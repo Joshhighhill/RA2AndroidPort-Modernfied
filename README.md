@@ -48,9 +48,11 @@ cmake --build build-android --target ra2assets ra2assets_so
 ```
 
 `RA2_BUILD_SHARED=ON` additionally builds `ra2assets_so` (installed as
-`libra2assets.so`), a shared target that links the static `ra2assets`
-library, purely so there is an inspectable `.so` artifact. Verify the
-result is AArch64:
+`libra2assets.so`), a shared target compiled from the same sources as the
+static `ra2assets` library, so the resulting `.so` actually contains the
+library's real code (verifiable with `llvm-nm`/`llvm-readelf`), proving the
+sources are portable to Android/arm64 as an ELF shared object too, not just
+as a static archive. Verify the result is AArch64:
 
 ```powershell
 python -c "

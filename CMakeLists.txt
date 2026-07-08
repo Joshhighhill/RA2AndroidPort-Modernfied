@@ -5,16 +5,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Library sources are added by later tasks; start empty via a stub object.
+# Library sources, shared between the static `ra2assets` target and the
+# optional `ra2assets_so` shared target below so both actually contain the
+# real library code (not just the placeholder).
+set(RA2_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/_placeholder.cpp
+    src/blowfish.cpp
+    src/mix_keyderiv.cpp
+    src/mix.cpp
+    src/pal.cpp
+    src/shp.cpp
+)
+
 add_library(ra2assets STATIC)
 target_include_directories(ra2assets PUBLIC include)
-# Keeps the target valid before any .cpp exists:
-target_sources(ra2assets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/_placeholder.cpp)
-target_sources(ra2assets PRIVATE src/blowfish.cpp)
-target_sources(ra2assets PRIVATE src/mix_keyderiv.cpp)
-target_sources(ra2assets PRIVATE src/mix.cpp)
-target_sources(ra2assets PRIVATE src/pal.cpp)
-target_sources(ra2assets PRIVATE src/shp.cpp)
+target_sources(ra2assets PRIVATE ${RA2_SOURCES})
 
 # mix_keyderiv.cpp is a verbatim XCC port that reinterprets bignum limbs via
 # `*(word*)` casts; this is strict-aliasing UB that only bites under
@@ -30,13 +35,12 @@ set_source_files_properties(src/mix_keyderiv.cpp PROPERTIES COMPILE_OPTIONS "-fn
 option(RA2_BUILD_SHARED "Build ra2assets as a shared lib (for Android .so check)" OFF)
 if (RA2_BUILD_SHARED)
     set_target_properties(ra2assets PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    # Source-having shared target (CMake requires >=1 source/object at
-    # generate time) that statically links ra2assets; it exists purely so an
-    # inspectable libra2assets.so lands in the build dir for the ELF
-    # machine-type check below — no whole-archive linkage needed for that.
-    add_library(ra2assets_so SHARED src/_placeholder.cpp)
+    # Built from the same RA2_SOURCES as the static `ra2assets` target (not a
+    # thin wrapper that links the static archive) so the resulting
+    # libra2assets.so actually contains the library's real compiled code —
+    # this is what the Android ELF/portability check below inspects.
+    add_library(ra2assets_so SHARED ${RA2_SOURCES})
     target_include_directories(ra2assets_so PUBLIC include)
-    target_link_libraries(ra2assets_so PRIVATE ra2assets)
     set_target_properties(ra2assets_so PROPERTIES OUTPUT_NAME ra2assets)
 endif()
 
