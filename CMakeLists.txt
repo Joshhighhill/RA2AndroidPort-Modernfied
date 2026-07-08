@@ -20,6 +20,7 @@ set(RA2_SOURCES
     src/mappack.cpp
     src/ini.cpp
     src/rules.cpp
+    src/map.cpp
 )
 
 add_library(ra2assets STATIC)
@@ -58,6 +59,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_mappack.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_lzo1x.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_ini.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_rules.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_map.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
