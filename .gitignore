@@ -1,0 +1,12 @@
+# Build output
+/build/
+# Oracle golden files derived from copyrighted assets — never commit
+/oracle/
+# Any accidental asset copies
+*.mix
+*.shp
+*.pal
+*.exe
+# Ghidra project lives outside the repo, but guard anyway
+*.gpr
+*.rep/
