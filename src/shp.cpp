@@ -15,7 +15,7 @@ ShpFile ShpFile::load(std::vector<uint8_t> bytes) {
         if (off + 24 > s.bytes_.size()) throw std::runtime_error("shp: truncated frame headers");
         const uint8_t* f=p+off;
         FrameHdr h;
-        h.x=r16(f+0); h.y=r16(f+2); h.w=r16(f+4); h.h=r16(f+6);
+        h.x=(int16_t)r16(f+0); h.y=(int16_t)r16(f+2); h.w=r16(f+4); h.h=r16(f+6);
         h.flags=r32(f+8); h.offset=r32(f+20);
         s.frames_.push_back(h);
         off+=24;
@@ -24,6 +24,7 @@ ShpFile ShpFile::load(std::vector<uint8_t> bytes) {
 }
 
 std::vector<uint8_t> ShpFile::decode_indexed(int i) const {
+    if (i < 0 || i >= (int)frames_.size()) throw std::runtime_error("shp: frame index out of range");
     const FrameHdr& h=frames_[i];
     std::vector<uint8_t> out((size_t)h.w*h.h, 0);
     if (h.offset==0) return out;                 // empty frame

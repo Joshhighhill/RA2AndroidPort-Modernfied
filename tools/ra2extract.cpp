@@ -72,6 +72,7 @@ int main(int argc, char** argv){
         }
         if (argc<5){ std::cerr<<"need <shp-path> <pal-path> <out.png>\n"; return 2; }
         ShpFile s=ShpFile::load(read_path(m, argv[2]));
+        if (s.count() == 0) throw std::runtime_error("shp has no frames");
         auto praw=read_path(m, argv[3]);
         Palette pal=Palette::load(praw.data(),praw.size());
         auto idx=s.decode_indexed(0);

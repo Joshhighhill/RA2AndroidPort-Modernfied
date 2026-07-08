@@ -61,7 +61,7 @@ TEST_CASE("palettize maps index 0 to transparent") {
     std::vector<uint8_t> idx = {0,1};
     auto rgba = ShpFile::palettize(idx, pal);
     CHECK(rgba[0].a==0);                 // index 0 transparent
-    CHECK(rgba[1].r==255); CHECK(rgba[1].a==255);
+    CHECK(rgba[1].r==252); CHECK(rgba[1].a==255);   // 63<<2 = 252 (game-accurate expand6)
 }
 
 TEST_CASE("shp rejects truncated frame headers and degrades on corrupt offsets") {
@@ -86,5 +86,25 @@ TEST_CASE("shp rejects truncated frame headers and degrades on corrupt offsets")
         auto out = s.decode_indexed(0);
         CHECK(out.size()==4);
         CHECK(out[0]==0); CHECK(out[1]==0); CHECK(out[2]==0); CHECK(out[3]==0);
+    }
+}
+
+TEST_CASE("shp guards zero-frame and out-of-range frame access") {
+    // Valid 1-frame SHP: out-of-range index must throw, not read OOB.
+    {
+        auto shp = make_shp(2,2,1,{1,2,3,4});
+        ShpFile s = ShpFile::load(std::move(shp));
+        REQUIRE(s.count()==1);
+        CHECK_THROWS_AS(s.decode_indexed(5), std::runtime_error);
+        CHECK_THROWS_AS(s.frame_info(5), std::runtime_error);
+    }
+    // 0-frame SHP: file header only (zero,cx,cy,frames=0), no frame headers.
+    {
+        std::vector<uint8_t> buf;
+        auto p16=[&](uint16_t v){ buf.push_back(v&0xff); buf.push_back(v>>8); };
+        p16(0); p16(0); p16(0); p16(0);   // zero, cx=0, cy=0, frames=0
+        ShpFile s = ShpFile::load(std::move(buf));
+        CHECK(s.count()==0);
+        CHECK_THROWS_AS(s.decode_indexed(0), std::runtime_error);
     }
 }

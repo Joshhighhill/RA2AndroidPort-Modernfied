@@ -26,6 +26,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cstddef>
+#include <mutex>
 
 namespace ra2assets::detail {
 
@@ -455,6 +456,11 @@ static void get_blowfish_key(const byte* s, byte* d)
 
 size_t westwood_blowfish_key(const uint8_t src[80], uint8_t out_key[56])
 {
+	// The underlying XCC port above uses module-global scratch state
+	// (pubkey, glob1, glob2, ...), so it is not reentrant; serialize this
+	// entry point so concurrent callers cannot race and derive a wrong key.
+	static std::mutex mtx;
+	std::lock_guard<std::mutex> lock(mtx);
 	get_blowfish_key(src, out_key);
 	return 56;
 }
