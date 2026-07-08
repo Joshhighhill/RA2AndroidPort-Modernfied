@@ -114,4 +114,17 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
                ra2assets::ShpFile& shp, const ra2assets::Palette& pal,
                const Camera& cam, int view_w, int view_h);
 
+// Draw a green isometric-diamond selection marker on the unit's tile
+// (at its interpolated fx/fy position). No-op if fully off-screen. Call
+// AFTER draw_terrain (so it's not painted over) and typically BEFORE
+// draw_unit so the sprite sits on top of the marker.
+void draw_selection(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,
+                    int view_h);
+
+// Draw the unit's remaining ordered path as a green poly-line + node dots
+// connecting the tile centers of its path cells (for visual feedback and
+// demo verification). No-op if the unit has no active path.
+void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,
+               int view_h);
+
 }  // namespace ra2engine

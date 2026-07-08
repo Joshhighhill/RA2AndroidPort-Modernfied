@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <utility>
 
@@ -159,10 +160,18 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
     if (unit.frame < 0 || unit.frame >= shp.count()) return false;
 
-    const ScreenPt p =
-        cell_to_screen(unit.cell_x, unit.cell_y, unit.level, kTileW, kTileH, kLevelPx);
-    const int tile_screen_x = p.x + cam.x;
-    const int tile_screen_y = p.y + cam.y;
+    // Project the unit's CONTINUOUS iso-cell position (fx, fy) -- not the
+    // snapped integer cell -- so it renders smoothly between cells while
+    // walking. cell_to_screen is linear in (x, y), so the same shear applies
+    // to fractional coordinates (see iso_project.hpp). Idle units have
+    // fx/fy == cell_x/cell_y, so this is identical to the integer path.
+    const double hw = kTileW / 2.0;
+    const double hh = kTileH / 2.0;
+    const int tile_screen_x =
+        static_cast<int>(std::lround((unit.fx - unit.fy) * hw)) + cam.x;
+    const int tile_screen_y =
+        static_cast<int>(std::lround((unit.fx + unit.fy) * hh - unit.level * kLevelPx)) +
+        cam.y;
 
     const ra2assets::ShpFile::Frame f = shp.frame_info(unit.frame);
 
@@ -202,6 +211,68 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     }
     SDL_RenderCopy(renderer, tex, nullptr, &dst);
     return true;
+}
+
+// Screen-space center (in projected pixels + camera) of the diamond tile at
+// continuous iso position (fx, fy, level). The tile's ground reference is the
+// center of its bounding rect (tile_w/2, tile_h/2 below the projected
+// top-left), matching draw_unit's anchor.
+static void tile_center_screen(double fx, double fy, int level, const Camera& cam,
+                               int& out_x, int& out_y) {
+    const double hw = kTileW / 2.0;
+    const double hh = kTileH / 2.0;
+    out_x = static_cast<int>(std::lround((fx - fy) * hw)) + cam.x + kTileW / 2;
+    out_y = static_cast<int>(std::lround((fx + fy) * hh - level * kLevelPx)) + cam.y +
+            kTileH / 2;
+}
+
+void draw_selection(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,
+                    int view_h) {
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+    int cx, cy;
+    tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
+    // Cull if the diamond is well off-screen.
+    if (cx + kTileW < 0 || cy + kTileH < 0 || cx - kTileW >= view_w || cy - kTileH >= view_h)
+        return;
+
+    const int hw = kTileW / 2;
+    const int hh = kTileH / 2;
+    // A green isometric diamond (the tile footprint) centered on the ground
+    // point: top, right, bottom, left corners.
+    SDL_Point pts[5] = {
+        {cx, cy - hh}, {cx + hw, cy}, {cx, cy + hh}, {cx - hw, cy}, {cx, cy - hh},
+    };
+    SDL_SetRenderDrawColor(renderer, 40, 240, 40, 255);
+    SDL_RenderDrawLines(renderer, pts, 5);
+    // Small corner brackets (thicker read) at the two side vertices.
+    SDL_RenderDrawLine(renderer, cx - hw, cy, cx - hw + 6, cy - 3);
+    SDL_RenderDrawLine(renderer, cx + hw, cy, cx + hw - 6, cy - 3);
+}
+
+void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,
+               int view_h) {
+    if (unit.path.size() < 2) return;
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+    (void)view_w;
+    (void)view_h;
+    SDL_SetRenderDrawColor(renderer, 60, 220, 90, 200);
+    // Poly-line connecting the tile centers of the remaining path cells (from
+    // the cell currently being walked toward, back one so it starts at the
+    // unit) so the ordered route is visible.
+    int prev_x = 0, prev_y = 0;
+    bool have_prev = false;
+    const size_t begin = unit.path_idx > 0 ? unit.path_idx - 1 : 0;
+    for (size_t i = begin; i < unit.path.size(); ++i) {
+        int px, py;
+        tile_center_screen(unit.path[i].x, unit.path[i].y, unit.level, cam, px, py);
+        if (have_prev) SDL_RenderDrawLine(renderer, prev_x, prev_y, px, py);
+        // A small node marker at each cell.
+        SDL_Rect dot{px - 1, py - 1, 3, 3};
+        SDL_RenderFillRect(renderer, &dot);
+        prev_x = px;
+        prev_y = py;
+        have_prev = true;
+    }
 }
 
 }  // namespace ra2engine
