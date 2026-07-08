@@ -1,6 +1,5 @@
 #include "ra2assets/mix.hpp"
 #include <stdexcept>
-#include <cstring>
 
 namespace ra2assets {
 
@@ -29,8 +28,10 @@ MixFile MixFile::open(std::vector<uint8_t> bytes) {
         m.encrypted_ = false; m.checksummed_ = false;
         pos = 0;
     }
+    if (n < pos + 6) throw std::runtime_error("mix: truncated header");
     uint16_t count = rd16(p + pos); pos += 2;
     /* body size */ (void)rd32(p + pos); pos += 4;
+    if ((uint64_t)pos + (uint64_t)count * 12 > n) throw std::runtime_error("mix: truncated index");
     m.entries_.reserve(count);
     for (uint16_t i = 0; i < count; i++) {
         MixEntry e{ rd32(p+pos), rd32(p+pos+4), rd32(p+pos+8) };
@@ -47,9 +48,9 @@ const MixEntry* MixFile::find(uint32_t id) const {
 }
 
 std::vector<uint8_t> MixFile::read(const MixEntry& e) const {
-    size_t start = body_start_ + e.offset;
+    uint64_t start = (uint64_t)body_start_ + e.offset;
     if (start + e.size > bytes_.size()) throw std::runtime_error("mix: entry out of range");
-    return std::vector<uint8_t>(bytes_.begin()+start, bytes_.begin()+start+e.size);
+    return std::vector<uint8_t>(bytes_.begin() + (size_t)start, bytes_.begin() + (size_t)(start + e.size));
 }
 
 } // namespace ra2assets
