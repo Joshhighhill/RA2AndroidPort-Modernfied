@@ -80,7 +80,7 @@ if (RA2_BUILD_ENGINE)
   set(SDL_SHARED ON CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(SDL2)
   add_executable(ra2engine
-    engine/main.cpp engine/platform.cpp)
+    engine/main.cpp engine/platform.cpp engine/texture_cache.cpp)
   target_include_directories(ra2engine PRIVATE include engine)
   # NOTE: link order deviates from the brief's literal listing (SDL2 then
   # SDL2main) to (SDL2main then SDL2). Under MinGW/GNU ld, static archives
