@@ -66,6 +66,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_theater.cpp)
 # compiled into BOTH this test binary and the ra2engine executable below
 # from a single source of truth (see engine/iso_project.hpp for rationale).
 target_sources(ra2assets_tests PRIVATE tests/test_projection.cpp engine/iso_project.cpp)
+# pathfind.cpp is pure C++17 (no SDL) and lives under engine/ so it can be
+# compiled into BOTH this test binary and the ra2engine executable below
+# from a single source of truth (same pattern as iso_project.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_pathfind.cpp engine/pathfind.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
@@ -85,7 +89,8 @@ if (RA2_BUILD_ENGINE)
   FetchContent_MakeAvailable(SDL2)
   add_executable(ra2engine
     engine/main.cpp engine/platform.cpp engine/texture_cache.cpp
-    engine/iso_project.cpp engine/iso_renderer.cpp engine/world.cpp)
+    engine/iso_project.cpp engine/iso_renderer.cpp engine/world.cpp
+    engine/pathfind.cpp)
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
   target_include_directories(ra2engine PRIVATE include engine third_party)
