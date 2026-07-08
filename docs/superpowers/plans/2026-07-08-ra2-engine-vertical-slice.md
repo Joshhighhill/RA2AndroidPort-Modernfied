@@ -310,6 +310,44 @@ TEST_CASE("format5 single + double chunk"){
 
 ---
 
+## Task 2b: LZO1X decompressor for IsoMapPack5 + codec-agnostic Format5 (pure lib)
+
+> **INSERTED DURING EXECUTION (plan correction).** Task 2 implementation + controller cross-check against XCC `misc/map_ts_encoder.cpp` proved that `[IsoMapPack5]` (the terrain layout) chunk bodies are **LZO1X** (`decode5(...,5)`), while `[OverlayPack]`/`[OverlayDataPack]` are Format80/LCW (`decode5(...,80)`). The Format5 chunk wrapper (`[u16 cmp][u16 uncmp]`) is identical for both; only the per-chunk codec differs. Task 1's LCW handles Overlay; terrain needs LZO1X. This task adds it so Task 5 can decode real terrain.
+
+**Files:** Create `include/ra2assets/lzo1x.hpp`, `src/lzo1x.cpp`, `tests/test_lzo1x.cpp`. Modify `include/ra2assets/mappack.hpp`, `src/mappack.cpp` (add codec-agnostic entry + fix banner comment), `tests/test_mappack.cpp`. Modify `CMakeLists.txt`.
+
+**Interfaces:**
+- Consumes: `lcw_decompress` (Task 1).
+- Produces:
+  ```cpp
+  namespace ra2assets {
+    // Decompress one LZO1X (LZO1X-1/miniLZO-compatible) block. expected_out = declared uncompressed size.
+    // Returns bytes written (== expected_out on success). Throws on malformed input / size mismatch.
+    size_t lzo1x_decompress(const uint8_t* src, size_t src_len, uint8_t* out, size_t out_len);
+
+    enum class MapPackCodec { LCW, LZO };
+    // Format5 chunk wrapper ([u16 cmp][u16 uncmp][body]*), body decoded by `codec`.
+    std::vector<uint8_t> decompress_mappack(const uint8_t* data, size_t len, MapPackCodec codec);
+  }
+  ```
+  `decompress_format5(data,len)` remains as a thin wrapper = `decompress_mappack(data,len,MapPackCodec::LCW)` so Task-2 tests/callers are unchanged.
+
+**Clean-room note:** LZO is Markus Oberhumer's; `miniLZO`/`liblzo2` are GPL. Implement the LZO1X **decompressor** fresh from the PUBLIC bitstream format description (the token/copy/literal grammar is documented and not copyrightable) — do NOT copy miniLZO/kernel-lzo/OpenRA-MiniLzo source. XCC/liblzo may be built OUTSIDE the repo as a byte-oracle only.
+
+- [ ] **Step 1: Write failing tests** (`tests/test_lzo1x.cpp`). LZO1X has no trivial one-liner KAT, so gate on: (a) a small hand-built LZO1X stream (literal-run + a back-copy + end-of-stream `0x11 0x00 0x00`) with hand-computed expected output; (b) a **guarded real-data test**: pull a real map's `[IsoMapPack5]` (same extraction approach Task 2 used for OverlayPack; env `RA2_TEST_MAP`), `base64_decode`, `decompress_mappack(..., MapPackCodec::LZO)`, and assert it (i) does not throw on real LZO1X data, (ii) each chunk's output length equals its declared `uncmp` size, (iii) total length is a positive multiple of 11 (the cell-record size) — a wrong LZO decoder mismatches (ii). Skip cleanly if asset absent; assert non-vacuous (>0 bytes) when present.
+
+- [ ] **Step 2: Run — expect FAIL** (`lzo1x_decompress`/`decompress_mappack` undefined).
+
+- [ ] **Step 3: Implement `lzo1x_decompress`** (`src/lzo1x.cpp`) per the documented LZO1X decompression grammar: the first-literal special case, the instruction bytes (0x00–0x0F short literals / longer-length encoding via zero-bytes; 0x10–0x1F long back-copies; 0x20–0x3F; 0x40–0x7F short back-copies; 0x80–0xFF short back-copies with distance from the length/state), the 2-bit "state" trailing-literal count carried between ops, little-endian distance reads, and the `0x11,0x00,0x00` end marker. Strict bounds on every read (`src_len`) and write (`out_len`) and every back-reference (distance ≤ bytes written). Throw `std::runtime_error` with context on any violation or if produced ≠ expected. (This grammar is fiddly — the real-data test in Step 1 is the correctness arbiter; iterate until real `[IsoMapPack5]` chunks decode to their exact declared sizes. If genuinely stuck after focused effort, a liblzo oracle built outside the repo can pin discrepancies — do NOT copy its code.)
+
+- [ ] **Step 4: Refactor `mappack`** — add `MapPackCodec` + `decompress_mappack(data,len,codec)` (the Task-2 chunk loop, dispatching each body to `lcw_decompress` or `lzo1x_decompress` by `codec`); make `decompress_format5` call it with `LCW`. **Fix the stale banner comment in `src/mappack.cpp`** to state both codecs (IsoMapPack5=LZO, Overlay=LCW) so it no longer contradicts the finding. Keep all Task-2 tests green.
+
+- [ ] **Step 5: Wire CMake** (`src/lzo1x.cpp` to lib, `tests/test_lzo1x.cpp` to tests), build, run `-tc="lzo*"` and the full suite (PowerShell, `RA2_INSTALL_DIR`/`RA2_TEST_MAP`) — PASS incl. the real IsoMapPack5 decode.
+
+- [ ] **Step 6: Commit** `feat(lzo): in-house LZO1X decompressor; IsoMapPack5 terrain decodes`.
+
+---
+
 ## Task 3: Minimal INI reader (pure lib)
 
 **Files:** Create `include/ra2assets/ini.hpp`, `src/ini.cpp`, `tests/test_ini.cpp`. Modify `CMakeLists.txt`.
@@ -379,7 +417,7 @@ TEST_CASE("format5 single + double chunk"){
 **Files:** Create `include/ra2assets/map.hpp`, `src/map.cpp`, `tests/test_map.cpp`. Modify `CMakeLists.txt`.
 
 **Interfaces:**
-- Consumes: `Ini`, `base64_decode`, `decompress_format5`.
+- Consumes: `Ini`, `base64_decode`, `decompress_mappack` (LZO variant — see Task 2b; `IsoMapPack5` chunk bodies are LZO1X, NOT LCW).
 - Produces:
   ```cpp
   namespace ra2assets {
@@ -399,7 +437,7 @@ TEST_CASE("format5 single + double chunk"){
 
 - [ ] **Step 2: Run — FAIL.**
 
-- [ ] **Step 3: Implement** — parse `[Map] Theater`, `Size`/`LocalSize` for dimensions. For `[IsoMapPack5]`: concatenate the ordered values from `Ini::section("IsoMapPack5")`, `base64_decode`, `decompress_format5`, then walk **11-byte** records: `int16 X, int16 Y, int32 Tile, uint8 SubTile, uint8 Level, uint8 (ignored)`. Skip records with `Tile==0xFFFFFFFF`/out-of-range as empty. Bounds-check. Confirm the 11-byte layout against OpenRA's `ReadTiles` / ModEnc during implementation; if the real-map test yields implausible coordinates, re-check record size/endianness (the tripwire).
+- [ ] **Step 3: Implement** — parse `[Map] Theater`, `Size`/`LocalSize` for dimensions. For `[IsoMapPack5]`: concatenate the ordered values from `Ini::section("IsoMapPack5")`, `base64_decode`, then `decompress_mappack(data, len, MapPackCodec::LZO)` (Task 2b — **IsoMapPack5 uses LZO1X, confirmed vs XCC `map_ts_encoder.cpp` `decode5(...,5)`**; the LCW-only `decompress_format5` will throw on real terrain). Then walk **11-byte** records: `int16 X, int16 Y, int32 Tile, uint8 SubTile, uint8 Level, uint8 (ignored)`. Skip records with `Tile==0xFFFFFFFF`/out-of-range as empty. Bounds-check. Confirm the 11-byte layout against OpenRA's `ReadTiles` / ModEnc during implementation; if the real-map test yields implausible coordinates, re-check record size/endianness (the tripwire).
 
 - [ ] **Step 4: Build, run `-tc="map*"` (PowerShell, RA2_INSTALL_DIR) — PASS.** Report cell count + dimensions for the chosen map.
 
