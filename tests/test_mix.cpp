@@ -161,3 +161,25 @@ TEST_CASE("mix_id known vector") {
     // vector that needs no install present to run.
     CHECK(ra2assets::mix_id("cachemd.mix") == 0x68EEC99Au);
 }
+
+TEST_CASE("open_nested opens a real child mix and throws on unknown names") {
+    using namespace ra2assets;
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto bytes = slurp(base + "\\ra2.mix");
+    if (bytes.empty()) { MESSAGE("skipped: ra2.mix not found"); return; }
+    MixFile m = MixFile::open(std::move(bytes));
+
+    // Open cache.mix as a nested archive
+    MixFile cache_child = m.open_nested("cache.mix");
+    CHECK(cache_child.count() > 0);
+    MESSAGE("cache.mix entries: " << cache_child.count());
+
+    // Open local.mix as a nested archive
+    MixFile local_child = m.open_nested("local.mix");
+    CHECK(local_child.count() > 0);
+    MESSAGE("local.mix entries: " << local_child.count());
+
+    // Verify that unknown nested files throw std::runtime_error
+    CHECK_THROWS_AS(m.open_nested("no-such-file.mix"), std::runtime_error);
+}
