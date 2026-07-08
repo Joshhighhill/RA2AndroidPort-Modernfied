@@ -153,4 +153,55 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
     return drawn;
 }
 
+bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
+              ra2assets::ShpFile& shp, const ra2assets::Palette& pal,
+              const Camera& cam, int view_w, int view_h) {
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+    if (unit.frame < 0 || unit.frame >= shp.count()) return false;
+
+    const ScreenPt p =
+        cell_to_screen(unit.cell_x, unit.cell_y, unit.level, kTileW, kTileH, kLevelPx);
+    const int tile_screen_x = p.x + cam.x;
+    const int tile_screen_y = p.y + cam.y;
+
+    const ra2assets::ShpFile::Frame f = shp.frame_info(unit.frame);
+
+    // Anchor math (derived + verified against the real gi.shp, not just the
+    // brief's starting heuristic -- see task-10-report.md): TS/RA2 SHP
+    // sprites are drawn onto a fixed global cx*cy canvas whose CENTER is the
+    // sprite's "ground point"; each frame's (x, y, w, h) is only the tight
+    // bounding box of that frame's non-transparent pixels *within* that
+    // canvas (used to shrink the stored/RLE-encoded data). So the correct
+    // anchor uses the canvas center (shp.width()/2, shp.height()/2), NOT the
+    // current frame's own w/h -- a per-frame-size anchor would make the feet
+    // jitter up/down as the animation cycles through frames of different
+    // heights. Verified: gi.shp's canvas is 78x66 (center 39,33); frame 0 is
+    // 13x29 at offset (32,7) -- its bottom edge lands 3px BELOW the canvas
+    // center, i.e. the character's feet sit almost exactly on the tile's
+    // ground point across every frame checked (frame 4, a taller frame,
+    // lands 8px below) -- both a couple pixels of slack for the foot/shadow
+    // pixels, not floating or sunk.
+    const int canvas_cx = shp.width();
+    const int canvas_cy = shp.height();
+    SDL_Rect dst;
+    dst.w = f.w;
+    dst.h = f.h;
+    dst.x = tile_screen_x + kTileW / 2 - canvas_cx / 2 + f.x;
+    dst.y = tile_screen_y + kTileH / 2 - canvas_cy / 2 + f.y;
+
+    // Cull if fully off-screen.
+    if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h)
+        return false;
+
+    char key[64];
+    std::snprintf(key, sizeof key, "unit:%s:%d", unit.image.c_str(), unit.frame);
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) {
+        std::vector<uint8_t> idx = shp.decode_indexed(unit.frame);
+        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal));
+    }
+    SDL_RenderCopy(renderer, tex, nullptr, &dst);
+    return true;
+}
+
 }  // namespace ra2engine

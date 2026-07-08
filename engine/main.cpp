@@ -18,6 +18,7 @@
 
 #include <SDL.h>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -30,10 +31,14 @@
 #include "iso_renderer.hpp"
 #include "platform.hpp"
 #include "texture_cache.hpp"
+#include "world.hpp"
 
+#include "ra2assets/ini.hpp"
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
+#include "ra2assets/rules.hpp"
+#include "ra2assets/shp.hpp"
 
 using namespace ra2assets;
 
@@ -105,6 +110,103 @@ Assets load_assets() {
     return Assets{std::move(map), pal, std::move(th)};
 }
 
+// Everything needed to draw the one placed unit: its decoded SHP, the
+// (separate, temperate UNIT, not terrain) palette, and the resolved image
+// name (Rules::image() output, e.g. "GI") the World's Unit is tagged with.
+struct UnitAssets {
+    ShpFile shp;
+    Palette pal;
+    std::string image;
+};
+
+// Resolves unit_id's Image= (e.g. "E1" -> "GI") from rulesmd.ini. rulesmd.ini
+// is not always a top-level ra2md.mix entry in a stock install -- it can be
+// nested inside one of a handful of mixes depending on layout. Mirrors the
+// exact fallback chain proven against the real install in
+// tests/test_rules.cpp's real-asset test.
+std::string resolve_unit_image(const std::string& dir, const std::string& unit_id) {
+    MixFile top = MixFile::open(slurp(dir + "ra2md.mix"));
+
+    std::vector<uint8_t> rules_bytes;
+    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
+        rules_bytes = top.read(*e);
+    } else {
+        static const char* candidates[] = {
+            "localmd.mix",  "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
+            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
+            "cachemd.mix",  "conqmd.mix",
+        };
+        for (const char* name : candidates) {
+            try {
+                MixFile nested = top.open_nested(name);
+                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
+                    rules_bytes = nested.read(*e2);
+                    break;
+                }
+            } catch (const std::exception&) {
+                // Nested mix not present in this install/layout; try the next.
+            }
+        }
+    }
+    if (rules_bytes.empty())
+        throw std::runtime_error("rulesmd.ini not found in ra2md.mix (top level or nested)");
+
+    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
+    Rules rules = Rules::load(ini);
+    return rules.image(unit_id);
+}
+
+// Loads the unit's SHP + palette for unit_id (e.g. "E1" -> image "GI" ->
+// GI.SHP). Asset chain (Phase-1 proven, see task-10-report.md):
+//   image name : ra2md.mix -> ... -> rulesmd.ini, [E1] Image=GI
+//   sprite     : ra2.mix -> conquer.mix -> gi.shp   (lowercased image name)
+//   palette    : ra2.mix -> cache.mix   -> unittem.pal (temperate UNIT
+//                palette -- distinct from isotem.pal, the TERRAIN palette
+//                used by load_assets()/draw_terrain)
+UnitAssets load_unit_assets(const std::string& dir, const std::string& unit_id) {
+    const std::string image = resolve_unit_image(dir, unit_id);
+
+    MixFile ra2 = MixFile::open(slurp(dir + "ra2.mix"));
+
+    MixFile conquer = ra2.open_nested("conquer.mix");
+    std::string shp_name = image + ".shp";
+    const MixEntry* se = conquer.find(shp_name);
+    if (!se) {
+        // conquer.mix's stock entry names are lowercase (e.g. "gi.shp"); try
+        // as-is first (in case a mod/layout differs), then lowercased.
+        std::string lower = shp_name;
+        for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        se = conquer.find(lower);
+        shp_name = lower;
+    }
+    if (!se)
+        throw std::runtime_error("unit SHP not found in ra2.mix/conquer.mix: " + image + ".shp");
+    ShpFile shp = ShpFile::load(conquer.read(*se));
+
+    MixFile cache = ra2.open_nested("cache.mix");
+    const MixEntry* pe = cache.find(std::string("unittem.pal"));
+    if (!pe) throw std::runtime_error("unittem.pal not found in ra2.mix/cache.mix");
+    auto pal_raw = cache.read(*pe);
+    Palette pal = Palette::load(pal_raw.data(), pal_raw.size());
+
+    std::cerr << "[unit] id=" << unit_id << " image=" << image << " shp=" << shp_name
+              << " frames=" << shp.count() << " canvas=" << shp.width() << "x" << shp.height()
+              << "\n";
+
+    return UnitAssets{std::move(shp), pal, image};
+}
+
+// Constructs the World (places the unit on a passable Clear cell -- see
+// world.hpp/pick_start_cell) and tags its Unit with the resolved image.
+ra2engine::World build_world(const Assets& a, const UnitAssets& ua) {
+    ra2engine::World world(a.map);
+    world.set_unit_image(ua.image, 0);
+    const ra2engine::Unit& u = world.unit();
+    std::cerr << "[unit] placed at cell (" << u.cell_x << "," << u.cell_y
+              << ") level=" << u.level << "\n";
+    return world;
+}
+
 // Center the camera so the map's projected bounding-box center lands in the
 // middle of the view (guarantees a populated region is shown).
 ra2engine::Camera centered_camera(const MapFile& map, int view_w, int view_h) {
@@ -120,6 +222,8 @@ ra2engine::Camera centered_camera(const MapFile& map, int view_w, int view_h) {
 int run_screenshot(const std::string& out_path) {
     const int W = 1280, H = 720;
     Assets a = load_assets();
+    UnitAssets ua = load_unit_assets(env_install_dir(), "E1");
+    ra2engine::World world = build_world(a, ua);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
     SDL_Window* win = SDL_CreateWindow("RA2 Engine (screenshot)", SDL_WINDOWPOS_CENTERED,
@@ -138,6 +242,7 @@ int run_screenshot(const std::string& out_path) {
         SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
         SDL_RenderClear(ren);
         int drawn = ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H);
+        bool unit_drawn = ra2engine::draw_unit(ren, tc, world.unit(), ua.shp, ua.pal, cam, W, H);
 
         std::vector<uint8_t> px(static_cast<size_t>(W) * H * 4);
         if (SDL_RenderReadPixels(ren, nullptr, SDL_PIXELFORMAT_RGBA32, px.data(), W * 4) != 0)
@@ -147,7 +252,8 @@ int run_screenshot(const std::string& out_path) {
             throw std::runtime_error("stbi_write_png failed: " + out_path);
 
         std::cerr << "[screenshot] wrote " << out_path << " (" << W << "x" << H
-                  << ", tiles drawn " << drawn << ")\n";
+                  << ", tiles drawn " << drawn << ", unit drawn=" << (unit_drawn ? "yes" : "no")
+                  << ")\n";
     }
 
     SDL_DestroyRenderer(ren);
@@ -158,6 +264,8 @@ int run_screenshot(const std::string& out_path) {
 
 int run_interactive() {
     Assets a = load_assets();
+    UnitAssets ua = load_unit_assets(env_install_dir(), "E1");
+    ra2engine::World world = build_world(a, ua);
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
 
@@ -206,6 +314,8 @@ int run_interactive() {
         platform.begin_frame();
         ra2engine::draw_terrain(platform.renderer(), tc, a.map, a.theater, a.pal, cam,
                                 platform.width(), platform.height());
+        ra2engine::draw_unit(platform.renderer(), tc, world.unit(), ua.shp, ua.pal, cam,
+                             platform.width(), platform.height());
         platform.present();
         SDL_Delay(16);  // ~60fps
     }

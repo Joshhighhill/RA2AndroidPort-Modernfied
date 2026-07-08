@@ -85,7 +85,7 @@ if (RA2_BUILD_ENGINE)
   FetchContent_MakeAvailable(SDL2)
   add_executable(ra2engine
     engine/main.cpp engine/platform.cpp engine/texture_cache.cpp
-    engine/iso_project.cpp engine/iso_renderer.cpp)
+    engine/iso_project.cpp engine/iso_renderer.cpp engine/world.cpp)
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
   target_include_directories(ra2engine PRIVATE include engine third_party)

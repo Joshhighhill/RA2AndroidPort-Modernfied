@@ -8,7 +8,9 @@
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
+#include "ra2assets/shp.hpp"     // ShpFile (draw_unit)
 #include "ra2assets/theater.hpp"  // TmpFile / TileImage
+#include "world.hpp"              // Unit
 
 namespace ra2engine {
 
@@ -92,5 +94,24 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
                  const ra2assets::Palette& pal, const Camera& cam, int view_w,
                  int view_h);
+
+// Draw a unit's current SHP frame on top of the terrain (call AFTER
+// draw_terrain so the sprite is not painted over). The unit's cell is
+// projected with cell_to_screen(cell_x, cell_y, level, 60, 30, 15) + camera
+// to get the tile's on-screen position; the SHP frame is then anchored so
+// the sprite's fixed "ground point" -- the CENTER of the SHP's global
+// cx*cy canvas (`shp.width()/2`, `shp.height()/2`), the standard TS/RA2
+// sprite-canvas convention -- lands on the tile's screen-space center
+// (tile_w/2, tile_h/2), which is the isometric ground reference for a
+// diamond tile. Using the canvas center (not the current frame's own w/h,
+// which varies per facing/animation frame) keeps the character's feet
+// planted at the same spot across every frame. See iso_renderer.cpp for the
+// exact formula and its empirical validation against gi.shp (Task 10
+// report). The frame is palettized/uploaded via `tc`, keyed
+// "unit:<image>:<frame>". Returns false (no-op, nothing drawn) if
+// unit.frame is out of range or the sprite rect is fully off-screen.
+bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
+               ra2assets::ShpFile& shp, const ra2assets::Palette& pal,
+               const Camera& cam, int view_w, int view_h);
 
 }  // namespace ra2engine
