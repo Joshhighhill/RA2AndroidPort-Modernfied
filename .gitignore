@@ -1,5 +1,6 @@
 # Build output
 /build/
+/build-*/
 # Oracle golden files derived from copyrighted assets — never commit
 /oracle/
 # Any accidental asset copies
