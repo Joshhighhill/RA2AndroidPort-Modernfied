@@ -10,11 +10,13 @@ add_library(ra2assets STATIC)
 target_include_directories(ra2assets PUBLIC include)
 # Keeps the target valid before any .cpp exists:
 target_sources(ra2assets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/_placeholder.cpp)
+target_sources(ra2assets PRIVATE src/blowfish.cpp)
 
 enable_testing()
 add_executable(ra2assets_tests
     tests/test_main.cpp
 )
+target_sources(ra2assets_tests PRIVATE tests/test_blowfish.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
