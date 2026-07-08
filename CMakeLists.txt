@@ -85,8 +85,10 @@ if (RA2_BUILD_ENGINE)
   FetchContent_MakeAvailable(SDL2)
   add_executable(ra2engine
     engine/main.cpp engine/platform.cpp engine/texture_cache.cpp
-    engine/iso_project.cpp)
-  target_include_directories(ra2engine PRIVATE include engine)
+    engine/iso_project.cpp engine/iso_renderer.cpp)
+  # third_party for the vendored stb_image_write.h (screenshot PNG output);
+  # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
+  target_include_directories(ra2engine PRIVATE include engine third_party)
   # NOTE: link order deviates from the brief's literal listing (SDL2 then
   # SDL2main) to (SDL2main then SDL2). Under MinGW/GNU ld, static archives
   # are resolved in a single left-to-right pass: SDL2main.a's WinMain is

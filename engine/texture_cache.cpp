@@ -14,6 +14,11 @@ TextureCache::~TextureCache() {
     }
 }
 
+void* TextureCache::peek(const std::string& key) const {
+    auto it = cache_.find(key);
+    return it != cache_.end() ? it->second : nullptr;
+}
+
 void* TextureCache::get(const std::string& key, const uint8_t* indices, int w,
                          int h, const ra2assets::Palette& pal) {
     auto it = cache_.find(key);

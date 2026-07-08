@@ -25,6 +25,10 @@ public:
     void* get(const std::string& key, const uint8_t* indices, int w, int h,
               const ra2assets::Palette& pal);
 
+    // Return the cached SDL_Texture* for `key`, or nullptr if not cached.
+    // Lets callers skip decoding/palettizing work on a cache hit.
+    void* peek(const std::string& key) const;
+
 private:
     void* renderer_;  // SDL_Renderer*, non-owning
     std::unordered_map<std::string, void*> cache_;  // key -> SDL_Texture*
