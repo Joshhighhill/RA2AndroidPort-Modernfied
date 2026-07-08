@@ -62,7 +62,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_ini.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_rules.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_map.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_theater.cpp)
-target_include_directories(ra2assets_tests PRIVATE third_party include)
+# iso_project.cpp is pure C++17 (no SDL) and lives under engine/ so it can be
+# compiled into BOTH this test binary and the ra2engine executable below
+# from a single source of truth (see engine/iso_project.hpp for rationale).
+target_sources(ra2assets_tests PRIVATE tests/test_projection.cpp engine/iso_project.cpp)
+target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
 
@@ -80,7 +84,8 @@ if (RA2_BUILD_ENGINE)
   set(SDL_SHARED ON CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(SDL2)
   add_executable(ra2engine
-    engine/main.cpp engine/platform.cpp engine/texture_cache.cpp)
+    engine/main.cpp engine/platform.cpp engine/texture_cache.cpp
+    engine/iso_project.cpp)
   target_include_directories(ra2engine PRIVATE include engine)
   # NOTE: link order deviates from the brief's literal listing (SDL2 then
   # SDL2main) to (SDL2main then SDL2). Under MinGW/GNU ld, static archives
