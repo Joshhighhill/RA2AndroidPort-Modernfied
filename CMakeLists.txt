@@ -55,3 +55,36 @@ add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
 add_executable(ra2extract tools/ra2extract.cpp)
 target_include_directories(ra2extract PRIVATE third_party)
 target_link_libraries(ra2extract PRIVATE ra2assets)
+
+option(RA2_BUILD_ENGINE "Build the SDL2 engine/app (needs SDL2)" ON)
+if (RA2_BUILD_ENGINE)
+  include(FetchContent)
+  FetchContent_Declare(SDL2
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-2.30.9)
+  set(SDL_TEST OFF CACHE BOOL "" FORCE)
+  set(SDL_SHARED ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(SDL2)
+  add_executable(ra2engine
+    engine/main.cpp engine/platform.cpp)
+  target_include_directories(ra2engine PRIVATE include engine)
+  # NOTE: link order deviates from the brief's literal listing (SDL2 then
+  # SDL2main) to (SDL2main then SDL2). Under MinGW/GNU ld, static archives
+  # are resolved in a single left-to-right pass: SDL2main.a's WinMain is
+  # pulled in via `-Wl,--undefined=WinMain` and internally references SDL_*
+  # symbols (SDL_Init, SDL_free, ...) that live in SDL2's import lib. If
+  # SDL2main.a is placed after SDL2's import lib on the command line, GNU ld
+  # has already finished scanning the SDL2 import lib by the time it
+  # discovers those undefined refs and does not revisit it, so the link
+  # fails ("undefined reference to SDL_ShowSimpleMessageBox" etc). Listing
+  # SDL2main before SDL2 (the standard `-lSDL2main -lSDL2` convention used
+  # by every MinGW SDL2 tutorial) fixes this; MSVC's linker is not
+  # order-sensitive this way, which is why the brief's literal order can
+  # look fine there. No SDL2 version/flags changed.
+  target_link_libraries(ra2engine PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2)
+  # SDL_SHARED=ON builds SDL2.dll; copy it next to ra2engine.exe post-build
+  # so the exe can find it at runtime (Windows has no rpath).
+  add_custom_command(TARGET ra2engine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_FILE:SDL2::SDL2> $<TARGET_FILE_DIR:ra2engine>)
+endif()
