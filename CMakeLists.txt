@@ -12,6 +12,7 @@ target_include_directories(ra2assets PUBLIC include)
 target_sources(ra2assets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/_placeholder.cpp)
 target_sources(ra2assets PRIVATE src/blowfish.cpp)
 target_sources(ra2assets PRIVATE src/mix_keyderiv.cpp)
+target_sources(ra2assets PRIVATE src/mix.cpp)
 
 enable_testing()
 add_executable(ra2assets_tests
