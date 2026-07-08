@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "ra2assets/shp.hpp"
+#include <stdexcept>
 using namespace ra2assets;
 
 // Helper: assemble a 1-frame SHP with given frame flags + pixel payload.
@@ -61,4 +62,29 @@ TEST_CASE("palettize maps index 0 to transparent") {
     auto rgba = ShpFile::palettize(idx, pal);
     CHECK(rgba[0].a==0);                 // index 0 transparent
     CHECK(rgba[1].r==255); CHECK(rgba[1].a==255);
+}
+
+TEST_CASE("shp rejects truncated frame headers and degrades on corrupt offsets") {
+    // Test 1: truncated frame headers — claim 5 frames but only ~10 bytes total
+    {
+        std::vector<uint8_t> buf;
+        auto p16=[&](uint16_t v){ buf.push_back(v&0xff); buf.push_back(v>>8); };
+        p16(0); p16(2); p16(2); p16(5);  // file header: zero, cx=2, cy=2, frames=5
+        // Only 2 more bytes (truncated, not enough for even 1 frame header)
+        buf.push_back(0);
+        buf.push_back(0);
+        CHECK_THROWS_AS(ShpFile::load(std::move(buf)), std::runtime_error);
+    }
+    // Test 2: corrupt frame data-offset field — should degrade gracefully
+    {
+        auto buf = make_shp(2,2,1,{1,2,3,4});
+        // Corrupt the data-offset field at bytes 28..31 to 0xFFFFFFF0
+        if (buf.size() >= 32) {
+            buf[28]=0xF0; buf[29]=0xFF; buf[30]=0xFF; buf[31]=0xFF;
+        }
+        ShpFile s = ShpFile::load(std::move(buf));
+        auto out = s.decode_indexed(0);
+        CHECK(out.size()==4);
+        CHECK(out[0]==0); CHECK(out[1]==0); CHECK(out[2]==0); CHECK(out[3]==0);
+    }
 }

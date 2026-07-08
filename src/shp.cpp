@@ -12,6 +12,7 @@ ShpFile ShpFile::load(std::vector<uint8_t> bytes) {
     int frames=r16(p+6);
     size_t off=8;
     for (int i=0;i<frames;i++){
+        if (off + 24 > s.bytes_.size()) throw std::runtime_error("shp: truncated frame headers");
         const uint8_t* f=p+off;
         FrameHdr h;
         h.x=r16(f+0); h.y=r16(f+2); h.w=r16(f+4); h.h=r16(f+6);
@@ -26,6 +27,7 @@ std::vector<uint8_t> ShpFile::decode_indexed(int i) const {
     const FrameHdr& h=frames_[i];
     std::vector<uint8_t> out((size_t)h.w*h.h, 0);
     if (h.offset==0) return out;                 // empty frame
+    if (h.offset > bytes_.size()) return out;    // corrupt offset: degrade to empty frame
     const uint8_t* src=bytes_.data()+h.offset;
     const uint8_t* end=bytes_.data()+bytes_.size();
     if (h.flags & 2u) {                          // RLE-zero (XCC format 3)
