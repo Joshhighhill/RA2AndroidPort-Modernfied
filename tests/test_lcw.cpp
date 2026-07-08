@@ -2,6 +2,7 @@
 #include "ra2assets/lcw.hpp"
 #include <vector>
 #include <cstdint>
+#include <stdexcept>
 using ra2assets::lcw_decompress;
 static std::vector<uint8_t> dec(std::vector<uint8_t> s, size_t out){
     std::vector<uint8_t> o(out,0); size_t n=lcw_decompress(s.data(),s.size(),o.data(),o.size()); o.resize(n); return o; }
@@ -67,4 +68,44 @@ TEST_CASE("lcw: mixed command sequence (literal + short-rel-copy + run-fill + me
     REQUIRE(o.size()==16);
     std::vector<uint8_t> expected = {'W','E','S','T','W','E','S','T','!','!','!','S','T','W','E','S'};
     for (size_t i=0;i<expected.size();++i) CHECK(o[i]==expected[i]);
+}
+TEST_CASE("lcw rejects malformed and overrunning streams") {
+    uint8_t out[16];
+    size_t out_len = sizeof(out);
+
+    // Sub-check 1: Source overrun / truncated stream
+    // Literal copy command 0x85 (5 bytes) but only 2 literal bytes provided
+    {
+        std::vector<uint8_t> stream = {0x85, 'A', 'B'};
+        CHECK_THROWS_AS(lcw_decompress(stream.data(), stream.size(), out, out_len), std::runtime_error);
+    }
+
+    // Sub-check 2: Truncated relative-copy operand
+    // Short relative copy (0x00) but no following offset byte
+    {
+        std::vector<uint8_t> stream = {0x00};
+        CHECK_THROWS_AS(lcw_decompress(stream.data(), stream.size(), out, out_len), std::runtime_error);
+    }
+
+    // Sub-check 3: Bad relative offset (offset > written)
+    // Literal 1 byte 'A', then relative copy with offset=5 but only 1 byte written
+    {
+        std::vector<uint8_t> stream = {0x81, 'A', 0x00, 0x05};
+        CHECK_THROWS_AS(lcw_decompress(stream.data(), stream.size(), out, out_len), std::runtime_error);
+    }
+
+    // Sub-check 4: Destination overrun
+    // Fill 16 bytes into 4-byte buffer
+    {
+        std::vector<uint8_t> stream = {0xFE, 0x10, 0x00, 0x77, 0x80};
+        uint8_t small_out[4];
+        CHECK_THROWS_AS(lcw_decompress(stream.data(), stream.size(), small_out, sizeof(small_out)), std::runtime_error);
+    }
+
+    // Sub-check 5: Bad absolute pos
+    // Medium abs copy from position 16 when nothing written
+    {
+        std::vector<uint8_t> stream = {0xC0, 0x10, 0x00, 0x80};
+        CHECK_THROWS_AS(lcw_decompress(stream.data(), stream.size(), out, out_len), std::runtime_error);
+    }
 }
