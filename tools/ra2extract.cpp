@@ -41,6 +41,7 @@ static std::vector<uint8_t> read_path(const MixFile& m, const std::string& path)
 int main(int argc, char** argv){
     if (argc<3){
         std::cerr<<"usage: ra2extract <mix> --list [nested-path]\n"
+                 <<"       ra2extract <mix> --raw <asset-path> <out.bin>\n"
                  <<"       ra2extract <mix> <shp-path> <pal-path> <out.png>\n"
                  <<"       asset paths may descend nested mixes: conquer.mix/e1.shp\n";
         return 2;
@@ -55,6 +56,18 @@ int main(int argc, char** argv){
             for (auto& e : t.entries())
                 std::printf("  %08X  offset=%-10u size=%u\n", e.id, e.offset, e.size);
             for (auto& n : t.local_names()) std::cout<<"  "<<n<<"\n";
+            return 0;
+        }
+        if (std::string(argv[2])=="--raw"){
+            // Dump the raw extracted bytes of any nested asset to disk, so an
+            // external oracle (e.g. XCC's own decoder) can be fed byte-identical
+            // input. Extraction is ra2assets'; decoding is the oracle's.
+            if (argc<5){ std::cerr<<"need --raw <asset-path> <out.bin>\n"; return 2; }
+            auto raw=read_path(m, argv[3]);
+            std::ofstream out(argv[4], std::ios::binary);
+            if (!out){ std::cerr<<"cannot write "<<argv[4]<<"\n"; return 1; }
+            out.write(reinterpret_cast<const char*>(raw.data()), (std::streamsize)raw.size());
+            std::cout<<"wrote "<<argv[4]<<" ("<<raw.size()<<" bytes)\n";
             return 0;
         }
         if (argc<5){ std::cerr<<"need <shp-path> <pal-path> <out.png>\n"; return 2; }
