@@ -41,6 +41,7 @@ struct OpenNodeGreater {
 std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, int height,
                               Cellxy start, Cellxy goal) {
     if (width <= 0 || height <= 0) return {};
+    if (passable.size() != static_cast<size_t>(width) * static_cast<size_t>(height)) return {};
 
     auto in_range = [&](int x, int y) {
         return x >= 0 && x < width && y >= 0 && y < height;

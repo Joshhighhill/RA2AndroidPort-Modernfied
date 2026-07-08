@@ -175,3 +175,34 @@ TEST_CASE("path: fully walled-off goal returns empty") {
     auto path = find_path(grid, w, h, Cellxy{0, 0}, Cellxy{2, 2});
     CHECK(path.empty());
 }
+
+TEST_CASE("find_path returns empty on passable/dimension size mismatch") {
+    const int w = 5, h = 5;
+    const int expected_size = w * h;  // 25
+
+    // Test 1: passable vector is too small (size = expected_size - 1 = 24)
+    {
+        auto grid = open_grid(w, h);
+        grid.pop_back();  // Remove one element, making it 24 instead of 25
+        REQUIRE(grid.size() == static_cast<size_t>(expected_size - 1));
+        auto path = find_path(grid, w, h, Cellxy{0, 0}, Cellxy{4, 4});
+        CHECK(path.empty());
+    }
+
+    // Test 2: passable vector is too large (size = expected_size + 5 = 30)
+    {
+        auto grid = open_grid(w, h);
+        grid.resize(static_cast<size_t>(expected_size + 5), 1);
+        REQUIRE(grid.size() == static_cast<size_t>(expected_size + 5));
+        auto path = find_path(grid, w, h, Cellxy{0, 0}, Cellxy{4, 4});
+        CHECK(path.empty());
+    }
+
+    // Test 3: correctly-sized all-passable 5x5 with start != goal should yield non-empty path
+    {
+        auto grid = open_grid(w, h);
+        REQUIRE(grid.size() == static_cast<size_t>(expected_size));
+        auto path = find_path(grid, w, h, Cellxy{0, 0}, Cellxy{4, 4});
+        CHECK(!path.empty());  // Proves the guard doesn't reject valid input
+    }
+}
