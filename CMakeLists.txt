@@ -27,3 +27,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_shp.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
+
+add_executable(ra2extract tools/ra2extract.cpp)
+target_include_directories(ra2extract PRIVATE third_party)
+target_link_libraries(ra2extract PRIVATE ra2assets)
