@@ -105,3 +105,59 @@ TEST_CASE("mix opens a real encrypted archive from the install") {
     // ra2md.mix is a top-level container of nested mixes; entry count is stable.
     MESSAGE("ra2md.mix entries: " << m.count());
 }
+
+TEST_CASE("mix_id resolves well-known nested mix names (stock assets)") {
+    using namespace ra2assets;
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    int archives_checked = 0;
+    {
+        auto bytes = slurp(base + "\\ra2.mix");
+        if (!bytes.empty()) {
+            MixFile m = MixFile::open(std::move(bytes));
+            CHECK(m.find(mix_id("cache.mix"))   != nullptr);
+            CHECK(m.find(mix_id("local.mix"))   != nullptr);
+            CHECK(m.find(mix_id("conquer.mix")) != nullptr);
+            archives_checked++;
+        }
+    }
+    {
+        auto bytes = slurp(base + "\\ra2md.mix");
+        if (!bytes.empty()) {
+            MixFile m = MixFile::open(std::move(bytes));
+            CHECK(m.find(mix_id("cachemd.mix")) != nullptr);
+            CHECK(m.find(mix_id("localmd.mix")) != nullptr);
+            CHECK(m.find(mix_id("conqmd.mix"))  != nullptr);
+            archives_checked++;
+        }
+    }
+    CHECK(archives_checked > 0);   // at least one stock archive must be exercised
+}
+
+TEST_CASE("mix_id matches real IDs via local mix database (if present)") {
+    using namespace ra2assets;
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto bytes = slurp(base + "\\ecache01.mix");
+    if (bytes.empty()) { MESSAGE("skipped: ecache01.mix not found"); return; }
+    MixFile m = MixFile::open(std::move(bytes));
+    auto names = m.local_names();
+    if (names.empty()) { MESSAGE("no local db in this mix; skipped"); return; }
+    int matched = 0;
+    for (auto& nm : names)
+        if (m.find(mix_id(nm))) matched++;
+    // The vast majority of named files must resolve.
+    CHECK(matched > 0);
+    CHECK(matched >= (int)names.size() * 3 / 4);
+}
+
+TEST_CASE("mix_id known vector") {
+    // Oracle: the real YR 1.001 ra2md.mix index (read from RA2_INSTALL_DIR),
+    // where find(mix_id("cachemd.mix")) resolves to entry id 0x68EEC99A. This
+    // literal was captured from Westwood's own shipped archive data (not
+    // derived by re-running our own CRC code path) and also independently
+    // appears in docs/re/mix.md's Task 4 dump of ra2md.mix's real entry IDs,
+    // recorded before this test existed. Frozen here as a fixed regression
+    // vector that needs no install present to run.
+    CHECK(ra2assets::mix_id("cachemd.mix") == 0x68EEC99Au);
+}

@@ -21,7 +21,12 @@ public:
     size_t count() const { return entries_.size(); }
     const std::vector<MixEntry>& entries() const { return entries_; }
     const MixEntry* find(uint32_t id) const;
+    const MixEntry* find(const std::string& name) const;
     std::vector<uint8_t> read(const MixEntry& e) const;
+    // Names listed inside "local mix database.dat", if this MIX embeds one.
+    std::vector<std::string> local_names() const;
+    // Extract a child MIX by name and open it.
+    MixFile open_nested(const std::string& name) const;
 private:
     std::vector<uint8_t> bytes_;
     std::vector<MixEntry> entries_;

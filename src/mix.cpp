@@ -1,5 +1,6 @@
 #include "ra2assets/mix.hpp"
 #include "ra2assets/blowfish.hpp"
+#include <cctype>
 #include <stdexcept>
 
 namespace ra2assets {
@@ -88,6 +89,62 @@ std::vector<uint8_t> MixFile::read(const MixEntry& e) const {
     uint64_t start = (uint64_t)body_start_ + e.offset;
     if (start + e.size > bytes_.size()) throw std::runtime_error("mix: entry out of range");
     return std::vector<uint8_t>(bytes_.begin() + (size_t)start, bytes_.begin() + (size_t)(start + e.size));
+}
+
+uint32_t mix_id(const std::string& name_in) {
+    // TS/RA2/YR scheme — NOT the TD/RA1 rotate-add scheme. Uppercase the name;
+    // if the length is not a multiple of 4, append ONE byte whose value is
+    // (len & 3), then repeat the FIRST character of the final 4-byte block
+    // until the length is a multiple of 4; then take a standard CRC32
+    // (reflected poly 0xEDB88320, init 0xFFFFFFFF, final XOR 0xFFFFFFFF).
+    // Reference: XCC `get_id` (Cc_structures); OpenRA PackageHashType.CRC32.
+    std::string s;
+    s.reserve(name_in.size() + 4);
+    for (char c : name_in) s.push_back((char)std::toupper((unsigned char)c));
+    size_t l = s.size();
+    if (l & 3u) {
+        s.push_back((char)(l & 3u));
+        size_t block_start = l & ~size_t(3);   // first char of the final block
+        while (s.size() & 3u) s.push_back(s[block_start]);
+    }
+    uint32_t crc = 0xFFFFFFFFu;                // standard CRC32, bitwise form
+    for (unsigned char ch : s) {
+        crc ^= ch;
+        for (int k = 0; k < 8; k++)
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
+const MixEntry* MixFile::find(const std::string& name) const {
+    return find(mix_id(name));
+}
+
+std::vector<std::string> MixFile::local_names() const {
+    // "local mix database.dat" id, then parse its XCC-format string table.
+    const MixEntry* e = find(mix_id("local mix database.dat"));
+    std::vector<std::string> out;
+    if (!e) return out;
+    auto data = read(*e);
+    // XCC local db format: 32-byte header ("XCC by Olaf van der Spek\0" + type),
+    // uint32 size, uint32 count, then `count` NUL-terminated names.
+    if (data.size() < 0x34) return out;
+    const uint8_t* p = data.data();
+    uint32_t count = rd32(p + 0x30);
+    size_t pos = 0x34;
+    for (uint32_t i = 0; i < count && pos < data.size(); i++) {
+        std::string nm;
+        while (pos < data.size() && p[pos]) nm.push_back((char)p[pos++]);
+        pos++; // skip NUL
+        out.push_back(nm);
+    }
+    return out;
+}
+
+MixFile MixFile::open_nested(const std::string& name) const {
+    const MixEntry* e = find(name);
+    if (!e) throw std::runtime_error("mix: nested entry not found: " + name);
+    return MixFile::open(read(*e));
 }
 
 } // namespace ra2assets
