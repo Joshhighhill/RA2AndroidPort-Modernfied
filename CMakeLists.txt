@@ -15,6 +15,7 @@ set(RA2_SOURCES
     src/mix.cpp
     src/pal.cpp
     src/shp.cpp
+    src/lcw.cpp
 )
 
 add_library(ra2assets STATIC)
@@ -48,6 +49,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_mix.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_pal.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_shp.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_oracle.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_lcw.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
