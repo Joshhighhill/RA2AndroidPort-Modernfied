@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <cstdlib>
+#include <fstream>
 
 TEST_CASE("westwood key derivation is deterministic and full-length") {
     uint8_t src[80];
@@ -85,4 +87,21 @@ TEST_CASE("mix rejects truncated and out-of-range input") {
         REQUIRE(e != nullptr);
         CHECK_THROWS_AS(m.read(*e), std::runtime_error);
     }
+}
+
+static std::vector<uint8_t> slurp(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return {};
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
+}
+TEST_CASE("mix opens a real encrypted archive from the install") {
+    using namespace ra2assets;
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto bytes = slurp(base + "\\ra2md.mix");
+    if (bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    MixFile m = MixFile::open(std::move(bytes));
+    CHECK(m.count() > 0);
+    // ra2md.mix is a top-level container of nested mixes; entry count is stable.
+    MESSAGE("ra2md.mix entries: " << m.count());
 }
