@@ -38,14 +38,19 @@ namespace detail {
 
 std::vector<MapCell> parse_cell_records(const uint8_t* data, size_t len) {
     constexpr size_t kRecordSize = 11;
-    // Real "no cell here" sentinel, confirmed against a real 103x110 map's
-    // decoded IsoMapPack5 (829 of 22550 records): Tile's low 16 bits are
-    // 0xFFFF with the upper 16 bits (always observed zero otherwise) also
-    // zero, i.e. the combined LE int32 reads as plain 0xFFFF. 0xFFFFFFFF is
-    // also treated as the sentinel defensively (the brief's original guess),
-    // though it was never observed in real data.
-    constexpr uint32_t kNoCellTile16 = 0xFFFFu;
-    constexpr uint32_t kNoCellTile32 = 0xFFFFFFFFu;
+    // "No tile" sentinel, confirmed against a real 103x110 map's decoded
+    // IsoMapPack5 (829 of 22550 records): Tile's low 16 bits are 0xFFFF with
+    // the upper 16 bits (always observed zero otherwise) also zero, i.e. the
+    // combined LE int32 reads as plain 0xFFFF. Per ModEnc, this is NOT a "no
+    // cell here" marker -- the game replaces it with a clear tile when
+    // loading, so the coordinate is real, walkable ground. We therefore
+    // MATERIALIZE these records as tile 0 ("Clear") rather than dropping
+    // them (see the Task 5 review finding / task-5-report.md). Only the
+    // 16-bit form (int32 value 65535) was ever observed in real data; the
+    // brief's original 0xFFFFFFFF guess is not handled since it has never
+    // been seen and there is no test data to justify carrying it as dead
+    // code (ModEnc specifies the sentinel as a 16-bit tile index).
+    constexpr uint32_t kNoTileSentinel = 0xFFFFu;
 
     std::vector<MapCell> cells;
     size_t count = len / kRecordSize; // trailing <kRecordSize bytes (a small
@@ -61,14 +66,18 @@ std::vector<MapCell> parse_cell_records(const uint8_t* data, size_t len) {
         uint8_t level = p[9];
         // p[10] ("IceGrowth"/ignored per the brief) intentionally not read.
 
-        if (tile == kNoCellTile16 || tile == kNoCellTile32) continue;
-
         MapCell c;
         c.x = x;
         c.y = y;
-        c.tile = tile;
-        c.subtile = subtile;
         c.level = level;
+        if (tile == kNoTileSentinel) {
+            // Materialize as Clear ground, not a dropped/void cell.
+            c.tile = 0;
+            c.subtile = 0;
+        } else {
+            c.tile = tile;
+            c.subtile = subtile;
+        }
         cells.push_back(c);
     }
     return cells;

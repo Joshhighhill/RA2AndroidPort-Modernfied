@@ -58,19 +58,30 @@ TEST_CASE("map: record-walk parses two hand-built 11-byte cell records") {
     CHECK(cells[1].level == 4);
 }
 
-TEST_CASE("map: record-walk drops the 0xFFFF no-cell sentinel; keeps tile==0; ignores a short trailer") {
+TEST_CASE("map: record-walk materializes the 0xFFFF no-tile sentinel as Clear; keeps tile==0; ignores a short trailer") {
     std::vector<uint8_t> raw;
-    push_record(raw, 1, 1, 0, 0, 0);      // tile==0 ("Clear") IS kept -- common, legit real terrain
-    push_record(raw, 2, 2, 0xFFFF, 9, 9); // real "no cell here" sentinel -- dropped
+    push_record(raw, 1, 1, 0, 0, 0);           // tile==0 ("Clear") IS kept -- common, legit real terrain
+    push_record(raw, 2, 2, 0xFFFF, 9, 9);      // "no tile" sentinel -- materialized as Clear, NOT dropped
     push_record(raw, 3, 3, 77, 5, 6);
     raw.push_back(0); raw.push_back(0); raw.push_back(0); // <11-byte zero pad trailer, ignored
 
     auto cells = detail::parse_cell_records(raw.data(), raw.size());
-    REQUIRE(cells.size() == 2);
+    REQUIRE(cells.size() == 3);
     CHECK(cells[0].x == 1);
     CHECK(cells[0].tile == 0);
-    CHECK(cells[1].x == 3);
-    CHECK(cells[1].tile == 77);
+
+    // The 0xFFFF record: kept (not dropped), x/y/level preserved from the
+    // record, but tile/subtile forced to Clear (0/0) -- per ModEnc, the game
+    // substitutes a clear tile for this sentinel when loading, so this is
+    // real, walkable ground, not a void/omitted cell.
+    CHECK(cells[1].x == 2);
+    CHECK(cells[1].y == 2);
+    CHECK(cells[1].tile == 0);
+    CHECK(cells[1].subtile == 0);
+    CHECK(cells[1].level == 9);
+
+    CHECK(cells[2].x == 3);
+    CHECK(cells[2].tile == 77);
 }
 
 TEST_CASE("map: parse() reads [Map] Theater/Size even with no terrain section") {
@@ -123,15 +134,21 @@ TEST_CASE("map: parses the real mapsmd03.mix temperate map (entry 0x133a0cb2)") 
     CHECK(map.height() == 110);
 
     // Exact real-data count: 22550 raw records (== (2*103-1)*110, the
-    // isometric cell count -- see task-2b-report.md) minus 829 real
-    // 0xFFFF-sentinel "no cell" records = 21721 kept cells. This is a
-    // strong, decode-path-specific assertion, not just ">0".
-    REQUIRE(map.cells().size() == 21721);
+    // isometric cell count -- see task-2b-report.md). Per the Task 5 review
+    // finding (see task-5-report.md's "Fix: 0xFFFF -> Clear" section), the
+    // 829 records whose Tile==0xFFFF are NOT dropped anymore -- they are
+    // materialized as Clear cells (per ModEnc: the game substitutes a clear
+    // tile for this sentinel at load time, so it's real, walkable ground).
+    // So every one of the 22550 raw records now produces exactly one
+    // MapCell: cells().size() must equal the total record count, i.e.
+    // nothing is silently dropped.
+    const size_t kTotalRecords = 22550;
+    REQUIRE(map.cells().size() == kTotalRecords);
 
     // Spot-check: raw record 0 is {X=103,Y=1,Tile=99,SubTile=2,Level=3}
     // (independently confirmed by Task 2b's own real-data dump in
-    // task-2b-report.md) and is not filtered (tile 99 != the 0xFFFF
-    // sentinel), so it must be cells()[0] here too.
+    // task-2b-report.md) and is not the 0xFFFF sentinel, so it is kept
+    // unchanged and must be cells()[0] here too.
     const MapCell& c0 = map.cells()[0];
     CHECK(c0.x == 103);
     CHECK(c0.y == 1);

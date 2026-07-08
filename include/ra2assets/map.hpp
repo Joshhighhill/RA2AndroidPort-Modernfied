@@ -11,9 +11,11 @@ namespace ra2assets {
 // IsoMapPack5 (confirmed empirically against a real 103x110 map: both range
 // roughly 1..212, i.e. on the order of width+height, NOT the same space as
 // MapFile::width()/height(), which come from [Map] Size, the map's ordinary
-// playable-grid rectangle). tile 0xFFFF is the real "no cell here" sentinel
-// (see detail::parse_cell_records) and is filtered out before a MapCell is
-// ever constructed for it, so every MapCell here is a real, drawn tile --
+// playable-grid rectangle). A raw tile index of 0xFFFF ("no tile", per
+// ModEnc) is NOT dropped: the game replaces it with a clear tile when
+// loading, so detail::parse_cell_records materializes it as tile 0
+// ("Clear") with subtile 0, keeping the record's x/y/level. So every
+// in-bounds record becomes exactly one MapCell here -- none are dropped --
 // including the very common, legitimate tile id 0 ("Clear" terrain).
 struct MapCell {
     int x = 0, y = 0;
@@ -40,12 +42,19 @@ namespace detail {
 // small zero pad, e.g. 4 bytes for the reference 103x110 map) are ignored,
 // not treated as a malformed/short record.
 //
-// Records whose Tile equals the real "no cell here" sentinel are dropped;
-// every other Tile value (INCLUDING 0, the common "Clear" terrain tile) is
-// kept. NOTE vs. the original task brief: the brief guessed the sentinel is
-// 0xFFFFFFFF, but real data shows it is 0xFFFF (the low 16 bits only, with
-// the upper Tile half always 0 in practice) -- both values are treated as
-// the sentinel here defensively, but 0xFFFF is the one actually observed.
+// Every in-map record becomes exactly one MapCell -- none are dropped.
+// Records whose Tile == 0xFFFF ("no tile", per ModEnc -- the low 16 bits
+// only; the upper Tile half is always 0 in practice, so the combined LE
+// int32 reads as plain 65535) are MATERIALIZED as tile 0 ("Clear")/subtile 0
+// rather than dropped, since the game itself substitutes a clear tile for
+// this sentinel when loading -- the coordinate is real, walkable ground,
+// not void. (NOTE vs. an earlier version of this code: it used to drop
+// these records, which left holes in terrain rendering/pathfinding; see
+// task-5-report.md's "Fix: 0xFFFF -> Clear" section.) Every other Tile
+// value (INCLUDING literal 0, the common "Clear" terrain tile) is kept
+// as-is. The brief's original guess of a 0xFFFFFFFF sentinel is not
+// specially handled -- ModEnc specifies the sentinel as a 16-bit tile
+// index, and 0xFFFFFFFF has never been observed in real data.
 //
 // Exposed here (not `static` in map.cpp) specifically so Task 5's synthetic
 // unit test can drive the record-walking logic directly with hand-built raw
