@@ -34,3 +34,37 @@ TEST_CASE("blowfish known-answer vectors (Eric Young)") {
         CHECK(std::memcmp(back, clr, 8) == 0);
     }
 }
+
+TEST_CASE("blowfish bulk decrypt processes whole blocks and leaves the tail untouched") {
+    // Create a Blowfish with the KAT key
+    uint8_t key[8];
+    hex_to_bytes("FEDCBA9876543210", key, 8);
+    Blowfish bf;
+    bf.set_key(key, 8);
+
+    // Build a 29-byte buffer: 3 plaintext blocks (24 bytes) + 5 tail bytes
+    uint8_t plaintext[29];
+    for (size_t i = 0; i < 24; i++) {
+        plaintext[i] = (uint8_t)(i * 11 + 1);
+    }
+    // Tail bytes: 0xA0, 0xA1, 0xA2, 0xA3, 0xA4
+    for (size_t i = 0; i < 5; i++) {
+        plaintext[24 + i] = (uint8_t)(0xA0 + i);
+    }
+
+    // Encrypt each of the 3 blocks individually into a second buffer
+    uint8_t encrypted[29];
+    for (size_t i = 0; i < 3; i++) {
+        bf.encrypt_block(&plaintext[i * 8], &encrypted[i * 8]);
+    }
+    // Copy the 5 tail bytes through unchanged
+    std::memcpy(&encrypted[24], &plaintext[24], 5);
+
+    // Call decrypt on the encrypted buffer (in place)
+    bf.decrypt(encrypted, 29);
+
+    // CHECK the first 24 bytes equal the original plaintext
+    CHECK(std::memcmp(encrypted, plaintext, 24) == 0);
+    // CHECK the last 5 bytes are still the original tail values
+    CHECK(std::memcmp(&encrypted[24], &plaintext[24], 5) == 0);
+}
