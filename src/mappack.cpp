@@ -1,13 +1,20 @@
 #include "ra2assets/mappack.hpp"
 #include "ra2assets/lcw.hpp"
+#include "ra2assets/lzo1x.hpp"
 #include <cctype>
 #include <stdexcept>
 
-// Map-pack wrapper: base64 decode + "Format5" chunk decompression, sitting
-// directly on top of Task 1's lcw_decompress. RA2/YR stores the terrain of
-// a map (its [IsoMapPack5] INI section) as base64 text; decoded, that
-// yields a "Format5" stream of independently LCW/Format80-compressed
-// chunks whose concatenated output is an array of 11-byte cell records.
+// Map-pack wrapper: base64 decode + "Format5" chunk decompression, sitting on
+// top of the library's two block codecs. RA2/YR store several packed sections
+// of a map INI as base64 text; decoded, each yields a "Format5" stream of
+// independently compressed chunks ([u16 compressedSize][u16 uncompressedSize]
+// [body]*). The chunk WRAPPER is shared across sections; the per-chunk body
+// codec differs by section (confirmed against XCC map_ts_encoder.cpp ->
+// decode5(...,format)):
+//   - [IsoMapPack5]  (terrain, an array of 11-byte cell records): bodies are
+//                    LZO1X  (ra2assets::lzo1x_decompress; XCC decode5(...,5)).
+//   - [OverlayPack]/[OverlayDataPack]: bodies are LCW / "Format80"
+//                    (ra2assets::lcw_decompress; XCC decode5(...,80)).
 namespace ra2assets {
 
 std::vector<uint8_t> base64_decode(const std::string& s) {
@@ -48,7 +55,7 @@ std::vector<uint8_t> base64_decode(const std::string& s) {
     return out;
 }
 
-std::vector<uint8_t> decompress_format5(const uint8_t* data, size_t len) {
+std::vector<uint8_t> decompress_mappack(const uint8_t* data, size_t len, MapPackCodec codec) {
     std::vector<uint8_t> out;
     size_t pos = 0;
     while (pos < len) {
@@ -64,7 +71,12 @@ std::vector<uint8_t> decompress_format5(const uint8_t* data, size_t len) {
                 ") overruns input at offset " + std::to_string(pos));
 
         std::vector<uint8_t> tmp(uncmp);
-        size_t produced = lcw_decompress(data + pos, cmp, tmp.data(), uncmp);
+        // Dispatch the chunk body to the codec selected for this section. Both
+        // decoders share the same (src, src_len, dst, dst_len)->bytes-written
+        // contract and each bounds-checks itself internally.
+        size_t produced = (codec == MapPackCodec::LZO)
+            ? lzo1x_decompress(data + pos, cmp, tmp.data(), uncmp)
+            : lcw_decompress(data + pos, cmp, tmp.data(), uncmp);
         if (produced != (size_t)uncmp)
             throw std::runtime_error(
                 "format5: chunk at offset " + std::to_string(pos) + " decompressed to " +
@@ -73,6 +85,10 @@ std::vector<uint8_t> decompress_format5(const uint8_t* data, size_t len) {
         pos += cmp;
     }
     return out;
+}
+
+std::vector<uint8_t> decompress_format5(const uint8_t* data, size_t len) {
+    return decompress_mappack(data, len, MapPackCodec::LCW);
 }
 
 } // namespace ra2assets
