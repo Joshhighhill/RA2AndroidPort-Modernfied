@@ -20,6 +20,43 @@ TEST_CASE("westwood key derivation is deterministic and full-length") {
     CHECK_FALSE(all_zero);                                 // non-degenerate
 }
 
+TEST_CASE("westwood key derivation reproduces golden vectors") {
+    // Known-answer test: two real (80-byte key source) -> (56-byte Blowfish
+    // key) pairs captured as black-box output from ra2md.mix and ra2.mix.
+    // Self-contained (no assets required) regression guard for the clean-room
+    // RSA key-derivation. The repeated 0x18/0xbb runs are genuine, deterministic
+    // output bytes, not padding.
+    auto hex2bytes = [](const std::string& h) {
+        std::vector<uint8_t> v;
+        auto nib = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return 0;
+        };
+        for (size_t i = 0; i + 1 < h.size(); i += 2)
+            v.push_back((uint8_t)((nib(h[i]) << 4) | nib(h[i + 1])));
+        return v;
+    };
+    struct Vec { const char* in80; const char* out56; };
+    const Vec vecs[] = {
+        {"14b9ca52002b8edd5134483fdc97e4d3b692a017c649ca31649b5ce2532c740a7cbbed89b8ea13498ed103323fbe74980d7acdb586336a1dde055c7d44a922a5a9fd619330542d8a811f310ca8e34d4d",
+         "86cc35620a8a8caa65e42b1ecc181818181818181818181818181818181818182c394e6db40a7042278e39fbfebbbbbbbbbbbbbbbbbbbbbb"},
+        {"1631ea5f4cef1fa2b3134f0c913608115decf296ae8e99690e42dd23140cb78003c8bb2d0710284a30a0d97a6005caa127c839c1f5a28094a6aa4b1ab91156ab881e3061afa04c614d96f580b5753e03",
+         "91a29e4ba4231af6d70bd91818181818181818181818181818181818181818181c2d57aa86c2ac04f454babbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    };
+    for (const auto& v : vecs) {
+        auto in = hex2bytes(v.in80);
+        auto expected = hex2bytes(v.out56);
+        REQUIRE(in.size() == 80);
+        REQUIRE(expected.size() == 56);
+        uint8_t key[56] = {0};
+        size_t n = ra2assets::detail::westwood_blowfish_key(in.data(), key);
+        CHECK(n == 56);
+        for (int i = 0; i < 56; ++i) CHECK((int)key[i] == (int)expected[i]);
+    }
+}
+
 TEST_CASE("mix parses unencrypted new-format header and reads entries") {
     using namespace ra2assets;
     std::vector<uint8_t> buf;

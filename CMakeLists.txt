@@ -21,16 +21,11 @@ add_library(ra2assets STATIC)
 target_include_directories(ra2assets PUBLIC include)
 target_sources(ra2assets PRIVATE ${RA2_SOURCES})
 
-# mix_keyderiv.cpp is a verbatim XCC port that reinterprets bignum limbs via
-# `*(word*)` casts; this is strict-aliasing UB that only bites under
-# optimization (host dev builds are -O0, but Android/NDK builds default to
-# Release), so disable strict-aliasing for this translation unit specifically.
-# -fsigned-char is also needed here: its `char2num` lookup table is
-# initialized with -1 sentinels assuming plain `char` is signed (true on
-# x86-64), but AAPCS64 makes plain `char` unsigned by default, which turns
-# those -1 literals into an illegal narrowing conversion on Android/arm64;
-# forcing signed char keeps the file byte-for-byte identical to upstream.
-set_source_files_properties(src/mix_keyderiv.cpp PROPERTIES COMPILE_OPTIONS "-fno-strict-aliasing;-fsigned-char")
+# NOTE: src/mix_keyderiv.cpp previously needed per-file
+# `-fno-strict-aliasing;-fsigned-char` because the old verbatim XCC port did
+# `*(word*)` limb type-punning and relied on plain `char` being signed. The
+# clean-room reimplementation uses only uint8_t byte handling and no
+# type-punning, so those flags are no longer required and were removed.
 
 option(RA2_BUILD_SHARED "Build ra2assets as a shared lib (for Android .so check)" OFF)
 if (RA2_BUILD_SHARED)

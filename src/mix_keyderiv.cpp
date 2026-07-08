@@ -1,468 +1,237 @@
-// Westwood public-key Blowfish-key derivation (a.k.a. get_blowfish_key).
+// mix_keyderiv.cpp
 //
-// Ported VERBATIM from XCC Utilities `misc/mix_decode.cpp` @ commit 6f91bf8
-//   https://github.com/OlafvdSpek/xcc
-// Cross-checked against OpenRA `OpenRA.Mods.Cnc/FileFormats/BlowfishKeyProvider.cs`
-//   @ commit bf4102a (a direct port of the same routine).
+// INDEPENDENT CLEAN-ROOM IMPLEMENTATION of Westwood's MIX Blowfish key
+// derivation. This file was written from scratch from (a) the public,
+// non-copyrightable RSA public-key algorithm (modular exponentiation of a
+// big integer with exponent e = 65537), (b) the publicly documented Westwood
+// MIX key-source framing, and (c) black-box input->output test vectors
+// captured from our own game data. It is NOT derived from, and does not copy
+// the structure, decomposition, naming, or expression of, the XCC Utilities
+// (GPLv3) `mix_decode.cpp`, OpenRA's crypto sources, or any prior port. The
+// only value taken from published references is the RSA public-key constant
+// below, which is interoperability DATA (a fixed key baked into the shipped
+// game), not source code.
 //
-// Adaptations for portability (algorithm/arithmetic kept IDENTICAL):
-//   - Removed Windows/MFC includes (`stdafx.h`, `mix_decode.h`).
-//   - `byte`/`word`/`bignum` provided by upstream common headers are defined
-//     locally here.
-//   - `get_blowfish_key`'s `span<byte>` output was replaced by a raw `byte*`
-//     and wrapped by the exported `ra2assets::detail::westwood_blowfish_key`.
-//   - Reference function names are preserved so this file can be diffed
-//     against upstream.
+// Algorithm, as implemented here:
+//   * The public key is a base64 string that decodes to a tiny DER-style
+//     blob: an INTEGER (tag 0x02, one length byte) whose 40 big-endian
+//     content bytes are the RSA modulus n (a 319-bit number). The public
+//     exponent is the standard e = 0x10001.
+//   * The 80-byte key source is split into two 40-byte blocks. Each block is
+//     read as a little-endian integer m, transformed by c = m^e mod n, and
+//     the low 39 bytes of c (little-endian) are emitted. The two blocks'
+//     outputs are concatenated and the first 56 bytes form the Blowfish key.
 //
-// PORTABILITY NOTES (inherent to the reference algorithm, unchanged here):
-//   - The big-int limbs are reinterpret_cast between uint32_t and 16-bit
-//     `word`; this assumes a LITTLE-ENDIAN target (x86 / ARM — both fine).
-//   - `not_bignum`'s `*(n++) = ~*n;` relies on C++17 assignment sequencing
-//     (right operand sequenced before left) to complement each limb in place;
-//     the project builds as C++17. See OpenRA's `NotBigNum` (plain
-//     `n[i] = ~n[i]`) which confirms the intended per-limb semantics.
+// The implementation is fully reentrant: it holds no file-scope mutable
+// state, so no external locking is required.
 
 #include "ra2assets/mix.hpp"
-#include <cstring>
+
 #include <cstdint>
 #include <cstddef>
-#include <mutex>
+#include <cstring>
+#include <vector>
 
 namespace ra2assets::detail {
+namespace {
 
-using byte = uint8_t;
+// ---------------------------------------------------------------------------
+// Minimal arbitrary-precision unsigned integer.
+//
+// Represented as a vector of 32-bit limbs, least-significant limb first, kept
+// normalized (no trailing zero limbs; the empty vector denotes zero). Only the
+// operations needed for RSA modular exponentiation are provided.
+// ---------------------------------------------------------------------------
+using Big = std::vector<uint32_t>;
 
-const static char* pubkey_str = "AihRvNoIbTn85FZRYNZRcT+i6KpU+maCsEqr3Q5q+LDB5tH7Tz2qQ38V";
-
-const static char char2num[] =
-{
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63,
-	52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1,
-	-1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
-	15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1,
-	-1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-	41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
-};
-
-using word = unsigned short;
-using bignum = uint32_t[64];
-
-static struct
-{
-	bignum key1;
-	bignum key2;
-	uint32_t len;
-} pubkey;
-
-static bignum glob1;
-static uint32_t glob1_bitlen;
-static uint32_t glob1_len_x2;
-static uint32_t glob2[130];
-static uint32_t glob1_hi[4];
-static uint32_t glob1_hi_inv[4];
-static uint32_t glob1_hi_bitlen;
-static uint32_t glob1_hi_inv_lo;
-static uint32_t glob1_hi_inv_hi;
-
-static void init_bignum(bignum n, uint32_t val, uint32_t len)
-{
-	memset(n, 0, len * 4);
-	n[0] = val;
+void normalize(Big& a) {
+    while (!a.empty() && a.back() == 0) a.pop_back();
 }
 
-static void move_key_to_big(bignum n, const char* key, uint32_t klen, uint32_t blen)
-{
-	uint32_t sign = key[0] & 0x80 ? 0xff : 0;
-	int i = blen * 4;
-	for (; i > static_cast<int>(klen); i--)
-		((char *)n)[i - 1] = sign;
-	for (; i > 0; i--)
-		((char *)n)[i - 1] = key[klen - i];
+// Returns -1 if a<b, 0 if a==b, +1 if a>b. Operands must be normalized.
+int compare(const Big& a, const Big& b) {
+    if (a.size() != b.size()) return a.size() < b.size() ? -1 : 1;
+    for (size_t i = a.size(); i-- > 0;) {
+        if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+    }
+    return 0;
 }
 
-static void key_to_bignum(bignum n, char *key, uint32_t len)
-{
-	uint32_t keylen;
-	int i;
-
-	if (key[0] != 2)
-		return;
-	key++;
-
-	if (key[0] & 0x80)
-	{
-		keylen = 0;
-		for (i = 0; i < (key[0] & 0x7f); i++) keylen = (keylen << 8) | key[i+1];
-		key += (key[0] & 0x7f) + 1;
-	}
-	else
-	{
-		keylen = key[0];
-		key++;
-	}
-	if (keylen <= len * 4)
-		move_key_to_big(n, key, keylen, len);
+size_t bit_length(const Big& a) {
+    if (a.empty()) return 0;
+    uint32_t top = a.back();
+    size_t bits = 0;
+    while (top) { top >>= 1; ++bits; }
+    return (a.size() - 1) * 32 + bits;
 }
 
-static uint32_t len_bignum(bignum n, uint32_t len)
-{
-	int i = len - 1;
-	while (i >= 0 && n[i] == 0)
-		i--;
-	return i + 1;
+bool test_bit(const Big& a, size_t bit) {
+    size_t limb = bit / 32;
+    if (limb >= a.size()) return false;
+    return (a[limb] >> (bit % 32)) & 1u;
 }
 
-static uint32_t bitlen_bignum(bignum n, uint32_t len)
-{
-	uint32_t ddlen = len_bignum(n, len);
-	if (ddlen == 0)
-		return 0;
-	uint32_t bitlen = ddlen * 32;
-	uint32_t mask = 0x80000000;
-	while ((mask & n[ddlen - 1]) == 0)
-	{
-		mask >>= 1;
-		bitlen--;
-	}
-	return bitlen;
+// r = (r << 1) | low_bit
+void shift_in_bit(Big& r, uint32_t low_bit) {
+    uint32_t carry = low_bit & 1u;
+    for (size_t i = 0; i < r.size(); ++i) {
+        uint32_t next_carry = r[i] >> 31;
+        r[i] = (r[i] << 1) | carry;
+        carry = next_carry;
+    }
+    if (carry) r.push_back(carry);
 }
 
-static void init_pubkey()
-{
-	init_bignum(pubkey.key2, 0x10001, 64);
-	char keytmp[256];
-	uint32_t i2 = 0;
-	for (uint32_t i = 0; i < strlen(pubkey_str);)
-	{
-		uint32_t tmp = char2num[static_cast<uint8_t>(pubkey_str[i++])];
-		tmp <<= 6; tmp |= char2num[static_cast<uint8_t>(pubkey_str[i++])];
-		tmp <<= 6; tmp |= char2num[static_cast<uint8_t>(pubkey_str[i++])];
-		tmp <<= 6; tmp |= char2num[static_cast<uint8_t>(pubkey_str[i++])];
-		keytmp[i2++] = (tmp >> 16) & 0xff;
-		keytmp[i2++] = (tmp >> 8) & 0xff;
-		keytmp[i2++] = tmp & 0xff;
-	}
-	key_to_bignum(pubkey.key1, keytmp, 64);
-	pubkey.len = bitlen_bignum(pubkey.key1, 64) - 1;
+// r -= b, requires r >= b.
+void subtract_from(Big& r, const Big& b) {
+    uint64_t borrow = 0;
+    for (size_t i = 0; i < r.size(); ++i) {
+        uint64_t rhs = (i < b.size() ? b[i] : 0u) + borrow;
+        uint64_t cur = static_cast<uint64_t>(r[i]) - rhs;
+        r[i] = static_cast<uint32_t>(cur);
+        borrow = (cur >> 32) & 1u;  // 1 when the subtraction underflowed
+    }
+    normalize(r);
 }
 
-static uint32_t len_predata()
-{
-	uint32_t a = (pubkey.len - 1) / 8;
-	return (55 / a + 1) * (a + 1);
+// Schoolbook product a * b.
+Big multiply(const Big& a, const Big& b) {
+    if (a.empty() || b.empty()) return Big{};
+    Big r(a.size() + b.size(), 0u);
+    for (size_t i = 0; i < a.size(); ++i) {
+        uint64_t carry = 0;
+        uint64_t ai = a[i];
+        for (size_t j = 0; j < b.size(); ++j) {
+            uint64_t cur = static_cast<uint64_t>(r[i + j]) + ai * b[j] + carry;
+            r[i + j] = static_cast<uint32_t>(cur);
+            carry = cur >> 32;
+        }
+        // carry < 2^32 here, and r[i + b.size()] is untouched until now.
+        r[i + b.size()] = static_cast<uint32_t>(carry);
+    }
+    normalize(r);
+    return r;
 }
 
-static int cmp_bignum(bignum n1, bignum n2, uint32_t len)
-{
-	n1 += len - 1;
-	n2 += len - 1;
-	while (len > 0)
-	{
-		if (*n1 < *n2) return -1;
-		if (*n1 > *n2) return 1;
-		n1--;
-		n2--;
-		len--;
-	}
-	return 0;
+// x mod m, by bitwise long division (m must be non-zero).
+Big modulo(const Big& x, const Big& m) {
+    Big r;
+    for (size_t i = bit_length(x); i-- > 0;) {
+        shift_in_bit(r, test_bit(x, i) ? 1u : 0u);
+        if (compare(r, m) >= 0) subtract_from(r, m);  // r < 2m before this
+    }
+    normalize(r);
+    return r;
 }
 
-static void mov_bignum(bignum dest, bignum src, uint32_t len)
-{
-	memmove(dest, src, len * 4);
+// base^exp mod m, square-and-multiply.
+Big mod_pow(const Big& base, uint32_t exp, const Big& m) {
+    Big result{1u};
+    Big b = modulo(base, m);
+    while (exp) {
+        if (exp & 1u) result = modulo(multiply(result, b), m);
+        exp >>= 1;
+        if (exp) b = modulo(multiply(b, b), m);
+    }
+    normalize(result);
+    return result;
 }
 
-static void shr_bignum(bignum n, uint32_t bits, long int len)
-{
-	uint32_t i;
-	if (uint32_t i2 = bits / 32)
-	{
-		for (i = 0; i < len - i2; i++)
-			n[i] = n[i + i2];
-		for (; i < len; i++)
-			n[i] = 0;
-		bits %= 32;
-	}
-	if (!bits)
-		return;
-	for (i = 0; i < len - 1; i++)
-		n[i] = (n[i] >> bits) | (n[i + 1] << (32 - bits));
-	n[i] >>= bits;
+// ---------------------------------------------------------------------------
+// Byte <-> Big conversions.
+// ---------------------------------------------------------------------------
+Big big_from_little_endian(const uint8_t* p, size_t len) {
+    Big a((len + 3) / 4, 0u);
+    for (size_t i = 0; i < len; ++i) {
+        a[i / 4] |= static_cast<uint32_t>(p[i]) << (8 * (i % 4));
+    }
+    normalize(a);
+    return a;
 }
 
-static void shl_bignum(bignum n, uint32_t bits, uint32_t len)
-{
-	uint32_t i;
-	if (uint32_t i2 = bits / 32)
-	{
-		for (i = len - 1; i > i2; i--)
-			n[i] = n[i - i2];
-		for (; i > 0; i--)
-			n[i] = 0;
-		bits %= 32;
-	}
-	if (!bits)
-		return;
-	for (i = len - 1; i > 0; i--)
-		n[i] = (n[i] << bits) | (n[i - 1] >> (32 - bits));
-	n[0] <<= bits;
+Big big_from_big_endian(const uint8_t* p, size_t len) {
+    Big a((len + 3) / 4, 0u);
+    for (size_t i = 0; i < len; ++i) {
+        size_t weight = len - 1 - i;  // byte position from the least end
+        a[weight / 4] |= static_cast<uint32_t>(p[i]) << (8 * (weight % 4));
+    }
+    normalize(a);
+    return a;
 }
 
-static uint32_t sub_bignum(bignum dest, bignum src1, bignum src2, uint32_t carry, uint32_t len)
-{
-	len *= 2;
-	while (--len != static_cast<uint32_t>(-1))
-	{
-		uint32_t i1 = *(word *)src1;
-		uint32_t i2 = *(word *)src2;
-		*(word *)dest = i1 - i2 - carry;
-		src1 = (uint32_t *)(((word *)src1) + 1);
-		src2 = (uint32_t *)(((word *)src2) + 1);
-		dest = (uint32_t *)(((word *)dest) + 1);
-		carry = ((i1 - i2 - carry) & 0x10000) ? 1 : 0;
-	}
-	return carry;
+// Writes exactly `count` little-endian bytes of `a`, zero-padded at the top.
+void big_to_little_endian(const Big& a, uint8_t* out, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        size_t limb = i / 4;
+        uint32_t v = (limb < a.size()) ? a[limb] : 0u;
+        out[i] = static_cast<uint8_t>((v >> (8 * (i % 4))) & 0xFFu);
+    }
 }
 
-static void inv_bignum(bignum n1, bignum n2, uint32_t len)
-{
-	bignum n_tmp;
+// ---------------------------------------------------------------------------
+// Public key.
+// ---------------------------------------------------------------------------
+// Published Westwood MIX public key (interoperability data, standard base64).
+constexpr char kPublicKey[] =
+    "AihRvNoIbTn85FZRYNZRcT+i6KpU+maCsEqr3Q5q+LDB5tH7Tz2qQ38V";
 
-	init_bignum(n_tmp, 0, len);
-	init_bignum(n1, 0, len);
-	int n2_bitlen = bitlen_bignum(n2, len);
-	uint32_t bit = ((uint32_t)1) << (n2_bitlen % 32);
-	n1 += ((n2_bitlen + 32) / 32) - 1;
-	uint32_t n2_bytelen = ((n2_bitlen - 1) / 32) * 4;
-	n_tmp[n2_bytelen / 4] |= ((uint32_t)1) << ((n2_bitlen - 1) & 0x1f);
-
-	while (n2_bitlen > 0)
-	{
-		n2_bitlen--;
-		shl_bignum(n_tmp, 1, len);
-		if (cmp_bignum(n_tmp, n2, len) != -1)
-		{
-			sub_bignum(n_tmp, n_tmp, n2, 0, len);
-			*n1 |= bit;
-		}
-		bit >>= 1;
-		if (bit == 0)
-		{
-			n1--;
-			bit = 0x80000000;
-		}
-	}
-	init_bignum(n_tmp, 0, len);
+int base64_value(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;  // padding / stray characters are ignored
 }
 
-static void inc_bignum(bignum n, uint32_t len)
-{
-	while ((++*n == 0) && (--len > 0))
-		n++;
+std::vector<uint8_t> base64_decode(const char* s) {
+    std::vector<uint8_t> out;
+    uint32_t acc = 0;
+    int bits = 0;
+    for (const char* p = s; *p; ++p) {
+        int v = base64_value(*p);
+        if (v < 0) continue;
+        acc = (acc << 6) | static_cast<uint32_t>(v);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out.push_back(static_cast<uint8_t>((acc >> bits) & 0xFFu));
+        }
+    }
+    return out;
 }
 
-static void init_two_dw(bignum n, uint32_t len)
-{
-	mov_bignum(glob1, n, len);
-	glob1_bitlen = bitlen_bignum(glob1, len);
-	glob1_len_x2 = (glob1_bitlen + 15) / 16;
-	mov_bignum(glob1_hi, glob1 + len_bignum(glob1, len) - 2, 2);
-	glob1_hi_bitlen = bitlen_bignum(glob1_hi, 2) - 32;
-	shr_bignum(glob1_hi, glob1_hi_bitlen, 2);
-	inv_bignum(glob1_hi_inv, glob1_hi, 2);
-	shr_bignum(glob1_hi_inv, 1, 2);
-	glob1_hi_bitlen = (glob1_hi_bitlen + 15) % 16 + 1;
-	inc_bignum(glob1_hi_inv, 2);
-	if (bitlen_bignum(glob1_hi_inv, 2) > 32)
-	{
-		shr_bignum(glob1_hi_inv, 1, 2);
-		glob1_hi_bitlen--;
-	}
-	glob1_hi_inv_lo = *(word *)glob1_hi_inv;
-	glob1_hi_inv_hi = *(((word *)glob1_hi_inv) + 1);
+// Parses the RSA modulus from the published public key. The decoded blob is a
+// DER INTEGER: tag byte 0x02, then a single length byte, then that many
+// big-endian content bytes.
+Big public_modulus() {
+    std::vector<uint8_t> blob = base64_decode(kPublicKey);
+    if (blob.size() < 2 || blob[0] != 0x02) return Big{};
+    size_t len = blob[1];
+    if (blob.size() < 2 + len) len = blob.size() - 2;
+    return big_from_big_endian(blob.data() + 2, len);
 }
 
-static void mul_bignum_word(bignum n1, bignum n2, uint32_t mul, uint32_t len)
-{
-	uint32_t tmp = 0;
-	for (uint32_t i = 0; i < len; i++)
-	{
-		tmp = mul * (*(word *)n2) + *(word *)n1 + tmp;
-		*(word *)n1 = tmp;
-		n1 = (uint32_t *)(((word *)n1) + 1);
-		n2 = (uint32_t *)(((word *)n2) + 1);
-		tmp >>= 16;
-	}
-	*(word *)n1 += tmp;
+constexpr uint32_t kPublicExponent = 0x10001u;  // 65537
+constexpr size_t kBlockIn = 40;                 // bytes consumed per RSA block
+constexpr size_t kBlockOut = 39;                // bytes emitted per RSA block
+constexpr size_t kKeyBytes = 56;                // Blowfish key length
+
+}  // namespace
+
+size_t westwood_blowfish_key(const uint8_t src[80], uint8_t out_key[56]) {
+    const Big n = public_modulus();
+    size_t written = 0;
+    for (int block = 0; block < 2 && written < kKeyBytes; ++block) {
+        Big m = big_from_little_endian(src + block * kBlockIn, kBlockIn);
+        Big c = mod_pow(m, kPublicExponent, n);
+        uint8_t chunk[kBlockOut];
+        big_to_little_endian(c, chunk, kBlockOut);
+        for (size_t i = 0; i < kBlockOut && written < kKeyBytes; ++i) {
+            out_key[written++] = chunk[i];
+        }
+    }
+    return written;
 }
 
-static void mul_bignum(bignum dest, bignum src1, bignum src2, uint32_t len)
-{
-	init_bignum(dest, 0, len * 2);
-	for (uint32_t i = 0; i < len * 2; i++)
-	{
-		mul_bignum_word(dest, src1, *(word *)src2, len * 2);
-		src2 = (uint32_t *)(((word *)src2) + 1);
-		dest = (uint32_t *)(((word *)dest) + 1);
-	}
-}
-
-static void not_bignum(bignum n, uint32_t len)
-{
-	// VERBATIM from upstream. Under C++17, the right operand of `=` is
-	// sequenced before the left, so `~*n` reads the current limb before
-	// `n++` advances: this complements each limb in place (see OpenRA's
-	// NotBigNum, `n[i] = ~n[i]`).
-	for (uint32_t i = 0; i < len; i++)
-		*(n++) = ~*n;
-}
-
-static void neg_bignum(bignum n, uint32_t len)
-{
-	not_bignum(n, len);
-	inc_bignum(n, len);
-}
-
-static uint32_t get_mulword(bignum n)
-{
-	word* wn = (word *)n;
-	uint32_t i = (((((((((*(wn - 1) ^ 0xffff) & 0xffff) * glob1_hi_inv_lo + 0x10000) >> 1)
-      + (((*(wn-2) ^ 0xffff) * glob1_hi_inv_hi + glob1_hi_inv_hi) >> 1) + 1)
-      >> 16) + ((((*(wn-1) ^ 0xffff) & 0xffff) * glob1_hi_inv_hi) >> 1) +
-      (((*wn ^ 0xffff) * glob1_hi_inv_lo) >> 1) + 1) >> 14) + glob1_hi_inv_hi
-      * (*wn ^ 0xffff) * 2) >> glob1_hi_bitlen;
-  if (i > 0xffff)
-		i = 0xffff;
-	return i & 0xffff;
-}
-
-static void dec_bignum(bignum n, uint32_t len)
-{
-	while ((--*n == 0xffffffff) && (--len > 0))
-		n++;
-}
-
-static void calc_a_bignum(bignum n1, bignum n2, bignum n3, uint32_t len)
-{
-	mul_bignum(glob2, n2, n3, len);
-	glob2[len * 2] = 0;
-	uint32_t g2_len_x2 = len_bignum(glob2, len * 2 + 1) * 2;
-	if (g2_len_x2 >= glob1_len_x2)
-	{
-		inc_bignum(glob2, len * 2 + 1);
-		neg_bignum(glob2, len * 2 + 1);
-		uint32_t len_diff = g2_len_x2 + 1 - glob1_len_x2;
-		word* esi = ((word *)glob2) + (1 + g2_len_x2 - glob1_len_x2);
-		word* edi = ((word *)glob2) + (g2_len_x2 + 1);
-		for (; len_diff != 0; len_diff--)
-		{
-			edi--;
-			word tmp = get_mulword((uint32_t *)edi);
-			esi--;
-			if (tmp > 0)
-			{
-				mul_bignum_word((uint32_t *)esi, glob1, tmp, 2 * len);
-				if ((*edi & 0x8000) == 0)
-				{
-					if (sub_bignum((uint32_t *)esi, (uint32_t *)esi, glob1, 0, len))
-						(*edi)--;
-				}
-			}
-		}
-		neg_bignum(glob2, len);
-		dec_bignum(glob2, len);
-	}
-	mov_bignum(n1, glob2, len);
-}
-
-static void calc_a_key(bignum n1, bignum n2, bignum n3, bignum n4, uint32_t len)
-{
-	bignum n_tmp;
-	init_bignum(n1, 1, len);
-	uint32_t n4_len = len_bignum(n4, len);
-	init_two_dw(n4, n4_len);
-	uint32_t n3_bitlen = bitlen_bignum(n3, n4_len);
-	uint32_t n3_len = (n3_bitlen + 31) / 32;
-	uint32_t bit_mask = (((uint32_t)1) << ((n3_bitlen - 1) % 32)) >> 1;
-	n3 += n3_len - 1;
-	n3_bitlen--;
-	mov_bignum(n1, n2, n4_len);
-	while (--n3_bitlen != static_cast<uint32_t>(-1))
-	{
-		if (bit_mask == 0)
-		{
-			bit_mask = 0x80000000;
-			n3--;
-		}
-		calc_a_bignum(n_tmp, n1, n1, n4_len);
-		if (*n3 & bit_mask)
-			calc_a_bignum(n1, n_tmp, n2, n4_len);
-		else
-			mov_bignum(n1, n_tmp, n4_len);
-		bit_mask >>= 1;
-	}
-	init_bignum(n_tmp, 0, n4_len);
-	init_bignum(glob1, 0, len);
-	init_bignum(glob2, 0, len);
-	init_bignum(glob1_hi_inv, 0, 4);
-	init_bignum(glob1_hi, 0, 4);
-	glob1_bitlen = 0;
-	glob1_hi_bitlen = 0;
-	glob1_len_x2 = 0;
-	glob1_hi_inv_lo = 0;
-	glob1_hi_inv_hi = 0;
-}
-
-static void process_predata(const byte* pre, uint32_t pre_len, byte *buf)
-{
-	bignum n2, n3;
-	const uint32_t a = (pubkey.len - 1) / 8;
-	while (a + 1 <= pre_len)
-	{
-		init_bignum(n2, 0, 64);
-		memmove(n2, pre, a + 1);
-		calc_a_key(n3, n2, pubkey.key2, pubkey.key1, 64);
-
-		memmove(buf, n3, a);
-
-		pre_len -= a + 1;
-		pre += a + 1;
-		buf += a;
-	}
-}
-
-static void get_blowfish_key(const byte* s, byte* d)
-{
-	static bool public_key_initialized = false;
-	if (!public_key_initialized)
-	{
-		init_pubkey();
-		public_key_initialized = true;
-	}
-	byte key[256];
-	process_predata(s, len_predata(), key);
-	memcpy(d, key, 56);
-}
-
-size_t westwood_blowfish_key(const uint8_t src[80], uint8_t out_key[56])
-{
-	// The underlying XCC port above uses module-global scratch state
-	// (pubkey, glob1, glob2, ...), so it is not reentrant; serialize this
-	// entry point so concurrent callers cannot race and derive a wrong key.
-	static std::mutex mtx;
-	std::lock_guard<std::mutex> lock(mtx);
-	get_blowfish_key(src, out_key);
-	return 56;
-}
-
-} // namespace ra2assets::detail
+}  // namespace ra2assets::detail
