@@ -68,10 +68,15 @@ stay green, not be deleted):
 ## Selection
 
 Selection is a per-unit `bool selected` (already on `Unit`). Pointer
-hit-testing is **cell-based** — the unit occupying `screen_to_cell(pointer)` —
-which is unambiguous precisely because occupancy guarantees one unit per cell.
-Box-select membership is screen-space: a unit is boxed if its projected
-ground-point falls inside the drag rectangle.
+hit-testing is **screen-space and level-aware**: the click is tested against
+each unit's hit box around its projected ground point (the same level-raised
+anchor the sprite is drawn at), and among hits the nearest ground point wins
+(deterministic index tie-break). *Amended during execution:* the original
+cell-based `screen_to_cell(pointer)` pick was proven level-blind — a click on
+a unit standing on level-2 terrain (common on the real map) resolved a full
+cell off — so the Phase-2 screen-space hit-test was restored and generalized
+to many units. Box-select membership is screen-space: a unit is boxed if its
+projected ground-point falls inside the drag rectangle.
 
 | Gesture | Action |
 |---|---|
