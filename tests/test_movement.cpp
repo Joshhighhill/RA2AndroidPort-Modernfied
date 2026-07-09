@@ -151,3 +151,31 @@ TEST_CASE("step_units: head-on with room routes both around to their goals") {
     CHECK(units[1].cell_x == 0);
     CHECK(units[1].cell_y == 0);
 }
+
+TEST_CASE("step_units: 3-unit rotational contention resolves without overlap") {
+    // Three units on a 2x2 open square, each ordered to the cell the next one
+    // occupies (a rotational near-deadlock): 0 at (0,0)->(1,0), 1 at
+    // (1,0)->(1,1), 2 at (1,1)->(0,0). The free cell (0,1) plus the seniority
+    // stagger must let the ring resolve -- every unit terminates (arrives or
+    // gives up) and the one-unit-per-cell invariant holds on every frame.
+    // This executes the N>=3 termination argument the pairwise tests miss.
+    auto p = open_grid(2, 2);
+    Occupancy occ(2, 2);
+    std::vector<Unit> units;
+    units.push_back(make_mover(0, 0, {1, 0}, p, 2, 2, occ, 0));
+    units.push_back(make_mover(1, 0, {1, 1}, p, 2, 2, occ, 1));
+    units.push_back(make_mover(1, 1, {0, 0}, p, 2, 2, occ, 2));
+    const double dt = 1.0 / 60.0;
+    for (double t = 0; t < 15.0; t += dt) {
+        step_units(units, p, 2, 2, occ, dt, 4.0);
+        check_no_overlap(units);
+    }
+    // Every unit terminated (no perpetual churn) and no two share a cell.
+    for (const auto& u : units) CHECK_FALSE(u.moving());
+    check_no_overlap(units);
+    // All three cells they occupy are distinct AND on the grid.
+    for (const auto& u : units) {
+        CHECK(u.cell_x >= 0); CHECK(u.cell_x <= 1);
+        CHECK(u.cell_y >= 0); CHECK(u.cell_y <= 1);
+    }
+}
