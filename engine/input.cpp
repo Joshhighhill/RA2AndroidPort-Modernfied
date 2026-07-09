@@ -147,8 +147,8 @@ void Input::handle(const InputEvent& ev) {
         case InputEvent::PointerDown:
             if (ev.button == InputEvent::Right) {
                 // Right-click = group-move the current selection (issued on
-                // down). Same tile-center convention as unit_under, so
-                // right-clicking a tile's visible diamond targets THAT cell.
+                // down). The half-tile offset before screen_to_cell maps the
+                // click to the cell whose visible diamond was clicked.
                 int cx = 0, cy = 0;
                 screen_to_cell(ev.x - cam_.x - kTileW / 2, ev.y - cam_.y - kTileH / 2,
                                kTileW, kTileH, cx, cy);

@@ -229,13 +229,28 @@ UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra
 // default if Speed is missing (0).
 constexpr double kCellsPerSecPerSpeed = 0.75;
 
-ra2engine::World build_world(const Assets& a, const UnitAssets& ua) {
+// Spawn `count` GI units on distinct walkable cells spiralling out from the
+// map's start cell (pick_start_cell). count==1 reproduces the old single-unit
+// slice (used by the single-unit demos); the interactive/screenshot/group
+// modes pass a small squad.
+ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
     ra2engine::World world(a.map);
-    world.set_unit_image(ua.image, 0);
     if (ua.speed > 0) world.set_move_speed(ua.speed * kCellsPerSecPerSpeed);
-    const ra2engine::Unit& u = world.unit();
-    std::cerr << "[unit] placed at cell (" << u.cell_x << "," << u.cell_y
-              << ") level=" << u.level << " grid=" << world.grid_w() << "x" << world.grid_h()
+
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(a.map);
+    int placed = 0;
+    for (int r = 0; r <= 12 && placed < count; ++r)
+        for (int dy = -r; dy <= r && placed < count; ++dy)
+            for (int dx = -r; dx <= r && placed < count; ++dx) {
+                if (std::abs(dx) != r && std::abs(dy) != r) continue;  // ring border only
+                const int x = c->x + dx, y = c->y + dy;
+                if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                    world.add_unit(x, y, ua.image, 0);
+                    ++placed;
+                }
+            }
+    std::cerr << "[world] spawned " << world.units().size() << " unit(s) near (" << c->x << ","
+              << c->y << ") grid=" << world.grid_w() << "x" << world.grid_h()
               << " move_cps=" << world.move_speed() << "\n";
     return world;
 }
@@ -246,12 +261,23 @@ ra2engine::World build_world(const Assets& a, const UnitAssets& ua) {
 // so they stay visually consistent.
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
-                  int W, int H) {
+                  int W, int H, const ra2engine::Input* input = nullptr) {
     ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H);
-    const ra2engine::Unit& u = world.unit();
-    ra2engine::draw_path(ren, u, cam, W, H);
-    if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H);
-    ra2engine::draw_unit(ren, tc, u, ua.shp, ua.pal, cam, W, H);
+    const std::vector<ra2engine::Unit>& us = world.units();
+    // Paths + selection markers first (under the sprites).
+    for (const ra2engine::Unit& u : us) {
+        ra2engine::draw_path(ren, u, cam, W, H);
+        if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H);
+    }
+    // Sprites back-to-front so nearer units overlap farther ones.
+    for (int idx : ra2engine::unit_draw_order(us))
+        ra2engine::draw_unit(ren, tc, us[idx], ua.shp, ua.pal, cam, W, H);
+    // Live selection box on top (interactive only).
+    if (input) {
+        int x0, y0, x1, y1;
+        if (input->selection_box(x0, y0, x1, y1))
+            ra2engine::draw_selection_box(ren, x0, y0, x1, y1);
+    }
 }
 
 // Read the framebuffer back and write it to a PNG. Throws on failure.
@@ -283,7 +309,7 @@ int run_screenshot(const std::string& out_path) {
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2, "E1");
-    ra2engine::World world = build_world(a, ua);
+    ra2engine::World world = build_world(a, ua, 5);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
     SDL_Window* win = SDL_CreateWindow("RA2 Engine (screenshot)", SDL_WINDOWPOS_CENTERED,
@@ -318,7 +344,7 @@ int run_interactive() {
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2, "E1");
-    ra2engine::World world = build_world(a, ua);
+    ra2engine::World world = build_world(a, ua, 5);
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
 
@@ -331,13 +357,21 @@ int run_interactive() {
         ra2engine::InputEvent ev;
         while (platform.poll(ev)) input.handle(ev);
 
-        // Keyboard arrow panning (polled directly; Platform only surfaces Quit
-        // for keys).
+        // Camera pan: arrow keys + screen-edge scroll (left-drag now box-selects).
         const Uint8* ks = SDL_GetKeyboardState(nullptr);
-        if (ks[SDL_SCANCODE_LEFT]) cam.x += kPan;
-        if (ks[SDL_SCANCODE_RIGHT]) cam.x -= kPan;
-        if (ks[SDL_SCANCODE_UP]) cam.y += kPan;
-        if (ks[SDL_SCANCODE_DOWN]) cam.y -= kPan;
+        int pan_dx = 0, pan_dy = 0;
+        if (ks[SDL_SCANCODE_LEFT]) pan_dx += kPan;
+        if (ks[SDL_SCANCODE_RIGHT]) pan_dx -= kPan;
+        if (ks[SDL_SCANCODE_UP]) pan_dy += kPan;
+        if (ks[SDL_SCANCODE_DOWN]) pan_dy -= kPan;
+        int mx = 0, my = 0;
+        SDL_GetMouseState(&mx, &my);
+        const int kEdge = 24;  // px band at the viewport edge that scrolls
+        if (mx <= kEdge) pan_dx += kPan;
+        else if (mx >= platform.width() - kEdge) pan_dx -= kPan;
+        if (my <= kEdge) pan_dy += kPan;
+        else if (my >= platform.height() - kEdge) pan_dy -= kPan;
+        if (pan_dx || pan_dy) input.pan(pan_dx, pan_dy);
 
         const Uint32 now = SDL_GetTicks();
         const double dt = (now - prev) / 1000.0;
@@ -346,7 +380,7 @@ int run_interactive() {
 
         platform.begin_frame();
         render_world(static_cast<SDL_Renderer*>(platform.renderer()), tc, a, ua, world, cam,
-                     platform.width(), platform.height());
+                     platform.width(), platform.height(), &input);
         platform.present();
         SDL_Delay(16);  // ~60fps
     }
@@ -371,14 +405,15 @@ int run_demo_move(int goal_x, int goal_y) {
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2, "E1");
-    ra2engine::World world = build_world(a, ua);
+    ra2engine::World world = build_world(a, ua, 1);
 
-    const int start_x = world.unit().cell_x;
-    const int start_y = world.unit().cell_y;
+    const int start_x = world.units()[0].cell_x;
+    const int start_y = world.units()[0].cell_y;
 
     // SELECT, then order the move.
-    world.unit().selected = true;
-    const std::size_t path_len = world.order_move(goal_x, goal_y);
+    world.units()[0].selected = true;
+    world.order_move_selected(goal_x, goal_y);
+    const std::size_t path_len = world.units()[0].path.size();
 
     std::cerr << "[demo] start=(" << start_x << "," << start_y << ") target=(" << goal_x << ","
               << goal_y << ") path_len=" << path_len << " goal_walkable="
@@ -423,14 +458,14 @@ int run_demo_move(int goal_x, int goal_y) {
         // Sim loop: fixed 60Hz steps until arrival or 15s of sim time.
         const double dt = 1.0 / 60.0;
         const double kMaxSim = 15.0;
-        while (world.unit().moving() && sim_time < kMaxSim) {
+        while (world.units()[0].moving() && sim_time < kMaxSim) {
             world.step(dt);
             sim_time += dt;
             draw();  // render every frame (exercises the render path)
         }
 
-        final_x = world.unit().cell_x;
-        final_y = world.unit().cell_y;
+        final_x = world.units()[0].cell_x;
+        final_y = world.units()[0].cell_y;
 
         // END frame: unit arrived (or stopped at the cap).
         draw();
@@ -442,7 +477,7 @@ int run_demo_move(int goal_x, int goal_y) {
     SDL_Quit();
 
     std::cerr << "[demo] finished sim_time=" << sim_time << "s final=(" << final_x << ","
-              << final_y << ") arrived=" << (!world.unit().moving() ? "yes" : "no (hit cap)")
+              << final_y << ") arrived=" << (!world.units()[0].moving() ? "yes" : "no (hit cap)")
               << "\n";
     std::cout << "start_cell=(" << start_x << "," << start_y << ") target=(" << goal_x << ","
               << goal_y << ") path_len=" << path_len << " final_cell=(" << final_x << ","
@@ -464,13 +499,14 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2, "E1");
-    ra2engine::World world = build_world(a, ua);
+    ra2engine::World world = build_world(a, ua, 1);
 
-    const int start_x = world.unit().cell_x;
-    const int start_y = world.unit().cell_y;
+    const int start_x = world.units()[0].cell_x;
+    const int start_y = world.units()[0].cell_y;
 
-    world.unit().selected = true;
-    const std::size_t len1 = world.order_move(x1, y1);
+    world.units()[0].selected = true;
+    world.order_move_selected(x1, y1);
+    const std::size_t len1 = world.units()[0].path.size();
     std::cerr << "[demo-retarget] start=(" << start_x << "," << start_y << ") first_target=("
               << x1 << "," << y1 << ") path_len1=" << len1 << "\n";
     if (len1 == 0) {
@@ -483,20 +519,21 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
     const double dt = 1.0 / 60.0;
     double sim_time = 0.0;
     const double kRetargetAt = 1.5;  // seconds
-    while (world.unit().moving() && sim_time < kRetargetAt) {
+    while (world.units()[0].moving() && sim_time < kRetargetAt) {
         world.step(dt);
         sim_time += dt;
     }
-    const bool was_moving_mid = world.unit().moving();
-    const double fx_mid = world.unit().fx;
-    const double fy_mid = world.unit().fy;
-    const int cell_mid_x = world.unit().cell_x;
-    const int cell_mid_y = world.unit().cell_y;
+    const bool was_moving_mid = world.units()[0].moving();
+    const double fx_mid = world.units()[0].fx;
+    const double fy_mid = world.units()[0].fy;
+    const int cell_mid_x = world.units()[0].cell_x;
+    const int cell_mid_y = world.units()[0].cell_y;
     const bool genuinely_fractional = (fx_mid != cell_mid_x || fy_mid != cell_mid_y);
 
     // Retarget mid-walk.
-    const std::size_t len2 = world.order_move(x2, y2);
-    const bool no_backward_snap = (world.unit().fx == fx_mid && world.unit().fy == fy_mid);
+    world.order_move_selected(x2, y2);
+    const std::size_t len2 = world.units()[0].path.size();
+    const bool no_backward_snap = (world.units()[0].fx == fx_mid && world.units()[0].fy == fy_mid);
     std::cerr << "[demo-retarget] retargeted at t=" << sim_time << "s (moving=" << was_moving_mid
               << " fractional=" << genuinely_fractional << ") mid_pos=(" << fx_mid << ","
               << fy_mid << ") second_target=(" << x2 << "," << y2 << ") path_len2=" << len2
@@ -508,12 +545,12 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
 
     // Run to arrival or a generous cap.
     const double kMaxSim = 30.0;
-    while (world.unit().moving() && sim_time < kMaxSim) {
+    while (world.units()[0].moving() && sim_time < kMaxSim) {
         world.step(dt);
         sim_time += dt;
     }
-    const int final_x = world.unit().cell_x;
-    const int final_y = world.unit().cell_y;
+    const int final_x = world.units()[0].cell_x;
+    const int final_y = world.units()[0].cell_y;
     const bool arrived_second = (final_x == x2 && final_y == y2);
 
     std::cout << "start=(" << start_x << "," << start_y << ") first_target=(" << x1 << "," << y1
@@ -524,6 +561,90 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
               << " sim_time=" << sim_time << "s\n";
 
     return (was_moving_mid && genuinely_fractional && no_backward_snap && arrived_second) ? 0 : 1;
+}
+
+// Non-interactive verification of the multi-unit pipeline: spawn `n` GI units,
+// select them all, group-move to (gx, gy), run the sim to arrival (or a cap),
+// and write before/after screenshots. Asserts the no-overlap invariant every
+// step and prints per-unit arrival cells. Screenshots -> scratchpad only.
+int run_demo_group(int n, int gx, int gy) {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_group_start.png";
+    const std::string end_png = scratch + "demo_group_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
+    ra2engine::World world = build_world(a, ua, n);
+    for (auto& u : world.units()) u.selected = true;
+    world.order_move_selected(gx, gy);
+
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+    SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-group)", SDL_WINDOWPOS_CENTERED,
+                                       SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+    if (!win) throw std::runtime_error(SDL_GetError());
+    SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+    if (!ren) throw std::runtime_error(SDL_GetError());
+
+    bool overlap_seen = false;
+    double sim_time = 0.0;
+    {
+        ra2engine::TextureCache tc(ren);
+        ra2engine::Camera cam;
+        {
+            const ra2engine::ScreenPt mid = ra2engine::cell_to_screen(
+                gx, gy, 0, 60, 30, 15);
+            cam.x = W / 2 - mid.x;
+            cam.y = H / 2 - mid.y;
+        }
+        auto draw = [&]() {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, tc, a, ua, world, cam, W, H);
+        };
+        auto any_moving = [&]() {
+            for (const auto& u : world.units()) if (u.moving()) return true;
+            return false;
+        };
+        auto check_overlap = [&]() {
+            const auto& us = world.units();
+            for (size_t i = 0; i < us.size(); ++i)
+                for (size_t j = i + 1; j < us.size(); ++j)
+                    if (us[i].cell_x == us[j].cell_x && us[i].cell_y == us[j].cell_y)
+                        overlap_seen = true;
+        };
+
+        draw();
+        capture_png(ren, start_png, W, H);
+
+        const double dt = 1.0 / 60.0;
+        const double kMaxSim = 30.0;
+        while (any_moving() && sim_time < kMaxSim) {
+            world.step(dt);
+            check_overlap();
+            sim_time += dt;
+            draw();
+        }
+        draw();
+        capture_png(ren, end_png, W, H);
+    }
+
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+
+    std::cout << "units=" << world.units().size() << " target=(" << gx << "," << gy
+              << ") sim_time=" << sim_time << "s overlap_seen=" << (overlap_seen ? "YES" : "no")
+              << "\n";
+    for (size_t i = 0; i < world.units().size(); ++i)
+        std::cout << "  unit " << i << " final=(" << world.units()[i].cell_x << ","
+                  << world.units()[i].cell_y << ")\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    return overlap_seen ? 1 : 0;  // fail if the invariant was ever violated
 }
 
 }  // namespace
@@ -544,6 +665,8 @@ int main(int argc, char** argv) {
         int demo_x = 0, demo_y = 0;
         bool demo_retarget = false;
         int retarget_x1 = 0, retarget_y1 = 0, retarget_x2 = 0, retarget_y2 = 0;
+        bool demo_group = false;
+        int group_n = 5, group_x = 0, group_y = 0;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--screenshot" && i + 1 < argc) {
@@ -558,8 +681,14 @@ int main(int argc, char** argv) {
                 retarget_y1 = std::atoi(argv[++i]);
                 retarget_x2 = std::atoi(argv[++i]);
                 retarget_y2 = std::atoi(argv[++i]);
+            } else if (arg == "--demo-group" && i + 3 < argc) {
+                demo_group = true;
+                group_n = std::atoi(argv[++i]);
+                group_x = std::atoi(argv[++i]);
+                group_y = std::atoi(argv[++i]);
             }
         }
+        if (demo_group) return run_demo_group(group_n, group_x, group_y);
         if (demo_retarget)
             return run_demo_retarget(retarget_x1, retarget_y1, retarget_x2, retarget_y2);
         if (demo_move) return run_demo_move(demo_x, demo_y);

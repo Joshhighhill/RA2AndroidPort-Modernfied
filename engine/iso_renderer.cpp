@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <utility>
 
 #include "iso_project.hpp"
@@ -313,6 +314,17 @@ void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view
         have_prev = true;
     }
     SDL_SetRenderDrawBlendMode(renderer, prev_blend);
+}
+
+void draw_selection_box(void* sdl_renderer, int x0, int y0, int x1, int y1) {
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+    SDL_Rect r;
+    r.x = std::min(x0, x1);
+    r.y = std::min(y0, y1);
+    r.w = std::abs(x1 - x0);
+    r.h = std::abs(y1 - y0);
+    SDL_SetRenderDrawColor(renderer, 60, 220, 90, 255);
+    SDL_RenderDrawRect(renderer, &r);
 }
 
 }  // namespace ra2engine

@@ -127,4 +127,9 @@ void draw_selection(void* sdl_renderer, const Unit& unit, const Camera& cam, int
 void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,
                int view_h);
 
+// Draw the live left-drag selection rectangle outline (green) in window-pixel
+// space. Coordinates are the raw drag endpoints (any order). HUD overlay: call
+// LAST, after terrain + units.
+void draw_selection_box(void* sdl_renderer, int x0, int y0, int x1, int y1);
+
 }  // namespace ra2engine
