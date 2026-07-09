@@ -138,6 +138,49 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
         }
         SDL_RenderCopy(renderer, tex, nullptr, &dst);
         ++drawn;
+
+        // Composite the tile's EXTRA image (cliff/slope face) if present.
+        // Cliff/slope tiles store their above-ground geometry -- the wall that
+        // rises out of the diamond -- in a separate plain rectangle; without
+        // it those cells render as transparent holes (window clear color).
+        // Placement: the extra image's (x_extra, y_extra) and the base
+        // diamond's (x, y) are in the SAME cell-anchor space, so the extra's
+        // offset RELATIVE to the diamond we just drew (at `p`) is
+        // (x_extra - x, y_extra - y). This matters for multi-cell templates
+        // (ramps/double slopes) whose higher subtiles carry a non-zero base
+        // (x, y): the map already places each cell at its own screen position,
+        // so we must measure the extra from THIS subtile's diamond, not the
+        // template origin. Cross-checked against XCC Ctmp_ts_file::draw and
+        // OpenRA TmpTSLoader (extraX -= (u-v)*w/2 == x_extra - base x).
+        if (tmp->has_extra(c.subtile)) {
+            const int ex_off = tmp->extra_x(c.subtile) - tmp->tile_x(c.subtile);
+            const int ey_off = tmp->extra_y(c.subtile) - tmp->tile_y(c.subtile);
+
+            char ekey[96];
+            std::snprintf(ekey, sizeof ekey, "tmp_extra:%s#%u",
+                          theater.filename_for_tile(c.tile).c_str(),
+                          static_cast<unsigned>(c.subtile));
+
+            SDL_Rect edst;
+            edst.x = p.x + cam.x + ex_off;
+            edst.y = p.y + cam.y + ey_off;
+
+            SDL_Texture* etex = static_cast<SDL_Texture*>(tc.peek(ekey));
+            if (!etex) {
+                ra2assets::TileImage eimg = tmp->decode_extra(c.subtile);
+                edst.w = eimg.w;
+                edst.h = eimg.h;
+                etex = static_cast<SDL_Texture*>(
+                    tc.get(ekey, eimg.indices.data(), eimg.w, eimg.h, pal));
+            } else {
+                // Cached: recover the dimensions from the texture itself.
+                SDL_QueryTexture(etex, nullptr, nullptr, &edst.w, &edst.h);
+            }
+
+            if (!(edst.x + edst.w <= 0 || edst.y + edst.h <= 0 || edst.x >= view_w ||
+                  edst.y >= view_h))
+                SDL_RenderCopy(renderer, etex, nullptr, &edst);
+        }
     }
     return drawn;
 }

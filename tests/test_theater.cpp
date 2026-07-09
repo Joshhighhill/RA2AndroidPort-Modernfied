@@ -50,6 +50,35 @@ static std::vector<uint8_t> make_tmp(int cx, int cy, uint8_t fill) {
     return b;
 }
 
+// Synthetic .tmp with an EXTRA image (cliff/slope face). Same 1x1 layout as
+// make_tmp, but the image header sets has_extra_data=1, the extra placement
+// (x_extra, y_extra) and size (cx_extra, cy_extra), and extra_ofs pointing at
+// a plain cx_extra*cy_extra byte block placed RIGHT AFTER the diamond. Note
+// extra_ofs is relative to the image header position (offset 20 here), matching
+// XCC get_extra_data = data + index[i] + extra_ofs.
+static std::vector<uint8_t> make_tmp_extra(int cx, int cy, uint8_t diamond_fill,
+                                           int ex, int ey, int cxe, int cye,
+                                           uint8_t extra_fill) {
+    std::vector<uint8_t> b;
+    auto p32 = [&](uint32_t v){ for (int i=0;i<4;i++) b.push_back((v>>(8*i))&0xff); };
+    p32(1); p32(1); p32((uint32_t)cx); p32((uint32_t)cy);   // header
+    const uint32_t hdr_off = 20;                            // 16 + one index entry
+    p32(hdr_off);
+    // image header (52 bytes)
+    const uint32_t extra_ofs = (uint32_t)(52 + cx*cy/2);    // right after diamond
+    p32(0); p32(0);                                         // x, y
+    p32(extra_ofs);                                         // extra_ofs
+    p32((uint32_t)(52 + cx*cy/2));                          // z_ofs (informational)
+    p32(0);                                                 // extra_z_ofs
+    p32((uint32_t)ex); p32((uint32_t)ey);                   // x_extra, y_extra
+    p32((uint32_t)cxe); p32((uint32_t)cye);                 // cx_extra, cy_extra
+    p32(1u);                                                // flag word: has_extra_data=1
+    for (int i=0;i<12;i++) b.push_back(0);                  // height..radar..pad
+    for (int i=0;i<cx*cy/2;i++) b.push_back(diamond_fill);  // diamond pixels
+    for (int i=0;i<cxe*cye;i++) b.push_back(extra_fill);    // extra image (plain rect)
+    return b;
+}
+
 TEST_CASE("tmp synthetic: single diamond tile, corners transparent") {
     const int cx = 48, cy = 24;
     auto bytes = make_tmp(cx, cy, 5);
@@ -79,6 +108,75 @@ TEST_CASE("tmp synthetic: single diamond tile, corners transparent") {
     }
     CHECK(diamond_pixels == cx*cy/2);   // exactly half the rectangle is diamond
     CHECK(corner_pixels == cx*cy/2);    // the other half is transparent corners
+
+    // A plain (no has_extra_data) tile reports no extra image.
+    CHECK(t.has_extra(0) == false);
+    CHECK(t.tile_x(0) == 0);
+    CHECK(t.tile_y(0) == 0);
+    TileImage none = t.decode_extra(0);
+    CHECK(none.w == 0);
+    CHECK(none.h == 0);
+    CHECK(none.indices.empty());
+}
+
+TEST_CASE("tmp synthetic: extra image (cliff face) decodes + positions") {
+    const int cx = 60, cy = 30;
+    const int ex = -6, ey = -40;        // cliff face rises up-and-left of the diamond
+    const int cxe = 24, cye = 40;       // plain rectangle
+    auto bytes = make_tmp_extra(cx, cy, 3, ex, ey, cxe, cye, 17);
+    TmpFile t = TmpFile::load(std::move(bytes));
+    REQUIRE(t.count() == 1);
+
+    // The base diamond still decodes exactly as before (unaffected by extra).
+    TileImage base = t.decode(0);
+    REQUIRE(base.w == cx);
+    REQUIRE(base.h == cy);
+    CHECK(std::count(base.indices.begin(), base.indices.end(), (uint8_t)3) == cx*cy/2);
+
+    // Extra image is present, correctly sized, and constant-filled.
+    CHECK(t.has_extra(0) == true);
+    CHECK(t.extra_x(0) == ex);          // signed offsets read back exactly
+    CHECK(t.extra_y(0) == ey);
+    CHECK(t.tile_x(0) == 0);            // base diamond offset (reference origin)
+    CHECK(t.tile_y(0) == 0);
+
+    TileImage extra = t.decode_extra(0);
+    REQUIRE(extra.w == cxe);
+    REQUIRE(extra.h == cye);
+    REQUIRE(extra.indices.size() == (size_t)cxe * cye);
+    CHECK(std::all_of(extra.indices.begin(), extra.indices.end(),
+                      [](uint8_t v){ return v == 17; }));
+}
+
+TEST_CASE("tmp extra image bounds checks") {
+    const int cx = 48, cy = 24;
+    // extra_ofs + cx_extra*cy_extra runs past EOF -> decode_extra throws, but
+    // the cheap accessors (has_extra / extra_x) still succeed (header is intact).
+    {
+        auto b = make_tmp_extra(cx, cy, 2, 0, -20, 16, 20, 8);
+        // Corrupt cy_extra (image header offset 20+32 = 52) to a huge value so
+        // the extra block claims far more bytes than the file holds.
+        const size_t cye_ofs = 20 + 32;
+        b[cye_ofs+0]=0x00; b[cye_ofs+1]=0x00; b[cye_ofs+2]=0x00; b[cye_ofs+3]=0x40; // 0x40000000
+        TmpFile t = TmpFile::load(std::move(b));
+        CHECK(t.has_extra(0) == true);
+        CHECK_THROWS_AS(t.decode_extra(0), std::runtime_error);
+    }
+    // Non-positive extra dimensions are rejected.
+    {
+        auto b = make_tmp_extra(cx, cy, 2, 0, -20, 16, 20, 8);
+        const size_t cxe_ofs = 20 + 28;        // cx_extra field
+        b[cxe_ofs+0]=0; b[cxe_ofs+1]=0; b[cxe_ofs+2]=0; b[cxe_ofs+3]=0;   // cx_extra = 0
+        TmpFile t = TmpFile::load(std::move(b));
+        CHECK_THROWS_AS(t.decode_extra(0), std::runtime_error);
+    }
+    // Out-of-range tile index throws on every extra accessor.
+    {
+        auto t = TmpFile::load(make_tmp_extra(cx, cy, 2, 0, -20, 16, 20, 8));
+        CHECK_THROWS_AS(t.has_extra(1), std::runtime_error);
+        CHECK_THROWS_AS(t.decode_extra(2), std::runtime_error);
+        CHECK_THROWS_AS(t.extra_x(-1), std::runtime_error);
+    }
 }
 
 TEST_CASE("tmp bounds checks reject malformed input") {
@@ -126,6 +224,9 @@ TEST_CASE("tmp absent index entry decodes to all-transparent tile") {
     // Absent tile -> full cx*cy buffer of zeros.
     REQUIRE(z.indices.size() == (size_t)cx*cy);
     CHECK(std::all_of(z.indices.begin(), z.indices.end(), [](uint8_t v){ return v==0; }));
+    // An absent tile reports no extra image and its decode_extra is empty.
+    CHECK(t.has_extra(1) == false);
+    CHECK(t.decode_extra(1).indices.empty());
 }
 
 // ---------------------------------------------------------------------------

@@ -59,23 +59,44 @@ TmpFile TmpFile::load(std::vector<uint8_t> bytes) {
     return t;
 }
 
-TileImage TmpFile::decode(int i) const {
+// Offsets of the int32 fields we read within the 52-byte t_tmp_image_header
+// (XCC misc/cc_structures.h t_tmp_image_header): x, y, extra_ofs, then the
+// extra placement/size block, then a 4-byte flag word whose bit 0 is
+// has_extra_data.
+static constexpr size_t kOfsX        = 0;
+static constexpr size_t kOfsY        = 4;
+static constexpr size_t kOfsExtraOfs = 8;
+static constexpr size_t kOfsXExtra   = 20;
+static constexpr size_t kOfsYExtra   = 24;
+static constexpr size_t kOfsCxExtra  = 28;
+static constexpr size_t kOfsCyExtra  = 32;
+static constexpr size_t kOfsFlags    = 36;
+static constexpr uint32_t kHasExtraDataBit = 0x1u;
+
+const uint8_t* TmpFile::image_header(int i) const {
     if (i < 0 || i >= count())
         throw std::runtime_error("tmp: tile index out of range: " + std::to_string(i));
+    const uint32_t hdr_off = index_[(size_t)i];
+    if (hdr_off == 0)
+        return nullptr;                         // absent tile
+    if ((size_t)hdr_off + kImageHeader > bytes_.size())
+        throw std::runtime_error("tmp: tile " + std::to_string(i) +
+            " image header at " + std::to_string(hdr_off) + " exceeds file");
+    return bytes_.data() + hdr_off;
+}
 
+TileImage TmpFile::decode(int i) const {
     TileImage out;
     out.w = cx_;
     out.h = cy_;
     out.indices.assign((size_t)cx_ * cy_, 0);   // transparent by default
 
-    const uint32_t hdr_off = index_[(size_t)i];
-    if (hdr_off == 0)
+    const uint8_t* hdr = image_header(i);       // validates i and header bounds
+    if (hdr == nullptr)
         return out;                             // absent tile -> all transparent
+    const uint32_t hdr_off = index_[(size_t)i];
 
     const size_t size = bytes_.size();
-    if ((size_t)hdr_off + kImageHeader > size)
-        throw std::runtime_error("tmp: tile " + std::to_string(i) +
-            " image header at " + std::to_string(hdr_off) + " exceeds file");
 
     // Pixels (the diamond) start immediately after the 52-byte image header.
     const size_t pixel_off = (size_t)hdr_off + kImageHeader;
@@ -102,6 +123,72 @@ TileImage TmpFile::decode(int i) const {
         for (int x = 0; x < width; x++)
             *row++ = *src++;
     }
+    return out;
+}
+
+int TmpFile::tile_x(int i) const {
+    const uint8_t* hdr = image_header(i);
+    return hdr ? (int)(int32_t)r32(hdr + kOfsX) : 0;
+}
+
+int TmpFile::tile_y(int i) const {
+    const uint8_t* hdr = image_header(i);
+    return hdr ? (int)(int32_t)r32(hdr + kOfsY) : 0;
+}
+
+bool TmpFile::has_extra(int i) const {
+    const uint8_t* hdr = image_header(i);
+    if (hdr == nullptr) return false;
+    return (r32(hdr + kOfsFlags) & kHasExtraDataBit) != 0;
+}
+
+int TmpFile::extra_x(int i) const {
+    const uint8_t* hdr = image_header(i);
+    return hdr ? (int)(int32_t)r32(hdr + kOfsXExtra) : 0;
+}
+
+int TmpFile::extra_y(int i) const {
+    const uint8_t* hdr = image_header(i);
+    return hdr ? (int)(int32_t)r32(hdr + kOfsYExtra) : 0;
+}
+
+TileImage TmpFile::decode_extra(int i) const {
+    TileImage out;                              // empty (w==h==0) by default
+    const uint8_t* hdr = image_header(i);       // validates i and header bounds
+    if (hdr == nullptr)
+        return out;                             // absent tile -> no extra
+    if ((r32(hdr + kOfsFlags) & kHasExtraDataBit) == 0)
+        return out;                             // no extra image for this tile
+
+    const int cxe = (int)(int32_t)r32(hdr + kOfsCxExtra);
+    const int cye = (int)(int32_t)r32(hdr + kOfsCyExtra);
+    if (cxe <= 0 || cye <= 0)
+        throw std::runtime_error("tmp: tile " + std::to_string(i) +
+            " has_extra_data but bad extra size " + std::to_string(cxe) + "x" +
+            std::to_string(cye));
+    const long long npix = (long long)cxe * cye;
+    if (npix > 64LL * 1024 * 1024)              // guard absurd allocation
+        throw std::runtime_error("tmp: tile " + std::to_string(i) +
+            " implausible extra size " + std::to_string(cxe) + "x" + std::to_string(cye));
+
+    // extra_ofs is relative to the image header position (same base the diamond
+    // offset uses); matches XCC get_extra_data = data + index[i] + extra_ofs.
+    const int32_t extra_ofs = (int32_t)r32(hdr + kOfsExtraOfs);
+    const uint32_t hdr_off = index_[(size_t)i];
+    if (extra_ofs < 0)
+        throw std::runtime_error("tmp: tile " + std::to_string(i) +
+            " negative extra_ofs " + std::to_string(extra_ofs));
+    const size_t start = (size_t)hdr_off + (size_t)extra_ofs;
+    if (start + (size_t)npix > bytes_.size())
+        throw std::runtime_error("tmp: tile " + std::to_string(i) +
+            " extra pixels (" + std::to_string(npix) + " bytes at " +
+            std::to_string(start) + ") exceed file");
+
+    // The extra image is a plain, row-major cx_extra*cy_extra byte rectangle
+    // (NOT diamond-packed); copy it verbatim (index 0 stays transparent).
+    out.w = cxe;
+    out.h = cye;
+    out.indices.assign(bytes_.begin() + start, bytes_.begin() + start + (size_t)npix);
     return out;
 }
 
