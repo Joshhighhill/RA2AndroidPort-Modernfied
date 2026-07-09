@@ -114,8 +114,12 @@ Pure `occupancy` module, driven by `World::step`:
 
 Explicitly-handled hard cases:
 
-- **Head-on swap** (A→B while B→A): deterministic tie-break — the lower-index
-  unit proceeds; the higher-index unit re-paths.
+- **Head-on / mutual block** (A→B while B→A): both units wait, then re-path in
+  fixed index order over a grid that treats other units' cells as blocked. In
+  open ground they route around each other; in a sealed one-cell corridor both
+  stop cleanly. The guarantee is **no overlap + guaranteed termination**
+  (deterministic by index order) — not that a specific unit always wins the
+  contested cell.
 - **Boxed-in** unit: re-path fails → the unit stops.
 - **One-cell-gap funnel**: units queue single-file via wait-then-proceed.
 
