@@ -1,12 +1,18 @@
 #include "doctest.h"
 #include "ra2assets/hva.hpp"
 #include "ra2assets/vxl.hpp"
+#include "ra2assets/mix.hpp"
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+namespace fs = std::filesystem;
 using namespace ra2assets;
 
 // ---------------------------------------------------------------------------
@@ -320,4 +326,139 @@ TEST_CASE("vxl span decode bounds violations throw") {
         b[830] = 100;
         CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Guarded real-asset oracle: decode the real htnk.vxl + htnk.hva (Rhino tank,
+// resolved from ra2.mix -> local.mix -- NOTE: voxels live in local.mix, NOT
+// conquer.mix) and compare a canonical text dump line-for-line against ground
+// truth produced by XCC's own VXL/HVA code (built verbatim, OUTSIDE this repo,
+// into xcc_vxl_dump -- see scripts/make_vxl_oracle.md). Floats are compared as
+// raw IEEE-754 bit patterns so no formatting can diverge. Skips cleanly when
+// the oracle files or the install are absent.
+// ---------------------------------------------------------------------------
+static std::vector<uint8_t> slurp_file(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
+}
+
+static std::vector<std::string> read_lines(const fs::path& p) {
+    std::ifstream f(p);
+    std::vector<std::string> out;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        out.push_back(line);
+    }
+    while (!out.empty() && out.back().empty()) out.pop_back();
+    return out;
+}
+
+static std::string fbits(float f) {
+    uint32_t v;
+    std::memcpy(&v, &f, 4);
+    char buf[16];
+    std::snprintf(buf, sizeof buf, "0x%08x", v);
+    return buf;
+}
+
+static void canonical_vxl(const VxlModel& m, std::vector<std::string>& out) {
+    char line[160];
+    for (size_t i = 0; i < m.sections.size(); i++) {
+        const VxlSection& s = m.sections[i];
+        std::snprintf(line, sizeof line, "section %u %s %d %d %d %d %s",
+                      (unsigned)i, s.name.c_str(), s.size_x, s.size_y, s.size_z,
+                      (int)s.normals_mode, fbits(s.scale).c_str());
+        out.push_back(line);
+        for (int z = 0; z < s.size_z; z++)
+            for (int y = 0; y < s.size_y; y++)
+                for (int x = 0; x < s.size_x; x++) {
+                    const VxlVoxel& v = s.voxels[(size_t)x + (size_t)s.size_x *
+                                                 ((size_t)y + (size_t)s.size_y * (size_t)z)];
+                    if (!v.present) continue;
+                    std::snprintf(line, sizeof line, "%d %d %d %d %d",
+                                  x, y, z, (int)v.color, (int)v.normal);
+                    out.push_back(line);
+                }
+    }
+}
+
+static void canonical_hva(const HvaModel& m, std::vector<std::string>& out) {
+    char line[160];
+    std::snprintf(line, sizeof line, "hva %d %u",
+                  m.frame_count, (unsigned)m.section_names.size());
+    out.push_back(line);
+    // Frame-major model emission == raw file order under our frame-major read.
+    for (const auto& frame : m.frames)
+        for (const auto& xf : frame)
+            for (int r = 0; r < 3; r++) {
+                std::snprintf(line, sizeof line, "%s %s %s %s",
+                              fbits(xf.transform[r][0]).c_str(),
+                              fbits(xf.transform[r][1]).c_str(),
+                              fbits(xf.transform[r][2]).c_str(),
+                              fbits(xf.transform[r][3]).c_str());
+                out.push_back(line);
+            }
+}
+
+static int compare_lines(const std::vector<std::string>& got,
+                         const std::vector<std::string>& want) {
+    REQUIRE(got.size() == want.size());
+    size_t mismatches = 0;
+    for (size_t i = 0; i < got.size(); i++) {
+        if (got[i] != want[i]) {
+            mismatches++;
+            if (mismatches <= 5)
+                MESSAGE("line " << i << ": got '" << got[i] << "' want '" << want[i] << "'");
+        }
+    }
+    CHECK(mismatches == 0);
+    return (int)got.size();
+}
+
+TEST_CASE("vxl oracle: htnk.vxl + htnk.hva match the XCC dump line-for-line") {
+    const char* od = std::getenv("RA2_ORACLE_DIR");
+    fs::path base = od ? od : "D:\\ra2-android\\oracle";
+    fs::path vxl_txt = base / "vxl" / "htnk.vxl.txt";
+    fs::path hva_txt = base / "vxl" / "htnk.hva.txt";
+    if (!fs::exists(vxl_txt) || !fs::exists(hva_txt)) {
+        MESSAGE("vxl oracle files absent; skipped");
+        return;
+    }
+    const char* id = std::getenv("RA2_INSTALL_DIR");
+    fs::path install = id ? id : "D:\\Red Alert 2";
+    if (!fs::exists(install / "ra2.mix")) {
+        MESSAGE("RA2 install absent; skipped");
+        return;
+    }
+
+    auto mixbytes = slurp_file(install / "ra2.mix");
+    REQUIRE_FALSE(mixbytes.empty());
+    MixFile outer = MixFile::open(std::move(mixbytes));
+    MixFile local = outer.open_nested("local.mix");
+
+    int lines_checked = 0;
+    {   // VXL
+        const MixEntry* e = local.find("htnk.vxl");
+        REQUIRE(e != nullptr);
+        std::vector<uint8_t> raw = local.read(*e);
+        REQUIRE(raw.size() == 34550);          // byte-verified size in this install
+        VxlModel m = load_vxl(raw.data(), raw.size());
+        std::vector<std::string> got;
+        canonical_vxl(m, got);
+        lines_checked += compare_lines(got, read_lines(vxl_txt));
+    }
+    {   // HVA
+        const MixEntry* e = local.find("htnk.hva");
+        REQUIRE(e != nullptr);
+        std::vector<uint8_t> raw = local.read(*e);
+        REQUIRE(raw.size() == 88);             // byte-verified size in this install
+        HvaModel h = load_hva(raw.data(), raw.size());
+        CHECK(h.frame_count == 1);
+        CHECK(h.section_names.size() == 1);
+        std::vector<std::string> got;
+        canonical_hva(h, got);
+        lines_checked += compare_lines(got, read_lines(hva_txt));
+    }
+    CHECK(lines_checked > 0);   // guard against silently comparing nothing
 }
