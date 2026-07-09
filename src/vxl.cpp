@@ -92,7 +92,7 @@ static void decode_spans(const uint8_t* body, size_t body_size, size_t sec_index
                 v.present = true;
                 z++;
             }
-            off++;                             // trailing duplicate count byte
+            next_byte(off, "span trailing count byte");  // consume + bounds-check
         }
     }
 }
