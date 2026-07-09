@@ -32,6 +32,10 @@ TEST_CASE("indexed output matches XCC oracle byte-for-byte") {
     if (!fs::exists(base)) { MESSAGE("oracle dir absent; skipped"); return; }
     const char* id = std::getenv("RA2_INSTALL_DIR");
     fs::path install = id ? id : "D:\\Red Alert 2";
+    if (!fs::exists(install / "ra2.mix")) {
+        MESSAGE("install absent; skipped (oracle files present but no game mixes)");
+        return;
+    }
     // manifest.txt: one asset per line, whitespace-separated fields:
     //   <mix-name-relative-to-install> <shp-path-within-mix> <frame-dir-under-oracle>
     // e.g.:  ra2.mix  conquer.mix/e1.shp  ra2/e1

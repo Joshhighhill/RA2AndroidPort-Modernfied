@@ -263,6 +263,10 @@ TEST_CASE("tmp tile output matches XCC oracle byte-for-byte") {
     if (!fs::exists(manifest)) { MESSAGE("no tmp oracle manifest; skipped"); return; }
     const char* id = std::getenv("RA2_INSTALL_DIR");
     fs::path install = id ? id : "D:\\Red Alert 2";
+    if (!fs::exists(install / "ra2.mix")) {
+        MESSAGE("install absent; skipped (oracle files present but no game mixes)");
+        return;
+    }
 
     std::ifstream mf(manifest);
     std::string mixname, tmppath, tiledir;
