@@ -1,6 +1,12 @@
 # Foundation Batch (Phase 2.5) — Design
 
-**Status:** Approved for planning (2026-07-09)
+**Status:** Approved for planning (2026-07-09). **Amended same day** after
+verifying every piece against the real install (see "Ground-truth
+corrections" below): the audio piece targets the formats this game actually
+ships (BAG/IDX + IMA-ADPCM, not headered `.aud`), the voxel oracle assets
+live in `ra2.mix/local.mix`, and the startup fix targets the measured
+bottleneck (byte-wise MIX slurping in the engine load path — tile decode is
+already lazy).
 
 ## Goal
 
@@ -55,6 +61,44 @@ source-list line).
   function(s), address(es), and a High/Med/Low confidence rating — extending
   the Phase-1 `docs/re/` methodology.
 
+## Ground-truth corrections (verified against the install, 2026-07-09)
+
+Every claim below was verified by extracting and inspecting the real files
+with `ra2extract` before planning:
+
+1. **Voxel models live in `ra2.mix/local.mix`** (not `conquer.mix`): 84
+   `.vxl`/`.hva` files resolved by name there, including `htnk.vxl` (34,550
+   bytes) + `htnk.hva` (88 bytes) — the Rhino tank, with separate
+   `htnktur`/`htnkbarl` turret/barrel models. The VXL layout is confirmed by
+   arithmetic: 802-byte file header (16 magic `"Voxel Animation"` + 5 u32 +
+   2 remap bytes + 768-byte palette) + 28-byte section header + body
+   (`bodysize` = 33,628) + 92-byte section tailer = 34,550 exactly.
+2. **This install contains NO headered `.aud` files.** The game's audio is:
+   * SFX + unit voices: `language.mix → audio.mix → audio.idx` (`GABA`
+     magic, version 2, 1,153 entries; 12-byte header + 1,153 × 36-byte
+     entries = 41,520 bytes exactly) + `audio.bag` (headerless
+     **Westwood IMA-ADPCM** clip streams).
+   * EVA speech: `audio.mix → <name>.wav` (459 files, e.g. `ceva001.wav`) —
+     genuine RIFF WAVE, `fmt` tag 0x0011 (IMA ADPCM), mono 22,050 Hz.
+   * Music: `theme.mix → <Sound>.wav` (16 RIFF WAVE files named by
+     `theme.ini` `Sound=` keys, e.g. `Grinder.WAV`).
+   Sub-project 3 therefore decodes **IDX/BAG + IMA-ADPCM** (the codec is the
+   same IMA core the spec's `.aud` type-99 description named; only the
+   container changed). Headered-AUD support is dropped as asset-less here.
+3. **CSF:** `ra2.csf` sits **loose** in the install root (526 KB, magic
+   `" FSC"`, version 3, 4,562 labels). Known-good vectors decoded from it:
+   `GUI:Cancel` → "Cancel", `Name:HTNK` → "Rhino Heavy Tank", `Name:E1` →
+   "GI", `GUI:LoadGame` → "Load Game". Values are UTF-16LE with every byte
+   XOR 0xFF (equivalent to `~` per 16-bit unit).
+4. **Tile decode is ALREADY lazy** (`Theater::tmp_for_tile` memoizes
+   templates; `draw_terrain` decodes a subtile only on texture-cache miss).
+   The real startup cost — **measured 79 s on the desktop host** for
+   `ra2engine --screenshot` — is the engine's `slurp()`
+   (`std::istreambuf_iterator`, byte-at-a-time, no reserve) reading
+   `ra2.mix` (268 MB) **twice** plus `ra2md.mix` (195 MB) once ≈ 730 MB of
+   byte-wise reads. Sub-project 4 replaces that load path (block reads +
+   open `ra2.mix` once); its byte-identical gate is unchanged.
+
 ## Sub-project 1 — VXL + HVA voxel model decoder
 
 **Consumed by:** Phase 6 (vehicles/tanks/aircraft — RA2 vehicles are voxel
@@ -102,11 +146,13 @@ HvaModel load_hva(const uint8_t* data, size_t len);
 **Files:** `include/ra2assets/vxl.hpp`, `src/vxl.cpp`, `include/ra2assets/hva.hpp`,
 `src/hva.cpp`, `tests/test_vxl.cpp`, `docs/re/vxl.md`.
 
-**Verification:** (1) Ghidra-exact span/normal/transform logic. (2) Structural
-oracle on a real vehicle model from the install (e.g. a tank `.vxl`/`.hva`
-resolved from `ra2.mix`): section count, per-section dimensions, voxel counts,
-palette, and per-frame transform counts cross-checked against a reference
-decoder's dump kept off-repo. Skips cleanly without assets.
+**Verification:** (1) Ghidra-exact span/normal/transform logic. (2) Oracle on
+a real vehicle model from the install — `htnk.vxl` + `htnk.hva` (Rhino tank)
+resolved from `ra2.mix/local.mix` — section count, per-section dimensions,
+per-voxel (position, color, normal) bytes, palette, and per-frame transform
+counts cross-checked against a reference decoder's dump kept off-repo
+(XCC's own VXL code built into a standalone dump tool under `D:\ra2-re\`,
+the Task-9 pattern). Skips cleanly without assets.
 
 ## Sub-project 2 — CSF string-table reader
 
@@ -140,64 +186,88 @@ private:
 `docs/re/csf.md`.
 
 **Verification:** (1) Ghidra-exact record walk + inversion. (2) Oracle against
-`ra2.csf` in the install: `count() > 0` and a handful of known
-label→text pairs decode correctly (fixed vectors read from the real file).
+the loose `ra2.csf` in the install root: `count() > 0` and the known
+label→text vectors listed in "Ground-truth corrections" decode correctly.
 Skips cleanly without assets.
 
-## Sub-project 3 — AUD audio decoder
+## Sub-project 3 — Audio decoder (BAG/IDX + Westwood IMA-ADPCM)
 
 **Consumed by:** the audio phase (EVA / unit responses / SFX / music). **Decode
 to PCM only** — no playback.
 
-**Format:** Westwood `.aud` header (sample rate u16, compressed size u32,
-uncompressed size u32, flags u8 [stereo/16-bit], type u8 [1 = WW-ADPCM,
-99 = IMA-ADPCM]); then chunks each `{compressed u16, uncompressed u16, id
-0x0000DEAF u32}` of IMA-ADPCM nibbles.
+**Format (as shipped in THIS install — see Ground-truth corrections):**
+* `audio.idx` (in `language.mix → audio.mix`): header `{char magic[4] =
+  "GABA"; u32 version = 2; u32 count}`, then `count` × 36-byte entries
+  `{char name[16]; u32 offset; u32 size; u32 sample_rate; u32 flags;
+  u32 chunk_size}` (entry layout to be confirmed exactly by Ghidra).
+* `audio.bag`: at each entry's `offset`/`size`, a headerless **Westwood
+  IMA-ADPCM** nibble stream (mono/stereo, 16-bit per `flags`).
+* The EVA/music RIFF WAVs use the same IMA-ADPCM codec inside standard WAV
+  `fmt 0x0011` framing — out of scope for this piece (any WAV reader can
+  frame them later; the codec is what matters).
 
-**Ghidra target:** the AUD decoder in `gamemd.exe` — the exact IMA step table,
-index-adjust table, predictor accumulation, and sample clamping.
+**Ghidra target:** the BAG/IDX loader and ADPCM decoder in `gamemd.exe` — the
+exact IMA step table, index-adjust table, predictor accumulation, sample
+clamping, and the idx entry layout/flag bits. Anchors: the 89-entry IMA step
+table constants and the `"audio.idx"`/`"audio.bag"` strings.
 
 **Interface:**
 ```cpp
 namespace ra2assets {
-struct AudInfo { int sample_rate = 0; int channels = 1; int bits = 16; };
-// Decodes an AUD to interleaved little-endian 16-bit PCM.
-std::vector<int16_t> decode_aud(const uint8_t* data, size_t len, AudInfo& out_info);
+struct BagClip {
+    std::string name;               // idx name field (no extension)
+    uint32_t offset = 0, size = 0;  // clip bytes within audio.bag
+    uint32_t sample_rate = 0, flags = 0, chunk_size = 0;
+};
+class AudioIdx {
+public:
+    static AudioIdx load(const uint8_t* data, size_t len);
+    const BagClip* find(const std::string& name) const;  // nullptr if absent
+    const std::vector<BagClip>& clips() const;
+};
+struct AudioClipInfo { int sample_rate = 0; int channels = 1; int bits = 16; };
+// Decode one clip's bytes (from audio.bag) to interleaved 16-bit PCM.
+std::vector<int16_t> decode_bag_clip(const uint8_t* bag_data, size_t bag_len,
+                                     const BagClip& clip, AudioClipInfo& out_info);
 }
 ```
 
-**Files:** `include/ra2assets/aud.hpp`, `src/aud.cpp`, `tests/test_aud.cpp`,
-`docs/re/aud.md`.
+**Files:** `include/ra2assets/audio_bag.hpp`, `src/audio_bag.cpp`,
+`tests/test_audio.cpp`, `docs/re/audio.md`.
 
-**Verification:** (1) Ghidra-exact tables + clamping. (2) Oracle: decode a real
-`.aud` from the install; assert the decoded sample count matches the header's
-uncompressed size and the PCM matches a reference decoder's output for that
-file (reference kept off-repo). Skips cleanly without assets.
+**Verification:** (1) Ghidra-exact tables + clamping + idx layout. (2) Oracle:
+decode a real clip from the install's `audio.bag`; assert the PCM matches a
+reference decoder's output for that clip (XCC's own ADPCM code built into a
+standalone dump tool off-repo, the Task-9 pattern) and the sample count
+matches the clip size implied by the format. Skips cleanly without assets.
 
-## Sub-project 4 — Startup performance (lazy/cached tile decode)
+## Sub-project 4 — Startup performance (fast MIX loading)
 
-**Consumed by:** everything — the ~2-minute cold start (measured on the Android
-emulator and reported on-device) makes iterating painful and worsens as later
-phases load more. This is the one **non-RE** piece: it is our own optimization,
-not game logic, so it has **no Ghidra step** — its correctness gate is that
-decoded output is byte-identical to today's.
+**Consumed by:** everything — the ~2-minute cold start on device (79 s
+measured on the desktop host) makes iterating painful and worsens as later
+phases load more. This is the one **non-RE** piece: it is our own
+optimization, not game logic, so it has **no Ghidra step** — its correctness
+gate is that loaded/decoded output is byte-identical to today's.
 
-**Change:** today `Theater`/asset load eagerly decodes every theater template up
-front. Make tile decoding **lazy + memoized**: keep the raw TMP bytes, decode a
-`(tile, subtile)` on first request, cache the decoded indexed pixels; the SDL
-`TextureCache` already memoizes the GPU texture on top. `load_assets()` stops
-pre-decoding the full template set. Touches `engine/theater.cpp`,
-`engine/theater.hpp`, and possibly `engine/main.cpp`'s load path only.
+**Change (targets the measured bottleneck — see Ground-truth corrections):**
+1. Add `ra2assets::read_file(path)` — a block-reading file slurp (seek to
+   end, size, single `read()`) replacing the engine's per-byte
+   `istreambuf_iterator` slurp.
+2. Open `ra2.mix` **once** per run and pass the open `MixFile` to both
+   `load_assets()` and `load_unit_assets()` (today each slurps the 268 MB
+   file independently).
+Tile decoding is already lazy + memoized and is **not** touched.
 
-**Files (edit, not new):** `engine/theater.{hpp,cpp}` (+ `engine/main.cpp` load
-path); `tests/test_theater.cpp` (add a lazy-decode-equivalence + memoization
-test).
+**Files:** Create `include/ra2assets/fileio.hpp`, `src/fileio.cpp`,
+`tests/test_fileio.cpp`; modify `engine/main.cpp` (load path only) and
+`tools/ra2extract.cpp` (same slurp swap).
 
-**Verification:** (1) The existing theater/oracle tests still pass — every
-decoded tile is byte-identical to the eager path (the primary gate). (2) A new
-test asserts a tile decoded lazily equals the eager decode and that a second
-request is served from cache (no re-decode). (3) Measured: time-to-first-frame
-drops from minutes to seconds (report the before/after; not a unit assertion).
+**Verification:** (1) The full existing suite still passes (the load path
+produces the same bytes; everything downstream is untouched). (2) A new test
+asserts `read_file` returns byte-identical content to the old slurp and
+throws on a missing file. (3) Measured: `ra2engine --screenshot` wall time
+drops from 79 s to seconds on the host (report before/after; not a unit
+assertion).
 
 ## Shared verification methodology
 
@@ -217,8 +287,12 @@ TDD throughout (failing test first). Test output must be pristine.
 
 - **One git worktree + one implementer agent per piece**, run concurrently
   (fanned out by a workflow). Pieces 1–3 only **add** files + one
-  `cmake/ra2_sources.cmake` line each; piece 4 edits `engine/theater.*` only —
-  disjoint file sets, so merge-back is conflict-free.
+  `cmake/ra2_sources.cmake` line each; piece 4 adds `fileio.*` and is the
+  only piece that edits `engine/main.cpp` / `tools/ra2extract.cpp` — disjoint
+  file sets, so merge-back is conflict-free. (All four also append one
+  `target_sources` line to the test executable in `CMakeLists.txt` and their
+  library line to `cmake/ra2_sources.cmake`; these are one-line additive
+  edits at a marked list end — trivial to merge.)
 - Each piece follows the Phase-1 review loop: implement (TDD) → independent
   spec+quality review → fix Critical/Important → re-review → merge.
 - After all four merge, a **light integration pass**: the full suite builds and
@@ -232,18 +306,22 @@ TDD throughout (failing test first). Test output must be pristine.
 - **Rendering** voxels (Phase 6), **playing** audio (audio phase), and **using**
   CSF strings in any UI (Phases 10/11). This batch decodes/produces data only.
 - Secondary/extra CSF values per label (first value suffices for now).
-- WW-ADPCM type-1 AUD if the located assets are all IMA type-99 — implement the
-  type the real assets use; record if type-1 is unneeded.
+- Headered `.aud` files and WW-ADPCM "type 1": this install ships neither
+  (verified — see Ground-truth corrections); implement the formats the real
+  assets use and record the decision in `docs/re/audio.md`.
+- RIFF WAV framing (EVA/music): same codec, trivial container, added later by
+  the audio phase when playback lands.
 - Any change to the coupled engine core beyond piece 4's self-contained load
   path.
 
 ## Success criteria
 
-1. Three new decoders (`vxl`+`hva`, `csf`, `aud`) in the pure library, each
-   Ghidra-exact and real-asset-oracle-verified, tests skip cleanly without
-   assets.
-2. Startup: map opens in seconds, with decoded tiles byte-identical to before.
-3. `docs/re/{vxl,csf,aud}.md` document the located game loaders with confidence
-   ratings.
+1. Three new decoders (`vxl`+`hva`, `csf`, `audio_bag`) in the pure library,
+   each Ghidra-exact and real-asset-oracle-verified, tests skip cleanly
+   without assets.
+2. Startup: map opens in seconds (host `--screenshot` from 79 s to single
+   digits), with loaded data byte-identical to before.
+3. `docs/re/{vxl,csf,audio}.md` document the located game loaders with
+   confidence ratings.
 4. Full host suite green; Android APK still builds with the new sources.
 5. No game assets / binary / Ghidra project / GPL source committed.
