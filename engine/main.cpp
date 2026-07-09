@@ -63,6 +63,11 @@ std::string env_install_dir() {
     const char* ext = SDL_AndroidGetExternalStoragePath();
     std::string dir = ext ? ext : "/sdcard/Android/data/org.ra2.engine/files";
     dir += "/ra2/";
+    // std::cerr/std::cout are not captured on Android; SDL_Log routes to
+    // logcat (tag "SDL"). Log the resolved asset dir so a missing/misplaced
+    // game-file set is diagnosable from `adb logcat` instead of the app
+    // silently exiting.
+    SDL_Log("[assets] android asset dir = %s", dir.c_str());
     return dir;
 #else
     const char* e = std::getenv("RA2_INSTALL_DIR");
@@ -556,6 +561,10 @@ int main(int argc, char** argv) {
         return run_interactive();
 #endif
     } catch (const std::exception& ex) {
+        // SDL_Log reaches Android logcat (tag "SDL"); std::cerr does not. Emit
+        // both so the failure reason is visible on-device and on desktop
+        // instead of the app just vanishing.
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "fatal: %s", ex.what());
         std::cerr << "fatal: " << ex.what() << "\n";
         return 1;
     }

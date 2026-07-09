@@ -165,34 +165,61 @@ PY
 
 Expected: both `machine=0xb7 AArch64`.
 
-### On device (deferred — needs a connected phone)
+### Running it (device or emulator)
 
-No physical device was attached when this was built, so install/run is
-deferred. With an arm64 Android phone connected (USB debugging on):
+The APK ships **both** `arm64-v8a` (real phones) and `x86_64` (emulator on an
+x86 host / x86 Chromebooks). It has been run on an Android 11 (API 30) x86_64
+emulator: it loads the real temperate map and GI unit and renders them
+full-screen. Game files are **never** bundled (copyright) — they are read at
+run time from the app's own external files dir.
 
-1. **Install** the APK:
+1. **Install** the APK (on a real phone connect it with USB debugging on):
    ```powershell
    adb install -r android\app\build\outputs\apk\debug\app-debug.apk
    ```
-2. **Push your own game files** to the app's external dir (the app package is
-   `org.ra2.engine`; assets are NOT in the APK). The engine reads the mix chain
-   from `.../files/ra2/`, so at minimum push `ra2.mix`, `ra2md.mix`, and
-   `mapsmd03.mix` (the loader also opens the theater/config/palette mixes nested
-   inside `ra2.mix`, so push the full set you own):
+2. **Place your own game files** where the app reads them. The engine reads the
+   mix chain from `SDL_AndroidGetExternalStoragePath()/ra2/`, i.e.
+   `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2/`. Push at least
+   `mapsmd03.mix`, `ra2.mix`, and `ra2md.mix` (the loader opens the
+   theater/config/palette/unit mixes nested inside `ra2.mix`/`ra2md.mix`, so
+   push the full set you own).
+
+   **The files must be readable by the app** — this is the #1 cause of "it
+   opens then instantly closes". `Android/data/<pkg>/` is scoped storage, so:
+   - **Real phone:** copy the files in with a file manager / MTP, or
+     `adb push` **as the normal (non-root) shell user** — both route through
+     MediaProvider and give the files the correct SELinux label
+     (`media_rw_data_file`) that the app is allowed to read.
+   - **Do NOT `adb root` then push** into that folder: root-created files get
+     the `storage_file` label and the app's sandbox is SELinux-denied `read`
+     (you'll see `avc: denied { read } ... tcontext=...storage_file` in
+     logcat). If you already did this, either re-push as non-root, or on an
+     emulator only, work around it with `adb root; adb shell setenforce 0`.
    ```powershell
+   # non-root push (correct label); create the dir first if needed
    adb shell mkdir -p /sdcard/Android/data/org.ra2.engine/files/ra2
+   adb push "D:\Red Alert 2\mapsmd03.mix" /sdcard/Android/data/org.ra2.engine/files/ra2/
    adb push "D:\Red Alert 2\ra2.mix"      /sdcard/Android/data/org.ra2.engine/files/ra2/
    adb push "D:\Red Alert 2\ra2md.mix"    /sdcard/Android/data/org.ra2.engine/files/ra2/
-   adb push "D:\Red Alert 2\mapsmd03.mix" /sdcard/Android/data/org.ra2.engine/files/ra2/
    ```
-   (The exact external path is what `SDL_AndroidGetExternalStoragePath()`
-   returns, i.e. `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2`.)
 3. **Launch** the app (`RA2 Engine`) from the launcher, or:
    ```powershell
    adb shell am start -n org.ra2.engine/.RA2Activity
    ```
    It opens into the real temperate map; tap-select and tap-move work with
    touch. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
+
+   **Diagnosing failures:** the engine logs to Android logcat under the
+   `SDL/APP` tag. On startup it prints `[assets] android asset dir = <path>`,
+   and any fatal error is logged as `fatal: <reason>` (e.g.
+   `cannot open file: .../mapsmd03.mix`) before it exits — so
+   `adb logcat -s SDL/APP:V` tells you exactly what went wrong instead of the
+   app vanishing silently.
+
+   **Note on x86_64 emulator:** it uses software GL (SwiftShader) and slow
+   emulated storage, so first load takes ~1 minute; a real arm64 phone is far
+   faster. The emulator confirms asset-loading + logic + layout, but final GPU
+   behavior is only authoritative on a real device.
 
 ## Preflight Check
 
