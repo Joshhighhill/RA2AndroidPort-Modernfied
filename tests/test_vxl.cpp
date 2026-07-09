@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "ra2assets/hva.hpp"
+#include "ra2assets/vxl.hpp"
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -83,5 +84,132 @@ TEST_CASE("hva synthetic: size mismatches and bad counts throw") {
     {
         auto b = make_hva(2, 0);
         CHECK_THROWS_AS(load_hva(b.data(), b.size()), std::runtime_error);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic .vxl builder: 1 section "TESTSEC", size_x=2, size_y=1, size_z=2.
+// Column 0 (x=0,y=0) holds one voxel at z=1 (color 7, normal 3); column 1
+// (x=1,y=0) is EMPTY (span start/end entries = 0xFFFFFFFF). Palette entry 7
+// is 6-bit (63,0,0), which must expand game-accurately (<<2) to r=252.
+//
+// Body layout (21 bytes): span starts u32[2] @0, span ends u32[2] @8, span
+// data @16: skip=1, count=1, color=7, normal=3, trailing-count=1.
+// File = 802 (file header) + 28 (section header) + 21 (body) + 92 (tailer)
+//      = 943 bytes — same arithmetic that pins the real htnk.vxl at
+//        802 + 28 + 33,628 + 92 = 34,550.
+// ---------------------------------------------------------------------------
+static std::vector<uint8_t> make_vxl() {
+    std::vector<uint8_t> b;
+    auto p8  = [&](uint8_t v){ b.push_back(v); };
+    auto p32 = [&](uint32_t v){ for (int i=0;i<4;i++) p8((uint8_t)((v>>(8*i))&0xff)); };
+    auto pf32 = [&](float f){ uint32_t v; std::memcpy(&v, &f, 4); p32(v); };
+    auto pname = [&](const std::string& s){
+        for (int i=0;i<16;i++) p8(i < (int)s.size() ? (uint8_t)s[i] : 0);
+    };
+    // --- file header (802 bytes) ---
+    pname("Voxel Animation");        // magic: 15 chars + NUL padding
+    p32(1);                          // palette_count
+    p32(1);                          // section_header_count
+    p32(1);                          // section_tailer_count
+    p32(21);                         // body_size
+    p8(0x10); p8(0x1f);              // palette remap start/end (as real files)
+    for (int i=0;i<256;i++) {        // 768-byte 6-bit palette; entry 7 = (63,0,0)
+        if (i == 7) { p8(63); p8(0); p8(0); }
+        else        { p8(0);  p8(0); p8(0); }
+    }
+    // --- section header (28 bytes) ---
+    pname("TESTSEC");
+    p32(0);                          // limb_number
+    p32(1);                          // unknown1 (XCC-written files hold 1)
+    p32(0);                          // unknown2 (XCC-written files hold 0)
+    // --- body (21 bytes) ---
+    p32(0);  p32(0xFFFFFFFFu);       // span starts: col0=0, col1=EMPTY
+    p32(4);  p32(0xFFFFFFFFu);       // span ends:   col0=4 (last byte index), col1=EMPTY
+    p8(1); p8(1); p8(7); p8(3); p8(1); // col0 data: skip 1, count 1, (7,3), trailing 1
+    // --- section tailer (92 bytes) ---
+    p32(0);                          // span_start_ofs (body-relative)
+    p32(8);                          // span_end_ofs
+    p32(16);                         // span_data_ofs
+    pf32(0.25f);                     // det_scale (exactly representable)
+    for (int i=1;i<=12;i++) pf32((float)i);   // transform rows {1..4},{5..8},{9..12}
+    pf32(-1.5f); pf32(-0.5f); pf32(0.0f);     // min_bounds
+    pf32( 1.5f); pf32( 0.5f); pf32(2.0f);     // max_bounds
+    p8(2); p8(1); p8(2);             // size_x, size_y, size_z
+    p8(4);                           // normals_mode (RA2)
+    return b;
+}
+
+TEST_CASE("vxl synthetic: header, palette, section header + tailer parse") {
+    auto bytes = make_vxl();
+    REQUIRE(bytes.size() == 943);
+    VxlModel m = load_vxl(bytes.data(), bytes.size());
+
+    // Palette entry 7 is 6-bit (63,0,0) -> game-accurate <<2 expansion = 252.
+    CHECK(m.palette[7].r == 252);
+    CHECK(m.palette[7].g == 0);
+    CHECK(m.palette[7].b == 0);
+    CHECK(m.palette[7].a == 255);
+    CHECK(m.palette[0].r == 0);
+
+    REQUIRE(m.sections.size() == 1);
+    const VxlSection& s = m.sections[0];
+    CHECK(s.name == "TESTSEC");
+    CHECK(s.size_x == 2);
+    CHECK(s.size_y == 1);
+    CHECK(s.size_z == 2);
+    CHECK(s.scale == 0.25f);
+    CHECK(s.transform[0][0] == 1.0f);
+    CHECK(s.transform[0][3] == 4.0f);
+    CHECK(s.transform[1][1] == 6.0f);
+    CHECK(s.transform[2][3] == 12.0f);
+    CHECK(s.min_bounds[0] == -1.5f);
+    CHECK(s.min_bounds[1] == -0.5f);
+    CHECK(s.min_bounds[2] == 0.0f);
+    CHECK(s.max_bounds[0] == 1.5f);
+    CHECK(s.max_bounds[1] == 0.5f);
+    CHECK(s.max_bounds[2] == 2.0f);
+    CHECK(s.normals_mode == 4);
+    CHECK(s.voxels.size() == 4u);            // 2*1*2 cells allocated
+}
+
+TEST_CASE("vxl bounds checks reject malformed input") {
+    // truncated: smaller than the 802-byte file header
+    {
+        auto b = make_vxl(); b.resize(100);
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // wrong magic
+    {
+        auto b = make_vxl(); b[0] = 'W';
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // palette_count != 1
+    {
+        auto b = make_vxl(); b[16] = 2;
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // tailer_count != header_count
+    {
+        auto b = make_vxl(); b[24] = 2;
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // total size must equal 802 + N*28 + body_size + N*92 exactly
+    {
+        auto b = make_vxl(); b.push_back(0);
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // span start TABLE beyond the body: tailer span_start_ofs (abs offset 851,
+    // = 802 + 28 + 21) corrupted to 0x40000000
+    {
+        auto b = make_vxl();
+        b[851] = 0x00; b[852] = 0x00; b[853] = 0x00; b[854] = 0x40;
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // span_data_ofs beyond the body (abs offset 859 -> 64 > body_size 21)
+    {
+        auto b = make_vxl();
+        b[859] = 64; b[860] = 0; b[861] = 0; b[862] = 0;
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
     }
 }
