@@ -1239,10 +1239,23 @@ bool load_real_map(MapFile& out) {
 }
 
 // Screen pixel over the cell (cx, cy) ground point at identity camera, level 0.
+// Correct for CLICK tests: Input::unit_under inverts the pointer level-
+// agnostically to the exact cell, so the level-0 ground point always hits.
 void px_for_cell(int cx, int cy, int& px, int& py) {
     const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, 0, 60, 30, 15);
     px = p.x + 30;  // + tile_w/2 (ground point x)
     py = p.y + 15;  // + tile_h/2 (ground point y)
+}
+
+// Ground-point pixel of a unit under an identity camera -- LEVEL-AWARE,
+// mirroring Input::unit_ground_px / draw_unit's anchor. Required for BOX
+// tests: commit_box tests each unit's real (level-raised) ground point, and
+// the spawn cluster is NOT level 0 on the real map.
+void ground_px_for_unit(const ra2engine::Unit& u, int& px, int& py) {
+    const ra2engine::ScreenPt p =
+        ra2engine::cell_to_screen(u.cell_x, u.cell_y, u.level, 60, 30, 15);
+    px = p.x + 30;
+    py = p.y + 15;
 }
 
 // Left click helper (down then up, no move) with modifiers + timestamp.
@@ -1359,10 +1372,13 @@ TEST_CASE("Input: left-drag exposes a selection box and box-selects covered unit
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped"); return; }
 
-    // Compute the ground pixels of all three units, then drag a box covering them.
+    // Compute the REAL (level-aware) ground pixels of all three units --
+    // commit_box tests unit_ground_px, which uses each unit's terrain level,
+    // so the box corners must account for it too -- then drag a box covering
+    // them.
     int minx = 1000000000, miny = 1000000000, maxx = -1000000000, maxy = -1000000000;
-    for (auto& cxy : fx.cells) {
-        int px, py; px_for_cell(cxy.first, cxy.second, px, py);
+    for (const auto& un : world.units()) {
+        int px, py; ground_px_for_unit(un, px, py);
         minx = std::min(minx, px); maxx = std::max(maxx, px);
         miny = std::min(miny, py); maxy = std::max(maxy, py);
     }
@@ -1607,9 +1623,14 @@ void Input::unit_ground_px(const Unit& u, int& gx, int& gy) const {
 int Input::unit_under(int px, int py) const {
     // Cell-based pick: invert the pointer (undo camera) to an iso cell, then ask
     // the World which unit stands there. Unambiguous because occupancy keeps at
-    // most one unit per cell.
+    // most one unit per cell. screen_to_cell inverts the tile's TOP-LEFT
+    // convention, but sprites/ground points anchor at the tile CENTER
+    // (top-left + (tile_w/2, tile_h/2) -- see unit_ground_px / draw_unit), so
+    // subtract the half-tile first; without this a click on a unit's feet
+    // resolves one cell east (center pixel inverts to (cx+1, cy) exactly).
     int cx = 0, cy = 0;
-    screen_to_cell(px - cam_.x, py - cam_.y, kTileW, kTileH, cx, cy);
+    screen_to_cell(px - cam_.x - kTileW / 2, py - cam_.y - kTileH / 2, kTileW, kTileH,
+                   cx, cy);
     return world_.unit_at_cell(cx, cy);
 }
 
@@ -1669,9 +1690,12 @@ void Input::handle(const InputEvent& ev) {
 
         case InputEvent::PointerDown:
             if (ev.button == InputEvent::Right) {
-                // Right-click = group-move the current selection (issued on down).
+                // Right-click = group-move the current selection (issued on
+                // down). Same tile-center convention as unit_under, so
+                // right-clicking a tile's visible diamond targets THAT cell.
                 int cx = 0, cy = 0;
-                screen_to_cell(ev.x - cam_.x, ev.y - cam_.y, kTileW, kTileH, cx, cy);
+                screen_to_cell(ev.x - cam_.x - kTileW / 2, ev.y - cam_.y - kTileH / 2,
+                               kTileW, kTileH, cx, cy);
                 world_.order_move_selected(cx, cy);
             } else {
                 l_down_ = true;
