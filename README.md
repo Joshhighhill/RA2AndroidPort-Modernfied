@@ -3,7 +3,8 @@
 A portable C++17 library that decodes Red Alert 2 / Yuri's Revenge game data
 (`ra2assets`: MIX archives, PAL palettes, SHP sprites, VXL/HVA voxel models
 (vehicle meshes + animation transforms, decode only), LZO/LCW map packs, INI,
-rules, `.map` cell grids, TMP theater tiles, CSF string tables), plus `ra2engine` — an SDL2
+rules, `.map` cell grids, TMP theater tiles, CSF string tables, BAG/IDX audio
+decoded from Westwood IMA-ADPCM to PCM), plus `ra2engine` — an SDL2
 front-end that renders a real stock map with real theater terrain and lets you
 select and move a unit (A\* pathfinding + walk animation). The library stays
 pure and dependency-free; only the engine links SDL2.
