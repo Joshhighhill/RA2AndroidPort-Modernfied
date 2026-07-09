@@ -486,7 +486,7 @@ git -C D:\ra2-android commit -m "engine: add pure formation assignment (nearest_
 **Interfaces:**
 - Consumes: `Occupancy` (Task 1), `find_path` (`engine/pathfind.hpp`), `Unit`/`Cellxy` (`engine/world.hpp`).
 - Produces: field `double Unit::wait_time = 0.0;` and free function
-  `void step_units(std::vector<Unit>& units, const std::vector<uint8_t>& passable, int w, int h, Occupancy& occ, double dt, double move_cps)` — advances every moving unit toward its `path` at `move_cps` cells/sec, reserving the next cell before entering it. A blocked unit waits (resuming the instant the cell frees), attempts a re-path around occupied cells every `kBlockedWait` (0.30 s), and abandons its order only after `kGiveUpAfter` (2.0 s) of continuous block. Idle units re-assert ownership of their current cell and stand. Does **not** touch `Unit::level` (rendering height is patched by `World::step` from the map). Stepping order is ascending index (deterministic).
+  `void step_units(std::vector<Unit>& units, const std::vector<uint8_t>& passable, int w, int h, Occupancy& occ, double dt, double move_cps)` — advances every moving unit toward its `path` at `move_cps` cells/sec, reserving the next cell before entering it. A blocked unit waits (resuming the instant the cell frees), attempts a re-path around occupied cells on a seniority-staggered cadence (`kBlockedWait` = 0.30 s if blocked by a lower-index unit, one interval later if blocked by a higher-index one — this deterministic index-order asymmetry is what prevents two facing units from livelocking on mirror-image detours), and abandons its order only after `kGiveUpAfter` (2.0 s) of continuous block. Idle units re-assert ownership of their current cell and stand. Does **not** touch `Unit::level` (rendering height is patched by `World::step` from the map). Stepping order is ascending index (deterministic).
 
 - [ ] **Step 1: Write the failing test** — create `tests/test_movement.cpp`:
 
@@ -677,8 +677,11 @@ After the `struct Unit { ... };` block (before `pick_start_cell`), add the decla
 // cells/sec, using `occ` to enforce one-unit-per-cell: a unit reserves the next
 // path cell before entering it. While that cell is held by another unit the
 // unit waits (resuming the instant the cell frees) and attempts a re-path
-// around occupied cells every kBlockedWait seconds; it abandons the order only
-// after kGiveUpAfter seconds of continuous block (boxed-in / sealed corridor).
+// around occupied cells on a seniority-staggered cadence -- a unit blocked by
+// a LOWER-index unit tries at kBlockedWait, one blocked by a HIGHER-index unit
+// one interval later (breaks the mirror-symmetric re-path livelock); it
+// abandons the order only after kGiveUpAfter seconds of continuous block
+// (boxed-in / sealed corridor).
 // Idle units re-assert ownership of their current cell and stand. Units are
 // processed in ascending index order (deterministic). Does NOT modify
 // Unit::level -- rendering height is patched separately from the map by
@@ -792,6 +795,23 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             const double prev_wait = u.wait_time;
             u.wait_time += dt;
             u.frame = kStandFrame;  // stand while waiting (reads as "holding")
+            // Seniority stagger (breaks the mirror-symmetric re-path
+            // livelock): if the unit blocking our next cell has a LOWER index,
+            // it holds course and WE detour early (first attempt at
+            // kBlockedWait); if it has a HIGHER index, it is expected to
+            // detour first, so our first attempt is delayed one extra
+            // interval. Without this, two facing units cross the re-path
+            // threshold on the same frame every cycle and -- with symmetric
+            // occupancy and deterministic A* tie-breaks -- each computes the
+            // mirror image of the other's detour, oscillating between rows
+            // forever (a stable 2-cycle: observed in a 200s trace, not
+            // hypothetical).
+            const Cellxy blk = u.path[u.path_idx];
+            const int blocker = occ.at(blk.x, blk.y);
+            const double first_try =
+                (blocker != Occupancy::kEmpty && blocker < self)
+                    ? kBlockedWait
+                    : 2.0 * kBlockedWait;
             if (u.wait_time >= kGiveUpAfter) {
                 // Continuously blocked with no route found for the whole
                 // timeout (boxed-in / sealed corridor) -> give up cleanly.
@@ -800,14 +820,17 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 u.fx = u.cell_x;
                 u.fy = u.cell_y;
                 u.wait_time = 0.0;
-            } else if (static_cast<int>(prev_wait / kBlockedWait) !=
-                       static_cast<int>(u.wait_time / kBlockedWait)) {
-                // Crossed a kBlockedWait boundary -> attempt a re-path around
-                // the current traffic. On FAILURE keep the original path and
-                // keep waiting: transient jams (another unit mid-crossing of a
-                // funnel cell) clear on their own, and the per-frame can_enter
-                // check above resumes the walk the moment the blocker steps
-                // off. Only the kGiveUpAfter timeout abandons the order.
+            } else if (u.wait_time >= first_try &&
+                       (prev_wait < first_try ||
+                        static_cast<int>((prev_wait - first_try) / kBlockedWait) !=
+                            static_cast<int>((u.wait_time - first_try) / kBlockedWait))) {
+                // On a re-path attempt boundary (first_try, then every
+                // kBlockedWait after) -> attempt a re-path around the current
+                // traffic. On FAILURE keep the original path and keep waiting:
+                // transient jams (another unit mid-crossing of a funnel cell)
+                // clear on their own, and the per-frame can_enter check above
+                // resumes the walk the moment the blocker steps off. Only the
+                // kGiveUpAfter timeout abandons the order.
                 const Cellxy goal = u.path.back();
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(passable, w, h, occ, self, u.cell_x, u.cell_y);
