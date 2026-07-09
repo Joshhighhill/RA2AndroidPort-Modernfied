@@ -41,6 +41,62 @@ static std::string name16(const uint8_t* p) {
     return std::string(reinterpret_cast<const char*>(p), n);
 }
 
+// Walk one section's voxel columns. Column i covers (x = i % size_x,
+// y = i / size_x); its data at body + span_data_ofs + start[i] is a run of
+// {skip, count, count*(color,normal), trailing-duplicate-count} packets along
+// +z, and 0xFFFFFFFF in the start table marks an EMPTY column. This is the
+// walk shape of the game's own loader (docs/re/vxl.md; cross-checked off-repo
+// against XCC Cvxl_file). A column may end on a bare skip reaching size_z.
+// Every byte is bounds-checked against the body region.
+static void decode_spans(const uint8_t* body, size_t body_size, size_t sec_index,
+                         uint32_t span_start_ofs, uint32_t span_data_ofs,
+                         VxlSection& sec) {
+    const size_t ncols = (size_t)sec.size_x * (size_t)sec.size_y;
+    auto next_byte = [&](size_t& off, const char* what) -> uint8_t {
+        if (off >= body_size)
+            throw std::runtime_error("vxl: section " + std::to_string(sec_index) +
+                " " + what + " at body offset " + std::to_string(off) +
+                " exceeds body (" + std::to_string(body_size) + " bytes)");
+        return body[off++];
+    };
+    for (size_t i = 0; i < ncols; i++) {
+        const uint32_t start = r32(body + span_start_ofs + i * 4);
+        if (start == 0xFFFFFFFFu)
+            continue;                          // empty column
+        const uint64_t data_off = (uint64_t)span_data_ofs + start;
+        if (data_off >= (uint64_t)body_size)
+            throw std::runtime_error("vxl: section " + std::to_string(sec_index) +
+                " column " + std::to_string(i) + " span start " +
+                std::to_string(start) + " exceeds body (" +
+                std::to_string(body_size) + " bytes)");
+        const int x = (int)(i % (size_t)sec.size_x);
+        const int y = (int)(i / (size_t)sec.size_x);
+        size_t off = (size_t)data_off;
+        int z = 0;
+        while (z < sec.size_z) {
+            z += next_byte(off, "span skip byte");
+            if (z >= sec.size_z)
+                break;                         // column may end on a skip
+            const int count = next_byte(off, "span voxel count");
+            for (int j = 0; j < count; j++) {
+                if (z >= sec.size_z)
+                    throw std::runtime_error("vxl: section " + std::to_string(sec_index) +
+                        " column " + std::to_string(i) +
+                        " voxel run exceeds size_z " + std::to_string(sec.size_z));
+                const uint8_t color  = next_byte(off, "voxel color");
+                const uint8_t normal = next_byte(off, "voxel normal");
+                VxlVoxel& v = sec.voxels[(size_t)x + (size_t)sec.size_x *
+                                         ((size_t)y + (size_t)sec.size_y * (size_t)z)];
+                v.color = color;
+                v.normal = normal;
+                v.present = true;
+                z++;
+            }
+            off++;                             // trailing duplicate count byte
+        }
+    }
+}
+
 VxlModel load_vxl(const uint8_t* data, size_t len) {
     if (data == nullptr || len < kFileHeader)
         throw std::runtime_error("vxl: file smaller than 802-byte header (" +
@@ -114,9 +170,7 @@ VxlModel load_vxl(const uint8_t* data, size_t len) {
                 " exceeds body (" + std::to_string(body_size) + " bytes)");
 
         sec.voxels.assign(ncols * (size_t)sec.size_z, VxlVoxel{0, 0, false});
-        // Span decode (filling sec.voxels) lands in the next task; the grid
-        // stays all-absent here.
-        (void)body;
+        decode_spans(body, (size_t)body_size, si, span_start_ofs, span_data_ofs, sec);
         m.sections.push_back(std::move(sec));
     }
     return m;

@@ -213,3 +213,111 @@ TEST_CASE("vxl bounds checks reject malformed input") {
         CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Second synthetic .vxl: 1 section, size 1x1x8, ONE column whose data holds
+// two voxel spans separated by skips and ends on a BARE skip (no trailing
+// count/duplicate bytes after it):
+//   skip 1, count 2, (10,1), (11,2), trailing 2,
+//   skip 2, count 1, (12,3),         trailing 1,
+//   skip 2                                          -> z = 8 = size_z, column ends
+// Voxels present: z=1 (10,1), z=2 (11,2), z=5 (12,3). 13 data bytes; body =
+// 4 (starts) + 4 (ends) + 13 = 21; file = 802 + 28 + 21 + 92 = 943 bytes.
+// ---------------------------------------------------------------------------
+static std::vector<uint8_t> make_vxl_multispan() {
+    std::vector<uint8_t> b;
+    auto p8  = [&](uint8_t v){ b.push_back(v); };
+    auto p32 = [&](uint32_t v){ for (int i=0;i<4;i++) p8((uint8_t)((v>>(8*i))&0xff)); };
+    auto pf32 = [&](float f){ uint32_t v; std::memcpy(&v, &f, 4); p32(v); };
+    auto pname = [&](const std::string& s){
+        for (int i=0;i<16;i++) p8(i < (int)s.size() ? (uint8_t)s[i] : 0);
+    };
+    // file header (802 bytes)
+    pname("Voxel Animation");
+    p32(1); p32(1); p32(1); p32(21);            // palette_count, headers, tailers, body_size
+    p8(0x10); p8(0x1f);
+    for (int i=0;i<768;i++) p8(0);              // all-zero palette
+    // section header (28 bytes)
+    pname("MULTI");
+    p32(0); p32(1); p32(0);
+    // body (21 bytes)
+    p32(0);                                      // span start[0] = 0
+    p32(12);                                     // span end[0]   = 12 (last data byte)
+    p8(1); p8(2); p8(10); p8(1); p8(11); p8(2); p8(2);   // span 1: skip,count,2 voxels,trailing
+    p8(2); p8(1); p8(12); p8(3); p8(1);                  // span 2: skip,count,1 voxel,trailing
+    p8(2);                                               // final bare skip -> z = 8
+    // section tailer (92 bytes)
+    p32(0);                                      // span_start_ofs
+    p32(4);                                      // span_end_ofs
+    p32(8);                                      // span_data_ofs
+    pf32(1.0f);                                  // det_scale
+    for (int i=0;i<12;i++) pf32(0.0f);           // transform
+    for (int i=0;i<6;i++) pf32(0.0f);            // min/max bounds
+    p8(1); p8(1); p8(8);                         // size_x, size_y, size_z
+    p8(4);                                        // normals_mode
+    return b;
+}
+
+TEST_CASE("vxl span decode: skip/count walk fills the voxel grid") {
+    auto bytes = make_vxl();
+    VxlModel m = load_vxl(bytes.data(), bytes.size());
+    REQUIRE(m.sections.size() == 1);
+    const VxlSection& s = m.sections[0];
+    REQUIRE(s.voxels.size() == 4u);
+    // documented layout: voxels[x + size_x*(y + size_y*z)]
+    auto at = [&](int x, int y, int z) -> const VxlVoxel& {
+        return s.voxels[(size_t)x + (size_t)s.size_x *
+                        ((size_t)y + (size_t)s.size_y * (size_t)z)];
+    };
+    CHECK(at(0,0,0).present == false);
+    CHECK(at(0,0,1).present == true);      // the one voxel: skip 1 then (7,3)
+    CHECK(at(0,0,1).color == 7);
+    CHECK(at(0,0,1).normal == 3);
+    CHECK(at(1,0,0).present == false);     // empty column (0xFFFFFFFF start)
+    CHECK(at(1,0,1).present == false);
+}
+
+TEST_CASE("vxl span decode: multi-span column with skips, ends on a bare skip") {
+    auto bytes = make_vxl_multispan();
+    REQUIRE(bytes.size() == 943);
+    VxlModel m = load_vxl(bytes.data(), bytes.size());
+    REQUIRE(m.sections.size() == 1);
+    const VxlSection& s = m.sections[0];
+    CHECK(s.name == "MULTI");
+    REQUIRE(s.voxels.size() == 8u);        // 1*1*8; index of (0,0,z) is z
+    int present = 0;
+    for (const auto& v : s.voxels) if (v.present) present++;
+    CHECK(present == 3);
+    CHECK(s.voxels[1].present); CHECK(s.voxels[1].color == 10); CHECK(s.voxels[1].normal == 1);
+    CHECK(s.voxels[2].present); CHECK(s.voxels[2].color == 11); CHECK(s.voxels[2].normal == 2);
+    CHECK(s.voxels[5].present); CHECK(s.voxels[5].color == 12); CHECK(s.voxels[5].normal == 3);
+    CHECK_FALSE(s.voxels[0].present);
+    CHECK_FALSE(s.voxels[3].present);
+    CHECK_FALSE(s.voxels[4].present);
+    CHECK_FALSE(s.voxels[6].present);
+    CHECK_FALSE(s.voxels[7].present);
+}
+
+TEST_CASE("vxl span decode bounds violations throw") {
+    // Voxel count pushes z past size_z: column 0 data of make_vxl() lives at
+    // abs 846..850 = [skip 1, count 1, color 7, normal 3, trailing 1]
+    // (body starts at abs 830 = 802+28; data at body+16). Corrupt the count.
+    {
+        auto b = make_vxl();
+        b[847] = 2;
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // Span start points at the last body byte -> the count read (and beyond)
+    // falls off the body region: span start[0] entry is at abs 830.
+    {
+        auto b = make_vxl();
+        b[830] = 4;
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+    // Span start beyond the body region entirely.
+    {
+        auto b = make_vxl();
+        b[830] = 100;
+        CHECK_THROWS_AS(load_vxl(b.data(), b.size()), std::runtime_error);
+    }
+}
