@@ -96,9 +96,9 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  int view_h);
 
 // Draw a unit's current SHP frame on top of the terrain (call AFTER
-// draw_terrain so the sprite is not painted over). The unit's cell is
-// projected with cell_to_screen(cell_x, cell_y, level, 60, 30, 15) + camera
-// to get the tile's on-screen position; the SHP frame is then anchored so
+// draw_terrain so the sprite is not painted over). The unit's interpolated
+// position is projected with cell_to_screen(fx, fy, level, 60, 30, 15) +
+// camera to get the tile's on-screen position; the SHP frame is then anchored so
 // the sprite's fixed "ground point" -- the CENTER of the SHP's global
 // cx*cy canvas (`shp.width()/2`, `shp.height()/2`), the standard TS/RA2
 // sprite-canvas convention -- lands on the tile's screen-space center

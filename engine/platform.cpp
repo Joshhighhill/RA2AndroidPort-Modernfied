@@ -37,6 +37,23 @@ Platform Platform::create(const char* title, int w, int h) {
         throw std::runtime_error(err);
     }
 
+    // Fix a LOGICAL render resolution (w x h, the size the engine's scene
+    // layout/camera code is written against) decoupled from the window's
+    // actual PHYSICAL pixel size. SDL scales all rendering to fill the real
+    // window/framebuffer and transparently remaps mouse/finger event
+    // coordinates into logical space for us. This matters because:
+    //  - Desktop: SDL_CreateWindow honors (w, h) directly, so physical ==
+    //    logical and this is a no-op in practice; resizing the window still
+    //    scales correctly instead of clipping.
+    //  - Android: SDL_CreateWindow is forced fullscreen at the device's real
+    //    resolution (the requested w/h is ignored), so without a logical
+    //    size the scene would render at 1280x720 in the corner of a larger
+    //    framebuffer and touch coordinates (normalized 0..1, scaled by the
+    //    logical w/h in Platform::poll) would no longer line up with what's
+    //    drawn. Setting the logical size keeps rendering AND input in the
+    //    same fixed coordinate space on both platforms.
+    SDL_RenderSetLogicalSize(renderer, w, h);
+
     Platform p;
     p.p_ = new Impl{window, renderer, w, h};
     return p;
