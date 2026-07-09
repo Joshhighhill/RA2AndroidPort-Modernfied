@@ -277,3 +277,83 @@ TEST_CASE("bag decode: errors") {
                         std::runtime_error);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Guarded real-asset oracle: locate clips through OUR AudioIdx +
+// decode_bag_clip from the REAL install files and compare the PCM
+// byte-for-byte against ground truth decoded by XCC's own ADPCM code
+// (built verbatim, OUTSIDE this repo, into xcc_adpcm_dump -- see
+// scripts/make_audio_oracle.md). Skips cleanly if the install or the oracle
+// set is absent, so asset-free CI still builds and passes.
+//
+// oracle/audio/manifest.txt: one clip per line, whitespace-separated:
+//   <name> <sample_rate> <flags> <chunk_size>
+// oracle/audio/<name>.pcm: raw little-endian int16 interleaved PCM.
+// ---------------------------------------------------------------------------
+static std::vector<uint8_t> slurp_file(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
+}
+
+TEST_CASE("audio bag: real clips match XCC oracle byte-for-byte") {
+    const char* od = std::getenv("RA2_ORACLE_DIR");
+    fs::path base = od ? od : "D:\\ra2-android\\oracle";
+    fs::path manifest = base / "audio" / "manifest.txt";
+    if (!fs::exists(manifest)) { MESSAGE("no audio oracle manifest; skipped"); return; }
+    const char* id = std::getenv("RA2_INSTALL_DIR");
+    fs::path install = id ? id : "D:\\Red Alert 2";
+    fs::path lang = install / "language.mix";
+    if (!fs::exists(lang)) { MESSAGE("language.mix absent; skipped"); return; }
+
+    auto mixbytes = slurp_file(lang);
+    REQUIRE_FALSE(mixbytes.empty());
+    MixFile language = MixFile::open(std::move(mixbytes));
+    MixFile audio = language.open_nested("audio.mix");
+    const MixEntry* ie = audio.find("audio.idx");
+    REQUIRE(ie != nullptr);
+    auto idx_bytes = audio.read(*ie);
+    AudioIdx idx = AudioIdx::load(idx_bytes.data(), idx_bytes.size());
+    CHECK(idx.clips().size() > 0);        // 1153 in this install
+    const MixEntry* be = audio.find("audio.bag");
+    REQUIRE(be != nullptr);
+    auto bag = audio.read(*be);
+
+    std::ifstream mf(manifest);
+    std::string name;
+    uint32_t rate = 0, flags = 0, chunk = 0;
+    int clips_checked = 0;
+    while (mf >> name >> rate >> flags >> chunk) {
+        const BagClip* clip = idx.find(name);
+        REQUIRE(clip != nullptr);
+        CHECK(clip->sample_rate == rate);   // idx fields match the manifest
+        CHECK(clip->flags == flags);
+        CHECK(clip->chunk_size == chunk);
+
+        AudioClipInfo info;
+        auto pcm = decode_bag_clip(bag.data(), bag.size(), *clip, info);
+        CHECK(info.sample_rate == (int)rate);
+
+        // Sample count must match what the format implies.
+        if (clip->flags & 0x8u) {
+            size_t n_chunks =
+                ((size_t)clip->size + clip->chunk_size - 1) / clip->chunk_size;
+            CHECK(pcm.size() == ((size_t)clip->size - 4 * n_chunks) * 2 + n_chunks);
+        } else {
+            CHECK(pcm.size() == (size_t)clip->size / 2);
+        }
+
+        auto want = slurp_file(base / "audio" / (name + ".pcm"));
+        REQUIRE_FALSE(want.empty());
+        REQUIRE(want.size() == pcm.size() * 2);
+        bool equal = true;
+        for (size_t i = 0; i < pcm.size() && equal; i++) {
+            uint16_t u = (uint16_t)pcm[i];
+            if (want[2 * i] != (uint8_t)(u & 0xff) ||
+                want[2 * i + 1] != (uint8_t)(u >> 8))
+                equal = false;
+        }
+        CHECK(equal);                       // byte-for-byte LE int16 parity
+        clips_checked++;
+    }
+    CHECK(clips_checked > 0);   // a manifest exercising zero clips is a failure
+}
