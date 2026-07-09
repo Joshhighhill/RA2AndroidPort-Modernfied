@@ -22,7 +22,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -35,6 +34,7 @@
 #include "texture_cache.hpp"
 #include "world.hpp"
 
+#include "ra2assets/fileio.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
@@ -45,12 +45,6 @@
 using namespace ra2assets;
 
 namespace {
-
-std::vector<uint8_t> slurp(const std::string& p) {
-    std::ifstream f(p, std::ios::binary);
-    if (!f) throw std::runtime_error("cannot open file: " + p);
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
 
 std::string env_install_dir() {
 #ifdef __ANDROID__
@@ -84,11 +78,14 @@ struct Assets {
     ra2engine::Theater theater;
 };
 
-Assets load_assets() {
-    const std::string dir = env_install_dir();
-
+// `ra2` is the already-open ra2.mix (holds the nested theater/config/palette
+// mixes) -- opened ONCE by each mode entry point and shared with
+// load_unit_assets(), instead of each loader slurping the 268 MB file
+// independently (was 79 s cold start; see docs/superpowers/specs/
+// 2026-07-09-foundation-batch-design.md, sub-project 4).
+Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
     // Map: read the temperate reference map INI out of mapsmd03.mix.
-    MixFile maps = MixFile::open(slurp(dir + "mapsmd03.mix"));
+    MixFile maps = MixFile::open(ra2assets::read_file(dir + "mapsmd03.mix"));
     const MixEntry* me = maps.find(0x133a0cb2u);
     if (!me) throw std::runtime_error("map entry 0x133a0cb2 not found in mapsmd03.mix");
     auto map_raw = maps.read(*me);
@@ -100,9 +97,6 @@ Assets load_assets() {
         // (isosnow.mix/snow.ini/.sno, isourb.mix/urban.ini/.urb).
         throw std::runtime_error("unsupported theater (only TEMPERATE wired): " + theater);
     }
-
-    // ra2.mix holds the nested theater/config/palette mixes.
-    MixFile ra2 = MixFile::open(slurp(dir + "ra2.mix"));
 
     // Palette: isotem.pal lives in cache.mix.
     MixFile cache = ra2.open_nested("cache.mix");
@@ -152,7 +146,7 @@ struct UnitRules {
 };
 
 UnitRules resolve_unit_rules(const std::string& dir, const std::string& unit_id) {
-    MixFile top = MixFile::open(slurp(dir + "ra2md.mix"));
+    MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
 
     std::vector<uint8_t> rules_bytes;
     if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
@@ -190,11 +184,13 @@ UnitRules resolve_unit_rules(const std::string& dir, const std::string& unit_id)
 //   palette    : ra2.mix -> cache.mix   -> unittem.pal (temperate UNIT
 //                palette -- distinct from isotem.pal, the TERRAIN palette
 //                used by load_assets()/draw_terrain)
-UnitAssets load_unit_assets(const std::string& dir, const std::string& unit_id) {
+// `ra2` is the already-open ra2.mix shared with load_assets() (opened once by
+// the mode entry points -- previously this function slurped the 268 MB file a
+// second time).
+UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra2,
+                            const std::string& unit_id) {
     const UnitRules ur = resolve_unit_rules(dir, unit_id);
     const std::string image = ur.image;
-
-    MixFile ra2 = MixFile::open(slurp(dir + "ra2.mix"));
 
     MixFile conquer = ra2.open_nested("conquer.mix");
     std::string shp_name = image + ".shp";
@@ -281,8 +277,12 @@ ra2engine::Camera centered_camera(const MapFile& map, int view_w, int view_h) {
 
 int run_screenshot(const std::string& out_path) {
     const int W = 1280, H = 720;
-    Assets a = load_assets();
-    UnitAssets ua = load_unit_assets(env_install_dir(), "E1");
+    // ra2.mix opened ONCE and shared by both loaders; the buffer stays
+    // resident for the run (accepted tradeoff, see the load_assets comment).
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
     ra2engine::World world = build_world(a, ua);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
@@ -314,8 +314,10 @@ int run_screenshot(const std::string& out_path) {
 }
 
 int run_interactive() {
-    Assets a = load_assets();
-    UnitAssets ua = load_unit_assets(env_install_dir(), "E1");
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
     ra2engine::World world = build_world(a, ua);
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
@@ -365,8 +367,10 @@ int run_demo_move(int goal_x, int goal_y) {
     const std::string start_png = scratch + "task12_start.png";
     const std::string end_png = scratch + "task12_end.png";
 
-    Assets a = load_assets();
-    UnitAssets ua = load_unit_assets(env_install_dir(), "E1");
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
     ra2engine::World world = build_world(a, ua);
 
     const int start_x = world.unit().cell_x;
@@ -456,8 +460,10 @@ int run_demo_move(int goal_x, int goal_y) {
 // (b) the unit still ends up at the SECOND target, not stuck partway or
 // stranded. Prints the numbers; exits 0 only if both checks hold.
 int run_demo_retarget(int x1, int y1, int x2, int y2) {
-    Assets a = load_assets();
-    UnitAssets ua = load_unit_assets(env_install_dir(), "E1");
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
     ra2engine::World world = build_world(a, ua);
 
     const int start_x = world.unit().cell_x;
