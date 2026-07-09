@@ -53,6 +53,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_ini.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_rules.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_map.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_theater.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_vxl.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_csf.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_fileio.cpp)
 # iso_project.cpp is pure C++17 (no SDL) and lives under engine/ so it can be
