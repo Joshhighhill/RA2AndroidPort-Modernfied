@@ -76,8 +76,11 @@ with `ra2extract` before planning:
 2. **This install contains NO headered `.aud` files.** The game's audio is:
    * SFX + unit voices: `language.mix → audio.mix → audio.idx` (`GABA`
      magic, version 2, 1,153 entries; 12-byte header + 1,153 × 36-byte
-     entries = 41,520 bytes exactly) + `audio.bag` (headerless
-     **Westwood IMA-ADPCM** clip streams).
+     entries = 41,520 bytes exactly) + `audio.bag` (**Westwood IMA-ADPCM**
+     clip data, chunked: `chunk_size`-framed blocks each led by a small
+     predictor/index header, per XCC's own BAG decode path; entries with
+     flag bit 1 are raw 16-bit PCM instead — every real PCM entry has
+     `chunk_size` 0, every ADPCM entry 512/1024).
    * EVA speech: `audio.mix → <name>.wav` (459 files, e.g. `ceva001.wav`) —
      genuine RIFF WAVE, `fmt` tag 0x0011 (IMA ADPCM), mono 22,050 Hz.
    * Music: `theme.mix → <Sound>.wav` (16 RIFF WAVE files named by
@@ -85,8 +88,12 @@ with `ra2extract` before planning:
    Sub-project 3 therefore decodes **IDX/BAG + IMA-ADPCM** (the codec is the
    same IMA core the spec's `.aud` type-99 description named; only the
    container changed). Headered-AUD support is dropped as asset-less here.
-3. **CSF:** `ra2.csf` sits **loose** in the install root (526 KB, magic
-   `" FSC"`, version 3, 4,562 labels). Known-good vectors decoded from it:
+3. **CSF:** `ra2.csf` sits **loose** in the install root (491,826 bytes,
+   magic `" FSC"`, version 3, 4,562 label records — 4,558 distinct labels
+   after case-insensitive normalization: exactly four duplicate pairs exist,
+   `txt_defense_tab`, `txt_defense_tab_desc`, `txt_structure_tab`,
+   `txt_structure_tab_desc` each appearing in both cases — direct real-file
+   evidence for case-insensitive lookup). Known-good vectors decoded from it:
    `GUI:Cancel` → "Cancel", `Name:HTNK` → "Rhino Heavy Tank", `Name:E1` →
    "GI", `GUI:LoadGame` → "Load Game". Values are UTF-16LE with every byte
    XOR 0xFF (equivalent to `~` per 16-bit unit).
@@ -200,8 +207,13 @@ to PCM only** — no playback.
   "GABA"; u32 version = 2; u32 count}`, then `count` × 36-byte entries
   `{char name[16]; u32 offset; u32 size; u32 sample_rate; u32 flags;
   u32 chunk_size}` (entry layout to be confirmed exactly by Ghidra).
-* `audio.bag`: at each entry's `offset`/`size`, a headerless **Westwood
-  IMA-ADPCM** nibble stream (mono/stereo, 16-bit per `flags`).
+* `audio.bag`: at each entry's `offset`/`size`, the clip payload. ADPCM
+  entries are **chunked**: consecutive `chunk_size`-byte blocks, each led by
+  a 4-byte header `{i16 predictor; u8 step_index; u8 reserved}` that restarts
+  the IMA state (XCC's own BAG decode path; confirmed against the real data —
+  ADPCM entries all have `chunk_size` 512/1024). Entries with flag bit 1 are
+  raw 16-bit LE PCM (`chunk_size` 0). Exact flag-bit semantics
+  (stereo/16-bit/PCM) pinned by the Ghidra task.
 * The EVA/music RIFF WAVs use the same IMA-ADPCM codec inside standard WAV
   `fmt 0x0011` framing — out of scope for this piece (any WAV reader can
   frame them later; the codec is what matters).

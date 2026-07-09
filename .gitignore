@@ -17,6 +17,13 @@
 *.shp
 *.pal
 *.exe
+*.vxl
+*.hva
+*.csf
+*.aud
+*.bag
+*.idx
+*.wav
 # Ghidra project lives outside the repo, but guard anyway
 *.gpr
 *.rep/
