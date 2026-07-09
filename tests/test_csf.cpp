@@ -1,10 +1,14 @@
 #include "doctest.h"
 #include "ra2assets/csf.hpp"
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+namespace fs = std::filesystem;
 using namespace ra2assets;
 
 // ---------------------------------------------------------------------------
@@ -230,4 +234,48 @@ TEST_CASE("csf malformed input throws with context") {
         auto b = make_csf({ {"AA", {{u"X", true, "hi"}}} });
         CHECK_THROWS_AS(CsfStrings::load(b.data(), 50), std::runtime_error);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Guarded real-asset oracle: loads the LOOSE ra2.csf from the install root
+// (no MIX extraction needed) and checks known label->text vectors decoded
+// independently (Python byte-walk of the same file, 2026-07-09). Skips
+// cleanly with a doctest MESSAGE when the install is absent so asset-free
+// CI still builds and passes.
+// ---------------------------------------------------------------------------
+static std::vector<uint8_t> slurp_file(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
+}
+
+TEST_CASE("csf real asset: ra2.csf known vectors") {
+    const char* id = std::getenv("RA2_INSTALL_DIR");
+    fs::path install = id ? id : "D:\\Red Alert 2";
+    fs::path csf = install / "ra2.csf";
+    if (!fs::exists(csf)) { MESSAGE("ra2.csf absent; skipped"); return; }
+
+    auto bytes = slurp_file(csf);
+    REQUIRE_FALSE(bytes.empty());
+    CsfStrings cs = CsfStrings::load(bytes.data(), bytes.size());
+
+    // THIS install's ra2.csf has 4562 label records = 4558 distinct labels
+    // after case-insensitive normalization (4 duplicate pairs, keep-first);
+    // assert loosely so other language/patch variants still pass.
+    CHECK(cs.count() > 4000);
+
+    struct Vec { const char* label; std::u16string want; };
+    const Vec vecs[] = {
+        {"GUI:Cancel",   u"Cancel"},
+        {"Name:HTNK",    u"Rhino Heavy Tank"},
+        {"Name:E1",      u"GI"},
+        {"GUI:LoadGame", u"Load Game"},
+    };
+    int checked = 0;
+    for (const auto& v : vecs) {
+        const std::u16string* got = cs.find(v.label);
+        REQUIRE(got != nullptr);
+        CHECK(*got == v.want);
+        checked++;
+    }
+    CHECK(checked == 4);   // guards against a silent skip when assets exist
 }
