@@ -1,5 +1,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include "ra2assets/fileio.hpp"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
 #include "ra2assets/shp.hpp"
@@ -9,11 +10,6 @@
 #include <stdexcept>
 #include <vector>
 using namespace ra2assets;
-
-static std::vector<uint8_t> slurp(const std::string& p){
-    std::ifstream f(p,std::ios::binary);
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)),{});
-}
 
 // Descend a nested-mix chain: "cache.mix" or "a.mix/b.mix".
 static MixFile descend(MixFile m, std::string path){
@@ -47,7 +43,7 @@ int main(int argc, char** argv){
         return 2;
     }
     try {
-        auto bytes=slurp(argv[1]);
+        auto bytes=read_file(argv[1]);
         if (bytes.empty()){ std::cerr<<"cannot read "<<argv[1]<<"\n"; return 1; }
         MixFile m = MixFile::open(std::move(bytes));
         if (std::string(argv[2])=="--list"){

@@ -44,6 +44,11 @@ $env:RA2_INSTALL_DIR = "D:\Red Alert 2"
 & .\build\ra2engine.exe
 ```
 
+Startup: MIX files are block-read (`ra2assets::read_file`) and `ra2.mix` is
+opened once per run; cold start dropped from ~79 s to ~0.87 s on the host
+(measured via `Measure-Command { ra2engine --screenshot }`). The same sources
+build into the Android APK via `cmake/ra2_sources.cmake` — no jni changes.
+
 Interactive controls: tap/click the unit to select it (green marker); click a
 destination to path-find and walk there; drag to pan the camera; arrow keys
 also pan; Esc/close quits.
@@ -212,7 +217,7 @@ run time from the app's own external files dir.
    **Diagnosing failures:** the engine logs to Android logcat under the
    `SDL/APP` tag. On startup it prints `[assets] android asset dir = <path>`,
    and any fatal error is logged as `fatal: <reason>` (e.g.
-   `cannot open file: .../mapsmd03.mix`) before it exits — so
+   `cannot open file: .../ra2.mix`) before it exits — so
    `adb logcat -s SDL/APP:V` tells you exactly what went wrong instead of the
    app vanishing silently.
 
