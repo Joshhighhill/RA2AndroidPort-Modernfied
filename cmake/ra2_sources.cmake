@@ -1,0 +1,39 @@
+# Single source of truth for the ra2 source-file lists.
+#
+# Included by BOTH builds so they cannot drift:
+#   * the desktop build  (top-level CMakeLists.txt)
+#   * the Android build  (android/app/jni/CMakeLists.txt, packaged into libmain.so)
+#
+# RA2_ROOT is derived from this file's own location (cmake/ -> repo root), so it
+# resolves correctly no matter which CMakeLists includes it.
+get_filename_component(RA2_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+
+# ra2assets library (pure C++17, no SDL/OS deps).
+set(RA2_LIB_SOURCES
+    ${RA2_ROOT}/src/_placeholder.cpp
+    ${RA2_ROOT}/src/blowfish.cpp
+    ${RA2_ROOT}/src/mix_keyderiv.cpp
+    ${RA2_ROOT}/src/mix.cpp
+    ${RA2_ROOT}/src/pal.cpp
+    ${RA2_ROOT}/src/shp.cpp
+    ${RA2_ROOT}/src/lcw.cpp
+    ${RA2_ROOT}/src/lzo1x.cpp
+    ${RA2_ROOT}/src/mappack.cpp
+    ${RA2_ROOT}/src/ini.cpp
+    ${RA2_ROOT}/src/rules.cpp
+    ${RA2_ROOT}/src/map.cpp
+    ${RA2_ROOT}/src/theater.cpp
+)
+
+# ra2engine app/library sources (uses SDL). Same set feeds the desktop
+# `ra2engine` executable and the Android `libmain.so`.
+set(RA2_ENGINE_SOURCES
+    ${RA2_ROOT}/engine/main.cpp
+    ${RA2_ROOT}/engine/platform.cpp
+    ${RA2_ROOT}/engine/texture_cache.cpp
+    ${RA2_ROOT}/engine/iso_project.cpp
+    ${RA2_ROOT}/engine/iso_renderer.cpp
+    ${RA2_ROOT}/engine/world.cpp
+    ${RA2_ROOT}/engine/pathfind.cpp
+    ${RA2_ROOT}/engine/input.cpp
+)

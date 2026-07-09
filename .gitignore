@@ -1,6 +1,15 @@
 # Build output
 /build/
 /build-*/
+# Android build outputs + machine-specific SDK/NDK paths (never commit)
+/android/build/
+/android/app/build/
+/android/.gradle/
+/android/.cxx/
+/android/app/.cxx/
+/android/local.properties
+# Android SDK (installed outside the repo; guard against accidental copies)
+/android-sdk/
 # Oracle golden files derived from copyrighted assets — never commit
 /oracle/
 # Any accidental asset copies

@@ -1,0 +1,94 @@
+def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
+def buildAsApplication = !buildAsLibrary
+if (buildAsApplication) {
+    apply plugin: 'com.android.application'
+}
+else {
+    apply plugin: 'com.android.library'
+}
+
+// The NDK location is machine-specific, so it is kept in local.properties
+// (gitignored) rather than committed. We use a custom key `ra2.ndkPath` (NOT
+// `ndk.dir`, which AGP reads on its own -> a "[CXX1100] both set" conflict)
+// and feed it to android.ndkPath below. If absent, AGP falls back to an
+// SDK-managed NDK.
+def ndkDirProp = null
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    def props = new Properties()
+    localPropsFile.withInputStream { props.load(it) }
+    ndkDirProp = props.getProperty('ra2.ndkPath')
+}
+
+android {
+    if (buildAsApplication) {
+        namespace "org.ra2.engine"
+    }
+    compileSdk 34
+    // Must match the NDK that ndkPath points at (r27c = 27.2.12479018),
+    // otherwise AGP errors [CXX1100] on the version mismatch vs its default.
+    ndkVersion "27.2.12479018"
+    if (ndkDirProp != null) {
+        ndkPath ndkDirProp
+    }
+    defaultConfig {
+        if (buildAsApplication) {
+            applicationId "org.ra2.engine"
+        }
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+        // arm64-v8a ONLY (Task 14 requirement). abiFilters here restricts the
+        // native build; the ndk block below restricts what gets packaged.
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_shared"
+                abiFilters 'arm64-v8a'
+            }
+        }
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    applicationVariants.all { variant ->
+        tasks["merge${variant.name.capitalize()}Assets"]
+            .dependsOn("externalNativeBuild${variant.name.capitalize()}")
+    }
+    if (!project.hasProperty('EXCLUDE_NATIVE_LIBS')) {
+        sourceSets.main {
+            jniLibs.srcDir 'libs'
+        }
+        externalNativeBuild {
+            cmake {
+                path 'jni/CMakeLists.txt'
+                version '3.22.1'
+            }
+        }
+    }
+    lint {
+        abortOnError false
+    }
+
+    if (buildAsLibrary) {
+        libraryVariants.all { variant ->
+            variant.outputs.each { output ->
+                def outputFile = output.outputFile
+                if (outputFile != null && outputFile.name.endsWith(".aar")) {
+                    def fileName = "org.libsdl.app.aar";
+                    output.outputFile = new File(outputFile.parent, fileName);
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+}

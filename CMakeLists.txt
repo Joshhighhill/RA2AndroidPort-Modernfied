@@ -5,24 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Library + engine source lists live in cmake/ra2_sources.cmake, a single
+# source of truth shared with the Android jni build (android/app/jni) so the
+# two builds cannot drift. It defines RA2_LIB_SOURCES and RA2_ENGINE_SOURCES.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ra2_sources.cmake)
+
 # Library sources, shared between the static `ra2assets` target and the
 # optional `ra2assets_so` shared target below so both actually contain the
 # real library code (not just the placeholder).
-set(RA2_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/_placeholder.cpp
-    src/blowfish.cpp
-    src/mix_keyderiv.cpp
-    src/mix.cpp
-    src/pal.cpp
-    src/shp.cpp
-    src/lcw.cpp
-    src/lzo1x.cpp
-    src/mappack.cpp
-    src/ini.cpp
-    src/rules.cpp
-    src/map.cpp
-    src/theater.cpp
-)
+set(RA2_SOURCES ${RA2_LIB_SOURCES})
 
 add_library(ra2assets STATIC)
 target_include_directories(ra2assets PUBLIC include)
@@ -98,10 +89,9 @@ if (RA2_BUILD_ENGINE)
   set(SDL_TEST OFF CACHE BOOL "" FORCE)
   set(SDL_SHARED ON CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(SDL2)
-  add_executable(ra2engine
-    engine/main.cpp engine/platform.cpp engine/texture_cache.cpp
-    engine/iso_project.cpp engine/iso_renderer.cpp engine/world.cpp
-    engine/pathfind.cpp engine/input.cpp)
+  # Engine source list comes from cmake/ra2_sources.cmake (shared with the
+  # Android jni build so the two cannot drift).
+  add_executable(ra2engine ${RA2_ENGINE_SOURCES})
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
   target_include_directories(ra2engine PRIVATE include engine third_party)

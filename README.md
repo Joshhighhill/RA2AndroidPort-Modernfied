@@ -103,6 +103,97 @@ print('machine=0x%x' % machine, 'AArch64' if machine == 0xB7 else 'NOT-ARM64')
 
 Expected output: `machine=0xb7 AArch64`.
 
+## Android app (APK — arm64-v8a)
+
+`android/` is a self-contained SDL2 Android project that packages the whole
+engine (all of `engine/*.cpp` + the `ra2assets` library from `src/`) into an
+installable **arm64-v8a** APK. `SDLActivity` loads `libSDL2.so` + `libmain.so`
+and calls `SDL_main` (our `engine/main.cpp`), which on Android launches
+straight into the interactive scene — tap to select the unit, tap to move
+(A\* + walk animation), drag to pan. No menus.
+
+The native `.so` list and the source lists come from the same
+`cmake/ra2_sources.cmake` the desktop build uses, so the two cannot drift.
+Game assets are **never** bundled (copyright); they are read at run time from
+the app's external files dir (see "Assets on device" below).
+
+### Prerequisites
+
+- **Android SDK** (command-line tools) with `platforms;android-34`,
+  `build-tools;34.0.0`, `platform-tools`, `cmake;3.22.1`. Install to e.g.
+  `D:\android-sdk` and set `ANDROID_HOME`/`ANDROID_SDK_ROOT` to it.
+- **NDK r27c** (e.g. `D:\android-ndk-r27c`).
+- **JDK 17+** for Gradle (this project uses **JDK 21**). Gradle 8.9 + Android
+  Gradle Plugin 8.5.2 are pinned; the bundled `gradlew` wrapper auto-downloads
+  Gradle, so no system Gradle is needed.
+- The desktop CMake configure must have run once so SDL2 (release-2.30.9) is
+  present at `build/_deps/sdl2-src` (the jni build reuses it; override with
+  `-DSDL2_SRC_DIR=` if it lives elsewhere).
+
+Create `android/local.properties` (gitignored — machine-specific) pointing at
+your SDK + NDK:
+
+```properties
+sdk.dir=D:/android-sdk
+ndk.dir=D:/android-ndk-r27c
+```
+
+### Build the APK
+
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
+$env:ANDROID_HOME = "D:\android-sdk"
+Set-Location D:\ra2-android\android
+.\gradlew.bat assembleDebug
+```
+
+Output: `android/app/build/outputs/apk/debug/app-debug.apk` (arm64-v8a only).
+Verify it contains AArch64 native libs (no device needed):
+
+```powershell
+python - <<'PY'
+import zipfile, struct
+apk = r"android/app/build/outputs/apk/debug/app-debug.apk"
+with zipfile.ZipFile(apk) as z:
+    for name in ("lib/arm64-v8a/libmain.so", "lib/arm64-v8a/libSDL2.so"):
+        m = z.read(name)[:20]
+        machine = struct.unpack('<H', m[18:20])[0]
+        print(name, "ELF" if m[:4] == b'\x7fELF' else "NOT-ELF",
+              "machine=0x%x" % machine, "AArch64" if machine == 0xB7 else "NOT-ARM64")
+PY
+```
+
+Expected: both `machine=0xb7 AArch64`.
+
+### On device (deferred — needs a connected phone)
+
+No physical device was attached when this was built, so install/run is
+deferred. With an arm64 Android phone connected (USB debugging on):
+
+1. **Install** the APK:
+   ```powershell
+   adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+   ```
+2. **Push your own game files** to the app's external dir (the app package is
+   `org.ra2.engine`; assets are NOT in the APK). The engine reads the mix chain
+   from `.../files/ra2/`, so at minimum push `ra2.mix`, `ra2md.mix`, and
+   `mapsmd03.mix` (the loader also opens the theater/config/palette mixes nested
+   inside `ra2.mix`, so push the full set you own):
+   ```powershell
+   adb shell mkdir -p /sdcard/Android/data/org.ra2.engine/files/ra2
+   adb push "D:\Red Alert 2\ra2.mix"      /sdcard/Android/data/org.ra2.engine/files/ra2/
+   adb push "D:\Red Alert 2\ra2md.mix"    /sdcard/Android/data/org.ra2.engine/files/ra2/
+   adb push "D:\Red Alert 2\mapsmd03.mix" /sdcard/Android/data/org.ra2.engine/files/ra2/
+   ```
+   (The exact external path is what `SDL_AndroidGetExternalStoragePath()`
+   returns, i.e. `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2`.)
+3. **Launch** the app (`RA2 Engine`) from the launcher, or:
+   ```powershell
+   adb shell am start -n org.ra2.engine/.RA2Activity
+   ```
+   It opens into the real temperate map; tap-select and tap-move work with
+   touch. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
+
 ## Preflight Check
 
 Verify the game install and binary before RE/oracle work:

@@ -53,10 +53,23 @@ std::vector<uint8_t> slurp(const std::string& p) {
 }
 
 std::string env_install_dir() {
+#ifdef __ANDROID__
+    // Android has no env vars / CLI. The user pushes the game files to the
+    // app's external files dir (see README "Android": adb push ... ra2.mix,
+    // mapsmd03.mix, ...). SDL_AndroidGetExternalStoragePath() resolves that to
+    // /storage/emulated/0/Android/data/org.ra2.engine/files (no runtime
+    // permission needed for the app's own dir); we read the mix chain from its
+    // `ra2/` subfolder. Assets are NOT bundled in the APK (copyright).
+    const char* ext = SDL_AndroidGetExternalStoragePath();
+    std::string dir = ext ? ext : "/sdcard/Android/data/org.ra2.engine/files";
+    dir += "/ra2/";
+    return dir;
+#else
     const char* e = std::getenv("RA2_INSTALL_DIR");
     std::string dir = e ? e : "D:\\Red Alert 2";
     if (!dir.empty() && dir.back() != '/' && dir.back() != '\\') dir += '\\';
     return dir;
+#endif
 }
 
 // Everything the renderer needs, loaded once from the mix chain.
@@ -506,6 +519,15 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
 
 int main(int argc, char** argv) {
     try {
+#ifdef __ANDROID__
+        // Android launches straight into the interactive engine: there is no
+        // CLI, so the desktop-only verification modes (--screenshot/--demo-*)
+        // are unreachable here. Touch drives select/move (see platform.cpp
+        // SDL_FINGER* handling + input.cpp).
+        (void)argc;
+        (void)argv;
+        return run_interactive();
+#else
         std::string screenshot;
         bool demo_move = false;
         int demo_x = 0, demo_y = 0;
@@ -532,6 +554,7 @@ int main(int argc, char** argv) {
         if (demo_move) return run_demo_move(demo_x, demo_y);
         if (!screenshot.empty()) return run_screenshot(screenshot);
         return run_interactive();
+#endif
     } catch (const std::exception& ex) {
         std::cerr << "fatal: " << ex.what() << "\n";
         return 1;
