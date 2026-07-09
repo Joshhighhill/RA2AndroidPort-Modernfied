@@ -6,7 +6,9 @@ A portable C++17 library that decodes Red Alert 2 / Yuri's Revenge game data
 rules, `.map` cell grids, TMP theater tiles, CSF string tables, BAG/IDX audio
 decoded from Westwood IMA-ADPCM to PCM), plus `ra2engine` — an SDL2
 front-end that renders a real stock map with real theater terrain and lets you
-select and move a unit (A\* pathfinding + walk animation). The library stays
+select and command a squad of units (RA2-classic controls: left-click / box /
+Shift to select, right-click to group-move) with A\* pathfinding,
+grid-occupancy collision avoidance, and walk animation. The library stays
 pure and dependency-free; only the engine links SDL2.
 
 ## Building
@@ -51,14 +53,20 @@ opened once per run; cold start dropped from ~79 s to ~0.87 s on the host
 (measured via `Measure-Command { ra2engine --screenshot }`). The same sources
 build into the Android APK via `cmake/ra2_sources.cmake` — no jni changes.
 
-Interactive controls: tap/click the unit to select it (green marker); click a
-destination to path-find and walk there; drag to pan the camera; arrow keys
-also pan; Esc/close quits.
+Interactive controls: left-click a unit to select it (green marker); left-drag
+a box to select many; Shift+left-click to add/remove one; double-click a unit
+to select all of its type on screen; right-click to move the selection (units
+fan out to distinct cells and route around each other); pan with the arrow
+keys or by pushing the pointer to a screen edge; Esc/close quits.
 
 Headless/verification CLI modes (render one or more frames and exit):
 - `ra2engine.exe --screenshot <out.png>` — render one frame of the map+unit to a PNG.
 - `ra2engine.exe --demo-move <cellX> <cellY>` — select the unit, path to the cell, run the sim to arrival, write `task12_start.png`/`task12_end.png` to the scratchpad.
 - `ra2engine.exe --demo-retarget <x1> <y1> <x2> <y2>` — order a move, retarget mid-walk, confirm arrival at the second target.
+- `ra2engine.exe --demo-group <n> <cellX> <cellY>` — spawn `n` GI units, select
+  all, group-move to the cell, run to arrival; writes `demo_group_start.png`/
+  `demo_group_end.png` to the scratchpad and exits non-zero if any two units
+  ever shared a cell.
 
 ## Android (arm64-v8a) cross-compile
 
