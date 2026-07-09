@@ -100,3 +100,134 @@ TEST_CASE("csf synthetic: non-ASCII UTF-16 units survive the XOR transform") {
     CHECK(*got == text);
     CHECK(got->size() == 6);
 }
+
+TEST_CASE("csf synthetic: WRTS value skips extra ASCII and stays in sync") {
+    // A WRTS first value carries trailing ASCII data; the reader must skip
+    // it and land exactly on the next label record.
+    auto bytes = make_csf({
+        {"GUI:Save", {{u"Save", true, "save_extra"}}},
+        {"GUI:Load", {{u"Load"}}},
+    });
+    CsfStrings cs = CsfStrings::load(bytes.data(), bytes.size());
+    CHECK(cs.count() == 2);
+    const std::u16string* save = cs.find("GUI:Save");
+    REQUIRE(save != nullptr);
+    CHECK(*save == u"Save");
+    const std::u16string* load = cs.find("GUI:Load");
+    REQUIRE(load != nullptr);                  // the walk stayed in sync
+    CHECK(*load == u"Load");
+}
+
+TEST_CASE("csf synthetic: multi-value label stores first value, walks the rest") {
+    auto bytes = make_csf({
+        {"Multi:Val",   {{u"first"}, {u"second"}}},
+        {"After:Multi", {{u"still here"}}},
+    });
+    CsfStrings cs = CsfStrings::load(bytes.data(), bytes.size());
+    CHECK(cs.count() == 2);
+    const std::u16string* v = cs.find("Multi:Val");
+    REQUIRE(v != nullptr);
+    CHECK(*v == u"first");                     // value 0 wins
+    const std::u16string* after = cs.find("After:Multi");
+    REQUIRE(after != nullptr);                 // second value was walked over
+    CHECK(*after == u"still here");
+}
+
+TEST_CASE("csf synthetic: zero-value label is walked but not stored") {
+    auto bytes = make_csf({
+        {"EMPTY:NoValues", {}},                // num_values == 0
+        {"GUI:Ok", {{u"OK"}}},
+    });
+    CsfStrings cs = CsfStrings::load(bytes.data(), bytes.size());
+    CHECK(cs.count() == 1);                    // zero-value label excluded
+    CHECK(cs.find("EMPTY:NoValues") == nullptr);
+    const std::u16string* ok = cs.find("GUI:Ok");
+    REQUIRE(ok != nullptr);
+    CHECK(*ok == u"OK");
+}
+
+TEST_CASE("csf synthetic: empty-TEXT value is stored (distinct from zero values)") {
+    auto bytes = make_csf({ {"Blank:Text", {{u""}}} });   // one value, val_len 0
+    CsfStrings cs = CsfStrings::load(bytes.data(), bytes.size());
+    CHECK(cs.count() == 1);
+    const std::u16string* blank = cs.find("Blank:Text");
+    REQUIRE(blank != nullptr);                 // present ...
+    CHECK(blank->empty());                     // ... and empty
+}
+
+TEST_CASE("csf malformed input throws with context") {
+    // Base image for the corruption cases: one label "AA" with one " RTS"
+    // value u"X". Offsets: file header 0..23, label magic @24, num_values
+    // @28, label_len @32, name "AA" @36..37, value magic @38, val_len @42,
+    // payload @46..47. Total 48 bytes.
+    auto base = make_csf({ {"AA", {{u"X"}}} });
+    REQUIRE(base.size() == 48);
+
+    // Too small for the 24-byte file header.
+    CHECK_THROWS_AS(CsfStrings::load(base.data(), 3), std::runtime_error);
+
+    // Wrong file magic.
+    {
+        auto b = base;
+        b[0] = 0x21;                           // " FSC" -> "!FSC"
+        CHECK_THROWS_AS(CsfStrings::load(b.data(), b.size()), std::runtime_error);
+    }
+    // Wrong label magic -> the message reports the file offset (24).
+    {
+        auto b = base;
+        b[24] = 0x00;
+        try {
+            CsfStrings::load(b.data(), b.size());
+            FAIL("expected std::runtime_error");
+        } catch (const std::runtime_error& e) {
+            CHECK(std::string(e.what()).find("offset 24") != std::string::npos);
+        }
+    }
+    // Label name length runs past EOF.
+    {
+        auto b = base;
+        b[32]=0xFF; b[33]=0xFF; b[34]=0x00; b[35]=0x00;   // label_len = 65535
+        CHECK_THROWS_AS(CsfStrings::load(b.data(), b.size()), std::runtime_error);
+    }
+    // Wrong value magic.
+    {
+        auto b = base;
+        b[38] = 0x00;                          // " RTS" -> "\0RTS"
+        CHECK_THROWS_AS(CsfStrings::load(b.data(), b.size()), std::runtime_error);
+    }
+    // Value payload length runs past EOF.
+    {
+        auto b = base;
+        b[42]=0xFF; b[43]=0xFF; b[44]=0x00; b[45]=0x00;   // val_len = 65535 units
+        CHECK_THROWS_AS(CsfStrings::load(b.data(), b.size()), std::runtime_error);
+    }
+    // Truncated mid value header.
+    CHECK_THROWS_AS(CsfStrings::load(base.data(), 40), std::runtime_error);
+
+    // num_labels claims more records than the file holds.
+    {
+        auto b = base;
+        b[8] = 2;                              // num_labels 1 -> 2
+        CHECK_THROWS_AS(CsfStrings::load(b.data(), b.size()), std::runtime_error);
+    }
+
+    // WRTS extra_len runs past EOF -> the error mentions the extra data.
+    // Layout: label "AA" @24 (12B hdr + 2B name), "WRTS" @38, val_len @42,
+    // payload @46..47, extra_len @48, extra "hi" @52..53. Total 54 bytes.
+    {
+        auto b = make_csf({ {"AA", {{u"X", true, "hi"}}} });
+        REQUIRE(b.size() == 54);
+        b[48]=0xFF; b[49]=0xFF; b[50]=0x00; b[51]=0x00;   // extra_len = 65535
+        try {
+            CsfStrings::load(b.data(), b.size());
+            FAIL("expected std::runtime_error");
+        } catch (const std::runtime_error& e) {
+            CHECK(std::string(e.what()).find("extra") != std::string::npos);
+        }
+    }
+    // WRTS truncated before the extra_len field itself.
+    {
+        auto b = make_csf({ {"AA", {{u"X", true, "hi"}}} });
+        CHECK_THROWS_AS(CsfStrings::load(b.data(), 50), std::runtime_error);
+    }
+}

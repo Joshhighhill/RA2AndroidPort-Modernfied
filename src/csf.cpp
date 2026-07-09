@@ -75,10 +75,14 @@ CsfStrings CsfStrings::load(const uint8_t* data, size_t len) {
                 throw std::runtime_error("csf: value record header for label \"" +
                     label + "\" at " + std::to_string(pos) + " exceeds file");
             const uint8_t* m = data + pos;
-            if (!(m[0]==0x20 && m[1]==0x52 && m[2]==0x54 && m[3]==0x53))   // " RTS"
+            bool wide = false;
+            if (m[0]==0x57 && m[1]==0x52 && m[2]==0x54 && m[3]==0x53) {        // "WRTS"
+                wide = true;
+            } else if (!(m[0]==0x20 && m[1]==0x52 && m[2]==0x54 && m[3]==0x53)) { // " RTS"
                 throw std::runtime_error("csf: bad value magic at offset " +
                     std::to_string(pos) + " (label \"" + label + "\", value " +
                     std::to_string(vi) + ")");
+            }
             const uint32_t val_len = r32(data + pos + 4);
             pos += kValueHeader;
             const size_t val_bytes = (size_t)val_len * 2;
@@ -98,6 +102,24 @@ CsfStrings CsfStrings::load(const uint8_t* data, size_t len) {
                 cs.table_.emplace(upper_ascii(label), std::move(text));
             }
             pos += val_bytes;
+
+            if (wide) {
+                // "WRTS" trailing extra ASCII payload: skipped (only the
+                // UTF-16 text is in scope), but bounds-walked to stay in
+                // sync with the next record.
+                if (4 > len - pos)
+                    throw std::runtime_error("csf: WRTS extra length at " +
+                        std::to_string(pos) + " exceeds file (label \"" +
+                        label + "\")");
+                const uint32_t extra_len = r32(data + pos);
+                pos += 4;
+                if (extra_len > len - pos)
+                    throw std::runtime_error("csf: WRTS extra data (" +
+                        std::to_string(extra_len) + " bytes at " +
+                        std::to_string(pos) + ") exceeds file (label \"" +
+                        label + "\")");
+                pos += extra_len;
+            }
         }
     }
     return cs;
