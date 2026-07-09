@@ -42,4 +42,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/pathfind.cpp
     ${RA2_ROOT}/engine/input.cpp
     ${RA2_ROOT}/engine/occupancy.cpp
+    ${RA2_ROOT}/engine/group_move.cpp
 )

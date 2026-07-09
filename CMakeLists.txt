@@ -80,6 +80,9 @@ target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp)
 # multi-unit movement/collision logic; compiled into both this test binary and
 # ra2engine from one source of truth (same pattern as pathfind.cpp/world.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_occupancy.cpp engine/occupancy.cpp)
+# group_move.cpp is pure C++17 (no SDL): formation target assignment for a
+# group move order. Compiled into both binaries from one source of truth.
+target_sources(ra2assets_tests PRIVATE tests/test_group_move.cpp engine/group_move.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
