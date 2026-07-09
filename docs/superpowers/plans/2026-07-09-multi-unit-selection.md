@@ -29,7 +29,7 @@
 - Modify: `CMakeLists.txt` (add test + source), `cmake/ra2_sources.cmake` (add engine source)
 
 **Interfaces:**
-- Produces: `class ra2engine::Occupancy` with `kEmpty = -1`; ctor `Occupancy(int width, int height)`; `int width()`, `int height()`; `int at(int x,int y) const` (owner unit index or `kEmpty`, `kEmpty` off-grid); `bool is_free(int x,int y) const`; `void set(int x,int y,int unit)`; `void clear(int x,int y)`; `void release(int x,int y,int unit)` (clears only if currently owned by `unit`); `bool can_enter(int x,int y,int unit) const` (in-grid AND (free OR owned by `unit`)).
+- Produces: `class ra2engine::Occupancy` with `kEmpty = -1`; ctor `Occupancy(int width, int height)`; `int width()`, `int height()`; `int at(int x,int y) const` (owner unit index or `kEmpty`, `kEmpty` off-grid); `bool is_free(int x,int y) const`; `void set(int x,int y,int unit)`; `void clear(int x,int y)`; `void release(int x,int y,int unit)` (clears only if currently owned by `unit`); `void release_all_of(int unit, int keep_x, int keep_y)` (clears every cell owned by `unit` except the kept one — stale-reservation cleanup on re-order); `bool can_enter(int x,int y,int unit) const` (in-grid AND (free OR owned by `unit`)).
 
 - [ ] **Step 1: Write the failing test** — create `tests/test_occupancy.cpp`:
 
@@ -83,6 +83,17 @@ TEST_CASE("Occupancy: release only clears the matching owner; clear is unconditi
     occ.set(99, 99, 1);
     occ.clear(99, 99);
     occ.release(99, 99, 1);
+}
+
+TEST_CASE("Occupancy: release_all_of clears every cell of a unit except the kept one") {
+    Occupancy occ(4, 3);
+    occ.set(1, 1, 5);   // current cell
+    occ.set(2, 1, 5);   // stale next-cell reservation
+    occ.set(3, 2, 6);   // another unit
+    occ.release_all_of(5, 1, 1);
+    CHECK(occ.at(1, 1) == 5);                  // kept
+    CHECK(occ.at(2, 1) == Occupancy::kEmpty);  // stale reservation cleared
+    CHECK(occ.at(3, 2) == 6);                  // other units untouched
 }
 ```
 
@@ -152,6 +163,16 @@ public:
     void release(int x, int y, int unit) {
         if (in(x, y) && owner_[idx(x, y)] == unit) owner_[idx(x, y)] = kEmpty;
     }
+    // Clear EVERY cell owned by `unit` except (keep_x, keep_y). Used when a
+    // unit is re-ordered mid-walk: it may hold a reservation on a next cell it
+    // will now never enter, which would otherwise stay owned forever and block
+    // other units. O(w*h) scan -- called only on user orders, not per frame.
+    void release_all_of(int unit, int keep_x, int keep_y) {
+        for (int y = 0; y < h_; ++y)
+            for (int x = 0; x < w_; ++x)
+                if (owner_[idx(x, y)] == unit && !(x == keep_x && y == keep_y))
+                    owner_[idx(x, y)] = kEmpty;
+    }
 
 private:
     bool in(int x, int y) const { return x >= 0 && y >= 0 && x < w_ && y < h_; }
@@ -179,7 +200,7 @@ namespace ra2engine {}  // namespace ra2engine
 - [ ] **Step 5: Run the tests to verify they pass.**
 
 Run: `cmake --build D:\ra2-android\build --target ra2assets_tests` then `& D:\ra2-android\build\ra2assets_tests.exe -tc="Occupancy*"`
-Expected: PASS — `test cases: 3 | 3 passed`.
+Expected: PASS — `test cases: 4 | 4 passed`.
 
 - [ ] **Step 6: Commit.**
 
@@ -465,7 +486,7 @@ git -C D:\ra2-android commit -m "engine: add pure formation assignment (nearest_
 **Interfaces:**
 - Consumes: `Occupancy` (Task 1), `find_path` (`engine/pathfind.hpp`), `Unit`/`Cellxy` (`engine/world.hpp`).
 - Produces: field `double Unit::wait_time = 0.0;` and free function
-  `void step_units(std::vector<Unit>& units, const std::vector<uint8_t>& passable, int w, int h, Occupancy& occ, double dt, double move_cps)` — advances every moving unit toward its `path` at `move_cps` cells/sec, reserving the next cell before entering it; a unit blocked by another unit's cell waits `kBlockedWait` seconds then re-paths around occupied cells, and stops cleanly if no route exists. Idle units re-assert ownership of their current cell and stand. Does **not** touch `Unit::level` (rendering height is patched by `World::step` from the map). Stepping order is ascending index (deterministic).
+  `void step_units(std::vector<Unit>& units, const std::vector<uint8_t>& passable, int w, int h, Occupancy& occ, double dt, double move_cps)` — advances every moving unit toward its `path` at `move_cps` cells/sec, reserving the next cell before entering it. A blocked unit waits (resuming the instant the cell frees), attempts a re-path around occupied cells every `kBlockedWait` (0.30 s), and abandons its order only after `kGiveUpAfter` (2.0 s) of continuous block. Idle units re-assert ownership of their current cell and stand. Does **not** touch `Unit::level` (rendering height is patched by `World::step` from the map). Stepping order is ascending index (deterministic).
 
 - [ ] **Step 1: Write the failing test** — create `tests/test_movement.cpp`:
 
@@ -654,8 +675,10 @@ After the `struct Unit { ... };` block (before `pick_start_cell`), add the decla
 ```cpp
 // Advance every moving unit toward its `path` by `dt` seconds at `move_cps`
 // cells/sec, using `occ` to enforce one-unit-per-cell: a unit reserves the next
-// path cell before entering it; if that cell is held by another unit it waits,
-// then re-paths around occupied cells, and stops cleanly if no route remains.
+// path cell before entering it. While that cell is held by another unit the
+// unit waits (resuming the instant the cell frees) and attempts a re-path
+// around occupied cells every kBlockedWait seconds; it abandons the order only
+// after kGiveUpAfter seconds of continuous block (boxed-in / sealed corridor).
 // Idle units re-assert ownership of their current cell and stand. Units are
 // processed in ascending index order (deterministic). Does NOT modify
 // Unit::level -- rendering height is patched separately from the map by
@@ -669,11 +692,15 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 Add `#include "pathfind.hpp"` if not already present (it is, transitively via world.hpp, but include explicitly). At the top of the `ra2engine` namespace, near the existing `kStandFrame`/`kWalkFirst` constants, add:
 
 ```cpp
-// Seconds a unit stays blocked (its next cell held by another unit) before it
-// re-paths around the obstruction. Short enough to feel responsive, long
-// enough that a unit briefly waiting for one ahead to step off doesn't thrash
-// its path every frame.
+// Seconds between re-path attempts while blocked (next cell held by another
+// unit). Short enough to feel responsive, long enough that a unit briefly
+// waiting for one ahead to step off doesn't thrash A* every frame.
 static constexpr double kBlockedWait = 0.30;
+// Seconds of CONTINUOUS block after which a unit abandons its order (boxed-in
+// or sealed corridor). Transient jams (a funnel cell mid-crossing) clear well
+// inside this: the per-frame can_enter check resumes the walk the instant the
+// blocker steps off, and failed re-paths retry every kBlockedWait until then.
+static constexpr double kGiveUpAfter = 2.0;
 ```
 
 Then add the helper and the function (place after `World::step`'s current definition, or anywhere in the namespace):
@@ -762,9 +789,25 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         }
 
         if (blocked) {
+            const double prev_wait = u.wait_time;
             u.wait_time += dt;
             u.frame = kStandFrame;  // stand while waiting (reads as "holding")
-            if (u.wait_time >= kBlockedWait) {
+            if (u.wait_time >= kGiveUpAfter) {
+                // Continuously blocked with no route found for the whole
+                // timeout (boxed-in / sealed corridor) -> give up cleanly.
+                u.path.clear();
+                u.path_idx = 0;
+                u.fx = u.cell_x;
+                u.fy = u.cell_y;
+                u.wait_time = 0.0;
+            } else if (static_cast<int>(prev_wait / kBlockedWait) !=
+                       static_cast<int>(u.wait_time / kBlockedWait)) {
+                // Crossed a kBlockedWait boundary -> attempt a re-path around
+                // the current traffic. On FAILURE keep the original path and
+                // keep waiting: transient jams (another unit mid-crossing of a
+                // funnel cell) clear on their own, and the per-frame can_enter
+                // check above resumes the walk the moment the blocker steps
+                // off. Only the kGiveUpAfter timeout abandons the order.
                 const Cellxy goal = u.path.back();
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(passable, w, h, occ, self, u.cell_x, u.cell_y);
@@ -772,13 +815,6 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 if (np.size() > 1) {
                     u.path = std::move(np);
                     u.path_idx = 1;
-                    u.wait_time = 0.0;
-                } else {
-                    // No route around the obstruction -> give up cleanly.
-                    u.path.clear();
-                    u.path_idx = 0;
-                    u.fx = u.cell_x;
-                    u.fy = u.cell_y;
                     u.wait_time = 0.0;
                 }
             }
@@ -806,6 +842,13 @@ git -C D:\ra2-android commit -m "engine: add step_units collision stepper (reser
 ```
 
 ---
+
+> **EXECUTION NOTE (controller):** Tasks 4 and 5 are dispatched to a single
+> implementer and reviewed as one unit. Task 4 removes `World`'s single-unit API
+> (`unit()`, `set_unit_image`, `order_move`), which the OLD `engine/input.cpp`
+> and `tests/test_input.cpp` (both rewritten in Task 5) still call —
+> `ra2assets_tests` does not compile between the two tasks, so they must land
+> together. Run Task 4's test step after Task 5's changes are in; commit once.
 
 ### Task 4: `World` multi-unit API (units vector, selection, group order, step)
 
@@ -1044,6 +1087,12 @@ void World::order_move_selected(int goal_x, int goal_y) {
 
     for (std::size_t k = 0; k < sel.size(); ++k) {
         Unit& u = units_[sel[k]];
+        // Drop any stale next-cell reservation from an in-flight order (the
+        // occupancy may still mark a cell this unit reserved but will now
+        // never enter, which would block other units forever); re-assert only
+        // the current cell.
+        occ_.release_all_of(sel[k], u.cell_x, u.cell_y);
+        occ_.set(u.cell_x, u.cell_y, sel[k]);
         const Cellxy tgt = targets[k];
         std::vector<Cellxy> path =
             find_path(passable_, grid_w_, grid_h_, {u.cell_x, u.cell_y}, tgt);
@@ -1124,10 +1173,12 @@ git -C D:\ra2-android commit -m "engine: World holds a unit vector + selection/g
 ```cpp
 #include "doctest.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "input.hpp"
@@ -1286,7 +1337,7 @@ TEST_CASE("Input: left-drag exposes a selection box and box-selects covered unit
     if (!fx.ok) { MESSAGE("skipped"); return; }
 
     // Compute the ground pixels of all three units, then drag a box covering them.
-    int minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+    int minx = 1000000000, miny = 1000000000, maxx = -1000000000, maxy = -1000000000;
     for (auto& cxy : fx.cells) {
         int px, py; px_for_cell(cxy.first, cxy.second, px, py);
         minx = std::min(minx, px); maxx = std::max(maxx, px);
@@ -1304,6 +1355,32 @@ TEST_CASE("Input: left-drag exposes a selection box and box-selects covered unit
     input.handle(u);
     CHECK_FALSE(input.selection_box(x0, y0, x1, y1));  // box gone after release
     for (const auto& un : world.units()) CHECK(un.selected);
+}
+
+TEST_CASE("Input: double-click selects all on-screen units of the same type") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 3);
+    if (!fx.ok) { MESSAGE("skipped"); return; }
+
+    // Center the camera on unit 0 so all three (adjacent cells) are on-screen
+    // -- commit_double only selects units whose ground point lies inside the
+    // viewport. Input holds cam by reference, so mutating it here is live.
+    int gx0, gy0;
+    px_for_cell(fx.cells[0].first, fx.cells[0].second, gx0, gy0);
+    cam.x = 1280 / 2 - gx0;
+    cam.y = 720 / 2 - gy0;
+
+    // Two quick clicks on unit 0's cell (window px = ground px + camera).
+    const int px = gx0 + cam.x, py = gy0 + cam.y;
+    left_click(input, px, py, false, 1000);
+    CHECK(world.units()[0].selected);           // first click: single select
+    CHECK_FALSE(world.units()[1].selected);
+    left_click(input, px, py, false, 1200);     // 200ms later, same spot: double
+    for (const auto& u : world.units()) CHECK(u.selected);  // all GI on screen
 }
 
 TEST_CASE("Input: pan moves the camera (clamped) and never fires a select") {
@@ -1630,7 +1707,7 @@ Add `#include <algorithm>` to `input.cpp` (for `std::min`/`std::max`).
 - [ ] **Step 7: Run the tests to verify they pass.**
 
 Run: `cmake --build D:\ra2-android\build --target ra2assets_tests` then `$env:RA2_INSTALL_DIR = "D:\Red Alert 2"; & D:\ra2-android\build\ra2assets_tests.exe -tc="Input*"`
-Expected: PASS — 6 cases pass (or skip cleanly without the install).
+Expected: PASS — 7 cases pass (or skip cleanly without the install).
 
 - [ ] **Step 8: Commit.**
 
