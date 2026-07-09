@@ -130,3 +130,150 @@ TEST_CASE("audio idx: validation rejects malformed input") {
         CHECK_THROWS_AS(AudioIdx::load(b.data(), b.size()), std::runtime_error);
     }
 }
+
+// ---------------------------------------------------------------------------
+// decode_bag_clip synthetic tests. BAG ADPCM clips are chunked: chunk_size-
+// byte chunks, each opening with a 4-byte header {i16 predictor; u8 index;
+// u8 reserved} whose predictor is emitted as the chunk's first sample, then
+// (chunk_bytes-4)*2 nibbles, LOW nibble first (docs/re/audio.md; XCC
+// Cima_adpcm_wav_decode::load + aud_decode_ima_chunk are the cross-check).
+// All expected PCM vectors below are HAND-COMPUTED from the step/index
+// tables -- the arithmetic is worked in the plan and docs/re/audio.md.
+// ---------------------------------------------------------------------------
+static BagClip clip_of(uint32_t offset, uint32_t size, uint32_t flags,
+                       uint32_t chunk_size) {
+    BagClip c;
+    c.name = "test";
+    c.offset = offset; c.size = size;
+    c.sample_rate = 22050; c.flags = flags; c.chunk_size = chunk_size;
+    return c;
+}
+
+static void put_chunk_header(std::vector<uint8_t>& b, int16_t sample, uint8_t index) {
+    b.push_back((uint8_t)((uint16_t)sample & 0xff));
+    b.push_back((uint8_t)(((uint16_t)sample >> 8) & 0xff));
+    b.push_back(index);
+    b.push_back(0);                                // reserved
+}
+
+TEST_CASE("bag decode: worked IMA example (predictor 0, index 0)") {
+    std::vector<uint8_t> bag;
+    put_chunk_header(bag, 0, 0);
+    bag.push_back(0x07);                           // nibbles: 7 (low), 0 (high)
+    bag.push_back(0x80);                           // nibbles: 0 (low), 8 (high)
+    AudioClipInfo info;
+    auto pcm = decode_bag_clip(bag.data(), bag.size(),
+                               clip_of(0, 6, /*flags*/ 12, /*chunk*/ 512), info);
+    // Hand-computed: header sample 0; nibble 7 (step 7, delta 0+1+3+7=11) -> 11,
+    // index += 8; nibble 0 (step 16, delta 2) -> 13, index 7; nibble 0 (step 14,
+    // delta 1) -> 14, index 6; nibble 8 (step 13, delta 1, sign) -> 13.
+    const std::vector<int16_t> want = {0, 11, 13, 14, 13};
+    CHECK(pcm == want);
+    CHECK(info.sample_rate == 22050);
+    CHECK(info.channels == 1);
+    CHECK(info.bits == 16);
+}
+
+TEST_CASE("bag decode: each chunk restarts from its own header") {
+    // chunk_size=8 -> each chunk is a 4-byte header + 4 nibble bytes.
+    std::vector<uint8_t> bag;
+    put_chunk_header(bag, 0, 0);
+    for (int i = 0; i < 4; i++) bag.push_back(0xFF);   // 8 x code 15
+    put_chunk_header(bag, 1000, 0);
+    for (int i = 0; i < 4; i++) bag.push_back(0x00);   // 8 x code 0
+    AudioClipInfo info;
+    auto pcm = decode_bag_clip(bag.data(), bag.size(), clip_of(0, 16, 12, 8), info);
+    // Chunk 2 must NOT continue from -5431: it restarts at its header's
+    // predictor 1000, and code-0 nibbles at index 0 (step 7, delta 7>>3 = 0)
+    // leave the predictor unchanged.
+    const std::vector<int16_t> want = {
+        0, -11, -41, -104, -240, -533, -1164, -2521, -5431,     // chunk 1
+        1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000,   // chunk 2 (reset)
+    };
+    CHECK(pcm == want);
+}
+
+TEST_CASE("bag decode: predictor clamps to int16 range") {
+    std::vector<uint8_t> bag;
+    put_chunk_header(bag, 0, 0);
+    for (int i = 0; i < 6; i++) bag.push_back(0xFF);   // 12 x code 15
+    AudioClipInfo info;
+    auto pcm = decode_bag_clip(bag.data(), bag.size(), clip_of(0, 10, 12, 512), info);
+    // Hand-computed walk (index 0,8,16,...,80,88; steps 7,16,34,73,157,337,
+    // 724,1552,3327,7132,15289,32767; deltas 11,30,63,136,293,631,1357,2910,
+    // 6236,13372,28666,61436): the 11th subtraction hits -53705 -> clamp.
+    const std::vector<int16_t> want = {
+        0, -11, -41, -104, -240, -533, -1164, -2521, -5431,
+        -11667, -25039, -32768, -32768,
+    };
+    CHECK(pcm == want);
+}
+
+TEST_CASE("bag decode: raw 16-bit PCM path (flags bit 1)") {
+    // flags 6 = 0x4|0x2 (mono raw PCM), chunk_size 0 -- 21 entries in the real
+    // audio.idx use exactly this (e.g. "utext"); bytes pass through as LE i16.
+    std::vector<uint8_t> bag = {0xFE, 0xFF, 0xBC, 0x02, 0xFF, 0x7F};  // -2, 700, 32767
+    AudioClipInfo info;
+    auto pcm = decode_bag_clip(bag.data(), bag.size(), clip_of(0, 6, 6, 0), info);
+    const std::vector<int16_t> want = {-2, 700, 32767};
+    CHECK(pcm == want);
+    CHECK(info.channels == 1);
+
+    // flags 7 adds the stereo bit: same passthrough (already interleaved).
+    auto pcm2 = decode_bag_clip(bag.data(), bag.size(), clip_of(0, 6, 7, 0), info);
+    CHECK(pcm2 == want);
+    CHECK(info.channels == 2);
+}
+
+TEST_CASE("bag decode: empty clip -> empty vector") {
+    std::vector<uint8_t> bag = {0x00};
+    AudioClipInfo info;
+    auto pcm = decode_bag_clip(bag.data(), bag.size(), clip_of(0, 0, 12, 512), info);
+    CHECK(pcm.empty());
+    CHECK(info.sample_rate == 22050);
+    CHECK(info.channels == 1);
+}
+
+TEST_CASE("bag decode: errors") {
+    std::vector<uint8_t> bag(16, 0);
+    AudioClipInfo info;
+    // Clip range beyond bag_len.
+    CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
+                                    clip_of(8, 12, 12, 512), info),
+                    std::runtime_error);
+    // Offset far beyond the bag (also exercises the overflow-safe check).
+    CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
+                                    clip_of(0xFFFFFFFFu, 4, 12, 512), info),
+                    std::runtime_error);
+    // ADPCM with chunk_size too small to hold the 4-byte chunk header.
+    CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
+                                    clip_of(0, 8, 12, 0), info),
+                    std::runtime_error);
+    // Stereo IMA-ADPCM (flags 13): unimplemented-with-throw (only
+    // uslide1/uslide2 in the real install -- docs/re/audio.md).
+    CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
+                                    clip_of(0, 16, 13, 1024), info),
+                    std::runtime_error);
+    // Neither PCM (bit 1) nor ADPCM (bit 3) flagged.
+    CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
+                                    clip_of(0, 8, 4, 0), info),
+                    std::runtime_error);
+    // Raw PCM with odd byte size.
+    CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
+                                    clip_of(0, 5, 6, 0), info),
+                    std::runtime_error);
+    // Trailing partial chunk too small to hold its 4-byte header
+    // (size 10, chunk 8 -> second chunk is only 2 bytes).
+    CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
+                                    clip_of(0, 10, 12, 8), info),
+                    std::runtime_error);
+    // Chunk-header step index out of range (> 88).
+    {
+        std::vector<uint8_t> b2;
+        put_chunk_header(b2, 0, 89);
+        b2.push_back(0x00);
+        CHECK_THROWS_AS(decode_bag_clip(b2.data(), b2.size(),
+                                        clip_of(0, 5, 12, 512), info),
+                        std::runtime_error);
+    }
+}
