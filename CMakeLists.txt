@@ -83,6 +83,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_occupancy.cpp engine/occupancy
 # group_move.cpp is pure C++17 (no SDL): formation target assignment for a
 # group move order. Compiled into both binaries from one source of truth.
 target_sources(ra2assets_tests PRIVATE tests/test_group_move.cpp engine/group_move.cpp)
+# test_movement.cpp exercises the pure step_units collision stepper defined in
+# engine/world.cpp (already a source above) against hand-built grids/units --
+# no MapFile needed, so the head-on/boxed-in/funnel cases are deterministic.
+target_sources(ra2assets_tests PRIVATE tests/test_movement.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)

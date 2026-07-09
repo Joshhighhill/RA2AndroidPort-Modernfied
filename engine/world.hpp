@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "occupancy.hpp"
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "ra2assets/map.hpp"
 
@@ -35,9 +36,26 @@ struct Unit {
     std::size_t path_idx = 0;  // index of the next path cell to advance toward
     double fx = 0.0, fy = 0.0;  // continuous iso-cell position (interp render)
     double anim_time = 0.0;     // accumulated time for walk-frame cycling
+    double wait_time = 0.0;     // seconds blocked at current cell (collision re-path timer)
 
     bool moving() const { return !path.empty() && path_idx < path.size(); }
 };
+
+// Advance every moving unit toward its `path` by `dt` seconds at `move_cps`
+// cells/sec, using `occ` to enforce one-unit-per-cell: a unit reserves the next
+// path cell before entering it. While that cell is held by another unit the
+// unit waits (resuming the instant the cell frees) and attempts a re-path
+// around occupied cells on a seniority-staggered cadence -- a unit blocked by
+// a LOWER-index unit tries at kBlockedWait, one blocked by a HIGHER-index
+// unit one interval later (breaks the mirror-symmetric re-path livelock); it
+// abandons the order only after kGiveUpAfter seconds of continuous block
+// (boxed-in / sealed corridor).
+// Idle units re-assert ownership of their current cell and stand. Units are
+// processed in ascending index order (deterministic). Does NOT modify
+// Unit::level -- rendering height is patched separately from the map by
+// World::step. Pure: takes a passability grid + occupancy, no MapFile/SDL.
+void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable, int w, int h,
+                Occupancy& occ, double dt, double move_cps);
 
 // Picks a passable (Clear/grass, `tile == 0` -- confirmed in Task 9 /
 // task-9-report.md: "tile index 0 is Clear") cell close to the centroid of
