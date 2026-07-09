@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "group_move.hpp"     // assign_formation
 #include "iso_project.hpp"   // cell_to_screen (terrain_screen_bounds)
 #include "iso_renderer.hpp"  // terrain_screen_bounds declaration
 #include "pathfind.hpp"
@@ -130,14 +131,8 @@ bool terrain_screen_bounds(const ra2assets::MapFile& map, int& min_x, int& min_y
 }
 
 World::World(const ra2assets::MapFile& map) : map_(&map) {
-    if (const ra2assets::MapCell* c = pick_start_cell(map)) {
-        unit_.cell_x = c->x;
-        unit_.cell_y = c->y;
-        unit_.level = c->level;
-    }
-    unit_.fx = unit_.cell_x;
-    unit_.fy = unit_.cell_y;
     passable_ = build_passability(map.cells(), grid_w_, grid_h_);
+    occ_ = Occupancy(grid_w_, grid_h_);
 }
 
 bool World::walkable(int x, int y) const {
@@ -145,97 +140,94 @@ bool World::walkable(int x, int y) const {
     return passable_[static_cast<size_t>(y) * grid_w_ + x] != 0;
 }
 
-void World::set_unit_image(const std::string& image, int frame) {
-    unit_.image = image;
-    unit_.frame = frame;
+Unit& World::add_unit(int cell_x, int cell_y, const std::string& image, int frame) {
+    Unit u;
+    u.cell_x = cell_x;
+    u.cell_y = cell_y;
+    u.fx = cell_x;
+    u.fy = cell_y;
+    u.image = image;
+    u.frame = frame;
+    if (const ra2assets::MapCell* mc = map_->at(cell_x, cell_y)) u.level = mc->level;
+    units_.push_back(std::move(u));
+    const int idx = static_cast<int>(units_.size()) - 1;
+    occ_.set(cell_x, cell_y, idx);
+    return units_.back();
 }
 
-std::size_t World::order_move(int goal_x, int goal_y) {
-    Unit& u = unit_;
-    std::vector<Cellxy> path =
-        find_path(passable_, grid_w_, grid_h_, {u.cell_x, u.cell_y}, {goal_x, goal_y});
-    // A single-cell path (goal == current) or empty (unreachable / off-grid)
-    // means "nowhere to walk": clear any active order and stay put. Snap
-    // fx/fy onto the committed cell here -- if this fires MID-WALK (fx/fy
-    // fractional, between two committed cells), moving() is about to go
-    // false and step() will early-return forever, so without this the
-    // sprite would be stranded off-grid at whatever fractional position it
-    // was interpolating through (Task 12 review Finding 1).
-    if (path.size() <= 1) {
-        u.path.clear();
-        u.path_idx = 0;
-        u.anim_time = 0.0;
-        u.frame = kStandFrame;
-        u.fx = u.cell_x;
-        u.fy = u.cell_y;
-        return 0;
+void World::clear_selection() {
+    for (Unit& u : units_) u.selected = false;
+}
+
+int World::unit_at_cell(int x, int y) const {
+    for (std::size_t i = 0; i < units_.size(); ++i)
+        if (units_[i].cell_x == x && units_[i].cell_y == y) return static_cast<int>(i);
+    return -1;
+}
+
+void World::order_move_selected(int goal_x, int goal_y) {
+    std::vector<int> sel;
+    std::vector<Cellxy> cur;
+    for (std::size_t i = 0; i < units_.size(); ++i)
+        if (units_[i].selected) {
+            sel.push_back(static_cast<int>(i));
+            cur.push_back({units_[i].cell_x, units_[i].cell_y});
+        }
+    if (sel.empty()) return;
+
+    std::vector<Cellxy> targets =
+        assign_formation({goal_x, goal_y}, cur, passable_, grid_w_, grid_h_, occ_);
+
+    for (std::size_t k = 0; k < sel.size(); ++k) {
+        Unit& u = units_[sel[k]];
+        // Drop any stale next-cell reservation from an in-flight order (the
+        // occupancy may still mark a cell this unit reserved but will now
+        // never enter, which would block other units forever); re-assert only
+        // the current cell.
+        occ_.release_all_of(sel[k], u.cell_x, u.cell_y);
+        occ_.set(u.cell_x, u.cell_y, sel[k]);
+        const Cellxy tgt = targets[k];
+        std::vector<Cellxy> path =
+            find_path(passable_, grid_w_, grid_h_, {u.cell_x, u.cell_y}, tgt);
+        if (path.size() <= 1) {
+            // Assigned its own cell / unreachable: stay put, snap cleanly
+            // (mirrors the single-unit Finding-1 cancel branch).
+            u.path.clear();
+            u.path_idx = 0;
+            u.anim_time = 0.0;
+            u.wait_time = 0.0;
+            u.frame = kStandFrame;
+            u.fx = u.cell_x;
+            u.fy = u.cell_y;
+        } else {
+            u.path = std::move(path);
+            u.path_idx = 1;  // path[0] is the current cell
+            u.anim_time = 0.0;
+            u.wait_time = 0.0;
+            // Do NOT reset fx/fy: preserves an in-flight walk across a reorder
+            // (Task 12 Finding 1); step_units interpolates from any fx/fy.
+        }
     }
-    u.path = std::move(path);
-    u.path_idx = 1;  // path[0] is the cell we're standing on
-    u.anim_time = 0.0;
-    // Do NOT touch fx/fy here (Task 12 review Finding 1): if the unit is
-    // idle, fx/fy already sit exactly on cell_x/cell_y, so this is moot. But
-    // if it is RETARGETED MID-WALK, fx/fy hold the current in-flight
-    // interpolated position; resetting them to cell_x/cell_y would snap the
-    // sprite backward to its last committed cell, discarding the walk that
-    // was already rendered. step() interpolates fine from any starting
-    // fx/fy toward path[path_idx] regardless of whether fx/fy lies exactly
-    // on that segment, so leaving it alone keeps the walk visually
-    // continuous across a reorder.
-    return u.path.size();
 }
 
 void World::step(double dt) {
-    Unit& u = unit_;
-    if (!u.moving()) {
-        u.frame = kStandFrame;
-        return;
-    }
+    step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_);
+    // Patch terrain height for rendering (step_units is map-agnostic).
+    for (Unit& u : units_)
+        if (const ra2assets::MapCell* mc = map_->at(u.cell_x, u.cell_y)) u.level = mc->level;
+}
 
-    // Budget of cells we may traverse this tick (euclidean in iso-cell space;
-    // a cardinal step is 1.0, a diagonal ~1.414). Walk the remaining budget
-    // across as many cell segments as it covers so a large dt never overshoots
-    // or skips animation.
-    double budget = move_cps_ * dt;
-    while (budget > 0.0 && u.path_idx < u.path.size()) {
-        const Cellxy& tgt = u.path[u.path_idx];
-        const double dx = tgt.x - u.fx;
-        const double dy = tgt.y - u.fy;
-        const double dist = std::sqrt(dx * dx + dy * dy);
-        if (dist <= 1e-9 || budget >= dist) {
-            // Reached this cell: snap onto it, commit the integer cell + level,
-            // and move on to the next path node with the leftover budget.
-            u.fx = tgt.x;
-            u.fy = tgt.y;
-            u.cell_x = tgt.x;
-            u.cell_y = tgt.y;
-            if (const ra2assets::MapCell* mc = map_->at(tgt.x, tgt.y))
-                u.level = mc->level;
-            budget -= (dist <= 1e-9 ? 0.0 : dist);
-            ++u.path_idx;
-        } else {
-            const double t = budget / dist;
-            u.fx += dx * t;
-            u.fy += dy * t;
-            budget = 0.0;
-        }
-    }
-
-    if (u.path_idx >= u.path.size()) {
-        // Arrived: stop, stand, drop the path.
-        u.fx = u.cell_x;
-        u.fy = u.cell_y;
-        u.path.clear();
-        u.path_idx = 0;
-        u.anim_time = 0.0;
-        u.frame = kStandFrame;
-        return;
-    }
-
-    // Still walking: cycle the walk frames.
-    u.anim_time += dt;
-    const int phase = static_cast<int>(u.anim_time * kWalkFps) % kWalkCount;
-    u.frame = kWalkFirst + phase;
+std::vector<int> unit_draw_order(const std::vector<Unit>& units) {
+    std::vector<int> order(units.size());
+    for (int i = 0; i < static_cast<int>(units.size()); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        const double da = units[a].fx + units[a].fy;
+        const double db = units[b].fx + units[b].fy;
+        if (da != db) return da < db;
+        if (units[a].fx != units[b].fx) return units[a].fx < units[b].fx;
+        return a < b;
+    });
+    return order;
 }
 
 // Copy `passable` but mark every cell OWNED/RESERVED by a unit other than

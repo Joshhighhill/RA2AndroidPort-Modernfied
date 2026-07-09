@@ -1,9 +1,14 @@
 #include "doctest.h"
 
+#include <cstdlib>
+#include <fstream>
 #include <vector>
 
 #include "iso_project.hpp"  // cell_to_screen / screen_to_cell
+#include "occupancy.hpp"
+#include "pathfind.hpp"
 #include "ra2assets/map.hpp"
+#include "ra2assets/mix.hpp"
 #include "world.hpp"
 
 using ra2assets::MapCell;
@@ -80,4 +85,94 @@ TEST_CASE("coordinate reconciliation: cell -> screen -> cell round-trips into th
         REQUIRE(ry < gh);
         CHECK(grid[gidx(gw, rx, ry)] == 1);  // the inverted cell is walkable
     }
+}
+
+// ---- Multi-unit World integration (guarded real map) ----
+namespace {
+std::vector<uint8_t> slurp_ra2(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return {};
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
+}
+bool load_real_map_w(ra2assets::MapFile& out) {
+    const char* d = std::getenv("RA2_INSTALL_DIR");
+    std::string dir = d ? d : "D:\\Red Alert 2";
+    if (!dir.empty() && dir.back() != '/' && dir.back() != '\\') dir += '\\';
+    auto b = slurp_ra2(dir + "mapsmd03.mix");
+    if (b.empty()) return false;
+    ra2assets::MixFile mix = ra2assets::MixFile::open(std::move(b));
+    const ra2assets::MixEntry* e = mix.find(0x133a0cb2u);
+    if (!e) return false;
+    auto raw = mix.read(*e);
+    out = ra2assets::MapFile::parse(std::string(raw.begin(), raw.end()));
+    return true;
+}
+}  // namespace
+
+TEST_CASE("World: add_unit places units, occupancy and unit_at_cell agree") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    ra2engine::Unit& u0 = world.add_unit(c->x, c->y, "GI", 0);
+    CHECK(world.units().size() == 1);
+    CHECK(world.unit_at_cell(c->x, c->y) == 0);
+    CHECK(world.occupancy().at(c->x, c->y) == 0);
+    (void)u0;
+}
+
+TEST_CASE("World: group move sends selected units to distinct cells, never overlapping") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // Spawn a small cluster around the start cell (skip any non-walkable slot).
+    int placed = 0;
+    for (int dy = 0; dy < 3 && placed < 4; ++dy)
+        for (int dx = 0; dx < 3 && placed < 4; ++dx)
+            if (world.walkable(c->x + dx, c->y + dy) &&
+                world.unit_at_cell(c->x + dx, c->y + dy) < 0) {
+                world.add_unit(c->x + dx, c->y + dy, "GI", 0);
+                ++placed;
+            }
+    REQUIRE(placed >= 2);
+    for (auto& u : world.units()) u.selected = true;
+
+    // Order them to a reachable cell ~12 south-east and run the sim.
+    world.order_move_selected(c->x + 12, c->y + 12);
+    const double dt = 1.0 / 60.0;
+    for (double t = 0; t < 20.0; t += dt) {
+        world.step(dt);
+        // no-overlap invariant every frame
+        const auto& us = world.units();
+        for (size_t i = 0; i < us.size(); ++i)
+            for (size_t j = i + 1; j < us.size(); ++j)
+                CHECK_FALSE((us[i].cell_x == us[j].cell_x && us[i].cell_y == us[j].cell_y));
+    }
+    // Distinct final cells.
+    const auto& us = world.units();
+    for (size_t i = 0; i < us.size(); ++i)
+        for (size_t j = i + 1; j < us.size(); ++j)
+            CHECK_FALSE((us[i].cell_x == us[j].cell_x && us[i].cell_y == us[j].cell_y));
+}
+
+TEST_CASE("unit_draw_order: sorts back-to-front by fx+fy") {
+    std::vector<ra2engine::Unit> us(3);
+    us[0].fx = 5; us[0].fy = 5;   // depth 10 (middle)
+    us[1].fx = 1; us[1].fy = 1;   // depth 2  (farthest -> first)
+    us[2].fx = 9; us[2].fy = 9;   // depth 18 (nearest -> last)
+    auto order = ra2engine::unit_draw_order(us);
+    REQUIRE(order.size() == 3);
+    CHECK(order[0] == 1);
+    CHECK(order[1] == 0);
+    CHECK(order[2] == 2);
 }

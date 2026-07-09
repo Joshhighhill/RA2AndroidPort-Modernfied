@@ -83,65 +83,62 @@ const ra2assets::MapCell* pick_start_cell(const ra2assets::MapFile& map);
 std::vector<std::uint8_t> build_passability(const std::vector<ra2assets::MapCell>& cells,
                                             int& grid_w, int& grid_h);
 
-// Holds a reference to the (caller-owned, long-lived) MapFile plus the one
-// placed Unit and the passability grid derived from the map's cells. Does
-// not copy the map's cell data -- the caller must keep the MapFile alive for
-// at least as long as the World built from it. Pure ra2assets/engine-layer
-// logic; no SDL dependency.
+// Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
+// Units, the passability grid, and a cell-occupancy grid derived from the
+// map's cells. Does not copy the map's cell data -- the caller must keep the
+// MapFile alive at least as long as the World. Pure engine-layer logic; no SDL.
 class World {
 public:
     explicit World(const ra2assets::MapFile& map);
 
     const ra2assets::MapFile& map() const { return *map_; }
-    const Unit& unit() const { return unit_; }
-    Unit& unit() { return unit_; }
+
+    std::vector<Unit>& units() { return units_; }
+    const std::vector<Unit>& units() const { return units_; }
+
+    // Append a unit at iso cell (cell_x, cell_y) with SHP image name + frame;
+    // seeds its level from the map and claims its cell in the occupancy grid.
+    // Returns a reference to the new unit (valid until units() is reallocated).
+    Unit& add_unit(int cell_x, int cell_y, const std::string& image, int frame = 0);
+
+    // Deselect every unit.
+    void clear_selection();
+    // Index of the unit whose CURRENT cell is (x, y), or -1 if none.
+    int unit_at_cell(int x, int y) const;
 
     // Passability grid accessors (iso space; see build_passability).
     int grid_w() const { return grid_w_; }
     int grid_h() const { return grid_h_; }
     const std::vector<std::uint8_t>& passable() const { return passable_; }
-    // Bounds-checked walkability test at iso cell (x, y).
     bool walkable(int x, int y) const;
+    const Occupancy& occupancy() const { return occ_; }
 
-    // Sets the unit's SHP image name + starting frame (main.cpp calls this
-    // once it has resolved Rules::image("E1") -> "GI").
-    void set_unit_image(const std::string& image, int frame = 0);
-
-    // Movement speed in iso cells/sec. Derived by the caller from
-    // Rules::speed (see main.cpp); defaults to a sane walk pace so tests /
-    // callers that never set it still move.
+    // Movement speed in iso cells/sec (see main.cpp for the Rules-derived value).
     void set_move_speed(double cells_per_sec) { move_cps_ = cells_per_sec; }
     double move_speed() const { return move_cps_; }
 
-    // Orders the (already-selected) unit to walk to iso cell (goal_x, goal_y):
-    // runs A* from the unit's current cell over the passability grid and, if
-    // a real (length > 1) path exists, stores it on the unit and starts
-    // movement. A single-cell / empty result (goal == current, unreachable,
-    // or off-grid) clears any active path (no-op move) and snaps fx/fy onto
-    // the committed cell_x/cell_y. Returns the stored path length (0 if no
-    // move started).
-    //
-    // Safe to call MID-WALK (retargeting an already-moving unit): on success
-    // fx/fy are left untouched (NOT reset to cell_x/cell_y), so a unit
-    // retargeted while walking keeps its current interpolated position
-    // instead of snapping backward to its last committed cell (Task 12
-    // review Finding 1 -- see world.cpp for the failure this avoids).
-    std::size_t order_move(int goal_x, int goal_y);
+    // Order every SELECTED unit to walk toward (goal_x, goal_y): assigns each a
+    // distinct formation cell spiralling out from the goal, then paths it there.
+    // Units retargeted mid-walk keep their interpolated fx/fy (no backward
+    // snap). No-op if nothing is selected.
+    void order_move_selected(int goal_x, int goal_y);
 
-    // Advances the unit along its path by `dt` seconds (interpolating
-    // fx/fy toward the next cell at move_speed cells/sec, committing
-    // cell_x/cell_y + level as each cell is reached) and cycles the walk
-    // animation frame; snaps to a stand frame and clears the path on arrival
-    // or when idle. Safe to call every frame regardless of state.
+    // Advance all units by dt seconds (collision-aware, via step_units) and
+    // patch each unit's terrain level from the map for rendering height.
     void step(double dt);
 
 private:
     const ra2assets::MapFile* map_;
-    Unit unit_;
+    std::vector<Unit> units_;
     std::vector<std::uint8_t> passable_;
+    Occupancy occ_;
     int grid_w_ = 0;
     int grid_h_ = 0;
-    double move_cps_ = 3.0;  // default cells/sec if caller never sets it
+    double move_cps_ = 3.0;
 };
+
+// Indices of `units` sorted back-to-front for painter's-order drawing: by
+// screen depth (fx + fy) ascending, tie-break fx ascending then index. Pure.
+std::vector<int> unit_draw_order(const std::vector<Unit>& units);
 
 }  // namespace ra2engine

@@ -108,31 +108,45 @@ bool Platform::poll(InputEvent& ev) {
             ev.kind = InputEvent::PointerDown;
             ev.x = e.button.x;
             ev.y = e.button.y;
+            ev.button = (e.button.button == SDL_BUTTON_RIGHT) ? InputEvent::Right
+                                                              : InputEvent::Left;
+            ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEBUTTONUP:
             ev.kind = InputEvent::PointerUp;
             ev.x = e.button.x;
             ev.y = e.button.y;
+            ev.button = (e.button.button == SDL_BUTTON_RIGHT) ? InputEvent::Right
+                                                              : InputEvent::Left;
+            ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEMOTION:
             ev.kind = InputEvent::PointerMove;
             ev.x = e.motion.x;
             ev.y = e.motion.y;
+            ev.t_ms = e.motion.timestamp;
             break;
         case SDL_FINGERDOWN:
             ev.kind = InputEvent::PointerDown;
             ev.x = static_cast<int>(e.tfinger.x * p_->w);
             ev.y = static_cast<int>(e.tfinger.y * p_->h);
+            ev.button = InputEvent::Left;  // touch maps to the left/primary button
+            ev.t_ms = e.tfinger.timestamp;
             break;
         case SDL_FINGERUP:
             ev.kind = InputEvent::PointerUp;
             ev.x = static_cast<int>(e.tfinger.x * p_->w);
             ev.y = static_cast<int>(e.tfinger.y * p_->h);
+            ev.button = InputEvent::Left;
+            ev.t_ms = e.tfinger.timestamp;
             break;
         case SDL_FINGERMOTION:
             ev.kind = InputEvent::PointerMove;
             ev.x = static_cast<int>(e.tfinger.x * p_->w);
             ev.y = static_cast<int>(e.tfinger.y * p_->h);
+            ev.t_ms = e.tfinger.timestamp;
             break;
         default:
             ev.kind = InputEvent::None;

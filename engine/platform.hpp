@@ -1,8 +1,12 @@
 #pragma once
+#include <cstdint>
 namespace ra2engine {
 struct InputEvent {
     enum Kind { None, Quit, PointerDown, PointerUp, PointerMove } kind = None;
-    int x = 0, y = 0;            // pointer position (window pixels)
+    int x = 0, y = 0;                       // pointer position (window pixels)
+    enum Button { Left, Right } button = Left;  // valid on PointerDown/PointerUp
+    bool shift = false;                     // Shift held at event time
+    uint32_t t_ms = 0;                      // event timestamp (ms) for double-click
 };
 class Platform {
 public:
