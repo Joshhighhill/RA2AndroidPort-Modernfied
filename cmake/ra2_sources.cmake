@@ -23,6 +23,7 @@ set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/rules.cpp
     ${RA2_ROOT}/src/map.cpp
     ${RA2_ROOT}/src/theater.cpp
+    ${RA2_ROOT}/src/fileio.cpp
 )
 
 # ra2engine app/library sources (uses SDL). Same set feeds the desktop
