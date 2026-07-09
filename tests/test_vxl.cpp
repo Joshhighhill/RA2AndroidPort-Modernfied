@@ -220,6 +220,27 @@ TEST_CASE("vxl bounds checks reject malformed input") {
     }
 }
 
+TEST_CASE("vxl rejects an implausible section count with a clear error") {
+    // An attacker-controlled header count must be rejected by an explicit
+    // plausibility cap (mirroring load_hva / AudioIdx::load) with a message that
+    // NAMES the bad count -- not left to fall through to the generic size check
+    // or to a large speculative allocation. section_header_count is at byte 20
+    // and section_tailer_count at byte 24; keep them equal so the count-mismatch
+    // guard doesn't fire first.
+    auto b = make_vxl();
+    auto put32 = [&](size_t o, uint32_t v) {
+        for (int i = 0; i < 4; i++) b[o + i] = (uint8_t)((v >> (8 * i)) & 0xff);
+    };
+    put32(20, 2000000u);
+    put32(24, 2000000u);
+    bool threw = false;
+    std::string msg;
+    try { load_vxl(b.data(), b.size()); }
+    catch (const std::runtime_error& e) { threw = true; msg = e.what(); }
+    CHECK(threw);
+    CHECK(msg.find("implausible") != std::string::npos);
+}
+
 // ---------------------------------------------------------------------------
 // Second synthetic .vxl: 1 section, size 1x1x8, ONE column whose data holds
 // two voxel spans separated by skips and ends on a BARE skip (no trailing

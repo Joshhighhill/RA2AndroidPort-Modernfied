@@ -115,6 +115,13 @@ VxlModel load_vxl(const uint8_t* data, size_t len) {
             std::to_string(n_headers) + " != tailer count " + std::to_string(n_tailers));
     if (n_headers == 0)
         throw std::runtime_error("vxl: zero sections");
+    // Plausibility cap on the attacker-controlled section count, mirroring the
+    // guards in load_hva / AudioIdx::load: reject absurd counts up front with a
+    // clear error instead of falling through to the size check or reserving a
+    // huge section vector. Real models have a handful of sections.
+    if (n_headers > 1000000u)
+        throw std::runtime_error("vxl: implausible section count " +
+                                 std::to_string(n_headers) + " (max 1000000)");
     const uint64_t expect = (uint64_t)kFileHeader +
                             (uint64_t)n_headers * kSectionHeader +
                             (uint64_t)body_size +
