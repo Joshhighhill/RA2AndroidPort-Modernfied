@@ -99,8 +99,15 @@ public:
     // runs A* from the unit's current cell over the passability grid and, if
     // a real (length > 1) path exists, stores it on the unit and starts
     // movement. A single-cell / empty result (goal == current, unreachable,
-    // or off-grid) clears any active path (no-op move). Returns the stored
-    // path length (0 if no move started).
+    // or off-grid) clears any active path (no-op move) and snaps fx/fy onto
+    // the committed cell_x/cell_y. Returns the stored path length (0 if no
+    // move started).
+    //
+    // Safe to call MID-WALK (retargeting an already-moving unit): on success
+    // fx/fy are left untouched (NOT reset to cell_x/cell_y), so a unit
+    // retargeted while walking keeps its current interpolated position
+    // instead of snapping backward to its last committed cell (Task 12
+    // review Finding 1 -- see world.cpp for the failure this avoids).
     std::size_t order_move(int goal_x, int goal_y);
 
     // Advances the unit along its path by `dt` seconds (interpolating

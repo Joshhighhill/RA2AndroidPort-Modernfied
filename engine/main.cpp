@@ -303,7 +303,7 @@ int run_interactive() {
     ra2engine::TextureCache tc(platform.renderer());
 
     ra2engine::Camera cam = centered_camera(a.map, platform.width(), platform.height());
-    ra2engine::Input input(world, cam);
+    ra2engine::Input input(world, cam, platform.width(), platform.height());
     const int kPan = 40;
 
     Uint32 prev = SDL_GetTicks();
@@ -430,6 +430,78 @@ int run_demo_move(int goal_x, int goal_y) {
     return 0;
 }
 
+// Headless (no window/rendering) verification of the Task 12 review's
+// Finding 1 fix: order a move to (x1,y1), let the sim run PARTWAY (not to
+// completion -- so fx/fy is genuinely fractional/mid-walk), then retarget to
+// a DIFFERENT cell (x2,y2) exactly as a live reorder would, and confirm (a)
+// the retarget did NOT snap fx/fy backward to the last committed cell, and
+// (b) the unit still ends up at the SECOND target, not stuck partway or
+// stranded. Prints the numbers; exits 0 only if both checks hold.
+int run_demo_retarget(int x1, int y1, int x2, int y2) {
+    Assets a = load_assets();
+    UnitAssets ua = load_unit_assets(env_install_dir(), "E1");
+    ra2engine::World world = build_world(a, ua);
+
+    const int start_x = world.unit().cell_x;
+    const int start_y = world.unit().cell_y;
+
+    world.unit().selected = true;
+    const std::size_t len1 = world.order_move(x1, y1);
+    std::cerr << "[demo-retarget] start=(" << start_x << "," << start_y << ") first_target=("
+              << x1 << "," << y1 << ") path_len1=" << len1 << "\n";
+    if (len1 == 0) {
+        std::cerr << "[demo-retarget] no path to first target; aborting.\n";
+        return 2;
+    }
+
+    // Step partway into the first order -- long enough to be well off the
+    // starting cell, short enough (checked below) to still be mid-walk.
+    const double dt = 1.0 / 60.0;
+    double sim_time = 0.0;
+    const double kRetargetAt = 1.5;  // seconds
+    while (world.unit().moving() && sim_time < kRetargetAt) {
+        world.step(dt);
+        sim_time += dt;
+    }
+    const bool was_moving_mid = world.unit().moving();
+    const double fx_mid = world.unit().fx;
+    const double fy_mid = world.unit().fy;
+    const int cell_mid_x = world.unit().cell_x;
+    const int cell_mid_y = world.unit().cell_y;
+    const bool genuinely_fractional = (fx_mid != cell_mid_x || fy_mid != cell_mid_y);
+
+    // Retarget mid-walk.
+    const std::size_t len2 = world.order_move(x2, y2);
+    const bool no_backward_snap = (world.unit().fx == fx_mid && world.unit().fy == fy_mid);
+    std::cerr << "[demo-retarget] retargeted at t=" << sim_time << "s (moving=" << was_moving_mid
+              << " fractional=" << genuinely_fractional << ") mid_pos=(" << fx_mid << ","
+              << fy_mid << ") second_target=(" << x2 << "," << y2 << ") path_len2=" << len2
+              << " no_backward_snap=" << no_backward_snap << "\n";
+    if (len2 == 0) {
+        std::cerr << "[demo-retarget] no path to second target; aborting.\n";
+        return 3;
+    }
+
+    // Run to arrival or a generous cap.
+    const double kMaxSim = 30.0;
+    while (world.unit().moving() && sim_time < kMaxSim) {
+        world.step(dt);
+        sim_time += dt;
+    }
+    const int final_x = world.unit().cell_x;
+    const int final_y = world.unit().cell_y;
+    const bool arrived_second = (final_x == x2 && final_y == y2);
+
+    std::cout << "start=(" << start_x << "," << start_y << ") first_target=(" << x1 << "," << y1
+              << ") second_target=(" << x2 << "," << y2 << ") mid_pos=(" << fx_mid << "," << fy_mid
+              << ") no_backward_snap=" << (no_backward_snap ? "yes" : "no") << " final_cell=("
+              << final_x << "," << final_y
+              << ") arrived_at_second=" << (arrived_second ? "yes" : "no")
+              << " sim_time=" << sim_time << "s\n";
+
+    return (was_moving_mid && genuinely_fractional && no_backward_snap && arrived_second) ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -437,6 +509,8 @@ int main(int argc, char** argv) {
         std::string screenshot;
         bool demo_move = false;
         int demo_x = 0, demo_y = 0;
+        bool demo_retarget = false;
+        int retarget_x1 = 0, retarget_y1 = 0, retarget_x2 = 0, retarget_y2 = 0;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--screenshot" && i + 1 < argc) {
@@ -445,8 +519,16 @@ int main(int argc, char** argv) {
                 demo_move = true;
                 demo_x = std::atoi(argv[++i]);
                 demo_y = std::atoi(argv[++i]);
+            } else if (arg == "--demo-retarget" && i + 4 < argc) {
+                demo_retarget = true;
+                retarget_x1 = std::atoi(argv[++i]);
+                retarget_y1 = std::atoi(argv[++i]);
+                retarget_x2 = std::atoi(argv[++i]);
+                retarget_y2 = std::atoi(argv[++i]);
             }
         }
+        if (demo_retarget)
+            return run_demo_retarget(retarget_x1, retarget_y1, retarget_x2, retarget_y2);
         if (demo_move) return run_demo_move(demo_x, demo_y);
         if (!screenshot.empty()) return run_screenshot(screenshot);
         return run_interactive();

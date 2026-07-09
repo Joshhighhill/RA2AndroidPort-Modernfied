@@ -71,25 +71,13 @@ const ra2assets::TmpFile* Theater::tmp_for_tile(uint32_t global_index) {
     }
 }
 
-bool terrain_screen_bounds(const ra2assets::MapFile& map, int& min_x, int& min_y,
-                           int& max_x, int& max_y) {
-    const auto& cells = map.cells();
-    if (cells.empty()) return false;
-    int mnx = 1 << 30, mny = 1 << 30, mxx = -(1 << 30), mxy = -(1 << 30);
-    for (const auto& c : cells) {
-        const ScreenPt p =
-            cell_to_screen(c.x, c.y, static_cast<int>(c.level), kTileW, kTileH, kLevelPx);
-        mnx = std::min(mnx, p.x);
-        mny = std::min(mny, p.y);
-        mxx = std::max(mxx, p.x + kTileW);
-        mxy = std::max(mxy, p.y + kTileH);
-    }
-    min_x = mnx;
-    min_y = mny;
-    max_x = mxx;
-    max_y = mxy;
-    return true;
-}
+// NOTE: terrain_screen_bounds is declared above (iso_renderer.hpp) but
+// DEFINED in engine/world.cpp, not here -- this file (iso_renderer.cpp)
+// pulls in SDL and is not part of the SDL-free `ra2assets_tests` binary,
+// while world.cpp already is. Input needs this pure function to clamp
+// camera drag to the map's extent (Task 12 review Finding 2) without
+// dragging SDL into the test build; see world.cpp for the implementation
+// and rationale.
 
 int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
@@ -255,6 +243,14 @@ void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
     (void)view_w;
     (void)view_h;
+    // The path color's alpha (200, i.e. ~78% opaque) only takes effect if
+    // the renderer's blend mode allows it -- SDL's default draw-color blend
+    // mode is SDL_BLENDMODE_NONE, which ignores alpha and draws fully
+    // opaque (Task 12 review Finding 4). Save/restore so this draw call
+    // doesn't change blend behavior for whatever renders after it.
+    SDL_BlendMode prev_blend = SDL_BLENDMODE_NONE;
+    SDL_GetRenderDrawBlendMode(renderer, &prev_blend);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 60, 220, 90, 200);
     // Poly-line connecting the tile centers of the remaining path cells (from
     // the cell currently being walked toward, back one so it starts at the
@@ -273,6 +269,7 @@ void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view
         prev_y = py;
         have_prev = true;
     }
+    SDL_SetRenderDrawBlendMode(renderer, prev_blend);
 }
 
 }  // namespace ra2engine

@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "iso_project.hpp"   // cell_to_screen (terrain_screen_bounds)
+#include "iso_renderer.hpp"  // terrain_screen_bounds declaration
+
 namespace ra2engine {
 
 // GI.SHP (temperate infantry) walk animation, facing 0. RA2 infantry SHPs
@@ -16,6 +19,14 @@ static constexpr int kStandFrame = 0;
 static constexpr int kWalkFirst = 8;
 static constexpr int kWalkCount = 6;
 static constexpr double kWalkFps = 9.0;  // walk-cycle frame rate
+
+// RA2 temperate tile geometry -- must match iso_renderer.cpp's / input.cpp's
+// kTileW/kTileH/kLevelPx (the same duplicated-constant pattern already
+// flagged as a Minor in task-12-report.md; not made any worse here). Used
+// only by terrain_screen_bounds below.
+static constexpr int kTileW = 60;
+static constexpr int kTileH = 30;
+static constexpr int kLevelPx = 15;
 
 const ra2assets::MapCell* pick_start_cell(const ra2assets::MapFile& map) {
     const auto& cells = map.cells();
@@ -78,6 +89,35 @@ std::vector<std::uint8_t> build_passability(const std::vector<ra2assets::MapCell
     return passable;
 }
 
+// Screen-space bounding box (camera-local projected pixels, level included)
+// of every cell in `map`. Declared in iso_renderer.hpp (it's conceptually a
+// renderer/camera helper -- main.cpp's centered_camera uses it), but defined
+// HERE rather than in iso_renderer.cpp: iso_renderer.cpp pulls in SDL and is
+// not part of the SDL-free `ra2assets_tests` binary, while world.cpp already
+// is (same single-source-of-truth pattern as engine/iso_project.cpp and
+// engine/pathfind.cpp -- see CMakeLists.txt). Input needs this pure function
+// to clamp camera drag to the map's extent (Task 12 review Finding 2)
+// without dragging SDL into the test build.
+bool terrain_screen_bounds(const ra2assets::MapFile& map, int& min_x, int& min_y, int& max_x,
+                           int& max_y) {
+    const auto& cells = map.cells();
+    if (cells.empty()) return false;
+    int mnx = 1 << 30, mny = 1 << 30, mxx = -(1 << 30), mxy = -(1 << 30);
+    for (const auto& c : cells) {
+        const ScreenPt p =
+            cell_to_screen(c.x, c.y, static_cast<int>(c.level), kTileW, kTileH, kLevelPx);
+        mnx = std::min(mnx, p.x);
+        mny = std::min(mny, p.y);
+        mxx = std::max(mxx, p.x + kTileW);
+        mxy = std::max(mxy, p.y + kTileH);
+    }
+    min_x = mnx;
+    min_y = mny;
+    max_x = mxx;
+    max_y = mxy;
+    return true;
+}
+
 World::World(const ra2assets::MapFile& map) : map_(&map) {
     if (const ra2assets::MapCell* c = pick_start_cell(map)) {
         unit_.cell_x = c->x;
@@ -104,20 +144,33 @@ std::size_t World::order_move(int goal_x, int goal_y) {
     std::vector<Cellxy> path =
         find_path(passable_, grid_w_, grid_h_, {u.cell_x, u.cell_y}, {goal_x, goal_y});
     // A single-cell path (goal == current) or empty (unreachable / off-grid)
-    // means "nowhere to walk": clear any active order and stay put.
+    // means "nowhere to walk": clear any active order and stay put. Snap
+    // fx/fy onto the committed cell here -- if this fires MID-WALK (fx/fy
+    // fractional, between two committed cells), moving() is about to go
+    // false and step() will early-return forever, so without this the
+    // sprite would be stranded off-grid at whatever fractional position it
+    // was interpolating through (Task 12 review Finding 1).
     if (path.size() <= 1) {
         u.path.clear();
         u.path_idx = 0;
         u.anim_time = 0.0;
         u.frame = kStandFrame;
+        u.fx = u.cell_x;
+        u.fy = u.cell_y;
         return 0;
     }
     u.path = std::move(path);
     u.path_idx = 1;  // path[0] is the cell we're standing on
     u.anim_time = 0.0;
-    // fx/fy already sit exactly on the current cell.
-    u.fx = u.cell_x;
-    u.fy = u.cell_y;
+    // Do NOT touch fx/fy here (Task 12 review Finding 1): if the unit is
+    // idle, fx/fy already sit exactly on cell_x/cell_y, so this is moot. But
+    // if it is RETARGETED MID-WALK, fx/fy hold the current in-flight
+    // interpolated position; resetting them to cell_x/cell_y would snap the
+    // sprite backward to its last committed cell, discarding the walk that
+    // was already rendered. step() interpolates fine from any starting
+    // fx/fy toward path[path_idx] regardless of whether fx/fy lies exactly
+    // on that segment, so leaving it alone keeps the walk visually
+    // continuous across a reorder.
     return u.path.size();
 }
 

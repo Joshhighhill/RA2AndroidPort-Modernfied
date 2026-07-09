@@ -30,7 +30,12 @@ namespace ra2engine {
 // for hit-testing and fed straight to World::order_move / find_path.
 class Input {
 public:
-    Input(World& world, Camera& camera) : world_(world), cam_(camera) {}
+    // view_w/view_h: the viewport size in window pixels (Platform::width()/
+    // height() in the live loop). Used ONLY to clamp camera drag (see
+    // clamp_camera() below, Task 12 review Finding 2) so the map can't be
+    // dragged arbitrarily far off-screen; they don't otherwise affect
+    // select/move hit-testing.
+    Input(World& world, Camera& camera, int view_w, int view_h);
 
     // Feed one polled event. Mutates world_/cam_ per the model above.
     void handle(const InputEvent& ev);
@@ -39,6 +44,7 @@ public:
 
 private:
     void on_tap(int px, int py);  // resolve a tap into select / move
+    void clamp_camera();          // keeps cam_ within the drag bounds below
 
     World& world_;
     Camera& cam_;
@@ -47,6 +53,20 @@ private:
     bool dragging_ = false;   // this press has crossed the drag threshold
     int down_x_ = 0, down_y_ = 0;  // where the press started (click vs drag)
     int last_x_ = 0, last_y_ = 0;  // previous pointer pos (drag delta)
+
+    // --- Camera drag clamp (Task 12 review Finding 2) ---
+    // Computed once at construction from the map's screen-space bounding box
+    // (terrain_screen_bounds, world.map()) plus the viewport size: cam_.x/y
+    // is kept within [min_cam_x_, max_cam_x_] / [min_cam_y_, max_cam_y_] so a
+    // drag can never push the map's ENTIRE screen bounding box more than
+    // `margin` (half a viewport, view_w_/2 x view_h_/2) past the viewport's
+    // edges -- i.e. some part of the map is always at most a half-viewport
+    // away from being on-screen; it can never be dragged arbitrarily far
+    // off. See input.cpp for the exact formula. Left wide-open
+    // (INT_MIN/INT_MAX, i.e. unclamped) if the map has no cells (nothing to
+    // bound against -- e.g. an empty synthetic test map).
+    int view_w_ = 0, view_h_ = 0;
+    int min_cam_x_ = 0, max_cam_x_ = 0, min_cam_y_ = 0, max_cam_y_ = 0;
 };
 
 }  // namespace ra2engine

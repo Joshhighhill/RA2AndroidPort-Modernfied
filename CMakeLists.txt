@@ -75,6 +75,12 @@ target_sources(ra2assets_tests PRIVATE tests/test_pathfind.cpp engine/pathfind.c
 # it must agree with. Compiled from the same single source of truth as the
 # ra2engine executable below (same pattern as iso_project.cpp / pathfind.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp)
+# input.cpp is SDL-free (only InputEvent, screen_to_cell, World -- see
+# engine/input.hpp) so it compiles into this test binary too (Task 12 review
+# Finding 3: Input previously had zero test coverage); it calls
+# terrain_screen_bounds, which is defined in engine/world.cpp (already a
+# source above) rather than engine/iso_renderer.cpp so this stays SDL-free.
+target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
