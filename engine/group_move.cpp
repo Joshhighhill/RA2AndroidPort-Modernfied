@@ -21,7 +21,7 @@ std::vector<Cellxy> nearest_free_cells(Cellxy center, int count,
     };
 
     // Ring 0 is the center; ring r is the square border at Chebyshev distance r.
-    // The map's iso extent is ~213 cells, so this is a hard upper bound on r.
+    // The maximum Chebyshev distance inside a w*h grid is max(w,h)-1 < w+h, so every cell is reachable before the loop ends.
     const int kMaxRing = w + h;
     consider(center.x, center.y);
     for (int r = 1; r <= kMaxRing && (int)out.size() < count; ++r) {

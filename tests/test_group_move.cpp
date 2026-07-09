@@ -39,14 +39,24 @@ TEST_CASE("nearest_free_cells: returns the goal first, then nearest free walkabl
 }
 
 TEST_CASE("nearest_free_cells: skips impassable and occupied cells") {
+    // Center (2,2) blocked (impassable). Ring-1 scan order is
+    // (1,1),(1,3),(2,1),(2,3),(3,1),(3,3),(1,2),(3,2); occupy the first two
+    // candidates so the occupancy filter is genuinely load-bearing: with
+    // count=3 the result must be the NEXT three free cells, not the occupied
+    // ones (if the is_free filter were dropped, (1,1)/(1,3) would leak in).
     auto p = open_grid(5, 5);
     p[2 * 5 + 2] = 0;              // block the center (2,2)
     Occupancy occ(5, 5);
-    occ.set(3, 2, 0);             // occupy (3,2)
+    occ.set(1, 1, 0);              // occupy 1st ring-1 candidate
+    occ.set(1, 3, 1);              // occupy 2nd ring-1 candidate
     auto cells = nearest_free_cells({2, 2}, 3, p, 5, 5, occ);
     REQUIRE(cells.size() == 3);
     CHECK_FALSE(has_cell(cells, 2, 2));   // impassable center excluded
-    CHECK_FALSE(has_cell(cells, 3, 2));   // occupied cell excluded
+    CHECK_FALSE(has_cell(cells, 1, 1));   // occupied cells excluded
+    CHECK_FALSE(has_cell(cells, 1, 3));
+    CHECK(has_cell(cells, 2, 1));         // ...replaced by the next free ones
+    CHECK(has_cell(cells, 2, 3));
+    CHECK(has_cell(cells, 3, 1));
 }
 
 TEST_CASE("nearest_free_cells: returns fewer than requested when the area is crowded") {
@@ -79,20 +89,21 @@ TEST_CASE("assign_formation: one target per mover, all distinct, mover cells cou
     CHECK(has_cell(targets, 5, 5));
 }
 
-TEST_CASE("assign_formation: crowded area leaves overflow movers on their own cell") {
-    // 3x1 strip: goal region has room for only the 3 strip cells, but 3 movers
-    // already sit on all 3. A 4th mover far away keeps its own cell.
-    auto p = open_grid(3, 1);
-    Occupancy occ(3, 1);
-    std::vector<Cellxy> movers = {{0, 0}, {1, 0}, {2, 0}};
+TEST_CASE("assign_formation: a mover with no available slot keeps its own cell") {
+    // 2x1 grid where cell (1,0) is IMPASSABLE. Mover 1 stands on it (the pure
+    // function takes mover cells as given). nearest_free_cells can only offer
+    // the single walkable cell (0,0), so mover 0 (distance 0) wins it and
+    // mover 1 is left unassigned -> it must keep its own current cell. This
+    // exercises assign_formation's fallback default (targets = mover_cells).
+    std::vector<uint8_t> p = {1, 0};
+    Occupancy occ(2, 1);
+    std::vector<Cellxy> movers = {{0, 0}, {1, 0}};
     occ.set(0, 0, 0);
     occ.set(1, 0, 1);
-    occ.set(2, 0, 2);
-    auto targets = assign_formation({1, 0}, movers, p, 3, 1, occ);
-    REQUIRE(targets.size() == 3);
-    // Every mover cell is free (they are the movers), so all 3 get assigned
-    // distinct cells within the strip.
-    for (size_t i = 0; i < targets.size(); ++i)
-        for (size_t j = i + 1; j < targets.size(); ++j)
-            CHECK_FALSE((targets[i].x == targets[j].x && targets[i].y == targets[j].y));
+    auto targets = assign_formation({0, 0}, movers, p, 2, 1, occ);
+    REQUIRE(targets.size() == 2);
+    CHECK(targets[0].x == 0);
+    CHECK(targets[0].y == 0);
+    CHECK(targets[1].x == 1);   // unassigned mover keeps its own cell
+    CHECK(targets[1].y == 0);
 }

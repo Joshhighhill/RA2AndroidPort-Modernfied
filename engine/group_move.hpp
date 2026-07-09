@@ -21,6 +21,7 @@ std::vector<Cellxy> nearest_free_cells(Cellxy center, int count,
 // greedily gives each collected cell (nearest-to-goal first) to the nearest
 // not-yet-assigned mover. Any mover left unassigned (crowded) keeps its own
 // current cell. Returns exactly mover_cells.size() targets. Pure.
+// Precondition: mover_cells are pairwise distinct (callers derive them from an Occupancy, which holds at most one unit per cell); duplicate mover cells can produce duplicate targets.
 std::vector<Cellxy> assign_formation(Cellxy goal, const std::vector<Cellxy>& mover_cells,
                                      const std::vector<uint8_t>& passable, int w, int h,
                                      const Occupancy& occ);
