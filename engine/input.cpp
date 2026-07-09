@@ -1,6 +1,7 @@
 #include "input.hpp"
 
 #include <climits>  // INT_MIN/INT_MAX
+#include <cmath>    // std::lround
 #include <cstdlib>  // std::abs
 
 #include "iso_project.hpp"  // screen_to_cell
@@ -12,6 +13,21 @@ namespace ra2engine {
 // inverts to the same cell the sprite sits on.
 static constexpr int kTileW = 60;
 static constexpr int kTileH = 30;
+
+// Terrain height step in px -- must match iso_renderer.cpp's kLevelPx. The
+// unit sprite is drawn RAISED by level*kLevelPx, so a selection hit-test that
+// ignored height would miss any unit standing on elevated ground (the visible
+// sprite sits above the flat-tile position the tap would otherwise invert to).
+static constexpr int kLevelPx = 15;
+
+// Selection hit box around the unit's on-screen ground point (its "feet").
+// A single tile is a tiny target -- especially for touch -- so accept a tap
+// anywhere over the sprite's footprint and body: about half a tile to each
+// side, most of a sprite-height up (the body rises above the feet), a little
+// below. Generous on purpose; there is only one unit to disambiguate.
+static constexpr int kHitHalfW = 32;
+static constexpr int kHitUp = 46;
+static constexpr int kHitDown = 16;
 
 // Pointer travel (window px) past which a press is treated as a camera drag
 // rather than a tap. Small enough that deliberate clicks never pan, large
@@ -96,18 +112,33 @@ void Input::handle(const InputEvent& ev) {
 }
 
 void Input::on_tap(int px, int py) {
-    // Undo the camera pan, then invert the projection to the iso cell (same
-    // space as MapCell / unit cell / passability grid).
-    int cx = 0, cy = 0;
-    screen_to_cell(px - cam_.x, py - cam_.y, kTileW, kTileH, cx, cy);
-
     Unit& u = world_.unit();
-    if (cx == u.cell_x && cy == u.cell_y) {
-        u.selected = true;  // tapped the unit -> select it
+
+    // Hit-test in SCREEN space against where the unit's sprite is actually
+    // drawn -- its ground point (feet) in window pixels. This is the same
+    // anchor draw_unit uses in iso_renderer.cpp: project the unit's continuous
+    // position, add the tile center, raise by the terrain height, apply the
+    // camera. Testing here (rather than inverting the tap to a cell and
+    // comparing) both (a) accounts for the height raise, so taps on elevated
+    // units land, and (b) lets the hit box be as large as a comfortable tap
+    // target instead of a single 60x30 tile.
+    const double hw = kTileW / 2.0;
+    const double hh = kTileH / 2.0;
+    const int gx = static_cast<int>(std::lround((u.fx - u.fy) * hw)) + kTileW / 2 + cam_.x;
+    const int gy = static_cast<int>(std::lround((u.fx + u.fy) * hh - u.level * kLevelPx)) +
+                   kTileH / 2 + cam_.y;
+
+    if (px >= gx - kHitHalfW && px <= gx + kHitHalfW && py >= gy - kHitUp && py <= gy + kHitDown) {
+        u.selected = true;  // tapped on/near the unit -> select it
         return;
     }
     if (u.selected) {
-        world_.order_move(cx, cy);  // tapped elsewhere while selected -> move
+        // Tapped away from the unit while selected -> move there. The
+        // destination is taken on the ground plane (screen_to_cell ignores
+        // height, which is ambiguous from a pixel alone).
+        int cx = 0, cy = 0;
+        screen_to_cell(px - cam_.x, py - cam_.y, kTileW, kTileH, cx, cy);
+        world_.order_move(cx, cy);
     }
 }
 

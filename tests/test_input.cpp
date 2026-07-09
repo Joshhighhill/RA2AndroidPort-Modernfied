@@ -112,6 +112,17 @@ void tap_point_for_cell(int cell_x, int cell_y, int& px, int& py) {
     py = p.y;
 }
 
+// Screen pixel at the unit's on-screen GROUND POINT (its feet) under an
+// identity camera -- LEVEL-AWARE, matching Input::on_tap's screen-space sprite
+// hit-test and draw_unit's anchor (tile ref + tile center, raised by the
+// terrain height). This is the dead center of the selection hit box, so a tap
+// here must select regardless of the unit's terrain level.
+void tap_point_for_unit(const ra2engine::Unit& u, int& px, int& py) {
+    const ra2engine::ScreenPt p = ra2engine::cell_to_screen(u.cell_x, u.cell_y, u.level, 60, 30, 15);
+    px = p.x + 30;  // + tile_w/2 -> sprite ground point x (tile center)
+    py = p.y + 15;  // + tile_h/2 -> sprite ground point y
+}
+
 }  // namespace
 
 TEST_CASE("Input: tap on the unit's cell selects it (identity camera)") {
@@ -126,13 +137,36 @@ TEST_CASE("Input: tap on the unit's cell selects it (identity camera)") {
 
     REQUIRE_FALSE(world.unit().selected);
     int px, py;
-    tap_point_for_cell(world.unit().cell_x, world.unit().cell_y, px, py);
+    tap_point_for_unit(world.unit(), px, py);  // tap the unit's drawn sprite (level-aware)
 
     input.handle(InputEvent{InputEvent::PointerDown, px, py});
     input.handle(InputEvent{InputEvent::PointerUp, px, py});
 
     CHECK(world.unit().selected);
     CHECK_FALSE(world.unit().moving());  // a select tap must not also move it
+}
+
+TEST_CASE("Input: tap near (not exactly on) an elevated unit still selects it") {
+    MapFile map;
+    if (!load_real_map(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+
+    // Tap a few px off the exact ground point -- the kind of imprecise tap a
+    // finger makes. The generous hit box must still select (this is the whole
+    // point of the screen-space hit-test vs. the old exact-cell match).
+    REQUIRE_FALSE(world.unit().selected);
+    int px, py;
+    tap_point_for_unit(world.unit(), px, py);
+    input.handle(InputEvent{InputEvent::PointerDown, px + 20, py - 18});
+    input.handle(InputEvent{InputEvent::PointerUp, px + 20, py - 18});
+
+    CHECK(world.unit().selected);
+    CHECK_FALSE(world.unit().moving());
 }
 
 TEST_CASE("Input: tap elsewhere while selected issues a real move order") {
