@@ -26,6 +26,24 @@ MapCell cell(int x, int y) {
 
 int gidx(int w, int x, int y) { return y * w + x; }
 
+// Scan outward from (x0, y0) for the first offset (skipping skip_dx/skip_dy)
+// that find_path -- the same algorithm order_move_selected uses -- reaches
+// with a real (>1 cell) route. Pure probing: no World state is touched.
+constexpr int kProbeDirs[8][2] = {{1, 0}, {-1, 0}, {0, 1},  {0, -1},
+                                  {1, 1}, {-1, -1}, {1, -1}, {-1, 1}};
+bool find_reachable(const ra2engine::World& w, int x0, int y0, int skip_dx, int skip_dy,
+                    int& ox, int& oy) {
+    for (int r = 4; r <= 40; r += 2)
+        for (const auto& d : kProbeDirs) {
+            const int dx = d[0] * r, dy = d[1] * r;
+            if (dx == skip_dx && dy == skip_dy) continue;
+            auto p = ra2engine::find_path(w.passable(), w.grid_w(), w.grid_h(),
+                                          {x0, y0}, {x0 + dx, y0 + dy});
+            if (p.size() > 1) { ox = x0 + dx; oy = y0 + dy; return true; }
+        }
+    return false;
+}
+
 }  // namespace
 
 TEST_CASE("build_passability: empty cells -> empty grid, zero dims") {
@@ -175,4 +193,68 @@ TEST_CASE("unit_draw_order: sorts back-to-front by fx+fy") {
     CHECK(order[0] == 1);
     CHECK(order[1] == 0);
     CHECK(order[2] == 2);
+}
+
+TEST_CASE("World: order_move_selected mid-walk retarget keeps fx/fy (no backward snap)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.set_move_speed(3.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_unit(c->x, c->y, "GI", 0);
+    world.units()[0].selected = true;
+
+    int t1x = 0, t1y = 0;
+    REQUIRE(find_reachable(world, c->x, c->y, 999999, 999999, t1x, t1y));
+    world.order_move_selected(t1x, t1y);
+    REQUIRE(world.units()[0].moving());
+
+    // Step partway: 0.05s at 3 cells/sec = 0.15 cells -- genuinely mid-segment.
+    world.step(0.05);
+    REQUIRE(world.units()[0].moving());
+    const double fx0 = world.units()[0].fx, fy0 = world.units()[0].fy;
+    REQUIRE((fx0 != (double)world.units()[0].cell_x || fy0 != (double)world.units()[0].cell_y));
+
+    int t2x = 0, t2y = 0;
+    REQUIRE(find_reachable(world, world.units()[0].cell_x, world.units()[0].cell_y,
+                           t1x - world.units()[0].cell_x, t1y - world.units()[0].cell_y,
+                           t2x, t2y));
+    world.order_move_selected(t2x, t2y);
+
+    // The retarget must NOT snap fx/fy backward to the committed cell.
+    CHECK(world.units()[0].fx == fx0);
+    CHECK(world.units()[0].fy == fy0);
+    CHECK(world.units()[0].moving());
+    REQUIRE_FALSE(world.units()[0].path.empty());
+    CHECK(world.units()[0].path.back().x == t2x);   // formation slot for a lone
+    CHECK(world.units()[0].path.back().y == t2y);   // unit is the goal itself
+}
+
+TEST_CASE("World: unreachable order mid-walk cancels and snaps fx/fy cleanly") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.set_move_speed(3.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_unit(c->x, c->y, "GI", 0);
+    world.units()[0].selected = true;
+
+    int t1x = 0, t1y = 0;
+    REQUIRE(find_reachable(world, c->x, c->y, 999999, 999999, t1x, t1y));
+    world.order_move_selected(t1x, t1y);
+    world.step(0.05);
+    REQUIRE(world.units()[0].moving());
+    REQUIRE((world.units()[0].fx != (double)world.units()[0].cell_x ||
+             world.units()[0].fy != (double)world.units()[0].cell_y));
+
+    // A goal FAR off-grid: the formation ring search finds no free walkable
+    // cell, the unit keeps its own cell as target, pathing to self cancels ->
+    // fx/fy must snap onto the committed cell, not strand mid-segment.
+    world.order_move_selected(world.grid_w() + 1000, world.grid_h() + 1000);
+    CHECK_FALSE(world.units()[0].moving());
+    CHECK(world.units()[0].path.empty());
+    CHECK(world.units()[0].fx == (double)world.units()[0].cell_x);
+    CHECK(world.units()[0].fy == (double)world.units()[0].cell_y);
 }

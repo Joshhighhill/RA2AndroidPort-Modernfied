@@ -13,6 +13,16 @@ static constexpr int kTileW = 60;
 static constexpr int kTileH = 30;
 static constexpr int kLevelPx = 15;
 
+// Selection hit box around a unit's on-screen ground point (its feet): about
+// half a tile to each side, most of a sprite height up, a little below.
+// Restored from the Phase-2 tap hit-test: picking must be done in SCREEN
+// space against the LEVEL-AWARE ground point the sprite is actually drawn at
+// -- a bare screen_to_cell inversion is level-blind and resolves a full cell
+// off for a unit standing on level-2 terrain.
+static constexpr int kHitHalfW = 32;
+static constexpr int kHitUp = 46;
+static constexpr int kHitDown = 16;
+
 // Pointer travel (window px) past which a left press becomes a selection-box
 // drag rather than a click.
 static constexpr int kDragThreshold = 6;
@@ -58,17 +68,26 @@ void Input::unit_ground_px(const Unit& u, int& gx, int& gy) const {
 }
 
 int Input::unit_under(int px, int py) const {
-    // Cell-based pick: invert the pointer (undo camera) to an iso cell, then ask
-    // the World which unit stands there. Unambiguous because occupancy keeps at
-    // most one unit per cell. screen_to_cell inverts the tile's TOP-LEFT
-    // convention, but sprites/ground points anchor at the tile CENTER
-    // (top-left + (tile_w/2, tile_h/2) -- see unit_ground_px / draw_unit), so
-    // subtract the half-tile first; without this a click on a unit's feet
-    // resolves one cell east (center pixel inverts to (cx+1, cy) exactly).
-    int cx = 0, cy = 0;
-    screen_to_cell(px - cam_.x - kTileW / 2, py - cam_.y - kTileH / 2, kTileW, kTileH,
-                   cx, cy);
-    return world_.unit_at_cell(cx, cy);
+    // Screen-space pick: test the click against every unit's hit box around
+    // its level-aware ground point (unit_ground_px -- identical anchor to
+    // draw_unit). Among units whose box contains the click, the NEAREST
+    // ground point wins; ties break to the lowest index (deterministic).
+    const std::vector<Unit>& us = world_.units();
+    int best = -1;
+    long best_d2 = 0;
+    for (std::size_t i = 0; i < us.size(); ++i) {
+        int gx, gy;
+        unit_ground_px(us[i], gx, gy);
+        if (px < gx - kHitHalfW || px > gx + kHitHalfW) continue;
+        if (py < gy - kHitUp || py > gy + kHitDown) continue;
+        const long dx = px - gx, dy = py - gy;
+        const long d2 = dx * dx + dy * dy;
+        if (best < 0 || d2 < best_d2) {
+            best = static_cast<int>(i);
+            best_d2 = d2;
+        }
+    }
+    return best;
 }
 
 bool Input::selection_box(int& x0, int& y0, int& x1, int& y1) const {

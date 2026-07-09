@@ -10,6 +10,7 @@
 
 #include "input.hpp"
 #include "iso_project.hpp"
+#include "iso_renderer.hpp"  // terrain_screen_bounds
 #include "world.hpp"
 
 #include "ra2assets/map.hpp"
@@ -43,9 +44,10 @@ bool load_real_map(MapFile& out) {
 }
 
 // Screen pixel over the cell (cx, cy) ground point at identity camera, level 0.
-// This is the LEVEL-0 variant -- correct for click tests, because
-// Input::unit_under inverts the pointer level-agnostically (screen_to_cell
-// only inverts the level-0 plane); box tests need ground_px_for_unit below.
+// This is the level-0 cell ground point, used for GROUND-target clicks
+// (right-click move issues to a cell, not a unit, and is level-blind by
+// design). Unit clicks must use ground_px_for_unit below, which is
+// level-aware to match Input::unit_under's screen-space pick.
 void px_for_cell(int cx, int cy, int& px, int& py) {
     const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, 0, 60, 30, 15);
     px = p.x + 30;  // + tile_w/2 (ground point x)
@@ -108,7 +110,7 @@ TEST_CASE("Input: left-click a unit selects only it; empty click clears") {
     if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
 
     int px, py;
-    px_for_cell(fx.cells[1].first, fx.cells[1].second, px, py);
+    ground_px_for_unit(world.units()[1], px, py);
     left_click(input, px, py, /*shift=*/false, /*t=*/1000);
     CHECK(world.units()[1].selected);
     CHECK_FALSE(world.units()[0].selected);
@@ -129,8 +131,8 @@ TEST_CASE("Input: Shift+left-click toggles units in and out of the selection") {
     if (!fx.ok) { MESSAGE("skipped"); return; }
 
     int px0, py0, px2, py2;
-    px_for_cell(fx.cells[0].first, fx.cells[0].second, px0, py0);
-    px_for_cell(fx.cells[2].first, fx.cells[2].second, px2, py2);
+    ground_px_for_unit(world.units()[0], px0, py0);
+    ground_px_for_unit(world.units()[2], px2, py2);
     left_click(input, px0, py0, false, 1000);   // select unit 0
     left_click(input, px2, py2, true, 2000);    // shift-add unit 2
     CHECK(world.units()[0].selected);
@@ -214,7 +216,7 @@ TEST_CASE("Input: double-click selects all on-screen units of the same type") {
     // -- commit_double only selects units whose ground point lies inside the
     // viewport. Input holds cam by reference, so mutating it here is live.
     int gx0, gy0;
-    px_for_cell(fx.cells[0].first, fx.cells[0].second, gx0, gy0);
+    ground_px_for_unit(world.units()[0], gx0, gy0);
     cam.x = 1280 / 2 - gx0;
     cam.y = 720 / 2 - gy0;
 
@@ -241,4 +243,65 @@ TEST_CASE("Input: pan moves the camera (clamped) and never fires a select") {
     input.pan(-40, -25);
     CHECK(cam.x == x0 - 40);
     CHECK(cam.y == y0 - 25);
+}
+
+TEST_CASE("Input: Shift+left-drag ADDS boxed units to the selection") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 3);
+    if (!fx.ok) { MESSAGE("skipped"); return; }
+
+    // Click-select unit 0 first (plain click).
+    int p0x, p0y;
+    ground_px_for_unit(world.units()[0], p0x, p0y);
+    left_click(input, p0x, p0y, false, 1000);
+    REQUIRE(world.units()[0].selected);
+
+    // Shift+drag a box over units 1 and 2 ONLY (unit 0 sits 30px west of the
+    // box's left edge). Shift box must ADD them, keeping unit 0 selected.
+    int p1x, p1y, p2x, p2y;
+    ground_px_for_unit(world.units()[1], p1x, p1y);
+    ground_px_for_unit(world.units()[2], p2x, p2y);
+    const int bx0 = std::min(p1x, p2x) - 10, by0 = std::min(p1y, p2y) - 10;
+    const int bx1 = std::max(p1x, p2x) + 10, by1 = std::max(p1y, p2y) + 10;
+    InputEvent d;
+    d.kind = InputEvent::PointerDown; d.button = InputEvent::Left;
+    d.x = bx0; d.y = by0; d.shift = true; d.t_ms = 3000;
+    input.handle(d);
+    InputEvent m;
+    m.kind = InputEvent::PointerMove; m.x = bx1; m.y = by1; m.t_ms = 3050;
+    input.handle(m);
+    InputEvent u;
+    u.kind = InputEvent::PointerUp; u.button = InputEvent::Left;
+    u.x = bx1; u.y = by1; u.shift = true; u.t_ms = 3100;
+    input.handle(u);
+
+    CHECK(world.units()[0].selected);   // retained: shift box adds, not replaces
+    CHECK(world.units()[1].selected);
+    CHECK(world.units()[2].selected);
+}
+
+TEST_CASE("Input: pan clamps the camera to the map's screen bounds") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    const int view_w = 1280, view_h = 720;
+    int mnx, mny, mxx, mxy;
+    REQUIRE(ra2engine::terrain_screen_bounds(map, mnx, mny, mxx, mxy));
+    const int margin_x = view_w / 2, margin_y = view_h / 2;
+
+    Camera cam_pos;
+    Input in_pos(world, cam_pos, view_w, view_h);
+    in_pos.pan(1000000000, 1000000000);
+    CHECK(cam_pos.x == view_w + margin_x - mnx);
+    CHECK(cam_pos.y == view_h + margin_y - mny);
+
+    Camera cam_neg;
+    Input in_neg(world, cam_neg, view_w, view_h);
+    in_neg.pan(-1000000000, -1000000000);
+    CHECK(cam_neg.x == -margin_x - mxx);
+    CHECK(cam_neg.y == -margin_y - mxy);
 }

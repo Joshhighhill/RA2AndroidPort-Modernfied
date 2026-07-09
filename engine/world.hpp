@@ -99,6 +99,9 @@ public:
     // Append a unit at iso cell (cell_x, cell_y) with SHP image name + frame;
     // seeds its level from the map and claims its cell in the occupancy grid.
     // Returns a reference to the new unit (valid until units() is reallocated).
+    // Precondition: (cell_x, cell_y) is walkable and unoccupied -- callers
+    // check walkable() and unit_at_cell() first; seeding two units onto one
+    // cell silently breaks the one-unit-per-cell invariant.
     Unit& add_unit(int cell_x, int cell_y, const std::string& image, int frame = 0);
 
     // Deselect every unit.
