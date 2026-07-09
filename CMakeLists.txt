@@ -76,6 +76,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp)
 # terrain_screen_bounds, which is defined in engine/world.cpp (already a
 # source above) rather than engine/iso_renderer.cpp so this stays SDL-free.
 target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp)
+# occupancy.cpp is a pure C++17 cell-ownership grid (no SDL) used by the
+# multi-unit movement/collision logic; compiled into both this test binary and
+# ra2engine from one source of truth (same pattern as pathfind.cpp/world.cpp).
+target_sources(ra2assets_tests PRIVATE tests/test_occupancy.cpp engine/occupancy.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)

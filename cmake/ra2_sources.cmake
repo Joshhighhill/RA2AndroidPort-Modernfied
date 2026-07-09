@@ -41,4 +41,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/world.cpp
     ${RA2_ROOT}/engine/pathfind.cpp
     ${RA2_ROOT}/engine/input.cpp
+    ${RA2_ROOT}/engine/occupancy.cpp
 )
