@@ -171,18 +171,10 @@ void Input::commit_double(int px, int py) {
 }
 
 void Input::handle(const InputEvent& ev) {
-    // A right-button PointerUp is a pure no-op: the order (attack or group-
-    // move) was already dispatched on the paired PointerDown below, and this
-    // event touches no other state (l_down_/dragging_ are left alone, same
-    // as before Task 5). Return BEFORE the reset so it doesn't erase the
-    // action Down just recorded -- a real click's Down+Up are typically
-    // drained in the SAME per-frame event batch, and Task 6 checks
-    // last_actions() once per frame, after every event in that batch has
-    // been fed; if this no-op Up reset the struct, a right-click's ack would
-    // always be wiped before the frame's check ever saw it.
-    if (ev.kind == InputEvent::PointerUp && ev.button == InputEvent::Right) return;
-
-    actions_ = InputActions{};  // reset: state reflects ONLY this event's handling
+    // NOTE: actions_ is deliberately NOT touched here -- it ACCUMULATES
+    // across handle() calls (the commit/order sites below OR their flags in)
+    // and is cleared only by take_actions(), the game loop's once-per-frame
+    // consume point. See InputActions in input.hpp for the rationale.
     switch (ev.kind) {
         case InputEvent::Quit:
             quit_ = true;
@@ -265,7 +257,7 @@ void Input::handle(const InputEvent& ev) {
             break;
 
         case InputEvent::PointerUp:
-            // Right-button Up already returned above (pure no-op).
+            if (ev.button == InputEvent::Right) break;
             if (l_down_) {
                 if (dragging_) {
                     commit_box(down_shift_);

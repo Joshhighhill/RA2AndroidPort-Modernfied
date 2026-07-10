@@ -650,8 +650,13 @@ TEST_CASE("Input: right-click a hostile with nothing selected is a ground move, 
 }
 
 // ---- Task 5: InputActions feedback (voice-ack hooks, audio phase) ----
+// Accumulate-then-consume: handle() ORs flags into the accumulator (never
+// resets it); take_actions() -- the game loop's once-per-frame consume
+// point -- returns the accumulated struct AND clears it, so a same-batch
+// Down+Up pair is preserved and an idle frame reads back all-false (no
+// re-triggered acks from stale flags).
 
-TEST_CASE("Input: last_actions reports selected + actor on a click-select; empty click clears both") {
+TEST_CASE("Input: take_actions reports selected + actor on a click-select, then consumes") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
     World world(map);
@@ -663,20 +668,32 @@ TEST_CASE("Input: last_actions reports selected + actor on a click-select; empty
     int px, py;
     ground_px_for_unit(world.units()[1], px, py);
     left_click(input, px, py, /*shift=*/false, /*t=*/1000);
-    CHECK(input.last_actions().selected);
-    CHECK(input.last_actions().actor == 1);
-    CHECK_FALSE(input.last_actions().move_ordered);
-    CHECK_FALSE(input.last_actions().attack_ordered);
+    const ra2engine::InputActions a = input.take_actions();
+    CHECK(a.selected);
+    CHECK(a.actor == 1);
+    CHECK_FALSE(a.move_ordered);
+    CHECK_FALSE(a.attack_ordered);
 
-    // Click far-away empty ground: clears selection AND last_actions.
+    // The consume is real: an immediate second take (an idle frame -- no
+    // events in between) reads back all-false / actor -1, so an ack can
+    // never re-trigger from stale flags.
+    const ra2engine::InputActions idle = input.take_actions();
+    CHECK_FALSE(idle.selected);
+    CHECK_FALSE(idle.move_ordered);
+    CHECK_FALSE(idle.attack_ordered);
+    CHECK(idle.actor == -1);
+
+    // Click far-away empty ground: clears the selection and accumulates
+    // nothing (a commit that ends with an empty selection is not an action).
     left_click(input, px + 900, py + 400, false, 2000);
-    CHECK_FALSE(input.last_actions().selected);
-    CHECK_FALSE(input.last_actions().move_ordered);
-    CHECK_FALSE(input.last_actions().attack_ordered);
-    CHECK(input.last_actions().actor == -1);
+    const ra2engine::InputActions e = input.take_actions();
+    CHECK_FALSE(e.selected);
+    CHECK_FALSE(e.move_ordered);
+    CHECK_FALSE(e.attack_ordered);
+    CHECK(e.actor == -1);
 }
 
-TEST_CASE("Input: last_actions resets on the very next handle() (e.g. a plain mouse move)") {
+TEST_CASE("Input: a mouse-move-only frame after the consume reads back all-false") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
     World world(map);
@@ -688,22 +705,24 @@ TEST_CASE("Input: last_actions resets on the very next handle() (e.g. a plain mo
     int px, py;
     ground_px_for_unit(world.units()[0], px, py);
     left_click(input, px, py, false, 1000);
-    REQUIRE(input.last_actions().selected);
+    REQUIRE(input.take_actions().selected);   // frame 1: select consumed
 
+    // Frame 2: only a plain mouse move -- accumulates nothing.
     InputEvent mv;
     mv.kind = InputEvent::PointerMove;
     mv.x = px + 5; mv.y = py + 5; mv.t_ms = 1050;
     input.handle(mv);
 
-    CHECK_FALSE(input.last_actions().selected);
-    CHECK_FALSE(input.last_actions().move_ordered);
-    CHECK_FALSE(input.last_actions().attack_ordered);
-    CHECK(input.last_actions().actor == -1);
+    const ra2engine::InputActions a = input.take_actions();
+    CHECK_FALSE(a.selected);
+    CHECK_FALSE(a.move_ordered);
+    CHECK_FALSE(a.attack_ordered);
+    CHECK(a.actor == -1);
     // Selection itself is untouched by the move (pure observation, no behavior change).
     CHECK(world.units()[0].selected);
 }
 
-TEST_CASE("Input: last_actions reports selected + lowest boxed index on a box-select") {
+TEST_CASE("Input: take_actions reports selected + lowest boxed index on a box-select") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
     World world(map);
@@ -732,11 +751,12 @@ TEST_CASE("Input: last_actions reports selected + lowest boxed index on a box-se
     REQUIRE(world.units()[1].selected);
     REQUIRE(world.units()[2].selected);
     CHECK_FALSE(world.units()[0].selected);
-    CHECK(input.last_actions().selected);
-    CHECK(input.last_actions().actor == 1);
+    const ra2engine::InputActions a = input.take_actions();
+    CHECK(a.selected);
+    CHECK(a.actor == 1);
 }
 
-TEST_CASE("Input: last_actions reports move_ordered + lowest actor on a right-click ground move") {
+TEST_CASE("Input: take_actions reports move_ordered + lowest actor on a right-click ground move") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
     World world(map);
@@ -763,15 +783,19 @@ TEST_CASE("Input: last_actions reports move_ordered + lowest actor on a right-cl
 
     int px, py;
     px_for_cell(gx, gy, px, py);
+    // right_click feeds BOTH the Down (which dispatches the order) and the
+    // trailing Up before the take below -- exactly a real frame's event
+    // batch. Accumulation must carry the Down-recorded action across the Up.
     right_click(input, px, py, 2000);
 
-    CHECK(input.last_actions().move_ordered);
-    CHECK_FALSE(input.last_actions().selected);
-    CHECK_FALSE(input.last_actions().attack_ordered);
-    CHECK(input.last_actions().actor == std::min(fx.gi0, fx.gi1));
+    const ra2engine::InputActions a = input.take_actions();
+    CHECK(a.move_ordered);
+    CHECK_FALSE(a.selected);
+    CHECK_FALSE(a.attack_ordered);
+    CHECK(a.actor == std::min(fx.gi0, fx.gi1));
 }
 
-TEST_CASE("Input: last_actions reports attack_ordered + lowest actor on a right-click attack") {
+TEST_CASE("Input: take_actions reports attack_ordered + lowest actor on a right-click attack") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
     World world(map);
@@ -785,10 +809,13 @@ TEST_CASE("Input: last_actions reports attack_ordered + lowest actor on a right-
 
     int px, py;
     ground_px_for_unit(world.units()[fx.cons], px, py);
+    // Down (dispatches the attack) + trailing Up both fed before the take,
+    // as in a real frame's event batch (see the move case above).
     right_click(input, px, py, 1000);
 
-    CHECK(input.last_actions().attack_ordered);
-    CHECK_FALSE(input.last_actions().selected);
-    CHECK_FALSE(input.last_actions().move_ordered);
-    CHECK(input.last_actions().actor == std::min(fx.gi0, fx.gi1));
+    const ra2engine::InputActions a = input.take_actions();
+    CHECK(a.attack_ordered);
+    CHECK_FALSE(a.selected);
+    CHECK_FALSE(a.move_ordered);
+    CHECK(a.actor == std::min(fx.gi0, fx.gi1));
 }

@@ -8,17 +8,21 @@
 
 namespace ra2engine {
 
-// Reports what the MOST RECENT handle() call did, for audio voice-ack hooks
-// (Task 5 of the audio-playback phase) -- pure observation, no behavior
-// change to selection/orders. handle() resets this to all-false/actor=-1 at
-// entry, so a non-select/order event (e.g. a plain mouse move) always reads
-// back empty. ONE exception: a right-button PointerUp is a documented no-op
-// (the attack/move order already dispatched on the paired PointerDown) and
-// does not reset -- it leaves whatever that PointerDown just recorded intact,
-// so a right-click's ack survives to the end of the frame's event batch (see
-// input.cpp's handle()). The three bool flags are mutually exclusive per
-// event by construction (a single handle() call takes exactly one branch
-// that can set any of them).
+// Reports what handle() did since the last take_actions() call, for audio
+// voice-ack hooks (Task 5 of the audio-playback phase) -- pure observation,
+// no behavior change to selection/orders. ACCUMULATE-THEN-CONSUME: handle()
+// never resets this; each commit/order site ORs its flag in (actor = lowest
+// selected unit index, captured before the order mutates state), and
+// Input::take_actions() is the single consume point -- it returns the
+// accumulated struct and clears it. WHY: the game loop feeds a whole frame's
+// event batch (a click's Down+Up typically arrive together) and then reads
+// the actions ONCE per frame -- accumulation means the Down-recorded action
+// survives the batch's trailing events without special-casing any of them,
+// and consuming means an idle frame (or a frame of plain mouse moves) reads
+// back all-false instead of re-triggering the previous frame's ack forever.
+// Within one consume window the flags are independent bits: a select-click
+// and a right-click order in the same frame both report (Task 6's ack
+// precedence -- selected, else attack, else move -- picks one voice line).
 struct InputActions {
     bool selected = false;       // a commit produced a non-empty selection
     bool move_ordered = false;   // right-click group move issued
@@ -71,8 +75,15 @@ public:
 
     bool wants_quit() const { return quit_; }
 
-    // State produced by the MOST RECENT handle() call (see InputActions).
-    const InputActions& last_actions() const { return actions_; }
+    // Consume the actions accumulated by every handle() call since the
+    // previous take_actions(): returns them and resets the accumulator (see
+    // InputActions above for the accumulate-then-consume rationale). Call
+    // ONCE per frame, after the frame's event-poll loop.
+    InputActions take_actions() {
+        InputActions out = actions_;
+        actions_ = InputActions{};
+        return out;
+    }
 
 private:
     void clamp_camera();
@@ -92,7 +103,7 @@ private:
     World& world_;
     Camera& cam_;
     bool quit_ = false;
-    InputActions actions_;  // reset at the top of every handle() call
+    InputActions actions_;  // accumulator; cleared only by take_actions()
 
     // Left-button gesture state.
     bool l_down_ = false;
