@@ -102,6 +102,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_combat.cpp engine/combat.cpp)
 # (docs/re/audio-playback.md). Compiled into both this test binary and
 # ra2engine from one source of truth (same pattern as combat.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_audio_mixer.cpp engine/audio_mixer.cpp)
+# voxel_raster.cpp is the pure C++17 voxel rasterizer (no SDL): VXL/HVA model +
+# yaw + voxels.vpl lighting + palette -> RGBA sprite (docs/re/voxel-render.md).
+# Compiled into both this test binary and ra2engine from one source of truth
+# (same pattern as combat.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_voxel_raster.cpp engine/voxel_raster.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
