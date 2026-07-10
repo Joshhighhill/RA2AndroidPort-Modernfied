@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -124,28 +125,29 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
     return Assets{std::move(map), pal, std::move(th)};
 }
 
-// Everything needed to draw the one placed unit: its decoded SHP, the
-// (separate, temperate UNIT, not terrain) palette, and the resolved image
-// name (Rules::image() output, e.g. "GI") the World's Unit is tagged with.
+// Everything needed to draw + fight both squads: one decoded SHP per
+// distinct image ("GI", "CONS", both keyed by Rules::image() output), the
+// shared (temperate UNIT, not terrain) palette, and each unit-type's
+// Rules-resolved combat stats + walk speed. Generalizes the single-unit-type
+// version of this struct (Phase 2/6) to the two-squad combat vertical slice
+// (Task 8): render_world/draw calls pick the SHP by `unit.image` out of
+// `shps` instead of assuming there is only one.
 struct UnitAssets {
-    ShpFile shp;
-    Palette pal;
-    std::string image;
-    int speed = 0;  // rulesmd.ini [unit] Speed= (drives walk pace; see build_world)
+    std::map<std::string, ShpFile> shps;  // image -> decoded SHP ("GI", "CONS")
+    Palette pal;                          // shared unittem.pal
+    ra2engine::UnitCombat gi;             // E1-resolved combat stats (image "GI")
+    int gi_speed = 0;                     // rulesmd.ini [E1] Speed=
+    ra2engine::UnitCombat cons;           // E2-resolved combat stats (image "CONS")
+    int cons_speed = 0;                   // rulesmd.ini [E2] Speed=
 };
 
-// Resolves unit_id's Image= (e.g. "E1" -> "GI") from rulesmd.ini. rulesmd.ini
-// is not always a top-level ra2md.mix entry in a stock install -- it can be
-// nested inside one of a handful of mixes depending on layout. Mirrors the
-// exact fallback chain proven against the real install in
-// tests/test_rules.cpp's real-asset test.
-// Resolved rulesmd.ini fields the engine needs for one unit.
-struct UnitRules {
-    std::string image;
-    int speed = 0;
-};
-
-UnitRules resolve_unit_rules(const std::string& dir, const std::string& unit_id) {
+// Loads rulesmd.ini ONCE per mode entry point (nested fallback chain --
+// rulesmd.ini is not always a top-level ra2md.mix entry in a stock install;
+// mirrors the exact fallback chain proven against the real install in
+// tests/test_rules.cpp's real-asset test). The returned Ini must outlive any
+// Rules built from it (Rules wraps its Ini by reference, see rules.hpp) --
+// callers keep both as locals in the same function scope.
+Ini load_rules_ini(const std::string& dir) {
     MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
 
     std::vector<uint8_t> rules_bytes;
@@ -171,33 +173,52 @@ UnitRules resolve_unit_rules(const std::string& dir, const std::string& unit_id)
     }
     if (rules_bytes.empty())
         throw std::runtime_error("rulesmd.ini not found in ra2md.mix (top level or nested)");
-
-    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
-    Rules rules = Rules::load(ini);
-    return UnitRules{rules.image(unit_id), rules.speed(unit_id)};
+    return Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
 }
 
-// Loads the unit's SHP + palette for unit_id (e.g. "E1" -> image "GI" ->
-// GI.SHP). Asset chain (Phase-1 proven, see task-10-report.md):
-//   image name : ra2md.mix -> ... -> rulesmd.ini, [E1] Image=GI
-//   sprite     : ra2.mix -> conquer.mix -> gi.shp   (lowercased image name)
-//   palette    : ra2.mix -> cache.mix   -> unittem.pal (temperate UNIT
-//                palette -- distinct from isotem.pal, the TERRAIN palette
-//                used by load_assets()/draw_terrain)
-// `ra2` is the already-open ra2.mix shared with load_assets() (opened once by
-// the mode entry points -- previously this function slurped the 268 MB file a
-// second time).
-UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra2,
-                            const std::string& unit_id) {
-    const UnitRules ur = resolve_unit_rules(dir, unit_id);
-    const std::string image = ur.image;
+// One unit id's full combat + movement profile, resolved from an
+// already-loaded Rules: Image= (SHP base name), Speed=, Strength=, Armor=,
+// then the Primary= weapon's Damage=/ROF=/Range=/Warhead=, then that
+// warhead's Verses=.
+struct ResolvedUnit {
+    ra2engine::UnitCombat combat;
+    int speed = 0;
+};
 
-    MixFile conquer = ra2.open_nested("conquer.mix");
+// Resolves one unit id and logs it (extends the old load_unit_assets [unit]
+// log line with the new combat fields) so a real-install run visibly
+// confirms which numbers got pinned for E1/E2 (Task 8 ground truth: E1 GI
+// M60 15/20/4 SA armor=none str=125; E2 CONS M1Carbine 15/25/4 SA armor=flak
+// str=125).
+ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id) {
+    ResolvedUnit r;
+    r.combat.image = rules.image(unit_id);
+    r.speed = rules.speed(unit_id);
+    r.combat.strength = rules.strength(unit_id);
+    r.combat.armor = rules.armor(unit_id);
+    const std::string primary = rules.primary(unit_id);
+    r.combat.damage = rules.weapon_damage(primary);
+    r.combat.rof = rules.weapon_rof(primary);
+    r.combat.range = rules.weapon_range(primary);
+    const std::string warhead = rules.weapon_warhead(primary);
+    r.combat.verses = rules.verses(warhead);
+
+    std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
+              << " strength=" << r.combat.strength << " armor=" << r.combat.armor
+              << " primary=" << primary << " damage=" << r.combat.damage
+              << " rof=" << r.combat.rof << " range=" << r.combat.range
+              << " warhead=" << warhead << "\n";
+    return r;
+}
+
+// Loads one image's SHP from ra2.mix/conquer.mix ("<Image>.shp", falling
+// back to the lowercased form -- conquer.mix's stock entry names are
+// lowercase, e.g. "gi.shp"/"cons.shp"; try as-is first in case a mod/layout
+// differs).
+ShpFile load_unit_shp(const MixFile& conquer, const std::string& image) {
     std::string shp_name = image + ".shp";
     const MixEntry* se = conquer.find(shp_name);
     if (!se) {
-        // conquer.mix's stock entry names are lowercase (e.g. "gi.shp"); try
-        // as-is first (in case a mod/layout differs), then lowercased.
         std::string lower = shp_name;
         for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         se = conquer.find(lower);
@@ -206,18 +227,39 @@ UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra
     if (!se)
         throw std::runtime_error("unit SHP not found in ra2.mix/conquer.mix: " + image + ".shp");
     ShpFile shp = ShpFile::load(conquer.read(*se));
+    std::cerr << "[shp] image=" << image << " file=" << shp_name << " frames=" << shp.count()
+              << " canvas=" << shp.width() << "x" << shp.height() << "\n";
+    return shp;
+}
+
+// Loads everything both squads need: rulesmd.ini once -> ONE Rules -> E1
+// (GI) + E2 (Conscript) resolved combat/speed profiles, their two SHPs
+// (GI.SHP, CONS.SHP), and the shared unittem.pal. `ra2` is the already-open
+// ra2.mix shared with load_assets() (opened once by the mode entry points --
+// avoids slurping the 268 MB file again).
+UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
+    Ini ini = load_rules_ini(dir);
+    Rules rules = Rules::load(ini);
+
+    const ResolvedUnit gi = resolve_combat_unit(rules, "E1");
+    const ResolvedUnit cons = resolve_combat_unit(rules, "E2");
+
+    MixFile conquer = ra2.open_nested("conquer.mix");
+    UnitAssets ua;
+    ua.shps.emplace(gi.combat.image, load_unit_shp(conquer, gi.combat.image));
+    ua.shps.emplace(cons.combat.image, load_unit_shp(conquer, cons.combat.image));
 
     MixFile cache = ra2.open_nested("cache.mix");
     const MixEntry* pe = cache.find(std::string("unittem.pal"));
     if (!pe) throw std::runtime_error("unittem.pal not found in ra2.mix/cache.mix");
     auto pal_raw = cache.read(*pe);
-    Palette pal = Palette::load(pal_raw.data(), pal_raw.size());
+    ua.pal = Palette::load(pal_raw.data(), pal_raw.size());
 
-    std::cerr << "[unit] id=" << unit_id << " image=" << image << " shp=" << shp_name
-              << " frames=" << shp.count() << " canvas=" << shp.width() << "x" << shp.height()
-              << " speed=" << ur.speed << "\n";
-
-    return UnitAssets{std::move(shp), pal, image, ur.speed};
+    ua.gi = gi.combat;
+    ua.gi_speed = gi.speed;
+    ua.cons = cons.combat;
+    ua.cons_speed = cons.speed;
+    return ua;
 }
 
 // Constructs the World (places the unit on a passable Clear cell -- see
@@ -229,26 +271,42 @@ UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra
 // default if Speed is missing (0).
 constexpr double kCellsPerSecPerSpeed = 0.75;
 
-// Spawn `count` GI units on distinct walkable cells spiralling out from the
-// map's start cell (pick_start_cell). count==1 reproduces the old single-unit
-// slice (used by the single-unit demos); the interactive/screenshot/group
-// modes pass a small squad.
-ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
-    ra2engine::World world(a.map);
-    if (ua.speed > 0) world.set_move_speed(ua.speed * kCellsPerSecPerSpeed);
-
-    const ra2assets::MapCell* c = ra2engine::pick_start_cell(a.map);
+// Spawns `count` combat units of the given type/house on distinct walkable,
+// unoccupied cells, spiralling ring-by-ring out from (origin_x, origin_y).
+// Shared by both squads in build_world so their spawn geometry -- and thus
+// --demo-combat's bit-identical replay, which depends on that geometry being
+// reproduced exactly every run -- comes from one code path.
+void spawn_squad(ra2engine::World& world, int origin_x, int origin_y, int count, int house,
+                 const ra2engine::UnitCombat& combat) {
     int placed = 0;
     for (int r = 0; r <= 12 && placed < count; ++r)
         for (int dy = -r; dy <= r && placed < count; ++dy)
             for (int dx = -r; dx <= r && placed < count; ++dx) {
                 if (std::abs(dx) != r && std::abs(dy) != r) continue;  // ring border only
-                const int x = c->x + dx, y = c->y + dy;
+                const int x = origin_x + dx, y = origin_y + dy;
                 if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
-                    world.add_unit(x, y, ua.image, 0);
+                    world.add_combat_unit(x, y, house, combat);
                     ++placed;
                 }
             }
+}
+
+// Spawn `count` GI units (house 0, player/Allied) on distinct walkable cells
+// spiralling out from the map's start cell (pick_start_cell), plus `count`
+// Conscript units (house 1, hostile/Soviet) spiralling out from 8 cells east
+// of it. count==1 reproduces the old single-GI slice (used by the
+// single-unit demos, which now also get one hostile Conscript alongside --
+// harmless for movement-only demos); the interactive/screenshot/group/combat
+// modes pass a small squad. Hostiles get no orders here -- they auto-acquire
+// and retaliate once combat starts (see engine/combat.cpp step_combat).
+ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
+    ra2engine::World world(a.map);
+    if (ua.gi_speed > 0) world.set_move_speed(ua.gi_speed * kCellsPerSecPerSpeed);
+
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(a.map);
+    spawn_squad(world, c->x, c->y, count, /*house=*/0, ua.gi);
+    spawn_squad(world, c->x + 8, c->y, count, /*house=*/1, ua.cons);
+
     std::cerr << "[world] spawned " << world.units().size() << " unit(s) near (" << c->x << ","
               << c->y << ") grid=" << world.grid_w() << "x" << world.grid_h()
               << " move_cps=" << world.move_speed() << "\n";
@@ -256,22 +314,46 @@ ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
 }
 
 // Draws one full frame of the world into the current render target (does NOT
-// clear or present): terrain, the ordered path (if any), the selection
-// diamond (if selected), then the unit sprite on top. Shared by every mode
-// so they stay visually consistent.
+// clear or present): terrain, the ordered path + selection diamond (alive,
+// non-dying units only), the unit sprites (back-to-front; dying units
+// included so their die anim plays, tombstoned units excluded -- see
+// unit_draw_order), HP bars (alive, non-dying, selected-or-damaged units),
+// then the live selection box on top. Shared by every mode so they stay
+// visually consistent. House color (pal_for_house) is applied inside
+// draw_unit itself via its house-keyed texture cache entry -- no extra work
+// needed here.
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr) {
     ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H);
     const std::vector<ra2engine::Unit>& us = world.units();
-    // Paths + selection markers first (under the sprites).
+    // Paths + selection markers first (under the sprites); skip dead/dying
+    // units entirely (no path, no selection marker for a corpse-in-progress).
     for (const ra2engine::Unit& u : us) {
+        if (!u.alive || u.die_time >= 0.0) continue;
         ra2engine::draw_path(ren, u, cam, W, H);
         if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H);
     }
-    // Sprites back-to-front so nearer units overlap farther ones.
-    for (int idx : ra2engine::unit_draw_order(us))
-        ra2engine::draw_unit(ren, tc, us[idx], ua.shp, ua.pal, cam, W, H);
+    // Sprites back-to-front so nearer units overlap farther ones. Picks the
+    // SHP by the unit's own image ("GI"/"CONS") rather than assuming a single
+    // shared SHP; an unrecognized image is logged and skipped (not thrown)
+    // so one bad unit can't take down the whole frame.
+    for (int idx : ra2engine::unit_draw_order(us)) {
+        const ra2engine::Unit& u = us[idx];
+        auto it = ua.shps.find(u.image);
+        if (it == ua.shps.end()) {
+            std::cerr << "[render] no SHP loaded for image=" << u.image << " (unit " << idx
+                      << "); skipping\n";
+            continue;
+        }
+        ra2engine::draw_unit(ren, tc, u, it->second, ua.pal, cam, W, H);
+    }
+    // HP bars after sprites, before the selection box: alive, non-dying units
+    // that are selected or currently damaged.
+    for (const ra2engine::Unit& u : us) {
+        if (!u.alive || u.die_time >= 0.0) continue;
+        if (u.selected || u.hp < u.max_hp) ra2engine::draw_hp_bar(ren, u, cam, W, H);
+    }
     // Live selection box on top (interactive only).
     if (input) {
         int x0, y0, x1, y1;
@@ -308,7 +390,7 @@ int run_screenshot(const std::string& out_path) {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
-    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
+    UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 5);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
@@ -343,7 +425,7 @@ int run_interactive() {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
-    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
+    UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 5);
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
@@ -404,7 +486,7 @@ int run_demo_move(int goal_x, int goal_y) {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
-    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
+    UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 1);
 
     const int start_x = world.units()[0].cell_x;
@@ -498,7 +580,7 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
-    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
+    UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 1);
 
     const int start_x = world.units()[0].cell_x;
@@ -578,7 +660,7 @@ int run_demo_group(int n, int gx, int gy) {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
-    UnitAssets ua = load_unit_assets(dir, ra2, "E1");
+    UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, n);
     for (auto& u : world.units()) u.selected = true;
     world.order_move_selected(gx, gy);
@@ -647,6 +729,224 @@ int run_demo_group(int n, int gx, int gy) {
     return overlap_seen ? 1 : 0;  // fail if the invariant was ever violated
 }
 
+// One deterministic run of the 5v5 skirmish (see run_demo_combat). Builds a
+// FRESH World every call (so two calls from the same Assets/UnitAssets are
+// truly independent sims, not two views of shared state), gives it the same
+// orders, and steps it at a fixed 60Hz dt until one side is wiped out or the
+// 120s cap is hit. `render` controls whether each frame is actually drawn
+// (into the caller's already-created hidden window/renderer/TextureCache/
+// camera) and whether start/end screenshots are captured -- render_world
+// only READS Unit/World state to draw, so whether this flag is true or false
+// must never change the resulting log; that invariant is exactly what
+// run_demo_combat checks by diffing a render=true run against a render=false
+// one.
+struct DemoCombatResult {
+    std::vector<std::string> log;  // per-frame hp-change + death lines, in order
+    int shot_count = 0;            // number of hp-change lines (one per landed hit)
+    int death_count = 0;           // number of "died" lines
+    int gi_survivors = 0;          // house-0 alive & non-dying at sim end
+    int cons_survivors = 0;        // house-1 alive & non-dying at sim end
+    double sim_time = 0.0;
+    bool overlap = false;          // two alive, non-dying units shared a cell at end
+    bool dangling_target = false;  // some unit's target index was out of [-1, n)
+};
+
+DemoCombatResult simulate_combat(Assets& a, UnitAssets& ua, bool render, SDL_Renderer* ren,
+                                 ra2engine::TextureCache* tc, const ra2engine::Camera* cam, int W,
+                                 int H, const std::string& start_png, const std::string& end_png) {
+    ra2engine::World world = build_world(a, ua, 5);
+
+    // Select all house-0 (GI) units and order an attack on the single
+    // hostile nearest their centroid (euclidean over spawn cells -- squared
+    // distance is monotonic with euclidean, so no sqrt is needed just to
+    // compare). Deterministic: build_world's spiral spawn reproduces the
+    // exact same geometry every call, so this picks the same target index
+    // every run.
+    double cx = 0.0, cy = 0.0;
+    int n_allied = 0;
+    for (const auto& u : world.units())
+        if (u.house == 0) { cx += u.cell_x; cy += u.cell_y; ++n_allied; }
+    if (n_allied > 0) { cx /= n_allied; cy /= n_allied; }
+
+    int nearest = -1;
+    double best_d2 = 0.0;
+    for (std::size_t i = 0; i < world.units().size(); ++i) {
+        const ra2engine::Unit& u = world.units()[i];
+        if (u.house == 0) continue;
+        const double dx = u.cell_x - cx, dy = u.cell_y - cy;
+        const double d2 = dx * dx + dy * dy;
+        if (nearest < 0 || d2 < best_d2) { nearest = static_cast<int>(i); best_d2 = d2; }
+    }
+    for (auto& u : world.units())
+        if (u.house == 0) u.selected = true;
+    if (nearest >= 0) world.order_attack(nearest);
+    // Hostiles (house 1) get NO orders -- they auto-acquire/retaliate once a
+    // GI closes into range (engine/combat.cpp step_combat).
+
+    DemoCombatResult result;
+    const std::size_t nunits = world.units().size();
+    std::vector<int> prev_hp(nunits);
+    for (std::size_t i = 0; i < nunits; ++i) prev_hp[i] = world.units()[i].hp;
+    std::vector<bool> prev_alive(nunits, true);
+
+    auto alive_non_dying = [&](int house) {
+        int n = 0;
+        for (const auto& u : world.units())
+            if (u.house == house && u.alive && u.die_time < 0.0) ++n;
+        return n;
+    };
+    auto draw = [&]() {
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H);
+    };
+
+    if (render) {
+        draw();
+        capture_png(ren, start_png, W, H);
+    }
+
+    const double dt = 1.0 / 60.0;
+    const double kMaxSim = 120.0;
+    double t = 0.0;
+    while (alive_non_dying(0) > 0 && alive_non_dying(1) > 0 && t < kMaxSim) {
+        world.step(dt);
+        t += dt;
+        for (std::size_t i = 0; i < nunits; ++i) {
+            const ra2engine::Unit& u = world.units()[i];
+            if (u.hp != prev_hp[i]) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "t=%.3f victim=%zu(%s) hp=%d->%d", t, i,
+                              u.image.c_str(), prev_hp[i], u.hp);
+                result.log.emplace_back(buf);
+                ++result.shot_count;
+                prev_hp[i] = u.hp;
+            }
+            if (prev_alive[i] && !u.alive) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "t=%.3f unit %zu(%s) died", t, i,
+                              u.image.c_str());
+                result.log.emplace_back(buf);
+                ++result.death_count;
+                prev_alive[i] = false;
+            }
+        }
+        if (render) draw();
+    }
+    result.sim_time = t;
+    if (render) {
+        draw();
+        capture_png(ren, end_png, W, H);
+    }
+
+    result.gi_survivors = alive_non_dying(0);
+    result.cons_survivors = alive_non_dying(1);
+
+    // End-state invariants: no dangling target indices, no two live units
+    // sharing a cell (occupancy is released the instant a unit starts dying,
+    // so the no-overlap check only applies to alive, non-dying units).
+    for (std::size_t i = 0; i < nunits; ++i) {
+        const ra2engine::Unit& u = world.units()[i];
+        if (u.target < -1 || u.target >= static_cast<int>(nunits)) result.dangling_target = true;
+    }
+    for (std::size_t i = 0; i < nunits; ++i) {
+        const ra2engine::Unit& u = world.units()[i];
+        if (!u.alive || u.die_time >= 0.0) continue;
+        for (std::size_t j = i + 1; j < nunits; ++j) {
+            const ra2engine::Unit& v = world.units()[j];
+            if (!v.alive || v.die_time >= 0.0) continue;
+            if (u.cell_x == v.cell_x && u.cell_y == v.cell_y) result.overlap = true;
+        }
+    }
+    return result;
+}
+
+// Bit-deterministic proof of the whole combat pipeline: spawn 5 GIs (house 0)
+// vs 5 Conscripts (house 1), order the GIs to attack the nearest hostile, and
+// run the sim TWICE from identical starting state (a fresh World each time,
+// built from the same Assets/UnitAssets) -- once rendering every frame to a
+// hidden window (plus start/end screenshots), once fully headless -- then
+// byte-compare the two per-shot logs. Combat itself has no RNG (see
+// docs/re/combat.md section 5: confirmed no ROF jitter/randomness anywhere in
+// vanilla combat), so identical spawn geometry + identical orders must
+// produce identical logs; `seed` is accepted only for interface stability
+// (some future mode might need to seed something, e.g. randomized spawn
+// placement -- this vertical slice's combat has nothing to seed) and is
+// otherwise ignored.
+int run_demo_combat(int seed) {
+    (void)seed;  // see function comment: combat is deterministic, nothing to seed here.
+
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_combat_start.png";
+    const std::string end_png = scratch + "demo_combat_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+
+    // Run 1: rendered every frame (hidden window; exercises the full render
+    // path) + start/end screenshots.
+    DemoCombatResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-combat)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_combat(a, ua, /*render=*/true, ren, &tc, &cam, W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless (no window/renderer/texture cache at all) -- identical
+    // spawn/orders from a FRESH World; logs must still be byte-identical
+    // (rendering must not perturb sim state; if it does, that's a bug to
+    // surface here, not paper over).
+    DemoCombatResult r2 =
+        simulate_combat(a, ua, /*render=*/false, nullptr, nullptr, nullptr, W, H, "", "");
+
+    const bool logs_identical = (r1.log == r2.log);
+    const bool nobody_died = (r1.death_count == 0 || r2.death_count == 0);
+    const bool bad = !logs_identical || nobody_died || r1.overlap || r2.overlap ||
+                     r1.dangling_target || r2.dangling_target;
+
+    std::cerr << "[demo-combat] run1 lines=" << r1.log.size() << " run2 lines=" << r2.log.size()
+              << " identical=" << (logs_identical ? "yes" : "NO") << " deaths(r1/r2)="
+              << r1.death_count << "/" << r2.death_count << " overlap(r1/r2)="
+              << (r1.overlap ? "Y" : "n") << "/" << (r2.overlap ? "Y" : "n") << " dangling(r1/r2)="
+              << (r1.dangling_target ? "Y" : "n") << "/" << (r2.dangling_target ? "Y" : "n")
+              << "\n";
+
+    std::cout << "survivors: gi=" << r1.gi_survivors << " cons=" << r1.cons_survivors
+              << " sim_time=" << r1.sim_time << "s\n";
+    std::cout << "--- first 5 log lines ---\n";
+    {
+        const std::size_t first_n = r1.log.size() < 5 ? r1.log.size() : 5;
+        for (std::size_t i = 0; i < first_n; ++i) std::cout << r1.log[i] << "\n";
+    }
+    std::cout << "--- last 5 log lines ---\n";
+    {
+        const std::size_t from = r1.log.size() > 5 ? r1.log.size() - 5 : 0;
+        for (std::size_t i = from; i < r1.log.size(); ++i) std::cout << r1.log[i] << "\n";
+    }
+    std::cout << "shots=" << r1.shot_count << " deaths=" << r1.death_count << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    std::cout << "deterministic=" << (logs_identical ? "yes" : "no") << " logs=" << r1.log.size()
+              << " lines\n";
+
+    return bad ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -667,6 +967,8 @@ int main(int argc, char** argv) {
         int retarget_x1 = 0, retarget_y1 = 0, retarget_x2 = 0, retarget_y2 = 0;
         bool demo_group = false;
         int group_n = 5, group_x = 0, group_y = 0;
+        bool demo_combat = false;
+        int combat_seed = 0;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--screenshot" && i + 1 < argc) {
@@ -686,8 +988,24 @@ int main(int argc, char** argv) {
                 group_n = std::atoi(argv[++i]);
                 group_x = std::atoi(argv[++i]);
                 group_y = std::atoi(argv[++i]);
+            } else if (arg == "--demo-combat") {
+                demo_combat = true;
+                // Optional int seed: only consume the next arg if it actually
+                // parses as one (so a following unrelated flag isn't
+                // swallowed). Accepted and ignored -- see run_demo_combat's
+                // comment (combat has no RNG to seed; this is here purely for
+                // interface stability).
+                if (i + 1 < argc) {
+                    char* end = nullptr;
+                    const long v = std::strtol(argv[i + 1], &end, 10);
+                    if (end != argv[i + 1] && *end == '\0') {
+                        combat_seed = static_cast<int>(v);
+                        ++i;
+                    }
+                }
             }
         }
+        if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
         if (demo_retarget)
             return run_demo_retarget(retarget_x1, retarget_y1, retarget_x2, retarget_y2);
