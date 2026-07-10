@@ -100,3 +100,35 @@ TEST_CASE("rules: locates real rulesmd.ini from the install and reads GI (unit i
     CHECK(rules.speed("E1") > 0);
     MESSAGE("rulesmd.ini [E1] (GI) speed=" << rules.speed("E1"));
 }
+
+TEST_CASE("rules: combat getters read unit/weapon/warhead fields") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[E9]\nStrength=125\nArmor=flak\nPrimary=Zap\n"
+        "[Zap]\nDamage=15\nROF=25\nRange=4\nWarhead=SA\nReport=ZapSound\n"
+        "[SA]\nVerses=100%,80%,80%,50%,25%,25%,75%,50%,25%,100%,100%\n");
+    ra2assets::Rules r = ra2assets::Rules::load(ini);
+    CHECK(r.strength("E9") == 125);
+    CHECK(r.armor("E9") == "flak");
+    CHECK(r.primary("E9") == "Zap");
+    CHECK(r.weapon_damage("Zap") == 15);
+    CHECK(r.weapon_rof("Zap") == 25);
+    CHECK(r.weapon_range("Zap") == 4);
+    CHECK(r.weapon_warhead("Zap") == "SA");
+    CHECK(r.weapon_report("Zap") == "ZapSound");
+    auto v = r.verses("SA");
+    REQUIRE(v.size() == 11);
+    CHECK(v[0] == 100); CHECK(v[1] == 80); CHECK(v[4] == 25); CHECK(v[6] == 75);
+    // Absent sections/keys fall back safely.
+    CHECK(r.strength("NOPE") == 0);
+    CHECK(r.armor("NOPE") == "none");
+    CHECK(r.primary("NOPE") == "");
+    CHECK(r.verses("NOPE").empty());
+}
+
+TEST_CASE("rules: verses parsing tolerates spaces and missing % signs") {
+    ra2assets::Ini ini = ra2assets::Ini::parse("[W]\nVerses= 100% , 80 ,70%\n");
+    ra2assets::Rules r = ra2assets::Rules::load(ini);
+    auto v = r.verses("W");
+    REQUIRE(v.size() == 3);
+    CHECK(v[0] == 100); CHECK(v[1] == 80); CHECK(v[2] == 70);
+}
