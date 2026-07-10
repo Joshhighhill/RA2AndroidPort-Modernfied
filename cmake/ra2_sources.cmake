@@ -26,6 +26,7 @@ set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/map.cpp
     ${RA2_ROOT}/src/theater.cpp
     ${RA2_ROOT}/src/audio_bag.cpp
+    ${RA2_ROOT}/src/wav.cpp
     ${RA2_ROOT}/src/hva.cpp
     ${RA2_ROOT}/src/vxl.cpp
     ${RA2_ROOT}/src/csf.cpp

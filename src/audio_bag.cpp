@@ -1,4 +1,5 @@
 #include "ra2assets/audio_bag.hpp"
+#include "ima_adpcm.hpp"
 #include <stdexcept>
 #include <string>
 
@@ -92,23 +93,13 @@ const BagClip* AudioIdx::find(const std::string& name) const {
 }
 
 // ---------------------------------------------------------------------------
-// IMA-ADPCM tables. The standard IMA step-size (89 entries) and index-adjust
-// tables -- the same constants the game's own decoder in gamemd.exe uses
-// (located via constant-table anchoring; addresses in docs/re/audio.md).
+// IMA-ADPCM step/index tables + per-nibble cascade: shared with the RIFF
+// fmt-0x0011 WAV decoder (src/wav.cpp) via src/ima_adpcm.hpp -- the same
+// constants the game's own decoder in gamemd.exe uses (located via
+// constant-table anchoring; addresses in docs/re/audio.md). Extraction is
+// behavior-identical; this file's oracle suite (tests/test_audio.cpp) proves
+// it byte-for-byte against XCC's own decode.
 // ---------------------------------------------------------------------------
-static const int kStepTable[89] = {
-    7,     8,     9,     10,    11,    12,    13,    14,    16,
-    17,    19,    21,    23,    25,    28,    31,    34,    37,
-    41,    45,    50,    55,    60,    66,    73,    80,    88,
-    97,    107,   118,   130,   143,   157,   173,   190,   209,
-    230,   253,   279,   307,   337,   371,   408,   449,   494,
-    544,   598,   658,   724,   796,   876,   963,   1060,  1166,
-    1282,  1411,  1552,  1707,  1878,  2066,  2272,  2499,  2749,
-    3024,  3327,  3660,  4026,  4428,  4871,  5358,  5894,  6484,
-    7132,  7845,  8630,  9493,  10442, 11487, 12635, 13899, 15289,
-    16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
-};
-static const int kIndexAdjust[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
 
 std::vector<int16_t> decode_bag_clip(const uint8_t* bag_data, size_t bag_len,
                                      const BagClip& clip, AudioClipInfo& out_info) {
@@ -182,22 +173,7 @@ std::vector<int16_t> decode_bag_clip(const uint8_t* bag_data, size_t bag_len,
         for (size_t i = 0; i < nibbles; i++) {
             int code = d[i >> 1];
             code = (i & 1) ? (code >> 4) : (code & 0xf);   // low nibble first
-            const int step = kStepTable[index];
-            int delta = step >> 3;
-            if (code & 1) delta += step >> 2;
-            if (code & 2) delta += step >> 1;
-            if (code & 4) delta += step;
-            if (code & 8) {
-                sample -= delta;
-                if (sample < -32768) sample = -32768;
-            } else {
-                sample += delta;
-                if (sample > 32767) sample = 32767;
-            }
-            out.push_back((int16_t)sample);
-            index += kIndexAdjust[code & 7];
-            if (index < 0) index = 0;
-            else if (index > 88) index = 88;
+            out.push_back((int16_t)ima::decode_nibble(code, sample, index));
         }
         p += chunk;
         remaining -= chunk;
