@@ -810,8 +810,43 @@ DemoCombatResult simulate_combat(Assets& a, UnitAssets& ua, bool render, SDL_Ren
     const double kMaxSim = 120.0;
     double t = 0.0;
     while (alive_non_dying(0) > 0 && alive_non_dying(1) > 0 && t < kMaxSim) {
+        // Player-micro emulation (demo only): re-target idle units at the
+        // nearest living hostile -- a pure function of world state, so the
+        // bit-determinism gate still holds. Without this the demo faithfully
+        // reproduces guard semantics (hold position when the ordered target
+        // dies) and stalls at the cap.
+        std::vector<int> idle_no_target;
+        for (std::size_t i = 0; i < world.units().size(); ++i) {
+            const ra2engine::Unit& u = world.units()[i];
+            if (u.house == 0 && u.alive && u.die_time < 0.0 && !u.moving() && u.target == -1)
+                idle_no_target.push_back(static_cast<int>(i));
+        }
+        for (int i : idle_no_target) {
+            const double ux = world.units()[i].fx, uy = world.units()[i].fy;
+            int nearest_h = -1;
+            double best_d2 = 0.0;
+            for (std::size_t j = 0; j < world.units().size(); ++j) {
+                const ra2engine::Unit& h = world.units()[j];
+                if (h.house != 1 || !h.alive || h.die_time >= 0.0) continue;
+                const double dx = ux - h.fx, dy = uy - h.fy;
+                const double d2 = dx * dx + dy * dy;
+                if (nearest_h < 0 || d2 < best_d2) { nearest_h = static_cast<int>(j); best_d2 = d2; }
+            }
+            if (nearest_h < 0) break;  // no living hostiles left; nothing to re-order
+            world.clear_selection();
+            world.units()[i].selected = true;
+            world.order_attack(nearest_h);
+        }
+        // Restore the "whole squad selected" visual the demo starts with --
+        // the per-unit re-order passes above touch selection one unit at a
+        // time via clear_selection()/order_attack().
+        for (auto& u : world.units())
+            if (u.house == 0 && u.alive && u.die_time < 0.0) u.selected = true;
+
         world.step(dt);
         t += dt;
+        // Victim-centric per-hit log (plan amended): attacker attribution
+        // would require instrumenting the locked combat core.
         for (std::size_t i = 0; i < nunits; ++i) {
             const ra2engine::Unit& u = world.units()[i];
             if (u.hp != prev_hp[i]) {

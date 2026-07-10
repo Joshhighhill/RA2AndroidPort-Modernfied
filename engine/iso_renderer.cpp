@@ -361,6 +361,8 @@ void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int vi
     int fill_w = static_cast<int>(static_cast<long long>(hp) * kHpBarW / unit.max_hp);
     if (fill_w > kHpBarW) fill_w = kHpBarW;
     if (fill_w < 0) fill_w = 0;
+    // clamp: a living unit always shows at least 1px of health
+    if (unit.hp > 0 && fill_w < 1) fill_w = 1;
     if (fill_w > 0) {
         SDL_Rect fg{bg.x, bg.y, fill_w, kHpBarH};
         // Integer thresholds (brief-specified): green above 2/3, yellow above
