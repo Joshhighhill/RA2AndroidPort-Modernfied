@@ -11,6 +11,7 @@
 #include "input.hpp"
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"  // terrain_screen_bounds
+#include "pathfind.hpp"      // find_path (reachability probe, Task 6 raised-terrain test)
 #include "world.hpp"
 
 #include "ra2assets/map.hpp"
@@ -74,6 +75,107 @@ void left_click(Input& in, int px, int py, bool shift, uint32_t t_ms) {
     u.kind = InputEvent::PointerUp;
     in.handle(d);
     in.handle(u);
+}
+
+// Right click helper (down then up, no move) with a timestamp. The order
+// (attack or group-move) is dispatched on PointerDown; the PointerUp is fed
+// too only to mirror a real event stream (handle()'s Right PointerUp branch
+// is a no-op).
+void right_click(Input& in, int px, int py, uint32_t t_ms) {
+    InputEvent d;
+    d.kind = InputEvent::PointerDown; d.button = InputEvent::Right; d.x = px; d.y = py;
+    d.t_ms = t_ms;
+    InputEvent u = d;
+    u.kind = InputEvent::PointerUp;
+    in.handle(d);
+    in.handle(u);
+}
+
+// GI (house 0, M60) / Conscript (house 1, M1Carbine) combat stats -- same
+// ground-truth numbers test_world.cpp's gi_stats()/cons_stats() use (both
+// Strength=125, SA warhead verses).
+const std::vector<int> kSAVerses = {100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100};
+ra2engine::UnitCombat gi_combat() {
+    return ra2engine::UnitCombat{125, "none", "GI", 15, 20, 4.0, kSAVerses};
+}
+ra2engine::UnitCombat cons_combat() {
+    return ra2engine::UnitCombat{125, "flak", "CONS", 15, 25, 4.0, kSAVerses};
+}
+
+// Spawn 2 GIs (house 0) + 1 Conscript (house 1) via add_combat_unit at
+// adjacent walkable cells near the map's start -- same dx-scan pattern as
+// `spawn` above, just combat-capable units and a mixed-house trio. All three
+// land within a few cells of each other, comfortably inside both units'
+// weapon range (4.0 cells), so the Conscript is always an in-range hostile
+// for the group-move/engagement tests below.
+struct CombatFixture {
+    bool ok = false;
+    int gi0 = -1, gi1 = -1, cons = -1;
+};
+CombatFixture spawn_combat_fixture(World& world) {
+    CombatFixture fx;
+    const MapCell* c = ra2engine::pick_start_cell(world.map());
+    if (!c) return fx;
+    std::vector<std::pair<int, int>> cells;
+    int placed = 0;
+    for (int dx = 0; dx < 8 && placed < 3; ++dx) {
+        const int x = c->x + dx, y = c->y;
+        if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+            cells.push_back({x, y});
+            ++placed;
+        }
+    }
+    if (placed < 3) return fx;
+    world.add_combat_unit(cells[0].first, cells[0].second, 0, gi_combat());
+    fx.gi0 = static_cast<int>(world.units().size()) - 1;
+    world.add_combat_unit(cells[1].first, cells[1].second, 0, gi_combat());
+    fx.gi1 = static_cast<int>(world.units().size()) - 1;
+    world.add_combat_unit(cells[2].first, cells[2].second, 1, cons_combat());
+    fx.cons = static_cast<int>(world.units().size()) - 1;
+    fx.ok = true;
+    return fx;
+}
+
+// True if (p.x, p.y) is within one cell of (gx, gy) -- order_move_selected's
+// formation spiral can assign a multi-unit selection's movers to distinct
+// cells around the goal rather than the exact goal cell each, so a
+// group-move assertion checks "near", not "==" (see World::order_move_selected
+// / group_move.hpp's assign_formation).
+bool near_cell(const ra2engine::Cellxy& p, int gx, int gy) {
+    return std::abs(p.x - gx) <= 1 && std::abs(p.y - gy) <= 1;
+}
+
+// Level-aware ground pixel for a raw (cx, cy, level) cell -- same formula as
+// ground_px_for_unit but for a bare cell (no Unit); used by the raised-
+// terrain right-click test to click the ACTUAL on-screen position of a
+// level >= 1 tile (identity camera).
+void level_ground_px(int cx, int cy, int level, int& px, int& py) {
+    const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, level, 60, 30, 15);
+    px = p.x + 30;
+    py = p.y + 15;
+}
+
+// Nearest-first (by squared distance from (bx, by)) cell with level >= 1
+// that is both walkable and reachable (find_path -- the same algorithm
+// order_move_selected uses -- returns a real >1-cell route from (bx, by)) --
+// or nullptr if none exists. The raised-terrain test MESSAGE-skips if this
+// comes back empty (not every map has reachable raised terrain near a given
+// spawn area).
+const MapCell* find_reachable_raised_cell(const World& world, int bx, int by) {
+    std::vector<const MapCell*> candidates;
+    for (const auto& mc : world.map().cells())
+        if (mc.level >= 1 && world.walkable(mc.x, mc.y)) candidates.push_back(&mc);
+    std::sort(candidates.begin(), candidates.end(), [bx, by](const MapCell* a, const MapCell* b) {
+        const long long da = (long long)(a->x - bx) * (a->x - bx) + (long long)(a->y - by) * (a->y - by);
+        const long long db = (long long)(b->x - bx) * (b->x - bx) + (long long)(b->y - by) * (b->y - by);
+        return da < db;
+    });
+    for (const MapCell* mc : candidates) {
+        auto p = ra2engine::find_path(world.passable(), world.grid_w(), world.grid_h(), {bx, by},
+                                      {mc->x, mc->y});
+        if (p.size() > 1) return mc;
+    }
+    return nullptr;
 }
 
 // Spawn `n` GI units at consecutive walkable cells near the map's start.
@@ -304,4 +406,185 @@ TEST_CASE("Input: pan clamps the camera to the map's screen bounds") {
     in_neg.pan(-1000000000, -1000000000);
     CHECK(cam_neg.x == -margin_x - mxx);
     CHECK(cam_neg.y == -margin_y - mxy);
+}
+
+// ---- Task 6: right-click attack + level-aware ground target + house-filtered selection ----
+
+TEST_CASE("Input: right-click a hostile issues an attack order to the selection") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    // Select both GIs (direct set -- equivalent to box/click selection, which
+    // Input's own selection tests already cover).
+    world.units()[fx.gi0].selected = true;
+    world.units()[fx.gi1].selected = true;
+
+    int px, py;
+    ground_px_for_unit(world.units()[fx.cons], px, py);
+    right_click(input, px, py, 1000);
+
+    CHECK(world.units()[fx.gi0].target == fx.cons);
+    CHECK(world.units()[fx.gi0].attack_order);
+    CHECK(world.units()[fx.gi1].target == fx.cons);
+    CHECK(world.units()[fx.gi1].attack_order);
+    CHECK_FALSE(world.units()[fx.cons].selected);  // the hostile itself was never selected
+}
+
+TEST_CASE("Input: right-click ground still group-moves the selection") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    world.units()[fx.gi0].selected = true;
+    world.units()[fx.gi1].selected = true;
+
+    // Engagement seam guard: one step lets the idle GIs auto-acquire the
+    // in-range Conscript (mirrors test_world.cpp's freeze-seam regression) --
+    // the move-cancels-engagement assertion below is only meaningful if a
+    // real engagement happened first.
+    world.step(1.0 / 60.0);
+    REQUIRE((world.units()[fx.gi0].target == fx.cons || world.units()[fx.gi1].target == fx.cons));
+
+    // Empty ground well beyond weapon range (>=5 cells): scan south from
+    // GI0's cell for the first walkable, LEVEL-0 cell -- a level-0 target's
+    // level-blind first pass is already exact (see px_for_cell), so the
+    // clicked cell and the resolved goal must match precisely.
+    const int bx = world.units()[fx.gi0].cell_x, by = world.units()[fx.gi0].cell_y;
+    int gx = -1, gy = -1;
+    for (int r = 5; r <= 60 && gx < 0; ++r) {
+        const int cx = bx + r, cy = by;
+        if (!world.walkable(cx, cy)) continue;
+        const MapCell* mc = world.map().at(cx, cy);
+        if (mc && mc->level == 0) { gx = cx; gy = cy; }
+    }
+    REQUIRE(gx >= 0);
+
+    int px, py;
+    px_for_cell(gx, gy, px, py);
+    right_click(input, px, py, 2000);
+
+    CHECK(world.units()[fx.gi0].target == -1);        // move cancels engagement
+    CHECK(world.units()[fx.gi1].target == -1);
+    CHECK(world.units()[fx.gi0].moving());
+    CHECK(world.units()[fx.gi1].moving());
+    CHECK(near_cell(world.units()[fx.gi0].path.back(), gx, gy));
+    CHECK(near_cell(world.units()[fx.gi1].path.back(), gx, gy));
+}
+
+TEST_CASE("Input: left-click a hostile selects nothing") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    int px, py;
+    ground_px_for_unit(world.units()[fx.cons], px, py);
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+
+    for (const auto& u : world.units()) CHECK_FALSE(u.selected);
+    CHECK_FALSE(world.units()[fx.cons].selected);
+}
+
+TEST_CASE("Input: box over both squads selects only house-0") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    // Box covering all three units' real (level-aware) ground points.
+    int minx = 1000000000, miny = 1000000000, maxx = -1000000000, maxy = -1000000000;
+    for (const auto& un : world.units()) {
+        int px, py; ground_px_for_unit(un, px, py);
+        minx = std::min(minx, px); maxx = std::max(maxx, px);
+        miny = std::min(miny, py); maxy = std::max(maxy, py);
+    }
+    InputEvent d; d.kind = InputEvent::PointerDown; d.button = InputEvent::Left;
+    d.x = minx - 20; d.y = miny - 20; d.t_ms = 1000;
+    input.handle(d);
+    InputEvent m; m.kind = InputEvent::PointerMove; m.x = maxx + 20; m.y = maxy + 20; m.t_ms = 1050;
+    input.handle(m);
+    InputEvent u; u.kind = InputEvent::PointerUp; u.button = InputEvent::Left;
+    u.x = maxx + 20; u.y = maxy + 20; u.t_ms = 1100;
+    input.handle(u);
+
+    CHECK(world.units()[fx.gi0].selected);
+    CHECK(world.units()[fx.gi1].selected);
+    CHECK_FALSE(world.units()[fx.cons].selected);
+}
+
+TEST_CASE("Input: dead units are unpickable") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    int px, py;
+    ground_px_for_unit(world.units()[fx.cons], px, py);
+
+    // Tombstone the Conscript: a dead corpse (die_time first, then alive --
+    // matches the brief's exact construction order; final state is the same
+    // either way).
+    world.units()[fx.cons].die_time = 0.0;
+    world.units()[fx.cons].alive = false;
+
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    for (const auto& u : world.units()) CHECK_FALSE(u.selected);  // no selection change
+
+    world.units()[fx.gi0].selected = true;
+    world.units()[fx.gi1].selected = true;
+
+    right_click(input, px, py, 2000);
+    CHECK(world.units()[fx.gi0].target == -1);  // no attack order issued on a corpse
+    CHECK(world.units()[fx.gi1].target == -1);
+
+    int moving = 0;
+    for (const auto& u : world.units()) moving += u.moving() ? 1 : 0;
+    CHECK(moving >= 1);  // the right-click fell through to a ground move instead
+}
+
+TEST_CASE("Input: right-click on RAISED ground targets the clicked tile (level-aware)") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 1);
+    if (!fx.ok) { MESSAGE("skipped: could not place 1 unit"); return; }
+
+    const MapCell* raised =
+        find_reachable_raised_cell(world, fx.cells[0].first, fx.cells[0].second);
+    if (!raised) { MESSAGE("skipped: no reachable level>=1 cell found near the spawn"); return; }
+
+    world.units()[0].selected = true;
+
+    int px, py;
+    level_ground_px(raised->x, raised->y, raised->level, px, py);
+    right_click(input, px, py, 3000);
+
+    // Pre-fix, the level-0 inversion would land 1-2 cells off; the two-pass
+    // level-aware inversion must resolve to exactly the clicked cell.
+    REQUIRE(world.units()[0].moving());
+    CHECK(world.units()[0].path.back().x == raised->x);
+    CHECK(world.units()[0].path.back().y == raised->y);
 }

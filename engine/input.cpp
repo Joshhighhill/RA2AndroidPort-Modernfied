@@ -5,7 +5,8 @@
 #include <cmath>
 #include <cstdlib>
 
-#include "iso_project.hpp"  // screen_to_cell
+#include "iso_project.hpp"    // screen_to_cell
+#include "ra2assets/map.hpp"  // MapCell (level lookup for the level-aware ground target)
 
 namespace ra2engine {
 
@@ -72,12 +73,17 @@ int Input::unit_under(int px, int py) const {
     // its level-aware ground point (unit_ground_px -- identical anchor to
     // draw_unit). Among units whose box contains the click, the NEAREST
     // ground point wins; ties break to the lowest index (deterministic).
+    // Corpses are unpickable ANYWHERE this is used -- including the
+    // right-click attack path -- so the alive/die_time check lives here once
+    // rather than being repeated by every caller.
     const std::vector<Unit>& us = world_.units();
     int best = -1;
     long best_d2 = 0;
     for (std::size_t i = 0; i < us.size(); ++i) {
+        const Unit& u = us[i];
+        if (!u.alive || u.die_time >= 0.0) continue;  // dead/dying: unpickable
         int gx, gy;
-        unit_ground_px(us[i], gx, gy);
+        unit_ground_px(u, gx, gy);
         if (px < gx - kHitHalfW || px > gx + kHitHalfW) continue;
         if (py < gy - kHitUp || py > gy + kHitDown) continue;
         const long dx = px - gx, dy = py - gy;
@@ -100,7 +106,11 @@ bool Input::selection_box(int& x0, int& y0, int& x1, int& y1) const {
 }
 
 void Input::commit_click(int px, int py, bool shift) {
-    const int idx = unit_under(px, py);
+    // Left-click never selects a hostile: a pick that lands on a house != 0
+    // unit is treated exactly like a pick on empty ground (falls through to
+    // the clear-selection branch below).
+    int idx = unit_under(px, py);
+    if (idx >= 0 && world_.units()[idx].house != 0) idx = -1;
     if (idx >= 0) {
         if (shift) {
             world_.units()[idx].selected = !world_.units()[idx].selected;  // toggle
@@ -109,7 +119,7 @@ void Input::commit_click(int px, int py, bool shift) {
             world_.units()[idx].selected = true;
         }
     } else if (!shift) {
-        world_.clear_selection();  // click on empty ground clears (Shift+empty = no-op)
+        world_.clear_selection();  // click on empty ground (or a hostile) clears (Shift+empty = no-op)
     }
 }
 
@@ -119,6 +129,10 @@ void Input::commit_box(bool shift) {
     y0 = std::min(down_y_, cur_y_); y1 = std::max(down_y_, cur_y_);
     if (!shift) world_.clear_selection();  // plain box replaces; Shift+box adds
     for (Unit& u : world_.units()) {
+        // A box drag never selects hostiles or corpses -- house != 0 units
+        // and dead/dying units are skipped even if their ground point falls
+        // inside the dragged rectangle.
+        if (u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
         int gx, gy;
         unit_ground_px(u, gx, gy);
         if (gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1) u.selected = true;
@@ -126,12 +140,17 @@ void Input::commit_box(bool shift) {
 }
 
 void Input::commit_double(int px, int py) {
+    // Same house-0-only rule as commit_click: a double-click landing on a
+    // hostile does nothing (no type-select, no selection change).
     const int idx = unit_under(px, py);
-    if (idx < 0) return;
+    if (idx < 0 || world_.units()[idx].house != 0) return;
     const std::string type = world_.units()[idx].image;
     world_.clear_selection();
     for (Unit& u : world_.units()) {
-        if (u.image != type) continue;
+        // The "same type" scan is also house-0-only and skips corpses (a
+        // hostile or a dead unit sharing the clicked unit's image must never
+        // join the selection).
+        if (u.house != 0 || u.image != type || !u.alive || u.die_time >= 0.0) continue;
         int gx, gy;
         unit_ground_px(u, gx, gy);
         if (gx >= 0 && gx < view_w_ && gy >= 0 && gy < view_h_) u.selected = true;  // on-screen
@@ -146,13 +165,43 @@ void Input::handle(const InputEvent& ev) {
 
         case InputEvent::PointerDown:
             if (ev.button == InputEvent::Right) {
-                // Right-click = group-move the current selection (issued on
-                // down). The half-tile offset before screen_to_cell maps the
-                // click to the cell whose visible diamond was clicked.
-                int cx = 0, cy = 0;
-                screen_to_cell(ev.x - cam_.x - kTileW / 2, ev.y - cam_.y - kTileH / 2,
-                               kTileW, kTileH, cx, cy);
-                world_.order_move_selected(cx, cy);
+                // Right-click: attack a hostile under the cursor if the pick
+                // lands on one (house != 0) -- a right-click on a FRIENDLY
+                // unit is NOT an attack order and falls through to the
+                // ground-move branch below (RA2 behavior: there is no
+                // "attack own unit" order, so it's treated like clicking the
+                // ground under that unit).
+                const int idx = unit_under(ev.x, ev.y);
+                if (idx >= 0 && world_.units()[idx].house != 0) {
+                    world_.order_attack(idx);
+                } else {
+                    // Group-move to the clicked ground cell (issued on down).
+                    // The half-tile offset before screen_to_cell maps the
+                    // click to the cell whose visible diamond was clicked --
+                    // LEVEL-AWARE, two-pass: raised terrain projects its
+                    // diamond kLevelPx*level higher on screen than the
+                    // level-0 projection (cell_to_screen subtracts
+                    // level*kLevelPx from py), so a single level-blind
+                    // inversion resolves 1-2 cells short of the tile actually
+                    // drawn under the cursor. Pass 1 inverts at level 0 to get
+                    // a first-guess cell; looking up THAT cell's real level
+                    // and re-inverting with the raise added back to py
+                    // converges on the true cell on smooth terrain (one
+                    // refinement step, not a fixed-point loop -- see
+                    // task-6-report.md).
+                    int cx0 = 0, cy0 = 0;
+                    screen_to_cell(ev.x - cam_.x - kTileW / 2, ev.y - cam_.y - kTileH / 2,
+                                   kTileW, kTileH, cx0, cy0);
+                    const ra2assets::MapCell* cell0 = world_.map().at(cx0, cy0);
+                    const int level = cell0 ? cell0->level : 0;
+                    int cx = cx0, cy = cy0;
+                    if (level > 0) {
+                        screen_to_cell(ev.x - cam_.x - kTileW / 2,
+                                       ev.y - cam_.y - kTileH / 2 + level * kLevelPx,
+                                       kTileW, kTileH, cx, cy);
+                    }
+                    world_.order_move_selected(cx, cy);
+                }
             } else {
                 l_down_ = true;
                 dragging_ = false;
