@@ -97,6 +97,7 @@ const UnitAnimSeq& anim_for_image(const std::string& image) {
 }
 
 static constexpr double kWalkFps = 9.0;  // walk-cycle frame rate (shared cadence, all images)
+static constexpr double kFireAnimFps = 15.0;  // Fire sequence pacing: the 6-frame recoil plays through ONCE per shot, spanning the kFireFlashSecs (0.4s) flash window exactly at the game's ~15Hz animation rate (6 frames / 0.4s = 15fps). Distinct from kWalkFps: walk cycles loop, fire plays once.
 
 // Duplicated from engine/combat.cpp's (anonymous-namespace) kFireFlashSecs --
 // NOT exposed via combat.hpp, so World::step's anim-override pass below
@@ -438,21 +439,20 @@ void World::step(double dt) {
             const int adv = static_cast<int>(u.die_time * kWalkFps);
             u.frame = seq.die_first + std::min(seq.die_count - 1, adv);
         } else if (u.fire_flash > 0.0) {
+            // Play the fire/recoil sequence ONCE across the flash window.
             // fire_flash counts DOWN from kFireFlashSecs (set by
-            // combat.cpp's try_fire on every shot) to 0; `progress` counts UP
-            // from the moment of firing at the walk cycle's own kWalkFps
-            // cadence, so the muzzle-flash frame (fire_first) shows right
-            // when the shot lands and the pose advances through the
-            // recoil/hold frames for the rest of the flash window.
+            // combat.cpp's try_fire on every shot) to 0. The fire sequence
+            // plays once per shot at kFireAnimFps (15 Hz), so all fire_count
+            // frames are visited during the 0.4s flash window.
             // kFireFlashSecs is combat.cpp's (anonymous-namespace, not
             // exposed via combat.hpp) constant, duplicated here at the same
             // value -- same already-tolerated pattern as this file's
             // kTileW/kTileH/kLevelPx duplicating iso_renderer.cpp/input.cpp
             // (task-12-report.md Minor). MUST stay in sync with combat.cpp's
             // kFireFlashSecs if that ever changes.
-            const double progress = (kFireFlashSecs - u.fire_flash) * kWalkFps;
-            const int adv = static_cast<int>(progress);
-            u.frame = seq.fire_first + (adv % seq.fire_count);
+            const int adv = static_cast<int>((kFireFlashSecs - u.fire_flash) * kFireAnimFps);
+            const UnitAnimSeq& seq = anim_for_image(u.image);
+            u.frame = seq.fire_first + std::min(seq.fire_count - 1, adv);
         }
         // else: leave step_units' stand/walk choice untouched.
     }

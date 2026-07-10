@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <set>
 #include <tuple>
 #include <vector>
 
@@ -918,7 +919,7 @@ TEST_CASE("pal_for_house: indices outside 16..31 are untouched by either house")
 
 // ---- Fire/die anim-override pass (Task 7: World::step frame selection) ----
 
-TEST_CASE("World::step anim-override: fire_flash > 0 selects the unit's fire frame range") {
+TEST_CASE("World::step anim-override: fire_flash > 0 selects the unit's fire frame range and visits all frames during flash window") {
     // No real map needed -- this exercises Unit::frame selection only, not
     // terrain/pathing, so a default-constructed (cell-less) MapFile is fine
     // (World tolerates an empty map: build_passability(empty) -> 0x0 grid,
@@ -926,13 +927,39 @@ TEST_CASE("World::step anim-override: fire_flash > 0 selects the unit's fire fra
     ra2assets::MapFile map;
     ra2engine::World world(map);
     ra2engine::Unit& u = world.add_combat_unit(0, 0, 0, gi_stats());  // image "GI"
-    u.fire_flash = 0.3;  // mid-flash (combat.cpp's kFireFlashSecs is 0.4; any >0 exercises this branch)
-
-    world.step(1.0 / 60.0);
-
     const ra2engine::UnitAnimSeq& seq = ra2engine::anim_for_image("GI");
+
+    // Mid-flash sanity check: frame selection is within range.
+    u.fire_flash = 0.3;
+    world.step(1.0 / 60.0);
     CHECK(u.frame >= seq.fire_first);
     CHECK(u.frame < seq.fire_first + seq.fire_count);
+
+    // Exhaustiveness check: simulate a full flash window from fire_flash = 0.4
+    // (kFireFlashSecs) down to 0, collecting all visited frames.
+    ra2engine::World world2(map);
+    ra2engine::Unit& u2 = world2.add_combat_unit(0, 0, 0, gi_stats());
+    const ra2engine::UnitAnimSeq& seq2 = ra2engine::anim_for_image("GI");
+
+    std::set<int> visited_frames;
+    u2.fire_flash = 0.4;  // start of flash window
+    const double dt = 1.0 / 60.0;
+
+    while (u2.fire_flash > 0.0) {
+        world2.step(dt);
+        // u2.fire_flash is decremented by step_combat during step()
+        // Record the frame after each step while still in flash window.
+        if (u2.fire_flash >= 0.0) {
+            visited_frames.insert(u2.frame);
+        }
+    }
+
+    // After fire_flash reaches 0, verify all fire frames were visited.
+    REQUIRE(seq2.fire_count > 0);
+    for (int i = 0; i < seq2.fire_count; ++i) {
+        const int expected_frame = seq2.fire_first + i;
+        CHECK(visited_frames.count(expected_frame) > 0);
+    }
 }
 
 TEST_CASE("World::step anim-override: die_time selects the die range and clamps at the last frame") {
