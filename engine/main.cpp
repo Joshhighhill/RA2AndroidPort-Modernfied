@@ -711,10 +711,20 @@ int run_interactive(bool no_audio) {
             }
             const auto act = input.take_actions();  // ONCE/frame, consumes
             if (act.actor >= 0) {
-                const auto& av = audio.voices[world.units()[act.actor].image];
-                if (act.selected) audio.mixer->play(av.select);
-                else if (act.attack_ordered) audio.mixer->play(av.attack);
-                else if (act.move_ordered) audio.mixer->play(av.move);
+                // Acks attenuate like every other event (docs/re/
+                // audio-playback.md, AMENDED: positional = !GLOBAL for ALL
+                // events -- acks inherit [Defaults] Type=SCREEN): same
+                // Chebyshev metric as the report/die path above, on the
+                // ACTOR unit's position. Usually near full volume, since
+                // the actor was just clicked on-screen.
+                const auto& au = world.units()[act.actor];
+                const double asx = (au.fx - au.fy) * 30.0 - view_center_px_x;
+                const double asy = (au.fx + au.fy) * 15.0 - view_center_px_y;
+                const double adist = std::max(std::abs(asx), 2.0 * std::abs(asy)) / 60.0;
+                const auto& av = audio.voices[au.image];
+                if (act.selected) audio.mixer->play(av.select, adist);
+                else if (act.attack_ordered) audio.mixer->play(av.attack, adist);
+                else if (act.move_ordered) audio.mixer->play(av.move, adist);
             }
             audio.out.pump(*audio.mixer);
         }
