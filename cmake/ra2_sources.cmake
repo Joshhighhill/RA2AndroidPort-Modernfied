@@ -29,6 +29,7 @@ set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/wav.cpp
     ${RA2_ROOT}/src/hva.cpp
     ${RA2_ROOT}/src/vxl.cpp
+    ${RA2_ROOT}/src/vpl.cpp
     ${RA2_ROOT}/src/csf.cpp
     ${RA2_ROOT}/src/fileio.cpp
 )
