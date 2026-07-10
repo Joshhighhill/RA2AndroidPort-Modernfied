@@ -16,8 +16,19 @@ recovered from the original `gamemd.exe` via Ghidra and driven by your real
 and all 8 facings are resolved from your real `artmd.ini` sequence data
 (`ra2assets::Art`, see `docs/re/infantry-anim.md`), and group attack orders
 fan attackers out to individual firing positions instead of queuing them
-single-file. The library stays pure and dependency-free; only the engine
-links SDL2.
+single-file. The fight is audible, too: weapon-fire sound effects, unit voice
+acknowledgements (select/move/attack barks), death screams, and the EVA
+"Unit lost" announcement, all driven by your real `soundmd.ini`/`evamd.ini`
+event definitions and the `audio.bag`/`audio.idx` sample archive decoded by
+the in-house IMA-ADPCM decoder (no XCC/third-party tooling) plus a from-scratch
+WAV reader for the EVA clips. Playback semantics — linear distance
+attenuation over the isometric screen-pixel Chebyshev metric, per-event
+simultaneous-instance limits enforced by voice-stealing, `Control=random`
+variant selection over Attack/body/Decay sample partitions, and the 5-level
+Priority scale — were recovered from `gamemd.exe` via Ghidra (see
+`docs/re/audio-playback.md`) and are mixed by a small dependency-free
+`ra2engine::Mixer`, played out through SDL2 on desktop/Android. The library
+stays pure and dependency-free; only the engine links SDL2.
 
 ## Building
 
@@ -84,6 +95,19 @@ Headless/verification CLI modes (render one or more frames and exit):
   see `docs/re/combat.md`; the seed is accepted for interface stability and
   unused). Writes start/end screenshots to the scratchpad; exits non-zero on
   any overlap, dangling target, log divergence, or a bloodless battle.
+- `ra2engine.exe --demo-audio` — headless-safe proof that the audio pipeline
+  actually produces sound: loads `rulesmd.ini`/`soundmd.ini`/`evamd.ini` and
+  the `audio.bag` archive, plays `GIAttack` and renders straight into a plain
+  buffer bypassing SDL entirely (fails if every sample comes back zero); if a
+  real audio device opens, it also plays an audible ~4 s scripted sequence
+  (`GIAttack` → `GISelect` → `GIDie` → EVA "Unit lost") through it. Device
+  absence is not a failure (CI/headless boxes have none — only check 1 must
+  pass); prints a `[demo-audio] clips=<n> device=yes|no mix=nonzero` summary
+  and exits 0.
+
+`ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
+silent fallback as a failed device open, just without touching the mix chain
+at all) alongside the interactive run.
 
 ## Android (arm64-v8a) cross-compile
 
