@@ -407,9 +407,12 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ### Task 4: engine/voxel_raster — the pure rasterizer
 
-**[RE-GATE]** Do not dispatch until the controller has reconciled every
-`[RE: voxel-render.md §N]` marker below against Task 1's doc and committed
-any amendments.
+**[RE-GATE: APPLIED 2026-07-10]** — every marker below has been reconciled
+against Task 1's docs/re/voxel-render.md "Decisions for ra2engine" and the
+code blocks amended (projection basis + axis swap, corner-anchored voxels,
+depth rule, 2×1 footprint, kNormals4[245], diffuse+specular lighting with a
+yaw-rotated world light + level clamp, index_to_yaw offset). Remaining
+`[RE: §N]` strings are citations, not open items.
 
 **Files:**
 - Create: `engine/voxel_raster.hpp`, `engine/voxel_raster.cpp`, `engine/voxel_normals.inc`
@@ -422,42 +425,55 @@ any amendments.
   - `struct VoxelSprite { int w = 0, h = 0; int anchor_x = 0, anchor_y = 0; std::vector<uint8_t> rgba; }` — anchor is the model-origin ("ground center") pixel within the sprite.
   - `VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva, double yaw_rad, const ra2assets::Vpl& vpl, const ra2assets::Palette& pal)` — renders ALL sections of one model (frame 0) rotated by `yaw_rad` about the model Z axis.
   - `int facing_to_index(double facing_u16, int n)` and `double index_to_yaw(int i, int n)` — the facing-quantization pair `[RE: voxel-render.md §2]`.
-  - `engine/voxel_normals.inc` defining `kNormals2[36][3]` and `kNormals4[244][3]` (copied verbatim from voxel-render.md §3).
+  - `engine/voxel_normals.inc` defining `kNormals2[36][3]` and `kNormals4[245][3]` (copied verbatim from voxel-render.md §3 — mode 4 has 245 entries, not 244; entries 240–244 are identical padding).
 
-**The math (each formula tagged with its RE-doc section — amend per Task 1):**
+**The math (AMENDED post-Task-1 from docs/re/voxel-render.md "Decisions for
+ra2engine" — these are the recovered values, no longer assumptions):**
 
-1. Voxel (ix,iy,iz) center in section-local units:
-   `local = min_bounds + (i + 0.5) * (max_bounds - min_bounds) / size` per axis
-   `[RE: voxel-render.md §1 — bounds-normalized voxel centers]`.
+1. Voxel (ix,iy,iz) position in section-local units — CORNER-ANCHORED, no
+   half-voxel offset (voxel-render.md §1):
+   `local = min_bounds + i * (max_bounds - min_bounds) / size` per axis.
 2. Section transform: `world = hva_matrix_3x4 * local`, with the HVA
    TRANSLATION column pre-multiplied by the section `scale` (det_scale)
-   `[RE: voxel-render.md §1 — scale applies to HVA translation]`.
+   (voxel-render.md §1, CONFIRMED — `FUN_005BD160` applies it at load; doing
+   it per call is equivalent).
 3. Yaw: rotate `world` about +Z by `yaw_rad`.
-4. Screen: `sx = (wx - wy) * kIsoX; sy = (wx + wy) * kIsoY - wz * kIsoZ;`
-   with `constexpr double kIsoX, kIsoY, kIsoZ` from
-   `[RE: voxel-render.md §1 — px-per-model-unit constants]`
-   (assumed structure: same diamond shear as `cell_to_screen`; assumed
-   placeholder values kIsoX=0.75, kIsoY=0.375, kIsoZ=0.65 — MUST be amended
-   to the recovered constants).
-5. Depth: `depth = wx + wy + wz` larger = nearer; per-pixel z-buffer keeps
-   the largest depth `[RE: voxel-render.md §1 — depth rule]`.
-6. Lighting: `level = clamp(int((dot(normal_table[v.normal], kLightDir) * 0.5 + 0.5) * (vpl.section_count - 1) + 0.5), 0, vpl.section_count - 1)`,
-   `final_index = vpl.tables[level][v.color]`, RGBA = `pal[final_index]`
-   with alpha 255 `[RE: voxel-render.md §3 — replace with the recovered
-   scaling; kLightDir from the doc]`. The normal table per section is picked
-   by `normals_mode` (2 → kNormals2, 4 → kNormals4; any other mode → treat
-   as 4). Out-of-range normal indices clamp to the table's last entry.
+4. Screen (voxel-render.md §1, recovered basis Rx(−60°)·Rz(−45°); note the
+   axis roles vs the old placeholder are SWAPPED):
+   `sx = (wx + wy) * kIsoX; sy = (wx - wy) * kIsoY - wz * kIsoZ;`
+   with `kIsoX = 0.70711, kIsoY = 0.35355, kIsoZ = 0.86603`.
+   1 voxel unit = 1 px; do NOT scale by cell metrics inside the rasterizer.
+5. Depth (voxel-render.md §1, third basis row):
+   `depth = 0.61237 * (wx - wy) + 0.5 * wz`, larger = nearer,
+   strictly-greater z-buffer test.
+6. Lighting (voxel-render.md §3, recovered formula — diffuse + specular):
+   with `L_model = Rz(-yaw) * (-0.7071, -0.7071, 0)` (the light is
+   WORLD-fixed, so it rotates into model space per rasterize call — it is
+   NOT a global constant dotted with unrotated normals) and
+   `H_model = normalize(L_model + (0,0,1))`:
+   `d = max(0, dot(n, L_model)); h = max(0, dot(n, H_model)); s = h / (3 - 2*h);`
+   `level = clamp(ftol((d + s) * 16.0), 0, vpl.section_count - 1)`
+   (the clamp is REQUIRED: d+s can reach ~2.0 → 32 without it — reviewer
+   finding on the RE doc). Normal indices 253–255 are forced to level 16
+   (the neutral row). `final_index = vpl.tables[level][v.color]`,
+   RGBA = `pal[final_index]`, alpha 255. Normal table per section by
+   `normals_mode` (2 → kNormals2[36], 4 → kNormals4[245]; any other mode →
+   treat as 4). Out-of-range normal indices clamp to the table's last entry.
 7. Sprite bounds: project all 8 corners of each section's transformed
-   bounding box, take the pixel AABB over all sections plus a 1px pad;
-   `anchor = -aabb_min` (so model origin lands at (anchor_x, anchor_y)).
-8. Each voxel fills a `ceil(kIsoX)`-px square at its projected center
-   (voxels are ~1 model unit apart; the fill factor prevents pinholes)
-   `[RE: voxel-render.md §1 — the original's per-voxel footprint rule]`.
+   bounding box, take the pixel AABB over all sections plus a 1px pad (+1px
+   right for the footprint below); `anchor = -aabb_min` (model origin lands
+   at (anchor_x, anchor_y)).
+8. Footprint (voxel-render.md §1, RESOLVED): each voxel plots exactly
+   2 horizontal pixels (2×1 — px and px+1 on one row), matching vanilla's
+   pinhole behavior. No `ceil(kIsoX)` square.
 
 **House remap is NOT a rasterizer parameter:** callers pass an
 already-remapped `Palette` (reuse `pal_for_house` from `iso_renderer.hpp` —
 it remaps indices 16–31, matching artmd `Remapable=yes`)
-`[RE: voxel-render.md §4 — confirm voxel remap is the same 16–31 ramp]`.
+(voxel-render.md §4, CONFIRMED: draw-time colors index the unit palette
+through the same per-house 16–31 ramp as SHP; the vpl's embedded palette and
+the VXL's embedded palette are NOT consulted at draw time, and vpl
+remap_start/remap_end drive nothing).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -544,17 +560,23 @@ TEST_CASE("voxel_raster: single voxel lands on the anchor") {
 }
 
 TEST_CASE("voxel_raster: yaw rotation moves an off-axis voxel as hand-computed") {
-    // Two-voxel column along model +X: bounds [-1,1] x [-0.5,0.5]^2, 2x1x1.
+    // Two-voxel column along model +X: bounds [0,2] x [0,1] x [0,1], 2x1x1.
+    // Corner-anchored positions (voxel-render.md §1): voxel (1,0,0) sits at
+    // local (1, 0, 0) exactly -- pure +X, so its projected offset from the
+    // anchor is sign-definite under the recovered basis (no y/z bleed).
     VxlModel m = single_voxel_model(100, 0);
-    m.sections[0].size_x = 2;
-    m.sections[0].min_bounds[0] = -1.0f;
-    m.sections[0].max_bounds[0] = 1.0f;
-    m.sections[0].voxels = { {0, 0, false}, {100, 0, true} };  // only x=1 present: center (0.5, 0, 0)
+    m.sections[0].size_x = 4;
+    m.sections[0].min_bounds[0] = 0.0f; m.sections[0].max_bounds[0] = 4.0f;
+    m.sections[0].min_bounds[1] = 0.0f; m.sections[0].max_bounds[1] = 1.0f;
+    m.sections[0].min_bounds[2] = 0.0f; m.sections[0].max_bounds[2] = 1.0f;
+    m.sections[0].voxels = { {0, 0, false}, {0, 0, false}, {0, 0, false},
+                             {100, 0, true} };  // only x=3 present: local (3, 0, 0)
     auto at0 = ra2engine::rasterize_model(m, identity_hva(), 0.0, identity_vpl(), gray_pal());
     auto at180 = ra2engine::rasterize_model(m, identity_hva(), M_PI, identity_vpl(), gray_pal());
-    // At yaw 0 the voxel is at world (0.5,0,0) -> screen (+0.5*kIsoX, +0.5*kIsoY)
-    // of the anchor; at yaw pi it is at (-0.5,0,0) -> mirrored. Find each
-    // sprite's opaque centroid relative to its anchor and check the sign flip.
+    // At yaw 0 the voxel is at world (3,0,0) -> sx = +2.12, sy = +1.06 px
+    // (down-right, screen East -- whole-pixel offsets survive rounding); at
+    // yaw pi it is (-3,0,0) -> sx = -2.12, sy = -1.06. Find each sprite's
+    // opaque centroid relative to its anchor and check the sign flip.
     auto centroid_rel = [](const ra2engine::VoxelSprite& s, double& cx, double& cy) {
         double sx = 0, sy = 0; int n = 0;
         for (int y = 0; y < s.h; ++y)
@@ -649,15 +671,16 @@ struct VoxelSprite {
     std::vector<uint8_t> rgba;  // w*h*4, alpha 0 = empty
 };
 
-// Projection constants: screen px per rotated-model unit along the diamond
-// axes, and the light direction the lighting rule dots normals with.
-// Values from docs/re/voxel-render.md §1/§3.
-// [RE: voxel-render.md §1 -- AMEND these to the recovered constants]
-constexpr double kIsoX = 0.75;
-constexpr double kIsoY = 0.375;
-constexpr double kIsoZ = 0.65;
-// [RE: voxel-render.md §3 -- AMEND to the recovered light direction]
-constexpr double kLightDir[3] = {-0.577, 0.577, -0.577};
+// Projection constants (docs/re/voxel-render.md §1, recovered basis
+// Rx(-60 deg)*Rz(-45 deg)): screen px per rotated-model unit. 1 voxel
+// unit = 1 px -- no cell-metric scaling inside the rasterizer.
+constexpr double kIsoX = 0.70711;   // sx = (wx + wy) * kIsoX
+constexpr double kIsoY = 0.35355;   // sy = (wx - wy) * kIsoY - wz * kIsoZ
+constexpr double kIsoZ = 0.86603;
+// World-fixed light direction (voxel-render.md §3): rotated into MODEL
+// space per rasterize call (L_model = Rz(-yaw) * kLightWorld), never dotted
+// with normals directly as a constant.
+constexpr double kLightWorld[3] = {-0.7071, -0.7071, 0.0};
 
 // Facing quantization (docs/re/voxel-render.md §2): `facing_u16` is a
 // facing in the original's 16-bit space [0, 65536); n is the cached facing
@@ -705,19 +728,26 @@ V3 yaw_rotate(const V3& p, double c, double s) {
 }
 
 void project(const V3& w, double& sx, double& sy, double& depth) {
-    sx = (w.x - w.y) * kIsoX;
-    sy = (w.x + w.y) * kIsoY - w.z * kIsoZ;
-    depth = w.x + w.y + w.z;  // [RE: voxel-render.md §1 -- depth rule]
+    // voxel-render.md §1: basis Rx(-60)*Rz(-45); depth = third row.
+    sx = (w.x + w.y) * kIsoX;
+    sy = (w.x - w.y) * kIsoY - w.z * kIsoZ;
+    depth = 0.61237 * (w.x - w.y) + 0.5 * w.z;
 }
 
-int light_level(uint8_t normal_ix, uint8_t mode, uint32_t levels) {
+// voxel-render.md §3: level = ftol((d + s) * 16), d = diffuse, s = specular
+// h/(3-2h); L/H are the light dir already rotated into MODEL space by the
+// caller (world-fixed light). Indices 253-255 -> neutral row 16. Clamp to
+// section_count-1 (d+s can reach ~2.0).
+int light_level(uint8_t normal_ix, uint8_t mode, uint32_t levels,
+                const double L[3], const double H[3]) {
+    if (normal_ix >= 253) return std::min<int>(16, static_cast<int>(levels) - 1);
     const float(*tab)[3] = (mode == 2) ? kNormals2 : kNormals4;
-    const int tab_n = (mode == 2) ? 36 : 244;
+    const int tab_n = (mode == 2) ? 36 : 245;
     const int ix = std::min<int>(normal_ix, tab_n - 1);
-    const double dot = tab[ix][0] * kLightDir[0] + tab[ix][1] * kLightDir[1] +
-                       tab[ix][2] * kLightDir[2];
-    // [RE: voxel-render.md §3 -- AMEND to the recovered scaling]
-    const int lv = static_cast<int>((dot * 0.5 + 0.5) * (levels - 1) + 0.5);
+    const double d = std::max(0.0, tab[ix][0] * L[0] + tab[ix][1] * L[1] + tab[ix][2] * L[2]);
+    const double h = std::max(0.0, tab[ix][0] * H[0] + tab[ix][1] * H[1] + tab[ix][2] * H[2]);
+    const double s = h / (3.0 - 2.0 * h);
+    const int lv = static_cast<int>((d + s) * 16.0);  // ftol = truncate
     return std::clamp(lv, 0, static_cast<int>(levels) - 1);
 }
 }  // namespace
@@ -729,9 +759,11 @@ int facing_to_index(double facing_u16, int n) {
 }
 
 double index_to_yaw(int i, int n) {
-    // [RE: voxel-render.md §2 -- AMEND sign/offset to the recovered
-    // facing->angle mapping (which index is screen-North)]
-    return -2.0 * M_PI * i / n;
+    // voxel-render.md §2 (AMENDED): yaw(i) = (i - n/4) * (-2*pi/n).
+    // Index n/4 (facing 0x4000, screen East) is the unrotated model (+X
+    // nose points down-right); increasing facing rotates CLOCKWISE on
+    // screen. For n=32: yaw(8)=0, yaw(0)=+pi/2 (North).
+    return (i - n / 4) * (-2.0 * M_PI / n);
 }
 
 VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
@@ -767,9 +799,15 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
     std::vector<double> zbuf(static_cast<size_t>(out.w) * out.h,
                              -std::numeric_limits<double>::infinity());
 
-    // Voxel footprint: fill a fp x fp square per voxel so ~1-unit spacing
-    // leaves no pinholes. [RE: voxel-render.md §1 -- footprint rule]
-    const int fp = std::max(1, static_cast<int>(std::ceil(kIsoX)));
+    // Voxel footprint (voxel-render.md §1, RESOLVED): the original plots
+    // exactly 2 horizontal pixels per voxel (px and px+1, one row).
+    // Light dirs rotated into model space ONCE per call (world-fixed light):
+    const double lc = std::cos(-yaw_rad), ls = std::sin(-yaw_rad);
+    const double L[3] = {kLightWorld[0] * lc - kLightWorld[1] * ls,
+                         kLightWorld[0] * ls + kLightWorld[1] * lc, kLightWorld[2]};
+    double H[3] = {L[0], L[1], L[2] + 1.0};
+    const double hn = std::sqrt(H[0] * H[0] + H[1] * H[1] + H[2] * H[2]);
+    H[0] /= hn; H[1] /= hn; H[2] /= hn;
 
     // Pass 2: voxels.
     for (size_t si = 0; si < m.sections.size(); ++si) {
@@ -784,28 +822,29 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
                     const auto& v = sec.voxels[x + static_cast<size_t>(sec.size_x) *
                                                        (y + static_cast<size_t>(sec.size_y) * z)];
                     if (!v.present) continue;
-                    const V3 local = {sec.min_bounds[0] + (x + 0.5) * stepx,
-                                      sec.min_bounds[1] + (y + 0.5) * stepy,
-                                      sec.min_bounds[2] + (z + 0.5) * stepz};
+                    // Corner-anchored (voxel-render.md §1): no +0.5.
+                    const V3 local = {sec.min_bounds[0] + x * stepx,
+                                      sec.min_bounds[1] + y * stepy,
+                                      sec.min_bounds[2] + z * stepz};
                     double sx, sy, depth;
                     project(yaw_rotate(apply_xform(xf.transform, sec.scale, local), c, s),
                             sx, sy, depth);
                     const int px = static_cast<int>(std::round(sx)) + out.anchor_x;
                     const int py = static_cast<int>(std::round(sy)) + out.anchor_y;
-                    const int lv = light_level(v.normal, sec.normals_mode, vpl.section_count);
+                    const int lv = light_level(v.normal, sec.normals_mode, vpl.section_count, L, H);
                     const ra2assets::Rgba col = pal[vpl.tables[lv][v.color]];
-                    for (int dy = 0; dy < fp; ++dy)
-                        for (int dx = 0; dx < fp; ++dx) {
-                            const int qx = px + dx, qy = py + dy;
-                            if (qx < 0 || qy < 0 || qx >= out.w || qy >= out.h) continue;
-                            const size_t at = static_cast<size_t>(qy) * out.w + qx;
-                            if (depth <= zbuf[at]) continue;
-                            zbuf[at] = depth;
-                            out.rgba[at * 4 + 0] = col.r;
-                            out.rgba[at * 4 + 1] = col.g;
-                            out.rgba[at * 4 + 2] = col.b;
-                            out.rgba[at * 4 + 3] = 255;
-                        }
+                    // 2x1 footprint (voxel-render.md §1).
+                    for (int dx = 0; dx < 2; ++dx) {
+                        const int qx = px + dx, qy = py;
+                        if (qx < 0 || qy < 0 || qx >= out.w || qy >= out.h) continue;
+                        const size_t at = static_cast<size_t>(qy) * out.w + qx;
+                        if (depth <= zbuf[at]) continue;
+                        zbuf[at] = depth;
+                        out.rgba[at * 4 + 0] = col.r;
+                        out.rgba[at * 4 + 1] = col.g;
+                        out.rgba[at * 4 + 2] = col.b;
+                        out.rgba[at * 4 + 3] = 255;
+                    }
                 }
     }
     return out;
@@ -816,8 +855,8 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
 
 `engine/voxel_normals.inc`: the two arrays copied VERBATIM from
 `docs/re/voxel-render.md` §3 (`static constexpr float kNormals2[36][3] = {...};`
-`static constexpr float kNormals4[244][3] = {...};`). Included inside the
-anonymous namespace of voxel_raster.cpp only.
+`static constexpr float kNormals4[245][3] = {...};` — 245 entries). Included
+inside the anonymous namespace of voxel_raster.cpp only.
 
 CMakeLists.txt: add `target_sources(ra2assets_tests PRIVATE tests/test_voxel_raster.cpp engine/voxel_raster.cpp)`
 (pattern/comment style of the `engine/combat.cpp` block); add
@@ -838,7 +877,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ### Task 5: Vehicle state — ROT turning, per-unit speed, turret slew, aim-gated fire
 
-**[RE-GATE]** Reconcile `[RE: voxel-render.md §5]` markers first.
+**[RE-GATE: APPLIED 2026-07-10]** — §5 markers reconciled: aim tolerance
+AMENDED to 0 (rotation-complete), kRotU16PerRotPerSec CONFIRMED, spawn-facing
+constant CONFIRMED, speed-scale controller decision recorded in Task 6 item 6.
 
 **Files:**
 - Modify: `engine/world.hpp`, `engine/world.cpp`, `engine/combat.cpp`
@@ -849,8 +890,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Produces (Task 6 consumes):
   - `Unit` gains: `bool is_vehicle = false; double body_facing = 32768.0; double turret_facing = 32768.0; double rot_u16_per_sec = 0.0; double speed_cps = 0.0;`
     (facings in the original 16-bit space [0,65536); 32768 = the same
-    screen-South spawn direction infantry uses `[RE: voxel-render.md §2 —
-    amend the constant if the recovered index-0 direction differs]`).
+    screen-South spawn direction infantry uses — CONFIRMED by
+    voxel-render.md §2: facing 32768 is index 16 = screen South; keep it).
   - `double facing_u16_from_delta(double dx, double dy)` — continuous
     facing from a cell-space direction, consistent with `facing_from_delta`'s
     8-block convention (block k spans facing `k*8192 ± 4096`).
@@ -859,9 +900,17 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     facing (== target when within max_step).
   - `bool vehicle_aimed(const Unit& u, double target_facing)` — true when
     `|shortest_arc(u.turret_facing, target_facing)| <= kAimToleranceU16`.
-  - `constexpr double kAimToleranceU16 = 1024.0;` `[RE: voxel-render.md §5 — amend to the recovered FireError::FACING tolerance]`
+  - `constexpr double kAimToleranceU16 = 0.0;` — AMENDED per voxel-render.md
+    §5: vanilla holds fire until the timed turret rotation COMPLETES (exact
+    facing, tolerance 0, via Is_Rotating). `turn_toward` clamp-lands exactly
+    on the target value, and `step_turrets`/`step_combat` compute `want`
+    from the same positions in the same frame, so exact double comparison is
+    well-defined (`<= 0.0` on the shortest-arc magnitude). Same rule for the
+    hull turn-then-move gate.
   - `UnitCombat` gains `int rot = 0; bool turret = false; double speed_cps = 0.0; bool is_vehicle = false;` and `World::add_combat_unit` copies them onto the Unit (`rot_u16_per_sec = rot * kRotU16PerRotPerSec`).
-  - `constexpr double kRotU16PerRotPerSec = 256.0 * 15.0;` — ROT=5 → 19,200 u16/sec → full circle in ~3.4 s `[RE: voxel-render.md §5 — amend to the recovered per-frame step × 15 Hz]`.
+  - `constexpr double kRotU16PerRotPerSec = 256.0 * 15.0;` — CONFIRMED by
+    voxel-render.md §5 (`Set_ROT` = ROT·256 u16/frame at 15 Hz): ROT=5 →
+    19,200 u16/sec → full circle in ~3.4 s.
 
 **Behavior changes (all vehicle-gated — infantry paths byte-identical):**
 
@@ -1023,7 +1072,9 @@ TEST_CASE("vehicle: fire waits for turret aim; infantry does not") {
     CHECK(units[1].hp == 400);          // vehicle held fire (not aimed)
     CHECK(units[0].hp < 400);           // infantry-rules unit fired
 
-    units[0].turret_facing = facing_u16_from_delta(1.0, 0.0);  // now aimed
+    // Aim EXACTLY (tolerance 0): use the same delta step_combat computes,
+    // (t.fx - u.fx, t.fy - u.fy) = (2, 0), so the doubles compare equal.
+    units[0].turret_facing = facing_u16_from_delta(2.0, 0.0);
     ra2engine::step_combat(units, occ, 1.0 / 15.0);
     CHECK(units[1].hp < 400);           // vehicle fired once aimed
 }
@@ -1163,7 +1214,11 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ### Task 6: main.cpp wiring — assets, facing cache, draw, death explosion, voices, --demo-tank
 
-**[RE-GATE]** Reconcile `[RE: voxel-render.md §2/§4/§6]` markers first.
+**[RE-GATE: APPLIED 2026-07-10]** — §2 facings/spawn CONFIRMED, §4 palette +
+remap CONFIRMED (unittem.pal via pal_for_house), §6 FLH RESOLVED with code,
+§5 speed-scale decision recorded (keep 0.75·Speed, document divergence), §7
+projectile instant-hit + single-target damage kept per the doc's
+recommendation (documented divergences).
 
 **Files:**
 - Create: `engine/facing_cache.hpp`, `engine/facing_cache.cpp`
@@ -1182,10 +1237,10 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Load chain (all individually guarded — any failure logs once and leaves `va.ok = false`, game continues infantry-only):**
 1. `htnk.vxl`/`htnk.hva`/`htnktur.vxl`/`htnktur.hva`/`htnkbarl.vxl`/`htnkbarl.hva` from `ra2.mix → local.mix` (same nested-open pattern as `temperat.ini` in `load_assets`). Turret/barrel absence is NOT an error for non-turreted vehicles (`Rules::has_turret` gates the attempt).
 2. `voxels.vpl` from `ra2.mix → local.mix`.
-3. Palette: `unittem.pal` from `ra2.mix → cache.mix` (already loaded as `ua.pal`) `[RE: voxel-render.md §4 — amend if the doc names a different palette source for voxels]`.
+3. Palette: `unittem.pal` from `ra2.mix → cache.mix` (already loaded as `ua.pal`) — CONFIRMED by voxel-render.md §4.
 4. Explosion: `Rules::explosion_first("HTNK")` (= "TWLT070") SHP from `ra2.mix → conquer.mix` via the existing `load_unit_shp`, drawn with `anim.pal` from `ra2.mix → cache.mix` if present, else `ua.pal`.
 5. Build 6 FacingSets: hull/turret/barrel × house 0/1, palette per house via `pal_for_house(pal, house)`. Skip turret/barrel sets when absent.
-6. Combat stats: `resolve_combat_unit(rules, "HTNK")` + `va.combat.is_vehicle = true; va.combat.rot = rules.rot("HTNK"); va.combat.turret = rules.has_turret("HTNK"); va.combat.speed_cps = speed * kCellsPerSecPerSpeed;` (Speed=6 → 4.5 cps, keeping the established Speed-scale so tank:GI = 6:4) `[RE: voxel-render.md §5 — amend kCellsPerSecPerSpeed usage if the recovered conversion differs materially]`.
+6. Combat stats: `resolve_combat_unit(rules, "HTNK")` + `va.combat.is_vehicle = true; va.combat.rot = rules.rot("HTNK"); va.combat.turret = rules.has_turret("HTNK"); va.combat.speed_cps = speed * kCellsPerSecPerSpeed;` (Speed=6 → 4.5 cps). CONTROLLER DECISION per voxel-render.md §5: vanilla's absolute conversion is 0.15·Speed (≈5× slower); the engine keeps its established 0.75·Speed scale for ALL units (the tank:GI 6:4 ratio — the vanilla-faithful part — is preserved) as a KNOWN, documented divergence inherited from the infantry phases. Task 7's README lists it; a whole-engine time-base calibration pass is a recorded future-phase candidate. Do NOT change the scale piecemeal for tanks only.
 7. Audio: extend `init_audio`'s unit-id loop `{"E1", "E2"}` → `{"E1", "E2", "HTNK"}` — nothing else; the existing per-image `UnitVoices` machinery handles the rest (image "HTNK").
 
 **Draw (in render_world's back-to-front loop):** units with `u.image == "HTNK"` (or generally: an image with a VehicleAssets entry) draw via voxel sprites instead of SHP:
@@ -1208,10 +1263,30 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 explosion SHP instead of the tank: `frame = min(int(u.die_time * 15.0), shp.count()-1)`
 (same 15 fps as infantry deaths, kDieAnimSecs=1.0 unchanged), anchored like
 draw_unit. Fire flash offset: keep the existing fire_flash mechanism; the flash
-anchor for vehicles adds the FLH screen offset
-`[RE: voxel-render.md §6 — the recovered lepton→px conversion; if §6 landed
-Low-confidence, draw the flash at the turret-front sprite edge and record the
-divergence]`.
+anchor for vehicles adds the FLH screen offset — RESOLVED by voxel-render.md
+§6 (High): `PrimaryFireFLH=F,L,H` is leptons in TURRET space; muzzle offset in
+cells = `Rz(turret yaw) * (F, L) / 256.0` (H likewise /256), then reuse the
+unit-anchor projection basis:
+
+```cpp
+    // FLH (voxel-render.md §6): rotate (F, L) by the QUANTIZED turret yaw,
+    // convert leptons -> cells (/256), project with the same 60x30 diamond
+    // shear draw_unit uses; height contributes via the level_px-equivalent
+    // z term (100 leptons of H ~= 0.39 cells * 15 px/level-ish -- use
+    // -H/256.0 * 30.0 px, the cell_to_screen level convention scaled to a
+    // half-cell rise, and record the visual anchor in the report).
+    const double yaw = ra2engine::index_to_yaw(
+        ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings),
+        ra2engine::kVehicleFacings);
+    const double fc = va.flh[0] / 256.0, lc = va.flh[1] / 256.0;
+    const double mx = fc * std::cos(yaw) - lc * std::sin(yaw);   // cells, model X
+    const double my = fc * std::sin(yaw) + lc * std::cos(yaw);   // cells, model Y
+    const int flash_dx = static_cast<int>(std::round((mx + my) * 30.0));
+    const int flash_dy = static_cast<int>(std::round((mx - my) * 15.0 - (va.flh[2] / 256.0) * 30.0));
+```
+
+(the (mx+my)/(mx−my) axis pairing matches the rasterizer's recovered basis —
+model +X at turret yaw 0 points screen East; Burst=1 so L never flips).
 
 **Spawning:** `spawn_tank_squads(world, va, n)` — reuse `spawn_squad` verbatim
 with `va.combat`, origins offset from the infantry squads (house 0 tanks 4
@@ -1370,7 +1445,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Steps:**
 
 - [ ] **Step 1: arm64 gate.** Cross-compile the Android target exactly as the audio phase did (NDK r27c; see `.superpowers/sdd/progress.md` for the invocation) and verify `libmain.so` contains the new symbols: `llvm-nm` for `rasterize_model`, `build_facing_set`, `Vpl::load`, `step_turrets`.
-- [ ] **Step 2: README.** Add a "Voxel vehicles" paragraph after the audio one: what renders (hull/turret/barrel, 32 cached facings, vpl lighting), the locomotion model (ROT turn-in-place, per-unit speed), and the PRECISE divergence list from the spec: no slope tilt (cached flat facings), no crush, no debris, projectile/splash per voxel-render.md §7's decision (state it), MoveSound deferred, attenuation/facing caveats if any surfaced.
+- [ ] **Step 2: README.** Add a "Voxel vehicles" paragraph after the audio one: what renders (hull/turret/barrel, 32 cached facings, vpl lighting), the locomotion model (ROT turn-in-place, per-unit speed), and the PRECISE divergence list from the spec: no slope tilt (cached flat facings), no crush, no debris, projectile instant-hit + single-target damage (voxel-render.md §7: vanilla shells fly 102 leptons/frame and CellSpread .3 reaches only the direct target — state both halves), absolute speed scale kept at the engine's established 0.75·Speed vs vanilla's 0.15·Speed (ratios vanilla-faithful; whole-engine time-base calibration is a recorded future candidate), turret ROF+5-frame idle-return hold omitted, MoveSound deferred.
 - [ ] **Step 3: Full gates, both modes.** PowerShell: full suite WITH install (expect all-pass), then `Remove-Item Env:RA2_INSTALL_DIR` + rename-guard is NOT possible (default dir exists on this box) — instead run the suite and confirm the guarded tests report their real-asset cases (the without-install skip path is exercised on the arm64/CI side; note it in the report as the audio phase did). Run `--demo-tank`, `--demo-combat`, `--demo-audio`, `--screenshot`.
 - [ ] **Step 4: Commit + ledger.**
 
