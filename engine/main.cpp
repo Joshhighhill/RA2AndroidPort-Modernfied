@@ -18,16 +18,21 @@
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "audio_mixer.hpp"
+#include "audio_sdl.hpp"
 #include "input.hpp"
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
@@ -36,6 +41,7 @@
 #include "world.hpp"
 
 #include "ra2assets/art.hpp"
+#include "ra2assets/audio_bag.hpp"
 #include "ra2assets/fileio.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/map.hpp"
@@ -43,6 +49,8 @@
 #include "ra2assets/pal.hpp"
 #include "ra2assets/rules.hpp"
 #include "ra2assets/shp.hpp"
+#include "ra2assets/sounds.hpp"
+#include "ra2assets/wav.hpp"
 
 using namespace ra2assets;
 
@@ -177,6 +185,161 @@ Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
     if (ini_bytes.empty())
         throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)");
     return Ini::parse(std::string(ini_bytes.begin(), ini_bytes.end()));
+}
+
+// --- Audio Playback phase, Task 6: SDL sink + game audio wiring ---------
+//
+// One unit-type's soundmd.ini section names for its voice/report lines.
+// VoiceSelect/VoiceMove/VoiceAttack/DieSound come straight from Rules;
+// `report` is the unit's PRIMARY WEAPON's Report= (docs/re/audio-playback.md:
+// Report lives on the weapon, not the unit). Any field may be "" if
+// rulesmd.ini omits it -- looking that up in AudioSystem::voices and playing
+// it is then just a silent no-op (Mixer::play on an empty/unregistered key
+// returns false).
+struct UnitVoices { std::string select, move, attack, die, report; };
+
+// Everything the audio wiring needs at runtime. `mixer` is a unique_ptr (not
+// a plain Mixer member) because Mixer stores its SoundBank BY REFERENCE (see
+// engine/audio_mixer.hpp): init_audio() fully populates `bank` first (every
+// voice/report/die clip's variants, then the EVA clip), and only THEN
+// constructs the Mixer over the now-stable bank -- so the reference the
+// Mixer holds is never invalidated by an earlier/later bank.add() call, and
+// AudioSystem itself never needs to move once init_audio returns.
+// `enabled` gates ALL per-frame audio work (event collection/acks/pump in
+// run_interactive) -- stays false when --no-audio was passed (init_audio is
+// then never called at all) or the SDL device failed to open, giving the
+// "fully silent game, no crash" robustness guarantee.
+struct AudioSystem {
+    ra2engine::SoundBank bank;
+    std::unique_ptr<ra2engine::Mixer> mixer;
+    ra2engine::AudioOutput out;
+    std::map<std::string, UnitVoices> voices;  // by image ("GI","CONS")
+    int eva_unitlost = -1;                     // bank clip id, -1 if unavailable
+    bool enabled = false;
+};
+
+// Audio-local RNG seed for Mixer's variant-selection RNG (docs/re/
+// audio-playback.md's RNG-determinism caveat: audio must draw from its OWN
+// RNG, never the sim's Randomizer, so --demo-combat's byte-identity gate
+// stays unaffected by audio; any fixed constant is fine here since nothing
+// about audio playback needs to be bit-reproducible across runs).
+constexpr uint32_t kAudioRngSeed = 0x52413221u;
+
+bool has_token(const std::vector<std::string>& tokens, const char* tok) {
+    return std::find(tokens.begin(), tokens.end(), tok) != tokens.end();
+}
+
+// Resolves every variant name of one soundmd.ini `[key]` section to decoded
+// PCM (via `idx`/`bag`, the audio.mix BAG chain), adding each clip to
+// `audio.bank` as it goes, and returns the MixerSound to register for `key`.
+// NOT registered here -- init_audio collects these into a temporary map and
+// registers them only after audio.mixer is constructed (see AudioSystem's
+// mixer comment: the bank must be complete before the Mixer is built over
+// it). A missing idx entry is logged once and that variant is skipped
+// (soundmd.ini's own documented "missing sample" tolerance, docs/re/
+// audio-playback.md finding 1); a key with zero resolved variants still
+// gets a MixerSound back (empty `variants`) -- Mixer::play() already treats
+// that as an unconditional no-op, so there is no separate "unregistered"
+// state to implement here.
+ra2engine::MixerSound resolve_sound_event(AudioSystem& audio, const ra2assets::Sounds& sounds,
+                                          const ra2assets::AudioIdx& idx,
+                                          const std::vector<uint8_t>& bag, const std::string& key) {
+    const ra2assets::SoundEntry e = sounds.entry(key);
+    ra2engine::MixerSound ms;
+    for (const std::string& variant : e.sounds) {
+        const ra2assets::BagClip* clip = idx.find(variant);
+        if (!clip) {
+            std::cerr << "[audio] missing clip " << variant << " (key " << key << ")\n";
+            continue;
+        }
+        ra2assets::AudioClipInfo info;
+        std::vector<int16_t> pcm = ra2assets::decode_bag_clip(bag.data(), bag.size(), *clip, info);
+        ms.variants.push_back(audio.bank.add(std::move(pcm)));
+    }
+    ms.volume = e.volume;
+    // AMENDED (docs/re/audio-playback.md "Decisions for ra2engine"): EVERY
+    // event attenuates by distance, voice acks included -- they inherit
+    // [Defaults] Type=SCREEN and are positional too, just usually near full
+    // volume since they play near an on-screen unit. GLOBAL only adds the
+    // MinVolume floor inside gain_permille; it does not mean "non-positional".
+    ms.priority = ra2engine::priority_from_string(e.priority);
+    ms.limit = e.limit;
+    ms.interrupt = has_token(e.control, "interrupt");
+    ms.global = has_token(e.type, "global");
+    ms.range = e.range;
+    ms.min_volume = e.min_volume;
+    return ms;
+}
+
+// Loads soundmd.ini + the audio.mix BAG chain (language.mix -> audio.mix ->
+// audio.idx/audio.bag, the exact chain tests/test_audio.cpp:305-311 uses),
+// resolves E1 (GI)/E2 (CONS)'s five voice-line keys apiece (select/move/
+// attack/die/report), decodes every variant into audio.bank, builds the
+// Mixer over the now-complete bank, and registers every key. Also loads the
+// EVA "Unit lost" clip ("ceva064.wav", same audio.mix, WAV/IMA path -- Task
+// 3 -- not the BAG path) and opens the SDL sink. NOT called for --no-audio
+// (main() skips this call entirely -- see run_interactive/mode_demo_audio)
+// or for --demo-combat (its byte-identity gate stays provably unaffected by
+// audio).
+void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) {
+    Ini snd_ini = load_ini_from_ra2md(dir, "soundmd.ini");
+    ra2assets::Sounds sounds = ra2assets::Sounds::load(snd_ini);
+
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    ra2assets::MixFile audio_mix = language.open_nested("audio.mix");
+    const ra2assets::MixEntry* ie = audio_mix.find("audio.idx");
+    if (!ie) throw std::runtime_error("audio.idx not found in language.mix/audio.mix");
+    auto idx_bytes = audio_mix.read(*ie);
+    ra2assets::AudioIdx idx = ra2assets::AudioIdx::load(idx_bytes.data(), idx_bytes.size());
+    const ra2assets::MixEntry* be = audio_mix.find("audio.bag");
+    if (!be) throw std::runtime_error("audio.bag not found in language.mix/audio.mix");
+    std::vector<uint8_t> bag = audio_mix.read(*be);
+
+    // Resolve both squads' voice/report keys, decoding every referenced clip
+    // into audio.bank as we go; collect the MixerSounds in `pending` and
+    // register them only once the bank -- and thus the Mixer built over it --
+    // is complete (see AudioSystem's mixer comment above).
+    std::map<std::string, ra2engine::MixerSound> pending;
+    for (const char* unit_id : {"E1", "E2"}) {
+        const std::string image = rules.image(unit_id);
+        UnitVoices v;
+        v.select = rules.voice_select(unit_id);
+        v.move = rules.voice_move(unit_id);
+        v.attack = rules.voice_attack(unit_id);
+        v.die = rules.die_sound(unit_id);
+        v.report = rules.weapon_report(rules.primary(unit_id));
+        audio.voices[image] = v;
+
+        for (const std::string& key : {v.select, v.move, v.attack, v.die, v.report}) {
+            if (key.empty() || pending.count(key)) continue;
+            pending[key] = resolve_sound_event(audio, sounds, idx, bag, key);
+        }
+    }
+
+    // EVA: "ceva064.wav" ("Unit lost") lives in the SAME audio.mix, decoded
+    // via load_wav_ima (the WAV/IMA container, Task 3), not decode_bag_clip.
+    try {
+        const ra2assets::MixEntry* we = audio_mix.find("ceva064.wav");
+        if (!we) throw std::runtime_error("ceva064.wav not found in language.mix/audio.mix");
+        std::vector<uint8_t> wav_bytes = audio_mix.read(*we);
+        ra2assets::WavInfo info;
+        std::vector<int16_t> pcm = ra2assets::load_wav_ima(wav_bytes.data(), wav_bytes.size(), info);
+        audio.eva_unitlost = audio.bank.add(std::move(pcm));
+    } catch (const std::exception& ex) {
+        std::cerr << "[audio] EVA unavailable: " << ex.what() << "\n";
+        audio.eva_unitlost = -1;
+    }
+
+    // The bank is now complete -- safe to build the Mixer over it and
+    // register every resolved key.
+    audio.mixer = std::make_unique<ra2engine::Mixer>(audio.bank, kAudioRngSeed);
+    for (auto& [key, ms] : pending) audio.mixer->register_sound(key, ms);
+
+    audio.out.open();
+    audio.enabled = audio.out.ok();
+    std::cerr << "[audio] device=" << (audio.out.ok() ? "ok" : "none")
+              << " clips=" << audio.bank.count() << "\n";
 }
 
 // One unit id's full combat + movement profile, resolved from an
@@ -457,7 +620,7 @@ int run_screenshot(const std::string& out_path) {
     return 0;
 }
 
-int run_interactive() {
+int run_interactive(bool no_audio) {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
@@ -469,6 +632,22 @@ int run_interactive() {
     ra2engine::Camera cam = centered_camera(a.map, platform.width(), platform.height());
     ra2engine::Input input(world, cam, platform.width(), platform.height());
     const int kPan = 40;
+
+    // Audio wiring (Task 6): --no-audio skips init_audio entirely, leaving
+    // `audio` default-constructed (enabled=false) -- same silent-fallback
+    // outcome as a failed device open, just without ever touching the mix
+    // chain. rulesmd.ini is re-parsed here (load_unit_assets already parsed
+    // it once for combat/anim stats) purely for the Rules voice getters --
+    // a one-time startup cost, not per-frame.
+    AudioSystem audio;
+    if (!no_audio) {
+        Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+        Rules rules = Rules::load(rules_ini);
+        init_audio(audio, dir, rules);
+    }
+    // fire_flash/die_time seen last frame, per unit index (resized as units()
+    // grows; never shrinks, matching World's own tombstone-not-erase model).
+    std::vector<std::pair<double, double>> prev_audio_state;
 
     Uint32 prev = SDL_GetTicks();
     while (!input.wants_quit()) {
@@ -495,6 +674,50 @@ int run_interactive() {
         const double dt = (now - prev) / 1000.0;
         prev = now;
         world.step(dt);
+
+        // Audio event collection + acks (Task 6, Step 3). Gated on
+        // audio.enabled so a --no-audio run or a failed device open touches
+        // none of this (and, per input.hpp, Input::take_actions() -- the
+        // ONE place per frame the accumulated select/move/attack flags are
+        // consumed -- is only called here; nothing else in the engine reads
+        // InputActions today).
+        if (audio.enabled) {
+            const double view_center_px_x = platform.width() / 2.0 - cam.x;
+            const double view_center_px_y = platform.height() / 2.0 - cam.y;
+            const auto& units = world.units();
+            prev_audio_state.resize(units.size(), {0.0, -1.0});
+            for (std::size_t i = 0; i < units.size(); ++i) {
+                const auto& u = units[i];
+                // Game metric (docs/re/audio-playback.md, High): Chebyshev
+                // max(|dx|, 2|dy|) in SCREEN pixels from the view centre,
+                // /60 to cells (the game multiplies Range by 60 px/cell;
+                // dividing here keeps Mixer::gain_permille in cell units).
+                // Same iso projection the renderer uses (iso_renderer.cpp
+                // draw_unit / iso_project.hpp cell_to_screen(60,30,15)):
+                // screen = (fx-fy)*30 + cam.x, (fx+fy)*15 + cam.y (level
+                // ignored, per the brief's simplified formula).
+                const double sx = (u.fx - u.fy) * 30.0 - view_center_px_x;
+                const double sy = (u.fx + u.fy) * 15.0 - view_center_px_y;
+                const double dist = std::max(std::abs(sx), 2.0 * std::abs(sy)) / 60.0;
+                const auto& v = audio.voices[u.image];
+                if (u.fire_flash > prev_audio_state[i].first)  // rising edge: fired
+                    audio.mixer->play(v.report, dist);
+                if (u.die_time >= 0.0 && prev_audio_state[i].second < 0.0) {  // started dying
+                    audio.mixer->play(v.die, dist);
+                    if (u.house == 0 && audio.eva_unitlost >= 0)
+                        audio.mixer->play_eva(audio.eva_unitlost);
+                }
+                prev_audio_state[i] = {u.fire_flash, u.die_time};
+            }
+            const auto act = input.take_actions();  // ONCE/frame, consumes
+            if (act.actor >= 0) {
+                const auto& av = audio.voices[world.units()[act.actor].image];
+                if (act.selected) audio.mixer->play(av.select);
+                else if (act.attack_ordered) audio.mixer->play(av.attack);
+                else if (act.move_ordered) audio.mixer->play(av.move);
+            }
+            audio.out.pump(*audio.mixer);
+        }
 
         platform.begin_frame();
         render_world(static_cast<SDL_Renderer*>(platform.renderer()), tc, a, ua, world, cam,
@@ -1018,6 +1241,60 @@ int run_demo_combat(int seed) {
     return bad ? 1 : 0;
 }
 
+// --demo-audio: headless-safe proof that the audio pipeline actually
+// produces sound (no window is created -- CI/dev-box safe either way).
+// Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
+// then:
+//  1) A DEVICELESS proof: play "GIAttack" and render straight into a plain
+//     buffer (bypassing AudioOutput/SDL entirely) -- FAILS (exit 1) if every
+//     sample comes back zero, which would mean the whole load -> decode ->
+//     register -> play chain silently produced nothing.
+//  2) IF a real device opened (audio.enabled), an audible scripted sequence
+//     -- GIAttack -> GISelect -> GIDie -> EVA "Unit lost" -- paced over ~4s
+//     of wall time so a human at the keyboard can actually hear it play.
+//     Device absence is NOT a failure (CI/headless boxes have none).
+// Always prints the summary line and exits 0 once past check 1.
+int mode_demo_audio() {
+    const std::string dir = env_install_dir();
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+
+    AudioSystem audio;
+    init_audio(audio, dir, rules);
+
+    // 1) Deviceless render proof.
+    audio.mixer->play("GIAttack");
+    std::vector<int16_t> buf(22050, 0);
+    audio.mixer->render(buf.data(), buf.size());
+    const bool all_zero = std::all_of(buf.begin(), buf.end(), [](int16_t s) { return s == 0; });
+    if (all_zero) {
+        std::cerr << "[demo-audio] FAILED: rendered buffer is all-zero (GIAttack produced no "
+                     "audible samples)\n";
+        return 1;
+    }
+
+    // 2) Audible scripted sequence, only if a real device opened.
+    if (audio.enabled) {
+        const Uint32 t0 = SDL_GetTicks();
+        bool did_select = false, did_die = false, did_eva = false;
+        while (SDL_GetTicks() - t0 < 4000) {
+            const Uint32 t = SDL_GetTicks() - t0;
+            if (!did_select && t >= 1000) { audio.mixer->play("GISelect"); did_select = true; }
+            if (!did_die && t >= 2000) { audio.mixer->play("GIDie"); did_die = true; }
+            if (!did_eva && t >= 3000 && audio.eva_unitlost >= 0) {
+                audio.mixer->play_eva(audio.eva_unitlost);
+                did_eva = true;
+            }
+            audio.out.pump(*audio.mixer);
+            SDL_Delay(16);
+        }
+    }
+
+    std::cout << "[demo-audio] clips=" << audio.bank.count()
+              << " device=" << (audio.enabled ? "yes" : "no") << " mix=nonzero\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1029,7 +1306,7 @@ int main(int argc, char** argv) {
         // SDL_FINGER* handling + input.cpp).
         (void)argc;
         (void)argv;
-        return run_interactive();
+        return run_interactive(/*no_audio=*/false);
 #else
         std::string screenshot;
         bool demo_move = false;
@@ -1040,6 +1317,8 @@ int main(int argc, char** argv) {
         int group_n = 5, group_x = 0, group_y = 0;
         bool demo_combat = false;
         int combat_seed = 0;
+        bool demo_audio = false;
+        bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--screenshot" && i + 1 < argc) {
@@ -1074,15 +1353,20 @@ int main(int argc, char** argv) {
                         ++i;
                     }
                 }
+            } else if (arg == "--demo-audio") {
+                demo_audio = true;
+            } else if (arg == "--no-audio") {
+                no_audio = true;
             }
         }
         if (demo_combat) return run_demo_combat(combat_seed);
+        if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
         if (demo_retarget)
             return run_demo_retarget(retarget_x1, retarget_y1, retarget_x2, retarget_y2);
         if (demo_move) return run_demo_move(demo_x, demo_y);
         if (!screenshot.empty()) return run_screenshot(screenshot);
-        return run_interactive();
+        return run_interactive(no_audio);
 #endif
     } catch (const std::exception& ex) {
         // SDL_Log reaches Android logcat (tag "SDL"); std::cerr does not. Emit

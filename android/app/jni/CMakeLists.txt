@@ -33,6 +33,10 @@ add_subdirectory("${SDL2_SRC_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/SDL2")
 include("${RA2_ROOT}/cmake/ra2_sources.cmake")
 
 add_library(main SHARED ${RA2_ENGINE_SOURCES} ${RA2_LIB_SOURCES})
+# audio_sdl.cpp is main.cpp's SDL audio-sink companion (Task 6 of the Audio
+# Playback phase). Added directly here (mirrors the top-level CMakeLists.txt)
+# rather than into the shared RA2_ENGINE_SOURCES list in cmake/ra2_sources.cmake.
+target_sources(main PRIVATE "${RA2_ROOT}/engine/audio_sdl.cpp")
 set_target_properties(main PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON

@@ -121,6 +121,12 @@ if (RA2_BUILD_ENGINE)
   # Engine source list comes from cmake/ra2_sources.cmake (shared with the
   # Android jni build so the two cannot drift).
   add_executable(ra2engine ${RA2_ENGINE_SOURCES})
+  # audio_sdl.cpp is main.cpp's SDL audio-sink companion (Task 6 of the Audio
+  # Playback phase, task-6-brief.md Step 1/Files). Added directly to this
+  # target (and to android/app/jni/CMakeLists.txt) rather than into the
+  # shared RA2_ENGINE_SOURCES list in cmake/ra2_sources.cmake, per the task
+  # brief -- it is not part of ra2assets_tests either way.
+  target_sources(ra2engine PRIVATE engine/audio_sdl.cpp)
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
   target_include_directories(ra2engine PRIVATE include engine third_party)
