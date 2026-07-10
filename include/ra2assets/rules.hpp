@@ -5,10 +5,11 @@
 
 namespace ra2assets {
 
-// Thin, minimal lookup for the handful of unit fields the engine vertical
-// slice needs from rulesmd.ini. Deliberately does NOT model rules.ini
-// generally (armor types, weapons, warheads, ...) -- only image/speed exist
-// today; more fields land when the sim actually needs them (YAGNI).
+// Thin, minimal lookup for the unit/weapon/warhead fields the engine needs
+// from rulesmd.ini: art (image), movement (speed), and combat (strength/armor/
+// primary + weapon damage/rof/range/warhead/report + warhead verses). Still
+// deliberately NOT a general rules.ini model -- fields land only when the sim
+// needs them (YAGNI).
 //
 // Rules wraps an already-parsed Ini by reference (not by copy) to stay
 // "thin" -- the caller must keep the Ini alive for at least as long as the
