@@ -234,12 +234,19 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h)
         return false;
 
-    char key[64];
-    std::snprintf(key, sizeof key, "unit:%s:%d", unit.image.c_str(), unit.frame);
+    // Key includes the house so the two houses' recolors (pal_for_house)
+    // cache as distinct textures -- otherwise whichever house rendered a
+    // given image:frame FIRST would "win" the cache slot and every other
+    // house's unit sharing that image:frame would silently render in the
+    // wrong color. pal_for_house is only ever called below, on a cache MISS,
+    // so steady-state per-frame cost is unchanged (Task 7).
+    char key[80];
+    std::snprintf(key, sizeof key, "unit:%s:%d:h%d", unit.image.c_str(), unit.frame, unit.house);
     SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
     if (!tex) {
         std::vector<uint8_t> idx = shp.decode_indexed(unit.frame);
-        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal));
+        const ra2assets::Palette house_pal = pal_for_house(pal, unit.house);
+        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, house_pal));
     }
     SDL_RenderCopy(renderer, tex, nullptr, &dst);
     return true;
@@ -325,6 +332,44 @@ void draw_selection_box(void* sdl_renderer, int x0, int y0, int x1, int y1) {
     r.h = std::abs(y1 - y0);
     SDL_SetRenderDrawColor(renderer, 60, 220, 90, 255);
     SDL_RenderDrawRect(renderer, &r);
+}
+
+// HP bar geometry: kHpBarUp matches input.cpp's kHitUp (46px -- "most of a
+// sprite height up" from the ground point, the same anchor the click hit-box
+// and draw_selection use), plus a small gap so the bar clears the selection
+// diamond's top corner instead of overlapping it.
+static constexpr int kHpBarW = 24;
+static constexpr int kHpBarH = 3;
+static constexpr int kHpBarUp = 46;
+static constexpr int kHpBarGap = 6;
+
+void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h) {
+    if (unit.max_hp <= 0) return;
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+
+    int cx, cy;
+    tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
+    const int bar_cy = cy - kHpBarUp - kHpBarGap;
+
+    SDL_Rect bg{cx - kHpBarW / 2, bar_cy - kHpBarH / 2, kHpBarW, kHpBarH};
+    if (bg.x + bg.w <= 0 || bg.y + bg.h <= 0 || bg.x >= view_w || bg.y >= view_h) return;
+
+    SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);
+    SDL_RenderFillRect(renderer, &bg);
+
+    const int hp = unit.hp < 0 ? 0 : unit.hp;
+    int fill_w = static_cast<int>(static_cast<long long>(hp) * kHpBarW / unit.max_hp);
+    if (fill_w > kHpBarW) fill_w = kHpBarW;
+    if (fill_w < 0) fill_w = 0;
+    if (fill_w > 0) {
+        SDL_Rect fg{bg.x, bg.y, fill_w, kHpBarH};
+        // Integer thresholds (brief-specified): green above 2/3, yellow above
+        // 1/3, red at or below 1/3 -- avoids floating-point division.
+        if (unit.hp * 3 > unit.max_hp * 2) SDL_SetRenderDrawColor(renderer, 40, 220, 40, 255);
+        else if (unit.hp * 3 > unit.max_hp) SDL_SetRenderDrawColor(renderer, 230, 210, 40, 255);
+        else SDL_SetRenderDrawColor(renderer, 220, 40, 40, 255);
+        SDL_RenderFillRect(renderer, &fg);
+    }
 }
 
 }  // namespace ra2engine

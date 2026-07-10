@@ -57,6 +57,36 @@ struct Unit {
     double die_time = -1.0;        // >=0: dying (die anim playing); alive stays true until it ends
 };
 
+// Per-image (per-unit-type) animation frame ranges within that image's SHP:
+// the standing/ready frame, the walk cycle, the fire cycle, and the death
+// animation. Generalizes the GI-only file-static constants Phase 2 used
+// (kStandFrame/kWalkFirst/kWalkCount in world.cpp) to a small per-image table
+// so Conscripts (CONS.SHP) get their OWN ranges instead of borrowing GI's --
+// same "facing not modelled, facing-0 block only" simplification Phase 2
+// already made for the walk cycle (RA2 infantry SHPs lay every sequence out
+// as consecutive per-facing blocks; only facing 0's block is used here).
+// Values verified BY EYE from ra2extract frame dumps (Task 7) -- see
+// engine/world.cpp for the per-image derivation comment and
+// combat-task-7-report.md for the dump evidence/screenshots.
+struct UnitAnimSeq {
+    int stand;       // standing/ready frame (facing 0)
+    int walk_first;  // first frame of the walk cycle (facing 0)
+    int walk_count;  // frames in the walk cycle
+    int fire_first;  // first frame of the fire cycle (facing 0)
+    int fire_count;  // frames in the fire cycle
+    int die_first;   // first frame of the death animation
+    int die_count;   // frames in the death animation
+};
+
+// Looks up the per-image animation table by Unit::image ("GI", "CONS"); any
+// other image name falls back to the GI table (documented default -- rather
+// than crash/UB on an unrecognized image, since every other unit is
+// currently a GI/CONS-derived body in this vertical slice). Defined in
+// world.cpp; declared here (not file-static in world.cpp) so both
+// step_units/World::step AND tests/test_world.cpp's pure anim-selection
+// tests can call it.
+const UnitAnimSeq& anim_for_image(const std::string& image);
+
 // Advance every moving unit toward its `path` by `dt` seconds at `move_cps`
 // cells/sec, using `occ` to enforce one-unit-per-cell: a unit reserves the next
 // path cell before entering it. While that cell is held by another unit the

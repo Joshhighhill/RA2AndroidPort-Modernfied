@@ -114,6 +114,24 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
                ra2assets::ShpFile& shp, const ra2assets::Palette& pal,
                const Camera& cam, int view_w, int view_h);
 
+// House palette remap for unit sprites. Unit palettes (unittem.pal) reserve
+// indices 16..31 as the "remap ramp" -- the strip of colors the game
+// substitutes per house so the same GI/CONS sprite reads as a different
+// color for each side (the source ramp is red == Soviet). house 1 (Soviet)
+// returns the ramp unchanged; house 0 (Allied) rescales each ramp entry's
+// ORIGINAL brightness onto a blue ramp instead, preserving alpha. Pure
+// (Palette in, Palette out) -- unit-tested directly in tests/test_world.cpp.
+// Declared here (conceptually a renderer/palette helper -- draw_unit's call
+// site is below) but DEFINED in engine/world.cpp, not iso_renderer.cpp --
+// same terrain_screen_bounds precedent (see that declaration's comment and
+// world.cpp): this file pulls in SDL and isn't part of the SDL-free
+// `ra2assets_tests` binary, while world.cpp already is.
+// TODO(cleanup): a third SDL-free-but-renderer-conceptual helper living here
+// would be a good trigger to split these into their own small pure
+// "renderer_pure.hpp/.cpp" unit instead of continuing to bounce definitions
+// into world.cpp (same note already on terrain_screen_bounds).
+ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house);
+
 // Draw a green isometric-diamond selection marker on the unit's tile
 // (at its interpolated fx/fy position). No-op if fully off-screen. Call
 // AFTER draw_terrain (so it's not painted over) and typically BEFORE
@@ -131,5 +149,17 @@ void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view
 // space. Coordinates are the raw drag endpoints (any order). HUD overlay: call
 // LAST, after terrain + units.
 void draw_selection_box(void* sdl_renderer, int x0, int y0, int x1, int y1);
+
+// Draw a 24x3 px HP bar centered above the unit's ground point (tile center
+// projected from its interpolated fx/fy, same anchor draw_selection uses),
+// kHitUp + a small gap above it so it clears the selection diamond's top
+// corner. A dark background rect plus a filled foreground rect scaled to
+// hp/max_hp of the 24px width; green when hp > 2/3 max, yellow when > 1/3,
+// red otherwise. Caller decides WHETHER to draw (selected units, or any
+// damaged-but-not-dying unit -- dying units show no bar); this function does
+// not check unit.selected/alive/die_time itself. No-op if max_hp <= 0 or the
+// bar's rect is fully off-screen. Call after unit sprites, before the
+// selection box (HUD overlay order).
+void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h);
 
 }  // namespace ra2engine

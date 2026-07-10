@@ -6,11 +6,13 @@
 #include <tuple>
 #include <vector>
 
-#include "iso_project.hpp"  // cell_to_screen / screen_to_cell
+#include "iso_project.hpp"   // cell_to_screen / screen_to_cell
+#include "iso_renderer.hpp"  // pal_for_house
 #include "occupancy.hpp"
 #include "pathfind.hpp"
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
+#include "ra2assets/pal.hpp"  // Palette/Rgba (pal_for_house tests)
 #include "world.hpp"
 
 using ra2assets::MapCell;
@@ -843,4 +845,116 @@ TEST_CASE("World: moving units do not auto-acquire or return fire (idle-only eng
     REQUIRE(world.units()[0].cell_x == gx);
     REQUIRE(world.units()[0].cell_y == gy);
     CHECK(world.units()[0].hp < 125);  // it was shot en route
+}
+
+// ---- pal_for_house (Task 7: house palette remap) ----
+
+namespace {
+// Hand-built unittem.pal stand-in: index 5 is a sentinel OUTSIDE the 16..31
+// remap ramp (verifies non-ramp entries are left alone); index 20 is the
+// task brief's own worked example -- (60,90,150), brightness
+// (60+90+150)/3 == 100 -> house-0 remap (100*2/5, 100*3/5, 100) == (40,60,100)
+// -- with a non-255 alpha (200) to verify alpha is preserved, not
+// clobbered; indices 16 and 31 are the ramp's inclusive boundaries.
+// Uses Palette's mutable operator[] (added this task alongside the existing
+// const overload -- pal_for_house needs write access to build a derived
+// palette from a copy, which the const-only accessor didn't allow).
+ra2assets::Palette make_test_pal() {
+    uint8_t raw[768] = {0};
+    ra2assets::Palette pal = ra2assets::Palette::load(raw, 768);  // all zero, alpha 255
+    pal[5] = ra2assets::Rgba{11, 22, 33, 255};     // sentinel, OUTSIDE the ramp
+    pal[16] = ra2assets::Rgba{200, 10, 10, 255};   // ramp lower boundary
+    pal[20] = ra2assets::Rgba{60, 90, 150, 200};   // brief's worked example
+    pal[31] = ra2assets::Rgba{90, 5, 5, 255};      // ramp upper boundary
+    pal[32] = ra2assets::Rgba{7, 8, 9, 255};        // sentinel, just OUTSIDE the ramp
+    return pal;
+}
+}  // namespace
+
+TEST_CASE("pal_for_house: house 1 (Soviet) returns the palette unchanged (identity)") {
+    const ra2assets::Palette src = make_test_pal();
+    const ra2assets::Palette out = ra2engine::pal_for_house(src, 1);
+    for (int i = 0; i < 256; ++i) {
+        CHECK(out[i].r == src[i].r);
+        CHECK(out[i].g == src[i].g);
+        CHECK(out[i].b == src[i].b);
+        CHECK(out[i].a == src[i].a);
+    }
+}
+
+TEST_CASE("pal_for_house: house 0 (Allied) rescales ramp entries onto a blue ramp by original brightness") {
+    const ra2assets::Palette src = make_test_pal();
+    const ra2assets::Palette out = ra2engine::pal_for_house(src, 0);
+
+    // Brief's worked example: entry 20 = (60,90,150) -> brightness 100 ->
+    // (40, 60, 100), alpha (200) preserved verbatim.
+    CHECK(out[20].r == 40);
+    CHECK(out[20].g == 60);
+    CHECK(out[20].b == 100);
+    CHECK(out[20].a == 200);
+
+    // Ramp boundary 16 = (200,10,10) -> brightness (200+10+10)/3 == 73 (int
+    // division) -> (73*2/5, 73*3/5, 73) == (29, 43, 73).
+    CHECK(out[16].r == 29);
+    CHECK(out[16].g == 43);
+    CHECK(out[16].b == 73);
+    CHECK(out[16].a == 255);
+}
+
+TEST_CASE("pal_for_house: indices outside 16..31 are untouched by either house") {
+    const ra2assets::Palette src = make_test_pal();
+    const ra2assets::Palette out0 = ra2engine::pal_for_house(src, 0);
+    const ra2assets::Palette out1 = ra2engine::pal_for_house(src, 1);
+    for (const ra2assets::Palette* out : {&out0, &out1}) {
+        CHECK((*out)[5].r == src[5].r);
+        CHECK((*out)[5].g == src[5].g);
+        CHECK((*out)[5].b == src[5].b);
+        CHECK((*out)[5].a == src[5].a);
+        CHECK((*out)[32].r == src[32].r);
+        CHECK((*out)[32].g == src[32].g);
+        CHECK((*out)[32].b == src[32].b);
+    }
+}
+
+// ---- Fire/die anim-override pass (Task 7: World::step frame selection) ----
+
+TEST_CASE("World::step anim-override: fire_flash > 0 selects the unit's fire frame range") {
+    // No real map needed -- this exercises Unit::frame selection only, not
+    // terrain/pathing, so a default-constructed (cell-less) MapFile is fine
+    // (World tolerates an empty map: build_passability(empty) -> 0x0 grid,
+    // Occupancy(0,0) no-ops all accesses -- see occupancy.hpp).
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    ra2engine::Unit& u = world.add_combat_unit(0, 0, 0, gi_stats());  // image "GI"
+    u.fire_flash = 0.3;  // mid-flash (combat.cpp's kFireFlashSecs is 0.4; any >0 exercises this branch)
+
+    world.step(1.0 / 60.0);
+
+    const ra2engine::UnitAnimSeq& seq = ra2engine::anim_for_image("GI");
+    CHECK(u.frame >= seq.fire_first);
+    CHECK(u.frame < seq.fire_first + seq.fire_count);
+}
+
+TEST_CASE("World::step anim-override: die_time selects the die range and clamps at the last frame") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    ra2engine::Unit& u = world.add_combat_unit(0, 0, 1, cons_stats());  // image "CONS"
+    const ra2engine::UnitAnimSeq& seq = ra2engine::anim_for_image("CONS");
+
+    // Early in the death animation: not yet clamped.
+    u.die_time = 0.05;
+    world.step(1.0 / 60.0);
+    REQUIRE(u.alive);  // still dying, not yet tombstoned
+    CHECK(u.frame >= seq.die_first);
+    CHECK(u.frame < seq.die_first + seq.die_count);
+
+    // Late in the death animation, but still short of combat.cpp's
+    // kDieAnimSecs (1.0s) -- world.cpp's die_count is deliberately capped so
+    // the WHOLE die range is reachable before the unit tombstones (see the
+    // derivation comment next to kGIAnim/kConsAnim) -- clamps at the LAST
+    // die frame instead of running off the end of the table.
+    u.die_time = 0.9;
+    world.step(1.0 / 60.0);
+    REQUIRE(u.alive);  // still dying at this die_time (< kDieAnimSecs)
+    CHECK(u.frame == seq.die_first + seq.die_count - 1);
 }

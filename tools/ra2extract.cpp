@@ -38,8 +38,9 @@ int main(int argc, char** argv){
     if (argc<3){
         std::cerr<<"usage: ra2extract <mix> --list [nested-path]\n"
                  <<"       ra2extract <mix> --raw <asset-path> <out.bin>\n"
-                 <<"       ra2extract <mix> <shp-path> <pal-path> <out.png>\n"
-                 <<"       asset paths may descend nested mixes: conquer.mix/e1.shp\n";
+                 <<"       ra2extract <mix> <shp-path> <pal-path> <out.png> [frame]\n"
+                 <<"       asset paths may descend nested mixes: conquer.mix/e1.shp\n"
+                 <<"       [frame] defaults to 0; must be < the SHP's frame count.\n";
         return 2;
     }
     try {
@@ -69,13 +70,19 @@ int main(int argc, char** argv){
         if (argc<5){ std::cerr<<"need <shp-path> <pal-path> <out.png>\n"; return 2; }
         ShpFile s=ShpFile::load(read_path(m, argv[2]));
         if (s.count() == 0) throw std::runtime_error("shp has no frames");
+        // Optional trailing frame index (derivation aid for the Combat Phase's
+        // fire/die sequence dumps -- Task 7): defaults to 0 (prior behavior
+        // unchanged for every existing caller/test).
+        int frame = 0;
+        if (argc >= 6) frame = std::atoi(argv[5]);
+        if (frame < 0 || frame >= s.count()) throw std::runtime_error("frame out of range");
         auto praw=read_path(m, argv[3]);
         Palette pal=Palette::load(praw.data(),praw.size());
-        auto idx=s.decode_indexed(0);
+        auto idx=s.decode_indexed(frame);
         auto rgba=ShpFile::palettize(idx,pal);
-        auto fi=s.frame_info(0);
+        auto fi=s.frame_info(frame);
         stbi_write_png(argv[4], fi.w, fi.h, 4, rgba.data(), fi.w*4);
-        std::cout<<"wrote "<<argv[4]<<" ("<<fi.w<<"x"<<fi.h<<", "<<s.count()<<" frames)\n";
+        std::cout<<"wrote "<<argv[4]<<" ("<<fi.w<<"x"<<fi.h<<", frame "<<frame<<"/"<<s.count()<<")\n";
         return 0;
     } catch (const std::exception& ex){
         std::cerr<<"error: "<<ex.what()<<"\n";
