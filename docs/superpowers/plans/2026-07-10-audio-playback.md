@@ -768,18 +768,28 @@ struct InputActions {
     bool attack_ordered = false; // right-click attack issued
     int actor = -1;              // representative unit index (lowest selected)
 };
-const InputActions& last_actions() const;  // state produced by the MOST RECENT handle()
+InputActions take_actions();  // ACCUMULATED since the last take; clears on return
 ```
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_input.cpp`, using its existing World/Input fixture and synthetic-event helpers — follow the file's current click/box/attack cases):
-  - click-select a unit → `last_actions().selected == true`, `actor` == that unit's index; click empty ground → all false, actor −1.
-  - right-click ground with a selection → `move_ordered == true`, actor == lowest selected index; `selected == false`.
-  - right-click a hostile with a selection → `attack_ordered == true`.
-  - each `handle()` RESETS the struct: after the select-click case, feeding a mouse-move event yields all-false.
-  - box-select over two units → `selected == true`, actor == lowest boxed index.
+  AMENDED (post-implementation design fix): `handle()` ACCUMULATES (ORs flags in,
+  never resets) and `take_actions()` is the single CONSUME point — returns the
+  accumulated struct and clears it. Rationale: a reset-at-entry model loses a
+  right-click ack when the paired PointerUp lands in the same frame's poll
+  batch, and a non-consuming `last_actions()` re-triggers the ack every idle
+  frame. Accumulate-then-consume handles both: same-batch Down+Up preserves the
+  Down's flags until the frame's single `take_actions()`, and idle frames read
+  an already-cleared struct.
 
-- [ ] **Step 2: Run to verify failure** — `-tc='input*'`: new cases fail to compile (no last_actions).
-- [ ] **Step 3: Implement** — `InputActions actions_;` member; `handle()` starts with `actions_ = {};`; `commit_click/commit_box/commit_double` set `selected=true` + lowest selected index when their commit results in ≥1 selected unit; the right-click branch sets `move_ordered`/`attack_ordered` + actor (lowest selected, BEFORE the order mutates anything) only when the selection is non-empty (matching the existing guards). No behavior change to selection/orders themselves.
+- [ ] **Step 1: Write the failing tests** (append to `tests/test_input.cpp`, using its existing World/Input fixture and synthetic-event helpers — follow the file's current click/box/attack cases):
+  - click-select a unit → `take_actions().selected == true`, `actor` == that unit's index; a second immediate `take_actions()` → all false, actor −1 (consumed).
+  - click empty ground → take → all false.
+  - right-click Down+Up pair fed BEFORE the take → `move_ordered == true`, actor == lowest selected index; `selected == false`; next take → all false.
+  - right-click a hostile (Down+Up) with a selection → `attack_ordered == true`.
+  - idle after consume: feeding a mouse-move event then taking → all-false (no stale re-ack).
+  - box-select over two units → take → `selected == true`, actor == lowest boxed index.
+
+- [ ] **Step 2: Run to verify failure** — `-tc='input*'`: new cases fail to compile (no take_actions).
+- [ ] **Step 3: Implement** — `InputActions actions_;` member; `commit_click/commit_box/commit_double` OR in `selected=true` + lowest selected index when their commit results in ≥1 selected unit; the right-click branch ORs in `move_ordered`/`attack_ordered` + actor (lowest selected, BEFORE the order mutates anything) only when the selection is non-empty (matching the existing guards); `take_actions()` swaps the member with a default-constructed struct and returns the old value. No behavior change to selection/orders themselves.
 - [ ] **Step 4: Run** — `-tc='input*'` green; full suite once.
 - [ ] **Step 5: Commit** — `git commit -m "feat(engine): Input reports select/move/attack actions (audio ack hooks)"`.
 
@@ -792,7 +802,7 @@ const InputActions& last_actions() const;  // state produced by the MOST RECENT 
 - Modify: `engine/main.cpp` (audio load + AudioSystem + event collection + acks + `--no-audio` + `--demo-audio`), desktop engine target in `CMakeLists.txt` + Android app jni sources (add `engine/audio_sdl.cpp` wherever `engine/main.cpp`'s SDL companions are listed — NOT the test target, NOT `cmake/ra2_sources.cmake`)
 
 **Interfaces:**
-- Consumes: `Sounds`/`SoundEntry` + Rules voice getters (Task 2), `load_wav_ima` (Task 3), `SoundBank`/`Mixer`/`MixerSound`/`priority_from_string` (Task 4), `Input::last_actions()` (Task 5), `load_ini_from_ra2md(dir, name)` (existing, engine/main.cpp), `AudioIdx`/`decode_bag_clip` (existing), the World accessors (`units()`, camera center already used by render_world).
+- Consumes: `Sounds`/`SoundEntry` + Rules voice getters (Task 2), `load_wav_ima` (Task 3), `SoundBank`/`Mixer`/`MixerSound`/`priority_from_string` (Task 4), `Input::take_actions()` (Task 5, AMENDED consume semantics), `load_ini_from_ra2md(dir, name)` (existing, engine/main.cpp), `AudioIdx`/`decode_bag_clip` (existing), the World accessors (`units()`, camera center already used by render_world).
 - Produces: the audible game. No new interfaces consumed later.
 
 - [ ] **Step 1: `engine/audio_sdl.{hpp,cpp}`** — queue-push sink, no callback/locks:
@@ -869,7 +879,7 @@ if (audio.enabled) {
         }
         prev_audio_state[i] = {u.fire_flash, u.die_time};
     }
-    const auto& act = input.last_actions();   // after the event-poll loop
+    const auto act = input.take_actions();   // ONCE per frame, after the event-poll loop (consumes)
     if (act.actor >= 0) {
         const auto& av = audio.voices[world.units()[act.actor].image];
         if (act.selected) audio.mixer->play(av.select);
