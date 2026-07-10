@@ -51,13 +51,6 @@ struct MixerSound {
     int limit = 5;                // max simultaneous instances; <=0 unlimited
     bool interrupt = false;       // Control=interrupt: steal oldest same-key voice
     bool global = false;          // Type contains GLOBAL: MinVolume floor (never silent)
-    // Type does NOT contain GLOBAL (docs/re/audio-playback.md "Decisions",
-    // item 2): whether Task 6 should feed a real positional distance into
-    // play()/gain_permille at all, vs. always 0 (full gain, subject only to
-    // the GLOBAL floor above). Not consulted inside this pure module --
-    // it's the caller's routing flag, kept on MixerSound so Task 6 doesn't
-    // need a parallel lookup.
-    bool positional = true;
     double range = 10.0;          // cells
     int min_volume = 50;          // 0..100; GLOBAL-only floor
 };

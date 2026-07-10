@@ -124,7 +124,7 @@ TEST_CASE("mixer: seeded variant selection is deterministic") {
     int c2 = bank.add({3});
     MixerSound s;
     s.variants = {c0, c1, c2};
-    s.positional = false; s.limit = 0; s.volume = 100;
+    s.limit = 0; s.volume = 100;
     Mixer a(bank, 42), b(bank, 42);
     a.register_sound("V", s);
     b.register_sound("V", s);
