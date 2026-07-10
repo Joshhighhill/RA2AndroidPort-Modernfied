@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,10 @@ struct Unit {
     double anim_time = 0.0;     // accumulated time for walk-frame cycling
     double wait_time = 0.0;     // seconds blocked at current cell (collision re-path timer)
 
+    // 8-way facing block index, 0=N going COUNTERCLOCKWISE on screen to 7=NE
+    // (docs/re/infantry-anim.md §4-6); spawns facing S (4).
+    int facing = 4;
+
     bool moving() const { return !path.empty() && path_idx < path.size(); }
 
     // --- Combat (this phase). Stats resolved once at spawn from Rules. ---
@@ -57,35 +62,60 @@ struct Unit {
     double die_time = -1.0;        // >=0: dying (die anim playing); alive stays true until it ends
 };
 
-// Per-image (per-unit-type) animation frame ranges within that image's SHP:
-// the standing/ready frame, the walk cycle, the fire cycle, and the death
-// animation. Generalizes the GI-only file-static constants Phase 2 used
-// (kStandFrame/kWalkFirst/kWalkCount in world.cpp) to a small per-image table
-// so Conscripts (CONS.SHP) get their OWN ranges instead of borrowing GI's --
-// same "facing not modelled, facing-0 block only" simplification Phase 2
-// already made for the walk cycle (RA2 infantry SHPs lay every sequence out
-// as consecutive per-facing blocks; only facing 0's block is used here).
-// Values verified BY EYE from ra2extract frame dumps (Task 7) -- see
-// engine/world.cpp for the per-image derivation comment and
-// combat-task-7-report.md for the dump evidence/screenshots.
-struct UnitAnimSeq {
-    int stand;       // standing/ready frame (facing 0)
-    int walk_first;  // first frame of the walk cycle (facing 0)
-    int walk_count;  // frames in the walk cycle
-    int fire_first;  // first frame of the fire cycle (facing 0)
-    int fire_count;  // frames in the fire cycle
-    int die_first;   // first frame of the death animation
-    int die_count;   // frames in the death animation
+// Per-image (per-unit-type), facing-aware animation data -- REPLACES the
+// Task 7 empirically-eyeballed table, which had two confirmed frame bugs
+// (CONS fire played half of Die2's frames; die played Idle2/Prone frames).
+// Calibrated against the ORIGINAL game's artmd.ini GISequence/ConSequence
+// data; docs/re/infantry-anim.md is the calibration authority -- see it for
+// the extracted values, the frame-selection formula's derivation, and the
+// facing-block-order evidence (§1-5).
+//
+// A SeqEntry mirrors one artmd.ini `Name=StartFrame,FrameCount,
+// FacingMultiplier` sequence entry (§1); frame selection is
+// `first + facing*fmult + phase` (see seq_frame below). `fmult == 0` means
+// facing-independent (deaths use one shared animation, no per-facing block).
+struct SeqEntry {
+    int first = 0;
+    int count = 1;
+    int fmult = 0;
 };
 
-// Looks up the per-image animation table by Unit::image ("GI", "CONS"); any
-// other image name falls back to the GI table (documented default -- rather
-// than crash/UB on an unrecognized image, since every other unit is
-// currently a GI/CONS-derived body in this vertical slice). Defined in
-// world.cpp; declared here (not file-static in world.cpp) so both
-// step_units/World::step AND tests/test_world.cpp's pure anim-selection
-// tests can call it.
-const UnitAnimSeq& anim_for_image(const std::string& image);
+// One unit-type's stand/walk/fire/die sequences.
+struct UnitAnimSeq {
+    SeqEntry stand, walk, fire, die;
+};
+
+// Per-image animation table: Unit::image ("GI", "CONS", ...) -> its
+// UnitAnimSeq. Populated from artmd.ini by main.cpp (Task 4 wires
+// ra2assets::Art in); declared here (not file-static) so both World and
+// tests/test_world.cpp's pure anim-selection tests can build/pass one.
+using AnimTable = std::map<std::string, UnitAnimSeq>;
+
+// The real GI/CONS artmd.ini values (docs/re/infantry-anim.md §2). Serves as
+// the fallback for any image not registered in an AnimTable -- including
+// every test that builds a World without wiring artmd.ini at all -- so
+// unregistered images still animate with the REAL values instead of a
+// crash/UB or stale placeholder.
+const UnitAnimSeq& default_anim();
+
+// Looks up `image` in `t`; falls back to default_anim() on a miss (documented
+// -- see default_anim() above). Defined in world.cpp; declared here so both
+// step_units/World::step and tests/test_world.cpp can call it.
+const UnitAnimSeq& anim_for_image(const AnimTable& t, const std::string& image);
+
+// frame = e.first + facing*e.fmult + phase, with phase clamped to
+// [0, e.count-1] (docs/re/infantry-anim.md §1's
+// `StartFrame + facing*FacingMultiplier + phase` formula; `phase` here is
+// the doc's "frame offset within the sequence", renamed to avoid confusion
+// with the FrameCount field).
+int seq_frame(const SeqEntry& e, int facing, int phase);
+
+// Cell-space direction (dx, dy) -> facing block index (0=N, counterclockwise
+// on screen to 7=NE; docs/re/infantry-anim.md §4/§5). Returns -1 for a zero
+// vector (no direction -- caller should keep the unit's current facing).
+// Takes continuous (double) input so a move segment's ray direction resolves
+// the same way regardless of its magnitude.
+int facing_from_delta(double dx, double dy);
 
 // Advance every moving unit toward its `path` by `dt` seconds at `move_cps`
 // cells/sec, using `occ` to enforce one-unit-per-cell: a unit reserves the next
@@ -97,11 +127,14 @@ const UnitAnimSeq& anim_for_image(const std::string& image);
 // abandons the order only after kGiveUpAfter seconds of continuous block
 // (boxed-in / sealed corridor).
 // Idle units re-assert ownership of their current cell and stand. Units are
-// processed in ascending index order (deterministic). Does NOT modify
-// Unit::level -- rendering height is patched separately from the map by
-// World::step. Pure: takes a passability grid + occupancy, no MapFile/SDL.
+// processed in ascending index order (deterministic). `anims` resolves each
+// unit's per-image stand/walk sequence (anim_for_image) and its facing
+// (Unit::facing, updated here as each walk segment is selected --
+// docs/re/infantry-anim.md §5) drives frame selection (seq_frame). Does NOT
+// modify Unit::level -- rendering height is patched separately from the map
+// by World::step. Pure: takes a passability grid + occupancy, no MapFile/SDL.
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable, int w, int h,
-                Occupancy& occ, double dt, double move_cps);
+                Occupancy& occ, double dt, double move_cps, const AnimTable& anims);
 
 // Picks a passable (Clear/grass, `tile == 0` -- confirmed in Task 9 /
 // task-9-report.md: "tile index 0 is Clear") cell close to the centroid of
@@ -175,6 +208,11 @@ public:
     // cell silently breaks the one-unit-per-cell invariant.
     Unit& add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat& c);
 
+    // Registers (or replaces) the animation sequence used for Unit::image ==
+    // `image`; anim_for_image falls back to default_anim() for any image
+    // never registered here (main.cpp/Task 4 wires this from artmd.ini).
+    void set_anim(const std::string& image, const UnitAnimSeq& seq);
+
     // Deselect every unit.
     void clear_selection();
     // Index of the unit whose CURRENT cell is (x, y), or -1 if none -- skips
@@ -237,6 +275,7 @@ private:
     int grid_w_ = 0;
     int grid_h_ = 0;
     double move_cps_ = 3.0;
+    AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by

@@ -12,92 +12,49 @@
 
 namespace ra2engine {
 
-// Per-image animation sequence tables (Task 7 -- Combat Phase renderer
-// feedback). Replaces the GI-only file-static constants Phase 2 introduced
-// (kStandFrame/kWalkFirst/kWalkCount) with a small per-image lookup so
-// Conscripts (CONS.SHP) get their own, independently-derived ranges.
-//
-// EMPIRICAL DERIVATION (dump evidence -- see combat-task-7-report.md for the
-// contact-sheet screenshots this was read from): both gi.shp (744 frames) and
-// cons.shp (602 frames) were dumped frame-by-frame via `ra2extract <mix>
-// conquer.mix/<gi|cons>.shp cache.mix/unittem.pal <out.png> <frame>` (the
-// frame-index arg this task added) and inspected by eye. Both SHPs have real
-// (non-degenerate) content only up to ~frame 300-370; every frame beyond that
-// decodes as a 0x0 stub (an empty/invisible padding frame -- confirmed, not a
-// dump bug). RA2 infantry SHPs lay every sequence out as a block of 8
-// consecutive per-facing frames; only facing 0's block is used here (same
-// simplification Phase 2 already made for the walk cycle: "facing not
-// modelled").
-//
-//  GI.SHP (E1):
-//   - stand=0: the stock "Ready" pose (Phase 2, task-10-report.md).
-//   - walk=8..13 (6 frames): the stock "Walk" cycle (Phase 2, confirmed).
-//   - fire=164..169 (6 frames): a clean 8-facing x 6-frame block (158..211)
-//     of a standing side-on aim pose; frame 164 (facing 0's first frame)
-//     shows a bright yellow muzzle-flash sprite at the M60's barrel, frames
-//     165..169 the recoil/hold pose with no flash -- the classic
-//     "flash-then-hold" cadence `fire_flash`'s progress formula expects.
-//     HIGH confidence (the flash pixel is unambiguous and the 6-frame
-//     facing-block cadence matches the walk cycle's own).
-//   - die=80..87 (8 of the ~12 frames the dump shows, 80..91): a continuous
-//     standing (back view) -> crumpling -> nearly-flat progression, no facing
-//     repetition (a single death, not per-facing). The dump's fuller range
-//     continues settling through frame 91, but die_count is capped at 8 so
-//     the WHOLE sequence is reachable at kWalkFps(9.0, world.cpp) before
-//     combat.cpp's kDieAnimSecs(1.0) tombstones the unit: the anim-override
-//     pass's clamp formula (`die_first + min(die_count-1, die_time*kWalkFps)`)
-//     only ever advances while `alive` is still true, and alive flips false
-//     the instant die_time reaches 1.0s -- so any die_count > kWalkFps *
-//     kDieAnimSecs (9 frames) would reserve frames that are provably never
-//     drawn (a !alive unit is skipped both by this pass and by
-//     unit_draw_order). MEDIUM confidence (the fall motion read is clear;
-//     the exact frame where the game's OWN sequence table would end the
-//     block wasn't independently cross-checked against an art.ini -- the
-//     8-frame cap here is a pacing choice, not a re-derivation).
-//  CONS.SHP (E2):
-//   - stand=0: same convention as GI (frame 0 -- the Conscript's neutral
-//     stance happens to already be a combat crouch holding the rifle
-//     diagonally, unlike GI's arms-down Ready, but it's still frame 0).
-//   - walk=8..13 (6 frames): LOW-MEDIUM confidence -- cons.shp's early
-//     frames (0..69) are a continuous crouch-walk cycle with no visually
-//     obvious "calm standing still" pose distinct from "mid-stride" (the
-//     Conscript's art keeps a bent-knee combat crouch throughout), so the
-//     exact Ready/Walk boundary couldn't be pinned by eye the way GI's could.
-//     Reused GI's offsets on the (corroborated, see below) hypothesis that
-//     both SHPs share one base template/frame layout.
-//   - fire=158..163 (6 frames): a standing aim-and-crouch pose repeating in
-//     a clean 6-frame facing cadence from 158 through ~259, with a much
-//     subtler flash than GI's (small light-gray/white spark pixels near the
-//     muzzle, e.g. frames 165/171/189/195-196) rather than one bright burst
-//     -- consistent with a weaker M1 Carbine report. MEDIUM confidence (the
-//     pose and cadence are clear; the flash pixel is small and its exact
-//     in-block position less crisp than GI's).
-//   - die=80..87 (same 8-of-12 cap as GI's, same reason): the SAME offsets as
-//     GI's -- independently re-derived by eye from cons.shp's own dump (a
-//     standing-back-view -> crumple -> lying-flat progression, frame-for-
-//     frame at the same indices), which also corroborates the walk=8..13
-//     reuse above (both SHPs evidently share one skeleton/frame-layout
-//     template). HIGH confidence.
-namespace {
-const UnitAnimSeq kGIAnim{
-    /*stand=*/0, /*walk_first=*/8, /*walk_count=*/6,
-    /*fire_first=*/164, /*fire_count=*/6,
-    /*die_first=*/80, /*die_count=*/8,
-};
-const UnitAnimSeq kConsAnim{
-    /*stand=*/0, /*walk_first=*/8, /*walk_count=*/6,
-    /*fire_first=*/158, /*fire_count=*/6,
-    /*die_first=*/80, /*die_count=*/8,
-};
-}  // namespace
+// Per-image animation data (Task 2): calibrated against the ORIGINAL game's
+// artmd.ini GISequence/ConSequence data. docs/re/infantry-anim.md is the
+// calibration authority -- see it for the extracted values (§2), the
+// StartFrame/FrameCount/FacingMultiplier frame-selection formula (§1), and
+// the facing-block-order evidence (§4/§5). This REPLACES the Task 7
+// empirically-eyeballed table, which had two confirmed frame bugs: CONS fire
+// was hardcoded to 158..163 (the tail of Die2), and both units' die used
+// 80..87 (Idle2/Prone frames), not the real Die1=134..148 (docs §3).
+const UnitAnimSeq& default_anim() {
+    static const UnitAnimSeq a{
+        /*stand=*/{0, 1, 1}, /*walk=*/{8, 6, 6},
+        /*fire=*/{164, 6, 6}, /*die=*/{134, 15, 0},
+    };
+    return a;
+}
 
-const UnitAnimSeq& anim_for_image(const std::string& image) {
-    if (image == "CONS") return kConsAnim;
-    return kGIAnim;  // "GI" and any unrecognized image -> GI table (documented fallback)
+const UnitAnimSeq& anim_for_image(const AnimTable& t, const std::string& image) {
+    const auto it = t.find(image);
+    return it != t.end() ? it->second : default_anim();
+}
+
+int seq_frame(const SeqEntry& e, int facing, int phase) {
+    const int p = phase < 0 ? 0 : (phase >= e.count ? e.count - 1 : phase);
+    return e.first + facing * e.fmult + p;
+}
+
+// Cell-space direction -> SHP facing block index (counterclockwise from
+// North on screen -- docs/re/infantry-anim.md §4/§5). Screen projection is
+// (sx, sy) ~ (dx - dy, dx + dy) with y down.
+int facing_from_delta(double dx, double dy) {
+    if (dx == 0.0 && dy == 0.0) return -1;
+    const double ang = std::atan2(dx + dy, dx - dy) * 180.0 / 3.14159265358979323846;
+    const double ccw = std::fmod(-90.0 - ang + 720.0, 360.0);
+    return static_cast<int>(std::lround(ccw / 45.0)) % 8;
 }
 
 static constexpr double kWalkFps = 9.0;  // walk-cycle frame rate (shared cadence, all images)
 static constexpr double kFireAnimFps = 15.0;  // Fire sequence pacing: the 6-frame recoil plays through ONCE per shot, spanning the kFireFlashSecs (0.4s) flash window exactly at the game's ~15Hz animation rate (6 frames / 0.4s = 15fps). Distinct from kWalkFps: walk cycles loop, fire plays once.
+// Die-progress frame rate: 15 frames (default_anim's die.count) at 15fps is
+// EXACTLY combat.cpp's kDieAnimSecs (1.0s), so every die frame is reachable
+// before the unit tombstones (docs/re/infantry-anim.md §2/§3). Distinct from
+// kWalkFps: this only paces the die-progress formula, not walk cycling.
+static constexpr double kDieAnimFps = 15.0;
 
 // Duplicated from engine/combat.cpp's (anonymous-namespace) kFireFlashSecs --
 // NOT exposed via combat.hpp, so World::step's anim-override pass below
@@ -282,6 +239,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     return u;
 }
 
+void World::set_anim(const std::string& image, const UnitAnimSeq& seq) { anims_[image] = seq; }
+
 void World::clear_selection() {
     for (Unit& u : units_) u.selected = false;
 }
@@ -313,7 +272,7 @@ void World::order_unit_move(int idx, int gx, int gy) {
         u.path_idx = 0;
         u.anim_time = 0.0;
         u.wait_time = 0.0;
-        u.frame = anim_for_image(u.image).stand;
+        u.frame = seq_frame(anim_for_image(anims_, u.image).stand, u.facing, 0);
         u.fx = u.cell_x;
         u.fy = u.cell_y;
     } else {
@@ -377,7 +336,7 @@ void World::order_attack(int target_idx) {
 }
 
 void World::step(double dt) {
-    step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_);
+    step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
     const std::vector<MoveRequest> reqs = step_combat(units_, occ_, dt);
     for (const MoveRequest& r : reqs) {
@@ -415,34 +374,55 @@ void World::step(double dt) {
         }
     }
 
-    // Fire/die animation override (Task 7): step_units (above) already picked
-    // a stand/walk frame assuming the unit is simply idle or walking; this
-    // pass OVERRIDES that choice for a unit that is dying or mid-recoil from
-    // a shot, using each image's fire/die ranges (anim_for_image). Runs AFTER
-    // the hold-at-range pass (so a unit that just stopped to fire this same
-    // frame still gets its fire pose) and BEFORE the level patch (ordering
-    // vs. the level patch is otherwise irrelevant -- this pass only touches
-    // Unit::frame). Dying units are already skipped by step_units's
-    // stand/walk writes (see its `if (!u.alive || u.die_time >= 0.0) continue;`
-    // guard), so there is no earlier write this pass could be clobbering for
-    // that branch -- their frame comes ONLY from here.
+    // Fire/die animation override (Task 7, facing added Task 2): step_units
+    // (above) already picked a stand/walk frame assuming the unit is simply
+    // idle or walking; this pass OVERRIDES that choice for a unit that is
+    // dying or mid-recoil from a shot, using each image's fire/die ranges
+    // (anim_for_image) and seq_frame's facing-aware selection. Runs AFTER the
+    // hold-at-range pass (so a unit that just stopped to fire this same frame
+    // still gets its fire pose) and BEFORE the level patch (ordering vs. the
+    // level patch is otherwise irrelevant -- this pass only touches
+    // Unit::frame/Unit::facing). Dying units are already skipped by
+    // step_units's stand/walk writes (see its
+    // `if (!u.alive || u.die_time >= 0.0) continue;` guard), so there is no
+    // earlier write this pass could be clobbering for that branch -- their
+    // frame comes ONLY from here.
     for (Unit& u : units_) {
         if (!u.alive) continue;
-        const UnitAnimSeq& seq = anim_for_image(u.image);
+        const UnitAnimSeq& seq = anim_for_image(anims_, u.image);
+
+        // Aim facing (docs/re/infantry-anim.md §5): any unit with a valid
+        // live target faces it, even BETWEEN shots (not just during the fire
+        // pose) -- so a unit standing still tracking a target still visibly
+        // turns to face it, matching the original's aim-facing behavior.
+        if (u.target >= 0 && u.target < (int)units_.size()) {
+            const Unit& t = units_[u.target];
+            if (t.alive) {
+                const int f = facing_from_delta(t.fx - u.fx, t.fy - u.fy);
+                if (f >= 0) u.facing = f;
+            }
+        }
+
         if (u.die_time >= 0.0) {
             // Play the die frames once, forward, clamped on the last frame.
             // The unit tombstones (alive=false) shortly after via
             // combat.cpp's kDieAnimSecs, and unit_draw_order excludes
             // tombstoned units -- so "holding the last frame" is only ever
             // visible for whatever fraction of a second remains before the
-            // corpse disappears, never a stuck/looping corpse.
-            const int adv = static_cast<int>(u.die_time * kWalkFps);
-            u.frame = seq.die_first + std::min(seq.die_count - 1, adv);
+            // corpse disappears, never a stuck/looping corpse. default_anim's
+            // die entry (134,15,0) is EXACTLY 15 frames at kDieAnimFps
+            // (15Hz) == combat.cpp's kDieAnimSecs (1.0s), so every frame is
+            // reachable before that tombstone -- seq_frame's own clamp is
+            // just a defensive backstop, not a pacing choice (contrast the
+            // Task 7 table this replaced, which capped die_count to force
+            // reachability -- see docs/re/infantry-anim.md §2/§3).
+            const int adv = static_cast<int>(u.die_time * kDieAnimFps);
+            u.frame = seq_frame(seq.die, u.facing, adv);
         } else if (u.fire_flash > 0.0) {
             // Play the fire/recoil sequence ONCE across the flash window.
             // fire_flash counts DOWN from kFireFlashSecs (set by
             // combat.cpp's try_fire on every shot) to 0. The fire sequence
-            // plays once per shot at kFireAnimFps (15 Hz), so all fire_count
+            // plays once per shot at kFireAnimFps (15 Hz), so all fire.count
             // frames are visited during the 0.4s flash window.
             // kFireFlashSecs is combat.cpp's (anonymous-namespace, not
             // exposed via combat.hpp) constant, duplicated here at the same
@@ -451,8 +431,7 @@ void World::step(double dt) {
             // (task-12-report.md Minor). MUST stay in sync with combat.cpp's
             // kFireFlashSecs if that ever changes.
             const int adv = static_cast<int>((kFireFlashSecs - u.fire_flash) * kFireAnimFps);
-            const UnitAnimSeq& seq = anim_for_image(u.image);
-            u.frame = seq.fire_first + std::min(seq.fire_count - 1, adv);
+            u.frame = seq_frame(seq.fire, u.facing, adv);
         }
         // else: leave step_units' stand/walk choice untouched.
     }
@@ -501,11 +480,11 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
 }
 
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable, int w, int h,
-                Occupancy& occ, double dt, double move_cps) {
+                Occupancy& occ, double dt, double move_cps, const AnimTable& anims) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
-        const UnitAnimSeq& seq = anim_for_image(u.image);  // per-image walk/stand table (Task 7)
+        const UnitAnimSeq& seq = anim_for_image(anims, u.image);  // per-image anim table (Task 2)
 
         // Dead/dying units never move, never re-claim a cell, and never
         // occupy: combat.cpp's step_combat already released a unit's
@@ -519,7 +498,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             occ.set(u.cell_x, u.cell_y, self);  // idle units own their cell
             u.fx = u.cell_x;
             u.fy = u.cell_y;
-            u.frame = seq.stand;
+            u.frame = seq_frame(seq.stand, u.facing, 0);
             u.wait_time = 0.0;
             continue;
         }
@@ -532,6 +511,12 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 ++u.path_idx;
                 continue;
             }
+            // Face the segment being entered (docs/re/infantry-anim.md §5) --
+            // updated at segment SELECTION, before the reservation/blocked
+            // check below, so a unit still visibly turns toward a blocked
+            // direction even on a frame where it can't actually step yet.
+            const int f = facing_from_delta(tgt.x - u.cell_x, tgt.y - u.cell_y);
+            if (f >= 0) u.facing = f;
             // Reserve the next cell before stepping into it.
             if (occ.at(tgt.x, tgt.y) != self) {
                 if (occ.can_enter(tgt.x, tgt.y, self)) {
@@ -567,7 +552,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             u.path.clear();
             u.path_idx = 0;
             u.anim_time = 0.0;
-            u.frame = seq.stand;
+            u.frame = seq_frame(seq.stand, u.facing, 0);
             u.wait_time = 0.0;
             occ.set(u.cell_x, u.cell_y, self);
             continue;
@@ -576,7 +561,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         if (blocked) {
             const double prev_wait = u.wait_time;
             u.wait_time += dt;
-            u.frame = seq.stand;  // stand while waiting (reads as "holding")
+            u.frame = seq_frame(seq.stand, u.facing, 0);  // stand while waiting (reads as "holding")
             // Seniority stagger (breaks the mirror-symmetric re-path
             // livelock): if the unit blocking our next cell has a LOWER index,
             // it holds course and WE detour early (first attempt at
@@ -628,8 +613,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 
         // Still walking: cycle the walk frames.
         u.anim_time += dt;
-        const int phase = static_cast<int>(u.anim_time * kWalkFps) % seq.walk_count;
-        u.frame = seq.walk_first + phase;
+        const int phase = static_cast<int>(u.anim_time * kWalkFps) % seq.walk.count;
+        u.frame = seq_frame(seq.walk, u.facing, phase);
     }
 }
 

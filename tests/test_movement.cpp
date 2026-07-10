@@ -14,6 +14,11 @@ using ra2engine::Unit;
 
 namespace {
 
+// step_units's trailing AnimTable arg (Task 2): these tests don't exercise
+// per-image animation, so an empty table (-> default_anim() fallback for
+// every unit) is enough; named+reused since every call site needs it.
+const ra2engine::AnimTable kNoAnims{};
+
 std::vector<uint8_t> open_grid(int w, int h) { return std::vector<uint8_t>((size_t)w * h, 1); }
 
 // Build a unit at (x,y) with a straight-line intent toward `goal` computed by
@@ -35,7 +40,7 @@ Unit make_mover(int x, int y, Cellxy goal, const std::vector<uint8_t>& p, int w,
 void run(std::vector<Unit>& units, const std::vector<uint8_t>& p, int w, int h, Occupancy& occ,
          double seconds, double cps = 4.0) {
     const double dt = 1.0 / 60.0;
-    for (double t = 0; t < seconds; t += dt) step_units(units, p, w, h, occ, dt, cps);
+    for (double t = 0; t < seconds; t += dt) step_units(units, p, w, h, occ, dt, cps, kNoAnims);
 }
 
 // Assert no two units share an integer cell.
@@ -78,7 +83,7 @@ TEST_CASE("step_units: reservation prevents two units ever sharing a cell (funne
     // Step and assert the no-overlap invariant on EVERY frame.
     const double dt = 1.0 / 60.0;
     for (double t = 0; t < 20.0; t += dt) {
-        step_units(units, p, w, h, occ, dt, 4.0);
+        step_units(units, p, w, h, occ, dt, 4.0, kNoAnims);
         check_no_overlap(units);
     }
     // All three funnel through and reach the right room at distinct cells.
@@ -126,7 +131,7 @@ TEST_CASE("step_units: head-on in a 1-wide corridor -> no overlap, both terminat
     units.push_back(make_mover(3, 0, {0, 0}, p, 4, 1, occ, 1));  // wants to go left
     const double dt = 1.0 / 60.0;
     for (double t = 0; t < 10.0; t += dt) {
-        step_units(units, p, 4, 1, occ, dt, 4.0);
+        step_units(units, p, 4, 1, occ, dt, 4.0, kNoAnims);
         check_no_overlap(units);
     }
     // Deadlock resolves by both stopping; neither overlaps.
@@ -143,7 +148,7 @@ TEST_CASE("step_units: head-on with room routes both around to their goals") {
     units.push_back(make_mover(3, 0, {0, 0}, p, 4, 2, occ, 1));
     const double dt = 1.0 / 60.0;
     for (double t = 0; t < 20.0; t += dt) {
-        step_units(units, p, 4, 2, occ, dt, 4.0);
+        step_units(units, p, 4, 2, occ, dt, 4.0, kNoAnims);
         check_no_overlap(units);
     }
     CHECK(units[0].cell_x == 3);
@@ -167,7 +172,7 @@ TEST_CASE("step_units: 3-unit rotational contention resolves without overlap") {
     units.push_back(make_mover(1, 1, {0, 0}, p, 2, 2, occ, 2));
     const double dt = 1.0 / 60.0;
     for (double t = 0; t < 15.0; t += dt) {
-        step_units(units, p, 2, 2, occ, dt, 4.0);
+        step_units(units, p, 2, 2, occ, dt, 4.0, kNoAnims);
         check_no_overlap(units);
     }
     // Every unit terminated (no perpetual churn) and no two share a cell.

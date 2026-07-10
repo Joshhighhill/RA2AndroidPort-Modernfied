@@ -917,7 +917,8 @@ TEST_CASE("pal_for_house: indices outside 16..31 are untouched by either house")
     }
 }
 
-// ---- Fire/die anim-override pass (Task 7: World::step frame selection) ----
+// ---- Fire/die anim-override pass (Task 7 introduced; Task 2 recalibrated
+// the frame values + added facing -- docs/re/infantry-anim.md) ----
 
 TEST_CASE("World::step anim-override: fire_flash > 0 selects the unit's fire frame range and visits all frames during flash window") {
     // No real map needed -- this exercises Unit::frame selection only, not
@@ -927,19 +928,24 @@ TEST_CASE("World::step anim-override: fire_flash > 0 selects the unit's fire fra
     ra2assets::MapFile map;
     ra2engine::World world(map);
     ra2engine::Unit& u = world.add_combat_unit(0, 0, 0, gi_stats());  // image "GI"
-    const ra2engine::UnitAnimSeq& seq = ra2engine::anim_for_image("GI");
+    const ra2engine::UnitAnimSeq& seq = ra2engine::default_anim();
 
-    // Mid-flash sanity check: frame selection is within range.
+    // Mid-flash sanity check: frame selection is within range, at whatever
+    // facing the unit currently has (no target set -> stays the spawn
+    // default, but the assertion is written facing-relative on purpose).
     u.fire_flash = 0.3;
     world.step(1.0 / 60.0);
-    CHECK(u.frame >= seq.fire_first);
-    CHECK(u.frame < seq.fire_first + seq.fire_count);
+    const int base = seq.fire.first + u.facing * seq.fire.fmult;
+    CHECK(u.frame >= base);
+    CHECK(u.frame < base + seq.fire.count);
 
     // Exhaustiveness check: simulate a full flash window from fire_flash = 0.4
-    // (kFireFlashSecs) down to 0, collecting all visited frames.
+    // (kFireFlashSecs) down to 0, collecting all visited frames. Facing stays
+    // fixed throughout (no target -> the aim-facing pass never touches it),
+    // proving all 6 fire frames are reachable at that one fixed facing.
     ra2engine::World world2(map);
     ra2engine::Unit& u2 = world2.add_combat_unit(0, 0, 0, gi_stats());
-    const ra2engine::UnitAnimSeq& seq2 = ra2engine::anim_for_image("GI");
+    const ra2engine::UnitAnimSeq& seq2 = ra2engine::default_anim();
 
     std::set<int> visited_frames;
     u2.fire_flash = 0.4;  // start of flash window
@@ -955,33 +961,137 @@ TEST_CASE("World::step anim-override: fire_flash > 0 selects the unit's fire fra
     }
 
     // After fire_flash reaches 0, verify all fire frames were visited.
-    REQUIRE(seq2.fire_count > 0);
-    for (int i = 0; i < seq2.fire_count; ++i) {
-        const int expected_frame = seq2.fire_first + i;
+    REQUIRE(seq2.fire.count > 0);
+    for (int i = 0; i < seq2.fire.count; ++i) {
+        const int expected_frame = ra2engine::seq_frame(seq2.fire, u2.facing, i);
         CHECK(visited_frames.count(expected_frame) > 0);
     }
 }
 
-TEST_CASE("World::step anim-override: die_time selects the die range and clamps at the last frame") {
+TEST_CASE("World::step anim-override: die_time selects the die range and reaches the last frame before tombstone") {
     ra2assets::MapFile map;
     ra2engine::World world(map);
     ra2engine::Unit& u = world.add_combat_unit(0, 0, 1, cons_stats());  // image "CONS"
-    const ra2engine::UnitAnimSeq& seq = ra2engine::anim_for_image("CONS");
+    const ra2engine::UnitAnimSeq& seq = ra2engine::default_anim();
 
-    // Early in the death animation: not yet clamped.
+    // Early in the death animation: not yet at the end.
     u.die_time = 0.05;
     world.step(1.0 / 60.0);
     REQUIRE(u.alive);  // still dying, not yet tombstoned
-    CHECK(u.frame >= seq.die_first);
-    CHECK(u.frame < seq.die_first + seq.die_count);
+    CHECK(u.frame >= seq.die.first);
+    CHECK(u.frame < seq.die.first + seq.die.count);
 
     // Late in the death animation, but still short of combat.cpp's
-    // kDieAnimSecs (1.0s) -- world.cpp's die_count is deliberately capped so
-    // the WHOLE die range is reachable before the unit tombstones (see the
-    // derivation comment next to kGIAnim/kConsAnim) -- clamps at the LAST
-    // die frame instead of running off the end of the table.
-    u.die_time = 0.9;
+    // kDieAnimSecs (1.0s) -- default_anim's die entry (134,15,0) is EXACTLY
+    // 15 frames at kDieAnimFps (15Hz, world.cpp) == kDieAnimSecs (1.0s), so
+    // the WHOLE die range (134..148) is reachable before the unit tombstones
+    // (docs/re/infantry-anim.md §2/§3): this reaches the LAST die frame (148)
+    // while still alive, proving frame 148 is actually displayed (the Task 7
+    // bug this replaces never reached its analogous last frame at all).
+    u.die_time = 0.95;
     world.step(1.0 / 60.0);
     REQUIRE(u.alive);  // still dying at this die_time (< kDieAnimSecs)
-    CHECK(u.frame == seq.die_first + seq.die_count - 1);
+    CHECK(u.frame == seq.die.first + seq.die.count - 1);
+    CHECK(u.frame == 148);
+}
+
+// ---- Task 2: facing + artmd-calibrated animation table (docs/re/infantry-anim.md) ----
+
+TEST_CASE("facing: 8-way cell-direction table (docs/re/infantry-anim.md §5)") {
+    using ra2engine::facing_from_delta;
+    CHECK(facing_from_delta(0, -1) == 7);   // screen NE
+    CHECK(facing_from_delta(1, -1) == 6);   // E
+    CHECK(facing_from_delta(1, 0) == 5);    // SE
+    CHECK(facing_from_delta(1, 1) == 4);    // S
+    CHECK(facing_from_delta(0, 1) == 3);    // SW
+    CHECK(facing_from_delta(-1, 1) == 2);   // W
+    CHECK(facing_from_delta(-1, 0) == 1);   // NW
+    CHECK(facing_from_delta(-1, -1) == 0);  // N
+    CHECK(facing_from_delta(0, 0) == -1);   // no direction -> keep current
+    CHECK(facing_from_delta(5.0, 5.0) == 4);      // continuous, same ray as (1,1)
+    CHECK(facing_from_delta(0.1, -0.1) == 6);     // continuous E ray
+}
+
+TEST_CASE("facing: seq_frame formula and real default table") {
+    using namespace ra2engine;
+    const UnitAnimSeq& a = default_anim();
+    CHECK(a.stand.first == 0);   CHECK(a.stand.count == 1);  CHECK(a.stand.fmult == 1);
+    CHECK(a.walk.first == 8);    CHECK(a.walk.count == 6);   CHECK(a.walk.fmult == 6);
+    CHECK(a.fire.first == 164);  CHECK(a.fire.count == 6);   CHECK(a.fire.fmult == 6);
+    CHECK(a.die.first == 134);   CHECK(a.die.count == 15);   CHECK(a.die.fmult == 0);
+    CHECK(seq_frame(a.stand, 3, 0) == 3);          // stand facing SW -> frame 3
+    CHECK(seq_frame(a.fire, 6, 2) == 164 + 36 + 2); // fire E phase 2 -> 202
+    CHECK(seq_frame(a.die, 6, 4) == 138);           // die ignores facing (fmult 0)
+    CHECK(seq_frame(a.fire, 0, 99) == 169);         // phase clamps to count-1
+    AnimTable t;
+    UnitAnimSeq custom = a; custom.fire.first = 500;
+    t["ZZZ"] = custom;
+    CHECK(anim_for_image(t, "ZZZ").fire.first == 500);
+    CHECK(anim_for_image(t, "GI").fire.first == 164);  // miss -> default
+}
+
+TEST_CASE("Unit: spawns facing S (facing == 4, docs/re/infantry-anim.md §6)") {
+    ra2engine::Unit u;
+    CHECK(u.facing == 4);
+}
+
+TEST_CASE("World::step: walking unit faces its segment (docs/re/infantry-anim.md §5)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(3.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // Find a walkable start cell whose east neighbor is ALSO walkable and
+    // unoccupied (pick_start_cell's centroid cell alone isn't guaranteed to
+    // have a walkable east neighbor at a map edge/obstacle).
+    int sx = -1, sy = -1;
+    for (int dy = 0; dy < 8 && sx < 0; ++dy)
+        for (int dx = 0; dx < 8 && sx < 0; ++dx) {
+            const int x = c->x + dx, y = c->y + dy;
+            if (world.walkable(x, y) && world.walkable(x + 1, y) &&
+                world.unit_at_cell(x, y) < 0 && world.unit_at_cell(x + 1, y) < 0) {
+                sx = x;
+                sy = y;
+            }
+        }
+    REQUIRE(sx >= 0);
+
+    world.add_unit(sx, sy, "GI", 0);
+    REQUIRE(world.units()[0].facing == 4);  // spawn facing S
+    world.units()[0].selected = true;
+    world.order_move_selected(sx + 1, sy);  // one cell east
+    REQUIRE(world.units()[0].moving());
+
+    world.step(1.0 / 60.0);  // small dt at 3 cells/sec -> still mid-segment
+    CHECK(world.units()[0].facing == 5);  // faces the segment: delta (1,0) -> SE
+    CHECK(world.units()[0].frame >= 8 + 5 * 6);
+    CHECK(world.units()[0].frame < 8 + 5 * 6 + 6);
+}
+
+TEST_CASE("World::step anim-override: firing unit faces its target (docs/re/infantry-anim.md §5)") {
+    // No real map needed (same minimal fixture as the fire/die override tests
+    // above): two stationary combat units, attacker due WEST of victim so
+    // the attacker's delta-to-victim is (1,0) -> facing 5 (SE).
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.add_combat_unit(0, 0, 0, gi_stats());    // index 0: attacker (GI, house 0)
+    world.add_combat_unit(1, 0, 1, cons_stats());  // index 1: victim (CONS, house 1), due east
+
+    // Idle proximity: step_combat auto-acquires the nearest hostile in range
+    // and fires immediately (rof_cool starts at 0) -- no explicit order needed.
+    world.step(1.0 / 60.0);
+
+    const ra2engine::Unit& attacker = world.units()[0];
+    REQUIRE(attacker.target == 1);
+    CHECK(attacker.facing == 5);  // faces the victim even between/during shots
+    REQUIRE(attacker.fire_flash > 0.0);
+    const ra2engine::UnitAnimSeq& seq = ra2engine::default_anim();
+    const int base = seq.fire.first + attacker.facing * seq.fire.fmult;
+    CHECK(attacker.frame >= base);
+    CHECK(attacker.frame < base + seq.fire.count);
 }
