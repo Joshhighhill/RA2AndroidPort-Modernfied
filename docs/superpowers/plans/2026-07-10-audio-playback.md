@@ -21,6 +21,7 @@
 - Pure sources → `cmake/ra2_sources.cmake` (shared with Android jni): `src/sounds.cpp`, `src/wav.cpp` beside `src/rules.cpp`; `engine/audio_mixer.cpp` beside `engine/combat.cpp`. SDL-aware `engine/audio_sdl.cpp` goes ONLY where other SDL-aware engine files (e.g. `engine/iso_renderer.cpp`? — no, iso_renderer is SDL-aware: follow wherever `engine/main.cpp`'s SDL companions like `engine/platform*.cpp` are listed for the desktop engine target AND the Android app target, NOT the test target).
 - No assets/GPL/Ghidra artifacts committed. Commits on `master`.
 - **Controller amendment gate:** Tasks 4–6 contain fallback constants/formulas marked `[RE-FALLBACK]`. After Task 1's doc lands, the controller diffs those against the doc's findings and commits plan amendments BEFORE dispatching the affected task.
+- **AMENDED post-Task-1 (docs/re/audio-playback.md "Decisions for ra2engine" — all now binding):** attenuation linear `1 − dist/range` CONFIRMED (High); distance metric = Chebyshev `max(|dx_px|, 2·|dy_px|)` in screen pixels from the view centre, ÷60 to cells; positional rule = EVERY event attenuates, `Type` containing `GLOBAL` adds a `MinVolume` floor (the old "acks non-positional" guess is DEAD); priority scale is 5 levels `lowest=0 low=1 normal=2 high=3 critical=4`; full voice pool DROPS the new sound (vanilla has no priority-steal of playing SFX voices); `Limit` reject-at-trigger kept as a documented approximation of vanilla's start-then-cull-to-cap; `interrupt` = steal oldest same-key (kept); `$` AND `#` prefixes both strip; `Control=random` = uniform with replacement (no shuffle-bag); VShift/FShift deferred with formulas recorded in the RE doc (carry-forward).
 
 ---
 
@@ -146,6 +147,9 @@ TEST_CASE("sounds: variant list, $ stripping, control tokens, shifts") {
     CHECK(d.priority == "low");
     CHECK(d.fshift_lo == -10);
     CHECK(d.fshift_hi == 10);
+    // '#' strips exactly like '$' (docs/re/audio-playback.md): extend the
+    // synthetic text with "[HashCase]\nSounds= #habc $hdef\n" and assert
+    // entry("HashCase").sounds == {"habc","hdef"}.
     CHECK(snd.has("GIDie"));
     CHECK_FALSE(snd.has("NoSuchSound"));
     SoundEntry missing = snd.entry("NoSuchSound");   // -> defaults verbatim
@@ -255,7 +259,9 @@ SoundEntry Sounds::entry(const std::string& name) const {
     SoundEntry e = defaults_;
     if (!ini_->has(name)) return e;
     for (const std::string& raw : split_ws(ini_->get(name, "Sounds", "")))
-        e.sounds.push_back(raw[0] == '$' ? raw.substr(1) : raw);
+        // gamemd's add_sound strips a leading '$' OR '#' (docs/re/
+        // audio-playback.md, High confidence).
+        e.sounds.push_back((raw[0] == '$' || raw[0] == '#') ? raw.substr(1) : raw);
     e.volume = ini_->get_int(name, "Volume", e.volume);
     e.limit = ini_->get_int(name, "Limit", e.limit);
     e.min_volume = ini_->get_int(name, "MinVolume", e.min_volume);
@@ -464,11 +470,13 @@ struct MixerSound {
     int priority = 1;            // 0 low, 1 normal, 2 high, 3 critical
     int limit = 5;               // max simultaneous instances; <=0 unlimited
     bool interrupt = false;      // Control=interrupt
-    bool positional = true;      // attenuated by distance (Type mapping, Task 6)
+    bool global = false;         // Type contains GLOBAL: MinVolume floor (never silent)
     double range = 10.0;         // cells
     int min_volume = 50;
 };
-int priority_from_string(const std::string& p);  // low=0 normal=1 high=2 critical=3, else 1
+// AMENDED: real 5-level scale (docs/re/audio-playback.md, table @0x815018):
+// lowest=0 low=1 normal=2 high=3 critical=4, unknown -> 2.
+int priority_from_string(const std::string& p);
 class SoundBank {
 public:
     int add(std::vector<int16_t> pcm);           // -> clip id
@@ -486,8 +494,11 @@ public:
     int active_voices() const;                    // non-EVA voices playing
     bool eva_active() const;
     std::size_t eva_queued() const;               // waiting behind the active one
-    // [RE-FALLBACK] linear falloff: full volume at dist 0 -> 0 at range; see
-    // docs/re/audio-playback.md. Returns 0..1000 gain (permille of s.volume).
+    // CONFIRMED linear falloff (docs/re/audio-playback.md, FUN_0074f8e0,
+    // High): gain = 1 - dist/range, full at 0, silent at range. Type=GLOBAL
+    // events are floored at min_volume (never silent) instead. The caller
+    // supplies dist in CELLS (the game divides its pixel metric by 60 --
+    // Task 6 computes the exact Chebyshev metric). Returns 0..1000.
     static int gain_permille(const MixerSound& s, double dist_cells);
 };
 ```
@@ -513,9 +524,8 @@ MixerSound plain(int clip, int volume = 100) {
     MixerSound s;
     s.variants = {clip};
     s.volume = volume;
-    s.positional = false;
     s.limit = 0;
-    return s;
+    return s;   // plays at dist 0 -> full gain
 }
 }  // namespace
 
@@ -580,33 +590,39 @@ TEST_CASE("mixer: Limit rejects the (limit+1)-th instance; interrupt steals inst
     CHECK(m2.active_voices() == 3);
 }
 
-TEST_CASE("mixer: full voice pool steals strictly-lower priority, else rejects") {
+TEST_CASE("mixer: full voice pool DROPS the new sound (vanilla: no priority steal)") {
+    // docs/re/audio-playback.md FUN_00405190: the SFX allocator reclaims
+    // finished voices only, then fails -- it never evicts a playing voice.
     SoundBank bank;
     int c = bank.add(std::vector<int16_t>(100, 100));
     Mixer m(bank, 1);
-    MixerSound low = plain(c);  low.priority = 0; low.limit = 0;
-    MixerSound norm = plain(c); norm.priority = 1; norm.limit = 0;
-    m.register_sound("low", low);
-    m.register_sound("norm", norm);
-    for (int i = 0; i < Mixer::kMaxVoices; ++i) REQUIRE(m.play("low"));
+    MixerSound s = plain(c);
+    s.priority = 4;                    // even critical does not steal
+    m.register_sound("S", s);
+    for (int i = 0; i < Mixer::kMaxVoices; ++i) REQUIRE(m.play("S"));
+    CHECK_FALSE(m.play("S"));          // pool full -> dropped
     CHECK(m.active_voices() == Mixer::kMaxVoices);
-    CHECK(m.play("norm"));             // steals a low voice  [RE-FALLBACK]
-    CHECK(m.active_voices() == Mixer::kMaxVoices);
-    Mixer m2(bank, 1);
-    m2.register_sound("norm", norm);
-    for (int i = 0; i < Mixer::kMaxVoices; ++i) REQUIRE(m2.play("norm"));
-    CHECK_FALSE(m2.play("norm"));      // equal priority: rejected
 }
 
-TEST_CASE("mixer: attenuation formula [RE-FALLBACK linear]") {
+TEST_CASE("mixer: priority_from_string uses the real 5-level scale") {
+    CHECK(priority_from_string("lowest") == 0);
+    CHECK(priority_from_string("low") == 1);
+    CHECK(priority_from_string("normal") == 2);
+    CHECK(priority_from_string("high") == 3);
+    CHECK(priority_from_string("critical") == 4);
+    CHECK(priority_from_string("bogus") == 2);
+}
+
+TEST_CASE("mixer: attenuation linear (CONFIRMED) with GLOBAL MinVolume floor") {
     MixerSound s;
-    s.volume = 100; s.range = 10.0; s.positional = true;
+    s.volume = 100; s.range = 10.0; s.min_volume = 50;
     CHECK(Mixer::gain_permille(s, 0.0) == 1000);
     CHECK(Mixer::gain_permille(s, 5.0) == 500);
     CHECK(Mixer::gain_permille(s, 10.0) == 0);
     CHECK(Mixer::gain_permille(s, 25.0) == 0);
-    s.positional = false;
-    CHECK(Mixer::gain_permille(s, 25.0) == 1000);  // non-positional: full
+    s.global = true;                   // Type=GLOBAL: floored, never silent
+    CHECK(Mixer::gain_permille(s, 25.0) == 500);   // max(gain, min_volume*10)
+    CHECK(Mixer::gain_permille(s, 0.0) == 1000);   // floor never raises full
 }
 
 TEST_CASE("mixer: seeded variant selection is deterministic") {
@@ -681,15 +697,18 @@ int SoundBank::add(std::vector<int16_t> pcm) {
 }
 // pcm(): bounds-checked at(); count(): size.
 
-// [RE-FALLBACK] docs/re/audio-playback.md: linear falloff, full at 0,
-// silent at range. Amend if the hunt recovers a different curve.
+// CONFIRMED linear falloff (docs/re/audio-playback.md FUN_0074f8e0, High):
+// gain = 1 - dist/range; Type=GLOBAL floors the result at MinVolume
+// (max(vol, MinVolume) branch is GLOBAL-only in gamemd; MinVolume is
+// ignored for every other Type).
 int Mixer::gain_permille(const MixerSound& s, double dist_cells) {
-    if (!s.positional) return 1000;
-    if (s.range <= 0.0) return 1000;
-    const double g = 1.0 - dist_cells / s.range;
-    if (g <= 0.0) return 0;
-    if (g >= 1.0) return 1000;
-    return static_cast<int>(g * 1000.0);
+    int g = 1000;
+    if (s.range > 0.0) {
+        const double f = 1.0 - dist_cells / s.range;
+        g = f <= 0.0 ? 0 : (f >= 1.0 ? 1000 : static_cast<int>(f * 1000.0));
+    }
+    if (s.global) g = std::max(g, s.min_volume * 10);
+    return g;
 }
 
 // xorshift32 -- audio-local, never the sim's state.
@@ -705,10 +724,15 @@ bool Mixer::play(const std::string& key, double dist_cells) {
     for (const Voice& v : voices_)
         if (v.key == key) ++same;
     if (s.limit > 0 && same >= s.limit) {
-        if (!s.interrupt) return false;                // [RE-FALLBACK] reject at limit
-        kill_oldest_with_key_(key);                    // [RE-FALLBACK] interrupt steals
+        // Reject-at-trigger: documented approximation of vanilla's
+        // start-then-cull-to-cap -- both hold the <=Limit invariant
+        // (docs/re/audio-playback.md FUN_004041d0, Decisions).
+        if (!s.interrupt) return false;
+        kill_oldest_with_key_(key);   // interrupt: steal same-event channel (Medium)
     } else if (static_cast<int>(voices_.size()) >= kMaxVoices) {
-        if (!steal_lower_priority_(s.priority)) return false;  // [RE-FALLBACK]
+        // Vanilla drops the new sound when the pool is full -- it never
+        // evicts a playing voice (docs/re/audio-playback.md FUN_00405190).
+        return false;
     }
     const int clip = s.variants[next_rand_() % s.variants.size()];
     voices_.push_back({key, clip, 0, s.volume * gain, s.priority, age_counter_++});
@@ -721,7 +745,7 @@ bool Mixer::play(const std::string& key, double dist_cells) {
 }  // namespace ra2engine
 ```
 
-  The header carries `struct Voice { std::string key; int clip; std::size_t pos; int vol_x_gain; int priority; uint64_t age; };`, `std::map<std::string, MixerSound> sounds_;`, `std::vector<Voice> voices_;`, `int eva_clip_ = -1; std::size_t eva_pos_ = 0; std::deque<int> eva_queue_;`, `uint32_t rng_; uint64_t age_counter_ = 0;`. Scaling: `vol_x_gain = s.volume * gain` (0..100000); per-sample contribution `pcm * vol_x_gain / 100000` in int64/int32 — the volume-65 test pins `10000*65*1000/100000 = 6500` exactly. Steal rules: `kill_oldest_with_key_` removes the same-key voice with the smallest `age`; `steal_lower_priority_(p)` removes the smallest-`age` voice whose priority < p, returning false if none.
+  The header carries `struct Voice { std::string key; int clip; std::size_t pos; int vol_x_gain; uint64_t age; };`, `std::map<std::string, MixerSound> sounds_;`, `std::vector<Voice> voices_;`, `int eva_clip_ = -1; std::size_t eva_pos_ = 0; std::deque<int> eva_queue_;`, `uint32_t rng_; uint64_t age_counter_ = 0;`. Scaling: `vol_x_gain = s.volume * gain` (0..100000); per-sample contribution `pcm * vol_x_gain / 100000` in int64/int32 — the volume-65 test pins `10000*65*1000/100000 = 6500` exactly. Steal rule: `kill_oldest_with_key_` removes the same-key voice with the smallest `age` (interrupt only; the full pool never steals — vanilla drops).
 
 - [ ] **Step 4: Run** — `-tc='mixer*'` green; then the FULL suite once (new shared sources touch cmake).
 - [ ] **Step 5: Commit** — `git commit -m "feat(engine): pure audio mixer (limit/priority/attenuation/variants/EVA queue)"`.
@@ -815,7 +839,7 @@ struct AudioSystem {
   Loader steps (one function `init_audio(AudioSystem&, const std::string& dir, const Rules& rules)` called by the interactive mode entry — NOT by --demo-combat):
   1. `Ini snd_ini = load_ini_from_ra2md(dir, "soundmd.ini"); Sounds sounds = Sounds::load(snd_ini);`
   2. Open `language.mix → audio.mix`, load `audio.idx` bytes → `AudioIdx`, slurp `audio.bag` bytes (this is the exact chain in tests/test_audio.cpp:305–311).
-  3. For each unit id {E1, E2}: fill `audio.voices[rules.image(id)] = UnitVoices{rules.voice_select(id), rules.voice_move(id), rules.voice_attack(id), rules.die_sound(id), rules.weapon_report(rules.primary(id))}` (note: Report is on the WEAPON). Then for each of those five keys: for each KEY: `SoundEntry e = sounds.entry(key)`; for each variant name: `AudioIdx::find` → `decode_bag_clip` → `bank.add`, collect ids; build `MixerSound{ids, e.volume, priority_from_string(e.priority), e.limit, has "interrupt" in e.control, /*positional=*/ !(std::find(type,"global")) — [RE-FALLBACK] positional = true for reports/die, false for voice acks (original: acks are UI sounds; amend per docs/re/audio-playback.md Type= findings), e.range, e.min_volume}`; `mixer->register_sound(key, ...)`. A missing idx name → `std::cerr << "[audio] missing clip ...\n"` once, skip variant; a key with zero resolved variants stays unregistered (play() returns false silently).
+  3. For each unit id {E1, E2}: fill `audio.voices[rules.image(id)] = UnitVoices{rules.voice_select(id), rules.voice_move(id), rules.voice_attack(id), rules.die_sound(id), rules.weapon_report(rules.primary(id))}` (note: Report is on the WEAPON). Then for each of those five keys: for each KEY: `SoundEntry e = sounds.entry(key)`; for each variant name: `AudioIdx::find` → `decode_bag_clip` → `bank.add`, collect ids; build `MixerSound{ids, e.volume, priority_from_string(e.priority), e.limit, /*interrupt=*/ e.control contains "interrupt", /*global=*/ e.type contains "global", e.range, e.min_volume}`; `mixer->register_sound(key, ...)`. AMENDED per docs/re/audio-playback.md: EVERY event attenuates by distance (voice acks included — they inherit `[Defaults]` `Type=SCREEN` and are positional; they just usually play near the view centre); `GLOBAL` only adds the MinVolume floor inside `gain_permille`. A missing idx name → `std::cerr << "[audio] missing clip ...\n"` once, skip variant; a key with zero resolved variants stays unregistered (play() returns false silently).
   4. EVA: read `"ceva064.wav"` from the same audio.mix → `load_wav_ima` → `bank.add` → `eva_unitlost`. On any exception: log `[audio] EVA unavailable: <what>` and leave −1.
   5. `out.open()`; `enabled = out.ok() && !no_audio_flag;` log one `[audio] device=<ok/none> clips=<bank.count()>` line.
 
@@ -827,7 +851,14 @@ if (audio.enabled) {
     prev_audio_state.resize(units.size(), {0.0, -1.0});
     for (std::size_t i = 0; i < units.size(); ++i) {
         const auto& u = units[i];
-        const double dist = std::hypot(u.fx - view_center_cell_x, u.fy - view_center_cell_y);
+        // Game metric (docs/re/audio-playback.md, High): Chebyshev
+        // max(|dx|, 2*|dy|) in SCREEN pixels from the view centre, /60 to
+        // cells (the game multiplies Range by 60 px/cell; dividing here
+        // keeps Mixer::gain_permille in cell units). dx/dy from the same
+        // iso projection the renderer uses: sx=(fx-fy)*30, sy=(fx+fy)*15.
+        const double sx = (u.fx - u.fy) * 30.0 - view_center_px_x;
+        const double sy = (u.fx + u.fy) * 15.0 - view_center_px_y;
+        const double dist = std::max(std::abs(sx), 2.0 * std::abs(sy)) / 60.0;
         const auto& v = audio.voices[u.image];
         if (u.fire_flash > prev_audio_state[i].first)          // rising edge: fired
             audio.mixer->play(v.report, dist);
@@ -849,7 +880,7 @@ if (audio.enabled) {
 }
 ```
 
-  `view_center_cell_x/y`: invert the camera's screen center to cell coords the same way input.cpp's ground inversion does at level 0 (reuse/borrow its helper; a one-line approximation via the camera's center is acceptable and documented — the attenuation input just needs "roughly how far off-screen").
+  `view_center_px_x/y`: the camera's centre in the same world-pixel space as the projection above (camera offset + half the viewport — exactly the values render_world already uses to place tiles; lift them from there).
   Note ack precedence: `handle()` produces at most one action per event, but a click that both selects and… cannot happen — the three flags are mutually exclusive per event by construction (Task 5).
 
 - [ ] **Step 4: `--no-audio` + `--demo-audio`.** `--no-audio`: skip init_audio entirely. `--demo-audio`: init assets + audio (no window), then scripted proof:
