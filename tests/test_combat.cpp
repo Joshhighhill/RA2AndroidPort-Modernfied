@@ -173,3 +173,38 @@ TEST_CASE("step_combat: death invariants — dying then tombstoned, occupancy fr
     for (double t = 0; t < 1.5; t += 1.0 / 60.0) ra2engine::step_combat(units, occ, 1.0 / 60.0);
     CHECK_FALSE(units[2].alive);
 }
+
+TEST_CASE("step_combat: leash drop off-anchor emits a return-to-anchor move request") {
+    // GI auto-acquires Conscript at range; GI drifts off anchor while target
+    // remains near the anchor, triggering leash drop. GI must emit a MoveRequest
+    // back to the ORIGINAL anchor, not the target's cell.
+    auto p = open_grid(20, 1);
+    Occupancy occ(20, 1);
+    std::vector<Unit> units;
+    units.push_back(make_soldier(0, 0, 0, 0, occ));
+    units.push_back(make_soldier(3, 0, 1, 1, occ));
+    units[1].w_damage = 0;  // isolate: only the GI's targeting is under test
+
+    auto reqs = ra2engine::step_combat(units, occ, 1.0 / 60.0);
+    REQUIRE(units[0].target == 1);
+    CHECK(units[0].guard_x == 0);
+    CHECK(units[0].guard_y == 0);
+
+    // Simulate the GI having drifted to (8,0): 8 cells from anchor (0,0),
+    // beyond weapon range (4) + kGuardStray (2) = 6; also > 4 cells from
+    // Conscript at (3,0) to ensure out-of-range firing check.
+    occ.release_all_of(0, -1, -1);
+    units[0].cell_x = 8;
+    units[0].fx = 8.0;
+    units[0].fy = 0.0;
+    occ.set(8, 0, 0);
+
+    reqs = ra2engine::step_combat(units, occ, 1.0 / 60.0);
+    // Target should be dropped due to leash violation (GI strayed too far).
+    CHECK(units[0].target == -1);
+    // Exactly one MoveRequest back to the ORIGINAL anchor.
+    REQUIRE(reqs.size() == 1);
+    CHECK(reqs[0].unit == 0);
+    CHECK(reqs[0].goal_x == 0);  // anchor x, not target's cell_x
+    CHECK(reqs[0].goal_y == 0);  // anchor y, not target's cell_y
+}
