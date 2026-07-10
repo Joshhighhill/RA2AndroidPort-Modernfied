@@ -132,3 +132,71 @@ TEST_CASE("rules: verses parsing tolerates spaces and missing % signs") {
     REQUIRE(v.size() == 3);
     CHECK(v[0] == 100); CHECK(v[1] == 80); CHECK(v[2] == 70);
 }
+
+TEST_CASE("rules: real rulesmd combat values pin (E1/E2/M60/M1Carbine/SA)") {
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto top_bytes = slurp(base + "\\ra2md.mix");
+    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    MixFile top = MixFile::open(std::move(top_bytes));
+
+    std::vector<uint8_t> rules_bytes;
+    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
+        rules_bytes = top.read(*e);
+    } else {
+        static const char* candidates[] = {
+            "localmd.mix",
+            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
+            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
+            "cachemd.mix", "conqmd.mix",
+        };
+        for (const char* name : candidates) {
+            try {
+                MixFile nested = top.open_nested(name);
+                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
+                    rules_bytes = nested.read(*e2);
+                    break;
+                }
+            } catch (const std::exception&) {
+            }
+        }
+    }
+    if (rules_bytes.empty()) {
+        MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
+                "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
+        return;
+    }
+
+    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
+    Rules rules = Rules::load(ini);
+
+    // E1 (GI) combat values
+    CHECK(rules.strength("E1") == 125);
+    CHECK(rules.armor("E1") == "none");
+    CHECK(rules.primary("E1") == "M60");
+    CHECK(rules.image("E1") == "GI");
+
+    // E2 (CONS) combat values
+    CHECK(rules.strength("E2") == 125);
+    CHECK(rules.armor("E2") == "flak");
+    CHECK(rules.primary("E2") == "M1Carbine");
+    CHECK(rules.image("E2") == "CONS");
+
+    // M60 weapon values
+    CHECK(rules.weapon_damage("M60") == 15);
+    CHECK(rules.weapon_rof("M60") == 20);
+    CHECK(rules.weapon_range("M60") == 4);
+    CHECK(rules.weapon_warhead("M60") == "SA");
+
+    // M1Carbine weapon values
+    CHECK(rules.weapon_damage("M1Carbine") == 15);
+    CHECK(rules.weapon_rof("M1Carbine") == 25);
+    CHECK(rules.weapon_range("M1Carbine") == 4);
+    CHECK(rules.weapon_warhead("M1Carbine") == "SA");
+
+    // SA warhead verses (armor effectiveness multipliers)
+    auto sa_verses = rules.verses("SA");
+    REQUIRE(sa_verses.size() == 11);
+    std::vector<int> expected_verses{100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100};
+    CHECK(sa_verses == expected_verses);
+}
