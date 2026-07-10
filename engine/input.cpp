@@ -172,7 +172,13 @@ void Input::handle(const InputEvent& ev) {
                 // "attack own unit" order, so it's treated like clicking the
                 // ground under that unit).
                 const int idx = unit_under(ev.x, ev.y);
-                if (idx >= 0 && world_.units()[idx].house != 0) {
+                // Attack requires BOTH a hostile under the cursor AND a live
+                // selection (spec gate); otherwise fall through to a ground move
+                // so an unselected right-click behaves identically everywhere.
+                bool any_selected = false;
+                for (const Unit& su : world_.units())
+                    if (su.selected && su.alive && su.die_time < 0.0) { any_selected = true; break; }
+                if (idx >= 0 && world_.units()[idx].house != 0 && any_selected) {
                     world_.order_attack(idx);
                 } else {
                     // Group-move to the clicked ground cell (issued on down).

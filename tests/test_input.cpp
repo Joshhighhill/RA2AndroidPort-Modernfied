@@ -562,6 +562,39 @@ TEST_CASE("Input: dead units are unpickable") {
     CHECK(moving >= 1);  // the right-click fell through to a ground move instead
 }
 
+TEST_CASE("Input: dying units (die anim playing) are equally unpickable") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    int px, py;
+    ground_px_for_unit(world.units()[fx.cons], px, py);
+
+    // Unit is mid-death-animation: alive but die_time >= 0 (die_time tracks
+    // the animation progress). The unit_under pick should skip it regardless.
+    world.units()[fx.cons].die_time = 0.0;
+    // alive stays true -- the mid-animation window
+
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    for (const auto& u : world.units()) CHECK_FALSE(u.selected);  // no selection change
+
+    world.units()[fx.gi0].selected = true;
+    world.units()[fx.gi1].selected = true;
+
+    right_click(input, px, py, 2000);
+    CHECK(world.units()[fx.gi0].target == -1);  // no attack order issued on a dying unit
+    CHECK(world.units()[fx.gi1].target == -1);
+
+    int moving = 0;
+    for (const auto& u : world.units()) moving += u.moving() ? 1 : 0;
+    CHECK(moving >= 1);  // the right-click fell through to a ground move instead
+}
+
 TEST_CASE("Input: right-click on RAISED ground targets the clicked tile (level-aware)") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
@@ -587,4 +620,31 @@ TEST_CASE("Input: right-click on RAISED ground targets the clicked tile (level-a
     REQUIRE(world.units()[0].moving());
     CHECK(world.units()[0].path.back().x == raised->x);
     CHECK(world.units()[0].path.back().y == raised->y);
+}
+
+TEST_CASE("Input: right-click a hostile with nothing selected is a ground move, not an attack") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    // Right-click the Conscript's ground point with NOTHING selected --
+    // the attack gate requires a live selection, so this must fall through
+    // to a ground move. Since nothing is selected, order_move_selected no-ops,
+    // but the important contract is that NO attack happened (all targets remain -1).
+    int px, py;
+    ground_px_for_unit(world.units()[fx.cons], px, py);
+    right_click(input, px, py, 1000);
+
+    // No unit should have an attack order or a target.
+    for (const auto& u : world.units()) {
+        CHECK(u.target == -1);
+        CHECK_FALSE(u.attack_order);
+    }
+    // The Conscript itself should never be selected (hostile never selectable).
+    CHECK_FALSE(world.units()[fx.cons].selected);
 }
