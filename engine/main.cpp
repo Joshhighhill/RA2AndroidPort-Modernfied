@@ -35,6 +35,7 @@
 #include "texture_cache.hpp"
 #include "world.hpp"
 
+#include "ra2assets/art.hpp"
 #include "ra2assets/fileio.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/map.hpp"
@@ -139,31 +140,33 @@ struct UnitAssets {
     int gi_speed = 0;                     // rulesmd.ini [E1] Speed=
     ra2engine::UnitCombat cons;           // E2-resolved combat stats (image "CONS")
     int cons_speed = 0;                   // rulesmd.ini [E2] Speed=
+    std::map<std::string, ra2engine::UnitAnimSeq> anims;  // image -> artmd.ini-resolved anim seq
 };
 
-// Loads rulesmd.ini ONCE per mode entry point (nested fallback chain --
-// rulesmd.ini is not always a top-level ra2md.mix entry in a stock install;
-// mirrors the exact fallback chain proven against the real install in
-// tests/test_rules.cpp's real-asset test). The returned Ini must outlive any
-// Rules built from it (Rules wraps its Ini by reference, see rules.hpp) --
-// callers keep both as locals in the same function scope.
-Ini load_rules_ini(const std::string& dir) {
+// Loads `name` (e.g. "rulesmd.ini", "artmd.ini") from ra2md.mix ONCE per mode
+// entry point (nested fallback chain -- these INIs are not always a
+// top-level ra2md.mix entry in a stock install; mirrors the exact fallback
+// chain proven against the real install in tests/test_rules.cpp's real-asset
+// test). The returned Ini must outlive any Rules/Art built from it (both wrap
+// their Ini by reference -- see rules.hpp/art.hpp) -- callers keep both as
+// locals in the same function scope.
+Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
     MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
 
-    std::vector<uint8_t> rules_bytes;
-    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
-        rules_bytes = top.read(*e);
+    std::vector<uint8_t> ini_bytes;
+    if (const MixEntry* e = top.find(mix_id(name))) {
+        ini_bytes = top.read(*e);
     } else {
         static const char* candidates[] = {
             "localmd.mix",  "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
             "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
             "cachemd.mix",  "conqmd.mix",
         };
-        for (const char* name : candidates) {
+        for (const char* cand : candidates) {
             try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
-                    rules_bytes = nested.read(*e2);
+                MixFile nested = top.open_nested(cand);
+                if (const MixEntry* e2 = nested.find(mix_id(name))) {
+                    ini_bytes = nested.read(*e2);
                     break;
                 }
             } catch (const std::exception&) {
@@ -171,9 +174,9 @@ Ini load_rules_ini(const std::string& dir) {
             }
         }
     }
-    if (rules_bytes.empty())
-        throw std::runtime_error("rulesmd.ini not found in ra2md.mix (top level or nested)");
-    return Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
+    if (ini_bytes.empty())
+        throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)");
+    return Ini::parse(std::string(ini_bytes.begin(), ini_bytes.end()));
 }
 
 // One unit id's full combat + movement profile, resolved from an
@@ -211,6 +214,24 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     return r;
 }
 
+// Resolves one image's stand/walk/fire/die animation sequence from an
+// already-loaded Art (artmd.ini's [image] Sequence= -> that [SequenceName]
+// section's Ready/Walk/FireUp/Die1 entries -- docs/re/infantry-anim.md).
+// Logs the fire/die entries (mirrors resolve_combat_unit's [unit] log line)
+// so a real-install run visibly confirms the real artmd.ini numbers got
+// pinned (ground truth: GI/CONS fireup=164,6,6 die1=134,15).
+ra2engine::UnitAnimSeq anim_from_art(const ra2assets::Art& art, const std::string& image) {
+    auto conv = [&](const char* name) {
+        const ra2assets::ArtSequenceEntry e = art.entry(image, name);
+        return ra2engine::SeqEntry{e.start, e.count, e.facing_mult};
+    };
+    ra2engine::UnitAnimSeq seq{conv("Ready"), conv("Walk"), conv("FireUp"), conv("Die1")};
+    std::cerr << "[anim] image=" << image << " fireup=" << seq.fire.first << ","
+              << seq.fire.count << "," << seq.fire.fmult << " die1=" << seq.die.first
+              << "," << seq.die.count << "\n";
+    return seq;
+}
+
 // Loads one image's SHP from ra2.mix/conquer.mix ("<Image>.shp", falling
 // back to the lowercased form -- conquer.mix's stock entry names are
 // lowercase, e.g. "gi.shp"/"cons.shp"; try as-is first in case a mod/layout
@@ -238,7 +259,7 @@ ShpFile load_unit_shp(const MixFile& conquer, const std::string& image) {
 // ra2.mix shared with load_assets() (opened once by the mode entry points --
 // avoids slurping the 268 MB file again).
 UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
-    Ini ini = load_rules_ini(dir);
+    Ini ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(ini);
 
     const ResolvedUnit gi = resolve_combat_unit(rules, "E1");
@@ -254,6 +275,15 @@ UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra
     if (!pe) throw std::runtime_error("unittem.pal not found in ra2.mix/cache.mix");
     auto pal_raw = cache.read(*pe);
     ua.pal = Palette::load(pal_raw.data(), pal_raw.size());
+
+    // artmd.ini: resolve both images' animation sequences. The Ini/Art locals
+    // stay alive only for this scope (Art wraps its Ini by reference -- see
+    // art.hpp), but anim_from_art returns plain UnitAnimSeq values, so storing
+    // them in ua.anims after art/art_ini go out of scope is safe.
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    ua.anims.emplace(gi.combat.image, anim_from_art(art, gi.combat.image));
+    ua.anims.emplace(cons.combat.image, anim_from_art(art, cons.combat.image));
 
     ua.gi = gi.combat;
     ua.gi_speed = gi.speed;
@@ -302,6 +332,12 @@ void spawn_squad(ra2engine::World& world, int origin_x, int origin_y, int count,
 ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
     ra2engine::World world(a.map);
     if (ua.gi_speed > 0) world.set_move_speed(ua.gi_speed * kCellsPerSecPerSpeed);
+
+    // Register each image's real artmd.ini-resolved anim sequence BEFORE any
+    // units are spawned (set_anim/anim_for_image, world.hpp) -- units spawned
+    // below immediately animate with these instead of falling back to
+    // default_anim().
+    for (const auto& [image, seq] : ua.anims) world.set_anim(image, seq);
 
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(a.map);
     spawn_squad(world, c->x, c->y, count, /*house=*/0, ua.gi);

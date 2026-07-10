@@ -12,8 +12,12 @@ grid-occupancy collision avoidance, and walk animation — and fight: Allied
 GIs vs Soviet Conscripts with house-colored palettes, HP bars, fire/death
 animations, and a damage model (Damage × Verses, ROF, range, guard behavior)
 recovered from the original `gamemd.exe` via Ghidra and driven by your real
-`rulesmd.ini` (see `docs/re/combat.md`). The library stays pure and
-dependency-free; only the engine links SDL2.
+`rulesmd.ini` (see `docs/re/combat.md`). Standing/walking/firing/dying frames
+and all 8 facings are resolved from your real `artmd.ini` sequence data
+(`ra2assets::Art`, see `docs/re/infantry-anim.md`), and group attack orders
+fan attackers out to individual firing positions instead of queuing them
+single-file. The library stays pure and dependency-free; only the engine
+links SDL2.
 
 ## Building
 
