@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <tuple>
@@ -596,4 +597,70 @@ TEST_CASE("World: dead units are unpickable and non-occupying") {
             if (idx == victim) found = true;
         CHECK_FALSE(found);  // tombstoned: excluded from draw order
     }
+}
+
+TEST_CASE("World: attack order halts the pursuer at weapon range (no melee overshoot)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // GI (house 0) at the start cell; a hostile Conscript ~6 cells away (well
+    // beyond the 4-cell weapon range) at a reachable, unoccupied cell.
+    ra2engine::UnitCombat gi{125, "none", "GI", 15, 20, 4.0,
+        {100,80,80,50,25,25,75,50,25,100,100}};
+    ra2engine::UnitCombat co{125, "flak", "CONS", 15, 25, 4.0,
+        {100,80,80,50,25,25,75,50,25,100,100}};
+    world.add_combat_unit(c->x, c->y, 0, gi);
+    // find_reachable's nearest-first scan (starting at radius 4) can land
+    // exactly on the 4-cell weapon range boundary rather than beyond it (on
+    // this map, the only radius-4 reachable offsets from the start cell are
+    // the cardinal (+-4,0) -- confirmed via debug trace, and every other
+    // radius-4 direction is blocked by terrain). Rather than rely on
+    // find_reachable's shared radius-4 start, scan directly here starting at
+    // radius 6, which guarantees a strictly-out-of-range distance (>4)
+    // whether the hit is cardinal (d=6) or diagonal (d~8.49), so the pursue
+    // transition this test exercises is actually triggered.
+    int ex = 0, ey = 0;
+    double d0 = 0.0;
+    bool found_far = false;
+    for (int r = 6; r <= 40 && !found_far; r += 2) {
+        for (const auto& d : kProbeDirs) {
+            const int dx = d[0] * r, dy = d[1] * r;
+            const int tx = c->x + dx, ty = c->y + dy;
+            auto p = ra2engine::find_path(world.passable(), world.grid_w(), world.grid_h(),
+                                          {c->x, c->y}, {tx, ty});
+            if (p.size() > 1) {
+                ex = tx; ey = ty;
+                d0 = std::sqrt(double(dx * dx + dy * dy));
+                found_far = true;
+                break;
+            }
+        }
+    }
+    REQUIRE(found_far);
+    REQUIRE(d0 > 4.0);
+    world.add_combat_unit(ex, ey, 1, co);   // hostile, index 1
+
+    // Select the GI and order the attack; the Conscript does NOT move or fire
+    // (leave it idle: it will auto-acquire/return-fire, which is fine).
+    world.units()[0].selected = true;
+    world.order_attack(1);
+    REQUIRE(world.units()[0].attack_order);
+
+    const int hp0 = world.units()[1].hp;
+    const double dt = 1.0 / 60.0;
+    for (double t = 0; t < 20.0; t += dt) world.step(dt);
+
+    // The GI closed to within weapon range and STOPPED there (did not march to
+    // melee contact) and has fired at least once.
+    const ra2engine::Unit& g = world.units()[0];
+    const ra2engine::Unit& e = world.units()[1];
+    const double df = std::sqrt((e.fx - g.fx) * (e.fx - g.fx) + (e.fy - g.fy) * (e.fy - g.fy));
+    CHECK(df <= 4.0 + 1e-6);        // reached effective range
+    CHECK(df >= 2.0);               // held at range -- did NOT close to melee (~1 cell)
+    CHECK_FALSE(g.moving());        // holding, not still walking
+    CHECK(e.hp < hp0);              // fired on the target while holding
 }

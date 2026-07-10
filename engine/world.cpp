@@ -266,6 +266,28 @@ void World::step(double dt) {
         order_unit_move(r.unit, r.goal_x, r.goal_y);
     }
 
+    // Hold at weapon range: a unit that has closed to within range of its live
+    // target stops pursuing (step_combat fires independently of movement). Without
+    // this, the stale pursue-path aimed at the target's cell would march a ranged
+    // unit into melee contact. Distance metric matches combat.cpp's dist_leptons
+    // (2D euclidean on lepton coords; see docs/re/combat.md range divergence note).
+    for (Unit& u : units_) {
+        if (!u.alive || u.die_time >= 0.0) continue;
+        if (u.target < 0 || u.target >= (int)units_.size()) continue;
+        const Unit& t = units_[u.target];
+        if (!t.alive || t.die_time >= 0.0) continue;
+        const double dx = (t.fx - u.fx) * 256.0;
+        const double dy = (t.fy - u.fy) * 256.0;
+        if (std::sqrt(dx * dx + dy * dy) <= u.w_range * 256.0 && !u.path.empty()) {
+            // In range with a live pursue-path -> stop and hold (snap onto the
+            // committed cell so we don't strand mid-segment; Finding-1 semantics).
+            u.path.clear();
+            u.path_idx = 0;
+            u.fx = u.cell_x;
+            u.fy = u.cell_y;
+        }
+    }
+
     // Patch terrain height for rendering (step_units is map-agnostic).
     // Dying units still render (die anim) so still get patched; tombstoned
     // (!alive) units are never drawn (unit_draw_order excludes them), so
