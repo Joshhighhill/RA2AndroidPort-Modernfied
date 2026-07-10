@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <utility>
 
 #include "combat.hpp"         // armor_index, step_combat, MoveRequest
 #include "group_move.hpp"     // assign_formation
@@ -339,11 +341,35 @@ void World::step(double dt) {
     step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
     const std::vector<MoveRequest> reqs = step_combat(units_, occ_, dt);
+    // Guard-return requests route directly. Approach requests are batched
+    // per goal cell (one batch per target) and resolved to DISTINCT free
+    // firing-position cells via assign_formation, so a group of attackers
+    // fans out around the target instead of queueing single-file behind
+    // whoever got in range first (spec: Combat Fidelity Fixes §B; the old
+    // goal -- the target's own occupied cell -- was unreachable by
+    // traffic-aware re-paths, which is exactly the reported stuck-queue
+    // bug). A crowded-out attacker re-assigned its own cell re-requests
+    // next frame: bounded churn, accepted for this unit count.
+    std::map<std::pair<int, int>, std::vector<int>> approach_groups;
     for (const MoveRequest& r : reqs) {
         if (r.unit < 0 || r.unit >= static_cast<int>(units_.size())) continue;
         const Unit& u = units_[r.unit];
-        if (!u.alive || u.die_time >= 0.0) continue;  // died/started dying this same step
-        order_unit_move(r.unit, r.goal_x, r.goal_y);
+        if (!u.alive || u.die_time >= 0.0) continue;  // died this same step
+        if (r.approach)
+            approach_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
+        else
+            order_unit_move(r.unit, r.goal_x, r.goal_y);
+    }
+    for (const auto& group : approach_groups) {
+        const std::vector<int>& movers = group.second;
+        std::vector<Cellxy> cur;
+        cur.reserve(movers.size());
+        for (int idx : movers) cur.push_back({units_[idx].cell_x, units_[idx].cell_y});
+        const std::vector<Cellxy> targets =
+            assign_formation({group.first.first, group.first.second}, cur, passable_,
+                             grid_w_, grid_h_, occ_);
+        for (std::size_t k = 0; k < movers.size(); ++k)
+            order_unit_move(movers[k], targets[k].x, targets[k].y);
     }
 
     // Hold at weapon range: a unit under an EXPLICIT attack order that has
@@ -357,13 +383,31 @@ void World::step(double dt) {
     // this makes that invariant explicit rather than relying on it silently.
     // Distance metric matches combat.cpp's dist_leptons (2D euclidean on
     // lepton coords; see docs/re/combat.md range divergence note).
+    //
+    // Checked against the unit's COMMITTED cell (cell_x/cell_y), not its
+    // continuous fx/fy: fx/fy can be mid-segment (interpolated) between the
+    // last fully-arrived cell and the next one, and this pass SNAPS onto
+    // cell_x/cell_y when it stops (below) -- checking fx/fy while snapping to
+    // cell_x/cell_y let the two disagree whenever the range boundary was
+    // crossed mid-segment (the interpolated fx/fy already in range, but the
+    // pre-segment cell_x/cell_y it reverts to still just outside it). That
+    // mismatch re-triggers an "out of range, not moving" re-approach request
+    // next frame (combat.cpp's attack_order branch) which recomputes the
+    // SAME short path and re-crosses the SAME point, live-locking the unit a
+    // hair outside range indefinitely (observed via an instrumented trace: a
+    // single pursuer frozen ~500 frames at 4.06-4.12 cells, just past the
+    // 4.0 weapon range, with Task 3's shorter near-target approach paths --
+    // see task-3-report.md). Checking cell_x/cell_y instead makes the check
+    // and the snap agree by construction: it only fires the frame a segment
+    // FULLY completes into an in-range cell, so the unit always progresses
+    // forward and settles first try.
     for (Unit& u : units_) {
         if (!u.alive || u.die_time >= 0.0) continue;
         if (u.target < 0 || !u.attack_order || u.target >= (int)units_.size()) continue;   // only explicit attackers hold at range
         const Unit& t = units_[u.target];
         if (!t.alive || t.die_time >= 0.0) continue;
-        const double dx = (t.fx - u.fx) * 256.0;
-        const double dy = (t.fy - u.fy) * 256.0;
+        const double dx = (t.fx - static_cast<double>(u.cell_x)) * 256.0;
+        const double dy = (t.fy - static_cast<double>(u.cell_y)) * 256.0;
         if (std::sqrt(dx * dx + dy * dy) <= u.w_range * 256.0 && !u.path.empty()) {
             // In range with a live pursue-path -> stop and hold (snap onto the
             // committed cell so we don't strand mid-segment; Finding-1 semantics).

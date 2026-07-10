@@ -203,12 +203,21 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, Occupancy& occ, d
         if (d <= range_leptons) {
             if (u.rof_cool <= 0.0) try_fire(u, v, i, u.target, occ);
         } else if (u.attack_order) {
-            // Explicit order: pursue indefinitely. Dedup: only ask again if
-            // the target's cell differs from where this unit is already
-            // headed.
-            const Cellxy goal{v.cell_x, v.cell_y};
-            if (u.path.empty() || u.path.back().x != goal.x || u.path.back().y != goal.y)
-                requests.push_back({i, goal.x, goal.y});
+            // Approach: ask the caller for a firing position near the target.
+            // The original engine approaches until in weapon range and never
+            // paths to the victim's own (occupied) cell (docs/re/
+            // infantry-anim.md §7); World::step batch-assigns each attacker
+            // a distinct free cell around the target. Re-request only when
+            // the current path's goal has stopped being a firing position
+            // for the target's CURRENT location (target moved out of the
+            // goal's range circle), or there is no live path at all.
+            bool need = !u.moving();
+            if (!need) {
+                const Cellxy g = u.path.back();
+                need = dist_leptons(static_cast<double>(g.x), static_cast<double>(g.y),
+                                    v.fx, v.fy) > range_leptons;
+            }
+            if (need) requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/true});
         } else {
             // Auto-acquired (or retaliation-acquired): leashed to the guard
             // anchor. Drop if EITHER the unit itself or its target has

@@ -48,6 +48,13 @@ int damage_vs(int damage, const std::vector<int>& verses, int ai);
 struct MoveRequest {
     int unit;
     int goal_x, goal_y;
+    // true: `goal_x/goal_y` is the TARGET's own cell and the caller (World)
+    // must resolve a distinct firing position near it (docs/re/
+    // infantry-anim.md §7 -- the original never paths an attacker to the
+    // victim's own occupied cell; it approaches until in weapon range).
+    // false (default): move exactly to (goal_x, goal_y) -- guard-anchor
+    // returns are always false.
+    bool approach = false;
 };
 
 // Advances combat by dt seconds for every unit, ascending index (fully

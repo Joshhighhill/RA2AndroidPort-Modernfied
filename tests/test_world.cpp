@@ -49,6 +49,46 @@ bool find_reachable(const ra2engine::World& w, int x0, int y0, int skip_dx, int 
     return false;
 }
 
+// Count of walkable Chebyshev-ring-1 (immediate 8-neighbor) cells around
+// (x, y). Task 3: an attack_order target is no longer approached directly --
+// World::step now resolves each attacker a DISTINCT free firing cell near the
+// target via assign_formation, so (unlike the old direct-pursuit code) the
+// terrain immediately around a test's chosen target now matters: a spot
+// boxed in by cliffs/water/other terrain leaves assign_formation nothing
+// close to hand out, and the pursuer can only reach whatever free cell the
+// ring search finds -- possibly far outside weapon range. Tests placing a
+// pursuit target below use this to reject overly-enclosed candidates.
+int open_neighbor_count(const ra2engine::World& w, int x, int y) {
+    static const int nb[8][2] = {{1, 0}, {-1, 0}, {0, 1},  {0, -1},
+                                 {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+    int n = 0;
+    for (const auto& o : nb)
+        if (w.walkable(x + o[0], y + o[1])) ++n;
+    return n;
+}
+
+// Like find_reachable's kProbeDirs ring scan, but ALSO requires at least
+// `min_open` free (open_neighbor_count) immediate neighbors around the
+// candidate before accepting it -- see open_neighbor_count above. Returns the
+// found cell's (ox, oy) and its Euclidean distance from (x0, y0) in odist.
+bool find_reachable_open(const ra2engine::World& w, int x0, int y0, int start_r, int min_open,
+                         int& ox, int& oy, double& odist) {
+    for (int r = start_r; r <= 60; r += 2)
+        for (const auto& d : kProbeDirs) {
+            const int dx = d[0] * r, dy = d[1] * r;
+            const int tx = x0 + dx, ty = y0 + dy;
+            if (open_neighbor_count(w, tx, ty) < min_open) continue;
+            auto p = ra2engine::find_path(w.passable(), w.grid_w(), w.grid_h(), {x0, y0}, {tx, ty});
+            if (p.size() > 1) {
+                ox = tx;
+                oy = ty;
+                odist = std::sqrt(double(dx * dx + dy * dy));
+                return true;
+            }
+        }
+    return false;
+}
+
 }  // namespace
 
 TEST_CASE("build_passability: empty cells -> empty grid, zero dims") {
@@ -625,24 +665,16 @@ TEST_CASE("World: attack order halts the pursuer at weapon range (no melee overs
     // find_reachable's shared radius-4 start, scan directly here starting at
     // radius 6, which guarantees a strictly-out-of-range distance (>4)
     // whether the hit is cardinal (d=6) or diagonal (d~8.49), so the pursue
-    // transition this test exercises is actually triggered.
+    // transition this test exercises is actually triggered. ALSO requires
+    // open ground around the candidate (open_neighbor_count) -- Task 3's
+    // approach logic resolves a firing position NEAR the target via
+    // assign_formation rather than pathing directly to it, so a target
+    // boxed in by terrain would leave the GI no in-range cell to walk to at
+    // all (confirmed via debug trace: a boxed-in candidate this scan used to
+    // accept left the GI stuck 4.12 cells out -- just outside range).
     int ex = 0, ey = 0;
     double d0 = 0.0;
-    bool found_far = false;
-    for (int r = 6; r <= 40 && !found_far; r += 2) {
-        for (const auto& d : kProbeDirs) {
-            const int dx = d[0] * r, dy = d[1] * r;
-            const int tx = c->x + dx, ty = c->y + dy;
-            auto p = ra2engine::find_path(world.passable(), world.grid_w(), world.grid_h(),
-                                          {c->x, c->y}, {tx, ty});
-            if (p.size() > 1) {
-                ex = tx; ey = ty;
-                d0 = std::sqrt(double(dx * dx + dy * dy));
-                found_far = true;
-                break;
-            }
-        }
-    }
+    bool found_far = find_reachable_open(world, c->x, c->y, 6, 4, ex, ey, d0);
     REQUIRE(found_far);
     REQUIRE(d0 > 4.0);
     world.add_combat_unit(ex, ey, 1, co);   // hostile, index 1
@@ -666,6 +698,78 @@ TEST_CASE("World: attack order halts the pursuer at weapon range (no melee overs
     CHECK(df >= 2.0);               // held at range -- did NOT close to melee (~1 cell)
     CHECK_FALSE(g.moving());        // holding, not still walking
     CHECK(e.hp < hp0);              // fired on the target while holding
+}
+
+TEST_CASE("combat: five attackers fan out and ALL fire (no single-file queue)") {
+    // Regression for the reported bug: a group attack order used to send
+    // EVERY attacker to the target's own occupied cell (combat.cpp's old §f
+    // attack_order branch emitted {i, v.cell_x, v.cell_y} for every unit), so
+    // they queued single-file behind whoever got in range first and never
+    // fanned out to distinct firing positions -- only ONE attacker ever fired
+    // (the others sat blocked, out of weapon range, forever). docs/re/
+    // infantry-anim.md §7: the original approaches until in weapon range and
+    // never paths to the victim's own cell; World::step now batch-assigns
+    // each attacker its own free firing cell via assign_formation.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // Tough, disarmed victim (house 1) far enough away (> the 4-cell weapon
+    // range) that every attacker must actually approach it. Huge hp so the
+    // victim survives the whole 12s window; damage=0 so no attacker dies
+    // mid-test (a death would vacate a cell and could mask the single-file
+    // symptom by letting the next queued attacker shuffle forward).
+    ra2engine::UnitCombat victim_stats = cons_stats();
+    victim_stats.strength = 100000;
+    victim_stats.damage = 0;
+
+    // Needs at least 5 open (walkable) immediate neighbors around the victim
+    // cell -- see open_neighbor_count -- so assign_formation actually has 5
+    // distinct, in-range firing positions to hand out (a candidate near a
+    // map edge/cliff/water could otherwise leave it no choice but to hand out
+    // cells beyond weapon range, which isn't the bug this test targets).
+    int vx = 0, vy = 0;
+    double dv = 0.0;
+    bool found_far = find_reachable_open(world, c->x, c->y, 8, 5, vx, vy, dv);
+    REQUIRE(found_far);
+    REQUIRE(dv > 4.0);
+    world.add_combat_unit(vx, vy, 1, victim_stats);
+    const int victim_idx = static_cast<int>(world.units().size()) - 1;
+
+    // Five house-0 attackers CLUSTERED tightly near the start cell -- the
+    // "single-file-prone" formation from the user's bug report (spawn_combat_
+    // squad packs them into adjacent free cells scanning outward from base).
+    std::vector<int> attackers = spawn_combat_squad(world, c->x, c->y, 0, gi_stats(), 5);
+    REQUIRE(attackers.size() == 5);
+
+    world.clear_selection();
+    for (int a : attackers) world.units()[a].selected = true;
+    world.order_attack(victim_idx);
+    for (int a : attackers) REQUIRE(world.units()[a].attack_order);
+
+    bool has_fired[5] = {false, false, false, false, false};
+    const double dt = 1.0 / 60.0;
+    for (double t = 0; t < 12.0; t += dt) {
+        world.step(dt);
+        for (std::size_t k = 0; k < attackers.size(); ++k)
+            if (world.units()[attackers[k]].fire_flash > 0.0) has_fired[k] = true;
+    }
+
+    for (std::size_t k = 0; k < attackers.size(); ++k) CHECK(has_fired[k]);
+
+    // Every attacker ended within weapon range of the victim.
+    const ra2engine::Unit& v = world.units()[victim_idx];
+    for (int a : attackers) {
+        const ra2engine::Unit& u = world.units()[a];
+        const double dx = v.fx - u.fx, dy = v.fy - u.fy;
+        CHECK(std::sqrt(dx * dx + dy * dy) <= u.w_range + 1e-6);
+    }
 }
 
 // ---- Move-cancels-engagement regression (freeze seam: hold-at-range pass
