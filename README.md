@@ -23,10 +23,11 @@ event definitions and the `audio.bag`/`audio.idx` sample archive decoded by
 the in-house IMA-ADPCM decoder (no XCC/third-party tooling) plus a from-scratch
 WAV reader for the EVA clips. Playback semantics — linear distance
 attenuation over the isometric screen-pixel Chebyshev metric, per-event
-simultaneous-instance limits enforced by voice-stealing, `Control=random`
-variant selection over Attack/body/Decay sample partitions, and the 5-level
-Priority scale — were recovered from `gamemd.exe` via Ghidra (see
-`docs/re/audio-playback.md`) and are mixed by a small dependency-free
+simultaneous-instance limits (approximated by reject-at-trigger; only
+`Control=interrupt` steals a busy voice), uniform `Control=random` variant
+selection, and the 5-level Priority scale — were recovered from
+`gamemd.exe` via Ghidra (see `docs/re/audio-playback.md`, which also
+records the deliberate divergences) and are mixed by a small dependency-free
 `ra2engine::Mixer`, played out through SDL2 on desktop/Android. The library
 stays pure and dependency-free; only the engine links SDL2.
 
