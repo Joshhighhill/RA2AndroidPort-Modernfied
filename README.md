@@ -31,6 +31,33 @@ records the deliberate divergences) and are mixed by a small dependency-free
 `ra2engine::Mixer`, played out through SDL2 on desktop/Android. The library
 stays pure and dependency-free; only the engine links SDL2.
 
+Vehicles fight too, rendered as real voxels instead of sprites: the Rhino
+tank's hull, turret, and barrel sections are decoded from your real VXL/HVA
+meshes (`ra2assets::Vxl`/`Hva`) and rasterized by a from-scratch software
+voxel rasterizer (`ra2engine::rasterize_model`, see
+`docs/re/voxel-render.md`) into 32 pre-rendered facing sprites per section,
+cached once at load (`build_facing_set`) and blitted per frame — the same
+"cached facings" strategy the original uses — lit by the recovered normal
+tables and diffuse/specular lighting against the unit's own `voxels.vpl`
+(`ra2assets::Vpl`) and remapped through the house-colored unit palette.
+Locomotion follows the recovered Drive model: hull and turret both turn in
+place at the type's `ROT` degrees/frame with shortest-arc, exact-landing
+`FacingClass` semantics (`step_turrets`), and each vehicle drives at its own
+`Speed`-derived rate. Documented divergences from vanilla (see
+`docs/re/voxel-render.md` §5, §7): no slope tilt (facings are cached flat,
+so a vehicle on a ramp still renders level); no crush and no debris;
+projectiles are instant-hit with single-target damage — vanilla shells fly
+102 leptons/frame (not modeled; travel time is skipped) but `[AP]
+CellSpread=.3` only ever reaches 76 leptons, in practice just the direct
+target anyway, so the single-target damage half of this is exact even
+though the flight-time half is a real simplification; the engine keeps its
+already-established absolute speed scale of `0.75·Speed` cells/sec rather
+than vanilla's `0.15·Speed` (the tank:GI speed ratio is vanilla-faithful
+either way — a whole-engine time-base recalibration to the vanilla absolute
+scale is a recorded future candidate, not done piecemeal here); the
+turret's ROF+5-frame idle-return hold is omitted (it re-centers
+immediately); and `MoveSound` (engine/track sound effects) is deferred.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
