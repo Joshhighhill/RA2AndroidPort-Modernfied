@@ -73,7 +73,10 @@ void try_fire(Unit& u, Unit& v, int attacker_idx, int victim_idx, Occupancy& occ
     u.fire_flash = kFireFlashSecs;
     const int dmg = damage_vs(u.w_damage, u.w_verses, v.armor_ix);
     v.hp -= dmg;
-    if (v.target == -1) {
+    // Return fire only if IDLE (spec: "return fire when hit" applies to
+    // idle/guarding units; a unit under a move order keeps walking rather
+    // than stopping to retaliate).
+    if (v.target == -1 && !v.moving()) {
         // Idle victim retaliates (docs/re/combat.md §7: retaliation target
         // choice confirmed). Also records ITS OWN guard anchor at its
         // current position -- retaliation is a form of auto-acquire
@@ -164,23 +167,29 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, Occupancy& occ, d
         // call). Records the guard anchor at the unit's OWN current cell --
         // the post it should return to if the target strays too far (§7,
         // ModEnc fallback, Low).
+        // Only IDLE/guarding units auto-acquire (spec wording): a unit
+        // executing a move order walks on without stopping to fight; it will
+        // acquire on arrival if a hostile is still in range.
         if (u.target == -1) {
-            int best = -1;
-            double best_d = 0.0;
-            for (int j = 0; j < n; ++j) {
-                if (j == i || !valid_target(units, u.house, j)) continue;
-                const Unit& v = units[j];
-                const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
-                if (d <= u.w_range * kLeptonsPerCell && (best == -1 || d < best_d)) {
-                    best = j;
-                    best_d = d;
+            if (u.moving()) { /* no auto-acquire while under a move order */ }
+            else {
+                int best = -1;
+                double best_d = 0.0;
+                for (int j = 0; j < n; ++j) {
+                    if (j == i || !valid_target(units, u.house, j)) continue;
+                    const Unit& v = units[j];
+                    const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
+                    if (d <= u.w_range * kLeptonsPerCell && (best == -1 || d < best_d)) {
+                        best = j;
+                        best_d = d;
+                    }
                 }
-            }
-            if (best != -1) {
-                u.target = best;
-                u.guard_x = u.cell_x;
-                u.guard_y = u.cell_y;
-                u.attack_order = false;
+                if (best != -1) {
+                    u.target = best;
+                    u.guard_x = u.cell_x;
+                    u.guard_y = u.cell_y;
+                    u.attack_order = false;
+                }
             }
         }
 

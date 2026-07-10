@@ -664,3 +664,183 @@ TEST_CASE("World: attack order halts the pursuer at weapon range (no melee overs
     CHECK_FALSE(g.moving());        // holding, not still walking
     CHECK(e.hp < hp0);              // fired on the target while holding
 }
+
+// ---- Move-cancels-engagement regression (freeze seam: hold-at-range pass
+// clearing the path of a moving unit that still carried an auto-acquired or
+// retaliation target) ----
+
+namespace {
+// Scan a short list of close offsets from (bx, by) for the first walkable,
+// unoccupied cell -- used by the two tests below to park a Conscript within
+// weapon range (4.0 cells) of a GI's start cell via a direct add_combat_unit
+// call (not the squad-scan helpers above, which aren't guaranteed to land
+// close). Ordered nearest-ish first; the wide spread of directions/radii
+// makes it very unlikely every candidate is blocked on this map (the same
+// neighborhood other tests in this file already pack up to 6 units into).
+bool find_close_free_cell(const ra2engine::World& w, int bx, int by, int& ox, int& oy) {
+    struct Off { int dx, dy; };
+    static const Off offs[] = {{3, 0},  {0, 3},  {-3, 0}, {0, -3}, {2, 2},  {2, -2},
+                               {-2, 2}, {-2, -2}, {2, 0},  {0, 2},  {-2, 0}, {0, -2},
+                               {1, 1},  {1, -1},  {-1, 1}, {-1, -1}, {1, 0}, {0, 1},
+                               {-1, 0}, {0, -1}};
+    for (const auto& o : offs) {
+        const int x = bx + o.dx, y = by + o.dy;
+        if (w.walkable(x, y) && w.unit_at_cell(x, y) < 0) { ox = x; oy = y; return true; }
+    }
+    return false;
+}
+}  // namespace
+
+TEST_CASE("World: a group-move order cancels engagement and is never frozen by the hold-pass") {
+    // Regression for the freeze seam this task fixes: a GI holding an
+    // AUTO-ACQUIRED target (idle, in weapon range) that is then given a group
+    // move order used to have its path repeatedly cleared by the hold-at-range
+    // pass every single frame (the pass only checked "has a live target still
+    // in range", not "is this an explicit attack order") -- frozen in place,
+    // never reaching the ordered cell. order_move_selected must now cancel
+    // the engagement outright, so the hold-at-range pass never touches it.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    world.add_combat_unit(c->x, c->y, 0, gi_stats());  // GI, index 0
+
+    // Conscript (idle, house 1) within weapon range (4.0 cells) of the GI's
+    // start cell.
+    int conx = -1, cony = -1;
+    REQUIRE(find_close_free_cell(world, c->x, c->y, conx, cony));
+    const double d_init =
+        std::sqrt(double((conx - c->x) * (conx - c->x) + (cony - c->y) * (cony - c->y)));
+    REQUIRE(d_init <= 4.0 + 1e-6);  // in range
+    world.add_combat_unit(conx, cony, 1, cons_stats());  // Conscript, index 1
+
+    // One step: both units are idle and in range of each other -> the GI
+    // auto-acquires the Conscript.
+    world.step(1.0 / 60.0);
+    REQUIRE(world.units()[0].target == 1);
+
+    // A goal at least 5 cells away (well beyond weapon range). Reuses this
+    // file's far-goal probe pattern (kProbeDirs at growing radius, confirmed
+    // reachable via find_path) rather than the shared find_reachable helper:
+    // the earlier "attack order halts pursuer" test found find_reachable's
+    // radius-4 start can land exactly on this map's cardinal offsets from
+    // this same start cell (distance == weapon range, not "well beyond" it).
+    // Starting the scan at radius 6 guarantees a strictly ->=5-cell goal
+    // regardless of which directions this map allows.
+    int gx = 0, gy = 0;
+    double dgoal = 0.0;
+    bool found_far = false;
+    for (int r = 6; r <= 40 && !found_far; r += 2) {
+        for (const auto& d : kProbeDirs) {
+            const int dx = d[0] * r, dy = d[1] * r;
+            const int tx = c->x + dx, ty = c->y + dy;
+            auto p = ra2engine::find_path(world.passable(), world.grid_w(), world.grid_h(),
+                                          {c->x, c->y}, {tx, ty});
+            if (p.size() > 1) {
+                gx = tx;
+                gy = ty;
+                dgoal = std::sqrt(double(dx * dx + dy * dy));
+                found_far = true;
+                break;
+            }
+        }
+    }
+    REQUIRE(found_far);
+    REQUIRE(dgoal >= 5.0);
+
+    world.clear_selection();
+    world.units()[0].selected = true;
+    world.order_move_selected(gx, gy);
+
+    // The move order must cancel engagement immediately -- load-bearing fix.
+    CHECK(world.units()[0].target == -1);
+    CHECK_FALSE(world.units()[0].attack_order);
+
+    // Simulate: pre-fix, the hold-at-range pass would clear this path every
+    // frame (the target was still in range at the moment of the order) and
+    // the GI would never move at all. Post-fix it walks unimpeded to the
+    // ordered cell.
+    const double dt = 1.0 / 60.0;
+    for (double t = 0; t < 30.0 && world.units()[0].moving(); t += dt) world.step(dt);
+
+    REQUIRE_FALSE(world.units()[0].moving());
+    REQUIRE(world.units()[0].cell_x == gx);
+    REQUIRE(world.units()[0].cell_y == gy);
+}
+
+TEST_CASE("World: moving units do not auto-acquire or return fire (idle-only engagement)") {
+    // Spec wording: "IDLE/guarding units auto-acquire hostiles in range and
+    // return fire when hit" -- a unit executing a player move order is
+    // neither idle nor guarding. GI ordered to walk away from an in-range
+    // idle Conscript: the Conscript (idle) DOES auto-acquire and fires on the
+    // GI (whose start cell is already within the Conscript's range), but the
+    // GI must never acquire a target or retaliate while moving() is true --
+    // it takes damage but keeps walking -- and must still arrive.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    world.add_combat_unit(c->x, c->y, 0, gi_stats());  // GI, index 0
+
+    // Conscript (idle, house 1) within weapon range of the GI's start cell --
+    // the GI's own starting position is already in range, so the Conscript
+    // can acquire and fire the instant combat runs, regardless of which
+    // direction the GI is then ordered to walk.
+    int conx = -1, cony = -1;
+    REQUIRE(find_close_free_cell(world, c->x, c->y, conx, cony));
+    const double d_init =
+        std::sqrt(double((conx - c->x) * (conx - c->x) + (cony - c->y) * (cony - c->y)));
+    REQUIRE(d_init <= 4.0 + 1e-6);  // in range
+    world.add_combat_unit(conx, cony, 1, cons_stats());  // Conscript, index 1
+
+    // A far goal (direction is irrelevant to the engagement window -- the
+    // Conscript is already in range of the GI's own start cell before it has
+    // moved anywhere).
+    int gx = 0, gy = 0;
+    bool found_far = false;
+    for (int r = 8; r <= 40 && !found_far; r += 2) {
+        for (const auto& d : kProbeDirs) {
+            const int dx = d[0] * r, dy = d[1] * r;
+            const int tx = c->x + dx, ty = c->y + dy;
+            auto p = ra2engine::find_path(world.passable(), world.grid_w(), world.grid_h(),
+                                          {c->x, c->y}, {tx, ty});
+            if (p.size() > 1) {
+                gx = tx;
+                gy = ty;
+                found_far = true;
+                break;
+            }
+        }
+    }
+    REQUIRE(found_far);
+
+    world.units()[0].selected = true;
+    world.order_move_selected(gx, gy);
+    REQUIRE(world.units()[0].moving());
+    REQUIRE(world.units()[0].target == -1);
+
+    const double dt = 1.0 / 60.0;
+    double t = 0.0;
+    while (world.units()[0].moving() && t < 30.0) {
+        CHECK(world.units()[0].target == -1);
+        world.step(dt);
+        t += dt;
+    }
+
+    REQUIRE_FALSE(world.units()[0].moving());  // arrived, not stuck/timed out
+    REQUIRE(world.units()[0].cell_x == gx);
+    REQUIRE(world.units()[0].cell_y == gy);
+    CHECK(world.units()[0].hp < 125);  // it was shot en route
+}

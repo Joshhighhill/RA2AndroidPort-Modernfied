@@ -226,6 +226,13 @@ void World::order_move_selected(int goal_x, int goal_y) {
         assign_formation({goal_x, goal_y}, cur, passable_, grid_w_, grid_h_, occ_);
 
     for (std::size_t k = 0; k < sel.size(); ++k) {
+        Unit& u = units_[sel[k]];
+        // An explicit move order CANCELS engagement (RTS convention, and the
+        // spec's "idle/guarding" wording: a unit executing a player move is
+        // neither): drop the target so the hold-at-range pass and pursuit
+        // machinery never touch this unit's move path.
+        u.target = -1;
+        u.attack_order = false;
         const Cellxy tgt = targets[k];
         order_unit_move(sel[k], tgt.x, tgt.y);
     }
@@ -266,14 +273,20 @@ void World::step(double dt) {
         order_unit_move(r.unit, r.goal_x, r.goal_y);
     }
 
-    // Hold at weapon range: a unit that has closed to within range of its live
-    // target stops pursuing (step_combat fires independently of movement). Without
-    // this, the stale pursue-path aimed at the target's cell would march a ranged
-    // unit into melee contact. Distance metric matches combat.cpp's dist_leptons
-    // (2D euclidean on lepton coords; see docs/re/combat.md range divergence note).
+    // Hold at weapon range: a unit under an EXPLICIT attack order that has
+    // closed to within range of its live target stops pursuing (step_combat
+    // fires independently of movement). Without this, the stale pursue-path
+    // aimed at the target's cell would march a ranged unit into melee contact.
+    // Gated on attack_order (defense-in-depth): with move orders cancelling
+    // engagement (order_move_selected) and auto-acquire/retaliation only ever
+    // targeting idle (non-moving) units (step_combat/try_fire), a unit with a
+    // live path and a target is already provably an attack_order pursuer --
+    // this makes that invariant explicit rather than relying on it silently.
+    // Distance metric matches combat.cpp's dist_leptons (2D euclidean on
+    // lepton coords; see docs/re/combat.md range divergence note).
     for (Unit& u : units_) {
         if (!u.alive || u.die_time >= 0.0) continue;
-        if (u.target < 0 || u.target >= (int)units_.size()) continue;
+        if (u.target < 0 || !u.attack_order || u.target >= (int)units_.size()) continue;   // only explicit attackers hold at range
         const Unit& t = units_[u.target];
         if (!t.alive || t.die_time >= 0.0) continue;
         const double dx = (t.fx - u.fx) * 256.0;
