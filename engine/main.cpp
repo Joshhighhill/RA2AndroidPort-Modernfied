@@ -1285,6 +1285,9 @@ int mode_demo_audio() {
 
     // 2) Audible scripted sequence, only if a real device opened.
     if (audio.enabled) {
+        // The deviceless proof above already consumed the first GIAttack voice
+        // via render(), so re-trigger it here to make it audible over SDL_QueueAudio.
+        audio.mixer->play("GIAttack");
         const Uint32 t0 = SDL_GetTicks();
         bool did_select = false, did_die = false, did_eva = false;
         while (SDL_GetTicks() - t0 < 4000) {
