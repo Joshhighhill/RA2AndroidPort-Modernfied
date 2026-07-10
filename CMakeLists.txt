@@ -111,6 +111,12 @@ target_sources(ra2assets_tests PRIVATE tests/test_audio_mixer.cpp engine/audio_m
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as combat.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_voxel_raster.cpp engine/voxel_raster.cpp)
+# facing_cache.cpp is the pure C++17 load-time voxel facing cache (no SDL): it
+# rasterizes each of kVehicleFacings quantized yaws once at load (build_facing_set)
+# so the draw path can blit cached sprites (docs/re/voxel-render.md §2). Compiled
+# into both this test binary and ra2engine from one source of truth (same pattern
+# as voxel_raster.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_facing_cache.cpp engine/facing_cache.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
