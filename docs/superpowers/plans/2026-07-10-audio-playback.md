@@ -579,14 +579,14 @@ TEST_CASE("mixer: Limit rejects the (limit+1)-th instance; interrupt steals inst
     s.limit = 3;                       // ConscriptAttack's real limit
     m.register_sound("S", s);
     CHECK(m.play("S")); CHECK(m.play("S")); CHECK(m.play("S"));
-    CHECK_FALSE(m.play("S"));          // 4th rejected  [RE-FALLBACK]
+    CHECK_FALSE(m.play("S"));          // 4th rejected (documented approx of vanilla cull-to-cap)
     CHECK(m.active_voices() == 3);
     MixerSound si = s;
     si.interrupt = true;
     Mixer m2(bank, 1);
     m2.register_sound("S", si);
     CHECK(m2.play("S")); CHECK(m2.play("S")); CHECK(m2.play("S"));
-    CHECK(m2.play("S"));               // interrupt: steals oldest same-key  [RE-FALLBACK]
+    CHECK(m2.play("S"));               // interrupt: steals oldest same-key (RE doc, Medium)
     CHECK(m2.active_voices() == 3);
 }
 
