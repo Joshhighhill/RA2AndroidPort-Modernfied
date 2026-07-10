@@ -39,6 +39,22 @@ struct Unit {
     double wait_time = 0.0;     // seconds blocked at current cell (collision re-path timer)
 
     bool moving() const { return !path.empty() && path_idx < path.size(); }
+
+    // --- Combat (this phase). Stats resolved once at spawn from Rules. ---
+    int house = 0;                 // 0 = player/Allied, 1 = hostile/Soviet
+    int hp = 1, max_hp = 1;
+    int armor_ix = 0;              // armor_index(Armor=)
+    int w_damage = 0;              // weapon Damage=
+    int w_rof = 0;                 // weapon ROF= (15Hz logic frames)
+    double w_range = 0.0;          // weapon Range= (cells)
+    std::vector<int> w_verses;     // warhead Verses percents (11 entries)
+    int target = -1;               // unit index being attacked, -1 none
+    bool attack_order = false;     // explicit order (pursues) vs auto-acquire
+    double rof_cool = 0.0;         // seconds until the weapon may fire again
+    double fire_flash = 0.0;       // seconds of fire-anim left (renderer)
+    int guard_x = 0, guard_y = 0;  // guard anchor (cell when target auto-acquired)
+    bool alive = true;             // TOMBSTONE: false after die anim; never erased
+    double die_time = -1.0;        // >=0: dying (die anim playing); alive stays true until it ends
 };
 
 // Advance every moving unit toward its `path` by `dt` seconds at `move_cps`
