@@ -22,6 +22,9 @@ TEST_CASE("rules: synthetic - explicit Image/Speed, unknown id falls back") {
     // Unknown unit id: image falls back to the id itself; speed defaults to 0.
     CHECK(rules.image("NOSUCHUNIT") == "NOSUCHUNIT");
     CHECK(rules.speed("NOSUCHUNIT") == 0);
+
+    // Voice getters: absent section/key -> "".
+    CHECK(rules.voice_select("E9") == "");
 }
 
 TEST_CASE("rules: image() returns the explicit Image= value, not just the id") {
@@ -175,12 +178,18 @@ TEST_CASE("rules: real rulesmd combat values pin (E1/E2/M60/M1Carbine/SA)") {
     CHECK(rules.armor("E1") == "none");
     CHECK(rules.primary("E1") == "M60");
     CHECK(rules.image("E1") == "GI");
+    CHECK(rules.voice_select("E1") == "GISelect");
+    CHECK(rules.voice_move("E1") == "GIMove");
+    CHECK(rules.voice_attack("E1") == "GIAttackCommand");
+    CHECK(rules.die_sound("E1") == "GIDie");
 
     // E2 (CONS) combat values
     CHECK(rules.strength("E2") == 125);
     CHECK(rules.armor("E2") == "flak");
     CHECK(rules.primary("E2") == "M1Carbine");
     CHECK(rules.image("E2") == "CONS");
+    CHECK(rules.voice_select("E2") == "ConscriptSelect");
+    CHECK(rules.die_sound("E2") == "ConscriptDie");
 
     // M60 weapon values
     CHECK(rules.weapon_damage("M60") == 15);

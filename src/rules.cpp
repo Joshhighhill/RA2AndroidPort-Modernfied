@@ -32,6 +32,22 @@ std::string Rules::primary(const std::string& unit_id) const {
     return ini_->get(unit_id, "Primary", "");
 }
 
+std::string Rules::voice_select(const std::string& unit_id) const {
+    return ini_->get(unit_id, "VoiceSelect", "");
+}
+
+std::string Rules::voice_move(const std::string& unit_id) const {
+    return ini_->get(unit_id, "VoiceMove", "");
+}
+
+std::string Rules::voice_attack(const std::string& unit_id) const {
+    return ini_->get(unit_id, "VoiceAttack", "");
+}
+
+std::string Rules::die_sound(const std::string& unit_id) const {
+    return ini_->get(unit_id, "DieSound", "");
+}
+
 int Rules::weapon_damage(const std::string& w) const {
     return ini_->get_int(w, "Damage", 0);
 }

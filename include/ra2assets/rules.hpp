@@ -36,6 +36,22 @@ public:
     // [unit_id] Primary=, or "" if absent.
     std::string primary(const std::string& unit_id) const;
 
+    // [unit_id] VoiceSelect=, or "" if absent -- soundmd.ini section name for
+    // the "unit selected" voice line (e.g. E1 -> "GISelect").
+    std::string voice_select(const std::string& unit_id) const;
+
+    // [unit_id] VoiceMove=, or "" if absent -- soundmd.ini section name for
+    // the "move order acknowledged" voice line.
+    std::string voice_move(const std::string& unit_id) const;
+
+    // [unit_id] VoiceAttack=, or "" if absent -- soundmd.ini section name for
+    // the "attack order acknowledged" voice line.
+    std::string voice_attack(const std::string& unit_id) const;
+
+    // [unit_id] DieSound=, or "" if absent -- soundmd.ini section name for the
+    // unit's death voice line.
+    std::string die_sound(const std::string& unit_id) const;
+
     // [weapon] Damage=, or 0 if absent.
     int weapon_damage(const std::string& weapon) const;
 
