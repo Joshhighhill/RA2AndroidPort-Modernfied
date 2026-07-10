@@ -717,8 +717,12 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         const double mx = fc * std::cos(yaw) - lc * std::sin(yaw);    // cells, model X
         const double my = fc * std::sin(yaw) + lc * std::cos(yaw);    // cells, model Y
         const int flash_dx = static_cast<int>(std::lround((mx + my) * 30.0));
+        // H (up) term: the recovered vertical scale is 0.866·60/√2 ≈ 36.74 px
+        // per cell-of-z (docs/re/voxel-render.md §6 FLH via §1's buf_y = ... −
+        // 0.866·v.z coefficient, in 256√2/60 px-per-lepton units), NOT the
+        // 30 px/cell diamond half-height that applies to the F/L ground plane.
         const int flash_dy =
-            static_cast<int>(std::lround((mx - my) * 15.0 - (va.flh[2] / 256.0) * 30.0));
+            static_cast<int>(std::lround((mx - my) * 15.0 - (va.flh[2] / 256.0) * 36.74));
         const int cx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
         const int cy =
             static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15;

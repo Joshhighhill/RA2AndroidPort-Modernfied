@@ -2,11 +2,62 @@
 #include "doctest.h"
 #include "world.hpp"
 #include "combat.hpp"
+#include "voxel_raster.hpp"
+#include "ra2assets/vxl.hpp"
+#include "ra2assets/hva.hpp"
+#include "ra2assets/vpl.hpp"
+#include "ra2assets/pal.hpp"
 #include <cmath>
+#include <cstdint>
+#include <vector>
 
 using ra2engine::Unit;
 using ra2engine::turn_toward;
 using ra2engine::facing_u16_from_delta;
+
+namespace {
+// Synthetic voxel-render fixtures for the "nose leads travel" integration pin
+// (copied from tests/test_voxel_raster.cpp / the reviewer's probe -- install-
+// free, deterministic). Arrow model = a line of 9 voxels along model +X only,
+// so its rasterized opaque centroid sits in the "nose" (+X) direction.
+ra2assets::VxlModel arrow_model() {
+    ra2assets::VxlModel m;
+    ra2assets::VxlSection s;
+    s.name = "A";
+    s.size_x = 9; s.size_y = 1; s.size_z = 1;
+    s.scale = 1.0f;
+    for (int r = 0; r < 3; ++r) for (int c = 0; c < 4; ++c) s.transform[r][c] = (r == c) ? 1.f : 0.f;
+    s.min_bounds[0] = 0.f;   s.max_bounds[0] = 9.f;    // nose extends +X only
+    s.min_bounds[1] = -0.5f; s.max_bounds[1] = 0.5f;
+    s.min_bounds[2] = -0.5f; s.max_bounds[2] = 0.5f;
+    s.normals_mode = 2;
+    s.voxels.resize(9);
+    for (auto& v : s.voxels) { v.color = 100; v.normal = 0; v.present = true; }
+    m.sections.push_back(s);
+    return m;
+}
+ra2assets::HvaModel vh_identity_hva() {
+    ra2assets::HvaModel h;
+    h.frame_count = 1;
+    h.section_names = {"A"};
+    ra2assets::HvaSectionXform x{};
+    for (int r = 0; r < 3; ++r) for (int c = 0; c < 4; ++c) x.transform[r][c] = (r == c) ? 1.f : 0.f;
+    h.frames = {{x}};
+    return h;
+}
+ra2assets::Vpl vh_identity_vpl() {
+    std::vector<std::uint8_t> raw(16 + 768 + 32 * 256, 0);
+    raw[8] = 32;  // section_count
+    for (int i = 0; i < 256; ++i)
+        for (int t = 0; t < 32; ++t) raw[16 + 768 + t * 256 + i] = static_cast<std::uint8_t>(i);
+    return ra2assets::Vpl::load(raw.data(), raw.size());
+}
+ra2assets::Palette vh_gray_pal() {
+    std::uint8_t raw[768];
+    for (int i = 0; i < 256; ++i) raw[i*3] = raw[i*3+1] = raw[i*3+2] = static_cast<std::uint8_t>(i / 4);
+    return ra2assets::Palette::load(raw, 768);
+}
+}  // namespace
 
 TEST_CASE("vehicle: turn_toward takes the shortest arc with wraparound") {
     CHECK(turn_toward(0.0, 100.0, 300.0) == doctest::Approx(100.0));     // within step: clamp at target
@@ -19,22 +70,54 @@ TEST_CASE("vehicle: turn_toward takes the shortest arc with wraparound") {
     CHECK(turn_toward(65500.0, 300.0, 100.0) == doctest::Approx(64.0));  // 65500 + 100 = 65600 -> 64
 }
 
-TEST_CASE("vehicle: facing_u16_from_delta agrees with the 8-block convention") {
-    // facing_from_delta (infantry) maps each direction to block 0..7
-    // (N=0 counterclockwise-on-screen to NE=7, spawn S=4). The continuous
-    // facing must land inside block*8192 +/- 4096 of the SAME block.
-    const double dirs[8][2] = {
-        // the same 8 cell-space rays test_world.cpp uses for facing_from_delta
-        {-1, -1}, {-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1},
-    };
-    for (int k = 0; k < 8; ++k) {
-        const int block = ra2engine::facing_from_delta(dirs[k][0], dirs[k][1]);
-        REQUIRE(block >= 0);
-        const double f = facing_u16_from_delta(dirs[k][0], dirs[k][1]);
-        const double center = block * 8192.0;
-        double d = std::fmod(f - center + 65536.0 * 2, 65536.0);
-        if (d > 32768.0) d -= 65536.0;
-        CHECK(std::abs(d) <= 4096.0);
+TEST_CASE("vehicle: facing_u16_from_delta lands in the recovered render space") {
+    // The vehicle facing space is the ORIGINAL's RENDER space
+    // (docs/re/voxel-render.md §2), the space facing_to_index/index_to_yaw are
+    // calibrated to -- NOT infantry's 8-block facing_from_delta space. Facing
+    // 0x4000 = screen East (down-right diagonal) = the unrotated +X-nose model,
+    // and facing increases CLOCKWISE. So the four cardinal cell rays pin to the
+    // four exact render facings (and their 32-way indices):
+    CHECK(facing_u16_from_delta(1.0, 0.0) == doctest::Approx(16384.0));   // +x -> East
+    CHECK(facing_u16_from_delta(0.0, 1.0) == doctest::Approx(32768.0));   // +y -> South (spawn body_facing)
+    CHECK(facing_u16_from_delta(-1.0, 0.0) == doctest::Approx(49152.0));  // -x -> West
+    CHECK(facing_u16_from_delta(0.0, -1.0) == doctest::Approx(0.0));      // -y -> North
+    CHECK(ra2engine::facing_to_index(facing_u16_from_delta(1.0, 0.0), 32) == 8);
+    CHECK(ra2engine::facing_to_index(facing_u16_from_delta(0.0, 1.0), 32) == 16);
+    CHECK(ra2engine::facing_to_index(facing_u16_from_delta(-1.0, 0.0), 32) == 24);
+    CHECK(ra2engine::facing_to_index(facing_u16_from_delta(0.0, -1.0), 32) == 0);
+}
+
+TEST_CASE("vehicle: rendered nose leads the travel direction") {
+    // Integration pin (reviewer's probe methodology): drive a +X-heavy "arrow"
+    // model through the FULL production chain -- facing_u16_from_delta ->
+    // facing_to_index -> index_to_yaw -> rasterize_model -- for cell travel
+    // directions, and assert the rasterized opaque centroid (the nose) points
+    // within +/-30 deg of the on-screen travel direction. Proves the vehicle
+    // facing space and the render facing space (voxel-render.md §2) agree.
+    ra2assets::VxlModel arrow = arrow_model();
+    ra2assets::HvaModel hva = vh_identity_hva();
+    ra2assets::Vpl vpl = vh_identity_vpl();
+    ra2assets::Palette pal = vh_gray_pal();
+
+    const double kPi = 3.14159265358979323846;
+    const double dirs[3][2] = {{1, 0}, {0, 1}, {-1, 0}};
+    for (const auto& d : dirs) {
+        const double f = facing_u16_from_delta(d[0], d[1]);
+        const int idx = ra2engine::facing_to_index(f, 32);
+        ra2engine::VoxelSprite s =
+            ra2engine::rasterize_model(arrow, hva, ra2engine::index_to_yaw(idx, 32), vpl, pal);
+        // Opaque centroid offset from the model anchor (the nose direction).
+        double sx = 0, sy = 0; int n = 0;
+        for (int y = 0; y < s.h; ++y)
+            for (int x = 0; x < s.w; ++x)
+                if (s.rgba[(static_cast<size_t>(y) * s.w + x) * 4 + 3] != 0) { sx += x; sy += y; ++n; }
+        REQUIRE(n > 0);
+        const double nx = sx / n - s.anchor_x, ny = sy / n - s.anchor_y;
+        // Projected on-screen travel direction (60x30 diamond shear, y down).
+        const double ta = std::atan2((d[0] + d[1]) * 15.0, (d[0] - d[1]) * 30.0);
+        const double na = std::atan2(ny, nx);
+        double err = std::fmod(na - ta + 3.0 * kPi, 2.0 * kPi) - kPi;  // wrap to (-pi, pi]
+        CHECK(std::abs(err) <= 30.0 * kPi / 180.0);  // nose leads motion within 30 deg
     }
 }
 

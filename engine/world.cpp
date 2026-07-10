@@ -50,18 +50,25 @@ int facing_from_delta(double dx, double dy) {
     return static_cast<int>(std::lround(ccw / 45.0)) % 8;
 }
 
-// Continuous 16-bit-space facing from a cell-space direction, consistent with
-// facing_from_delta's 8-block convention (docs/re/voxel-render.md §5).
-// atan2(dx+dy, dx-dy) is the on-screen angle (see docs/re/infantry-anim.md §5,
-// same projection facing_from_delta uses); screen E is block 6, so offset so
-// block 0 (N) lands at facing 0, then scale radians to u16.
+// Continuous 16-bit facing from a cell-space direction, in the ORIGINAL's
+// RENDER facing space (docs/re/voxel-render.md §2) -- the space
+// facing_to_index/index_to_yaw (voxel_raster.cpp) are calibrated to, so a
+// vehicle's rendered nose LEADS its travel/aim direction. In that space
+// facing 0x4000 = screen East (the down-right 2:1 diagonal = the unrotated
+// +X-nose model), and facing increases CLOCKWISE on screen. atan2(dx, -dy)
+// maps: cell (+1,0) -> pi/2 -> 16384 = 0x4000 (East, index 8); (0,+1) -> pi
+// -> 32768 = South (matching the Unit spawn body_facing=32768 constant);
+// (-1,0) -> 49152 = 0xC000; (0,-1) -> 0 = North (index 0). NOTE this differs
+// (by a rotation AND a reflection) from infantry's facing_from_delta 8-block
+// space -- vehicles must use THIS function, infantry the other; the two are
+// never mixed. turn_toward / vehicle_aimed / the hull turn gate / turret slew
+// are isometry-invariant (they only compare facings from this same function),
+// so locomotion semantics are unchanged.
 double facing_u16_from_delta(double dx, double dy) {
     constexpr double kPi = 3.14159265358979323846;
-    const double a = std::atan2(dx + dy, dx - dy);  // [-pi, pi], 0 = screen E
-    double f = 6.0 * 8192.0 - a * (65536.0 / (2.0 * kPi));
-    f = std::fmod(f, 65536.0);
-    if (f < 0) f += 65536.0;
-    return f;
+    // atan2 in [-pi, pi] -> [-32768, 32768]; the +65536 then fmod normalizes
+    // into [0, 65536) without a separate negative-wrap fixup.
+    return std::fmod(std::atan2(dx, -dy) * (65536.0 / (2.0 * kPi)) + 65536.0, 65536.0);
 }
 
 double turn_toward(double facing, double target, double max_step) {
