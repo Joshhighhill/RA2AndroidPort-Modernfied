@@ -10,6 +10,7 @@
 #include "ra2assets/pal.hpp"
 #include "ra2assets/shp.hpp"     // ShpFile (draw_unit)
 #include "ra2assets/theater.hpp"  // TmpFile / TileImage
+#include "voxel_raster.hpp"       // VoxelSprite (draw_voxel_sprite)
 #include "world.hpp"              // Unit
 
 namespace ra2engine {
@@ -114,6 +115,20 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
                ra2assets::ShpFile& shp, const ra2assets::Palette& pal,
                const Camera& cam, int view_w, int view_h);
 
+// Draw one pre-rendered voxel-model sprite `s` (a FacingSet entry) for a unit
+// standing at continuous iso position (fx, fy, level). Projects the ground
+// point with the SAME 60x30 diamond shear (level step 15) draw_unit uses --
+// tile center = cell_to_screen(fx, fy, level, 60, 30, 15) + camera + (30, 15) --
+// then places `s` so its model-origin anchor (s.anchor_x/anchor_y) lands on
+// that tile center (blit rect (center.x - anchor_x, center.y - anchor_y, s.w,
+// s.h)), so hull/turret/barrel sprites (all sharing the model origin) stack
+// coherently (docs/re/voxel-render.md §1). Uploads via tc.get_rgba(key, ...)
+// (the sprite is already final RGBA). Off-screen rects are culled. Returns
+// false (nothing drawn) on an empty sprite or a fully off-screen rect.
+bool draw_voxel_sprite(void* sdl_renderer, TextureCache& tc, const std::string& key,
+                       const VoxelSprite& s, double fx, double fy, int level,
+                       const Camera& cam, int view_w, int view_h);
+
 // House palette remap for unit sprites. Unit palettes (unittem.pal) reserve
 // indices 16..31 as the "remap ramp" -- the strip of colors the game
 // substitutes per house so the same GI/CONS sprite reads as a different
@@ -136,8 +151,12 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house);
 // (at its interpolated fx/fy position). No-op if fully off-screen. Call
 // AFTER draw_terrain (so it's not painted over) and typically BEFORE
 // draw_unit so the sprite sits on top of the marker.
+// `width_px` (spec: "sized from the cached sprite bounds"): 0 keeps the default
+// single-cell (60px) diamond footprint; a vehicle passes its hull sprite width
+// so the selection diamond scales to the wider voxel sprite. Callers that pass
+// nothing are unchanged.
 void draw_selection(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,
-                    int view_h);
+                    int view_h, int width_px = 0);
 
 // Draw the unit's remaining ordered path as a green poly-line + node dots
 // connecting the tile centers of its path cells (for visual feedback and
@@ -160,6 +179,10 @@ void draw_selection_box(void* sdl_renderer, int x0, int y0, int x1, int y1);
 // not check unit.selected/alive/die_time itself. No-op if max_hp <= 0 or the
 // bar's rect is fully off-screen. Call after unit sprites, before the
 // selection box (HUD overlay order).
-void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h);
+// `width_px` (spec: "sized from the cached sprite bounds"): 0 keeps the default
+// 24px bar; a vehicle passes its hull sprite width so the bar spans the wider
+// voxel hull. Callers that pass nothing are unchanged.
+void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h,
+                 int width_px = 0);
 
 }  // namespace ra2engine

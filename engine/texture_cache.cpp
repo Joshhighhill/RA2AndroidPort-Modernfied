@@ -60,4 +60,26 @@ void* TextureCache::get(const std::string& key, const uint8_t* indices, int w,
     return tex;
 }
 
+void* TextureCache::get_rgba(const std::string& key, const uint8_t* rgba, int w, int h) {
+    auto it = cache_.find(key);
+    if (it != cache_.end()) {
+        return it->second;
+    }
+
+    // Same RGBA32 byte-order rationale as get() above (SDL's *32 alias resolves
+    // to the packed format matching R,G,B,A memory order on this platform).
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(renderer_);
+    SDL_Texture* tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32,
+                                          SDL_TEXTUREACCESS_STATIC, w, h);
+    if (!tex) {
+        throw std::runtime_error(SDL_GetError());
+    }
+
+    SDL_UpdateTexture(tex, nullptr, rgba, w * 4);
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+
+    cache_.emplace(key, tex);
+    return tex;
+}
+
 }  // namespace ra2engine

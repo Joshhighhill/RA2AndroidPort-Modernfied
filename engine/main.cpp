@@ -33,16 +33,19 @@
 
 #include "audio_mixer.hpp"
 #include "audio_sdl.hpp"
+#include "facing_cache.hpp"
 #include "input.hpp"
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
 #include "platform.hpp"
 #include "texture_cache.hpp"
+#include "voxel_raster.hpp"
 #include "world.hpp"
 
 #include "ra2assets/art.hpp"
 #include "ra2assets/audio_bag.hpp"
 #include "ra2assets/fileio.hpp"
+#include "ra2assets/hva.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
@@ -50,6 +53,8 @@
 #include "ra2assets/rules.hpp"
 #include "ra2assets/shp.hpp"
 #include "ra2assets/sounds.hpp"
+#include "ra2assets/vpl.hpp"
+#include "ra2assets/vxl.hpp"
 #include "ra2assets/wav.hpp"
 
 using namespace ra2assets;
@@ -149,6 +154,25 @@ struct UnitAssets {
     ra2engine::UnitCombat cons;           // E2-resolved combat stats (image "CONS")
     int cons_speed = 0;                   // rulesmd.ini [E2] Speed=
     std::map<std::string, ra2engine::UnitAnimSeq> anims;  // image -> artmd.ini-resolved anim seq
+};
+
+// Everything needed to draw + fight one voxel vehicle type (Rhino/HTNK): six
+// pre-rendered facing caches (hull/turret/barrel x house 0/1 -- see
+// facing_cache.hpp), its Rules-resolved combat/locomotion stats, the
+// turret-space PrimaryFireFLH muzzle offset (leptons; docs/re/voxel-render.md
+// §6), and the death-explosion SHP + its palette. `ok` is false whenever ANY
+// required asset failed to load (logged once); the game then runs infantry-only
+// and never touches this struct's caches. Move-only (unique_ptr member); loaded
+// once per mode entry point, held by reference thereafter.
+struct VehicleAssets {
+    ra2engine::FacingSet hull[2], turret[2], barrel[2];  // index = house (0 Allied, 1 Soviet)
+    bool has_turret = false, has_barrel = false;
+    ra2engine::UnitCombat combat;
+    int flh[3] = {0, 0, 0};                        // PrimaryFireFLH F,L,H (leptons, turret space)
+    std::string explosion_image;                   // Explosion= first entry (e.g. "TWLT070")
+    std::unique_ptr<ra2assets::ShpFile> explosion;  // death anim SHP; null if unavailable
+    ra2assets::Palette explosion_pal;              // anim.pal (or unit pal fallback)
+    bool ok = false;
 };
 
 // Loads `name` (e.g. "rulesmd.ini", "artmd.ini") from ra2md.mix ONCE per mode
@@ -301,7 +325,9 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
     // register them only once the bank -- and thus the Mixer built over it --
     // is complete (see AudioSystem's mixer comment above).
     std::map<std::string, ra2engine::MixerSound> pending;
-    for (const char* unit_id : {"E1", "E2"}) {
+    // HTNK (Rhino) added for the Voxel Vehicles phase: the per-image UnitVoices
+    // machinery below handles it exactly like the infantry ids (image "HTNK").
+    for (const char* unit_id : {"E1", "E2", "HTNK"}) {
         const std::string image = rules.image(unit_id);
         UnitVoices v;
         v.select = rules.voice_select(unit_id);
@@ -484,6 +510,134 @@ void spawn_squad(ra2engine::World& world, int origin_x, int origin_y, int count,
             }
 }
 
+// Loads everything the Rhino (or any single voxel vehicle) needs to render +
+// fight: its combat/locomotion profile from rulesmd.ini, the hull/turret/barrel
+// VXL+HVA parts + voxels.vpl from ra2.mix -> local.mix, six load-time facing
+// caches (hull/turret/barrel x house 0/1, palette per house via pal_for_house
+// over the shared unit palette `unit_pal` == ua.pal), the PrimaryFireFLH muzzle
+// offset from artmd.ini, and the death-explosion SHP + its palette. EVERY step
+// is guarded: on ANY failure the whole load is abandoned (logged once) and `ok`
+// stays false, so the game runs infantry-only and never crashes. `ra2` is the
+// shared already-open ra2.mix. Turret/barrel absence is not an error for a
+// non-turreted vehicle (Rules::has_turret gates the attempt).
+VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFile& ra2,
+                                  const ra2assets::Palette& unit_pal, const std::string& unit_id) {
+    VehicleAssets va;
+    try {
+        Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+        Rules rules = Rules::load(rules_ini);
+        Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+        Art art = Art::load(art_ini);
+
+        const ResolvedUnit ru = resolve_combat_unit(rules, unit_id);
+        va.combat = ru.combat;
+        va.combat.is_vehicle = true;
+        va.combat.rot = rules.rot(unit_id);
+        va.combat.turret = rules.has_turret(unit_id);
+        va.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;  // Speed 6 -> 4.5 cps
+
+        const std::string image = va.combat.image;  // "HTNK"
+        std::string base = image;
+        for (char& ch : base) ch = static_cast<char>(std::tolower((unsigned char)ch));  // "htnk"
+
+        MixFile local = ra2.open_nested("local.mix");
+        auto load_part = [&](const std::string& part_base, ra2assets::VxlModel& m,
+                             ra2assets::HvaModel& h) -> bool {
+            const MixEntry* ve = local.find(part_base + ".vxl");
+            const MixEntry* he = local.find(part_base + ".hva");
+            if (!ve || !he) return false;
+            auto vr = local.read(*ve);
+            auto hr = local.read(*he);
+            m = ra2assets::load_vxl(vr.data(), vr.size());
+            h = ra2assets::load_hva(hr.data(), hr.size());
+            return true;
+        };
+
+        ra2assets::VxlModel hull_m, tur_m, barl_m;
+        ra2assets::HvaModel hull_h, tur_h, barl_h;
+        if (!load_part(base, hull_m, hull_h))
+            throw std::runtime_error("hull vxl/hva missing (" + base + ")");
+
+        va.has_turret = rules.has_turret(unit_id);
+        if (va.has_turret) {
+            if (!load_part(base + "tur", tur_m, tur_h))
+                throw std::runtime_error("turret vxl/hva missing (" + base + "tur)");
+            va.has_barrel = load_part(base + "barl", barl_m, barl_h);  // barrel absence OK
+        }
+
+        const MixEntry* pe = local.find("voxels.vpl");
+        if (!pe) throw std::runtime_error("voxels.vpl missing");
+        auto vpl_raw = local.read(*pe);
+        ra2assets::Vpl vpl = ra2assets::Vpl::load(vpl_raw.data(), vpl_raw.size());
+
+        art.fire_flh(image, va.flh);  // leaves {0,0,0} if absent/malformed
+
+        for (int house = 0; house <= 1; ++house) {
+            const ra2assets::Palette hp = ra2engine::pal_for_house(unit_pal, house);
+            va.hull[house] =
+                ra2engine::build_facing_set(hull_m, hull_h, ra2engine::kVehicleFacings, vpl, hp);
+            if (va.has_turret)
+                va.turret[house] =
+                    ra2engine::build_facing_set(tur_m, tur_h, ra2engine::kVehicleFacings, vpl, hp);
+            if (va.has_barrel)
+                va.barrel[house] =
+                    ra2engine::build_facing_set(barl_m, barl_h, ra2engine::kVehicleFacings, vpl, hp);
+        }
+
+        // Death explosion (Rules::explosion_first -> SHP from conquer.mix,
+        // drawn with anim.pal from cache.mix if present, else the unit pal).
+        // Individually guarded: a missing explosion downgrades the death visual
+        // (tank simply vanishes) but does NOT fail the whole vehicle load.
+        va.explosion_image = rules.explosion_first(unit_id);
+        va.explosion_pal = unit_pal;
+        if (!va.explosion_image.empty()) {
+            try {
+                MixFile conquer = ra2.open_nested("conquer.mix");
+                va.explosion =
+                    std::make_unique<ShpFile>(load_unit_shp(conquer, va.explosion_image));
+                try {
+                    MixFile cache = ra2.open_nested("cache.mix");
+                    const MixEntry* ape = cache.find(std::string("anim.pal"));
+                    if (ape) {
+                        auto apal = cache.read(*ape);
+                        va.explosion_pal = Palette::load(apal.data(), apal.size());
+                    }
+                } catch (const std::exception&) { /* keep unit pal */ }
+            } catch (const std::exception& ex) {
+                std::cerr << "[vehicle] explosion SHP unavailable: " << ex.what() << "\n";
+                va.explosion.reset();
+            }
+        }
+
+        va.ok = true;
+        const auto& hs = hull_m.sections.empty() ? ra2assets::VxlSection{} : hull_m.sections[0];
+        std::cerr << "[vehicle] image=" << image << " facings=" << ra2engine::kVehicleFacings
+                  << " hull=" << hs.size_x << "x" << hs.size_y << "x" << hs.size_z
+                  << " turret=" << (va.has_turret ? "yes" : "no")
+                  << " barrel=" << (va.has_barrel ? "yes" : "no")
+                  << " speed_cps=" << va.combat.speed_cps << " rot=" << va.combat.rot << "\n";
+    } catch (const std::exception& ex) {
+        std::cerr << "[vehicle] assets unavailable (" << ex.what()
+                  << "); running infantry-only\n";
+        va.ok = false;
+    }
+    return va;
+}
+
+// Spawns `n` Rhino tanks per side (docs/re/voxel-render.md spawn rules): house 0
+// 4 cells WEST of the GI origin (pick_start_cell), house 1 4 cells EAST of the
+// CONS origin (GI origin + 8 east). Reuses spawn_squad verbatim with va.combat.
+// Called ONLY when va.ok, and NEVER from the byte-identity-gated demos
+// (--demo-combat/move/retarget/group) -- interactive/screenshot/demo-tank only.
+void spawn_tank_squads(ra2engine::World& world, const Assets& a, const VehicleAssets& va, int n) {
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(a.map);
+    if (!c) return;
+    spawn_squad(world, c->x - 4, c->y, n, /*house=*/0, va.combat);
+    spawn_squad(world, c->x + 12, c->y, n, /*house=*/1, va.combat);
+    std::cerr << "[world] spawned " << n << " tank(s)/side; total units now "
+              << world.units().size() << "\n";
+}
+
 // Spawn `count` GI units (house 0, player/Allied) on distinct walkable cells
 // spiralling out from the map's start cell (pick_start_cell), plus `count`
 // Conscript units (house 1, hostile/Soviet) spiralling out from 8 cells east
@@ -512,6 +666,70 @@ ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
     return world;
 }
 
+// Draws one voxel vehicle in render_world's back-to-front loop: a dying tank
+// shows the death-explosion SHP (frame = min(die_time*15, count-1), the same
+// 15 fps as infantry deaths); a live tank draws its hull, then (if turreted)
+// turret + barrel facing sprites via the cached FacingSets, then -- while
+// firing -- a muzzle flash at the PrimaryFireFLH point (docs/re/voxel-render.md
+// §6: rotate (F, L) by the quantized turret yaw, leptons->cells /256, project
+// with the same 60x30 diamond shear draw_unit uses; H raises the flash).
+void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
+                       const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
+    if (u.die_time >= 0.0) {
+        if (va.explosion && va.explosion->count() > 0) {
+            int frame = static_cast<int>(u.die_time * 15.0);
+            if (frame >= va.explosion->count()) frame = va.explosion->count() - 1;
+            if (frame < 0) frame = 0;
+            // Reuse draw_unit's SHP canvas-center anchor. house 1 -> identity
+            // pal_for_house remap, so the explosion keeps its own fire colors
+            // (a house-0 remap would recolor any 16..31 indices to blue).
+            ra2engine::Unit tmp = u;
+            tmp.frame = frame;
+            tmp.image = va.explosion_image;
+            tmp.house = 1;
+            ra2engine::draw_unit(ren, tc, tmp, *va.explosion, va.explosion_pal, cam, W, H);
+        }
+        return;  // dying vehicle: explosion instead of the tank
+    }
+
+    const std::string& img = va.combat.image;
+    const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
+    ra2engine::draw_voxel_sprite(
+        ren, tc, "vxl:" + img + ":h:" + std::to_string(u.house) + ":" + std::to_string(bi),
+        va.hull[u.house].sprites[bi], u.fx, u.fy, u.level, cam, W, H);
+    if (va.has_turret) {
+        const int ti = ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings);
+        ra2engine::draw_voxel_sprite(
+            ren, tc, "vxl:" + img + ":t:" + std::to_string(u.house) + ":" + std::to_string(ti),
+            va.turret[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H);
+        if (va.has_barrel)
+            ra2engine::draw_voxel_sprite(
+                ren, tc, "vxl:" + img + ":b:" + std::to_string(u.house) + ":" + std::to_string(ti),
+                va.barrel[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H);
+    }
+
+    // Muzzle flash at the FLH point while firing (voxel-render.md §6).
+    if (u.fire_flash > 0.0) {
+        const double yaw = ra2engine::index_to_yaw(
+            ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings),
+            ra2engine::kVehicleFacings);
+        const double fc = va.flh[0] / 256.0, lc = va.flh[1] / 256.0;  // leptons -> cells
+        const double mx = fc * std::cos(yaw) - lc * std::sin(yaw);    // cells, model X
+        const double my = fc * std::sin(yaw) + lc * std::cos(yaw);    // cells, model Y
+        const int flash_dx = static_cast<int>(std::lround((mx + my) * 30.0));
+        const int flash_dy =
+            static_cast<int>(std::lround((mx - my) * 15.0 - (va.flh[2] / 256.0) * 30.0));
+        const int cx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
+        const int cy =
+            static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15;
+        SDL_Rect fr{cx + flash_dx - 3, cy + flash_dy - 3, 6, 6};
+        if (!(fr.x + fr.w <= 0 || fr.y + fr.h <= 0 || fr.x >= W || fr.y >= H)) {
+            SDL_SetRenderDrawColor(ren, 255, 230, 120, 255);
+            SDL_RenderFillRect(ren, &fr);
+        }
+    }
+}
+
 // Draws one full frame of the world into the current render target (does NOT
 // clear or present): terrain, the ordered path + selection diamond (alive,
 // non-dying units only), the unit sprites (back-to-front; dying units
@@ -520,25 +738,42 @@ ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
 // then the live selection box on top. Shared by every mode so they stay
 // visually consistent. House color (pal_for_house) is applied inside
 // draw_unit itself via its house-keyed texture cache entry -- no extra work
-// needed here.
+// needed here. `va` (optional): when non-null AND va->ok, units whose image
+// matches the vehicle's draw via voxel sprites (draw_vehicle_unit) instead of
+// SHP, and their selection diamond / HP bar size to the hull sprite width.
+// Passed nullptr by the SHP-only modes (including --demo-combat, whose
+// byte-identity gate requires tanks NEVER spawn there).
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
-                  int W, int H, const ra2engine::Input* input = nullptr) {
+                  int W, int H, const ra2engine::Input* input = nullptr,
+                  const VehicleAssets* va = nullptr) {
     ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H);
     const std::vector<ra2engine::Unit>& us = world.units();
+    // Hull sprite width for a vehicle unit (0 for infantry) -- sizes the
+    // selection diamond + HP bar to the wider voxel sprite.
+    auto veh_width = [&](const ra2engine::Unit& u) -> int {
+        if (!(va && va->ok && u.image == va->combat.image)) return 0;
+        const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
+        return va->hull[u.house].sprites[bi].w;
+    };
     // Paths + selection markers first (under the sprites); skip dead/dying
     // units entirely (no path, no selection marker for a corpse-in-progress).
     for (const ra2engine::Unit& u : us) {
         if (!u.alive || u.die_time >= 0.0) continue;
         ra2engine::draw_path(ren, u, cam, W, H);
-        if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H);
+        if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
     }
-    // Sprites back-to-front so nearer units overlap farther ones. Picks the
-    // SHP by the unit's own image ("GI"/"CONS") rather than assuming a single
-    // shared SHP; an unrecognized image is logged and skipped (not thrown)
-    // so one bad unit can't take down the whole frame.
+    // Sprites back-to-front so nearer units overlap farther ones. Vehicles
+    // (an image with a VehicleAssets entry) draw via voxel sprites; otherwise
+    // pick the SHP by the unit's own image ("GI"/"CONS"). An unrecognized
+    // image is logged and skipped (not thrown) so one bad unit can't take
+    // down the whole frame.
     for (int idx : ra2engine::unit_draw_order(us)) {
         const ra2engine::Unit& u = us[idx];
+        if (va && va->ok && u.image == va->combat.image) {
+            draw_vehicle_unit(ren, tc, u, *va, cam, W, H);
+            continue;
+        }
         auto it = ua.shps.find(u.image);
         if (it == ua.shps.end()) {
             std::cerr << "[render] no SHP loaded for image=" << u.image << " (unit " << idx
@@ -551,7 +786,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // that are selected or currently damaged.
     for (const ra2engine::Unit& u : us) {
         if (!u.alive || u.die_time >= 0.0) continue;
-        if (u.selected || u.hp < u.max_hp) ra2engine::draw_hp_bar(ren, u, cam, W, H);
+        if (u.selected || u.hp < u.max_hp) ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
     }
     // Live selection box on top (interactive only).
     if (input) {
@@ -590,7 +825,9 @@ int run_screenshot(const std::string& out_path) {
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
+    VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
     ra2engine::World world = build_world(a, ua, 5);
+    if (va.ok) spawn_tank_squads(world, a, va, 3);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
     SDL_Window* win = SDL_CreateWindow("RA2 Engine (screenshot)", SDL_WINDOWPOS_CENTERED,
@@ -608,7 +845,7 @@ int run_screenshot(const std::string& out_path) {
 
         SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
         SDL_RenderClear(ren);
-        render_world(ren, tc, a, ua, world, cam, W, H);
+        render_world(ren, tc, a, ua, world, cam, W, H, /*input=*/nullptr, va.ok ? &va : nullptr);
         capture_png(ren, out_path, W, H);
 
         std::cerr << "[screenshot] wrote " << out_path << " (" << W << "x" << H << ")\n";
@@ -625,7 +862,9 @@ int run_interactive(bool no_audio) {
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
+    VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
     ra2engine::World world = build_world(a, ua, 5);
+    if (va.ok) spawn_tank_squads(world, a, va, 3);
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
 
@@ -731,7 +970,7 @@ int run_interactive(bool no_audio) {
 
         platform.begin_frame();
         render_world(static_cast<SDL_Renderer*>(platform.renderer()), tc, a, ua, world, cam,
-                     platform.width(), platform.height(), &input);
+                     platform.width(), platform.height(), &input, va.ok ? &va : nullptr);
         platform.present();
         SDL_Delay(16);  // ~60fps
     }
@@ -1018,6 +1257,13 @@ struct DemoCombatResult {
     double sim_time = 0.0;
     bool overlap = false;          // two alive, non-dying units shared a cell at end
     bool dangling_target = false;  // some unit's target index was out of [-1, n)
+    // --demo-tank only (unused by --demo-combat, which leaves them false): a
+    // victim hp drop of exactly 90 on a Rhino (HTNK, heavy 100% of 120mm's
+    // Damage=90 -- only a Rhino can inflict it) proves a Rhino-vs-Rhino hit;
+    // exactly 22 on an infantry victim (none 25% -> trunc(90*0.25)) proves a
+    // Rhino-vs-infantry hit.
+    bool hit90_rhino = false;
+    bool hit22_infantry = false;
 };
 
 DemoCombatResult simulate_combat(Assets& a, UnitAssets& ua, bool render, SDL_Renderer* ren,
@@ -1163,6 +1409,232 @@ DemoCombatResult simulate_combat(Assets& a, UnitAssets& ua, bool render, SDL_Ren
         }
     }
     return result;
+}
+
+// Tank-aware pattern-copy of simulate_combat (see that function's comments):
+// builds the same 5 GI (house 0) vs 5 CONS (house 1) world, then adds 3 Rhinos
+// per side (spawn_tank_squads), orders house-0 to attack the nearest hostile,
+// re-targets idle units identically, and runs to wipe-out or the 120s cap.
+// `render` draws every frame (with the vehicle draw path, &va) + start/end
+// screenshots. Additionally records the two Rhino-hit witnesses: a victim hp
+// drop of exactly 90 on a Rhino (Rhino-vs-Rhino) and exactly 22 on an infantry
+// unit (Rhino-vs-infantry). Determinism holds for the same reason as
+// simulate_combat (no combat RNG); render must not perturb the log.
+DemoCombatResult simulate_tank_combat(Assets& a, UnitAssets& ua, const VehicleAssets& va,
+                                      bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                      const ra2engine::Camera* cam, int W, int H,
+                                      const std::string& start_png, const std::string& end_png) {
+    ra2engine::World world = build_world(a, ua, 5);
+    spawn_tank_squads(world, a, va, 3);
+
+    double cx = 0.0, cy = 0.0;
+    int n_allied = 0;
+    for (const auto& u : world.units())
+        if (u.house == 0) { cx += u.cell_x; cy += u.cell_y; ++n_allied; }
+    if (n_allied > 0) { cx /= n_allied; cy /= n_allied; }
+
+    int nearest = -1;
+    double best_d2 = 0.0;
+    for (std::size_t i = 0; i < world.units().size(); ++i) {
+        const ra2engine::Unit& u = world.units()[i];
+        if (u.house == 0) continue;
+        const double dx = u.cell_x - cx, dy = u.cell_y - cy;
+        const double d2 = dx * dx + dy * dy;
+        if (nearest < 0 || d2 < best_d2) { nearest = static_cast<int>(i); best_d2 = d2; }
+    }
+    for (auto& u : world.units())
+        if (u.house == 0) u.selected = true;
+    if (nearest >= 0) world.order_attack(nearest);
+
+    DemoCombatResult result;
+    const std::size_t nunits = world.units().size();
+    std::vector<int> prev_hp(nunits);
+    for (std::size_t i = 0; i < nunits; ++i) prev_hp[i] = world.units()[i].hp;
+    std::vector<bool> prev_alive(nunits, true);
+
+    auto alive_non_dying = [&](int house) {
+        int n = 0;
+        for (const auto& u : world.units())
+            if (u.house == house && u.alive && u.die_time < 0.0) ++n;
+        return n;
+    };
+    auto draw = [&]() {
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, /*input=*/nullptr, &va);
+    };
+
+    if (render) {
+        draw();
+        capture_png(ren, start_png, W, H);
+    }
+
+    const double dt = 1.0 / 60.0;
+    const double kMaxSim = 120.0;
+    double t = 0.0;
+    while (alive_non_dying(0) > 0 && alive_non_dying(1) > 0 && t < kMaxSim) {
+        std::vector<int> idle_no_target;
+        for (std::size_t i = 0; i < world.units().size(); ++i) {
+            const ra2engine::Unit& u = world.units()[i];
+            if (u.house == 0 && u.alive && u.die_time < 0.0 && !u.moving() && u.target == -1)
+                idle_no_target.push_back(static_cast<int>(i));
+        }
+        for (int i : idle_no_target) {
+            const double ux = world.units()[i].fx, uy = world.units()[i].fy;
+            int nearest_h = -1;
+            double best_dh2 = 0.0;
+            for (std::size_t j = 0; j < world.units().size(); ++j) {
+                const ra2engine::Unit& h = world.units()[j];
+                if (h.house != 1 || !h.alive || h.die_time >= 0.0) continue;
+                const double dx = ux - h.fx, dy = uy - h.fy;
+                const double d2 = dx * dx + dy * dy;
+                if (nearest_h < 0 || d2 < best_dh2) { nearest_h = static_cast<int>(j); best_dh2 = d2; }
+            }
+            if (nearest_h < 0) break;
+            world.clear_selection();
+            world.units()[i].selected = true;
+            world.order_attack(nearest_h);
+        }
+        for (auto& u : world.units())
+            if (u.house == 0 && u.alive && u.die_time < 0.0) u.selected = true;
+
+        world.step(dt);
+        t += dt;
+        for (std::size_t i = 0; i < nunits; ++i) {
+            const ra2engine::Unit& u = world.units()[i];
+            if (u.hp != prev_hp[i]) {
+                const int drop = prev_hp[i] - u.hp;
+                const bool is_rhino = (u.image == va.combat.image);  // "HTNK"
+                // A 90-drop can ONLY be a Rhino's 120mm (Damage=90) at heavy
+                // 100%; a 22-drop is 90*25% (none) -- both are Rhino hits.
+                if (drop == 90 && is_rhino) result.hit90_rhino = true;
+                if (drop == 22 && !is_rhino) result.hit22_infantry = true;
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "t=%.3f victim=%zu(%s) hp=%d->%d", t, i,
+                              u.image.c_str(), prev_hp[i], u.hp);
+                result.log.emplace_back(buf);
+                ++result.shot_count;
+                prev_hp[i] = u.hp;
+            }
+            if (prev_alive[i] && !u.alive) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "t=%.3f unit %zu(%s) died", t, i, u.image.c_str());
+                result.log.emplace_back(buf);
+                ++result.death_count;
+                prev_alive[i] = false;
+            }
+        }
+        if (render) draw();
+    }
+    result.sim_time = t;
+    if (render) {
+        draw();
+        capture_png(ren, end_png, W, H);
+    }
+
+    result.gi_survivors = alive_non_dying(0);
+    result.cons_survivors = alive_non_dying(1);
+
+    for (std::size_t i = 0; i < nunits; ++i) {
+        const ra2engine::Unit& u = world.units()[i];
+        if (u.target < -1 || u.target >= static_cast<int>(nunits)) result.dangling_target = true;
+    }
+    for (std::size_t i = 0; i < nunits; ++i) {
+        const ra2engine::Unit& u = world.units()[i];
+        if (!u.alive || u.die_time >= 0.0) continue;
+        for (std::size_t j = i + 1; j < nunits; ++j) {
+            const ra2engine::Unit& v = world.units()[j];
+            if (!v.alive || v.die_time >= 0.0) continue;
+            if (u.cell_x == v.cell_x && u.cell_y == v.cell_y) result.overlap = true;
+        }
+    }
+    return result;
+}
+
+// --demo-tank: the voxel-vehicle counterpart of --demo-combat. 5 GI + 3 Rhinos
+// (house 0) vs 5 CONS + 3 Rhinos (house 1); house 0 attacks the nearest
+// hostile, idle units re-target exactly like simulate_combat. Runs the sim
+// rendered (hidden window + start/end screenshots via the voxel draw path) and
+// headless, byte-compares the two logs, and passes (exit 0) only if: logs
+// identical, >=1 death, no overlap, no dangling target, AND both Rhino-hit
+// witnesses fired (a 90-hp Rhino-vs-Rhino drop and a 22-hp Rhino-vs-infantry
+// drop). Never touched by the byte-identity-gated demos.
+int run_demo_tank() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_tank_start.png";
+    const std::string end_png = scratch + "demo_tank_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
+    if (!va.ok) {
+        std::cerr << "[demo-tank] FAILED: vehicle assets unavailable (see [vehicle] log)\n";
+        return 1;
+    }
+
+    // Run 1: rendered (hidden window) + start/end screenshots.
+    DemoCombatResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-tank)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_tank_combat(a, ua, va, /*render=*/true, ren, &tc, &cam, W, H, start_png,
+                                      end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless -- identical spawn/orders from a FRESH World.
+    DemoCombatResult r2 = simulate_tank_combat(a, ua, va, /*render=*/false, nullptr, nullptr,
+                                               nullptr, W, H, "", "");
+
+    const bool logs_identical = (r1.log == r2.log);
+    const bool someone_died = (r1.death_count > 0 && r2.death_count > 0);
+    const bool hits_present = r1.hit90_rhino && r1.hit22_infantry;
+    const bool bad = !logs_identical || !someone_died || r1.overlap || r2.overlap ||
+                     r1.dangling_target || r2.dangling_target || !hits_present;
+
+    std::cerr << "[demo-tank] run1 lines=" << r1.log.size() << " run2 lines=" << r2.log.size()
+              << " identical=" << (logs_identical ? "yes" : "NO") << " deaths(r1/r2)="
+              << r1.death_count << "/" << r2.death_count << " overlap(r1/r2)="
+              << (r1.overlap ? "Y" : "n") << "/" << (r2.overlap ? "Y" : "n") << " dangling(r1/r2)="
+              << (r1.dangling_target ? "Y" : "n") << "/" << (r2.dangling_target ? "Y" : "n")
+              << " hit90_rhino=" << (r1.hit90_rhino ? "Y" : "n")
+              << " hit22_infantry=" << (r1.hit22_infantry ? "Y" : "n") << "\n";
+
+    std::cout << "survivors: gi=" << r1.gi_survivors << " cons=" << r1.cons_survivors
+              << " sim_time=" << r1.sim_time << "s\n";
+    std::cout << "--- first 5 log lines ---\n";
+    {
+        const std::size_t first_n = r1.log.size() < 5 ? r1.log.size() : 5;
+        for (std::size_t i = 0; i < first_n; ++i) std::cout << r1.log[i] << "\n";
+    }
+    std::cout << "--- last 5 log lines ---\n";
+    {
+        const std::size_t from = r1.log.size() > 5 ? r1.log.size() - 5 : 0;
+        for (std::size_t i = from; i < r1.log.size(); ++i) std::cout << r1.log[i] << "\n";
+    }
+    std::cout << "shots=" << r1.shot_count << " deaths=" << r1.death_count
+              << " hit90_rhino=" << (r1.hit90_rhino ? "yes" : "no")
+              << " hit22_infantry=" << (r1.hit22_infantry ? "yes" : "no") << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    std::cout << "deterministic=" << (logs_identical ? "yes" : "no") << " logs=" << r1.log.size()
+              << " lines\n";
+
+    return bad ? 1 : 0;
 }
 
 // Bit-deterministic proof of the whole combat pipeline: spawn 5 GIs (house 0)
@@ -1330,6 +1802,7 @@ int main(int argc, char** argv) {
         int group_n = 5, group_x = 0, group_y = 0;
         bool demo_combat = false;
         int combat_seed = 0;
+        bool demo_tank = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -1366,12 +1839,16 @@ int main(int argc, char** argv) {
                         ++i;
                     }
                 }
+            } else if (arg == "--demo-tank") {
+                demo_tank = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
                 no_audio = true;
             }
         }
+        // --demo-tank dispatched BEFORE --demo-combat (brief Step 6 ordering).
+        if (demo_tank) return run_demo_tank();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);

@@ -226,10 +226,10 @@ TEST_CASE("voxel_raster: real htnk hull renders deterministically") {
     CHECK(opaque_count(s1) > 200);          // a 46x34x12 tank is not a speck
     CHECK(s1.w < 200);
     CHECK(s1.h < 200);                      // and not exploded
-    // FNV-1a fingerprint -- MESSAGE only until Task 6's visual calibration
-    // pins it as a CHECK (regression lock).
-    MESSAGE("htnk hull rgba FNV-1a = 0x" << std::hex << fnv1a(s1.rgba)
-            << " (w=" << std::dec << s1.w << " h=" << s1.h
-            << " opaque=" << opaque_count(s1)
-            << " anchor=" << s1.anchor_x << "," << s1.anchor_y << ")");
+    // FNV-1a fingerprint (regression lock) -- pinned after visual calibration
+    // vs the original (Task 6, docs/re/voxel-render.md §1-4: the recovered
+    // projection/lighting/palette produce a coherent Rhino hull, verified on
+    // screen). Re-pin ONLY with a new visual check. Observed sprite: w=61 h=43
+    // opaque=1038 anchor=(27,24).
+    CHECK(fnv1a(s1.rgba) == 1209756769u);  // 0x481b6c61
 }

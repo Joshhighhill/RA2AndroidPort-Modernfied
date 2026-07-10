@@ -25,6 +25,14 @@ public:
     void* get(const std::string& key, const uint8_t* indices, int w, int h,
               const ra2assets::Palette& pal);
 
+    // Upload an already-palettized RGBA buffer (`rgba` = w*h*4 bytes, R,G,B,A
+    // memory order, alpha 0 = transparent) directly as a cached SDL_Texture,
+    // keyed by `key`. Used by the voxel draw path, whose rasterizer already
+    // produces final RGBA (VoxelSprite::rgba) rather than palette indices. On
+    // cache hit returns the previously created texture. Trivial variant of the
+    // indexed `get` above (skips the palettize loop).
+    void* get_rgba(const std::string& key, const uint8_t* rgba, int w, int h);
+
     // Return the cached SDL_Texture* for `key`, or nullptr if not cached.
     // Lets callers skip decoding/palettizing work on a cache hit.
     void* peek(const std::string& key) const;

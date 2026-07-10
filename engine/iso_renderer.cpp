@@ -252,6 +252,39 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     return true;
 }
 
+bool draw_voxel_sprite(void* sdl_renderer, TextureCache& tc, const std::string& key,
+                       const VoxelSprite& s, double fx, double fy, int level,
+                       const Camera& cam, int view_w, int view_h) {
+    if (s.w <= 0 || s.h <= 0) return false;
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+
+    // Same fractional diamond projection as draw_unit: project the continuous
+    // (fx, fy) ground point, then offset to the tile CENTER (kTileW/2,
+    // kTileH/2) -- the iso ground reference. The sprite's model-origin anchor
+    // is then placed on that center so hull/turret/barrel (which all share the
+    // model origin) stack coherently.
+    const double hw = kTileW / 2.0;
+    const double hh = kTileH / 2.0;
+    const int center_x =
+        static_cast<int>(std::lround((fx - fy) * hw)) + cam.x + kTileW / 2;
+    const int center_y =
+        static_cast<int>(std::lround((fx + fy) * hh - level * kLevelPx)) + cam.y + kTileH / 2;
+
+    SDL_Rect dst;
+    dst.x = center_x - s.anchor_x;
+    dst.y = center_y - s.anchor_y;
+    dst.w = s.w;
+    dst.h = s.h;
+
+    if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h)
+        return false;
+
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) tex = static_cast<SDL_Texture*>(tc.get_rgba(key, s.rgba.data(), s.w, s.h));
+    SDL_RenderCopy(renderer, tex, nullptr, &dst);
+    return true;
+}
+
 // Screen-space center (in projected pixels + camera) of the diamond tile at
 // continuous iso position (fx, fy, level). The tile's ground reference is the
 // center of its bounding rect (tile_w/2, tile_h/2 below the projected
@@ -266,16 +299,21 @@ static void tile_center_screen(double fx, double fy, int level, const Camera& ca
 }
 
 void draw_selection(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,
-                    int view_h) {
+                    int view_h, int width_px) {
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
     int cx, cy;
     tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
+
+    // Diamond size: default one-cell footprint (60x30, 2:1), or scaled to
+    // `width_px` for wide voxel sprites (keeping the 2:1 iso ratio).
+    const int diamond_w = width_px > 0 ? width_px : kTileW;
     // Cull if the diamond is well off-screen.
-    if (cx + kTileW < 0 || cy + kTileH < 0 || cx - kTileW >= view_w || cy - kTileH >= view_h)
+    if (cx + diamond_w < 0 || cy + diamond_w < 0 || cx - diamond_w >= view_w ||
+        cy - diamond_w >= view_h)
         return;
 
-    const int hw = kTileW / 2;
-    const int hh = kTileH / 2;
+    const int hw = diamond_w / 2;
+    const int hh = diamond_w / 4;
     // A green isometric diamond (the tile footprint) centered on the ground
     // point: top, right, bottom, left corners.
     SDL_Point pts[5] = {
@@ -343,23 +381,28 @@ static constexpr int kHpBarH = 3;
 static constexpr int kHpBarUp = 46;
 static constexpr int kHpBarGap = 6;
 
-void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h) {
+void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h,
+                 int width_px) {
     if (unit.max_hp <= 0) return;
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+
+    // Bar width: default 24px, or the caller-supplied sprite width (voxel
+    // hull) so the bar spans a wider vehicle.
+    const int bar_w = width_px > 0 ? width_px : kHpBarW;
 
     int cx, cy;
     tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
     const int bar_cy = cy - kHpBarUp - kHpBarGap;
 
-    SDL_Rect bg{cx - kHpBarW / 2, bar_cy - kHpBarH / 2, kHpBarW, kHpBarH};
+    SDL_Rect bg{cx - bar_w / 2, bar_cy - kHpBarH / 2, bar_w, kHpBarH};
     if (bg.x + bg.w <= 0 || bg.y + bg.h <= 0 || bg.x >= view_w || bg.y >= view_h) return;
 
     SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);
     SDL_RenderFillRect(renderer, &bg);
 
     const int hp = unit.hp < 0 ? 0 : unit.hp;
-    int fill_w = static_cast<int>(static_cast<long long>(hp) * kHpBarW / unit.max_hp);
-    if (fill_w > kHpBarW) fill_w = kHpBarW;
+    int fill_w = static_cast<int>(static_cast<long long>(hp) * bar_w / unit.max_hp);
+    if (fill_w > bar_w) fill_w = bar_w;
     if (fill_w < 0) fill_w = 0;
     // clamp: a living unit always shows at least 1px of health
     if (unit.hp > 0 && fill_w < 1) fill_w = 1;
