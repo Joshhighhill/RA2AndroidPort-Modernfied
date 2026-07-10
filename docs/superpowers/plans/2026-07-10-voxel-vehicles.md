@@ -218,9 +218,10 @@ TEST_CASE("vpl: real voxels.vpl pins") {
     //   CHECK(bytes.size() == 16 + 768 + p.section_count * 256);
     //   CHECK(p.section_count == 32);
     //   CHECK(p.tables.size() == 32);
-    // Identity spot-check [RE: voxel-render.md §3 — the "full brightness"
-    // table maps most colors to themselves]: count fixed points of the table
-    // the RE doc names as full-light and CHECK(fixed_points > 200).
+    // Identity spot-check (voxel-render.md §3, CORRECTED post-Task-2 vs the
+    // real file): ROW 8 is the base/unmodified row ((d+s)=0.5), 199 fixed
+    // points measured; CHECK(fixed points of tables[8] > 150). Row 16 is NOT
+    // neutral (13 fixed points). [Task 2 already landed exactly this pin.]
 }
 ```
 
@@ -455,7 +456,8 @@ ra2engine" — these are the recovered values, no longer assumptions):**
    `level = clamp(ftol((d + s) * 16.0), 0, vpl.section_count - 1)`
    (the clamp is REQUIRED: d+s can reach ~2.0 → 32 without it — reviewer
    finding on the RE doc). Normal indices 253–255 are forced to level 16
-   (the neutral row). `final_index = vpl.tables[level][v.color]`,
+   (a hard-wired marker level; row 8 — not 16 — is the base/identity row per
+   the corrected §3). `final_index = vpl.tables[level][v.color]`,
    RGBA = `pal[final_index]`, alpha 255. Normal table per section by
    `normals_mode` (2 → kNormals2[36], 4 → kNormals4[245]; any other mode →
    treat as 4). Out-of-range normal indices clamp to the table's last entry.
@@ -736,7 +738,7 @@ void project(const V3& w, double& sx, double& sy, double& depth) {
 
 // voxel-render.md §3: level = ftol((d + s) * 16), d = diffuse, s = specular
 // h/(3-2h); L/H are the light dir already rotated into MODEL space by the
-// caller (world-fixed light). Indices 253-255 -> neutral row 16. Clamp to
+// caller (world-fixed light). Indices 253-255 -> hard-wired level 16 (slightly brightened; row 8 is base). Clamp to
 // section_count-1 (d+s can reach ~2.0).
 int light_level(uint8_t normal_ix, uint8_t mode, uint32_t levels,
                 const double L[3], const double H[3]) {
