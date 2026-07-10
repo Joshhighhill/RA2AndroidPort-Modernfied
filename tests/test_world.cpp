@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <tuple>
 #include <vector>
 
 #include "iso_project.hpp"  // cell_to_screen / screen_to_cell
@@ -124,6 +125,87 @@ bool load_real_map_w(ra2assets::MapFile& out) {
     auto raw = mix.read(*e);
     out = ra2assets::MapFile::parse(std::string(raw.begin(), raw.end()));
     return true;
+}
+
+// GI (house 0, M60) / Conscript (house 1, M1Carbine) combat stats -- ground
+// truth from docs/re/combat.md / the Combat Phase's extracted rulesmd values
+// (both Strength=125, SA warhead), same numbers test_combat.cpp's
+// make_soldier helper uses.
+ra2engine::UnitCombat gi_stats() {
+    ra2engine::UnitCombat c;
+    c.strength = 125;
+    c.armor = "none";
+    c.image = "GI";
+    c.damage = 15;
+    c.rof = 20;
+    c.range = 4.0;
+    c.verses = {100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100};  // kSAVerses
+    return c;
+}
+ra2engine::UnitCombat cons_stats() {
+    ra2engine::UnitCombat c;
+    c.strength = 125;
+    c.armor = "flak";
+    c.image = "CONS";
+    c.damage = 15;
+    c.rof = 25;
+    c.range = 4.0;
+    c.verses = {100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100};  // kSAVerses
+    return c;
+}
+
+// Spawn `n` combat units of `house` at walkable+unoccupied cells scanning a
+// small square from (base_x, base_y) -- same walkable()+unit_at_cell()<0
+// scan the Input-test spawn helper (tests/test_input.cpp's `spawn`) and this
+// file's own "group move" test use, just via add_combat_unit instead of
+// add_unit. Returns the placed units' indices (fewer than n if the area is
+// too crowded/blocked).
+std::vector<int> spawn_combat_squad(ra2engine::World& world, int base_x, int base_y, int house,
+                                    const ra2engine::UnitCombat& stats, int n) {
+    std::vector<int> idx;
+    for (int dy = 0; dy < 8 && static_cast<int>(idx.size()) < n; ++dy)
+        for (int dx = 0; dx < 8 && static_cast<int>(idx.size()) < n; ++dx) {
+            const int x = base_x + dx, y = base_y + dy;
+            if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                world.add_combat_unit(x, y, house, stats);
+                idx.push_back(static_cast<int>(world.units().size()) - 1);
+            }
+        }
+    return idx;
+}
+
+// Spawn two 3-unit squads (GI house 0 / Conscript house 1) INTERLEAVED at
+// walkable+unoccupied cells scanning outward from (base_x, base_y): the
+// (placed % 2) alternation means every two spatially-adjacent placed units
+// are opposite factions, so every unit's nearest enemy is close -- unlike a
+// two-separate-blocks layout (each squad scanned from its own offset base),
+// which leaves the far-end unit of EACH block as nobody's "nearest enemy"
+// (it's the single farthest point from the other block): in a 120s
+// full-battle run against the real map this produced two mutually-idle,
+// undamaged, just-out-of-weapon-range survivors that never engaged --
+// confirmed by instrumenting a run before landing on this interleaved
+// layout. Interleaving keeps every unit within a cell or two of an opposing
+// unit throughout the fight, so a unit whose original target dies is very
+// likely to have another hostile already within auto-acquire range.
+struct InterleavedSquads {
+    std::vector<int> gi, cons;
+};
+InterleavedSquads spawn_interleaved_squads(ra2engine::World& world, int base_x, int base_y,
+                                           const ra2engine::UnitCombat& gi_c,
+                                           const ra2engine::UnitCombat& cons_c, int n_each) {
+    InterleavedSquads sq;
+    int placed = 0;
+    for (int dy = 0; dy < 8 && placed < 2 * n_each; ++dy)
+        for (int dx = 0; dx < 8 && placed < 2 * n_each; ++dx) {
+            const int x = base_x + dx, y = base_y + dy;
+            if (!world.walkable(x, y) || world.unit_at_cell(x, y) >= 0) continue;
+            const bool is_gi = (placed % 2) == 0;
+            world.add_combat_unit(x, y, is_gi ? 0 : 1, is_gi ? gi_c : cons_c);
+            const int idx = static_cast<int>(world.units().size()) - 1;
+            (is_gi ? sq.gi : sq.cons).push_back(idx);
+            ++placed;
+        }
+    return sq;
 }
 }  // namespace
 
@@ -257,4 +339,261 @@ TEST_CASE("World: unreachable order mid-walk cancels and snaps fx/fy cleanly") {
     CHECK(world.units()[0].path.empty());
     CHECK(world.units()[0].fx == (double)world.units()[0].cell_x);
     CHECK(world.units()[0].fy == (double)world.units()[0].cell_y);
+}
+
+// ---- Combat integration (Task 5: add_combat_unit / order_attack / step chaining / tombstones) ----
+
+TEST_CASE("World: two squads fight to elimination deterministically (real map)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+
+    const ra2engine::UnitCombat gi = gi_stats();
+    const ra2engine::UnitCombat cons = cons_stats();
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // Runs the full scenario on a fresh World (same underlying map): spawn 3
+    // GIs (house 0) and 3 Conscripts (house 1) interleaved (see
+    // spawn_interleaved_squads -- close-range combat, ~1-3 cells apart), each
+    // GI explicitly ordered (via order_attack, selecting one unit at a time)
+    // to attack its own nearest hostile, each Conscript given an explicit
+    // attack on its own nearest GI directly (hostiles have no selection path
+    // -- order_attack is a house-0-only command), then simulates at 60Hz to a
+    // 120s cap, checking per-frame invariants throughout. Returns the final
+    // (hp, cell_x, cell_y, alive, dying) tuple per unit for the bit-
+    // determinism comparison across two independent runs below.
+    auto run_battle = [&](ra2engine::World& world) {
+        world.set_move_speed(3.0);
+
+        InterleavedSquads sq = spawn_interleaved_squads(world, c->x, c->y, gi, cons, 3);
+        std::vector<int>& gi_idx = sq.gi;
+        std::vector<int>& cons_idx = sq.cons;
+        REQUIRE(gi_idx.size() == 3);
+        REQUIRE(cons_idx.size() == 3);
+
+        // Each GI attacks its OWN nearest hostile: select just that unit so
+        // order_attack's "every selected unit" only ever touches it.
+        for (int gi_i : gi_idx) {
+            world.clear_selection();
+            world.units()[gi_i].selected = true;
+            int nearest = -1;
+            double best_d2 = 0.0;
+            for (int cons_i : cons_idx) {
+                const double dx = world.units()[gi_i].cell_x - world.units()[cons_i].cell_x;
+                const double dy = world.units()[gi_i].cell_y - world.units()[cons_i].cell_y;
+                const double d2 = dx * dx + dy * dy;
+                if (nearest == -1 || d2 < best_d2) {
+                    nearest = cons_i;
+                    best_d2 = d2;
+                }
+            }
+            REQUIRE(nearest != -1);
+            world.order_attack(nearest);
+        }
+        world.clear_selection();
+
+        // Conscripts (hostile) have no selection path -- set target/
+        // attack_order directly on each, aimed at its own nearest GI.
+        for (int cons_i : cons_idx) {
+            int nearest = -1;
+            double best_d2 = 0.0;
+            for (int gi_i : gi_idx) {
+                const double dx = world.units()[cons_i].cell_x - world.units()[gi_i].cell_x;
+                const double dy = world.units()[cons_i].cell_y - world.units()[gi_i].cell_y;
+                const double d2 = dx * dx + dy * dy;
+                if (nearest == -1 || d2 < best_d2) {
+                    nearest = gi_i;
+                    best_d2 = d2;
+                }
+            }
+            REQUIRE(nearest != -1);
+            world.units()[cons_i].target = nearest;
+            world.units()[cons_i].attack_order = true;
+        }
+
+        const double dt = 1.0 / 60.0;
+        double t = 0.0;
+        bool ended = false;
+        for (; t < 120.0; t += dt) {
+            world.step(dt);
+            const auto& us = world.units();
+
+            // No two ALIVE-and-not-dying units ever share a cell (a dying
+            // unit's occupancy was already released at the moment it started
+            // dying, so it MAY coincide with a living unit's cell -- excluded
+            // from this invariant by design).
+            for (std::size_t i = 0; i < us.size(); ++i) {
+                if (!us[i].alive || us[i].die_time >= 0.0) continue;
+                for (std::size_t j = i + 1; j < us.size(); ++j) {
+                    if (!us[j].alive || us[j].die_time >= 0.0) continue;
+                    CHECK_FALSE((us[i].cell_x == us[j].cell_x && us[i].cell_y == us[j].cell_y));
+                }
+            }
+            // No target ever dangles: -1, or a valid index into a unit that
+            // is alive. (A target may point at a unit that is DYING but still
+            // alive==true for one frame -- validation clears it on the NEXT
+            // step_combat call -- so "alive", not "not dying", is the correct
+            // per-frame invariant here.)
+            for (const auto& u : us) {
+                CHECK((u.target == -1 || (u.target >= 0 &&
+                                          u.target < static_cast<int>(us.size()) &&
+                                          us[u.target].alive)));
+            }
+
+            int gi_alive = 0, cons_alive = 0;
+            for (int gi_i : gi_idx)
+                if (us[gi_i].alive && us[gi_i].die_time < 0.0) ++gi_alive;
+            for (int cons_i : cons_idx)
+                if (us[cons_i].alive && us[cons_i].die_time < 0.0) ++cons_alive;
+            if (gi_alive == 0 || cons_alive == 0) {
+                ended = true;
+                break;
+            }
+        }
+        CHECK(ended);       // battle resolves before the 120s cap
+        CHECK(t < 120.0);
+
+        std::vector<std::tuple<int, int, int, bool, bool>> final_state;
+        for (const auto& u : world.units())
+            final_state.emplace_back(u.hp, u.cell_x, u.cell_y, u.alive, u.die_time >= 0.0);
+        return final_state;
+    };
+
+    ra2engine::World world1(map);
+    const auto final1 = run_battle(world1);
+
+    ra2engine::World world2(map);
+    const auto final2 = run_battle(world2);
+
+    // Bit determinism: an identical run from a fresh World reaches the exact
+    // same final state.
+    REQUIRE(final1.size() == final2.size());
+    CHECK(final1 == final2);
+}
+
+TEST_CASE("World: order_attack sets target+attack_order on selected units only") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    std::vector<int> gi_idx = spawn_combat_squad(world, c->x, c->y, 0, gi_stats(), 3);
+    std::vector<int> cons_idx = spawn_combat_squad(world, c->x + 3, c->y, 1, cons_stats(), 1);
+    REQUIRE(gi_idx.size() == 3);
+    REQUIRE(cons_idx.size() == 1);
+    const int hostile = cons_idx[0];
+
+    // Select only the first two GIs.
+    world.units()[gi_idx[0]].selected = true;
+    world.units()[gi_idx[1]].selected = true;
+    world.units()[gi_idx[2]].selected = false;
+
+    world.order_attack(hostile);
+
+    CHECK(world.units()[gi_idx[0]].target == hostile);
+    CHECK(world.units()[gi_idx[0]].attack_order == true);
+    CHECK(world.units()[gi_idx[1]].target == hostile);
+    CHECK(world.units()[gi_idx[1]].attack_order == true);
+    // Unselected GI untouched.
+    CHECK(world.units()[gi_idx[2]].target == -1);
+    CHECK(world.units()[gi_idx[2]].attack_order == false);
+
+    world.clear_selection();
+    world.units()[gi_idx[2]].selected = true;
+
+    // No-op: out-of-range target index.
+    world.order_attack(static_cast<int>(world.units().size()) + 5);
+    CHECK(world.units()[gi_idx[2]].target == -1);
+    CHECK(world.units()[gi_idx[2]].attack_order == false);
+
+    // No-op: target is house 0 (friendly) -- can't order an attack on it.
+    world.order_attack(gi_idx[0]);
+    CHECK(world.units()[gi_idx[2]].target == -1);
+
+    // No-op: dead target.
+    world.units()[hostile].alive = false;
+    world.order_attack(hostile);
+    CHECK(world.units()[gi_idx[2]].target == -1);
+    world.units()[hostile].alive = true;  // restore
+
+    // No-op: dying target.
+    world.units()[hostile].die_time = 0.2;
+    world.order_attack(hostile);
+    CHECK(world.units()[gi_idx[2]].target == -1);
+    world.units()[hostile].die_time = -1.0;  // restore
+
+    // A selected but dying unit does not get a target set either.
+    world.units()[gi_idx[2]].die_time = 0.1;
+    world.order_attack(hostile);
+    CHECK(world.units()[gi_idx[2]].target == -1);
+}
+
+TEST_CASE("World: dead units are unpickable and non-occupying") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(3.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    std::vector<int> gi_idx = spawn_combat_squad(world, c->x, c->y, 0, gi_stats(), 1);
+    std::vector<int> cons_idx = spawn_combat_squad(world, c->x + 3, c->y, 1, cons_stats(), 1);
+    REQUIRE(gi_idx.size() == 1);
+    REQUIRE(cons_idx.size() == 1);
+    const int victim = cons_idx[0];
+    world.units()[victim].w_damage = 0;  // disarm: isolate the GI's attack (no retaliation kill-race)
+
+    world.units()[gi_idx[0]].selected = true;
+    world.order_attack(victim);
+
+    const int vx = world.units()[victim].cell_x;
+    const int vy = world.units()[victim].cell_y;
+    REQUIRE(world.unit_at_cell(vx, vy) == victim);  // alive: pickable, occupies its cell
+
+    const double dt = 1.0 / 60.0;
+    double t = 0.0;
+    while (world.units()[victim].die_time < 0.0 && t < 30.0) {
+        world.step(dt);
+        t += dt;
+    }
+    REQUIRE(world.units()[victim].die_time >= 0.0);
+    REQUIRE(world.units()[victim].alive);  // dying, not yet tombstoned
+
+    // Dying: unpickable and non-occupying, but still rendered (die anim).
+    CHECK(world.unit_at_cell(vx, vy) != victim);
+    CHECK(world.occupancy().at(vx, vy) == ra2engine::Occupancy::kEmpty);
+    {
+        const auto order = ra2engine::unit_draw_order(world.units());
+        bool found = false;
+        for (int idx : order)
+            if (idx == victim) found = true;
+        CHECK(found);
+    }
+
+    // Run the death animation out to tombstone (alive = false).
+    while (world.units()[victim].alive && t < 32.0) {
+        world.step(dt);
+        t += dt;
+    }
+    REQUIRE_FALSE(world.units()[victim].alive);
+
+    CHECK(world.unit_at_cell(vx, vy) != victim);
+    CHECK(world.occupancy().at(vx, vy) == ra2engine::Occupancy::kEmpty);
+    {
+        const auto order = ra2engine::unit_draw_order(world.units());
+        bool found = false;
+        for (int idx : order)
+            if (idx == victim) found = true;
+        CHECK_FALSE(found);  // tombstoned: excluded from draw order
+    }
 }

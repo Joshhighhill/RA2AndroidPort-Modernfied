@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "combat.hpp"         // armor_index, step_combat, MoveRequest
 #include "group_move.hpp"     // assign_formation
 #include "iso_project.hpp"   // cell_to_screen (terrain_screen_bounds)
 #include "iso_renderer.hpp"  // terrain_screen_bounds declaration
@@ -155,21 +156,67 @@ Unit& World::add_unit(int cell_x, int cell_y, const std::string& image, int fram
     return units_.back();
 }
 
+Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat& c) {
+    Unit& u = add_unit(cell_x, cell_y, c.image, 0);
+    u.house = house;
+    u.hp = u.max_hp = c.strength;
+    u.armor_ix = armor_index(c.armor);
+    u.w_damage = c.damage;
+    u.w_rof = c.rof;
+    u.w_range = c.range;
+    u.w_verses = c.verses;
+    return u;
+}
+
 void World::clear_selection() {
     for (Unit& u : units_) u.selected = false;
 }
 
 int World::unit_at_cell(int x, int y) const {
-    for (std::size_t i = 0; i < units_.size(); ++i)
-        if (units_[i].cell_x == x && units_[i].cell_y == y) return static_cast<int>(i);
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+        const Unit& u = units_[i];
+        if (!u.alive || u.die_time >= 0.0) continue;  // corpses/dying: unpickable
+        if (u.cell_x == x && u.cell_y == y) return static_cast<int>(i);
+    }
     return -1;
+}
+
+void World::order_unit_move(int idx, int gx, int gy) {
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    Unit& u = units_[idx];
+    // Drop any stale next-cell reservation from an in-flight order (the
+    // occupancy may still mark a cell this unit reserved but will now never
+    // enter, which would block other units forever); re-assert only the
+    // current cell.
+    occ_.release_all_of(idx, u.cell_x, u.cell_y);
+    occ_.set(u.cell_x, u.cell_y, idx);
+    std::vector<Cellxy> path =
+        find_path(passable_, grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
+    if (path.size() <= 1) {
+        // Assigned its own cell / unreachable: stay put, snap cleanly
+        // (mirrors the single-unit Finding-1 cancel branch).
+        u.path.clear();
+        u.path_idx = 0;
+        u.anim_time = 0.0;
+        u.wait_time = 0.0;
+        u.frame = kStandFrame;
+        u.fx = u.cell_x;
+        u.fy = u.cell_y;
+    } else {
+        u.path = std::move(path);
+        u.path_idx = 1;  // path[0] is the current cell
+        u.anim_time = 0.0;
+        u.wait_time = 0.0;
+        // Do NOT reset fx/fy: preserves an in-flight walk across a reorder
+        // (Task 12 Finding 1); step_units interpolates from any fx/fy.
+    }
 }
 
 void World::order_move_selected(int goal_x, int goal_y) {
     std::vector<int> sel;
     std::vector<Cellxy> cur;
     for (std::size_t i = 0; i < units_.size(); ++i)
-        if (units_[i].selected) {
+        if (units_[i].selected && units_[i].alive && units_[i].die_time < 0.0) {
             sel.push_back(static_cast<int>(i));
             cur.push_back({units_[i].cell_x, units_[i].cell_y});
         }
@@ -179,47 +226,61 @@ void World::order_move_selected(int goal_x, int goal_y) {
         assign_formation({goal_x, goal_y}, cur, passable_, grid_w_, grid_h_, occ_);
 
     for (std::size_t k = 0; k < sel.size(); ++k) {
-        Unit& u = units_[sel[k]];
-        // Drop any stale next-cell reservation from an in-flight order (the
-        // occupancy may still mark a cell this unit reserved but will now
-        // never enter, which would block other units forever); re-assert only
-        // the current cell.
-        occ_.release_all_of(sel[k], u.cell_x, u.cell_y);
-        occ_.set(u.cell_x, u.cell_y, sel[k]);
         const Cellxy tgt = targets[k];
-        std::vector<Cellxy> path =
-            find_path(passable_, grid_w_, grid_h_, {u.cell_x, u.cell_y}, tgt);
-        if (path.size() <= 1) {
-            // Assigned its own cell / unreachable: stay put, snap cleanly
-            // (mirrors the single-unit Finding-1 cancel branch).
-            u.path.clear();
-            u.path_idx = 0;
-            u.anim_time = 0.0;
-            u.wait_time = 0.0;
-            u.frame = kStandFrame;
-            u.fx = u.cell_x;
-            u.fy = u.cell_y;
-        } else {
-            u.path = std::move(path);
-            u.path_idx = 1;  // path[0] is the current cell
-            u.anim_time = 0.0;
-            u.wait_time = 0.0;
-            // Do NOT reset fx/fy: preserves an in-flight walk across a reorder
-            // (Task 12 Finding 1); step_units interpolates from any fx/fy.
-        }
+        order_unit_move(sel[k], tgt.x, tgt.y);
+    }
+}
+
+void World::order_attack(int target_idx) {
+    if (target_idx < 0 || target_idx >= static_cast<int>(units_.size())) return;
+    const Unit& tgt = units_[target_idx];
+    // Can't order an attack on a dead/dying target, or on a house-0 unit
+    // (order_attack is issued for the player's house-0 units against
+    // hostiles -- a house-0 target would mean "attack a friendly").
+    if (!tgt.alive || tgt.die_time >= 0.0 || tgt.house == 0) return;
+
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+        Unit& u = units_[i];
+        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        u.target = target_idx;
+        u.attack_order = true;
+        // Same occupancy cleanup as order_move_selected: drop any stale
+        // next-cell reservation from an in-flight move order, re-assert only
+        // the current cell, and clear the path -- step_combat's next
+        // MoveRequest (pursuit, now that attack_order is true) re-paths it.
+        occ_.release_all_of(static_cast<int>(i), u.cell_x, u.cell_y);
+        occ_.set(u.cell_x, u.cell_y, static_cast<int>(i));
+        u.path.clear();
+        u.path_idx = 0;
     }
 }
 
 void World::step(double dt) {
     step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_);
+
+    const std::vector<MoveRequest> reqs = step_combat(units_, occ_, dt);
+    for (const MoveRequest& r : reqs) {
+        if (r.unit < 0 || r.unit >= static_cast<int>(units_.size())) continue;
+        const Unit& u = units_[r.unit];
+        if (!u.alive || u.die_time >= 0.0) continue;  // died/started dying this same step
+        order_unit_move(r.unit, r.goal_x, r.goal_y);
+    }
+
     // Patch terrain height for rendering (step_units is map-agnostic).
-    for (Unit& u : units_)
+    // Dying units still render (die anim) so still get patched; tombstoned
+    // (!alive) units are never drawn (unit_draw_order excludes them), so
+    // their level is left as-is.
+    for (Unit& u : units_) {
+        if (!u.alive) continue;
         if (const ra2assets::MapCell* mc = map_->at(u.cell_x, u.cell_y)) u.level = mc->level;
+    }
 }
 
 std::vector<int> unit_draw_order(const std::vector<Unit>& units) {
-    std::vector<int> order(units.size());
-    for (int i = 0; i < static_cast<int>(units.size()); ++i) order[i] = i;
+    std::vector<int> order;
+    order.reserve(units.size());
+    for (int i = 0; i < static_cast<int>(units.size()); ++i)
+        if (units[i].alive) order.push_back(i);  // dying still renders; tombstoned excluded
     std::sort(order.begin(), order.end(), [&](int a, int b) {
         const double da = units[a].fx + units[a].fy;
         const double db = units[b].fx + units[b].fy;
@@ -253,6 +314,14 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
+
+        // Dead/dying units never move, never re-claim a cell, and never
+        // occupy: combat.cpp's step_combat already released a unit's
+        // occupancy the instant it died (die_time flips to >= 0.0), so
+        // falling through to the idle branch below would resurrect a
+        // corpse's claim on its cell and wrongly block living units from
+        // entering it.
+        if (!u.alive || u.die_time >= 0.0) continue;
 
         if (!u.moving()) {
             occ.set(u.cell_x, u.cell_y, self);  // idle units own their cell

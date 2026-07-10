@@ -85,6 +85,21 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 // Returns nullptr if the map has no cells at all.
 const ra2assets::MapCell* pick_start_cell(const ra2assets::MapFile& map);
 
+// Per-unit combat stats resolved once by the caller (main.cpp, from Rules)
+// and handed to World::add_combat_unit to fill in a spawned Unit's hp/armor/
+// weapon fields. Mirrors the Rules-derived values Task 2 exposes (strength,
+// armor, the primary weapon's damage/rof/range, and its warhead's verses)
+// plus the SHP image name add_unit already takes directly.
+struct UnitCombat {
+    int strength = 1;
+    std::string armor;
+    std::string image;
+    int damage = 0;
+    int rof = 0;
+    double range = 0.0;
+    std::vector<int> verses;
+};
+
 // Builds the passability grid in RAW IsoMapPack5 (x, y) space -- the SAME
 // coordinate space MapCell.x/y and iso_project's cell_to_screen /
 // screen_to_cell live in (see map.hpp + iso_project.hpp). The grid is sized
@@ -120,9 +135,21 @@ public:
     // cell silently breaks the one-unit-per-cell invariant.
     Unit& add_unit(int cell_x, int cell_y, const std::string& image, int frame = 0);
 
+    // Append a combat-capable unit at (cell_x, cell_y): mirrors add_unit
+    // (image = c.image, frame 0, level seed, occupancy claim) and additionally
+    // resolves `house` plus hp/max_hp (from c.strength), armor_ix
+    // (armor_index(c.armor)), and the weapon fields (w_damage/w_rof/w_range
+    // from c.damage/c.rof/c.range, w_verses = c.verses). Same precondition as
+    // add_unit: (cell_x, cell_y) must be walkable and unoccupied -- callers
+    // check walkable() and unit_at_cell() first; seeding two units onto one
+    // cell silently breaks the one-unit-per-cell invariant.
+    Unit& add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat& c);
+
     // Deselect every unit.
     void clear_selection();
-    // Index of the unit whose CURRENT cell is (x, y), or -1 if none.
+    // Index of the unit whose CURRENT cell is (x, y), or -1 if none -- skips
+    // dying and dead units (a corpse is unpickable; its cell was already
+    // released by the time it started dying, so it never occupies anyway).
     int unit_at_cell(int x, int y) const;
 
     // Passability grid accessors (iso space; see build_passability).
@@ -139,14 +166,40 @@ public:
     // Order every SELECTED unit to walk toward (goal_x, goal_y): assigns each a
     // distinct formation cell spiralling out from the goal, then paths it there.
     // Units retargeted mid-walk keep their interpolated fx/fy (no backward
-    // snap). No-op if nothing is selected.
+    // snap). Dying/dead selected units are skipped. No-op if nothing eligible
+    // is selected.
     void order_move_selected(int goal_x, int goal_y);
 
-    // Advance all units by dt seconds (collision-aware, via step_units) and
-    // patch each unit's terrain level from the map for rendering height.
+    // Order every SELECTED house-0, alive, non-dying unit to attack
+    // `target_idx`: sets target=target_idx and attack_order=true (pursues
+    // indefinitely -- step_combat's next MoveRequest paths it there via
+    // step()), and releases/re-asserts its occupancy claim and clears its
+    // path the same way order_move_selected does (a fresh pursuit path is
+    // computed later by step_combat's request, not here). No-op (touches no
+    // unit) if target_idx is out of range, dead, dying, or itself house 0 --
+    // a house-0 (player) unit can't be ordered to attack a friendly.
+    void order_attack(int target_idx);
+
+    // Advance all units by dt seconds: step_units (collision-aware movement)
+    // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
+    // anchor MoveRequests) -> path each request via order_unit_move (skipping
+    // any request for a unit that died/started dying this same step) -> patch
+    // each still-alive unit's terrain level from the map for rendering height.
     void step(double dt);
 
 private:
+    // Per-unit body shared by order_move_selected (per selected unit, given
+    // its formation-assigned cell) and step's MoveRequest execution (per
+    // pursuing/returning unit, given step_combat's requested cell): paths
+    // unit `idx` directly to (gx, gy) -- no formation, since a pursuit/
+    // return-to-anchor request already names one specific goal cell --
+    // releasing/re-asserting its occupancy claim first. Unreachable/self-goal
+    // cancels cleanly (fx/fy snap to the current cell, mirroring the
+    // single-unit Finding-1 cancel branch); otherwise fx/fy are left alone
+    // (no backward snap) and the unit starts walking. No-op if idx is out of
+    // range.
+    void order_unit_move(int idx, int gx, int gy);
+
     const ra2assets::MapFile* map_;
     std::vector<Unit> units_;
     std::vector<std::uint8_t> passable_;
@@ -157,7 +210,9 @@ private:
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by
-// screen depth (fx + fy) ascending, tie-break fx ascending then index. Pure.
+// screen depth (fx + fy) ascending, tie-break fx ascending then index.
+// Includes dying units (die_time >= 0 -- the die anim must still render);
+// excludes tombstoned (!alive) units. Pure.
 std::vector<int> unit_draw_order(const std::vector<Unit>& units);
 
 }  // namespace ra2engine
