@@ -8,8 +8,12 @@ decoded from Westwood IMA-ADPCM to PCM), plus `ra2engine` — an SDL2
 front-end that renders a real stock map with real theater terrain and lets you
 select and command a squad of units (RA2-classic controls: left-click / box /
 Shift to select, right-click to group-move) with A\* pathfinding,
-grid-occupancy collision avoidance, and walk animation. The library stays
-pure and dependency-free; only the engine links SDL2.
+grid-occupancy collision avoidance, and walk animation — and fight: Allied
+GIs vs Soviet Conscripts with house-colored palettes, HP bars, fire/death
+animations, and a damage model (Damage × Verses, ROF, range, guard behavior)
+recovered from the original `gamemd.exe` via Ghidra and driven by your real
+`rulesmd.ini` (see `docs/re/combat.md`). The library stays pure and
+dependency-free; only the engine links SDL2.
 
 ## Building
 
@@ -55,9 +59,11 @@ build into the Android APK via `cmake/ra2_sources.cmake` — no jni changes.
 
 Interactive controls: left-click a unit to select it (green marker); left-drag
 a box to select many; Shift+left-click to add/remove one; double-click a unit
-to select all of its type on screen; right-click to move the selection (units
-fan out to distinct cells and route around each other); pan with the arrow
-keys or by pushing the pointer to a screen edge; Esc/close quits.
+to select all of its type on screen; right-click ground to move the selection
+(units fan out to distinct cells and route around each other); **right-click a
+hostile Conscript to attack it** — units move into weapon range, hold, and
+fire; idle units auto-acquire hostiles in range and return fire; pan with the
+arrow keys or by pushing the pointer to a screen edge; Esc/close quits.
 
 Headless/verification CLI modes (render one or more frames and exit):
 - `ra2engine.exe --screenshot <out.png>` — render one frame of the map+unit to a PNG.
@@ -67,6 +73,13 @@ Headless/verification CLI modes (render one or more frames and exit):
   all, group-move to the cell, run to arrival; writes `demo_group_start.png`/
   `demo_group_end.png` to the scratchpad and exits non-zero if any two units
   ever shared a cell.
+- `ra2engine.exe --demo-combat [seed]` — 5 GIs vs 5 Conscripts fight to
+  elimination with a deterministic player-micro policy; the sim runs twice
+  (rendered + headless) and the per-hit damage logs must be byte-identical
+  (combat is fully deterministic — the original's combat paths use no RNG,
+  see `docs/re/combat.md`; the seed is accepted for interface stability and
+  unused). Writes start/end screenshots to the scratchpad; exits non-zero on
+  any overlap, dangling target, log divergence, or a bloodless battle.
 
 ## Android (arm64-v8a) cross-compile
 
