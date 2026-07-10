@@ -115,7 +115,7 @@ TEST_CASE("rules: combat getters read unit/weapon/warhead fields") {
     CHECK(r.primary("E9") == "Zap");
     CHECK(r.weapon_damage("Zap") == 15);
     CHECK(r.weapon_rof("Zap") == 25);
-    CHECK(r.weapon_range("Zap") == 4);
+    CHECK(r.weapon_range("Zap") == doctest::Approx(4.0));
     CHECK(r.weapon_warhead("Zap") == "SA");
     CHECK(r.weapon_report("Zap") == "ZapSound");
     auto v = r.verses("SA");
@@ -134,6 +134,22 @@ TEST_CASE("rules: verses parsing tolerates spaces and missing % signs") {
     auto v = r.verses("W");
     REQUIRE(v.size() == 3);
     CHECK(v[0] == 100); CHECK(v[1] == 80); CHECK(v[2] == 70);
+}
+
+TEST_CASE("rules: vehicle getters") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[HTNK]\nROT=5\nTurret=yes\nExplosion=TWLT070,S_BANG48\n"
+        "[UTNK]\nTurret=no\n"
+        "[120mm]\nRange=5.75\n");
+    ra2assets::Rules r = ra2assets::Rules::load(ini);
+    CHECK(r.rot("HTNK") == 5);
+    CHECK(r.rot("NOPE") == 0);
+    CHECK(r.has_turret("HTNK"));
+    CHECK_FALSE(r.has_turret("UTNK"));
+    CHECK_FALSE(r.has_turret("NOPE"));
+    CHECK(r.explosion_first("HTNK") == "TWLT070");
+    CHECK(r.explosion_first("NOPE") == "");
+    CHECK(r.weapon_range("120mm") == doctest::Approx(5.75));
 }
 
 TEST_CASE("rules: real rulesmd combat values pin (E1/E2/M60/M1Carbine/SA)") {
@@ -194,14 +210,20 @@ TEST_CASE("rules: real rulesmd combat values pin (E1/E2/M60/M1Carbine/SA)") {
     // M60 weapon values
     CHECK(rules.weapon_damage("M60") == 15);
     CHECK(rules.weapon_rof("M60") == 20);
-    CHECK(rules.weapon_range("M60") == 4);
+    CHECK(rules.weapon_range("M60") == doctest::Approx(4.0));
     CHECK(rules.weapon_warhead("M60") == "SA");
 
     // M1Carbine weapon values
     CHECK(rules.weapon_damage("M1Carbine") == 15);
     CHECK(rules.weapon_rof("M1Carbine") == 25);
-    CHECK(rules.weapon_range("M1Carbine") == 4);
+    CHECK(rules.weapon_range("M1Carbine") == doctest::Approx(4.0));
     CHECK(rules.weapon_warhead("M1Carbine") == "SA");
+
+    // Vehicle getters (HTNK) + 120mm weapon range pin
+    CHECK(rules.rot("HTNK") == 5);
+    CHECK(rules.has_turret("HTNK"));
+    CHECK(rules.explosion_first("HTNK") == "TWLT070");
+    CHECK(rules.weapon_range("120mm") == doctest::Approx(5.75));
 
     // SA warhead verses (armor effectiveness multipliers)
     auto sa_verses = rules.verses("SA");

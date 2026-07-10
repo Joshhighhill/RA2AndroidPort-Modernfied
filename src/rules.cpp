@@ -1,11 +1,26 @@
 #include "ra2assets/rules.hpp"
+#include <cctype>
 #include <cstdlib>
 #include <vector>
 
 // Thin wrapper over Ini -- see rules.hpp for the field/lifetime contract.
-// This file intentionally has no parsing logic of its own: Ini already
-// handles case-insensitivity, defaults, and duplicate-key semantics.
+// This file intentionally has no parsing logic of its own beyond a couple of
+// small local helpers (bool-ish "yes"/"true" values, comma-split) that Ini
+// doesn't provide: Ini already handles case-insensitivity, defaults, and
+// duplicate-key semantics for everything else.
 namespace ra2assets {
+
+namespace {
+
+// Case-insensitive "yes"/"true" check, mirroring the game's own tolerant
+// boolean parsing (Turret=yes, Turret=Yes, Turret=TRUE all count).
+bool is_truthy(const std::string& v) {
+    std::string lower = v;
+    for (char& c : lower) c = (char)std::tolower((unsigned char)c);
+    return lower == "yes" || lower == "true";
+}
+
+} // namespace
 
 Rules Rules::load(const Ini& ini) {
     return Rules(ini);
@@ -56,8 +71,12 @@ int Rules::weapon_rof(const std::string& w) const {
     return ini_->get_int(w, "ROF", 0);
 }
 
-int Rules::weapon_range(const std::string& w) const {
-    return ini_->get_int(w, "Range", 0);
+double Rules::weapon_range(const std::string& w) const {
+    // Range= can be fractional (e.g. 120mm's Range=5.75) -- Ini::get_int
+    // would truncate it, so parse the raw string with strtod instead.
+    std::string v = ini_->get(w, "Range", "");
+    if (v.empty()) return 0.0;
+    return std::strtod(v.c_str(), nullptr);
 }
 
 std::string Rules::weapon_warhead(const std::string& w) const {
@@ -85,6 +104,26 @@ std::vector<int> Rules::verses(const std::string& warhead) const {
         pos = comma + 1;
     }
     return out;
+}
+
+int Rules::rot(const std::string& unit_id) const {
+    return ini_->get_int(unit_id, "ROT", 0);
+}
+
+bool Rules::has_turret(const std::string& unit_id) const {
+    return is_truthy(ini_->get(unit_id, "Turret", ""));
+}
+
+std::string Rules::explosion_first(const std::string& unit_id) const {
+    // Explosion=TWLT070,S_BANG48,... -- only the first entry (the actual
+    // death VoxelAnim/animation) is needed today.
+    std::string v = ini_->get(unit_id, "Explosion", "");
+    if (v.empty()) return "";
+    size_t comma = v.find(',');
+    std::string first = (comma == std::string::npos) ? v : v.substr(0, comma);
+    size_t b = first.find_first_not_of(" \t");
+    size_t e = first.find_last_not_of(" \t");
+    return b == std::string::npos ? "" : first.substr(b, e - b + 1);
 }
 
 } // namespace ra2assets

@@ -1,7 +1,36 @@
 #include "ra2assets/art.hpp"
+#include <cctype>
 #include <cstdlib>
 
 namespace ra2assets {
+
+namespace {
+
+// Case-insensitive "yes"/"true" check, mirroring the game's own tolerant
+// boolean parsing (Voxel=yes, Voxel=Yes, Voxel=TRUE all count).
+bool is_truthy(const std::string& v) {
+    std::string lower = v;
+    for (char& c : lower) c = (char)std::tolower((unsigned char)c);
+    return lower == "yes" || lower == "true";
+}
+
+// Strict int parse: the whole (trimmed) field must be an optionally-signed
+// decimal integer, no trailing garbage. Used by fire_flh(), which must
+// reject malformed FLH= entries rather than silently defaulting fields to 0.
+bool parse_int_strict(const std::string& field, int& out) {
+    size_t b = field.find_first_not_of(" \t");
+    if (b == std::string::npos) return false;
+    size_t e = field.find_last_not_of(" \t");
+    std::string s = field.substr(b, e - b + 1);
+    if (s.empty()) return false;
+    char* end = nullptr;
+    long v = std::strtol(s.c_str(), &end, 10);
+    if (end != s.c_str() + s.size()) return false;
+    out = (int)v;
+    return true;
+}
+
+} // namespace
 
 Art Art::load(const Ini& ini) { return Art(ini); }
 
@@ -31,6 +60,37 @@ ArtSequenceEntry Art::entry(const std::string& image, const std::string& name) c
     e.count = out[1] > 0 ? out[1] : 1;
     e.facing_mult = out[2];
     return e;
+}
+
+bool Art::voxel(const std::string& image) const {
+    return is_truthy(ini_->get(image, "Voxel", ""));
+}
+
+bool Art::remapable(const std::string& image) const {
+    return is_truthy(ini_->get(image, "Remapable", ""));
+}
+
+bool Art::fire_flh(const std::string& image, int flh[3]) const {
+    std::string v = ini_->get(image, "PrimaryFireFLH", "");
+    if (v.empty()) return false;
+    int parsed[3];
+    size_t pos = 0;
+    int count = 0;
+    while (count < 4) {  // stop early if a 4th field would exist (malformed)
+        size_t comma = v.find(',', pos);
+        std::string field = v.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        if (count < 3) {
+            if (!parse_int_strict(field, parsed[count])) return false;
+        }
+        ++count;
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    if (count != 3) return false;  // require exactly 3 fields, not fewer/more
+    flh[0] = parsed[0];
+    flh[1] = parsed[1];
+    flh[2] = parsed[2];
+    return true;
 }
 
 }  // namespace ra2assets

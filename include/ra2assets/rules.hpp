@@ -58,8 +58,10 @@ public:
     // [weapon] ROF=, or 0 if absent.
     int weapon_rof(const std::string& weapon) const;
 
-    // [weapon] Range=, or 0 if absent.
-    int weapon_range(const std::string& weapon) const;
+    // [weapon] Range=, or 0 if absent. A double (not int) because real
+    // weapons use fractional cell ranges, e.g. 120mm's Range=5.75 -- an int
+    // truncated that to 5.
+    double weapon_range(const std::string& weapon) const;
 
     // [weapon] Warhead=, or "" if absent.
     std::string weapon_warhead(const std::string& weapon) const;
@@ -70,6 +72,18 @@ public:
     // [warhead] Verses= parsed into percent integers; empty vector if absent.
     // Tolerates spaces and missing '%' signs in the comma-separated list.
     std::vector<int> verses(const std::string& warhead) const;
+
+    // [unit_id] ROT= (rotation speed, in game "steps per tick" units), or 0
+    // if absent.
+    int rot(const std::string& unit_id) const;
+
+    // [unit_id] Turret=, true iff the value is "yes"/"true" (case-
+    // insensitive); false if absent.
+    bool has_turret(const std::string& unit_id) const;
+
+    // First comma-separated entry of [unit_id] Explosion= (the VoxelAnim/
+    // animation name used for the unit's death explosion), or "" if absent.
+    std::string explosion_first(const std::string& unit_id) const;
 
 private:
     explicit Rules(const Ini& ini) : ini_(&ini) {}

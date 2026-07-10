@@ -66,6 +66,22 @@ TEST_CASE("art: absent image/section/key -> defaults {0,1,0}") {
     CHECK(e2.facing_mult == 0);
 }
 
+TEST_CASE("art: voxel getters") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[HTNK]\nVoxel=yes\nRemapable=yes\nPrimaryFireFLH=150,0,100\n"
+        "[GI]\nCameo=GIICON\n");
+    ra2assets::Art a = ra2assets::Art::load(ini);
+    CHECK(a.voxel("HTNK"));
+    CHECK_FALSE(a.voxel("GI"));
+    CHECK(a.remapable("HTNK"));
+    int flh[3] = {-1, -1, -1};
+    CHECK(a.fire_flh("HTNK", flh));
+    CHECK(flh[0] == 150); CHECK(flh[1] == 0); CHECK(flh[2] == 100);
+    int flh2[3] = {-1, -1, -1};
+    CHECK_FALSE(a.fire_flh("GI", flh2));
+    CHECK(flh2[0] == -1);
+}
+
 static std::vector<uint8_t> slurp(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return {};
@@ -117,6 +133,8 @@ TEST_CASE("art: real artmd.ini pins (GISequence == ConSequence for our entries)"
     Art art = Art::load(ini);
     CHECK(art.sequence_name("GI") == "GISequence");
     CHECK(art.sequence_name("CONS") == "ConSequence");
+    CHECK(art.voxel("HTNK"));
+    CHECK(art.remapable("HTNK")); /* fire_flh pins 150,0,100 */
     for (const char* img : {"GI", "CONS"}) {
         CHECK(art.entry(img, "Ready").start == 0);
         CHECK(art.entry(img, "Ready").count == 1);

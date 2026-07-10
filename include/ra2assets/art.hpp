@@ -40,6 +40,22 @@ public:
     // image, its sequence section, or the entry key is absent.
     ArtSequenceEntry entry(const std::string& image, const std::string& name) const;
 
+    // [image] Voxel=, true iff the value is "yes"/"true" (case-insensitive);
+    // false if absent. Distinguishes voxel-rendered units (vehicles) from
+    // SHP-rendered ones.
+    bool voxel(const std::string& image) const;
+
+    // [image] Remapable=, true iff the value is "yes"/"true" (case-
+    // insensitive); false if absent. Marks the image's house-color remap
+    // (owner tint) as applicable.
+    bool remapable(const std::string& image) const;
+
+    // [image] PrimaryFireFLH=F,L,H (turret-relative Forward/Lateral/Height
+    // muzzle offset) parsed into flh[0..2]. Returns false and leaves flh
+    // untouched if the image/key is absent or doesn't have exactly 3
+    // int-parseable comma-separated fields.
+    bool fire_flh(const std::string& image, int flh[3]) const;
+
 private:
     explicit Art(const Ini& ini) : ini_(&ini) {}
     const Ini* ini_;
