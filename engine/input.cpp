@@ -96,6 +96,13 @@ int Input::unit_under(int px, int py) const {
     return best;
 }
 
+int Input::lowest_selected() const {
+    const std::vector<Unit>& us = world_.units();
+    for (std::size_t i = 0; i < us.size(); ++i)
+        if (us[i].selected) return static_cast<int>(i);
+    return -1;
+}
+
 bool Input::selection_box(int& x0, int& y0, int& x1, int& y1) const {
     if (!(l_down_ && dragging_)) return false;
     x0 = std::min(down_x_, cur_x_);
@@ -121,6 +128,8 @@ void Input::commit_click(int px, int py, bool shift) {
     } else if (!shift) {
         world_.clear_selection();  // click on empty ground (or a hostile) clears (Shift+empty = no-op)
     }
+    const int lo = lowest_selected();
+    if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
 }
 
 void Input::commit_box(bool shift) {
@@ -137,6 +146,8 @@ void Input::commit_box(bool shift) {
         unit_ground_px(u, gx, gy);
         if (gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1) u.selected = true;
     }
+    const int lo = lowest_selected();
+    if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
 }
 
 void Input::commit_double(int px, int py) {
@@ -155,9 +166,23 @@ void Input::commit_double(int px, int py) {
         unit_ground_px(u, gx, gy);
         if (gx >= 0 && gx < view_w_ && gy >= 0 && gy < view_h_) u.selected = true;  // on-screen
     }
+    const int lo = lowest_selected();
+    if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
 }
 
 void Input::handle(const InputEvent& ev) {
+    // A right-button PointerUp is a pure no-op: the order (attack or group-
+    // move) was already dispatched on the paired PointerDown below, and this
+    // event touches no other state (l_down_/dragging_ are left alone, same
+    // as before Task 5). Return BEFORE the reset so it doesn't erase the
+    // action Down just recorded -- a real click's Down+Up are typically
+    // drained in the SAME per-frame event batch, and Task 6 checks
+    // last_actions() once per frame, after every event in that batch has
+    // been fed; if this no-op Up reset the struct, a right-click's ack would
+    // always be wiped before the frame's check ever saw it.
+    if (ev.kind == InputEvent::PointerUp && ev.button == InputEvent::Right) return;
+
+    actions_ = InputActions{};  // reset: state reflects ONLY this event's handling
     switch (ev.kind) {
         case InputEvent::Quit:
             quit_ = true;
@@ -179,7 +204,11 @@ void Input::handle(const InputEvent& ev) {
                 for (const Unit& su : world_.units())
                     if (su.selected && su.alive && su.die_time < 0.0) { any_selected = true; break; }
                 if (idx >= 0 && world_.units()[idx].house != 0 && any_selected) {
+                    // Capture actor BEFORE the order mutates any state.
+                    const int actor = lowest_selected();
                     world_.order_attack(idx);
+                    actions_.attack_ordered = true;
+                    actions_.actor = actor;
                 } else {
                     // Group-move to the clicked ground cell (issued on down).
                     // The half-tile offset before screen_to_cell maps the
@@ -206,7 +235,15 @@ void Input::handle(const InputEvent& ev) {
                                        ev.y - cam_.y - kTileH / 2 + level * kLevelPx,
                                        kTileW, kTileH, cx, cy);
                     }
+                    // Capture actor BEFORE the order mutates any state; the
+                    // move flag is set only when the selection is non-empty
+                    // (an empty-selection right-click is a no-op move).
+                    const int actor = lowest_selected();
                     world_.order_move_selected(cx, cy);
+                    if (actor >= 0) {
+                        actions_.move_ordered = true;
+                        actions_.actor = actor;
+                    }
                 }
             } else {
                 l_down_ = true;
@@ -228,7 +265,7 @@ void Input::handle(const InputEvent& ev) {
             break;
 
         case InputEvent::PointerUp:
-            if (ev.button == InputEvent::Right) break;
+            // Right-button Up already returned above (pure no-op).
             if (l_down_) {
                 if (dragging_) {
                     commit_box(down_shift_);

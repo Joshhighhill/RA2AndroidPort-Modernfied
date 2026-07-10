@@ -648,3 +648,147 @@ TEST_CASE("Input: right-click a hostile with nothing selected is a ground move, 
     // The Conscript itself should never be selected (hostile never selectable).
     CHECK_FALSE(world.units()[fx.cons].selected);
 }
+
+// ---- Task 5: InputActions feedback (voice-ack hooks, audio phase) ----
+
+TEST_CASE("Input: last_actions reports selected + actor on a click-select; empty click clears both") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 3);
+    if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
+
+    int px, py;
+    ground_px_for_unit(world.units()[1], px, py);
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    CHECK(input.last_actions().selected);
+    CHECK(input.last_actions().actor == 1);
+    CHECK_FALSE(input.last_actions().move_ordered);
+    CHECK_FALSE(input.last_actions().attack_ordered);
+
+    // Click far-away empty ground: clears selection AND last_actions.
+    left_click(input, px + 900, py + 400, false, 2000);
+    CHECK_FALSE(input.last_actions().selected);
+    CHECK_FALSE(input.last_actions().move_ordered);
+    CHECK_FALSE(input.last_actions().attack_ordered);
+    CHECK(input.last_actions().actor == -1);
+}
+
+TEST_CASE("Input: last_actions resets on the very next handle() (e.g. a plain mouse move)") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 3);
+    if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
+
+    int px, py;
+    ground_px_for_unit(world.units()[0], px, py);
+    left_click(input, px, py, false, 1000);
+    REQUIRE(input.last_actions().selected);
+
+    InputEvent mv;
+    mv.kind = InputEvent::PointerMove;
+    mv.x = px + 5; mv.y = py + 5; mv.t_ms = 1050;
+    input.handle(mv);
+
+    CHECK_FALSE(input.last_actions().selected);
+    CHECK_FALSE(input.last_actions().move_ordered);
+    CHECK_FALSE(input.last_actions().attack_ordered);
+    CHECK(input.last_actions().actor == -1);
+    // Selection itself is untouched by the move (pure observation, no behavior change).
+    CHECK(world.units()[0].selected);
+}
+
+TEST_CASE("Input: last_actions reports selected + lowest boxed index on a box-select") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 3);
+    if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
+
+    // Box units 1 and 2 only (unit 0 stays outside -- same box geometry as
+    // "Input: Shift+left-drag ADDS boxed units..." above), so the lowest
+    // selected index after the box is 1, not 0.
+    int p1x, p1y, p2x, p2y;
+    ground_px_for_unit(world.units()[1], p1x, p1y);
+    ground_px_for_unit(world.units()[2], p2x, p2y);
+    const int bx0 = std::min(p1x, p2x) - 10, by0 = std::min(p1y, p2y) - 10;
+    const int bx1 = std::max(p1x, p2x) + 10, by1 = std::max(p1y, p2y) + 10;
+    InputEvent d; d.kind = InputEvent::PointerDown; d.button = InputEvent::Left;
+    d.x = bx0; d.y = by0; d.t_ms = 1000;
+    input.handle(d);
+    InputEvent m; m.kind = InputEvent::PointerMove; m.x = bx1; m.y = by1; m.t_ms = 1050;
+    input.handle(m);
+    InputEvent u; u.kind = InputEvent::PointerUp; u.button = InputEvent::Left;
+    u.x = bx1; u.y = by1; u.t_ms = 1100;
+    input.handle(u);
+
+    REQUIRE(world.units()[1].selected);
+    REQUIRE(world.units()[2].selected);
+    CHECK_FALSE(world.units()[0].selected);
+    CHECK(input.last_actions().selected);
+    CHECK(input.last_actions().actor == 1);
+}
+
+TEST_CASE("Input: last_actions reports move_ordered + lowest actor on a right-click ground move") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    world.units()[fx.gi0].selected = true;
+    world.units()[fx.gi1].selected = true;
+
+    // Empty ground well beyond weapon range (same scan as "Input: right-click
+    // ground still group-moves the selection" above).
+    const int bx = world.units()[fx.gi0].cell_x, by = world.units()[fx.gi0].cell_y;
+    int gx = -1, gy = -1;
+    for (int r = 5; r <= 60 && gx < 0; ++r) {
+        const int cx = bx + r, cy = by;
+        if (!world.walkable(cx, cy)) continue;
+        const MapCell* mc = world.map().at(cx, cy);
+        if (mc && mc->level == 0) { gx = cx; gy = cy; }
+    }
+    REQUIRE(gx >= 0);
+
+    int px, py;
+    px_for_cell(gx, gy, px, py);
+    right_click(input, px, py, 2000);
+
+    CHECK(input.last_actions().move_ordered);
+    CHECK_FALSE(input.last_actions().selected);
+    CHECK_FALSE(input.last_actions().attack_ordered);
+    CHECK(input.last_actions().actor == std::min(fx.gi0, fx.gi1));
+}
+
+TEST_CASE("Input: last_actions reports attack_ordered + lowest actor on a right-click attack") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    world.units()[fx.gi0].selected = true;
+    world.units()[fx.gi1].selected = true;
+
+    int px, py;
+    ground_px_for_unit(world.units()[fx.cons], px, py);
+    right_click(input, px, py, 1000);
+
+    CHECK(input.last_actions().attack_ordered);
+    CHECK_FALSE(input.last_actions().selected);
+    CHECK_FALSE(input.last_actions().move_ordered);
+    CHECK(input.last_actions().actor == std::min(fx.gi0, fx.gi1));
+}

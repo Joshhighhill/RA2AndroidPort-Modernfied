@@ -8,6 +8,24 @@
 
 namespace ra2engine {
 
+// Reports what the MOST RECENT handle() call did, for audio voice-ack hooks
+// (Task 5 of the audio-playback phase) -- pure observation, no behavior
+// change to selection/orders. handle() resets this to all-false/actor=-1 at
+// entry, so a non-select/order event (e.g. a plain mouse move) always reads
+// back empty. ONE exception: a right-button PointerUp is a documented no-op
+// (the attack/move order already dispatched on the paired PointerDown) and
+// does not reset -- it leaves whatever that PointerDown just recorded intact,
+// so a right-click's ack survives to the end of the frame's event batch (see
+// input.cpp's handle()). The three bool flags are mutually exclusive per
+// event by construction (a single handle() call takes exactly one branch
+// that can set any of them).
+struct InputActions {
+    bool selected = false;       // a commit produced a non-empty selection
+    bool move_ordered = false;   // right-click group move issued
+    bool attack_ordered = false; // right-click attack issued
+    int actor = -1;              // representative unit index (lowest selected)
+};
+
 // Translates pointer InputEvents (Task 0 Platform) into actions on a World +
 // Camera. PURE engine logic -- no SDL (only the SDL-free InputEvent struct,
 // screen_to_cell, and World) -- so it is unit-testable without a window.
@@ -53,8 +71,13 @@ public:
 
     bool wants_quit() const { return quit_; }
 
+    // State produced by the MOST RECENT handle() call (see InputActions).
+    const InputActions& last_actions() const { return actions_; }
+
 private:
     void clamp_camera();
+    // Lowest index i with units()[i].selected == true, or -1 if none.
+    int lowest_selected() const;
     // Screen pixel -> unit index or -1. Skips dead/dying units (corpses are
     // unpickable everywhere this is used, including the right-click attack
     // path) but still returns hostiles -- attack targeting needs them; it is
@@ -69,6 +92,7 @@ private:
     World& world_;
     Camera& cam_;
     bool quit_ = false;
+    InputActions actions_;  // reset at the top of every handle() call
 
     // Left-button gesture state.
     bool l_down_ = false;
