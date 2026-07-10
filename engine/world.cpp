@@ -50,6 +50,52 @@ int facing_from_delta(double dx, double dy) {
     return static_cast<int>(std::lround(ccw / 45.0)) % 8;
 }
 
+// Continuous 16-bit-space facing from a cell-space direction, consistent with
+// facing_from_delta's 8-block convention (docs/re/voxel-render.md §5).
+// atan2(dx+dy, dx-dy) is the on-screen angle (see docs/re/infantry-anim.md §5,
+// same projection facing_from_delta uses); screen E is block 6, so offset so
+// block 0 (N) lands at facing 0, then scale radians to u16.
+double facing_u16_from_delta(double dx, double dy) {
+    constexpr double kPi = 3.14159265358979323846;
+    const double a = std::atan2(dx + dy, dx - dy);  // [-pi, pi], 0 = screen E
+    double f = 6.0 * 8192.0 - a * (65536.0 / (2.0 * kPi));
+    f = std::fmod(f, 65536.0);
+    if (f < 0) f += 65536.0;
+    return f;
+}
+
+double turn_toward(double facing, double target, double max_step) {
+    double d = std::fmod(target - facing, 65536.0);
+    if (d > 32768.0) d -= 65536.0;
+    if (d < -32768.0) d += 65536.0;
+    double out;
+    if (std::abs(d) <= max_step) out = target;
+    else out = facing + (d > 0 ? max_step : -max_step);
+    out = std::fmod(out, 65536.0);
+    if (out < 0) out += 65536.0;
+    return out;
+}
+
+bool vehicle_aimed(const Unit& u, double target_facing) {
+    double d = std::fmod(target_facing - u.turret_facing, 65536.0);
+    if (d > 32768.0) d -= 65536.0;
+    if (d < -32768.0) d += 65536.0;
+    return std::abs(d) <= kAimToleranceU16;
+}
+
+void step_turrets(std::vector<Unit>& units, double dt) {
+    for (auto& u : units) {
+        if (!u.is_vehicle || !u.alive || u.die_time >= 0.0) continue;
+        double want = u.body_facing;
+        if (u.target >= 0 && u.target < static_cast<int>(units.size())) {
+            const Unit& t = units[u.target];
+            if (t.alive && t.die_time < 0.0)
+                want = facing_u16_from_delta(t.fx - u.fx, t.fy - u.fy);
+        }
+        u.turret_facing = turn_toward(u.turret_facing, want, u.rot_u16_per_sec * dt);
+    }
+}
+
 static constexpr double kWalkFps = 9.0;  // walk-cycle frame rate (shared cadence, all images)
 static constexpr double kFireAnimFps = 15.0;  // Fire sequence pacing: the 6-frame recoil plays through ONCE per shot, spanning the kFireFlashSecs (0.4s) flash window exactly at the game's ~15Hz animation rate (6 frames / 0.4s = 15fps). Distinct from kWalkFps: walk cycles loop, fire plays once.
 // Die-progress frame rate: 15 frames (default_anim's die.count) at 15fps is
@@ -238,6 +284,13 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_rof = c.rof;
     u.w_range = c.range;
     u.w_verses = c.verses;
+    // Voxel Vehicles phase (docs/re/voxel-render.md §5): vehicle locomotion
+    // state. ROT= is converted to a u16/sec turn rate; speed_cps == 0 keeps
+    // the unit on the World-wide move_cps. Infantry leave all of these at
+    // their defaults (is_vehicle=false, rot=0, speed_cps=0).
+    u.is_vehicle = c.is_vehicle;
+    u.speed_cps = c.speed_cps;
+    u.rot_u16_per_sec = c.rot * kRotU16PerRotPerSec;
     return u;
 }
 
@@ -339,6 +392,11 @@ void World::order_attack(int target_idx) {
 
 void World::step(double dt) {
     step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
+
+    // Slew vehicle turrets AFTER movement and BEFORE combat so the aim gate
+    // (vehicle_aimed) in step_combat sees this frame's post-slew turret
+    // facing (docs/re/voxel-render.md §5). No-op for infantry.
+    step_turrets(units_, dt);
 
     const std::vector<MoveRequest> reqs = step_combat(units_, occ_, dt);
     // Guard-return requests route directly. Approach requests are batched
@@ -547,7 +605,31 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             continue;
         }
 
-        double budget = move_cps * dt;
+        // Vehicle hull turn-then-move gate (docs/re/voxel-render.md §5): a
+        // vehicle first rotates its body toward the next segment's direction
+        // at its ROT rate; until the body is aligned (shortest arc within
+        // kAimToleranceU16) it turns in place and does NOT advance this frame.
+        // Infantry (!is_vehicle) skip this entirely -- byte-identical path.
+        if (u.is_vehicle) {
+            std::size_t pi = u.path_idx;
+            while (pi < u.path.size() && u.path[pi].x == u.cell_x && u.path[pi].y == u.cell_y)
+                ++pi;
+            if (pi < u.path.size()) {
+                const double seg_dx = u.path[pi].x - u.cell_x;
+                const double seg_dy = u.path[pi].y - u.cell_y;
+                const double want = facing_u16_from_delta(seg_dx, seg_dy);
+                u.body_facing = turn_toward(u.body_facing, want, u.rot_u16_per_sec * dt);
+                double d = std::fmod(want - u.body_facing, 65536.0);
+                if (d > 32768.0) d -= 65536.0;
+                if (d < -32768.0) d += 65536.0;
+                if (std::abs(d) > kAimToleranceU16) continue;  // still turning in place
+            }
+        }
+
+        // Per-unit speed: a vehicle rolls at its own speed_cps; infantry (and
+        // any unit with speed_cps == 0) use the World-wide move_cps unchanged.
+        const double cps = u.speed_cps > 0.0 ? u.speed_cps : move_cps;
+        double budget = cps * dt;
         bool blocked = false;
         while (budget > 0.0 && u.path_idx < u.path.size()) {
             const Cellxy tgt = u.path[u.path_idx];
@@ -559,8 +641,13 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             // updated at segment SELECTION, before the reservation/blocked
             // check below, so a unit still visibly turns toward a blocked
             // direction even on a frame where it can't actually step yet.
-            const int f = facing_from_delta(tgt.x - u.cell_x, tgt.y - u.cell_y);
-            if (f >= 0) u.facing = f;
+            // Vehicles carry a continuous body_facing (updated by the turn
+            // gate above) instead of the 8-way Unit::facing; renderers must
+            // not use Unit::facing for them, so skip this update.
+            if (!u.is_vehicle) {
+                const int f = facing_from_delta(tgt.x - u.cell_x, tgt.y - u.cell_y);
+                if (f >= 0) u.facing = f;
+            }
             // Reserve the next cell before stepping into it.
             if (occ.at(tgt.x, tgt.y) != self) {
                 if (occ.can_enter(tgt.x, tgt.y, self)) {

@@ -201,7 +201,18 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, Occupancy& occ, d
         const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
 
         if (d <= range_leptons) {
-            if (u.rof_cool <= 0.0) try_fire(u, v, i, u.target, occ);
+            if (u.rof_cool <= 0.0) {
+                // Aim gate (docs/re/voxel-render.md §5, FireError::FACING): a
+                // vehicle holds fire until its turret has finished slewing onto
+                // the target (step_turrets ran this frame, before step_combat,
+                // computing `want` from these same fx/fy, so the exact
+                // comparison in vehicle_aimed is well-defined). Infantry are
+                // exempt -- zero behavior change.
+                if (u.is_vehicle &&
+                    !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
+                    continue;  // hold fire this frame; rof_cool untouched
+                try_fire(u, v, i, u.target, occ);
+            }
         } else if (u.attack_order) {
             // Approach: ask the caller for a firing position near the target.
             // The original engine approaches until in weapon range and never

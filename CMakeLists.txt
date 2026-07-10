@@ -91,6 +91,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_group_move.cpp engine/group_mo
 # engine/world.cpp (already a source above) against hand-built grids/units --
 # no MapFile needed, so the head-on/boxed-in/funnel cases are deterministic.
 target_sources(ra2assets_tests PRIVATE tests/test_movement.cpp)
+# test_vehicle.cpp exercises the vehicle locomotion additions (ROT turn-in-
+# place, per-unit speed, turret slew, aim-gated fire) in engine/world.cpp and
+# engine/combat.cpp (both already sources above -- no new source needed).
+target_sources(ra2assets_tests PRIVATE tests/test_vehicle.cpp)
 # combat.cpp is pure C++17 (no SDL): armor_index/damage_vs/step_combat, the
 # targeting/ROF/damage/death/pursuit-request core (docs/re/combat.md).
 # Compiled into both this test binary and ra2engine from one source of truth

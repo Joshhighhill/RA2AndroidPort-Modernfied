@@ -60,6 +60,15 @@ struct Unit {
     int guard_x = 0, guard_y = 0;  // guard anchor (cell when target auto-acquired)
     bool alive = true;             // TOMBSTONE: false after die anim; never erased
     double die_time = -1.0;        // >=0: dying (die anim playing); alive stays true until it ends
+
+    // --- Voxel Vehicles phase: continuous-facing vehicle state ---
+    // Facings live in the original's 16-bit space [0, 65536); 32768 faces
+    // screen-South like the infantry spawn (docs/re/voxel-render.md §2/§5).
+    bool is_vehicle = false;
+    double body_facing = 32768.0;
+    double turret_facing = 32768.0;
+    double rot_u16_per_sec = 0.0;  // ROT * kRotU16PerRotPerSec
+    double speed_cps = 0.0;        // per-unit speed; 0 = use World move_cps
 };
 
 // Per-image (per-unit-type), facing-aware animation data -- REPLACES the
@@ -117,6 +126,36 @@ int seq_frame(const SeqEntry& e, int facing, int phase);
 // the same way regardless of its magnitude.
 int facing_from_delta(double dx, double dy);
 
+// --- Voxel Vehicles phase: continuous 16-bit-space facing helpers ---
+// (docs/re/voxel-render.md §5). Facings are in [0, 65536); the 8 infantry
+// blocks sit at k*8192.
+
+// ROT rate scale: Set_ROT applies ROT*256 u16 per 15 Hz logic frame, i.e.
+// ROT*256*15 u16/sec (voxel-render.md §5). ROT=5 -> 19,200 u16/sec ->
+// ~3.4 s per full circle.
+constexpr double kRotU16PerRotPerSec = 256.0 * 15.0;
+
+// Aim tolerance for rotation-complete fire gating (voxel-render.md §5):
+// vanilla holds fire until the timed turret rotation COMPLETES (exact facing,
+// via Is_Rotating). turn_toward clamp-lands exactly on its target and
+// step_turrets/step_combat compute `want` from the same positions in the same
+// frame, so exact double comparison (`<= 0.0` on the shortest-arc magnitude)
+// is well-defined. Same rule gates the hull turn-then-move.
+constexpr double kAimToleranceU16 = 0.0;
+
+// Continuous facing (u16) from a cell-space direction, consistent with
+// facing_from_delta's 8-block convention (block k spans k*8192 +/- 4096).
+double facing_u16_from_delta(double dx, double dy);
+
+// Shortest-arc step in u16 space with wraparound, clamped to max_step;
+// returns the new facing (== target when the arc magnitude <= max_step),
+// always normalized to [0, 65536).
+double turn_toward(double facing, double target, double max_step);
+
+// True when the shortest arc from u.turret_facing to target_facing is within
+// kAimToleranceU16 (rotation-complete gate).
+bool vehicle_aimed(const Unit& u, double target_facing);
+
 // Advance every moving unit toward its `path` by `dt` seconds at `move_cps`
 // cells/sec, using `occ` to enforce one-unit-per-cell: a unit reserves the next
 // path cell before entering it. While that cell is held by another unit the
@@ -135,6 +174,13 @@ int facing_from_delta(double dx, double dy);
 // by World::step. Pure: takes a passability grid + occupancy, no MapFile/SDL.
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims);
+
+// Slew each alive, non-dying vehicle's turret_facing toward its target (via
+// turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
+// its body_facing (docs/re/voxel-render.md §5). Non-vehicles are skipped.
+// Called from World::step between step_units and step_combat so the fire
+// gate (vehicle_aimed) sees the turret's post-slew facing this frame. Pure.
+void step_turrets(std::vector<Unit>& units, double dt);
 
 // Picks a passable (Clear/grass, `tile == 0` -- confirmed in Task 9 /
 // task-9-report.md: "tile index 0 is Clear") cell close to the centroid of
@@ -161,6 +207,11 @@ struct UnitCombat {
     int rof = 0;
     double range = 0.0;
     std::vector<int> verses;
+    // --- Voxel Vehicles phase (docs/re/voxel-render.md §5) ---
+    int rot = 0;               // Rules ROT= (turn rate); 0 = no turning
+    bool turret = false;       // has an independently-slewing turret
+    double speed_cps = 0.0;    // per-unit speed in cells/sec; 0 = World move_cps
+    bool is_vehicle = false;   // gates all vehicle-specific locomotion
 };
 
 // Builds the passability grid in RAW IsoMapPack5 (x, y) space -- the SAME
