@@ -95,6 +95,12 @@ target_sources(ra2assets_tests PRIVATE tests/test_movement.cpp)
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as pathfind.cpp/world.cpp/occupancy.cpp/group_move.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_combat.cpp engine/combat.cpp)
+# audio_mixer.cpp is pure C++17 (no SDL/asset deps): the software mixer --
+# SoundBank storage, keyed voice registry, Limit/interrupt/priority pool
+# rules, linear attenuation + GLOBAL floor, and the EVA FIFO queue
+# (docs/re/audio-playback.md). Compiled into both this test binary and
+# ra2engine from one source of truth (same pattern as combat.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_audio_mixer.cpp engine/audio_mixer.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
