@@ -33,11 +33,15 @@
 
 #include "audio_mixer.hpp"
 #include "audio_sdl.hpp"
+#include "building.hpp"
+#include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
 #include "input.hpp"
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
 #include "platform.hpp"
+#include "production.hpp"
+#include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "voxel_raster.hpp"
 #include "world.hpp"
@@ -53,6 +57,7 @@
 #include "ra2assets/rules.hpp"
 #include "ra2assets/shp.hpp"
 #include "ra2assets/sounds.hpp"
+#include "ra2assets/theater_name.hpp"
 #include "ra2assets/vpl.hpp"
 #include "ra2assets/vxl.hpp"
 #include "ra2assets/wav.hpp"
@@ -173,6 +178,33 @@ struct VehicleAssets {
     std::unique_ptr<ra2assets::ShpFile> explosion;  // death anim SHP; null if unavailable
     ra2assets::Palette explosion_pal;              // anim.pal (or unit pal fallback)
     bool ok = false;
+};
+
+// All SHP + palette assets for one building type, resolved through the
+// NewTheater candidate list [RE: building-render.md §1] over the already-open
+// ra2.mix nested mixes. ok=false drops the type from the roster (guarded
+// degrade, never crash).
+struct BuildingArt {
+    ra2assets::ShpFile shp;      // main image (frame 0 healthy, 1 damaged; 2nd half shadows)
+    ra2assets::ShpFile buildup;  // MK anim ("" buildup -> unused)
+    ra2assets::ShpFile cameo;    // 60x48 icon (may be absent for ConYards)
+    bool has_buildup = false, has_cameo = false, ok = false;
+};
+
+// Everything the buildings + sidebar draw/interaction needs, loaded once.
+struct BuildingAssets {
+    std::vector<ra2engine::BuildingTypeDef> roster;  // index = Building::type
+    std::vector<BuildingArt> art;                    // parallel to roster
+    ra2assets::Palette unit_pal;                     // unittem.pal (cache.mix)
+    ra2assets::Palette cameo_pal;                    // cameo.pal (cache.mix)
+    // sidebar chrome (player side = Allied sidec01) [RE-GATE: construction.md
+    // §11]: four SEPARATE tab SHPs + the 55-frame gclock2.shp build clock.
+    ra2assets::ShpFile sb_top, sb_side1, sb_side2, sb_tabs[4], sb_powerp, sb_credits, sb_gclock;
+    ra2assets::Palette sb_pal;                       // sidebar.pal if present, else cameo.pal
+    bool sidebar_ok = false;
+    // Prerequisite groups resolved once [RE: construction.md §10].
+    std::vector<std::pair<std::string, std::vector<std::string>>> groups;
+    bool ok = false;                                 // any usable building
 };
 
 // Loads `name` (e.g. "rulesmd.ini", "artmd.ini") from ra2md.mix ONCE per mode
@@ -666,6 +698,164 @@ ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
     return world;
 }
 
+// Loads the roster of 8 buildings + their SHP/cameo/sidebar assets through
+// the theater candidate walk [RE: building-render.md §1/§6]. Every load is
+// individually guarded: a missing main SHP drops that type (art[i].ok=false)
+// but never crashes. `ra2`/`language` are already-open archives; `rules`/`art`
+// already loaded. Temperate only (letter 'T', isotemp/temperat/generic walk).
+BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
+                                    const ra2assets::MixFile& language, const Rules& rules,
+                                    const Art& art) {
+    BuildingAssets ba;
+    static const char* kRoster[8] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+                                     "NACNST", "NAPOWR", "NAHAND", "NAWEAP"};
+
+    // Palettes (both verified present in cache.mix): buildings draw with
+    // unittem.pal (+ house remap), cameos with cameo.pal [RE: building-render.md §6].
+    MixFile cache = ra2.open_nested("cache.mix");
+    auto load_pal = [&](const char* name) -> Palette {
+        const MixEntry* pe = cache.find(std::string(name));
+        if (!pe) throw std::runtime_error(std::string(name) + " not found in ra2.mix/cache.mix");
+        auto raw = cache.read(*pe);
+        return Palette::load(raw.data(), raw.size());
+    };
+    ba.unit_pal = load_pal("unittem.pal");
+    ba.cameo_pal = load_pal("cameo.pal");
+    // Sidebar chrome palette: sidebar.pal if present (the §11 pixel-decode
+    // used it), else cameo.pal (guarded probe).
+    ba.sb_pal = ba.cameo_pal;
+    if (const MixEntry* se = cache.find(std::string("sidebar.pal"))) {
+        auto raw = cache.read(*se);
+        ba.sb_pal = Palette::load(raw.data(), raw.size());
+    }
+
+    // Theater art mix cache: open each nested mix once, lazily; a mix that
+    // fails to open is remembered as null so later candidates just skip it.
+    std::map<std::string, std::unique_ptr<MixFile>> mix_cache;
+    auto get_mix = [&](const std::string& name) -> MixFile* {
+        auto it = mix_cache.find(name);
+        if (it != mix_cache.end()) return it->second.get();
+        std::unique_ptr<MixFile> m;
+        try {
+            m = std::make_unique<MixFile>(ra2.open_nested(name));
+        } catch (const std::exception&) { m.reset(); }
+        MixFile* raw = m.get();
+        mix_cache.emplace(name, std::move(m));
+        return raw;
+    };
+    // Resolve an image name to a decoded SHP over the theater candidate walk
+    // (first hit wins); throws if no candidate hits.
+    auto resolve_shp = [&](const std::string& image) -> ShpFile {
+        for (const auto& c : ra2assets::theater_candidates(image, 'T', "isotemp.mix",
+                                                           "temperat.mix", ".shp")) {
+            MixFile* m = get_mix(c.mix);
+            if (!m) continue;
+            if (const MixEntry* e = m->find(c.file)) return ShpFile::load(m->read(*e));
+        }
+        throw std::runtime_error("no theater candidate resolved for " + image);
+    };
+
+    ba.roster.reserve(8);
+    ba.art.reserve(8);
+    int ok_n = 0;
+    for (const char* id_c : kRoster) {
+        const std::string id = id_c;
+        ra2engine::BuildingTypeDef d;
+        d.id = id;
+        d.fw = d.fh = 1;
+        art.foundation(id, d.fw, d.fh);
+        d.strength = rules.strength(id);
+        d.armor_ix = ra2engine::armor_index(rules.armor(id));
+        d.cost = rules.cost(id);
+        d.power = rules.power(id);
+        d.adjacent = rules.adjacent(id);
+        d.tech_level = rules.tech_level(id);
+        d.conyard = rules.is_construction_yard(id);
+        d.prerequisite = rules.prerequisite(id);
+        d.image = id;
+        d.buildup = art.buildup(id);
+        d.cameo = art.cameo(id);
+        d.explosion = rules.explosion_first(id);
+
+        BuildingArt slot;
+        try {
+            slot.shp = resolve_shp(id);
+            slot.ok = true;
+            ++ok_n;
+            if (!d.buildup.empty()) {
+                try {
+                    slot.buildup = resolve_shp(d.buildup);
+                    slot.has_buildup = true;
+                } catch (const std::exception&) { slot.has_buildup = false; }
+            }
+            if (!d.cameo.empty()) {
+                try {
+                    MixFile cameo_mix = language.open_nested("cameo.mix");
+                    std::string cn = d.cameo;
+                    for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
+                    if (const MixEntry* ce = cameo_mix.find(cn + ".shp")) {
+                        slot.cameo = ShpFile::load(cameo_mix.read(*ce));
+                        slot.has_cameo = true;
+                    }
+                } catch (const std::exception&) { slot.has_cameo = false; }
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[building] " << id << " main image missing (" << ex.what() << ")\n";
+            slot.ok = false;
+        }
+        std::cerr << "[building] " << id << " fnd=" << d.fw << "x" << d.fh << " str=" << d.strength
+                  << " cost=" << d.cost << " power=" << d.power << " adj=" << d.adjacent
+                  << " tech=" << d.tech_level << " conyard=" << (d.conyard ? "y" : "n")
+                  << " buildup=" << (slot.has_buildup ? "y" : "n")
+                  << " cameo=" << (slot.has_cameo ? "y" : "n") << " ok=" << (slot.ok ? "y" : "n")
+                  << " prereq=[";
+        for (size_t k = 0; k < d.prerequisite.size(); ++k)
+            std::cerr << (k ? "," : "") << d.prerequisite[k];
+        std::cerr << "]\n";
+        ba.roster.push_back(std::move(d));
+        ba.art.push_back(std::move(slot));
+    }
+    ba.ok = ok_n > 0;
+
+    // Sidebar chrome (player side = Allied sidec01) [RE-GATE: construction.md
+    // §11]: four SEPARATE 28x27 tab SHPs + the 55-frame gclock2.shp clock.
+    try {
+        MixFile sb = ra2.open_nested("sidec01.mix");
+        auto load_sb = [&](const char* fn) -> ShpFile {
+            const MixEntry* e = sb.find(std::string(fn));
+            if (!e) throw std::runtime_error(std::string("sidebar SHP missing: ") + fn);
+            return ShpFile::load(sb.read(*e));
+        };
+        ba.sb_top = load_sb("top.shp");
+        ba.sb_side1 = load_sb("side1.shp");
+        ba.sb_side2 = load_sb("side2.shp");
+        ba.sb_tabs[0] = load_sb("tab00.shp");
+        ba.sb_tabs[1] = load_sb("tab01.shp");
+        ba.sb_tabs[2] = load_sb("tab02.shp");
+        ba.sb_tabs[3] = load_sb("tab03.shp");
+        ba.sb_powerp = load_sb("powerp.shp");
+        ba.sb_credits = load_sb("credits.shp");
+        ba.sb_gclock = load_sb("gclock2.shp");
+        ba.sidebar_ok = true;
+    } catch (const std::exception& ex) {
+        std::cerr << "[building] sidebar chrome missing (" << ex.what() << ")\n";
+        ba.sidebar_ok = false;
+    }
+
+    ba.groups = {
+        {"POWER", rules.prerequisite_group("Power")},
+        {"BARRACKS", rules.prerequisite_group("Barracks")},
+        {"PROC", rules.prerequisite_group("Proc")},
+        {"FACTORY", rules.prerequisite_group("Factory")},
+        {"RADAR", rules.prerequisite_group("Radar")},
+        {"TECH", rules.prerequisite_group("Tech")},
+    };
+
+    std::cerr << "[building] roster=" << ba.roster.size() << " ok=" << ok_n
+              << " sidebar=" << (ba.sidebar_ok ? "ok" : "missing") << "\n";
+    return ba;
+}
+
 // Draws one voxel vehicle in render_world's back-to-front loop: a dying tank
 // shows the death-explosion SHP (frame = min(die_time*15, count-1), the same
 // 15 fps as infantry deaths); a live tank draws its hull, then (if turreted)
@@ -830,6 +1020,14 @@ int run_screenshot(const std::string& out_path) {
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    (void)ba;  // Step 2: loaded + logged; spawn_base + draw wired in Step 3.
     ra2engine::World world = build_world(a, ua, 5);
     if (va.ok) spawn_tank_squads(world, a, va, 3);
 
