@@ -115,11 +115,14 @@ and gems are decoded straight off the real map's `[OverlayPack]`/
 overlay index belongs to a tiberium type when it falls in that type's
 `[base, base+NumImages=12)` flat-image range or the following `NumSlopes=8`
 slope range (`docs/re/economy.md` §5); the runtime index is the 0-based
-order-of-appearance position in `[OverlayTypes]` (bases 27/102/127 for
-GEM01/TIB01/TIB2_01 on the real stock map), density is the map's per-cell
-byte, 0..11. `HARV`/`CMIN` miners run the recovered harvester FSM
+order-of-appearance position in `[OverlayTypes]` (bases 27/102/127/147 for
+GEM01/TIB01/TIB2_01/TIB3_01 on the real stock map), density is the map's
+per-cell byte, 0..11. `HARV`/`CMIN` miners run the recovered harvester FSM
 (`ra2engine::step_harvest`, `engine/harvest.cpp`): an 8-neighbour dig banks
-bale value into a per-tiberium-type 4-slot ore store until full, then the
+bale value into cargo until full — the engine models a **2-kind** store
+(`Unit::bales_ore`/`bales_gems`), collapsing the original binary's
+**4-slot** per-tiberium-type store (one slot each for GEM/TIB/TIB2/TIB3,
+`docs/re/economy.md` §1) into a single ore bucket — then the
 miner drives (`HARV`) or Chrono-teleports (`CMIN`, a `TeleportLocomotionClass`
 analogue bracketed by `ChronoInSound`/`ChronoOutSound`) to the refinery's
 single dock, where a chunked per-tick payout transfers `Σ bales × Value` into
@@ -148,10 +151,15 @@ refinery dock cell is adjudicated as the foundation's south-center cell
 no `DockingOffset` in artmd — **[RE-FALLBACK]**; the per-gulp/unload/
 chrono-warp/ore-scan pacing constants (`kGulpSecs`, `kUnloadSecsPerBale`,
 `kChronoWarpSecs`, `kOreScanRadius`) are adjudicated, not recovered —
-**[RE-FALLBACK]**; only the base TIB01/GEM01 overlay-index model is loaded
-(a 2-kind `OreField`, bases 27/102/127) — the `TIB2_*`/`TIB3_*` variant art
-blocks are unused, since the real stock map's `OverlayPack` never references
-them; `--demo-base`'s roster witness now reports `roster=10` (GAREFN/NAREFN
+**[RE-FALLBACK]**; classification (`ore.cpp`'s `kBases`) models all four
+overlay-index bases (27 GEM01, 102 TIB01, 127 TIB2_01, 147 TIB3_01 — all
+`OreKind::Ore` except GEM), and the real stock map DOES reference index 127
+(`economy.md` §5's own Task 2 dump observed it directly) — but only the
+generic `TIB01..TIB20`/`GEM01..GEM12` art files are loaded (`load_ore_art`,
+`engine/main.cpp`), so TIB2/TIB3 cells render through the shared
+`TIB01..TIB20` set (whichever slot their in-block offset selects) instead of
+dedicated `TIB2_*`/`TIB3_*` art, which is never loaded; `--demo-base`'s
+roster witness now reports `roster=10` (GAREFN/NAREFN
 appended to the buildable roster) — an intended content change, the gated
 `hash=5273b5e71ca009e1` is unchanged; the ConYard `BaseUnit` cost-subtraction
 rule recovered in `economy.md` §6a (Cost −= avg MCV cost when the type is

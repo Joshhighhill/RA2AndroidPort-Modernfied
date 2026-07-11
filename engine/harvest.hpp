@@ -63,4 +63,25 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   double dt, const OreValues& values, double house_credits[2],
                   std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events);
 
+// FreeUnit grand-opening edge detector [RE: economy.md §6, main.cpp's
+// spawn_free_units_on_open] -- Review Important-2: the Buildup->Idle edge
+// detection that drives a refinery's grand-opening miner spawn had zero
+// automated coverage (its only caller is the interactive loop). Extracted
+// here as a pure function -- no World/Rules/asset dependency -- so it's
+// directly unit-testable.
+//
+// Returns the indices (ascending, each at most once) of every building that
+// flipped Buildup->Idle since the LAST call AND whose roster type ships a
+// FreeUnit. `prev_states` is grown/tracked exactly like main.cpp's own
+// prev_states: index i holds buildings[i]'s last-observed Building::State
+// (as an int), -1 meaning "never seen" (so a building already Idle the
+// first time it's observed does not fire -- matches the original semantics).
+// `free_unit_of_type[t]` is true when roster type t ships a FreeUnit (the
+// caller resolves this from Rules::free_unit(id).empty()); a building whose
+// type is out of range is treated as "no FreeUnit" (skipped), matching
+// spawn_free_units_on_open's own bounds check.
+std::vector<std::size_t> free_unit_grand_openings(
+    const std::vector<Building>& buildings, const std::vector<bool>& free_unit_of_type,
+    std::vector<int>& prev_states);
+
 }  // namespace ra2engine

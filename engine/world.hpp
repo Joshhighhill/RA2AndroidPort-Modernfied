@@ -113,6 +113,14 @@ struct Unit {
     double bales_gems = 0.0;         // current load, gem bales
     HarvState harv = HarvState::None;
     int harv_cell_x = 0, harv_cell_y = 0;   // target/last ore cell
+    // True once harv_cell_x/y have been stamped with a REAL cell (SeekOre
+    // finding ore, or a player's order_harvest click) -- Review Important-3:
+    // a freshly spawned CMIN manually returned before ever finding ore has
+    // harv_cell_x/y at their (0,0) default, which is not a place worth
+    // warping back to. Deliberately never cleared back to false once set
+    // (a miner that has found ore once always has a legitimate fallback
+    // cell to return to).
+    bool has_harv_cell = false;
     int dock_refinery = -1;          // target/docked refinery Building index:
                                      // stamped when ReturnToRef picks it, held
                                      // through WaitDock/Unloading (-1 = none,

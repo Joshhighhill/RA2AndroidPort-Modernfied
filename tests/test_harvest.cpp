@@ -376,6 +376,7 @@ TEST_CASE("harvest: CMIN warp releases the origin cell and claims exactly the la
     r.units[0].harv = HarvState::ReturnToRef;
     r.units[0].harv_cell_x = 2;
     r.units[0].harv_cell_y = 2;
+    r.units[0].has_harv_cell = true;  // stamped directly (bypasses SeekOre)
     r.units[0].bales_ore = 20;                        // full -> outbound warp
     REQUIRE(r.occ.at(2, 2) == 0);
 
@@ -448,4 +449,221 @@ TEST_CASE("harvest: warp releases a mid-move next-cell reservation too") {
     CHECK(r.occ.at(2, 2) == Occupancy::kEmpty);
     CHECK(r.occ.at(3, 2) == Occupancy::kEmpty);        // stale reservation swept
     CHECK(r.claims_of(0) == 1);                        // exactly the landing cell
+}
+
+// ---- Review Important-1: ReturnToRef emits a HarvestMove ONCE per leg ----
+
+TEST_CASE("harvest: a driving HARV gets exactly one HarvestMove per return leg") {
+    Rig r;
+    r.harv(1, 1, /*chrono=*/false, /*storage=*/40);   // unit 0: HARV, far from the dock
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].bales_ore = 40;                         // full -> heads home
+
+    int total_moves = 0;
+
+    // First tick: not moving yet -> exactly one HarvestMove requested (the
+    // dock cell for the Rig's NAREFN is (10, 11), see the file-header note).
+    r.step(0.1);
+    REQUIRE(r.moves.size() == 1);
+    CHECK(r.moves[0].unit == 0);
+    CHECK(r.moves[0].gx == 10);
+    CHECK(r.moves[0].gy == 11);
+    total_moves += (int)r.moves.size();
+
+    // World::order_unit_move would now have set the unit's path toward the
+    // dock cell; step_harvest itself never touches Unit::path, so this test
+    // (which drives ONLY step_harvest, not step_units/order_unit_move -- see
+    // the Rig fixture) mocks that hand-off the same way World::step does:
+    // the unit is "moving" with its path's last cell == the stamped target.
+    r.units[0].path = {{1, 1}, {10, 11}};
+    r.units[0].path_idx = 1;
+
+    // Many more ticks while still driving toward the SAME cell: NO further
+    // HarvestMove, ever -- step_units (not step_harvest) now owns the drive,
+    // including its own re-path/give-up handling on collision.
+    for (int i = 0; i < 50; ++i) {
+        r.step(0.1);
+        total_moves += (int)r.moves.size();
+        CHECK(r.moves.empty());
+        CHECK(r.units[0].harv == HarvState::ReturnToRef);  // still driving
+    }
+    CHECK(total_moves == 1);  // exactly one HarvestMove for the whole leg
+
+    // Arrival: step_units would have advanced cell_x/y onto the dock cell
+    // and cleared the path.
+    r.units[0].cell_x = 10;
+    r.units[0].cell_y = 11;
+    r.units[0].path.clear();
+    r.units[0].path_idx = 0;
+
+    r.step(0.1);
+    CHECK(r.moves.empty());                      // arrival needs no new move
+    CHECK(r.units[0].harv == HarvState::WaitDock);
+}
+
+TEST_CASE("harvest: a HARV that stops without arriving re-requests exactly one HarvestMove") {
+    // Mirrors step_units' blocked give-up: the path was abandoned mid-route
+    // (collision give-up), so the unit is stationary again without having
+    // reached the dock. ReturnToRef must notice and re-issue exactly one
+    // fresh HarvestMove -- not zero (stuck forever) and not one per tick.
+    Rig r;
+    r.harv(1, 1, /*chrono=*/false, /*storage=*/40);
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].bales_ore = 40;
+
+    r.step(0.1);
+    REQUIRE(r.moves.size() == 1);
+
+    r.units[0].path = {{1, 1}, {10, 11}};
+    r.units[0].path_idx = 1;
+    r.step(0.1);
+    CHECK(r.moves.empty());  // driving -> quiet
+
+    // step_units gives up: path cleared, unit stationary short of the dock.
+    r.units[0].path.clear();
+    r.units[0].path_idx = 0;
+    r.units[0].cell_x = 5;
+    r.units[0].cell_y = 5;  // stopped partway, not at the dock
+
+    r.step(0.1);
+    REQUIRE(r.moves.size() == 1);  // re-requested exactly once
+    CHECK(r.moves[0].gx == 10);
+    CHECK(r.moves[0].gy == 11);
+    CHECK(r.units[0].harv == HarvState::ReturnToRef);
+}
+
+// ---- Review Important-3: empty CMIN + manual return skips the warp-back ----
+
+TEST_CASE("harvest: CMIN manual return with an empty, never-stamped hold skips the warp-back") {
+    Rig r;
+    r.harv(5, 6, /*chrono=*/true, /*storage=*/20);  // fresh spawn -- never found ore
+    REQUIRE_FALSE(r.units[0].has_harv_cell);
+    REQUIRE(r.units[0].bales_ore == 0);
+    REQUIRE(r.units[0].bales_gems == 0);
+    // Mirrors World::order_return(): jump straight to ReturnToRef, bypassing
+    // SeekOre entirely (a manual return order never stamps harv_cell).
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].harv_timer = 0.0;
+
+    // Outbound chrono warp to the dock (10, 11) -- unaffected by the fix;
+    // an empty-handed manual return still legitimately drives to the dock.
+    r.step(kChronoWarpSecs);
+    CHECK(r.units[0].cell_x == 10);
+    CHECK(r.units[0].cell_y == 11);
+    REQUIRE(r.units[0].harv == HarvState::WaitDock);
+
+    r.step(0.01);  // dock free -> Unloading
+    REQUIRE(r.units[0].harv == HarvState::Unloading);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 0) == 1);
+
+    r.step(0.01);  // no bales to drain -> UnloadEnd fires immediately.
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadEnd, 0) == 1);
+    // The bug (pre-fix): this would ALSO fire ChronoOut and start a timed
+    // warp toward harv_cell_x/y's (0,0) default. Fixed: no warp at all.
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 0);
+    CHECK(r.units[0].harv == HarvState::SeekOre);  // straight back to seeking, in place
+    CHECK(r.units[0].cell_x == 10);                // still at the dock -- no warp-back
+    CHECK(r.units[0].cell_y == 11);
+
+    // Confirm no delayed ChronoIn/teleport ever follows.
+    r.step(kChronoWarpSecs * 2);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 0);
+    CHECK(r.units[0].cell_x == 10);
+    CHECK(r.units[0].cell_y == 11);
+}
+
+TEST_CASE("harvest: CMIN manual return with a real stamped harv_cell still warps back") {
+    // Contrast case: has_harv_cell == true (found ore earlier) -> the normal
+    // timed warp-back still fires. Guards against the fix being over-broad.
+    Rig r;
+    r.ore.set(2, 2, OreKind::Ore, kMaxOreDensity, 0);
+    r.harv(2, 2, /*chrono=*/true, /*storage=*/20);
+    r.step(0.01);  // SeekOre finds (2,2) -> stamps has_harv_cell, MoveToOre
+    REQUIRE(r.units[0].has_harv_cell);
+    r.step(0.01);  // arrives, not moving -> Harvesting
+    REQUIRE(r.units[0].harv == HarvState::Harvesting);
+
+    // Manual return mid-harvest, before any bales are collected.
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].harv_timer = 0.0;
+
+    r.step(kChronoWarpSecs);
+    REQUIRE(r.units[0].harv == HarvState::WaitDock);
+    r.step(0.01);
+    REQUIRE(r.units[0].harv == HarvState::Unloading);
+
+    r.step(0.01);  // no bales -> UnloadEnd, but has_harv_cell -> warp-back starts
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadEnd, 0) == 1);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 1);
+    CHECK(r.units[0].harv == HarvState::Unloading);  // warp-back transit state
+    CHECK(r.units[0].dock_refinery == -1);
+
+    r.step(kChronoWarpSecs);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
+    CHECK(r.units[0].cell_x == 2);
+    CHECK(r.units[0].cell_y == 2);
+    CHECK(r.units[0].harv == HarvState::SeekOre);
+}
+
+// ---- Review Important-2: FreeUnit grand-opening edge detector coverage ----
+// (main.cpp's spawn_free_units_on_open, extracted into the pure
+// free_unit_grand_openings so the Buildup->Idle edge detection that drives a
+// refinery's grand-opening miner spawn -- previously exercised only by hand
+// through the interactive loop -- gets direct automated coverage.)
+
+TEST_CASE("harvest: free_unit_grand_openings fires once per Buildup->Idle edge, "
+          "FreeUnit types only") {
+    std::vector<Building> bs;
+    Building refA; refA.type = 0; refA.state = Building::State::Buildup;
+    bs.push_back(refA);                                  // type 0: ships a FreeUnit
+    Building other; other.type = 1; other.state = Building::State::Buildup;
+    bs.push_back(other);                                 // type 1: does NOT
+    std::vector<bool> free_unit_of_type = {true, false};
+    std::vector<int> prev_states;
+
+    // Frame 1: still Buildup -> no signal yet, but both get seeded.
+    auto opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+    CHECK(opened.empty());
+
+    // Both buildings complete buildup on the SAME tick.
+    bs[0].state = Building::State::Idle;
+    bs[1].state = Building::State::Idle;
+    opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+    REQUIRE(opened.size() == 1);          // none for the non-FreeUnit type
+    CHECK(opened[0] == 0);                // exactly one signal, for the FreeUnit type
+
+    // Subsequent ticks: no more signals, even though both stay Idle.
+    for (int i = 0; i < 5; ++i) {
+        opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+        CHECK(opened.empty());
+    }
+
+    // A second refinery (FreeUnit type) is added later and completes buildup
+    // on its own tick -- it must fire exactly once too.
+    Building refB; refB.type = 0; refB.state = Building::State::Buildup;
+    bs.push_back(refB);
+    opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+    CHECK(opened.empty());                // still Buildup -- only seeded
+
+    bs[2].state = Building::State::Idle;
+    opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+    REQUIRE(opened.size() == 1);
+    CHECK(opened[0] == 2);
+
+    // And it doesn't fire again afterward either.
+    opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+    CHECK(opened.empty());
+}
+
+TEST_CASE("harvest: free_unit_grand_openings ignores an out-of-range building type") {
+    std::vector<Building> bs;
+    Building b; b.type = 5; b.state = Building::State::Buildup;  // no such roster slot
+    bs.push_back(b);
+    std::vector<bool> free_unit_of_type = {true};  // roster only has 1 entry
+    std::vector<int> prev_states;
+
+    free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+    bs[0].state = Building::State::Idle;
+    auto opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
+    CHECK(opened.empty());
 }

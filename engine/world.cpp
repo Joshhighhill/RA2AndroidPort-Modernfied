@@ -376,6 +376,7 @@ void World::order_harvest(int x, int y) {
             continue;
         u.harv_cell_x = x;
         u.harv_cell_y = y;
+        u.has_harv_cell = true;  // a player-directed cell is a real stamp too
         u.harv = HarvState::MoveToOre;
         u.harv_timer = 0.0;
         u.manual_hold = false;

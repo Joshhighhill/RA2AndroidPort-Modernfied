@@ -9,7 +9,13 @@ namespace ra2engine {
 namespace {
 
 // 8-ring / warp-fallback neighbor order: N, NE, E, SE, S, SW, W, NW
-// [RE-GATE APPLIED: economy.md §1 CONFIRMED — offset table DAT_0089E5F8].
+// [RE-GATE APPLIED: economy.md §1 -- CONFIRMED that an 8-neighbour ring dig
+// via an offset table (DAT_0089E5F8) exists and is walked neighbour-by-
+// neighbour; the table's own dx,dy VALUES were not decompiled here, so this
+// specific N,NE,E,SE,S,SW,W,NW sequence is [RE-FALLBACK adjudicated], not
+// itself CONFIRMED -- review Minor-5: the banner previously overclaimed the
+// exact order, not just the mechanism (the Harvesting-case comment below
+// already split this correctly).]
 constexpr int kRingDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
 constexpr int kRingDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
 
@@ -140,6 +146,25 @@ int nearest_refinery(const std::vector<Building>& buildings,
     return best;
 }
 
+std::vector<std::size_t> free_unit_grand_openings(
+    const std::vector<Building>& buildings, const std::vector<bool>& free_unit_of_type,
+    std::vector<int>& prev_states) {
+    prev_states.resize(buildings.size(), -1);
+    std::vector<std::size_t> opened;
+    for (std::size_t i = 0; i < buildings.size(); ++i) {
+        const int cur = static_cast<int>(buildings[i].state);
+        const int prev = prev_states[i];
+        prev_states[i] = cur;
+        if (prev != static_cast<int>(Building::State::Buildup) ||
+            cur != static_cast<int>(Building::State::Idle))
+            continue;
+        const int t = buildings[i].type;
+        if (t < 0 || t >= (int)free_unit_of_type.size() || !free_unit_of_type[t]) continue;
+        opened.push_back(i);
+    }
+    return opened;
+}
+
 void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   const std::vector<BuildingTypeDef>& types,
                   const std::vector<int>& refinery_types, OreField& ore,
@@ -180,6 +205,7 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 if (find_nearest_ore(ore, u.cell_x, u.cell_y, kOreScanRadius, ox, oy)) {
                     u.harv_cell_x = ox;
                     u.harv_cell_y = oy;
+                    u.has_harv_cell = true;  // real stamp -- see world.hpp
                     moves.push_back({idx, ox, oy});
                     u.harv = HarvState::MoveToOre;
                 }
@@ -296,7 +322,24 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                     if (at_dock) {
                         u.harv = HarvState::WaitDock;
                         u.harv_timer = 0.0;
-                    } else {
+                    } else if (!u.moving() || u.path.back().x != dcx ||
+                               u.path.back().y != dcy) {
+                        // Review Important-1: emit the HarvestMove ONLY when
+                        // the unit isn't already pathing to this exact dock
+                        // cell -- mirroring SeekOre's emit-once-on-transition
+                        // pattern (MoveToOre never re-emits either). The old
+                        // unconditional push_back() here forced World to run
+                        // a full A* repath every tick for every driving
+                        // harvester (wasteful) AND reset wait_time=0 every
+                        // tick via order_unit_move, silently disabling
+                        // step_units' kBlockedWait/kGiveUpAfter give-up
+                        // machinery for returning harvesters. Now step_units
+                        // owns the drive (and its own re-path/give-up
+                        // handling) once the move is issued; this branch only
+                        // re-fires when the unit stops without having
+                        // arrived (blocked give-up cleared its path, or the
+                        // stamped dock changed), exactly like MoveToOre's
+                        // "stopped without arriving -> retry" case.
                         moves.push_back({idx, dcx, dcy});
                     }
                 }
@@ -342,8 +385,11 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
             case HarvState::Unloading: {
                 // CMIN post-unload warp-back transit: `dock_refinery == -1`
                 // with an empty load marks the return warp in flight (set
-                // below when the last bale drains). Must be checked BEFORE
-                // the refinery-death repick, which keys off the same -1.
+                // below when the last bale drains, ONLY when has_harv_cell --
+                // review Important-3 -- so `harv` never re-enters this state
+                // with dock_refinery == -1 unless a real warp is in flight).
+                // Must be checked BEFORE the refinery-death repick, which
+                // keys off the same -1.
                 if (u.chrono_miner && u.dock_refinery < 0) {
                     u.harv_timer += dt;
                     if (u.harv_timer >= kChronoWarpSecs) {
@@ -383,7 +429,7 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 if (u.bales_ore <= 0.0 && u.bales_gems <= 0.0) {
                     events.push_back({HarvestEvent::Kind::UnloadEnd, idx});
                     u.dock_refinery = -1;
-                    if (u.chrono_miner) {
+                    if (u.chrono_miner && u.has_harv_cell) {
                         // [RE-GATE APPLIED §3: "warp back after unload, same
                         // mechanics" -- the return warp is TIMED like the
                         // outbound one; [RE-FALLBACK adjudicated]: HarvState
@@ -392,6 +438,18 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                         // marks it -- see the branch at the top of this
                         // case): ChronoOut fires now, the teleport + ChronoIn
                         // land once harv_timer >= kChronoWarpSecs.]
+                        //
+                        // Review Important-3: gated on has_harv_cell (a REAL
+                        // cell was stamped at least once) rather than firing
+                        // unconditionally. A CMIN manually returned (order_
+                        // return) with an empty hold and no ore ever found
+                        // has harv_cell_x/y stuck at their (0,0) default --
+                        // without this guard it would still play both chrono
+                        // sounds and warp toward (0,0)/whatever is nearest to
+                        // it, a no-op-unload-then-teleport-to-garbage
+                        // player-facing bug. Skip straight to SeekOre in
+                        // place instead (the `else` branch below), same as a
+                        // non-chrono HARV.
                         events.push_back({HarvestEvent::Kind::ChronoOut, idx});
                         u.harv_timer = 0.0;
                     } else {

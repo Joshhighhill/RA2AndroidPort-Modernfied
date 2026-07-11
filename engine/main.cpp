@@ -880,22 +880,22 @@ void wire_economy(ra2engine::World& world, const BuildingAssets& ba, const Rules
 // assets are loaded, spawn that miner at the refinery's dock cell. Call once
 // per frame AFTER world.step(). Instant (scripted) buildings start Idle and so
 // never trigger this -- their free units are spawned explicitly by the caller.
+//
+// Review Important-2: the Buildup->Idle edge detection itself (the part with
+// zero automated coverage) is extracted into the pure, directly-testable
+// ra2engine::free_unit_grand_openings (harvest.hpp/cpp, covered by
+// tests/test_harvest.cpp); this function is now a thin wrapper resolving the
+// FreeUnit id/asset/spawn-cell side effects that DO need World/Rules/assets.
 void spawn_free_units_on_open(ra2engine::World& world, const BuildingAssets& ba,
                               const Rules& rules, const MinerAssets& miners,
                               std::vector<int>& prev_states) {
-    std::vector<ra2engine::Building>& bs = world.buildings();
-    prev_states.resize(bs.size(), -1);
-    for (std::size_t i = 0; i < bs.size(); ++i) {
-        const int cur = static_cast<int>(bs[i].state);
-        const int prev = prev_states[i];
-        prev_states[i] = cur;
-        if (prev != static_cast<int>(ra2engine::Building::State::Buildup) ||
-            cur != static_cast<int>(ra2engine::Building::State::Idle))
-            continue;
-        const ra2engine::Building b = bs[i];  // copy: dock cell math only
-        if (b.type < 0 || b.type >= static_cast<int>(ba.roster.size())) continue;
+    std::vector<bool> free_unit_of_type(ba.roster.size());
+    for (std::size_t t = 0; t < ba.roster.size(); ++t)
+        free_unit_of_type[t] = !rules.free_unit(ba.roster[t].id).empty();
+    for (std::size_t i :
+        ra2engine::free_unit_grand_openings(world.buildings(), free_unit_of_type, prev_states)) {
+        const ra2engine::Building b = world.buildings()[i];  // copy: dock cell math only
         const std::string fu = rules.free_unit(ba.roster[b.type].id);
-        if (fu.empty()) continue;
         bool chrono = false;
         int storage = 0;
         const VehicleAssets* va = miner_for_id(miners, fu, chrono, storage);
