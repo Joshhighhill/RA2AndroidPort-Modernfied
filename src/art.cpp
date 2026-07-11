@@ -93,4 +93,29 @@ bool Art::fire_flh(const std::string& image, int flh[3]) const {
     return true;
 }
 
+bool Art::foundation(const std::string& image, int& fw, int& fh) const {
+    std::string v = ini_->get(image, "Foundation", "");
+    if (v.empty()) return false;
+    size_t xpos = v.find_first_of("xX");
+    if (xpos == std::string::npos) return false;
+    int w, h;
+    if (!parse_int_strict(v.substr(0, xpos), w)) return false;
+    if (!parse_int_strict(v.substr(xpos + 1), h)) return false;
+    fw = w;
+    fh = h;
+    return true;
+}
+
+std::string Art::buildup(const std::string& image) const {
+    return ini_->get(image, "Buildup", "");
+}
+
+std::string Art::cameo(const std::string& image) const {
+    return ini_->get(image, "Cameo", "");
+}
+
+bool Art::new_theater(const std::string& image) const {
+    return is_truthy(ini_->get(image, "NewTheater", ""));
+}
+
 }  // namespace ra2assets

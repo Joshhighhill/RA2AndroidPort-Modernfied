@@ -231,3 +231,104 @@ TEST_CASE("rules: real rulesmd combat values pin (E1/E2/M60/M1Carbine/SA)") {
     std::vector<int> expected_verses{100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100};
     CHECK(sa_verses == expected_verses);
 }
+
+TEST_CASE("rules: building accessors (synthetic)") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[General]\nBuildSpeed=.7\nRefundPercent=50%\nPrerequisitePower=GAPOWR,NAPOWR\n"
+        "[MultiplayerDialogSettings]\nMoney=10000\n"
+        "[GAPOWR]\nCost=800\nPower=200\nAdjacent=2\nTechLevel=1\nPrerequisite=GACNST\n"
+        "[GACNST]\nConstructionYard=yes\nCost=3000\n"
+        "[GAPILE]\nPrerequisite= power , GACNST\n");
+    ra2assets::Rules r = ra2assets::Rules::load(ini);
+    CHECK(r.cost("GAPOWR") == 800);
+    CHECK(r.power("GAPOWR") == 200);
+    CHECK(r.power("MISSING") == 0);
+    CHECK(r.adjacent("GAPOWR") == 2);
+    CHECK(r.tech_level("GAPOWR") == 1);
+    CHECK(r.is_construction_yard("GACNST"));
+    CHECK_FALSE(r.is_construction_yard("GAPOWR"));
+    auto pre = r.prerequisite("GAPILE");
+    REQUIRE(pre.size() == 2);
+    CHECK(pre[0] == "POWER");   // trimmed + uppercased
+    CHECK(pre[1] == "GACNST");
+    auto grp = r.prerequisite_group("Power");
+    REQUIRE(grp.size() == 2);
+    CHECK(grp[0] == "GAPOWR");
+    CHECK(r.general_double("BuildSpeed", 0.0) == doctest::Approx(0.7));
+    CHECK(r.general_double("RefundPercent", 0.0) == doctest::Approx(50.0));
+    CHECK(r.general_double("Absent", 3.5) == doctest::Approx(3.5));
+    CHECK(r.mp_money() == 10000);
+}
+
+TEST_CASE("rules: real rulesmd building pins") {
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto top_bytes = slurp(base + "\\ra2md.mix");
+    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    MixFile top = MixFile::open(std::move(top_bytes));
+
+    std::vector<uint8_t> rules_bytes;
+    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
+        rules_bytes = top.read(*e);
+    } else {
+        static const char* candidates[] = {
+            "localmd.mix",
+            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
+            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
+            "cachemd.mix", "conqmd.mix",
+        };
+        for (const char* name : candidates) {
+            try {
+                MixFile nested = top.open_nested(name);
+                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
+                    rules_bytes = nested.read(*e2);
+                    break;
+                }
+            } catch (const std::exception&) {
+            }
+        }
+    }
+    if (rules_bytes.empty()) {
+        MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
+                "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
+        return;
+    }
+
+    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
+    Rules rules = Rules::load(ini);
+
+    CHECK(rules.cost("GAPOWR") == 800);
+    CHECK(rules.cost("NAPOWR") == 600);
+    CHECK(rules.cost("GAPILE") == 500);
+    CHECK(rules.cost("GAWEAP") == 2000);
+    CHECK(rules.cost("GACNST") == 3000);
+
+    CHECK(rules.power("GAPOWR") == 200);
+    CHECK(rules.power("NAPOWR") == 150);
+    CHECK(rules.power("GAWEAP") == -25);
+    CHECK(rules.power("NAHAND") == -10);
+    CHECK(rules.power("GACNST") == 0);
+
+    CHECK(rules.adjacent("GACNST") == 2);
+    CHECK(rules.tech_level("GACNST") == -1);
+
+    CHECK(rules.is_construction_yard("GACNST"));
+    CHECK(rules.is_construction_yard("NACNST"));
+    CHECK_FALSE(rules.is_construction_yard("GAPOWR"));
+
+    auto gaweap_pre = rules.prerequisite("GAWEAP");
+    std::vector<std::string> expected_pre{"PROC", "GAPILE", "GACNST"};
+    CHECK(gaweap_pre == expected_pre);
+
+    auto proc_group = rules.prerequisite_group("Proc");
+    REQUIRE_FALSE(proc_group.empty());
+    CHECK(proc_group[0] == "GAREFN");
+
+    CHECK(rules.general_double("BuildSpeed", 0.0) == doctest::Approx(0.7));
+    CHECK(rules.general_double("RefundPercent", 0.0) == doctest::Approx(50.0));
+    CHECK(rules.general_double("LowPowerPenaltyModifier", 0.0) == doctest::Approx(1.0));
+    CHECK(rules.general_double("ConditionYellow", 0.0) == doctest::Approx(50.0));
+    CHECK(rules.general_double("ConditionRed", 0.0) == doctest::Approx(25.0));
+
+    CHECK(rules.mp_money() == 10000);
+}

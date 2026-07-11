@@ -150,3 +150,85 @@ TEST_CASE("art: real artmd.ini pins (GISequence == ConSequence for our entries)"
         CHECK(art.entry(img, "Die1").facing_mult == 0);
     }
 }
+
+TEST_CASE("art: building accessors (synthetic)") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[GAPOWR]\nFoundation=2x2\nBuildup=GAPOWRMK\nCameo=POWRICON\nNewTheater=yes\n"
+        "[BAD]\nFoundation=huge\n");
+    ra2assets::Art a = ra2assets::Art::load(ini);
+    int fw = -1, fh = -1;
+    REQUIRE(a.foundation("GAPOWR", fw, fh));
+    CHECK(fw == 2); CHECK(fh == 2);
+    int ow = 9, oh = 9;
+    CHECK_FALSE(a.foundation("BAD", ow, oh));
+    CHECK(ow == 9);                       // untouched on failure
+    CHECK_FALSE(a.foundation("MISSING", ow, oh));
+    CHECK(a.buildup("GAPOWR") == "GAPOWRMK");
+    CHECK(a.buildup("MISSING") == "");
+    CHECK(a.cameo("GAPOWR") == "POWRICON");
+    CHECK(a.new_theater("GAPOWR"));
+    CHECK_FALSE(a.new_theater("MISSING"));
+}
+
+TEST_CASE("art: real artmd building pins") {
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto top_bytes = slurp(base + "\\ra2md.mix");
+    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    MixFile top = MixFile::open(std::move(top_bytes));
+
+    std::vector<uint8_t> art_bytes;
+    if (const MixEntry* e = top.find(mix_id("artmd.ini"))) {
+        art_bytes = top.read(*e);
+    } else {
+        static const char* candidates[] = {
+            "localmd.mix",
+            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
+            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
+            "cachemd.mix", "conqmd.mix",
+        };
+        for (const char* name : candidates) {
+            try {
+                MixFile nested = top.open_nested(name);
+                if (const MixEntry* e2 = nested.find(mix_id("artmd.ini"))) {
+                    art_bytes = nested.read(*e2);
+                    break;
+                }
+            } catch (const std::exception&) {
+            }
+        }
+    }
+    if (art_bytes.empty()) {
+        MESSAGE("skipped: artmd.ini not found in ra2md.mix top level or in "
+                "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
+        return;
+    }
+
+    Ini ini = Ini::parse(std::string(art_bytes.begin(), art_bytes.end()));
+    Art art = Art::load(ini);
+
+    int fw = -1, fh = -1;
+    REQUIRE(art.foundation("GACNST", fw, fh));
+    CHECK(fw == 4); CHECK(fh == 4);
+    REQUIRE(art.foundation("GAPOWR", fw, fh));
+    CHECK(fw == 2); CHECK(fh == 2);
+    REQUIRE(art.foundation("GAPILE", fw, fh));
+    CHECK(fw == 3); CHECK(fh == 2);
+    REQUIRE(art.foundation("GAWEAP", fw, fh));
+    CHECK(fw == 5); CHECK(fh == 3);
+    REQUIRE(art.foundation("NAPOWR", fw, fh));
+    CHECK(fw == 3); CHECK(fh == 2);
+    REQUIRE(art.foundation("NAHAND", fw, fh));
+    CHECK(fw == 2); CHECK(fh == 2);
+    REQUIRE(art.foundation("NAWEAP", fw, fh));
+    CHECK(fw == 5); CHECK(fh == 3);
+
+    CHECK(art.buildup("GACNST") == "GACNSTMK");
+    CHECK(art.buildup("NAWEAP") == "NAWEAPMK");
+
+    CHECK(art.cameo("GAPOWR") == "POWRICON");
+    CHECK(art.cameo("GAWEAP") == "gwepicon");
+    CHECK(art.cameo("GACNST") == "");
+
+    CHECK(art.new_theater("GACNST"));
+}

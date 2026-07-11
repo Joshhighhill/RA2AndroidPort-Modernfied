@@ -85,6 +85,44 @@ public:
     // animation name used for the unit's death explosion), or "" if absent.
     std::string explosion_first(const std::string& unit_id) const;
 
+    // [id] Cost=, or 0 if absent.
+    int cost(const std::string& id) const;
+
+    // [id] Power=, or 0 if absent (negative = drain, positive = generation).
+    int power(const std::string& id) const;
+
+    // [id] Adjacent=, or 0 if absent.
+    int adjacent(const std::string& id) const;
+
+    // [id] TechLevel=, or 0 if absent.
+    int tech_level(const std::string& id) const;
+
+    // [id] ConstructionYard=, true iff the value is "yes"/"true" (case-
+    // insensitive); false if absent.
+    bool is_construction_yard(const std::string& id) const;
+
+    // [id] Prerequisite= split on commas, whitespace-trimmed and uppercased;
+    // empty if absent.
+    std::vector<std::string> prerequisite(const std::string& id) const;
+
+    // [General] Prerequisite<group>= (e.g. group="Power" reads
+    // PrerequisitePower=) split on commas, whitespace-trimmed and
+    // uppercased; empty if absent.
+    std::vector<std::string> prerequisite_group(const std::string& group) const;
+
+    // [General] key= parsed as a double, tolerating a trailing '%' (percent
+    // values are returned as given, e.g. "50%" -> 50.0). Falls back to
+    // [AudioVisual] key= if the key isn't in [General] -- ConditionYellow/
+    // ConditionRed live there in the real rulesmd.ini (loaded by
+    // FUN_00668C20's [AudioVisual] reader, per docs/re/building-render.md
+    // §4), while BuildSpeed/RefundPercent/LowPowerPenaltyModifier live in
+    // [General]; this getter serves all five known keys regardless of which
+    // section actually holds them. Returns `fallback` if absent from both.
+    double general_double(const std::string& key, double fallback) const;
+
+    // [MultiplayerDialogSettings] Money=, fallback 10000 if absent.
+    int mp_money() const;
+
 private:
     explicit Rules(const Ini& ini) : ini_(&ini) {}
     const Ini* ini_;

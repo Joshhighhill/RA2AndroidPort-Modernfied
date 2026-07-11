@@ -56,6 +56,21 @@ public:
     // int-parseable comma-separated fields.
     bool fire_flh(const std::string& image, int flh[3]) const;
 
+    // [image] Foundation=WxH (case-insensitive 'x'), parsed into fw/fh.
+    // Returns false and leaves fw/fh untouched if the image/key is absent or
+    // the value isn't a parseable "<int>x<int>" pair.
+    bool foundation(const std::string& image, int& fw, int& fh) const;
+
+    // [image] Buildup=, or "" if absent.
+    std::string buildup(const std::string& image) const;
+
+    // [image] Cameo=, or "" if absent.
+    std::string cameo(const std::string& image) const;
+
+    // [image] NewTheater=, true iff the value is "yes"/"true" (case-
+    // insensitive); false if absent.
+    bool new_theater(const std::string& image) const;
+
 private:
     explicit Art(const Ini& ini) : ini_(&ini) {}
     const Ini* ini_;

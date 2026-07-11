@@ -20,6 +20,28 @@ bool is_truthy(const std::string& v) {
     return lower == "yes" || lower == "true";
 }
 
+// Comma-split `v`, trimming whitespace and uppercasing each token; empty
+// tokens (from "" or trailing commas) are skipped. Used by prerequisite()/
+// prerequisite_group() to normalize section-id lists.
+std::vector<std::string> split_trim_upper(const std::string& v) {
+    std::vector<std::string> out;
+    size_t pos = 0;
+    while (pos <= v.size()) {
+        size_t comma = v.find(',', pos);
+        std::string tok = v.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        size_t b = tok.find_first_not_of(" \t");
+        size_t e = tok.find_last_not_of(" \t");
+        if (b != std::string::npos) {
+            std::string trimmed = tok.substr(b, e - b + 1);
+            for (char& c : trimmed) c = (char)std::toupper((unsigned char)c);
+            out.push_back(trimmed);
+        }
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return out;
+}
+
 } // namespace
 
 Rules Rules::load(const Ini& ini) {
@@ -124,6 +146,48 @@ std::string Rules::explosion_first(const std::string& unit_id) const {
     size_t b = first.find_first_not_of(" \t");
     size_t e = first.find_last_not_of(" \t");
     return b == std::string::npos ? "" : first.substr(b, e - b + 1);
+}
+
+int Rules::cost(const std::string& id) const {
+    return ini_->get_int(id, "Cost", 0);
+}
+
+int Rules::power(const std::string& id) const {
+    return ini_->get_int(id, "Power", 0);
+}
+
+int Rules::adjacent(const std::string& id) const {
+    return ini_->get_int(id, "Adjacent", 0);
+}
+
+int Rules::tech_level(const std::string& id) const {
+    return ini_->get_int(id, "TechLevel", 0);
+}
+
+bool Rules::is_construction_yard(const std::string& id) const {
+    return is_truthy(ini_->get(id, "ConstructionYard", ""));
+}
+
+std::vector<std::string> Rules::prerequisite(const std::string& id) const {
+    return split_trim_upper(ini_->get(id, "Prerequisite", ""));
+}
+
+std::vector<std::string> Rules::prerequisite_group(const std::string& group) const {
+    return split_trim_upper(ini_->get("General", "Prerequisite" + group, ""));
+}
+
+double Rules::general_double(const std::string& key, double fallback) const {
+    // [General] first (BuildSpeed/RefundPercent/LowPowerPenaltyModifier's
+    // real home); [AudioVisual] second (ConditionYellow/ConditionRed's real
+    // home -- see the header comment).
+    std::string v = ini_->get("General", key, "");
+    if (v.empty()) v = ini_->get("AudioVisual", key, "");
+    if (v.empty()) return fallback;
+    return std::strtod(v.c_str(), nullptr);
+}
+
+int Rules::mp_money() const {
+    return ini_->get_int("MultiplayerDialogSettings", "Money", 10000);
 }
 
 } // namespace ra2assets
