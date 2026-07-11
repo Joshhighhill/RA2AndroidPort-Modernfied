@@ -211,6 +211,10 @@ struct BuildingAssets {
     // Prerequisite groups resolved once [RE: construction.md §10].
     std::vector<std::pair<std::string, std::vector<std::string>>> groups;
     bool ok = false;                                 // any usable building
+    // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
+    // damaged building frame) [RE: task-7 review "ConditionYellow"], read via
+    // rules.general_double in load_building_assets; 0.5 is only the fallback.
+    double condition_yellow = 0.5;
 };
 
 // Loads `name` (e.g. "rulesmd.ini", "artmd.ini") from ra2md.mix ONCE per mode
@@ -723,6 +727,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                      "NACNST", "NAPOWR", "NAHAND", "NAWEAP"};
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
+    // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
+    // damaged-vs-healthy building frame) [RE: task-7 review "ConditionYellow"].
+    ba.condition_yellow = rules.general_double("ConditionYellow", 50.0) / 100.0;
 
     // Palettes (both verified present in cache.mix): buildings draw with
     // unittem.pal (+ house remap), cameos with cameo.pal [RE: building-render.md §6].
@@ -1172,7 +1179,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (d.kind == 0) {
             const ra2engine::Building& b = world.buildings()[d.idx];
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
-            draw_building(ren, tc, b, *ba, mc ? mc->level : 0, /*condition_yellow=*/0.5, cam, W, H);
+            draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H);
         } else {
             draw_one_unit(d.idx);
         }
@@ -1427,16 +1434,38 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     // Power meter [RE-GATE APPLIED: construction.md §8].
     const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
     const int output = pt.output, drain = pt.drain;
-    int total_pips = lay.power.h / 3;
+    // total_pips = (bar_height+3)/3 [§8]; NOT bar_height/3.
+    int total_pips = (lay.power.h + 3) / 3;
     if (total_pips < 1) total_pips = 1;
-    int pips_used =
-        total_pips - static_cast<int>(total_pips * 400.0 / (output + drain + 400.0));
-    pips_used = std::clamp(pips_used, 0, total_pips);
-    const int denom = std::max(output + drain, 1);
+    // Capacity scale (FUN_0063F2F0): total_power = Sum output + Sum drain;
+    // pips_used = total_pips - clamp(ftol(total_pips*400/(total_power+400)),
+    // 0, total_pips-1) -- the clamp upper bound of total_pips-1 (not
+    // total_pips) is what guarantees at least 1 pip whenever there is any
+    // power at all (and, per the literal formula, even at zero power).
+    const int total_power = output + drain;
+    const int inner = std::clamp(
+        static_cast<int>(total_pips * 400.0 / (total_power + 400.0)), 0, total_pips - 1);
+    int pips_used = total_pips - inner;
+    if ((output + drain) > 0 && pips_used < 1) pips_used = 1;
+    // Color split (FUN_0063F400): surplus = output - drain; surplus<0 -> no
+    // green/yellow (red_amt=drain only); else yellow_amt=min(surplus,100),
+    // green_amt=surplus-yellow_amt, red_amt=drain. Pips are divided
+    // proportionally by amt/(drain+yellow_amt+green_amt) -- for surplus>=0
+    // that denominator collapses to `output` (drain+yellow+green = drain +
+    // surplus = output), NOT output+drain.
     const int surplus = output - drain;
-    const int red = static_cast<int>(std::lround((double)pips_used * drain / denom));
-    const int ypow = std::clamp(surplus, 0, 100);
-    const int yellow = static_cast<int>(std::lround((double)pips_used * ypow / denom));
+    int yellow_amt = 0, green_amt = 0;
+    if (surplus >= 0) {
+        yellow_amt = std::min(surplus, 100);
+        green_amt = surplus - yellow_amt;
+    }
+    const int red_amt = drain;
+    const int denom = red_amt + yellow_amt + green_amt;
+    int red = 0, yellow = 0;
+    if (denom > 0) {
+        red = static_cast<int>(std::lround((double)pips_used * red_amt / denom));
+        yellow = static_cast<int>(std::lround((double)pips_used * yellow_amt / denom));
+    }
     int green = pips_used - red - yellow;
     if (green < 0) green = 0;
     const bool outage = drain > output;
