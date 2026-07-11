@@ -19,10 +19,14 @@ static const std::vector<std::pair<std::string, std::vector<std::string>>> kGrou
     {{"POWER", {"GAPOWR", "NAPOWR"}}};
 
 TEST_CASE("build_frames: BuildSpeed formula [RE: construction.md §7]") {
+    // Pins recovered from the binary (FUN_00711280): ftol(Cost*BuildSpeed*0.9).
+    // Operation-order sensitive: the algebraically equal /1000*900 rounds to
+    // 503/1889 under IEEE 754 instead of the binary's 504/1890.
     CHECK(build_frames(1000, 0.7) == 630);   // 0.7 min * 900
-    CHECK(build_frames(800, 0.7) == 503);    // FP precision: 0.8*0.7*900 = 503.999... -> 503
+    CHECK(build_frames(800, 0.7) == 504);    // GAPOWR pin (Task-1 hunt)
     CHECK(build_frames(500, 0.7) == 315);
     CHECK(build_frames(2000, 0.7) == 1260);
+    CHECK(build_frames(3000, 0.7) == 1890);  // GACNST pin (Task-1 hunt)
 }
 
 TEST_CASE("power_totals + build_speed_multiplier [RE-GATE: construction.md §8]") {
@@ -76,9 +80,9 @@ TEST_CASE("can_start: slot, conyard, tech level") {
 TEST_CASE("tick: 54-step economy [RE-GATE: construction.md §10]") {
     auto t = roster();
     ProductionState ps; ps.credits = 10000;
-    start(ps, 1, t, 0.7);                    // GAPOWR: 503 frames, 800 credits
-    CHECK(ps.slot.total_frames == 503);
-    CHECK(ps.slot.step_ticks == 9);          // trunc(503/54) = 9
+    start(ps, 1, t, 0.7);                    // GAPOWR: 504 frames, 800 credits
+    CHECK(ps.slot.total_frames == 504);
+    CHECK(ps.slot.step_ticks == 9);          // trunc(504/54)
     // 27 stages = half the steps = 27*9 = 243 frames = 16.2 s
     tick(ps, 243.0 / 15.0, 1.0, t);
     CHECK(ps.slot.stage == 27);

@@ -5,7 +5,11 @@
 namespace ra2engine {
 
 int build_frames(int cost, double build_speed) {
-    return (int)(cost / 1000.0 * build_speed * 900.0);   // [RE: construction.md §7]
+    // [RE: construction.md §7, FUN_00711280] Binary operation order:
+    // ftol(Cost * BuildSpeed * 0.9). Do NOT algebraically rearrange —
+    // /1000*900 rounds differently under IEEE 754 (503 vs 504 for GAPOWR:
+    // 800*0.7 = exactly 560.0, *0.9 = exactly 504.0).
+    return (int)(cost * build_speed * 0.9);
 }
 
 PowerTotals power_totals(const std::vector<Building>& buildings,
