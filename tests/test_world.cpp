@@ -7,6 +7,7 @@
 #include <tuple>
 #include <vector>
 
+#include "building.hpp"
 #include "iso_project.hpp"   // cell_to_screen / screen_to_cell
 #include "iso_renderer.hpp"  // pal_for_house
 #include "occupancy.hpp"
@@ -1198,4 +1199,96 @@ TEST_CASE("World::step anim-override: firing unit faces its target (docs/re/infa
     const int base = seq.fire.first + attacker.facing * seq.fire.fmult;
     CHECK(attacker.frame >= base);
     CHECK(attacker.frame < base + seq.fire.count);
+}
+
+// ---- Buildings & Construction Task 4: World integration (blocking, attack) ----
+// Real-map fixture (same load_real_map_w/pick_start_cell precedent as every
+// other World integration test in this file) -- MapFile has no public
+// cell-injecting constructor, so an "in-memory" fixture would mean hand-
+// synthesizing IsoMapPack5 LZO1X bytes, which test_lzo1x.cpp documents as
+// impractical; the real-map-or-skip pattern is this file's established way
+// of getting real walkable terrain into a World.
+
+TEST_CASE("world: add_building blocks passability, death restores it") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World w(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // A 2x2 walkable block with a 5th walkable cell 2 cells east of its
+    // origin (outside the foundation, to prove only the foundation itself
+    // gets blocked).
+    int bx = -1, by = -1;
+    for (int dy = 0; dy < 10 && bx < 0; ++dy)
+        for (int dx = 0; dx < 10 && bx < 0; ++dx) {
+            const int x = c->x + dx, y = c->y + dy;
+            if (w.walkable(x, y) && w.walkable(x + 1, y) && w.walkable(x, y + 1) &&
+                w.walkable(x + 1, y + 1) && w.walkable(x + 2, y)) {
+                bx = x;
+                by = y;
+            }
+        }
+    REQUIRE(bx >= 0);
+    REQUIRE(w.walkable(bx, by));
+
+    const int bi = w.add_building(/*type*/ 0, bx, by, /*fw*/ 2, /*fh*/ 2, /*house*/ 1,
+                                  /*strength*/ 100, /*armor_ix*/ 0, /*buildup_total*/ 0.0,
+                                  /*instant*/ true);
+    CHECK_FALSE(w.walkable(bx, by));
+    CHECK_FALSE(w.walkable(bx + 1, by + 1));
+    CHECK(w.walkable(bx + 2, by));
+    CHECK(w.building_at_cell(bx + 1, by) == bi);
+    CHECK(w.building_at_cell(bx + 2, by) == -1);
+
+    ra2engine::kill_building(w.buildings()[bi]);
+    w.step(0.001);  // death detected -> passability restored
+    CHECK(w.walkable(bx, by));
+    CHECK(w.building_at_cell(bx, by) == -1);
+
+    w.step(ra2engine::kBuildingDieSecs + 0.1);
+    CHECK_FALSE(w.buildings()[bi].alive);  // tombstoned, never erased
+}
+
+TEST_CASE("world: order_attack_building sets exclusive target") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World w(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    w.add_combat_unit(c->x, c->y, 0, gi_stats());  // house-0 combat unit, index 0
+    w.units()[0].selected = true;
+
+    // Friendly (house 0) building: ordering an attack on it must be a no-op.
+    int fx = -1, fy = -1;
+    REQUIRE(find_close_free_cell(w, c->x, c->y, fx, fy));
+    const int bi_friendly = w.add_building(0, fx, fy, 1, 1, /*house*/ 0, 100, 0, 0.0, true);
+    w.order_attack_building(bi_friendly);
+    CHECK(w.units()[0].target_building == -1);
+
+    // Hostile (house 1) building elsewhere.
+    int ex = -1, ey = -1;
+    REQUIRE(find_close_free_cell(w, c->x + 3, c->y + 3, ex, ey));
+    const int bi_enemy = w.add_building(0, ex, ey, 1, 1, /*house*/ 1, 100, 0, 0.0, true);
+    w.order_attack_building(bi_enemy);
+    CHECK(w.units()[0].target_building == bi_enemy);
+    CHECK(w.units()[0].target == -1);
+    CHECK(w.units()[0].attack_order);
+
+    // A subsequent order_attack(<enemy unit>) clears target_building (the two
+    // target kinds are mutually exclusive).
+    int hx = -1, hy = -1;
+    REQUIRE(find_close_free_cell(w, c->x - 3, c->y - 3, hx, hy));
+    w.add_combat_unit(hx, hy, 1, cons_stats());  // hostile unit, index 1
+    w.order_attack(1);
+    CHECK(w.units()[0].target_building == -1);
+    CHECK(w.units()[0].target == 1);
+    CHECK(w.units()[0].attack_order);
 }

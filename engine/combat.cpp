@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 
+#include "building.hpp"  // Building, foundation_cells, kill_building (Task 4)
 #include "pathfind.hpp"  // Cellxy
 
 namespace ra2engine {
@@ -118,7 +119,8 @@ int damage_vs(int damage, const std::vector<int>& verses, int ai) {
     return damage * verses[idx] / 100;
 }
 
-std::vector<MoveRequest> step_combat(std::vector<Unit>& units, Occupancy& occ, double dt) {
+std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Building>& buildings,
+                                     Occupancy& occ, double dt) {
     std::vector<MoveRequest> requests;
     const int n = static_cast<int>(units.size());
 
@@ -149,6 +151,69 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, Occupancy& occ, d
         if (u.rof_cool < 0.0) u.rof_cool = 0.0;
         u.fire_flash -= dt;
         if (u.fire_flash < 0.0) u.fire_flash = 0.0;
+
+        // --- Buildings & Construction Task 4: explicit attack-building path.
+        // target_building is ONLY ever set by World::order_attack_building
+        // (never by auto-acquire -- units NEVER auto-acquire buildings, and
+        // buildings never retaliate, no weapons in this roster), so this
+        // whole block is unreachable (u.target_building stays at its -1
+        // default) for every unit in the pre-Task-4 unit-vs-unit tests and
+        // for any unit not given an explicit attack-building order --
+        // required for the byte-identical-when-buildings-is-empty gate.
+        if (u.target_building >= 0) {
+            Building* b = (u.target_building < static_cast<int>(buildings.size()))
+                              ? &buildings[u.target_building]
+                              : nullptr;
+            const bool valid = b && b->alive && b->state != Building::State::Dead;
+            if (!valid) {
+                // Target validity: gone/dead/Dead-state -> clear and fall
+                // back to normal (unit) targeting below, same "an explicit
+                // order dies with its target" policy as (d) below.
+                u.target_building = -1;
+                u.attack_order = false;
+            } else {
+                const int b_idx = u.target_building;
+                // Range to the NEAREST foundation cell (a 4x4 building is in
+                // range of its EDGE, not its center).
+                const auto cells = foundation_cells(b->cx, b->cy, b->fw, b->fh);
+                double best_d = -1.0;
+                int nx = 0, ny = 0;
+                for (const Cellxy& cell : cells) {
+                    const double d = dist_leptons(u.fx, u.fy, static_cast<double>(cell.x),
+                                                  static_cast<double>(cell.y));
+                    if (best_d < 0.0 || d < best_d) {
+                        best_d = d;
+                        nx = cell.x;
+                        ny = cell.y;
+                    }
+                }
+                const double range_leptons = u.w_range * kLeptonsPerCell;
+                if (best_d <= range_leptons) {
+                    if (u.rof_cool <= 0.0) {
+                        u.rof_cool = u.w_rof / kLogicFps;
+                        u.fire_flash = kFireFlashSecs;
+                        const int dmg = damage_vs(u.w_damage, u.w_verses, b->armor_ix);
+                        b->hp -= dmg;
+                        if (b->hp <= 0) {
+                            kill_building(*b);
+                            u.target_building = -1;
+                            u.attack_order = false;
+                            // Clear every OTHER unit's target_building
+                            // pointing at the now-dead building immediately
+                            // (their own next-call validity check would also
+                            // catch it via state == Dead, but the spec calls
+                            // for this to happen within the same call).
+                            for (Unit& other : units)
+                                if (&other != &u && other.target_building == b_idx)
+                                    other.target_building = -1;
+                        }
+                    }
+                } else if (u.attack_order) {
+                    requests.push_back({i, nx, ny, /*approach=*/true});
+                }
+                continue;  // handled -- skip the unit-vs-unit path entirely
+            }
+        }
 
         // (d) Target validation: drop a stale target (gone from the vector,
         // dead, dying, or no longer hostile). Clearing also resets

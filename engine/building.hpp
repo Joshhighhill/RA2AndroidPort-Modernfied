@@ -37,12 +37,17 @@ struct Building {
     int fw = 1, fh = 1;              // copied from the type at placement
     int house = 0;
     int hp = 1, max_hp = 1;
+    int armor_ix = 0;                // armor_index(Rules armor); set by World::add_building
     enum class State { Buildup, Idle, Dead };
     State state = State::Buildup;
     double buildup_time = 0.0;       // seconds elapsed in Buildup
     double buildup_total = 0.0;      // seconds Buildup lasts (0 = instant)
     double die_time = -1.0;          // >=0: death anim playing
     bool alive = true;               // tombstone after death anim (never erased)
+    // World-owned bookkeeping (NOT touched by building.cpp): true once World
+    // has restored passable_ for this building's foundation cells after it
+    // died, so death-triggered unblocking happens exactly once.
+    bool blocking_released = false;
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

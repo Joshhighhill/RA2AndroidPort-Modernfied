@@ -365,8 +365,13 @@ void World::order_move_selected(int goal_x, int goal_y) {
         // An explicit move order CANCELS engagement (RTS convention, and the
         // spec's "idle/guarding" wording: a unit executing a player move is
         // neither): drop the target so the hold-at-range pass and pursuit
-        // machinery never touch this unit's move path.
+        // machinery never touch this unit's move path. Building targets
+        // (Task 4) are cancelled the same way -- without this a unit ordered
+        // away from a building it was attacking would keep firing at it
+        // whenever back in range, forever (target_building never self-clears
+        // while the building lives).
         u.target = -1;
+        u.target_building = -1;
         u.attack_order = false;
         const Cellxy tgt = targets[k];
         order_unit_move(sel[k], tgt.x, tgt.y);
@@ -385,11 +390,65 @@ void World::order_attack(int target_idx) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
         u.target = target_idx;
+        u.target_building = -1;  // mutually exclusive with a unit target
         u.attack_order = true;
         // Same occupancy cleanup as order_move_selected: drop any stale
         // next-cell reservation from an in-flight move order, re-assert only
         // the current cell, and clear the path -- step_combat's next
         // MoveRequest (pursuit, now that attack_order is true) re-paths it.
+        occ_.release_all_of(static_cast<int>(i), u.cell_x, u.cell_y);
+        occ_.set(u.cell_x, u.cell_y, static_cast<int>(i));
+        u.path.clear();
+        u.path_idx = 0;
+    }
+}
+
+int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int strength,
+                        int armor_ix, double buildup_total, bool instant) {
+    Building b;
+    b.type = type;
+    b.cx = cx;
+    b.cy = cy;
+    b.fw = fw;
+    b.fh = fh;
+    b.house = house;
+    b.hp = b.max_hp = strength;
+    b.armor_ix = armor_ix;
+    b.buildup_total = buildup_total;
+    b.state = instant ? Building::State::Idle : Building::State::Buildup;
+    buildings_.push_back(b);
+    const int idx = static_cast<int>(buildings_.size()) - 1;
+    for (const Cellxy& cell : foundation_cells(cx, cy, fw, fh)) {
+        if (cell.x < 0 || cell.y < 0 || cell.x >= grid_w_ || cell.y >= grid_h_) continue;
+        passable_[static_cast<std::size_t>(cell.y) * grid_w_ + cell.x] = 0;
+    }
+    return idx;
+}
+
+int World::building_at_cell(int x, int y) const {
+    for (std::size_t i = 0; i < buildings_.size(); ++i) {
+        const Building& b = buildings_[i];
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (x >= b.cx && x < b.cx + b.fw && y >= b.cy && y < b.cy + b.fh)
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void World::order_attack_building(int b_idx) {
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return;
+    const Building& tgt = buildings_[b_idx];
+    // Can't order an attack on a dead/Dead-state/house-0 (friendly) building
+    // -- mirrors order_attack's own guard against a house-0 target.
+    if (!tgt.alive || tgt.state == Building::State::Dead || tgt.house == 0) return;
+
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+        Unit& u = units_[i];
+        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        u.target_building = b_idx;
+        u.target = -1;  // mutually exclusive with a unit target
+        u.attack_order = true;
+        // Same occupancy-release/path-clear dance as order_attack.
         occ_.release_all_of(static_cast<int>(i), u.cell_x, u.cell_y);
         occ_.set(u.cell_x, u.cell_y, static_cast<int>(i));
         u.path.clear();
@@ -405,7 +464,23 @@ void World::step(double dt) {
     // facing (docs/re/voxel-render.md §5). No-op for infantry.
     step_turrets(units_, dt);
 
-    const std::vector<MoveRequest> reqs = step_combat(units_, occ_, dt);
+    // Buildings & Construction Task 4: advance buildup/death timers, then
+    // restore passability for any building that DIED this frame (state ==
+    // Dead) and hasn't had its blocking released yet -- tracked per-building
+    // via blocking_released so this only ever fires once per building, at
+    // the moment of death (not at the later tombstone/alive=false point).
+    step_buildings(buildings_, dt);
+    for (Building& b : buildings_) {
+        if (b.state == Building::State::Dead && !b.blocking_released) {
+            for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+                if (cell.x < 0 || cell.y < 0 || cell.x >= grid_w_ || cell.y >= grid_h_) continue;
+                passable_[static_cast<std::size_t>(cell.y) * grid_w_ + cell.x] = 1;
+            }
+            b.blocking_released = true;
+        }
+    }
+
+    const std::vector<MoveRequest> reqs = step_combat(units_, buildings_, occ_, dt);
     // Guard-return requests route directly. Approach requests are batched
     // per goal cell (one batch per target) and resolved to DISTINCT free
     // firing-position cells via assign_formation, so a group of attackers

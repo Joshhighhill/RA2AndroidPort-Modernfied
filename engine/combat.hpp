@@ -70,6 +70,23 @@ struct MoveRequest {
 // kDieAnimSecs they tombstone (alive=false) but are never erased from
 // `units`. Returns the accumulated MoveRequests for the caller (World) to
 // path.
-std::vector<MoveRequest> step_combat(std::vector<Unit>& units, Occupancy& occ, double dt);
+//
+// Buildings & Construction Task 4: `buildings` adds an explicit-order-only
+// attack-building path (Unit::target_building) alongside the pre-existing
+// unit-targeting machinery above -- units never auto-acquire buildings, and
+// buildings never retaliate (no weapons in this roster), so the unit-vs-unit
+// code path is BIT-IDENTICAL to the pre-Task-4 3-arg step_combat whenever
+// `buildings` is empty (the byte-identity demo gates depend on this). For a
+// unit with target_building >= 0: the target is first validated (alive &&
+// state != Dead, else cleared and normal targeting resumes); range is the
+// distance to the NEAREST foundation cell (a 4x4 building is in range at its
+// edge, not its center); in range, it fires on the same rof_cool cadence as
+// unit combat (damage_vs against the building's armor_ix, hp -= dmg, hp <= 0
+// -> kill_building, which also clears every OTHER unit's target_building
+// pointing at it); out of range with attack_order set, it emits a
+// MoveRequest at the nearest foundation cell (approach = true, same
+// firing-position-resolution contract as the unit-pursuit case).
+std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Building>& buildings,
+                                     Occupancy& occ, double dt);
 
 }  // namespace ra2engine

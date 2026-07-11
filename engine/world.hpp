@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "building.hpp"
 #include "occupancy.hpp"
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "ra2assets/map.hpp"
@@ -54,6 +55,10 @@ struct Unit {
     double w_range = 0.0;          // weapon Range= (cells)
     std::vector<int> w_verses;     // warhead Verses percents (11 entries)
     int target = -1;               // unit index being attacked, -1 none
+    int target_building = -1;      // building index being attacked, -1 none;
+                                    // mutually exclusive with `target` --
+                                    // setting one clears the other (Buildings
+                                    // & Construction Task 4).
     bool attack_order = false;     // explicit order (pursues) vs auto-acquire
     double rof_cool = 0.0;         // seconds until the weapon may fire again
     double fire_flash = 0.0;       // seconds of fire-anim left (renderer)
@@ -299,6 +304,37 @@ public:
     // a house-0 (player) unit can't be ordered to attack a friendly.
     void order_attack(int target_idx);
 
+    // Placed buildings (Buildings & Construction Task 4).
+    std::vector<Building>& buildings() { return buildings_; }
+    const std::vector<Building>& buildings() const { return buildings_; }
+
+    // Appends a Building at foundation origin (cx, cy), sized fw x fh, owned
+    // by `house`, with hp = max_hp = strength and the given armor_ix (used by
+    // combat's damage_vs). State starts Buildup unless `instant` (scripted
+    // spawns pass true), in which case it starts Idle. Clears passable_ for
+    // every foundation cell (foundation_cells) so units can no longer walk
+    // through it -- restored automatically by World::step when the building
+    // dies. Returns the new building's index (stable -- buildings are never
+    // erased, only tombstoned). Precondition: the caller already validated
+    // the placement via placement_check (this method does not re-check it).
+    int add_building(int type, int cx, int cy, int fw, int fh, int house, int strength,
+                     int armor_ix, double buildup_total, bool instant);
+
+    // Index of the alive, non-Dead building whose foundation contains (x, y),
+    // or -1 if none (ascending index; foundations never overlap while both
+    // are alive, so at most one can ever match).
+    int building_at_cell(int x, int y) const;
+
+    // Orders every SELECTED house-0, alive, non-dying unit to attack building
+    // `b_idx`: target_building = b_idx, target = -1 (mutually exclusive with
+    // order_attack's unit target), attack_order = true, plus the same
+    // occupancy-release/path-clear dance as order_attack (a fresh pursuit
+    // path is computed later by step_combat's request, not here). No-op
+    // (touches no unit) if b_idx is out of range, dead, in State::Dead, or
+    // owned by house 0 (a house-0 unit can't be ordered to attack a
+    // friendly building).
+    void order_attack_building(int b_idx);
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -321,6 +357,7 @@ private:
 
     const ra2assets::MapFile* map_;
     std::vector<Unit> units_;
+    std::vector<Building> buildings_;
     std::vector<std::uint8_t> passable_;
     Occupancy occ_;
     int grid_w_ = 0;

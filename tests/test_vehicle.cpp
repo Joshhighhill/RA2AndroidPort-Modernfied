@@ -205,13 +205,14 @@ TEST_CASE("vehicle: fire waits for turret aim; infantry does not") {
     ra2engine::Occupancy occ(16, 16);
     occ.set(5, 5, 0); occ.set(7, 5, 1);
 
-    ra2engine::step_combat(units, occ, 1.0 / 15.0);
+    std::vector<ra2engine::Building> bs;
+    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
     CHECK(units[1].hp == 400);          // vehicle held fire (not aimed)
     CHECK(units[0].hp < 400);           // infantry-rules unit fired
 
     // Aim EXACTLY (tolerance 0): use the same delta step_combat computes,
     // (t.fx - u.fx, t.fy - u.fy) = (2, 0), so the doubles compare equal.
     units[0].turret_facing = facing_u16_from_delta(2.0, 0.0);
-    ra2engine::step_combat(units, occ, 1.0 / 15.0);
+    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
     CHECK(units[1].hp < 400);           // vehicle fired once aimed
 }
