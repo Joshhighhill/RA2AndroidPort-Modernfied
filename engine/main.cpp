@@ -37,6 +37,7 @@
 #include "building.hpp"
 #include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
+#include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
@@ -99,6 +100,20 @@ struct Assets {
     ra2engine::Theater theater;
 };
 
+// Ore/gem overlay art [RE: economy.md §5]: one SHP per [OverlayTypes] name,
+// loaded from the temperate theater chain (.tem, then a generic .shp
+// fallback) via the existing theater name resolver. Indexed [kind][slot]:
+// kind 0 = Ore (tibNN), 1 = Gems (gemNN); slot = the 0-based art index within
+// the set (OreField::variant_at). Each SHP carries the density frames
+// (frame = min(density, count-1)). Individually guarded: a name missing in
+// every candidate leaves present=false and that cell is simply not drawn --
+// never a crash.
+struct OreArt {
+    ra2assets::ShpFile shp[2][20];
+    bool present[2][20] = {};
+    bool any = false;
+};
+
 // `ra2` is the already-open ra2.mix (holds the nested theater/config/palette
 // mixes) -- opened ONCE by each mode entry point and shared with
 // load_unit_assets(), instead of each loader slurping the 268 MB file
@@ -143,6 +158,62 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
               << " templates=" << th.template_count() << "\n";
 
     return Assets{std::move(map), pal, std::move(th)};
+}
+
+// Loads the ore/gem overlay SHPs from the temperate theater chain [RE:
+// economy.md §5]. Ore uses the TIB set (tib01..tib20), gems use gem01..gem12;
+// each name is resolved through theater_candidates (.tem preferred, .shp
+// fallback) over the isotemp/temperat/generic nested mixes -- exactly the
+// walk load_building_assets uses. Every name is individually guarded (a miss
+// leaves present=false; the cell just doesn't draw). Logs a small probe of
+// frame counts so a real-install run confirms the density-frame layout.
+OreArt load_ore_art(const ra2assets::MixFile& ra2) {
+    OreArt oa;
+    std::map<std::string, std::unique_ptr<MixFile>> mix_cache;
+    auto get_mix = [&](const std::string& name) -> MixFile* {
+        auto it = mix_cache.find(name);
+        if (it != mix_cache.end()) return it->second.get();
+        std::unique_ptr<MixFile> m;
+        try {
+            m = std::make_unique<MixFile>(ra2.open_nested(name));
+        } catch (const std::exception&) { m.reset(); }
+        MixFile* raw = m.get();
+        mix_cache.emplace(name, std::move(m));
+        return raw;
+    };
+    auto try_load = [&](const std::string& name, ra2assets::ShpFile& out) -> bool {
+        for (const char* ext : {".tem", ".shp"})
+            for (const auto& c : ra2assets::theater_candidates(name, 'T', "isotemp.mix",
+                                                               "temperat.mix", ext)) {
+                MixFile* m = get_mix(c.mix);
+                if (!m) continue;
+                if (const MixEntry* e = m->find(c.file)) {
+                    try {
+                        out = ShpFile::load(m->read(*e));
+                        return true;
+                    } catch (const std::exception&) { return false; }
+                }
+            }
+        return false;
+    };
+    int ok = 0;
+    for (int i = 0; i < 20; ++i) {
+        char nm[16];
+        std::snprintf(nm, sizeof nm, "tib%02d", i + 1);
+        if (try_load(nm, oa.shp[0][i])) { oa.present[0][i] = true; ++ok; }
+    }
+    for (int i = 0; i < 12; ++i) {
+        char nm[16];
+        std::snprintf(nm, sizeof nm, "gem%02d", i + 1);
+        if (try_load(nm, oa.shp[1][i])) { oa.present[1][i] = true; ++ok; }
+    }
+    oa.any = ok > 0;
+    std::cerr << "[ore] art files loaded=" << ok
+              << " tib01=" << (oa.present[0][0] ? std::to_string(oa.shp[0][0].count()) : "absent")
+              << "f tib02=" << (oa.present[0][1] ? std::to_string(oa.shp[0][1].count()) : "absent")
+              << "f gem01=" << (oa.present[1][0] ? std::to_string(oa.shp[1][0].count()) : "absent")
+              << "f\n";
+    return oa;
 }
 
 // Everything needed to draw + fight both squads: one decoded SHP per
@@ -288,6 +359,9 @@ struct AudioSystem {
     ra2engine::AudioOutput out;
     std::map<std::string, UnitVoices> voices;  // by image ("GI","CONS")
     int eva_unitlost = -1;                     // bank clip id, -1 if unavailable
+    // Chrono Miner teleport sounds [RE: economy.md §3]: soundmd section names
+    // from rulesmd [CMIN] ChronoOut/InSound ("" -> silent no-op on play).
+    std::string chrono_out, chrono_in;
     bool enabled = false;
 };
 
@@ -397,6 +471,18 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
     // Registered globally (a missing section resolves to a silent no-op).
     if (!pending.count("PlaceBuilding"))
         pending["PlaceBuilding"] = resolve_sound_event(audio, sounds, idx, bag, "PlaceBuilding");
+
+    // Chrono Miner teleport sounds [RE: economy.md §3]: rulesmd [CMIN]
+    // ChronoOut/InSound name soundmd sections; resolve + register so the
+    // interactive loop can play them on ChronoOut/ChronoIn harvest events.
+    {
+        Ini cmin_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+        audio.chrono_out = cmin_ini.get("CMIN", "ChronoOutSound", "");
+        audio.chrono_in = cmin_ini.get("CMIN", "ChronoInSound", "");
+        for (const std::string& k : {audio.chrono_out, audio.chrono_in})
+            if (!k.empty() && !pending.count(k))
+                pending[k] = resolve_sound_event(audio, sounds, idx, bag, k);
+    }
 
     // EVA: "ceva064.wav" ("Unit lost") lives in the SAME audio.mix, decoded
     // via load_wav_ima (the WAV/IMA container, Task 3), not decode_bag_clip.
@@ -693,6 +779,112 @@ void spawn_tank_squads(ra2engine::World& world, const Assets& a, const VehicleAs
               << world.units().size() << "\n";
 }
 
+// The two harvester types the economy needs [RE: economy.md §1-§3], plus each
+// type's Storage= (bales) and chrono flag. HARV/CMIN are voxel units loaded
+// exactly like the Rhino (load_vehicle_assets: HARV has a turret, CMIN none).
+// A type whose voxel assets fail to load keeps ok=false and is simply never
+// spawned (economy silently degrades; a demo prints the [vehicle] failure).
+struct MinerAssets {
+    VehicleAssets harv;   // Soviet War Miner (drives home)
+    VehicleAssets cmin;   // Allied Chrono Miner (warps home)
+    int harv_storage = 40;
+    int cmin_storage = 20;
+};
+
+MinerAssets load_miner_assets(const std::string& dir, const ra2assets::MixFile& ra2,
+                              const ra2assets::Palette& unit_pal, const Rules& rules) {
+    MinerAssets m;
+    m.harv = load_vehicle_assets(dir, ra2, unit_pal, "HARV");
+    m.cmin = load_vehicle_assets(dir, ra2, unit_pal, "CMIN");
+    const int hs = rules.storage("HARV"), cs = rules.storage("CMIN");
+    m.harv_storage = hs > 0 ? hs : 40;
+    m.cmin_storage = cs > 0 ? cs : 20;
+    std::cerr << "[miner] harv ok=" << (m.harv.ok ? "y" : "n") << " storage=" << m.harv_storage
+              << " cmin ok=" << (m.cmin.ok ? "y" : "n") << " storage=" << m.cmin_storage << "\n";
+    return m;
+}
+
+// Resolves a FreeUnit id (GAREFN->"CMIN", NAREFN->"HARV") to the loaded
+// VehicleAssets + its chrono flag + storage; nullptr if the id isn't a known
+// miner or its assets failed to load.
+const VehicleAssets* miner_for_id(const MinerAssets& m, const std::string& id, bool& chrono,
+                                  int& storage) {
+    if (id == "HARV") { chrono = false; storage = m.harv_storage; return m.harv.ok ? &m.harv : nullptr; }
+    if (id == "CMIN") { chrono = true;  storage = m.cmin_storage; return m.cmin.ok ? &m.cmin : nullptr; }
+    return nullptr;
+}
+
+// Spawns a harvester of `va`'s type at/next to (tx,ty): tries the target cell,
+// then rings outward, for the first walkable + unoccupied cell (add_harvester's
+// placement precondition). Returns the new unit index or -1 if none is free.
+// Starts the miner in SeekOre (add_harvester).
+int spawn_harvester(ra2engine::World& world, const VehicleAssets& va, bool chrono, int storage,
+                    int house, int tx, int ty) {
+    for (int r = 0; r <= 8; ++r)
+        for (int dy = -r; dy <= r; ++dy)
+            for (int dx = -r; dx <= r; ++dx) {
+                if (std::abs(dx) != r && std::abs(dy) != r) continue;  // ring border only
+                const int x = tx + dx, y = ty + dy;
+                if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                    world.add_harvester(x, y, house, va.combat, chrono, storage);
+                    return static_cast<int>(world.units().size()) - 1;
+                }
+            }
+    return -1;
+}
+
+// Refinery roster indices = types that ship a FreeUnit harvester
+// (GAREFN/NAREFN); the World needs these to route unload docking.
+std::vector<int> refinery_type_indices(const BuildingAssets& ba, const Rules& rules) {
+    std::vector<int> v;
+    for (int i = 0; i < static_cast<int>(ba.roster.size()); ++i)
+        if (!rules.free_unit(ba.roster[i].id).empty()) v.push_back(i);
+    return v;
+}
+
+// Wire the World's economy from Rules [RE: economy.md §4]: roster copy,
+// refinery type indices, ore/gem Values (Riparius 25 / Cruentus 50), and the
+// GrowthRate cadence (minutes->seconds) + Riparius growth/spread percentages.
+void wire_economy(ra2engine::World& world, const BuildingAssets& ba, const Rules& rules) {
+    world.set_economy(ba.roster, refinery_type_indices(ba, rules),
+                      ra2engine::OreValues{rules.value("Riparius"), rules.value("Cruentus")},
+                      rules.growth_rate_minutes() * 60.0,
+                      rules.growth_percentage("Riparius"),
+                      rules.spread_percentage("Riparius"));
+}
+
+// FreeUnit grand-opening spawn [RE: economy.md §6]: for every building that
+// flipped Buildup->Idle since the previous frame (tracked in `prev_states`,
+// grown as buildings are added), if its type ships a FreeUnit and the miner
+// assets are loaded, spawn that miner at the refinery's dock cell. Call once
+// per frame AFTER world.step(). Instant (scripted) buildings start Idle and so
+// never trigger this -- their free units are spawned explicitly by the caller.
+void spawn_free_units_on_open(ra2engine::World& world, const BuildingAssets& ba,
+                              const Rules& rules, const MinerAssets& miners,
+                              std::vector<int>& prev_states) {
+    std::vector<ra2engine::Building>& bs = world.buildings();
+    prev_states.resize(bs.size(), -1);
+    for (std::size_t i = 0; i < bs.size(); ++i) {
+        const int cur = static_cast<int>(bs[i].state);
+        const int prev = prev_states[i];
+        prev_states[i] = cur;
+        if (prev != static_cast<int>(ra2engine::Building::State::Buildup) ||
+            cur != static_cast<int>(ra2engine::Building::State::Idle))
+            continue;
+        const ra2engine::Building b = bs[i];  // copy: dock cell math only
+        if (b.type < 0 || b.type >= static_cast<int>(ba.roster.size())) continue;
+        const std::string fu = rules.free_unit(ba.roster[b.type].id);
+        if (fu.empty()) continue;
+        bool chrono = false;
+        int storage = 0;
+        const VehicleAssets* va = miner_for_id(miners, fu, chrono, storage);
+        if (!va) continue;
+        spawn_harvester(world, *va, chrono, storage, b.house, ra2engine::dock_cell_x(b),
+                        ra2engine::dock_cell_y(b));
+        prev_states.resize(world.buildings().size(), -1);  // units added, not buildings; safe
+    }
+}
+
 // Spawn `count` GI units (house 0, player/Allied) on distinct walkable cells
 // spiralling out from the map's start cell (pick_start_cell), plus `count`
 // Conscript units (house 1, hostile/Soviet) spiralling out from 8 cells east
@@ -730,8 +922,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                     const ra2assets::MixFile& language, const Rules& rules,
                                     const Art& art) {
     BuildingAssets ba;
-    static const char* kRoster[8] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
-                                     "NACNST", "NAPOWR", "NAHAND", "NAWEAP"};
+    // Economy phase adds GAREFN/NAREFN (appended so the existing 0..7 indices
+    // -- and thus demo-base's world_hash -- stay byte-identical). Both ship a
+    // FreeUnit harvester (GAREFN->CMIN, NAREFN->HARV), driving the charge math
+    // below [RE: economy.md §6a].
+    static const char* kRoster[10] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+                                       "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
+                                       "GAREFN", "NAREFN"};
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -795,6 +992,12 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.strength = rules.strength(id);
         d.armor_ix = ra2engine::armor_index(rules.armor(id));
         d.cost = rules.cost(id);
+        // [RE: economy.md §6a] charge basis: cost normally; the FreeUnit-
+        // subtracted amount for a refinery (GAREFN/NAREFN ship a HARV/CMIN,
+        // so the queue charges cost - FreeUnit.Cost = 2000-1400 = 600). Build
+        // TIME still uses raw `cost` (production.cpp start()).
+        const std::string free_id = rules.free_unit(id);
+        d.charge = free_id.empty() ? d.cost : std::max(0, d.cost - rules.cost(free_id));
         d.power = rules.power(id);
         d.adjacent = rules.adjacent(id);
         d.tech_level = rules.tech_level(id);
@@ -943,7 +1146,9 @@ int roster_index(const BuildingAssets& ba, const std::string& id) {
 // (house 1) additionally gets NAPOWR/NAHAND/NAWEAP, each validity-checked
 // (adjacency enforced) against the GROWING base and probed eastward up to k=6
 // on a miss. All scripted spawns are instant (start Idle immediately).
-void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, int cx, int cy) {
+void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, int cx, int cy,
+                bool with_refinery = false, const VehicleAssets* harv_va = nullptr,
+                bool harv_chrono = false, int harv_storage = 0) {
     auto place = [&](int type, int px, int py, bool bypass) -> int {
         if (type < 0 || type >= static_cast<int>(ba.art.size()) || !ba.art[type].ok) return -1;
         const ra2engine::BuildingTypeDef& d = ba.roster[type];
@@ -970,6 +1175,18 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
         place(roster_index(ba, "NAPOWR"), cx + 6, cy, /*bypass=*/false);
         place(roster_index(ba, "NAHAND"), cx + 6, cy + 4, /*bypass=*/false);
         place(roster_index(ba, "NAWEAP"), cx - 1, cy + 6, /*bypass=*/false);
+        // Economy phase [RE: economy.md §6]: a refinery east of NAHAND plus its
+        // free War Miner adjacent to the dock. Instant + validity-bypassed like
+        // the ConYard. demo-base never sets with_refinery (default false), so
+        // its spawn_base output -- and world_hash -- is byte-identical.
+        if (with_refinery) {
+            const int refn = place(roster_index(ba, "NAREFN"), cx + 9, cy + 4, /*bypass=*/true);
+            if (refn >= 0 && harv_va) {
+                const ra2engine::Building& rb = world.buildings()[refn];
+                spawn_harvester(world, *harv_va, harv_chrono, harv_storage, house,
+                                ra2engine::dock_cell_x(rb), ra2engine::dock_cell_y(rb));
+            }
+        }
     }
 }
 
@@ -1128,6 +1345,61 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     }
 }
 
+// Ore/overlay render pass [RE: economy.md §5]: drawn immediately after the
+// terrain tiles and below all objects (units/buildings). For every visible
+// map cell that has_ore, pick the tiberium set's art by the cell's variant
+// (OreField::variant_at) and select the density frame (min(density,
+// count-1)); anchor it exactly like a terrain tile (cell_to_screen top-left +
+// the SHP frame's own bbox offset) and palettize with the TERRAIN palette.
+// Cells whose variant art is absent simply don't draw.
+void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
+              const ra2engine::OreField& ore, const ra2assets::MapFile& map,
+              const ra2assets::Palette& pal, const ra2engine::Camera& cam, int W, int H) {
+    if (!oa.any) return;
+    for (const ra2assets::MapCell& c : map.cells()) {
+        if (!ore.has_ore(c.x, c.y)) continue;
+        const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
+        int slot = ore.variant_at(c.x, c.y);
+        if (slot < 0 || slot >= 20) slot = 0;
+        // Variant picks the SHP; density picks the frame within it. Fall back
+        // to the set's base art (slot 0) when this exact variant is absent.
+        if (!oa.present[kind][slot]) {
+            slot = 0;
+            if (!oa.present[kind][slot]) continue;
+        }
+        const ra2assets::ShpFile& shp = oa.shp[kind][slot];
+        if (shp.count() <= 0) continue;
+        int frame = ore.density_at(c.x, c.y);
+        if (frame >= shp.count()) frame = shp.count() - 1;
+        if (frame < 0) frame = 0;
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(c.x, c.y, static_cast<int>(c.level), 60, 30, 15);
+        const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+        SDL_Rect dst{p.x + cam.x + f.x, p.y + cam.y + f.y, f.w, f.h};
+        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) continue;
+        char key[48];
+        std::snprintf(key, sizeof key, "ore:%d:%d:%d", kind, slot, frame);
+        SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+        if (!tex) {
+            std::vector<uint8_t> idx = shp.decode_indexed(frame);
+            tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal));
+        }
+        SDL_RenderCopy(ren, tex, nullptr, &dst);
+    }
+}
+
+// Finds the loaded VehicleAssets whose resolved image matches `image` (Rhino
+// HTNK and the two miners HARV/CMIN all render through the voxel path); nullptr
+// if none matches or the list is null. Lets render_world draw several distinct
+// voxel types in one scene instead of the old single-`va` special case.
+const VehicleAssets* va_for_image(const std::vector<const VehicleAssets*>* vlist,
+                                  const std::string& image) {
+    if (!vlist) return nullptr;
+    for (const VehicleAssets* v : *vlist)
+        if (v && v->ok && v->combat.image == image) return v;
+    return nullptr;
+}
+
 // Draws one full frame of the world into the current render target (does NOT
 // clear or present): terrain, the ordered path + selection diamond (alive,
 // non-dying units only), the unit sprites (back-to-front; dying units
@@ -1144,13 +1416,17 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
-                  const VehicleAssets* va = nullptr, const BuildingAssets* ba = nullptr) {
+                  const std::vector<const VehicleAssets*>* vlist = nullptr,
+                  const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
     ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H);
+    // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
+    if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H);
     const std::vector<ra2engine::Unit>& us = world.units();
     // Hull sprite width for a vehicle unit (0 for infantry) -- sizes the
     // selection diamond + HP bar to the wider voxel sprite.
     auto veh_width = [&](const ra2engine::Unit& u) -> int {
-        if (!(va && va->ok && u.image == va->combat.image)) return 0;
+        const VehicleAssets* va = va_for_image(vlist, u.image);
+        if (!va) return 0;
         const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
         return va->hull[u.house].sprites[bi].w;
     };
@@ -1168,7 +1444,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // down the whole frame.
     auto draw_one_unit = [&](int idx) {
         const ra2engine::Unit& u = us[idx];
-        if (va && va->ok && u.image == va->combat.image) {
+        if (const VehicleAssets* va = va_for_image(vlist, u.image)) {
             draw_vehicle_unit(ren, tc, u, *va, cam, W, H);
             return;
         }
@@ -1272,6 +1548,9 @@ int run_screenshot(const std::string& out_path) {
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
     Art art = Art::load(art_ini);
     BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+    OreArt ore_art = load_ore_art(ra2);
+    const std::vector<const VehicleAssets*> vlist{&va, &miners.harv, &miners.cmin};
     ra2engine::World world = build_world(a, ua, 5);
     if (va.ok) spawn_tank_squads(world, a, va, 3);
     // Player ConYard + enemy full base flanking the existing squads (visual
@@ -1280,7 +1559,9 @@ int run_screenshot(const std::string& out_path) {
         const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
         if (sc) {
             spawn_base(world, ba, /*house=*/0, sc->x, sc->y + 4);
-            spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y);
+            spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y, /*with_refinery=*/true,
+                       miners.harv.ok ? &miners.harv : nullptr, /*harv_chrono=*/false,
+                       miners.harv_storage);
         }
     }
 
@@ -1311,8 +1592,8 @@ int run_screenshot(const std::string& out_path) {
 
         SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
         SDL_RenderClear(ren);
-        render_world(ren, tc, a, ua, world, cam, W, H, /*input=*/nullptr, va.ok ? &va : nullptr,
-                     ba.ok ? &ba : nullptr);
+        render_world(ren, tc, a, ua, world, cam, W, H, /*input=*/nullptr, &vlist,
+                     ba.ok ? &ba : nullptr, ore_art.any ? &ore_art : nullptr);
         // Sidebar HUD (idle production state) so --screenshot shows the full UI.
         if (ba.ok && ba.sidebar_ok) {
             const std::vector<int> buildable = sidebar_buildable(ba);
@@ -1600,19 +1881,30 @@ int run_interactive(bool no_audio) {
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
     Art art = Art::load(art_ini);
     BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+    OreArt ore_art = load_ore_art(ra2);
+    const std::vector<const VehicleAssets*> vlist{&va, &miners.harv, &miners.cmin};
     const double build_speed = rules.general_double("BuildSpeed", 0.7);
     const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
 
     ra2engine::World world = build_world(a, ua, 5);
+    // Economy wiring [RE: economy.md]: enables ore growth/spread + harvester
+    // stepping in World::step (set_economy gates it on).
+    if (ba.ok) wire_economy(world, ba, rules);
     if (va.ok) spawn_tank_squads(world, a, va, 3);
-    // Player ConYard + enemy full base flanking the squads.
+    // Player ConYard + enemy full base (with a refinery + War Miner) flanking
+    // the squads.
     if (ba.ok) {
         const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
         if (sc) {
             spawn_base(world, ba, /*house=*/0, sc->x, sc->y + 4);
-            spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y);
+            spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y, /*with_refinery=*/true,
+                       miners.harv.ok ? &miners.harv : nullptr, /*harv_chrono=*/false,
+                       miners.harv_storage);
         }
     }
+    // Building-state tracker for FreeUnit grand-opening spawns (Buildup->Idle).
+    std::vector<int> bstates;
 
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
@@ -1708,6 +2000,22 @@ int run_interactive(bool no_audio) {
         prev = now;
         world.step(dt);
         ps_tick(ps, world, ba, dt, low_mod);
+        // Harvest income -> player credits [RE: economy.md §2] (drain per frame).
+        ps.credits += world.take_income(0);
+        // FreeUnit grand-opening spawns (a just-built refinery drops its miner).
+        if (ba.ok) spawn_free_units_on_open(world, ba, rules, miners, bstates);
+        // Chrono Miner teleport sounds (drain the harvest event queue each frame;
+        // UnloadStart/End produce no sound [RE: economy.md §2]).
+        {
+            std::vector<ra2engine::HarvestEvent> hev = world.take_harvest_events();
+            if (audio.enabled)
+                for (const ra2engine::HarvestEvent& e : hev) {
+                    if (e.kind == ra2engine::HarvestEvent::Kind::ChronoOut)
+                        audio.mixer->play(audio.chrono_out);
+                    else if (e.kind == ra2engine::HarvestEvent::Kind::ChronoIn)
+                        audio.mixer->play(audio.chrono_in);
+                }
+        }
 
         // Rolling credits tally (display-only; never read by the sim).
         {
@@ -1798,7 +2106,7 @@ int run_interactive(bool no_audio) {
         platform.begin_frame();
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(platform.renderer());
         render_world(ren, tc, a, ua, world, cam, platform.width(), platform.height(), &input,
-                     va.ok ? &va : nullptr, ba.ok ? &ba : nullptr);
+                     &vlist, ba.ok ? &ba : nullptr, ore_art.any ? &ore_art : nullptr);
         // Placement cursor (suppressed while the mouse is over the sidebar —
         // a Down there is consumed, so no placement can happen under the
         // bar), then the sidebar chrome on top.
@@ -2295,10 +2603,11 @@ DemoCombatResult simulate_tank_combat(Assets& a, UnitAssets& ua, const VehicleAs
             if (u.house == house && u.alive && u.die_time < 0.0) ++n;
         return n;
     };
+    const std::vector<const VehicleAssets*> vlist{&va};
     auto draw = [&]() {
         SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
         SDL_RenderClear(ren);
-        render_world(ren, *tc, a, ua, world, *cam, W, H, /*input=*/nullptr, &va);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, /*input=*/nullptr, &vlist);
     };
 
     if (render) {
@@ -2878,6 +3187,371 @@ int run_demo_base() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-econ helpers ---------------------------------------------------
+
+// FNV extension of world_hash with the ore field + credits, for --demo-econ's
+// two-run byte-identity gate. world_hash itself stays UNTOUCHED (demo-base's
+// pin is unaffected).
+uint64_t econ_hash(const ra2engine::World& world, double player_credits, double enemy_income) {
+    uint64_t h = world_hash(world);
+    const ra2engine::OreField& ore = world.ore();
+    for (int y = 0; y < ore.h(); ++y)
+        for (int x = 0; x < ore.w(); ++x) {
+            if (!ore.has_ore(x, y)) continue;
+            h = fnv_mix(h, static_cast<uint64_t>(x));
+            h = fnv_mix(h, static_cast<uint64_t>(y));
+            h = fnv_mix(h, static_cast<uint64_t>(static_cast<int>(ore.kind_at(x, y))));
+            h = fnv_mix(h, static_cast<uint64_t>(ore.density_at(x, y)));
+        }
+    h = fnv_mix(h, static_cast<uint64_t>(std::llround(player_credits)));
+    h = fnv_mix(h, static_cast<uint64_t>(std::llround(enemy_income * 100.0)));
+    return h;
+}
+
+// Seeds a solid ore patch (density d, variant 0) on walkable, ore-free cells
+// within Chebyshev `radius` of (cx,cy); returns cells seeded. Guarantees the
+// demo's harvesters have deterministic ore next to their refinery regardless
+// of the reference map's natural ore locations.
+int seed_ore_patch(ra2engine::World& world, int cx, int cy, int radius, int d) {
+    int n = 0;
+    for (int dy = -radius; dy <= radius; ++dy)
+        for (int dx = -radius; dx <= radius; ++dx) {
+            const int x = cx + dx, y = cy + dy;
+            if (!world.walkable(x, y) || world.ore().has_ore(x, y)) continue;
+            world.ore().set(x, y, ra2engine::OreKind::Ore, d, 0);
+            ++n;
+        }
+    return n;
+}
+
+// Index of the first alive building of roster `type` owned by `house`, or -1.
+int find_building(const ra2engine::World& world, int type, int house) {
+    const std::vector<ra2engine::Building>& bs = world.buildings();
+    for (int i = 0; i < static_cast<int>(bs.size()); ++i)
+        if (bs[i].alive && bs[i].type == type && bs[i].house == house) return i;
+    return -1;
+}
+
+struct DemoEconResult {
+    std::vector<std::string> witness;
+    uint64_t hash = 0;
+    bool ok = true;
+};
+
+// One scripted run of the economy demo (fixed 15 Hz dt, frame-driven, like
+// simulate_base). Player Allied base (+ instant GAPOWR/GAPILE so GAWEAP's only
+// missing prereq is PROC) vs a Soviet base with a refinery + War Miner. Script:
+// build+place GAREFN (its CMIN FreeUnit spawns), assert GAWEAP unblocks, run
+// until the player's CMIN and the enemy's HARV each complete an unload, then
+// past the first ore-growth firing, and hash. Rendered and headless runs must
+// be byte-identical (witness + econ_hash are pure sim state).
+DemoEconResult simulate_econ(Assets& a, UnitAssets& ua, BuildingAssets& ba, MinerAssets& miners,
+                             const Rules& rules, double build_speed, double low_mod, int mp_money,
+                             const std::vector<const VehicleAssets*>& vlist, const OreArt& ore_art,
+                             bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                             const ra2engine::Camera* cam, int W, int H,
+                             const std::string& start_png, const std::string& end_png) {
+    DemoEconResult r;
+    ra2engine::World world = build_world(a, ua, 0);  // no scenery infantry
+    wire_economy(world, ba, rules);
+
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    spawn_base(world, ba, /*house=*/0, pc->x, pc->y + 6);
+    spawn_base(world, ba, /*house=*/1, pc->x, pc->y - 16, /*with_refinery=*/true,
+               miners.harv.ok ? &miners.harv : nullptr, /*harv_chrono=*/false, miners.harv_storage);
+
+    const int gacnst = roster_index(ba, "GACNST");
+    const int gapowr = roster_index(ba, "GAPOWR");
+    const int gapile = roster_index(ba, "GAPILE");
+    const int gaweap = roster_index(ba, "GAWEAP");
+    const int garefn = roster_index(ba, "GAREFN");
+    const int narefn = roster_index(ba, "NAREFN");
+
+    // Player POWER + BARRACKS (instant, no charge): GAWEAP prereq is
+    // [PROC, GAPILE, GACNST], so with these placed only PROC (the refinery
+    // built below) is still missing -- the inverse of demo-base.
+    const int cy_bi = find_building(world, gacnst, 0);
+    if (cy_bi < 0) r.ok = false;
+    const ra2engine::Building cy_b =
+        cy_bi >= 0 ? world.buildings()[cy_bi] : ra2engine::Building{};
+    {
+        int ox = 0, oy = 0;
+        if (!place_player_building(world, ba, gapowr, cy_b.cx + cy_b.fw, cy_b.cy, ox, oy)) r.ok = false;
+        if (!place_player_building(world, ba, gapile, cy_b.cx, cy_b.cy + cy_b.fh, ox, oy)) r.ok = false;
+    }
+
+    // Enemy ore patch beside its refinery dock (the War Miner starts hunting on
+    // the first step).
+    const int narefn_bi = find_building(world, narefn, 1);
+    if (narefn_bi >= 0) {
+        const ra2engine::Building nb = world.buildings()[narefn_bi];
+        seed_ore_patch(world, ra2engine::dock_cell_x(nb), ra2engine::dock_cell_y(nb) + 3, 3,
+                       ra2engine::kMaxOreDensity);
+    }
+
+    const ra2engine::SidebarLayout lay =
+        ra2engine::SidebarLayout::compute(W, H, sidebar_buildable(ba));
+    ra2engine::ProductionState ps;
+    ps.credits = mp_money;
+
+    const double dt = 1.0 / 15.0;
+    const double cap = 400.0;
+    long frame = 0;
+    double t = 0.0;
+    double enemy_income = 0.0;
+    bool cmin_unloaded = false;
+    double cmin_credits = 0.0;
+    bool enemy_unloaded = false;
+    double enemy_income_at = 0.0;
+
+    auto draw = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, /*input=*/nullptr, &vlist, &ba,
+                     ore_art.any ? &ore_art : nullptr);
+        if (ba.sidebar_ok)
+            draw_sidebar(ren, *tc, ba, lay, ps, world, static_cast<int>(std::llround(ps.credits)),
+                         t);
+    };
+    auto step_one = [&]() {
+        world.step(dt);
+        ps_tick(ps, world, ba, dt, low_mod);
+        ps.credits += world.take_income(0);
+        enemy_income += world.take_income(1);
+        for (const ra2engine::HarvestEvent& e : world.take_harvest_events()) {
+            if (e.kind != ra2engine::HarvestEvent::Kind::UnloadEnd) continue;
+            const int hs = (e.unit >= 0 && e.unit < static_cast<int>(world.units().size()))
+                               ? world.units()[e.unit].house
+                               : -1;
+            if (hs == 0 && !cmin_unloaded) { cmin_unloaded = true; cmin_credits = ps.credits; }
+            if (hs == 1 && !enemy_unloaded) { enemy_unloaded = true; enemy_income_at = enemy_income; }
+        }
+        ++frame;
+        t += dt;
+        draw();
+    };
+
+    if (render) {
+        draw();
+        capture_png(ren, start_png, W, H);
+    }
+
+    // t=1.0s: start GAREFN (frames=1260 from raw Cost 2000; charge=600).
+    while (frame < 15) step_one();
+    ra2engine::start(ps, garefn, ba.roster, build_speed);
+    {
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "[econ] start GAREFN frames=%d step_ticks=%d charge=%d",
+                      ps.slot.total_frames, ps.slot.step_ticks, ps.slot.charge_basis);
+        r.witness.emplace_back(buf);
+    }
+    while (ps.slot.type == garefn && !ps.slot.ready && t < cap) step_one();
+
+    // Place east of the ConYard; the queue already spent exactly `charge`.
+    int gx = 0, gy = 0;
+    const ra2engine::Building cyb2 = (cy_bi >= 0) ? world.buildings()[cy_bi] : ra2engine::Building{};
+    if (!place_player_building(world, ba, garefn, cyb2.cx + cyb2.fw, cyb2.cy, gx, gy)) r.ok = false;
+    ra2engine::placed(ps);
+    {
+        const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "[econ] placed GAREFN cell=(%d,%d) credits=%d power=+%d/-%d",
+                      gx, gy, static_cast<int>(std::llround(ps.credits)), pt.output, pt.drain);
+        r.witness.emplace_back(buf);
+    }
+
+    // Seed the player ore patch by the GAREFN dock, then spawn the CMIN FreeUnit
+    // (GAREFN->CMIN) at the dock -- the refinery's grand opening.
+    int cmin_unit = -1;
+    const int garefn_bi = find_building(world, garefn, 0);
+    if (garefn_bi >= 0) {
+        const ra2engine::Building gb = world.buildings()[garefn_bi];
+        seed_ore_patch(world, ra2engine::dock_cell_x(gb), ra2engine::dock_cell_y(gb) + 3, 3,
+                       ra2engine::kMaxOreDensity);
+        bool chrono = false;
+        int storage = 0;
+        const VehicleAssets* mva = miner_for_id(miners, rules.free_unit("GAREFN"), chrono, storage);
+        if (mva)
+            cmin_unit = spawn_harvester(world, *mva, chrono, storage, 0,
+                                        ra2engine::dock_cell_x(gb), ra2engine::dock_cell_y(gb));
+    }
+    if (cmin_unit >= 0) {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "[econ] CMIN spawned cell=(%d,%d)",
+                      world.units()[cmin_unit].cell_x, world.units()[cmin_unit].cell_y);
+        r.witness.emplace_back(buf);
+    } else {
+        r.witness.emplace_back("[econ] CMIN spawn FAILED");
+        r.ok = false;
+    }
+
+    // GAWEAP now buildable (PROC met by the refinery) -- inverse of demo-base.
+    const bool can_weap = ra2engine::can_start(ps, gaweap, ba.roster, world.buildings(), 0,
+                                               ba.groups, conyard_alive(world, ba, 0));
+    if (can_weap) r.witness.emplace_back("[econ] GAWEAP can_start=yes (PROC met)");
+    else { r.witness.emplace_back("[econ] GAWEAP can_start=NO (unexpected)"); r.ok = false; }
+
+    // Run until the player's CMIN completes its first unload (20 bales * 25 = 500).
+    while (!cmin_unloaded && t < cap) step_one();
+    {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "[econ] CMIN unloaded credits=%d",
+                      static_cast<int>(std::llround(cmin_credits)));
+        r.witness.emplace_back(buf);
+    }
+    if (!cmin_unloaded) r.ok = false;
+
+    // Run until the enemy War Miner completes its first unload (40 bales * 25 = 1000).
+    while (!enemy_unloaded && t < cap) step_one();
+    {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "[econ] enemy income=%d",
+                      static_cast<int>(std::llround(enemy_unloaded ? enemy_income_at : enemy_income)));
+        r.witness.emplace_back(buf);
+    }
+    if (!enemy_unloaded) r.ok = false;
+
+    // Growth witness: bracket the first growth firing after t=250 (the ore
+    // timer resets when it fires) and report the first ore cell whose density
+    // rose across that single tick.
+    while (t < 250.0 && t < cap) step_one();
+    const ra2engine::OreField& oref = world.ore();
+    const int ow = oref.w(), oh = oref.h();
+    std::vector<int> before(static_cast<size_t>(ow) * oh, 0);
+    bool fired = false;
+    int gcx = -1, gcy = -1, gbv = 0, gav = 0;
+    while (t < cap && !fired) {
+        for (int y = 0; y < oh; ++y)
+            for (int x = 0; x < ow; ++x)
+                before[static_cast<size_t>(y) * ow + x] = world.ore().density_at(x, y);
+        const double prev_timer = world.ore().timer();
+        step_one();
+        if (world.ore().timer() < prev_timer) {
+            fired = true;
+            const ra2engine::OreField& of = world.ore();
+            for (int y = 0; y < oh && gcx < 0; ++y)
+                for (int x = 0; x < ow; ++x) {
+                    const int bf = before[static_cast<size_t>(y) * ow + x];
+                    const int af = of.density_at(x, y);
+                    if (bf > 0 && af > bf) { gcx = x; gcy = y; gbv = bf; gav = af; break; }
+                }
+        }
+    }
+    if (gcx >= 0) {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "[econ] growth cell=(%d,%d) density=%d->%d", gcx, gcy, gbv,
+                      gav);
+        r.witness.emplace_back(buf);
+    } else {
+        r.witness.emplace_back("[econ] growth NONE (no cell rose)");
+        r.ok = false;
+    }
+
+    // Run out to t=320 (past the pinned growth firing).
+    while (t < 320.0 && t < cap) step_one();
+    if (t >= cap) r.ok = false;
+
+    r.hash = econ_hash(world, ps.credits, enemy_income);
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof buf, "[econ] econ_hash=%016llx",
+                      static_cast<unsigned long long>(r.hash));
+        r.witness.emplace_back(buf);
+    }
+
+    if (render) {
+        draw();
+        capture_png(ren, end_png, W, H);
+    }
+    return r;
+}
+
+// --demo-econ: the Economy integration gate. Runs simulate_econ rendered
+// (hidden window + start/end screenshots through the ore/miner draw path) and
+// headless, and byte-compares the two witness logs + econ hashes. Exit 0 iff
+// both runs are byte-identical AND both `ok`.
+int run_demo_econ() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_econ_start.png";
+    const std::string end_png = scratch + "demo_econ_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-econ] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+    if (!miners.harv.ok || !miners.cmin.ok) {
+        std::cerr << "[demo-econ] FAILED: miner (HARV/CMIN) assets unavailable\n";
+        return 1;
+    }
+    OreArt ore_art = load_ore_art(ra2);
+    const std::vector<const VehicleAssets*> vlist{&miners.harv, &miners.cmin};
+    const double build_speed = rules.general_double("BuildSpeed", 0.7);
+    const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
+    const int mp_money = rules.mp_money();
+
+    // Camera centered on the player base region (ConYard + dock + seeded ore).
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(pc->x + 4, pc->y + 9, 0, 60, 30, 15);
+        cam.x = (W - 168) / 2 - p.x;  // playfield left of the sidebar strip
+        cam.y = H / 2 - p.y;
+    }
+
+    // Run 1: rendered (hidden window) + start/end screenshots.
+    DemoEconResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-econ)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_econ(a, ua, ba, miners, rules, build_speed, low_mod, mp_money, vlist,
+                               ore_art, /*render=*/true, ren, &tc, &cam, W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless -- identical script from a FRESH World.
+    DemoEconResult r2 = simulate_econ(a, ua, ba, miners, rules, build_speed, low_mod, mp_money,
+                                      vlist, ore_art, /*render=*/false, nullptr, nullptr, nullptr, W,
+                                      H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-econ] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    std::cout << "deterministic=" << (identical ? "yes" : "no") << " lines=" << r1.witness.size()
+              << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -2959,6 +3633,7 @@ int main(int argc, char** argv) {
         int combat_seed = 0;
         bool demo_tank = false;
         bool demo_base = false;
+        bool demo_econ = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -2999,6 +3674,8 @@ int main(int argc, char** argv) {
                 demo_tank = true;
             } else if (arg == "--demo-base") {
                 demo_base = true;
+            } else if (arg == "--demo-econ") {
+                demo_econ = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
@@ -3008,6 +3685,7 @@ int main(int argc, char** argv) {
         // --demo-tank dispatched BEFORE --demo-combat (brief Step 6 ordering).
         if (demo_tank) return run_demo_tank();
         if (demo_base) return run_demo_base();
+        if (demo_econ) return run_demo_econ();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);

@@ -298,6 +298,30 @@ void Input::handle(const InputEvent& ev) {
                     // task-6-report.md).
                     int cx = 0, cy = 0;
                     resolve_ground_cell(ev.x, ev.y, cx, cy);
+                    // Harvester orders [RE: economy.md §1], resolved BEFORE the
+                    // attack-building branch: with a house-0 harvester in the
+                    // selection, a right-click on an ore cell issues a harvest
+                    // order and one on an own alive building (the refinery)
+                    // sends the miner(s) home. order_harvest/order_return only
+                    // touch selected house-0 harvesters, so non-harvester
+                    // right-clicks fall straight through to attack/move below.
+                    bool harv_selected = false;
+                    for (const Unit& su : world_.units())
+                        if (su.selected && su.is_harvester && su.house == 0 && su.alive &&
+                            su.die_time < 0.0) {
+                            harv_selected = true;
+                            break;
+                        }
+                    const int here_b = world_.building_at_cell(cx, cy);
+                    if (harv_selected && world_.ore().has_ore(cx, cy)) {
+                        world_.order_harvest(cx, cy);
+                        break;  // handled: no attack/move for this right-click
+                    }
+                    if (harv_selected && here_b >= 0 && world_.buildings()[here_b].house == 0 &&
+                        world_.buildings()[here_b].alive) {
+                        world_.order_return();
+                        break;  // handled
+                    }
                     // Interactive attack-building (Task 4 machinery wired to the
                     // player here): if the resolved ground cell lands on a
                     // HOSTILE building's foundation it's an attack order, not a
