@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -188,6 +189,7 @@ struct BuildingArt {
     ra2assets::ShpFile shp;      // main image (frame 0 healthy, 1 damaged; 2nd half shadows)
     ra2assets::ShpFile buildup;  // MK anim ("" buildup -> unused)
     ra2assets::ShpFile cameo;    // 60x48 icon (may be absent for ConYards)
+    double buildup_total = 0.0;  // seconds the buildup anim lasts [RE: building-render.md §5]
     bool has_buildup = false, has_cameo = false, ok = false;
 };
 
@@ -202,6 +204,10 @@ struct BuildingAssets {
     ra2assets::ShpFile sb_top, sb_side1, sb_side2, sb_tabs[4], sb_powerp, sb_credits, sb_gclock;
     ra2assets::Palette sb_pal;                       // sidebar.pal if present, else cameo.pal
     bool sidebar_ok = false;
+    // Shared building death explosion (TWLT070) [RE: building-render.md §4] --
+    // render-only; null if unavailable (building just vanishes on death).
+    std::unique_ptr<ra2assets::ShpFile> explosion;
+    ra2assets::Palette explosion_pal;
     // Prerequisite groups resolved once [RE: construction.md §10].
     std::vector<std::pair<std::string, std::vector<std::string>>> groups;
     bool ok = false;                                 // any usable building
@@ -709,6 +715,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     BuildingAssets ba;
     static const char* kRoster[8] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                      "NACNST", "NAPOWR", "NAHAND", "NAWEAP"};
+    // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
+    const double build_time_min = rules.general_double("BuildupTime", 0.06);
 
     // Palettes (both verified present in cache.mix): buildings draw with
     // unittem.pal (+ house remap), cameos with cameo.pal [RE: building-render.md §6].
@@ -786,6 +794,14 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                 try {
                     slot.buildup = resolve_shp(d.buildup);
                     slot.has_buildup = true;
+                    // [RE-GATE APPLIED: building-render.md §5] buildup_total =
+                    // image_frames * max(1, trunc(BuildupTime*900/image_frames)) / 15.
+                    const int image_frames = slot.buildup.count() / 2;
+                    if (image_frames > 0) {
+                        const int rate =
+                            std::max(1, (int)(build_time_min * 900.0 / image_frames));
+                        slot.buildup_total = image_frames * rate / 15.0;
+                    }
                 } catch (const std::exception&) { slot.has_buildup = false; }
             }
             if (!d.cameo.empty()) {
@@ -842,6 +858,21 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         ba.sidebar_ok = false;
     }
 
+    // Shared death explosion (TWLT070) from conquer.mix + anim.pal (guarded;
+    // render-only). Mirrors the vehicle death-anim path [RE: building-render.md §4].
+    ba.explosion_pal = ba.unit_pal;
+    try {
+        MixFile conquer = ra2.open_nested("conquer.mix");
+        const MixEntry* ee = conquer.find(std::string("twlt070.shp"));
+        if (ee) {
+            ba.explosion = std::make_unique<ShpFile>(ShpFile::load(conquer.read(*ee)));
+            if (const MixEntry* ape = cache.find(std::string("anim.pal"))) {
+                auto apal = cache.read(*ape);
+                ba.explosion_pal = Palette::load(apal.data(), apal.size());
+            }
+        }
+    } catch (const std::exception&) { ba.explosion.reset(); }
+
     ba.groups = {
         {"POWER", rules.prerequisite_group("Power")},
         {"BARRACKS", rules.prerequisite_group("Barracks")},
@@ -854,6 +885,136 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     std::cerr << "[building] roster=" << ba.roster.size() << " ok=" << ok_n
               << " sidebar=" << (ba.sidebar_ok ? "ok" : "missing") << "\n";
     return ba;
+}
+
+// Roster index of a building id, or -1.
+int roster_index(const BuildingAssets& ba, const std::string& id) {
+    for (std::size_t i = 0; i < ba.roster.size(); ++i)
+        if (ba.roster[i].id == id) return static_cast<int>(i);
+    return -1;
+}
+
+// Spawns a base for `house` with foundation origin near (cx, cy) [RE:
+// building-render.md §2 origin, construction.md §9 adjacency]. The ConYard
+// (GACNST/NACNST) is placed instant + validity-bypassed; a full Soviet base
+// (house 1) additionally gets NAPOWR/NAHAND/NAWEAP, each validity-checked
+// (adjacency enforced) against the GROWING base and probed eastward up to k=6
+// on a miss. All scripted spawns are instant (start Idle immediately).
+void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, int cx, int cy) {
+    auto place = [&](int type, int px, int py, bool bypass) -> int {
+        if (type < 0 || type >= static_cast<int>(ba.art.size()) || !ba.art[type].ok) return -1;
+        const ra2engine::BuildingTypeDef& d = ba.roster[type];
+        for (int k = 0; k <= 6; ++k) {
+            const int tx = px + k;
+            const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                tx, py, d.fw, d.fh, house, d.adjacent, world.passable(), world.grid_w(),
+                world.grid_h(), world.occupancy(), world.buildings(), bypass);
+            if (chk.ok) {
+                const int idx =
+                    world.add_building(type, tx, py, d.fw, d.fh, house, d.strength, d.armor_ix,
+                                       ba.art[type].buildup_total, /*instant=*/true);
+                std::cerr << "[base] spawned " << d.id << " house=" << house << " at (" << tx << ","
+                          << py << ")" << (k ? " probed+" + std::to_string(k) : "") << "\n";
+                return idx;
+            }
+        }
+        std::cerr << "[base] FAILED to place " << d.id << " near (" << px << "," << py << ")\n";
+        return -1;
+    };
+
+    place(roster_index(ba, house == 1 ? "NACNST" : "GACNST"), cx, cy, /*bypass=*/true);
+    if (house == 1) {
+        place(roster_index(ba, "NAPOWR"), cx + 6, cy, /*bypass=*/false);
+        place(roster_index(ba, "NAHAND"), cx + 6, cy + 4, /*bypass=*/false);
+        place(roster_index(ba, "NAWEAP"), cx - 1, cy + 6, /*bypass=*/false);
+    }
+}
+
+// Draws one building in render_world's merged back-to-front pass. Anchors the
+// SHP canvas CENTER at the foundation's screen bbox center [RE-GATE APPLIED:
+// building-render.md §2 center-center registration, replacing the pre-hunt
+// bottom-center rule]. State selects SHP + frame: Buildup -> buildup MK frame;
+// Idle -> main frame 0 (healthy) / 1 (damaged, hp/max<=ConditionYellow); Dead
+// -> explosion anim (TWLT070) over kBuildingDieSecs. `level` = the foundation
+// origin cell's terrain level (buildings flatten their footprint).
+void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Building& b,
+                   const BuildingAssets& ba, int level, double condition_yellow,
+                   const ra2engine::Camera& cam, int W, int H) {
+    if (b.type < 0 || b.type >= static_cast<int>(ba.art.size())) return;
+    const BuildingArt& art = ba.art[b.type];
+    if (!art.ok) return;
+    const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
+
+    // Foundation screen bbox = union of the fw*fh cell diamonds (60x30 rects).
+    int minx = INT_MAX, miny = INT_MAX, maxx = INT_MIN, maxy = INT_MIN;
+    for (int j = 0; j < b.fh; ++j)
+        for (int i = 0; i < b.fw; ++i) {
+            const ra2engine::ScreenPt p =
+                ra2engine::cell_to_screen(b.cx + i, b.cy + j, level, 60, 30, 15);
+            const int x0 = p.x + cam.x, y0 = p.y + cam.y;
+            minx = std::min(minx, x0);
+            miny = std::min(miny, y0);
+            maxx = std::max(maxx, x0 + 60);
+            maxy = std::max(maxy, y0 + 30);
+        }
+    const int fcx = (minx + maxx) / 2, fcy = (miny + maxy) / 2;
+
+    // Dead: explosion anim centered on the foundation (render-only nicety).
+    if (b.state == ra2engine::Building::State::Dead) {
+        if (ba.explosion && ba.explosion->count() > 0) {
+            int frame = static_cast<int>(b.die_time * 15.0);
+            frame = std::clamp(frame, 0, ba.explosion->count() - 1);
+            const ra2assets::ShpFile::Frame f = ba.explosion->frame_info(frame);
+            SDL_Rect dst{fcx - ba.explosion->width() / 2 + f.x,
+                         fcy - ba.explosion->height() / 2 + f.y, f.w, f.h};
+            if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) return;
+            char key[96];
+            std::snprintf(key, sizeof key, "bldx:%s:%d", def.id.c_str(), frame);
+            SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+            if (!tex) {
+                std::vector<uint8_t> idx = ba.explosion->decode_indexed(frame);
+                tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, ba.explosion_pal));
+            }
+            SDL_RenderCopy(ren, tex, nullptr, &dst);
+        }
+        return;
+    }
+
+    const bool buildup = (b.state == ra2engine::Building::State::Buildup && art.has_buildup);
+    const ra2assets::ShpFile& shp = buildup ? art.buildup : art.shp;
+    const int frame = buildup ? ra2engine::buildup_frame(b, art.buildup.count())
+                              : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    if (frame < 0 || frame >= shp.count()) return;
+    const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+    SDL_Rect dst{fcx - shp.width() / 2 + f.x, fcy - shp.height() / 2 + f.y, f.w, f.h};
+    if (!(dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H)) {
+        char key[96];
+        std::snprintf(key, sizeof key, "bld:%s:%c:h%d:%d", def.id.c_str(), buildup ? 'b' : 'm',
+                      b.house, frame);
+        SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+        if (!tex) {
+            std::vector<uint8_t> idx = shp.decode_indexed(frame);
+            const ra2assets::Palette hp = ra2engine::pal_for_house(ba.unit_pal, b.house);
+            tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, hp));
+        }
+        SDL_RenderCopy(ren, tex, nullptr, &dst);
+    }
+
+    // Foundation-width HP bar when damaged (render-only; buildings aren't
+    // selectable so there's no selection marker).
+    if (b.hp < b.max_hp && b.max_hp > 0) {
+        const int bw = std::max(24, maxx - minx - 8);
+        const int bx = fcx - bw / 2, by = miny - 6;
+        SDL_Rect bg{bx - 1, by - 1, bw + 2, 5};
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 200);
+        SDL_RenderFillRect(ren, &bg);
+        const double frac = static_cast<double>(b.hp) / b.max_hp;
+        SDL_Rect fg{bx, by, static_cast<int>(bw * frac), 3};
+        if (frac > 2.0 / 3) SDL_SetRenderDrawColor(ren, 0, 220, 0, 255);
+        else if (frac > 1.0 / 3) SDL_SetRenderDrawColor(ren, 220, 220, 0, 255);
+        else SDL_SetRenderDrawColor(ren, 220, 0, 0, 255);
+        SDL_RenderFillRect(ren, &fg);
+    }
 }
 
 // Draws one voxel vehicle in render_world's back-to-front loop: a dying tank
@@ -940,7 +1101,7 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
-                  const VehicleAssets* va = nullptr) {
+                  const VehicleAssets* va = nullptr, const BuildingAssets* ba = nullptr) {
     ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H);
     const std::vector<ra2engine::Unit>& us = world.units();
     // Hull sprite width for a vehicle unit (0 for infantry) -- sizes the
@@ -962,19 +1123,53 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // pick the SHP by the unit's own image ("GI"/"CONS"). An unrecognized
     // image is logged and skipped (not thrown) so one bad unit can't take
     // down the whole frame.
-    for (int idx : ra2engine::unit_draw_order(us)) {
+    auto draw_one_unit = [&](int idx) {
         const ra2engine::Unit& u = us[idx];
         if (va && va->ok && u.image == va->combat.image) {
             draw_vehicle_unit(ren, tc, u, *va, cam, W, H);
-            continue;
+            return;
         }
         auto it = ua.shps.find(u.image);
         if (it == ua.shps.end()) {
             std::cerr << "[render] no SHP loaded for image=" << u.image << " (unit " << idx
                       << "); skipping\n";
-            continue;
+            return;
         }
         ra2engine::draw_unit(ren, tc, u, it->second, ua.pal, cam, W, H);
+    };
+    // Merge alive buildings (depth key = center x+y with (f-1)/2, [RE-GATE
+    // APPLIED: building-render.md §3]) into the unit draw order (fx+fy);
+    // buildings precede units on ties (std::merge takes the first range when
+    // keys tie). With no BuildingAssets (or no buildings) this is exactly the
+    // old unit-only pass -- the byte-identity-gated demos spawn no buildings.
+    const std::vector<int> uorder = ra2engine::unit_draw_order(us);
+    struct DrawItem { double key; int kind; int idx; };  // kind 0=building, 1=unit
+    std::vector<DrawItem> merged;
+    if (ba) {
+        const std::vector<ra2engine::Building>& bs = world.buildings();
+        auto bkey = [&](int i) {
+            const ra2engine::Building& b = bs[i];
+            return (b.cx + (b.fw - 1) / 2.0) + (b.cy + (b.fh - 1) / 2.0);
+        };
+        std::vector<DrawItem> A, B;
+        for (int i = 0; i < static_cast<int>(bs.size()); ++i)
+            if (bs[i].alive) A.push_back({bkey(i), 0, i});
+        std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+        for (int i : uorder) B.push_back({us[i].fx + us[i].fy, 1, i});
+        merged.resize(A.size() + B.size());
+        std::merge(A.begin(), A.end(), B.begin(), B.end(), merged.begin(),
+                   [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+    } else {
+        for (int i : uorder) merged.push_back({0.0, 1, i});
+    }
+    for (const DrawItem& d : merged) {
+        if (d.kind == 0) {
+            const ra2engine::Building& b = world.buildings()[d.idx];
+            const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
+            draw_building(ren, tc, b, *ba, mc ? mc->level : 0, /*condition_yellow=*/0.5, cam, W, H);
+        } else {
+            draw_one_unit(d.idx);
+        }
     }
     // HP bars after sprites, before the selection box: alive, non-dying units
     // that are selected or currently damaged.
@@ -1027,9 +1222,17 @@ int run_screenshot(const std::string& out_path) {
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
     Art art = Art::load(art_ini);
     BuildingAssets ba = load_building_assets(ra2, language, rules, art);
-    (void)ba;  // Step 2: loaded + logged; spawn_base + draw wired in Step 3.
     ra2engine::World world = build_world(a, ua, 5);
     if (va.ok) spawn_tank_squads(world, a, va, 3);
+    // Player ConYard + enemy full base flanking the existing squads (visual
+    // gate: buildings on their foundations, blue player vs red enemy remap).
+    if (ba.ok) {
+        const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
+        if (sc) {
+            spawn_base(world, ba, /*house=*/0, sc->x, sc->y + 4);
+            spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y);
+        }
+    }
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
     SDL_Window* win = SDL_CreateWindow("RA2 Engine (screenshot)", SDL_WINDOWPOS_CENTERED,
@@ -1044,10 +1247,22 @@ int run_screenshot(const std::string& out_path) {
     {
         ra2engine::TextureCache tc(ren);
         ra2engine::Camera cam = centered_camera(a.map, W, H);
+        // With bases present, frame the player ConYard region so the visual
+        // gate can verify foundation registration + house remap directly.
+        if (ba.ok) {
+            const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
+            if (sc) {
+                const ra2engine::ScreenPt p =
+                    ra2engine::cell_to_screen(sc->x + 4, sc->y + 4, 0, 60, 30, 15);
+                cam.x = W / 2 - p.x;
+                cam.y = H / 2 - p.y;
+            }
+        }
 
         SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
         SDL_RenderClear(ren);
-        render_world(ren, tc, a, ua, world, cam, W, H, /*input=*/nullptr, va.ok ? &va : nullptr);
+        render_world(ren, tc, a, ua, world, cam, W, H, /*input=*/nullptr, va.ok ? &va : nullptr,
+                     ba.ok ? &ba : nullptr);
         capture_png(ren, out_path, W, H);
 
         std::cerr << "[screenshot] wrote " << out_path << " (" << W << "x" << H << ")\n";
