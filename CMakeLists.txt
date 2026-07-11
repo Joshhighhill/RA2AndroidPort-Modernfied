@@ -101,6 +101,14 @@ target_sources(ra2assets_tests PRIVATE tests/test_vehicle.cpp)
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as pathfind.cpp/world.cpp/occupancy.cpp/group_move.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_combat.cpp engine/combat.cpp)
+# building.cpp is pure C++17 (no SDL): BuildingTypeDef/Building struct defs,
+# foundation_cells row-major enumeration, placement_check validity (in-grid,
+# passable, unoccupied, no overlap, adjacency), building_frame/buildup_frame
+# for SHP frame selection, step_buildings state machine (Buildup->Idle->Dead->
+# tombstone), and kill_building marking + die-anim timing (docs/re/building-
+# render.md). Compiled into both this test binary and ra2engine from one source
+# of truth (same pattern as combat.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_building.cpp engine/building.cpp)
 # audio_mixer.cpp is pure C++17 (no SDL/asset deps): the software mixer --
 # SoundBank storage, keyed voice registry, Limit/interrupt/priority pool
 # rules, linear attenuation + GLOBAL floor, and the EVA FIFO queue

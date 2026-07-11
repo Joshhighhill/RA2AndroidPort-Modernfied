@@ -49,6 +49,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/occupancy.cpp
     ${RA2_ROOT}/engine/group_move.cpp
     ${RA2_ROOT}/engine/combat.cpp
+    ${RA2_ROOT}/engine/building.cpp
     ${RA2_ROOT}/engine/audio_mixer.cpp
     ${RA2_ROOT}/engine/voxel_raster.cpp
     ${RA2_ROOT}/engine/facing_cache.cpp
