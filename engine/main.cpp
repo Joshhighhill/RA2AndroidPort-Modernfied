@@ -2460,6 +2460,323 @@ int run_demo_combat(int seed) {
     return bad ? 1 : 0;
 }
 
+// --- --demo-base helpers ---------------------------------------------------
+
+// FNV-1a 64-bit world-state hash (the --demo-tank pattern, extended with
+// building tuples): units (cell/hp/alive) + buildings (type,cx,cy,hp,state).
+uint64_t fnv_mix(uint64_t h, uint64_t v) {
+    for (int i = 0; i < 8; ++i) {
+        h ^= (v & 0xffull);
+        h *= 0x100000001b3ull;
+        v >>= 8;
+    }
+    return h;
+}
+uint64_t world_hash(const ra2engine::World& world) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+    }
+    for (const ra2engine::Building& b : world.buildings()) {
+        h = fnv_mix(h, static_cast<uint64_t>(b.type));
+        h = fnv_mix(h, static_cast<uint64_t>(b.cx));
+        h = fnv_mix(h, static_cast<uint64_t>(b.cy));
+        h = fnv_mix(h, static_cast<uint64_t>(b.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(b.state));
+    }
+    return h;
+}
+
+// True if `prereq` is satisfiable by owning exactly the buildings named in
+// `have_ids` (reuses the tested prerequisites_met over a synthetic Idle base).
+bool names_satisfy(const std::vector<std::string>& prereq,
+                   const std::vector<std::string>& have_ids, const BuildingAssets& ba) {
+    std::vector<ra2engine::Building> fake;
+    for (const std::string& id : have_ids) {
+        const int t = roster_index(ba, id);
+        if (t < 0) continue;
+        ra2engine::Building b;
+        b.type = t;
+        b.house = 0;
+        b.state = ra2engine::Building::State::Idle;
+        b.alive = true;
+        fake.push_back(b);
+    }
+    return ra2engine::prerequisites_met(prereq, fake, ba.roster, 0, ba.groups);
+}
+
+// Demo "buildable" = the sidebar-buildable types reachable from a lone ConYard
+// through the tech tree (no refinery, so PROC-gated GAWEAP is excluded) ->
+// {GAPOWR, GAPILE}, in sidebar order.
+std::vector<int> demo_buildable_closure(const BuildingAssets& ba) {
+    const std::vector<int> sb = sidebar_buildable(ba);
+    std::vector<std::string> have = {"GACNST"};
+    std::vector<int> got;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (int t : sb) {
+            if (std::find(got.begin(), got.end(), t) != got.end()) continue;
+            if (names_satisfy(ba.roster[t].prerequisite, have, ba)) {
+                got.push_back(t);
+                have.push_back(ba.roster[t].id);
+                changed = true;
+            }
+        }
+    }
+    std::vector<int> ordered;
+    for (int t : sb)
+        if (std::find(got.begin(), got.end(), t) != got.end()) ordered.push_back(t);
+    return ordered;
+}
+
+// Place a player building instant (Idle) at (px,py), probing eastward on a
+// validity miss. Returns the placed cell (or false).
+bool place_player_building(ra2engine::World& world, const BuildingAssets& ba, int type, int px,
+                           int py, int& out_x, int& out_y) {
+    if (type < 0 || type >= static_cast<int>(ba.roster.size())) return false;
+    const ra2engine::BuildingTypeDef& d = ba.roster[type];
+    for (int k = 0; k <= 6; ++k) {
+        const int tx = px + k;
+        const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+            tx, py, d.fw, d.fh, 0, d.adjacent, world.passable(), world.grid_w(), world.grid_h(),
+            world.occupancy(), world.buildings(), /*bypass_adjacency=*/false);
+        if (chk.ok) {
+            world.add_building(type, tx, py, d.fw, d.fh, 0, d.strength, d.armor_ix,
+                               ba.art[type].buildup_total, /*instant=*/true);
+            out_x = tx;
+            out_y = py;
+            return true;
+        }
+    }
+    return false;
+}
+
+struct DemoBaseResult {
+    std::vector<std::string> witness;  // order-pinned [base] lines
+    uint64_t hash = 0;
+    bool ok = true;  // all placements succeeded, GAWEAP blocked, NAPOWR died
+};
+
+// One scripted run of the base-building demo (fixed 15 Hz dt, frame-driven).
+// `render` draws every frame (world + sidebar) into the caller's hidden
+// window; the witness log + hash are pure sim state, so rendered and headless
+// runs must be byte-identical (the --demo-tank determinism guarantee).
+DemoBaseResult simulate_base(Assets& a, UnitAssets& ua, BuildingAssets& ba, double build_speed,
+                             double low_mod, int mp_money, bool render, SDL_Renderer* ren,
+                             ra2engine::TextureCache* tc, const ra2engine::Camera* cam, int W, int H,
+                             const std::string& start_png, const std::string& end_png) {
+    DemoBaseResult r;
+    ra2engine::World world = build_world(a, ua, 3);  // 3 GI (house 0) + 3 CONS (house 1) scenery
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    // Player ConYard south of the GI squad; enemy full base to the NORTH so the
+    // GIs march away from the scenery Conscripts (east) to reach NAPOWR.
+    spawn_base(world, ba, /*house=*/0, pc->x, pc->y + 6);
+    spawn_base(world, ba, /*house=*/1, pc->x, pc->y - 16);
+
+    int conyard_bi = -1, napowr_bi = -1;
+    const int napowr_type = roster_index(ba, "NAPOWR");
+    for (int i = 0; i < static_cast<int>(world.buildings().size()); ++i) {
+        const ra2engine::Building& b = world.buildings()[i];
+        if (b.house == 0 && ba.roster[b.type].conyard) conyard_bi = i;
+        if (b.house == 1 && b.type == napowr_type) napowr_bi = i;
+    }
+
+    const std::vector<int> buildable = sidebar_buildable(ba);
+    const ra2engine::SidebarLayout lay =
+        ra2engine::SidebarLayout::compute(W, H, sidebar_dims(ba), buildable);
+    ra2engine::ProductionState ps;
+    ps.credits = mp_money;
+
+    const int gapowr = roster_index(ba, "GAPOWR");
+    const int gapile = roster_index(ba, "GAPILE");
+    const int gaweap = roster_index(ba, "GAWEAP");
+
+    const double dt = 1.0 / 15.0;
+    long frame = 0;
+    double t = 0.0;
+    auto draw = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, /*input=*/nullptr, /*va=*/nullptr, &ba);
+        if (ba.sidebar_ok)
+            draw_sidebar(ren, *tc, ba, lay, ps, world, static_cast<int>(ps.credits), t);
+    };
+    auto step_one = [&]() {
+        world.step(dt);
+        ps_tick(ps, world, ba, dt, low_mod);
+        ++frame;
+        t += dt;
+        draw();
+    };
+
+    // Witness 1: header.
+    std::vector<int> closure = demo_buildable_closure(ba);
+    std::string blist;
+    for (std::size_t i = 0; i < closure.size(); ++i)
+        blist += (i ? "," : "") + ba.roster[closure[i]].id;
+    {
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "[base] roster=%d buildable=%s sidebar=%s",
+                      static_cast<int>(ba.roster.size()), blist.c_str(),
+                      ba.sidebar_ok ? "ok" : "missing");
+        r.witness.emplace_back(buf);
+    }
+
+    if (render) {
+        draw();
+        capture_png(ren, start_png, W, H);
+    }
+
+    // Frame 15 (t=1.0s): start GAPOWR.
+    while (frame < 15) step_one();
+    ra2engine::start(ps, gapowr, ba.roster, build_speed);
+    {
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "[base] t=%.1f start GAPOWR frames=%d step_ticks=%d", t,
+                      ps.slot.total_frames, ps.slot.step_ticks);
+        r.witness.emplace_back(buf);
+    }
+    while (ps.slot.type == gapowr && !ps.slot.ready) step_one();
+    int gx = 0, gy = 0;
+    const ra2engine::Building& cy_b = world.buildings()[conyard_bi];
+    if (!place_player_building(world, ba, gapowr, cy_b.cx + cy_b.fw, cy_b.cy, gx, gy)) r.ok = false;
+    ra2engine::placed(ps);
+    {
+        const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "[base] placed GAPOWR cell=(%d,%d) credits=%d power=+%d/-%d",
+                      gx, gy, static_cast<int>(std::llround(ps.credits)), pt.output, pt.drain);
+        r.witness.emplace_back(buf);
+    }
+
+    // GAPILE (needs POWER -> satisfied now that GAPOWR is Idle).
+    ra2engine::start(ps, gapile, ba.roster, build_speed);
+    while (ps.slot.type == gapile && !ps.slot.ready) step_one();
+    int px2 = 0, py2 = 0;
+    if (!place_player_building(world, ba, gapile, cy_b.cx, cy_b.cy + cy_b.fh, px2, py2)) r.ok = false;
+    ra2engine::placed(ps);
+    {
+        const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "[base] placed GAPILE credits=%d power=+%d/-%d",
+                      static_cast<int>(std::llround(ps.credits)), pt.output, pt.drain);
+        r.witness.emplace_back(buf);
+    }
+
+    // GAWEAP: prerequisite-blocked without a refinery (PROC).
+    const bool can_weap = ra2engine::can_start(ps, gaweap, ba.roster, world.buildings(), 0,
+                                               ba.groups, conyard_alive(world, ba, 0));
+    if (!can_weap) r.witness.emplace_back("[base] GAWEAP blocked (PROC unmet)");
+    else { r.witness.emplace_back("[base] GAWEAP NOT blocked (unexpected)"); r.ok = false; }
+
+    // Order the GIs to attack the enemy NAPOWR; run until it dies (or a cap).
+    for (ra2engine::Unit& u : world.units())
+        if (u.house == 0 && u.alive && u.die_time < 0.0) u.selected = true;
+    world.order_attack_building(napowr_bi);
+    const double cap = 400.0;  // sim seconds
+    auto napowr_dead = [&]() {
+        const ra2engine::Building& b = world.buildings()[napowr_bi];
+        return !b.alive || b.state == ra2engine::Building::State::Dead;
+    };
+    while (!napowr_dead() && t < cap) step_one();
+    r.ok = r.ok && napowr_dead();
+    {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "[base] NAPOWR destroyed t=%.1f", t);
+        r.witness.emplace_back(buf);
+    }
+
+    // Let the death anim tombstone, then hash.
+    for (int k = 0; k < 20; ++k) step_one();
+    r.hash = world_hash(world);
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof buf, "[base] hash=%016llx",
+                      static_cast<unsigned long long>(r.hash));
+        r.witness.emplace_back(buf);
+    }
+
+    if (render) {
+        draw();
+        capture_png(ren, end_png, W, H);
+    }
+    return r;
+}
+
+// --demo-base: the Buildings & Construction integration gate. Builds a player
+// ConYard + a Soviet base, scripts GAPOWR -> place -> GAPILE -> place -> GAWEAP
+// (asserted blocked), then destroys the enemy NAPOWR. Runs rendered (hidden
+// window + start/end screenshots via the building draw path) and headless, and
+// byte-compares the two witness logs + world hashes.
+int run_demo_base() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_base_start.png";
+    const std::string end_png = scratch + "demo_base_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-base] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    const double build_speed = rules.general_double("BuildSpeed", 0.7);
+    const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
+    const int mp_money = rules.mp_money();
+
+    // Run 1: rendered (hidden window) + start/end screenshots.
+    DemoBaseResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-base)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_base(a, ua, ba, build_speed, low_mod, mp_money, /*render=*/true, ren, &tc,
+                               &cam, W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless -- identical script from a FRESH World.
+    DemoBaseResult r2 = simulate_base(a, ua, ba, build_speed, low_mod, mp_money, /*render=*/false,
+                                      nullptr, nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-base] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    std::cout << "deterministic=" << (identical ? "yes" : "no") << " lines=" << r1.witness.size()
+              << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -2540,6 +2857,7 @@ int main(int argc, char** argv) {
         bool demo_combat = false;
         int combat_seed = 0;
         bool demo_tank = false;
+        bool demo_base = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -2578,6 +2896,8 @@ int main(int argc, char** argv) {
                 }
             } else if (arg == "--demo-tank") {
                 demo_tank = true;
+            } else if (arg == "--demo-base") {
+                demo_base = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
@@ -2586,6 +2906,7 @@ int main(int argc, char** argv) {
         }
         // --demo-tank dispatched BEFORE --demo-combat (brief Step 6 ordering).
         if (demo_tank) return run_demo_tank();
+        if (demo_base) return run_demo_base();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
