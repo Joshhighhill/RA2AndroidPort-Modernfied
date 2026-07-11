@@ -260,6 +260,27 @@ TEST_CASE("rules: building accessors (synthetic)") {
     CHECK(r.mp_money() == 10000);
 }
 
+TEST_CASE("rules: economy accessors") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[General]\nGrowthRate=5\n"
+        "[Riparius]\nValue=25\nGrowthPercentage=.06\nSpreadPercentage=.06\n"
+        "[HARV]\nStorage=40\nHarvester=yes\nDock=NAREFN,GAREFN\nUnloadingClass=HORV\n"
+        "[NAREFN]\nStorage=200\nFreeUnit=HARV\nNumberOfDocks=1\n");
+    auto r = ra2assets::Rules::load(ini);
+    CHECK(r.value("Riparius") == 25);
+    CHECK(r.growth_percentage("Riparius") == doctest::Approx(0.06));
+    CHECK(r.spread_percentage("Riparius") == doctest::Approx(0.06));
+    CHECK(r.storage("HARV") == 40);
+    CHECK(r.harvester("HARV"));
+    CHECK_FALSE(r.harvester("NAREFN"));
+    CHECK(r.dock("HARV") == std::vector<std::string>{"NAREFN", "GAREFN"});
+    CHECK(r.free_unit("NAREFN") == "HARV");
+    CHECK(r.free_unit("HARV") == "");
+    CHECK(r.number_of_docks("NAREFN") == 1);
+    CHECK(r.growth_rate_minutes() == doctest::Approx(5.0));
+    CHECK(r.unloading_class("HARV") == "HORV");
+}
+
 TEST_CASE("rules: real rulesmd building pins") {
     const char* dir = std::getenv("RA2_INSTALL_DIR");
     std::string base = dir ? dir : "D:\\Red Alert 2";

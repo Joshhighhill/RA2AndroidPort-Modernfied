@@ -190,4 +190,48 @@ int Rules::mp_money() const {
     return ini_->get_int("MultiplayerDialogSettings", "Money", 10000);
 }
 
+int Rules::value(const std::string& id) const {
+    return ini_->get_int(id, "Value", 0);
+}
+
+double Rules::growth_percentage(const std::string& id) const {
+    std::string v = ini_->get(id, "GrowthPercentage", "");
+    if (v.empty()) return 0.0;
+    return std::strtod(v.c_str(), nullptr);
+}
+
+double Rules::spread_percentage(const std::string& id) const {
+    std::string v = ini_->get(id, "SpreadPercentage", "");
+    if (v.empty()) return 0.0;
+    return std::strtod(v.c_str(), nullptr);
+}
+
+int Rules::storage(const std::string& id) const {
+    return ini_->get_int(id, "Storage", 0);
+}
+
+bool Rules::harvester(const std::string& id) const {
+    return is_truthy(ini_->get(id, "Harvester", ""));
+}
+
+std::vector<std::string> Rules::dock(const std::string& id) const {
+    return split_trim_upper(ini_->get(id, "Dock", ""));
+}
+
+std::string Rules::free_unit(const std::string& id) const {
+    return ini_->get(id, "FreeUnit", "");
+}
+
+int Rules::number_of_docks(const std::string& id) const {
+    return ini_->get_int(id, "NumberOfDocks", 0);
+}
+
+double Rules::growth_rate_minutes() const {
+    return general_double("GrowthRate", 5.0);
+}
+
+std::string Rules::unloading_class(const std::string& id) const {
+    return ini_->get(id, "UnloadingClass", "");
+}
+
 } // namespace ra2assets

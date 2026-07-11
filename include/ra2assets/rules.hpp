@@ -123,6 +123,38 @@ public:
     // [MultiplayerDialogSettings] Money=, fallback 10000 if absent.
     int mp_money() const;
 
+    // [id] Value=, or 0 if absent.
+    int value(const std::string& id) const;
+
+    // [id] GrowthPercentage=, or 0.0 if absent.
+    double growth_percentage(const std::string& id) const;
+
+    // [id] SpreadPercentage=, or 0.0 if absent.
+    double spread_percentage(const std::string& id) const;
+
+    // [id] Storage=, or 0 if absent.
+    int storage(const std::string& id) const;
+
+    // [id] Harvester=, true iff the value is "yes"/"true" (case-insensitive);
+    // false if absent.
+    bool harvester(const std::string& id) const;
+
+    // [id] Dock= split on commas, whitespace-trimmed and uppercased; empty if
+    // absent.
+    std::vector<std::string> dock(const std::string& id) const;
+
+    // [id] FreeUnit=, or "" if absent.
+    std::string free_unit(const std::string& id) const;
+
+    // [id] NumberOfDocks=, or 0 if absent.
+    int number_of_docks(const std::string& id) const;
+
+    // [General] GrowthRate=, or 5.0 if absent.
+    double growth_rate_minutes() const;
+
+    // [id] UnloadingClass=, or "" if absent.
+    std::string unloading_class(const std::string& id) const;
+
 private:
     explicit Rules(const Ini& ini) : ini_(&ini) {}
     const Ini* ini_;
