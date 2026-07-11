@@ -108,6 +108,58 @@ never fully pinned); and the main SHP's second damaged frame (frame 2, a
 distinct debris/lighting variant) is unused, since it's only reachable
 through the anim-stage machinery a static building never exercises.
 
+The Economy phase closes the loop from raw terrain to spendable credits. Ore
+and gems are decoded straight off the real map's `[OverlayPack]`/
+`[OverlayDataPack]` (no synthetic placement) and classified into an
+`ra2engine::OreField` by the recovered range-based overlay-index rule — an
+overlay index belongs to a tiberium type when it falls in that type's
+`[base, base+NumImages=12)` flat-image range or the following `NumSlopes=8`
+slope range (`docs/re/economy.md` §5); the runtime index is the 0-based
+order-of-appearance position in `[OverlayTypes]` (bases 27/102/127 for
+GEM01/TIB01/TIB2_01 on the real stock map), density is the map's per-cell
+byte, 0..11. `HARV`/`CMIN` miners run the recovered harvester FSM
+(`ra2engine::step_harvest`, `engine/harvest.cpp`): an 8-neighbour dig banks
+bale value into a per-tiberium-type 4-slot ore store until full, then the
+miner drives (`HARV`) or Chrono-teleports (`CMIN`, a `TeleportLocomotionClass`
+analogue bracketed by `ChronoInSound`/`ChronoOutSound`) to the refinery's
+single dock, where a chunked per-tick payout transfers `Σ bales × Value` into
+house credits. Refineries also spawn their `FreeUnit` (HARV/CMIN) at
+grand-opening with its cost pre-billed into the refinery's own price
+(`charge = Cost − FreeUnit.Cost`, e.g. GAREFN 2000 − 1400 = 600, while its
+1260-frame build time still derives from the raw, un-subtracted 2000 —
+`economy.md` §6a), and once built the refinery satisfies the `PROC`
+prerequisite group, unlocking `GAWEAP`/`NAWEAP` (the War Factory, correctly
+gated off in the Buildings phase). Ore itself is alive: a
+`GrowthRate`-cadenced timer raises density toward the cap (11) on a slice of
+eligible cells and spreads new tiberium onto adjacent empty, passable cells
+from fully-grown sources. Calibration authority: `docs/re/economy.md`
+(harvester FSM, dock/unload math, chrono locomotion, growth/spread, overlay
+tables, FreeUnit cost split); companion of `docs/re/construction.md`.
+
+Documented divergences from vanilla (Economy phase): ore growth/spread
+candidate selection uses an engine-local **seeded xorshift32** RNG in place
+of the original's lockstep-synchronised `Randomizer` — same rates
+(`GrowthRate`, `Growth`/`Spread`, `*Percentage`, cap 11), not bit-identical
+(the original's netgame-synchronised sequence is unreachable single-machine);
+the `UnloadingClass` art swap (e.g. `HARV`→`HORV`, `CMIN`→`CMON`) while docked
+is not implemented — miners keep their normal body during unload; the
+refinery dock cell is adjudicated as the foundation's south-center cell
+(`dock_cell_x`/`dock_cell_y`, `engine/harvest.hpp`) since GAREFN/NAREFN define
+no `DockingOffset` in artmd — **[RE-FALLBACK]**; the per-gulp/unload/
+chrono-warp/ore-scan pacing constants (`kGulpSecs`, `kUnloadSecsPerBale`,
+`kChronoWarpSecs`, `kOreScanRadius`) are adjudicated, not recovered —
+**[RE-FALLBACK]**; only the base TIB01/GEM01 overlay-index model is loaded
+(a 2-kind `OreField`, bases 27/102/127) — the `TIB2_*`/`TIB3_*` variant art
+blocks are unused, since the real stock map's `OverlayPack` never references
+them; `--demo-base`'s roster witness now reports `roster=10` (GAREFN/NAREFN
+appended to the buildable roster) — an intended content change, the gated
+`hash=5273b5e71ca009e1` is unchanged; the ConYard `BaseUnit` cost-subtraction
+rule recovered in `economy.md` §6a (Cost −= avg MCV cost when the type is
+`BaseUnit[0].DeploysInto`) is not implemented, since Construction Yards are
+never player-purchasable in this engine; and ore renders flat-cells-only —
+the 8 `NumSlopes` slope frames per tiberium type are unused (no sloped-tile
+ore rendering).
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -182,10 +234,42 @@ Headless/verification CLI modes (render one or more frames and exit):
   absence is not a failure (CI/headless boxes have none — only check 1 must
   pass); prints a `[demo-audio] clips=<n> device=yes|no mix=nonzero` summary
   and exits 0.
+- `ra2engine.exe --demo-tank` — the voxel-vehicle counterpart of
+  `--demo-combat`: 5 GIs + 3 Rhino tanks per side fight to elimination; the
+  sim runs twice (rendered + headless) and the per-hit damage logs must be
+  byte-identical. Writes start/end screenshots to the scratchpad; exits
+  non-zero on any overlap, dangling target, or log divergence.
+- `ra2engine.exe --demo-base` — the Buildings & Construction integration
+  gate: builds a Construction Yard → Power Plant → Barracks-class producer,
+  confirms `GAWEAP` stays prerequisite-blocked (`PROC` unmet) against a
+  pre-built Soviet base, and hashes the whole world state (FNV-1a 64-bit).
+  Rendered and headless runs must produce identical witness lines and hash.
+- `ra2engine.exe --demo-econ` — the Economy integration gate: places a
+  refinery (charging the FreeUnit-subtracted cost, building at the raw-Cost
+  frame count), watches its `CMIN` FreeUnit complete a chunked unload, watches
+  an AI refinery's `HARV` unload for income, confirms `GAWEAP` unblocks once
+  `PROC` is met, and crosses one ore-growth timer firing — then hashes the
+  world state (ore field + credits included). Rendered and headless runs must
+  be byte-identical.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
 at all) alongside the interactive run.
+
+### Determinism gates (permanent)
+
+These four headless demos are byte-identity regression gates: any change to
+their printed output signals a defect in whatever change caused it, not an
+intentional update (content changes that legitimately alter output, e.g. a
+new roster entry, must be called out explicitly — see the Economy divergences
+above for `--demo-base`'s `roster=10`).
+
+| Demo | Gate | Key witnesses |
+|------|------|----------------|
+| `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
+| `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
+| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=10`, GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
+| `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 
 ## Android (arm64-v8a) cross-compile
 
