@@ -104,13 +104,23 @@ struct Assets {
 // loaded from the temperate theater chain (.tem, then a generic .shp
 // fallback) via the existing theater name resolver. Indexed [kind][slot]:
 // kind 0 = Ore (tibNN), 1 = Gems (gemNN); slot = the 0-based art index within
-// the set (OreField::variant_at). Each SHP carries the density frames
-// (frame = min(density, count-1)). Individually guarded: a name missing in
-// every candidate leaves present=false and that cell is simply not drawn --
-// never a crash.
+// the set (OreField::variant_at). Each SHP's first half is the density
+// frames (0..11), second half shadows (verified: tib01.tem = SHP(TS) 60x60,
+// 24 frames, frame 12+ empty). Individually guarded: a name missing in every
+// candidate leaves present=false and that cell is simply not drawn -- never
+// a crash.
+//
+// PALETTE (task-7 fix round, root-caused from raw-byte dumps): overlays
+// palettize with temperat.pal -- the THEATER palette -- NOT isotem.pal (the
+// iso TILE palette). The same decoded indices render as multicolored
+// confetti under isotem.pal but as the original's golden-amber ore clumps /
+// blue-green gem crystals under temperat.pal (scratchpad
+// tib01_f11_isotem.png vs tib01_f11_temperat.png).
 struct OreArt {
     ra2assets::ShpFile shp[2][20];
     bool present[2][20] = {};
+    ra2assets::Palette pal;   // temperat.pal (see PALETTE note above)
+    bool has_pal = false;     // false -> draw_ore falls back to the terrain pal
     bool any = false;
 };
 
@@ -207,8 +217,19 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
         std::snprintf(nm, sizeof nm, "gem%02d", i + 1);
         if (try_load(nm, oa.shp[1][i])) { oa.present[1][i] = true; ++ok; }
     }
+    // The overlay palette: temperat.pal from cache.mix (see OreArt's PALETTE
+    // note). Guarded: if absent, draw_ore falls back to the terrain palette
+    // (wrong colors, but still renders rather than crashing).
+    try {
+        MixFile cache = ra2.open_nested("cache.mix");
+        if (const MixEntry* pe = cache.find(std::string("temperat.pal"))) {
+            auto raw = cache.read(*pe);
+            oa.pal = Palette::load(raw.data(), raw.size());
+            oa.has_pal = true;
+        }
+    } catch (const std::exception&) { oa.has_pal = false; }
     oa.any = ok > 0;
-    std::cerr << "[ore] art files loaded=" << ok
+    std::cerr << "[ore] art files loaded=" << ok << " pal=" << (oa.has_pal ? "temperat" : "FALLBACK")
               << " tib01=" << (oa.present[0][0] ? std::to_string(oa.shp[0][0].count()) : "absent")
               << "f tib02=" << (oa.present[0][1] ? std::to_string(oa.shp[0][1].count()) : "absent")
               << "f gem01=" << (oa.present[1][0] ? std::to_string(oa.shp[1][0].count()) : "absent")
@@ -1348,14 +1369,18 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
 // Ore/overlay render pass [RE: economy.md §5]: drawn immediately after the
 // terrain tiles and below all objects (units/buildings). For every visible
 // map cell that has_ore, pick the tiberium set's art by the cell's variant
-// (OreField::variant_at) and select the density frame (min(density,
-// count-1)); anchor it exactly like a terrain tile (cell_to_screen top-left +
-// the SHP frame's own bbox offset) and palettize with the TERRAIN palette.
+// (OreField::variant_at) and select the density frame within the SHP's IMAGE
+// half -- min(density, count/2 - 1); the second half is shadow frames, empty
+// for ore (verified frame 12 of tib01.tem decodes 0x0). Anchor it exactly
+// like a terrain tile (cell_to_screen top-left + the SHP frame's own bbox
+// offset) and palettize with the THEATER palette temperat.pal (OreArt::pal;
+// see OreArt's PALETTE root-cause note -- isotem.pal renders confetti).
 // Cells whose variant art is absent simply don't draw.
 void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
               const ra2engine::OreField& ore, const ra2assets::MapFile& map,
               const ra2assets::Palette& pal, const ra2engine::Camera& cam, int W, int H) {
     if (!oa.any) return;
+    const ra2assets::Palette& ore_pal = oa.has_pal ? oa.pal : pal;
     for (const ra2assets::MapCell& c : map.cells()) {
         if (!ore.has_ore(c.x, c.y)) continue;
         const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
@@ -1369,8 +1394,10 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
         }
         const ra2assets::ShpFile& shp = oa.shp[kind][slot];
         if (shp.count() <= 0) continue;
+        // Image frames = first half (second half shadows), like every TS SHP.
+        const int image_frames = std::max(1, shp.count() / 2);
         int frame = ore.density_at(c.x, c.y);
-        if (frame >= shp.count()) frame = shp.count() - 1;
+        if (frame >= image_frames) frame = image_frames - 1;
         if (frame < 0) frame = 0;
         const ra2engine::ScreenPt p =
             ra2engine::cell_to_screen(c.x, c.y, static_cast<int>(c.level), 60, 30, 15);
@@ -1382,7 +1409,7 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
         if (!tex) {
             std::vector<uint8_t> idx = shp.decode_indexed(frame);
-            tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal));
+            tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, ore_pal));
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
     }
@@ -1921,6 +1948,9 @@ int run_interactive(bool no_audio) {
 
     ra2engine::Camera cam = centered_camera(a.map, playfield_w, platform.height());
     ra2engine::Input input(world, cam, playfield_w, platform.height());
+    // Refinery gate for the right-click "return" order (fix round: brief says
+    // own alive REFINERY only): the same type list wire_economy passes.
+    if (ba.ok) input.set_refinery_types(refinery_type_indices(ba, rules));
     const int kPan = 40;
 
     // Player production state (starts with MP money).

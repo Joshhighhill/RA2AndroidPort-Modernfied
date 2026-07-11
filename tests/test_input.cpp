@@ -928,3 +928,140 @@ TEST_CASE("Input: right-click a hostile building attacks; own building is a move
     CHECK(world.units()[fx.gi0].target_building == -1);
     CHECK(world.units()[fx.gi1].target_building == -1);
 }
+
+// ---- Economy fix round: harvester right-click orders ----
+
+namespace {
+// Minimal harvester profile (image "CMIN"; combat stats irrelevant to input).
+ra2engine::UnitCombat miner_combat() {
+    return ra2engine::UnitCombat{1000, "heavy", "CMIN", 0, 0, 0.0, kSAVerses};
+}
+
+// First walkable, unit-free, ore-free LEVEL-0 cell at least `min_d` cells
+// (Chebyshev) from (ax, ay) -- level 0 so px_for_cell is the exact inverse of
+// Input's resolve_ground_cell (same rule the attack-building test relies on).
+std::pair<int, int> far_l0_cell(const World& world, int ax, int ay, int min_d) {
+    for (const auto& mc : world.map().cells()) {
+        if (mc.level != 0) continue;
+        if (!world.walkable(mc.x, mc.y) || world.unit_at_cell(mc.x, mc.y) >= 0) continue;
+        if (world.ore().has_ore(mc.x, mc.y)) continue;
+        if (std::max(std::abs(mc.x - ax), std::abs(mc.y - ay)) < min_d) continue;
+        return {mc.x, mc.y};
+    }
+    return {-1, -1};
+}
+}  // namespace
+
+TEST_CASE("Input: mixed selection right-click on ore -> harvester harvests, others move") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+
+    // One GI (non-harvester) + one harvester side by side near the start.
+    const MapCell* c = ra2engine::pick_start_cell(world.map());
+    REQUIRE(c != nullptr);
+    int gi = -1, harv = -1;
+    for (int dx = 0; dx < 10 && (gi < 0 || harv < 0); ++dx) {
+        const int x = c->x + dx, y = c->y;
+        if (!world.walkable(x, y) || world.unit_at_cell(x, y) >= 0) continue;
+        if (gi < 0) {
+            world.add_combat_unit(x, y, 0, gi_combat());
+            gi = static_cast<int>(world.units().size()) - 1;
+        } else {
+            world.add_harvester(x, y, 0, miner_combat(), /*chrono=*/true, /*storage=*/20);
+            harv = static_cast<int>(world.units().size()) - 1;
+        }
+    }
+    if (gi < 0 || harv < 0) { MESSAGE("skipped: could not place fixture"); return; }
+
+    // A level-0 ore cell away from the units (planted ore -- the click target).
+    const auto oc = far_l0_cell(world, world.units()[gi].cell_x, world.units()[gi].cell_y, 8);
+    if (oc.first < 0) { MESSAGE("skipped: no suitable level-0 cell"); return; }
+    world.ore().set(oc.first, oc.second, ra2engine::OreKind::Ore, 5, 0);
+    REQUIRE(world.ore().has_ore(oc.first, oc.second));
+
+    world.units()[gi].selected = true;
+    world.units()[harv].selected = true;
+
+    int px, py;
+    px_for_cell(oc.first, oc.second, px, py);
+    right_click(input, px, py, 1000);
+
+    // Harvester: harvest mission pinned to the clicked cell (order_harvest).
+    CHECK(world.units()[harv].harv == ra2engine::HarvState::MoveToOre);
+    CHECK(world.units()[harv].harv_cell_x == oc.first);
+    CHECK(world.units()[harv].harv_cell_y == oc.second);
+    CHECK_FALSE(world.units()[harv].manual_hold);  // a move order would set this
+
+    // Non-harvester: normal ground move toward the same cell (formation cell
+    // near the goal), NOT stranded.
+    CHECK(world.units()[gi].moving());
+    REQUIRE_FALSE(world.units()[gi].path.empty());
+    CHECK(near_cell(world.units()[gi].path.back(), oc.first, oc.second));
+
+    // Selection restored: both still selected; the move ack was reported.
+    CHECK(world.units()[gi].selected);
+    CHECK(world.units()[harv].selected);
+    const ra2engine::InputActions a = input.take_actions();
+    CHECK(a.move_ordered);
+}
+
+TEST_CASE("Input: harvester right-click own building returns only on a refinery") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    input.set_refinery_types({5});  // roster type 5 = the refinery in this fixture
+
+    const MapCell* c = ra2engine::pick_start_cell(world.map());
+    REQUIRE(c != nullptr);
+    int harv = -1;
+    for (int dx = 0; dx < 10 && harv < 0; ++dx) {
+        const int x = c->x + dx, y = c->y;
+        if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+            world.add_harvester(x, y, 0, miner_combat(), /*chrono=*/true, /*storage=*/20);
+            harv = static_cast<int>(world.units().size()) - 1;
+        }
+    }
+    if (harv < 0) { MESSAGE("skipped: could not place harvester"); return; }
+    const int hx = world.units()[harv].cell_x, hy = world.units()[harv].cell_y;
+
+    // Two disjoint 2x2 own buildings on far level-0 ground: type 1 (NOT a
+    // refinery) and type 5 (the refinery per set_refinery_types above).
+    const auto o1 = far_l0_cell(world, hx, hy, 8);
+    if (o1.first < 0) { MESSAGE("skipped: no level-0 cell"); return; }
+    std::pair<int, int> o2{-1, -1};
+    for (const auto& mc : world.map().cells()) {
+        if (mc.level != 0 || !world.walkable(mc.x, mc.y)) continue;
+        if (std::max(std::abs(mc.x - hx), std::abs(mc.y - hy)) < 8) continue;
+        if (std::abs(mc.x - o1.first) <= 3 && std::abs(mc.y - o1.second) <= 3) continue;
+        o2 = {mc.x, mc.y};
+        break;
+    }
+    if (o2.first < 0) { MESSAGE("skipped: no disjoint cell"); return; }
+    world.add_building(/*type=*/1, o1.first, o1.second, 2, 2, /*house=*/0, 1000, 0, 0.0,
+                       /*instant=*/true);
+    world.add_building(/*type=*/5, o2.first, o2.second, 2, 2, /*house=*/0, 1000, 0, 0.0,
+                       /*instant=*/true);
+
+    world.units()[harv].selected = true;
+
+    // Right-click the own NON-refinery building: falls through to the ground
+    // move -- no return order (harv stays off ReturnToRef, manual_hold set by
+    // the move path).
+    int px, py;
+    px_for_cell(o1.first, o1.second, px, py);
+    right_click(input, px, py, 1000);
+    CHECK(world.units()[harv].harv != ra2engine::HarvState::ReturnToRef);
+    CHECK(world.units()[harv].manual_hold);  // proves the MOVE path ran instead
+
+    // Right-click the own REFINERY: return order.
+    px_for_cell(o2.first, o2.second, px, py);
+    right_click(input, px, py, 2000);
+    CHECK(world.units()[harv].harv == ra2engine::HarvState::ReturnToRef);
+}

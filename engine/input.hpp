@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "iso_renderer.hpp"  // Camera
 #include "platform.hpp"      // InputEvent
@@ -95,6 +97,15 @@ public:
     // (x0<=x1, y0<=y1) in window pixels and return true; else return false.
     bool selection_box(int& x0, int& y0, int& x1, int& y1) const;
 
+    // Economy phase: the roster type indices that are refineries
+    // (GAREFN/NAREFN) -- the SAME list main.cpp's wire_economy hands to
+    // World::set_economy. Gates the right-click "return to refinery" order:
+    // with a harvester selected, a right-click on an own alive building
+    // issues order_return ONLY when that building's type is in this list; a
+    // click on any other own building stays a plain ground move. Empty
+    // (never called) = no building ever triggers a return order.
+    void set_refinery_types(std::vector<int> types) { refinery_types_ = std::move(types); }
+
     bool wants_quit() const { return quit_; }
 
     // Consume the actions accumulated by every handle() call since the
@@ -124,6 +135,12 @@ private:
     void commit_click(int px, int py, bool shift);  // house-0-only selection (see .cpp)
     void commit_box(bool shift);                    // house-0-only, corpse-skipping box select
     void commit_double(int px, int py);             // house-0-only type-select
+    // True iff roster type `t` is in refinery_types_ (set_refinery_types).
+    bool is_refinery_type(int t) const {
+        for (int r : refinery_types_)
+            if (r == t) return true;
+        return false;
+    }
 
     World& world_;
     Camera& cam_;
@@ -144,6 +161,9 @@ private:
     // that roster type; place_fw_/fh_ is its foundation size.
     int place_type_ = -1;
     int place_fw_ = 1, place_fh_ = 1;
+
+    // Economy phase: refinery roster types (set_refinery_types).
+    std::vector<int> refinery_types_;
 
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).

@@ -301,9 +301,11 @@ void Input::handle(const InputEvent& ev) {
                     // Harvester orders [RE: economy.md §1], resolved BEFORE the
                     // attack-building branch: with a house-0 harvester in the
                     // selection, a right-click on an ore cell issues a harvest
-                    // order and one on an own alive building (the refinery)
-                    // sends the miner(s) home. order_harvest/order_return only
-                    // touch selected house-0 harvesters, so non-harvester
+                    // order and one on an own alive REFINERY (is_refinery_type
+                    // -- the roster list set_refinery_types installed; any
+                    // other own building stays a plain ground move) sends the
+                    // miner(s) home. order_harvest/order_return only touch
+                    // selected house-0 harvesters, so non-harvester
                     // right-clicks fall straight through to attack/move below.
                     bool harv_selected = false;
                     for (const Unit& su : world_.units())
@@ -315,10 +317,39 @@ void Input::handle(const InputEvent& ev) {
                     const int here_b = world_.building_at_cell(cx, cy);
                     if (harv_selected && world_.ore().has_ore(cx, cy)) {
                         world_.order_harvest(cx, cy);
-                        break;  // handled: no attack/move for this right-click
+                        // MIXED selection (fix round): co-selected NON-harvester
+                        // units are not harvest-capable -- they get the normal
+                        // group move to the same cell (each unit interprets the
+                        // click per its own logic). The harvesters are dropped
+                        // from the selection for the move call so
+                        // order_move_selected can't clobber the harvest mission
+                        // just issued (it would set manual_hold + repath), then
+                        // restored -- the player's selection is untouched.
+                        std::vector<std::size_t> harv_idx;
+                        bool any_other = false;
+                        for (std::size_t i = 0; i < world_.units().size(); ++i) {
+                            const Unit& su = world_.units()[i];
+                            if (!su.selected || !su.alive || su.die_time >= 0.0) continue;
+                            if (su.is_harvester && su.house == 0)
+                                harv_idx.push_back(i);
+                            else
+                                any_other = true;
+                        }
+                        if (any_other) {
+                            const int actor = lowest_selected();
+                            for (std::size_t i : harv_idx) world_.units()[i].selected = false;
+                            world_.order_move_selected(cx, cy);
+                            for (std::size_t i : harv_idx) world_.units()[i].selected = true;
+                            if (actor >= 0) {
+                                actions_.move_ordered = true;
+                                actions_.actor = actor;
+                            }
+                        }
+                        break;  // handled: no attack for this right-click
                     }
                     if (harv_selected && here_b >= 0 && world_.buildings()[here_b].house == 0 &&
-                        world_.buildings()[here_b].alive) {
+                        world_.buildings()[here_b].alive &&
+                        is_refinery_type(world_.buildings()[here_b].type)) {
                         world_.order_return();
                         break;  // handled
                     }
