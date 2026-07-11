@@ -131,6 +131,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_facing_cache.cpp engine/facing
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as combat.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_production.cpp engine/production.cpp)
+# sidebar.cpp is pure C++17 (no SDL): RA2 sidebar geometry + hit-testing
+# (docs/re/construction.md §11). Compiled into both this test binary and ra2engine
+# from one source of truth (same pattern as combat.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_sidebar.cpp engine/sidebar.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
