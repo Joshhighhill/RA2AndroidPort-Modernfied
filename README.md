@@ -58,6 +58,54 @@ scale is a recorded future candidate, not done piecemeal here); the
 turret's ROF+5-frame idle-return hold is omitted (it re-centers
 immediately); and `MoveSound` (engine/track sound effects) is deferred.
 
+Buildings round out the base game: an 8-building Allied+Soviet roster
+(Construction Yard, Power Plant, Barracks-class infantry producer, and War
+Factory, both houses — `GACNST/GAPOWR/GAPILE/GAWEAP` and
+`NACNST/NAPOWR/NAHAND/NAWEAP`) renders from the same real SHP art pipeline as
+units, resolved via the recovered
+`NewTheater` letter-substitution + `'G'`-fallback rule (a `name[1]` munge
+tested against `{g,n,c,y}×{a,t}`, then a hardcoded `'G'` retry on miss,
+searched across every loaded mix, no per-art scoping — see
+`docs/re/building-render.md` §1); multi-cell foundations occupy their full
+W×H cell rectangle and block pathfinding/placement like any other obstacle.
+The whole Construction Yard loop works end to end: a real RA2 sidebar
+(credits readout, power bar, four tab buttons, and the cameo build-progress
+clock drawn with the game's own `gclock2.shp` — one frame per production
+step, 55 frames = idle + 54 steps, instead of a fill bar) drives a
+54-step `FactoryClass`-faithful build economy at
+`frames = trunc(Cost × BuildSpeed × 0.9)` (15 Hz, e.g. 504 frames for an
+800-cost Power Plant), a placement cursor validated by the recovered
+`Adjacent+1` expanded-rect proximity rule, buildup animations paced at
+`BuildupTime × 900` ticks (rate = frames/image_frames, played once), and a
+low-power build penalty clamped to `clamp(1 − modifier×(1 − output/drain),
+.5, .8)`. Attack-capable buildings fight too, with turret-aim gating shared
+with vehicles. A pre-built Soviet base exercises the Soviet roster and the
+non-local-player placement-check bypass the original itself uses for
+scripted placement, and `--demo-base` is a deterministic headless gate over
+the whole loop. Calibration authorities:
+`docs/re/building-render.md` (art/foundation/draw-order/damage-state/buildup/
+palette semantics) and `docs/re/construction.md` (build-time math, power
+model, placement validity, queue rules, sidebar metrics).
+
+Documented divergences from vanilla: no idle `ActiveAnims`/production
+animations; repair and sell are not implemented (their sidebar buttons are
+inert); no rubble frames; no shroud; the radar is a static frame; sidebar
+tabs beyond the Building tab are inert; the credits tally uses a built-in
+digit strip rather than the game's own (unproven-for-this-string) font path;
+`GAWEAP` (Soviet War Factory) is unbuildable by the player this phase — its
+`PROC` prerequisite is correctly enforced and unmet, exercised instead via
+the pre-built Soviet base; units never auto-acquire buildings as combat
+targets (explicit attack orders only). Plus, from the construction-phase
+RE-gate: power output does **not** scale with building health (vanilla
+scales output by hp ratio — `construction.md` §8 optional-fidelity item,
+omitted here); `Bib=yes` bib art/row is omitted (`GAWEAP` renders fine
+without its bib — `building-render.md` §2); tab buttons are drawn frame-0 +
+a shade overlay rather than their full per-state frame set (the §11
+`[RE-FALLBACK]`, since the frame-index-to-state mapping beyond frame 0 was
+never fully pinned); and the main SHP's second damaged frame (frame 2, a
+distinct debris/lighting variant) is unused, since it's only reachable
+through the anim-stage machinery a static building never exercises.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
