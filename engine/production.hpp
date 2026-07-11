@@ -1,0 +1,104 @@
+#pragma once
+// Pure construction economy: the single BuildingType queue, credits, power.
+// Calibration: docs/re/construction.md (§ refs inline). No SDL/OS.
+#include <string>
+#include <vector>
+#include "building.hpp"
+
+namespace ra2engine {
+
+// [RE: construction.md §7, pre-hunt] BuildSpeed comment in rulesmd: "time in
+// minutes to produce a 1000 credit cost item"; RA2 logic runs 900 frames/min
+// at 15 Hz. Truncated toward zero like the damage formula.
+int build_frames(int cost, double build_speed);   // = (int)(cost/1000.0 * build_speed * 900.0)
+
+// Power totals over ALIVE, non-Dead buildings of `house`. Buildings still in
+// Buildup do NOT contribute output or drain [RE: construction.md §8,
+// pre-hunt: power applies when operational].
+struct PowerTotals { int output = 0; int drain = 0; };   // drain stored positive
+PowerTotals power_totals(const std::vector<Building>& buildings,
+                         const std::vector<BuildingTypeDef>& types, int house);
+
+// [RE-GATE APPLIED: construction.md §8] low power = drain > output. Recovered
+// rule (FUN_004FCC50 + the production-speed chain): with f = output/drain,
+//   speed = 1 - low_power_penalty_modifier * (1 - f)        (0 output -> 0)
+//   speed = max(speed, kMinLowPowerSpeed)                    (= .5, rulesmd)
+//   speed = min(speed, kMaxLowPowerSpeed)   [low power only] (= .8, rulesmd)
+// Full power -> exactly 1.0. With modifier=1 and any shortage, the result is
+// therefore always in [.5, .8].
+constexpr double kMinLowPowerSpeed = 0.5;   // rulesmd MinLowPowerProductionSpeed
+constexpr double kMaxLowPowerSpeed = 0.8;   // rulesmd MaxLowPowerProductionSpeed
+double build_speed_multiplier(const PowerTotals& p, double low_power_penalty_modifier);
+
+// One-slot BuildingType queue [RE-GATE APPLIED: construction.md §10 —
+// FactoryClass's 54-step incremental economy]. Production advances in
+// exactly kProductionSteps stages; each stage lasts `step_ticks` 15 Hz
+// frames (= clamp(trunc(total_frames/54), 1, 255)); entering stage s+1
+// charges `(cost - spent) / (54 - s)` credits — equal cost/54 chunks under
+// uninterrupted funding. When a stage's charge is unaffordable the build
+// STALLS (no progress, no charge, retried every tick).
+constexpr int kProductionSteps = 54;
+struct QueueSlot {
+    int type = -1;              // roster index; -1 = idle
+    int stage = 0;              // 0..kProductionSteps
+    int step_ticks = 1;         // 15 Hz frames per stage
+    double frames_accum = 0.0;  // fractional frames toward the next stage
+    int total_frames = 1;       // Time_To_Build (the 504-frame pin) — display/witness
+    double spent = 0.0;         // credits deducted so far
+    bool ready = false;         // finished, waiting for placement
+};
+
+struct ProductionState {
+    double credits = 0.0;
+    QueueSlot slot;
+};
+
+// Prerequisite check [RE: construction.md §10]: every token must be satisfied.
+// A plain token = an ALIVE, IDLE (fully built) building of that id owned by
+// `house` exists. Group tokens (POWER/BARRACKS/PROC/FACTORY/RADAR/TECH) =
+// any id in `groups[token]` satisfied the same way. Unknown tokens fail.
+bool prerequisites_met(const std::vector<std::string>& tokens,
+                       const std::vector<Building>& buildings,
+                       const std::vector<BuildingTypeDef>& types, int house,
+                       const std::vector<std::pair<std::string, std::vector<std::string>>>& groups);
+
+// Can `type` start building? conyard_alive = an own alive Idle ConYard exists
+// (the BuildingType factory); slot must be idle; prereqs met; TechLevel > 0.
+// Affordability is NOT gated here — RA2 starts a build with any credits and
+// stalls at 0 [RE: construction.md §10].
+bool can_start(const ProductionState& ps, int type,
+               const std::vector<BuildingTypeDef>& types,
+               const std::vector<Building>& buildings, int house,
+               const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
+               bool conyard_alive);
+
+// Start building `type` (caller checked can_start): total_frames =
+// build_frames(cost, build_speed); step_ticks = clamp(total_frames /
+// kProductionSteps, 1, 255) (integer division = the binary's trunc)
+// [RE-GATE: construction.md §10 FUN_004C9DC0]. GAPOWR: 504 -> step_ticks 9
+// (wall duration 54*9 = 486 frames = 32.4 s).
+void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& types,
+           double build_speed);
+
+// Advance by dt seconds [RE-GATE: construction.md §10]:
+//   frames_accum += dt * 15 * speed_mult;
+//   while (frames_accum >= step_ticks && stage < kProductionSteps):
+//     charge = (cost - spent) / (kProductionSteps - stage);
+//     if (credits < charge) { frames_accum = step_ticks; break; }  // stall+retry
+//     credits -= charge; spent += charge; ++stage; frames_accum -= step_ticks;
+//   stage == kProductionSteps -> spent settles to exactly cost, ready = true.
+// The stall clamp (frames_accum = step_ticks) mirrors the original's
+// rolled-back stage retried each tick — a funding gap never produces a
+// catch-up burst. No-op when idle/ready.
+void tick(ProductionState& ps, double dt, double speed_mult,
+          const std::vector<BuildingTypeDef>& types);
+
+// Cancel: refund everything spent so far, clear the slot
+// [RE-GATE: construction.md §10 — Abandon refunds Cost_Of minus balance,
+// i.e. ALL spent].
+void cancel(ProductionState& ps);
+
+// Placement succeeded: clear the slot (credits already fully spent).
+void placed(ProductionState& ps);
+
+}  // namespace ra2engine

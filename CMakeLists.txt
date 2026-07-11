@@ -126,6 +126,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_voxel_raster.cpp engine/voxel_
 # into both this test binary and ra2engine from one source of truth (same pattern
 # as voxel_raster.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_facing_cache.cpp engine/facing_cache.cpp)
+# production.cpp is pure C++17 (no SDL): construction economy — the single
+# BuildingType queue, credits, and power (docs/re/construction.md §§7-10).
+# Compiled into both this test binary and ra2engine from one source of truth
+# (same pattern as combat.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_production.cpp engine/production.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
