@@ -2,36 +2,92 @@
 #include "../engine/sidebar.hpp"
 using namespace ra2engine;
 
-TEST_CASE("sidebar layout: geometry from art dims") {
-    SidebarArtDims art;   // defaults
-    auto lay = SidebarLayout::compute(1280, 720, art, {1, 2, 3});
-    CHECK(lay.bar.x == 1280 - art.top_w);
-    CHECK(lay.bar.w == art.top_w);
+// Every pin below is a literal recovered from gamemd.exe's sidebar geometry
+// writers — docs/re/construction.md §11a (Allied/sidec01 style).
+
+TEST_CASE("sidebar layout: recovered composition at 1280x720") {
+    auto lay = SidebarLayout::compute(1280, 720, {1, 2, 3});
+    const int x0 = 1280 - 168;
+    CHECK(lay.bar.x == x0);
+    CHECK(lay.bar.w == 168);
     CHECK(lay.bar.h == 720);
-    CHECK(lay.radar.y == 0);
-    CHECK(lay.credits.y == lay.radar.y + lay.radar.h);
-    CHECK(lay.tabs[0].y == lay.credits.y + lay.credits.h);
-    CHECK(lay.tabs[1].x == lay.tabs[0].x + lay.bar.w / 4);   // 42 px pitch, 28 wide
-    CHECK(lay.tabs[0].w == art.tab_w);
+
+    // Top stack: credits(0,0,168x16) -> top cap(0,16,168x32) ->
+    // radar(0,48,168x110) -> side1(0,158,168x69). 158 = 16+32+110 = 0x9E.
+    CHECK(lay.credits.y == 0);
+    CHECK(lay.credits.h == 16);
+    CHECK(lay.top_cap.y == 16);
+    CHECK(lay.top_cap.h == 32);
+    CHECK(lay.radar.y == 48);
+    CHECK(lay.radar.h == 110);
+    CHECK(lay.side1.y == 158);
+    CHECK(lay.side1.h == 69);
+
+    // Tabs: x = 26 + 29*i (pitch 29, NOT bar.w/4), y = 197, 28x27.
+    CHECK(lay.tabs[0].x == x0 + 26);
+    CHECK(lay.tabs[1].x == x0 + 26 + 29);
+    CHECK(lay.tabs[3].x == x0 + 26 + 87);
+    CHECK(lay.tabs[0].y == 197);
+    CHECK(lay.tabs[0].w == 28);
+    CHECK(lay.tabs[0].h == 27);
+
+    // Strip: N = floor((720 - 234 - 26)/50) = 9 rows; strip top 227.
+    CHECK(lay.strip_top == 227);
+    CHECK(lay.side2_rows == 9);
+
+    // Cameo grid: origin (22, 228), col pitch 63, row pitch 50, 60x48.
     REQUIRE(lay.cameos.size() == 3);
     CHECK(lay.cameos[0].type == 1);
-    // 2-column grid: cell 0 and 1 same row, cell 2 next row
-    CHECK(lay.cameos[0].rect.y == lay.cameos[1].rect.y);
-    CHECK(lay.cameos[2].rect.y > lay.cameos[0].rect.y);
-    CHECK(lay.cameos[2].rect.x == lay.cameos[0].rect.x);
-    // power strip hugs the bar's left edge below the tabs
-    CHECK(lay.power.x == lay.bar.x);
-    CHECK(lay.power.y == lay.tabs[0].y + lay.tabs[0].h);
+    CHECK(lay.cameos[0].rect.x == x0 + 22);
+    CHECK(lay.cameos[0].rect.y == 228);
+    CHECK(lay.cameos[0].rect.w == 60);
+    CHECK(lay.cameos[0].rect.h == 48);
+    CHECK(lay.cameos[1].rect.x == x0 + 22 + 63);
+    CHECK(lay.cameos[1].rect.y == 228);
+    CHECK(lay.cameos[2].rect.x == x0 + 22);
+    CHECK(lay.cameos[2].rect.y == 228 + 50);
+
+    // Power pips: x = +5, from the strip top, capacity (450+3)/3 = 151.
+    CHECK(lay.power.x == x0 + 5);
+    CHECK(lay.power.y == 227);
+    CHECK(lay.power_pips == 151);
+    CHECK(lay.power.h == 151 * 3);
+
+    // Scroll buttons: 7 px below the strip, r-dn left / r-up right, 46x25.
+    CHECK(lay.scroll_dn.x == x0 + 39);
+    CHECK(lay.scroll_dn.y == 227 + 450 + 7);
+    CHECK(lay.scroll_up.x == x0 + 39 + 46);
+    CHECK(lay.scroll_up.y == lay.scroll_dn.y);
+    CHECK(lay.scroll_dn.w == 46);
+    CHECK(lay.scroll_dn.h == 25);
+}
+
+TEST_CASE("sidebar layout: 800x600 reproduces the original's 6 rows") {
+    // The binary's native case: N = floor((600 - 234 - 26)/50) = 6 rows,
+    // 101 power pips [RE: construction.md §11a].
+    auto lay = SidebarLayout::compute(800, 600, {1});
+    CHECK(lay.bar.x == 800 - 168);
+    CHECK(lay.side2_rows == 6);
+    CHECK(lay.power_pips == 101);
+    CHECK(lay.scroll_dn.y == 227 + 300 + 7);
+}
+
+TEST_CASE("sidebar layout: cameo cells clamp to the visible strip") {
+    // 2 columns x N rows visible; extra types are not laid out (no strip
+    // scrolling this phase). At 600 px: 12 cells max.
+    std::vector<int> many;
+    for (int i = 0; i < 20; ++i) many.push_back(i);
+    auto lay = SidebarLayout::compute(800, 600, many);
+    CHECK(lay.cameos.size() == 12);
 }
 
 TEST_CASE("sidebar hit-testing") {
-    SidebarArtDims art;
-    auto lay = SidebarLayout::compute(1280, 720, art, {1, 2});
+    auto lay = SidebarLayout::compute(1280, 720, {1, 2});
     auto c0 = lay.cameos[0].rect;
     CHECK(lay.cameo_at(c0.x + 1, c0.y + 1) == 0);
     CHECK(lay.cameo_at(c0.x - 200, c0.y) == -1);         // in the world, not the bar
     CHECK(lay.tab_at(lay.tabs[2].x + 1, lay.tabs[2].y + 1) == 2);
     CHECK(lay.tab_at(0, 0) == -1);
     CHECK(lay.contains(1280 - 1, 0));
-    CHECK_FALSE(lay.contains(1280 - art.top_w - 1, 0));
+    CHECK_FALSE(lay.contains(1280 - 168 - 1, 0));
 }

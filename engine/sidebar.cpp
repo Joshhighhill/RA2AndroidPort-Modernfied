@@ -1,53 +1,58 @@
 #include "sidebar.hpp"
 
+#include <algorithm>
+
 namespace ra2engine {
 
 SidebarLayout SidebarLayout::compute(int view_w, int view_h,
-                                     const SidebarArtDims& art,
                                      const std::vector<int>& types) {
     SidebarLayout lay;
 
-    // bar = whole sidebar strip on the right edge
-    lay.bar = {view_w - art.top_w, 0, art.top_w, view_h};
+    // Whole sidebar column on the right edge, full window height
+    // [RE: construction.md §11a — x0 = screen_w − 168, y0 = 0].
+    lay.bar = {view_w - kSidebarW, 0, kSidebarW, view_h};
+    const int x0 = lay.bar.x;
 
-    // radar at the top of the bar
-    lay.radar = {lay.bar.x, lay.bar.y, art.top_w, art.top_h};
+    // Fixed top stack: credits(0,0) -> top cap(0,16) -> radar(0,48) ->
+    // side1(0,158). 158 is the binary's literal 0x9E = 16 + 32 + 110.
+    lay.credits = {x0, 0, kSidebarW, kCreditsH};
+    lay.top_cap = {x0, kTopCapY, kSidebarW, kRadarY - kTopCapY};
+    lay.radar = {x0, kRadarY, kSidebarW, kRadarH};
+    lay.side1 = {x0, kSide1Y, kSidebarW, kSide1H};
 
-    // credits directly below radar
-    lay.credits = {lay.bar.x, lay.radar.y + lay.radar.h, art.credits_w, art.credits_h};
+    // Tab row: four separate 28x27 buttons at x = 26 + 29*i, y = 197
+    // [RE: §11a — pitch 29, NOT bar.w/4].
+    for (int i = 0; i < 4; ++i)
+        lay.tabs[i] = {x0 + kTabX0 + kTabPitch * i, kTabY, kTabW, kTabH};
 
-    // 4 tabs in one row below credits, pitch = bar.w/4 (42), each tab_w (28) wide centered in its slot
-    int tab_pitch = lay.bar.w / 4;  // 42 for 168-wide bar
-    int tabs_y = lay.credits.y + lay.credits.h;
-    for (int i = 0; i < 4; ++i) {
-        lay.tabs[i].x = lay.bar.x + i * tab_pitch + (tab_pitch - art.tab_w) / 2;
-        lay.tabs[i].y = tabs_y;
-        lay.tabs[i].w = art.tab_w;
-        lay.tabs[i].h = art.tab_h;
-    }
+    // Visible cameo rows: N = floor((view_h - 234 - side3_h)/50), min 1
+    // [RE: §11a] — 6 at 600 px, 9 at 720 px. side2 tiles once per row.
+    lay.side2_rows = std::max(1, (view_h - 234 - kSide3H) / kCameoRowPitch);
+    const int strip_h = lay.side2_rows * kSide2H;
 
-    // power strip: left edge of bar, below tabs, width art.power_w, full height remaining
-    int tabs_bottom = tabs_y + art.tab_h;
-    lay.power = {lay.bar.x, tabs_bottom, art.power_w, view_h - tabs_bottom};
+    // Power pip column hugs the strip's left edge from the strip top;
+    // capacity = (strip_h + 3)/3 pips at 3 px pitch [RE: §11a/§8].
+    lay.power_pips = (strip_h + kPowerPitch) / kPowerPitch;
+    lay.power = {x0 + kPowerX, kStripTop, kPowerPipW, lay.power_pips * kPowerPitch};
 
-    // cameo grid: 2 columns starting right of power strip (x = bar.x + power_w + 2),
-    // rows from tabs_bottom + 2, row-major ordering, pitch = cameo size + 1px gutter
-    int cameo_x_start = lay.bar.x + art.power_w + 2;
-    int cameo_y_start = tabs_bottom + 2;
-    int cameo_pitch_x = art.cameo_w + 1;
-    int cameo_pitch_y = art.cameo_h + 1;
+    // Strip scroll buttons: r-dn left, r-up right, on the row 7 px below the
+    // strip (inert this phase; rects reserved for hit-test completeness).
+    const int scroll_y = kStripTop + strip_h + 7;
+    lay.scroll_dn = {x0 + kScrollX, scroll_y, kScrollW, kScrollH};
+    lay.scroll_up = {x0 + kScrollX + kScrollW, scroll_y, kScrollW, kScrollH};
 
-    for (size_t i = 0; i < types.size(); ++i) {
-        int col = i % 2;  // 0 or 1 for 2-column grid
-        int row = i / 2;
-
+    // Cameo grid: origin (22, strip_top + 1), column pitch 63, row pitch 50,
+    // 2 columns row-major — these land the 60x48 cameos INSIDE the socket
+    // recesses baked into side2.shp [RE: §11a]. Cells beyond the visible
+    // 2*N are not laid out (no strip scrolling with this roster).
+    const std::size_t max_cells = static_cast<std::size_t>(2 * lay.side2_rows);
+    for (std::size_t i = 0; i < types.size() && i < max_cells; ++i) {
+        const int col = static_cast<int>(i % 2);
+        const int row = static_cast<int>(i / 2);
         CameoCell cell;
         cell.type = types[i];
-        cell.rect.x = cameo_x_start + col * cameo_pitch_x;
-        cell.rect.y = cameo_y_start + row * cameo_pitch_y;
-        cell.rect.w = art.cameo_w;
-        cell.rect.h = art.cameo_h;
-
+        cell.rect = {x0 + kCameoX + col * kCameoColPitch,
+                     kStripTop + 1 + row * kCameoRowPitch, kCameoW, kCameoH};
         lay.cameos.push_back(cell);
     }
 
@@ -55,19 +60,15 @@ SidebarLayout SidebarLayout::compute(int view_w, int view_h,
 }
 
 int SidebarLayout::cameo_at(int px, int py) const {
-    for (size_t i = 0; i < cameos.size(); ++i) {
-        if (cameos[i].rect.contains(px, py)) {
-            return i;
-        }
+    for (std::size_t i = 0; i < cameos.size(); ++i) {
+        if (cameos[i].rect.contains(px, py)) return static_cast<int>(i);
     }
     return -1;
 }
 
 int SidebarLayout::tab_at(int px, int py) const {
     for (int i = 0; i < 4; ++i) {
-        if (tabs[i].contains(px, py)) {
-            return i;
-        }
+        if (tabs[i].contains(px, py)) return i;
     }
     return -1;
 }

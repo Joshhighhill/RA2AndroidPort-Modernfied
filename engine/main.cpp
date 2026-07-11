@@ -199,9 +199,16 @@ struct BuildingAssets {
     std::vector<BuildingArt> art;                    // parallel to roster
     ra2assets::Palette unit_pal;                     // unittem.pal (cache.mix)
     ra2assets::Palette cameo_pal;                    // cameo.pal (cache.mix)
-    // sidebar chrome (player side = Allied sidec01) [RE-GATE: construction.md
-    // §11]: four SEPARATE tab SHPs + the 55-frame gclock2.shp build clock.
+    // sidebar chrome (player side = Allied sidec01) [RE: construction.md
+    // §11a]: four SEPARATE tab SHPs + the 55-frame gclock2.shp build clock,
+    // plus the full recovered composition set — radar.shp (168x110x33; frame
+    // 0 = pre-radar eagle logo), side3 bottom cap, addon tail, scroll
+    // buttons, repair/sell and options/diplomacy button chrome.
     ra2assets::ShpFile sb_top, sb_side1, sb_side2, sb_tabs[4], sb_powerp, sb_credits, sb_gclock;
+    ra2assets::ShpFile sb_radar, sb_side3, sb_addon, sb_rup, sb_rdn, sb_repair, sb_sell,
+                       sb_optbtn, sb_diplobtn;
+    bool has_radar = false, has_side3 = false, has_addon = false, has_scroll = false,
+         has_repair_sell = false, has_optbtns = false;
     ra2assets::Palette sb_pal;                       // sidebar.pal if present, else cameo.pal
     bool sidebar_ok = false;
     // Shared building death explosion (TWLT070) [RE: building-render.md §4] --
@@ -866,6 +873,29 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         ba.sb_credits = load_sb("credits.shp");
         ba.sb_gclock = load_sb("gclock2.shp");
         ba.sidebar_ok = true;
+        // Optional composition pieces [RE: construction.md §11a] — each
+        // individually guarded so a missing decorative SHP degrades to a
+        // plain gap, never a dead sidebar.
+        auto opt = [&](ra2assets::ShpFile& dst, const char* fn, bool& flag) {
+            try { dst = load_sb(fn); flag = true; } catch (const std::exception&) {}
+        };
+        opt(ba.sb_radar, "radar.shp", ba.has_radar);
+        opt(ba.sb_side3, "side3.shp", ba.has_side3);
+        opt(ba.sb_addon, "addon.shp", ba.has_addon);
+        bool up = false, dn = false;
+        opt(ba.sb_rup, "r-up.shp", up);
+        opt(ba.sb_rdn, "r-dn.shp", dn);
+        ba.has_scroll = up && dn;
+        bool rep = false, sel = false;
+        opt(ba.sb_repair, "repair.shp", rep);
+        opt(ba.sb_sell, "sell.shp", sel);
+        ba.has_repair_sell = rep && sel;
+        bool ob = false, db = false;
+        opt(ba.sb_optbtn, "optbtn.shp", ob);
+        opt(ba.sb_diplobtn, "diplobtn.shp", db);
+        ba.has_optbtns = ob && db;
+        if (!ba.has_radar)
+            std::cerr << "[building] radar.shp missing — radar area will be blank\n";
     } catch (const std::exception& ex) {
         std::cerr << "[building] sidebar chrome missing (" << ex.what() << ")\n";
         ba.sidebar_ok = false;
@@ -1222,7 +1252,6 @@ ra2engine::Camera centered_camera(const MapFile& map, int view_w, int view_h) {
 // Sidebar helpers (defined below, before run_interactive) used by both the
 // screenshot HUD and the interactive loop.
 std::vector<int> sidebar_buildable(const BuildingAssets& ba);
-ra2engine::SidebarArtDims sidebar_dims(const BuildingAssets& ba);
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
                   const ra2engine::World& world, int credits_shown, double t_now);
@@ -1288,7 +1317,7 @@ int run_screenshot(const std::string& out_path) {
         if (ba.ok && ba.sidebar_ok) {
             const std::vector<int> buildable = sidebar_buildable(ba);
             const ra2engine::SidebarLayout lay =
-                ra2engine::SidebarLayout::compute(W, H, sidebar_dims(ba), buildable);
+                ra2engine::SidebarLayout::compute(W, H, buildable);
             ra2engine::ProductionState ps;
             ps.credits = rules.mp_money();
             draw_sidebar(ren, tc, ba, lay, ps, world, static_cast<int>(ps.credits), 0.0);
@@ -1341,20 +1370,6 @@ std::vector<int> sidebar_buildable(const BuildingAssets& ba) {
     return v;
 }
 
-ra2engine::SidebarArtDims sidebar_dims(const BuildingAssets& ba) {
-    ra2engine::SidebarArtDims d;
-    d.top_w = ba.sb_top.width();
-    d.top_h = ba.sb_top.height();
-    d.credits_w = ba.sb_credits.width();
-    d.credits_h = ba.sb_credits.height();
-    d.tab_w = ba.sb_tabs[0].width();
-    d.tab_h = ba.sb_tabs[0].height();
-    d.side1_h = ba.sb_side1.height();
-    d.side2_h = ba.sb_side2.height();
-    d.power_w = ba.sb_powerp.width();
-    return d;
-}
-
 // Built-in 5x7 digit strip (documented divergence [RE: construction.md §11 —
 // the game font is not trivially extractable]); white, right-aligned.
 static const uint8_t kDigits[10][7] = {
@@ -1382,6 +1397,15 @@ void draw_number(SDL_Renderer* ren, int value, int right_x, int y, int scale) {
     }
 }
 
+// Centered variant: the original's credits tally prints "%d" centered at
+// bar x+84 [RE: construction.md §11a, FUN_004A2280]. draw_number is
+// right-aligned, so pass center + half the glyph run's width.
+void draw_number_centered(SDL_Renderer* ren, int value, int center_x, int y, int scale) {
+    const std::string s = std::to_string(value < 0 ? 0 : value);
+    const int total_w = static_cast<int>(s.size()) * 6 * scale;
+    draw_number(ren, value, center_x + total_w / 2, y, scale);
+}
+
 // Blit one SHP frame at screen (x,y) (frame bbox offset applied), palettized
 // via tc under `key` (position-independent, so the same key caches once).
 void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
@@ -1405,37 +1429,64 @@ void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint
     SDL_RenderFillRect(ren, &rc);
 }
 
-// Draws the whole sidebar (chrome, tabs, power meter, credits, cameo grid with
-// per-state overlays) [RE-GATE APPLIED: construction.md §8 power pips, §11
-// gclock2 build clock]. `t_now` drives the Ready flash + power outage flash.
+// Draws the whole sidebar per the recovered composition [RE: construction.md
+// §11a — credits(0,0) -> top cap(0,16) -> radar(0,48) -> side1(0,158) w/
+// repair+sell -> tabs y=197 -> side2 x N rows from 227 -> side3 -> addon ->
+// scroll buttons; §8 power pips]. `t_now` drives the Ready + outage flashes.
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
                   const ra2engine::World& world, int credits_shown, double t_now) {
-    // Opaque bar backdrop, then side1/side2 tiled down the cameo strip.
+    // Opaque backdrop behind any gaps (missing optional chrome), then the
+    // recovered top-to-bottom stack.
     shade_rect(ren, lay.bar, 255, 24, 24, 28);
-    int y = lay.tabs[0].y + lay.tabs[0].h;
-    blit_shp(ren, tc, "sb:side1", ba.sb_side1, 0, ba.sb_pal, lay.bar.x, y);
-    y += ba.sb_side1.height();
-    for (int k = 0; y < lay.bar.y + lay.bar.h && k < 32; ++k) {
-        blit_shp(ren, tc, "sb:side2", ba.sb_side2, 0, ba.sb_pal, lay.bar.x, y);
-        y += ba.sb_side2.height();
-    }
-    // Radar cap (top.shp frame 0).
-    blit_shp(ren, tc, "sb:top", ba.sb_top, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
-    // Credits readout backdrop + rolling number.
+    // Credits strip at the very top; tally centered at x+84 [§11a].
     blit_shp(ren, tc, "sb:credits", ba.sb_credits, 0, ba.sb_pal, lay.credits.x, lay.credits.y);
-    draw_number(ren, credits_shown, lay.credits.x + lay.credits.w - 4, lay.credits.y + 4, 2);
+    draw_number_centered(ren, credits_shown, lay.credits.x + 84, lay.credits.y + 2, 2);
+    // Bevel cap.
+    blit_shp(ren, tc, "sb:top", ba.sb_top, 0, ba.sb_pal, lay.top_cap.x, lay.top_cap.y);
+    // Options / diplomacy buttons over the cap (frame 0, inert).
+    if (ba.has_optbtns) {
+        blit_shp(ren, tc, "sb:optb", ba.sb_optbtn, 0, ba.sb_pal, lay.bar.x + 11, 20);
+        blit_shp(ren, tc, "sb:dipb", ba.sb_diplobtn, 0, ba.sb_pal, lay.bar.x + 83, 20);
+    }
+    // Radar area: radar.shp frame 0 = the pre-radar side logo (no radar
+    // building exists this phase) [§11a].
+    if (ba.has_radar)
+        blit_shp(ren, tc, "sb:radar", ba.sb_radar, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
+    // side1 band (carries the repair/sell socket art), then the buttons.
+    blit_shp(ren, tc, "sb:side1", ba.sb_side1, 0, ba.sb_pal, lay.side1.x, lay.side1.y);
+    if (ba.has_repair_sell) {
+        blit_shp(ren, tc, "sb:rep", ba.sb_repair, 0, ba.sb_pal, lay.bar.x + 20, 166);
+        blit_shp(ren, tc, "sb:sell", ba.sb_sell, 0, ba.sb_pal, lay.bar.x + 84, 166);
+    }
     // Four tab buttons (frame 0); tab 0 (Building) full-bright, others shaded.
     for (int i = 0; i < 4; ++i) {
         blit_shp(ren, tc, "sb:tab" + std::to_string(i), ba.sb_tabs[i], 0, ba.sb_pal, lay.tabs[i].x,
                  lay.tabs[i].y);
         if (i != 0) shade_rect(ren, lay.tabs[i], 110);
     }
-    // Power meter [RE-GATE APPLIED: construction.md §8].
+    // Cameo strip: side2 tiled once per visible row (sockets are baked into
+    // the art), side3 bottom cap, addon tail (clips at the window bottom),
+    // scroll buttons frame 0 (inert) [§11a].
+    for (int k = 0; k < lay.side2_rows; ++k)
+        blit_shp(ren, tc, "sb:side2", ba.sb_side2, 0, ba.sb_pal, lay.bar.x,
+                 lay.strip_top + k * 50);
+    const int strip_bottom = lay.strip_top + lay.side2_rows * 50;
+    if (ba.has_side3)
+        blit_shp(ren, tc, "sb:side3", ba.sb_side3, 0, ba.sb_pal, lay.bar.x, strip_bottom);
+    if (ba.has_addon)
+        blit_shp(ren, tc, "sb:addon", ba.sb_addon, 0, ba.sb_pal, lay.bar.x,
+                 strip_bottom + (ba.has_side3 ? ba.sb_side3.height() : 0));
+    if (ba.has_scroll) {
+        blit_shp(ren, tc, "sb:rdn", ba.sb_rdn, 0, ba.sb_pal, lay.scroll_dn.x, lay.scroll_dn.y);
+        blit_shp(ren, tc, "sb:rup", ba.sb_rup, 0, ba.sb_pal, lay.scroll_up.x, lay.scroll_up.y);
+    }
+    // Power meter [RE: construction.md §8 pip model, §11a geometry — the
+    // column runs from the strip top at x=+5, capacity (strip_h+3)/3
+    // precomputed by SidebarLayout].
     const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
     const int output = pt.output, drain = pt.drain;
-    // total_pips = (bar_height+3)/3 [§8]; NOT bar_height/3.
-    int total_pips = (lay.power.h + 3) / 3;
+    int total_pips = lay.power_pips;
     if (total_pips < 1) total_pips = 1;
     // Capacity scale (FUN_0063F2F0): total_power = Sum output + Sum drain;
     // pips_used = total_pips - clamp(ftol(total_pips*400/(total_power+400)),
@@ -1571,9 +1622,8 @@ int run_interactive(bool no_audio) {
     // left of the bar, not the full window (the spec's "viewport shrinks by
     // the sidebar width" rule — final-review M5).
     const std::vector<int> buildable = sidebar_buildable(ba);
-    const ra2engine::SidebarArtDims sbdims = sidebar_dims(ba);
     ra2engine::SidebarLayout lay =
-        ra2engine::SidebarLayout::compute(platform.width(), platform.height(), sbdims, buildable);
+        ra2engine::SidebarLayout::compute(platform.width(), platform.height(), buildable);
     const bool sidebar_up = ba.ok && ba.sidebar_ok;
     const int playfield_w = platform.width() - (sidebar_up ? lay.bar.w : 0);
 
@@ -2637,7 +2687,7 @@ DemoBaseResult simulate_base(Assets& a, UnitAssets& ua, BuildingAssets& ba, doub
 
     const std::vector<int> buildable = sidebar_buildable(ba);
     const ra2engine::SidebarLayout lay =
-        ra2engine::SidebarLayout::compute(W, H, sidebar_dims(ba), buildable);
+        ra2engine::SidebarLayout::compute(W, H, buildable);
     ra2engine::ProductionState ps;
     ps.credits = mp_money;
 

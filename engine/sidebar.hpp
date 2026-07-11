@@ -1,7 +1,10 @@
 #pragma once
-// Pure RA2 sidebar geometry + interaction states. All pixel metrics
-// [RE: construction.md §11] — the constants below are pre-hunt assumptions
-// from the art dimensions; the RE-GATE amends them before this task runs.
+// Pure RA2 sidebar geometry + interaction states. Every pixel metric is a
+// literal recovered from gamemd.exe's SidebarClass/RadarClass/TabClass/
+// PowerClass geometry writers — docs/re/construction.md §11a (second hunt,
+// High confidence; supersedes the pre-hunt art-derived guesses). Allied
+// (sidec01) style constants; Soviet/Yuri variants are recorded in §11a but
+// not implemented (the player is Allied this phase).
 #include <string>
 #include <vector>
 
@@ -13,20 +16,30 @@ struct SbRect { int x = 0, y = 0, w = 0, h = 0;
     }
 };
 
-// Input art dimensions, measured from the loaded SHPs at wire-up time (so
-// the layout adapts to the real art rather than hardcoding every number).
-struct SidebarArtDims {
-    // Defaults = the REAL measured art [RE-GATE: construction.md §11]:
-    // top 168x32, credits 168x16, four separate 28x27 tab SHPs (tab00-tab03,
-    // 5 state frames each — NOT one strip divided by 4), side1 168x69,
-    // side2 168x50, cameo 60x48, powerp pips 12x2 at 3 px pitch.
-    int top_w = 168, top_h = 32;       // top.shp (radar frame)
-    int credits_w = 168, credits_h = 16;
-    int tab_w = 28, tab_h = 27;        // ONE tab button (tab00..tab03 each)
-    int side1_h = 69, side2_h = 50;    // strip background segments
-    int cameo_w = 60, cameo_h = 48;
-    int power_w = 12;                  // powerp.shp pip width (12x2, 3 px pitch)
-};
+// Recovered Allied layout constants [RE: construction.md §11a]. All x values
+// are bar-relative (add bar.x = view_w - kSidebarW); y from the window top.
+constexpr int kSidebarW = 168;
+constexpr int kCreditsH = 16;        // credits.shp at (0, 0)
+constexpr int kTopCapY = 16;         // top.shp 168x32 bevel cap
+constexpr int kRadarY = 48;          // radar.shp 168x110 (frame 0 = eagle logo)
+constexpr int kRadarH = 110;
+constexpr int kSide1Y = 158;         // binary literal 0x9E = 16 + 32 + 110
+constexpr int kSide1H = 69;
+constexpr int kTabY = 197;           // four 28x27 tabs
+constexpr int kTabX0 = 26;
+constexpr int kTabPitch = 29;
+constexpr int kTabW = 28, kTabH = 27;
+constexpr int kStripTop = 227;       // = kSide1Y + kSide1H; side2 rows + pips + cameos
+constexpr int kSide2H = 50;          // one cameo row per side2 tile
+constexpr int kSide3H = 26;          // bottom cap
+constexpr int kCameoX = 22;          // grid origin (22, kStripTop + 1)
+constexpr int kCameoColPitch = 63;
+constexpr int kCameoRowPitch = 50;
+constexpr int kCameoW = 60, kCameoH = 48;
+constexpr int kScrollX = 39;         // r-dn at 39, r-up at 39+46
+constexpr int kScrollW = 46, kScrollH = 25;
+constexpr int kPowerX = 5;           // powerp.shp 12x2 pips, 3 px pitch
+constexpr int kPowerPipW = 12, kPowerPipH = 2, kPowerPitch = 3;
 
 enum class CameoState { Available, Disabled, Building, Ready };
 
@@ -34,18 +47,25 @@ enum class CameoState { Available, Disabled, Building, Ready };
 struct CameoCell { int type = -1; SbRect rect; };
 
 struct SidebarLayout {
-    SbRect bar;              // whole sidebar (right edge strip)
-    SbRect radar;            // top.shp area
-    SbRect credits;          // credits readout
+    SbRect bar;              // whole sidebar column (right edge, full height)
+    SbRect credits;          // credits.shp backdrop (tally centered at x+84)
+    SbRect top_cap;          // top.shp bevel cap
+    SbRect radar;            // radar.shp area (frame 0 pre-radar logo)
+    SbRect side1;            // side1.shp band (repair/sell chrome)
     SbRect tabs[4];          // Building, Defense, Infantry, Vehicle
-    SbRect power;            // vertical power meter strip
+    SbRect power;            // pip column: x=+5, y=kStripTop, w=12, h=pips*3
+    SbRect scroll_dn, scroll_up;   // strip scroll buttons (inert this phase)
+    int strip_top = kStripTop;
+    int side2_rows = 0;      // N: side2 tiles / visible cameo rows
+    int power_pips = 0;      // capacity = (50*N + 3) / 3
     std::vector<CameoCell> cameos;   // 2-column grid, row-major
 
     // view_w/view_h = window size; `types` = roster indices to show, already
     // filtered (cameo != "" AND tech_level > 0) and ordered by tech_level
-    // then roster order.
+    // then roster order. Row count N = floor((view_h - 234 - side3_h)/50),
+    // min 1 [RE: construction.md §11a]; cells beyond 2*N are not laid out
+    // (strip scrolling is out of scope with a 3-cameo roster).
     static SidebarLayout compute(int view_w, int view_h,
-                                 const SidebarArtDims& art,
                                  const std::vector<int>& types);
 
     int cameo_at(int px, int py) const;   // index into cameos, or -1
