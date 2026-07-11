@@ -7,10 +7,11 @@
 
 namespace ra2engine {
 
-// [RE: construction.md §7, pre-hunt] BuildSpeed comment in rulesmd: "time in
-// minutes to produce a 1000 credit cost item"; RA2 logic runs 900 frames/min
-// at 15 Hz. Truncated toward zero like the damage formula.
-int build_frames(int cost, double build_speed);   // = (int)(cost/1000.0 * build_speed * 900.0)
+// [RE: construction.md §7] gamemd computes ftol(Cost x BuildSpeed x 0.9) in
+// EXACTLY that operation order (FUN_00711280). Do NOT algebraically
+// rearrange to /1000*900: IEEE rounding differs (503/1889 instead of the
+// recovered 504/1890 pins for GAPOWR/GACNST).
+int build_frames(int cost, double build_speed);   // = (int)(cost * build_speed * 0.9)
 
 // Power totals over ALIVE, non-Dead buildings of `house`. Buildings still in
 // Buildup do NOT contribute output or drain [RE: construction.md §8,
@@ -80,16 +81,17 @@ bool can_start(const ProductionState& ps, int type,
 void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& types,
            double build_speed);
 
-// Advance by dt seconds [RE-GATE: construction.md §10]:
+// Advance by dt seconds [RE: construction.md §10]:
 //   frames_accum += dt * 15 * speed_mult;
 //   while (frames_accum >= step_ticks && stage < kProductionSteps):
 //     charge = (cost - spent) / (kProductionSteps - stage);
-//     if (credits < charge) { frames_accum = step_ticks; break; }  // stall+retry
+//     if (credits < charge) { frames_accum = 0.0; break; }  // stall
 //     credits -= charge; spent += charge; ++stage; frames_accum -= step_ticks;
 //   stage == kProductionSteps -> spent settles to exactly cost, ready = true.
-// The stall clamp (frames_accum = step_ticks) mirrors the original's
-// rolled-back stage retried each tick — a funding gap never produces a
-// catch-up burst. No-op when idle/ready.
+// The stall reset (frames_accum = 0.0) models the original's free-running
+// stage timer, which restarts after a broke expiry (rolled-back stage,
+// retried on the NEXT timer expiry) — a funding gap adds 0..step_ticks
+// latency and never produces a catch-up burst. No-op when idle/ready.
 void tick(ProductionState& ps, double dt, double speed_mult,
           const std::vector<BuildingTypeDef>& types);
 
