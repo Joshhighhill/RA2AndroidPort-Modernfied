@@ -2,7 +2,8 @@
 
 (Method: `docs/re/workflow.md`; image base `0x00400000`, YR 1.001 `gamemd.exe`.
 Hunt scripts, all off-repo at `D:\ra2-re\scripts\`: `building_hunt.py` …
-`building_hunt11.py`. Anchored from `"BuildSpeed"`, `"LowPowerPenaltyModifier"`,
+`building_hunt11.py`, plus the §11a sidebar-composition passes
+`sidebar_hunt.py` … `sidebar_hunt5.py`. Anchored from `"BuildSpeed"`, `"LowPowerPenaltyModifier"`,
 `"MaximumQueuedObjects"`, `"Prerequisite*"`, `"Adjacent"`, `"POWERP.SHP"`,
 `"SIDE1.SHP"`, `"TAB%02d.SHP"`, `"GCLOCK2.SHP"` string refs and the
 `.?AVFactoryClass@@` / `.?AVSidebarClass@@` / `.?AVPowerClass@@` /
@@ -42,6 +43,11 @@ Companion of `building-render.md`; calibration authority for §7 BuildTime math,
 | `FUN_006A4ED0` | SidebarClass art init: SIDE1/2/3.SHP, ADDON.SHP, `TAB%02d.SHP` ×4, R-UP/R-DN, REPAIR/SELL, GCLOCK2, DARKEN | consumer of `"SIDE1.SHP"` @`0x83E9B0` |
 | `0x6A8BD0` (gap, 4210 B) | cameo StripClass draw: 2 columns, 60×48 shade rect, GCLOCK2 stage overlay, quantity/READY text | window sweep 0x6A7400–0x6AB900; `"DARKEN.SHP"` raw ref `0x6A77F3` |
 | `FUN_00434A50` | loads `GAME.FNT` at startup (old-style bitmap font present in RA2) | `"GAME.FNT"` @`0x817B98` |
+| `FUN_006A4720` / `FUN_006A47C0` | SidebarClass geometry writers: ALL layout globals (side1 top 0x9E, tab pitch 0x1D, col pitch 0x3F, row pitch 0x32, strip origin, scroll-button row) per side style | writers of `0x885F10`–`0x885F1C` / `0xB0A44C`–`0xB0A484` (xref classify, sidebar_hunt.py) |
+| `FUN_006A49A0` / `FUN_006AB3C0` | SidebarClass one-time gadget init / layout applier (repair, sell, tabs, R-UP/R-DN, cameo cell gadget rects) | same global cluster reads |
+| `FUN_00652730` / `FUN_006528D0` / `FUN_00652B40` | RadarClass One_Time (top.shp y=16, radar y=48, minimap 140×108 @(16,49)) / Init_For_House (optbtn/diplobtn gadgets) / Draw_It (TOP.SHP + RADAR.SHP anim + minimap) | `"RadarClass: One_Time"` @`0x8382D4`, `"RadarClass: Init_For_House"` @`0x838324`; readers of `0xB0E950`/`0xB0E9D8` |
+| `0x6CFF90` (gap) / `FUN_004A2280` | TabClass::Draw_It (CREDITS.SHP at (0,0)) / credits tally print (`"%d"` centered at (84, 2)) | reader of `"CREDITS.SHP"` shape global `0xB0EA78`; callee |
+| `FUN_0072EAF0` / `FUN_0072ED40` / `FUN_0072E620` | UI-shell chrome loader (per-side name table @`0x843C8C`: SIDEBTTN/CREDITS/TOP/RADAR(Y)/SIDE1/2/2B/3/ADDON/LENDCAP/RENDCAP) / rect builder (stacks credits+top+radar+side1+side2×n+side3+addon) / shell draw | data-pointer scan for `"TOP.SHP"` @`0x84405C` etc. |
 | `FUN_0045FE40` | BuildingTypeClass::LoadFromINI: `Adjacent`→+0xEB4 (int), `Power`→ split +0xEE0 output / +0xEE4 drain, `BaseNormal`→+0x154F, `EligibleForAllyBuilding`-style flag +0x1550 | string refs (see building-render.md) |
 
 ## §7 BuildTime math
@@ -267,6 +273,125 @@ Art dimensions (empirical, `ra2extract`, `sidec01.mix` unless noted):
   within this phase — recommendation stands: **built-in digit strip**
   (documented divergence).
 
+## §11a Sidebar composition (exact) — supersedes §11's y-offset guesses
+
+(Second hunt, scripts `sidebar_hunt.py`…`sidebar_hunt5.py`, dumps
+`D:\ra2-re\out\sb*_*`. Every number below is a literal read from gamemd.exe —
+the geometry writers `FUN_006A4720` + `FUN_006A47C0`, the one-time gadget init
+`FUN_006A49A0`, the gadget layout applier `FUN_006AB3C0`,
+`RadarClass::One_Time FUN_00652730`, `RadarClass::Init_For_House
+FUN_006528D0`, `RadarClass::Draw_It FUN_00652B40`, `TabClass::Draw_It
+FUN_006CFF90` (gap fn @`0x6CFF90`), credits tally `FUN_004A2280`, the shell
+rect builder `FUN_0072ED40` and chrome loader `FUN_0072EAF0` — cross-checked
+against pixel measurements of the decoded sidec01.mix art.)
+
+**Coordinate space.** SidebarClass/RadarClass/TabClass composite into a
+dedicated sidebar surface (`DAT_00886280`) whose origin is the bar's top-left:
+x0 = `DAT_00885F10` = tactical-view right edge = **screen_w − 168**, y0 =
+**window top (0)**. Gadget rects are stored in screen coords and re-based by
+`−DAT_00885F10` at draw. `DAT_00885F18` = bar width = **168**
+(`DAT_007F4BF8`). `DAT_00885F14` = side1 top = literal **0x9E = 158**. The
+tactical view (`FUN_0072A030`) is `{0, 0, screen_w−168, screen_h−32}` — 32 =
+`DAT_007F4BFC` = the bottom message-bar reservation; the sidebar column itself
+runs to the true screen bottom (`DAT_00885F1C` = screen_h − 158, the space
+below side1's top edge).
+
+**Side style.** `[session+0x34B8]` (0 = Allied/sidec01, 1 = Soviet/sidec02,
+2 = Yuri/sidec03 — mode 2 loads `RADARY.SHP` instead of `RADAR.SHP`) selects
+two constant sets in `FUN_006A4720`/`FUN_006A47C0`. Allied values first,
+(Soviet/Yuri in parens) — Soviet and Yuri share one set.
+
+**Layout table** — bar-relative x (add screen_w−168), absolute y, at any
+resolution; `N` = visible cameo rows, `strip_h` = 50·N:
+
+| piece | source (sidec01.mix) | x | y | w×h | drawn by |
+|---|---|---:|---:|---|---|
+| credits backdrop | `credits.shp` | 0 | 0 | 168×16 | TabClass::Draw_It |
+| credits tally text | font (see §11) | 84 (bar center), style `0x4108` | 2 | — | `FUN_004A2280`, format `"%d"` |
+| top cap | `top.shp` | 0 | 16 | 168×32 | RadarClass::Draw_It |
+| options button | `optbtn.shp` (2 fr) | 11 (14) | 20 (21) | 72×18 | gadget id 242 |
+| diplomacy button | `diplobtn.shp` (2 fr) | 83 (86) | 20 (21) | 72×18 | gadget id 243 |
+| **radar area** | `radar.shp` (33 fr) | 0 | 48 | 168×110 | RadarClass::Draw_It |
+| radar minimap viewport | (engine-rendered) | 16 | 49 | 140×108 | radar gadget id 223 |
+| side1 | `side1.shp` | 0 | 158 | 168×69 | SidebarClass::Draw_It |
+| repair button | `repair.shp` (2 fr) | 20 (33) | 166 (165) | 64×31 | gadget id 101 |
+| sell button | `sell.shp` (2 fr) | 84 (85) | 166 (165) | 64×31 | gadget id 102 |
+| tab i = 0..3 | `tab0i.shp` (5 fr) | 26 + 29·i (20 + 32·i) | 197 | 28×27 | gadget ids 203+i |
+| side2 × N rows | `side2.shp` | 0 | 227 + 50·k | 168×50 | SidebarClass::Draw_It |
+| side3 bottom cap | `side3.shp` | 0 | 227 + strip_h | 168×26 | SidebarClass::Draw_It |
+| addon tail | `addon.shp` | 0 | 227 + strip_h + 26 | 168×63 | SidebarClass::Draw_It (clipped at screen bottom) |
+| scroll DOWN | `r-dn.shp` (3 fr) | 39 | 227 + strip_h + 7 | 46×25 | gadget id 201 |
+| scroll UP | `r-up.shp` (3 fr) | 39+46 = 85 (39+45 = 84) | same | 46×25 | gadget id 200 |
+| power pip column | `powerp.shp` 12×2 (5 fr) | 5 (0) | 227 + 3·k | 12×2 per pip | PowerClass::Draw_It |
+
+Anchors: 158 = 16 + 32 + 110 (credits + top + radar heights) — the binary's
+literal `0x9E` and the shell's `credits.h + top.h + radar.h` stacking agree.
+Strip top `DAT_00B0A468` = `DAT_00885F14 + 0x45` = 158 + 69 = **227** (0x45 =
+69 = side1_h — the strip begins exactly at side1's bottom edge). Scroll-button
+row y = `DAT_00B0A47C` = strip_top + strip_h + 7.
+
+- **Row count**: `N = floor((DAT_00885F1C − 227 − side3_h − 7 + 158)/50)`
+  with side3_h counted as 26 (18 for Soviet/Yuri) ⇒
+  `N = floor((screen_h − 234 − side3_h)/50)` = **6 rows (12 cameos) at
+  800×600** Allied (also 6 for Soviet/Yuri). The pre-game shell
+  (`FUN_0072ED40`) uses `floor((screen_h − 253)/50)` — same result at standard
+  sizes. side2 tiles once per row; side3 caps the stack; addon is drawn after
+  side3 and clips off the bottom of the screen (art has decorative machinery +
+  the scroll-arrow socket tops).
+- **Radar area content**: pre-radar the engine draws `radar.shp` **frame 0**
+  (the side logo — Allied eagle) into the 168×110 rect; on radar
+  activation/deactivation it steps frames 1..31 as a boot animation
+  (state machine at RadarClass+0x14AC/+0x14FC, 4-tick frame timer), and frame
+  **32** is the active backdrop behind the live minimap, which renders in the
+  inset 140×108 viewport at (16, 49) (viewport x = `(168−0x90)/2 + 4` = 16
+  Allied, `(168−0x91)/2 + 5` = 16 Soviet/Yuri; y = member +0x11F4 = 0x31 = 49;
+  w/h = members +0x11F8/+0x11FC = 0x8C/0x6C set in `RadarClass::One_Time`).
+  `radar.shp` lives in sidec01.mix (168×110×33, verified with ra2extract);
+  `radary.shp` is the Yuri variant.
+- **Cameo grid (S2)**: origin = (`DAT_00B0A464` − x0, strip_top + 1) =
+  **(22, 228)**; column pitch `DAT_00B0A46C` = **63** (64), row pitch
+  `DAT_00B0A470` = **50** (both styles); 2 columns × N rows, row-major;
+  cell = 60×48. Scrolling is by whole rows (strip cell index =
+  `col + (row + TopRow)·2`). The EMPTY sockets are **baked into side2.shp**:
+  each 168×50 tile carries two 60×48 socket recesses whose interiors sit at
+  side2-local x ≈ 26..81 and 89..144 (pixel-measured) — i.e. the cameo rects
+  (22..81, 85..144) cover socket + inner bevel, with the 3-px ridge at
+  x 82..84 left visible between columns. `side2b.shp` is the socket-less
+  variant used by the pre-game shell. side1 carries no sockets (its lower
+  band is the tab row art); there is NO per-cell blank-cameo SHP.
+- **Cameo cell overlays** (strip draw `0x6A8BD0`, all relative to cell x,y):
+  cameo SHP frame 0 at (x, y); 60×48 translucent shade fill (surface vtbl
+  +0x54) over non-current/disabled cells; `DARKEN.SHP` at (x, y) flags 0x401
+  when unbuildable / 0x404 flashing; `gclock2.shp` frame `stage+1` at (x, y)
+  flags 0x404 while producing; progress/status text at (x, y+36); quantity
+  count right-aligned at (x+60, y+1) text flag 0x242; hold text centered at
+  (x+30, y+1) flag 0x142.
+- **Power bar (S3)**: pip column x = **5** bar-relative (0 for Soviet/Yuri),
+  first pip y = `DAT_00885F14 + 0x45` = **227** (= strip top), pitch **+3 px
+  downward**, capacity = `(strip_h + 3)/3` (= 101 pips at 800×600). Drawn
+  top→bottom: empty pips (frame 0), one flash pip (frame 4, blink gate
+  `(tick & 1)==0`) at the empty/used boundary while draining, then green
+  (frame 1), yellow (frame 2), red (frame 3) at the bottom; counts per §8.
+  There is no separate drain indicator besides the frame-4 flash pip.
+- **Credits tally (S4)**: TabClass::Draw_It blits `credits.shp` at (0, 0)
+  then `FUN_004A2280` prints the amount with format `"%d"` at bar-relative
+  (84, 2) — x = bar_width/2 — with text style `0x4108` (centered with shadow,
+  by observed behavior; exact flag decode [RE-FALLBACK: visual]); color from
+  the UI palette entry pair `DAT_00B0E98C/D`. Observer mode prints a mission
+  timer instead. (We keep the §11 digit-strip divergence — only position
+  matters: centered on the credits strip, 2 px from the top.)
+- **S5 — assets our engine hasn't loaded yet** (all verified present in
+  `ra2.mix/sidec01.mix` via ra2extract): `radar.shp` 168×110×33 (radar
+  frame/boot anim/logo placeholder — REQUIRED for the radar area),
+  `side3.shp` 168×26×1 (bottom cap), `addon.shp` 168×63×1 (bottom tail),
+  `side2b.shp` 168×50×1 (shell-only, optional), `r-up.shp`/`r-dn.shp`
+  46×25×3 (strip scroll buttons), `repair.shp`/`sell.shp` 64×31×2,
+  `optbtn.shp`/`diplobtn.shp` 72×18×2 (top-cap buttons, optional),
+  `sidebttn.shp` 125×25×3 (shell/top-bar variant, optional),
+  `lendcap.shp` 28×32×3 / `rendcap.shp` 28×32×1 (bottom message-bar caps,
+  optional). Soviet = sidec02.mix, Yuri = sidec03.mix same names (+
+  `radary.shp`).
+
 ## Confidence
 
 | Item | Evidence | Confidence |
@@ -283,7 +408,10 @@ Art dimensions (empirical, `ra2extract`, `sidec01.mix` unless noted):
 | §10 one-building-at-a-time; MaximumQueuedObjects=29 for unit queues | Start/Add path + rules key | **High** |
 | §10 prerequisite AND semantics, groups via [General] lists | `FUN_00505180` + loader | **High** (group-id numbering: [RE-FALLBACK: ModEnc], behaviorally forced) |
 | §11 168 px width, 4 separate tab SHPs, 2-column 60×48 cameo grid, gclock2 55-frame clock | art dims + SidebarClass/strip decompiles | **High** |
-| §11 exact pixel y-offsets of each chrome piece | runtime-computed; not binary literals | **Medium** (compute from art heights) |
+| §11a exact (x, y) of every chrome piece, tab pitch 29, cameo origin (22, 228) + pitches 63/50, row-count formula, scroll-button rects | literal constants in `FUN_006A4720`/`FUN_006A47C0`/`FUN_006A49A0`/`FUN_006AB3C0`/`FUN_00652730` + shell rect builder `FUN_0072ED40`; agree with pixel-measured socket rects in side1/side2 art | **High** |
+| §11a radar area = radar.shp 168×110 at (0, 48); frame 0 = pre-radar logo; minimap viewport 140×108 at (16, 49) | `RadarClass::One_Time`/`Init_For_House`/`Draw_It` literals + radar.shp dims | **High** |
+| §11a which of optbtn/diplobtn is left vs right | gadget geometry certain; name→gadget binding via register args not dumped | **Medium** (geometry High) |
+| §11a credits tally centered at (84, 2), format `"%d"` | `FUN_004A2280` decompile | **High** (style-flag bit meanings: Medium) |
 | §11 credits font identity | GAME.FNT loaded but tally not traced to it | **Low** ([RE-FALLBACK: divergence decision]) |
 
 ## Decisions for ra2engine
@@ -335,17 +463,46 @@ Resolving every `[RE: construction.md §N]` marker in the plan (Tasks 2–7):
   placed building of that id; group tokens POWER/BARRACKS/PROC/FACTORY/RADAR/
   TECH = any id in the `[General] Prerequisite<Group>` list. GAWEAP
   prerequisite-blocked without a refinery — confirmed; keep it greyed.
-- **§11 layout (Tasks 6/7e)**: sidebar width 168; stack from art heights
-  (top 32 → tabs 27 → cameo strips; credits.shp 168×16 readout). `tab_w`:
-  **four separate 28×27 SHPs (`tab00`–`tab03`), NOT one strip divided by 4** —
-  amend Task 6's `tab00 width/4` note; each has 5 state frames (use frame 0 +
-  a lit/greyed variant). Cameo grid: 2 columns of 60×48. Build clock: the
-  original uses `gclock2.shp` (sidec01.mix, 60×48, 55 frames = 1 idle + 54
-  steps — one frame per production step). Since it ships in the already-loaded
-  sidec01.mix and decodes with the existing SHP path, **use gclock2.shp frames
-  (frame = 1 + stage) instead of the pre-hunt vertical fill bar** — cheaper
-  AND exact. Power meter: pip column at the strip's left edge, 3 px pitch,
-  starting ≈0x45 px below the tab area (compute from art, don't hardcode).
+- **§11/§11a layout (Tasks 6/7e)** — `SidebarLayout::compute`
+  (engine/sidebar.cpp) must be rewritten to the recovered constants
+  (bar-relative x, y from window top; `bx = view_w − 168`):
+  - `lay.bar = {bx, 0, 168, view_h}` (unchanged).
+  - `lay.credits = {bx, 0, 168, 16}` — credits strip is the TOPMOST piece
+    (currently placed below the radar: wrong). Tally text centered at
+    (bx+84, 2).
+  - top.shp cap at `{bx, 16, 168, 32}` — it is a bevel between credits and
+    radar, NOT the radar frame (our current `lay.radar = top.shp @ y0` is the
+    visible bug: the real radar area was missing entirely).
+  - `lay.radar = {bx, 48, 168, 110}` — blit `radar.shp` frame 0 (side logo)
+    until a radar building exists; minimap renders inside `{bx+16, 49, 140,
+    108}`. **New asset to load: sidec01.mix/radar.shp** (168×110×33).
+  - side1.shp at `{bx, 158, 168, 69}`; repair gadget `{bx+20, 166, 64, 31}`,
+    sell `{bx+84, 166, 64, 31}` (art repair.shp/sell.shp, optional this
+    phase).
+  - `lay.tabs[i] = {bx + 26 + 29*i, 197, 28, 27}` — tab row x-pitch is
+    **29** (NOT `bar.w/4` = 42, and not centered per-slot), y = 197.
+  - cameo strip: `rows = (view_h − 260) / 50` (= `(view_h − 234 −
+    side3_h(26))/50`, 6 at 600); side2.shp tiled at `{bx, 227 + 50*k, 168,
+    50}`; **cameo cell (col, row) = `{bx + 22 + 63*col, 228 + 50*row, 60,
+    48}`** — column pitch 63 (NOT cameo_w+1 = 61), row pitch 50 (NOT 49),
+    origin (22, 228) (NOT power_w+2 = 14, tabs_bottom+2). These land the
+    icons exactly in the sockets baked into side2.shp.
+  - side3.shp at `{bx, 227 + 50*rows, 168, 26}`, then addon.shp right below
+    (clips off-screen; both cosmetic but cheap — load from sidec01.mix).
+  - scroll buttons: r-dn.shp gadget `{bx+39, 227 + 50*rows + 7, 46, 25}`,
+    r-up.shp at `{bx+85, same y}` (down-arrow left, up-arrow right — binary
+    order). Scrolling moves whole rows.
+  - `lay.power`: pip column at `{bx+5, 227}`, pip = powerp.shp 12×2, pitch
+    3 px downward, `total_pips = (50*rows + 3)/3` — replaces both the
+    "below tabs, full height" rect and §11's "≈0x45 below sidebar-top"
+    approximation (0x45 = 69 = side1_h exactly; pips start at the strip top).
+  - `SidebarArtDims` additions: `radar_h = 110`, `side3_h = 26`,
+    `tab_pitch = 29`, `cameo_origin = (22, 228−227=1 within strip)`,
+    `col_pitch = 63`, `row_pitch = 50`, `power_x = 5`, `scroll = 46×25`.
+    (Soviet/Yuri sidec02/03 variants differ slightly — tab pitch 32, col
+    pitch 64, pip x 0, side3_h 18 — not needed while we ship Allied chrome.)
+  - Build clock unchanged: `gclock2.shp` frame `1 + stage` overlay; DARKEN
+    for unbuildable; quantity right-aligned at cell x+60, y+1.
 - **§11 credits digits (Task 6)**: the game's own tally font is not trivially
   extractable (GAME.FNT format decode is real work and unproven for this
   string) — **use the built-in 5×7 digit strip** (documented divergence), as
