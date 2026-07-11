@@ -11,6 +11,18 @@
 
 namespace ra2engine {
 
+// Harvester mission states [RE: economy.md §1]. Lives here (not harvest.hpp)
+// because Unit carries one; harvest.hpp includes world.hpp.
+enum class HarvState : std::uint8_t {
+    None,          // not a harvester / no mission
+    SeekOre,       // choosing an ore cell (rescan)
+    MoveToOre,     // pathing to harv_cell
+    Harvesting,    // parked on ore, gulping
+    ReturnToRef,   // driving (HARV) or warping (CMIN) home
+    WaitDock,      // at the refinery, dock busy
+    Unloading,     // draining bales into credits
+};
+
 // A single visible/controllable actor in the world: its map cell + height
 // level (raw IsoMapPack5 coordinate space -- see ra2assets::MapCell), the
 // SHP base image name (a `Rules::image()` result, e.g. unit id "E1" ->
@@ -74,6 +86,18 @@ struct Unit {
     double turret_facing = 32768.0;
     double rot_u16_per_sec = 0.0;  // ROT * kRotU16PerRotPerSec
     double speed_cps = 0.0;        // per-unit speed; 0 = use World move_cps
+
+    // --- Economy phase: harvester state [RE: economy.md §1-§3] ---
+    bool is_harvester = false;
+    bool chrono_miner = false;       // CMIN: warps home instead of driving
+    int storage_bales = 0;           // Rules Storage= (HARV 40, CMIN 20)
+    double bales_ore = 0.0;          // current load, ore bales
+    double bales_gems = 0.0;         // current load, gem bales
+    HarvState harv = HarvState::None;
+    int harv_cell_x = 0, harv_cell_y = 0;   // target/last ore cell
+    int dock_refinery = -1;          // Building index being docked at (-1 none)
+    double harv_timer = 0.0;         // gulp/unload/rescan/warp accumulator
+    bool manual_hold = false;        // player move order: pause auto-resume until arrival
 };
 
 // Per-image (per-unit-type), facing-aware animation data -- REPLACES the

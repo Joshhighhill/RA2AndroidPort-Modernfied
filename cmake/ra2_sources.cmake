@@ -56,4 +56,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/facing_cache.cpp
     ${RA2_ROOT}/engine/sidebar.cpp
     ${RA2_ROOT}/engine/ore.cpp
+    ${RA2_ROOT}/engine/harvest.cpp
 )

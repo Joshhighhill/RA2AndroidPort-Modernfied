@@ -1,0 +1,241 @@
+#include "doctest.h"
+#include "../engine/harvest.hpp"
+using namespace ra2engine;
+
+namespace {
+struct Rig {
+    std::vector<Unit> units;
+    std::vector<Building> buildings;
+    std::vector<BuildingTypeDef> types;   // [0] = NAREFN 4x3
+    std::vector<int> ref_types{0};
+    OreField ore{20, 20};
+    std::vector<std::uint8_t> pass = std::vector<std::uint8_t>(400, 1);
+    OreValues values;
+    double credits[2] = {0, 0};
+    std::vector<HarvestMove> moves;
+    std::vector<HarvestEvent> events;
+    Rig() {
+        BuildingTypeDef d; d.id = "NAREFN"; d.fw = 4; d.fh = 3; types.push_back(d);
+        Building b; b.type = 0; b.cx = 8; b.cy = 8; b.fw = 4; b.fh = 3;
+        b.state = Building::State::Idle; buildings.push_back(b);
+    }
+    Unit& harv(int x, int y, bool chrono = false, int storage = 40) {
+        Unit u; u.cell_x = x; u.cell_y = y; u.fx = x; u.fy = y;
+        u.is_harvester = true; u.chrono_miner = chrono; u.storage_bales = storage;
+        u.harv = HarvState::SeekOre; units.push_back(u); return units.back();
+    }
+    void step(double dt) {
+        moves.clear(); events.clear();
+        step_harvest(units, buildings, types, ref_types, ore, pass, 20, 20, dt,
+                     values, credits, moves, events);
+    }
+};
+
+int count_events(const std::vector<HarvestEvent>& evs, HarvestEvent::Kind k, int unit) {
+    int n = 0;
+    for (const auto& e : evs) if (e.kind == k && e.unit == unit) ++n;
+    return n;
+}
+}  // namespace
+
+// Dock cell for the Rig's default NAREFN (cx=8, cy=8, fw=4, fh=3) is
+// (cx + fw/2, cy + fh) = (10, 11) [dock_cell_x/y, harvest.hpp].
+
+TEST_CASE("harvest: seek picks the nearest ore cell and requests a move") {
+    Rig r;
+    r.ore.set(3, 3, OreKind::Ore, 5, 0);
+    r.ore.set(15, 15, OreKind::Ore, 5, 0);  // Chebyshev 13 from (2,2) -- farther
+    r.harv(2, 2);                            // Chebyshev 1 from (3,3) -- nearest
+
+    r.step(0.1);
+
+    REQUIRE(r.units.size() == 1);
+    CHECK(r.units[0].harv_cell_x == 3);
+    CHECK(r.units[0].harv_cell_y == 3);
+    REQUIRE(r.moves.size() == 1);
+    CHECK(r.moves[0].unit == 0);
+    CHECK(r.moves[0].gx == 3);
+    CHECK(r.moves[0].gy == 3);
+    CHECK(r.units[0].harv == HarvState::MoveToOre);
+}
+
+TEST_CASE("harvest: gulps fill to exactly Storage then return") {
+    Rig r;
+    // Dense ore under the miner AND all 8 ring cells so 40 gulps are
+    // available without a wide relocate (own cell provides 11, the dig
+    // then walks the fixed N,NE,E,SE,S,SW,W,NW ring for the remaining 29).
+    r.ore.set(5, 5, OreKind::Ore, kMaxOreDensity, 0);
+    static const int dx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+    static const int dy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+    for (int d = 0; d < 8; ++d) r.ore.set(5 + dx[d], 5 + dy[d], OreKind::Ore, kMaxOreDensity, 0);
+    r.harv(5, 5);  // storage defaults to 40 (HARV)
+
+    r.step(0.01);  // SeekOre: own cell is nearest ore (distance 0) -> MoveToOre
+    REQUIRE(r.units[0].harv == HarvState::MoveToOre);
+    REQUIRE(r.units[0].harv_cell_x == 5);
+    REQUIRE(r.units[0].harv_cell_y == 5);
+
+    r.step(0.01);  // already at harv_cell, not moving -> arrived -> Harvesting
+    REQUIRE(r.units[0].harv == HarvState::Harvesting);
+
+    for (int gulp = 1; gulp <= 40; ++gulp) {
+        r.step(kGulpSecs);
+        if (gulp == 1) {
+            CHECK(r.units[0].bales_ore == 1);
+            CHECK(r.ore.density_at(5, 5) == kMaxOreDensity - 1);
+        }
+        if (gulp == 11) {
+            // own cell exhausted exactly at gulp 11 (started at density 11)
+            CHECK(r.units[0].bales_ore == 11);
+            CHECK(r.ore.kind_at(5, 5) == OreKind::None);
+        }
+        if (gulp == 12) {
+            // ring cell N (5,4) starts feeding
+            CHECK(r.units[0].bales_ore == 12);
+            CHECK(r.ore.density_at(5, 4) == kMaxOreDensity - 1);
+        }
+        if (gulp < 40) {
+            CHECK(r.units[0].harv == HarvState::Harvesting);
+        }
+    }
+    CHECK(r.units[0].bales_ore + r.units[0].bales_gems == 40);
+    CHECK(r.units[0].harv == HarvState::ReturnToRef);
+}
+
+TEST_CASE("harvest: unload drains bales into house credits at the recovered rate") {
+    Rig r;
+    r.harv(2, 2);
+    r.units[0].harv = HarvState::Unloading;
+    r.units[0].dock_refinery = 0;
+    r.units[0].bales_ore = 2;
+    r.units[0].bales_gems = 1;
+    r.units[0].harv_timer = 0.0;
+
+    r.step(kUnloadSecsPerBale);  // drains 1 ore bale
+    CHECK(r.units[0].bales_ore == 1);
+    CHECK(r.credits[0] == 25);
+    CHECK(r.units[0].harv == HarvState::Unloading);
+
+    r.step(kUnloadSecsPerBale);  // drains the 2nd ore bale (ore before gems)
+    CHECK(r.units[0].bales_ore == 0);
+    CHECK(r.credits[0] == 50);
+    CHECK(r.units[0].harv == HarvState::Unloading);
+
+    r.step(kUnloadSecsPerBale);  // drains the last (gems) bale -> empty
+    CHECK(r.units[0].bales_gems == 0);
+    CHECK(r.credits[0] == 2 * 25 + 1 * 50);
+    CHECK(r.units[0].harv == HarvState::SeekOre);
+    CHECK(r.units[0].dock_refinery == -1);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadEnd, 0) == 1);
+}
+
+TEST_CASE("harvest: one dock - second miner queues until the first finishes") {
+    Rig r;
+    r.harv(10, 11);  // unit 0, at the dock cell
+    r.harv(10, 11);  // unit 1, same dock cell
+    r.units[0].harv = HarvState::WaitDock;
+    r.units[1].harv = HarvState::WaitDock;
+    r.units[0].bales_ore = 5;
+    r.units[1].bales_ore = 3;
+
+    r.step(0.01);  // ascending order: unit 0 claims the free dock first
+    REQUIRE(r.units[0].harv == HarvState::Unloading);
+    REQUIRE(r.units[0].dock_refinery == 0);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 0) == 1);
+    // unit 1 sees the dock already taken by an Unloading unit this same tick
+    CHECK(r.units[1].harv == HarvState::WaitDock);
+    CHECK(r.units[1].dock_refinery == -1);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 1) == 0);
+
+    // Drain unit 0's 5 bales one per tick; unit 1 must stay queued throughout.
+    for (int i = 0; i < 4; ++i) {
+        r.step(kUnloadSecsPerBale);
+        CHECK(r.units[1].harv == HarvState::WaitDock);
+    }
+    REQUIRE(r.units[0].bales_ore == 1);
+
+    r.step(kUnloadSecsPerBale);  // unit 0's last bale drains -> frees the dock,
+                                 // and unit 1 (processed right after, same tick)
+                                 // claims it immediately.
+    CHECK(r.units[0].bales_ore == 0);
+    CHECK(r.units[0].harv == HarvState::SeekOre);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadEnd, 0) == 1);
+    CHECK(r.units[1].harv == HarvState::Unloading);
+    CHECK(r.units[1].dock_refinery == 0);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 1) == 1);
+}
+
+TEST_CASE("harvest: CMIN warps home, HARV drives") {
+    Rig r;
+    r.harv(1, 1, /*chrono=*/true, /*storage=*/20);   // unit 0: CMIN, far from refinery
+    r.harv(1, 2, /*chrono=*/false, /*storage=*/40);  // unit 1: HARV, far from refinery
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].bales_ore = 20;  // full
+    r.units[1].harv = HarvState::ReturnToRef;
+    r.units[1].bales_ore = 40;  // full
+
+    r.step(kChronoWarpSecs);  // one full warp interval
+
+    // CMIN: no move request, warped straight to the dock cell (10, 11).
+    CHECK(r.units[0].cell_x == 10);
+    CHECK(r.units[0].cell_y == 11);
+    CHECK(r.units[0].harv == HarvState::WaitDock);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 1);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
+    for (const auto& m : r.moves) CHECK(m.unit != 0);  // no HarvestMove for unit 0
+
+    // HARV: a HarvestMove to the dock cell, no chrono events, hasn't arrived.
+    bool harv_move_found = false;
+    for (const auto& m : r.moves) {
+        if (m.unit == 1) {
+            harv_move_found = true;
+            CHECK(m.gx == 10);
+            CHECK(m.gy == 11);
+        }
+    }
+    CHECK(harv_move_found);
+    CHECK(r.units[1].harv == HarvState::ReturnToRef);
+    CHECK(r.units[1].cell_x == 1);
+    CHECK(r.units[1].cell_y == 2);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 1) == 0);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 1) == 0);
+}
+
+TEST_CASE("harvest: determinism - two identical rigs stay identical") {
+    auto build = []() {
+        Rig r;
+        r.harv(2, 2);
+        r.harv(2, 3, /*chrono=*/true, /*storage=*/20);
+        r.harv(18, 18);
+        r.ore.set(3, 3, OreKind::Ore, 6, 0);
+        r.ore.set(3, 2, OreKind::Gems, 4, 0);
+        r.ore.set(17, 17, OreKind::Ore, 8, 1);
+        r.ore.set(10, 10, OreKind::Ore, kMaxOreDensity, 0);
+        return r;
+    };
+    Rig a = build();
+    Rig b = build();
+
+    for (int i = 0; i < 500; ++i) {
+        double dt = 0.15 + 0.05 * (i % 5);  // deterministic, non-uniform cadence
+        a.step(dt);
+        b.step(dt);
+    }
+
+    REQUIRE(a.units.size() == b.units.size());
+    for (size_t i = 0; i < a.units.size(); ++i) {
+        const Unit& ua = a.units[i];
+        const Unit& ub = b.units[i];
+        CHECK(ua.cell_x == ub.cell_x);
+        CHECK(ua.cell_y == ub.cell_y);
+        CHECK(ua.fx == ub.fx);
+        CHECK(ua.fy == ub.fy);
+        CHECK(ua.bales_ore == ub.bales_ore);
+        CHECK(ua.bales_gems == ub.bales_gems);
+        CHECK((int)ua.harv == (int)ub.harv);
+        CHECK(ua.dock_refinery == ub.dock_refinery);
+        CHECK(ua.harv_timer == ub.harv_timer);
+    }
+    CHECK(a.credits[0] == b.credits[0]);
+    CHECK(a.credits[1] == b.credits[1]);
+}
