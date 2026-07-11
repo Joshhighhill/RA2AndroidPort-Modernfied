@@ -96,6 +96,43 @@ int Input::unit_under(int px, int py) const {
     return best;
 }
 
+void Input::resolve_ground_cell(int px, int py, int& cx, int& cy) const {
+    // LEVEL-AWARE two-pass inversion, identical to the right-click move path
+    // (see handle()'s PointerDown/Right branch for the full rationale). Pass 1
+    // inverts at level 0; if the resolved cell's real terrain level > 0, add
+    // the raise back to py and re-invert once.
+    int cx0 = 0, cy0 = 0;
+    screen_to_cell(px - cam_.x - kTileW / 2, py - cam_.y - kTileH / 2, kTileW, kTileH, cx0, cy0);
+    const ra2assets::MapCell* cell0 = world_.map().at(cx0, cy0);
+    const int level = cell0 ? cell0->level : 0;
+    cx = cx0;
+    cy = cy0;
+    if (level > 0) {
+        screen_to_cell(px - cam_.x - kTileW / 2, py - cam_.y - kTileH / 2 + level * kLevelPx,
+                       kTileW, kTileH, cx, cy);
+    }
+}
+
+void Input::begin_placement(int roster_type, int fw, int fh) {
+    place_type_ = roster_type;
+    place_fw_ = fw > 0 ? fw : 1;
+    place_fh_ = fh > 0 ? fh : 1;
+    // Any in-flight left gesture is abandoned when placement begins.
+    l_down_ = false;
+    dragging_ = false;
+}
+
+void Input::cancel_placement() {
+    place_type_ = -1;
+    place_fw_ = place_fh_ = 1;
+}
+
+void Input::placement_cell(int& cx, int& cy) const {
+    resolve_ground_cell(cur_x_, cur_y_, cx, cy);
+    cx -= place_fw_ / 2;
+    cy -= place_fh_ / 2;
+}
+
 int Input::lowest_selected() const {
     const std::vector<Unit>& us = world_.units();
     for (std::size_t i = 0; i < us.size(); ++i)
@@ -175,6 +212,49 @@ void Input::handle(const InputEvent& ev) {
     // across handle() calls (the commit/order sites below OR their flags in)
     // and is cleared only by take_actions(), the game loop's once-per-frame
     // consume point. See InputActions in input.hpp for the rationale.
+
+    // Placement mode (Task 7a) intercepts the whole gesture model: a left
+    // Down+Up (no drag) confirms at the hovered foundation origin; a right
+    // click cancels; PointerMove just tracks the cursor (so placement_cell
+    // follows it); everything else is swallowed so no selection/attack/move
+    // gesture leaks through while placing. Quit still propagates.
+    if (placement_active()) {
+        switch (ev.kind) {
+            case InputEvent::Quit:
+                quit_ = true;
+                break;
+            case InputEvent::PointerMove:
+                cur_x_ = ev.x;
+                cur_y_ = ev.y;
+                break;
+            case InputEvent::PointerDown:
+                if (ev.button == InputEvent::Right) {
+                    actions_.place_cancelled = true;
+                    cancel_placement();
+                } else {
+                    l_down_ = true;
+                    dragging_ = false;
+                    down_x_ = cur_x_ = ev.x;
+                    down_y_ = cur_y_ = ev.y;
+                }
+                break;
+            case InputEvent::PointerUp:
+                if (ev.button == InputEvent::Left && l_down_ && !dragging_) {
+                    int cx = 0, cy = 0;
+                    resolve_ground_cell(ev.x, ev.y, cx, cy);
+                    actions_.place_confirmed = true;
+                    actions_.place_cx = cx - place_fw_ / 2;
+                    actions_.place_cy = cy - place_fh_ / 2;
+                }
+                l_down_ = false;
+                dragging_ = false;
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
     switch (ev.kind) {
         case InputEvent::Quit:
             quit_ = true;
@@ -216,17 +296,8 @@ void Input::handle(const InputEvent& ev) {
                     // converges on the true cell on smooth terrain (one
                     // refinement step, not a fixed-point loop -- see
                     // task-6-report.md).
-                    int cx0 = 0, cy0 = 0;
-                    screen_to_cell(ev.x - cam_.x - kTileW / 2, ev.y - cam_.y - kTileH / 2,
-                                   kTileW, kTileH, cx0, cy0);
-                    const ra2assets::MapCell* cell0 = world_.map().at(cx0, cy0);
-                    const int level = cell0 ? cell0->level : 0;
-                    int cx = cx0, cy = cy0;
-                    if (level > 0) {
-                        screen_to_cell(ev.x - cam_.x - kTileW / 2,
-                                       ev.y - cam_.y - kTileH / 2 + level * kLevelPx,
-                                       kTileW, kTileH, cx, cy);
-                    }
+                    int cx = 0, cy = 0;
+                    resolve_ground_cell(ev.x, ev.y, cx, cy);
                     // Capture actor BEFORE the order mutates any state; the
                     // move flag is set only when the selection is non-empty
                     // (an empty-selection right-click is a no-op move).

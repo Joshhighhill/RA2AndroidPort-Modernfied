@@ -28,6 +28,11 @@ struct InputActions {
     bool move_ordered = false;   // right-click group move issued
     bool attack_ordered = false; // right-click attack issued
     int actor = -1;              // representative unit index (lowest selected)
+
+    // --- Buildings phase: placement mode (Task 7a) ---
+    bool place_confirmed = false;   // left-click confirmed a placement this batch
+    bool place_cancelled = false;   // right-click/Esc cancelled placement this batch
+    int place_cx = 0, place_cy = 0; // confirmed foundation ORIGIN cell
 };
 
 // Translates pointer InputEvents (Task 0 Platform) into actions on a World +
@@ -64,6 +69,23 @@ public:
     // Feed one polled event (RA2-classic model, see input.cpp).
     void handle(const InputEvent& ev);
 
+    // --- Buildings phase: placement mode (Task 7a) -------------------------
+    // While active, a left Down+Up (no drag) confirms placement at the hovered
+    // foundation ORIGIN cell (reported via InputActions::place_confirmed +
+    // place_cx/cy); a right click OR cancel_placement() (main.cpp routes the
+    // Escape key here) cancels back to READY. Selection/attack/move gestures
+    // are suppressed while placing. main.cpp routes sidebar-rect clicks BEFORE
+    // Input::handle (the sidebar consumes them), so Input never needs to know
+    // the sidebar exists.
+    void begin_placement(int roster_type, int fw, int fh);
+    void cancel_placement();
+    bool placement_active() const { return place_type_ >= 0; }
+    int placement_type() const { return place_type_; }
+    // Hovered foundation ORIGIN cell for the CURRENT pointer position:
+    // resolve_ground_cell(cur) minus half the foundation, so the cursor sits
+    // near the foundation's center. Meaningful only while placement_active().
+    void placement_cell(int& cx, int& cy) const;
+
     // Pan the camera by (dx, dy) window pixels, clamped to the map bounds.
     // Called by main.cpp for arrow-key + screen-edge scrolling (left-drag no
     // longer pans -- it draws the selection box).
@@ -96,6 +118,9 @@ private:
     // restrict selection to house == 0.
     int unit_under(int px, int py) const;
     void unit_ground_px(const Unit& u, int& gx, int& gy) const;  // ground point in window px
+    // Level-aware two-pass window-pixel -> ground cell (the exact resolution
+    // the right-click move path uses); shared with placement_cell.
+    void resolve_ground_cell(int px, int py, int& cx, int& cy) const;
     void commit_click(int px, int py, bool shift);  // house-0-only selection (see .cpp)
     void commit_box(bool shift);                    // house-0-only, corpse-skipping box select
     void commit_double(int px, int py);             // house-0-only type-select
@@ -114,6 +139,11 @@ private:
     // Double-click detection (uses event t_ms; no clock read here).
     uint32_t last_click_t_ = 0;
     int last_click_x_ = 0, last_click_y_ = 0;
+
+    // Placement mode (Task 7a): place_type_ >= 0 while placing a building of
+    // that roster type; place_fw_/fh_ is its foundation size.
+    int place_type_ = -1;
+    int place_fw_ = 1, place_fh_ = 1;
 
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).

@@ -795,6 +795,47 @@ TEST_CASE("Input: take_actions reports move_ordered + lowest actor on a right-cl
     CHECK(a.actor == std::min(fx.gi0, fx.gi1));
 }
 
+// ---- Buildings & Construction Task 7a: placement mode ----
+
+TEST_CASE("input: placement mode confirms at hovered origin and suppresses orders") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;  // origin
+    Input input(world, cam, 800, 600);
+    Fixture fx = spawn(world, 1);
+    if (!fx.ok) { MESSAGE("skipped: could not place 1 unit"); return; }
+
+    // Pick a level-0 map cell so the two-pass level-aware resolution collapses
+    // to a single pass and lands exactly on the clicked cell (px_for_cell
+    // projects at level 0; resolve_ground_cell is its exact inverse there).
+    int tx = -1, ty = -1;
+    for (const auto& mc : world.map().cells())
+        if (mc.level == 0) { tx = mc.x; ty = mc.y; break; }
+    REQUIRE(tx >= 0);
+
+    input.begin_placement(/*type=*/1, /*fw=*/2, /*fh=*/2);
+    CHECK(input.placement_active());
+    CHECK(input.placement_type() == 1);
+
+    int px, py;
+    px_for_cell(tx, ty, px, py);
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    const ra2engine::InputActions acts = input.take_actions();
+    CHECK(acts.place_confirmed);
+    CHECK(acts.place_cx == tx - 1);   // -fw/2
+    CHECK(acts.place_cy == ty - 1);   // -fh/2
+    CHECK_FALSE(acts.selected);       // the confirming click did NOT select
+    CHECK_FALSE(world.units()[0].selected);
+
+    // Right-click cancels back to READY and reports place_cancelled.
+    input.begin_placement(1, 2, 2);
+    CHECK(input.placement_active());
+    right_click(input, px, py, /*t=*/2000);
+    CHECK(input.take_actions().place_cancelled);
+    CHECK_FALSE(input.placement_active());
+}
+
 TEST_CASE("Input: take_actions reports attack_ordered + lowest actor on a right-click attack") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
