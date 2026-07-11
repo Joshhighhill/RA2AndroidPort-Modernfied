@@ -168,10 +168,12 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
             }
 
             case HarvState::Harvesting: {
-                // [RE-GATE APPLIED §1 CONFIRMED: 8-ring dig, DAT_0089E5F8
-                // offset table order, one density step per timed gulp banked
-                // into a per-type store; [RE-FALLBACK] the gulp cadence
-                // itself.] Own cell first, then the fixed ring order.
+                // [RE-GATE APPLIED §1 CONFIRMED: 8-ring dig in DAT_0089E5F8
+                // offset-table order, one density step per timed gulp banked
+                // into a per-type store. [RE-FALLBACK] the gulp cadence
+                // itself; and [RE-FALLBACK adjudicated] trying the miner's
+                // OWN cell before the ring -- the doc confirms only the
+                // 8-neighbour ring walk, not an own-cell-first step.]
                 u.harv_timer += dt;
                 while (u.harv_timer >= kGulpSecs && u.harv == HarvState::Harvesting) {
                     u.harv_timer -= kGulpSecs;
@@ -206,11 +208,25 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
             }
 
             case HarvState::ReturnToRef: {
-                int ref = nearest_refinery(buildings, types, refinery_types, u.house, u.cell_x,
+                // Stamp the target refinery ONCE, the moment this state picks
+                // it (review fix: re-deriving `nearest` every tick made the
+                // WaitDock busy check evaluate against a moving target in a
+                // multi-refinery house). The stamp persists through WaitDock/
+                // Unloading; repick ONLY when the stamped building dies
+                // [economy.md §2 -- the radio handshake binds a miner to the
+                // refinery that answered it].
+                int ref = u.dock_refinery;
+                if (ref < 0 || ref >= (int)buildings.size() ||
+                    !buildings[(size_t)ref].alive ||
+                    buildings[(size_t)ref].state != Building::State::Idle) {
+                    ref = nearest_refinery(buildings, types, refinery_types, u.house, u.cell_x,
                                            u.cell_y);
+                    u.dock_refinery = ref;
+                }
                 if (ref < 0) {
                     // No alive refinery: park the (still loaded) miner back
                     // in SeekOre, retried every rescan, per economy.md §1/§2.
+                    u.dock_refinery = -1;
                     u.harv = HarvState::SeekOre;
                     u.harv_timer = 0.0;
                     break;
@@ -246,9 +262,15 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
             }
 
             case HarvState::WaitDock: {
-                int ref = nearest_refinery(buildings, types, refinery_types, u.house, u.cell_x,
-                                           u.cell_y);
-                if (ref < 0) {
+                // Queue at the refinery STAMPED by ReturnToRef (review fix:
+                // never re-derive `nearest` here -- another refinery going
+                // Idle mid-wait must not poach a queued miner). Repick (via
+                // ReturnToRef) only if the stamped building died.
+                int ref = u.dock_refinery;
+                if (ref < 0 || ref >= (int)buildings.size() ||
+                    !buildings[(size_t)ref].alive ||
+                    buildings[(size_t)ref].state == Building::State::Dead) {
+                    u.dock_refinery = -1;
                     u.harv = HarvState::ReturnToRef;
                     u.harv_timer = 0.0;
                     break;
@@ -268,7 +290,6 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                     }
                 }
                 if (!busy) {
-                    u.dock_refinery = ref;
                     events.push_back({HarvestEvent::Kind::UnloadStart, idx});
                     u.harv = HarvState::Unloading;
                     u.harv_timer = 0.0;
@@ -277,6 +298,20 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
             }
 
             case HarvState::Unloading: {
+                // CMIN post-unload warp-back transit: `dock_refinery == -1`
+                // with an empty load marks the return warp in flight (set
+                // below when the last bale drains). Must be checked BEFORE
+                // the refinery-death repick, which keys off the same -1.
+                if (u.chrono_miner && u.dock_refinery < 0) {
+                    u.harv_timer += dt;
+                    if (u.harv_timer >= kChronoWarpSecs) {
+                        teleport_unit(u, u.harv_cell_x, u.harv_cell_y, passable, gw, gh);
+                        events.push_back({HarvestEvent::Kind::ChronoIn, idx});
+                        u.harv = HarvState::SeekOre;
+                        u.harv_timer = 0.0;
+                    }
+                    break;
+                }
                 if (u.dock_refinery < 0 || u.dock_refinery >= (int)buildings.size() ||
                     !buildings[(size_t)u.dock_refinery].alive ||
                     buildings[(size_t)u.dock_refinery].state == Building::State::Dead) {
@@ -307,20 +342,20 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                     events.push_back({HarvestEvent::Kind::UnloadEnd, idx});
                     u.dock_refinery = -1;
                     if (u.chrono_miner) {
-                        // [RE-FALLBACK adjudicated]: HarvState has no
-                        // dedicated post-unload warp-back state (unlike the
-                        // outbound ReturnToRef warp, this leg has nowhere to
-                        // "wait" -- the miner heads straight back to SeekOre
-                        // either way), so the warp back to the last ore cell
-                        // is applied synchronously here (both ChronoOut and
-                        // ChronoIn fire this same tick) rather than spread
-                        // over kChronoWarpSecs.
+                        // [RE-GATE APPLIED §3: "warp back after unload, same
+                        // mechanics" -- the return warp is TIMED like the
+                        // outbound one; [RE-FALLBACK adjudicated]: HarvState
+                        // has no dedicated warp-back state, so the transit
+                        // stays parked in Unloading (dock_refinery == -1
+                        // marks it -- see the branch at the top of this
+                        // case): ChronoOut fires now, the teleport + ChronoIn
+                        // land once harv_timer >= kChronoWarpSecs.]
                         events.push_back({HarvestEvent::Kind::ChronoOut, idx});
-                        teleport_unit(u, u.harv_cell_x, u.harv_cell_y, passable, gw, gh);
-                        events.push_back({HarvestEvent::Kind::ChronoIn, idx});
+                        u.harv_timer = 0.0;
+                    } else {
+                        u.harv = HarvState::SeekOre;
+                        u.harv_timer = 0.0;
                     }
-                    u.harv = HarvState::SeekOre;
-                    u.harv_timer = 0.0;
                 }
                 break;
             }

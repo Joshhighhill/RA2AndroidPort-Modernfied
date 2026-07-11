@@ -133,8 +133,12 @@ TEST_CASE("harvest: one dock - second miner queues until the first finishes") {
     Rig r;
     r.harv(10, 11);  // unit 0, at the dock cell
     r.harv(10, 11);  // unit 1, same dock cell
-    r.units[0].harv = HarvState::WaitDock;
-    r.units[1].harv = HarvState::WaitDock;
+    for (int i = 0; i < 2; ++i) {
+        r.units[i].harv = HarvState::WaitDock;
+        // WaitDock queues at the refinery STAMPED by ReturnToRef; the test
+        // stamps it directly, mirroring how a unit really arrives here.
+        r.units[i].dock_refinery = 0;
+    }
     r.units[0].bales_ore = 5;
     r.units[1].bales_ore = 3;
 
@@ -144,7 +148,7 @@ TEST_CASE("harvest: one dock - second miner queues until the first finishes") {
     CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 0) == 1);
     // unit 1 sees the dock already taken by an Unloading unit this same tick
     CHECK(r.units[1].harv == HarvState::WaitDock);
-    CHECK(r.units[1].dock_refinery == -1);
+    CHECK(r.units[1].dock_refinery == 0);  // still stamped-queued, NOT unloading
     CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 1) == 0);
 
     // Drain unit 0's 5 bales one per tick; unit 1 must stay queued throughout.
@@ -163,6 +167,111 @@ TEST_CASE("harvest: one dock - second miner queues until the first finishes") {
     CHECK(r.units[1].harv == HarvState::Unloading);
     CHECK(r.units[1].dock_refinery == 0);
     CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 1) == 1);
+}
+
+TEST_CASE("harvest: stamped dock target - far refinery going Idle mid-wait poaches nobody") {
+    Rig r;
+    // Second refinery (index 1) in the far corner, dock cell (2, 3); still
+    // under construction, so not pickable when the miners queue.
+    {
+        Building b2;
+        b2.type = 0; b2.cx = 0; b2.cy = 0; b2.fw = 4; b2.fh = 3;
+        b2.state = Building::State::Buildup;
+        r.buildings.push_back(b2);
+    }
+    r.harv(10, 11);  // unit 0: at refinery 0's dock (10, 11)
+    r.harv(5, 6);    // unit 1: queue spot Chebyshev 3 from B's dock, 5 from A's
+    for (int i = 0; i < 2; ++i) {
+        r.units[i].harv = HarvState::WaitDock;
+        r.units[i].dock_refinery = 0;  // both queued AT refinery 0 (stamped)
+        r.units[i].bales_ore = 3;
+    }
+
+    r.step(0.01);  // unit 0 claims refinery 0's dock; unit 1 queues behind it
+    REQUIRE(r.units[0].harv == HarvState::Unloading);
+    REQUIRE(r.units[1].harv == HarvState::WaitDock);
+
+    r.buildings[1].state = Building::State::Idle;  // far refinery opens mid-wait
+
+    r.step(0.01);
+    // The queued miner must NOT re-derive "nearest = refinery 1" (it IS
+    // nearer to unit 1's cell) and start a second unload -- the stamp holds.
+    CHECK(r.units[1].harv == HarvState::WaitDock);
+    CHECK(r.units[1].dock_refinery == 0);
+    int unloading = 0;
+    for (const auto& u : r.units)
+        if (u.harv == HarvState::Unloading) ++unloading;
+    CHECK(unloading == 1);  // exactly one Unloading per refinery at any tick
+
+    // Drain unit 0's 3 bales; unit 1 stays queued at refinery 0 throughout.
+    for (int i = 0; i < 3; ++i) {
+        CHECK(r.units[1].harv == HarvState::WaitDock);
+        CHECK(r.units[1].dock_refinery == 0);
+        r.step(kUnloadSecsPerBale);
+    }
+    CHECK(r.units[0].harv == HarvState::SeekOre);       // finished + freed dock
+    CHECK(r.units[1].harv == HarvState::Unloading);     // took over the SAME dock
+    CHECK(r.units[1].dock_refinery == 0);               // ...at refinery 0, not 1
+}
+
+TEST_CASE("harvest: CMIN full cycle - load, warp home, unload, timed warp back") {
+    Rig r;
+    r.ore.set(2, 2, OreKind::Ore, kMaxOreDensity, 0);  // 11 bales under the miner
+    r.ore.set(2, 1, OreKind::Ore, 9, 0);               // + 9 in the N ring cell = 20
+    r.harv(2, 2, /*chrono=*/true, /*storage=*/20);
+
+    r.step(0.01);  // SeekOre: own cell is the nearest ore (distance 0)
+    REQUIRE(r.units[0].harv == HarvState::MoveToOre);
+    r.step(0.01);  // already at harv_cell, not moving -> Harvesting
+    REQUIRE(r.units[0].harv == HarvState::Harvesting);
+
+    for (int g = 0; g < 20; ++g) r.step(kGulpSecs);
+    REQUIRE(r.units[0].bales_ore == 20);
+    REQUIRE(r.units[0].harv == HarvState::ReturnToRef);
+    REQUIRE(r.units[0].harv_cell_x == 2);
+    REQUIRE(r.units[0].harv_cell_y == 2);
+
+    // Outbound warp: ChronoOut on the first transit tick...
+    r.step(kChronoWarpSecs / 2);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 1);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 0);
+    CHECK(r.units[0].harv == HarvState::ReturnToRef);   // still in transit
+    // ...ChronoIn a full kChronoWarpSecs later, landing ON the dock cell.
+    r.step(kChronoWarpSecs / 2);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 0);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
+    CHECK(r.units[0].cell_x == 10);
+    CHECK(r.units[0].cell_y == 11);
+    REQUIRE(r.units[0].harv == HarvState::WaitDock);
+
+    r.step(0.01);  // dock free -> Unloading
+    REQUIRE(r.units[0].harv == HarvState::Unloading);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadStart, 0) == 1);
+
+    for (int i = 0; i < 19; ++i) r.step(kUnloadSecsPerBale);
+    REQUIRE(r.units[0].bales_ore == 1);
+    CHECK(r.units[0].harv == HarvState::Unloading);
+    CHECK(r.credits[0] == 19 * 25);
+
+    r.step(kUnloadSecsPerBale);  // last bale -> UnloadEnd; return warp STARTS
+    CHECK(r.units[0].bales_ore == 0);
+    CHECK(r.credits[0] == 20 * 25);
+    CHECK(count_events(r.events, HarvestEvent::Kind::UnloadEnd, 0) == 1);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 1);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 0);  // NOT landed
+    CHECK(r.units[0].harv == HarvState::Unloading);     // warp-back transit state
+    CHECK(r.units[0].dock_refinery == -1);
+    CHECK(r.units[0].cell_x == 10);                     // still at the dock
+    CHECK(r.units[0].cell_y == 11);
+
+    r.step(kChronoWarpSecs);  // transit completes exactly kChronoWarpSecs later
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 0);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
+    // Lands at/adjacent to harv_cell (2,2) -- here (2,2) itself is passable,
+    // so the teleport lands exactly on it.
+    CHECK(r.units[0].cell_x == 2);
+    CHECK(r.units[0].cell_y == 2);
+    CHECK(r.units[0].harv == HarvState::SeekOre);
 }
 
 TEST_CASE("harvest: CMIN warps home, HARV drives") {

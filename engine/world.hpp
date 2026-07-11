@@ -95,7 +95,10 @@ struct Unit {
     double bales_gems = 0.0;         // current load, gem bales
     HarvState harv = HarvState::None;
     int harv_cell_x = 0, harv_cell_y = 0;   // target/last ore cell
-    int dock_refinery = -1;          // Building index being docked at (-1 none)
+    int dock_refinery = -1;          // target/docked refinery Building index:
+                                     // stamped when ReturnToRef picks it, held
+                                     // through WaitDock/Unloading (-1 = none,
+                                     // or CMIN post-unload warp in transit)
     double harv_timer = 0.0;         // gulp/unload/rescan/warp accumulator
     bool manual_hold = false;        // player move order: pause auto-resume until arrival
 };
