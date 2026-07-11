@@ -95,11 +95,21 @@ public:
     // an index if a caller needs repeated random-access lookups.
     const MapCell* at(int x, int y) const;
 
+    // [OverlayPack]/[OverlayDataPack]: 262,144-byte (512x512) per-cell
+    // arrays in the SAME raw iso coordinate space as MapCell::x/y,
+    // cell = x + y*512. 0xFF in the overlay array = "no overlay".
+    // Accessors return -1 for out-of-range, absent section, or no-overlay;
+    // otherwise the raw byte. [RE: economy.md §5]
+    bool has_overlay() const { return !overlay_.empty(); }
+    int overlay_at(int x, int y) const;
+    int overlay_data_at(int x, int y) const;
+
 private:
     int width_ = 0;
     int height_ = 0;
     std::string theater_;
     std::vector<MapCell> cells_;
+    std::vector<uint8_t> overlay_, overlay_data_;
 };
 
 } // namespace ra2assets

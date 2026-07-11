@@ -109,6 +109,33 @@ MapFile MapFile::parse(const std::string& ini_text) {
         }
     }
 
+    // [OverlayPack]/[OverlayDataPack]: same collect-and-decode shape as
+    // [IsoMapPack5] above, but the Format5 chunk BODY codec is LCW ("Format80"),
+    // not LZO1X (confirmed in task-2-report.md / test_mappack.cpp). Each
+    // decodes to a flat 512x512 (262,144-byte) per-cell array; keep the
+    // result only if it is exactly that size -- anything else (malformed
+    // pack, truncated section, wrong codec desync) is treated as an absent
+    // section rather than crashing map load.
+    constexpr size_t kOverlayBytes = 512 * 512;
+    auto collect_overlay = [&ini](const std::string& section) -> std::vector<uint8_t> {
+        const auto& sec_kvs = ini.section(section);
+        if (sec_kvs.empty()) return {};
+        std::string b64;
+        for (const auto& kv : sec_kvs) b64 += kv.second;
+        std::vector<uint8_t> packed = base64_decode(b64);
+        if (packed.empty()) return {};
+        std::vector<uint8_t> raw;
+        try {
+            raw = decompress_mappack(packed.data(), packed.size(), MapPackCodec::LCW);
+        } catch (const std::exception&) {
+            return {}; // malformed pack: treat as absent, don't crash map load
+        }
+        if (raw.size() != kOverlayBytes) return {};
+        return raw;
+    };
+    map.overlay_ = collect_overlay("OverlayPack");
+    map.overlay_data_ = collect_overlay("OverlayDataPack");
+
     return map;
 }
 
@@ -117,6 +144,17 @@ const MapCell* MapFile::at(int x, int y) const {
         if (c.x == x && c.y == y) return &c;
     }
     return nullptr;
+}
+
+int MapFile::overlay_at(int x, int y) const {
+    if (overlay_.empty() || x < 0 || x >= 512 || y < 0 || y >= 512) return -1;
+    const uint8_t v = overlay_[static_cast<size_t>(x) + static_cast<size_t>(y) * 512];
+    return v == 0xFF ? -1 : v;
+}
+int MapFile::overlay_data_at(int x, int y) const {
+    if (overlay_data_.empty() || x < 0 || x >= 512 || y < 0 || y >= 512) return -1;
+    if (overlay_at(x, y) < 0) return -1;   // data byte is meaningless without an overlay
+    return overlay_data_[static_cast<size_t>(x) + static_cast<size_t>(y) * 512];
 }
 
 } // namespace ra2assets
