@@ -1566,15 +1566,22 @@ int run_interactive(bool no_audio) {
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
 
-    ra2engine::Camera cam = centered_camera(a.map, platform.width(), platform.height());
-    ra2engine::Input input(world, cam, platform.width(), platform.height());
-    const int kPan = 40;
-
-    // Sidebar layout + player production state (starts with MP money).
+    // Sidebar layout first: the sidebar OWNS its screen strip, so the world
+    // viewport (camera centering, clamping, on-screen tests) is the PLAYFIELD
+    // left of the bar, not the full window (the spec's "viewport shrinks by
+    // the sidebar width" rule — final-review M5).
     const std::vector<int> buildable = sidebar_buildable(ba);
     const ra2engine::SidebarArtDims sbdims = sidebar_dims(ba);
     ra2engine::SidebarLayout lay =
         ra2engine::SidebarLayout::compute(platform.width(), platform.height(), sbdims, buildable);
+    const bool sidebar_up = ba.ok && ba.sidebar_ok;
+    const int playfield_w = platform.width() - (sidebar_up ? lay.bar.w : 0);
+
+    ra2engine::Camera cam = centered_camera(a.map, playfield_w, platform.height());
+    ra2engine::Input input(world, cam, playfield_w, platform.height());
+    const int kPan = 40;
+
+    // Player production state (starts with MP money).
     ra2engine::ProductionState ps;
     ps.credits = rules.mp_money();
     double credits_shown = ps.credits;
@@ -1591,25 +1598,32 @@ int run_interactive(bool no_audio) {
     while (!input.wants_quit()) {
         ra2engine::InputEvent ev;
         while (platform.poll(ev)) {
-            // Sidebar consumes left clicks inside the bar BEFORE Input (so
-            // Input never needs to know the sidebar exists). Cameo click:
-            // Available -> start; Building -> cancel; Ready -> begin_placement;
-            // tab clicks are no-ops (tab 0 already active).
-            if (ba.ok && ba.sidebar_ok && ev.kind == ra2engine::InputEvent::PointerDown &&
-                ev.button == ra2engine::InputEvent::Left && lay.contains(ev.x, ev.y)) {
-                const int ci = lay.cameo_at(ev.x, ev.y);
-                if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
-                    const int type = buildable[ci];
-                    if (ps.slot.type == type && ps.slot.ready) {
-                        input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
-                    } else if (ps.slot.type == type) {
-                        ra2engine::cancel(ps);
-                    } else if (ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0,
-                                                    ba.groups, conyard_alive(world, ba, 0))) {
-                        ra2engine::start(ps, type, ba.roster, build_speed);
+            // The sidebar consumes EVERY PointerDown inside the bar BEFORE
+            // Input (so Input never needs to know the sidebar exists): left
+            // clicks act on the cameo grid, right/other buttons are no-ops —
+            // a gesture can never START under the bar, so box-selects and
+            // world orders can't leak beneath it (final-review M5).
+            // PointerUp/Move still pass through: a drag that STARTED in the
+            // world must end cleanly wherever the button is released.
+            // Cameo click: Available -> start; Building -> cancel;
+            // Ready -> begin_placement; tab clicks are no-ops (tab 0 active).
+            if (sidebar_up && ev.kind == ra2engine::InputEvent::PointerDown &&
+                lay.contains(ev.x, ev.y)) {
+                if (ev.button == ra2engine::InputEvent::Left) {
+                    const int ci = lay.cameo_at(ev.x, ev.y);
+                    if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
+                        const int type = buildable[ci];
+                        if (ps.slot.type == type && ps.slot.ready) {
+                            input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
+                        } else if (ps.slot.type == type) {
+                            ra2engine::cancel(ps);
+                        } else if (ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0,
+                                                        ba.groups, conyard_alive(world, ba, 0))) {
+                            ra2engine::start(ps, type, ba.roster, build_speed);
+                        }
                     }
                 }
-                continue;  // consumed by the sidebar
+                continue;  // consumed by the sidebar (right-click = no-op)
             }
             // Escape (mapped to Quit by platform) cancels placement instead of
             // quitting while a placement is in progress.
@@ -1629,7 +1643,10 @@ int run_interactive(bool no_audio) {
         if (ks[SDL_SCANCODE_DOWN]) pan_dy -= kPan;
         int mx = 0, my = 0;
         SDL_GetMouseState(&mx, &my);
-        const int kEdge = 24;  // px band at the viewport edge that scrolls
+        // px band at the WINDOW edge that scrolls — deliberately the true
+        // screen edge, not the playfield edge: vanilla RA2 edge-scrolls with
+        // the cursor over the sidebar too.
+        const int kEdge = 24;
         if (mx <= kEdge) pan_dx += kPan;
         else if (mx >= platform.width() - kEdge) pan_dx -= kPan;
         if (my <= kEdge) pan_dy += kPan;
@@ -1732,8 +1749,12 @@ int run_interactive(bool no_audio) {
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(platform.renderer());
         render_world(ren, tc, a, ua, world, cam, platform.width(), platform.height(), &input,
                      va.ok ? &va : nullptr, ba.ok ? &ba : nullptr);
-        // Placement cursor (under the sidebar), then the sidebar chrome on top.
-        draw_placement_cursor(ren, world, ba, input, a, cam, platform.width(), platform.height());
+        // Placement cursor (suppressed while the mouse is over the sidebar —
+        // a Down there is consumed, so no placement can happen under the
+        // bar), then the sidebar chrome on top.
+        if (!(sidebar_up && lay.contains(mx, my)))
+            draw_placement_cursor(ren, world, ba, input, a, cam, platform.width(),
+                                  platform.height());
         if (ba.ok && ba.sidebar_ok)
             draw_sidebar(ren, tc, ba, lay, ps, world,
                          static_cast<int>(std::llround(credits_shown)), now / 1000.0);
