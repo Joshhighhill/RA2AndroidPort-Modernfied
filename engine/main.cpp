@@ -381,6 +381,12 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
         }
     }
 
+    // Building placement sound [RE: building-render.md §5]: rules [AudioVisual]
+    // BuildingSlam=PlaceBuilding -> soundmd [PlaceBuilding] Sounds=uplace.
+    // Registered globally (a missing section resolves to a silent no-op).
+    if (!pending.count("PlaceBuilding"))
+        pending["PlaceBuilding"] = resolve_sound_event(audio, sounds, idx, bag, "PlaceBuilding");
+
     // EVA: "ceva064.wav" ("Unit lost") lives in the SAME audio.mix, decoded
     // via load_wav_ima (the WAV/IMA container, Task 3), not decode_bag_clip.
     try {
@@ -1206,6 +1212,14 @@ ra2engine::Camera centered_camera(const MapFile& map, int view_w, int view_h) {
     return cam;
 }
 
+// Sidebar helpers (defined below, before run_interactive) used by both the
+// screenshot HUD and the interactive loop.
+std::vector<int> sidebar_buildable(const BuildingAssets& ba);
+ra2engine::SidebarArtDims sidebar_dims(const BuildingAssets& ba);
+void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
+                  const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
+                  const ra2engine::World& world, int credits_shown, double t_now);
+
 int run_screenshot(const std::string& out_path) {
     const int W = 1280, H = 720;
     // ra2.mix opened ONCE and shared by both loaders; the buffer stays
@@ -1263,6 +1277,15 @@ int run_screenshot(const std::string& out_path) {
         SDL_RenderClear(ren);
         render_world(ren, tc, a, ua, world, cam, W, H, /*input=*/nullptr, va.ok ? &va : nullptr,
                      ba.ok ? &ba : nullptr);
+        // Sidebar HUD (idle production state) so --screenshot shows the full UI.
+        if (ba.ok && ba.sidebar_ok) {
+            const std::vector<int> buildable = sidebar_buildable(ba);
+            const ra2engine::SidebarLayout lay =
+                ra2engine::SidebarLayout::compute(W, H, sidebar_dims(ba), buildable);
+            ra2engine::ProductionState ps;
+            ps.credits = rules.mp_money();
+            draw_sidebar(ren, tc, ba, lay, ps, world, static_cast<int>(ps.credits), 0.0);
+        }
         capture_png(ren, out_path, W, H);
 
         std::cerr << "[screenshot] wrote " << out_path << " (" << W << "x" << H << ")\n";
@@ -1274,14 +1297,243 @@ int run_screenshot(const std::string& out_path) {
     return 0;
 }
 
+// ---- Buildings & Construction Task 7e: sidebar + production glue ----------
+
+// True if `house` owns an alive, Idle ConYard (the BuildingType factory).
+bool conyard_alive(const ra2engine::World& world, const BuildingAssets& ba, int house) {
+    for (const ra2engine::Building& b : world.buildings()) {
+        if (!b.alive || b.state != ra2engine::Building::State::Idle || b.house != house) continue;
+        if (b.type >= 0 && b.type < static_cast<int>(ba.roster.size()) && ba.roster[b.type].conyard)
+            return true;
+    }
+    return false;
+}
+
+// Per-frame construction glue [RE: construction.md §8/§10], headless-safe (no
+// SDL): recompute power, advance the queue, and cancel if the ConYard died.
+void ps_tick(ra2engine::ProductionState& ps, const ra2engine::World& world,
+             const BuildingAssets& ba, double dt, double low_mod) {
+    const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+    ra2engine::tick(ps, dt, ra2engine::build_speed_multiplier(pt, low_mod), ba.roster);
+    if (ps.slot.type != -1 && !conyard_alive(world, ba, 0)) ra2engine::cancel(ps);
+}
+
+// Sidebar buildable list [RE: construction.md §11]: the Allied player's roster
+// indices with cameo != "" && tech_level > 0 && art ok, ordered by tech_level
+// then roster order -> {GAPOWR, GAPILE, GAWEAP}.
+std::vector<int> sidebar_buildable(const BuildingAssets& ba) {
+    std::vector<int> v;
+    for (int i = 0; i < static_cast<int>(ba.roster.size()); ++i) {
+        const ra2engine::BuildingTypeDef& d = ba.roster[i];
+        if (!ba.art[i].ok || d.cameo.empty() || d.tech_level <= 0) continue;
+        if (d.id.size() < 2 || d.id[0] != 'G' || d.id[1] != 'A') continue;  // Allied player side
+        v.push_back(i);
+    }
+    std::stable_sort(v.begin(), v.end(),
+                     [&](int a, int b) { return ba.roster[a].tech_level < ba.roster[b].tech_level; });
+    return v;
+}
+
+ra2engine::SidebarArtDims sidebar_dims(const BuildingAssets& ba) {
+    ra2engine::SidebarArtDims d;
+    d.top_w = ba.sb_top.width();
+    d.top_h = ba.sb_top.height();
+    d.credits_w = ba.sb_credits.width();
+    d.credits_h = ba.sb_credits.height();
+    d.tab_w = ba.sb_tabs[0].width();
+    d.tab_h = ba.sb_tabs[0].height();
+    d.side1_h = ba.sb_side1.height();
+    d.side2_h = ba.sb_side2.height();
+    d.power_w = ba.sb_powerp.width();
+    return d;
+}
+
+// Built-in 5x7 digit strip (documented divergence [RE: construction.md §11 —
+// the game font is not trivially extractable]); white, right-aligned.
+static const uint8_t kDigits[10][7] = {
+    {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
+    {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E},
+    {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},
+    {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
+    {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},
+};
+
+void draw_number(SDL_Renderer* ren, int value, int right_x, int y, int scale) {
+    const std::string s = std::to_string(value < 0 ? 0 : value);
+    SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+    int x = right_x - static_cast<int>(s.size()) * 6 * scale;
+    for (char ch : s) {
+        const int d = ch - '0';
+        if (d >= 0 && d <= 9)
+            for (int row = 0; row < 7; ++row)
+                for (int col = 0; col < 5; ++col)
+                    if (kDigits[d][row] & (1 << (4 - col))) {
+                        SDL_Rect px{x + col * scale, y + row * scale, scale, scale};
+                        SDL_RenderFillRect(ren, &px);
+                    }
+        x += 6 * scale;
+    }
+}
+
+// Blit one SHP frame at screen (x,y) (frame bbox offset applied), palettized
+// via tc under `key` (position-independent, so the same key caches once).
+void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
+              const ra2assets::ShpFile& shp, int frame, const ra2assets::Palette& pal, int x, int y) {
+    if (frame < 0 || frame >= shp.count()) return;
+    const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) {
+        std::vector<uint8_t> idx = shp.decode_indexed(frame);
+        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal));
+    }
+    SDL_Rect dst{x + f.x, y + f.y, f.w, f.h};
+    SDL_RenderCopy(ren, tex, nullptr, &dst);
+}
+
+void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint8 rr = 0,
+                Uint8 gg = 0, Uint8 bb = 0) {
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren, rr, gg, bb, alpha);
+    SDL_Rect rc{r.x, r.y, r.w, r.h};
+    SDL_RenderFillRect(ren, &rc);
+}
+
+// Draws the whole sidebar (chrome, tabs, power meter, credits, cameo grid with
+// per-state overlays) [RE-GATE APPLIED: construction.md §8 power pips, §11
+// gclock2 build clock]. `t_now` drives the Ready flash + power outage flash.
+void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
+                  const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
+                  const ra2engine::World& world, int credits_shown, double t_now) {
+    // Opaque bar backdrop, then side1/side2 tiled down the cameo strip.
+    shade_rect(ren, lay.bar, 255, 24, 24, 28);
+    int y = lay.tabs[0].y + lay.tabs[0].h;
+    blit_shp(ren, tc, "sb:side1", ba.sb_side1, 0, ba.sb_pal, lay.bar.x, y);
+    y += ba.sb_side1.height();
+    for (int k = 0; y < lay.bar.y + lay.bar.h && k < 32; ++k) {
+        blit_shp(ren, tc, "sb:side2", ba.sb_side2, 0, ba.sb_pal, lay.bar.x, y);
+        y += ba.sb_side2.height();
+    }
+    // Radar cap (top.shp frame 0).
+    blit_shp(ren, tc, "sb:top", ba.sb_top, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
+    // Credits readout backdrop + rolling number.
+    blit_shp(ren, tc, "sb:credits", ba.sb_credits, 0, ba.sb_pal, lay.credits.x, lay.credits.y);
+    draw_number(ren, credits_shown, lay.credits.x + lay.credits.w - 4, lay.credits.y + 4, 2);
+    // Four tab buttons (frame 0); tab 0 (Building) full-bright, others shaded.
+    for (int i = 0; i < 4; ++i) {
+        blit_shp(ren, tc, "sb:tab" + std::to_string(i), ba.sb_tabs[i], 0, ba.sb_pal, lay.tabs[i].x,
+                 lay.tabs[i].y);
+        if (i != 0) shade_rect(ren, lay.tabs[i], 110);
+    }
+    // Power meter [RE-GATE APPLIED: construction.md §8].
+    const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+    const int output = pt.output, drain = pt.drain;
+    int total_pips = lay.power.h / 3;
+    if (total_pips < 1) total_pips = 1;
+    int pips_used =
+        total_pips - static_cast<int>(total_pips * 400.0 / (output + drain + 400.0));
+    pips_used = std::clamp(pips_used, 0, total_pips);
+    const int denom = std::max(output + drain, 1);
+    const int surplus = output - drain;
+    const int red = static_cast<int>(std::lround((double)pips_used * drain / denom));
+    const int ypow = std::clamp(surplus, 0, 100);
+    const int yellow = static_cast<int>(std::lround((double)pips_used * ypow / denom));
+    int green = pips_used - red - yellow;
+    if (green < 0) green = 0;
+    const bool outage = drain > output;
+    for (int i = 0; i < total_pips; ++i) {
+        int frame = (i < red) ? 3 : (i < red + yellow) ? 2 : (i < pips_used) ? 1 : 0;
+        if (outage && i < pips_used && (static_cast<int>(t_now / 0.2) % 2 == 0)) frame = 4;
+        const int py = lay.power.y + lay.power.h - (i + 1) * 3;
+        blit_shp(ren, tc, "sb:pp" + std::to_string(frame), ba.sb_powerp, frame, ba.sb_pal,
+                 lay.power.x, py);
+    }
+    // Cameo grid + per-state overlay.
+    for (const ra2engine::CameoCell& c : lay.cameos) {
+        const int type = c.type;
+        if (type < 0 || type >= static_cast<int>(ba.art.size())) continue;
+        if (ba.art[type].has_cameo)
+            blit_shp(ren, tc, "cam:" + ba.roster[type].id, ba.art[type].cameo, 0, ba.cameo_pal,
+                     c.rect.x, c.rect.y);
+        const bool can = ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
+                                              conyard_alive(world, ba, 0));
+        if (ps.slot.type == type && ps.slot.ready) {
+            // Ready: 2 Hz brightness flash (green tint overlay; READY text is a
+            // documented divergence -- no game font in this phase).
+            if (static_cast<int>(t_now * 2) % 2 == 0) shade_rect(ren, c.rect, 90, 0, 200, 0);
+        } else if (ps.slot.type == type) {
+            // Building: gclock2 frame (1 + stage) over a shade [§11].
+            shade_rect(ren, c.rect, 90);
+            int gframe = 1 + ps.slot.stage;
+            if (gframe >= ba.sb_gclock.count()) gframe = ba.sb_gclock.count() - 1;
+            blit_shp(ren, tc, "sb:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
+                     c.rect.x, c.rect.y);
+        } else if (!can) {
+            shade_rect(ren, c.rect, 140);  // Disabled: ~55% black
+        }
+    }
+}
+
+// Placement cursor: draw the fw*fh foundation cell diamonds green (cell OK) /
+// red (cell blocked OR adjacency fails -> whole grid red) [RE: construction.md §9].
+void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
+                           const BuildingAssets& ba, const ra2engine::Input& input,
+                           const Assets& a, const ra2engine::Camera& cam, int W, int H) {
+    if (!input.placement_active()) return;
+    const int type = input.placement_type();
+    if (type < 0 || type >= static_cast<int>(ba.roster.size())) return;
+    const ra2engine::BuildingTypeDef& d = ba.roster[type];
+    int cx = 0, cy = 0;
+    input.placement_cell(cx, cy);
+    const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+        cx, cy, d.fw, d.fh, 0, d.adjacent, world.passable(), world.grid_w(), world.grid_h(),
+        world.occupancy(), world.buildings(), /*bypass_adjacency=*/false);
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    const std::vector<ra2engine::Cellxy> cells = ra2engine::foundation_cells(cx, cy, d.fw, d.fh);
+    for (std::size_t k = 0; k < cells.size(); ++k) {
+        const ra2assets::MapCell* mc = a.map.at(cells[k].x, cells[k].y);
+        const int level = mc ? mc->level : 0;
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(cells[k].x, cells[k].y, level, 60, 30, 15);
+        const int sx = p.x + cam.x, sy = p.y + cam.y;
+        const bool ok = chk.adjacency && (k < chk.cell_ok.size() ? chk.cell_ok[k] : false);
+        if (ok) SDL_SetRenderDrawColor(ren, 0, 220, 0, 160);
+        else SDL_SetRenderDrawColor(ren, 220, 0, 0, 160);
+        SDL_Point diamond[5] = {{sx + 30, sy},      {sx + 60, sy + 15}, {sx + 30, sy + 30},
+                                {sx, sy + 15},       {sx + 30, sy}};
+        SDL_RenderDrawLines(ren, diamond, 5);
+    }
+}
+
 int run_interactive(bool no_audio) {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
+
+    // Building assets + a Rules kept alive for the whole run (production math +
+    // the audio voice getters both read it).
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    const double build_speed = rules.general_double("BuildSpeed", 0.7);
+    const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
+
     ra2engine::World world = build_world(a, ua, 5);
     if (va.ok) spawn_tank_squads(world, a, va, 3);
+    // Player ConYard + enemy full base flanking the squads.
+    if (ba.ok) {
+        const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
+        if (sc) {
+            spawn_base(world, ba, /*house=*/0, sc->x, sc->y + 4);
+            spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y);
+        }
+    }
+
     ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(platform.renderer());
 
@@ -1289,18 +1541,19 @@ int run_interactive(bool no_audio) {
     ra2engine::Input input(world, cam, platform.width(), platform.height());
     const int kPan = 40;
 
-    // Audio wiring (Task 6): --no-audio skips init_audio entirely, leaving
-    // `audio` default-constructed (enabled=false) -- same silent-fallback
-    // outcome as a failed device open, just without ever touching the mix
-    // chain. rulesmd.ini is re-parsed here (load_unit_assets already parsed
-    // it once for combat/anim stats) purely for the Rules voice getters --
-    // a one-time startup cost, not per-frame.
+    // Sidebar layout + player production state (starts with MP money).
+    const std::vector<int> buildable = sidebar_buildable(ba);
+    const ra2engine::SidebarArtDims sbdims = sidebar_dims(ba);
+    ra2engine::SidebarLayout lay =
+        ra2engine::SidebarLayout::compute(platform.width(), platform.height(), sbdims, buildable);
+    ra2engine::ProductionState ps;
+    ps.credits = rules.mp_money();
+    double credits_shown = ps.credits;
+
+    // Audio wiring (Task 6): --no-audio skips init_audio entirely. `rules`
+    // above is reused for the voice getters -- no second parse.
     AudioSystem audio;
-    if (!no_audio) {
-        Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
-        Rules rules = Rules::load(rules_ini);
-        init_audio(audio, dir, rules);
-    }
+    if (!no_audio) init_audio(audio, dir, rules);
     // fire_flash/die_time seen last frame, per unit index (resized as units()
     // grows; never shrinks, matching World's own tombstone-not-erase model).
     std::vector<std::pair<double, double>> prev_audio_state;
@@ -1308,7 +1561,35 @@ int run_interactive(bool no_audio) {
     Uint32 prev = SDL_GetTicks();
     while (!input.wants_quit()) {
         ra2engine::InputEvent ev;
-        while (platform.poll(ev)) input.handle(ev);
+        while (platform.poll(ev)) {
+            // Sidebar consumes left clicks inside the bar BEFORE Input (so
+            // Input never needs to know the sidebar exists). Cameo click:
+            // Available -> start; Building -> cancel; Ready -> begin_placement;
+            // tab clicks are no-ops (tab 0 already active).
+            if (ba.ok && ba.sidebar_ok && ev.kind == ra2engine::InputEvent::PointerDown &&
+                ev.button == ra2engine::InputEvent::Left && lay.contains(ev.x, ev.y)) {
+                const int ci = lay.cameo_at(ev.x, ev.y);
+                if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
+                    const int type = buildable[ci];
+                    if (ps.slot.type == type && ps.slot.ready) {
+                        input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
+                    } else if (ps.slot.type == type) {
+                        ra2engine::cancel(ps);
+                    } else if (ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0,
+                                                    ba.groups, conyard_alive(world, ba, 0))) {
+                        ra2engine::start(ps, type, ba.roster, build_speed);
+                    }
+                }
+                continue;  // consumed by the sidebar
+            }
+            // Escape (mapped to Quit by platform) cancels placement instead of
+            // quitting while a placement is in progress.
+            if (ev.kind == ra2engine::InputEvent::Quit && input.placement_active()) {
+                input.cancel_placement();
+                continue;
+            }
+            input.handle(ev);
+        }
 
         // Camera pan: arrow keys + screen-edge scroll (left-drag now box-selects).
         const Uint8* ks = SDL_GetKeyboardState(nullptr);
@@ -1330,6 +1611,40 @@ int run_interactive(bool no_audio) {
         const double dt = (now - prev) / 1000.0;
         prev = now;
         world.step(dt);
+        ps_tick(ps, world, ba, dt, low_mod);
+
+        // Rolling credits tally (display-only; never read by the sim).
+        {
+            const double target = ps.credits;
+            const double rate = std::max(500.0, std::abs(target - credits_shown) / 0.5);
+            const double step = rate * dt;
+            if (credits_shown < target) credits_shown = std::min(target, credits_shown + step);
+            else credits_shown = std::max(target, credits_shown - step);
+        }
+
+        // Consume input actions ONCE per frame (audio acks + placement both
+        // read this single snapshot).
+        const ra2engine::InputActions act = input.take_actions();
+        // Placement confirm: re-run the validity check; on OK place the
+        // building (buildup anim), clear the queue slot, exit placement, and
+        // play the placement sound. On a bad click keep placing (RA2 bonk).
+        if (act.place_confirmed && input.placement_active()) {
+            const int type = input.placement_type();
+            if (type >= 0 && type < static_cast<int>(ba.roster.size())) {
+                const ra2engine::BuildingTypeDef& d = ba.roster[type];
+                const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                    act.place_cx, act.place_cy, d.fw, d.fh, 0, d.adjacent, world.passable(),
+                    world.grid_w(), world.grid_h(), world.occupancy(), world.buildings(),
+                    /*bypass_adjacency=*/false);
+                if (chk.ok) {
+                    world.add_building(type, act.place_cx, act.place_cy, d.fw, d.fh, 0, d.strength,
+                                       d.armor_ix, ba.art[type].buildup_total, /*instant=*/false);
+                    ra2engine::placed(ps);
+                    input.cancel_placement();
+                    if (audio.enabled) audio.mixer->play("PlaceBuilding");
+                }
+            }
+        }
 
         // Audio event collection + acks (Task 6, Step 3). Gated on
         // audio.enabled so a --no-audio run or a failed device open touches
@@ -1365,7 +1680,6 @@ int run_interactive(bool no_audio) {
                 }
                 prev_audio_state[i] = {u.fire_flash, u.die_time};
             }
-            const auto act = input.take_actions();  // ONCE/frame, consumes
             if (act.actor >= 0) {
                 // Acks attenuate like every other event (docs/re/
                 // audio-playback.md, AMENDED: positional = !GLOBAL for ALL
@@ -1386,8 +1700,14 @@ int run_interactive(bool no_audio) {
         }
 
         platform.begin_frame();
-        render_world(static_cast<SDL_Renderer*>(platform.renderer()), tc, a, ua, world, cam,
-                     platform.width(), platform.height(), &input, va.ok ? &va : nullptr);
+        SDL_Renderer* ren = static_cast<SDL_Renderer*>(platform.renderer());
+        render_world(ren, tc, a, ua, world, cam, platform.width(), platform.height(), &input,
+                     va.ok ? &va : nullptr, ba.ok ? &ba : nullptr);
+        // Placement cursor (under the sidebar), then the sidebar chrome on top.
+        draw_placement_cursor(ren, world, ba, input, a, cam, platform.width(), platform.height());
+        if (ba.ok && ba.sidebar_ok)
+            draw_sidebar(ren, tc, ba, lay, ps, world, static_cast<int>(credits_shown),
+                         now / 1000.0);
         platform.present();
         SDL_Delay(16);  // ~60fps
     }
