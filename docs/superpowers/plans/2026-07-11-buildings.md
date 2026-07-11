@@ -900,10 +900,12 @@ TEST_CASE("world: order_attack_building sets exclusive target") {
 
 namespace ra2engine {
 
-// [RE: construction.md §7, pre-hunt] BuildSpeed comment in rulesmd: "time in
-// minutes to produce a 1000 credit cost item"; RA2 logic runs 900 frames/min
-// at 15 Hz. Truncated toward zero like the damage formula.
-int build_frames(int cost, double build_speed);   // = (int)(cost/1000.0 * build_speed * 900.0)
+// [RE-GATE APPLIED x2: construction.md §7] gamemd computes
+// ftol(Cost × BuildSpeed × 0.9) in EXACTLY that operation order
+// (FUN_00711280). Do NOT algebraically rearrange: the /1000*900 form
+// IEEE-rounds differently (503/1889 instead of the recovered 504/1890
+// pins for GAPOWR/GACNST).
+int build_frames(int cost, double build_speed);   // = (int)(cost * build_speed * 0.9)
 
 // Power totals over ALIVE, non-Dead buildings of `house`. Buildings still in
 // Buildup do NOT contribute output or drain [RE: construction.md §8,
@@ -1149,7 +1151,8 @@ TEST_CASE("tick: 54-step economy [RE-GATE: construction.md §10]") {
 namespace ra2engine {
 
 int build_frames(int cost, double build_speed) {
-    return (int)(cost / 1000.0 * build_speed * 900.0);   // [RE: construction.md §7]
+    // [RE-GATE x2: construction.md §7] binary operation order — see header.
+    return (int)(cost * build_speed * 0.9);
 }
 
 PowerTotals power_totals(const std::vector<Building>& buildings,
