@@ -293,6 +293,37 @@ TEST_CASE("map: missing overlay sections are not an error") {
     CHECK(m.overlay_data_at(0, 0) == -1);
 }
 
+TEST_CASE("map: overlay body with invalid base64 is treated as absent, not a crash") {
+    // base64_decode throws std::runtime_error on any non-alphabet character
+    // (src/mappack.cpp); a garbage [OverlayPack]/[OverlayDataPack] body must
+    // be swallowed by parse() (section treated as absent), never propagate
+    // out of MapFile::parse.
+    std::string ini =
+        "[Map]\nSize=0,0,10,10\nTheater=TEMPERATE\n"
+        "[OverlayPack]\n1=!!!not-base64@@@\n"
+        "[OverlayDataPack]\n1=???also*garbage???\n";
+    ra2assets::MapFile m = ra2assets::MapFile::parse(ini); // must not throw
+    CHECK_FALSE(m.has_overlay());
+    CHECK(m.overlay_at(0, 0) == -1);
+    CHECK(m.overlay_data_at(0, 0) == -1);
+}
+
+TEST_CASE("map: overlay body with corrupt Format5/LCW data is treated as absent, not a crash") {
+    // Well-formed base64 whose decoded bytes are NOT a valid Format5 pack:
+    // a chunk header declaring a 0xFFFF-byte body when only 4 bytes remain
+    // (decompress_mappack throws "chunk body ... overruns input"). parse()
+    // must swallow it and report the section absent.
+    std::vector<uint8_t> bogus = {0xFF, 0xFF, 0x00, 0x20, 0xDE, 0xAD, 0xBE, 0xEF};
+    std::string ini =
+        "[Map]\nSize=0,0,10,10\nTheater=TEMPERATE\n"
+        "[OverlayPack]\n1=" + b64_encode(bogus) + "\n" +
+        "[OverlayDataPack]\n1=" + b64_encode(bogus) + "\n";
+    ra2assets::MapFile m = ra2assets::MapFile::parse(ini); // must not throw
+    CHECK_FALSE(m.has_overlay());
+    CHECK(m.overlay_at(0, 0) == -1);
+    CHECK(m.overlay_data_at(0, 0) == -1);
+}
+
 // --- DUMP/PINS: real reference map's ore overlay -----------------------------
 // Guarded (RA2_INSTALL_DIR pattern mirrored from the existing real-map test
 // above / test_theater_name.cpp / test_theater.cpp): opens mapsmd03.mix,

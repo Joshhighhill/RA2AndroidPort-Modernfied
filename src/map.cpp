@@ -122,13 +122,17 @@ MapFile MapFile::parse(const std::string& ini_text) {
         if (sec_kvs.empty()) return {};
         std::string b64;
         for (const auto& kv : sec_kvs) b64 += kv.second;
-        std::vector<uint8_t> packed = base64_decode(b64);
-        if (packed.empty()) return {};
         std::vector<uint8_t> raw;
         try {
+            // Both stages throw on malformed input (base64_decode on any
+            // non-alphabet character, decompress_mappack on a bad Format5/
+            // LCW stream); either way the pack is treated as absent -- a
+            // malformed overlay section must never crash map load.
+            std::vector<uint8_t> packed = base64_decode(b64);
+            if (packed.empty()) return {};
             raw = decompress_mappack(packed.data(), packed.size(), MapPackCodec::LCW);
         } catch (const std::exception&) {
-            return {}; // malformed pack: treat as absent, don't crash map load
+            return {};
         }
         if (raw.size() != kOverlayBytes) return {};
         return raw;
