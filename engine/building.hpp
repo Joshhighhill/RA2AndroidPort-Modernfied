@@ -19,6 +19,18 @@ struct BuildingTypeDef {
     int strength = 1;
     int armor_ix = 0;                // armor_index(Rules armor)
     int cost = 0;
+    // Credits actually deducted by production.cpp's per-stage charge math
+    // [RE-GATE APPLIED: economy.md §6a]. The binary charges the
+    // FreeUnit-subtracted cost while build TIME still uses raw `cost`
+    // (GAREFN/NAREFN ship a free HARV/CMIN: charge = cost - free_unit_cost,
+    // e.g. 2000-1400 = 600). Resolved ONCE by the caller: `charge = cost`
+    // for every type with no FreeUnit; `charge = max(0, cost -
+    // free_unit_cost)` for GAREFN/NAREFN. Left at the default 0 ("unset") by
+    // every caller/test that predates this phase and never touches it --
+    // production.cpp's start() treats charge == 0 as "use cost", so those
+    // callers are byte-identical without modification (see QueueSlot::
+    // charge_basis in production.hpp).
+    int charge = 0;
     int power = 0;                   // + output, - drain
     int adjacent = 2;
     int tech_level = 0;

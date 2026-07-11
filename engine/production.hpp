@@ -47,6 +47,19 @@ struct QueueSlot {
     int total_frames = 1;       // Time_To_Build (the 504-frame pin) — display/witness
     double spent = 0.0;         // credits deducted so far
     bool ready = false;         // finished, waiting for placement
+    // Effective per-build charge total [RE-GATE APPLIED: economy.md §6a].
+    // Resolved ONCE by start(): types[type].charge when the caller set one
+    // (> 0 — e.g. GAREFN/NAREFN's FreeUnit-subtracted 600), else
+    // types[type].cost (every pre-economy-phase caller/test that never
+    // touches BuildingTypeDef::charge, which defaults to 0). tick()'s
+    // per-stage charge math and its final settle-to-exact-total line both
+    // read THIS field, never types[...].cost/.charge directly — `types` is a
+    // const ref shared across every build of that type, so resolving the
+    // "charge unset -> use cost" fallback into the per-slot state here
+    // (instead of mutating the roster) keeps concurrent/repeat builds of the
+    // same type independent. build_frames (wall-clock build TIME) is
+    // unaffected — it stays on raw cost, computed once in start() below.
+    int charge_basis = 0;
 };
 
 struct ProductionState {
@@ -77,17 +90,23 @@ bool can_start(const ProductionState& ps, int type,
 // build_frames(cost, build_speed); step_ticks = clamp(total_frames /
 // kProductionSteps, 1, 255) (integer division = the binary's trunc)
 // [RE-GATE: construction.md §10 FUN_004C9DC0]. GAPOWR: 504 -> step_ticks 9
-// (wall duration 54*9 = 486 frames = 32.4 s).
+// (wall duration 54*9 = 486 frames = 32.4 s). Also resolves
+// QueueSlot::charge_basis = types[type].charge > 0 ? types[type].charge :
+// types[type].cost [RE-GATE: economy.md §6a] — the "charge unset" fallback;
+// see QueueSlot's comment.
 void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& types,
            double build_speed);
 
-// Advance by dt seconds [RE: construction.md §10]:
+// Advance by dt seconds [RE: construction.md §10; charge basis vs. cost —
+// economy.md §6a]:
 //   frames_accum += dt * 15 * speed_mult;
 //   while (frames_accum >= step_ticks && stage < kProductionSteps):
-//     charge = (cost - spent) / (kProductionSteps - stage);
+//     charge = (charge_basis - spent) / (kProductionSteps - stage);
 //     if (credits < charge) { frames_accum = 0.0; break; }  // stall
 //     credits -= charge; spent += charge; ++stage; frames_accum -= step_ticks;
-//   stage == kProductionSteps -> spent settles to exactly cost, ready = true.
+//   stage == kProductionSteps -> spent settles to exactly charge_basis, ready = true.
+// charge_basis (see QueueSlot) is cost for every type with no FreeUnit, and
+// the caller's FreeUnit-subtracted amount otherwise — see start() below.
 // The stall reset (frames_accum = 0.0) models the original's free-running
 // stage timer, which restarts after a broke expiry (rolled-back stage,
 // retried on the NEXT timer expiry) — a funding gap adds 0..step_ticks

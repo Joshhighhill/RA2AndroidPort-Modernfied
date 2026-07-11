@@ -77,21 +77,28 @@ void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& ty
            double build_speed) {
     ps.slot = QueueSlot{};
     ps.slot.type = type;
-    ps.slot.total_frames = std::max(1, build_frames(types[type].cost, build_speed));
+    const BuildingTypeDef& t = types[type];
+    ps.slot.total_frames = std::max(1, build_frames(t.cost, build_speed));
     // [RE-GATE: construction.md §10 FUN_004C9DC0] frames per production step.
     ps.slot.step_ticks = std::clamp(ps.slot.total_frames / kProductionSteps, 1, 255);
+    // [RE-GATE: economy.md §6a] charge basis: the caller's FreeUnit-subtracted
+    // amount when set (> 0), else raw cost — resolved once here so tick()
+    // never has to special-case an unset BuildingTypeDef::charge (see
+    // QueueSlot::charge_basis).
+    ps.slot.charge_basis = t.charge > 0 ? t.charge : t.cost;
 }
 
 void tick(ProductionState& ps, double dt, double speed_mult,
           const std::vector<BuildingTypeDef>& types) {
     if (ps.slot.type == -1 || ps.slot.ready) return;
-    const BuildingTypeDef& t = types[ps.slot.type];
+    (void)types;  // charge basis was already resolved into ps.slot.charge_basis by start()
     ps.slot.frames_accum += dt * 15.0 * speed_mult;
     while (ps.slot.frames_accum >= ps.slot.step_ticks &&
            ps.slot.stage < kProductionSteps) {
-        // [RE-GATE: construction.md §10] entering the next stage charges the
-        // remaining balance split over the remaining steps.
-        double charge = ((double)t.cost - ps.slot.spent) /
+        // [RE-GATE: construction.md §10; charge basis economy.md §6a]
+        // entering the next stage charges the remaining balance (against
+        // charge_basis, NOT raw cost) split over the remaining steps.
+        double charge = ((double)ps.slot.charge_basis - ps.slot.spent) /
                         (kProductionSteps - ps.slot.stage);
         if (ps.credits < charge) {
             // Stall: no progress, no charge; retried next tick. Reset the
@@ -105,9 +112,9 @@ void tick(ProductionState& ps, double dt, double speed_mult,
         ps.slot.frames_accum -= ps.slot.step_ticks;
     }
     if (ps.slot.stage >= kProductionSteps) {
-        // settle rounding: total spend is exactly cost
-        ps.credits -= (double)t.cost - ps.slot.spent;
-        ps.slot.spent = (double)t.cost;
+        // settle rounding: total spend is exactly charge_basis
+        ps.credits -= (double)ps.slot.charge_basis - ps.slot.spent;
+        ps.slot.spent = (double)ps.slot.charge_basis;
         ps.slot.ready = true;
     }
 }

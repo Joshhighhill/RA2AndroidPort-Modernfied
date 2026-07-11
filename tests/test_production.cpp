@@ -138,3 +138,35 @@ TEST_CASE("tick: 54-step economy [RE-GATE: construction.md §10]") {
     tick(s, 1.0, 0.5, t);                     // 15 frames -> one stage
     CHECK(s.slot.stage == 1);
 }
+
+TEST_CASE("tick: FreeUnit charge split -- charge basis diverges from raw cost "
+         "[RE-GATE: economy.md §6a]") {
+    // GAREFN/NAREFN-shaped type: cost 2000 (drives build TIME), charge 600
+    // (cost 2000 minus the FreeUnit HARV/CMIN's 1400 -- the credits actually
+    // deducted). build_speed 0.7 matches every other pin in this file.
+    std::vector<BuildingTypeDef> t(1);
+    t[0].id = "GAREFN"; t[0].cost = 2000; t[0].charge = 600; t[0].tech_level = 1;
+
+    ProductionState ps; ps.credits = 10000;
+    start(ps, 0, t, 0.7);
+    CHECK(ps.slot.total_frames == 1260);   // ftol(2000*0.7*0.9) -- raw cost, unaffected by charge
+    CHECK(ps.slot.step_ticks == 23);       // trunc(1260/54)
+    CHECK(ps.slot.charge_basis == 600);
+
+    tick(ps, 10000.0, 1.0, t);             // way past the end
+    CHECK(ps.slot.ready);
+    CHECK(ps.slot.stage == kProductionSteps);
+    CHECK(ps.credits == doctest::Approx(10000.0 - 600.0));   // exactly charge, not cost, deducted
+    CHECK(ps.slot.spent == doctest::Approx(600.0));
+
+    // Existing charge-unset roster types (GAPOWR etc.) are UNCHANGED: charge
+    // defaults to 0 -> start() falls back to cost, so every pre-existing pin
+    // in this file (504/9 frames, 800 total spend) keeps passing unmodified.
+    auto t2 = roster();
+    ProductionState ps2; ps2.credits = 10000;
+    start(ps2, 1, t2, 0.7);                // GAPOWR: cost 800, charge unset
+    CHECK(ps2.slot.charge_basis == 800);
+    tick(ps2, 504.0, 1.0, t2);
+    CHECK(ps2.slot.ready);
+    CHECK(ps2.credits == doctest::Approx(10000.0 - 800.0));
+}

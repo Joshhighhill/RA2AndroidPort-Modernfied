@@ -7,6 +7,7 @@
 
 #include "combat.hpp"         // armor_index, step_combat, MoveRequest
 #include "group_move.hpp"     // assign_formation
+#include "harvest.hpp"        // step_harvest/HarvestMove/HarvestEvent/OreValues (Economy phase)
 #include "iso_project.hpp"   // cell_to_screen (terrain_screen_bounds)
 #include "iso_renderer.hpp"  // terrain_screen_bounds / pal_for_house declarations
 #include "pathfind.hpp"
@@ -286,6 +287,10 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house) 
 World::World(const ra2assets::MapFile& map) : map_(&map) {
     passable_ = build_passability(map.cells(), grid_w_, grid_h_);
     occ_ = Occupancy(grid_w_, grid_h_);
+    // Economy phase: built unconditionally (empty if the map has no overlay
+    // section) so ore() is always valid; set_economy gates whether it ever
+    // steps (byte-identity guard -- see types_'s comment in world.hpp).
+    ore_ = OreField::from_map(map, grid_w_, grid_h_);
 }
 
 bool World::walkable(int x, int y) const {
@@ -328,6 +333,74 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
 }
 
 void World::set_anim(const std::string& image, const UnitAnimSeq& seq) { anims_[image] = seq; }
+
+// --- Economy phase [RE: economy.md] ---
+
+void World::set_economy(std::vector<BuildingTypeDef> types, std::vector<int> refinery_types,
+                        OreValues values, double growth_interval_secs, double growth_pct,
+                        double spread_pct) {
+    types_ = std::move(types);
+    refinery_types_ = std::move(refinery_types);
+    ore_value_ore_ = values.ore;
+    ore_value_gems_ = values.gems;
+    growth_interval_ = growth_interval_secs;
+    growth_pct_ = growth_pct;
+    spread_pct_ = spread_pct;
+}
+
+double World::take_income(int house) {
+    if (house < 0 || house > 1) return 0.0;
+    const double v = house_credits_[house];
+    house_credits_[house] = 0.0;
+    return v;
+}
+
+Unit& World::add_harvester(int cell_x, int cell_y, int house, const UnitCombat& c, bool chrono,
+                           int storage_bales) {
+    Unit& u = add_combat_unit(cell_x, cell_y, house, c);
+    u.is_harvester = true;
+    u.chrono_miner = chrono;
+    u.storage_bales = storage_bales;
+    // A freshly built/spawned harvester starts hunting immediately, matching
+    // the original -- see the header comment on add_harvester.
+    u.harv = HarvState::SeekOre;
+    return u;
+}
+
+void World::order_harvest(int x, int y) {
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+        Unit& u = units_[i];
+        // Player orders act on the player's (house-0) selected harvesters
+        // only -- same house gate order_attack applies to its issuers.
+        if (!u.selected || !u.is_harvester || u.house != 0 || !u.alive || u.die_time >= 0.0)
+            continue;
+        u.harv_cell_x = x;
+        u.harv_cell_y = y;
+        u.harv = HarvState::MoveToOre;
+        u.harv_timer = 0.0;
+        u.manual_hold = false;
+        order_unit_move(static_cast<int>(i), x, y);
+    }
+}
+
+void World::order_return() {
+    for (Unit& u : units_) {
+        // Same house-0 gate as order_harvest above.
+        if (!u.selected || !u.is_harvester || u.house != 0 || !u.alive || u.die_time >= 0.0)
+            continue;
+        u.harv = HarvState::ReturnToRef;
+        u.harv_timer = 0.0;
+    }
+}
+
+std::vector<HarvestEvent> World::take_harvest_events() {
+    std::vector<HarvestEvent> out;
+    out.reserve(harvest_events_.size());
+    for (const PendingHarvestEvent& e : harvest_events_)
+        out.push_back({static_cast<HarvestEvent::Kind>(e.kind), e.unit});
+    harvest_events_.clear();
+    return out;
+}
 
 void World::clear_selection() {
     for (Unit& u : units_) u.selected = false;
@@ -399,6 +472,11 @@ void World::order_move_selected(int goal_x, int goal_y) {
         u.target = -1;
         u.target_building = -1;
         u.attack_order = false;
+        // Economy phase [RE: economy.md §1 auto-resume]: a player move order
+        // parks the harvester mission FSM (step_harvest's manual_hold branch)
+        // for the duration of this walk; it resumes at SeekOre the instant
+        // the unit arrives, load/dock state intact.
+        if (u.is_harvester) u.manual_hold = true;
         const Cellxy tgt = targets[k];
         order_unit_move(sel[k], tgt.x, tgt.y);
     }
@@ -536,6 +614,26 @@ void World::step(double dt) {
                              grid_w_, grid_h_, occ_);
         for (std::size_t k = 0; k < movers.size(); ++k)
             order_unit_move(movers[k], targets[k].x, targets[k].y);
+    }
+
+    // Economy phase [RE: economy.md]: ore growth/spread + harvester mission
+    // stepping, gated on set_economy having been called (types_ non-empty).
+    // A World that never calls set_economy (every pre-economy-phase caller,
+    // including demo-base's World -- see the byte-identity note in
+    // task-6-brief.md) steps with zero ore/harvest activity: ore_.step is
+    // also gated (not just step_harvest), so ore().timer() stays exactly 0.
+    if (!types_.empty()) {
+        ore_.step(dt, growth_interval_, growth_pct_, spread_pct_, passable_, ore_rng_);
+        std::vector<HarvestMove> h_moves;
+        std::vector<HarvestEvent> h_events;
+        step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
+                    grid_h_, dt, OreValues{ore_value_ore_, ore_value_gems_}, house_credits_,
+                    h_moves, h_events);
+        // Path each requested move the same way step_combat's MoveRequests
+        // are executed above (order_unit_move mirrors that pattern).
+        for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);
+        for (const HarvestEvent& e : h_events)
+            harvest_events_.push_back({static_cast<int>(e.kind), e.unit});
     }
 
     // Hold at weapon range: a unit under an EXPLICIT attack order that has

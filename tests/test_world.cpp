@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "building.hpp"
+#include "harvest.hpp"        // Economy phase: HarvState/HarvestEvent/OreValues/kUnloadSecsPerBale
 #include "iso_project.hpp"   // cell_to_screen / screen_to_cell
 #include "iso_renderer.hpp"  // pal_for_house
 #include "occupancy.hpp"
@@ -1291,4 +1292,161 @@ TEST_CASE("world: order_attack_building sets exclusive target") {
     CHECK(w.units()[0].target_building == -1);
     CHECK(w.units()[0].target == 1);
     CHECK(w.units()[0].attack_order);
+}
+
+// ---- Economy phase Task 6: World integration (ore ownership, harvest step,
+// income, orders) -- same real-map-or-skip fixture as every other World
+// integration test in this file (see the comment above "world: add_building
+// blocks passability..." for why: MapFile has no cell-injecting constructor).
+
+TEST_CASE("World: add_harvester sets harvester fields + occupancy") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    ra2engine::Unit& u = world.add_harvester(c->x, c->y, 0, gi_stats(), /*chrono*/ false,
+                                             /*storage*/ 40);
+    CHECK(world.units().size() == 1);
+    CHECK(u.is_harvester);
+    CHECK_FALSE(u.chrono_miner);
+    CHECK(u.storage_bales == 40);
+    CHECK(u.harv == ra2engine::HarvState::SeekOre);   // starts hunting immediately
+    CHECK(world.unit_at_cell(c->x, c->y) == 0);
+    CHECK(world.occupancy().at(c->x, c->y) == 0);
+
+    // CMIN variant: chrono flag + a different storage figure both carry through.
+    int cx = -1, cy = -1;
+    REQUIRE(find_close_free_cell(world, c->x, c->y, cx, cy));
+    ra2engine::Unit& cmin = world.add_harvester(cx, cy, 1, cons_stats(), /*chrono*/ true,
+                                                /*storage*/ 20);
+    CHECK(cmin.chrono_miner);
+    CHECK(cmin.storage_bales == 20);
+    CHECK(cmin.house == 1);
+}
+
+TEST_CASE("World: order_harvest paths a selected harvester to ore and it gulps on arrival") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    int ox = -1, oy = -1;
+    REQUIRE(find_close_free_cell(world, c->x, c->y, ox, oy));
+    world.ore().set(ox, oy, ra2engine::OreKind::Ore, ra2engine::kMaxOreDensity, 0);
+
+    ra2engine::Unit& u =
+        world.add_harvester(c->x, c->y, 0, gi_stats(), /*chrono*/ false, /*storage*/ 40);
+    u.selected = true;
+    world.order_harvest(ox, oy);
+    CHECK(u.harv == ra2engine::HarvState::MoveToOre);
+    CHECK(u.harv_cell_x == ox);
+    CHECK(u.harv_cell_y == oy);
+
+    // step_harvest only runs once economy is configured -- growth/spread
+    // parked at a huge interval so this short run never fires them (keeps
+    // the test focused purely on the seek->arrive->gulp path).
+    std::vector<ra2engine::BuildingTypeDef> types(1);
+    types[0].id = "NAREFN";
+    world.set_economy(types, {0}, ra2engine::OreValues{}, /*growth_interval*/ 1000.0,
+                      /*growth_pct*/ 0.0, /*spread_pct*/ 0.0);
+
+    bool gulped = false;
+    for (int i = 0; i < 400 && !gulped; ++i) {
+        world.step(0.1);
+        if (u.bales_ore > 0.0 || world.ore().density_at(ox, oy) < ra2engine::kMaxOreDensity)
+            gulped = true;
+    }
+    CHECK(gulped);
+}
+
+TEST_CASE("World: take_income drains harvest income once, then reads zero") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // Find a 4x3 refinery-shaped footprint (NAREFN) with its dock cell
+    // (origin + (fw/2, fh), per dock_cell_x/y) also walkable.
+    int bx = -1, by = -1;
+    for (int dy = 0; dy < 16 && bx < 0; ++dy)
+        for (int dx = 0; dx < 16 && bx < 0; ++dx) {
+            const int x = c->x + dx, y = c->y + dy;
+            bool ok = true;
+            for (int fy = 0; fy < 3 && ok; ++fy)
+                for (int fx = 0; fx < 4 && ok; ++fx)
+                    if (!world.walkable(x + fx, y + fy)) ok = false;
+            if (ok && world.walkable(x + 2, y + 3)) { bx = x; by = y; }
+        }
+    REQUIRE(bx >= 0);
+
+    const int ref_idx = world.add_building(/*type*/ 0, bx, by, /*fw*/ 4, /*fh*/ 3, /*house*/ 0,
+                                           /*strength*/ 1000, /*armor_ix*/ 0,
+                                           /*buildup_total*/ 0.0, /*instant*/ true);
+    const int dock_x = bx + 2, dock_y = by + 3;   // dock_cell_x/y, harvest.hpp
+
+    ra2engine::Unit& u = world.add_harvester(dock_x, dock_y, 0, gi_stats(), /*chrono*/ false,
+                                             /*storage*/ 40);
+    // Drive the mini-cycle directly from Unloading (drives the same
+    // per-bale drain step_harvest's own unload test exercises) rather than a
+    // full seek/gulp/return walk -- this test is about take_income's
+    // drain-once-then-zero contract, not the whole FSM.
+    u.harv = ra2engine::HarvState::Unloading;
+    u.dock_refinery = ref_idx;
+    u.bales_ore = 2;    // 2 * OreValues::ore (25) = 50 credits
+
+    std::vector<ra2engine::BuildingTypeDef> types(1);
+    types[0].id = "NAREFN";
+    world.set_economy(types, {0}, ra2engine::OreValues{}, /*growth_interval*/ 1000.0,
+                      /*growth_pct*/ 0.0, /*spread_pct*/ 0.0);
+
+    for (int i = 0; i < 50 && (u.bales_ore > 0.0 || u.bales_gems > 0.0); ++i)
+        world.step(ra2engine::kUnloadSecsPerBale);
+    CHECK(u.bales_ore == 0.0);
+
+    const double income = world.take_income(0);
+    CHECK(income == doctest::Approx(50.0));
+    CHECK(world.take_income(0) == doctest::Approx(0.0));   // drained once -> zero after
+    CHECK(world.take_income(1) == doctest::Approx(0.0));   // house 1 untouched
+}
+
+TEST_CASE("World: step() without set_economy runs zero ore/harvest activity "
+         "(byte-identity gate)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // Even with an ore cell manually placed and a harvester mid-mission,
+    // set_economy was never called -> types_ is empty -> step() must not
+    // touch ore growth/spread OR the harvester's mission state at all.
+    world.ore().set(c->x, c->y, ra2engine::OreKind::Ore, ra2engine::kMaxOreDensity, 0);
+    ra2engine::Unit& u =
+        world.add_harvester(c->x, c->y, 0, gi_stats(), /*chrono*/ false, /*storage*/ 40);
+    u.harv = ra2engine::HarvState::Harvesting;
+    u.harv_timer = 0.0;
+
+    for (int i = 0; i < 50; ++i) world.step(1.0);
+
+    CHECK(world.ore().timer() == 0.0);
+    CHECK(world.ore().density_at(c->x, c->y) == ra2engine::kMaxOreDensity);   // never gulped
+    CHECK(u.bales_ore == 0.0);
+    CHECK(u.harv == ra2engine::HarvState::Harvesting);   // FSM frozen, never advanced
+    CHECK(world.take_income(0) == doctest::Approx(0.0));
 }

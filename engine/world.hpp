@@ -6,10 +6,28 @@
 
 #include "building.hpp"
 #include "occupancy.hpp"
+#include "ore.hpp"  // OreField/OreKind/OreRng (Economy phase)
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "ra2assets/map.hpp"
 
 namespace ra2engine {
+
+// Forward declarations only: OreValues and HarvestEvent are DEFINED in
+// harvest.hpp, which itself includes world.hpp (harvest.hpp needs Unit,
+// defined below) -- a real #include cycle, so world.hpp cannot include
+// harvest.hpp back. These two structs appear here ONLY in function
+// declaration signatures (set_economy's by-value parameter, take_harvest_
+// events' by-value return), which is legal with just a forward declaration
+// (no instantiation is forced by a mere declaration); World stores NO member
+// of either type directly -- set_economy copies OreValues's two ints into
+// private int fields, and take_harvest_events converts a private POD event
+// buffer (World::PendingHarvestEvent, fully defined inline, see below) to/
+// from real HarvestEvent objects, entirely inside world.cpp where
+// harvest.hpp IS included. Any caller of these methods must include
+// harvest.hpp itself to get the complete types (main.cpp / tests already do,
+// or will).
+struct OreValues;
+struct HarvestEvent;
 
 // Harvester mission states [RE: economy.md §1]. Lives here (not harvest.hpp)
 // because Unit carries one; harvest.hpp includes world.hpp.
@@ -318,6 +336,47 @@ public:
     bool walkable(int x, int y) const;
     const Occupancy& occupancy() const { return occ_; }
 
+    // --- Economy phase [RE: economy.md] ---
+    // Ore state built from the ctor map's overlay (empty if the map has
+    // none, or the map's has_overlay() is false).
+    OreField& ore() { return ore_; }
+    const OreField& ore() const { return ore_; }
+
+    // Roster copy + refinery type ids so step() can run harvest logic.
+    // `types_.empty()` (never called) gates OFF ore_.step/step_harvest in
+    // step() entirely -- a World that never calls this (every pre-economy-
+    // phase caller, including demo-base) steps with zero ore/harvest
+    // activity, byte-identical to before this phase landed.
+    void set_economy(std::vector<BuildingTypeDef> types, std::vector<int> refinery_types,
+                     OreValues values, double growth_interval_secs,
+                     double growth_pct, double spread_pct);
+
+    // Harvest income accumulated (both houses' unload drains summed since
+    // the last call to take_income for THAT house) since the last call,
+    // then zeroed for `house`. House index must be 0 or 1; anything else
+    // returns 0 untouched.
+    double take_income(int house);
+
+    // Spawn a harvester: add_combat_unit (same placement precondition: the
+    // caller already checked walkable()/unit_at_cell()) plus the harvester
+    // fields, starting the mission at HarvState::SeekOre (a freshly built
+    // harvester starts hunting immediately, matching the original).
+    Unit& add_harvester(int cell_x, int cell_y, int house, const UnitCombat& c,
+                        bool chrono, int storage_bales);
+
+    // Player orders (selected house-0 harvesters only). Simplified per
+    // economy.md §1: no separate "pinned" flag -- just pin harv_cell_* to
+    // (x, y), set the mission to MoveToOre, and emit the path immediately
+    // via order_unit_move (mirrors step()'s own HarvestMove handling).
+    void order_harvest(int x, int y);
+    // ReturnToRef now (resets harv_timer -- every transition into
+    // ReturnToRef resets it; see harvest.cpp's ChronoOut-fires-once comment).
+    void order_return();
+
+    // Drained by main.cpp each frame for audio (chrono/unload sounds); empty
+    // if set_economy was never called (step() never populates it then).
+    std::vector<HarvestEvent> take_harvest_events();
+
     // Movement speed in iso cells/sec (see main.cpp for the Rules-derived value).
     void set_move_speed(double cells_per_sec) { move_cps_ = cells_per_sec; }
     double move_speed() const { return move_cps_; }
@@ -327,6 +386,11 @@ public:
     // Units retargeted mid-walk keep their interpolated fx/fy (no backward
     // snap). Dying/dead selected units are skipped. No-op if nothing eligible
     // is selected.
+    // Economy phase addition [RE: economy.md §1 auto-resume]: a selected
+    // is_harvester unit also gets manual_hold = true, so step_harvest parks
+    // its mission FSM for the duration of this player-directed move and
+    // resumes (at SeekOre) the instant it arrives -- a ground right-click on
+    // a harvester keeps this existing move path rather than a dedicated one.
     void order_move_selected(int goal_x, int goal_y);
 
     // Order every SELECTED house-0, alive, non-dying unit to attack
@@ -390,6 +454,12 @@ private:
     // range.
     void order_unit_move(int idx, int gx, int gy);
 
+    // Fully-defined-inline POD mirror of HarvestEvent (kind stored as int,
+    // via static_cast to/from HarvestEvent::Kind) -- see the forward-
+    // declaration comment near the top of this header for why World cannot
+    // store a real HarvestEvent (or a container of one) as a member.
+    struct PendingHarvestEvent { int kind; int unit; };
+
     const ra2assets::MapFile* map_;
     std::vector<Unit> units_;
     std::vector<Building> buildings_;
@@ -399,6 +469,24 @@ private:
     int grid_h_ = 0;
     double move_cps_ = 3.0;
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
+
+    // --- Economy phase [RE: economy.md] ---
+    OreField ore_;
+    OreRng ore_rng_;
+    // Roster copy + refinery type ids (set_economy). EMPTY types_ (the
+    // default -- set_economy never called) is the byte-identity gate:
+    // step() skips ore_.step and step_harvest entirely in that case.
+    std::vector<BuildingTypeDef> types_;
+    std::vector<int> refinery_types_;
+    // OreValues's two fields, copied by set_economy (see the forward-
+    // declaration comment above for why OreValues itself isn't stored).
+    int ore_value_ore_ = 25;
+    int ore_value_gems_ = 50;
+    double growth_interval_ = 0.0;
+    double growth_pct_ = 0.0;
+    double spread_pct_ = 0.0;
+    double house_credits_[2] = {0.0, 0.0};  // accumulated unload income, per house
+    std::vector<PendingHarvestEvent> harvest_events_;  // pending take_harvest_events() drain
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by
