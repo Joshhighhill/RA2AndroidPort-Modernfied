@@ -627,8 +627,8 @@ void World::step(double dt) {
         std::vector<HarvestMove> h_moves;
         std::vector<HarvestEvent> h_events;
         step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
-                    grid_h_, dt, OreValues{ore_value_ore_, ore_value_gems_}, house_credits_,
-                    h_moves, h_events);
+                    grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
+                    house_credits_, h_moves, h_events);
         // Path each requested move the same way step_combat's MoveRequests
         // are executed above (order_unit_move mirrors that pattern).
         for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);

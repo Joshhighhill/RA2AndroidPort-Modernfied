@@ -10,6 +10,7 @@ struct Rig {
     std::vector<int> ref_types{0};
     OreField ore{20, 20};
     std::vector<std::uint8_t> pass = std::vector<std::uint8_t>(400, 1);
+    Occupancy occ{20, 20};  // Task 6 review fix: chrono warps reconcile this
     OreValues values;
     double credits[2] = {0, 0};
     std::vector<HarvestMove> moves;
@@ -22,12 +23,26 @@ struct Rig {
     Unit& harv(int x, int y, bool chrono = false, int storage = 40) {
         Unit u; u.cell_x = x; u.cell_y = y; u.fx = x; u.fy = y;
         u.is_harvester = true; u.chrono_miner = chrono; u.storage_bales = storage;
-        u.harv = HarvState::SeekOre; units.push_back(u); return units.back();
+        u.harv = HarvState::SeekOre;
+        // Claim the spawn cell like World::add_unit does (the warp's
+        // occupancy reconcile below is asserted against these claims). NOTE
+        // the two dock-queue tests spawn two units on one cell -- the later
+        // claim wins, matching that fixture's deliberate invariant bend.
+        occ.set(x, y, (int)units.size());
+        units.push_back(u); return units.back();
     }
     void step(double dt) {
         moves.clear(); events.clear();
-        step_harvest(units, buildings, types, ref_types, ore, pass, 20, 20, dt,
+        step_harvest(units, buildings, types, ref_types, ore, pass, 20, 20, occ, dt,
                      values, credits, moves, events);
+    }
+    // Number of cells currently claimed by unit `idx` (invariant checks).
+    int claims_of(int idx) const {
+        int n = 0;
+        for (int y = 0; y < 20; ++y)
+            for (int x = 0; x < 20; ++x)
+                if (occ.at(x, y) == idx) ++n;
+        return n;
     }
 };
 
@@ -347,4 +362,90 @@ TEST_CASE("harvest: determinism - two identical rigs stay identical") {
     }
     CHECK(a.credits[0] == b.credits[0]);
     CHECK(a.credits[1] == b.credits[1]);
+}
+
+// ---- Task 6 review fix: chrono-warp occupancy reconcile ----
+// Invariant: after any warp, an alive unit holds exactly ONE occupancy
+// claim, on its current cell, and a warp never lands on another unit's cell.
+
+TEST_CASE("harvest: CMIN warp releases the origin cell and claims exactly the landing cell "
+          "(both legs)") {
+    Rig r;
+    r.ore.set(2, 2, OreKind::Ore, kMaxOreDensity, 0);
+    r.harv(2, 2, /*chrono=*/true, /*storage=*/20);   // claims (2,2)
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].harv_cell_x = 2;
+    r.units[0].harv_cell_y = 2;
+    r.units[0].bales_ore = 20;                        // full -> outbound warp
+    REQUIRE(r.occ.at(2, 2) == 0);
+
+    // Outbound leg: warp to the dock cell (10, 11).
+    r.step(kChronoWarpSecs);
+    REQUIRE(r.units[0].cell_x == 10);
+    REQUIRE(r.units[0].cell_y == 11);
+    CHECK(r.occ.at(2, 2) == Occupancy::kEmpty);       // (a) origin released...
+    CHECK(r.occ.can_enter(2, 2, /*unit*/ 99));        // ...another unit could be pathed onto it
+    CHECK(r.occ.at(10, 11) == 0);                     // landing claimed
+    CHECK(r.claims_of(0) == 1);                       // (b) exactly one claim
+
+    // Drive through WaitDock -> Unloading -> drain all 20 bales.
+    r.step(0.01);
+    REQUIRE(r.units[0].harv == HarvState::Unloading);
+    for (int i = 0; i < 20; ++i) r.step(kUnloadSecsPerBale);
+    REQUIRE(r.units[0].bales_ore == 0);
+    REQUIRE(r.units[0].dock_refinery == -1);          // return-warp transit marker
+
+    // Return leg: warp back to the ore field (2, 2).
+    r.step(kChronoWarpSecs);
+    REQUIRE(r.units[0].harv == HarvState::SeekOre);
+    REQUIRE(r.units[0].cell_x == 2);
+    REQUIRE(r.units[0].cell_y == 2);
+    CHECK(r.occ.at(10, 11) == Occupancy::kEmpty);     // (a) dock cell released
+    CHECK(r.occ.can_enter(10, 11, /*unit*/ 99));
+    CHECK(r.occ.at(2, 2) == 0);                       // landing claimed
+    CHECK(r.claims_of(0) == 1);                       // (b) exactly one claim, full cycle
+}
+
+TEST_CASE("harvest: warp onto a cell occupied by another unit deflects (no overlap)") {
+    Rig r;
+    r.harv(2, 2, /*chrono=*/true, /*storage=*/20);    // unit 0: CMIN, claims (2,2)
+    r.harv(10, 11, /*chrono=*/false, /*storage=*/40);  // unit 1: parked ON the dock cell
+    r.units[1].harv = HarvState::None;                 // idle blocker, never moves
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].bales_ore = 20;
+    REQUIRE(r.occ.at(10, 11) == 1);                    // blocker owns the dock cell
+
+    r.step(kChronoWarpSecs);
+
+    // Deflected to the first free ring cell around the dock in the recovered
+    // N,NE,E,SE,S,SW,W,NW order: N = (10, 10).
+    CHECK(r.units[0].cell_x == 10);
+    CHECK(r.units[0].cell_y == 10);
+    const bool overlap = r.units[0].cell_x == r.units[1].cell_x &&
+                         r.units[0].cell_y == r.units[1].cell_y;
+    CHECK_FALSE(overlap);                              // (c) no overlap
+    CHECK(r.occ.at(10, 10) == 0);                      // lander's ONE claim
+    CHECK(r.occ.at(10, 11) == 1);                      // blocker's claim untouched
+    CHECK(r.occ.at(2, 2) == Occupancy::kEmpty);        // origin released
+    CHECK(r.claims_of(0) == 1);
+    CHECK(r.claims_of(1) == 1);
+}
+
+TEST_CASE("harvest: warp releases a mid-move next-cell reservation too") {
+    Rig r;
+    r.harv(2, 2, /*chrono=*/true, /*storage=*/20);
+    // Simulate a mid-move CMIN: it also holds a reservation on the next path
+    // cell (the step_units reserve-before-enter protocol).
+    r.occ.set(3, 2, 0);
+    REQUIRE(r.claims_of(0) == 2);
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].bales_ore = 20;
+
+    r.step(kChronoWarpSecs);
+
+    CHECK(r.units[0].cell_x == 10);
+    CHECK(r.units[0].cell_y == 11);
+    CHECK(r.occ.at(2, 2) == Occupancy::kEmpty);
+    CHECK(r.occ.at(3, 2) == Occupancy::kEmpty);        // stale reservation swept
+    CHECK(r.claims_of(0) == 1);                        // exactly the landing cell
 }

@@ -45,23 +45,64 @@ bool find_nearest_ore(const OreField& ore, int cx, int cy, int radius, int& out_
     return found;
 }
 
-// Teleport `u` to (tx, ty) if passable, else the first passable cell in the
-// fixed ring order around it [RE-GATE APPLIED §3 PROBABLE: the teleport
-// locomotor warps to the dock coord; occupancy (a cell held by another unit)
-// is handled by World in Task 6, so only terrain passability is checked
-// here]. Clears path (movement stays in step_units).
-void teleport_unit(Unit& u, int tx, int ty, const std::vector<std::uint8_t>& passable, int gw,
-                    int gh) {
-    int fx = tx, fy = ty;
-    if (!is_passable(passable, gw, gh, fx, fy)) {
-        for (int d = 0; d < 8; ++d) {
-            int nx = tx + kRingDx[d], ny = ty + kRingDy[d];
-            if (is_passable(passable, gw, gh, nx, ny)) {
-                fx = nx;
-                fy = ny;
-                break;
-            }
+// Widening-ring deflect bound for a blocked warp target (Chebyshev radius).
+// 8 rings = up to a 17x17 neighborhood -- far more candidates than a dock
+// pileup can plausibly exhaust; beyond it the warp aborts in place (the
+// unit's own just-released cell is always re-claimable, see teleport_unit).
+constexpr int kWarpDeflectRadius = 8;
+
+// Teleport `u` (unit index `self`) to (tx, ty), reconciling occupancy
+// (Task 6 review fix -- the pre-fix code only checked terrain passability
+// and left `occ` untouched, so the pre-warp cell stayed claimed forever and
+// the landing cell was never claimed):
+//   1. release EVERY claim `self` holds (current cell + any mid-move
+//      next-cell reservation -- the same release_all_of sweep World's order
+//      flows use);
+//   2. land on the first cell that is terrain-passable AND free in `occ`:
+//      the target itself, else the radius-1 8-ring in the recovered
+//      N,NE,E,SE,S,SW,W,NW order [RE-GATE §1: DAT_0089E5F8] (preserves the
+//      pre-fix landing choice whenever the target/ring is open), else
+//      widening Chebyshev rings walked in scan order (y asc, x asc -- the
+//      same deterministic tie-break find_nearest_ore uses) out to
+//      kWarpDeflectRadius;
+//   3. if EVERY candidate is blocked, the warp aborts in place: the unit
+//      stays on its current cell (guaranteed re-claimable -- step 1 just
+//      released it and nobody else can have claimed it within this call);
+//   4. claim exactly the landing cell.
+// Post-invariant either way: `self` holds exactly ONE claim, on its current
+// cell, and never overlaps another unit's claim. Clears path (movement
+// stays in step_units).
+void teleport_unit(Unit& u, int self, int tx, int ty,
+                   const std::vector<std::uint8_t>& passable, int gw, int gh, Occupancy& occ) {
+    occ.release_all_of(self, /*keep_x*/ -1, /*keep_y*/ -1);  // off-grid keep = release ALL
+    auto ok = [&](int x, int y) {
+        return is_passable(passable, gw, gh, x, y) && occ.is_free(x, y);
+    };
+    int fx = u.cell_x, fy = u.cell_y;  // abort-in-place fallback
+    bool found = false;
+    if (ok(tx, ty)) {
+        fx = tx;
+        fy = ty;
+        found = true;
+    }
+    for (int d = 0; d < 8 && !found; ++d) {
+        int nx = tx + kRingDx[d], ny = ty + kRingDy[d];
+        if (ok(nx, ny)) {
+            fx = nx;
+            fy = ny;
+            found = true;
         }
+    }
+    for (int r = 2; r <= kWarpDeflectRadius && !found; ++r) {
+        for (int y = ty - r; y <= ty + r && !found; ++y)
+            for (int x = tx - r; x <= tx + r && !found; ++x) {
+                if (std::max(std::abs(x - tx), std::abs(y - ty)) != r) continue;  // perimeter only
+                if (ok(x, y)) {
+                    fx = x;
+                    fy = y;
+                    found = true;
+                }
+            }
     }
     u.cell_x = fx;
     u.cell_y = fy;
@@ -69,6 +110,7 @@ void teleport_unit(Unit& u, int tx, int ty, const std::vector<std::uint8_t>& pas
     u.fy = (double)fy;
     u.path.clear();
     u.path_idx = 0;
+    occ.set(fx, fy, self);
 }
 
 }  // namespace
@@ -101,7 +143,7 @@ int nearest_refinery(const std::vector<Building>& buildings,
 void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   const std::vector<BuildingTypeDef>& types,
                   const std::vector<int>& refinery_types, OreField& ore,
-                  const std::vector<std::uint8_t>& passable, int gw, int gh,
+                  const std::vector<std::uint8_t>& passable, int gw, int gh, Occupancy& occ,
                   double dt, const OreValues& values, double house_credits[2],
                   std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events) {
     for (int idx = 0; idx < (int)units.size(); ++idx) {
@@ -244,7 +286,7 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                     }
                     u.harv_timer += dt;
                     if (u.harv_timer >= kChronoWarpSecs) {
-                        teleport_unit(u, dcx, dcy, passable, gw, gh);
+                        teleport_unit(u, idx, dcx, dcy, passable, gw, gh, occ);
                         events.push_back({HarvestEvent::Kind::ChronoIn, idx});
                         u.harv = HarvState::WaitDock;
                         u.harv_timer = 0.0;
@@ -305,7 +347,7 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 if (u.chrono_miner && u.dock_refinery < 0) {
                     u.harv_timer += dt;
                     if (u.harv_timer >= kChronoWarpSecs) {
-                        teleport_unit(u, u.harv_cell_x, u.harv_cell_y, passable, gw, gh);
+                        teleport_unit(u, idx, u.harv_cell_x, u.harv_cell_y, passable, gw, gh, occ);
                         events.push_back({HarvestEvent::Kind::ChronoIn, idx});
                         u.harv = HarvState::SeekOre;
                         u.harv_timer = 0.0;

@@ -5,6 +5,7 @@
 // module only emits HarvestMove requests (the step_combat MoveRequest
 // pattern) that World paths afterwards. No SDL/OS.
 #include <vector>
+#include "occupancy.hpp"  // Occupancy (chrono-warp occupancy reconcile, Task 6 review fix)
 #include "ore.hpp"
 #include "world.hpp"
 
@@ -49,10 +50,16 @@ int nearest_refinery(const std::vector<Building>& buildings,
 // `events` (either may be nullptr-free — pass by reference, always).
 // `refinery_types` = roster indices whose id is a refinery (GAREFN/NAREFN).
 // `house_credits` accumulates unload income per house (index 0/1).
+// `occ` is the World cell-ownership grid (Task 6 review fix): a CMIN
+// chrono-warp releases EVERY claim the warping unit holds and claims exactly
+// its landing cell, and a warp never lands on a cell owned by another unit
+// (it deflects deterministically -- see teleport_unit in harvest.cpp). Only
+// the teleport path touches `occ`; driving/parked harvesters' occupancy is
+// managed by step_units exactly as before.
 void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   const std::vector<BuildingTypeDef>& types,
                   const std::vector<int>& refinery_types, OreField& ore,
-                  const std::vector<std::uint8_t>& passable, int gw, int gh,
+                  const std::vector<std::uint8_t>& passable, int gw, int gh, Occupancy& occ,
                   double dt, const OreValues& values, double house_credits[2],
                   std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events);
 
