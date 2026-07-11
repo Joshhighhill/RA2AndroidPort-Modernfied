@@ -63,6 +63,23 @@ Verified asset locations (ra2extract probes this session):
 
 Tasks 2–7 contain constants and semantic choices marked `[RE: building-render.md §N]` or `[RE: construction.md §N]`. They are written from pre-hunt assumptions so the plan is complete, but **the controller MUST reconcile them against Task 1's RE docs and commit plan amendments BEFORE dispatching each affected task**. If the hunt contradicts an assumption, the plan text is amended (and committed) first; the implementer never sees the stale version. Items the hunt cannot resolve get an `[RE-FALLBACK]` tag in the RE doc naming the off-repo source used.
 
+**[RE-GATE STATUS: RECONCILED 2026-07-11 against 5ac594c.]** Amended (marked
+`[RE-GATE APPLIED]` in place): Task 2 theater resolver (pattern-gated munge,
+[themed, 'g'] names × 3-mix walk, no literal 4th candidate); Task 3
+buildup_frame (period-stepped, trunc(time/period)); Task 5
+build_speed_multiplier (clamp form, .5 floor/.8 low-cap) + the 54-step
+FactoryClass economy (QueueSlot stage/step_ticks, stall-and-retry, no
+catch-up burst); Task 6 SidebarArtDims (real art sizes, four 28×27 tab SHPs
+at bar.w/4 pitch); Task 7 (buildup_total from BuildupTime×900, center–center
+canvas registration, (f−1)/2 depth key, gclock2.shp build clock, §8 power-bar
+pip model, sidebar art list + gclock2 + sidebar.pal probe); Task 8 README
+divergence additions. Remaining `[RE: …§N]` markers were CONFIRMED as
+written by the hunt (foundation origin/min-corner §2, expanded-rect
+adjacency ⇒ gap ≤ Adjacent §9, frame-0/1 + shadow-half §4, build_frames
+trunc formula §7 with 504/1890 pins, Buildup-contributes-nothing §8,
+ANDed prereq tokens + groups §10, 168-px sidebar structure §11) — no text
+change needed; implementers treat them as recovered fact, citing the docs.
+
 ---
 
 ### Task 1: Ghidra buildings hunt → docs/re/building-render.md + docs/re/construction.md
@@ -151,23 +168,24 @@ struct TheaterCandidate {
     std::string file;  // e.g. "ggcnst.shp"
 };
 
-// NewTheater=yes filename resolution [RE: building-render.md §1].
-// Pre-hunt rule (verified empirically on the real install, to be confirmed/
-// amended by the hunt): the art name's SECOND character is replaced by the
-// theater letter ('T' temperate, 'A' snow, 'U' urban) and looked up in the
-// theater's iso mix; if absent, the letter 'G' (generic) is substituted and
-// looked up in generic.mix; the literal name is the final fallback (snow's
-// letter IS 'A', so e.g. GACNST's literal name equals its snow name).
+// NewTheater=yes filename resolution [RE-GATE APPLIED: building-render.md §1,
+// recovered from FUN_005F8860/FUN_005F8EA0/FUN_005F8F00]. The munge applies
+// ONLY when name[0] is one of {g,n,c,y} AND name[1] is one of {a,t} (case-
+// insensitive): name[1] is replaced by the theater letter ('T' temperate,
+// 'A' snow, 'U' urban); the lookup is a GLOBAL search over the loaded mixes;
+// on miss, ONE retry with name[1]='G' (the generic art). There is NO third
+// literal candidate for munged names (snow's letter IS 'A', so a literal
+// spelling like "gacnst" is already the snow-themed name). Names that fail
+// the pattern check get the literal name only.
 // `image` is the artmd image/section name (e.g. "GACNST"); `ext` includes the
-// dot (".shp"). Returns candidates in lookup order.
-// theater_letter: 'T' | 'A' | 'U'. iso_mix: the theater's iso mix name
-// ("isotemp.mix" for temperate) -- buildup anims live THERE, main building
-// art does not [RE: building-render.md §1], so callers pass the mix set they
-// want searched; this function only builds the ordered (mix, file) list:
-//   1. { iso_mix,      image[0] + letter + rest + ext }
-//   2. { theater_mix,  image[0] + letter + rest + ext }   (e.g. "snow.mix")
-//   3. { "generic.mix", image[0] + 'G' + rest + ext }
-//   4. { theater_mix,  lowercase(image) + ext }           (literal)
+// dot (".shp"). iso_mix/theater_mix define the engine's walk ORDER over its
+// open nested mixes (the binary searches all loaded mixes; we search these
+// three per name): for each candidate NAME in order [themed, generic-'g']
+// (or just [literal] for non-matching names), emit
+//   { iso_mix, name+ext }, { theater_mix, name+ext }, { "generic.mix", name+ext }
+// i.e. 6 entries for munged names, 3 for literal ones. Pinned real
+// locations this must reproduce: ggcnst->generic.mix, gacnst->snow.mix,
+// gtcnstmk->isotemp.mix.
 // theater_mix: "temperat.mix" | "snow.mix" | "urban.mix".
 std::vector<TheaterCandidate> theater_candidates(const std::string& image,
                                                  char theater_letter,
@@ -266,19 +284,29 @@ using ra2assets::theater_candidates;
 
 TEST_CASE("theater_candidates: temperate GACNST order") {
     auto c = theater_candidates("GACNST", 'T', "isotemp.mix", "temperat.mix", ".shp");
-    REQUIRE(c.size() == 4);
+    REQUIRE(c.size() == 6);            // [gtcnst x3 mixes, ggcnst x3 mixes]
     CHECK(c[0].mix == "isotemp.mix");   CHECK(c[0].file == "gtcnst.shp");
     CHECK(c[1].mix == "temperat.mix");  CHECK(c[1].file == "gtcnst.shp");
-    CHECK(c[2].mix == "generic.mix");   CHECK(c[2].file == "ggcnst.shp");
-    CHECK(c[3].mix == "temperat.mix");  CHECK(c[3].file == "gacnst.shp");
+    CHECK(c[2].mix == "generic.mix");   CHECK(c[2].file == "gtcnst.shp");
+    CHECK(c[3].mix == "isotemp.mix");   CHECK(c[3].file == "ggcnst.shp");
+    CHECK(c[5].mix == "generic.mix");   CHECK(c[5].file == "ggcnst.shp");
 }
 
-TEST_CASE("theater_candidates: snow letter A collapses to literal") {
+TEST_CASE("theater_candidates: snow letter A themes to the literal spelling") {
     auto c = theater_candidates("GACNST", 'A', "isosnow.mix", "snow.mix", ".shp");
-    REQUIRE(c.size() == 4);
+    REQUIRE(c.size() == 6);
     CHECK(c[0].file == "gacnst.shp");   // letter A == literal spelling
-    CHECK(c[1].mix == "snow.mix");
-    CHECK(c[2].file == "ggcnst.shp");
+    CHECK(c[1].mix == "snow.mix");      // where the real file lives
+    CHECK(c[3].file == "ggcnst.shp");
+}
+
+TEST_CASE("theater_candidates: non-NewTheater-pattern name is literal only") {
+    // First-two-chars pattern {g,n,c,y}x{a,t} not matched -> no munge
+    // [RE-GATE: building-render.md §1 FUN_005F8EA0 pattern check].
+    auto c = theater_candidates("XXICON", 'T', "isotemp.mix", "temperat.mix", ".shp");
+    REQUIRE(c.size() == 3);
+    CHECK(c[0].file == "xxicon.shp");
+    CHECK(c[2].mix == "generic.mix");
 }
 
 TEST_CASE("theater_candidates: real-install resolution pins") {
@@ -310,19 +338,30 @@ std::vector<TheaterCandidate> theater_candidates(const std::string& image,
                                                  const std::string& theater_mix,
                                                  const std::string& ext) {
     std::vector<TheaterCandidate> out;
-    if (image.size() < 2) return out;   // no second char to substitute
+    if (image.empty()) return out;
     std::string base = lower(image);
-    std::string themed = base;
-    themed[1] = (char)std::tolower((unsigned char)theater_letter);
-    std::string generic = base;
-    generic[1] = 'g';
-    // [RE: building-render.md §1] pre-hunt order, verified empirically:
-    // theater letter in the iso mix, theater letter in the theater mix,
-    // 'G' generic in generic.mix, literal in the theater mix.
-    out.push_back({iso_mix, themed + ext});
-    out.push_back({theater_mix, themed + ext});
-    out.push_back({"generic.mix", generic + ext});
-    out.push_back({theater_mix, base + ext});
+    // [RE-GATE: building-render.md §1] munge only when name[0] in {g,n,c,y}
+    // and name[1] in {a,t} (FUN_005F8EA0's pattern check); candidate NAMES
+    // are [themed, generic-'g'] (FUN_005F8F00's one 'G' retry), each searched
+    // across the walk-order mixes; non-matching names stay literal.
+    auto push_name = [&](const std::string& name) {
+        out.push_back({iso_mix, name + ext});
+        out.push_back({theater_mix, name + ext});
+        out.push_back({"generic.mix", name + ext});
+    };
+    bool munge = base.size() >= 2 &&
+                 (base[0] == 'g' || base[0] == 'n' || base[0] == 'c' || base[0] == 'y') &&
+                 (base[1] == 'a' || base[1] == 't');
+    if (munge) {
+        std::string themed = base;
+        themed[1] = (char)std::tolower((unsigned char)theater_letter);
+        std::string generic = base;
+        generic[1] = 'g';
+        push_name(themed);
+        push_name(generic);   // real theater letters T/A/U never equal 'g'
+    } else {
+        push_name(base);
+    }
     return out;
 }
 
@@ -438,9 +477,12 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
 int building_frame(const Building& b, int shp_frame_count, double condition_yellow);
 
 // Frame selection for the BUILDUP SHP during State::Buildup
-// [RE: building-render.md §5, pre-hunt]: image frames = first half; the anim
-// plays ONCE over buildup_total seconds, mapping buildup_time linearly onto
-// [0, image_frames-1] (clamped).
+// [RE-GATE APPLIED: building-render.md §5]: image frames = first half; the
+// anim plays ONCE, one frame per fixed PERIOD, period = buildup_total /
+// image_frames seconds (the original's per-frame delay is
+// trunc(BuildupTime*900/image_frames) ticks; buildup_total is period *
+// image_frames, so dividing recovers the period). frame =
+// trunc(buildup_time / period), clamped to [0, image_frames-1].
 int buildup_frame(const Building& b, int buildup_shp_frame_count);
 
 // Death anim duration (the explosion SHP is drawn by main.cpp; this is the
@@ -556,10 +598,12 @@ TEST_CASE("buildup_frame + step_buildings: plays once then Idle") {
     Building b = mk(0, 0, 2, 2);
     b.state = Building::State::Buildup;
     b.buildup_total = 2.0;
-    // 20-frame MK SHP -> 10 image frames [RE: building-render.md §5]
+    // 20-frame MK SHP -> 10 image frames, period = 2.0/10 = 0.2 s
+    // [RE-GATE: building-render.md §5 — frame = trunc(time/period), clamped]
     b.buildup_time = 0.0;  CHECK(buildup_frame(b, 20) == 0);
-    b.buildup_time = 1.0;  CHECK(buildup_frame(b, 20) == 4);   // 1.0/2.0*9 = 4.5 -> 4
-    b.buildup_time = 2.0;  CHECK(buildup_frame(b, 20) == 9);
+    b.buildup_time = 0.19; CHECK(buildup_frame(b, 20) == 0);
+    b.buildup_time = 1.0;  CHECK(buildup_frame(b, 20) == 5);   // trunc(1.0/0.2)
+    b.buildup_time = 1.9;  CHECK(buildup_frame(b, 20) == 9);
     b.buildup_time = 9.9;  CHECK(buildup_frame(b, 20) == 9);   // clamped
 
     std::vector<Building> v = {b};
@@ -658,11 +702,11 @@ int building_frame(const Building& b, int shp_frame_count, double condition_yell
 }
 
 int buildup_frame(const Building& b, int buildup_shp_frame_count) {
-    int image_frames = buildup_shp_frame_count / 2;   // [RE: building-render.md §5]
+    int image_frames = buildup_shp_frame_count / 2;   // [RE-GATE: building-render.md §5]
     if (image_frames < 1) return 0;
     if (b.buildup_total <= 0.0) return image_frames - 1;
-    double t = std::clamp(b.buildup_time / b.buildup_total, 0.0, 1.0);
-    int f = (int)(t * (image_frames - 1));
+    double period = b.buildup_total / image_frames;   // one frame per period
+    int f = (int)(b.buildup_time / period);
     return std::clamp(f, 0, image_frames - 1);
 }
 
@@ -868,18 +912,31 @@ struct PowerTotals { int output = 0; int drain = 0; };   // drain stored positiv
 PowerTotals power_totals(const std::vector<Building>& buildings,
                          const std::vector<BuildingTypeDef>& types, int house);
 
-// [RE: construction.md §8, pre-hunt] low power = drain > output; build-speed
-// multiplier while low. LowPowerPenaltyModifier=1; formula assumed
-//   speed_mult = 1 - modifier * (drain - output) / max(drain, 1), clamped to
-//   [kLowPowerFloor, 1]. kLowPowerFloor pre-hunt 0.5 — AMEND from the hunt.
-constexpr double kLowPowerFloor = 0.5;
+// [RE-GATE APPLIED: construction.md §8] low power = drain > output. Recovered
+// rule (FUN_004FCC50 + the production-speed chain): with f = output/drain,
+//   speed = 1 - low_power_penalty_modifier * (1 - f)        (0 output -> 0)
+//   speed = max(speed, kMinLowPowerSpeed)                    (= .5, rulesmd)
+//   speed = min(speed, kMaxLowPowerSpeed)   [low power only] (= .8, rulesmd)
+// Full power -> exactly 1.0. With modifier=1 and any shortage, the result is
+// therefore always in [.5, .8].
+constexpr double kMinLowPowerSpeed = 0.5;   // rulesmd MinLowPowerProductionSpeed
+constexpr double kMaxLowPowerSpeed = 0.8;   // rulesmd MaxLowPowerProductionSpeed
 double build_speed_multiplier(const PowerTotals& p, double low_power_penalty_modifier);
 
-// One-slot BuildingType queue [RE: construction.md §10: one item at a time].
+// One-slot BuildingType queue [RE-GATE APPLIED: construction.md §10 —
+// FactoryClass's 54-step incremental economy]. Production advances in
+// exactly kProductionSteps stages; each stage lasts `step_ticks` 15 Hz
+// frames (= clamp(trunc(total_frames/54), 1, 255)); entering stage s+1
+// charges `(cost - spent) / (54 - s)` credits — equal cost/54 chunks under
+// uninterrupted funding. When a stage's charge is unaffordable the build
+// STALLS (no progress, no charge, retried every tick).
+constexpr int kProductionSteps = 54;
 struct QueueSlot {
     int type = -1;              // roster index; -1 = idle
-    double frames = 0.0;        // progress in 15 Hz frames
-    int total_frames = 1;
+    int stage = 0;              // 0..kProductionSteps
+    int step_ticks = 1;         // 15 Hz frames per stage
+    double frames_accum = 0.0;  // fractional frames toward the next stage
+    int total_frames = 1;       // Time_To_Build (the 504-frame pin) — display/witness
     double spent = 0.0;         // credits deducted so far
     bool ready = false;         // finished, waiting for placement
 };
@@ -908,20 +965,30 @@ bool can_start(const ProductionState& ps, int type,
                const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
                bool conyard_alive);
 
-// Start building `type` (caller checked can_start).
+// Start building `type` (caller checked can_start): total_frames =
+// build_frames(cost, build_speed); step_ticks = clamp(total_frames /
+// kProductionSteps, 1, 255) (integer division = the binary's trunc)
+// [RE-GATE: construction.md §10 FUN_004C9DC0]. GAPOWR: 504 -> step_ticks 9
+// (wall duration 54*9 = 486 frames = 32.4 s).
 void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& types,
            double build_speed);
 
-// Advance by dt seconds: progress += dt*15*speed_mult frames, but each frame
-// of progress deducts its pro-rata credit share (cost/total_frames); when
-// credits are exhausted, progress STALLS (deduct/advance only what's
-// affordable) [RE: construction.md §10 incremental deduction]. At
-// total_frames -> ready=true. No-op when idle/ready.
+// Advance by dt seconds [RE-GATE: construction.md §10]:
+//   frames_accum += dt * 15 * speed_mult;
+//   while (frames_accum >= step_ticks && stage < kProductionSteps):
+//     charge = (cost - spent) / (kProductionSteps - stage);
+//     if (credits < charge) { frames_accum = step_ticks; break; }  // stall+retry
+//     credits -= charge; spent += charge; ++stage; frames_accum -= step_ticks;
+//   stage == kProductionSteps -> spent settles to exactly cost, ready = true.
+// The stall clamp (frames_accum = step_ticks) mirrors the original's
+// rolled-back stage retried each tick — a funding gap never produces a
+// catch-up burst. No-op when idle/ready.
 void tick(ProductionState& ps, double dt, double speed_mult,
           const std::vector<BuildingTypeDef>& types);
 
 // Cancel: refund everything spent so far, clear the slot
-// [RE: construction.md §10].
+// [RE-GATE: construction.md §10 — Abandon refunds Cost_Of minus balance,
+// i.e. ALL spent].
 void cancel(ProductionState& ps);
 
 // Placement succeeded: clear the slot (credits already fully spent).
@@ -960,7 +1027,7 @@ TEST_CASE("build_frames: BuildSpeed formula [RE: construction.md §7]") {
     CHECK(build_frames(2000, 0.7) == 1260);
 }
 
-TEST_CASE("power_totals + build_speed_multiplier") {
+TEST_CASE("power_totals + build_speed_multiplier [RE-GATE: construction.md §8]") {
     auto t = roster();
     std::vector<Building> bs = {live(1), live(2)};       // +200, -10
     auto p = power_totals(bs, t, 0);
@@ -969,8 +1036,13 @@ TEST_CASE("power_totals + build_speed_multiplier") {
     bs[0].state = Building::State::Buildup;              // powerplant not up yet
     p = power_totals(bs, t, 0);
     CHECK(p.output == 0); CHECK(p.drain == 10);
-    double m = build_speed_multiplier(p, 1.0);
-    CHECK(m < 1.0); CHECK(m >= kLowPowerFloor);
+    // f = 0/10 = 0 -> speed 1-1*(1-0) = 0 -> max(.5) -> min(.8) = 0.5 exactly
+    CHECK(build_speed_multiplier(p, 1.0) == doctest::Approx(kMinLowPowerSpeed));
+    // partial shortage: out 90 / drain 100 -> 1-1*(1-.9) = .9 -> capped at .8
+    PowerTotals part; part.output = 90; part.drain = 100;
+    CHECK(build_speed_multiplier(part, 1.0) == doctest::Approx(kMaxLowPowerSpeed));
+    // heavy modifier: out 90/drain 100, mod 4 -> 1-4*.1 = .6 (within [.5,.8])
+    CHECK(build_speed_multiplier(part, 4.0) == doctest::Approx(0.6));
     kill_building(bs[1]);
     p = power_totals(bs, t, 0);
     CHECK(p.drain == 0);                                 // dead building drains nothing
@@ -1003,48 +1075,66 @@ TEST_CASE("can_start: slot, conyard, tech level") {
     CHECK_FALSE(can_start(ps, 1, t, bs, 0, kGroups, true));    // slot busy
 }
 
-TEST_CASE("tick: incremental deduction, stall at 0, ready, cancel refund") {
+TEST_CASE("tick: 54-step economy [RE-GATE: construction.md §10]") {
     auto t = roster();
     ProductionState ps; ps.credits = 10000;
     start(ps, 1, t, 0.7);                    // GAPOWR: 504 frames, 800 credits
     CHECK(ps.slot.total_frames == 504);
-    tick(ps, 504.0 / 15.0 / 2.0, 1.0, t);    // half the build
-    CHECK(ps.slot.frames == doctest::Approx(252.0));
-    CHECK(ps.credits == doctest::Approx(10000 - 400.0).epsilon(0.01));
+    CHECK(ps.slot.step_ticks == 9);          // trunc(504/54)
+    // 27 stages = half the steps = 27*9 = 243 frames = 16.2 s
+    tick(ps, 243.0 / 15.0, 1.0, t);
+    CHECK(ps.slot.stage == 27);
+    CHECK(ps.credits == doctest::Approx(10000 - 400.0));   // equal cost/54 chunks
     CHECK_FALSE(ps.slot.ready);
     tick(ps, 504.0, 1.0, t);                 // way past the end
     CHECK(ps.slot.ready);
-    CHECK(ps.slot.frames == doctest::Approx(504.0));
-    CHECK(ps.credits == doctest::Approx(9200.0).epsilon(0.01));   // exactly cost deducted
+    CHECK(ps.slot.stage == kProductionSteps);
+    CHECK(ps.credits == doctest::Approx(9200.0));           // exactly cost deducted
     placed(ps);
     CHECK(ps.slot.type == -1);
 
-    // stall: 100 credits can fund only 63 of 504 frames (800/504 per frame)
+    // stall: 100 credits fund 6 chunks of 800/54 (= 88.9); the 7th (14.8) is
+    // unaffordable -> stalls with ~11.1 left, no progress past stage 6
     ps.credits = 100;
     start(ps, 1, t, 0.7);
     tick(ps, 1000.0, 1.0, t);
-    CHECK(ps.credits == doctest::Approx(0.0).epsilon(0.01));
-    CHECK(ps.slot.frames == doctest::Approx(100.0 / (800.0 / 504.0)).epsilon(0.1));
+    CHECK(ps.slot.stage == 6);
+    CHECK(ps.credits == doctest::Approx(100.0 - 800.0 * 6 / 54).epsilon(0.001));
     CHECK_FALSE(ps.slot.ready);
-    ps.credits = 5000;                        // funds arrive -> resumes
+    ps.credits += 5000;                       // funds arrive -> resumes
     tick(ps, 1000.0, 1.0, t);
     CHECK(ps.slot.ready);
+    CHECK(ps.credits == doctest::Approx(100.0 + 5000.0 - 800.0));  // total spend == cost
+    placed(ps);
+
+    // stall never produces a catch-up burst: broke for a long time, then
+    // funded -> at most ONE stage per step_ticks afterwards
+    ProductionState nb; nb.credits = 0;
+    start(nb, 1, t, 0.7);
+    tick(nb, 100.0, 1.0, t);                  // long broke stretch
+    CHECK(nb.slot.stage == 0);
+    nb.credits = 10000;
+    tick(nb, 9.0 / 15.0, 1.0, t);             // exactly one step_ticks worth
+    CHECK(nb.slot.stage == 1);                // NOT a burst to stage 11
 
     // cancel refunds spent
     ProductionState c; c.credits = 1000;
-    start(c, 2, t, 0.7);                      // GAPILE 315 frames / 500 credits
-    tick(c, 315.0 / 15.0 / 3.0, 1.0, t);      // a third
-    double after = c.credits;
-    CHECK(after < 1000.0);
+    start(c, 2, t, 0.7);                      // GAPILE: 315 frames, step_ticks 5
+    CHECK(c.slot.step_ticks == 5);            // trunc(315/54)
+    tick(c, 90.0 / 15.0, 1.0, t);             // 90 frames = 18 stages
+    CHECK(c.slot.stage == 18);
+    CHECK(c.credits < 1000.0);
     cancel(c);
-    CHECK(c.credits == doctest::Approx(1000.0).epsilon(0.01));
+    CHECK(c.credits == doctest::Approx(1000.0));
     CHECK(c.slot.type == -1);
 
-    // half-speed multiplier halves progress rate
+    // half-speed multiplier halves stage cadence
     ProductionState s; s.credits = 10000;
-    start(s, 1, t, 0.7);
-    tick(s, 1.0, 0.5, t);
-    CHECK(s.slot.frames == doctest::Approx(7.5));   // 15 * 0.5
+    start(s, 1, t, 0.7);                      // step_ticks 9
+    tick(s, 1.0, 0.5, t);                     // 7.5 frames < 9 -> no stage yet
+    CHECK(s.slot.stage == 0);
+    tick(s, 1.0, 0.5, t);                     // 15 frames -> one stage
+    CHECK(s.slot.stage == 1);
 }
 ```
 
@@ -1077,9 +1167,13 @@ PowerTotals power_totals(const std::vector<Building>& buildings,
 
 double build_speed_multiplier(const PowerTotals& p, double low_power_penalty_modifier) {
     if (p.drain <= p.output) return 1.0;
-    // [RE: construction.md §8, pre-hunt] penalty = modifier * shortage ratio.
-    double shortage = (double)(p.drain - p.output) / std::max(p.drain, 1);
-    return std::clamp(1.0 - low_power_penalty_modifier * shortage, kLowPowerFloor, 1.0);
+    // [RE-GATE: construction.md §8] f = output/drain; 1 - mod*(1-f), then
+    // floor .5 and (low power only) cap .8.
+    double f = (double)p.output / p.drain;
+    double s = 1.0 - low_power_penalty_modifier * (1.0 - f);
+    s = std::max(s, kMinLowPowerSpeed);
+    s = std::min(s, kMaxLowPowerSpeed);
+    return s;
 }
 
 bool prerequisites_met(const std::vector<std::string>& tokens,
@@ -1124,27 +1218,36 @@ void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& ty
     ps.slot = QueueSlot{};
     ps.slot.type = type;
     ps.slot.total_frames = std::max(1, build_frames(types[type].cost, build_speed));
+    // [RE-GATE: construction.md §10 FUN_004C9DC0] frames per production step.
+    ps.slot.step_ticks = std::clamp(ps.slot.total_frames / kProductionSteps, 1, 255);
 }
 
 void tick(ProductionState& ps, double dt, double speed_mult,
           const std::vector<BuildingTypeDef>& types) {
     if (ps.slot.type == -1 || ps.slot.ready) return;
     const BuildingTypeDef& t = types[ps.slot.type];
-    double per_frame = (double)t.cost / ps.slot.total_frames;   // credits per frame
-    double want = dt * 15.0 * speed_mult;                        // frames of progress
-    want = std::min(want, (double)ps.slot.total_frames - ps.slot.frames);
-    // [RE: construction.md §10] incremental deduction; stall when broke.
-    double affordable = per_frame > 0.0 ? ps.credits / per_frame : want;
-    double adv = std::min(want, std::max(0.0, affordable));
-    ps.slot.frames += adv;
-    double charge = adv * per_frame;
-    ps.credits -= charge;
-    ps.slot.spent += charge;
-    if (ps.slot.frames >= ps.slot.total_frames - 1e-9) {
+    ps.slot.frames_accum += dt * 15.0 * speed_mult;
+    while (ps.slot.frames_accum >= ps.slot.step_ticks &&
+           ps.slot.stage < kProductionSteps) {
+        // [RE-GATE: construction.md §10] entering the next stage charges the
+        // remaining balance split over the remaining steps.
+        double charge = ((double)t.cost - ps.slot.spent) /
+                        (kProductionSteps - ps.slot.stage);
+        if (ps.credits < charge) {
+            // Stall: no progress, no charge; retried next tick. Clamp the
+            // accumulator so a funding gap never bursts through many stages.
+            ps.slot.frames_accum = (double)ps.slot.step_ticks;
+            return;
+        }
+        ps.credits -= charge;
+        ps.slot.spent += charge;
+        ps.slot.stage += 1;
+        ps.slot.frames_accum -= ps.slot.step_ticks;
+    }
+    if (ps.slot.stage >= kProductionSteps) {
         // settle rounding: total spend is exactly cost
         ps.credits -= (double)t.cost - ps.slot.spent;
         ps.slot.spent = (double)t.cost;
-        ps.slot.frames = (double)ps.slot.total_frames;
         ps.slot.ready = true;
     }
 }
@@ -1194,12 +1297,16 @@ struct SbRect { int x = 0, y = 0, w = 0, h = 0;
 // Input art dimensions, measured from the loaded SHPs at wire-up time (so
 // the layout adapts to the real art rather than hardcoding every number).
 struct SidebarArtDims {
-    int top_w = 168, top_h = 110;      // top.shp (radar frame)  [RE §11]
-    int credits_w = 168, credits_h = 14;
-    int tab_w = 42, tab_h = 21;        // one tab button
-    int side1_h = 100, side2_h = 100;  // strip background segments
+    // Defaults = the REAL measured art [RE-GATE: construction.md §11]:
+    // top 168x32, credits 168x16, four separate 28x27 tab SHPs (tab00-tab03,
+    // 5 state frames each — NOT one strip divided by 4), side1 168x69,
+    // side2 168x50, cameo 60x48, powerp pips 12x2 at 3 px pitch.
+    int top_w = 168, top_h = 32;       // top.shp (radar frame)
+    int credits_w = 168, credits_h = 16;
+    int tab_w = 28, tab_h = 27;        // ONE tab button (tab00..tab03 each)
+    int side1_h = 69, side2_h = 50;    // strip background segments
     int cameo_w = 60, cameo_h = 48;
-    int power_w = 8;                   // powerp.shp pip column width
+    int power_w = 12;                  // powerp.shp pip width (12x2, 3 px pitch)
 };
 
 enum class CameoState { Available, Disabled, Building, Ready };
@@ -1230,7 +1337,7 @@ struct SidebarLayout {
 }  // namespace ra2engine
 ```
 
-`compute` [RE: construction.md §11, pre-hunt layout]: `bar = {view_w - art.top_w, 0, art.top_w, view_h}`; `radar` at bar top; `credits` directly below radar; the 4 `tabs` in one row below credits (x advancing by tab_w); `power` = `{bar.x, tabs_bottom, art.power_w, view_h - tabs_bottom}` (left edge of the bar); cameo grid 2 columns starting right of the power strip (`x = bar.x + art.power_w + 2`), rows descending from tabs_bottom + 2, cell pitch = cameo size + 1px gutter, one row-major cell per entry of `types`.
+`compute` [RE-GATE: construction.md §11]: `bar = {view_w - art.top_w, 0, art.top_w, view_h}`; `radar` at bar top; `credits` directly below radar; the 4 `tabs` in one row below credits — four SEPARATE buttons at pitch `bar.w / 4` (= 42), each `tab_w`(28) wide centered in its slot: `tabs[i].x = bar.x + i*(bar.w/4) + (bar.w/4 - art.tab_w)/2`; `power` = `{bar.x, tabs_bottom, art.power_w, view_h - tabs_bottom}` (pip column at the strip's left edge, 3 px pitch); cameo grid 2 columns starting right of the power strip (`x = bar.x + art.power_w + 2`), rows descending from tabs_bottom + 2, cell pitch = cameo size + 1px gutter, one row-major cell per entry of `types`.
 
 - [ ] **Step 1: Write the failing tests** (`tests/test_sidebar.cpp`):
 
@@ -1248,7 +1355,8 @@ TEST_CASE("sidebar layout: geometry from art dims") {
     CHECK(lay.radar.y == 0);
     CHECK(lay.credits.y == lay.radar.y + lay.radar.h);
     CHECK(lay.tabs[0].y == lay.credits.y + lay.credits.h);
-    CHECK(lay.tabs[1].x == lay.tabs[0].x + art.tab_w);
+    CHECK(lay.tabs[1].x == lay.tabs[0].x + lay.bar.w / 4);   // 42 px pitch, 28 wide
+    CHECK(lay.tabs[0].w == art.tab_w);
     REQUIRE(lay.cameos.size() == 3);
     CHECK(lay.cameos[0].type == 1);
     // 2-column grid: cell 0 and 1 same row, cell 2 next row
@@ -1348,26 +1456,28 @@ struct BuildingAssets {
     ra2assets::Palette unit_pal;                      // unittem.pal (cache.mix)
     ra2assets::Palette cameo_pal;                     // cameo.pal (cache.mix)
     // sidebar chrome per house side (0 = sidec01 Allied, 1 = sidec02 Soviet)
-    ra2assets::ShpFile sb_top, sb_side1, sb_side2, sb_tab00, sb_tab01,
-                       sb_powerp, sb_credits;
+    // [RE-GATE: construction.md §11] four SEPARATE tab SHPs + the 55-frame
+    // gclock2.shp build clock (frame = 1 + production stage).
+    ra2assets::ShpFile sb_top, sb_side1, sb_side2, sb_tabs[4],
+                       sb_powerp, sb_credits, sb_gclock;
     bool sidebar_ok = false;
     bool ok = false;                                  // any usable building
 };
 ```
 
 `load_building_assets(MixFile& ra2, MixFile& language, const Rules& rules, const Art& art)`:
-roster = the 8 ids in this fixed order: `{"GACNST","GAPOWR","GAPILE","GAWEAP","NACNST","NAPOWR","NAHAND","NAWEAP"}`; per id fill `BuildingTypeDef` from Rules/Art (foundation, strength, `armor_index(rules.armor(id))`, cost, power, adjacent, tech_level, is_construction_yard, prerequisite, buildup, cameo, explosion_first). Per id resolve the main SHP via `theater_candidates(id, 'T', "isotemp.mix", "temperat.mix", ".shp")` walked over ra2.mix's nested mixes (open each candidate mix once, `find` the file; first hit wins); buildup likewise with the MK name. Cameo from `language.mix/cameo.mix/<lowercase cameo>.shp`. Sidebar chrome from `ra2.mix/sidec01.mix` (player side; Soviet sidec02 is NOT loaded this phase — the player is Allied). Every load individually try/caught → log one `[building] <id> ... missing` line, `art[i].ok = false`. Palettes: `unittem.pal` + `cameo.pal` from `ra2.mix/cache.mix` (both verified present).
+roster = the 8 ids in this fixed order: `{"GACNST","GAPOWR","GAPILE","GAWEAP","NACNST","NAPOWR","NAHAND","NAWEAP"}`; per id fill `BuildingTypeDef` from Rules/Art (foundation, strength, `armor_index(rules.armor(id))`, cost, power, adjacent, tech_level, is_construction_yard, prerequisite, buildup, cameo, explosion_first). Per id resolve the main SHP via `theater_candidates(id, 'T', "isotemp.mix", "temperat.mix", ".shp")` walked over ra2.mix's nested mixes (open each candidate mix once, `find` the file; first hit wins); buildup likewise with the MK name. Cameo from `language.mix/cameo.mix/<lowercase cameo>.shp`. Sidebar chrome from `ra2.mix/sidec01.mix` (player side; Soviet sidec02 is NOT loaded this phase — the player is Allied): `top.shp`, `side1.shp`, `side2.shp`, `tab00.shp`–`tab03.shp` (four separate 28×27 buttons), `powerp.shp`, `credits.shp`, and `gclock2.shp` (60×48, 55 frames — the build clock) [RE-GATE: construction.md §11]. Every load individually try/caught → log one `[building] <id> ... missing` line, `art[i].ok = false`. Palettes: `unittem.pal` + `cameo.pal` from `ra2.mix/cache.mix` (both verified present); sidebar chrome + gclock draw with `cameo.pal`'s sidebar sibling — use `sidebar.pal` if present in cache.mix, else `cameo.pal` (the hunt's §11 pixel-decoding used sidebar.pal; probe at load, guarded).
 
 Prerequisite groups resolved once: `groups = {{"POWER", rules.prerequisite_group("Power")}, {"BARRACKS", ...("Barracks")}, {"PROC", ...("Proc")}, {"FACTORY", ...("Factory")}, {"RADAR", ...("Radar")}, {"TECH", ...("Tech")}}`.
 
-**7c. Spawning.** `spawn_base(World&, BuildingAssets&, int house, int cx, int cy)`: ConYard (GACNST/NACNST per house) at (cx, cy) instant + validity-bypassed; for house 1 additionally NAPOWR at (cx+6, cy), NAHAND at (cx+6, cy+4), NAWEAP at (cx-1, cy+6) — each via `placement_check(..., bypass_adjacency=false)` against the growing base, `instant=true`; if a scripted cell fails validity, probe (cx±k) eastward up to k=6 and log. `buildup_total` at real placement = `image_frames(buildup)/15.0` seconds [RE: building-render.md §5]. Interactive/screenshot + `--demo-base` spawn: player ConYard + the existing GI squad; enemy full base + Conscript squad. **`--demo-combat`, `--demo-tank`, and the other demos spawn NO buildings.**
+**7c. Spawning.** `spawn_base(World&, BuildingAssets&, int house, int cx, int cy)`: ConYard (GACNST/NACNST per house) at (cx, cy) instant + validity-bypassed; for house 1 additionally NAPOWR at (cx+6, cy), NAHAND at (cx+6, cy+4), NAWEAP at (cx-1, cy+6) — each via `placement_check(..., bypass_adjacency=false)` against the growing base, `instant=true`; if a scripted cell fails validity, probe (cx±k) eastward up to k=6 and log. `buildup_total` at real placement [RE-GATE APPLIED: building-render.md §5] = `image_frames * max(1, (int)(kBuildupTimeMinutes * 900.0 / image_frames)) / 15.0` seconds, with `kBuildupTimeMinutes = 0.06` (rulesmd `[General] BuildupTime=.06`; read it via `rules.general_double("BuildupTime", 0.06)`). GACNSTMK (29 image frames) ≈ 1.93 s; a 25-frame MK ≈ 3.33 s. Interactive/screenshot + `--demo-base` spawn: player ConYard + the existing GI squad; enemy full base + Conscript squad. **`--demo-combat`, `--demo-tank`, and the other demos spawn NO buildings.**
 
-**7d. Draw.** Buildings render in the world pass with units: build a merged draw list — for each alive building, depth key `(cx + fw/2.0) + (cy + fh/2.0)` [RE: building-render.md §3] merged into `unit_draw_order`'s `(fx+fy)` space (std::merge two sorted lists by key; buildings before units on ties). Per building: texture = `TextureCache::get("bld:<id>:<house>:<frame>", indices, w, h, pal_for_house(unit_pal, house))`; screen anchor: `cell_to_screen(cx, cy, level, 60, 30, kLevelPx)` gives the ORIGIN cell's top-left; the SHP canvas is positioned so its bottom-center sits at the foundation's screen bounding box's bottom-center [RE: building-render.md §2] — pre-hunt formula: compute the foundation's screen bbox as the union of `cell_to_screen(cx+i, cy+j, level, 60, 30, kLevelPx)`-anchored 60×30 tile rects over all foundation cells, then `px = bbox_center_x - canvas_w/2`, `py = bbox_bottom - canvas_h`. **The RE-GATE replaces this with §2's exact registration rule before this task dispatches.** State::Buildup draws the buildup SHP frame (`buildup_frame`); Dead draws the explosion anim (reuse the vehicle death-anim path: TWLT070 frames over `kBuildingDieSecs` via the existing explosion texture helper). Damaged frame via `building_frame(b, count, cond_yellow/100.0)`. HP bar + selection box reuse the unit pattern, sized to the foundation's screen extent (buildings are right-click targets, not selectable).
+**7d. Draw.** Buildings render in the world pass with units: build a merged draw list — for each alive building, depth key `(cx + (fw-1)/2.0) + (cy + (fh-1)/2.0)` [RE-GATE APPLIED: building-render.md §3 — Center_Coord uses (f−1)/2, NOT f/2] merged into `unit_draw_order`'s `(fx+fy)` space (std::merge two sorted lists by key; buildings before units on ties). Per building: texture = `TextureCache::get("bld:<id>:<house>:<frame>", indices, w, h, pal_for_house(unit_pal, house))`; screen anchor [RE-GATE APPLIED: building-render.md §2 — CENTER–center registration, replacing the pre-hunt bottom-center rule]: compute the foundation's screen bbox as the union of `cell_to_screen(cx+i, cy+j, level, 60, 30, kLevelPx)`-anchored 60×30 tile rects over all foundation cells, then `px = bbox_center_x - canvas_w/2`, `py = bbox_center_y - canvas_h/2`. State::Buildup draws the buildup SHP frame (`buildup_frame`); Dead draws the explosion anim (reuse the vehicle death-anim path: TWLT070 frames over `kBuildingDieSecs` via the existing explosion texture helper). Damaged frame via `building_frame(b, count, cond_yellow/100.0)`. HP bar + selection box reuse the unit pattern, sized to the foundation's screen extent (buildings are right-click targets, not selectable).
 
 **7e. Sidebar draw + interaction** (main.cpp, screen-space pass after the world):
 - `SidebarArtDims` filled from the loaded SHPs' `width()`/`height()` (tab_w = tab00 width / 4 if the strip is one image [RE: construction.md §11 — the hunt says which]; pre-hunt: tab00.shp frame per tab).
 - Buildable list: roster indices with `cameo != "" && tech_level > 0 && art[i].ok`, ordered tech_level then roster order → `{GAPOWR, GAPILE, GAWEAP}` for the Allied player.
-- Per frame: draw side1/side2 tiled down the bar, top.shp radar frame (static frame 0), credits number (right-aligned in the credits rect), tabs (Building tab lit = tab01 frame, others tab00/grey), power meter (pip column: `output` pips green scaled `1 pip = 100 power` [RE: construction.md §8 thresholds], drain marker line at `drain` height, red flash when drain > output at 2 Hz via the existing frame counter), cameo grid with per-state overlay: Disabled = 55% black shade (existing shade helper), Building = same shade + clock-sweep wedge (progress fraction = `slot.frames/total_frames`; draw as a filled pie via 16 triangle steps into an SDL vertex batch — or simplest: a vertical fill bar bottom-up over the cameo; pre-hunt choice: **vertical fill bar**, amend if the hunt's §11 makes the wedge cheap), Ready = 2 Hz brightness flash + "READY" text.
+- Per frame: draw side1/side2 tiled down the bar, top.shp radar frame (static frame 0), credits number (right-aligned in the credits rect), the four tab buttons (tab00–tab03, frame 0; the active Building tab drawn full-bright, the other three shaded with the existing shade helper — the per-state frame mapping beyond idle is the §11 [RE-FALLBACK], so frame 0 + shade is the documented choice), power meter [RE-GATE APPLIED: construction.md §8 pip model]: `total_pips = power.h / 3` (3 px pitch); `pips_used = total_pips - (int)(total_pips * 400.0 / (output + drain + 400.0))` (the soft 400 capacity scale); from the BOTTOM up draw `red = round(pips_used * drain / max(output+drain,1))` pips with powerp frame 3, then yellow = the pips covering surplus up to 100 power (frame 2), then green for the rest of pips_used (frame 1), empty (frame 0) above; while `drain > output` redraw the used pips with flash frame 4 on alternating 3-tick periods. Cameo grid per-state overlay [RE-GATE APPLIED: construction.md §11 — gclock2.shp replaces the pre-hunt fill bar]: Disabled = 55% black shade (existing shade helper); Building = the gclock2.shp frame `1 + slot.stage` drawn over the cameo (60×48, aligned; its palette-index-0 transparency shows the cameo through the swept region) + the shade under it; Ready = 2 Hz brightness flash + "READY" text.
 - Credits digits: **built-in 5×7 digit strip** (a `static const uint8_t kDigits[10][7]` bitmap rendered via SDL rects, white) — documented divergence UNLESS Task 1 §11 found the game font trivially extractable, in which case the RE-GATE amends this step. The DISPLAYED number rolls toward the true credit total (RA2's tally animation): `shown += clamp(true - shown, -rate*dt, rate*dt)` with rate = max(500/s, |true−shown|/0.5s); display-only, never read by the sim.
 - Event routing in the main loop: for each mouse event, if `lay.contains(px, py)` → sidebar handling (cameo click: Available → `start`; Building → `cancel`; Ready → `begin_placement`; tab clicks: only tab 0 does anything (no-op — it's already active)); else forward to `Input::handle`. Keyboard Escape while placing → `cancel_placement` (input handles).
 - Placement cursor: while `placement_active()`, per frame run `placement_check(...)` at `placement_cell` and draw the fw×fh cell diamonds green/red (per-cell `cell_ok` AND overall adjacency → all-red tint when adjacency fails); on `place_confirmed`: re-run check, if ok → `World::add_building(type, ..., buildup_total, /*instant*/false)` + `placed(ps)` + play the placement sound [RE: building-render.md §5 sound name — pre-hunt "PlaceBuilding"] via the existing AudioSystem; if not ok → keep placing (RA2 behavior: invalid click just bonks).
@@ -1377,7 +1487,7 @@ Prerequisite groups resolved once: `groups = {{"POWER", rules.prerequisite_group
 
 ```
 [base] roster=8 buildable=GAPOWR,GAPILE sidebar=ok
-[base] t=1.0 start GAPOWR frames=504
+[base] t=1.0 start GAPOWR frames=504 step_ticks=9
 [base] placed GAPOWR cell=(x,y) credits=9200 power=+200/-0
 [base] placed GAPILE credits=8700 power=+200/-10
 [base] GAWEAP blocked (PROC unmet)
@@ -1402,7 +1512,7 @@ Prerequisite groups resolved once: `groups = {{"POWER", rules.prerequisite_group
 - Modify: `README.md` (divergences + phase paragraph), `.superpowers/sdd/progress.md`
 
 - [ ] **Step 1:** arm64: `$env:JAVA_HOME = "C:\Program Files\Java\jdk-21"; cd android; .\gradlew assembleDebug` → BUILD SUCCESSFUL; `llvm-nm --demangle` spot-check that `placement_check` and `SidebarLayout::compute` symbols are in `libmain.so`.
-- [ ] **Step 2:** README: buildings paragraph + divergence list verbatim from the spec §Documented divergences (idle anims, repair/sell, rubble, shroud, radar, credits font if divergent, inert tabs, GAWEAP PROC-blocked, no auto-acquire of buildings, bib art if omitted).
+- [ ] **Step 2:** README: buildings paragraph + divergence list verbatim from the spec §Documented divergences (idle anims, repair/sell, rubble, shroud, radar, credits font digit-strip, inert tabs, GAWEAP PROC-blocked, no auto-acquire of buildings), PLUS the RE-GATE additions: power output does NOT scale with building health (vanilla scales output by hp ratio — construction.md §8 optional-fidelity item); Bib=yes bib art/row omitted (GAWEAP renders without its bib — building-render.md §2); tab buttons drawn frame-0 + shade (per-state frames are the §11 [RE-FALLBACK]); main-SHP damaged frame 2 (second damaged variant) unused.
 - [ ] **Step 3:** FULL suite with and without `RA2_INSTALL_DIR` (PowerShell); `--demo-combat` + `--demo-tank` + `--demo-base` all green/pinned.
 - [ ] **Step 4:** Ledger entry + commit (`docs: buildings phase README + ledger`).
 
