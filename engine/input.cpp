@@ -298,14 +298,36 @@ void Input::handle(const InputEvent& ev) {
                     // task-6-report.md).
                     int cx = 0, cy = 0;
                     resolve_ground_cell(ev.x, ev.y, cx, cy);
-                    // Capture actor BEFORE the order mutates any state; the
-                    // move flag is set only when the selection is non-empty
-                    // (an empty-selection right-click is a no-op move).
-                    const int actor = lowest_selected();
-                    world_.order_move_selected(cx, cy);
-                    if (actor >= 0) {
-                        actions_.move_ordered = true;
+                    // Interactive attack-building (Task 4 machinery wired to the
+                    // player here): if the resolved ground cell lands on a
+                    // HOSTILE building's foundation it's an attack order, not a
+                    // move -- mirrors the hostile-unit gate above (house != 0 +
+                    // a live selection). building_at_cell returns only alive,
+                    // non-Dead foundations and order_attack_building re-guards
+                    // house-0/dead/out-of-range internally (world.cpp:464), so
+                    // the lone house != 0 test here is just the input-level
+                    // friendly-vs-hostile decision: a click on an own/friendly
+                    // building is NOT an attack and falls through to the move
+                    // below, exactly like a friendly-unit right-click.
+                    const int b_idx = world_.building_at_cell(cx, cy);
+                    if (b_idx >= 0 && world_.buildings()[b_idx].house != 0 && any_selected) {
+                        // Capture actor BEFORE the order mutates any state.
+                        const int actor = lowest_selected();
+                        world_.order_attack_building(b_idx);
+                        actions_.attack_ordered = true;
                         actions_.actor = actor;
+                    } else {
+                        // Group-move to the clicked ground cell (issued on
+                        // down). Capture actor BEFORE the order mutates state;
+                        // the move flag is set only when the selection is
+                        // non-empty (an empty-selection right-click is a no-op
+                        // move).
+                        const int actor = lowest_selected();
+                        world_.order_move_selected(cx, cy);
+                        if (actor >= 0) {
+                            actions_.move_ordered = true;
+                            actions_.actor = actor;
+                        }
                     }
                 }
             } else {

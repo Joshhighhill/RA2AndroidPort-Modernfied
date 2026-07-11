@@ -860,3 +860,71 @@ TEST_CASE("Input: take_actions reports attack_ordered + lowest actor on a right-
     CHECK_FALSE(a.move_ordered);
     CHECK(a.actor == std::min(fx.gi0, fx.gi1));
 }
+
+// ---- Final-review MF1: interactive attack-building right-click ----
+
+TEST_CASE("Input: right-click a hostile building attacks; own building is a move") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    world.set_move_speed(4.0);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+
+    // Two well-separated level-0 cells for the foundations -- level 0 so the
+    // level-blind px_for_cell projection is the exact inverse of Input's
+    // resolve_ground_cell (as the placement test relies on). Keep both clear
+    // of the unit cluster so unit_under can't intercept the pick.
+    std::vector<std::pair<int, int>> l0;
+    for (const auto& mc : world.map().cells())
+        if (mc.level == 0 && world.unit_at_cell(mc.x, mc.y) < 0 &&
+            std::abs(mc.x - world.units()[fx.gi0].cell_x) > 6)
+            l0.push_back({mc.x, mc.y});
+    if (l0.size() < 2) { MESSAGE("skipped: not enough level-0 cells"); return; }
+    // Ensure the two 2x2 foundations don't overlap.
+    const auto hostile_o = l0.front();
+    std::pair<int, int> friendly_o{-1, -1};
+    for (const auto& c : l0)
+        if (std::abs(c.first - hostile_o.first) > 3 || std::abs(c.second - hostile_o.second) > 3) {
+            friendly_o = c;
+            break;
+        }
+    if (friendly_o.first < 0) { MESSAGE("skipped: no disjoint foundation cell"); return; }
+
+    const int hostile_bi = world.add_building(/*type=*/1, hostile_o.first, hostile_o.second,
+                                              /*fw=*/2, /*fh=*/2, /*house=*/1, /*strength=*/1000,
+                                              /*armor_ix=*/0, /*buildup_total=*/0.0, /*instant=*/true);
+    const int friendly_bi = world.add_building(/*type=*/1, friendly_o.first, friendly_o.second,
+                                               /*fw=*/2, /*fh=*/2, /*house=*/0, /*strength=*/1000,
+                                               /*armor_ix=*/0, /*buildup_total=*/0.0, /*instant=*/true);
+    REQUIRE(hostile_bi >= 0);
+    REQUIRE(friendly_bi >= 0);
+
+    world.units()[fx.gi0].selected = true;
+    world.units()[fx.gi1].selected = true;
+
+    // Right-click the HOSTILE building's foundation origin -> attack order.
+    int px, py;
+    px_for_cell(hostile_o.first, hostile_o.second, px, py);
+    right_click(input, px, py, 1000);
+    const ra2engine::InputActions a = input.take_actions();
+    CHECK(a.attack_ordered);
+    CHECK_FALSE(a.move_ordered);
+    CHECK(a.actor == std::min(fx.gi0, fx.gi1));
+    CHECK(world.units()[fx.gi0].target_building == hostile_bi);
+    CHECK(world.units()[fx.gi1].target_building == hostile_bi);
+
+    // Right-click the player's OWN building's foundation origin -> ground move,
+    // NOT an attack (house 0 is never an attack target).
+    px_for_cell(friendly_o.first, friendly_o.second, px, py);
+    right_click(input, px, py, 2000);
+    const ra2engine::InputActions b = input.take_actions();
+    CHECK(b.move_ordered);
+    CHECK_FALSE(b.attack_ordered);
+    // The own-building click issued no building attack: target_building stays
+    // pointed at the earlier hostile order for neither unit (move clears it).
+    CHECK(world.units()[fx.gi0].target_building == -1);
+    CHECK(world.units()[fx.gi1].target_building == -1);
+}

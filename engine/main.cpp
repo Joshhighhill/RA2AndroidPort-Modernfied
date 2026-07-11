@@ -1735,8 +1735,8 @@ int run_interactive(bool no_audio) {
         // Placement cursor (under the sidebar), then the sidebar chrome on top.
         draw_placement_cursor(ren, world, ba, input, a, cam, platform.width(), platform.height());
         if (ba.ok && ba.sidebar_ok)
-            draw_sidebar(ren, tc, ba, lay, ps, world, static_cast<int>(credits_shown),
-                         now / 1000.0);
+            draw_sidebar(ren, tc, ba, lay, ps, world,
+                         static_cast<int>(std::llround(credits_shown)), now / 1000.0);
         platform.present();
         SDL_Delay(16);  // ~60fps
     }
@@ -2633,7 +2633,8 @@ DemoBaseResult simulate_base(Assets& a, UnitAssets& ua, BuildingAssets& ba, doub
         SDL_RenderClear(ren);
         render_world(ren, *tc, a, ua, world, *cam, W, H, /*input=*/nullptr, /*va=*/nullptr, &ba);
         if (ba.sidebar_ok)
-            draw_sidebar(ren, *tc, ba, lay, ps, world, static_cast<int>(ps.credits), t);
+            draw_sidebar(ren, *tc, ba, lay, ps, world,
+                         static_cast<int>(std::llround(ps.credits)), t);
     };
     auto step_one = [&]() {
         world.step(dt);

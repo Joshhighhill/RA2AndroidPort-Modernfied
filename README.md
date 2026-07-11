@@ -92,6 +92,8 @@ animations; repair and sell are not implemented (their sidebar buttons are
 inert); no rubble frames; no shroud; the radar is a static frame; sidebar
 tabs beyond the Building tab are inert; the credits tally uses a built-in
 digit strip rather than the game's own (unproven-for-this-string) font path;
+the READY cameo state shows a flashing green tint (no in-game font this phase;
+the divergent credits digit strip covers 0–9 only);
 `GAWEAP` (Soviet War Factory) is unbuildable by the player this phase — its
 `PROC` prerequisite is correctly enforced and unmet, exercised instead via
 the pre-built Soviet base; units never auto-acquire buildings as combat
