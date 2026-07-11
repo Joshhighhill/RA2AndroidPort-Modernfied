@@ -185,7 +185,15 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 // its body_facing (docs/re/voxel-render.md §5). Non-vehicles are skipped.
 // Called from World::step between step_units and step_combat so the fire
 // gate (vehicle_aimed) sees the turret's post-slew facing this frame. Pure.
-void step_turrets(std::vector<Unit>& units, double dt);
+//
+// Buildings & Construction Task 4 fix: a unit with a live `target_building`
+// (alive, non-Dead) also slews, toward the NEAREST foundation cell of that
+// building -- same nearest-cell rule combat.cpp uses for range -- mirroring
+// the unit-target branch above it. With `buildings` empty (every call site
+// predating this fix, and any test that doesn't attack a building) this new
+// branch is unreachable, so behavior is byte-identical to the old 2-arg
+// signature.
+void step_turrets(std::vector<Unit>& units, const std::vector<Building>& buildings, double dt);
 
 // Picks a passable (Clear/grass, `tile == 0` -- confirmed in Task 9 /
 // task-9-report.md: "tile index 0 is Clear") cell close to the centroid of

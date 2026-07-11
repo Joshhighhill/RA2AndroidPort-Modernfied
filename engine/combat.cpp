@@ -190,6 +190,18 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
                 const double range_leptons = u.w_range * kLeptonsPerCell;
                 if (best_d <= range_leptons) {
                     if (u.rof_cool <= 0.0) {
+                        // Aim gate, mirroring the unit path exactly
+                        // (combat.cpp ~L276-278): a vehicle holds fire until
+                        // its turret has slewed onto the nearest foundation
+                        // cell (step_turrets ran this frame, before
+                        // step_combat, using this same facing). Infantry are
+                        // exempt -- zero behavior change. rof_cool untouched
+                        // while unaimed.
+                        if (u.is_vehicle &&
+                            !vehicle_aimed(u, facing_u16_from_delta(
+                                                  static_cast<double>(nx) - u.fx,
+                                                  static_cast<double>(ny) - u.fy)))
+                            continue;  // hold fire this frame; rof_cool untouched
                         u.rof_cool = u.w_rof / kLogicFps;
                         u.fire_flash = kFireFlashSecs;
                         const int dmg = damage_vs(u.w_damage, u.w_verses, b->armor_ix);
@@ -209,7 +221,27 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
                         }
                     }
                 } else if (u.attack_order) {
-                    requests.push_back({i, nx, ny, /*approach=*/true});
+                    // Dedup mirrors the unit-pursuit branch below (f): only
+                    // re-request when there's no live path, or the current
+                    // path's goal has stopped being a firing position for the
+                    // building (its nearest foundation cell to that goal has
+                    // left weapon range). The building never moves, but the
+                    // goal-to-nearest-cell distance can still change because
+                    // "nearest" is relative to the goal, not the unit -- e.g.
+                    // a goal on the far side of a multi-cell foundation.
+                    bool need = !u.moving();
+                    if (!need) {
+                        const Cellxy g = u.path.back();
+                        double g_best = -1.0;
+                        for (const Cellxy& cell : cells) {
+                            const double d = dist_leptons(
+                                static_cast<double>(g.x), static_cast<double>(g.y),
+                                static_cast<double>(cell.x), static_cast<double>(cell.y));
+                            if (g_best < 0.0 || d < g_best) g_best = d;
+                        }
+                        need = g_best > range_leptons;
+                    }
+                    if (need) requests.push_back({i, nx, ny, /*approach=*/true});
                 }
                 continue;  // handled -- skip the unit-vs-unit path entirely
             }

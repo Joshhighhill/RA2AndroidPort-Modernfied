@@ -183,10 +183,11 @@ TEST_CASE("vehicle: turret slews to target and returns to body when disengaged")
     units[0].hp = units[0].max_hp = 100;
     const double want = facing_u16_from_delta(units[1].fx - units[0].fx,
                                               units[1].fy - units[0].fy);
-    for (int i = 0; i < 300; ++i) ra2engine::step_turrets(units, 1.0 / 60.0);
+    std::vector<ra2engine::Building> no_buildings;
+    for (int i = 0; i < 300; ++i) ra2engine::step_turrets(units, no_buildings, 1.0 / 60.0);
     CHECK(units[0].turret_facing == doctest::Approx(want));
     units[0].target = -1;
-    for (int i = 0; i < 300; ++i) ra2engine::step_turrets(units, 1.0 / 60.0);
+    for (int i = 0; i < 300; ++i) ra2engine::step_turrets(units, no_buildings, 1.0 / 60.0);
     CHECK(units[0].turret_facing == doctest::Approx(units[0].body_facing));
 }
 
@@ -215,4 +216,41 @@ TEST_CASE("vehicle: fire waits for turret aim; infantry does not") {
     units[0].turret_facing = facing_u16_from_delta(2.0, 0.0);
     ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
     CHECK(units[1].hp < 400);           // vehicle fired once aimed
+}
+
+TEST_CASE("vehicle: fire at a building waits for turret aim, then fires after step_turrets") {
+    // Mirrors "vehicle: fire waits for turret aim; infantry does not" but for
+    // an attack-building order (Buildings & Construction Task 4 review fix
+    // 2): step_turrets must slew a vehicle toward the building's NEAREST
+    // foundation cell, and step_combat's building-fire path must gate on
+    // vehicle_aimed exactly like the unit-vs-unit path.
+    std::vector<Unit> units = {tank_at(5, 5)};
+    units[0].hp = units[0].max_hp = 400; units[0].w_damage = 90; units[0].w_rof = 65;
+    units[0].w_range = 5.75; units[0].w_verses = {100}; units[0].alive = true;
+    units[0].house = 0;
+    units[0].target_building = 0; units[0].attack_order = true;
+    // Turret starts at its default (South, body_facing 32768) -- the
+    // building sits due EAST (facing 16384) -- so it starts unaligned
+    // without any manual override.
+
+    std::vector<ra2engine::Building> bs(1);
+    ra2engine::Building& b = bs[0];
+    b.state = ra2engine::Building::State::Idle; b.alive = true; b.house = 1;
+    b.cx = 7; b.cy = 5; b.fw = 1; b.fh = 1;  // nearest cell (7,5), dist 2 <= 5.75
+    b.hp = b.max_hp = 180; b.armor_ix = 0;
+
+    ra2engine::Occupancy occ(16, 16);
+    occ.set(5, 5, 0);
+
+    // step_combat alone (no step_turrets) must never let it fire.
+    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    CHECK(b.hp == 180);           // vehicle held fire (not aimed)
+
+    // Slew the turret via step_turrets toward the building's nearest cell.
+    for (int i = 0; i < 300; ++i) ra2engine::step_turrets(units, bs, 1.0 / 60.0);
+    const double want = facing_u16_from_delta(7.0 - 5.0, 5.0 - 5.0);
+    CHECK(units[0].turret_facing == doctest::Approx(want));
+
+    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    CHECK(b.hp < 180);            // vehicle fired once aimed
 }

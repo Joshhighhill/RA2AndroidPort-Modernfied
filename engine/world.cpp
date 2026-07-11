@@ -90,7 +90,7 @@ bool vehicle_aimed(const Unit& u, double target_facing) {
     return std::abs(d) <= kAimToleranceU16;
 }
 
-void step_turrets(std::vector<Unit>& units, double dt) {
+void step_turrets(std::vector<Unit>& units, const std::vector<Building>& buildings, double dt) {
     for (auto& u : units) {
         if (!u.is_vehicle || !u.alive || u.die_time >= 0.0) continue;
         double want = u.body_facing;
@@ -98,6 +98,32 @@ void step_turrets(std::vector<Unit>& units, double dt) {
             const Unit& t = units[u.target];
             if (t.alive && t.die_time < 0.0)
                 want = facing_u16_from_delta(t.fx - u.fx, t.fy - u.fy);
+        } else if (u.target_building >= 0 &&
+                   u.target_building < static_cast<int>(buildings.size())) {
+            // Buildings & Construction Task 4 fix: mirror the unit-target
+            // branch above for a live attack-building order -- slew toward
+            // the NEAREST foundation cell (same rule combat.cpp uses for
+            // range), not the building's origin/center. With `buildings`
+            // empty (every pre-Task-4 call site/test) this branch is
+            // unreachable, preserving byte-identity.
+            const Building& b = buildings[static_cast<std::size_t>(u.target_building)];
+            if (b.alive && b.state != Building::State::Dead) {
+                const auto cells = foundation_cells(b.cx, b.cy, b.fw, b.fh);
+                double best_d = -1.0;
+                int nx = 0, ny = 0;
+                for (const Cellxy& cell : cells) {
+                    const double dx = (static_cast<double>(cell.x) - u.fx);
+                    const double dy = (static_cast<double>(cell.y) - u.fy);
+                    const double d = dx * dx + dy * dy;
+                    if (best_d < 0.0 || d < best_d) {
+                        best_d = d;
+                        nx = cell.x;
+                        ny = cell.y;
+                    }
+                }
+                want = facing_u16_from_delta(static_cast<double>(nx) - u.fx,
+                                             static_cast<double>(ny) - u.fy);
+            }
         }
         u.turret_facing = turn_toward(u.turret_facing, want, u.rot_u16_per_sec * dt);
     }
@@ -462,7 +488,7 @@ void World::step(double dt) {
     // Slew vehicle turrets AFTER movement and BEFORE combat so the aim gate
     // (vehicle_aimed) in step_combat sees this frame's post-slew turret
     // facing (docs/re/voxel-render.md §5). No-op for infantry.
-    step_turrets(units_, dt);
+    step_turrets(units_, buildings_, dt);
 
     // Buildings & Construction Task 4: advance buildup/death timers, then
     // restore passability for any building that DIED this frame (state ==
