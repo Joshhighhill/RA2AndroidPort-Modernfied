@@ -4124,7 +4124,13 @@ DemoProdResult simulate_prod(Assets& a, UnitAssets& ua, BuildingAssets& ba, Unit
 
     // Second war factory + set_primary -> the NEXT tank exits from it.
     int gx = 0, gy = 0;
-    place_player_building(world, ba, gaweap, cy_b.cx + cy_b.fw + 4, cy_b.cy + cy_b.fh, gx, gy);
+    // Guard the 2nd GAWEAP placement like the first three: a failure (broken
+    // install) would leave w2=-1, skip set_primary, fall expected_exit2 back to
+    // factory 1, and let the "2nd MTNK from primary" check re-test factory 1
+    // against itself (match=1) -- a false pass. Fail the gate + diagnose.
+    if (!place_player_building(world, ba, gaweap, cy_b.cx + cy_b.fw + 4, cy_b.cy + cy_b.fh, gx, gy)) {
+        r.ok = false; r.witness.emplace_back("[prod] 2nd GAWEAP placement FAILED");
+    }
     int w2 = -1;   // locate the SECOND war factory (any alive GAWEAP != weap_bi)
     for (int i = 0; i < (int)world.buildings().size(); ++i)
         if (world.buildings()[i].alive && world.buildings()[i].type == gaweap && i != weap_bi) w2 = i;
@@ -4138,14 +4144,22 @@ DemoProdResult simulate_prod(Assets& a, UnitAssets& ua, BuildingAssets& ba, Unit
         r.ok = false;   // recovered MultipleFactory 0.8: 1fac=1.000, 2fac=1.250 EXACTLY
 
     // Exit cell of the NEW primary (2nd war factory), captured before the build.
-    const ra2engine::Building w2b = world.buildings()[w2 >= 0 ? w2 : weap_bi];
+    // Guard the index: if BOTH w2 and weap_bi are -1 (all GAWEAP placements
+    // failed on a broken install), dereferencing world.buildings()[-1] is UB.
+    // Report the verdict and skip the build rather than execute UB.
+    const int primary_bi = (w2 >= 0) ? w2 : weap_bi;
+    long double_frames = 0;
+    if (primary_bi < 0) {
+        r.ok = false; r.witness.emplace_back("[prod] 2nd MTNK no war factory (all placements failed)");
+    } else {
+    const ra2engine::Building w2b = world.buildings()[primary_bi];
     const ra2engine::Cellxy expected_exit2 = ra2engine::exit_cell(w2b, ba.roster[w2b.type], free_cell);
     const int u2_before = (int)world.units().size();
     q.set_credits(credits);
     q.start_unit(ra2engine::QueueCat::Vehicle, mtnk_slot, ur.defs, build_speed);
     const long f_double0 = frame;
     while (q.producing(ra2engine::QueueCat::Vehicle) != -1 && t < cap) step_one();
-    const long double_frames = frame - f_double0;
+    double_frames = frame - f_double0;
     if ((int)world.units().size() > u2_before) {
         const ra2engine::Unit& tank2 = world.units().back();
         const ra2engine::Cellxy ex2 = expected_exit2;
@@ -4155,6 +4169,7 @@ DemoProdResult simulate_prod(Assets& a, UnitAssets& ua, BuildingAssets& ba, Unit
             (tank2.cell_x == ex2.x && tank2.cell_y == ex2.y) ? 1 : 0); r.witness.emplace_back(b);
         if (tank2.cell_x != ex2.x || tank2.cell_y != ex2.y) r.ok = false;
     } else { r.witness.emplace_back("[prod] 2nd MTNK never exited"); r.ok = false; }
+    }   // end guarded 2nd-factory build (primary_bi >= 0)
     // PIN the MultipleFactory x0.8: the two-factory build must take EXACTLY the
     // recovered fraction of the single-factory frames (not merely "faster").
     // The 54-stage timer is free-running, so completion = ceil(54*step_ticks /
