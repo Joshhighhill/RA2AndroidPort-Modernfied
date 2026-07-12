@@ -156,6 +156,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_factory.cpp engine/factory.cpp
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as factory.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_ai_base.cpp engine/ai_base.cpp)
+# aimd_parse.cpp is pure C++17 (no SDL): the AI-2 aimd.ini parser --
+# TaskForce/ScriptType/TeamType tables via the existing ra2assets::Ini
+# ordered-section walk (docs/re/ai-team.md §1). Compiled into both this test
+# binary and ra2engine from one source of truth (same pattern as ai_base.cpp).
+target_sources(ra2assets_tests PRIVATE tests/test_aimd.cpp engine/aimd_parse.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
