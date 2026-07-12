@@ -42,6 +42,32 @@ std::vector<std::string> split_trim_upper(const std::string& v) {
     return out;
 }
 
+// True iff `id` (case-insensitive) is a VALUE in [section]'s key/value list.
+// The [InfantryTypes]/[VehicleTypes]/[BuildingTypes] list sections map numbered
+// keys ("0=E1") to ids, so membership is tested against the values, not keys.
+// Real rulesmd list entries carry inline comments ("65=GTGCAN   ; Grand Cannon")
+// which the wrapped Ini preserves (it strips only full-line comments), so cut
+// the value at the first ';' and trim trailing whitespace before comparing --
+// mirroring the real game's INI reader, which treats ';' as a comment anywhere.
+bool in_list_section(const ra2assets::Ini& ini, const std::string& section,
+                     const std::string& id) {
+    for (const auto& kv : ini.section(section)) {
+        std::string val = kv.second;
+        std::size_t semi = val.find(';');
+        if (semi != std::string::npos) val.erase(semi);
+        std::size_t end = val.find_last_not_of(" \t");
+        val = (end == std::string::npos) ? std::string() : val.substr(0, end + 1);
+        if (val.size() != id.size()) continue;
+        bool eq = true;
+        for (std::size_t i = 0; i < id.size(); ++i)
+            if (std::toupper((unsigned char)val[i]) != std::toupper((unsigned char)id[i])) {
+                eq = false; break;
+            }
+        if (eq) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 Rules Rules::load(const Ini& ini) {
@@ -232,6 +258,40 @@ double Rules::growth_rate_minutes() const {
 
 std::string Rules::unloading_class(const std::string& id) const {
     return ini_->get(id, "UnloadingClass", "");
+}
+
+bool Rules::is_infantry(const std::string& id) const {
+    return in_list_section(*ini_, "InfantryTypes", id);
+}
+
+bool Rules::is_vehicle(const std::string& id) const {
+    return in_list_section(*ini_, "VehicleTypes", id);
+}
+
+bool Rules::is_buildcat_combat(const std::string& id) const {
+    // BuildCat=Combat -> Defense queue [RE-GATE APPLIED: production.md §1.1].
+    // Case-insensitive value compare ("Combat"/"combat").
+    const std::string v = ini_->get(id, "BuildCat", "");
+    static const char kCombat[] = "combat";
+    if (v.size() != 6) return false;
+    for (std::size_t i = 0; i < 6; ++i)
+        if (std::tolower((unsigned char)v[i]) != kCombat[i]) return false;
+    return true;
+}
+
+Rules::BuildCategory Rules::build_category(const std::string& id) const {
+    if (is_infantry(id)) return BuildCategory::Infantry;
+    if (is_vehicle(id)) {
+        // Naval=yes -> the Ships queue, out of scope this phase -> None
+        // [RE-GATE APPLIED: production.md §1.1 -- Vehicles = [VehicleTypes]
+        // member AND Naval==0; Naval==1 routes to the separate Ships slot].
+        // Reuse is_truthy() rather than duplicate the yes/true literal list.
+        return is_truthy(ini_->get(id, "Naval", "")) ? BuildCategory::None
+                                                     : BuildCategory::Vehicle;
+    }
+    if (in_list_section(*ini_, "BuildingTypes", id))
+        return is_buildcat_combat(id) ? BuildCategory::Defense : BuildCategory::Structure;
+    return BuildCategory::None;
 }
 
 } // namespace ra2assets

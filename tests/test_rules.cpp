@@ -353,3 +353,83 @@ TEST_CASE("rules: real rulesmd building pins") {
 
     CHECK(rules.mp_money() == 10000);
 }
+
+TEST_CASE("rules: build_category / is_infantry / is_vehicle classification") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[InfantryTypes]\n0=E1\n1=E2\n"
+        "[VehicleTypes]\n0=MTNK\n1=HARV\n2=DEST\n"
+        "[BuildingTypes]\n0=GAPOWR\n1=GAWEAP\n2=GAPILL\n3=GATOW\n"
+        "[E1]\nName=GI\n"
+        "[MTNK]\nName=Grizzly\n"
+        "[DEST]\nName=Destroyer\nNaval=yes\n"
+        "[GAPOWR]\nName=Power Plant\nBuildCat=Power\n"
+        "[GAWEAP]\nName=War Factory\n"
+        "[GAPILL]\nName=Pillbox\nBuildCat=Combat\n"
+        "[GATOW]\nName=Patriot\nBuildCat=combat\n");
+    auto r = ra2assets::Rules::load(ini);
+    using BC = ra2assets::Rules::BuildCategory;
+    CHECK(r.build_category("E1") == BC::Infantry);
+    CHECK(r.build_category("MTNK") == BC::Vehicle);
+    CHECK(r.build_category("HARV") == BC::Vehicle);
+    CHECK(r.build_category("DEST") == BC::None);   // Naval=yes -> Ship queue, out of scope [§1.1]
+    CHECK(r.build_category("GAPOWR") == BC::Structure);  // BuildCat=Power -> Structure
+    CHECK(r.build_category("GAWEAP") == BC::Structure);  // no BuildCat -> Structure
+    CHECK(r.build_category("GAPILL") == BC::Defense);    // BuildCat=Combat -> Defense
+    CHECK(r.build_category("GATOW") == BC::Defense);     // case-insensitive value
+    CHECK(r.build_category("AMCV") == BC::None);   // in no list section
+    CHECK(r.is_infantry("E1"));
+    CHECK_FALSE(r.is_infantry("MTNK"));
+    CHECK(r.is_vehicle("MTNK"));
+    CHECK_FALSE(r.is_vehicle("E1"));
+    CHECK(r.is_buildcat_combat("GAPILL"));
+    CHECK_FALSE(r.is_buildcat_combat("GAWEAP"));
+    CHECK_FALSE(r.is_buildcat_combat("GAPOWR"));
+}
+
+TEST_CASE("rules: real rulesmd classification pins") {
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto top_bytes = slurp(base + "\\ra2md.mix");
+    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    MixFile top = MixFile::open(std::move(top_bytes));
+
+    std::vector<uint8_t> rules_bytes;
+    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
+        rules_bytes = top.read(*e);
+    } else {
+        static const char* candidates[] = {
+            "localmd.mix",
+            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
+            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
+            "cachemd.mix", "conqmd.mix",
+        };
+        for (const char* name : candidates) {
+            try {
+                MixFile nested = top.open_nested(name);
+                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
+                    rules_bytes = nested.read(*e2);
+                    break;
+                }
+            } catch (const std::exception&) {
+            }
+        }
+    }
+    if (rules_bytes.empty()) {
+        MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
+                "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
+        return;
+    }
+
+    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
+    Rules rules = Rules::load(ini);
+
+    using BC = ra2assets::Rules::BuildCategory;
+    CHECK(rules.build_category("E1") == BC::Infantry);     // GI
+    CHECK(rules.build_category("MTNK") == BC::Vehicle);    // Grizzly
+    // [RE-GATE APPLIED: production.md §1.1] every defense has BuildCat=Combat:
+    for (const char* d : {"GAPILL", "GTGCAN", "NALASR", "ATESLA", "NASAM", "GAWALL"})
+        CHECK(rules.build_category(d) == BC::Defense);
+    // ...and the non-Combat structures do NOT (BuildCat Power/Resource/Tech/None):
+    for (const char* s : {"GAPOWR", "GAREFN", "GATECH", "GACNST", "GAWEAP"})
+        CHECK(rules.build_category(s) == BC::Structure);
+}

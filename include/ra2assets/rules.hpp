@@ -155,6 +155,34 @@ public:
     // [id] UnloadingClass=, or "" if absent.
     std::string unloading_class(const std::string& id) const;
 
+    // Producible category [RE-GATE APPLIED: production.md §1.1]. Resolved from
+    // INI list-section membership plus the recovered BuildCat= key -- the
+    // Structure-vs-Defense queue classifier is BuildCat==Combat, NOT
+    // IsBaseDefense (GTGCAN/GAWALL are BuildCat=Combat with IsBaseDefense=None):
+    //   [BuildingTypes] member + BuildCat=Combat        -> Defense
+    //   [BuildingTypes] member otherwise                -> Structure
+    //                    (BuildCat Power/Resource/Tech/None)
+    //   [InfantryTypes] member                          -> Infantry
+    //   [VehicleTypes]  member + Naval!=yes             -> Vehicle
+    //   [VehicleTypes]  member + Naval=yes              -> None (Ship queue,
+    //                    out of scope this phase, production.md §1.1)
+    //   anything else (aircraft/unknown)                -> None
+    // Membership is by VALUE (the id, e.g. "GI"/"E1"): the list sections map
+    // numbered keys ("0=E1") to ids, so we scan values, not keys.
+    enum class BuildCategory { None, Structure, Defense, Infantry, Vehicle };
+    BuildCategory build_category(const std::string& id) const;
+
+    // [id] appears as a value in [InfantryTypes] / [VehicleTypes] respectively.
+    bool is_infantry(const std::string& id) const;
+    bool is_vehicle(const std::string& id) const;
+
+    // [id] BuildCat=, true iff the value is "Combat" (case-insensitive); false
+    // if absent [RE-GATE APPLIED: production.md §1.1 -- BuildCat==Combat(5) is
+    // the recovered Structure-vs-Defense queue classifier (BuildingType +0xE08,
+    // branch in FUN_004FA170); IsBaseDefense (+0x1706) is a separate
+    // AI-targeting flag and is NOT the queue key].
+    bool is_buildcat_combat(const std::string& id) const;
+
 private:
     explicit Rules(const Ini& ini) : ini_(&ini) {}
     const Ini* ini_;
