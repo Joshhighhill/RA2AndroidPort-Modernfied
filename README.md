@@ -231,6 +231,82 @@ ground truth — not bugs, do not "fix" in review):
   to its exit/rally cell; no per-building door-open/close animation frames are
   replicated.
 
+The AI-1 phase gives the enemy a brain. A house-generalized **per-house AI
+registry** (`World::enable_ai_house`) marks any house as AI-controlled with its
+own difficulty; the interactive scene enables house 1 (the pre-built Soviet
+base) at difficulty **Normal**. Each AI tick runs a pure, side-effect-free
+brain, `engine/ai_base` (`AiBaseState`, `build_base_plan`, `next_build`,
+`find_build_location`, `difficulty_mods`), that: builds an **ordered base-node
+plan** once via a topological (Kahn) prerequisite sort over the house's ownable
+BuildingTypes — the recovered mechanism that lets a Refinery land ahead of the
+War Factory/Radar that require it without the dispatcher ever needing to skip a
+blocked head node (`docs/re/ai-base.md` §2/§2a); **walks the plan head-first**,
+applying a **power-preemption** override (force-insert a Power node before any
+node that would drive drain over output − reserve) and a separate **economy
+expansion** override (add a Refinery/War Factory outright when affordable);
+picks a placement cell with a **deterministic outward scan** from existing
+anchors, respecting `AIBaseSpacing`; applies **per-difficulty handicaps**
+(Easy/Normal/Difficult cost/build-time/build-delay multipliers, §4); and
+**rebuilds in place** at a node's retained cell when its building is destroyed,
+ahead of any tail expansion (§5). Critically, none of this is new machinery —
+`World::step_ai_houses` drives the AI house through the **exact same**
+production queues, `can_start`/prerequisite checks, `placement_check`
+placement validity, and building-placed path the human player uses; the only
+AI-specific carve-out is the recovered `Adjacent=` proximity-check bypass
+non-human houses get (`ai-base.md` §3). `step_ai_houses` is the **last**
+statement of `World::step()` and is gated by a single early-return
+(`if (ai_any_)`) with AI fields excluded from `world_hash`, so with no AI house
+enabled the five legacy gates stay bit-identical — verified across every task
+of this phase and re-verified here. Calibration authority: `docs/re/ai-base.md`
+(house AI tick/build clock, urgency ordering + `[AI]` constants, prereq-sort
+plan builder, placement scan, per-difficulty handicaps, rebuild semantics);
+companion of `docs/re/construction.md` and `docs/re/production.md`.
+
+Deviations we take for AI-1 (adjudicated divergences from the recovered
+`ai-base.md` ground truth — not bugs, do not "fix" in review):
+- **Engine-local seeded xorshift32** (`AiBaseState::rng`, fixed seed) drives
+  the AI's build-clock jitter and node-position tie-breaks in place of the
+  original's lockstep game RNG (`FUN_0065c220`/`FUN_007c4d00`) — same
+  distributions/counts, not bit-identical to the netgame sequence
+  (`ai-base.md`, "Deviations / plan diffs" — RNG).
+- **Single-slot Structure/Defense queues** (one item building + one ready per
+  queue) stand in for the original's 29-deep `MaximumQueuedObjects` queue —
+  carried forward unchanged from the Production phase and reused as-is for the
+  AI's one-structure-at-a-time build clock (the recovered house+0x564c gate,
+  `ai-base.md` §1).
+- **Topological prereq-sort + force-emit cycle-breaker** is our model of the
+  recovered plan builder (`FUN_005052d0`): `build_base_plan` prereq-sorts the
+  node list (Kahn-style, ConYard → Power → Barracks → Refinery → War
+  Factory/Radar → prereq-sorted remainder → defenses+walls) and force-emits one
+  node per pass with no progress to guarantee termination; `next_build` acts on
+  the plan's head node only and never skips a blocked head, mirroring the
+  recovered head-only dispatcher `FUN_004fe200` (`ai-base.md` §2/§2a).
+- **NABNKR and TESLA are absent from this asset install**, so the Soviet
+  defense catalog is art-guard-dropped down to its two available members —
+  effective Soviet base defenses are **NALASR/NAFLAK** only, out of the
+  recovered full set `SovietBaseDefenses = NALASR,NABNKR,TESLA,NAFLAK`
+  (`ai-base.md` §2). This is an environmental install gap, not an engine
+  limitation (the GATOW lesson from the Production phase).
+- **`AIBaseSpacing=1`** is honored as the inter-building cell gap the
+  placement scan targets, and AI placement **bypasses the player's
+  `Adjacent=` proximity check** end to end — both recovered CONFIRMED
+  (`ai-base.md` §3); per-cell validity (bounds/terrain/occupancy) is still the
+  same shared grid the player's cursor uses.
+- **Per-difficulty handicaps are recovered values, applied at `start()`**
+  (charge ×= `Cost` mult, build speed ×= `BuildTime` mult) rather than at the
+  binary's exact handicap call sites, with identical numbers: `BuildTime`
+  0.8/1.0/1.0 and `BuildDelay` 0.03/0.03/0.1 minutes for Easy/Normal/Difficult
+  (`ai-base.md` §4). `BuildSlowdown` (no/yes/yes per difficulty) is recovered
+  and recorded but **unused** in AI-1 — no consumer of it exists yet in this
+  phase.
+- Remaining **`[RE-FALLBACK]`**s carried from the hunt, all adjudicated and
+  cited in `ai-base.md`: the exact outward placement-scan order (nearest-first
+  Chebyshev ring, first-free tie-break, §3); the lobby-selection→house
+  difficulty-index arithmetic (index 0/1/2 = Easy/Normal/Difficult as loaded,
+  §4); the per-difficulty base-defense-count array's index binding (hardest→25,
+  normal→22, easiest→6, §2); and the `BuildDelay` minutes→frames conversion
+  (minutes×60 seconds, §1).
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -330,6 +406,14 @@ Headless/verification CLI modes (render one or more frames and exit):
   build time is exactly the recovered MultipleFactory ×0.8 of the
   single-factory build — then hashes the world + queue state (`prod_hash`).
   Rendered and headless runs must be byte-identical.
+- `ra2engine.exe --demo-ai-base` — the AI-1 base-planning integration gate: a
+  lone Soviet Construction Yard (house 1, difficulty Normal, fixed seed) runs
+  the recovered per-house AI tick end-to-end — building power → barracks →
+  refinery → war factory → radar (the topological prereq-sort order,
+  `docs/re/ai-base.md` §2/§2a) through the same production queues and
+  placement validity the player uses — for a fixed frame budget, then hashes
+  the world/AI state (`ai_base_hash`). Runs twice and both runs must produce
+  identical witness lines and hash.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -337,21 +421,22 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These five headless demos are byte-identity regression gates: any change to
+These six headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
-above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster is now
-`roster=12` since the Unit Production phase's roster additions, hash
-unaffected).
+above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
+again with each subsequent roster addition — `roster=18` as of the AI-1 phase
+— with the gated hash unaffected each time).
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
 | `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
 | `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
-| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=12`, GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
+| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=18` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
+| `--demo-ai-base` | `ai_base_hash=62e1ab3f34b22d15` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
 
 ## Android (arm64-v8a) cross-compile
 
