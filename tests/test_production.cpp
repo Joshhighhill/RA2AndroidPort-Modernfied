@@ -301,6 +301,43 @@ TEST_CASE("production: cancelling TWO queues in one frame refunds BOTH (no lost 
     CHECK(q.producing(QueueCat::Vehicle) == -1);
 }
 
+TEST_CASE("production: ConYard-death cancels Structure+Defense, BOTH refunds land [final-review FIX 1]") {
+    // Regression for the ConYard-death branch in prod_tick: a lost ConYard
+    // cancels BOTH the Structure and Defense queues in one frame. The OLD code
+    // used raw ra2engine::cancel(q.structure()) (refunds q_[0].credits only, no
+    // broadcast) then q.cancel(Defense) (broadcasts q_[1]'s balance to ALL four
+    // queues) — the Defense broadcast OVERWROTE the Structure refund and
+    // reconcile_refund's max() could not recover it (all four already equal), so
+    // the Structure spend was permanently lost. The fix cancels BOTH through the
+    // broadcasting ProductionQueues::cancel, Structure FIRST, so the refunds
+    // accumulate. Mirror prod_tick's exact order (Structure then Defense) with
+    // UNEQUAL spent amounts so a dropped refund is visible.
+    auto t = roster();
+    ProductionQueues q;
+    const double kStart = 20000.0;
+    q.set_credits(kStart);
+    start(q.structure(), 1, t, 0.7);                 // GAPOWR (cost 800) in Structure queue
+    start(q.state(QueueCat::Defense), 2, t, 0.7);    // GAPILE (cost 500) in Defense queue
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
+    // Advance until BOTH building queues have spent DIFFERENT amounts.
+    for (int i = 0; i < 40; ++i) q.tick(1.0 / 15.0, 1.0, speedup, t);
+    const double spent_str = q.state(QueueCat::Structure).slot.spent;
+    const double spent_def = q.state(QueueCat::Defense).slot.spent;
+    REQUIRE(spent_str > 0.0);
+    REQUIRE(spent_def > 0.0);
+    REQUIRE(spent_str != spent_def);
+    CHECK(q.credits() == doctest::Approx(kStart - spent_str - spent_def));
+
+    // Cancel BOTH in prod_tick's order (Structure first, then Defense). With the
+    // fix each refund broadcasts into the shared pool and accumulates.
+    q.cancel(QueueCat::Structure);
+    q.cancel(QueueCat::Defense);
+    q.reconcile_refund();
+    CHECK(q.credits() == doctest::Approx(kStart));   // BOTH refunds landed
+    CHECK(q.producing(QueueCat::Structure) == -1);
+    CHECK(q.producing(QueueCat::Defense) == -1);
+}
+
 TEST_CASE("production: MultipleFactory speedup scales the vehicle queue [RE-GATE §1.2]") {
     auto u = unit_roster();
     // [RE-GATE APPLIED: production.md §1.2 — CONFIRMED: MultipleFactory = 0.8,

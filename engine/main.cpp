@@ -1822,7 +1822,15 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
     // ConYard-died cancels BOTH building queues (Structure AND Defense share the
     // ConYard-alive factory group) [RE: production.md §1.1].
     if (!conyard_alive(world, ba, 0)) {
-        if (q.structure().slot.type != -1) ra2engine::cancel(q.structure());
+        // Both building queues must cancel through the SAME broadcast path
+        // (ProductionQueues::cancel), so each refund lands in the shared pool
+        // and ACCUMULATES. A raw ra2engine::cancel(q.structure()) refunds only
+        // q_[0].credits without broadcasting; the following q.cancel(Defense)
+        // then broadcasts q_[1]'s balance over all four queues, OVERWRITING the
+        // Structure refund (reconcile_refund can't recover it — all four are
+        // already equal). Cancel Structure FIRST so its refund is in the pool
+        // before the Defense cancel builds on top of it.
+        if (q.producing(ra2engine::QueueCat::Structure) != -1) q.cancel(ra2engine::QueueCat::Structure);
         if (q.producing(ra2engine::QueueCat::Defense) != -1) q.cancel(ra2engine::QueueCat::Defense);
     }
     // Factory-died cancels+refunds the matching unit queue (mirrors ConYard).
@@ -4090,7 +4098,10 @@ DemoProdResult simulate_prod(Assets& a, UnitAssets& ua, BuildingAssets& ba, Unit
 
     // 8-ring exit cell the tank WILL take, captured now while the door is free
     // (recomputing after it spawns would walk past the now-occupied door).
-    auto free_cell = [&](int x, int y) { return world.walkable(x, y) && world.unit_at_cell(x, y) < 0; };
+    // Match launch_unit's engine-side predicate EXACTLY: occupancy().is_free
+    // sees committed cells AND mid-hop next-cell reservations (unit_at_cell does
+    // not), so the demo's expected exit cell tracks what the engine will pick.
+    auto free_cell = [&](int x, int y) { return world.walkable(x, y) && world.occupancy().is_free(x, y); };
     // Set a rally for the war factory before the tank completes.
     const int weap_bi = find_building(world, gaweap, 0);
     ra2engine::Cellxy expected_exit{-1, -1};

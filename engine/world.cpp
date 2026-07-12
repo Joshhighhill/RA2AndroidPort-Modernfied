@@ -578,9 +578,16 @@ void World::set_primary(int b_idx, const std::vector<int>& factory_types) {
 
 int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, const UnitCombat& c) {
     if (factory_idx < 0 || factory_idx >= static_cast<int>(buildings_.size())) return -1;
-    const Building& f = buildings_[factory_idx];   // copy rally state before spawning
+    const Building& f = buildings_[factory_idx];   // rally scalars are copied to locals below
     auto free_cell = [this](int x, int y) {
-        return walkable(x, y) && unit_at_cell(x, y) < 0;
+        // occ_.is_free sees BOTH committed cells AND a mid-hop unit's next-cell
+        // reservation (step_units reserves occ.set(next, self) while cell_x
+        // still holds the old cell). unit_at_cell only scans committed
+        // cell_x/cell_y, so it would treat a reserved next-cell as free and
+        // add_unit's unconditional occ_.set would then steal the mover's claim
+        // -> two units in one cell. Corpses own nothing, matching the old
+        // unit_at_cell corpse-skip.
+        return walkable(x, y) && occ_.is_free(x, y);
     };
     // [RE-GATE APPLIED: production.md §1.3] 8-ring walk to the first free cell.
     const Cellxy ex = exit_cell(f, factory_def, free_cell);

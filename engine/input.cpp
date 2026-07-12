@@ -299,15 +299,23 @@ void Input::handle(const InputEvent& ev) {
             if (ev.button == InputEvent::Right) {
                 // Rally-point set [RE: production.md §1.4]: with an own unit
                 // factory selected, a right-click sets its rally cell and
-                // consumes the event (no attack/move). set_rally re-guards the
-                // building index/alive internally, so a factory that died since
-                // selection is a harmless no-op. Resolved BEFORE the harvester/
-                // attack path so a selected factory always takes precedence.
+                // consumes the event (no attack/move). Resolved BEFORE the
+                // harvester/attack path so a selected factory always takes
+                // precedence. A factory that died since selection must NOT keep
+                // swallowing right-clicks: if the selection is stale (out of
+                // range or dead/tombstoned), clear it and fall through so the
+                // click resumes normal attack/move behavior.
                 if (selected_building_ >= 0) {
-                    int rcx = 0, rcy = 0;
-                    resolve_ground_cell(ev.x, ev.y, rcx, rcy);
-                    world_.set_rally(selected_building_, rcx, rcy);
-                    break;
+                    const auto& blds = world_.buildings();
+                    if (selected_building_ >= static_cast<int>(blds.size()) ||
+                        !blds[selected_building_].alive) {
+                        selected_building_ = -1;   // stale selection: don't consume
+                    } else {
+                        int rcx = 0, rcy = 0;
+                        resolve_ground_cell(ev.x, ev.y, rcx, rcy);
+                        world_.set_rally(selected_building_, rcx, rcy);
+                        break;
+                    }
                 }
                 // Right-click: attack a hostile under the cursor if the pick
                 // lands on one (house != 0) -- a right-click on a FRIENDLY
