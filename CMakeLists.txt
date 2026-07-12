@@ -161,6 +161,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_ai_base.cpp engine/ai_base.cpp
 # ordered-section walk (docs/re/ai-team.md §1). Compiled into both this test
 # binary and ra2engine from one source of truth (same pattern as ai_base.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_aimd.cpp engine/aimd_parse.cpp)
+# ai_team.cpp is pure C++17 (no SDL): the AI-2 offensive-team brain -- lifecycle
+# (Recruiting/Gathering/Executing/Disbanding) + the ScriptType interpreter over
+# a read-only TeamView (docs/re/ai-team.md §2/§3). Compiled into both this test
+# binary and ra2engine from one source of truth (same pattern as aimd_parse.cpp).
+target_sources(ra2assets_tests PRIVATE tests/test_ai_team.cpp engine/ai_team.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
