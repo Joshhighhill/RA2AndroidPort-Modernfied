@@ -4,7 +4,7 @@
 
 **Goal:** The War Factory (GAWEAP) and Barracks (GAPILE) actually produce units — the sidebar Defense/Infantry/Vehicle tabs come alive, cameo clicks feed real concurrent per-category production queues, and finished units drive out of a recovered factory exit cell, path to a settable rally point, and become controllable.
 
-**Architecture:** Task 1 recovers ground truth from gamemd.exe into `docs/re/production.md`; then the change lands additively, protecting all four byte-identity gates. ra2assets `rules.cpp` gains classification accessors; `engine/production` decouples the 54-step charge math into a scalar entry point and wraps it in a 3-queue `ProductionQueues` container (the existing `ProductionState` IS the BuildingType queue, untouched); a new pure `engine/factory` module recovers the exit cell, primary-factory selection, and rally; World spawns finished units at the exit and routes them to the rally; `main.cpp` brings the sidebar tabs alive, adds an Allied defense + unit roster, and wires a new `--demo-prod` gate. Spec: `docs/superpowers/specs/2026-07-12-production-design.md`.
+**Architecture:** Task 1 recovers ground truth from gamemd.exe into `docs/re/production.md`; then the change lands additively, protecting all four byte-identity gates. ra2assets `rules.cpp` gains classification accessors; `engine/production` decouples the 54-step charge math into a scalar entry point and wraps it in a 4-queue `ProductionQueues` container — Structures, Defenses, Infantry, Vehicles, mapping 1:1 to the four sidebar tabs [RE-GATE APPLIED: production.md §1.1] (the existing `ProductionState` IS the Structure queue, untouched); a new pure `engine/factory` module recovers the exit cell, primary-factory selection, and rally; World spawns finished units at the exit and routes them to the rally; `main.cpp` brings the sidebar tabs alive, adds an Allied defense + unit roster, and wires a new `--demo-prod` gate. Spec: `docs/superpowers/specs/2026-07-12-production-design.md`.
 
 **Tech Stack:** C++17, doctest, CMake+Ninja (desktop `build/`, Android `android/` gradle), Ghidra headless (JAVA_HOME=`C:\Program Files\Java\jdk-21`), SDL2 (wiring layer only).
 
@@ -13,7 +13,7 @@
 - **Calibration**: every gameplay/render constant cites `docs/re/production.md` (Task 1's output) or an existing `docs/re/*.md`. Values the hunt cannot pin are **[RE-FALLBACK]** plan-amendment gates — STOP, present options to the human, amend the plan, commit the amendment BEFORE any dependent dispatch. Never guess silently.
 - **[RE-GATE] protocol**: Tasks 2–9 are written with best-known pre-hunt values, each consuming point marked `[RE-GATE APPLIED: production.md §N]` with its fallback inline. After Task 1, the controller diffs `docs/re/production.md` against every `[RE-GATE APPLIED]` block, amends the plan, and commits the amendment before dispatching the task that uses it.
 - **Byte-identity hard gates (permanent)**: `--demo-combat` ends `deterministic=yes logs=78 lines`; `--demo-tank` ends `deterministic=yes logs=144 lines`; `--demo-base` prints `hash=5273b5e71ca009e1`; `--demo-econ` prints `econ_hash=7fed96cb98b68017` and is two-run byte-identical. Any change to their output is a defect in YOUR change.
-- **Byte-identity hazards called out inline**: `production.cpp`'s `tick`/`cancel`/`placed` stay untouched; the BuildingType queue math stays bit-identical; the four gates stay green; `Building`'s new fields (`primary`, `rally_x`, `rally_y`, `has_rally`) are excluded from `world_hash`; adding GAPILL/GATOW to the roster must not alter `--demo-base` (`spawn_base` places nothing new — verify); `prod_hash` is a NEW function, `world_hash` itself unchanged.
+- **Byte-identity hazards called out inline**: `production.cpp`'s `tick`/`cancel`/`placed` stay untouched; the Structure (BuildingType) queue math stays bit-identical; the four gates stay green; `Building`'s new fields (`primary`, `rally_x`, `rally_y`, `has_rally`) are excluded from `world_hash`; adding GAPILL/GATOW to the roster must not alter `--demo-base` (`spawn_base` places nothing new — verify); `prod_hash` is a NEW function, `world_hash` itself unchanged.
 - Run executables from **PowerShell**, never Git Bash. Run every build/test/demo **FOREGROUND, synchronously, blocking** — do NOT background test runs and wait; a prior phase lost subagents to that.
 - `RA2_INSTALL_DIR` default `D:\Red Alert 2`; install-dependent tests skip cleanly (doctest `MESSAGE` + `return`) without it.
 - No game assets, gamemd.exe, or Ghidra project committed. GPL sources (XCC/OpenRA/YRpp at `D:\ra2-re`) read off-repo, prose conclusions only; YRpp/Ares hardcoded addresses untrusted — content-anchored hunts only. **Recovered numeric constants ARE committable.**
@@ -25,7 +25,7 @@
 ### Player side & scope (spec §Approved scope decisions)
 
 - Player is **Allied** (GA\* side). Enemy Soviet base exists but does NOT produce this phase (player-only production; attack-wave AI is a future phase).
-- **Both unit factories** produce: Infantry (GAPILE → GI etc.) and Vehicle (GAWEAP → Grizzly etc.), **plus Defense structures** (tab 1, placed like buildings).
+- **Both unit factories** produce: Infantry (GAPILE → GI etc.) and Vehicle (GAWEAP → Grizzly etc.), **plus Defense structures** (tab 1 — its OWN concurrent Defense queue [RE-GATE APPLIED: production.md §1.1], placed like buildings).
 
 ### File Structure
 
@@ -34,7 +34,7 @@
 | `docs/re/production.md` (create, Task 1) | Calibration authority: queue model, primary/MultipleFactory, exit cell, rally, unit build economy, per-unit prereqs |
 | `include/ra2assets/rules.hpp` + `src/rules.cpp` (modify, Task 2) | `build_category` / `is_infantry` / `is_vehicle` classification accessors |
 | `engine/unit_type.hpp` (create, Task 3) | `UnitTypeDef` roster struct (production-relevant unit fields) |
-| `engine/production.hpp` + `production.cpp` (modify, Task 3) | scalar `start`, `can_start_unit`, `ProductionQueues` 3-queue container |
+| `engine/production.hpp` + `production.cpp` (modify, Task 3) | scalar `start`, `can_start_unit`, `ProductionQueues` 4-queue container (Structure/Defense/Infantry/Vehicle) |
 | `engine/factory.hpp` + `factory.cpp` (create, Task 4) | `exit_cell` / `primary_factory` / `set_primary`; `Building` rally/primary fields |
 | `engine/world.hpp` + `world.cpp` (modify, Task 5) | ready-to-exit spawn, rally routing, `set_rally`/`set_primary`, factory-died cancel |
 | `engine/main.cpp` (modify, Tasks 6–8) | sidebar tabs alive, defense+unit roster+assets, exit handoff, `--demo-prod` |
@@ -81,6 +81,8 @@ Expected: one commit, `docs/re/production.md` created.
 
 - [ ] **Step 6 (CONTROLLER, not the implementer): RE-GATE review.** Diff `production.md` against every `[RE-GATE APPLIED]` block in Tasks 2–9; amend the plan; commit the amendment BEFORE dispatching Task 2. Specifically confirm/replace: the 3-queue model + tab→queue map (Task 3/6), the `MultipleFactory` value and compounding (Task 3), `exit_cell`'s foundation-relative offset (Task 4), the rally default gather cell (Task 5), and the per-unit prereq tokens (Task 6/7). If item 1 shows anything other than "3 queues, tabs 0+1 share the BuildingType queue", STOP and amend Task 3/6 before dispatch.
 
+  **[RE-GATE CLOSED 2026-07-12]** Item 1 DID diverge: the binary keeps SEPARATE concurrent Structures and Defenses queues (production.md §1.1, classifier `BuildCat==Combat`, NOT `IsBaseDefense`). Tasks 2–9 below are amended to the FOUR-queue model — tab0→Structures, tab1→Defenses, tab2→Infantry, tab3→Vehicles. Also applied: exit cell = 8-ring first-free + ExitCoord (§1.3), rally default = exit-adjacent gather cell (§1.4), per-unit prereq ids (§1.6), and an explicit single-slot-vs-29 queue-depth divergence note (§1.5).
+
 ---
 
 ### Task 2: rules.cpp classification accessors — build_category / is_infantry / is_vehicle
@@ -95,13 +97,18 @@ Expected: one commit, `docs/re/production.md` created.
 - Produces (added to `class Rules`, following the existing thin-accessor pattern):
 
 ```cpp
-    // Producible category [RE-GATE APPLIED: production.md §1 item 1]. Resolved
-    // from INI list-section membership plus the recovered base-defense flag:
-    //   [BuildingTypes] member + IsBaseDefense=yes -> Defense
-    //   [BuildingTypes] member otherwise           -> Structure
-    //   [InfantryTypes] member                     -> Infantry
-    //   [VehicleTypes]  member                     -> Vehicle
-    //   anything else (aircraft/ships/unknown)     -> None
+    // Producible category [RE-GATE APPLIED: production.md §1.1]. Resolved from
+    // INI list-section membership plus the recovered BuildCat= key — the
+    // Structure-vs-Defense queue classifier is BuildCat==Combat, NOT
+    // IsBaseDefense (GTGCAN/GAWALL are BuildCat=Combat with IsBaseDefense=None):
+    //   [BuildingTypes] member + BuildCat=Combat        -> Defense
+    //   [BuildingTypes] member otherwise                -> Structure
+    //                    (BuildCat Power/Resource/Tech/None)
+    //   [InfantryTypes] member                          -> Infantry
+    //   [VehicleTypes]  member + Naval!=yes             -> Vehicle
+    //   [VehicleTypes]  member + Naval=yes              -> None (Ship queue,
+    //                    out of scope this phase, production.md §1.1)
+    //   anything else (aircraft/unknown)                -> None
     // Membership is by VALUE (the id, e.g. "GI"/"E1"): the list sections map
     // numbered keys ("0=E1") to ids, so we scan values, not keys.
     enum class BuildCategory { None, Structure, Defense, Infantry, Vehicle };
@@ -111,11 +118,12 @@ Expected: one commit, `docs/re/production.md` created.
     bool is_infantry(const std::string& id) const;
     bool is_vehicle(const std::string& id) const;
 
-    // [id] IsBaseDefense=, true iff "yes"/"true" (case-insensitive); false if
-    // absent [RE-GATE APPLIED: production.md §1 item 1 — the structure-vs-
-    // defense classifier key; [RE-FALLBACK] if the hunt names a different key
-    // (e.g. BaseNormal=no), amend to read that key instead].
-    bool is_base_defense(const std::string& id) const;
+    // [id] BuildCat=, true iff the value is "Combat" (case-insensitive); false
+    // if absent [RE-GATE APPLIED: production.md §1.1 — BuildCat==Combat(5) is
+    // the recovered Structure-vs-Defense queue classifier (BuildingType +0xE08,
+    // branch in FUN_004FA170); IsBaseDefense (+0x1706) is a separate
+    // AI-targeting flag and is NOT the queue key].
+    bool is_buildcat_combat(const std::string& id) const;
 ```
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_rules.cpp`, synthetic INI like the existing cases — no install needed):
@@ -124,30 +132,33 @@ Expected: one commit, `docs/re/production.md` created.
 TEST_CASE("rules: build_category / is_infantry / is_vehicle classification") {
     ra2assets::Ini ini = ra2assets::Ini::parse(
         "[InfantryTypes]\n0=E1\n1=E2\n"
-        "[VehicleTypes]\n0=MTNK\n1=HARV\n"
+        "[VehicleTypes]\n0=MTNK\n1=HARV\n2=DEST\n"
         "[BuildingTypes]\n0=GAPOWR\n1=GAWEAP\n2=GAPILL\n3=GATOW\n"
         "[E1]\nName=GI\n"
         "[MTNK]\nName=Grizzly\n"
-        "[GAPOWR]\nName=Power Plant\n"
+        "[DEST]\nName=Destroyer\nNaval=yes\n"
+        "[GAPOWR]\nName=Power Plant\nBuildCat=Power\n"
         "[GAWEAP]\nName=War Factory\n"
-        "[GAPILL]\nName=Pillbox\nIsBaseDefense=yes\n"
-        "[GATOW]\nName=Patriot\nIsBaseDefense=true\n");
+        "[GAPILL]\nName=Pillbox\nBuildCat=Combat\n"
+        "[GATOW]\nName=Patriot\nBuildCat=combat\n");
     auto r = ra2assets::Rules::load(ini);
     using BC = ra2assets::Rules::BuildCategory;
     CHECK(r.build_category("E1") == BC::Infantry);
     CHECK(r.build_category("MTNK") == BC::Vehicle);
     CHECK(r.build_category("HARV") == BC::Vehicle);
-    CHECK(r.build_category("GAPOWR") == BC::Structure);
-    CHECK(r.build_category("GAWEAP") == BC::Structure);
-    CHECK(r.build_category("GAPILL") == BC::Defense);
-    CHECK(r.build_category("GATOW") == BC::Defense);
+    CHECK(r.build_category("DEST") == BC::None);   // Naval=yes -> Ship queue, out of scope [§1.1]
+    CHECK(r.build_category("GAPOWR") == BC::Structure);  // BuildCat=Power -> Structure
+    CHECK(r.build_category("GAWEAP") == BC::Structure);  // no BuildCat -> Structure
+    CHECK(r.build_category("GAPILL") == BC::Defense);    // BuildCat=Combat -> Defense
+    CHECK(r.build_category("GATOW") == BC::Defense);     // case-insensitive value
     CHECK(r.build_category("AMCV") == BC::None);   // in no list section
     CHECK(r.is_infantry("E1"));
     CHECK_FALSE(r.is_infantry("MTNK"));
     CHECK(r.is_vehicle("MTNK"));
     CHECK_FALSE(r.is_vehicle("E1"));
-    CHECK(r.is_base_defense("GAPILL"));
-    CHECK_FALSE(r.is_base_defense("GAWEAP"));
+    CHECK(r.is_buildcat_combat("GAPILL"));
+    CHECK_FALSE(r.is_buildcat_combat("GAWEAP"));
+    CHECK_FALSE(r.is_buildcat_combat("GAPOWR"));
 }
 ```
 
@@ -186,21 +197,33 @@ bool Rules::is_infantry(const std::string& id) const {
 bool Rules::is_vehicle(const std::string& id) const {
     return in_list_section(*ini_, "VehicleTypes", id);
 }
-bool Rules::is_base_defense(const std::string& id) const {
-    // Reuse the existing yes/true bool-key pattern (see has_turret()).
-    const std::string v = ini_->get(id, "IsBaseDefense", "");
-    return v == "yes" || v == "true" || v == "Yes" || v == "True" || v == "YES" || v == "TRUE";
+bool Rules::is_buildcat_combat(const std::string& id) const {
+    // BuildCat=Combat -> Defense queue [RE-GATE APPLIED: production.md §1.1].
+    // Case-insensitive value compare ("Combat"/"combat").
+    const std::string v = ini_->get(id, "BuildCat", "");
+    static const char kCombat[] = "combat";
+    if (v.size() != 6) return false;
+    for (std::size_t i = 0; i < 6; ++i)
+        if (std::tolower((unsigned char)v[i]) != kCombat[i]) return false;
+    return true;
 }
 Rules::BuildCategory Rules::build_category(const std::string& id) const {
     if (is_infantry(id)) return BuildCategory::Infantry;
-    if (is_vehicle(id)) return BuildCategory::Vehicle;
+    if (is_vehicle(id)) {
+        // Naval=yes -> the Ships queue, out of scope this phase -> None
+        // [RE-GATE APPLIED: production.md §1.1 — Vehicles = [VehicleTypes]
+        // member AND Naval==0; Naval==1 routes to the separate Ships slot].
+        const std::string n = ini_->get(id, "Naval", "");
+        const bool naval = n == "yes" || n == "true" || n == "Yes" || n == "True";
+        return naval ? BuildCategory::None : BuildCategory::Vehicle;
+    }
     if (in_list_section(*ini_, "BuildingTypes", id))
-        return is_base_defense(id) ? BuildCategory::Defense : BuildCategory::Structure;
+        return is_buildcat_combat(id) ? BuildCategory::Defense : BuildCategory::Structure;
     return BuildCategory::None;
 }
 ```
 
-Add `#include <cctype>` to `src/rules.cpp` if not already present. (Confirm `is_base_defense`'s yes/true test matches the exact idiom `has_turret()` already uses in this file; reuse that helper if one exists rather than duplicating the literal list.)
+Add `#include <cctype>` to `src/rules.cpp` if not already present. (Confirm the Naval yes/true test matches the exact idiom `has_turret()` already uses in this file; reuse that helper if one exists rather than duplicating the literal list.)
 
 - [ ] **Step 4: Run tests to verify pass** (FOREGROUND): rebuild, then `D:\ra2-android\build\ra2assets_tests.exe --test-case="rules: build_category*"`. Expected: PASS.
 
@@ -213,9 +236,12 @@ TEST_CASE("rules: real rulesmd classification pins") {
     using BC = ra2assets::Rules::BuildCategory;
     CHECK(rules.build_category("E1") == BC::Infantry);     // GI
     CHECK(rules.build_category("MTNK") == BC::Vehicle);    // Grizzly
-    CHECK(rules.build_category("GAWEAP") == BC::Structure);// War Factory
-    // [RE-GATE APPLIED: production.md §1 item 1] a base-defense structure:
-    CHECK(rules.build_category("GAPILL") == BC::Defense);  // Pillbox
+    // [RE-GATE APPLIED: production.md §1.1] every defense has BuildCat=Combat:
+    for (const char* d : {"GAPILL", "GTGCAN", "NALASR", "ATESLA", "NASAM", "GAWALL"})
+        CHECK(rules.build_category(d) == BC::Defense);
+    // ...and the non-Combat structures do NOT (BuildCat Power/Resource/Tech/None):
+    for (const char* s : {"GAPOWR", "GAREFN", "GATECH", "GACNST", "GAWEAP"})
+        CHECK(rules.build_category(s) == BC::Structure);
 }
 ```
 
@@ -241,8 +267,8 @@ TEST_CASE("rules: real rulesmd classification pins") {
 // One producible unit type's production-relevant stats, resolved ONCE by the
 // caller (main.cpp from Rules/Art, or a test by hand) — the UnitType mirror of
 // BuildingTypeDef. Index into the unit roster is the queue's `type` key.
-// Calibration: docs/re/production.md §5 (units have NO FreeUnit subtraction:
-// charge == cost). No SDL/OS.
+// Calibration: docs/re/production.md §1.5 (units have NO FreeUnit subtraction:
+// charge == cost — the FreeUnit charge subtraction is BuildingType-only). No SDL/OS.
 #include <string>
 #include <vector>
 #include "world.hpp"   // UnitCombat
@@ -251,7 +277,7 @@ namespace ra2engine {
 
 struct UnitTypeDef {
     std::string id;                         // "E1" / "MTNK"
-    int cost = 0;                           // Rules Cost=; charge == cost (§5)
+    int cost = 0;                           // Rules Cost=; charge == cost (§1.5)
     int tech_level = 0;                     // Rules TechLevel=; <=0 = never buildable
     bool is_vehicle = false;                // Infantry queue vs Vehicle queue
     bool chrono_miner = false;              // CMIN flag (add_harvester path); unused for combat units
@@ -266,8 +292,11 @@ struct UnitTypeDef {
 - Produces — added to `engine/production.hpp` (`namespace ra2engine`):
 
 ```cpp
-// Scalar production entry point [RE-GATE APPLIED: production.md §5 — the
-// FactoryClass 54-step economy is shared by BuildingType/Infantry/Vehicle].
+// Scalar production entry point [RE-GATE APPLIED: production.md §1.5 — the
+// FactoryClass 54-step economy is shared by ALL categories (FactoryClass::Set
+// FUN_004C9B90 is the single entry for Structure/Defense/Infantry/Vehicle);
+// build_frames from raw Cost, immediate exit on completion for units,
+// READY-hold for structures/defenses].
 // Decouples the queue math from the BuildingType roster: total_frames =
 // build_frames(cost, build_speed); step_ticks = clamp(total_frames/54, 1, 255);
 // charge_basis = charge (caller passes cost when there is no FreeUnit — units
@@ -289,25 +318,39 @@ bool can_start_unit(const ProductionState& ps, int unit_type,
                     const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
                     bool factory_alive);
 
-// The three concurrent production queues [RE-GATE APPLIED: production.md §1
-// item 1 — 3 FactoryClass queues behind 4 tabs; tabs 0 (Structures) and 1
-// (Defenses) BOTH view the Building queue]. Additive: the Building queue's
-// ProductionState is stepped/started EXACTLY as before (demo-base/demo-econ
-// untouched — those never construct a ProductionQueues). Infantry/Vehicle
-// queues draw from a UnitTypeDef roster and, on completion, raise a
-// ready-to-exit flag consumed by World (Task 5) instead of ready-to-place.
-enum class QueueCat { Building, Infantry, Vehicle };
+// The FOUR concurrent production queues [RE-GATE APPLIED: production.md §1.1 —
+// per-house per-category FactoryClass queues; Structures (+0x53BC) and
+// Defenses (+0x53CC, BuildCat==Combat) are SEPARATE CONCURRENT queues, so this
+// phase's four sidebar tabs map 1:1 to four queues: tab0=Structure,
+// tab1=Defense, tab2=Infantry, tab3=Vehicle. Clicking a structure and a
+// defense builds BOTH at once from the same ConYard (two different
+// FactoryClass objects); both building queues gate on the ConYard-alive
+// factory group and share ONE ConYard factory-count slot (+0x5384) for the
+// MultipleFactory speedup — no struct/def split for the multiplier
+// (§1.1/§1.2)]. Additive: the Structure queue's ProductionState is
+// stepped/started EXACTLY as before (demo-base/demo-econ untouched — those
+// never construct a ProductionQueues; demo-base builds GAPOWR, a Structure,
+// so it stays byte-identical). Infantry/Vehicle queues draw from a
+// UnitTypeDef roster and, on completion, raise a ready-to-exit flag consumed
+// by World (Task 5); Structure/Defense queues READY-hold for placement.
+// DIVERGENCE (deliberate simplification — see Task 9 README, do not "fix" in
+// review): RA2 queues up to MaximumQueuedObjects=29 items per factory
+// (production.md §1.5); this phase keeps a SINGLE slot per queue (one item
+// building + ready).
+enum class QueueCat { Structure, Defense, Infantry, Vehicle };
 
 class ProductionQueues {
 public:
     ProductionQueues() = default;
 
-    ProductionState& building() { return q_[0]; }        // the existing single-queue economy
-    const ProductionState& building() const { return q_[0]; }
+    // The existing single-queue economy IS the Structure queue (demo-base
+    // builds GAPOWR, a Structure — byte-identical path).
+    ProductionState& structure() { return q_[0]; }
+    const ProductionState& structure() const { return q_[0]; }
     ProductionState& state(QueueCat c) { return q_[(int)c]; }
     const ProductionState& state(QueueCat c) const { return q_[(int)c]; }
 
-    // Wire the credit pool: all three queues SHARE the player's credits, so
+    // Wire the credit pool: all four queues SHARE the player's credits, so
     // set the same value on every ProductionState each frame before tick()
     // (mirrors how ps.credits is the single money pool). Call once at setup +
     // whenever credits change outside tick (income, placement).
@@ -315,38 +358,39 @@ public:
     double credits() const { return q_[0].credits; }
 
     // Advance every non-idle queue by dt. Each queue's speed = power_mult x its
-    // MultipleFactory speedup (factory_speedup[cat], 1.0 for Building). The
-    // three queues share ONE money pool, so tick SEQUENTIALLY (Building ->
-    // Infantry -> Vehicle) carrying the running balance across queues — total
-    // spend can never exceed the money, and the order is deterministic. Caller
-    // sets all three credits equal via set_credits() first; credits() reads the
-    // final pool balance after. [RE-GATE APPLIED: production.md §5 — shared
-    // FactoryClass timing]
-    void tick(double dt, double power_mult, const double factory_speedup[3],
+    // MultipleFactory speedup (factory_speedup[cat]; Structure and Defense
+    // receive the SAME ConYard-count speedup — buildings collapse to one
+    // factory-count slot, §1.1). The four queues share ONE money pool, so tick
+    // SEQUENTIALLY (Structure -> Defense -> Infantry -> Vehicle) carrying the
+    // running balance across queues — total spend can never exceed the money,
+    // and the order is deterministic. Caller sets all four credits equal via
+    // set_credits() first; credits() reads the final pool balance after.
+    // [RE-GATE APPLIED: production.md §1.5 — shared FactoryClass timing]
+    void tick(double dt, double power_mult, const double factory_speedup[4],
               const std::vector<BuildingTypeDef>& btypes);
 
     // Reconcile the pool after a cancel(): a refund raises exactly one queue's
-    // balance above the shared tail, so set all three to the max. Caller reads
+    // balance above the shared tail, so set all four to the max. Caller reads
     // credits() after. (No double-count: only the just-cancelled queue is high.)
     void reconcile_refund() {
         double m = q_[0].credits;
-        for (int i = 1; i < 3; ++i) m = std::max(m, q_[i].credits);
+        for (int i = 1; i < 4; ++i) m = std::max(m, q_[i].credits);
         for (auto& q : q_) q.credits = m;
     }
 
     // Start a unit build in the Infantry/Vehicle queue (caller checked
-    // can_start_unit). charge == cost (§5, no FreeUnit).
+    // can_start_unit). charge == cost (§1.5, no FreeUnit).
     void start_unit(QueueCat c, int unit_type, const std::vector<UnitTypeDef>& unit_roster,
                     double build_speed);
 
     void cancel(QueueCat c) { ra2engine::cancel(q_[(int)c]); }
-    // Queue slot readiness for the unit queues (Task 5 consumes this).
+    // Queue slot readiness (Task 5 consumes this for the unit queues).
     bool ready(QueueCat c) const { return q_[(int)c].slot.ready; }
     int producing(QueueCat c) const { return q_[(int)c].slot.type; }
     void placed(QueueCat c) { ra2engine::placed(q_[(int)c]); }
 
 private:
-    ProductionState q_[3];   // [0]=Building, [1]=Infantry, [2]=Vehicle
+    ProductionState q_[4];   // [0]=Structure, [1]=Defense, [2]=Infantry, [3]=Vehicle
 };
 ```
 
@@ -413,7 +457,7 @@ TEST_CASE("production: infantry queue reproduces the 54-step economy for a unit"
     const ProductionState& inf = q.state(QueueCat::Infantry);
     CHECK(inf.slot.total_frames == build_frames(200, 0.7));  // = 126
     CHECK(inf.slot.step_ticks == std::max(1, 126 / 54));     // clamp(2,1,255)=2
-    const double speedup[3] = {1.0, 1.0, 1.0};
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
     std::vector<BuildingTypeDef> bt;
     // Drive to completion; charge_basis == cost (no FreeUnit).
     for (int i = 0; i < 10000 && !q.ready(QueueCat::Infantry); ++i)
@@ -422,63 +466,70 @@ TEST_CASE("production: infantry queue reproduces the 54-step economy for a unit"
     CHECK(inf.slot.spent == doctest::Approx(200.0));
 }
 
-TEST_CASE("production: three queues advance concurrently and independently") {
+TEST_CASE("production: FOUR queues advance concurrently and independently [RE-GATE §1.1]") {
+    // [RE-GATE APPLIED: production.md §1.1] Structures and Defenses are
+    // SEPARATE concurrent queues — a structure and a defense build at once
+    // from the same ConYard, alongside the two unit queues. (The queue math is
+    // category-blind, so roster() entries stand in for both building queues.)
+    auto t = roster();
     auto u = unit_roster();
     ProductionQueues q;
     q.set_credits(100000);
+    start(q.structure(), 1, t, 0.7);                       // GAPOWR in the Structure queue
+    start(q.state(QueueCat::Defense), 2, t, 0.7);          // Defense queue (GAPILE as stand-in)
     q.start_unit(QueueCat::Infantry, 0, u, 0.7);           // E1
     q.start_unit(QueueCat::Vehicle, 1, u, 0.7);            // MTNK
-    // (Building queue left idle — its ProductionState is untouched.)
-    const double speedup[3] = {1.0, 1.0, 1.0};
-    std::vector<BuildingTypeDef> bt;
-    for (int i = 0; i < 5; ++i) q.tick(1.0 / 15.0, 1.0, speedup, bt);
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
+    for (int i = 0; i < 5; ++i) q.tick(1.0 / 15.0, 1.0, speedup, t);
+    // All four queues are producing at once, each tracking its own slot:
+    CHECK(q.producing(QueueCat::Structure) == 1);
+    CHECK(q.producing(QueueCat::Defense) == 2);
     CHECK(q.producing(QueueCat::Infantry) == 0);
     CHECK(q.producing(QueueCat::Vehicle) == 1);
-    CHECK(q.producing(QueueCat::Building) == -1);
     // Infantry (cheap, fast) reaches ready long before the vehicle:
     for (int i = 0; i < 10000 && !q.ready(QueueCat::Infantry); ++i)
-        q.tick(1.0 / 15.0, 1.0, speedup, bt);
+        q.tick(1.0 / 15.0, 1.0, speedup, t);
     CHECK(q.ready(QueueCat::Infantry));
     CHECK_FALSE(q.ready(QueueCat::Vehicle));
 }
 
-TEST_CASE("production: MultipleFactory speedup scales the vehicle queue [RE-GATE §1 item 2]") {
+TEST_CASE("production: MultipleFactory speedup scales the vehicle queue [RE-GATE §1.2]") {
     auto u = unit_roster();
-    // [RE-GATE APPLIED: production.md §1 item 2] two war factories multiply the
-    // effective build speed by MultipleFactory once (n-1 = 1); pre-hunt value
-    // 0.8 -> a build with 2 factories completes in FEWER frames than with 1.
-    // [RE-FALLBACK] if the recovered value/compounding differs, amend this
-    // constant + the speedup a queue receives.
+    // [RE-GATE APPLIED: production.md §1.2 — CONFIRMED: MultipleFactory = 0.8,
+    // compounding x0.8 per EXTRA same-class factory (2 -> x0.8, 3 -> x0.64),
+    // applied as a build-TIME multiplier in Time_To_Build FUN_006F3D00] two war
+    // factories multiply the effective build time by 0.8 once (n-1 = 1) -> a
+    // build with 2 factories completes in FEWER frames than with 1.
     ProductionQueues one, two;
     one.set_credits(1e9); two.set_credits(1e9);
     one.start_unit(QueueCat::Vehicle, 1, u, 0.7);
     two.start_unit(QueueCat::Vehicle, 1, u, 0.7);
     std::vector<BuildingTypeDef> bt;
-    const double s1[3] = {1.0, 1.0, 1.0};
-    const double s2[3] = {1.0, 1.0, 1.0 / 0.8};   // 2 factories: divide time by 0.8
+    const double s1[4] = {1.0, 1.0, 1.0, 1.0};
+    const double s2[4] = {1.0, 1.0, 1.0, 1.0 / 0.8};   // 2 factories: divide time by 0.8
     int f1 = 0, f2 = 0;
     while (!one.ready(QueueCat::Vehicle)) { one.tick(1.0/15.0, 1.0, s1, bt); ++f1; }
     while (!two.ready(QueueCat::Vehicle)) { two.tick(1.0/15.0, 1.0, s2, bt); ++f2; }
     CHECK(f2 < f1);
 }
 
-TEST_CASE("production: BuildingType queue path is unchanged by the multi-queue layer") {
-    // The Building queue reached via ProductionQueues behaves EXACTLY like a
+TEST_CASE("production: Structure (BuildingType) queue path is unchanged by the multi-queue layer") {
+    // The Structure queue reached via ProductionQueues behaves EXACTLY like a
     // standalone ProductionState driven by start()+tick().
     auto t = roster();
     ProductionQueues q; q.set_credits(10000);
-    start(q.building(), 1, t, 0.7);                 // GAPOWR through the shared start()
+    start(q.structure(), 1, t, 0.7);                // GAPOWR through the shared start()
     ProductionState solo; solo.credits = 10000;
     start(solo, 1, t, 0.7);
-    CHECK(q.building().slot.total_frames == solo.slot.total_frames);
-    CHECK(q.building().slot.step_ticks == solo.slot.step_ticks);
-    const double speedup[3] = {1.0, 1.0, 1.0};
+    CHECK(q.structure().slot.total_frames == solo.slot.total_frames);
+    CHECK(q.structure().slot.step_ticks == solo.slot.step_ticks);
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
     for (int i = 0; i < 10; ++i) {
         q.tick(1.0/15.0, 1.0, speedup, t);
         tick(solo, 1.0/15.0, 1.0, t);
     }
-    CHECK(q.building().slot.stage == solo.slot.stage);
-    CHECK(q.building().slot.spent == doctest::Approx(solo.slot.spent));
+    CHECK(q.structure().slot.stage == solo.slot.stage);
+    CHECK(q.structure().slot.spent == doctest::Approx(solo.slot.spent));
 }
 ```
 
@@ -526,21 +577,22 @@ bool can_start_unit(const ProductionState& ps, int unit_type,
 void ProductionQueues::start_unit(QueueCat c, int unit_type,
                                   const std::vector<UnitTypeDef>& unit_roster, double build_speed) {
     const UnitTypeDef& u = unit_roster[unit_type];
-    start(q_[(int)c], u.cost, u.cost, build_speed);   // §5: charge == cost (no FreeUnit)
+    start(q_[(int)c], u.cost, u.cost, build_speed);   // §1.5: charge == cost (no FreeUnit)
     q_[(int)c].slot.type = unit_type;                 // roster index into the UNIT roster
 }
 
-void ProductionQueues::tick(double dt, double power_mult, const double factory_speedup[3],
+void ProductionQueues::tick(double dt, double power_mult, const double factory_speedup[4],
                             const std::vector<BuildingTypeDef>& btypes) {
-    // Sequential single pool (deterministic Building->Infantry->Vehicle): carry
-    // the running balance across queues so total spend never exceeds the money.
-    double money = q_[0].credits;   // caller set all three equal via set_credits
-    for (int i = 0; i < 3; ++i) {
+    // Sequential single pool (deterministic Structure->Defense->Infantry->
+    // Vehicle): carry the running balance across queues so total spend never
+    // exceeds the money.
+    double money = q_[0].credits;   // caller set all four equal via set_credits
+    for (int i = 0; i < 4; ++i) {
         q_[i].credits = money;
         ra2engine::tick(q_[i], dt, power_mult * factory_speedup[i], btypes);
         money = q_[i].credits;      // this queue's spend reduces the shared pool
     }
-    for (auto& q : q_) q.credits = money;   // final balance to all three
+    for (auto& q : q_) q.credits = money;   // final balance to all four
 }
 ```
 
@@ -562,7 +614,7 @@ D:\ra2-android\build\ra2engine.exe --demo-econ
 Expected: `production:*` all PASS; `--demo-base` prints `hash=5273b5e71ca009e1`; `--demo-econ` prints `econ_hash=7fed96cb98b68017` and `deterministic=yes`. If either hash moved, the wrapper refactor broke bit-identity — revert Step 3 and re-derive.
 
 - [ ] **Step 6: Full suite FOREGROUND both modes.** Expected: all pass, skips clean.
-- [ ] **Step 7: Commit** `feat(engine): multi-queue production - scalar start, UnitTypeDef, ProductionQueues [RE: production.md]`.
+- [ ] **Step 7: Commit** `feat(engine): multi-queue production - scalar start, UnitTypeDef, 4-queue ProductionQueues [RE: production.md]`.
 
 ---
 
@@ -594,28 +646,45 @@ Expected: `production:*` all PASS; `--demo-base` prints `hash=5273b5e71ca009e1`;
 ```cpp
 #pragma once
 // Pure factory-exit / primary-factory / rally logic [RE: docs/re/production.md
-// §1-§4], layered on Building like harvest.cpp is on Unit. No SDL/OS.
+// §1.1–§1.4], layered on Building like harvest.cpp is on Unit. No SDL/OS.
 // `factory_types` is a category resolved to roster indices by the caller (the
 // set of BuildingType indices that are factories for ONE queue category, e.g.
 // the Vehicle queue's {GAWEAP}) — the same "resolve the category to a roster-
 // index list" pattern harvest.cpp's refinery_types uses.
+#include <functional>
 #include <vector>
 #include "building.hpp"
 #include "pathfind.hpp"  // Cellxy
 
 namespace ra2engine {
 
-// The cell a finished unit first appears in, foundation-relative
-// [RE-GATE APPLIED: production.md §1 item 3]. [RE-FALLBACK adjudicated,
-// mirroring the Economy refinery dock cell]: one row south of the foundation's
-// center column — (cx + fw/2, cy + fh). If the hunt pins a real per-type exit
-// coord (the [unit] Factory exit list), amend this to read it.
-Cellxy exit_cell(const Building& factory, const BuildingTypeDef& def);
+// The cell a finished unit first appears in [RE-GATE APPLIED: production.md
+// §1.3 — BuildingClass::KickOutUnit FUN_00443BC0]: from the building's anchor
+// cell (cx + fw/2, cy + fh/2), walk the 8-neighbour (dx,dy) ring — the SAME
+// DAT_0089E5F8 table as the harvester dig ring (economy.md §1) — expanding
+// the radius outward, to the FIRST cell `free(x,y)` accepts (the building's
+// own foundation cells are never free, so the walk naturally lands just
+// outside the door). It is NOT a fixed constant offset and NOT a per-unit
+// exit list (a unit's Factory= key is the producer's AbstractType, not a
+// coordinate). The BuildingType ExitCoord (+0xEC8) sub-cell lean rides on top
+// of the chosen door cell; our cell-resolution grid drops the sub-cell
+// fraction (divergence, noted in Task 9). Returns {-1, -1} when no ring cell
+// is free (caller HOLDs the ready slot).
+// [RE-FALLBACK adjudicated: the game seeds the walk from a lockstep-RNG exit
+// facing (production.md §1.3, PROBABLE); our single-machine engine uses a
+// deterministic door facing — SOUTH first, then the fixed ring order — same
+// reachable set, deterministic.] With the south door cell free this returns
+// (cx + fw/2, cy + fh) for even-height foundations — the cell one row south
+// of the foundation's center column.
+Cellxy exit_cell(const Building& factory, const BuildingTypeDef& def,
+                 const std::function<bool(int, int)>& free);
 
 // Index of the factory a completed unit exits from: the alive, Idle, owned
 // building whose type is in `factory_types` that is flagged `primary`; if none
-// is flagged, the recovered default [RE-GATE APPLIED: production.md §1 item 2 —
-// [RE-FALLBACK adjudicated]: the FIRST-built (lowest index) such factory].
+// is flagged, the recovered default [RE-GATE APPLIED: production.md §1.2 —
+// default primary = the FIRST-built (lowest index) same-category same-house
+// factory; a newly placed factory becomes primary only if the house has none
+// yet, and building a second never steals primary until right-clicked].
 // Returns -1 if the house owns no alive Idle factory of this category.
 int primary_factory(const std::vector<Building>& buildings,
                     const std::vector<int>& factory_types, int house);
@@ -648,11 +717,26 @@ BuildingTypeDef def(const char* id, int fw, int fh) {
 }
 }  // namespace
 
-TEST_CASE("factory: exit_cell is foundation-relative [RE-GATE §1 item 3]") {
+TEST_CASE("factory: exit_cell walks the 8-ring to the first free cell [RE-GATE §1.3]") {
     Building b = fac(3, 10, 20, 3, 2);           // GAWEAP 3x2 at (10,20)
-    Cellxy e = exit_cell(b, def("GAWEAP", 3, 2));
+    BuildingTypeDef d = def("GAWEAP", 3, 2);
+    auto in_foundation = [](int x, int y) { return x >= 10 && x < 13 && y >= 20 && y < 22; };
+    // Everything outside the foundation free -> the door cell: SOUTH of the
+    // anchor (11,21), i.e. (cx + fw/2, cy + fh) = (11, 22).
+    Cellxy e = exit_cell(b, d, [&](int x, int y) { return !in_foundation(x, y); });
     CHECK(e.x == 10 + 3 / 2);                     // cx + fw/2 = 11
     CHECK(e.y == 20 + 2);                         // cy + fh   = 22
+    // Door cell occupied -> the NEXT free ring cell (8-ring walk), NOT a hold:
+    Cellxy e2 = exit_cell(b, d, [&](int x, int y) {
+        return !in_foundation(x, y) && !(x == 11 && y == 22);
+    });
+    CHECK(e2.x != -1);
+    CHECK((e2.x != 11 || e2.y != 22));
+    CHECK_FALSE(in_foundation(e2.x, e2.y));
+    // Everything occupied -> {-1,-1} (caller HOLDs the ready slot):
+    Cellxy e3 = exit_cell(b, d, [](int, int) { return false; });
+    CHECK(e3.x == -1);
+    CHECK(e3.y == -1);
 }
 
 TEST_CASE("factory: primary_factory prefers the flagged primary, else first-built") {
@@ -702,9 +786,32 @@ Expected: link/compile FAIL — `exit_cell`/`primary_factory`/`set_primary` unde
 
 namespace ra2engine {
 
-Cellxy exit_cell(const Building& factory, const BuildingTypeDef& def) {
-    // [RE-GATE APPLIED: production.md §1 item 3 — [RE-FALLBACK adjudicated]]
-    return Cellxy{factory.cx + def.fw / 2, factory.cy + def.fh};
+namespace {
+// 8-neighbour (dx,dy) ring [RE-GATE APPLIED: production.md §1.3 — the
+// DAT_0089E5F8 table shared with the harvester dig ring (economy.md §1)],
+// rotated so the deterministic door facing (SOUTH) is probed first
+// [RE-FALLBACK: the original seeds the start index from the lockstep RNG].
+constexpr int kExitRing[8][2] = {
+    {0, 1}, {-1, 1}, {1, 1}, {-1, 0}, {1, 0}, {-1, -1}, {1, -1}, {0, -1}};
+}  // namespace
+
+Cellxy exit_cell(const Building& factory, const BuildingTypeDef& def,
+                 const std::function<bool(int, int)>& free) {
+    // [RE-GATE APPLIED: production.md §1.3 — KickOutUnit FUN_00443BC0: walk
+    // the 8-ring outward from the building's anchor cell to the first free
+    // cell; foundation cells are skipped because they are never free. The
+    // radius expands so wide foundations still find a door (the original
+    // loops "while occupant == this_building"). ExitCoord's sub-cell lean is
+    // dropped at cell resolution (Task 9 divergence).]
+    const int ax = factory.cx + def.fw / 2;   // anchor: foundation center cell
+    const int ay = factory.cy + def.fh / 2;
+    const int max_r = std::max(def.fw, def.fh) + 1;
+    for (int r = 1; r <= max_r; ++r)
+        for (const auto& d : kExitRing) {
+            const int x = ax + d[0] * r, y = ay + d[1] * r;
+            if (free(x, y)) return Cellxy{x, y};
+        }
+    return Cellxy{-1, -1};                     // fully boxed in -> caller HOLDs
 }
 
 namespace {
@@ -774,7 +881,7 @@ Expected: `hash=5273b5e71ca009e1` (unchanged — `world_hash` hashes only `type/
 - Produces (added to `class World`, public — near the Economy-phase block):
 
 ```cpp
-    // --- Production phase [RE: production.md §4] ---
+    // --- Production phase [RE: production.md §1.3/§1.4] ---
     // Set factory `b_idx`'s rally cell (finished units path here after exiting).
     // No-op if b_idx is out of range or not an alive building.
     void set_rally(int b_idx, int x, int y);
@@ -784,12 +891,16 @@ Expected: `hash=5273b5e71ca009e1` (unchanged — `world_hash` hashes only `type/
     // No-op if b_idx is out of range.
     void set_primary(int b_idx, const std::vector<int>& factory_types);
 
-    // Launch a finished COMBAT unit from `factory_idx`: if exit_cell(factory,
-    // factory_def) is walkable AND unoccupied, add_combat_unit there (house =
-    // factory's house, stats from `c`), then order it to the factory's rally
-    // cell (has_rally) else the default gather cell (exit + kDefaultGather),
-    // via order_unit_move (which cancels cleanly if unreachable). Returns the
-    // new unit index; -1 if the exit was blocked (caller HOLDS the queue ready)
+    // Launch a finished COMBAT unit from `factory_idx`: exit_cell() walks the
+    // 8-ring from the factory's anchor to the first FREE (walkable, unoccupied)
+    // cell [RE-GATE APPLIED: production.md §1.3]; add_combat_unit there (house
+    // = factory's house, stats from `c`), then order it to the factory's rally
+    // cell (has_rally) else the DEFAULT GATHER CELL — the nearest free cell
+    // from the building's own coordinate [RE-GATE APPLIED: production.md §1.4,
+    // FUN_00500020: the exit-adjacent gather cell, NOT the map center] —
+    // computed by re-running the ring walk now that the unit occupies the door
+    // cell. order_unit_move cancels cleanly if unreachable. Returns the new
+    // unit index; -1 if NO ring cell was free (caller HOLDS the queue ready)
     // or factory_idx is invalid. Asset-free: the caller resolves c + factory_def.
     int launch_unit(int factory_idx, const BuildingTypeDef& factory_def, const UnitCombat& c);
 
@@ -799,16 +910,14 @@ Expected: `hash=5273b5e71ca009e1` (unchanged — `world_hash` hashes only `type/
     bool factory_category_lost(const std::vector<int>& factory_types, int house) const;
 ```
 
-- Produces — a header-level constant in `world.hpp` (near the Economy constants) OR inline in `world.cpp`; the plan uses the offset directly:
-
-```cpp
-// Default gather offset from the exit cell when a factory has no rally point
-// [RE-GATE APPLIED: production.md §4 — [RE-FALLBACK adjudicated]: two cells
-// further out (south) of the exit so a launched unit clears the door for the
-// next one]. If the hunt pins a real default (e.g. exit-adjacent), amend.
-constexpr int kDefaultGatherDX = 0;
-constexpr int kDefaultGatherDY = 2;
-```
+- NO gather-offset constant [RE-GATE APPLIED: production.md §1.4 — the hunt
+  pinned the real default]: the produced unit's default destination is the
+  exit-adjacent gather cell returned by `FUN_00500020` — the nearest free cell
+  from the building's own coordinate — NOT a fixed offset and NOT the map
+  center. We model it by re-running the `exit_cell` ring walk after the unit
+  occupies the door cell (the next free ring cell IS the nearest free cell
+  from the building's coordinate). If a rally is set, the unit paths there
+  instead.
 
 - [ ] **Step 1: Failing tests** (append to `tests/test_world.cpp`; reuse the file's real-map skip helper `load_real_map_w` + `pick_start_cell` — install-gated like every other World integration case). Build a UnitCombat by hand (mirror the existing combat-unit spawns in this file). Cases:
 
@@ -825,7 +934,11 @@ TEST_CASE("World: launch_unit spawns at the exit when free and routes to rally")
                                       /*strength=*/100, /*armor_ix=*/0, /*buildup=*/0.0,
                                       /*instant=*/true);
     ra2engine::BuildingTypeDef fdef; fdef.id = "GAWEAP"; fdef.fw = 1; fdef.fh = 1;
-    const ra2engine::Cellxy ex = ra2engine::exit_cell(world.buildings()[fi], fdef);
+    auto free_cell = [&](int x, int y) {
+        return world.walkable(x, y) && world.unit_at_cell(x, y) < 0;
+    };
+    const ra2engine::Cellxy ex = ra2engine::exit_cell(world.buildings()[fi], fdef, free_cell);
+    REQUIRE(ex.x >= 0);                               // ring found a free door cell
     REQUIRE(world.walkable(ex.x, ex.y));
     // Set a rally a few cells away, then launch a GI.
     world.set_rally(fi, ex.x + 4, ex.y);
@@ -838,7 +951,7 @@ TEST_CASE("World: launch_unit spawns at the exit when free and routes to rally")
     CHECK(world.units()[ui].moving());               // has a path toward the rally
 }
 
-TEST_CASE("World: launch_unit HOLDS (returns -1) when the exit cell is occupied") {
+TEST_CASE("World: launch_unit ring-falls-back past an occupied door cell, HOLDs when boxed in") {
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
     ra2engine::World world(map);
@@ -846,14 +959,26 @@ TEST_CASE("World: launch_unit HOLDS (returns -1) when the exit cell is occupied"
     REQUIRE(c != nullptr);
     const int fi = world.add_building(0, c->x, c->y, 1, 1, 0, 100, 0, 0.0, true);
     ra2engine::BuildingTypeDef fdef; fdef.id = "GAWEAP"; fdef.fw = 1; fdef.fh = 1;
-    const ra2engine::Cellxy ex = ra2engine::exit_cell(world.buildings()[fi], fdef);
-    REQUIRE(world.walkable(ex.x, ex.y));
-    // Occupy the exit cell first.
+    auto free_cell = [&](int x, int y) {
+        return world.walkable(x, y) && world.unit_at_cell(x, y) < 0;
+    };
+    const ra2engine::Cellxy ex = ra2engine::exit_cell(world.buildings()[fi], fdef, free_cell);
+    REQUIRE(ex.x >= 0);
+    // Occupy the door cell: the 8-ring walk falls back to the NEXT free cell
+    // [RE-GATE APPLIED: production.md §1.3 — first-free-in-ring, not a fixed cell]:
     ra2engine::UnitCombat blocker; blocker.image = "GI"; blocker.strength = 100; blocker.armor = "none";
     world.add_combat_unit(ex.x, ex.y, 0, blocker);
-    const int before = static_cast<int>(world.units().size());
     const int ui = world.launch_unit(fi, fdef, blocker);
-    CHECK(ui == -1);                                  // blocked
+    REQUIRE(ui >= 0);                                 // spawned on a ring cell...
+    CHECK((world.units()[ui].cell_x != ex.x || world.units()[ui].cell_y != ex.y));  // ...not the door
+    // Now box the factory in: occupy EVERY remaining free ring cell.
+    while (true) {
+        const ra2engine::Cellxy g = ra2engine::exit_cell(world.buildings()[fi], fdef, free_cell);
+        if (g.x < 0) break;
+        world.add_combat_unit(g.x, g.y, 0, blocker);
+    }
+    const int before = static_cast<int>(world.units().size());
+    CHECK(world.launch_unit(fi, fdef, blocker) == -1);        // fully blocked -> HOLD
     CHECK(static_cast<int>(world.units().size()) == before);  // nothing spawned
 }
 
@@ -870,9 +995,13 @@ TEST_CASE("World: launch_unit gathers to the default cell when no rally is set")
     const int ui = world.launch_unit(fi, fdef, gi);   // no set_rally called
     REQUIRE(ui >= 0);
     CHECK_FALSE(world.buildings()[fi].has_rally);
-    // Moving toward the default gather cell (or standing if it was unreachable):
-    // the key contract is a spawn at the exit; a path is best-effort.
+    // Default destination = the exit-adjacent gather cell — the nearest free
+    // cell from the building's own coordinate [RE-GATE APPLIED: production.md
+    // §1.4, FUN_00500020] — NOT the map center. The unit spawns at the first
+    // free ring cell (south door for a 1x1) and best-effort moves one ring
+    // cell over to clear the door; the key contract is the spawn cell.
     CHECK(world.units()[ui].cell_x == world.buildings()[fi].cx + fdef.fw / 2);
+    CHECK(world.units()[ui].cell_y == world.buildings()[fi].cy + fdef.fh);
 }
 
 TEST_CASE("World: set_primary routes primary_factory, factory_category_lost detects a wipe") {
@@ -894,7 +1023,7 @@ TEST_CASE("World: set_primary routes primary_factory, factory_category_lost dete
 }
 ```
 
-- [ ] **Step 2: Build FOREGROUND, verify failure.** Add `#include "factory.hpp"` to `world.cpp`; declare the four methods + the two constants. Build.
+- [ ] **Step 2: Build FOREGROUND, verify failure.** Add `#include "factory.hpp"` to `world.cpp`; declare the four methods (no gather constant — the §1.4 gather cell is computed). Build.
 
 Expected: compile FAIL — `set_rally`/`launch_unit`/etc. undefined.
 
@@ -914,16 +1043,28 @@ void World::set_primary(int b_idx, const std::vector<int>& factory_types) {
 
 int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, const UnitCombat& c) {
     if (factory_idx < 0 || factory_idx >= (int)buildings_.size()) return -1;
-    const Building& f = buildings_[factory_idx];   // copy exit coords before spawning
-    const Cellxy ex = exit_cell(f, factory_def);
-    if (!walkable(ex.x, ex.y) || unit_at_cell(ex.x, ex.y) >= 0) return -1;  // HOLD
+    const Building& f = buildings_[factory_idx];   // copy rally state before spawning
+    auto free_cell = [this](int x, int y) {
+        return walkable(x, y) && unit_at_cell(x, y) < 0;
+    };
+    // [RE-GATE APPLIED: production.md §1.3] 8-ring walk to the first free cell.
+    const Cellxy ex = exit_cell(f, factory_def, free_cell);
+    if (ex.x < 0) return -1;                       // no free ring cell -> HOLD
     const int house = f.house;
     const bool has_rally = f.has_rally;
     const int rx = f.rally_x, ry = f.rally_y;
     add_combat_unit(ex.x, ex.y, house, c);
     const int ui = (int)units_.size() - 1;
-    const int gx = has_rally ? rx : ex.x + kDefaultGatherDX;
-    const int gy = has_rally ? ry : ex.y + kDefaultGatherDY;
+    int gx = rx, gy = ry;
+    if (!has_rally) {
+        // Default gather = nearest free cell from the building's own coord
+        // [RE-GATE APPLIED: production.md §1.4, FUN_00500020]: the unit now
+        // occupies the door cell, so re-running the ring walk yields the
+        // exit-adjacent gather cell.
+        const Cellxy g = exit_cell(buildings_[factory_idx], factory_def, free_cell);
+        if (g.x < 0) return ui;                    // fully boxed in: stand at the door
+        gx = g.x; gy = g.y;
+    }
     order_unit_move(ui, gx, gy);   // cancels cleanly if unreachable/self
     return ui;
 }
@@ -966,7 +1107,7 @@ Expected: `hash=5273b5e71ca009e1`, `econ_hash=7fed96cb98b68017`, both `determini
 - Test: none new (UI/render task; verified by the byte-identity gates + a screenshot eyeball). Pure logic added here is exercised by Task 8's `--demo-prod`.
 
 **Interfaces:**
-- Consumes: `BuildingAssets`, `sidebar_buildable`, `draw_sidebar`, `SidebarLayout::compute`, `lay.tab_at`, `Rules::is_base_defense` (Task 2), the `kRoster` load loop.
+- Consumes: `BuildingAssets`, `sidebar_buildable`, `draw_sidebar`, `SidebarLayout::compute`, `lay.tab_at`, `Rules::is_buildcat_combat` (Task 2), the `kRoster` load loop.
 - Produces (main.cpp file-local helpers):
 
 ```cpp
@@ -975,7 +1116,7 @@ std::vector<int> building_buildable_tab(const BuildingAssets& ba, bool defenses)
 
 and a generalized `draw_sidebar` taking `int active_tab`.
 
-**Byte-identity anchor:** `sidebar_buildable(ba)` MUST keep returning `{GAPOWR, GAPILE, GAWEAP}` (structures only) so `demo_buildable_closure` — which feeds `--demo-base`'s `buildable=GAPOWR,GAPILE` witness line — is unchanged. Adding GAPILL/GATOW to the roster appends indices 10/11; `spawn_base` places buildings by NAME and never places GAPILL/GATOW, so `--demo-base` `world_hash` is unchanged.
+**Byte-identity anchor:** `sidebar_buildable(ba)` MUST keep returning `{GAPOWR, GAPILE, GAWEAP}` (Structures only — all three are BuildCat≠Combat) so `demo_buildable_closure` — which feeds `--demo-base`'s `buildable=GAPOWR,GAPILE` witness line — is unchanged. GAPILL/GATOW (BuildCat=Combat) land exclusively on tab 1's SEPARATE Defense queue list [RE-GATE APPLIED: production.md §1.1] and can never appear in this list. Adding GAPILL/GATOW to the roster appends indices 10/11; `spawn_base` places buildings by NAME and never places GAPILL/GATOW, so `--demo-base` `world_hash` is unchanged.
 
 - [ ] **Step 1: Extend the building roster with GAPILL/GATOW.** In `load_building_assets`, change the roster table (currently 10 entries) to 12:
 
@@ -987,10 +1128,12 @@ and a generalized `draw_sidebar` taking `int active_tab`.
 
 The existing `for (const char* id_c : kRoster)` loop now covers all 12. Bump the reservations (harmless): `ba.roster.reserve(12); ba.art.reserve(12);`. GAPILL (pillbox) / GATOW (patriot) are base defenses; missing SHP/cameo just leaves `art[i].ok=false` and drops them from the tab (existing guard), never a crash.
 
-- [ ] **Step 2: Record the defense flag per roster entry.** Add a `std::vector<char> defense;` member to the `BuildingAssets` struct (near `roster`/`art`). In the roster loop, immediately after `ba.roster.push_back(std::move(d));`, append:
+- [ ] **Step 2: Record the defense (BuildCat==Combat) flag per roster entry.** Add a `std::vector<char> defense;` member to the `BuildingAssets` struct (near `roster`/`art`). In the roster loop, immediately after `ba.roster.push_back(std::move(d));`, append:
 
 ```cpp
-        ba.defense.push_back(rules.is_base_defense(id) ? 1 : 0);
+        // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is
+        // BuildCat==Combat, NOT IsBaseDefense]
+        ba.defense.push_back(rules.is_buildcat_combat(id) ? 1 : 0);
 ```
 
 (Keep `defense` index-aligned with `roster`.)
@@ -999,9 +1142,11 @@ The existing `for (const char* id_c : kRoster)` loop now covers all 12. Bump the
 
 ```cpp
 // Building-roster indices for a building tab: GA* player buildings with a
-// cameo, tech>0, art ok, split by the recovered base-defense flag
-// [RE-GATE APPLIED: production.md §1 item 1]. tab 0 (Structures) = !defense,
-// tab 1 (Defenses) = defense. Ordered by tech_level then roster order.
+// cameo, tech>0, art ok, split by the recovered BuildCat==Combat classifier
+// [RE-GATE APPLIED: production.md §1.1]. tab 0 (Structures) = BuildCat!=Combat,
+// tab 1 (Defenses) = BuildCat==Combat — tab 1 drives its OWN concurrent
+// Defense queue (wired in Task 7), NOT a filtered view of the Structure queue.
+// Ordered by tech_level then roster order.
 std::vector<int> building_buildable_tab(const BuildingAssets& ba, bool defenses) {
     std::vector<int> v;
     for (int i = 0; i < static_cast<int>(ba.roster.size()); ++i) {
@@ -1066,7 +1211,7 @@ In the sidebar-consume branch (the `if (sidebar_up && ... PointerDown && lay.con
                 }
 ```
 
-For tabs 0/1 both view the BUILDING queue (`ps`), so the existing cameo start/cancel/place code is unchanged for the Structures/Defenses tabs — a defense cameo starts a building in the same `ps` and follows the same ready→place flow (defenses ARE placed like buildings, per §1). Tabs 2/3 have an empty `buildable`, so `cameo_at` returns -1 and clicks are inert until Task 7. Pass `active_tab` to `draw_sidebar` at both draw sites in the loop.
+Tab 0 keeps the existing cameo start/cancel/place code on the single `ps` (which becomes the STRUCTURE queue when Task 7 introduces `ProductionQueues`). Tab 1 (Defenses) drives its OWN concurrent Defense queue [RE-GATE APPLIED: production.md §1.1 — Structures and Defenses are SEPARATE queues; a structure and a defense build at once from the same ConYard]; that queue object only arrives with `ProductionQueues` in Task 7, so in THIS task guard the cameo start/cancel/place branch with `active_tab == 0` — tab 1 shows its cameo strip but clicks are inert until Task 7 wires the Defense queue (defenses ARE placed like buildings: same ready→place flow, on their own queue). Tabs 2/3 have an empty `buildable`, so `cameo_at` returns -1 and clicks are inert until Task 7. Pass `active_tab` to `draw_sidebar` at both draw sites in the loop.
 
 - [ ] **Step 6: Build + FOREGROUND byte-identity + eyeball.**
 
@@ -1110,7 +1255,7 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
                const std::vector<int>& veh_ft);
 ```
 
-**Roster** [RE-GATE APPLIED: production.md §6 prereqs]: infantry `E1` (GI) + one more (`GGI`); vehicles `MTNK` (Grizzly) + `FV` (IFV). Every entry opt-guarded — a def whose combat/cameo/assets fail to resolve is DROPPED from `defs` (never a crash). Prereq tokens: infantry `{BARRACKS}` (or the recovered `GAPILE`), vehicles `{FACTORY}` (or `GAWEAP`). [RE-FALLBACK] if the hunt pins per-unit ids, amend the tokens.
+**Roster** [RE-GATE APPLIED: production.md §1.6]: infantry `E1` (GI) + `GGI` (Guardian GI); vehicles `MTNK` (Grizzly) + `FV` (IFV). Every entry opt-guarded — a def whose combat/cameo/assets fail to resolve is DROPPED from `defs` (never a crash). The recovered per-unit prereq tokens are PLAIN BUILDING IDS: `E1=GAPILE`, `GGI=GAPILE`, `MTNK=GAWEAP`, `FV=GAWEAP`. (The group tokens exist too — `Factory={GAWEAP,NAWEAP,YAWEAP}`, `Barracks={NAHAND,GAPILE,YABRCK}` — but our four units use plain ids per rulesmd.)
 
 - [ ] **Step 1: Load the unit roster.** Add `load_unit_roster` near `load_miner_assets`:
 
@@ -1118,11 +1263,13 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
 UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
                             const UnitAssets& ua, const Rules& rules, const Art& art) {
     UnitRoster ur;
-    // Curated Allied producibles [RE-GATE APPLIED: production.md §1/§6].
-    struct Ent { const char* id; bool vehicle; const char* group; };
+    // Curated Allied producibles [RE-GATE APPLIED: production.md §1.1/§1.6 —
+    // recovered per-unit prereqs are plain building ids: E1/GGI=GAPILE,
+    // MTNK/FV=GAWEAP (not the Barracks/Factory group tokens)].
+    struct Ent { const char* id; bool vehicle; const char* prereq; };
     static const Ent kUnits[] = {
-        {"E1",  false, "BARRACKS"}, {"GGI", false, "BARRACKS"},
-        {"MTNK", true, "FACTORY"},  {"FV",  true, "FACTORY"},
+        {"E1",  false, "GAPILE"}, {"GGI", false, "GAPILE"},
+        {"MTNK", true, "GAWEAP"}, {"FV",  true, "GAWEAP"},
     };
     for (const Ent& e : kUnits) {
         try {
@@ -1131,7 +1278,7 @@ UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra
             d.cost = rules.cost(e.id);
             d.tech_level = rules.tech_level(e.id);
             d.is_vehicle = e.vehicle;
-            d.prerequisite = {e.group};
+            d.prerequisite = {e.prereq};   // plain building id [RE: production.md §1.6]
             d.cameo = art.cameo(e.id);
             if (d.cost <= 0 || d.tech_level <= 0 || d.cameo.empty()) continue;  // not producible
             if (e.vehicle) {
@@ -1168,8 +1315,10 @@ std::vector<int> factory_types_for(const BuildingAssets& ba, const char* id) {
 }
 
 // Alive Idle owned factories of this category compound the build speed
-// [RE-GATE APPLIED: production.md §1 item 2]: time scales by mf^(n-1), so the
-// tick SPEED multiplier is mf^-(n-1). n<=1 -> 1.0. [RE-FALLBACK] mf value.
+// [RE-GATE APPLIED: production.md §1.2 — CONFIRMED: MultipleFactory = 0.8,
+// each EXTRA same-class factory multiplies build TIME by 0.8 (2 -> x0.8,
+// 3 -> x0.64; Time_To_Build FUN_006F3D00 loop)]: time scales by mf^(n-1), so
+// the tick SPEED multiplier is mf^-(n-1). n<=1 -> 1.0.
 double factory_speedup(const ra2engine::World& world, const std::vector<int>& ftypes, double mf) {
     int n = 0;
     for (const ra2engine::Building& b : world.buildings()) {
@@ -1189,12 +1338,21 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
                const std::vector<int>& veh_ft) {
     const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
     const double pmul = ra2engine::build_speed_multiplier(pt, low_mod);
-    const double sp[3] = {1.0, factory_speedup(world, inf_ft, mf), factory_speedup(world, veh_ft, mf)};
+    // Structure and Defense share ONE ConYard factory-count slot for the
+    // MultipleFactory speedup [RE-GATE APPLIED: production.md §1.1/§1.2 —
+    // buildings collapse to one count slot (+0x5384), no struct/def split]:
+    const std::vector<int> bld_ft = factory_types_for(ba, "GACNST");
+    const double bsp = factory_speedup(world, bld_ft, mf);
+    const double sp[4] = {bsp, bsp,
+                          factory_speedup(world, inf_ft, mf), factory_speedup(world, veh_ft, mf)};
     q.tick(dt, pmul, sp, ba.roster);
-    // ConYard-died cancels the Building queue (existing rule, via conyard_alive).
-    if (q.building().slot.type != -1 && !conyard_alive(world, ba, 0))
-        ra2engine::cancel(q.building());
-    // Factory-died cancels+refunds the matching unit queue [RE: production.md §4].
+    // ConYard-died cancels BOTH building queues — Structure AND Defense share
+    // the ConYard-alive factory group [RE: production.md §1.1]:
+    if (!conyard_alive(world, ba, 0)) {
+        if (q.structure().slot.type != -1) ra2engine::cancel(q.structure());
+        if (q.producing(ra2engine::QueueCat::Defense) != -1) q.cancel(ra2engine::QueueCat::Defense);
+    }
+    // Factory-died cancels+refunds the matching unit queue (mirrors the ConYard rule).
     if (q.producing(ra2engine::QueueCat::Infantry) != -1 && world.factory_category_lost(inf_ft, 0))
         q.cancel(ra2engine::QueueCat::Infantry);
     if (q.producing(ra2engine::QueueCat::Vehicle) != -1 && world.factory_category_lost(veh_ft, 0))
@@ -1203,7 +1361,7 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
 }
 ```
 
-- [ ] **Step 4: Wire ProductionQueues into `run_interactive`.** Replace the bare `ProductionState ps` with `ProductionQueues queues;` where `queues.building()` IS the old building queue. Load the unit roster + factory type lists + MultipleFactory:
+- [ ] **Step 4: Wire ProductionQueues into `run_interactive`.** Replace the bare `ProductionState ps` with `ProductionQueues queues;` where `queues.structure()` IS the old building queue (the Structure queue) and `queues.state(QueueCat::Defense)` is the NEW concurrent Defense queue for tab 1 [RE-GATE APPLIED: production.md §1.1]. Load the unit roster + factory type lists + MultipleFactory:
 
 ```cpp
     ra2engine::ProductionQueues queues;
@@ -1213,7 +1371,7 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
     UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
     const std::vector<int> inf_ft = factory_types_for(ba, "GAPILE");
     const std::vector<int> veh_ft = factory_types_for(ba, "GAWEAP");
-    const double mf = rules.general_double("MultipleFactory", 0.8);  // [RE-GATE §1 item 2]
+    const double mf = rules.general_double("MultipleFactory", 0.8);  // [RE-GATE §1.2: 0.8, CONFIRMED]
 ```
 
 Per frame (replacing the old `ps_tick` + income block):
@@ -1221,8 +1379,8 @@ Per frame (replacing the old `ps_tick` + income block):
 ```cpp
         queues.set_credits(player_credits);
         prod_tick(queues, world, ba, dt, low_mod, mf, inf_ft, veh_ft);
-        // Read the pool back (reconcile_refund set all three equal):
-        player_credits = queues.building().credits;
+        // Read the pool back (reconcile_refund set all four equal):
+        player_credits = queues.structure().credits;
         player_credits += world.take_income(0);      // harvest income (economy)
 
         // Exit handoff: any ready unit queue launches from its primary factory.
@@ -1247,7 +1405,7 @@ Per frame (replacing the old `ps_tick` + income block):
         }
 ```
 
-The building-queue placement flow (cameo Ready→`begin_placement`→confirm→`add_building`→`placed`) now targets `queues.building()`: replace `ps` with `queues.building()` in the sidebar-consume branch and the placement-confirm branch, and after any building placement do `queues.set_credits(player_credits)` if that path mutated credits (it does not — the queue already spent during tick; placement only clears the slot). `draw_sidebar` now receives the visible tab's ProductionState: pass `queues.building()` for tabs 0/1 and `queues.state(cat)` for tabs 2/3.
+The building-queue placement flow (cameo Ready→`begin_placement`→confirm→`add_building`→`placed`) now targets the tab's OWN queue: replace `ps` with `queues.structure()` for tab 0 and `queues.state(QueueCat::Defense)` for tab 1 in the sidebar-consume branch, and track WHICH building queue a ready cameo entered placement from (an `int place_cat` alongside the placement state) so the placement-confirm branch calls `queues.placed()` on the right queue. After any building placement do `queues.set_credits(player_credits)` if that path mutated credits (it does not — the queue already spent during tick; placement only clears the slot). `draw_sidebar` now receives the VISIBLE tab's ProductionState — `queues.structure()` for tab 0, `queues.state(QueueCat::Defense)` for tab 1, `queues.state(cat)` for tabs 2/3 — so each tab shows its own queue's build-clock/ready overlays independently.
 
 - [ ] **Step 5: Unit-tab cameo start (main.cpp sidebar branch).** In the `tab_buildable` lambda, return the unit-roster indices for tabs 2/3:
 
@@ -1271,9 +1429,9 @@ In the cameo-click handler, branch on the active tab: tabs 0/1 keep the existing
                             ? ra2engine::QueueCat::Vehicle : ra2engine::QueueCat::Infantry;
                         const int uslot = buildable[ci];   // unit-roster index
                         if (queues.producing(cat) == uslot) {
-                            queues.cancel(cat);            // click the building cameo -> cancel
+                            queues.cancel(cat);            // click the producing cameo -> cancel
                             queues.reconcile_refund();
-                            player_credits = queues.building().credits;
+                            player_credits = queues.structure().credits;
                         } else if (ra2engine::can_start_unit(
                                        queues.state(cat), uslot, ur.defs, world.buildings(),
                                        ba.roster, 0, ba.groups,
@@ -1283,7 +1441,19 @@ In the cameo-click handler, branch on the active tab: tabs 0/1 keep the existing
                             queues.start_unit(cat, uslot, ur.defs, build_speed);
                         }
                     } else {
-                        // ... existing building tab 0/1 start/cancel/place on queues.building() ...
+                        // Tabs 0/1: building start/cancel/ready->place on the
+                        // tab's OWN queue [RE-GATE APPLIED: production.md §1.1
+                        // — Structure and Defense are separate concurrent
+                        // queues; both gate on conyard_alive]. Drop Task 6's
+                        // temporary `active_tab == 0` guard — tab 1 is live now.
+                        ra2engine::ProductionState& bq = (active_tab == 1)
+                            ? queues.state(ra2engine::QueueCat::Defense)
+                            : queues.structure();
+                        // ... existing building start/cancel/ready->place code,
+                        // retargeted from `ps` to `bq`; record `place_cat` =
+                        // (active_tab == 1 ? QueueCat::Defense :
+                        // QueueCat::Structure) when entering placement so the
+                        // confirm branch calls queues.placed(place_cat) ...
                     }
 ```
 
@@ -1291,8 +1461,8 @@ In the cameo-click handler, branch on the active tab: tabs 0/1 keep the existing
 
 - [ ] **Step 6: input.cpp — factory selection, rally, primary.** Add to `input.hpp` (private) `int selected_building_ = -1;` and (public) `int selected_building() const { return selected_building_; }`, plus the unit-factory type list setter `void set_unit_factory_types(std::vector<int> t) { unit_factory_types_ = std::move(t); }` with `std::vector<int> unit_factory_types_;`. In `input.cpp`:
 
-- **Left-click** resolution (in `commit_click` / the left Down path): before the unit pick, if the click lands on an own (house 0) alive building whose type is in `unit_factory_types_` (`world_.building_at_cell` → type test), set `selected_building_ = that index` (and clear unit selection); a second left-click on the ALREADY-selected factory triggers `world_.set_primary(selected_building_, factory_types_of_that_category)` [RE-GATE APPLIED: production.md §1 item 2 — primary-set trigger; [RE-FALLBACK adjudicated]: re-click the selected factory]. A left-click elsewhere clears `selected_building_`.
-- **Right-click** (the existing `InputEvent::Right` branch, BEFORE the harvester/attack resolution): if `selected_building_ >= 0` and the click resolves to own ground, call `world_.set_rally(selected_building_, cx, cy)` and consume [RE-GATE APPLIED: production.md §4 — rally set trigger; [RE-FALLBACK adjudicated]: right-click ground with a factory selected].
+- **Left-click** resolution (in `commit_click` / the left Down path): before the unit pick, if the click lands on an own (house 0) alive building whose type is in `unit_factory_types_` (`world_.building_at_cell` → type test), set `selected_building_ = that index` (and clear unit selection); a second left-click on the ALREADY-selected factory triggers `world_.set_primary(selected_building_, factory_types_of_that_category)` [RE-GATE APPLIED: production.md §1.2 — the original toggles IsPrimary by right-clicking the selected factory (TogglePrimaryFactory, EVA_PrimaryBuildingSelected); [RE-FALLBACK adjudicated]: our right-click sets the rally, so we trigger primary-set by re-clicking the selected factory with LEFT]. A left-click elsewhere clears `selected_building_`.
+- **Right-click** (the existing `InputEvent::Right` branch, BEFORE the harvester/attack resolution): if `selected_building_ >= 0` and the click resolves to own ground, call `world_.set_rally(selected_building_, cx, cy)` and consume [RE-GATE APPLIED: production.md §1.4 — rally set by right-click with the factory selected (order handler FUN_004437D0, EVA_NewRallyPointEstablished); matches the original trigger].
 
 Because `set_primary` needs the category's factory-type list, store BOTH lists and pick by the selected building's type. Add `void set_infantry_factory_types(...)`/`set_vehicle_factory_types(...)` or a single combined list keyed by lookup — simplest: store `inf_ft`/`veh_ft` and in `set_primary`-trigger pass whichever contains the selected type. main.cpp calls `input.set_unit_factory_types(...)` with the union for selection, and the rally/primary handlers resolve the specific category from the selected building's type against the two stored lists.
 
@@ -1337,8 +1507,8 @@ Expected: `--demo-base` `hash=5273b5e71ca009e1`, `--demo-econ` `econ_hash=7fed96
 uint64_t prod_hash(const ra2engine::World& world, const ra2engine::ProductionQueues& q,
                    double credits) {
     uint64_t h = world_hash(world);
-    for (ra2engine::QueueCat c : {ra2engine::QueueCat::Building, ra2engine::QueueCat::Infantry,
-                                  ra2engine::QueueCat::Vehicle}) {
+    for (ra2engine::QueueCat c : {ra2engine::QueueCat::Structure, ra2engine::QueueCat::Defense,
+                                  ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
         const ra2engine::ProductionState& ps = q.state(c);
         h = fnv_mix(h, static_cast<uint64_t>(ps.slot.type));
         h = fnv_mix(h, static_cast<uint64_t>(ps.slot.stage));
@@ -1400,7 +1570,7 @@ DemoProdResult simulate_prod(Assets& a, UnitAssets& ua, BuildingAssets& ba, Unit
         world.step(dt);
         q.set_credits(credits);
         prod_tick(q, world, ba, dt, low_mod, mf, inf_ft, veh_ft);
-        credits = q.building().credits;
+        credits = q.structure().credits;
         credits += world.take_income(0);
         (void)world.take_harvest_events();
         // Exit handoff (same as run_interactive).
@@ -1418,7 +1588,7 @@ DemoProdResult simulate_prod(Assets& a, UnitAssets& ua, BuildingAssets& ba, Unit
         if (render) { SDL_SetRenderDrawColor(ren, 10, 20, 60, 255); SDL_RenderClear(ren);
             render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba,
                          ore_art.any ? &ore_art : nullptr);
-            if (ba.sidebar_ok) draw_sidebar(ren, *tc, ba, lay, q.building(), world,
+            if (ba.sidebar_ok) draw_sidebar(ren, *tc, ba, lay, q.structure(), world,
                                             static_cast<int>(std::llround(credits)), t, 0); }
     };
 
@@ -1562,13 +1732,18 @@ Expected: `BUILD SUCCESSFUL`. Then verify the new engine symbols linked into the
 
 Expected: at least one demangled/mangled match per symbol (nonempty output).
 
-- [ ] **Step 4: README — production section.** Add a "Unit Production" section after the Economy section documenting: the four sidebar tabs coming alive, the 3-queue model (tabs 0/1 share the Building queue), the Allied defense (GAPILL/GATOW) + unit (GI/GGI/MTNK/FV, whichever loaded) roster, primary factory + MultipleFactory speedup, exit cell + rally. Add the new permanent gate line to the gate table:
+- [ ] **Step 4: README — production section.** Add a "Unit Production" section after the Economy section documenting: the four sidebar tabs coming alive, the FOUR concurrent queues (Structures, Defenses, Infantry, Vehicles — tabs map 1:1; Structures and Defenses are SEPARATE queues keyed on `BuildCat==Combat`, so a power plant and a pillbox build at once from the same ConYard, production.md §1.1), the Allied defense (GAPILL/GATOW) + unit (GI/GGI/MTNK/FV, whichever loaded) roster, primary factory + MultipleFactory speedup (0.8 compounding, shared ConYard count slot for both building queues), exit cell (8-ring first-free) + rally (default = exit-adjacent gather cell). Add the new permanent gate line to the gate table:
 
 ```
 | --demo-prod | prod_hash=<pinned value from Step 2> | deterministic=yes; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 ```
 
-Add a "Deviations we will take" list capturing every `[RE-FALLBACK]` adjudication that survived the hunt: the `exit_cell` foundation-relative offset (if not a pinned per-type coord), the default gather cell, the `MultipleFactory` value/compounding if it differed, the rally-set + primary-set input triggers, and any leave-factory exit animation replaced by an instant spawn-at-exit.
+Add a "Deviations we will take" list capturing every divergence, so none is mistaken for a bug in review:
+  - **QUEUE DEPTH (deliberate simplification):** RA2 queues up to `MaximumQueuedObjects = 29` items per factory (production.md §1.5); this phase keeps a SINGLE slot per queue (one item building + ready). Explicitly tagged so it is not "fixed" in review.
+  - **Exit facing:** the original picks the exit door facing with the lockstep game RNG (production.md §1.3); we use a deterministic door facing (south-first, fixed 8-ring order) — same reachable set, not bit-identical to the netgame sequence.
+  - **ExitCoord sub-cell lean:** dropped at our cell-resolution grid (the 8-ring door CELL is modeled; the +0xEC8 lepton offset within the cell is not).
+  - **Leave-factory animation:** the Move-out to the gather/rally cell is kept; per-building door open/close animation frames are not replicated.
+  - **Primary-set input trigger:** the original toggles primary with a right-click on the selected factory; our right-click sets the rally, so primary-set is a second LEFT-click on the already-selected factory ([RE-FALLBACK adjudicated], Task 7).
 
 - [ ] **Step 5: Commit** `docs: production phase README + --demo-prod gate pin`.
 
@@ -1577,7 +1752,7 @@ Add a "Deviations we will take" list capturing every `[RE-FALLBACK]` adjudicatio
 ## Self-Review (performed at write time)
 
 1. **Spec coverage:**
-   - §1 (Ghidra hunt, all six items) → Task 1; each item cited as `[RE-GATE APPLIED: production.md §1 item N]` at its consuming task (classifier→Task 2/6; primary+MultipleFactory→Task 3/7; exit cell→Task 4; rally→Task 5; unit build economy→Task 3; per-unit prereqs→Task 7).
+   - §1 (Ghidra hunt, all six items) → Task 1; each item cited as `[RE-GATE APPLIED: production.md §1.N]` at its consuming task (queue model/classifier→Task 2/3/6; primary+MultipleFactory→Task 3/4/7; exit cell→Task 4/5; rally→Task 5/7; unit build economy→Task 3; per-unit prereqs→Task 7).
    - §2 (roster & rules: `build_category`/`is_infantry`/`is_vehicle`, `UnitTypeDef`) → Task 2 (accessors) + Task 3 (`UnitTypeDef`) + Task 7 (roster assembled by main.cpp).
    - §3 (multi-queue: scalar `start`, `can_start_unit`, `ProductionQueues`, 54-step economy, concurrency, speedup, prereq gating, BuildingType-path-unchanged) → Task 3 (all tests present).
    - §4 (factory exit/rally/primary, Building fields, World integration, factory-died cancel) → Task 4 (pure module + fields) + Task 5 (World).
@@ -1585,9 +1760,10 @@ Add a "Deviations we will take" list capturing every `[RE-FALLBACK]` adjudicatio
 2. **Placeholder scan:** `[RE-GATE APPLIED]`/`[RE-FALLBACK]` markers are the phase's designed amendment gates with explicit adjudicated fallbacks, not TBDs. Task 8's `prod_hash` pin is an extract-then-pin by design (economy-gate precedent). No "add error handling"/"similar to Task N"/bare-TODO strings.
 3. **Type/signature consistency across tasks:**
    - `UnitTypeDef` fields (`id`, `cost`, `tech_level`, `is_vehicle`, `chrono_miner`, `prerequisite`, `cameo`, `combat`) defined in Task 3, consumed identically in Tasks 7/8.
-   - `ProductionQueues` API (`building()`, `state(QueueCat)`, `set_credits`, `credits()`, `tick(dt,power_mult,double[3],btypes)`, `reconcile_refund()`, `start_unit(cat,type,roster,speed)`, `cancel(cat)`, `ready(cat)`, `producing(cat)`, `placed(cat)`) defined in Task 3, called with matching signatures in Tasks 7/8. `QueueCat{Building,Infantry,Vehicle}` consistent.
+   - `ProductionQueues` API (`structure()`, `state(QueueCat)`, `set_credits`, `credits()`, `tick(dt,power_mult,double[4],btypes)`, `reconcile_refund()`, `start_unit(cat,type,roster,speed)`, `cancel(cat)`, `ready(cat)`, `producing(cat)`, `placed(cat)`) defined in Task 3, called with matching signatures in Tasks 7/8. `QueueCat{Structure,Defense,Infantry,Vehicle}` — FOUR concurrent queues, `q_[4]`, speedup arrays `double[4]`, tab→queue map {tab0→Structure, tab1→Defense, tab2→Infantry, tab3→Vehicle} — consistent across Tasks 3/6/7/8 [RE-GATE APPLIED: production.md §1.1].
    - `can_start_unit(ps, unit_type, unit_roster, buildings, btypes, house, groups, factory_alive)` — Task 3 definition matches Task 7 call.
-   - `exit_cell(const Building&, const BuildingTypeDef&) -> Cellxy`, `primary_factory(buildings, factory_types, house) -> int`, `set_primary(buildings, factory_types, b_idx)` — Task 4 definitions match Tasks 5/7/8 calls (the abstract "category" param is realized as the roster-index list `factory_types`, documented in Task 4's header).
+   - `exit_cell(const Building&, const BuildingTypeDef&, const std::function<bool(int,int)>& free) -> Cellxy` (8-ring first-free walk, {-1,-1} = HOLD), `primary_factory(buildings, factory_types, house) -> int`, `set_primary(buildings, factory_types, b_idx)` — Task 4 definitions match Tasks 5/7/8 calls (the abstract "category" param is realized as the roster-index list `factory_types`, documented in Task 4's header).
    - `World::set_rally(b_idx,x,y)`, `World::set_primary(b_idx, factory_types)`, `World::launch_unit(factory_idx, factory_def, combat) -> int`, `World::factory_category_lost(factory_types, house) -> bool` — Task 5 definitions match Tasks 7/8 calls.
    - Byte-identity: `production.cpp` `tick`/`cancel`/`placed` untouched (Task 3 only refactors `start` into scalar+wrapper, bit-identical); `Building`'s new fields excluded from `world_hash` (Task 4 Step 5 verifies); `sidebar_buildable` output preserved (Task 6 Step 3); demos keep their own `ProductionState ps` (Tasks 6–8); `prod_hash` is new, `world_hash` unchanged (Task 8 Step 1). All four legacy gates asserted in Tasks 3, 4, 5, 6, 7, 8, 9.
+4. **RE-GATE amendment (2026-07-12, post-Task-1):** reconciled against `docs/re/production.md` ground truth. STRUCTURAL: 3-queue model replaced by FOUR concurrent queues — Structures and Defenses are separate FactoryClass queues keyed on `BuildCat==Combat` (NOT `IsBaseDefense`), tabs map 1:1 (§1.1); `is_base_defense` accessor → `is_buildcat_combat`, Naval=yes vehicles → None (Ships out of scope). DETAIL: MultipleFactory 0.8 compounding CONFIRMED (§1.2, buildings share one ConYard count slot); primary default = first-built CONFIRMED (§1.2); `exit_cell` = 8-ring first-free walk + ExitCoord, not a fixed offset (§1.3, deterministic-facing [RE-FALLBACK] kept); rally default = exit-adjacent gather cell, not map center (§1.4, gather constants removed); unit economy charge==Cost confirmed (§1.5); per-unit prereq tokens are plain ids E1/GGI=GAPILE, MTNK/FV=GAWEAP (§1.6); single-slot-vs-29 queue depth tagged as a deliberate divergence (§1.5, Tasks 3/9).
 
