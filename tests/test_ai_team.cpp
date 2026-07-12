@@ -304,6 +304,188 @@ TEST_CASE("ai_team: step_team is deterministic") {
     }
 }
 
+namespace {
+// Two-type test unit roster: [0] infantry 200c, [1] vehicle 700c.
+std::vector<UnitTypeDef> unit_roster2() {
+    std::vector<UnitTypeDef> r(2);
+    r[0].id = "E2";
+    r[0].cost = 200;
+    r[0].is_vehicle = false;
+    r[1].id = "HTNK";
+    r[1].cost = 700;
+    r[1].is_vehicle = true;
+    return r;
+}
+// aimd with TWO autocreate TeamTypes sharing TF1/SC1: priorities 7 and 9.
+AimdData make_aimd2() {
+    AimdData d = make_aimd();
+    TeamType hi = d.teams[0];
+    hi.id = "TT2";
+    hi.priority = 9;
+    hi.max = 1;
+    d.teams.push_back(hi);
+    return d;
+}
+}  // namespace
+
+TEST_CASE("ai_team: select_autocreate_team picks highest priority under caps") {
+    const AimdData d = make_aimd2();
+    AiTeamRules rules;
+    std::vector<TeamInstance> live;
+    // Highest priority first (TT2 pri 9 beats TT1 pri 7) [RE: ai-team.md §4]:
+    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules) == 1);
+    // Max cap: one live TT2 (max=1) -> TT1 is next [RE: ai-team.md §4]:
+    TeamInstance t2;
+    t2.teamtype = 1;
+    live.push_back(t2);
+    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules) == 0);
+    // TT1 at max=2 -> nothing eligible:
+    TeamInstance t0a, t0b;
+    t0a.teamtype = 0;
+    t0b.teamtype = 0;
+    live.push_back(t0a);
+    live.push_back(t0b);
+    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules) == -1);
+}
+
+TEST_CASE("ai_team: select_autocreate_team gates on house and CreditReserve") {
+    const AimdData d = make_aimd();
+    AiTeamRules rules;
+    const std::vector<TeamInstance> live;
+    // House mismatch -> ineligible; case-insensitive match; "<none>" = any
+    // [RE-GATE APPLIED: ai-team.md §4 — house-token matching pre-hunt]:
+    CHECK(select_autocreate_team(d, "Americans", live, 10000.0, rules) == -1);
+    CHECK(select_autocreate_team(d, "RUSSIANS", live, 10000.0, rules) == 0);
+    AimdData any = make_aimd();
+    any.teams[0].house = "<none>";
+    CHECK(select_autocreate_team(any, "Americans", live, 10000.0, rules) == 0);
+    // CreditReserve floor [RE-GATE APPLIED: ai-team.md §4/§6 — pre-hunt:
+    // creation requires credits >= kAiCreditReserve(100), the banked floor]:
+    CHECK(select_autocreate_team(d, "Russians", live, rules.credit_reserve - 1.0,
+                                 rules) == -1);
+    CHECK(select_autocreate_team(d, "Russians", live, rules.credit_reserve,
+                                 rules) == 0);
+    // autocreate=false is NEVER selected (AITriggerTypes creation is AI-3):
+    AimdData off = make_aimd();
+    off.teams[0].autocreate = false;
+    CHECK(select_autocreate_team(off, "Russians", live, 10000.0, rules) == -1);
+    // IsBaseDefense teams are DEFENSIVE -> never selected on the offensive path
+    // [RE-GATE APPLIED: ai-team.md §1/§4]:
+    AimdData def = make_aimd();
+    def.teams[0].is_base_defense = true;
+    CHECK(select_autocreate_team(def, "Russians", live, 10000.0, rules) == -1);
+    // Max=0 -> UNCAPPED (not cap 1) [RE-GATE APPLIED: ai-team.md §4]:
+    AimdData zero = make_aimd();
+    zero.teams[0].max = 0;
+    CHECK(select_autocreate_team(zero, "Russians", live, 10000.0, rules) == 0);
+    std::vector<TeamInstance> many(5);
+    for (auto& t : many) t.teamtype = 0;
+    CHECK(select_autocreate_team(zero, "Russians", many, 10000.0, rules) == 0);  // still eligible
+    // TotalAITeamCap is the hard per-house team-count cap [RE-GATE APPLIED: §4]:
+    AiTeamRules capped = rules;
+    capped.total_team_cap = 2;
+    std::vector<TeamInstance> at_cap(2);
+    for (auto& t : at_cap) t.teamtype = 0;
+    CHECK(select_autocreate_team(zero, "Russians", at_cap, 10000.0, capped) == -1);
+}
+
+TEST_CASE("ai_team: recruit_idle claims ascending idle units per TaskForce slot") {
+    const AimdData d = make_aimd();   // needs 2 x type0 + 1 x type1
+    TeamInstance t = make_team();
+    // Idle pool (ascending unit keys): type1, type0, type0, type0.
+    const std::vector<IdleUnitView> idle = {
+        {200, 1}, {205, 0}, {209, 0}, {214, 0}};
+    const int claimed = recruit_idle(t, d, idle);
+    CHECK(claimed == 3);
+    // File-order slots, ascending claim within a type [RE: ai-team.md §2 —
+    // the deterministic ascending walk]: type0 gets 205 then 209 (214 spare),
+    // type1 gets 200.
+    REQUIRE(t.members.size() == 3);
+    CHECK(t.members[0] == 205);
+    CHECK(t.members[1] == 209);
+    CHECK(t.members[2] == 200);
+    CHECK(t.member_types == std::vector<int>{0, 0, 1});
+    CHECK(team_shortfall_type(t, d) == -1);      // complete
+    // Idempotent on a complete team; partial pools claim what exists:
+    CHECK(recruit_idle(t, d, idle) == 0);
+    TeamInstance p = make_team();
+    const std::vector<IdleUnitView> one = {{300, 0}};
+    CHECK(recruit_idle(p, d, one) == 1);
+    CHECK(team_shortfall_type(p, d) == 0);       // still owes a type0
+}
+
+TEST_CASE("ai_team: team_shortfall_type walks slots in file order") {
+    const AimdData d = make_aimd();
+    TeamInstance t = make_team();
+    CHECK(team_shortfall_type(t, d) == 0);       // first slot first
+    t.member_types = {0, 0};
+    t.members = {1, 2};
+    CHECK(team_shortfall_type(t, d) == 1);       // type0 filled -> type1 owed
+    t.member_types = {0, 0, 1};
+    t.members = {1, 2, 3};
+    CHECK(team_shortfall_type(t, d) == -1);
+}
+
+TEST_CASE("ai_team: next_produce_type fills the oldest recruiting team, banked") {
+    const AimdData d = make_aimd();
+    const auto roster = unit_roster2();
+    AiTeamRules rules;
+    std::vector<TeamInstance> teams(2);
+    teams[0].teamtype = 0;                        // oldest first
+    teams[1].teamtype = 0;
+    // Oldest team owes type0 (infantry, 200c): affordable at
+    // cost x cost_mul + CreditReserve [RE-GATE APPLIED: ai-team.md §6 —
+    // bank-never-substitute, the AI-1 affordability rule]:
+    CHECK(next_produce_type(teams, d, 200.0 * 1.0 + rules.credit_reserve, 1.0,
+                            roster, rules) == 0);
+    CHECK(next_produce_type(teams, d, 200.0 * 1.0 + rules.credit_reserve - 1.0,
+                            1.0, roster, rules) == -1);   // bank, no substitute
+    // cost_mul scales the gate (difficulty handicap):
+    CHECK(next_produce_type(teams, d, 200.0 * 2.0 + rules.credit_reserve - 1.0,
+                            2.0, roster, rules) == -1);
+    CHECK(next_produce_type(teams, d, 200.0 * 2.0 + rules.credit_reserve, 2.0,
+                            roster, rules) == 0);
+    // Oldest team's infantry filled -> its vehicle slot (700c) drives next:
+    teams[0].member_types = {0, 0};
+    teams[0].members = {9, 10};
+    CHECK(next_produce_type(teams, d, 10000.0, 1.0, roster, rules) == 1);
+    // Only non-Recruiting teams left -> nothing to produce:
+    teams[0].state = TeamState::Executing;
+    teams[1].state = TeamState::Gathering;
+    CHECK(next_produce_type(teams, d, 10000.0, 1.0, roster, rules) == -1);
+    // InfantryReserve GATE [RE-GATE APPLIED: ai-team.md §6]: infantry shortfall
+    // is produced FREELY once credits exceed rules.infantry_reserve (50000),
+    // and via the normal cost check below it.
+    std::vector<TeamInstance> fresh(1);
+    fresh[0].teamtype = 0;
+    // Above the reserve: infantry produced freely.
+    CHECK(next_produce_type(fresh, d, rules.infantry_reserve + 1.0, 1.0, roster, rules) == 0);
+    // Below the reserve but above the normal cost floor: still produced.
+    CHECK(next_produce_type(fresh, d, 200.0 + rules.credit_reserve, 1.0, roster, rules) == 0);
+    // Below the reserve AND below the cost floor: banked, nothing starts.
+    CHECK(next_produce_type(fresh, d, 200.0 + rules.credit_reserve - 1.0, 1.0, roster, rules) == -1);
+    // A VEHICLE shortfall is NEVER gated by InfantryReserve — only the cost
+    // check applies (below the cost floor -> nothing, even above the reserve):
+    std::vector<TeamInstance> vfresh(1);
+    vfresh[0].teamtype = 0;
+    vfresh[0].member_types = {0, 0};             // infantry filled -> owes the vehicle
+    vfresh[0].members = {1, 2};
+    CHECK(next_produce_type(vfresh, d, rules.infantry_reserve + 1.0, 1.0, roster, rules) == 1);
+    CHECK(next_produce_type(vfresh, d, 700.0 + rules.credit_reserve - 1.0, 1.0, roster, rules) == -1);
+}
+
+TEST_CASE("ai_team: build_slowdown_blocks is the over-queue damp, not a time multiplier") {
+    AiTeamRules rules;
+    // Easy (build_slowdown off): never damps [RE-GATE APPLIED: ai-team.md §6].
+    CHECK_FALSE(build_slowdown_blocks(rules, /*category_has_queued_or_onhand=*/true));
+    CHECK_FALSE(build_slowdown_blocks(rules, /*category_has_queued_or_onhand=*/false));
+    // Normal/Difficult (build_slowdown on): blocks starting a category the house
+    // already has queued/on-hand; allows it when the category is empty.
+    rules.build_slowdown = true;
+    CHECK(build_slowdown_blocks(rules, /*category_has_queued_or_onhand=*/true));
+    CHECK_FALSE(build_slowdown_blocks(rules, /*category_has_queued_or_onhand=*/false));
+}
+
 // --- Install-gated real-rulesmd pins (skip clean without an install, exactly
 //     like tests/test_ai_base.cpp's install-gated case) ---
 #include "ra2assets/rules.hpp"

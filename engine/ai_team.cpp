@@ -1,6 +1,8 @@
 #include "ai_team.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 
 namespace ra2engine {
@@ -307,6 +309,109 @@ int team_shortfall_type(const TeamInstance& team, const AimdData& aimd) {
         if (have < m.count) return m.unit;
     }
     return -1;
+}
+
+namespace {
+// Optional country restriction ONLY [RE-GATE APPLIED: ai-team.md §1/§4]: stock
+// data is universally House=<none>, so this returns true for "<none>"/"" (any
+// house) — it is NOT the eligibility gate (fielding the TaskForce is, guaranteed
+// upstream by parse_aimd's art-guard-drop). A rare House=<name> team restricts
+// to that country (case-insensitive).
+bool house_matches(const std::string& team_house, const std::string& house_name) {
+    if (team_house.empty()) return true;
+    std::string a = team_house, b = house_name;
+    for (char& c : a) c = (char)std::toupper((unsigned char)c);
+    for (char& c : b) c = (char)std::toupper((unsigned char)c);
+    return a == "<NONE>" || a == b;
+}
+}  // namespace
+
+int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
+                           const std::vector<TeamInstance>& live, double credits,
+                           const AiTeamRules& rules) {
+    // [RE-GATE APPLIED: ai-team.md §4] autocreate ONLY (AITriggerTypes creation
+    // is AI-3); NOT is_base_defense (defensive teams out of offensive scope);
+    // the TotalAITeamCap hard per-house cap; the Max live-instance cap with
+    // Max=0 = UNCAPPED; the CreditReserve spend floor; highest Priority wins,
+    // tie = lowest TeamType index (deterministic). Eligibility is NOT a per-side
+    // house-token compare — house_matches only applies a rare House=<name>
+    // country restriction; fielding the TaskForce is guaranteed by parse_aimd's
+    // art-guard-drop (a team in `aimd` has a TaskForce this house can field).
+    if (credits < rules.credit_reserve) return -1;
+    if ((int)live.size() >= rules.total_team_cap) return -1;  // hard per-house cap
+    int best = -1;
+    for (int i = 0; i < (int)aimd.teams.size(); ++i) {
+        const TeamType& tt = aimd.teams[i];
+        if (!tt.autocreate || tt.is_base_defense ||
+            !house_matches(tt.house, house_name))
+            continue;
+        int count = 0;
+        for (const TeamInstance& t : live)
+            if (t.teamtype == i) ++count;
+        if (tt.max > 0 && count >= tt.max) continue;  // Max=0 -> uncapped
+        if (best < 0 || tt.priority > aimd.teams[best].priority) best = i;
+    }
+    return best;
+}
+
+int recruit_idle(TeamInstance& team, const AimdData& aimd,
+                 const std::vector<IdleUnitView>& idle) {
+    // [RE: ai-team.md §2] recruit-idle-first: TaskForce slots in FILE ORDER,
+    // ascending idle-unit walk per slot (the caller supplies `idle` in
+    // ascending unit-key order) — mirrors AI-1's deterministic
+    // standing-building sync. Each idle unit claimed at most once per call.
+    if (team.teamtype < 0 || team.teamtype >= (int)aimd.teams.size()) return 0;
+    const TaskForce& tf = aimd.taskforces[aimd.teams[team.teamtype].taskforce];
+    std::vector<char> taken(idle.size(), 0);
+    int claimed = 0;
+    for (const TaskForceMember& m : tf.members) {
+        int have = 0;
+        for (int t : team.member_types)
+            if (t == m.unit) ++have;
+        for (std::size_t i = 0; i < idle.size() && have < m.count; ++i) {
+            if (taken[i] || idle[i].unit_type != m.unit) continue;
+            taken[i] = 1;
+            team.members.push_back(idle[i].unit);
+            team.member_types.push_back(m.unit);
+            ++have;
+            ++claimed;
+        }
+    }
+    return claimed;
+}
+
+int next_produce_type(const std::vector<TeamInstance>& teams, const AimdData& aimd,
+                      double credits, double cost_mul,
+                      const std::vector<UnitTypeDef>& unit_roster,
+                      const AiTeamRules& rules) {
+    // [RE: ai-team.md §6] produce-the-shortfall: the FIRST (oldest)
+    // Recruiting team's first unfilled slot drives production — one intent
+    // per house tick; the caller routes infantry->tab2, vehicle->tab3 and
+    // holds when that queue is busy (the single-slot queue IS the recovered
+    // one-unit-at-a-time factory gate). Affordability gates the START:
+    // credits >= cost x cost_mul + CreditReserve — bank, never substitute
+    // (the AI-1 rule). INFANTRY shortfall is produced FREELY above
+    // InfantryReserve (50000); otherwise it falls to the normal check. VEHICLE
+    // shortfall always uses the normal check [RE-GATE APPLIED: ai-team.md §6].
+    for (const TeamInstance& team : teams) {
+        if (team.state != TeamState::Recruiting) continue;
+        const int t = team_shortfall_type(team, aimd);
+        if (t < 0 || t >= (int)unit_roster.size()) continue;
+        const bool infantry = !unit_roster[t].is_vehicle;
+        if (infantry && credits > rules.infantry_reserve) return t;
+        if (credits < unit_roster[t].cost * cost_mul + rules.credit_reserve)
+            return -1;  // bank income; NEVER a cheaper substitute
+        return t;
+    }
+    return -1;
+}
+
+bool build_slowdown_blocks(const AiTeamRules& rules, bool category_has_queued_or_onhand) {
+    // BuildSlowdown is a difficulty BYTE (Easy off / Normal+Difficult on), an
+    // anti-spam OVER-QUEUE damp, NOT a build-time multiplier [RE-GATE APPLIED:
+    // ai-team.md §6]. When on, decline to START a category the house already has
+    // queued or on-hand.
+    return rules.build_slowdown && category_has_queued_or_onhand;
 }
 
 }  // namespace ra2engine
