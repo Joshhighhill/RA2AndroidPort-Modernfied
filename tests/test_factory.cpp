@@ -22,12 +22,15 @@ TEST_CASE("factory: exit_cell walks the 8-ring to the first free cell [RE-GATE Â
     Cellxy e = exit_cell(b, d, [&](int x, int y) { return !in_foundation(x, y); });
     CHECK(e.x == 10 + 3 / 2);                     // cx + fw/2 = 11
     CHECK(e.y == 20 + 2);                         // cy + fh   = 22
-    // Door cell occupied -> the NEXT free ring cell (8-ring walk), NOT a hold:
+    // Door cell occupied -> the NEXT free ring cell. Exit facing is
+    // deterministic: anchor (11,21), r=1 ring is probed south-first, then
+    // column-centered (|dx| asc), then west-before-east. South door (11,22)
+    // is blocked, so the next probe is (dx,dy)=(-1,1) -> (10,22).
     Cellxy e2 = exit_cell(b, d, [&](int x, int y) {
         return !in_foundation(x, y) && !(x == 11 && y == 22);
     });
-    CHECK(e2.x != -1);
-    CHECK((e2.x != 11 || e2.y != 22));
+    CHECK(e2.x == 10);
+    CHECK(e2.y == 22);
     CHECK_FALSE(in_foundation(e2.x, e2.y));
     // Everything occupied -> {-1,-1} (caller HOLDs the ready slot):
     Cellxy e3 = exit_cell(b, d, [](int, int) { return false; });
