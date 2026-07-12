@@ -114,6 +114,12 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             // team dissolves on the timer. The skirmish/campaign default
             // (multiplay=false) NEVER dissolves — it keeps recruiting/producing
             // toward strength [RE-GATE APPLIED: ai-team.md §2].
+            // dissolve_frames (AiTeamRules) mirrors this constant for a modded
+            // [General] DissolveUnfilledTeamDelay= override, but step_team is a
+            // pure lifecycle that only takes the scalars it needs (multiplay
+            // here) — it has no AiTeamRules/config reach, and no other call
+            // site consumes dissolve_frames either, so it stays intentionally
+            // constant-backed rather than widening this MP-only signature.
             if (multiplay &&
                 team.recruit_timer * 15.0 >= (double)kAiDissolveUnfilledDelayFrames)
                 team.state = TeamState::Disbanding;

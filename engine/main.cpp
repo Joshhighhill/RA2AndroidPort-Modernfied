@@ -855,10 +855,7 @@ struct UnitRoster {
     std::vector<char> has_cameo;             // parallel to defs
 };
 
-// Loads the curated Allied producibles + assets [RE-GATE APPLIED:
-// production.md §1.1/§1.6 — recovered per-unit prereqs are PLAIN building ids:
-// E1/GGI=GAPILE, MTNK/FV=GAWEAP, not the Barracks/Factory group tokens]. Every
-// entry is opt-guarded: a def whose cost/tech/cameo is unusable, whose vehicle
+// Every entry is opt-guarded: a def whose cost/tech/cameo is unusable, whose vehicle
 // voxel assets fail to load, or whose combat can't resolve is DROPPED from
 // `defs` (never a crash — mirrors Task 6's defense guard). Cameo SHPs load
 // from cameo.mix (language.mix) exactly like building cameos, keyed by unit id.
@@ -939,6 +936,9 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
     return ur;
 }
 
+// Loads the curated Allied producibles + assets [RE-GATE APPLIED:
+// production.md §1.1/§1.6 — recovered per-unit prereqs are PLAIN building ids:
+// E1/GGI=GAPILE, MTNK/FV=GAWEAP, not the Barracks/Factory group tokens].
 UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
                             const UnitAssets& ua, const Rules& rules, const Art& art) {
     static const UnitRosterEnt kUnits[] = {
@@ -1973,7 +1973,7 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
     tc.rules.total_team_cap = (int)rules.section_double(
         "General", "TotalAITeamCap", (double)ra2engine::kAiTotalTeamCap);  // hard cap [§4]
     tc.rules.dissolve_frames = (int)rules.section_double(
-        "AI", "DissolveUnfilledTeamDelay",
+        "General", "DissolveUnfilledTeamDelay",
         (double)ra2engine::kAiDissolveUnfilledDelayFrames);
     tc.rules.credit_reserve =
         rules.section_double("AI", "CreditReserve", ra2engine::kAiCreditReserve);
