@@ -3976,6 +3976,301 @@ int run_demo_econ() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-prod helpers ---------------------------------------------------
+
+// FNV extension of world_hash with each queue's state + spawned unit types +
+// credits, for --demo-prod's two-run byte-identity gate. world_hash UNTOUCHED.
+uint64_t prod_hash(const ra2engine::World& world, const ra2engine::ProductionQueues& q,
+                   double credits) {
+    uint64_t h = world_hash(world);
+    for (ra2engine::QueueCat c : {ra2engine::QueueCat::Structure, ra2engine::QueueCat::Defense,
+                                  ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
+        const ra2engine::ProductionState& ps = q.state(c);
+        h = fnv_mix(h, static_cast<uint64_t>(ps.slot.type));
+        h = fnv_mix(h, static_cast<uint64_t>(ps.slot.stage));
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(ps.slot.spent)));
+    }
+    for (const ra2engine::Unit& u : world.units())   // spawned unit types (cells: world_hash)
+        for (char ch : u.image) h = fnv_mix(h, static_cast<uint64_t>((unsigned char)ch));
+    h = fnv_mix(h, static_cast<uint64_t>(std::llround(credits)));
+    return h;
+}
+
+struct DemoProdResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the unit-production demo (fixed 15 Hz dt, frame-driven,
+// like simulate_econ). Player Allied base + instant GAPOWR/GAPILE/GAWEAP (so
+// both unit factories exist and PROC is met). Script + witnesses: queue a
+// Grizzly (MTNK) in GAWEAP (frames from raw Cost, charge==Cost, §1.5), set a
+// rally + start a GI (E1) concurrently, run the tank to its 8-ring exit cell,
+// then add a SECOND war factory + set_primary and prove the NEXT tank exits
+// from it AND builds in the recovered MultipleFactory x0.8 of the single-
+// factory frames (§1.2). Rendered and headless runs must be byte-identical
+// (witness + prod_hash are pure sim state).
+DemoProdResult simulate_prod(Assets& a, UnitAssets& ua, BuildingAssets& ba, UnitRoster& ur,
+                             const Rules& /*rules*/, double build_speed, double low_mod, int mp_money,
+                             const std::vector<const VehicleAssets*>& vlist, const OreArt& ore_art,
+                             double mf, bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                             const ra2engine::Camera* cam, int W, int H,
+                             const std::string& start_png, const std::string& end_png) {
+    DemoProdResult r;
+    ra2engine::World world = build_world(a, ua, 0);
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    spawn_base(world, ba, /*house=*/0, pc->x, pc->y + 6);
+
+    const int gacnst = roster_index(ba, "GACNST");
+    const int gapowr = roster_index(ba, "GAPOWR");
+    const int gapile = roster_index(ba, "GAPILE");
+    const int gaweap = roster_index(ba, "GAWEAP");
+    const int cy_bi = find_building(world, gacnst, 0);
+    const ra2engine::Building cy_b = cy_bi >= 0 ? world.buildings()[cy_bi] : ra2engine::Building{};
+    { int ox = 0, oy = 0;
+      if (!place_player_building(world, ba, gapowr, cy_b.cx + cy_b.fw, cy_b.cy, ox, oy)) r.ok = false;
+      if (!place_player_building(world, ba, gapile, cy_b.cx, cy_b.cy + cy_b.fh, ox, oy)) r.ok = false;
+      if (!place_player_building(world, ba, gaweap, cy_b.cx + cy_b.fw, cy_b.cy + cy_b.fh, ox, oy)) r.ok = false; }
+
+    const std::vector<int> inf_ft = factory_types_for(ba, "GAPILE");
+    const std::vector<int> veh_ft = factory_types_for(ba, "GAWEAP");
+    // Unit-roster slots for MTNK (Grizzly) and E1 (GI).
+    int mtnk_slot = -1, gi_slot = -1;
+    for (int i = 0; i < (int)ur.defs.size(); ++i) {
+        if (ur.defs[i].id == "MTNK") mtnk_slot = i;
+        if (ur.defs[i].id == "E1") gi_slot = i;
+    }
+    if (mtnk_slot < 0 || gi_slot < 0) { r.ok = false; r.witness.emplace_back("[prod] roster MISSING MTNK/E1"); }
+
+    ra2engine::ProductionQueues q;
+    double credits = mp_money;
+    q.set_credits(credits);
+    const ra2engine::SidebarLayout lay =
+        ra2engine::SidebarLayout::compute(W, H, sidebar_buildable(ba));
+
+    const double dt = 1.0 / 15.0, cap = 600.0;
+    long frame = 0; double t = 0.0;
+    auto step_one = [&]() {
+        world.step(dt);
+        q.set_credits(credits);
+        prod_tick(q, world, ba, dt, low_mod, mf, inf_ft, veh_ft);
+        credits = q.structure().credits;
+        credits += world.take_income(0);
+        (void)world.take_harvest_events();
+        // Exit handoff (same as run_interactive).
+        for (ra2engine::QueueCat cat : {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
+            if (!q.ready(cat)) continue;
+            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? inf_ft : veh_ft;
+            const int fi = ra2engine::primary_factory(world.buildings(), ft, 0);
+            if (fi < 0) continue;
+            const int uslot = q.producing(cat);
+            if (uslot < 0 || uslot >= (int)ur.defs.size()) { q.placed(cat); continue; }
+            const ra2engine::BuildingTypeDef& fdef = ba.roster[world.buildings()[fi].type];
+            if (world.launch_unit(fi, fdef, ur.defs[uslot].combat) >= 0) q.placed(cat);
+        }
+        ++frame; t += dt;
+        if (render) { SDL_SetRenderDrawColor(ren, 10, 20, 60, 255); SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba,
+                         ore_art.any ? &ore_art : nullptr);
+            if (ba.sidebar_ok) draw_sidebar(ren, *tc, ba, lay, q.structure(), world,
+                                            static_cast<int>(std::llround(credits)), t, 0); }
+    };
+
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+
+    // W1: queue a Grizzly in the Vehicle queue (frames from raw cost, charge==cost).
+    while (frame < 15) step_one();
+    q.set_credits(credits);
+    q.start_unit(ra2engine::QueueCat::Vehicle, mtnk_slot, ur.defs, build_speed);
+    { char b[128]; std::snprintf(b, sizeof b, "[prod] start MTNK frames=%d step_ticks=%d charge=%d",
+        q.state(ra2engine::QueueCat::Vehicle).slot.total_frames,
+        q.state(ra2engine::QueueCat::Vehicle).slot.step_ticks,
+        q.state(ra2engine::QueueCat::Vehicle).slot.charge_basis); r.witness.emplace_back(b); }
+    const int mtnk_step_ticks = q.state(ra2engine::QueueCat::Vehicle).slot.step_ticks;
+
+    // MultipleFactory speed multiplier with a SINGLE war factory (baseline x1.0).
+    const double sp1 = factory_speedup(world, veh_ft, mf);
+
+    // 8-ring exit cell the tank WILL take, captured now while the door is free
+    // (recomputing after it spawns would walk past the now-occupied door).
+    auto free_cell = [&](int x, int y) { return world.walkable(x, y) && world.unit_at_cell(x, y) < 0; };
+    // Set a rally for the war factory before the tank completes.
+    const int weap_bi = find_building(world, gaweap, 0);
+    ra2engine::Cellxy expected_exit{-1, -1};
+    if (weap_bi >= 0) {
+        const ra2engine::Building wb = world.buildings()[weap_bi];
+        world.set_rally(weap_bi, wb.cx + wb.fw + 5, wb.cy + wb.fh);
+        expected_exit = ra2engine::exit_cell(wb, ba.roster[wb.type], free_cell);
+    }
+    // Also queue a GI concurrently -> witness both queues advancing.
+    q.set_credits(credits);
+    q.start_unit(ra2engine::QueueCat::Infantry, gi_slot, ur.defs, build_speed);
+    { char b[96]; std::snprintf(b, sizeof b, "[prod] concurrent GI stage=%d MTNK stage=%d",
+        q.state(ra2engine::QueueCat::Infantry).slot.stage,
+        q.state(ra2engine::QueueCat::Vehicle).slot.stage); r.witness.emplace_back(b); }
+
+    const int units_before = (int)world.units().size();
+    const long f_single0 = frame;
+    while (q.producing(ra2engine::QueueCat::Vehicle) != -1 && t < cap) step_one();  // to exit
+    const long single_frames = frame - f_single0;
+    // The freshly launched Grizzly is the last unit; witness its exit cell + rally path.
+    if ((int)world.units().size() > units_before) {
+        const ra2engine::Unit& tank = world.units().back();
+        const ra2engine::Cellxy ex = expected_exit;
+        char b[160]; std::snprintf(b, sizeof b,
+            "[prod] MTNK exit cell=(%d,%d) expected=(%d,%d) moving=%d credits=%d",
+            tank.cell_x, tank.cell_y, ex.x, ex.y, tank.moving() ? 1 : 0,
+            static_cast<int>(std::llround(credits)));
+        r.witness.emplace_back(b);
+        if (tank.cell_x != ex.x || tank.cell_y != ex.y) r.ok = false;
+    } else { r.witness.emplace_back("[prod] MTNK never exited"); r.ok = false; }
+
+    // Second war factory + set_primary -> the NEXT tank exits from it.
+    int gx = 0, gy = 0;
+    place_player_building(world, ba, gaweap, cy_b.cx + cy_b.fw + 4, cy_b.cy + cy_b.fh, gx, gy);
+    int w2 = -1;   // locate the SECOND war factory (any alive GAWEAP != weap_bi)
+    for (int i = 0; i < (int)world.buildings().size(); ++i)
+        if (world.buildings()[i].alive && world.buildings()[i].type == gaweap && i != weap_bi) w2 = i;
+    if (w2 >= 0) world.set_primary(w2, veh_ft);
+    const double sp2 = factory_speedup(world, veh_ft, mf);   // TWO war factories -> x1/mf
+    { char b[96]; std::snprintf(b, sizeof b, "[prod] primary factory now idx=%d (2nd war factory=%d)",
+        ra2engine::primary_factory(world.buildings(), veh_ft, 0), w2); r.witness.emplace_back(b); }
+    { char b[96]; std::snprintf(b, sizeof b, "[prod] MF veh speedup 1fac=%.3f 2fac=%.3f",
+        sp1, sp2); r.witness.emplace_back(b); }
+    if (std::llround(sp1 * 1000) != 1000 || std::llround(sp2 * 1000) != std::llround(1000.0 / mf))
+        r.ok = false;   // recovered MultipleFactory 0.8: 1fac=1.000, 2fac=1.250 EXACTLY
+
+    // Exit cell of the NEW primary (2nd war factory), captured before the build.
+    const ra2engine::Building w2b = world.buildings()[w2 >= 0 ? w2 : weap_bi];
+    const ra2engine::Cellxy expected_exit2 = ra2engine::exit_cell(w2b, ba.roster[w2b.type], free_cell);
+    const int u2_before = (int)world.units().size();
+    q.set_credits(credits);
+    q.start_unit(ra2engine::QueueCat::Vehicle, mtnk_slot, ur.defs, build_speed);
+    const long f_double0 = frame;
+    while (q.producing(ra2engine::QueueCat::Vehicle) != -1 && t < cap) step_one();
+    const long double_frames = frame - f_double0;
+    if ((int)world.units().size() > u2_before) {
+        const ra2engine::Unit& tank2 = world.units().back();
+        const ra2engine::Cellxy ex2 = expected_exit2;
+        char b[160]; std::snprintf(b, sizeof b,
+            "[prod] 2nd MTNK exit cell=(%d,%d) from primary=(%d,%d) match=%d",
+            tank2.cell_x, tank2.cell_y, ex2.x, ex2.y,
+            (tank2.cell_x == ex2.x && tank2.cell_y == ex2.y) ? 1 : 0); r.witness.emplace_back(b);
+        if (tank2.cell_x != ex2.x || tank2.cell_y != ex2.y) r.ok = false;
+    } else { r.witness.emplace_back("[prod] 2nd MTNK never exited"); r.ok = false; }
+    // PIN the MultipleFactory x0.8: the two-factory build must take EXACTLY the
+    // recovered fraction of the single-factory frames (not merely "faster").
+    // The 54-stage timer is free-running, so completion = ceil(54*step_ticks /
+    // (pmul*speedup)); with pmul constant across both builds the double-factory
+    // count is ceil(single / (sp2/sp1)) == ceil(single * mf) EXACTLY.
+    const long expected_double = static_cast<long>(std::ceil(single_frames * mf));
+    { char b[160]; std::snprintf(b, sizeof b,
+        "[prod] MTNK build_frames 1fac=%ld 2fac=%ld expected2=%ld step_ticks=%d",
+        single_frames, double_frames, expected_double, mtnk_step_ticks); r.witness.emplace_back(b); }
+    if (double_frames != expected_double) r.ok = false;
+
+    // Finish the GI queue too, so both categories produced.
+    while (q.producing(ra2engine::QueueCat::Infantry) != -1 && t < cap) step_one();
+    for (int k = 0; k < 30; ++k) step_one();   // settle motion
+
+    r.hash = prod_hash(world, q, credits);
+    { char b[64]; std::snprintf(b, sizeof b, "[prod] prod_hash=%016llx",
+        static_cast<unsigned long long>(r.hash)); r.witness.emplace_back(b); }
+    if (t >= cap) r.ok = false;
+    if (render) { step_one(); capture_png(ren, end_png, W, H); }
+    return r;
+}
+
+// --demo-prod: the Unit-Production integration gate. Runs simulate_prod
+// rendered (hidden window + start/end screenshots) then headless, and
+// byte-compares the two witness logs + prod hashes. Exit 0 iff both runs are
+// byte-identical AND both `ok`.
+int run_demo_prod() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_prod_start.png";
+    const std::string end_png = scratch + "demo_prod_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-prod] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
+    bool have_mtnk = false, have_gi = false;
+    for (const ra2engine::UnitTypeDef& d : ur.defs) {
+        if (d.id == "MTNK") have_mtnk = true;
+        if (d.id == "E1") have_gi = true;
+    }
+    if (!have_mtnk || !have_gi) {
+        std::cerr << "[demo-prod] FAILED: unit roster missing MTNK/E1 (both must be producible)\n";
+        return 1;
+    }
+    OreArt ore_art = load_ore_art(ra2);
+    // Render vlist = the roster's vehicle voxels, so launched MTNKs draw as voxels.
+    std::vector<const VehicleAssets*> vlist;
+    for (const VehicleAssets& v : ur.vehicles) vlist.push_back(&v);
+    const double build_speed = rules.general_double("BuildSpeed", 0.7);
+    const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
+    const int mp_money = rules.mp_money();
+    const double mf = rules.general_double("MultipleFactory", 0.8);
+
+    // Camera centered on the player base region (ConYard + unit factories).
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(pc->x + 4, pc->y + 9, 0, 60, 30, 15);
+        cam.x = (W - 168) / 2 - p.x;  // playfield left of the sidebar strip
+        cam.y = H / 2 - p.y;
+    }
+
+    // Run 1: rendered (hidden window) + start/end screenshots.
+    DemoProdResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-prod)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_prod(a, ua, ba, ur, rules, build_speed, low_mod, mp_money, vlist,
+                               ore_art, mf, /*render=*/true, ren, &tc, &cam, W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless -- identical script from a FRESH World.
+    DemoProdResult r2 = simulate_prod(a, ua, ba, ur, rules, build_speed, low_mod, mp_money, vlist,
+                                      ore_art, mf, /*render=*/false, nullptr, nullptr, nullptr, W, H,
+                                      "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-prod] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    std::cout << "deterministic=" << (identical ? "yes" : "no") << " lines=" << r1.witness.size()
+              << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -4058,6 +4353,7 @@ int main(int argc, char** argv) {
         bool demo_tank = false;
         bool demo_base = false;
         bool demo_econ = false;
+        bool demo_prod = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -4100,6 +4396,8 @@ int main(int argc, char** argv) {
                 demo_base = true;
             } else if (arg == "--demo-econ") {
                 demo_econ = true;
+            } else if (arg == "--demo-prod") {
+                demo_prod = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
@@ -4110,6 +4408,7 @@ int main(int argc, char** argv) {
         if (demo_tank) return run_demo_tank();
         if (demo_base) return run_demo_base();
         if (demo_econ) return run_demo_econ();
+        if (demo_prod) return run_demo_prod();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
