@@ -150,3 +150,64 @@ TEST_CASE("ai_base: real rulesmd [AI]/difficulty pins match the recovered consta
               doctest::Approx(ra2engine::kDifficultyBuildDelayMin[i]));
     }
 }
+
+TEST_CASE("ai_base: find_build_location scans nearest-first from the base center") {
+    BaseView v;
+    v.center_x = 10; v.center_y = 10;
+    v.threat_x = 30; v.threat_y = 10;
+    // Only (12, 10) is placeable -> ring r=2 finds it; nothing nearer passes.
+    auto only = [](int x, int y) { return x == 12 && y == 10; };
+    Cellxy c = find_build_location(v, /*is_defense=*/false, only);
+    CHECK(c.x == 12);
+    CHECK(c.y == 10);
+    // Everything placeable -> the center itself (r=0) wins (the caller's
+    // can_place normally rejects occupied cells; the scan is pure).
+    Cellxy c0 = find_build_location(v, false, [](int, int) { return true; });
+    CHECK(c0.x == 10);
+    CHECK(c0.y == 10);
+    // Determinism: same inputs -> same cell, every time.
+    for (int i = 0; i < 3; ++i) {
+        Cellxy cc = find_build_location(v, false, only);
+        CHECK(cc.x == c.x);
+        CHECK(cc.y == c.y);
+    }
+}
+
+TEST_CASE("ai_base: find_build_location prefers the nearer ring") {
+    BaseView v;
+    v.center_x = 0; v.center_y = 0;
+    // (0,2) at Chebyshev r=2 and (5,0) at r=5 both pass -> r=2 wins.
+    auto two = [](int x, int y) { return (x == 0 && y == 2) || (x == 5 && y == 0); };
+    Cellxy c = find_build_location(v, false, two);
+    CHECK(c.x == 0);
+    CHECK(c.y == 2);
+}
+
+TEST_CASE("ai_base: defense placement biases toward the threat within a ring") {
+    BaseView v;
+    v.center_x = 10; v.center_y = 10;
+    v.threat_x = 40; v.threat_y = 10;  // threat due +x
+    // Two cells on the SAME ring r=3: (13,10) faces the threat, (7,10) faces
+    // away. A defense picks the threat-facing one; a structure picks the
+    // row-major-first one ((7,7)..: with only these two passing, row-major
+    // order within the ring reaches (7,10) before (13,10)).
+    auto two = [](int x, int y) { return (x == 13 && y == 10) || (x == 7 && y == 10); };
+    Cellxy def = find_build_location(v, /*is_defense=*/true, two);
+    CHECK(def.x == 13);
+    CHECK(def.y == 10);
+    Cellxy str = find_build_location(v, /*is_defense=*/false, two);
+    CHECK(str.x == 7);
+    CHECK(str.y == 10);
+}
+
+TEST_CASE("ai_base: find_build_location boxed in -> {-1,-1}") {
+    BaseView v;
+    v.center_x = 0; v.center_y = 0;
+    Cellxy c = find_build_location(v, false, [](int, int) { return false; });
+    CHECK(c.x == -1);
+    CHECK(c.y == -1);
+    // A cell OUTSIDE the scan cap is never reached:
+    auto far = [](int x, int y) { return x == kAiMaxScanRadius + 5 && y == 0; };
+    Cellxy cf = find_build_location(v, false, far);
+    CHECK(cf.x == -1);
+}
