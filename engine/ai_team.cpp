@@ -188,10 +188,17 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                               // unmapped waypoint -> enemy base centre]
                     if (!team.move_issued) {
                         c.kind = TeamCommand::Kind::MoveTeam;
-                        c.x = w.x;
+                        c.x = w.x;                 // IDEAL cell (caller snaps it)
                         c.y = w.y;
                         team.move_issued = true;
-                    } else if (all_within(view, w.x, w.y, kAiCloseEnoughCells)) {
+                    } else if (all_within(view, team.gather_x, team.gather_y,
+                                          kAiCloseEnoughCells)) {
+                        // Arrival is measured against the REALIZED focus the
+                        // caller stored (the snapped cell members were actually
+                        // sent to), NOT the ideal `w` whose CloseEnough
+                        // neighborhood may be blocked/occupied — matching the
+                        // original's Focus (team+0x40) semantics and making the
+                        // predicate satisfiable [FIX: Executing-move wedge; §2].
                         ++team.script_pc;          // arrived (CloseEnough) -> next
                         team.move_issued = false;
                     }
@@ -208,8 +215,9 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                         c.x = w.x;
                         c.y = w.y;
                         team.move_issued = true;
-                    } else if (all_within(view, w.x, w.y, kAiCloseEnoughCells)) {
-                        ++team.script_pc;
+                    } else if (all_within(view, team.gather_x, team.gather_y,
+                                          kAiCloseEnoughCells)) {
+                        ++team.script_pc;          // arrival vs REALIZED focus [FIX]
                         team.move_issued = false;
                     }
                     return c;
@@ -221,8 +229,9 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                         c.x = m.x;
                         c.y = m.y;
                         team.move_issued = true;
-                    } else if (all_within(view, m.x, m.y, kAiCloseEnoughCells)) {
-                        ++team.script_pc;
+                    } else if (all_within(view, team.gather_x, team.gather_y,
+                                          kAiCloseEnoughCells)) {
+                        ++team.script_pc;          // arrival vs REALIZED focus [FIX]
                         team.move_issued = false;
                     }
                     return c;

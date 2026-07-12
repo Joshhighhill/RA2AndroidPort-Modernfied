@@ -140,8 +140,15 @@ struct TeamInstance {
     int script_pc = 0;               // ScriptType action cursor [RE: ai-team.md §3]
     double script_timer = 0.0;       // dt-accumulated timer for timed actions
     double recruit_timer = 0.0;      // full=no timeout clock [RE: ai-team.md §2]
-    int gather_x = 0, gather_y = 0;  // chosen gather cell (Gathering)
+    int gather_x = 0, gather_y = 0;  // REALIZED move focus: the caller snaps the
+                                     // ideal gather/move cell to the nearest free
+                                     // cell and writes it back here, so the pure
+                                     // arrival predicate is satisfiable [RE: §2].
     bool move_issued = false;        // the current move/gather order went out once
+    int stall_reissues = 0;          // World-only backstop counter: consecutive
+                                     // stalled re-issues of the CURRENT Executing
+                                     // move before the pc is force-advanced (the
+                                     // wedge-freedom guarantee) [RE: ai-team.md §2].
 };
 
 // Per-house team state [RE: ai-team.md §2/§4]. `rng` is the engine-local

@@ -4929,7 +4929,11 @@ DemoAiTeamResult simulate_ai_team(Assets& a, UnitAssets& ua, BuildingAssets& ba,
     // -> gathered -> executing -> first attack order. Wedge = NOT ok.
     if (last_created < 1) { r.ok = false; r.witness.emplace_back("[ai-team] NO team created"); }
     if (!attack_seen)     { r.ok = false; r.witness.emplace_back("[ai-team] NO attack order -- team logic wedged"); }
-    if (render) { step_one(); capture_png(ren, end_png, W, H); }
+    // Capture the ALREADY-rendered final frame WITHOUT stepping/witnessing again:
+    // an extra step_one() here (rendered run only) could append a witness line if
+    // a transition lands on that final frame, diverging the rendered vs headless
+    // logs and turning the byte-identity gate false-RED [FIX 3].
+    if (render) { capture_png(ren, end_png, W, H); }
     return r;
 }
 

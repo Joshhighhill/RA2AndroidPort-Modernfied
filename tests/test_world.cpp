@@ -2001,7 +2001,7 @@ namespace {
 // Tiny AI-2 world config: buildings [0]=NACNST conyard, [1]=NAHAND barracks;
 // unit roster [0] = one infantry type (image "AITEST"). aimd: ONE autocreate
 // TeamType needing 1 x type0, script = attack-anything then success.
-ra2engine::AiHouseConfig ai2_cfg(bool teams_enabled) {
+ra2engine::AiHouseConfig ai2_cfg(bool teams_enabled, bool unreachable_move = false) {
     ra2engine::AiHouseConfig cfg;
     cfg.roster.resize(2);
     cfg.roster[0].id = "NACNST"; cfg.roster[0].conyard = true;
@@ -2048,8 +2048,19 @@ ra2engine::AiHouseConfig ai2_cfg(bool teams_enabled) {
     cfg.team.aimd.taskforces.push_back(tf);
     ra2engine::ScriptType sc;
     sc.id = "SC1";
-    sc.actions = {{ra2engine::kOpAttackQuarry, ra2engine::kQuarryAnything},
-                  {ra2engine::kOpDisband, 0}};
+    if (unreachable_move) {
+        // Move to a mapped waypoint that is OFF-MAP: every snap candidate is out
+        // of bounds so the snap fails, order_unit_move cancels, and the member
+        // can never satisfy the arrival predicate. The generalized backstop must
+        // re-issue then advance the pc so the team disbands (never wedges) — the
+        // FIX-1 wedge-freedom guarantee exercised end-to-end through step_ai_teams.
+        cfg.team.waypoints = {ra2engine::Cellxy{-100, -100}};
+        sc.actions = {{ra2engine::kOpMoveToWaypoint, 0},
+                      {ra2engine::kOpDisband, 0}};
+    } else {
+        sc.actions = {{ra2engine::kOpAttackQuarry, ra2engine::kQuarryAnything},
+                      {ra2engine::kOpDisband, 0}};
+    }
     cfg.team.aimd.scripts.push_back(sc);
     ra2engine::TeamType tt;
     tt.id = "TT1";
@@ -2150,4 +2161,53 @@ TEST_CASE("World: a team produces its shortfall through the EXISTING Infantry qu
     // The single-slot queue held ONE unit at a time (Max=1 team of 1):
     for (int i = 0; i < 300; ++i) world.step(1.0 / 15.0);
     CHECK(world.units().size() == nu + 1);               // no runaway production
+}
+
+TEST_CASE("World: an Executing move whose ideal cell is unreachable does NOT wedge") {
+    // [FIX: Executing-move wedge] Before the fix, a move opcode whose target's
+    // CloseEnough neighborhood is blocked/unreachable ordered members onto an
+    // unreachable cell; order_unit_move cancelled, arrival vs the ideal was
+    // false forever, move_issued stayed true, and the team wedged in Executing
+    // PERMANENTLY holding its Max/TotalAITeamCap slot — the AI eventually stops
+    // attacking. With the generalized backstop the team re-issues then advances
+    // past the dead move, disbands, and FREES its cap slot so a fresh team spawns.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);  // AI conyard
+    // An idle recruitable AI unit (fills the team with no production wait) and a
+    // far house-0 unit so the enemy-threat centroid (gather-ring centre) is
+    // well-defined — the gather succeeds and the team reaches Executing, exactly
+    // as in the recruit-idle test above.
+    ra2engine::UnitCombat uc;
+    uc.strength = 100; uc.image = "AITEST";
+    uc.damage = 10; uc.rof = 15; uc.range = 4.0;
+    uc.verses = std::vector<int>(11, 100);
+    world.add_combat_unit(c->x + 3, c->y + 2, /*house=*/1, uc);
+    ra2engine::UnitCombat pc0 = uc; pc0.image = "PLTEST";
+    world.add_combat_unit(c->x + 20, c->y + 2, /*house=*/0, pc0);
+    world.enable_ai_house(1, ai2_cfg(/*teams_enabled=*/true, /*unreachable_move=*/true));
+
+    // Observe the lifecycle: the team must actually REACH Executing (non-vacuous
+    // — the move opcode is genuinely exercised) AND the cap slot must free (a
+    // second team is created once the first disbands past the dead move). Under
+    // the bug the first team wedges in Executing forever -> teams_created pegs at 1.
+    bool saw_executing = false;
+    int max_created = 0;
+    for (int i = 0; i < 4000; ++i) {
+        world.step(1.0 / 15.0);
+        const ra2engine::AiTeamState* st = world.ai_team_state(1);
+        REQUIRE(st != nullptr);
+        max_created = std::max(max_created, st->teams_created);
+        for (const ra2engine::TeamInstance& t : st->teams)
+            if (t.state == ra2engine::TeamState::Executing) saw_executing = true;
+        if (saw_executing && max_created >= 2) break;
+    }
+    CHECK(saw_executing);           // the Executing move opcode was reached
+    CHECK(max_created >= 2);        // team disbanded past the dead move + cap freed
+    // Max=1 held throughout: teams recycle (create -> wedge-free disband ->
+    // create) rather than accumulating a leaked wedged instance.
+    CHECK((int)world.ai_team_state(1)->teams.size() <= 1);
 }

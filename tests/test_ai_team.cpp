@@ -175,7 +175,11 @@ TEST_CASE("ai_team: move-to-waypoint opcode targets the waypoint table then adva
     CHECK(c.x == 30);                            // waypoints[0] = (30,12)
     CHECK(c.y == 12);
     CHECK(t.script_pc == 0);                     // still on the move action (far)
-    // Move members within CloseEnough=2.25 of the waypoint -> advance.
+    // The caller snapped the ideal waypoint (30,12) to a free cell and recorded
+    // it as the realized focus (here the waypoint itself is free). Move members
+    // within CloseEnough=2.25 of that realized focus -> advance [FIX: arrival is
+    // measured against the realized focus, not the ideal cell].
+    t.gather_x = 30; t.gather_y = 12;
     for (TeamMemberView& m : v.members) { m.cx = 30; m.cy = 12; }
     c = step_team(t, v, d, rng, kDt);            // arrived
     CHECK(t.script_pc == 1);                     // pc++ -> attack action
@@ -190,6 +194,48 @@ TEST_CASE("ai_team: move-to-waypoint opcode targets the waypoint table then adva
     CHECK(c.kind == TeamCommand::Kind::MoveTeam);
     CHECK(c.x == v2.enemy_x);
     CHECK(c.y == v2.enemy_y);
+}
+
+TEST_CASE("ai_team: move-arrival is measured against the REALIZED focus, not the ideal cell") {
+    // [FIX: Executing-move wedge] The caller sends members to a SNAPPED cell and
+    // writes it back as the realized focus (team.gather_x/gather_y). step_team
+    // must measure arrival against THAT, not the ideal waypoint whose CloseEnough
+    // neighborhood may be blocked — otherwise an unreachable ideal wedges the
+    // team in Executing forever (mirrors the original's snapped-Focus semantics).
+    AimdData d = make_aimd();
+    std::uint32_t rng = 1u;
+    // --- arrives when members sit on the realized focus, FAR from the ideal ---
+    {
+        TeamInstance t = make_team();
+        claim_full(t);
+        t.state = TeamState::Executing;             // pc 0 = move to waypoint (30,12)
+        TeamView v = full_view(true);
+        TeamCommand c = step_team(t, v, d, rng, kDt);
+        REQUIRE(c.kind == TeamCommand::Kind::MoveTeam);
+        REQUIRE(c.x == 30);                         // still emits the IDEAL cell
+        REQUIRE(c.y == 12);
+        REQUIRE(t.script_pc == 0);
+        // Caller snapped (30,12) to a free cell (5,5) and recorded it; members
+        // now sit ON (5,5) but ~30 cells from the ideal waypoint.
+        t.gather_x = 5; t.gather_y = 5;
+        for (TeamMemberView& m : v.members) { m.cx = 5; m.cy = 5; }
+        c = step_team(t, v, d, rng, kDt);
+        CHECK(t.script_pc == 1);                    // arrived vs REALIZED focus -> next
+        CHECK(t.move_issued == false);
+    }
+    // --- non-vacuous inverse: members near NEITHER cell -> the move is held ---
+    {
+        TeamInstance t = make_team();
+        claim_full(t);
+        t.state = TeamState::Executing;
+        TeamView v = full_view(true);
+        (void)step_team(t, v, d, rng, kDt);         // emit -> move_issued
+        t.gather_x = 5; t.gather_y = 5;             // realized focus
+        for (TeamMemberView& m : v.members) { m.cx = 20; m.cy = 20; }  // near neither
+        (void)step_team(t, v, d, rng, kDt);
+        CHECK(t.script_pc == 0);                    // NOT arrived -> stays on move
+        CHECK(t.move_issued == true);
+    }
 }
 
 TEST_CASE("ai_team: attack-quarry emits while a target exists, advances when extinct") {

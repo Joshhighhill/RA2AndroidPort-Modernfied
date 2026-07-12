@@ -1142,52 +1142,34 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
             // stack one cell; scatter widens the ring [RE-FALLBACK: engine
             // formation stand-in; order_unit_move cancels cleanly if a spread
             // cell is unreachable].
-            // CONTRACT A [ai-team.md §2 gather snap]: the pure engine hands an
-            // IDEAL cell; snap it to the nearest FREE (walkable+unoccupied) cell
-            // so members can actually satisfy the Stray(2.0)/CloseEnough(2.25)
-            // predicate. For a GATHER move we RECORD the snapped cell back as the
-            // realized gather focus so the arrival predicate (which the pure
-            // step_team checks against team.gather_x/gather_y) is satisfiable;
-            // for an Executing move we snap only within CloseEnough so the
-            // pure-target arrival predicate still holds.
+            // CONTRACT A [ai-team.md §2]: the pure engine hands an IDEAL cell;
+            // snap it to the nearest FREE (walkable+unoccupied) cell so members
+            // can actually satisfy the Stray(2.0)/CloseEnough(2.25) predicate,
+            // then RECORD the snapped cell back as the team's REALIZED move focus
+            // (team.gather_x/gather_y) for ALL MoveTeam commands — gather AND
+            // Executing move opcodes alike. step_team measures arrival against
+            // that realized focus, so a plain UNBOUNDED nearest-free snap is now
+            // correct for both (the previous CloseEnough-bounded Executing snap
+            // was the fragile half of the seam — it is gone; matches the
+            // original's snapped-Focus semantics FUN_006eb030/FUN_0056d750).
             auto free_cell = [this](int x, int y) {
                 return walkable(x, y) && occ_.is_free(x, y);
             };
-            // max_off2 < 0 => no offset bound (gather snap). Otherwise ring
-            // cells whose SQUARED offset from the ideal exceeds max_off2 are
-            // rejected, so the snapped cell stays within that distance of the
-            // ideal (used by the Executing snap to keep the pure CloseEnough
-            // arrival predicate satisfiable — a radius-2 corner is 2.83 cells,
-            // beyond CloseEnough 2.25, so it would wedge the move opcode).
-            auto nearest_free = [&](int cx, int cy, int maxr,
-                                    double max_off2) -> Cellxy {
+            auto nearest_free = [&](int cx, int cy, int maxr) -> Cellxy {
                 for (int r = 0; r <= maxr; ++r)
                     for (int oy = -r; oy <= r; ++oy)
                         for (int ox = -r; ox <= r; ++ox) {
                             if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
-                            if (max_off2 >= 0.0 &&
-                                (double)(ox * ox + oy * oy) > max_off2)
-                                continue;  // stay within CloseEnough of the ideal
                             const int x = cx + ox, y = cy + oy;
                             if (free_cell(x, y)) return Cellxy{x, y};
                         }
                 return Cellxy{-1, -1};
             };
             int gx = c.x, gy = c.y;
-            if (team.state == TeamState::Gathering) {
-                const Cellxy s = nearest_free(c.x, c.y, 8, -1.0);  // gather snap unchanged
-                if (s.x >= 0) { gx = s.x; gy = s.y; }
-                team.gather_x = gx;   // realized focus (contract A)
-                team.gather_y = gy;
-            } else {
-                // Snap only to cells within CloseEnough of the ideal so the pure
-                // arrival predicate (distance to the ideal cell) is satisfiable
-                // [FIX: latent move-snap wedge — corner of a radius-2 ring is
-                // 2.83 > kAiCloseEnoughCells].
-                const Cellxy s = nearest_free(
-                    c.x, c.y, 2, kAiCloseEnoughCells * kAiCloseEnoughCells);
-                if (s.x >= 0) { gx = s.x; gy = s.y; }
-            }
+            const Cellxy s = nearest_free(c.x, c.y, 8);
+            if (s.x >= 0) { gx = s.x; gy = s.y; }
+            team.gather_x = gx;   // realized move focus (contract A)
+            team.gather_y = gy;
             static const int dx[9] = {0, 1, -1, 0, 0, 1, -1, 1, -1};
             static const int dy[9] = {0, 0, 0, 1, -1, 1, -1, -1, 1};
             const int spread = c.scatter ? 3 : 1;
@@ -1356,10 +1338,25 @@ void World::step_ai_teams(double dt) {
             // additionally if a unit of the wanted type is already standing
             // on-hand (launched, not yet team-consumed). BuildSlowdown is a
             // difficulty BYTE, NOT a build-time multiplier — no speed penalty.
+            // "On-hand" = launched but NOT yet team-consumed. Exclude units
+            // already claimed into a team (the SAME in_team filter ai_idle_units
+            // uses) — otherwise the damp keys off OTHER teams' living members and
+            // idles house production well beyond the "don't over-queue" intent
+            // [FIX: over-damp — count only unclaimed on-hand units].
             bool onhand_of_type = false;
-            for (const Unit& u : units_)
-                if (u.alive && u.die_time < 0.0 && u.house == h &&
-                    ai_unit_type_of(rec, u) == want) { onhand_of_type = true; break; }
+            for (int i = 0; i < (int)units_.size() && !onhand_of_type; ++i) {
+                const Unit& u = units_[i];
+                if (!u.alive || u.die_time >= 0.0 || u.house != h ||
+                    ai_unit_type_of(rec, u) != want)
+                    continue;
+                bool in_team = false;
+                for (const TeamInstance& tm : st.teams) {
+                    for (int m : tm.members)
+                        if (m == i) { in_team = true; break; }
+                    if (in_team) break;
+                }
+                if (!in_team) onhand_of_type = true;
+            }
             if (rec.queues.producing(cat) == -1 && factory &&
                 !build_slowdown_blocks(tc.rules, onhand_of_type) &&
                 can_start_unit(rec.queues.state(cat), want, tc.unit_roster,
@@ -1388,30 +1385,55 @@ void World::step_ai_teams(double dt) {
             const TeamCommand c =
                 step_team(t, view, tc.aimd, st.rng, dt, tc.rules.multiplay);
             ai_execute_team_command(h, rec, t, c);
-            // CONTRACT A backstop [no forever-stall in Gathering]: if a gather
-            // move was issued but every live member has stopped short of the
-            // (realized) gather focus — the snapped cell was unreachable / boxed
-            // — re-pick a fresh ring cell (new seeded angle) and re-issue next
-            // tick so the team is guaranteed to make progress, never wedged.
-            if (t.state == TeamState::Gathering && t.move_issued) {
-                bool any_alive = false, any_moving = false, all_within = true;
-                for (int m : t.members) {
-                    if (m < 0 || m >= (int)units_.size()) continue;
-                    const Unit& u = units_[m];
-                    if (!u.alive || u.die_time >= 0.0) continue;
-                    any_alive = true;
-                    if (u.moving()) any_moving = true;
-                    const long long ddx = u.cell_x - t.gather_x;
-                    const long long ddy = u.cell_y - t.gather_y;
-                    if ((double)(ddx * ddx + ddy * ddy) >
-                        kAiStrayCells * kAiStrayCells)
-                        all_within = false;
-                }
-                if (any_alive && !any_moving && !all_within) {
-                    const Cellxy g = gather_cell(view.enemy_x, view.enemy_y, st.rng);
-                    t.gather_x = g.x;
-                    t.gather_y = g.y;
-                    t.move_issued = false;
+            // CONTRACT A backstop [wedge-freedom — no forever-stall in ANY
+            // move_issued state]: if a move was issued but every live member has
+            // stopped short of the REALIZED focus (team.gather_x/gather_y) — the
+            // snapped cell was unreachable / boxed and order_unit_move cancelled
+            // — the team must still make progress, never wedge:
+            //   * GATHERING re-picks a fresh ring cell (new seeded angle) and
+            //     re-issues next tick.
+            //   * an EXECUTING move opcode re-issues the SAME move ONCE; if it is
+            //     still stuck the next pass, the script pc is force-advanced so a
+            //     cancelled/unreachable order can NEVER stall a script line
+            //     forever (mirrors the original re-issuing Move to stragglers
+            //     each pass, then giving up — docs/re/ai-team.md §2).
+            if (t.state == TeamState::Gathering || t.state == TeamState::Executing) {
+                if (!t.move_issued) {
+                    t.stall_reissues = 0;  // no active move -> counter clear
+                } else {
+                    const double reach = (t.state == TeamState::Gathering)
+                                             ? kAiStrayCells
+                                             : kAiCloseEnoughCells;
+                    bool any_alive = false, any_moving = false, all_within = true;
+                    for (int m : t.members) {
+                        if (m < 0 || m >= (int)units_.size()) continue;
+                        const Unit& u = units_[m];
+                        if (!u.alive || u.die_time >= 0.0) continue;
+                        any_alive = true;
+                        if (u.moving()) any_moving = true;
+                        const long long ddx = u.cell_x - t.gather_x;
+                        const long long ddy = u.cell_y - t.gather_y;
+                        if ((double)(ddx * ddx + ddy * ddy) > reach * reach)
+                            all_within = false;
+                    }
+                    if (any_alive && !any_moving && !all_within) {
+                        if (t.state == TeamState::Gathering) {
+                            const Cellxy g =
+                                gather_cell(view.enemy_x, view.enemy_y, st.rng);
+                            t.gather_x = g.x;
+                            t.gather_y = g.y;
+                            t.move_issued = false;
+                        } else if (t.stall_reissues == 0) {
+                            t.move_issued = false;   // re-issue the same move once
+                            ++t.stall_reissues;
+                        } else {
+                            ++t.script_pc;           // give up: advance the line
+                            t.move_issued = false;
+                            t.stall_reissues = 0;
+                        }
+                    } else {
+                        t.stall_reissues = 0;  // progressing/arrived -> reset
+                    }
                 }
             }
             if (t.state == TeamState::Disbanding) {
