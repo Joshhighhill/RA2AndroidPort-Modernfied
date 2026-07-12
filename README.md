@@ -292,6 +292,14 @@ Deviations we take for AI-1 (adjudicated divergences from the recovered
   `Adjacent=` proximity check** end to end — both recovered CONFIRMED
   (`ai-base.md` §3); per-cell validity (bounds/terrain/occupancy) is still the
   same shared grid the player's cursor uses.
+- **Wall placement uses the generic center-out scan, not the defense
+  foundation-perimeter ring.** The original rings `ConcreteWalls` cells around
+  each base defense's foundation perimeter (`FUN_0050c160`, `ai-base.md` §3);
+  our AI-1 emits one wall node per planned defense but, because a wall node is
+  not a `catalog.defenses` entry, places it via the same nearest-first
+  Chebyshev center-out scan (`find_build_location`, `is_defense=false`) as any
+  non-defense node — a `[RE-FALLBACK]` deviation on the wall ring geometry
+  (the wall COUNT and per-defense pairing are kept).
 - **Per-difficulty handicaps are recovered values, applied at `start()`**
   (charge ×= `Cost` mult, build speed ×= `BuildTime` mult) rather than at the
   binary's exact handicap call sites, with identical numbers: `BuildTime`
@@ -436,7 +444,7 @@ again with each subsequent roster addition — `roster=18` as of the AI-1 phase
 | `--demo-base` | `hash=5273b5e71ca009e1` | `roster=18` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
-| `--demo-ai-base` | `ai_base_hash=62e1ab3f34b22d15` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
+| `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
 
 ## Android (arm64-v8a) cross-compile
 

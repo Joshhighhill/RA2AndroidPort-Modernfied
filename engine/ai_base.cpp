@@ -159,9 +159,12 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
     // remainder (AI-1: radar), Refineries x RefineryLimit(4), defenses x
     // per-difficulty count (cycling the side list deterministically — stands
     // in for the AIForcePrediction weighting [RE-FALLBACK: ai-base.md §2]),
-    // walls (ConcreteWalls) at the natural tail — wall cells resolve at
-    // placement from the defense foundation perimeter (FUN_0050c160)
-    // [RE: §2/§3; RE-FALLBACK: one perimeter node per defense in AI-1].
+    // walls (ConcreteWalls) at the natural tail — one wall node per planned
+    // defense. NB the original rings wall cells on the defense foundation
+    // perimeter (FUN_0050c160); here a wall node is NOT a catalog.defenses
+    // entry, so it is placed by the GENERIC center-out scan
+    // (find_build_location is_defense=false), not the perimeter ring
+    // [RE: §2/§3; RE-FALLBACK: one wall node per defense in AI-1].
     std::vector<int> cand;
     auto add_cand = [&](int t) {
         if (t >= 0 && t < (int)roster.size()) cand.push_back(t);
@@ -274,6 +277,11 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
     const int limit[2] = {ai.refinery_limit, ai.war_limit};
     for (int e = 0; e < 2; ++e) {
         const int t = expand[e];
+        // NOTE (MINOR-4): the refinery branch (e==0) is effectively
+        // UNREACHABLE — build_base_plan already emits refinery_limit refinery
+        // nodes, so once they stand count_alive(refinery) >= refinery_limit
+        // and this `continue` always fires. Only the war-factory branch
+        // (static plan holds ONE, war_limit==2) ever appends here.
         if (t < 0 || count_alive(view, t) >= limit[e]) continue;
         if (view.credits < roster[t].cost * mods.cost_mul + ai.credit_reserve)
             continue;  // opportunistic — no wait
@@ -281,9 +289,25 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
         n.id = state.next_node_id++;  // stable id for the appended expansion node
         n.type = t;
         state.plan.push_back(n);
+        const int ni = (int)state.plan.size() - 1;
+        // Route the inserted economy node through the SAME power-preemption
+        // gate a normal head node passes [RE: ai-base.md §2 — FUN_004fdb30
+        // inserts the node then dispatches through FUN_004fe200's power gate]:
+        // if starting this drainer would push drain > output - PowerSurplus(50),
+        // INSERT a Power node AHEAD of it first (MINOR-3).
+        const BuildingTypeDef& et = roster[t];
+        if (et.power < 0 && cat.power >= 0 && t != cat.power &&
+            view.power_drain + (-et.power) >
+                view.power_output - (int)ai.power_surplus) {
+            PlannedNode p;
+            p.id = state.next_node_id++;  // stable id -> pending[] never aliases
+            p.type = cat.power;
+            state.plan.insert(state.plan.begin() + ni, p);
+            return pick_node(state.plan, ni, view, roster, ai, mods);
+        }
         BuildDecision d;
         d.type = t;
-        d.node = (int)state.plan.size() - 1;
+        d.node = ni;
         return d;
     }
     return BuildDecision{};  // plan satisfied, limits met: build nothing

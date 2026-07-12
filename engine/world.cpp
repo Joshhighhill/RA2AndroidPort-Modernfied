@@ -763,6 +763,50 @@ void World::step_ai_houses(double dt) {
         if (!rec.is_ai) continue;
         const AiHouseConfig& cfg = rec.cfg;
 
+        // 0) Lazy base-plan build + STANDING-BUILDING SYNC [RE: ai-base.md §3 —
+        //    FUN_0050a3e0 builds the node vector iff empty, THEN walks the
+        //    house's already-placed buildings and records each one's cell (and
+        //    World index) into its matching plan node. Build + sync are ONE
+        //    step, mirroring the original. Without the sync a node covering a
+        //    PRE-BUILT building (spawn_base / the seeded demo ConYard) stays
+        //    cx=cy=0/building=-1, so its destruction is never death-detected
+        //    (step 2) and the AI rebuilds it as a FRESH nearest-ring node
+        //    instead of IN PLACE at the retained cell — breaking §3/§5 for the
+        //    pre-built enemy base. (next_build's own lazy build then no-ops
+        //    here: the plan is already non-empty; the pure ai_base unit tests
+        //    still exercise that lazy path directly.)
+        if (rec.state.plan.empty()) {
+            const BaseView v0 = make_ai_base_view(h, rec);
+            rec.state.plan = build_base_plan(v0, cfg.catalog, cfg.roster, cfg.ai, cfg.mods);
+            // Continue the stable-id counter past the ids build_base_plan
+            // assigned (identical to next_build's own sync).
+            rec.state.next_node_id = 0;
+            for (const PlannedNode& n : rec.state.plan)
+                if (n.id + 1 > rec.state.next_node_id) rec.state.next_node_id = n.id + 1;
+            // Match each STANDING building (deterministic iteration: ascending
+            // World building index) to the FIRST UNCLAIMED plan node of the
+            // SAME type; store the building's cell + index and link it — the
+            // same linkage ai_place_ready makes for a freshly-placed building.
+            // building < 0 == unclaimed, so one building claims one node and a
+            // node is claimed at most once (multiplicities stay exact). Plan
+            // ORDER / topo sort are untouched.
+            for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+                const Building& b = buildings_[bi];
+                if (!b.alive || b.state == Building::State::Dead || b.house != h ||
+                    b.type < 0)
+                    continue;
+                for (PlannedNode& n : rec.state.plan) {
+                    if (n.type == b.type && n.building < 0) {
+                        n.cx = b.cx;
+                        n.cy = b.cy;
+                        n.building = bi;
+                        n.dead = false;
+                        break;
+                    }
+                }
+            }
+        }
+
         // 1) Income (the economy phase accumulates per-house unload income).
         rec.credits += take_income(h);
 
@@ -785,8 +829,16 @@ void World::step_ai_houses(double dt) {
                 cfg.roster[b.type].conyard) { conyard = true; break; }
         }
         if (!conyard) {
-            for (QueueCat c : {QueueCat::Structure, QueueCat::Defense})
+            for (QueueCat c : {QueueCat::Structure, QueueCat::Defense}) {
+                const int q = c == QueueCat::Structure ? 0 : 1;
                 if (rec.queues.producing(c) != -1) rec.queues.cancel(c);
+                // Clear the pending node id too [fix wave — MINOR-2]:
+                // ai_place_ready can't (ready() is false after a cancel), so an
+                // un-cleared pending[q] would leave the queue permanently gated
+                // by `pending[q]!=-1` (step 8) — a latent AI-2 wedge (an MCV
+                // redeploy could never restart the queue).
+                rec.state.pending[q] = -1;
+            }
         }
 
         // 4) Tick the queues: SAME power clamp as the player [RE: ai-base.md

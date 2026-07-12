@@ -218,8 +218,12 @@ struct BuildDecision {
 // keeps its hoisted slot. Effective order: ConYard -> Power -> Barracks ->
 // Refinery -> War Factory -> Radar -> extra Refineries (x RefineryLimit) ->
 // base defenses (x mods.defense_target, cycling the side list) -> walls
-// (ConcreteWalls, one ring's worth per defense; cells derive from the placed
-// defense's foundation perimeter — FUN_0050c160). A !progress FORCE-EMIT
+// (ConcreteWalls, one node per planned defense). NB the original rings wall
+// cells around each defense's foundation perimeter (FUN_0050c160), but in
+// THIS engine a wall node is NOT in catalog.defenses, so it is placed by the
+// GENERIC center-out scan (find_build_location is_defense=false) like any
+// non-defense node — a [RE-FALLBACK] deviation, not the perimeter ring. A
+// !progress FORCE-EMIT
 // cycle-breaker guarantees termination on an unsatisfiable/cyclic prereq set.
 // Catalog gaps (-1) are skipped.
 std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& cat,

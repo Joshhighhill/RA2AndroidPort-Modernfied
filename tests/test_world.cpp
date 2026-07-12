@@ -1908,3 +1908,87 @@ TEST_CASE("World: a power-preemption insert never corrupts a pending queue's nod
     CHECK(world.buildings()[def_idx].cx == dcx);
     CHECK(world.buildings()[def_idx].cy == dcy);
 }
+
+TEST_CASE("World: a PRE-BUILT building is synced into its plan node and rebuilt "
+          "IN PLACE when destroyed") {
+    // REGRESSION [fix wave — final review IMPORTANT-1]: ai-base.md §3 —
+    // FUN_0050a3e0 builds the base plan AND walks the house's already-placed
+    // buildings, recording each live building's cell + World index into its
+    // matching plan node. Our engine skipped that sync, so a node covering a
+    // PRE-BUILT building (spawn_base, the seeded demo ConYard) stayed
+    // cx=cy=0/building=-1. When such a pre-built building was destroyed,
+    // node-death detection (n.building==-1) never fired, the node looked FRESH
+    // (cx==0&&cy==0) and the AI rebuilt at a NEW nearest-ring cell instead of
+    // IN PLACE at the retained cell — breaking the §3/§5 rebuild-in-place
+    // contract on the exact Goal scenario (the pre-built enemy base rebuilding
+    // what it loses). This test FAILS before the sync (node never linked;
+    // rebuild lands at the wrong cell) and PASSES after.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // [0]=conyard 1x1, [1]=power 1x1; BOTH in the catalog so the plan has a
+    // node for each (so the pre-built NAPOWR has a node to be synced into).
+    ra2engine::AiHouseConfig cfg;
+    cfg.roster.resize(2);
+    cfg.roster[0].id = "NACNST"; cfg.roster[0].conyard = true;
+    cfg.roster[0].cost = 3000; cfg.roster[0].tech_level = 1;
+    cfg.roster[0].strength = 1000; cfg.roster[0].adjacent = 2;
+    cfg.roster[1].id = "NAPOWR"; cfg.roster[1].cost = 600;
+    cfg.roster[1].tech_level = 1; cfg.roster[1].strength = 750;
+    cfg.roster[1].power = 150; cfg.roster[1].adjacent = 2;
+    cfg.buildup_totals = {0.0, 0.0};
+    cfg.catalog.conyard = 0;
+    cfg.catalog.power = 1;
+    ra2engine::DifficultyGroupRaw g[3];
+    for (int i = 0; i < 3; ++i) {
+        g[i].cost = ra2engine::kDifficultyCost[i];
+        g[i].build_time = ra2engine::kDifficultyBuildTime[i];
+        g[i].build_delay = ra2engine::kDifficultyBuildDelayMin[i];
+        g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];
+    }
+    cfg.difficulty = ra2engine::AiDifficulty::Normal;
+    cfg.mods = ra2engine::difficulty_mods(ra2engine::AiDifficulty::Normal, g);
+    cfg.build_speed = 0.1;
+    cfg.start_credits = 10000;
+
+    // Pre-build BOTH the ConYard and a NAPOWR at KNOWN cells (like spawn_base),
+    // BEFORE flagging the house. The NAPOWR sits far (+6,+6) from the ConYard
+    // so a FRESH nearest-ring rebuild (the pre-fix bug) would land somewhere
+    // else entirely — making the stored-cell check discriminating.
+    const int cy_idx = world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    const int napowr_cx = c->x + 6, napowr_cy = c->y + 6;
+    const int pw_idx =
+        world.add_building(1, napowr_cx, napowr_cy, 1, 1, /*house=*/1, 750, 0, 0.0, true);
+    REQUIRE(cy_idx == 0);
+    REQUIRE(pw_idx == 1);
+    world.enable_ai_house(1, cfg);
+
+    // One tick: the plan builds + the pre-built buildings sync into their nodes.
+    world.step(1.0 / 15.0);
+    const ra2engine::AiBaseState* st = world.ai_state(1);
+    REQUIRE(st != nullptr);
+    REQUIRE(st->plan.size() == 2);        // conyard node + power node
+    const ra2engine::PlannedNode& pnode = st->plan[1];
+    REQUIRE(pnode.type == 1);             // the power node
+    // The sync recorded the pre-built NAPOWR's cell + World index into its node.
+    CHECK(pnode.building == pw_idx);      // FAILS before the fix (stays -1)
+    CHECK(pnode.cx == napowr_cx);         // FAILS before the fix (stays 0)
+    CHECK(pnode.cy == napowr_cy);         // FAILS before the fix (stays 0)
+
+    // Destroy the pre-built NAPOWR. Because its node is now LINKED, node-death
+    // detection flips the node dead and the AI rebuilds it at the RETAINED cell.
+    ra2engine::kill_building(world.buildings()[pw_idx]);
+    for (int i = 0; i < 5000 && !(world.ai_state(1)->plan[1].building > pw_idx); ++i)
+        world.step(1.0 / 15.0);
+    const ra2engine::PlannedNode& rebuilt = world.ai_state(1)->plan[1];
+    REQUIRE(rebuilt.building > pw_idx);   // a NEW building index (rebuilt)
+    CHECK_FALSE(rebuilt.dead);
+    CHECK(world.buildings()[rebuilt.building].type == 1);
+    CHECK(world.buildings()[rebuilt.building].alive);
+    // Rebuilt IN PLACE at the pre-built cell — NOT a fresh nearest-ring cell
+    // (the pre-fix bug placed it near the ConYard center instead).
+    CHECK(world.buildings()[rebuilt.building].cx == napowr_cx);
+    CHECK(world.buildings()[rebuilt.building].cy == napowr_cy);
+}
