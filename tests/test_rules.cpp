@@ -438,3 +438,21 @@ TEST_CASE("rules: real rulesmd classification pins") {
     for (const char* n : {"DEST", "DLPH"})
         CHECK(rules.build_category(n) == BC::None);
 }
+
+TEST_CASE("rules: section_double reads the [AI] and difficulty sections") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[AI]\nPowerSurplus=50\nBaseSizeAdd=3\nPowerEmergency=75%\nRefineryRatio=.16\n"
+        "[Easy]\nCost=1.2\nBuildTime=1.2\n"
+        "[Difficult]\nCost=0.8\n");
+    auto r = ra2assets::Rules::load(ini);
+    CHECK(r.section_double("AI", "PowerSurplus", 0.0) == doctest::Approx(50.0));
+    CHECK(r.section_double("AI", "BaseSizeAdd", 0.0) == doctest::Approx(3.0));
+    // Tolerant parse: '%' stops strtod (75, normalized by the consumer) and
+    // a bare leading '.' parses ([RE: ai-base.md §2 — real key spellings]).
+    CHECK(r.section_double("AI", "PowerEmergency", 0.0) == doctest::Approx(75.0));
+    CHECK(r.section_double("AI", "RefineryRatio", 0.0) == doctest::Approx(0.16));
+    CHECK(r.section_double("Easy", "Cost", 1.0) == doctest::Approx(1.2));
+    CHECK(r.section_double("Difficult", "Cost", 1.0) == doctest::Approx(0.8));
+    CHECK(r.section_double("Easy", "Missing", 7.0) == doctest::Approx(7.0));   // fallback
+    CHECK(r.section_double("NoSection", "Cost", 3.0) == doctest::Approx(3.0)); // fallback
+}

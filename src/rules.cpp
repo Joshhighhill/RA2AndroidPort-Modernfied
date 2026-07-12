@@ -216,6 +216,15 @@ double Rules::general_double(const std::string& key, double fallback) const {
     return std::strtod(v.c_str(), nullptr);
 }
 
+double Rules::section_double(const std::string& section, const std::string& key,
+                             double fallback) const {
+    // [RE: ai-base.md §2/§4] the [AI] + difficulty sections; same tolerant
+    // strtod parse as general_double (trailing '%' tolerated by strtod stop).
+    const std::string v = ini_->get(section, key, "");
+    if (v.empty()) return fallback;
+    return std::strtod(v.c_str(), nullptr);
+}
+
 int Rules::mp_money() const {
     return ini_->get_int("MultiplayerDialogSettings", "Money", 10000);
 }

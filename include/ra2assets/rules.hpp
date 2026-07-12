@@ -120,6 +120,12 @@ public:
     // section actually holds them. Returns `fallback` if absent from both.
     double general_double(const std::string& key, double fallback) const;
 
+    // [section] key= parsed as a double (same tolerant parse as
+    // general_double), for the [AI] and difficulty sections the AI phase
+    // reads [RE: ai-base.md §2/§4]. Returns `fallback` if absent.
+    double section_double(const std::string& section, const std::string& key,
+                          double fallback) const;
+
     // [MultiplayerDialogSettings] Money=, fallback 10000 if absent.
     int mp_money() const;
 
