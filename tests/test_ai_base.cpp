@@ -231,6 +231,17 @@ std::vector<ra2engine::BuildingTypeDef> ai_roster() {
         r[i].tech_level = 1;
     }
     r[0].conyard = true;
+    // Real rulesmd prereq edges [RE-GATE APPLIED: ai-base.md §2a — the topo
+    // sort under test orders by THESE, via the engine's existing prereq
+    // tokens (BuildingTypeDef::prerequisite; PROC = the refinery GROUP)]:
+    // NAWEAP needs PROC and NARADR needs NAREFN, so both must sort AFTER
+    // the refinery.
+    r[1].prerequisite = {"NACNST"};          // NAPOWR
+    r[2].prerequisite = {"NAPOWR"};          // NAREFN
+    r[3].prerequisite = {"NACNST"};          // NAHAND
+    r[4].prerequisite = {"NAHAND", "PROC"};  // NAWEAP — PROC = refinery group
+    r[5].prerequisite = {"NAREFN"};          // NARADR
+    r[6].prerequisite = {"NAHAND"};          // NALASR
     return r;
 }
 ra2engine::AiCatalog ai_catalog() {
@@ -269,12 +280,14 @@ int count_nodes_of(const std::vector<ra2engine::PlannedNode>& p, int type) {
 }
 }  // namespace
 
-TEST_CASE("ai_base: build_base_plan emits the recovered static order") {
-    // [RE-GATE APPLIED: ai-base.md §2 — FUN_005052d0: ConYard -> Power ->
-    // Barracks -> War Factory -> prereq-sorted rest (radar) -> Refineries
-    // (x RefineryLimit) -> defenses (x per-difficulty count) -> walls.
-    // Barracks + War Factory come BEFORE Refineries — the key ordering
-    // change from the pre-hunt economy-first assumption.]
+TEST_CASE("ai_base: build_base_plan topologically prereq-sorts the plan") {
+    // [RE-GATE APPLIED: ai-base.md §2a — FUN_005052d0 is a Kahn-style
+    // topological prereq-sort: ConYard + Power append first; Barracks/War
+    // Factory are HOISTED preferences the sort OVERRIDES when a prereq is
+    // unmet. NAWEAP needs PROC (refinery group) and NARADR needs NAREFN, so
+    // the Refinery is emitted BEFORE the War Factory AND the Radar.
+    // Effective order: ConYard -> Power -> Barracks -> Refinery -> War
+    // Factory -> Radar -> extra Refineries -> defenses -> walls.]
     auto roster = ai_roster();
     auto cat = ai_catalog();
     AiRules ai;
@@ -282,18 +295,24 @@ TEST_CASE("ai_base: build_base_plan emits the recovered static order") {
     v.own = {bv(0)};  // lone ConYard
     const DifficultyMods easy = mods_for(AiDifficulty::Easy);
     const auto plan = build_base_plan(v, cat, roster, ai, easy);
-    REQUIRE(plan.size() >= 5);
+    REQUIRE(plan.size() >= 6);
     CHECK(plan[0].type == cat.conyard);
     CHECK(plan[1].type == cat.power);
-    CHECK(plan[2].type == cat.barracks);
-    CHECK(plan[3].type == cat.war_factory);
-    CHECK(plan[4].type == cat.radar);
-    // Production strictly BEFORE any refinery [RE: ai-base.md §2]:
+    CHECK(plan[2].type == cat.barracks);     // hoist preference HELD (prereq met)
+    CHECK(plan[3].type == cat.refinery);     // topo sort OVERRIDES the War
+                                             // Factory hoist: PROC unmet ->
+                                             // Refinery first [RE: §2a]
+    CHECK(plan[4].type == cat.war_factory);  // after its refinery
+    CHECK(plan[5].type == cat.radar);        // NARADR after NAREFN
+    // The §2a invariants: Refinery strictly BEFORE War Factory AND Radar;
+    // Barracks (no refinery prereq) keeps its hoisted slot:
+    CHECK(first_node_of(plan, cat.refinery) < first_node_of(plan, cat.war_factory));
+    CHECK(first_node_of(plan, cat.refinery) < first_node_of(plan, cat.radar));
     CHECK(first_node_of(plan, cat.barracks) < first_node_of(plan, cat.refinery));
-    CHECK(first_node_of(plan, cat.war_factory) < first_node_of(plan, cat.refinery));
     CHECK(count_nodes_of(plan, cat.refinery) == ai.refinery_limit);  // RefineryLimit=4 [RE: §2]
-    // Defenses after refineries, per-difficulty count; walls at the tail:
-    CHECK(first_node_of(plan, cat.refinery) < first_node_of(plan, cat.defenses[0]));
+    // Defenses after the prereq-sorted core, per-difficulty count; walls at
+    // the tail:
+    CHECK(first_node_of(plan, cat.war_factory) < first_node_of(plan, cat.defenses[0]));
     CHECK(count_nodes_of(plan, cat.defenses[0]) == easy.defense_target);  // Easy=6 [RE: §2, RE-FALLBACK index binding]
     CHECK(first_node_of(plan, cat.defenses[0]) < first_node_of(plan, cat.wall));
     // Per-difficulty counts separate Easy(6) and Difficult(25) [RE: §2]:
@@ -303,11 +322,64 @@ TEST_CASE("ai_base: build_base_plan emits the recovered static order") {
     CHECK(kAiDefenseTarget[0] < kAiDefenseTarget[2]);
 }
 
+TEST_CASE("ai_base: the plan is head-first prereq-satisfiable from a lone ConYard") {
+    // [RE-GATE APPLIED: ai-base.md §2a — the dispatcher acts on the HEAD
+    // node only and NEVER skips, so the plan itself must be buildable
+    // strictly in order. Walk the plan keeping a built-so-far set and assert
+    // every node's prereqs are met by its PREDECESSORS — the pre-§2a
+    // War-Factory-before-Refinery order deadlocked exactly here.]
+    auto roster = ai_roster();
+    auto cat = ai_catalog();
+    AiRules ai;
+    BaseView v;
+    v.own = {bv(0)};  // lone ConYard
+    const auto plan =
+        build_base_plan(v, cat, roster, ai, mods_for(AiDifficulty::Normal));
+    std::vector<int> built;  // roster types standing so far
+    for (const auto& n : plan) {
+        for (const std::string& tok : roster[n.type].prerequisite) {
+            bool met = false;
+            for (int b : built) {
+                if (roster[b].id == tok) met = true;
+                if (tok == "PROC" && b == cat.refinery) met = true;  // group token
+            }
+            CHECK_MESSAGE(met, "node type ", n.type, " blocked on ", tok);
+        }
+        built.push_back(n.type);
+    }
+}
+
+TEST_CASE("ai_base: force-emit cycle-breaker terminates on an unsatisfiable prereq") {
+    // [RE-GATE APPLIED: ai-base.md §2a — FUN_005052d0's !progress branch
+    // force-appends an unused candidate so the loop ALWAYS terminates. Drop
+    // the refinery from the catalog: NAWEAP's PROC prereq (and NARADR's
+    // NAREFN) is now unsatisfiable, yet both must still be emitted
+    // (force-emitted), never hang the builder or vanish.]
+    auto roster = ai_roster();
+    auto cat = ai_catalog();
+    cat.refinery = -1;  // no refinery in this install -> PROC never met
+    AiRules ai;
+    BaseView v;
+    v.own = {bv(0)};
+    const auto plan =
+        build_base_plan(v, cat, roster, ai, mods_for(AiDifficulty::Easy));
+    CHECK(first_node_of(plan, cat.war_factory) >= 0);  // force-emitted, not dropped
+    CHECK(first_node_of(plan, cat.radar) >= 0);        // force-emitted too
+    CHECK(count_nodes_of(plan, 2) == 0);               // roster 2 = NAREFN: absent
+    // Determinism: the force-emit order is stable run to run.
+    const auto again =
+        build_base_plan(v, cat, roster, ai, mods_for(AiDifficulty::Easy));
+    REQUIRE(again.size() == plan.size());
+    for (std::size_t i = 0; i < plan.size(); ++i) CHECK(again[i].type == plan[i].type);
+}
+
 TEST_CASE("ai_base: next_build walks the plan in order, one structure at a time") {
-    // [RE-GATE APPLIED: ai-base.md §1/§2 — the first UNSATISFIED node in
-    // plan order wins (FUN_004fe200 head-node dispatch; the single-slot
-    // house+0x564c gate lives with the caller). Recovered opening: Power ->
-    // Barracks -> War Factory -> radar -> Refinery — NOT refinery-first.]
+    // [RE-GATE APPLIED: ai-base.md §1/§2/§2a — HEAD-node dispatch
+    // (FUN_004fe200): the first UNSATISFIED node in plan order wins, a
+    // prereq-blocked head is NEVER skipped (the topo-sorted plan makes the
+    // head buildable), and the single-slot house+0x564c gate lives with the
+    // caller. Recovered opening: Power -> Barracks -> Refinery -> War
+    // Factory -> Radar — the Refinery BEFORE the War Factory, per §2a.]
     auto roster = ai_roster();
     auto cat = ai_catalog();
     AiRules ai;
@@ -323,16 +395,16 @@ TEST_CASE("ai_base: next_build walks the plan in order, one structure at a time"
     CHECK(st.plan[d.node].type == cat.power);
     v.own.push_back(bv(1)); v.power_output = 150;
     d = next_build(st, v, cat, roster, ai, m);
-    CHECK(d.type == cat.barracks);                 // 2) Barracks BEFORE refinery
+    CHECK(d.type == cat.barracks);                 // 2) Barracks (hoist held)
     v.own.push_back(bv(3)); v.power_drain = 10;
     d = next_build(st, v, cat, roster, ai, m);
-    CHECK(d.type == cat.war_factory);              // 3) War Factory
-    v.own.push_back(bv(4)); v.power_drain = 40;
+    CHECK(d.type == cat.refinery);                 // 3) Refinery BEFORE War Factory [RE: §2a]
+    v.own.push_back(bv(2)); v.power_drain = 30;
     d = next_build(st, v, cat, roster, ai, m);
-    CHECK(d.type == cat.radar);                    // 4) prereq-sorted rest
-    v.own.push_back(bv(5)); v.power_drain = 60;
+    CHECK(d.type == cat.war_factory);              // 4) War Factory (PROC now standing)
+    v.own.push_back(bv(4)); v.power_drain = 60;
     d = next_build(st, v, cat, roster, ai, m);
-    CHECK(d.type == cat.refinery);                 // 5) Refineries after production
+    CHECK(d.type == cat.radar);                    // 5) Radar (NAREFN standing)
     // Determinism: same state + view -> same decision.
     const BuildDecision d2 = next_build(st, v, cat, roster, ai, m);
     CHECK(d2.type == d.type);
@@ -355,16 +427,18 @@ TEST_CASE("ai_base: power preemption inserts a Power node before a drainer") {
     v.credits = 100000;
     v.power_output = 150; v.power_drain = 90;
     v.rival_base_size = 30;
-    // Head unsatisfied node = war factory (drain 30): 90+30 > 150-50 ->
-    // preempt with power. NOT a PowerEmergency (150 >= 0.75 x 90): the
-    // preemption gate alone fires [RE: ai-base.md §2].
+    // Head unsatisfied node = REFINERY (the §2a topo order puts it right
+    // after the barracks; drain 20): 90+20 > 150-50 -> preempt with power.
+    // NOT a PowerEmergency (150 >= 0.75 x 90): the preemption gate alone
+    // fires [RE: ai-base.md §2].
     CHECK(v.power_output >= ai.power_emergency * v.power_drain);
     const BuildDecision d = next_build(st, v, cat, roster, ai, m);
     CHECK(d.type == cat.power);
     CHECK(st.plan[d.node].type == cat.power);
-    // Inserted AHEAD of the war-factory node it preempted:
+    // Inserted AHEAD of the refinery node it preempted [RE-GATE APPLIED:
+    // ai-base.md §2a — expected head position moved with the topo order]:
     REQUIRE(d.node + 1 < (int)st.plan.size());
-    CHECK(st.plan[d.node + 1].type == cat.war_factory);
+    CHECK(st.plan[d.node + 1].type == cat.refinery);
 }
 
 TEST_CASE("ai_base: economy expansion appends a node when affordable and under limit") {

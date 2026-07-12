@@ -93,49 +93,117 @@ BuildDecision pick_node(const std::vector<PlannedNode>& plan, int i,
     d.node = i;
     return d;
 }
+// Plan-so-far prerequisite check [RE-GATE APPLIED: ai-base.md §2a —
+// FUN_00505180 tests a type's prereq tokens against a SUPPLIED building
+// list (here: the plan under construction), NOT the house's standing
+// buildings. Engine mapping of the EXISTING prereq semantics
+// (BuildingTypeDef::prerequisite, construction.md §10): a plain token
+// matches a plan node whose roster id equals it; a GROUP token maps to the
+// catalog slot resolved from the SAME [AI] build list the original's
+// negative token expands to (-1 Power/BuildPower, -2 Factory/BuildWeapons,
+// -3 Barracks/BuildBarracks, -4 Radar/BuildRadar, -5 Tech/BuildTech,
+// -6 PROC/BuildRefinery — ai-base.md §2a Evidence 1, so the AiCatalog IS
+// the recovered group table). An unresolvable token (catalog gap, TECH in
+// AI-1) is UNMET — the cycle-breaker below eventually force-emits.]
+bool prereqs_in_plan(int type, const std::vector<PlannedNode>& plan,
+                     const std::vector<BuildingTypeDef>& roster,
+                     const AiCatalog& cat) {
+    for (const std::string& tok : roster[type].prerequisite) {
+        int want = -1;  // roster index a group token demands; -1 = plain token
+        if (tok == "POWER") want = cat.power;
+        else if (tok == "FACTORY") want = cat.war_factory;
+        else if (tok == "BARRACKS") want = cat.barracks;
+        else if (tok == "RADAR") want = cat.radar;
+        else if (tok == "PROC") want = cat.refinery;
+        bool met = false;
+        for (const PlannedNode& n : plan) {
+            if (n.type < 0) continue;
+            if (want >= 0 ? n.type == want : roster[n.type].id == tok) {
+                met = true;
+                break;
+            }
+        }
+        if (!met) return false;
+    }
+    return true;
+}
 }  // namespace
 
 std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& cat,
                                          const std::vector<BuildingTypeDef>& roster,
                                          const AiRules& ai, const DifficultyMods& mods) {
-    // [RE-GATE APPLIED: ai-base.md §2 — FUN_005052d0's static order. A
-    // catalog gap (-1: art missing / not in this install) is SKIPPED —
-    // art-guard-drop, never a crash. `view` is reserved for the prereq-
-    // sorted-remainder step of later sub-phases (AI-1's remainder is the
-    // single radar entry).]
+    // [RE-GATE APPLIED: ai-base.md §2a — FUN_005052d0 is a Kahn-style
+    // TOPOLOGICAL PREREQ-SORT, not a fixed-order append. ConYard + Power
+    // are appended directly (§2 steps 1-2); Barracks/War Factory are
+    // HOISTED to candidate indices 0/1 as a PREFERENCE ONLY (§2 steps 3-4)
+    // — the sort OVERRIDES the hoist when a prereq is unmet, which is
+    // exactly how the Refinery (needs only Power) lands BEFORE the War
+    // Factory (needs PROC) and the Radar (needs NAREFN). A catalog gap
+    // (-1: art missing / not in this install) is SKIPPED — art-guard-drop,
+    // never a crash. `view` stays reserved for later sub-phases.]
     (void)view;
     std::vector<PlannedNode> plan;
     int next_id = 0;  // contiguous ids 0..N-1 for the static plan; next_build
                       // continues the per-state counter past the max (below)
-    auto push = [&](int t) {
-        if (t < 0 || t >= (int)roster.size()) return;
+    auto append = [&](int t) {
         PlannedNode n;
         n.id = next_id++;
         n.type = t;
         plan.push_back(n);
     };
-    push(cat.conyard);      // 1) ConYard      (BuildConst)   [RE: §2]
-    push(cat.power);        // 2) Power        (BuildPower)   [RE: §2]
-    push(cat.barracks);     // 3) Barracks     (BuildBarracks — hoisted) [RE: §2]
-    push(cat.war_factory);  // 4) War Factory  (BuildWeapons — hoisted)  [RE: §2]
-    push(cat.radar);        // 5) prereq-sorted remainder (AI-1: BuildRadar) [RE: §2]
-    for (int i = 0; i < ai.refinery_limit; ++i)  // 6) Refineries x RefineryLimit(4) [RE: §2]
-        push(cat.refinery);
+    // 1-2) ConYard + Power append DIRECTLY (not topo-gated) [RE: §2].
+    if (cat.conyard >= 0 && cat.conyard < (int)roster.size()) append(cat.conyard);
+    if (cat.power >= 0 && cat.power < (int)roster.size()) append(cat.power);
+    // 3-4) Candidate multiset in PREFERENCE order: Barracks + War Factory
+    // hoisted to the front [RE: §2 steps 3-4], then the prereq-sorted
+    // remainder (AI-1: radar), Refineries x RefineryLimit(4), defenses x
+    // per-difficulty count (cycling the side list deterministically — stands
+    // in for the AIForcePrediction weighting [RE-FALLBACK: ai-base.md §2]),
+    // walls (ConcreteWalls) at the natural tail — wall cells resolve at
+    // placement from the defense foundation perimeter (FUN_0050c160)
+    // [RE: §2/§3; RE-FALLBACK: one perimeter node per defense in AI-1].
+    std::vector<int> cand;
+    auto add_cand = [&](int t) {
+        if (t >= 0 && t < (int)roster.size()) cand.push_back(t);
+    };
+    add_cand(cat.barracks);
+    add_cand(cat.war_factory);
+    add_cand(cat.radar);
+    for (int i = 0; i < ai.refinery_limit; ++i) add_cand(cat.refinery);
     const int defs = std::min(mods.defense_target, ai.defense_limit);
     if (!cat.defenses.empty())
-        for (int i = 0; i < defs; ++i)  // 7) defenses x per-difficulty count
-                                        //    [RE: §2; RE-FALLBACK: index binding],
-                                        //    cycling the side list deterministically
-                                        //    (stands in for the AIForcePrediction
-                                        //    weighting [RE-FALLBACK: ai-base.md §2])
-            push(cat.defenses[i % (int)cat.defenses.size()]);
+        for (int i = 0; i < defs; ++i)
+            add_cand(cat.defenses[i % (int)cat.defenses.size()]);
     if (cat.wall >= 0 && !cat.defenses.empty())
-        for (int i = 0; i < defs; ++i)  // 8) walls (ConcreteWalls) at the tail —
-                                        //    cells resolve at placement from the
-                                        //    defense foundation perimeter
-                                        //    (FUN_0050c160) [RE: §2/§3; RE-FALLBACK:
-                                        //    one perimeter node per defense in AI-1]
-            push(cat.wall);
+        for (int i = 0; i < defs; ++i) add_cand(cat.wall);
+    // 5) Kahn-style topological loop [RE-GATE APPLIED: ai-base.md §2a —
+    // FUN_005052d0's main loop]: emit the FIRST candidate whose prereqs are
+    // already met BY THE PLAN-SO-FAR (prereqs_in_plan == the original's
+    // FUN_00505180 fed &outputPlanVector), then rescan from the front so
+    // the hoisted candidates are always retried first. Deterministic — no
+    // RNG: extra refineries fall in right after the prereq-sorted core
+    // instead of the original's RNG-spaced inserts, and defenses stay
+    // consecutive [RE-FALLBACK: ai-base.md deviations — engine-deterministic
+    // stand-in for the lockstep-RNG positions].
+    while (!cand.empty()) {
+        bool progress = false;
+        for (std::size_t i = 0; i < cand.size(); ++i) {
+            if (!prereqs_in_plan(cand[i], plan, roster, cat)) continue;
+            append(cand[i]);
+            cand.erase(cand.begin() + i);
+            progress = true;
+            break;  // rescan from the front: the hoist preference
+        }
+        if (!progress) {
+            // FORCE-EMIT cycle-breaker [RE-GATE APPLIED: ai-base.md §2a —
+            // the !progress branch force-appends an unused candidate so the
+            // loop ALWAYS terminates, even on an unsatisfiable/cyclic
+            // prereq set; matching FUN_005052d0, the LAST unused candidate
+            // is taken — deterministic, no RNG].
+            append(cand.back());
+            cand.pop_back();
+        }
+    }
     // NOTE: the static plan is NOT trimmed by BaseSizeAdd — the cap gates
     // DYNAMIC expansion (next_build) at rival + BaseSizeAdd(3) [RE: §2].
     return plan;
@@ -156,12 +224,18 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
             if (n.id + 1 > state.next_node_id) state.next_node_id = n.id + 1;
     }
 
-    // PLAN WALK [RE-GATE APPLIED: ai-base.md §1/§2/§5 — FUN_004fe200]: the
-    // first UNSATISFIED node in plan order, ONE structure at a time (the
-    // single Structure-queue slot / house+0x564c gate lives with the
-    // caller). Satisfaction is existence-based: each node is covered by one
-    // standing own building of its type; a DEAD node is unsatisfied again
-    // at its ORIGINAL position -> rebuild-before-tail-expansion [RE: §5].
+    // PLAN WALK [RE-GATE APPLIED: ai-base.md §1/§2/§2a/§5 — FUN_004fe200
+    // is a HEAD-ONLY dispatcher]: the first UNSATISFIED node in plan order,
+    // ONE structure at a time (the single Structure-queue slot /
+    // house+0x564c gate lives with the caller). Satisfaction is
+    // existence-based: each node is covered by one standing own building of
+    // its type; a DEAD node is unsatisfied again at its ORIGINAL position
+    // -> rebuild-before-tail-expansion [RE: §5]. The walk NEVER skips a
+    // prereq-blocked head and has NO find-next-buildable scan —
+    // FUN_004fe200 peeks the head node only; the topologically
+    // prereq-sorted plan (build_base_plan) guarantees the head is buildable
+    // once its predecessors stand [RE: §2a]. The ONLY thing ever put ahead
+    // of the head is the power-preemption INSERT below.
     std::vector<int> claimed(roster.size(), 0);
     for (int i = 0; i < (int)state.plan.size(); ++i) {
         const PlannedNode& n = state.plan[i];

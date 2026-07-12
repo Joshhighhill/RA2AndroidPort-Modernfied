@@ -209,23 +209,33 @@ struct BuildDecision {
 };
 
 // Build the PRECOMPUTED ORDERED base-node plan [RE-GATE APPLIED: ai-base.md
-// §2 — FUN_005052d0]. Static order: ConYard -> Power -> Barracks -> War
-// Factory -> prereq-sorted remaining production/tech (AI-1: radar) ->
-// Refineries (x RefineryLimit) -> base defenses (x mods.defense_target,
-// cycling the side list) -> walls (ConcreteWalls, one ring's worth per
-// defense; cells derive from the placed defense's foundation perimeter —
-// FUN_0050c160). NOTE Barracks + War Factory come BEFORE Refineries — the
-// recovered order, NOT economy-first. Catalog gaps (-1) are skipped.
+// §2a — FUN_005052d0 is a Kahn-style TOPOLOGICAL PREREQ-SORT]. ConYard +
+// Power append first; Barracks + War Factory are HOISTED to the front of the
+// candidate set as a PREFERENCE the prereq-sort OVERRIDES when a prereq is
+// unmet, so a prerequisite building is always emitted BEFORE the node that
+// depends on it: the Refinery (needs only Power) lands BEFORE the War Factory
+// (needs PROC) AND the Radar (needs NAREFN); Barracks (no refinery prereq)
+// keeps its hoisted slot. Effective order: ConYard -> Power -> Barracks ->
+// Refinery -> War Factory -> Radar -> extra Refineries (x RefineryLimit) ->
+// base defenses (x mods.defense_target, cycling the side list) -> walls
+// (ConcreteWalls, one ring's worth per defense; cells derive from the placed
+// defense's foundation perimeter — FUN_0050c160). A !progress FORCE-EMIT
+// cycle-breaker guarantees termination on an unsatisfiable/cyclic prereq set.
+// Catalog gaps (-1) are skipped.
 std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& cat,
                                          const std::vector<BuildingTypeDef>& roster,
                                          const AiRules& ai, const DifficultyMods& mods);
 
 // Walk the ordered plan ONE structure at a time [RE-GATE APPLIED: ai-base.md
-// §1/§2 — FUN_004fe200; the single Structure-queue slot maps the
-// house+0x564c one-at-a-time gate]: lazily build the plan when empty, then
-// return the first UNSATISFIED node (its building doesn't currently exist —
-// dead nodes are unsatisfied again, at their original list position, so
-// rebuild-before-tail-expansion emerges [RE: ai-base.md §5]). Two dynamic
+// §1/§2/§2a — FUN_004fe200 is a HEAD-ONLY dispatcher; the single
+// Structure-queue slot maps the house+0x564c one-at-a-time gate]: lazily
+// build the plan when empty, then return the first UNSATISFIED node (its
+// building doesn't currently exist — dead nodes are unsatisfied again, at
+// their original list position, so rebuild-before-tail-expansion emerges
+// [RE: ai-base.md §5]). It NEVER skips a prereq-blocked head and has NO
+// find-next-buildable scan — the topologically prereq-sorted plan
+// (build_base_plan) guarantees the head is buildable once its predecessors
+// stand [RE: ai-base.md §2a]. Two dynamic
 // overrides: (a) POWER PREEMPTION — before a power-draining node that would
 // push drain > output - PowerSurplus(50), INSERT a Power node ahead of it;
 // (b) ECONOMY EXPANSION — separately APPEND an extra refinery/war-factory
