@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "ai_base.hpp"  // AI-1 base-planning: AiBaseState/BaseView/next_build/...
+#include "ai_team.hpp"  // AI-2 offensive-teams: AiTeamState/TeamInstance/TeamView/...
 #include "building.hpp"
 #include "occupancy.hpp"
 #include "ore.hpp"  // OreField/OreKind/OreRng (Economy phase)
@@ -283,6 +284,23 @@ std::vector<std::uint8_t> build_passability(const std::vector<ra2assets::MapCell
 // handed to World::enable_ai_house. World stays asset-free: the roster here
 // is the same BuildingTypeDef list main.cpp already resolves (ba.roster),
 // buildup_totals mirrors ba.art[t].buildup_total, groups mirrors ba.groups.
+// --- AI-2 offensive-teams phase [RE: ai-team.md] ----------------------------
+// Everything an AI house's TEAM brain needs, resolved ONCE by main.cpp
+// (aimd.ini + unit roster + waypoint table) and handed inside AiHouseConfig.
+// BYTE-IDENTITY FIREWALL: `enabled` defaults FALSE — every existing
+// enable_ai_house caller (including --demo-ai-base) gets a team-less config,
+// so step_ai_teams skips the house and all six gates stay bit-identical.
+struct AiTeamConfig {
+    bool enabled = false;                 // the per-house team firewall
+    AimdData aimd;                        // parsed TaskForce/Script/TeamType tables
+    std::vector<UnitTypeDef> unit_roster; // producible/recruitable combat types
+    std::vector<int> inf_factory_types;   // BUILDING roster indices (barracks)
+    std::vector<int> veh_factory_types;   // BUILDING roster indices (war factory)
+    std::vector<Cellxy> waypoints;        // waypoint index -> cell (main.cpp table)
+    std::string house_name;               // aimd House= token (e.g. "Russians")
+    AiTeamRules rules;                    // recovered team knobs
+};
+
 struct AiHouseConfig {
     AiDifficulty difficulty = AiDifficulty::Normal;  // default group [RE-FALLBACK: ai-base.md §4]
     AiCatalog catalog;
@@ -298,6 +316,7 @@ struct AiHouseConfig {
                                          // exists in the difficulty sections;
                                          // this is the lobby/MPlayer money,
                                          // passed through unmodified]
+    AiTeamConfig team;  // AI-2 [RE: ai-team.md]; enabled=false = no team brain
 };
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
@@ -493,6 +512,14 @@ public:
     // (cat 1) queue; -1 = idle.
     int ai_producing(int house, int cat01) const;
 
+    // --- AI-2 offensive-teams phase [RE: ai-team.md] ---
+    // Read-only team state (nullptr when `house` is not AI-flagged). NOT read
+    // by world_hash — the new gate hashes it separately (ai_team_hash).
+    const AiTeamState* ai_team_state(int house) const;
+    // Unit-roster type building in the AI house's Infantry (0) or Vehicle (1)
+    // queue; -1 = idle.
+    int ai_unit_producing(int house, int iv01) const;
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -520,12 +547,34 @@ private:
         AiBaseState state;
         ProductionQueues queues;  // ONLY the Structure/Defense slots are used
         double credits = 0.0;
+        AiTeamState team_state;  // AI-2 [RE: ai-team.md]
     };
     std::vector<HouseAiRec> ai_houses_;  // index = house id (grown on demand)
     bool ai_any_ = false;                // the step() firewall bool
     void step_ai_houses(double dt);
     BaseView make_ai_base_view(int house, const HouseAiRec& rec) const;
     bool ai_place_ready(int house, HouseAiRec& rec, QueueCat cat);
+
+    // --- AI-2 offensive-teams phase [RE: ai-team.md] ---
+    void step_ai_teams(double dt);
+    int ai_unit_type_of(const HouseAiRec& rec, const Unit& u) const;
+    std::vector<IdleUnitView> ai_idle_units(int house, const HouseAiRec& rec) const;
+    void ai_fill_team_view(int house, const HouseAiRec& rec, const TeamInstance& team,
+                           TeamView& v) const;
+    bool ai_quarry_exists(int house, int quarry) const;
+    // Pickers score by distance^2 x value x seeded-RNG jitter (ai_rand over the
+    // passed rng) and keep the nearest-reachable [RE-GATE APPLIED: ai-team.md §5].
+    int ai_pick_quarry_unit(int house, int quarry, int nx, int ny, std::uint32_t& rng) const;
+    int ai_pick_quarry_building(int house, int quarry, int nx, int ny, std::uint32_t& rng) const;
+    // Shared mutation tail extracted from order_attack/order_attack_building so
+    // both the player selection-loops and the AI per-unit entry points commit a
+    // target identically [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
+    void commit_attack_target(int unit_idx, int target_unit, int target_building);
+    void ai_order_attack(int unit_idx, int target_idx);
+    void ai_order_attack_building(int unit_idx, int b_idx);
+    void ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
+                                 const TeamCommand& c);
+    bool ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat);
 
     // Fully-defined-inline POD mirror of HarvestEvent (kind stored as int,
     // via static_cast to/from HarvestEvent::Kind) -- see the forward-

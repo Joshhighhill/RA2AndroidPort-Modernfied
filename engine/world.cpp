@@ -495,17 +495,11 @@ void World::order_attack(int target_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
-        u.target = target_idx;
-        u.target_building = -1;  // mutually exclusive with a unit target
-        u.attack_order = true;
-        // Same occupancy cleanup as order_move_selected: drop any stale
-        // next-cell reservation from an in-flight move order, re-assert only
-        // the current cell, and clear the path -- step_combat's next
-        // MoveRequest (pursuit, now that attack_order is true) re-paths it.
-        occ_.release_all_of(static_cast<int>(i), u.cell_x, u.cell_y);
-        occ_.set(u.cell_x, u.cell_y, static_cast<int>(i));
-        u.path.clear();
-        u.path_idx = 0;
+        // Player guard kept above (selected + house 0); the shared mutation
+        // tail (target/attack_order + occupancy re-assert + path clear) is
+        // extracted into commit_attack_target so there is ONE copy of the
+        // target-commit body [RE-GATE APPLIED: ai-team.md §5].
+        commit_attack_target(static_cast<int>(i), target_idx, /*target_building=*/-1);
     }
 }
 
@@ -551,14 +545,9 @@ void World::order_attack_building(int b_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
-        u.target_building = b_idx;
-        u.target = -1;  // mutually exclusive with a unit target
-        u.attack_order = true;
-        // Same occupancy-release/path-clear dance as order_attack.
-        occ_.release_all_of(static_cast<int>(i), u.cell_x, u.cell_y);
-        occ_.set(u.cell_x, u.cell_y, static_cast<int>(i));
-        u.path.clear();
-        u.path_idx = 0;
+        // Player guard kept above; shared mutation tail via commit_attack_target
+        // [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
+        commit_attack_target(static_cast<int>(i), /*target_unit=*/-1, b_idx);
     }
 }
 
@@ -629,6 +618,7 @@ void World::enable_ai_house(int house, AiHouseConfig cfg) {
     rec.is_ai = true;
     rec.cfg = std::move(cfg);
     rec.state = AiBaseState{};
+    rec.team_state = AiTeamState{};  // AI-2: fresh team state per enable
     rec.state.difficulty = rec.cfg.difficulty;
     rec.queues = ProductionQueues{};
     rec.credits = rec.cfg.start_credits;
@@ -940,6 +930,499 @@ void World::step_ai_houses(double dt) {
     }
 }
 
+// --- AI-2 offensive-teams phase [RE: ai-team.md] ----------------------------
+
+namespace {
+// Quarry-kind -> unit-class match [RE-GATE APPLIED: ai-team.md §5 — the standard
+// RA2 enumeration; class values from ai_team.hpp's kQuarry* constants].
+bool quarry_unit_match(int quarry, const Unit& u) {
+    switch (quarry) {
+        case kQuarryHarvesters:  return u.is_harvester;
+        case kQuarryInfantry:    return !u.is_vehicle && !u.is_harvester;
+        case kQuarryVehicles:    return u.is_vehicle;
+        case kQuarryBaseThreats: return true;   // nearest hostile [RE-FALLBACK]
+        case kQuarryAnything:    return true;
+        default:                 return false;
+    }
+}
+// Kinds that resolve to buildings. 5 (factories) and 6 (base defenses) resolve
+// as ANY building until the class split is mapped [RE-FALLBACK: ai-team.md §5].
+bool quarry_wants_buildings(int quarry) {
+    return quarry == kQuarryAnything || quarry == kQuarryBuildings ||
+           quarry == kQuarryFactories || quarry == kQuarryDefenses;
+}
+}  // namespace
+
+const AiTeamState* World::ai_team_state(int house) const {
+    return ai_enabled(house) ? &ai_houses_[house].team_state : nullptr;
+}
+
+int World::ai_unit_producing(int house, int iv01) const {
+    if (!ai_enabled(house) || iv01 < 0 || iv01 > 1) return -1;
+    const QueueCat c = iv01 == 0 ? QueueCat::Infantry : QueueCat::Vehicle;
+    return ai_houses_[house].queues.producing(c);
+}
+
+int World::ai_unit_type_of(const HouseAiRec& rec, const Unit& u) const {
+    // Units carry no roster index — map via the resolved combat image
+    // (unique per producible type; deterministic).
+    const std::vector<UnitTypeDef>& r = rec.cfg.team.unit_roster;
+    for (int i = 0; i < (int)r.size(); ++i)
+        if (r[i].combat.image == u.image) return i;
+    return -1;
+}
+
+std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec) const {
+    // Recruitable = own, alive, non-dying, NOT a harvester, at rest, no
+    // attack pursuit, typed in the unit roster, and not already claimed by
+    // any team. ASCENDING unit index — the deterministic claim order
+    // [RE: ai-team.md §2].
+    std::vector<IdleUnitView> out;
+    for (int i = 0; i < (int)units_.size(); ++i) {
+        const Unit& u = units_[i];
+        if (!u.alive || u.die_time >= 0.0 || u.house != house || u.is_harvester)
+            continue;
+        if (u.moving() || u.attack_order) continue;
+        const int t = ai_unit_type_of(rec, u);
+        if (t < 0) continue;
+        bool in_team = false;
+        for (const TeamInstance& tm : rec.team_state.teams) {
+            for (int m : tm.members)
+                if (m == i) { in_team = true; break; }
+            if (in_team) break;
+        }
+        if (!in_team) out.push_back(IdleUnitView{i, t});
+    }
+    return out;
+}
+
+bool World::ai_quarry_exists(int house, int quarry) const {
+    for (const Unit& u : units_)
+        if (u.alive && u.die_time < 0.0 && u.house != house &&
+            quarry_unit_match(quarry, u))
+            return true;
+    if (quarry_wants_buildings(quarry))
+        for (const Building& b : buildings_)
+            if (b.alive && b.state != Building::State::Dead && b.house != house)
+                return true;
+    return false;
+}
+
+int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
+                               std::uint32_t& rng) const {
+    // Class-filter + distance^2 x value x seeded-RNG jitter, keep the minimum
+    // (nearest-and-most-valuable, with jitter); tie -> lowest index
+    // [RE-GATE APPLIED: ai-team.md §5]. `value` is a per-target term (proxy 1
+    // pre-map [RE-FALLBACK]); the jitter draws from ai_rand over `rng`.
+    int best = -1;
+    long long bestd = 0;
+    for (int i = 0; i < (int)units_.size(); ++i) {
+        const Unit& u = units_[i];
+        if (!u.alive || u.die_time >= 0.0 || u.house == house) continue;
+        if (!quarry_unit_match(quarry, u)) continue;
+        const long long dx = u.cell_x - nx, dy = u.cell_y - ny;
+        const long long value = 1;                      // [RE-FALLBACK] proxy
+        const long long jitter = 90 + (ai_rand(rng) % 21);  // 0.90x .. 1.10x, x100
+        const long long score = (dx * dx + dy * dy) * value * jitter;
+        if (best < 0 || score < bestd) { best = i; bestd = score; }
+    }
+    return best;
+}
+
+int World::ai_pick_quarry_building(int house, int quarry, int nx, int ny,
+                                   std::uint32_t& rng) const {
+    if (!quarry_wants_buildings(quarry)) return -1;
+    int best = -1;
+    long long bestd = 0;
+    for (int i = 0; i < (int)buildings_.size(); ++i) {
+        const Building& b = buildings_[i];
+        if (!b.alive || b.state == Building::State::Dead || b.house == house) continue;
+        const long long dx = b.cx - nx, dy = b.cy - ny;
+        const long long value = 1;                      // [RE-FALLBACK] proxy
+        const long long jitter = 90 + (ai_rand(rng) % 21);
+        const long long score = (dx * dx + dy * dy) * value * jitter;
+        if (best < 0 || score < bestd) { best = i; bestd = score; }
+    }
+    return best;
+}
+
+void World::commit_attack_target(int unit_idx, int target_unit, int target_building) {
+    // The identical mutation tail shared by the player selection-loops
+    // (order_attack/order_attack_building) AND the AI per-unit entry points —
+    // extracted so there is ONE copy of the target-commit body [RE-GATE APPLIED:
+    // ai-team.md §5]. target_unit / target_building are mutually exclusive
+    // (pass -1 for the unused one). Callers keep their OWN guards.
+    Unit& u = units_[unit_idx];
+    u.target = target_unit;
+    u.target_building = target_building;
+    u.attack_order = true;
+    occ_.release_all_of(unit_idx, u.cell_x, u.cell_y);
+    occ_.set(u.cell_x, u.cell_y, unit_idx);
+    u.path.clear();
+    u.path_idx = 0;
+}
+
+void World::ai_order_attack(int unit_idx, int target_idx) {
+    // Per-unit entry for AI-owned units: the existing order_attack drives
+    // SELECTED house-0 units only; teams need per-unit orders for ANY house.
+    // ADDITIVE — the player path is untouched (the six gates verify). Keeps its
+    // OWN guard, then calls the shared commit_attack_target [RE: ai-team.md §5].
+    if (unit_idx < 0 || unit_idx >= (int)units_.size()) return;
+    if (target_idx < 0 || target_idx >= (int)units_.size()) return;
+    const Unit& u = units_[unit_idx];
+    const Unit& tgt = units_[target_idx];
+    if (!u.alive || u.die_time >= 0.0) return;
+    if (!tgt.alive || tgt.die_time >= 0.0 || tgt.house == u.house) return;  // AI guard
+    commit_attack_target(unit_idx, target_idx, /*target_building=*/-1);
+}
+
+void World::ai_order_attack_building(int unit_idx, int b_idx) {
+    // Per-unit entry (same rationale); own guard + shared commit_attack_target.
+    if (unit_idx < 0 || unit_idx >= (int)units_.size()) return;
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return;
+    const Unit& u = units_[unit_idx];
+    const Building& tgt = buildings_[b_idx];
+    if (!u.alive || u.die_time >= 0.0) return;
+    if (!tgt.alive || tgt.state == Building::State::Dead || tgt.house == u.house) return;
+    commit_attack_target(unit_idx, /*target_unit=*/-1, b_idx);
+}
+
+void World::ai_fill_team_view(int house, const HouseAiRec& rec,
+                              const TeamInstance& team, TeamView& v) const {
+    v.members.clear();
+    for (int m : team.members) {
+        TeamMemberView mv;
+        mv.unit = m;
+        if (m >= 0 && m < (int)units_.size()) {
+            const Unit& u = units_[m];
+            mv.alive = u.alive && u.die_time < 0.0;
+            mv.cx = u.cell_x;
+            mv.cy = u.cell_y;
+            mv.idle = !u.moving() &&
+                      !(u.attack_order && (u.target >= 0 || u.target_building >= 0));
+        }
+        v.members.push_back(mv);
+    }
+    v.waypoints = rec.cfg.team.waypoints;
+    // Base center + enemy centroid reuse the AI-1 view (ConYard-first center,
+    // rival-buildings threat centroid) — ONE source of truth.
+    const BaseView bv = make_ai_base_view(house, rec);
+    v.base_x = bv.center_x;
+    v.base_y = bv.center_y;
+    v.enemy_x = bv.threat_x;
+    v.enemy_y = bv.threat_y;
+    // quarry_exists is computed for the CURRENT attack action's EFFECTIVE quarry
+    // class — the completion predicate the interpreter consults. It must match
+    // the quarry class step_team sets on the emitted command [RE: ai-team.md
+    // §3/§5]: AttackQuarry -> argument; AttackBuilding -> Buildings;
+    // AttackHouse/AttackUnits -> Anything. Recomputed PER TICK (contract B).
+    v.quarry_exists = false;
+    const AimdData& aimd = rec.cfg.team.aimd;
+    if (team.state == TeamState::Executing && team.teamtype >= 0 &&
+        team.teamtype < (int)aimd.teams.size()) {
+        const ScriptType& sc = aimd.scripts[aimd.teams[team.teamtype].script];
+        if (team.script_pc >= 0 && team.script_pc < (int)sc.actions.size()) {
+            const ScriptAction a = sc.actions[team.script_pc];
+            const OpClass oc = classify_op(a.action);
+            int q = -1;
+            if (oc == OpClass::AttackQuarry)        q = a.argument;
+            else if (oc == OpClass::AttackBuilding) q = kQuarryBuildings;
+            else if (oc == OpClass::AttackHouse ||
+                     oc == OpClass::AttackUnits)    q = kQuarryAnything;
+            if (q >= 0) v.quarry_exists = ai_quarry_exists(house, q);
+        }
+    }
+}
+
+void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
+                                    const TeamCommand& c) {
+    switch (c.kind) {
+        case TeamCommand::Kind::MoveTeam: {
+            // Deterministic per-member spread (ring offsets) so members do not
+            // stack one cell; scatter widens the ring [RE-FALLBACK: engine
+            // formation stand-in; order_unit_move cancels cleanly if a spread
+            // cell is unreachable].
+            // CONTRACT A [ai-team.md §2 gather snap]: the pure engine hands an
+            // IDEAL cell; snap it to the nearest FREE (walkable+unoccupied) cell
+            // so members can actually satisfy the Stray(2.0)/CloseEnough(2.25)
+            // predicate. For a GATHER move we RECORD the snapped cell back as the
+            // realized gather focus so the arrival predicate (which the pure
+            // step_team checks against team.gather_x/gather_y) is satisfiable;
+            // for an Executing move we snap only within CloseEnough so the
+            // pure-target arrival predicate still holds.
+            auto free_cell = [this](int x, int y) {
+                return walkable(x, y) && occ_.is_free(x, y);
+            };
+            auto nearest_free = [&](int cx, int cy, int maxr) -> Cellxy {
+                for (int r = 0; r <= maxr; ++r)
+                    for (int oy = -r; oy <= r; ++oy)
+                        for (int ox = -r; ox <= r; ++ox) {
+                            if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
+                            const int x = cx + ox, y = cy + oy;
+                            if (free_cell(x, y)) return Cellxy{x, y};
+                        }
+                return Cellxy{-1, -1};
+            };
+            int gx = c.x, gy = c.y;
+            if (team.state == TeamState::Gathering) {
+                const Cellxy s = nearest_free(c.x, c.y, 8);
+                if (s.x >= 0) { gx = s.x; gy = s.y; }
+                team.gather_x = gx;   // realized focus (contract A)
+                team.gather_y = gy;
+            } else {
+                const Cellxy s = nearest_free(c.x, c.y, 2);  // <= CloseEnough
+                if (s.x >= 0) { gx = s.x; gy = s.y; }
+            }
+            static const int dx[9] = {0, 1, -1, 0, 0, 1, -1, 1, -1};
+            static const int dy[9] = {0, 0, 0, 1, -1, 1, -1, -1, 1};
+            const int spread = c.scatter ? 3 : 1;
+            for (std::size_t k = 0; k < team.members.size(); ++k) {
+                const int m = team.members[k];
+                if (m < 0 || m >= (int)units_.size()) continue;
+                const Unit& u = units_[m];
+                if (!u.alive || u.die_time >= 0.0) continue;
+                order_unit_move(m, gx + dx[k % 9] * spread, gy + dy[k % 9] * spread);
+            }
+            break;
+        }
+        case TeamCommand::Kind::AttackQuarry: {
+            for (int m : team.members) {
+                if (m < 0 || m >= (int)units_.size()) continue;
+                Unit& u = units_[m];
+                if (!u.alive || u.die_time >= 0.0) continue;
+                if (u.attack_order && (u.target >= 0 || u.target_building >= 0))
+                    continue;  // already pursuing — no target thrash
+                const int tu = ai_pick_quarry_unit(house, c.quarry, u.cell_x,
+                                                   u.cell_y, rec.team_state.rng);
+                if (tu >= 0) { ai_order_attack(m, tu); continue; }
+                const int tb = ai_pick_quarry_building(house, c.quarry, u.cell_x,
+                                                       u.cell_y, rec.team_state.rng);
+                if (tb >= 0) ai_order_attack_building(m, tb);
+            }
+            break;
+        }
+        case TeamCommand::Kind::GuardArea: {
+            // Guard anchors only — the EXISTING step_combat auto-acquire and
+            // return-to-anchor machinery does the rest [RE: ai-team.md §3].
+            for (int m : team.members) {
+                if (m < 0 || m >= (int)units_.size()) continue;
+                Unit& u = units_[m];
+                if (!u.alive || u.die_time >= 0.0) continue;
+                u.guard_x = c.x;
+                u.guard_y = c.y;
+            }
+            break;
+        }
+        case TeamCommand::Kind::Inert:  // logged skip — pc already advanced
+        case TeamCommand::Kind::Wait:
+        case TeamCommand::Kind::None:
+        default:
+            break;
+    }
+}
+
+bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
+    // Exit handoff via the EXISTING primary_factory + launch_unit path (the
+    // player's run_interactive twin) [RE: ai-team.md §6]. Returns true if the
+    // ready slot was consumed.
+    if (!rec.queues.ready(cat)) return false;
+    const AiTeamConfig& tc = rec.cfg.team;
+    const std::vector<int>& ft =
+        cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
+    const int fi = primary_factory(buildings_, ft, house);
+    if (fi < 0) return false;  // no factory: the lost-check cancels the queue
+    const int uslot = rec.queues.producing(cat);
+    if (uslot < 0 || uslot >= (int)tc.unit_roster.size()) {
+        rec.queues.placed(cat);  // defensive: orphaned ready slot
+        return true;
+    }
+    const BuildingTypeDef& fdef = rec.cfg.roster[buildings_[fi].type];
+    const int uidx = launch_unit(fi, fdef, tc.unit_roster[uslot].combat);
+    if (uidx < 0) return false;  // exit blocked -> HOLD ready (retry next frame)
+    // Claim into the FIRST (oldest) Recruiting team owing this type —
+    // deterministic; an unclaimed unit stays idle and recruitable
+    // [RE: ai-team.md §2].
+    for (TeamInstance& t : rec.team_state.teams) {
+        if (t.state != TeamState::Recruiting) continue;
+        if (team_shortfall_type(t, tc.aimd) == uslot) {
+            t.members.push_back(uidx);
+            t.member_types.push_back(uslot);
+            break;
+        }
+    }
+    rec.queues.placed(cat);
+    return true;
+}
+
+void World::step_ai_teams(double dt) {
+    for (int h = 0; h < (int)ai_houses_.size(); ++h) {
+        HouseAiRec& rec = ai_houses_[h];
+        if (!rec.is_ai || !rec.cfg.team.enabled) continue;  // FIREWALL (spec §5)
+        const AiTeamConfig& tc = rec.cfg.team;
+        AiTeamState& st = rec.team_state;
+
+        // 1) Member-death sweep [RE: ai-team.md §2]: prune dead/dying members
+        //    (parallel vectors stay parallel); the pure lifecycle then sees
+        //    the reopened slot (full=yes teams drop back to Recruiting).
+        for (TeamInstance& t : st.teams) {
+            for (int k = (int)t.members.size() - 1; k >= 0; --k) {
+                const int m = t.members[k];
+                if (m < 0 || m >= (int)units_.size() || !units_[m].alive ||
+                    units_[m].die_time >= 0.0) {
+                    t.members.erase(t.members.begin() + k);
+                    t.member_types.erase(t.member_types.begin() + k);
+                }
+            }
+        }
+
+        // 2) Factory-lost cancel for the unit queues (the queues themselves
+        //    already TICKED inside step_ai_houses's rec.queues.tick — no new
+        //    production code) [RE: ai-team.md §6].
+        if (rec.queues.producing(QueueCat::Infantry) != -1 &&
+            factory_category_lost(tc.inf_factory_types, h))
+            rec.queues.cancel(QueueCat::Infantry);
+        if (rec.queues.producing(QueueCat::Vehicle) != -1 &&
+            factory_category_lost(tc.veh_factory_types, h))
+            rec.queues.cancel(QueueCat::Vehicle);
+        rec.credits = rec.queues.credits();
+
+        // 3) Launch READY unit slots (Infantry then Vehicle — deterministic).
+        ai_launch_unit_ready(h, rec, QueueCat::Infantry);
+        ai_launch_unit_ready(h, rec, QueueCat::Vehicle);
+
+        // 4) Two-clock autocreate [RE-GATE APPLIED: ai-team.md §4]: TeamDelays
+        //    (frames, per-difficulty) gates the management CHECK pass; within a
+        //    check pass, AutocreateTime (minutes) gates the actual SPAWN; the
+        //    TotalAITeamCap hard cap is enforced inside select_autocreate_team.
+        //    At most ONE new team per spawn, highest priority first, deterministic.
+        st.check_clock += dt;
+        const double check_period = (double)tc.rules.team_delay_frames / 15.0;
+        if (st.check_clock >= check_period) {
+            st.check_clock = 0.0;
+            st.spawn_clock += check_period;
+            const double spawn_period = tc.rules.autocreate_time_min * 60.0;  // min->s
+            if (st.spawn_clock >= spawn_period) {
+                st.spawn_clock = 0.0;
+                // CONTRACT F: select_autocreate_team takes a trailing seeded rng
+                // (the house's AiTeamState::rng — deterministic, never wall-clock).
+                const int pick = select_autocreate_team(tc.aimd, tc.house_name,
+                                                        st.teams, rec.credits,
+                                                        tc.rules, st.rng);
+                if (pick >= 0) {
+                    TeamInstance t;
+                    t.teamtype = pick;
+                    st.teams.push_back(t);
+                    ++st.teams_created;
+                }
+            }
+        }
+
+        // 5) Recruit-idle first [RE: ai-team.md §2] (re-scanned per team so a
+        //    unit claimed by an earlier team is not offered to a later one),
+        //    then ONE production intent per house tick through the EXISTING
+        //    queues — tab2 (Infantry) / tab3 (Vehicle) routing [RE: §6].
+        //    ai_idle_units returns ASCENDING unit-key order (contract D).
+        for (TeamInstance& t : st.teams) {
+            if (t.state != TeamState::Recruiting) continue;
+            recruit_idle(t, tc.aimd, ai_idle_units(h, rec));
+        }
+        const int want = next_produce_type(st.teams, tc.aimd, rec.credits,
+                                           rec.cfg.mods.cost_mul, tc.unit_roster,
+                                           tc.rules);
+        if (want >= 0) {
+            const bool veh = tc.unit_roster[want].is_vehicle;
+            const QueueCat cat = veh ? QueueCat::Vehicle : QueueCat::Infantry;
+            const std::vector<int>& ft = veh ? tc.veh_factory_types : tc.inf_factory_types;
+            const bool factory = !factory_category_lost(ft, h);
+            // BuildSlowdown OVER-QUEUE damp [RE-GATE APPLIED: ai-team.md §6]: on
+            // Normal/Difficult, do NOT start another of a category the house
+            // already has on-hand (contract E — YOU compute the flag). The wanted
+            // type's queue is already guarded (producing == -1); the damp blocks
+            // additionally if a unit of the wanted type is already standing
+            // on-hand (launched, not yet team-consumed). BuildSlowdown is a
+            // difficulty BYTE, NOT a build-time multiplier — no speed penalty.
+            bool onhand_of_type = false;
+            for (const Unit& u : units_)
+                if (u.alive && u.die_time < 0.0 && u.house == h &&
+                    ai_unit_type_of(rec, u) == want) { onhand_of_type = true; break; }
+            if (rec.queues.producing(cat) == -1 && factory &&
+                !build_slowdown_blocks(tc.rules, onhand_of_type) &&
+                can_start_unit(rec.queues.state(cat), want, tc.unit_roster,
+                               buildings_, rec.cfg.roster, h, rec.cfg.groups,
+                               factory)) {
+                // Scalar start + slot restamp — the AI-1 building idiom: the
+                // difficulty cost handicap on the charge and the BuildTime
+                // handicap on the speed. No BuildSlowdown time-mul.
+                const int cost = tc.unit_roster[want].cost;
+                const int charge = std::max(1, (int)(cost * rec.cfg.mods.cost_mul));
+                rec.queues.set_credits(rec.credits);
+                start(rec.queues.state(cat), cost, charge,
+                      rec.cfg.build_speed * rec.cfg.mods.build_time_mul);
+                rec.queues.state(cat).slot.type = want;
+                rec.credits = rec.queues.credits();
+            }
+        }
+
+        // 6) Step every team (pure brain) + execute its command (impure glue);
+        //    Disbanding teams release survivors (they simply stop being members
+        //    -> idle, re-recruitable) and are erased [RE: ai-team.md §2].
+        for (int i = 0; i < (int)st.teams.size();) {
+            TeamInstance& t = st.teams[i];
+            TeamView view;
+            ai_fill_team_view(h, rec, t, view);
+            const TeamCommand c =
+                step_team(t, view, tc.aimd, st.rng, dt, tc.rules.multiplay);
+            ai_execute_team_command(h, rec, t, c);
+            // CONTRACT A backstop [no forever-stall in Gathering]: if a gather
+            // move was issued but every live member has stopped short of the
+            // (realized) gather focus — the snapped cell was unreachable / boxed
+            // — re-pick a fresh ring cell (new seeded angle) and re-issue next
+            // tick so the team is guaranteed to make progress, never wedged.
+            if (t.state == TeamState::Gathering && t.move_issued) {
+                bool any_alive = false, any_moving = false, all_within = true;
+                for (int m : t.members) {
+                    if (m < 0 || m >= (int)units_.size()) continue;
+                    const Unit& u = units_[m];
+                    if (!u.alive || u.die_time >= 0.0) continue;
+                    any_alive = true;
+                    if (u.moving()) any_moving = true;
+                    const long long ddx = u.cell_x - t.gather_x;
+                    const long long ddy = u.cell_y - t.gather_y;
+                    if ((double)(ddx * ddx + ddy * ddy) >
+                        kAiStrayCells * kAiStrayCells)
+                        all_within = false;
+                }
+                if (any_alive && !any_moving && !all_within) {
+                    const Cellxy g = gather_cell(view.enemy_x, view.enemy_y, st.rng);
+                    t.gather_x = g.x;
+                    t.gather_y = g.y;
+                    t.move_issued = false;
+                }
+            }
+            if (t.state == TeamState::Disbanding) {
+                // Release survivors: stand each live member DOWN (stop any
+                // in-flight move) so the freed unit is IMMEDIATELY idle &
+                // re-recruitable — not left walking to an abandoned gather goal
+                // (its `path` would otherwise persist, keeping it non-idle so a
+                // replacement team wrongly PRODUCES instead of re-recruiting it)
+                // [RE: ai-team.md §2 — "release survivors -> idle, re-recruitable"].
+                for (int m : t.members) {
+                    if (m < 0 || m >= (int)units_.size()) continue;
+                    Unit& u = units_[m];
+                    if (!u.alive || u.die_time >= 0.0) continue;
+                    occ_.release_all_of(m, u.cell_x, u.cell_y);
+                    occ_.set(u.cell_x, u.cell_y, m);
+                    u.path.clear();
+                    u.path_idx = 0;
+                }
+                st.teams.erase(st.teams.begin() + i);
+            } else {
+                ++i;
+            }
+        }
+    }
+}
+
 void World::step(double dt) {
     step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
@@ -1137,7 +1620,11 @@ void World::step(double dt) {
     // the existing production/economy step, and ONLY when a house is
     // AI-flagged. The five demo scripts flag no AI house, so ai_any_ stays
     // false and this is a no-op -> byte-identical to before this phase.
-    if (ai_any_) step_ai_houses(dt);
+    if (ai_any_) {
+        step_ai_houses(dt);
+        step_ai_teams(dt);  // AFTER the base brain: base tick then team tick,
+                            // fixed deterministic order [RE: ai-team.md; spec §5]
+    }
 }
 
 std::vector<int> unit_draw_order(const std::vector<Unit>& units) {

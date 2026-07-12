@@ -8,6 +8,8 @@
 #include <tuple>
 #include <vector>
 
+#include "ai_team.hpp"        // AI-2 offensive-teams: AiTeamState/TeamInstance/opcodes
+#include "aimd_parse.hpp"     // AI-2: AimdData/TaskForce/ScriptType/TeamType
 #include "building.hpp"
 #include "factory.hpp"        // Production phase: exit_cell/primary_factory/set_primary
 #include "harvest.hpp"        // Economy phase: HarvState/HarvestEvent/OreValues/kUnloadSecsPerBale
@@ -1991,4 +1993,161 @@ TEST_CASE("World: a PRE-BUILT building is synced into its plan node and rebuilt 
     // (the pre-fix bug placed it near the ConYard center instead).
     CHECK(world.buildings()[rebuilt.building].cx == napowr_cx);
     CHECK(world.buildings()[rebuilt.building].cy == napowr_cy);
+}
+
+// ---- AI-2 offensive-teams phase [RE: ai-team.md] : step_ai_teams integration ----
+
+namespace {
+// Tiny AI-2 world config: buildings [0]=NACNST conyard, [1]=NAHAND barracks;
+// unit roster [0] = one infantry type (image "AITEST"). aimd: ONE autocreate
+// TeamType needing 1 x type0, script = attack-anything then success.
+ra2engine::AiHouseConfig ai2_cfg(bool teams_enabled) {
+    ra2engine::AiHouseConfig cfg;
+    cfg.roster.resize(2);
+    cfg.roster[0].id = "NACNST"; cfg.roster[0].conyard = true;
+    cfg.roster[0].cost = 3000; cfg.roster[0].tech_level = 1;
+    cfg.roster[0].strength = 1000; cfg.roster[0].adjacent = 2;
+    cfg.roster[1].id = "NAHAND"; cfg.roster[1].cost = 500;
+    cfg.roster[1].tech_level = 1; cfg.roster[1].strength = 500;
+    cfg.roster[1].adjacent = 2;
+    cfg.buildup_totals = {0.0, 0.0};
+    // Empty AiCatalog -> the AI-1 base brain plans nothing (all -1 skipped);
+    // this test exercises ONLY the team brain.
+    ra2engine::DifficultyGroupRaw g[3];
+    for (int i = 0; i < 3; ++i) {
+        g[i].cost = ra2engine::kDifficultyCost[i];
+        g[i].build_time = ra2engine::kDifficultyBuildTime[i];
+        g[i].build_delay = ra2engine::kDifficultyBuildDelayMin[i];
+        g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];
+    }
+    cfg.mods = ra2engine::difficulty_mods(ra2engine::AiDifficulty::Normal, g);
+    cfg.build_speed = 0.05;    // 200c infantry -> 9 frames -> fast test builds
+    cfg.start_credits = 10000;
+    if (!teams_enabled) return cfg;
+    cfg.team.enabled = true;
+    cfg.team.house_name = "Russians";
+    cfg.team.inf_factory_types = {1};   // NAHAND
+    cfg.team.veh_factory_types = {};
+    // Fast test clocks (the REAL cadences are the Task 3 constants
+    // [RE: ai-team.md §4]): TeamDelays check pass every 1 s, AutocreateTime spawn
+    // every ~1 s, so an autocreate team lands quickly in the short test window.
+    cfg.team.rules.team_delay_frames = 15;         // 1 s management check pass
+    cfg.team.rules.autocreate_time_min = 1.0 / 60.0;  // ~1 s spawn cadence
+    ra2engine::UnitTypeDef u;
+    u.id = "E2TEST";
+    u.cost = 200;
+    u.tech_level = 1;
+    u.is_vehicle = false;
+    u.prerequisite = {"NAHAND"};
+    u.combat.strength = 100;
+    u.combat.image = "AITEST";
+    cfg.team.unit_roster.push_back(u);
+    ra2engine::TaskForce tf;
+    tf.id = "TF1";
+    tf.members = {{1, 0}};              // 1 x type0
+    cfg.team.aimd.taskforces.push_back(tf);
+    ra2engine::ScriptType sc;
+    sc.id = "SC1";
+    sc.actions = {{ra2engine::kOpAttackQuarry, ra2engine::kQuarryAnything},
+                  {ra2engine::kOpDisband, 0}};
+    cfg.team.aimd.scripts.push_back(sc);
+    ra2engine::TeamType tt;
+    tt.id = "TT1";
+    tt.house = "Russians";
+    tt.taskforce = 0;
+    tt.script = 0;
+    tt.priority = 7;
+    tt.max = 1;
+    tt.autocreate = true;
+    cfg.team.aimd.teams.push_back(tt);
+    return cfg;
+}
+}  // namespace
+
+TEST_CASE("World: step_ai_teams firewall - team.enabled=false means no teams ever") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.enable_ai_house(1, ai2_cfg(/*teams_enabled=*/false));
+    const std::size_t nu = world.units().size();
+    for (int i = 0; i < 300; ++i) world.step(1.0 / 15.0);
+    REQUIRE(world.ai_team_state(1) != nullptr);
+    CHECK(world.ai_team_state(1)->teams.empty());        // firewall held
+    CHECK(world.ai_team_state(1)->teams_created == 0);
+    CHECK(world.units().size() == nu);                   // nothing produced
+    CHECK(world.ai_unit_producing(1, 0) == -1);
+}
+
+TEST_CASE("World: a team recruits an IDLE unit first and attacks the player") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    // An IDLE house-1 combat unit of the roster type (image match) + a
+    // house-0 target unit placed WELL OUTSIDE auto-acquire reach (20 cells,
+    // weapon range 4) so the AI unit stays genuinely idle/recruitable until
+    // the TEAM issues the attack order — the recruit-idle premise under test.
+    ra2engine::UnitCombat uc;
+    uc.strength = 100;
+    uc.image = "AITEST";
+    uc.damage = 10; uc.rof = 15; uc.range = 4.0;
+    uc.verses = std::vector<int>(11, 100);
+    world.add_combat_unit(c->x + 3, c->y + 2, /*house=*/1, uc);
+    ra2engine::UnitCombat pc0 = uc;
+    pc0.image = "PLTEST";
+    world.add_combat_unit(c->x + 20, c->y + 2, /*house=*/0, pc0);
+    world.enable_ai_house(1, ai2_cfg(/*teams_enabled=*/true));
+    const std::size_t nu = world.units().size();
+    // Step: autocreate fires (1 s test clock), recruit-idle claims the
+    // standing unit (NO production needed), the team gathers then executes
+    // attack-anything at the house-0 unit.
+    bool attacked = false;
+    for (int i = 0; i < 1200 && !attacked; ++i) {
+        world.step(1.0 / 15.0);
+        const ra2engine::Unit& u = world.units()[0];   // the AI unit
+        attacked = u.attack_order && (u.target >= 0 || u.target_building >= 0);
+    }
+    REQUIRE(world.ai_team_state(1) != nullptr);
+    CHECK(world.ai_team_state(1)->teams_created == 1);   // Max=1 respected
+    CHECK(world.units().size() == nu);                   // recruit-idle, NOT produce
+    CHECK(world.ai_unit_producing(1, 0) == -1);          // Infantry queue never ran
+    REQUIRE(attacked);
+    CHECK(world.units()[0].target == 1);                 // the house-0 unit
+}
+
+TEST_CASE("World: a team produces its shortfall through the EXISTING Infantry queue") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.add_building(1, c->x + 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);  // NAHAND
+    world.enable_ai_house(1, ai2_cfg(/*teams_enabled=*/true));
+    const std::size_t nu = world.units().size();
+    const double credits0 = world.ai_credits(1);
+    // No idle unit exists -> next_produce_type drives the Infantry queue
+    // (tab2) -> launch_unit spawns at the barracks exit -> the unit is
+    // claimed into the recruiting team [RE: ai-team.md §2/§6].
+    for (int i = 0; i < 1200 && world.units().size() < nu + 1; ++i)
+        world.step(1.0 / 15.0);
+    REQUIRE(world.units().size() == nu + 1);
+    const ra2engine::Unit& made = world.units()[nu];
+    CHECK(made.house == 1);
+    CHECK(made.image == "AITEST");
+    CHECK(world.ai_credits(1) < credits0);               // charged through the queue
+    REQUIRE(world.ai_team_state(1) != nullptr);
+    REQUIRE(world.ai_team_state(1)->teams.size() >= 1);
+    const ra2engine::TeamInstance& t = world.ai_team_state(1)->teams[0];
+    REQUIRE(t.members.size() == 1);
+    CHECK(t.members[0] == (int)nu);                      // claimed on launch
+    CHECK(t.member_types[0] == 0);
+    // The single-slot queue held ONE unit at a time (Max=1 team of 1):
+    for (int i = 0; i < 300; ++i) world.step(1.0 / 15.0);
+    CHECK(world.units().size() == nu + 1);               // no runaway production
 }
