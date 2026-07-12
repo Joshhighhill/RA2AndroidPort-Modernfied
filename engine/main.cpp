@@ -19,6 +19,7 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <climits>
 #include <cmath>
@@ -4399,6 +4400,235 @@ int run_demo_prod() {
     return bad ? 1 : 0;
 }
 
+// FNV hash of the AI-1 end state for --demo-ai-base's two-run byte-identity
+// gate [RE: ai-base.md]: the SORTED alive-building list [type, cell, hp] +
+// credits + power totals + the planned-node list. A NEW function; world_hash
+// / econ_hash / prod_hash UNTOUCHED.
+uint64_t ai_base_hash(const ra2engine::World& world, int house,
+                      const std::vector<ra2engine::BuildingTypeDef>& roster) {
+    uint64_t h = 1469598103934665603ULL;  // FNV offset basis
+    std::vector<std::array<int, 4>> rows;
+    for (const ra2engine::Building& b : world.buildings()) {
+        if (!b.alive || b.house != house) continue;
+        rows.push_back({b.type, b.cx, b.cy, b.hp});
+    }
+    std::sort(rows.begin(), rows.end());
+    for (const auto& r : rows)
+        for (int x : r) h = fnv_mix(h, static_cast<uint64_t>(x));
+    h = fnv_mix(h, static_cast<uint64_t>(std::llround(world.ai_credits(house))));
+    const ra2engine::PowerTotals pt =
+        ra2engine::power_totals(world.buildings(), roster, house);
+    h = fnv_mix(h, static_cast<uint64_t>(pt.output));
+    h = fnv_mix(h, static_cast<uint64_t>(pt.drain));
+    if (const ra2engine::AiBaseState* st = world.ai_state(house)) {
+        for (const ra2engine::PlannedNode& n : st->plan) {
+            h = fnv_mix(h, static_cast<uint64_t>(n.type));
+            h = fnv_mix(h, static_cast<uint64_t>(n.cx));
+            h = fnv_mix(h, static_cast<uint64_t>(n.cy));
+            h = fnv_mix(h, static_cast<uint64_t>(n.dead ? 1 : 0));
+            h = fnv_mix(h, static_cast<uint64_t>(n.building >= 0 ? 1 : 0));
+        }
+    }
+    return h;
+}
+
+struct DemoAiBaseResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the AI-base demo (fixed 15 Hz dt, frame-driven, rendered
+// + headless byte-identical). Spawns a LONE Soviet ConYard (NACNST) for house
+// 1, AI-flags it at a FIXED difficulty / credits / seed, and lets the existing
+// base-planning machinery build out over kAiBaseFrames. Witnesses record queue
+// starts + placements; ai_base_hash pins the end state. This is the ONLY
+// headless path that flags an AI house (intentional -- it IS the AI gate).
+DemoAiBaseResult simulate_ai_base(Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                  MinerAssets& miners, const Rules& rules,
+                                  const std::vector<const VehicleAssets*>& vlist,
+                                  const OreArt& ore_art, bool render, SDL_Renderer* ren,
+                                  ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                                  int W, int H, const std::string& start_png,
+                                  const std::string& end_png) {
+    DemoAiBaseResult r;
+    ra2engine::World world = build_world(a, ua, 0);
+    wire_economy(world, ba, rules);  // ore + harvest stepping for the AI's income
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    if (!pc) { r.ok = false; return r; }
+
+    // Lone Soviet ConYard, house 1, validity-bypassed like spawn_base's
+    // ConYard branch (the very first building has no neighbors).
+    const int nacnst = roster_index(ba, "NACNST");
+    if (nacnst < 0 || !ba.art[nacnst].ok) { r.ok = false; return r; }
+    {
+        const ra2engine::BuildingTypeDef& d = ba.roster[nacnst];
+        const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+            pc->x, pc->y, d.fw, d.fh, /*house=*/1, d.adjacent, world.passable(),
+            world.grid_w(), world.grid_h(), world.occupancy(), world.buildings(),
+            /*bypass=*/true);
+        if (!chk.ok) { r.ok = false; r.witness.emplace_back("[ai-base] ConYard placement FAILED"); return r; }
+        world.add_building(nacnst, pc->x, pc->y, d.fw, d.fh, 1, d.strength, d.armor_ix,
+                           ba.art[nacnst].buildup_total, /*instant=*/true);
+    }
+
+    // Fixed difficulty + fixed credits + fixed seed (AiBaseState's rng seed
+    // is a compile-time constant) -> fully deterministic [RE: ai-base.md].
+    world.enable_ai_house(1, make_ai_config(ba, rules, ra2engine::AiDifficulty::Normal,
+                                            (double)rules.mp_money()));
+
+    std::vector<int> bstates;  // FreeUnit grand-opening tracker (AI refinery miner)
+    const double dt = 1.0 / 15.0;
+    const long kAiBaseFrames = 5400;  // fixed run length: 6 min at 15 Hz
+    long frame = 0;
+    std::size_t known_buildings = world.buildings().size();
+    int last_prod[2] = {-1, -1};
+
+    auto step_one = [&]() {
+        world.step(dt);
+        spawn_free_units_on_open(world, ba, rules, miners, bstates);
+        // Witness: queue starts (build-sequence authenticity eyeball).
+        for (int q = 0; q < 2; ++q) {
+            const int now = world.ai_producing(1, q);
+            if (now != -1 && now != last_prod[q]) {
+                char b[128];
+                std::snprintf(b, sizeof b, "[ai-base] start %s queue=%s frame=%ld",
+                              ba.roster[now].id.c_str(), q == 0 ? "structure" : "defense",
+                              frame);
+                r.witness.emplace_back(b);
+            }
+            last_prod[q] = now;
+        }
+        // Witness: placements.
+        while (known_buildings < world.buildings().size()) {
+            const ra2engine::Building& nb = world.buildings()[known_buildings];
+            char b[160];
+            std::snprintf(b, sizeof b,
+                          "[ai-base] placed %s at (%d,%d) frame=%ld credits=%d",
+                          ba.roster[nb.type].id.c_str(), nb.cx, nb.cy, frame,
+                          (int)std::llround(world.ai_credits(1)));
+            r.witness.emplace_back(b);
+            ++known_buildings;
+        }
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba,
+                         ore_art.any ? &ore_art : nullptr);
+        }
+    };
+
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+    while (frame < kAiBaseFrames) step_one();
+
+    const ra2engine::PowerTotals pt =
+        ra2engine::power_totals(world.buildings(), ba.roster, 1);
+    {
+        char b[160];
+        std::snprintf(b, sizeof b,
+                      "[ai-base] final buildings=%d credits=%d power=%d/%d plan=%d",
+                      (int)known_buildings, (int)std::llround(world.ai_credits(1)),
+                      pt.output, pt.drain,
+                      world.ai_state(1) ? (int)world.ai_state(1)->plan.size() : -1);
+        r.witness.emplace_back(b);
+    }
+    r.hash = ai_base_hash(world, 1, ba.roster);
+    {
+        char b[64];
+        std::snprintf(b, sizeof b, "[ai-base] ai_base_hash=%016llx",
+                      static_cast<unsigned long long>(r.hash));
+        r.witness.emplace_back(b);
+    }
+    // Sanity: the AI actually built out (>= power + barracks + war factory,
+    // the recovered plan head [RE: ai-base.md §2]).
+    if (known_buildings < 4) { r.ok = false; r.witness.emplace_back("[ai-base] built too little"); }
+    if (render) { step_one(); capture_png(ren, end_png, W, H); }
+    return r;
+}
+
+// --demo-ai-base: the AI-1 base-planning integration gate (6th permanent
+// byte-identity gate). Runs simulate_ai_base rendered (hidden window +
+// start/end screenshots) then headless from a FRESH World, and byte-compares
+// the two witness logs + ai_base hashes. Exit 0 iff both runs are byte-
+// identical AND both `ok`.
+int run_demo_ai_base() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_ai_base_start.png";
+    const std::string end_png = scratch + "demo_ai_base_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-ai-base] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    const int nacnst = roster_index(ba, "NACNST");
+    if (nacnst < 0 || !ba.art[nacnst].ok) {
+        std::cerr << "[demo-ai-base] FAILED: NACNST (Soviet ConYard) unavailable\n";
+        return 1;
+    }
+    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+    OreArt ore_art = load_ore_art(ra2);
+    // Render vlist = the War Miner voxel, so the AI's harvester draws.
+    std::vector<const VehicleAssets*> vlist;
+    if (miners.harv.ok) vlist.push_back(&miners.harv);
+
+    // Camera centered on the enemy ConYard region (same math as run_demo_prod).
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(pc->x + 4, pc->y + 6, 0, 60, 30, 15);
+        cam.x = (W - 168) / 2 - p.x;  // playfield left of the sidebar strip
+        cam.y = H / 2 - p.y;
+    }
+
+    // Run 1: rendered (hidden window) + start/end screenshots.
+    DemoAiBaseResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-ai-base)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_ai_base(a, ua, ba, miners, rules, vlist, ore_art,
+                                  /*render=*/true, ren, &tc, &cam, W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless -- identical script from a FRESH World.
+    DemoAiBaseResult r2 = simulate_ai_base(a, ua, ba, miners, rules, vlist, ore_art,
+                                           /*render=*/false, nullptr, nullptr, nullptr, W, H,
+                                           "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-ai-base] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    std::cout << "deterministic=" << (identical ? "yes" : "no") << " lines=" << r1.witness.size()
+              << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -4482,6 +4712,7 @@ int main(int argc, char** argv) {
         bool demo_base = false;
         bool demo_econ = false;
         bool demo_prod = false;
+        bool demo_ai_base = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -4526,6 +4757,8 @@ int main(int argc, char** argv) {
                 demo_econ = true;
             } else if (arg == "--demo-prod") {
                 demo_prod = true;
+            } else if (arg == "--demo-ai-base") {
+                demo_ai_base = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
@@ -4537,6 +4770,7 @@ int main(int argc, char** argv) {
         if (demo_base) return run_demo_base();
         if (demo_econ) return run_demo_econ();
         if (demo_prod) return run_demo_prod();
+        if (demo_ai_base) return run_demo_ai_base();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
