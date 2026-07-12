@@ -1153,11 +1153,21 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
             auto free_cell = [this](int x, int y) {
                 return walkable(x, y) && occ_.is_free(x, y);
             };
-            auto nearest_free = [&](int cx, int cy, int maxr) -> Cellxy {
+            // max_off2 < 0 => no offset bound (gather snap). Otherwise ring
+            // cells whose SQUARED offset from the ideal exceeds max_off2 are
+            // rejected, so the snapped cell stays within that distance of the
+            // ideal (used by the Executing snap to keep the pure CloseEnough
+            // arrival predicate satisfiable — a radius-2 corner is 2.83 cells,
+            // beyond CloseEnough 2.25, so it would wedge the move opcode).
+            auto nearest_free = [&](int cx, int cy, int maxr,
+                                    double max_off2) -> Cellxy {
                 for (int r = 0; r <= maxr; ++r)
                     for (int oy = -r; oy <= r; ++oy)
                         for (int ox = -r; ox <= r; ++ox) {
                             if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
+                            if (max_off2 >= 0.0 &&
+                                (double)(ox * ox + oy * oy) > max_off2)
+                                continue;  // stay within CloseEnough of the ideal
                             const int x = cx + ox, y = cy + oy;
                             if (free_cell(x, y)) return Cellxy{x, y};
                         }
@@ -1165,12 +1175,17 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
             };
             int gx = c.x, gy = c.y;
             if (team.state == TeamState::Gathering) {
-                const Cellxy s = nearest_free(c.x, c.y, 8);
+                const Cellxy s = nearest_free(c.x, c.y, 8, -1.0);  // gather snap unchanged
                 if (s.x >= 0) { gx = s.x; gy = s.y; }
                 team.gather_x = gx;   // realized focus (contract A)
                 team.gather_y = gy;
             } else {
-                const Cellxy s = nearest_free(c.x, c.y, 2);  // <= CloseEnough
+                // Snap only to cells within CloseEnough of the ideal so the pure
+                // arrival predicate (distance to the ideal cell) is satisfiable
+                // [FIX: latent move-snap wedge — corner of a radius-2 ring is
+                // 2.83 > kAiCloseEnoughCells].
+                const Cellxy s = nearest_free(
+                    c.x, c.y, 2, kAiCloseEnoughCells * kAiCloseEnoughCells);
                 if (s.x >= 0) { gx = s.x; gy = s.y; }
             }
             static const int dx[9] = {0, 1, -1, 0, 0, 1, -1, 1, -1};

@@ -274,17 +274,58 @@ TEST_CASE("ai_team: jump consumes the tick; disband opcode ends the team") {
     CHECK(t2.state == TeamState::Disbanding);
 }
 
-TEST_CASE("ai_team: a wiped team disbands from any post-recruiting state") {
+TEST_CASE("ai_team: a wiped team disbands from any post-recruiting state (non-vacuous)") {
+    // The top-of-step liveness guard [RE: ai-team.md §2] disbands a launched team
+    // the instant it has zero LIVE members, BEFORE any state-specific handling.
+    // Without it a wiped Gathering team would satisfy all_within(Stray) VACUOUSLY
+    // (true over an empty live set) and advance to Executing, where an attack
+    // action re-emits forever (nothing sets Disbanding) — the dead team then
+    // permanently occupies its Max/TotalAITeamCap slot and the AI goes inert.
     AimdData d = make_aimd();
-    TeamInstance t = make_team();
     std::uint32_t rng = 1u;
-    claim_full(t);
-    t.state = TeamState::Executing;
-    t.script_pc = 1;
-    TeamView v = full_view(true);
-    for (TeamMemberView& m : v.members) m.alive = false;
-    (void)step_team(t, v, d, rng, kDt);
-    CHECK(t.state == TeamState::Disbanding);
+
+    // --- Executing with zero live members (all flags cleared, not yet pruned) ---
+    {
+        TeamInstance t = make_team();
+        claim_full(t);
+        t.state = TeamState::Executing;
+        t.script_pc = 1;                        // an attack action (quarry)
+        TeamView v = full_view(true);
+        for (TeamMemberView& m : v.members) m.alive = false;
+        (void)step_team(t, v, d, rng, kDt);
+        CHECK(t.state != TeamState::Executing);  // non-vacuous: did NOT stay Executing
+        CHECK(t.state == TeamState::Disbanding);
+    }
+
+    // --- Gathering with zero live members: must NOT vacuously advance to
+    // Executing via all_within over an empty live set. Members sit FAR from the
+    // gather ring, so the only path to Executing would be the vacuous predicate. ---
+    {
+        TeamInstance t = make_team();
+        claim_full(t);
+        TeamView v = full_view(true);
+        (void)step_team(t, v, d, rng, kDt);      // Recruiting -> Gathering
+        REQUIRE(t.state == TeamState::Gathering);
+        (void)step_team(t, v, d, rng, kDt);      // issues the ONE gather move
+        REQUIRE(t.state == TeamState::Gathering);
+        for (TeamMemberView& m : v.members) m.alive = false;  // whole team dies
+        (void)step_team(t, v, d, rng, kDt);
+        CHECK(t.state != TeamState::Executing);  // non-vacuous: did NOT go Executing
+        CHECK(t.state == TeamState::Disbanding);
+    }
+
+    // --- Gathering with a fully EMPTY member view (caller already pruned dead) ---
+    {
+        TeamInstance t = make_team();
+        claim_full(t);
+        TeamView v = full_view(true);
+        (void)step_team(t, v, d, rng, kDt);      // -> Gathering
+        REQUIRE(t.state == TeamState::Gathering);
+        v.members.clear();                       // all members pruned away
+        (void)step_team(t, v, d, rng, kDt);
+        CHECK(t.state != TeamState::Executing);
+        CHECK(t.state == TeamState::Disbanding);
+    }
 }
 
 TEST_CASE("ai_team: step_team is deterministic") {
