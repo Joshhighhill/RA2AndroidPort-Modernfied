@@ -315,6 +315,82 @@ Deviations we take for AI-1 (adjudicated divergences from the recovered
   normal→22, easiest→6, §2); and the `BuildDelay` minutes→frames conversion
   (minutes×60 seconds, §1).
 
+The AI-2 phase gives the enemy offense: it forms and marches **offensive
+squads** on top of the AI-1 base brain. `engine/aimd_parse` reads the real
+`aimd.ini` (index sections + numbered entries, whole-team art-guard-drop) into
+the recovered **TaskForce / ScriptType / TeamType** data model — the same
+`Ini::section()` ordered-list reader every other loader uses, no new file
+format. The pure brain, `engine/ai_team` (`AiTeamState`/`TeamInstance`,
+`step_team`), runs each team through a four-state lifecycle —
+**Recruiting → Gathering → Executing → Disbanding** — driven by a **ScriptType
+interpreter** (`classify_op`) over the recovered ~90-opcode table: the
+implementable core (attack-quarry/attack-move/attack-house/-building/-units,
+move-waypoint/-cell, guard-area, timed-guard, regroup, scatter, jump, disband)
+is fully dispatched; every opcode belonging to a subsystem this engine doesn't
+model yet (e.g. AIWaitFor-triggers, non-implemented base-tab opcodes) is
+interpreted to an **inert skip** (logged, `pc++`) rather than dropped from the
+table, so the interpreter's opcode coverage matches the recovered table
+1:1. Team **selection** (`select_autocreate_team`) is autocreate-only —
+`IsBaseDefense=no`, optional `House=` restriction, `Priority` ordering, `Max`
+cap (`Max=0`=uncapped), a `TotalAITeamCap`, and a `CreditReserve` gate, one
+spawn per autocreate tick — and **fill** is two-source: `recruit_idle` claims
+an already-IDLE unit of a needed type first, and only the shortfall
+(`next_produce_type`) is queued for production. Critically, none of this is
+new production machinery: `step_ai_teams` drives teams **only** through the
+EXISTING Infantry/Vehicle production queues, `launch_unit`, and
+`order_unit_move`/attack orders — the same paths the human player and the AI-1
+base brain already use. Teams gather at a seeded-angle ring around the enemy
+base (`AISafeDistance`) before executing their ScriptType, and march on
+whatever the interpreter's quarry/target opcodes resolve (attack-house
+defaults to the player). `World::step_ai_teams(dt)` runs after
+`step_ai_houses` inside the existing `if (ai_any_)` firewall, gated further by
+a per-house `team.enabled` flag (default `false`), and new AI-team fields are
+excluded from `world_hash` — so with team support off (the default for every
+existing gate and every non-team house), the six legacy gates stay bit-
+identical, re-verified across every task of this phase and re-verified
+here. Calibration authority: `docs/re/ai-team.md` (struct layouts + aimd.ini
+format §1, lifecycle state machine §2, full opcode table §3,
+selection/weighting §4, quarry/target selection §5, production/reserve
+interplay §6); companion of `docs/re/ai-base.md` and `docs/re/production.md`.
+**AITriggerTypes-driven weighted team creation is out of scope for AI-2 and
+lands in AI-3** — this phase's `select_autocreate_team` only ever spawns from
+the always-eligible autocreate pool.
+
+Deviations we take for AI-2 (adjudicated divergences from the recovered
+`ai-team.md` ground truth — not bugs, do not "fix" in review; see
+`docs/re/ai-team.md`'s "Deviations / plan diffs" section for the full,
+cited list):
+- **Engine xorshift32 for AI tie-breaks** (`AiTeamState::rng`, fixed seed)
+  stands in for the original's lockstep game RNG — the AI-1 carry-forward,
+  applied to team RNG draws too.
+- **Synthetic waypoint→cell table** (`make_ai_waypoints`, a deterministic
+  ring around the player base) stands in for the map's `[Waypoints]` section,
+  which stays unparsed until a later phase.
+- **Random-angle gather ring + engine free-cell snap**: the gather cell is a
+  seeded-xorshift32 angle on a circle of radius `AISafeDistance` around the
+  enemy base centre (the recovered rule, `ai-team.md` §2), snapped to a free
+  cell by the engine's own move/path machinery rather than the original's
+  `FUN_0056d750`. The "gathered"/arrival predicate uses the recovered
+  `Stray=2.0`/`CloseEnough=2.25` cell radii.
+- **Quarry class-filter targeting with proxy value + xorshift32 jitter**:
+  targets are scored `distance² × value × seeded-RNG` (`ai-team.md` §5);
+  `value` is a proxy of 1 pre-map, and the jitter uses the engine xorshift32
+  in place of the lockstep RNG **[RE-FALLBACK]**.
+- **BuildSlowdown modelled as an over-queue damp** (a difficulty byte, Easy
+  off / Normal+Difficult on: don't queue more of a category already
+  queued/on-hand) — **not** a build-time multiplier (`ai-team.md` §6).
+- **Single-slot Infantry/Vehicle queues** (one unit building at a time) vs
+  the original's 29-deep queue — carried forward from the Production phase;
+  the single slot maps the recovered one-at-a-time team-production gate.
+- **MoveToCell (0xb) and quarry kinds 5/6/7 (factories / base-defenses /
+  base-threats) resolved coarsely**: MoveToCell resolves to the enemy base
+  centre (no packed-cell unpack pre-map) and quarry 5/6 resolve as any
+  building **[RE-FALLBACK]** — plus every remaining `[RE-FALLBACK]` recorded
+  in `ai-team.md`, cited by §.
+- **DissolveUnfilledTeamDelay is multiplay-only** — the default
+  skirmish/campaign path never auto-dissolves an unfilled team on the timer
+  (`ai-team.md` §2); a `Full=no` team launches as soon as it has a member.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -422,6 +498,14 @@ Headless/verification CLI modes (render one or more frames and exit):
   placement validity the player uses — for a fixed frame budget, then hashes
   the world/AI state (`ai_base_hash`). Runs twice and both runs must produce
   identical witness lines and hash.
+- `ra2engine.exe --demo-ai-team` — the AI-2 offensive-teams integration gate:
+  a Soviet AI house (house 1, a pre-built base, `team.enabled=true`)
+  autocreates a team from the real `aimd.ini`, recruits/produces its
+  TaskForce through the existing queues, gathers near the base, and marches
+  the squad at the player under the ScriptType interpreter
+  (`docs/re/ai-team.md`) — then hashes the team/production/credit state
+  (`ai_team_hash`). Runs twice and both runs must produce identical witness
+  lines and hash.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -429,13 +513,15 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These six headless demos are byte-identity regression gates: any change to
+These seven headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=18` as of the AI-1 phase
-— with the gated hash unaffected each time).
+— with the gated hash unaffected each time). The first six are the legacy
+gates re-verified unchanged by every subsequent phase; `--demo-ai-team` is
+the new AI-2 gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -445,6 +531,7 @@ again with each subsequent roster addition — `roster=18` as of the AI-1 phase
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
+| `--demo-ai-team` | `ai_team_hash=801510409ccd55e7` | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
