@@ -105,9 +105,12 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
     // single radar entry).]
     (void)view;
     std::vector<PlannedNode> plan;
+    int next_id = 0;  // contiguous ids 0..N-1 for the static plan; next_build
+                      // continues the per-state counter past the max (below)
     auto push = [&](int t) {
         if (t < 0 || t >= (int)roster.size()) return;
         PlannedNode n;
+        n.id = next_id++;
         n.type = t;
         plan.push_back(n);
     };
@@ -144,8 +147,14 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
                          const AiRules& ai, const DifficultyMods& mods) {
     // Lazy plan build — the original builds the node vector iff empty
     // (FUN_0050a3e0 -> FUN_005052d0) [RE: ai-base.md §2/§3].
-    if (state.plan.empty())
+    if (state.plan.empty()) {
         state.plan = build_base_plan(view, cat, roster, ai, mods);
+        // Continue the stable-id counter past the ids build_base_plan assigned
+        // so every later insert/append draws a fresh, never-reused id.
+        state.next_node_id = 0;
+        for (const PlannedNode& n : state.plan)
+            if (n.id + 1 > state.next_node_id) state.next_node_id = n.id + 1;
+    }
 
     // PLAN WALK [RE-GATE APPLIED: ai-base.md §1/§2/§5 — FUN_004fe200]: the
     // first UNSATISFIED node in plan order, ONE structure at a time (the
@@ -172,6 +181,7 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
             view.power_drain + (-t.power) >
                 view.power_output - (int)ai.power_surplus) {
             PlannedNode p;
+            p.id = state.next_node_id++;  // stable id -> pending[] never aliases
             p.type = cat.power;
             state.plan.insert(state.plan.begin() + i, p);
             return pick_node(state.plan, i, view, roster, ai, mods);
@@ -194,6 +204,7 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
         if (view.credits < roster[t].cost * mods.cost_mul + ai.credit_reserve)
             continue;  // opportunistic — no wait
         PlannedNode n;
+        n.id = state.next_node_id++;  // stable id for the appended expansion node
         n.type = t;
         state.plan.push_back(n);
         BuildDecision d;

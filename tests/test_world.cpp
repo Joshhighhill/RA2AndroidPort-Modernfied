@@ -1754,4 +1754,157 @@ TEST_CASE("World: AI can_place rejects a partially-off-grid or partially-occupie
                                            world.passable(), world.grid_w(), world.grid_h(),
                                            world.occupancy(), world.buildings(),
                                            /*bypass_adjacency=*/true).ok);
+
+    // AIBaseSpacing(1) gap through the bound closure [RE-GATE APPLIED:
+    // ai-base.md §3]: the AI's can_place probes the foundation EXPANDED by
+    // +2*spacing (origin - s, size + 2*s), so a building placed one cell away
+    // from a candidate must BLOCK that candidate even though the candidate's
+    // RAW foundation is itself free. This exercises the spacing gap, not just
+    // the raw footprint (review Minor #1). Uses a fresh 1x1 candidate clear of
+    // the buildings placed above.
+    const int s = ra2engine::kAiBaseSpacing;  // == 1
+    const int gx = c->x + 3, gy = c->y;       // candidate origin (1x1)
+    auto raw_ok = [&](int x, int y) {
+        return ra2engine::placement_check(x, y, 1, 1, /*house=*/1, /*adjacent=*/2,
+                                          world.passable(), world.grid_w(), world.grid_h(),
+                                          world.occupancy(), world.buildings(),
+                                          /*bypass_adjacency=*/true).ok;
+    };
+    auto spaced_ok = [&](int x, int y) {  // exactly what ai_place_ready binds
+        return ra2engine::placement_check(x - s, y - s, 1 + 2 * s, 1 + 2 * s,
+                                          /*house=*/1, /*adjacent=*/2,
+                                          world.passable(), world.grid_w(), world.grid_h(),
+                                          world.occupancy(), world.buildings(),
+                                          /*bypass_adjacency=*/true).ok;
+    };
+    // Baseline: candidate is buildable and its spacing halo is clear.
+    REQUIRE(raw_ok(gx, gy));
+    REQUIRE(spaced_ok(gx, gy));
+    // Drop a 1x1 building exactly one cell east of the candidate — OUTSIDE the
+    // raw 1x1 footprint but INSIDE the +2*spacing expanded foundation.
+    world.add_building(0, gx + 1, gy, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    CHECK(raw_ok(gx, gy));          // raw footprint still free -> raw check accepts
+    CHECK_FALSE(spaced_ok(gx, gy)); // but the 1-cell gap now blocks the candidate
+}
+
+TEST_CASE("World: a power-preemption insert never corrupts a pending queue's node "
+          "(stable node identity)") {
+    // REGRESSION [fix wave 1]: step_ai_houses stored, per queue, the RAW plan
+    // index of the node in production (rec.state.pending[q]). next_build can
+    // INSERT a power-preemption node at the first-unsatisfied index; an insert
+    // at an index <= a stored pending index shifts the real node by one, but
+    // the stored raw index was NOT updated -> when that queue completed,
+    // ai_place_ready placed the WRONG (shifted) node: wrong type, wrong cell.
+    // The fix gives every PlannedNode a stable id and stores/resolves pending
+    // by id. This test reproduces the shift: a defense is mid-production
+    // (pending[Defense] -> the defense node) when an earlier radar node dies
+    // with power headroom tight, so next_build inserts a Power node AHEAD of
+    // it. The in-production defense must still land at ITS OWN node (defense
+    // type, its own stored cell), NOT the shifted radar node.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // Roster: [0]conyard [1]power(+50) [2]radar(-40 drainer) [3]defense
+    // [4]power2(+100, NOT in the catalog -> the AI never manages it; it only
+    // supplies output so radar's ORIGINAL build clears the preemption gate,
+    // then we kill it to make the radar REBUILD tight).
+    ra2engine::AiHouseConfig cfg;
+    cfg.roster.resize(5);
+    auto& R = cfg.roster;
+    R[0].id = "NACNST"; R[0].conyard = true; R[0].cost = 3000; R[0].tech_level = 1;
+    R[0].strength = 1000; R[0].adjacent = 2;
+    R[1].id = "NAPOWR"; R[1].cost = 600; R[1].tech_level = 1; R[1].strength = 750;
+    R[1].power = 50; R[1].adjacent = 2;
+    R[2].id = "NARADR"; R[2].cost = 1000; R[2].tech_level = 1; R[2].strength = 750;
+    R[2].power = -40; R[2].adjacent = 2;   // drainer -> a preemption target when dead
+    R[3].id = "NALASR"; R[3].cost = 5000; R[3].tech_level = 1; R[3].strength = 1000;
+    R[3].power = 0; R[3].adjacent = 2;     // slow (5000c) so it stays in production
+    R[4].id = "NAPOW2"; R[4].cost = 600; R[4].tech_level = 1; R[4].strength = 750;
+    R[4].power = 100; R[4].adjacent = 2;   // extra output (not a catalog entry)
+    cfg.buildup_totals = {0.0, 0.0, 0.0, 0.0, 0.0};
+    cfg.catalog.conyard = 0; cfg.catalog.power = 1; cfg.catalog.radar = 2;
+    cfg.catalog.defenses = {3};            // one defense type
+    cfg.ai.defense_limit = 1;              // -> exactly ONE defense node in the plan
+    ra2engine::DifficultyGroupRaw g[3];
+    for (int i = 0; i < 3; ++i) {
+        g[i].cost = ra2engine::kDifficultyCost[i];
+        g[i].build_time = ra2engine::kDifficultyBuildTime[i];
+        g[i].build_delay = ra2engine::kDifficultyBuildDelayMin[i];
+        g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];
+    }
+    cfg.difficulty = ra2engine::AiDifficulty::Normal;
+    cfg.mods = ra2engine::difficulty_mods(ra2engine::AiDifficulty::Normal, g);
+    cfg.build_speed = 0.1;
+    cfg.start_credits = 100000;
+
+    // Seed the ConYard and the extra (un-managed) power source, then flag AI.
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    const int power2_idx =
+        world.add_building(4, c->x + 3, c->y, 1, 1, /*house=*/1, 750, 0, 0.0, true);
+    REQUIRE(power2_idx >= 0);
+    world.enable_ai_house(1, cfg);
+
+    const int kRadar = 2, kDefense = 3;
+    auto count_type = [&](int type) {
+        int n = 0;
+        for (const auto& b : world.buildings())
+            if (b.alive && b.state != ra2engine::Building::State::Dead &&
+                b.house == 1 && b.type == type) ++n;
+        return n;
+    };
+    auto find_alive = [&](int type) {
+        for (int i = 0; i < (int)world.buildings().size(); ++i) {
+            const auto& b = world.buildings()[i];
+            if (b.alive && b.state != ra2engine::Building::State::Dead &&
+                b.house == 1 && b.type == type) return i;
+        }
+        return -1;
+    };
+
+    // Phase 1: let the AI build its power node, then the radar (output 150 from
+    // power2+power keeps radar's build under the preemption gate).
+    int steps = 0;
+    for (; steps < 8000 && count_type(kRadar) < 1; ++steps) world.step(1.0 / 15.0);
+    REQUIRE(count_type(kRadar) == 1);
+
+    // Phase 2: step until the AI starts the (slow) defense in the Defense queue.
+    for (; steps < 12000 && world.ai_producing(1, 1) != kDefense; ++steps)
+        world.step(1.0 / 15.0);
+    REQUIRE(world.ai_producing(1, 1) == kDefense);
+
+    // Record the defense node's OWN stored cell (chosen at start, before any
+    // insert) — the place the defense MUST land.
+    const ra2engine::AiBaseState* st = world.ai_state(1);
+    REQUIRE(st != nullptr);
+    int dcx = -1, dcy = -1;
+    for (const ra2engine::PlannedNode& n : st->plan)
+        if (n.type == kDefense) { dcx = n.cx; dcy = n.cy; break; }
+    REQUIRE(dcx != 0);  // a real cell was chosen (not the unset (0,0) sentinel)
+
+    // Kill the extra power source (drops output 150 -> 50, plan power node still
+    // satisfied) AND the radar (its node goes dead). Now rebuilding radar would
+    // push drain past output - PowerSurplus(50), so the NEXT next_build pass
+    // INSERTS a Power node ahead of the radar node — shifting the pending
+    // defense node by one.
+    ra2engine::kill_building(world.buildings()[power2_idx]);
+    const int radar_idx = find_alive(kRadar);
+    REQUIRE(radar_idx >= 0);
+    ra2engine::kill_building(world.buildings()[radar_idx]);
+
+    // Phase 3: run long enough for the insert to fire AND the defense to finish.
+    for (int i = 0; i < 3000 && world.ai_producing(1, 1) == kDefense; ++i)
+        world.step(1.0 / 15.0);
+    REQUIRE(world.ai_producing(1, 1) != kDefense);   // defense completed + placed
+
+    // The defense must have been placed at ITS OWN node: a building of the
+    // DEFENSE type, at the defense node's stored cell. Before the fix the
+    // Defense queue placed the shifted RADAR node instead (wrong type/cell),
+    // so no defense-type building exists here.
+    const int def_idx = find_alive(kDefense);
+    REQUIRE(def_idx >= 0);                            // FAILS before the fix
+    CHECK(world.buildings()[def_idx].cx == dcx);
+    CHECK(world.buildings()[def_idx].cy == dcy);
 }

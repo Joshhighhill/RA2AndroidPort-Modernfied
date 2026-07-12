@@ -114,6 +114,11 @@ DifficultyMods difficulty_mods(AiDifficulty d, const DifficultyGroupRaw (&groups
 // building index while standing, and the destroyed-awaiting-rebuild flag
 // (set by World when the placed building dies; the cell is RETAINED).
 struct PlannedNode {
+    int id = -1;          // STABLE node identity (assigned from AiBaseState::
+                          // next_node_id at creation; never reused). The
+                          // caller keys pending[] on this, NOT the vector
+                          // index, so a mid-plan insert/erase never aliases a
+                          // node in production to the wrong entry.
     int type = -1;        // roster index
     int cx = 0, cy = 0;   // foundation origin cell; (0,0) = not yet chosen [RE: ai-base.md §3 — cell is 0 until placed]
     int building = -1;    // World building index once placed (-1 = not placed)
@@ -123,8 +128,10 @@ struct PlannedNode {
 // Per-house planner state. `plan` is the PRECOMPUTED ORDERED base-node plan
 // (built lazily by next_build when empty — FUN_0050a3e0 builds iff count==0)
 // [RE: ai-base.md §2/§3]. `pending[q]` is the plan index the building
-// currently in queue q (0=Structure, 1=Defense) will fill on placement.
-// `rng` is the engine-local xorshift32 the economy/production phases
+// currently in queue q (0=Structure, 1=Defense) will fill on placement,
+// keyed by the node's STABLE id (see PlannedNode::id / next_node_id) so a
+// power-preemption insert ahead of it can never re-point pending[q] at the
+// wrong node. `rng` is the engine-local xorshift32 the economy/production phases
 // adjudicated [RE-FALLBACK: ai-base.md deviations — stands in for the
 // lockstep game RNG the original consults (build-tick jitter, node-cell
 // jitter); deterministic, NEVER wall-clock].
@@ -140,7 +147,12 @@ struct AiBaseState {
                                // secs = min x 60]
     std::vector<PlannedNode> plan;
     std::uint32_t rng = 0x2545F491u;  // deterministic fixed seed
-    int pending[2] = {-1, -1};
+    int pending[2] = {-1, -1};        // STABLE node id in production per queue
+                                      // (0=Structure, 1=Defense); -1 = idle
+    int next_node_id = 0;             // monotonic id source; every PlannedNode
+                                      // (plan build, preemption insert, and
+                                      // economy-expansion append) draws from
+                                      // it so ids never collide or reuse
 };
 
 // xorshift32 step (same algorithm family the economy phase adjudicated).

@@ -704,8 +704,17 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
 bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
     const int q = cat == QueueCat::Structure ? 0 : 1;
     if (!rec.queues.ready(cat)) return false;
-    const int node_i = rec.state.pending[q];
-    if (node_i < 0 || node_i >= (int)rec.state.plan.size()) {
+    // pending[q] is the node's STABLE id, not a raw index: resolve it by
+    // scanning the plan so a power-preemption insert that shifted vector
+    // indices since production started can never place the wrong node
+    // [fix wave 1]. Id no longer present (node legitimately removed) -> the
+    // existing orphaned-slot path.
+    const int pid = rec.state.pending[q];
+    int node_i = -1;
+    if (pid >= 0)
+        for (int i = 0; i < (int)rec.state.plan.size(); ++i)
+            if (rec.state.plan[i].id == pid) { node_i = i; break; }
+    if (node_i < 0) {
         rec.queues.placed(cat);  // defensive: orphaned ready slot
         rec.state.pending[q] = -1;
         return true;
@@ -871,7 +880,11 @@ void World::step_ai_houses(double dt) {
               cfg.build_speed * cfg.mods.build_time_mul);
         rec.queues.state(cat).slot.type = d.type;
         rec.credits = rec.queues.credits();
-        rec.state.pending[q] = node_i;
+        // Store the node's STABLE id (resolved back to an index in
+        // ai_place_ready), NOT the raw vector index — a later preemption
+        // insert can shift this node without corrupting the pending slot
+        // [fix wave 1].
+        rec.state.pending[q] = rec.state.plan[node_i].id;
     }
 }
 
