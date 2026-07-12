@@ -1049,9 +1049,20 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // Combat) appended at indices 10/11 [RE-GATE APPLIED: production.md §1.1].
     // They land ONLY on tab 1's separate Defense list; spawn_base never places
     // them by name, so demo-base's world_hash is unchanged.
-    static const char* kRoster[12] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    // AI-1 phase appends the recovered Soviet build set at indices 12..17
+    // [RE-GATE APPLIED: ai-base.md §2 -- SovietBaseDefenses = NALASR,NABNKR,
+    // TESLA,NAFLAK; ConcreteWalls -> NAWALL; BuildRadar -> NARADR]. Appended
+    // AFTER the existing 12 so every prior index -- and demo-base's
+    // world_hash -- is unchanged; spawn_base never places them by name; all
+    // six are NA*/T* so the GA*-filtered player sidebar lists are unchanged
+    // too. Missing SHPs just leave art[i].ok=false (existing guard) and
+    // make_ai_config drops them from the AI catalog (never a crash) -- the
+    // GATOW lesson.
+    static const char* kRoster[18] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
-                                       "GAREFN", "NAREFN", "GAPILL", "GATOW"};
+                                       "GAREFN", "NAREFN", "GAPILL", "GATOW",
+                                       "NALASR", "NABNKR", "TESLA",  "NAFLAK",
+                                       "NAWALL", "NARADR"};
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -1103,8 +1114,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
 
-    ba.roster.reserve(12);
-    ba.art.reserve(12);
+    ba.roster.reserve(18);
+    ba.art.reserve(18);
     int ok_n = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
@@ -1264,6 +1275,91 @@ int roster_index(const BuildingAssets& ba, const std::string& id) {
     for (std::size_t i = 0; i < ba.roster.size(); ++i)
         if (ba.roster[i].id == id) return static_cast<int>(i);
     return -1;
+}
+
+// Resolve everything an AI house needs from the loaded assets + rules
+// [RE: ai-base.md §2/§4]. Art-guarded: a catalog entry whose SHP failed to
+// load is dropped (-1 / omitted) so the planner skips that need.
+ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& rules,
+                                        ra2engine::AiDifficulty difficulty,
+                                        double start_credits) {
+    ra2engine::AiHouseConfig cfg;
+    cfg.difficulty = difficulty;
+    cfg.roster = ba.roster;  // the same defs the player machinery uses
+    cfg.buildup_totals.resize(ba.art.size(), 0.0);
+    for (std::size_t i = 0; i < ba.art.size(); ++i)
+        cfg.buildup_totals[i] = ba.art[i].buildup_total;
+    cfg.groups = ba.groups;
+    auto ok_index = [&](const char* id) -> int {
+        const int t = roster_index(ba, id);
+        return (t >= 0 && ba.art[t].ok) ? t : -1;  // art-guard-drop
+    };
+    // Soviet build set [RE-GATE APPLIED: ai-base.md §2 — the RECOVERED [AI]
+    // build lists: BuildConst=NACNST, BuildPower=NAPOWR, BuildRefinery=
+    // NAREFN, BuildBarracks=NAHAND, BuildWeapons=NAWEAP, BuildRadar=NARADR;
+    // SovietBaseDefenses = NALASR,NABNKR,TESLA,NAFLAK (per-Side list — the
+    // [AI] BuildDefense/BuildAA/BuildPDefense/BuildHelipad lists are DEAD);
+    // ConcreteWalls -> NAWALL (first Soviet-ownable of GAWALL,NAWALL,GAFWLL).
+    // Any SHP absent in this install is art-guard-dropped (the GATOW lesson).]
+    cfg.catalog.conyard = ok_index("NACNST");
+    cfg.catalog.power = ok_index("NAPOWR");
+    cfg.catalog.refinery = ok_index("NAREFN");
+    cfg.catalog.barracks = ok_index("NAHAND");
+    cfg.catalog.war_factory = ok_index("NAWEAP");
+    cfg.catalog.radar = ok_index("NARADR");
+    for (const char* d : {"NALASR", "NABNKR", "TESLA", "NAFLAK"}) {
+        const int t = ok_index(d);
+        if (t >= 0) cfg.catalog.defenses.push_back(t);
+    }
+    cfg.catalog.wall = ok_index("NAWALL");
+    // [AI] knobs from the real rulesmd [RE: ai-base.md §2] (constants are the
+    // committed pins; the file read keeps us honest if a mod changes them).
+    cfg.ai.power_surplus =
+        rules.section_double("AI", "PowerSurplus", ra2engine::kAiPowerSurplus);
+    // The key is PowerEmergency (NOT PowerEmergencyFraction); the file says
+    // "75%" -> strtod yields 75 -> normalize to the 0.75 fraction
+    // [RE-GATE APPLIED: ai-base.md §2].
+    double pe = rules.section_double("AI", "PowerEmergency",
+                                     ra2engine::kAiPowerEmergency * 100.0);
+    cfg.ai.power_emergency = pe > 1.0 ? pe / 100.0 : pe;
+    cfg.ai.base_size_add = (int)rules.section_double(
+        "AI", "BaseSizeAdd", (double)ra2engine::kAiBaseSizeAdd);
+    cfg.ai.base_spacing = (int)rules.section_double(
+        "AI", "AIBaseSpacing", (double)ra2engine::kAiBaseSpacing);
+    cfg.ai.refinery_ratio =
+        rules.section_double("AI", "RefineryRatio", ra2engine::kAiRefineryRatio);
+    cfg.ai.refinery_limit = (int)rules.section_double(
+        "AI", "RefineryLimit", (double)ra2engine::kAiRefineryLimit);
+    cfg.ai.war_ratio = rules.section_double("AI", "WarRatio", ra2engine::kAiWarRatio);
+    cfg.ai.war_limit =
+        (int)rules.section_double("AI", "WarLimit", (double)ra2engine::kAiWarLimit);
+    cfg.ai.defense_ratio =
+        rules.section_double("AI", "DefenseRatio", ra2engine::kAiDefenseRatio);
+    cfg.ai.defense_limit = (int)rules.section_double(
+        "AI", "DefenseLimit", (double)ra2engine::kAiDefenseLimit);
+    cfg.ai.credit_reserve =
+        rules.section_double("AI", "CreditReserve", ra2engine::kAiCreditReserve);
+    // Difficulty groups [RE-GATE APPLIED: ai-base.md §4 — the RECOVERED
+    // section names Easy/Normal/Difficult (NOT Medium/Hard); BuildDelay is
+    // MINUTES; BuildSlowdown is yes/no so it comes from the pinned constant].
+    ra2engine::DifficultyGroupRaw g[3];
+    const char* kGroups[3] = {"Easy", "Normal", "Difficult"};  // [RE: ai-base.md §4]
+    for (int i = 0; i < 3; ++i) {
+        g[i].cost = rules.section_double(kGroups[i], "Cost", ra2engine::kDifficultyCost[i]);
+        g[i].build_time =
+            rules.section_double(kGroups[i], "BuildTime", ra2engine::kDifficultyBuildTime[i]);
+        g[i].build_delay = rules.section_double(kGroups[i], "BuildDelay",
+                                                ra2engine::kDifficultyBuildDelayMin[i]);
+        g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];  // yes/no key [RE: ai-base.md §4]
+    }
+    cfg.mods = ra2engine::difficulty_mods(difficulty, g);
+    cfg.build_speed = rules.general_double("BuildSpeed", 0.7);
+    cfg.low_power_penalty = rules.general_double("LowPowerPenaltyModifier", 1.0);
+    cfg.start_credits = start_credits;  // lobby money, UNMODIFIED — no
+                                        // starting-credit multiplier exists
+                                        // in the difficulty sections
+                                        // [RE-GATE APPLIED: ai-base.md §4]
+    return cfg;
 }
 
 // Spawns a base for `house` with foundation origin near (cx, cy) [RE:
@@ -2205,6 +2301,12 @@ int run_interactive(bool no_audio) {
             spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y, /*with_refinery=*/true,
                        miners.harv.ok ? &miners.harv : nullptr, /*harv_chrono=*/false,
                        miners.harv_storage);
+            // AI-1: the enemy house gets the base-planning brain
+            // [RE: ai-base.md]. Interactive path ONLY -- no demo/screenshot
+            // path ever flags an AI house (byte-identity firewall).
+            world.enable_ai_house(
+                1, make_ai_config(ba, rules, ra2engine::AiDifficulty::Normal,
+                                  /*start_credits=*/(double)rules.mp_money()));
         }
     }
     // Building-state tracker for FreeUnit grand-opening spawns (Buildup->Idle).
