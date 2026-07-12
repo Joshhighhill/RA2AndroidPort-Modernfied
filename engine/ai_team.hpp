@@ -221,14 +221,18 @@ int recruit_idle(TeamInstance& team, const AimdData& aimd,
 // Caps: Max (+0xb8) live instances — Max=0 = UNCAPPED (not zero!), else a team
 // is eligible while cntInstances < Max; plus the hard per-house
 // rules.total_team_cap (TotalAITeamCap=30). Also gated on
-// credits >= rules.credit_reserve (the general spend floor). Highest Priority
-// wins, tie = lowest TeamType index. Returns the AimdData::teams index or -1.
-// ONE team per call — the caller enforces one per autocreate-spawn tick.
-// AITriggerTypes-driven creation is AI-3: this function is the whole AI-2
-// creation surface.
+// credits >= rules.credit_reserve (the general spend floor). Higher Priority is
+// strictly preferred; the equal-highest-priority tie is broken by a seeded
+// ai_rand draw among the equal-highest-priority eligible teams
+// [RE-FALLBACK: ai-team.md §4 — stock offensive teams are all Priority=5, so
+// ties are the common case; deterministic seeded xorshift32, NEVER wall-clock].
+// `rng` is the caller's seeded ai_rand stream (AiTeamState::rng). Returns the
+// AimdData::teams index or -1. ONE team per call — the caller enforces one per
+// autocreate-spawn tick. AITriggerTypes-driven creation is AI-3: this function
+// is the whole AI-2 creation surface.
 int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
                            const std::vector<TeamInstance>& live, double credits,
-                           const AiTeamRules& rules);
+                           const AiTeamRules& rules, std::uint32_t& rng);
 
 // Production intent [RE: ai-team.md §6]: the unit-roster type the house should
 // start producing NEXT — the shortfall type of the FIRST (oldest) Recruiting

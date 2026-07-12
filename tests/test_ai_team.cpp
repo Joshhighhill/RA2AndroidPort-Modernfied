@@ -1,5 +1,7 @@
 #include "doctest.h"
 #include <cmath>
+#include <set>
+#include <vector>
 #include "../engine/ai_team.hpp"
 using namespace ra2engine;
 
@@ -331,62 +333,120 @@ AimdData make_aimd2() {
 TEST_CASE("ai_team: select_autocreate_team picks highest priority under caps") {
     const AimdData d = make_aimd2();
     AiTeamRules rules;
+    std::uint32_t rng = 1u;
     std::vector<TeamInstance> live;
     // Highest priority first (TT2 pri 9 beats TT1 pri 7) [RE: ai-team.md §4]:
-    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules) == 1);
+    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules, rng) == 1);
     // Max cap: one live TT2 (max=1) -> TT1 is next [RE: ai-team.md §4]:
     TeamInstance t2;
     t2.teamtype = 1;
     live.push_back(t2);
-    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules) == 0);
+    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules, rng) == 0);
     // TT1 at max=2 -> nothing eligible:
     TeamInstance t0a, t0b;
     t0a.teamtype = 0;
     t0b.teamtype = 0;
     live.push_back(t0a);
     live.push_back(t0b);
-    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules) == -1);
+    CHECK(select_autocreate_team(d, "Russians", live, 10000.0, rules, rng) == -1);
 }
 
 TEST_CASE("ai_team: select_autocreate_team gates on house and CreditReserve") {
     const AimdData d = make_aimd();
     AiTeamRules rules;
+    std::uint32_t rng = 1u;
     const std::vector<TeamInstance> live;
     // House mismatch -> ineligible; case-insensitive match; "<none>" = any
     // [RE-GATE APPLIED: ai-team.md §4 — house-token matching pre-hunt]:
-    CHECK(select_autocreate_team(d, "Americans", live, 10000.0, rules) == -1);
-    CHECK(select_autocreate_team(d, "RUSSIANS", live, 10000.0, rules) == 0);
+    CHECK(select_autocreate_team(d, "Americans", live, 10000.0, rules, rng) == -1);
+    CHECK(select_autocreate_team(d, "RUSSIANS", live, 10000.0, rules, rng) == 0);
     AimdData any = make_aimd();
     any.teams[0].house = "<none>";
-    CHECK(select_autocreate_team(any, "Americans", live, 10000.0, rules) == 0);
+    CHECK(select_autocreate_team(any, "Americans", live, 10000.0, rules, rng) == 0);
     // CreditReserve floor [RE-GATE APPLIED: ai-team.md §4/§6 — pre-hunt:
     // creation requires credits >= kAiCreditReserve(100), the banked floor]:
     CHECK(select_autocreate_team(d, "Russians", live, rules.credit_reserve - 1.0,
-                                 rules) == -1);
+                                 rules, rng) == -1);
     CHECK(select_autocreate_team(d, "Russians", live, rules.credit_reserve,
-                                 rules) == 0);
+                                 rules, rng) == 0);
     // autocreate=false is NEVER selected (AITriggerTypes creation is AI-3):
     AimdData off = make_aimd();
     off.teams[0].autocreate = false;
-    CHECK(select_autocreate_team(off, "Russians", live, 10000.0, rules) == -1);
+    CHECK(select_autocreate_team(off, "Russians", live, 10000.0, rules, rng) == -1);
     // IsBaseDefense teams are DEFENSIVE -> never selected on the offensive path
     // [RE-GATE APPLIED: ai-team.md §1/§4]:
     AimdData def = make_aimd();
     def.teams[0].is_base_defense = true;
-    CHECK(select_autocreate_team(def, "Russians", live, 10000.0, rules) == -1);
+    CHECK(select_autocreate_team(def, "Russians", live, 10000.0, rules, rng) == -1);
     // Max=0 -> UNCAPPED (not cap 1) [RE-GATE APPLIED: ai-team.md §4]:
     AimdData zero = make_aimd();
     zero.teams[0].max = 0;
-    CHECK(select_autocreate_team(zero, "Russians", live, 10000.0, rules) == 0);
+    CHECK(select_autocreate_team(zero, "Russians", live, 10000.0, rules, rng) == 0);
     std::vector<TeamInstance> many(5);
     for (auto& t : many) t.teamtype = 0;
-    CHECK(select_autocreate_team(zero, "Russians", many, 10000.0, rules) == 0);  // still eligible
+    CHECK(select_autocreate_team(zero, "Russians", many, 10000.0, rules, rng) == 0);  // still eligible
     // TotalAITeamCap is the hard per-house team-count cap [RE-GATE APPLIED: §4]:
     AiTeamRules capped = rules;
     capped.total_team_cap = 2;
     std::vector<TeamInstance> at_cap(2);
     for (auto& t : at_cap) t.teamtype = 0;
-    CHECK(select_autocreate_team(zero, "Russians", at_cap, 10000.0, capped) == -1);
+    CHECK(select_autocreate_team(zero, "Russians", at_cap, 10000.0, capped, rng) == -1);
+}
+
+TEST_CASE("ai_team: select_autocreate_team breaks equal-priority ties with seeded ai_rand") {
+    // Build an aimd with THREE eligible teams at the SAME highest Priority=5,
+    // one eligible LOWER-priority team, and two INELIGIBLE teams that carry a
+    // higher Priority=9 (one base-defense, one autocreate=false). The tie-break
+    // must draw among {0,1,2} only — never the lower-priority or ineligible ones
+    // [RE-FALLBACK: ai-team.md §4].
+    AimdData d = make_aimd();                 // seeds teams[0] (pri 7, max 2)
+    d.teams.clear();
+    TeamType base = make_aimd().teams[0];     // TF1/SC1 template, house Russians
+    base.max = 0;                             // uncapped -> stays eligible every draw
+    auto add = [&](int pri, bool autoc, bool basedef) {
+        TeamType t = base;
+        t.priority = pri;
+        t.autocreate = autoc;
+        t.is_base_defense = basedef;
+        d.teams.push_back(t);
+    };
+    add(5, true, false);   // 0: eligible, top priority
+    add(5, true, false);   // 1: eligible, top priority
+    add(5, true, false);   // 2: eligible, top priority
+    add(3, true, false);   // 3: eligible but LOWER priority -> never picked
+    add(9, true, true);    // 4: base-defense -> ineligible despite pri 9
+    add(9, false, false);  // 5: autocreate=false -> ineligible despite pri 9
+    AiTeamRules rules;
+    const std::vector<TeamInstance> live;     // none live: all caps clear each draw
+
+    // (a) non-vacuous: only ever returns an equal-top-priority eligible team.
+    std::uint32_t rng = 0x2545F491u;
+    std::set<int> seen;
+    std::vector<int> seq_a;
+    for (int i = 0; i < 200; ++i) {
+        const int pick = select_autocreate_team(d, "Russians", live, 10000.0, rules, rng);
+        REQUIRE(pick >= 0);
+        CHECK((pick == 0 || pick == 1 || pick == 2));  // never 3/4/5
+        seen.insert(pick);
+        seq_a.push_back(pick);
+    }
+    // (c) randomization is LIVE, not stuck on index 0: more than one tied team
+    // is returned across the draws.
+    CHECK(seen.size() > 1);
+    // (b) deterministic/reproducible: the SAME fixed seed replays the SAME
+    // sequence (seeded ai_rand only, never wall-clock).
+    std::uint32_t rng2 = 0x2545F491u;
+    std::vector<int> seq_b;
+    for (int i = 0; i < 200; ++i)
+        seq_b.push_back(select_autocreate_team(d, "Russians", live, 10000.0, rules, rng2));
+    CHECK(seq_a == seq_b);
+    // A DIFFERENT seed still stays within the eligible tied set (a sanity check
+    // that eligibility, not the seed, bounds the output).
+    std::uint32_t rng3 = 12345u;
+    for (int i = 0; i < 50; ++i) {
+        const int pick = select_autocreate_team(d, "Russians", live, 10000.0, rules, rng3);
+        CHECK((pick == 0 || pick == 1 || pick == 2));
+    }
 }
 
 TEST_CASE("ai_team: recruit_idle claims ascending idle units per TaskForce slot") {

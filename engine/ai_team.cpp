@@ -328,18 +328,24 @@ bool house_matches(const std::string& team_house, const std::string& house_name)
 
 int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
                            const std::vector<TeamInstance>& live, double credits,
-                           const AiTeamRules& rules) {
+                           const AiTeamRules& rules, std::uint32_t& rng) {
     // [RE-GATE APPLIED: ai-team.md §4] autocreate ONLY (AITriggerTypes creation
     // is AI-3); NOT is_base_defense (defensive teams out of offensive scope);
     // the TotalAITeamCap hard per-house cap; the Max live-instance cap with
-    // Max=0 = UNCAPPED; the CreditReserve spend floor; highest Priority wins,
-    // tie = lowest TeamType index (deterministic). Eligibility is NOT a per-side
-    // house-token compare — house_matches only applies a rare House=<name>
-    // country restriction; fielding the TaskForce is guaranteed by parse_aimd's
-    // art-guard-drop (a team in `aimd` has a TaskForce this house can field).
+    // Max=0 = UNCAPPED; the CreditReserve spend floor; highest Priority is
+    // strictly preferred; the equal-highest-priority tie is broken by a SEEDED
+    // ai_rand draw among the tied eligible candidates [RE-FALLBACK: ai-team.md §4
+    // — all stock offensive teams are Priority=5, so ties are the common case and
+    // the enemy must vary its attack-wave composition; deterministic, NEVER
+    // wall-clock]. Eligibility is NOT a per-side house-token compare —
+    // house_matches only applies a rare House=<name> country restriction;
+    // fielding the TaskForce is guaranteed by parse_aimd's art-guard-drop (a team
+    // in `aimd` has a TaskForce this house can field).
     if (credits < rules.credit_reserve) return -1;
     if ((int)live.size() >= rules.total_team_cap) return -1;  // hard per-house cap
-    int best = -1;
+    // Pass 1: find the highest Priority among all eligible teams.
+    int best_priority = 0;
+    bool any = false;
     for (int i = 0; i < (int)aimd.teams.size(); ++i) {
         const TeamType& tt = aimd.teams[i];
         if (!tt.autocreate || tt.is_base_defense ||
@@ -349,9 +355,29 @@ int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
         for (const TeamInstance& t : live)
             if (t.teamtype == i) ++count;
         if (tt.max > 0 && count >= tt.max) continue;  // Max=0 -> uncapped
-        if (best < 0 || tt.priority > aimd.teams[best].priority) best = i;
+        if (!any || tt.priority > best_priority) {
+            best_priority = tt.priority;
+            any = true;
+        }
     }
-    return best;
+    if (!any) return -1;
+    // Pass 2: collect every eligible team at the highest Priority (file order).
+    std::vector<int> candidates;
+    for (int i = 0; i < (int)aimd.teams.size(); ++i) {
+        const TeamType& tt = aimd.teams[i];
+        if (!tt.autocreate || tt.is_base_defense ||
+            !house_matches(tt.house, house_name))
+            continue;
+        int count = 0;
+        for (const TeamInstance& t : live)
+            if (t.teamtype == i) ++count;
+        if (tt.max > 0 && count >= tt.max) continue;  // Max=0 -> uncapped
+        if (tt.priority == best_priority) candidates.push_back(i);
+    }
+    // Seeded tie-break among the equal-highest-priority eligible candidates
+    // [RE-FALLBACK: ai-team.md §4]. A single candidate still draws once so the
+    // RNG stream advances identically whether or not a tie exists.
+    return candidates[ai_rand(rng) % (std::uint32_t)candidates.size()];
 }
 
 int recruit_idle(TeamInstance& team, const AimdData& aimd,
