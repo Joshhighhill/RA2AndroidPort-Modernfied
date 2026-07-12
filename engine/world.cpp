@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "combat.hpp"         // armor_index, step_combat, MoveRequest
+#include "factory.hpp"        // exit_cell/primary_factory/set_primary (Production phase)
 #include "group_move.hpp"     // assign_formation
 #include "harvest.hpp"        // step_harvest/HarvestMove/HarvestEvent/OreValues (Economy phase)
 #include "iso_project.hpp"   // cell_to_screen (terrain_screen_bounds)
@@ -559,6 +560,57 @@ void World::order_attack_building(int b_idx) {
         u.path.clear();
         u.path_idx = 0;
     }
+}
+
+// --- Production phase [RE: production.md §1.3/§1.4] ---
+
+void World::set_rally(int b_idx, int x, int y) {
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size()) || !buildings_[b_idx].alive)
+        return;
+    buildings_[b_idx].rally_x = x;
+    buildings_[b_idx].rally_y = y;
+    buildings_[b_idx].has_rally = true;
+}
+
+void World::set_primary(int b_idx, const std::vector<int>& factory_types) {
+    ra2engine::set_primary(buildings_, factory_types, b_idx);
+}
+
+int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, const UnitCombat& c) {
+    if (factory_idx < 0 || factory_idx >= static_cast<int>(buildings_.size())) return -1;
+    const Building& f = buildings_[factory_idx];   // copy rally state before spawning
+    auto free_cell = [this](int x, int y) {
+        return walkable(x, y) && unit_at_cell(x, y) < 0;
+    };
+    // [RE-GATE APPLIED: production.md §1.3] 8-ring walk to the first free cell.
+    const Cellxy ex = exit_cell(f, factory_def, free_cell);
+    if (ex.x < 0) return -1;                        // no free ring cell -> HOLD
+    const int house = f.house;
+    const bool has_rally = f.has_rally;
+    const int rx = f.rally_x, ry = f.rally_y;
+    add_combat_unit(ex.x, ex.y, house, c);
+    const int ui = static_cast<int>(units_.size()) - 1;
+    int gx = rx, gy = ry;
+    if (!has_rally) {
+        // Default gather = nearest free cell from the building's own coord
+        // [RE-GATE APPLIED: production.md §1.4, FUN_00500020]: the unit now
+        // occupies the door cell, so re-running the ring walk yields the
+        // exit-adjacent gather cell.
+        const Cellxy g = exit_cell(buildings_[factory_idx], factory_def, free_cell);
+        if (g.x < 0) return ui;                     // fully boxed in: stand at the door
+        gx = g.x; gy = g.y;
+    }
+    order_unit_move(ui, gx, gy);   // cancels cleanly if unreachable/self
+    return ui;
+}
+
+bool World::factory_category_lost(const std::vector<int>& factory_types, int house) const {
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.state != Building::State::Idle || b.house != house) continue;
+        for (int t : factory_types)
+            if (b.type == t) return false;   // a survivor
+    }
+    return true;
 }
 
 void World::step(double dt) {

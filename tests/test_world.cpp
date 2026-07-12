@@ -8,14 +8,17 @@
 #include <vector>
 
 #include "building.hpp"
+#include "factory.hpp"        // Production phase: exit_cell/primary_factory/set_primary
 #include "harvest.hpp"        // Economy phase: HarvState/HarvestEvent/OreValues/kUnloadSecsPerBale
 #include "iso_project.hpp"   // cell_to_screen / screen_to_cell
 #include "iso_renderer.hpp"  // pal_for_house
 #include "occupancy.hpp"
 #include "pathfind.hpp"
+#include "production.hpp"     // Production phase: ProductionQueues cancel/reconcile_refund
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"  // Palette/Rgba (pal_for_house tests)
+#include "unit_type.hpp"      // Production phase: UnitTypeDef (refund test)
 #include "world.hpp"
 
 using ra2assets::MapCell;
@@ -1449,4 +1452,134 @@ TEST_CASE("World: step() without set_economy runs zero ore/harvest activity "
     CHECK(u.bales_ore == 0.0);
     CHECK(u.harv == ra2engine::HarvState::Harvesting);   // FSM frozen, never advanced
     CHECK(world.take_income(0) == doctest::Approx(0.0));
+}
+
+// --- Task 5: World factory launch / rally / primary integration ---
+
+TEST_CASE("World: launch_unit spawns at the exit when free and routes to rally") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // Place a 1x1 "factory" building on a walkable cell; its exit is (cx+0, cy+1).
+    const int fi = world.add_building(/*type=*/0, c->x, c->y, /*fw=*/1, /*fh=*/1, /*house=*/0,
+                                      /*strength=*/100, /*armor_ix=*/0, /*buildup=*/0.0,
+                                      /*instant=*/true);
+    ra2engine::BuildingTypeDef fdef; fdef.id = "GAWEAP"; fdef.fw = 1; fdef.fh = 1;
+    auto free_cell = [&](int x, int y) {
+        return world.walkable(x, y) && world.unit_at_cell(x, y) < 0;
+    };
+    const ra2engine::Cellxy ex = ra2engine::exit_cell(world.buildings()[fi], fdef, free_cell);
+    REQUIRE(ex.x >= 0);                               // ring found a free door cell
+    REQUIRE(world.walkable(ex.x, ex.y));
+    // Set a rally a few cells away, then launch a GI.
+    world.set_rally(fi, ex.x + 4, ex.y);
+    ra2engine::UnitCombat gi; gi.image = "GI"; gi.strength = 100; gi.armor = "none";
+    const int ui = world.launch_unit(fi, fdef, gi);
+    REQUIRE(ui >= 0);
+    CHECK(world.units()[ui].cell_x == ex.x);
+    CHECK(world.units()[ui].cell_y == ex.y);
+    CHECK(world.units()[ui].house == 0);
+    CHECK(world.units()[ui].moving());               // has a path toward the rally
+}
+
+TEST_CASE("World: launch_unit ring-falls-back past an occupied door cell, HOLDs when boxed in") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    const int fi = world.add_building(0, c->x, c->y, 1, 1, 0, 100, 0, 0.0, true);
+    ra2engine::BuildingTypeDef fdef; fdef.id = "GAWEAP"; fdef.fw = 1; fdef.fh = 1;
+    auto free_cell = [&](int x, int y) {
+        return world.walkable(x, y) && world.unit_at_cell(x, y) < 0;
+    };
+    const ra2engine::Cellxy ex = ra2engine::exit_cell(world.buildings()[fi], fdef, free_cell);
+    REQUIRE(ex.x >= 0);
+    // Occupy the door cell: the 8-ring walk falls back to the NEXT free cell
+    // [RE-GATE APPLIED: production.md §1.3 — first-free-in-ring, not a fixed cell]:
+    ra2engine::UnitCombat blocker; blocker.image = "GI"; blocker.strength = 100; blocker.armor = "none";
+    world.add_combat_unit(ex.x, ex.y, 0, blocker);
+    const int ui = world.launch_unit(fi, fdef, blocker);
+    REQUIRE(ui >= 0);                                 // spawned on a ring cell...
+    CHECK((world.units()[ui].cell_x != ex.x || world.units()[ui].cell_y != ex.y));  // ...not the door
+    // Now box the factory in: occupy EVERY remaining free ring cell.
+    while (true) {
+        const ra2engine::Cellxy g = ra2engine::exit_cell(world.buildings()[fi], fdef, free_cell);
+        if (g.x < 0) break;
+        world.add_combat_unit(g.x, g.y, 0, blocker);
+    }
+    const int before = static_cast<int>(world.units().size());
+    CHECK(world.launch_unit(fi, fdef, blocker) == -1);        // fully blocked -> HOLD
+    CHECK(static_cast<int>(world.units().size()) == before);  // nothing spawned
+}
+
+TEST_CASE("World: launch_unit gathers to the default cell when no rally is set") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    const int fi = world.add_building(0, c->x, c->y, 1, 1, 0, 100, 0, 0.0, true);
+    ra2engine::BuildingTypeDef fdef; fdef.id = "GAWEAP"; fdef.fw = 1; fdef.fh = 1;
+    ra2engine::UnitCombat gi; gi.image = "GI"; gi.strength = 100; gi.armor = "none";
+    const int ui = world.launch_unit(fi, fdef, gi);   // no set_rally called
+    REQUIRE(ui >= 0);
+    CHECK_FALSE(world.buildings()[fi].has_rally);
+    // Default destination = the exit-adjacent gather cell — the nearest free
+    // cell from the building's own coordinate [RE-GATE APPLIED: production.md
+    // §1.4, FUN_00500020] — NOT the map center. The unit spawns at the first
+    // free ring cell (south door for a 1x1) and best-effort moves one ring
+    // cell over to clear the door; the key contract is the spawn cell.
+    CHECK(world.units()[ui].cell_x == world.buildings()[fi].cx + fdef.fw / 2);
+    CHECK(world.units()[ui].cell_y == world.buildings()[fi].cy + fdef.fh);
+}
+
+TEST_CASE("World: set_primary routes primary_factory, factory_category_lost detects a wipe") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    const int a = world.add_building(3, c->x, c->y, 1, 1, 0, 100, 0, 0.0, true);
+    const int b = world.add_building(3, c->x + 2, c->y, 1, 1, 0, 100, 0, 0.0, true);
+    std::vector<int> ftypes = {3};
+    CHECK(ra2engine::primary_factory(world.buildings(), ftypes, 0) == a);  // first-built default
+    world.set_primary(b, ftypes);
+    CHECK(ra2engine::primary_factory(world.buildings(), ftypes, 0) == b);
+    CHECK_FALSE(world.factory_category_lost(ftypes, 0));
+    ra2engine::kill_building(world.buildings()[a]);
+    ra2engine::kill_building(world.buildings()[b]);
+    CHECK(world.factory_category_lost(ftypes, 0));    // no alive Idle factory left
+}
+
+// Carry-forward from the Task 3 review: the ProductionQueues cancel +
+// reconcile_refund path (the sink for THIS task's factory-category-lost
+// cancel) had NO test coverage. Drive a real cancel and assert the exact
+// credit total lands back in the shared pool via reconcile_refund. This is
+// the refund path a caller invokes when factory_category_lost() returns true.
+TEST_CASE("World/production: factory-lost cancel refunds spend into the shared pool exactly") {
+    std::vector<ra2engine::UnitTypeDef> u(1);
+    u[0].id = "MTNK"; u[0].cost = 2000; u[0].tech_level = 2; u[0].is_vehicle = true;
+
+    ra2engine::ProductionQueues q;
+    q.set_credits(5000.0);
+    // Build a MTNK in the Vehicle queue; tick a while so real credits are spent.
+    q.start_unit(ra2engine::QueueCat::Vehicle, 0, u, /*build_speed=*/0.7);
+    std::vector<ra2engine::BuildingTypeDef> btypes;  // unused by unit tick
+    const double speedups[4] = {1.0, 1.0, 1.0, 1.0};
+    for (int i = 0; i < 30; ++i) q.tick(1.0, 1.0, speedups, btypes);
+    // Credits were drawn down but the build is not yet ready/placed.
+    CHECK(q.credits() < 5000.0);
+    CHECK_FALSE(q.ready(ra2engine::QueueCat::Vehicle));
+
+    // factory_category_lost -> cancel that queue + reconcile the shared pool.
+    q.cancel(ra2engine::QueueCat::Vehicle);
+    q.reconcile_refund();
+    // Cancel refunds ALL spend, so the pool returns to exactly the start value.
+    CHECK(q.credits() == doctest::Approx(5000.0));
+    CHECK(q.producing(ra2engine::QueueCat::Vehicle) == -1);  // slot cleared
 }

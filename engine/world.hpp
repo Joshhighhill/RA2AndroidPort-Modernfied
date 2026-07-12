@@ -442,6 +442,34 @@ public:
     // friendly building).
     void order_attack_building(int b_idx);
 
+    // --- Production phase [RE: production.md §1.3/§1.4] ---
+    // Set factory `b_idx`'s rally cell (finished units path here after exiting).
+    // No-op if b_idx is out of range or not an alive building.
+    void set_rally(int b_idx, int x, int y);
+
+    // Make `b_idx` its house's primary factory of its category (factory::
+    // set_primary over `factory_types`, the roster-index list for ONE category).
+    // No-op if b_idx is out of range.
+    void set_primary(int b_idx, const std::vector<int>& factory_types);
+
+    // Launch a finished COMBAT unit from `factory_idx`: exit_cell() walks the
+    // 8-ring from the factory's anchor to the first FREE (walkable, unoccupied)
+    // cell [RE-GATE APPLIED: production.md §1.3]; add_combat_unit there (house
+    // = factory's house, stats from `c`), then order it to the factory's rally
+    // cell (has_rally) else the DEFAULT GATHER CELL — the nearest free cell
+    // from the building's own coordinate [RE-GATE APPLIED: production.md §1.4,
+    // FUN_00500020: the exit-adjacent gather cell, NOT the map center] —
+    // computed by re-running the ring walk now that the unit occupies the door
+    // cell. order_unit_move cancels cleanly if unreachable. Returns the new
+    // unit index; -1 if NO ring cell was free (caller HOLDS the queue ready)
+    // or factory_idx is invalid. Asset-free: the caller resolves c + factory_def.
+    int launch_unit(int factory_idx, const BuildingTypeDef& factory_def, const UnitCombat& c);
+
+    // True iff `house` owns NO alive Idle factory whose type is in
+    // factory_types (the caller then cancels+refunds that queue; a survivor ->
+    // false, the queue continues). Mirrors ps_tick's ConYard-died cancel gate.
+    bool factory_category_lost(const std::vector<int>& factory_types, int house) const;
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
