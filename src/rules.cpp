@@ -42,21 +42,25 @@ std::vector<std::string> split_trim_upper(const std::string& v) {
     return out;
 }
 
+// Strip an inline ';' comment and trailing whitespace from a raw Ini value.
+// The wrapped Ini preserves inline comments (it strips only full-line
+// comments), so real rulesmd values like "GTGCAN   ; Grand Cannon" or
+// "yes ;GS" arrive with the comment attached; this mirrors the real game's
+// INI reader, which treats ';' as a comment anywhere on the line.
+std::string strip_inline_comment(std::string val) {
+    std::size_t semi = val.find(';');
+    if (semi != std::string::npos) val.erase(semi);
+    std::size_t end = val.find_last_not_of(" \t");
+    return (end == std::string::npos) ? std::string() : val.substr(0, end + 1);
+}
+
 // True iff `id` (case-insensitive) is a VALUE in [section]'s key/value list.
 // The [InfantryTypes]/[VehicleTypes]/[BuildingTypes] list sections map numbered
 // keys ("0=E1") to ids, so membership is tested against the values, not keys.
-// Real rulesmd list entries carry inline comments ("65=GTGCAN   ; Grand Cannon")
-// which the wrapped Ini preserves (it strips only full-line comments), so cut
-// the value at the first ';' and trim trailing whitespace before comparing --
-// mirroring the real game's INI reader, which treats ';' as a comment anywhere.
 bool in_list_section(const ra2assets::Ini& ini, const std::string& section,
                      const std::string& id) {
     for (const auto& kv : ini.section(section)) {
-        std::string val = kv.second;
-        std::size_t semi = val.find(';');
-        if (semi != std::string::npos) val.erase(semi);
-        std::size_t end = val.find_last_not_of(" \t");
-        val = (end == std::string::npos) ? std::string() : val.substr(0, end + 1);
+        std::string val = strip_inline_comment(kv.second);
         if (val.size() != id.size()) continue;
         bool eq = true;
         for (std::size_t i = 0; i < id.size(); ++i)
@@ -286,8 +290,12 @@ Rules::BuildCategory Rules::build_category(const std::string& id) const {
         // [RE-GATE APPLIED: production.md §1.1 -- Vehicles = [VehicleTypes]
         // member AND Naval==0; Naval==1 routes to the separate Ships slot].
         // Reuse is_truthy() rather than duplicate the yes/true literal list.
-        return is_truthy(ini_->get(id, "Naval", "")) ? BuildCategory::None
-                                                     : BuildCategory::Vehicle;
+        // Real naval vehicles store an inline comment ("Naval=yes ;GS" on
+        // DEST/DLPH/CARRIER/CDEST) which the wrapped Ini preserves, so strip
+        // it before the truthiness check (same class as in_list_section).
+        return is_truthy(strip_inline_comment(ini_->get(id, "Naval", "")))
+                   ? BuildCategory::None
+                   : BuildCategory::Vehicle;
     }
     if (in_list_section(*ini_, "BuildingTypes", id))
         return is_buildcat_combat(id) ? BuildCategory::Defense : BuildCategory::Structure;

@@ -432,4 +432,9 @@ TEST_CASE("rules: real rulesmd classification pins") {
     // ...and the non-Combat structures do NOT (BuildCat Power/Resource/Tech/None):
     for (const char* s : {"GAPOWR", "GAREFN", "GATECH", "GACNST", "GAWEAP"})
         CHECK(rules.build_category(s) == BC::Structure);
+    // Real naval vehicles store Naval=yes with an inline comment ("Naval=yes ;GS"):
+    // they must route to the Ships queue (out of scope this phase) -> None, not
+    // Vehicle [RE-GATE APPLIED: production.md §1.1].
+    for (const char* n : {"DEST", "DLPH"})
+        CHECK(rules.build_category(n) == BC::None);
 }
