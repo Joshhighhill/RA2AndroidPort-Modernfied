@@ -289,6 +289,10 @@ struct BuildingArt {
 struct BuildingAssets {
     std::vector<ra2engine::BuildingTypeDef> roster;  // index = Building::type
     std::vector<BuildingArt> art;                    // parallel to roster
+    // [RE-GATE APPLIED: production.md §1.1] per-roster tab/queue classifier:
+    // 1 if BuildCat==Combat (Defense queue, tab 1), 0 otherwise (Structure
+    // queue, tab 0). Index-aligned with `roster`.
+    std::vector<char> defense;
     ra2assets::Palette unit_pal;                     // unittem.pal (cache.mix)
     ra2assets::Palette cameo_pal;                    // cameo.pal (cache.mix)
     // sidebar chrome (player side = Allied sidec01) [RE: construction.md
@@ -947,9 +951,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // -- and thus demo-base's world_hash -- stay byte-identical). Both ship a
     // FreeUnit harvester (GAREFN->CMIN, NAREFN->HARV), driving the charge math
     // below [RE: economy.md §6a].
-    static const char* kRoster[10] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    // GAPILL (pillbox) / GATOW (patriot) are Allied base defenses (BuildCat=
+    // Combat) appended at indices 10/11 [RE-GATE APPLIED: production.md §1.1].
+    // They land ONLY on tab 1's separate Defense list; spawn_base never places
+    // them by name, so demo-base's world_hash is unchanged.
+    static const char* kRoster[12] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
-                                       "GAREFN", "NAREFN"};
+                                       "GAREFN", "NAREFN", "GAPILL", "GATOW"};
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -1001,8 +1009,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
 
-    ba.roster.reserve(8);
-    ba.art.reserve(8);
+    ba.roster.reserve(12);
+    ba.art.reserve(12);
     int ok_n = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
@@ -1074,6 +1082,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         std::cerr << "]\n";
         ba.roster.push_back(std::move(d));
         ba.art.push_back(std::move(slot));
+        // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is
+        // BuildCat==Combat, NOT IsBaseDefense]
+        ba.defense.push_back(rules.is_buildcat_combat(id) ? 1 : 0);
     }
     ba.ok = ok_n > 0;
 
@@ -1557,7 +1568,7 @@ ra2engine::Camera centered_camera(const MapFile& map, int view_w, int view_h) {
 std::vector<int> sidebar_buildable(const BuildingAssets& ba);
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
-                  const ra2engine::World& world, int credits_shown, double t_now);
+                  const ra2engine::World& world, int credits_shown, double t_now, int active_tab);
 
 int run_screenshot(const std::string& out_path) {
     const int W = 1280, H = 720;
@@ -1628,7 +1639,8 @@ int run_screenshot(const std::string& out_path) {
                 ra2engine::SidebarLayout::compute(W, H, buildable);
             ra2engine::ProductionState ps;
             ps.credits = rules.mp_money();
-            draw_sidebar(ren, tc, ba, lay, ps, world, static_cast<int>(ps.credits), 0.0);
+            draw_sidebar(ren, tc, ba, lay, ps, world, static_cast<int>(ps.credits), 0.0,
+                         /*active_tab=*/0);
         }
         capture_png(ren, out_path, W, H);
 
@@ -1662,20 +1674,31 @@ void ps_tick(ra2engine::ProductionState& ps, const ra2engine::World& world,
     if (ps.slot.type != -1 && !conyard_alive(world, ba, 0)) ra2engine::cancel(ps);
 }
 
-// Sidebar buildable list [RE: construction.md §11]: the Allied player's roster
-// indices with cameo != "" && tech_level > 0 && art ok, ordered by tech_level
-// then roster order -> {GAPOWR, GAPILE, GAWEAP}.
-std::vector<int> sidebar_buildable(const BuildingAssets& ba) {
+// Building-roster indices for a building tab: GA* player buildings with a
+// cameo, tech>0, art ok, split by the recovered BuildCat==Combat classifier
+// [RE-GATE APPLIED: production.md §1.1]. tab 0 (Structures) = BuildCat!=Combat,
+// tab 1 (Defenses) = BuildCat==Combat — tab 1 drives its OWN concurrent
+// Defense queue (wired in Task 7), NOT a filtered view of the Structure queue.
+// Ordered by tech_level then roster order.
+std::vector<int> building_buildable_tab(const BuildingAssets& ba, bool defenses) {
     std::vector<int> v;
     for (int i = 0; i < static_cast<int>(ba.roster.size()); ++i) {
         const ra2engine::BuildingTypeDef& d = ba.roster[i];
         if (!ba.art[i].ok || d.cameo.empty() || d.tech_level <= 0) continue;
         if (d.id.size() < 2 || d.id[0] != 'G' || d.id[1] != 'A') continue;  // Allied player side
+        const bool def = i < static_cast<int>(ba.defense.size()) && ba.defense[i] != 0;
+        if (def != defenses) continue;
         v.push_back(i);
     }
     std::stable_sort(v.begin(), v.end(),
                      [&](int a, int b) { return ba.roster[a].tech_level < ba.roster[b].tech_level; });
     return v;
+}
+
+// Structures tab (tab 0) — the DEMO-facing list; identical to the pre-defense
+// output {GAPOWR,GAPILE,GAWEAP}, so demo_buildable_closure is unchanged.
+std::vector<int> sidebar_buildable(const BuildingAssets& ba) {
+    return building_buildable_tab(ba, /*defenses=*/false);
 }
 
 // Built-in 5x7 digit strip (documented divergence [RE: construction.md §11 —
@@ -1743,7 +1766,7 @@ void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint
 // scroll buttons; §8 power pips]. `t_now` drives the Ready + outage flashes.
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
-                  const ra2engine::World& world, int credits_shown, double t_now) {
+                  const ra2engine::World& world, int credits_shown, double t_now, int active_tab) {
     // Opaque backdrop behind any gaps (missing optional chrome), then the
     // recovered top-to-bottom stack.
     shade_rect(ren, lay.bar, 255, 24, 24, 28);
@@ -1767,11 +1790,11 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         blit_shp(ren, tc, "sb:rep", ba.sb_repair, 0, ba.sb_pal, lay.bar.x + 20, 166);
         blit_shp(ren, tc, "sb:sell", ba.sb_sell, 0, ba.sb_pal, lay.bar.x + 84, 166);
     }
-    // Four tab buttons (frame 0); tab 0 (Building) full-bright, others shaded.
+    // Four tab buttons (frame 0); the ACTIVE tab full-bright, the others shaded.
     for (int i = 0; i < 4; ++i) {
         blit_shp(ren, tc, "sb:tab" + std::to_string(i), ba.sb_tabs[i], 0, ba.sb_pal, lay.tabs[i].x,
                  lay.tabs[i].y);
-        if (i != 0) shade_rect(ren, lay.tabs[i], 110);
+        if (i != active_tab) shade_rect(ren, lay.tabs[i], 110);
     }
     // Cameo strip: side2 tiled once per visible row (sockets are baked into
     // the art), side3 bottom cap, addon tail (clips at the window bottom),
@@ -1940,7 +1963,15 @@ int run_interactive(bool no_audio) {
     // viewport (camera centering, clamping, on-screen tests) is the PLAYFIELD
     // left of the bar, not the full window (the spec's "viewport shrinks by
     // the sidebar width" rule — final-review M5).
-    const std::vector<int> buildable = sidebar_buildable(ba);
+    // Active sidebar tab (0=Structures, 1=Defenses, 2=Infantry, 3=Vehicles);
+    // the buildable list + layout are recomputed whenever the tab changes.
+    int active_tab = 0;
+    auto tab_buildable = [&](int tab) -> std::vector<int> {
+        if (tab == 0) return building_buildable_tab(ba, /*defenses=*/false);
+        if (tab == 1) return building_buildable_tab(ba, /*defenses=*/true);
+        return {};  // tabs 2 (Infantry) / 3 (Vehicle): unit roster wired in Task 7
+    };
+    std::vector<int> buildable = tab_buildable(active_tab);
     ra2engine::SidebarLayout lay =
         ra2engine::SidebarLayout::compute(platform.width(), platform.height(), buildable);
     const bool sidebar_up = ba.ok && ba.sidebar_ok;
@@ -1982,16 +2013,36 @@ int run_interactive(bool no_audio) {
             if (sidebar_up && ev.kind == ra2engine::InputEvent::PointerDown &&
                 lay.contains(ev.x, ev.y)) {
                 if (ev.button == ra2engine::InputEvent::Left) {
-                    const int ci = lay.cameo_at(ev.x, ev.y);
-                    if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
-                        const int type = buildable[ci];
-                        if (ps.slot.type == type && ps.slot.ready) {
-                            input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
-                        } else if (ps.slot.type == type) {
-                            ra2engine::cancel(ps);
-                        } else if (ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0,
-                                                        ba.groups, conyard_alive(world, ba, 0))) {
-                            ra2engine::start(ps, type, ba.roster, build_speed);
+                    // Tab-click switching first: a click on a different tab
+                    // recomputes the buildable list + layout and consumes the
+                    // event (no cameo handling this frame).
+                    const int tab = lay.tab_at(ev.x, ev.y);
+                    if (tab >= 0 && tab != active_tab) {
+                        active_tab = tab;
+                        buildable = tab_buildable(active_tab);
+                        lay = ra2engine::SidebarLayout::compute(platform.width(),
+                                                                platform.height(), buildable);
+                        continue;  // consumed: switched tab
+                    }
+                    // Cameo start/cancel/place is only wired for tab 0 (the
+                    // Structure queue on `ps`). Tab 1 (Defenses) drives its OWN
+                    // concurrent Defense queue [RE-GATE APPLIED: production.md
+                    // §1.1] that only arrives with ProductionQueues in Task 7,
+                    // so its cameo strip is shown but clicks are inert here.
+                    // Tabs 2/3 have an empty buildable, so cameo_at returns -1.
+                    if (active_tab == 0) {
+                        const int ci = lay.cameo_at(ev.x, ev.y);
+                        if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
+                            const int type = buildable[ci];
+                            if (ps.slot.type == type && ps.slot.ready) {
+                                input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
+                            } else if (ps.slot.type == type) {
+                                ra2engine::cancel(ps);
+                            } else if (ra2engine::can_start(ps, type, ba.roster, world.buildings(),
+                                                            0, ba.groups,
+                                                            conyard_alive(world, ba, 0))) {
+                                ra2engine::start(ps, type, ba.roster, build_speed);
+                            }
                         }
                     }
                 }
@@ -2145,7 +2196,7 @@ int run_interactive(bool no_audio) {
                                   platform.height());
         if (ba.ok && ba.sidebar_ok)
             draw_sidebar(ren, tc, ba, lay, ps, world,
-                         static_cast<int>(std::llround(credits_shown)), now / 1000.0);
+                         static_cast<int>(std::llround(credits_shown)), now / 1000.0, active_tab);
         platform.present();
         SDL_Delay(16);  // ~60fps
     }
@@ -3044,7 +3095,7 @@ DemoBaseResult simulate_base(Assets& a, UnitAssets& ua, BuildingAssets& ba, doub
         render_world(ren, *tc, a, ua, world, *cam, W, H, /*input=*/nullptr, /*va=*/nullptr, &ba);
         if (ba.sidebar_ok)
             draw_sidebar(ren, *tc, ba, lay, ps, world,
-                         static_cast<int>(std::llround(ps.credits)), t);
+                         static_cast<int>(std::llround(ps.credits)), t, /*active_tab=*/0);
     };
     auto step_one = [&]() {
         world.step(dt);
@@ -3342,7 +3393,7 @@ DemoEconResult simulate_econ(Assets& a, UnitAssets& ua, BuildingAssets& ba, Mine
                      ore_art.any ? &ore_art : nullptr);
         if (ba.sidebar_ok)
             draw_sidebar(ren, *tc, ba, lay, ps, world, static_cast<int>(std::llround(ps.credits)),
-                         t);
+                         t, /*active_tab=*/0);
     };
     auto step_one = [&]() {
         world.step(dt);
