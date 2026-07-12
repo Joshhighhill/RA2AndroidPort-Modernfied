@@ -1065,3 +1065,114 @@ TEST_CASE("Input: harvester right-click own building returns only on a refinery"
     right_click(input, px, py, 2000);
     CHECK(world.units()[harv].harv == ra2engine::HarvState::ReturnToRef);
 }
+
+// ---- Production phase: factory select / rally / primary [RE: production.md §1.2/§1.4] ----
+
+TEST_CASE("Input: left-click own unit factory selects it; re-click primes; elsewhere clears") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    input.set_unit_factory_types({3});   // roster type 3 = a unit factory in this fixture
+    input.set_vehicle_factory_types({3});
+
+    const MapCell* c = ra2engine::pick_start_cell(world.map());
+    REQUIRE(c != nullptr);
+    // Two own factories (type 3) on disjoint level-0 cells.
+    const auto o0 = far_l0_cell(world, c->x, c->y, 6);
+    if (o0.first < 0) { MESSAGE("skipped: no level-0 cell"); return; }
+    std::pair<int, int> o1{-1, -1};
+    for (const auto& mc : world.map().cells()) {
+        if (mc.level != 0 || !world.walkable(mc.x, mc.y)) continue;
+        if (std::max(std::abs(mc.x - c->x), std::abs(mc.y - c->y)) < 6) continue;
+        if (std::abs(mc.x - o0.first) <= 3 && std::abs(mc.y - o0.second) <= 3) continue;
+        o1 = {mc.x, mc.y};
+        break;
+    }
+    if (o1.first < 0) { MESSAGE("skipped: no disjoint cell"); return; }
+    const int b0 = world.add_building(3, o0.first, o0.second, 2, 2, 0, 1000, 0, 0.0, true);
+    const int b1 = world.add_building(3, o1.first, o1.second, 2, 2, 0, 1000, 0, 0.0, true);
+    REQUIRE(b0 >= 0);
+    REQUIRE(b1 >= 0);
+    world.buildings()[b1].primary = true;  // a pre-existing primary sibling to be cleared
+
+    // Left-click b0's origin selects it (no unit selection touched).
+    int px, py;
+    px_for_cell(o0.first, o0.second, px, py);
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    CHECK(input.selected_building() == b0);
+
+    // Re-click b0 (well past the double-click window) -> primary set on b0,
+    // cleared on the sibling b1 (exactly one primary per category per house).
+    left_click(input, px, py, /*shift=*/false, /*t=*/5000);
+    CHECK(world.buildings()[b0].primary);
+    CHECK_FALSE(world.buildings()[b1].primary);
+    CHECK(input.selected_building() == b0);
+
+    // Left-click empty ground drops the factory selection.
+    const auto empty = far_l0_cell(world, o0.first, o0.second, 12);
+    if (empty.first >= 0) {
+        int ex, ey;
+        px_for_cell(empty.first, empty.second, ex, ey);
+        left_click(input, ex, ey, /*shift=*/false, /*t=*/9000);
+        CHECK(input.selected_building() == -1);
+    }
+}
+
+TEST_CASE("Input: right-click with a factory selected sets its rally point") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    input.set_unit_factory_types({3});
+
+    const MapCell* c = ra2engine::pick_start_cell(world.map());
+    REQUIRE(c != nullptr);
+    const auto o = far_l0_cell(world, c->x, c->y, 6);
+    if (o.first < 0) { MESSAGE("skipped: no level-0 cell"); return; }
+    const int b = world.add_building(3, o.first, o.second, 2, 2, 0, 1000, 0, 0.0, true);
+    REQUIRE(b >= 0);
+
+    int px, py;
+    px_for_cell(o.first, o.second, px, py);
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    REQUIRE(input.selected_building() == b);
+
+    // Right-click a far level-0 cell -> rally cell set to exactly that cell.
+    const auto r = far_l0_cell(world, o.first, o.second, 8);
+    if (r.first < 0) { MESSAGE("skipped: no rally cell"); return; }
+    int rx, ry;
+    px_for_cell(r.first, r.second, rx, ry);
+    right_click(input, rx, ry, 2000);
+    CHECK(world.buildings()[b].has_rally);
+    CHECK(world.buildings()[b].rally_x == r.first);
+    CHECK(world.buildings()[b].rally_y == r.second);
+}
+
+TEST_CASE("Input: an enemy factory is never selected or rallied (own-house gating)") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    input.set_unit_factory_types({3});
+
+    const MapCell* c = ra2engine::pick_start_cell(world.map());
+    REQUIRE(c != nullptr);
+    const auto o = far_l0_cell(world, c->x, c->y, 6);
+    if (o.first < 0) { MESSAGE("skipped: no level-0 cell"); return; }
+    // Enemy (house 1) factory of the same type.
+    const int b = world.add_building(3, o.first, o.second, 2, 2, 1, 1000, 0, 0.0, true);
+    REQUIRE(b >= 0);
+
+    int px, py;
+    px_for_cell(o.first, o.second, px, py);
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    CHECK(input.selected_building() == -1);  // enemy factory is never selectable
+
+    // A right-click (nothing selected) must not set a rally on the enemy factory.
+    right_click(input, px, py, 2000);
+    CHECK_FALSE(world.buildings()[b].has_rally);
+}

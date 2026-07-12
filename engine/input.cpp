@@ -149,6 +149,41 @@ bool Input::selection_box(int& x0, int& y0, int& x1, int& y1) const {
     return true;
 }
 
+bool Input::commit_factory_click(int px, int py) {
+    // Resolve the clicked ground cell, then the building (if any) on it. The
+    // factory gesture is OWN-HOUSE GATED [Task 5 review]: only an alive,
+    // house-0 building whose type is a unit factory can ever be selected,
+    // rallied, or primed -- an enemy factory click falls through to normal
+    // selection (and clears any prior factory selection).
+    int cx = 0, cy = 0;
+    resolve_ground_cell(px, py, cx, cy);
+    const int b = world_.building_at_cell(cx, cy);
+    if (b >= 0 && world_.buildings()[b].house == 0 && world_.buildings()[b].alive &&
+        is_unit_factory_type(world_.buildings()[b].type)) {
+        if (selected_building_ == b) {
+            // Re-click the selected factory -> set primary [RE: production.md
+            // §1.2, RE-FALLBACK: original toggles by right-click; our right-
+            // click sets the rally, so LEFT re-click primes]. Resolve the
+            // building's category so set_primary clears only its sibling group.
+            const int t = world_.buildings()[b].type;
+            std::vector<int> cat;
+            for (int x : inf_factory_types_)
+                if (x == t) { cat = inf_factory_types_; break; }
+            if (cat.empty())
+                for (int x : veh_factory_types_)
+                    if (x == t) { cat = veh_factory_types_; break; }
+            if (cat.empty()) cat = {t};
+            world_.set_primary(b, cat);
+        } else {
+            selected_building_ = b;
+            world_.clear_selection();  // factory selection clears the unit selection
+        }
+        return true;
+    }
+    selected_building_ = -1;  // click NOT on an own factory: drop the selection
+    return false;
+}
+
 void Input::commit_click(int px, int py, bool shift) {
     // Left-click never selects a hostile: a pick that lands on a house != 0
     // unit is treated exactly like a pick on empty ground (falls through to
@@ -262,6 +297,18 @@ void Input::handle(const InputEvent& ev) {
 
         case InputEvent::PointerDown:
             if (ev.button == InputEvent::Right) {
+                // Rally-point set [RE: production.md §1.4]: with an own unit
+                // factory selected, a right-click sets its rally cell and
+                // consumes the event (no attack/move). set_rally re-guards the
+                // building index/alive internally, so a factory that died since
+                // selection is a harmless no-op. Resolved BEFORE the harvester/
+                // attack path so a selected factory always takes precedence.
+                if (selected_building_ >= 0) {
+                    int rcx = 0, rcy = 0;
+                    resolve_ground_cell(ev.x, ev.y, rcx, rcy);
+                    world_.set_rally(selected_building_, rcx, rcy);
+                    break;
+                }
                 // Right-click: attack a hostile under the cursor if the pick
                 // lands on one (house != 0) -- a right-click on a FRIENDLY
                 // unit is NOT an attack order and falls through to the
@@ -409,6 +456,12 @@ void Input::handle(const InputEvent& ev) {
             if (l_down_) {
                 if (dragging_) {
                     commit_box(down_shift_);
+                } else if (commit_factory_click(ev.x, ev.y)) {
+                    // Handled as a factory select/primary [RE: production.md
+                    // §1.2] -- takes precedence over unit selection AND the
+                    // double-click type-select; reset the double-click timer so
+                    // a following click on a unit isn't spuriously a "double".
+                    last_click_t_ = 0;
                 } else {
                     const bool is_double =
                         (ev.t_ms - last_click_t_) <= kDblMs &&

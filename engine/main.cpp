@@ -37,6 +37,7 @@
 #include "building.hpp"
 #include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
+#include "factory.hpp"      // primary_factory (unit exit handoff)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "iso_project.hpp"
@@ -839,6 +840,99 @@ const VehicleAssets* miner_for_id(const MinerAssets& m, const std::string& id, b
     return nullptr;
 }
 
+// The Allied producible-unit roster + its render/cameo assets [RE-GATE
+// APPLIED: production.md §1.6]. `defs` holds each UnitTypeDef (index = the
+// unit-queue slot type); `vehicles` holds one VehicleAssets per is_vehicle def
+// (appended in def order, so the k-th vehicle def maps to vehicles[k]); the
+// cameo SHP + present flag are parallel to `defs`. Infantry render/combat come
+// from the existing UnitAssets pipeline + UnitTypeDef::combat, so no per-def
+// infantry SHP store is needed here.
+struct UnitRoster {
+    std::vector<ra2engine::UnitTypeDef> defs;
+    std::vector<VehicleAssets> vehicles;
+    std::vector<ra2assets::ShpFile> cameos;  // parallel to defs
+    std::vector<char> has_cameo;             // parallel to defs
+};
+
+// Loads the curated Allied producibles + assets [RE-GATE APPLIED:
+// production.md §1.1/§1.6 — recovered per-unit prereqs are PLAIN building ids:
+// E1/GGI=GAPILE, MTNK/FV=GAWEAP, not the Barracks/Factory group tokens]. Every
+// entry is opt-guarded: a def whose cost/tech/cameo is unusable, whose vehicle
+// voxel assets fail to load, or whose combat can't resolve is DROPPED from
+// `defs` (never a crash — mirrors Task 6's defense guard). Cameo SHPs load
+// from cameo.mix (language.mix) exactly like building cameos, keyed by unit id.
+UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
+                            const UnitAssets& ua, const Rules& rules, const Art& art) {
+    UnitRoster ur;
+    struct Ent { const char* id; bool vehicle; const char* prereq; };
+    static const Ent kUnits[] = {
+        {"E1",  false, "GAPILE"}, {"GGI", false, "GAPILE"},
+        {"MTNK", true, "GAWEAP"}, {"FV",  true, "GAWEAP"},
+    };
+    // cameo.mix lives inside language.mix (same chain load_building_assets uses
+    // for building cameos); opened once here, guarded so a missing archive just
+    // leaves every unit cameo absent (defs still gate on the cameo NAME string).
+    std::unique_ptr<MixFile> cameo_mix;
+    try {
+        MixFile language = MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        cameo_mix = std::make_unique<MixFile>(language.open_nested("cameo.mix"));
+    } catch (const std::exception&) { cameo_mix.reset(); }
+
+    for (const Ent& e : kUnits) {
+        try {
+            ra2engine::UnitTypeDef d;
+            d.id = e.id;
+            d.cost = rules.cost(e.id);
+            d.tech_level = rules.tech_level(e.id);
+            d.is_vehicle = e.vehicle;
+            d.prerequisite = {e.prereq};   // plain building id [RE: production.md §1.6]
+            // DEVIATION from brief (`art.cameo(e.id)`): the cameo must come from
+            // the unit's IMAGE art section (the one it actually renders as), not
+            // the rules id. In this artmd.ini E1's section is [GI]
+            // (Cameo=GIICON) and, critically, rules [MTNK] Image=GTNK — the
+            // Grizzly — while the legacy [MTNK] art section is the *Apocalypse*
+            // (Cameo=MTNKICON). Keying on rules.image(id) yields GTNK->GTNKICON
+            // (Grizzly), the correct cameo. Fall back to the id-keyed section if
+            // the image section has none.
+            const std::string image = rules.image(e.id);
+            d.cameo = art.cameo(image);
+            if (d.cameo.empty()) d.cameo = art.cameo(e.id);
+            if (d.cost <= 0 || d.tech_level <= 0 || d.cameo.empty()) continue;  // not producible
+
+            // Cameo SHP (guarded; absence only downgrades the sidebar icon).
+            ra2assets::ShpFile cshp;
+            bool have_cameo = false;
+            if (cameo_mix) {
+                std::string cn = d.cameo;
+                for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
+                if (const MixEntry* ce = cameo_mix->find(cn + ".shp")) {
+                    try { cshp = ShpFile::load(cameo_mix->read(*ce)); have_cameo = true; }
+                    catch (const std::exception&) { have_cameo = false; }
+                }
+            }
+
+            if (e.vehicle) {
+                VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, e.id);
+                if (!va.ok) continue;                 // assets missing -> drop
+                d.combat = va.combat;
+                ur.vehicles.push_back(std::move(va));
+            } else {
+                const ResolvedUnit ru = resolve_combat_unit(rules, e.id);  // infantry combat + SHP image
+                d.combat = ru.combat;
+                d.combat.is_vehicle = false;
+                d.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+            }
+            ur.defs.push_back(std::move(d));
+            ur.cameos.push_back(std::move(cshp));
+            ur.has_cameo.push_back(have_cameo ? 1 : 0);
+        } catch (const std::exception& ex) {
+            std::cerr << "[unit-roster] " << e.id << " unavailable (" << ex.what() << ")\n";
+        }
+    }
+    std::cerr << "[unit-roster] producible=" << ur.defs.size() << "\n";
+    return ur;
+}
+
 // Spawns a harvester of `va`'s type at/next to (tx,ty): tries the target cell,
 // then rings outward, for the first walkable + unoccupied cell (add_harvester's
 // placement precondition). Returns the new unit index or -1 if none is free.
@@ -1568,7 +1662,8 @@ ra2engine::Camera centered_camera(const MapFile& map, int view_w, int view_h) {
 std::vector<int> sidebar_buildable(const BuildingAssets& ba);
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
-                  const ra2engine::World& world, int credits_shown, double t_now, int active_tab);
+                  const ra2engine::World& world, int credits_shown, double t_now, int active_tab,
+                  const UnitRoster* ur = nullptr);
 
 int run_screenshot(const std::string& out_path) {
     const int W = 1280, H = 720;
@@ -1588,6 +1683,9 @@ int run_screenshot(const std::string& out_path) {
     BuildingAssets ba = load_building_assets(ra2, language, rules, art);
     MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
     OreArt ore_art = load_ore_art(ra2);
+    // Producible-unit roster (logs [unit-roster] producible=N) so the HUD
+    // screenshot can render a unit tab with the real unit cameos.
+    UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
     const std::vector<const VehicleAssets*> vlist{&va, &miners.harv, &miners.cmin};
     ra2engine::World world = build_world(a, ua, 5);
     if (va.ok) spawn_tank_squads(world, a, va, 3);
@@ -1632,15 +1730,21 @@ int run_screenshot(const std::string& out_path) {
         SDL_RenderClear(ren);
         render_world(ren, tc, a, ua, world, cam, W, H, /*input=*/nullptr, &vlist,
                      ba.ok ? &ba : nullptr, ore_art.any ? &ore_art : nullptr);
-        // Sidebar HUD (idle production state) so --screenshot shows the full UI.
+        // Sidebar HUD so --screenshot shows the full UI. Render the Vehicle tab
+        // (tab 3) so the wired unit-roster cameos (MTNK/FV) are visible, with an
+        // idle unit queue's ProductionState.
         if (ba.ok && ba.sidebar_ok) {
-            const std::vector<int> buildable = sidebar_buildable(ba);
+            std::vector<int> buildable;   // tab 3 (Vehicle): unit-roster indices
+            for (int i = 0; i < static_cast<int>(ur.defs.size()); ++i)
+                if (ur.defs[i].is_vehicle) buildable.push_back(i);
+            const int active_tab = buildable.empty() ? 0 : 3;
+            if (buildable.empty()) buildable = sidebar_buildable(ba);
             const ra2engine::SidebarLayout lay =
                 ra2engine::SidebarLayout::compute(W, H, buildable);
             ra2engine::ProductionState ps;
             ps.credits = rules.mp_money();
             draw_sidebar(ren, tc, ba, lay, ps, world, static_cast<int>(ps.credits), 0.0,
-                         /*active_tab=*/0);
+                         active_tab, &ur);
         }
         capture_png(ren, out_path, W, H);
 
@@ -1674,6 +1778,61 @@ void ps_tick(ra2engine::ProductionState& ps, const ra2engine::World& world,
     if (ps.slot.type != -1 && !conyard_alive(world, ba, 0)) ra2engine::cancel(ps);
 }
 
+// The roster-index list of buildings that are factories for one queue category
+// (a single id here — GAPILE for Infantry, GAWEAP for Vehicle, GACNST for the
+// building queues). Empty if the id isn't in the roster.
+std::vector<int> factory_types_for(const BuildingAssets& ba, const char* id) {
+    std::vector<int> v;
+    const int t = roster_index(ba, id);
+    if (t >= 0) v.push_back(t);
+    return v;
+}
+
+// MultipleFactory build-SPEED multiplier for one category [RE-GATE APPLIED:
+// production.md §1.2 — CONFIRMED MultipleFactory=0.8: each EXTRA same-class
+// alive Idle owned factory multiplies build TIME by 0.8 (2->x0.8, 3->x0.64),
+// so the tick SPEED multiplier is mf^-(n-1)]. n<=1 -> 1.0.
+double factory_speedup(const ra2engine::World& world, const std::vector<int>& ftypes, double mf) {
+    int n = 0;
+    for (const ra2engine::Building& b : world.buildings()) {
+        if (!b.alive || b.state != ra2engine::Building::State::Idle || b.house != 0) continue;
+        for (int t : ftypes) if (b.type == t) { ++n; break; }
+    }
+    if (n <= 1 || mf <= 0.0) return 1.0;
+    return std::pow(1.0 / mf, n - 1);
+}
+
+// Per-frame production glue for the FOUR concurrent queues [RE-GATE APPLIED:
+// production.md §1.1/§1.2/§1.5], headless-safe. Recompute power, advance every
+// queue (each category's speed = power_mult x its MultipleFactory speedup;
+// Structure+Defense share the ONE ConYard factory-count slot), then cancel a
+// queue whose factory group was lost — buildings share the ConYard-alive gate
+// (both building queues cancel together), Infantry/Vehicle each cancel on their
+// own factory group. reconcile_refund settles the shared pool after a cancel.
+void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const BuildingAssets& ba,
+               double dt, double low_mod, double mf, const std::vector<int>& inf_ft,
+               const std::vector<int>& veh_ft) {
+    const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+    const double pmul = ra2engine::build_speed_multiplier(pt, low_mod);
+    const std::vector<int> bld_ft = factory_types_for(ba, "GACNST");
+    const double bsp = factory_speedup(world, bld_ft, mf);
+    const double sp[4] = {bsp, bsp,
+                          factory_speedup(world, inf_ft, mf), factory_speedup(world, veh_ft, mf)};
+    q.tick(dt, pmul, sp, ba.roster);
+    // ConYard-died cancels BOTH building queues (Structure AND Defense share the
+    // ConYard-alive factory group) [RE: production.md §1.1].
+    if (!conyard_alive(world, ba, 0)) {
+        if (q.structure().slot.type != -1) ra2engine::cancel(q.structure());
+        if (q.producing(ra2engine::QueueCat::Defense) != -1) q.cancel(ra2engine::QueueCat::Defense);
+    }
+    // Factory-died cancels+refunds the matching unit queue (mirrors ConYard).
+    if (q.producing(ra2engine::QueueCat::Infantry) != -1 && world.factory_category_lost(inf_ft, 0))
+        q.cancel(ra2engine::QueueCat::Infantry);
+    if (q.producing(ra2engine::QueueCat::Vehicle) != -1 && world.factory_category_lost(veh_ft, 0))
+        q.cancel(ra2engine::QueueCat::Vehicle);
+    q.reconcile_refund();   // a refund raised one queue above the pool tail
+}
+
 // Building-roster indices for a building tab: GA* player buildings with a
 // cameo, tech>0, art ok, split by the recovered BuildCat==Combat classifier
 // [RE-GATE APPLIED: production.md §1.1]. tab 0 (Structures) = BuildCat!=Combat,
@@ -1695,8 +1854,11 @@ std::vector<int> building_buildable_tab(const BuildingAssets& ba, bool defenses)
     return v;
 }
 
-// Structures tab (tab 0) — the DEMO-facing list; identical to the pre-defense
-// output {GAPOWR,GAPILE,GAWEAP}, so demo_buildable_closure is unchanged.
+// Structures tab (tab 0) — the DEMO-facing list of the player's non-defense
+// buildable buildings. With the Economy phase's GAREFN appended to the roster
+// it is {GAPOWR,GAREFN,GAPILE,GAWEAP} (tech-ordered), so it is not the bare
+// pre-economy trio; the byte-identity demos build specific ids by roster_index,
+// not this list, so their hashes are unaffected.
 std::vector<int> sidebar_buildable(const BuildingAssets& ba) {
     return building_buildable_tab(ba, /*defenses=*/false);
 }
@@ -1766,7 +1928,8 @@ void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint
 // scroll buttons; §8 power pips]. `t_now` drives the Ready + outage flashes.
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
-                  const ra2engine::World& world, int credits_shown, double t_now, int active_tab) {
+                  const ra2engine::World& world, int credits_shown, double t_now, int active_tab,
+                  const UnitRoster* ur) {
     // Opaque backdrop behind any gaps (missing optional chrome), then the
     // recovered top-to-bottom stack.
     shade_rect(ren, lay.bar, 255, 24, 24, 28);
@@ -1858,27 +2021,40 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         blit_shp(ren, tc, "sb:pp" + std::to_string(frame), ba.sb_powerp, frame, ba.sb_pal,
                  lay.power.x, py);
     }
-    // Cameo grid + per-state overlay.
+    // Cameo grid + per-state overlay. On unit tabs (2/3) `c.type` indexes the
+    // UnitRoster (not ba.art); the blit uses the unit cameo cache and the
+    // overlay tracks THIS tab's own queue (`ps` = queues.state(cat)). The
+    // disabled-shade can_start call is building-roster-based, so it is guarded
+    // to building tabs only (unit tabs skip the cosmetic disabled shade).
+    const bool unit_tab = (active_tab >= 2 && ur);
     for (const ra2engine::CameoCell& c : lay.cameos) {
         const int type = c.type;
-        if (type < 0 || type >= static_cast<int>(ba.art.size())) continue;
-        if (ba.art[type].has_cameo)
-            blit_shp(ren, tc, "cam:" + ba.roster[type].id, ba.art[type].cameo, 0, ba.cameo_pal,
-                     c.rect.x, c.rect.y);
-        const bool can = ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
+        if (unit_tab) {
+            if (type < 0 || type >= static_cast<int>(ur->defs.size())) continue;
+            if (type < static_cast<int>(ur->has_cameo.size()) && ur->has_cameo[type])
+                blit_shp(ren, tc, "ucam:" + ur->defs[type].id, ur->cameos[type], 0, ba.cameo_pal,
+                         c.rect.x, c.rect.y);
+        } else {
+            if (type < 0 || type >= static_cast<int>(ba.art.size())) continue;
+            if (ba.art[type].has_cameo)
+                blit_shp(ren, tc, "cam:" + ba.roster[type].id, ba.art[type].cameo, 0, ba.cameo_pal,
+                         c.rect.x, c.rect.y);
+        }
+        const bool can =
+            !unit_tab && ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
                                               conyard_alive(world, ba, 0));
         if (ps.slot.type == type && ps.slot.ready) {
             // Ready: 2 Hz brightness flash (green tint overlay; READY text is a
             // documented divergence -- no game font in this phase).
             if (static_cast<int>(t_now * 2) % 2 == 0) shade_rect(ren, c.rect, 90, 0, 200, 0);
         } else if (ps.slot.type == type) {
-            // Building: gclock2 frame (1 + stage) over a shade [§11].
+            // Building/unit: gclock2 frame (1 + stage) over a shade [§11].
             shade_rect(ren, c.rect, 90);
             int gframe = 1 + ps.slot.stage;
             if (gframe >= ba.sb_gclock.count()) gframe = ba.sb_gclock.count() - 1;
             blit_shp(ren, tc, "sb:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
                      c.rect.x, c.rect.y);
-        } else if (!can) {
+        } else if (active_tab < 2 && !can) {
             shade_rect(ren, c.rect, 140);  // Disabled: ~55% black
         }
     }
@@ -1915,6 +2091,54 @@ void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
     }
 }
 
+// Production chrome [RE: production.md §1.2/§1.4] — cosmetic, never mutates the
+// sim. A small filled yellow triangle marks each own (house 0) alive PRIMARY
+// unit factory at its foundation screen center; a cyan X marks the selected
+// factory's rally cell. Both are clipped to the playfield (left of the sidebar)
+// and tagged like the divergent READY overlay. `playfield_w` is the world
+// viewport width (window minus the sidebar strip).
+void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
+                            const BuildingAssets& ba, const ra2engine::Input& input,
+                            const Assets& a, const ra2engine::Camera& cam, int /*W*/,
+                            int playfield_w) {
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    auto cell_center_px = [&](int cx, int cy, int& sx, int& sy) {
+        const ra2assets::MapCell* mc = a.map.at(cx, cy);
+        const int level = mc ? mc->level : 0;
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, level, 60, 30, 15);
+        sx = p.x + cam.x + 30;   // + tile_w/2 (diamond center)
+        sy = p.y + cam.y + 15;   // + tile_h/2
+    };
+    // Primary-factory markers.
+    SDL_SetRenderDrawColor(ren, 255, 220, 40, 220);
+    for (const ra2engine::Building& b : world.buildings()) {
+        if (!b.alive || b.house != 0 || !b.primary) continue;
+        int sx = 0, sy = 0;
+        cell_center_px(b.cx + b.fw / 2, b.cy + b.fh / 2, sx, sy);
+        if (sx < 0 || sx >= playfield_w) continue;
+        SDL_Point tri[4] = {{sx, sy - 10}, {sx - 7, sy + 4}, {sx + 7, sy + 4}, {sx, sy - 10}};
+        SDL_RenderDrawLines(ren, tri, 4);
+        for (int yy = -8; yy <= 3; ++yy) {  // crude fill
+            const int half = (yy + 8) * 7 / 11;
+            SDL_RenderDrawLine(ren, sx - half, sy + yy, sx + half, sy + yy);
+        }
+    }
+    // Rally marker for the selected factory.
+    const int sb = input.selected_building();
+    if (sb >= 0 && sb < static_cast<int>(world.buildings().size())) {
+        const ra2engine::Building& b = world.buildings()[sb];
+        if (b.alive && b.has_rally) {
+            int sx = 0, sy = 0;
+            cell_center_px(b.rally_x, b.rally_y, sx, sy);
+            if (sx >= 0 && sx < playfield_w) {
+                SDL_SetRenderDrawColor(ren, 40, 230, 230, 230);
+                SDL_RenderDrawLine(ren, sx - 8, sy - 8, sx + 8, sy + 8);
+                SDL_RenderDrawLine(ren, sx - 8, sy + 8, sx + 8, sy - 8);
+            }
+        }
+    }
+}
+
 int run_interactive(bool no_audio) {
     const std::string dir = env_install_dir();
     ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
@@ -1933,9 +2157,32 @@ int run_interactive(bool no_audio) {
     BuildingAssets ba = load_building_assets(ra2, language, rules, art);
     MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
     OreArt ore_art = load_ore_art(ra2);
-    const std::vector<const VehicleAssets*> vlist{&va, &miners.harv, &miners.cmin};
+    // Producible-unit roster [RE: production.md §1.6]; its vehicle voxel assets
+    // are appended to the render vlist so launched MTNK/FV render as voxels.
+    UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
+    std::vector<const VehicleAssets*> vlist{&va, &miners.harv, &miners.cmin};
+    for (const VehicleAssets& v : ur.vehicles) vlist.push_back(&v);
+    // Register each infantry def's SHP + anim into the shared UnitAssets store
+    // so launched infantry render (E1's "GI" is already present; other infantry
+    // images are loaded on demand). Guarded: a missing SHP just leaves that unit
+    // unrenderable (render_world skips + logs), never a crash.
+    try {
+        MixFile conquer = ra2.open_nested("conquer.mix");
+        for (const ra2engine::UnitTypeDef& d : ur.defs) {
+            if (d.is_vehicle || ua.shps.count(d.combat.image)) continue;
+            try {
+                ua.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
+                ua.anims.emplace(d.combat.image, anim_from_art(art, d.combat.image));
+            } catch (const std::exception& ex) {
+                std::cerr << "[unit-roster] infantry SHP " << d.combat.image << " unavailable ("
+                          << ex.what() << ")\n";
+            }
+        }
+    } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
     const double build_speed = rules.general_double("BuildSpeed", 0.7);
     const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
+    // MultipleFactory build-time multiplier [RE-GATE §1.2: 0.8, CONFIRMED].
+    const double mf = rules.general_double("MultipleFactory", 0.8);
 
     ra2engine::World world = build_world(a, ua, 5);
     // Economy wiring [RE: economy.md]: enables ore growth/spread + harvester
@@ -1969,7 +2216,11 @@ int run_interactive(bool no_audio) {
     auto tab_buildable = [&](int tab) -> std::vector<int> {
         if (tab == 0) return building_buildable_tab(ba, /*defenses=*/false);
         if (tab == 1) return building_buildable_tab(ba, /*defenses=*/true);
-        return {};  // tabs 2 (Infantry) / 3 (Vehicle): unit roster wired in Task 7
+        std::vector<int> v;   // tabs 2 (Infantry) / 3 (Vehicle): unit-roster indices
+        const bool want_veh = (tab == 3);
+        for (int i = 0; i < static_cast<int>(ur.defs.size()); ++i)
+            if (ur.defs[i].is_vehicle == want_veh) v.push_back(i);
+        return v;
     };
     std::vector<int> buildable = tab_buildable(active_tab);
     ra2engine::SidebarLayout lay =
@@ -1982,12 +2233,30 @@ int run_interactive(bool no_audio) {
     // Refinery gate for the right-click "return" order (fix round: brief says
     // own alive REFINERY only): the same type list wire_economy passes.
     if (ba.ok) input.set_refinery_types(refinery_type_indices(ba, rules));
+    // Unit-factory type lists for the factory-select / rally / primary gestures
+    // [RE: production.md §1.2/§1.4], own-house 0 only (Input gates on house 0).
+    const std::vector<int> inf_ft = factory_types_for(ba, "GAPILE");
+    const std::vector<int> veh_ft = factory_types_for(ba, "GAWEAP");
+    {
+        std::vector<int> unit_ft = inf_ft;
+        unit_ft.insert(unit_ft.end(), veh_ft.begin(), veh_ft.end());
+        input.set_unit_factory_types(unit_ft);
+        input.set_infantry_factory_types(inf_ft);
+        input.set_vehicle_factory_types(veh_ft);
+    }
     const int kPan = 40;
 
-    // Player production state (starts with MP money).
-    ra2engine::ProductionState ps;
-    ps.credits = rules.mp_money();
-    double credits_shown = ps.credits;
+    // Player production: FOUR concurrent queues sharing one credit pool
+    // [RE-GATE APPLIED: production.md §1.1]. queues.structure() IS the old
+    // single Structure queue (byte-identical path); state(Defense/Infantry/
+    // Vehicle) are the new concurrent queues for tabs 1/2/3.
+    ra2engine::ProductionQueues queues;
+    double player_credits = rules.mp_money();
+    queues.set_credits(player_credits);
+    double credits_shown = player_credits;
+    // Which building queue a ready cameo entered placement from, so the
+    // placement-confirm branch clears the right queue's slot.
+    ra2engine::QueueCat place_cat = ra2engine::QueueCat::Structure;
 
     // Audio wiring (Task 6): --no-audio skips init_audio entirely. `rules`
     // above is reused for the voice getters -- no second parse.
@@ -2009,7 +2278,8 @@ int run_interactive(bool no_audio) {
             // PointerUp/Move still pass through: a drag that STARTED in the
             // world must end cleanly wherever the button is released.
             // Cameo click: Available -> start; Building -> cancel;
-            // Ready -> begin_placement; tab clicks are no-ops (tab 0 active).
+            // Ready -> begin_placement (building tabs) / launch on completion
+            // (unit tabs). Tab clicks switch the active tab (all four live).
             if (sidebar_up && ev.kind == ra2engine::InputEvent::PointerDown &&
                 lay.contains(ev.x, ev.y)) {
                 if (ev.button == ra2engine::InputEvent::Left) {
@@ -2024,24 +2294,53 @@ int run_interactive(bool no_audio) {
                                                                 platform.height(), buildable);
                         continue;  // consumed: switched tab
                     }
-                    // Cameo start/cancel/place is only wired for tab 0 (the
-                    // Structure queue on `ps`). Tab 1 (Defenses) drives its OWN
-                    // concurrent Defense queue [RE-GATE APPLIED: production.md
-                    // §1.1] that only arrives with ProductionQueues in Task 7,
-                    // so its cameo strip is shown but clicks are inert here.
-                    // Tabs 2/3 have an empty buildable, so cameo_at returns -1.
-                    if (active_tab == 0) {
-                        const int ci = lay.cameo_at(ev.x, ev.y);
-                        if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
+                    // Cameo start/cancel/place, dispatched by the active tab.
+                    // Tabs 0/1 drive the SEPARATE concurrent Structure/Defense
+                    // building queues; tabs 2/3 the Infantry/Vehicle unit queues
+                    // [RE-GATE APPLIED: production.md §1.1]. All four gate on
+                    // their own factory group (conyard_alive / factory group).
+                    const int ci = lay.cameo_at(ev.x, ev.y);
+                    if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
+                        if (active_tab >= 2) {
+                            const ra2engine::QueueCat cat = (active_tab == 3)
+                                ? ra2engine::QueueCat::Vehicle
+                                : ra2engine::QueueCat::Infantry;
+                            const int uslot = buildable[ci];   // unit-roster index
+                            const std::vector<int>& ft =
+                                (cat == ra2engine::QueueCat::Vehicle) ? veh_ft : inf_ft;
+                            if (queues.producing(cat) == uslot) {
+                                queues.cancel(cat);            // click the producing cameo -> cancel
+                                queues.reconcile_refund();
+                                player_credits = queues.structure().credits;
+                            } else if (ra2engine::can_start_unit(
+                                           queues.state(cat), uslot, ur.defs, world.buildings(),
+                                           ba.roster, 0, ba.groups,
+                                           !world.factory_category_lost(ft, 0))) {
+                                queues.set_credits(player_credits);
+                                queues.start_unit(cat, uslot, ur.defs, build_speed);
+                            }
+                        } else {
+                            // Tabs 0/1: building start/cancel/ready->place on the
+                            // tab's OWN queue. Record place_cat when entering
+                            // placement so the confirm branch clears the right
+                            // queue's slot.
+                            const ra2engine::QueueCat bcat = (active_tab == 1)
+                                ? ra2engine::QueueCat::Defense
+                                : ra2engine::QueueCat::Structure;
+                            ra2engine::ProductionState& bq = queues.state(bcat);
                             const int type = buildable[ci];
-                            if (ps.slot.type == type && ps.slot.ready) {
+                            if (bq.slot.type == type && bq.slot.ready) {
+                                place_cat = bcat;
                                 input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
-                            } else if (ps.slot.type == type) {
-                                ra2engine::cancel(ps);
-                            } else if (ra2engine::can_start(ps, type, ba.roster, world.buildings(),
+                            } else if (bq.slot.type == type) {
+                                queues.cancel(bcat);
+                                queues.reconcile_refund();
+                                player_credits = queues.structure().credits;
+                            } else if (ra2engine::can_start(bq, type, ba.roster, world.buildings(),
                                                             0, ba.groups,
                                                             conyard_alive(world, ba, 0))) {
-                                ra2engine::start(ps, type, ba.roster, build_speed);
+                                queues.set_credits(player_credits);
+                                ra2engine::start(bq, type, ba.roster, build_speed);
                             }
                         }
                     }
@@ -2080,9 +2379,40 @@ int run_interactive(bool no_audio) {
         const double dt = (now - prev) / 1000.0;
         prev = now;
         world.step(dt);
-        ps_tick(ps, world, ba, dt, low_mod);
+        // Advance all four queues from the shared pool, then read the pool back
+        // (reconcile_refund left all four equal).
+        queues.set_credits(player_credits);
+        prod_tick(queues, world, ba, dt, low_mod, mf, inf_ft, veh_ft);
+        player_credits = queues.structure().credits;
         // Harvest income -> player credits [RE: economy.md §2] (drain per frame).
-        ps.credits += world.take_income(0);
+        player_credits += world.take_income(0);
+
+        // Exit handoff [RE: production.md §1.3/§1.4]: any ready unit queue
+        // launches its unit from the category's primary factory. A blocked exit
+        // (no free ring cell) HOLDs the ready slot and retries next frame.
+        for (ra2engine::QueueCat cat :
+             {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
+            if (!queues.ready(cat)) continue;
+            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? inf_ft : veh_ft;
+            const int fi = ra2engine::primary_factory(world.buildings(), ft, 0);
+            if (fi < 0) continue;                    // no factory (queue cancelled elsewhere)
+            const int uslot = queues.producing(cat);
+            if (uslot < 0 || uslot >= static_cast<int>(ur.defs.size())) {
+                queues.placed(cat);
+                continue;
+            }
+            const ra2engine::BuildingTypeDef& fdef = ba.roster[world.buildings()[fi].type];
+            const int uidx = world.launch_unit(fi, fdef, ur.defs[uslot].combat);
+            if (uidx >= 0) {
+                // Register the unit's anim so infantry animate (vehicles ignore it).
+                world.set_anim(ur.defs[uslot].combat.image,
+                               ua.anims.count(ur.defs[uslot].combat.image)
+                                   ? ua.anims.at(ur.defs[uslot].combat.image)
+                                   : ra2engine::default_anim());
+                queues.placed(cat);                  // slot cleared; unit is on the field
+            }
+            // else exit blocked -> HOLD ready this frame (retry next frame)
+        }
         // FreeUnit grand-opening spawns (a just-built refinery drops its miner).
         if (ba.ok) spawn_free_units_on_open(world, ba, rules, miners, bstates);
         // Chrono Miner teleport sounds (drain the harvest event queue each frame;
@@ -2100,7 +2430,7 @@ int run_interactive(bool no_audio) {
 
         // Rolling credits tally (display-only; never read by the sim).
         {
-            const double target = ps.credits;
+            const double target = player_credits;
             const double rate = std::max(500.0, std::abs(target - credits_shown) / 0.5);
             const double step = rate * dt;
             if (credits_shown < target) credits_shown = std::min(target, credits_shown + step);
@@ -2124,7 +2454,7 @@ int run_interactive(bool no_audio) {
                 if (chk.ok) {
                     world.add_building(type, act.place_cx, act.place_cy, d.fw, d.fh, 0, d.strength,
                                        d.armor_ix, ba.art[type].buildup_total, /*instant=*/false);
-                    ra2engine::placed(ps);
+                    queues.placed(place_cat);   // clear the slot on the queue this cameo came from
                     input.cancel_placement();
                     if (audio.enabled) audio.mixer->play("PlaceBuilding");
                 }
@@ -2194,9 +2524,22 @@ int run_interactive(bool no_audio) {
         if (!(sidebar_up && lay.contains(mx, my)))
             draw_placement_cursor(ren, world, ba, input, a, cam, platform.width(),
                                   platform.height());
-        if (ba.ok && ba.sidebar_ok)
-            draw_sidebar(ren, tc, ba, lay, ps, world,
-                         static_cast<int>(std::llround(credits_shown)), now / 1000.0, active_tab);
+        if (ba.ok && ba.sidebar_ok) {
+            // Each tab shows its OWN queue's build-clock/ready overlays.
+            const ra2engine::QueueCat vis_cat =
+                (active_tab == 1) ? ra2engine::QueueCat::Defense
+                : (active_tab == 2) ? ra2engine::QueueCat::Infantry
+                : (active_tab == 3) ? ra2engine::QueueCat::Vehicle
+                                    : ra2engine::QueueCat::Structure;
+            draw_sidebar(ren, tc, ba, lay, queues.state(vis_cat), world,
+                         static_cast<int>(std::llround(credits_shown)), now / 1000.0, active_tab,
+                         &ur);
+        }
+        // Production chrome [RE: production.md §1.2/§1.4; markers are cosmetic,
+        // never touch sim state]: a filled triangle over each own primary unit
+        // factory, and a rally X for the currently selected factory.
+        draw_production_chrome(ren, world, ba, input, a, cam, platform.width(),
+                               playfield_w);
         platform.present();
         SDL_Delay(16);  // ~60fps
     }

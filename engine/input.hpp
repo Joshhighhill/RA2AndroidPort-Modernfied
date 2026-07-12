@@ -106,6 +106,21 @@ public:
     // (never called) = no building ever triggers a return order.
     void set_refinery_types(std::vector<int> types) { refinery_types_ = std::move(types); }
 
+    // Production phase [RE: production.md §1.2/§1.4]: the roster-index lists of
+    // the player's UNIT factories, used by the factory-select / rally / primary
+    // gestures. `unit_factory_types_` is the UNION (any left-click on an own
+    // alive building of one of these types selects it for rally/primary); the
+    // per-category lists (infantry = {GAPILE}, vehicle = {GAWEAP}) let the
+    // primary-set trigger resolve the SELECTED factory's category so
+    // set_primary clears the right sibling group. All own-house 0 only.
+    void set_unit_factory_types(std::vector<int> t) { unit_factory_types_ = std::move(t); }
+    void set_infantry_factory_types(std::vector<int> t) { inf_factory_types_ = std::move(t); }
+    void set_vehicle_factory_types(std::vector<int> t) { veh_factory_types_ = std::move(t); }
+
+    // The own (house 0) factory currently selected for rally/primary, or -1.
+    // Consumed by main.cpp's rally-marker chrome.
+    int selected_building() const { return selected_building_; }
+
     bool wants_quit() const { return quit_; }
 
     // Consume the actions accumulated by every handle() call since the
@@ -141,6 +156,20 @@ private:
             if (r == t) return true;
         return false;
     }
+    // True iff roster type `t` is one of the player's unit-factory types.
+    bool is_unit_factory_type(int t) const {
+        for (int r : unit_factory_types_)
+            if (r == t) return true;
+        return false;
+    }
+    // Factory-select / primary-set on a non-drag left click [RE: production.md
+    // §1.2]. If the click resolves to an own (house 0) alive unit-factory:
+    // re-clicking the ALREADY-selected factory sets it primary; otherwise it
+    // becomes the selection (clearing any unit selection). Returns true when a
+    // factory was handled (so the caller skips unit selection / double-click);
+    // returns false for a click NOT on an own factory, after clearing the
+    // factory selection so the caller's normal selection logic runs.
+    bool commit_factory_click(int px, int py);
 
     World& world_;
     Camera& cam_;
@@ -164,6 +193,11 @@ private:
 
     // Economy phase: refinery roster types (set_refinery_types).
     std::vector<int> refinery_types_;
+
+    // Production phase: unit-factory roster types + the currently selected own
+    // factory (set_unit_factory_types / commit_factory_click). -1 = none.
+    std::vector<int> unit_factory_types_, inf_factory_types_, veh_factory_types_;
+    int selected_building_ = -1;
 
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).
