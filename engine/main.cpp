@@ -4756,6 +4756,291 @@ int run_demo_ai_base() {
     return bad ? 1 : 0;
 }
 
+// FNV hash of the AI-2 end state for --demo-ai-team's two-run byte-identity
+// gate [RE: ai-team.md]: the SORTED live-team rows {teamtype, state, pc,
+// member count} + each team's SORTED member {cell, hp} rows + the
+// produced-unit list (house units: image chars, cell, hp, alive) + credits +
+// teams_created. A NEW function; world_hash/econ_hash/prod_hash/ai_base_hash
+// UNTOUCHED.
+uint64_t ai_team_hash(const ra2engine::World& world, int house) {
+    uint64_t h = 1469598103934665603ULL;  // FNV offset basis
+    if (const ra2engine::AiTeamState* st = world.ai_team_state(house)) {
+        h = fnv_mix(h, static_cast<uint64_t>(st->teams_created));
+        std::vector<std::array<int, 4>> rows;
+        for (const ra2engine::TeamInstance& t : st->teams)
+            rows.push_back({t.teamtype, (int)t.state, t.script_pc, (int)t.members.size()});
+        std::sort(rows.begin(), rows.end());
+        for (const auto& r : rows)
+            for (int x : r) h = fnv_mix(h, static_cast<uint64_t>(x));
+        for (const ra2engine::TeamInstance& t : st->teams) {
+            std::vector<std::array<int, 3>> mem;
+            for (int m : t.members) {
+                if (m < 0 || m >= (int)world.units().size()) continue;
+                const ra2engine::Unit& u = world.units()[m];
+                mem.push_back({u.cell_x, u.cell_y, u.hp});
+            }
+            std::sort(mem.begin(), mem.end());
+            for (const auto& r : mem)
+                for (int x : r) h = fnv_mix(h, static_cast<uint64_t>(x));
+        }
+    }
+    for (const ra2engine::Unit& u : world.units()) {   // produced-unit list
+        if (u.house != house) continue;
+        for (char ch : u.image) h = fnv_mix(h, static_cast<uint64_t>((unsigned char)ch));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+    }
+    h = fnv_mix(h, static_cast<uint64_t>(std::llround(world.ai_credits(house))));
+    return h;
+}
+
+struct DemoAiTeamResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the AI-team demo (fixed 15 Hz dt, frame-driven, rendered
+// + headless byte-identical). Spawns a FULL Soviet base (house 1, refinery +
+// War Miner, barracks & war factory standing) + a small player target base
+// (house 0), AI-flags house 1 at FIXED difficulty / credits / seed with teams
+// ENABLED from the REAL parsed aimd.ini (Soviet-roster-scoped via
+// make_ai_team_config -- the same path the interactive session uses), and lets
+// the offensive-team brain form/recruit/produce/gather/execute over the fixed
+// kAiTeamFrames run. Witnesses record team lifecycle transitions + the FIRST
+// attack order at the player; ai_team_hash pins the end state. This demo (and
+// the interactive session) are the ONLY producers of team.enabled=true.
+DemoAiTeamResult simulate_ai_team(Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                  MinerAssets& miners, const Rules& rules,
+                                  const std::vector<const VehicleAssets*>& vlist,
+                                  const OreArt& ore_art, const ra2assets::Ini& aimd_ini,
+                                  const UnitRoster& ur_ai, bool render, SDL_Renderer* ren,
+                                  ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                                  int W, int H, const std::string& start_png,
+                                  const std::string& end_png) {
+    DemoAiTeamResult r;
+    ra2engine::World world = build_world(a, ua, 0);
+    wire_economy(world, ba, rules);  // ore + harvest stepping for the AI's income
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    if (!pc) { r.ok = false; return r; }
+
+    // Bases: enemy Soviet FULL base (house 1, with refinery + miner) +
+    // player target base (house 0) -- the interactive layout, fixed cells.
+    spawn_base(world, ba, /*house=*/0, pc->x, pc->y + 4);
+    spawn_base(world, ba, /*house=*/1, pc->x + 14, pc->y, /*with_refinery=*/true,
+               miners.harv.ok ? &miners.harv : nullptr, /*harv_chrono=*/false,
+               miners.harv_storage);
+    ra2engine::AiHouseConfig acfg =
+        make_ai_config(ba, rules, ra2engine::AiDifficulty::Normal,
+                       (double)rules.mp_money());
+    acfg.team = make_ai_team_config(ba, ur_ai, rules, aimd_ini,
+                                    ra2engine::AiDifficulty::Normal,
+                                    pc->x, pc->y + 4);
+    world.enable_ai_house(1, acfg);
+    if (acfg.team.aimd.teams.empty()) {
+        r.ok = false;
+        r.witness.emplace_back("[ai-team] NO teams parsed from aimd.ini");
+        return r;
+    }
+
+    std::vector<int> bstates;  // FreeUnit grand-opening tracker (AI refinery miner)
+    const double dt = 1.0 / 15.0;
+    const long kAiTeamFrames = 5400;   // fixed run: 6 min at 15 Hz -- covers the
+                                       // Normal TeamDelays check pass (2500
+                                       // frames) + AutocreateTime spawn (900
+                                       // frames) + recruit/produce/gather/march
+    long frame = 0;
+    // Witness trackers: team lifecycle transitions + first attack order.
+    int last_created = 0;
+    std::vector<std::array<int, 3>> last_rows;   // {teamtype, state, pc} per live team
+    bool attack_seen = false;
+
+    auto step_one = [&]() {
+        world.step(dt);
+        spawn_free_units_on_open(world, ba, rules, miners, bstates);
+        const ra2engine::AiTeamState* st = world.ai_team_state(1);
+        if (st) {
+            if (st->teams_created > last_created) {
+                char b[160];
+                std::snprintf(b, sizeof b, "[ai-team] created teamtype=%s frame=%ld",
+                              acfg.team.aimd.teams[st->teams.back().teamtype].id.c_str(),
+                              frame);
+                r.witness.emplace_back(b);
+                last_created = st->teams_created;
+            }
+            std::vector<std::array<int, 3>> rows;
+            for (const ra2engine::TeamInstance& t : st->teams)
+                rows.push_back({t.teamtype, (int)t.state, t.script_pc});
+            if (rows != last_rows) {
+                for (const ra2engine::TeamInstance& t : st->teams) {
+                    char b[200];
+                    std::snprintf(b, sizeof b,
+                                  "[ai-team] team=%s state=%d pc=%d members=%d frame=%ld",
+                                  acfg.team.aimd.teams[t.teamtype].id.c_str(),
+                                  (int)t.state, t.script_pc, (int)t.members.size(),
+                                  frame);
+                    r.witness.emplace_back(b);
+                }
+                last_rows = rows;
+            }
+        }
+        if (!attack_seen) {
+            for (const ra2engine::Unit& u : world.units()) {
+                if (u.house == 1 && u.alive && u.attack_order &&
+                    (u.target >= 0 || u.target_building >= 0)) {
+                    char b[96];
+                    std::snprintf(b, sizeof b,
+                                  "[ai-team] FIRST ATTACK ORDER frame=%ld", frame);
+                    r.witness.emplace_back(b);
+                    attack_seen = true;
+                    break;
+                }
+            }
+        }
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba,
+                         ore_art.any ? &ore_art : nullptr);
+        }
+    };
+
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+    while (frame < kAiTeamFrames) step_one();
+
+    {
+        const ra2engine::AiTeamState* st = world.ai_team_state(1);
+        char b[200];
+        std::snprintf(b, sizeof b,
+                      "[ai-team] final teams_created=%d live=%d units=%d credits=%d attack=%s",
+                      st ? st->teams_created : -1, st ? (int)st->teams.size() : -1,
+                      (int)world.units().size(),
+                      (int)std::llround(world.ai_credits(1)),
+                      attack_seen ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+    r.hash = ai_team_hash(world, 1);
+    {
+        char b[64];
+        std::snprintf(b, sizeof b, "[ai-team] ai_team_hash=%016llx",
+                      static_cast<unsigned long long>(r.hash));
+        r.witness.emplace_back(b);
+    }
+    // The witness chain the spec demands: created -> recruited (members>0)
+    // -> gathered -> executing -> first attack order. Wedge = NOT ok.
+    if (last_created < 1) { r.ok = false; r.witness.emplace_back("[ai-team] NO team created"); }
+    if (!attack_seen)     { r.ok = false; r.witness.emplace_back("[ai-team] NO attack order -- team logic wedged"); }
+    if (render) { step_one(); capture_png(ren, end_png, W, H); }
+    return r;
+}
+
+// --demo-ai-team: the AI-2 offensive-teams integration gate (7th permanent
+// byte-identity gate). Runs simulate_ai_team rendered (hidden window +
+// start/end screenshots) then headless from a FRESH World, and byte-compares
+// the two witness logs + ai_team hashes. Exit 0 iff both runs are byte-
+// identical AND both `ok`. NO hardcoded hash literal -- compute-and-self-compare
+// (the --demo-ai-base precedent); the controller pins the observed value.
+int run_demo_ai_team() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_ai_team_start.png";
+    const std::string end_png = scratch + "demo_ai_team_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-ai-team] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    const int nacnst = roster_index(ba, "NACNST");
+    if (nacnst < 0 || !ba.art[nacnst].ok) {
+        std::cerr << "[demo-ai-team] FAILED: NACNST (Soviet ConYard) unavailable\n";
+        return 1;
+    }
+    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+    OreArt ore_art = load_ore_art(ra2);
+
+    // aimd.ini drives the enemy team brain [RE: ai-team.md]. A missing/broken
+    // aimd.ini is a HARD failure for THIS gate (the gate's whole point is the
+    // real parsed teams) -- unlike the interactive path's graceful degrade.
+    Ini aimd_ini = Ini::parse("");
+    try { aimd_ini = load_ini_from_ra2md(dir, "aimd.ini"); }
+    catch (const std::exception& ex) {
+        std::cerr << "[demo-ai-team] FAILED: aimd.ini unavailable (" << ex.what() << ")\n";
+        return 1;
+    }
+    // The Soviet combat roster the enemy's aimd teams field.
+    UnitRoster ur_ai = load_soviet_unit_roster(dir, ra2, ua, rules, art);
+    if (ur_ai.defs.empty()) {
+        std::cerr << "[demo-ai-team] FAILED: Soviet unit roster empty\n";
+        return 1;
+    }
+    // Render vlist = War Miner voxel + the AI's combat vehicles, so the AI's
+    // harvester and launched squad draw.
+    std::vector<const VehicleAssets*> vlist;
+    if (miners.harv.ok) vlist.push_back(&miners.harv);
+    for (const VehicleAssets& v : ur_ai.vehicles) vlist.push_back(&v);
+
+    // Camera centered on the enemy base region (same math as run_demo_ai_base).
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(pc->x + 4, pc->y + 6, 0, 60, 30, 15);
+        cam.x = (W - 168) / 2 - p.x;  // playfield left of the sidebar strip
+        cam.y = H / 2 - p.y;
+    }
+
+    // Run 1: rendered (hidden window) + start/end screenshots.
+    DemoAiTeamResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-ai-team)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_ai_team(a, ua, ba, miners, rules, vlist, ore_art, aimd_ini, ur_ai,
+                                  /*render=*/true, ren, &tc, &cam, W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless -- identical script from a FRESH World.
+    DemoAiTeamResult r2 = simulate_ai_team(a, ua, ba, miners, rules, vlist, ore_art, aimd_ini,
+                                           ur_ai, /*render=*/false, nullptr, nullptr, nullptr,
+                                           W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-ai-team] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[80];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d ai_team_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -4840,6 +5125,7 @@ int main(int argc, char** argv) {
         bool demo_econ = false;
         bool demo_prod = false;
         bool demo_ai_base = false;
+        bool demo_ai_team = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -4886,6 +5172,8 @@ int main(int argc, char** argv) {
                 demo_prod = true;
             } else if (arg == "--demo-ai-base") {
                 demo_ai_base = true;
+            } else if (arg == "--demo-ai-team") {
+                demo_ai_team = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
@@ -4898,6 +5186,7 @@ int main(int argc, char** argv) {
         if (demo_econ) return run_demo_econ();
         if (demo_prod) return run_demo_prod();
         if (demo_ai_base) return run_demo_ai_base();
+        if (demo_ai_team) return run_demo_ai_team();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
