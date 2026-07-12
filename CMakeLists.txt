@@ -145,6 +145,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_ore.cpp engine/ore.cpp)
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as ore.cpp/combat.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_harvest.cpp engine/harvest.cpp)
+# factory.cpp is pure C++17 (no SDL): factory exit-cell (8-ring walk to the
+# first free door cell + ExitCoord), primary-factory selection, and set-primary
+# (docs/re/production.md §1). Compiled into both this test binary and ra2engine
+# from one source of truth (same pattern as harvest.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_factory.cpp engine/factory.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)

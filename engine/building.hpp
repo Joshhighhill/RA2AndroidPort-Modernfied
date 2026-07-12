@@ -60,6 +60,14 @@ struct Building {
     // has restored passable_ for this building's foundation cells after it
     // died, so death-triggered unblocking happens exactly once.
     bool blocking_released = false;
+    // --- Production phase: factory rally/primary [RE: production.md §1] ---
+    // NOT read by world_hash (which hashes only type/cx/cy/hp/state), so
+    // --demo-base stays hash=5273b5e71ca009e1 (same discipline Economy used
+    // adding fields to Unit). Default-initialized; only unit-factory buildings
+    // ever set them.
+    bool primary = false;            // this house's primary factory of its category
+    int rally_x = 0, rally_y = 0;    // rally-point cell (valid iff has_rally)
+    bool has_rally = false;          // a rally point was set for this factory
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the
