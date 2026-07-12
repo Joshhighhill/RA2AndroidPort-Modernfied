@@ -862,14 +862,18 @@ struct UnitRoster {
 // voxel assets fail to load, or whose combat can't resolve is DROPPED from
 // `defs` (never a crash — mirrors Task 6's defense guard). Cameo SHPs load
 // from cameo.mix (language.mix) exactly like building cameos, keyed by unit id.
-UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
-                            const UnitAssets& ua, const Rules& rules, const Art& art) {
+// Hoisted from load_unit_roster so the AI-2 Soviet table reuses the loop.
+struct UnitRosterEnt { const char* id; bool vehicle; const char* prereq; };
+
+// Shared roster-loading loop [RE-GATE APPLIED: production.md §1.1/§1.6]. Loads
+// the given (ents, n) into a UnitRoster with EVERY guard identical to the
+// former load_unit_roster body (cost/tech/cameo drop, vehicle-asset drop,
+// per-entry catch/log) — the GATOW/art-guard lesson. Consumed by the player
+// roster (load_unit_roster) and the AI-2 Soviet roster (load_soviet_unit_roster).
+UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFile& ra2,
+                                  const UnitAssets& ua, const Rules& rules, const Art& art,
+                                  const UnitRosterEnt* ents, std::size_t n) {
     UnitRoster ur;
-    struct Ent { const char* id; bool vehicle; const char* prereq; };
-    static const Ent kUnits[] = {
-        {"E1",  false, "GAPILE"}, {"GGI", false, "GAPILE"},
-        {"MTNK", true, "GAWEAP"}, {"FV",  true, "GAWEAP"},
-    };
     // cameo.mix lives inside language.mix (same chain load_building_assets uses
     // for building cameos); opened once here, guarded so a missing archive just
     // leaves every unit cameo absent (defs still gate on the cameo NAME string).
@@ -879,7 +883,8 @@ UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra
         cameo_mix = std::make_unique<MixFile>(language.open_nested("cameo.mix"));
     } catch (const std::exception&) { cameo_mix.reset(); }
 
-    for (const Ent& e : kUnits) {
+    for (std::size_t i = 0; i < n; ++i) {
+        const UnitRosterEnt& e = ents[i];
         try {
             ra2engine::UnitTypeDef d;
             d.id = e.id;
@@ -932,6 +937,36 @@ UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra
     }
     std::cerr << "[unit-roster] producible=" << ur.defs.size() << "\n";
     return ur;
+}
+
+UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
+                            const UnitAssets& ua, const Rules& rules, const Art& art) {
+    static const UnitRosterEnt kUnits[] = {
+        {"E1",  false, "GAPILE"}, {"GGI", false, "GAPILE"},
+        {"MTNK", true, "GAWEAP"}, {"FV",  true, "GAWEAP"},
+    };
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kUnits, 4);
+}
+
+// The Soviet combat roster the exemplar aimd teams field [RE-GATE APPLIED:
+// ai-team.md §I exemplars]. These are exactly the UNITIDs the CONFIRMED stock
+// Soviet autocreate offensive TaskForces name: E2 (Conscript), HTNK (Rhino),
+// APOC (Apocalypse), HTK (Flak Track). Prereqs are the Soviet factories
+// (recovered ids from ai-base.md §2: NAHAND barracks, NAWEAP war factory; APOC
+// also needs the tech path — proxied to NAWEAP pre-map [RE-FALLBACK]). Any entry
+// whose assets fail to load is dropped (art-guard) and parse_aimd then drops the
+// teams needing it. Consumed ONLY by the AI config — the player's `ur` roster
+// (E1/GGI/MTNK/FV) is untouched, so the sidebar/demo-prod slots/witnesses stay
+// byte-identical.
+UnitRoster load_soviet_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
+                                   const UnitAssets& ua, const Rules& rules, const Art& art) {
+    static const UnitRosterEnt kSoviet[] = {
+        {"E2",   false, "NAHAND"},   // Conscript
+        {"HTNK", true,  "NAWEAP"},   // Rhino Tank
+        {"APOC", true,  "NAWEAP"},   // Apocalypse
+        {"HTK",  true,  "NAWEAP"},   // Flak Track
+    };
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kSoviet, 4);
 }
 
 // Spawns a harvester of `va`'s type at/next to (tx,ty): tries the target cell,
@@ -1885,6 +1920,74 @@ std::vector<int> factory_types_for(const BuildingAssets& ba, const char* id) {
     return v;
 }
 
+// Waypoint index -> cell table [RE-FALLBACK: ai-team.md deviations — the map
+// [Waypoints] section is not parsed yet; scripted move-to-waypoint arguments
+// resolve into this deterministic ring around the PLAYER base, so every
+// recovered script marches at the player regardless of which waypoint id it
+// names. Replace with real map waypoints in a later phase.]
+std::vector<ra2engine::Cellxy> make_ai_waypoints(int px, int py) {
+    static const int dx[8] = {0, 4, 4, 4, 0, -4, -4, -4};
+    static const int dy[8] = {-4, -4, 0, 4, 4, 4, 0, -4};
+    std::vector<ra2engine::Cellxy> w;
+    w.reserve(32);
+    for (int i = 0; i < 32; ++i)
+        w.push_back(ra2engine::Cellxy{px + dx[i % 8], py + dy[i % 8]});
+    return w;
+}
+
+// Resolve the AI-2 team config from the real aimd.ini + the Soviet unit
+// roster [RE: ai-team.md]. (player_x, player_y) anchors the waypoint table.
+ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const UnitRoster& ur_ai,
+                                            const Rules& rules, const ra2assets::Ini& aimd_ini,
+                                            ra2engine::AiDifficulty difficulty,
+                                            int player_x, int player_y) {
+    ra2engine::AiTeamConfig tc;
+    tc.enabled = true;
+    tc.unit_roster = ur_ai.defs;
+    // UNITID -> roster index; unknown ids -1 -> parse_aimd art-guard-drops
+    // the TaskForce and every team on it [RE: ai-team.md §1].
+    auto unit_ix = [&](const std::string& id) -> int {
+        for (int i = 0; i < (int)ur_ai.defs.size(); ++i)
+            if (ur_ai.defs[i].id == id) return i;
+        return -1;
+    };
+    tc.aimd = ra2engine::parse_aimd(aimd_ini, unit_ix);
+    tc.inf_factory_types = factory_types_for(ba, "NAHAND");   // tab2 [RE: ai-base.md §2]
+    tc.veh_factory_types = factory_types_for(ba, "NAWEAP");   // tab3
+    tc.house_name = "Russians";  // [RE-GATE APPLIED: ai-team.md §1/§4] — the
+                                 // OPTIONAL country restriction only; stock teams
+                                 // are House=<none> so this does NOT filter them.
+                                 // The real eligibility gate is that the Soviet
+                                 // roster can field the TaskForce (parse_aimd
+                                 // art-guard-drop). Interactive path is skirmish:
+                                 // tc.rules.multiplay stays false (no dissolve).
+    tc.waypoints = make_ai_waypoints(player_x, player_y);
+    // Team knobs from the real rulesmd, constants as fallbacks
+    // [RE: ai-team.md §2/§4]. TeamDelays= is a CSV and section_double would
+    // read only its head, so the per-difficulty value comes from the PINNED
+    // constant array (the Task 3 install-gated test keeps constant and file
+    // head consistent) [RE-FALLBACK: index binding]:
+    tc.rules.team_delay_frames = ra2engine::kAiTeamDelayFrames[(int)difficulty];
+    tc.rules.autocreate_time_min = rules.section_double(
+        "AI", "AutocreateTime", ra2engine::kAiAutocreateTimeMin);   // spawn cadence [§4]
+    tc.rules.total_team_cap = (int)rules.section_double(
+        "General", "TotalAITeamCap", (double)ra2engine::kAiTotalTeamCap);  // hard cap [§4]
+    tc.rules.dissolve_frames = (int)rules.section_double(
+        "AI", "DissolveUnfilledTeamDelay",
+        (double)ra2engine::kAiDissolveUnfilledDelayFrames);
+    tc.rules.credit_reserve =
+        rules.section_double("AI", "CreditReserve", ra2engine::kAiCreditReserve);
+    tc.rules.infantry_reserve = (int)rules.section_double(
+        "AI", "InfantryReserve", (double)ra2engine::kAiInfantryReserve);
+    // BuildSlowdown is a difficulty BYTE (Easy off / Normal+Difficult on) — the
+    // over-queue damp, NOT a time multiplier [RE-GATE APPLIED: ai-team.md §6].
+    tc.rules.build_slowdown = ra2engine::kDifficultyBuildSlowdown[(int)difficulty];
+    std::cerr << "[ai-team] aimd parsed: tf=" << tc.aimd.taskforces.size()
+              << " sc=" << tc.aimd.scripts.size()
+              << " teams=" << tc.aimd.teams.size() << "\n";
+    return tc;
+}
+
 // MultipleFactory build-SPEED multiplier for one category [RE-GATE APPLIED:
 // production.md §1.2 — CONFIRMED MultipleFactory=0.8: each EXTRA same-class
 // alive Idle owned factory multiplies build TIME by 0.8 (2->x0.8, 3->x0.64),
@@ -2266,23 +2369,35 @@ int run_interactive(bool no_audio) {
     UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
     std::vector<const VehicleAssets*> vlist{&va, &miners.harv, &miners.cmin};
     for (const VehicleAssets& v : ur.vehicles) vlist.push_back(&v);
+    // AI-2: the Soviet combat roster the enemy's aimd teams field
+    // [RE: ai-team.md]. Separate from the player roster `ur` — sidebar,
+    // demo-prod slots, and all gate outputs untouched.
+    UnitRoster ur_ai = load_soviet_unit_roster(dir, ra2, ua, rules, art);
+    for (const VehicleAssets& v : ur_ai.vehicles) vlist.push_back(&v);
     // Register each infantry def's SHP + anim into the shared UnitAssets store
     // so launched infantry render (E1's "GI" is already present; other infantry
     // images are loaded on demand). Guarded: a missing SHP just leaves that unit
-    // unrenderable (render_world skips + logs), never a crash.
+    // unrenderable (render_world skips + logs), never a crash. Covers BOTH the
+    // player roster and the AI-2 Soviet roster (E2/conscript etc.).
     try {
         MixFile conquer = ra2.open_nested("conquer.mix");
-        for (const ra2engine::UnitTypeDef& d : ur.defs) {
-            if (d.is_vehicle || ua.shps.count(d.combat.image)) continue;
-            try {
-                ua.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
-                ua.anims.emplace(d.combat.image, anim_from_art(art, d.combat.image));
-            } catch (const std::exception& ex) {
-                std::cerr << "[unit-roster] infantry SHP " << d.combat.image << " unavailable ("
-                          << ex.what() << ")\n";
+        for (const std::vector<ra2engine::UnitTypeDef>* defs : {&ur.defs, &ur_ai.defs})
+            for (const ra2engine::UnitTypeDef& d : *defs) {
+                if (d.is_vehicle || ua.shps.count(d.combat.image)) continue;
+                try {
+                    ua.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
+                    ua.anims.emplace(d.combat.image, anim_from_art(art, d.combat.image));
+                } catch (const std::exception& ex) {
+                    std::cerr << "[unit-roster] infantry SHP " << d.combat.image << " unavailable ("
+                              << ex.what() << ")\n";
+                }
             }
-        }
     } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+    // aimd.ini next to the other INIs [RE: ai-team.md]. Empty fallback: a missing
+    // aimd.ini degrades to zero teams, never a crash.
+    Ini aimd_ini = Ini::parse("");
+    try { aimd_ini = load_ini_from_ra2md(dir, "aimd.ini"); }
+    catch (const std::exception& ex) { std::cerr << "[ai-team] aimd.ini unavailable (" << ex.what() << ")\n"; }
     const double build_speed = rules.general_double("BuildSpeed", 0.7);
     const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
     // MultipleFactory build-time multiplier [RE-GATE §1.2: 0.8, CONFIRMED].
@@ -2302,12 +2417,24 @@ int run_interactive(bool no_audio) {
             spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y, /*with_refinery=*/true,
                        miners.harv.ok ? &miners.harv : nullptr, /*harv_chrono=*/false,
                        miners.harv_storage);
-            // AI-1: the enemy house gets the base-planning brain
-            // [RE: ai-base.md]. Interactive path ONLY -- no demo/screenshot
-            // path ever flags an AI house (byte-identity firewall).
-            world.enable_ai_house(
-                1, make_ai_config(ba, rules, ra2engine::AiDifficulty::Normal,
-                                  /*start_credits=*/(double)rules.mp_money()));
+            // AI-1 + AI-2: the enemy house gets the base brain AND the
+            // offensive-team brain [RE: ai-base.md; ai-team.md]. Interactive
+            // path ONLY — no demo/screenshot path enables teams.
+            ra2engine::AiHouseConfig acfg =
+                make_ai_config(ba, rules, ra2engine::AiDifficulty::Normal,
+                               /*start_credits=*/(double)rules.mp_money());
+            acfg.team = make_ai_team_config(ba, ur_ai, rules, aimd_ini,
+                                            ra2engine::AiDifficulty::Normal,
+                                            /*player base:*/ sc->x, sc->y + 4);
+            world.enable_ai_house(1, acfg);
+            // Register the AI infantry anims so launched conscripts animate
+            // (vehicles ignore this; missing anims fall back to default_anim).
+            for (const ra2engine::UnitTypeDef& d : acfg.team.unit_roster)
+                if (!d.is_vehicle)
+                    world.set_anim(d.combat.image,
+                                   ua.anims.count(d.combat.image)
+                                       ? ua.anims.at(d.combat.image)
+                                       : ra2engine::default_anim());
         }
     }
     // Building-state tracker for FreeUnit grand-opening spawns (Buildup->Idle).
