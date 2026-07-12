@@ -4,11 +4,15 @@
 #include <string>
 #include <vector>
 
+#include "ai_base.hpp"  // AI-1 base-planning: AiBaseState/BaseView/next_build/...
 #include "building.hpp"
 #include "occupancy.hpp"
 #include "ore.hpp"  // OreField/OreKind/OreRng (Economy phase)
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
+#include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "ra2assets/map.hpp"
+#include "unit_combat.hpp"  // UnitCombat (moved here to break the include cycle
+                            // production.hpp -> unit_type.hpp -> world.hpp)
 
 namespace ra2engine {
 
@@ -260,26 +264,6 @@ void step_turrets(std::vector<Unit>& units, const std::vector<Building>& buildin
 // Returns nullptr if the map has no cells at all.
 const ra2assets::MapCell* pick_start_cell(const ra2assets::MapFile& map);
 
-// Per-unit combat stats resolved once by the caller (main.cpp, from Rules)
-// and handed to World::add_combat_unit to fill in a spawned Unit's hp/armor/
-// weapon fields. Mirrors the Rules-derived values Task 2 exposes (strength,
-// armor, the primary weapon's damage/rof/range, and its warhead's verses)
-// plus the SHP image name add_unit already takes directly.
-struct UnitCombat {
-    int strength = 1;
-    std::string armor;
-    std::string image;
-    int damage = 0;
-    int rof = 0;
-    double range = 0.0;
-    std::vector<int> verses;
-    // --- Voxel Vehicles phase (docs/re/voxel-render.md §5) ---
-    int rot = 0;               // Rules ROT= (turn rate); 0 = no turning
-    bool turret = false;       // has an independently-slewing turret
-    double speed_cps = 0.0;    // per-unit speed in cells/sec; 0 = World move_cps
-    bool is_vehicle = false;   // gates all vehicle-specific locomotion
-};
-
 // Builds the passability grid in RAW IsoMapPack5 (x, y) space -- the SAME
 // coordinate space MapCell.x/y and iso_project's cell_to_screen /
 // screen_to_cell live in (see map.hpp + iso_project.hpp). The grid is sized
@@ -293,6 +277,28 @@ struct UnitCombat {
 // with a hand-built cell vector without constructing a full MapFile.
 std::vector<std::uint8_t> build_passability(const std::vector<ra2assets::MapCell>& cells,
                                             int& grid_w, int& grid_h);
+
+// --- AI-1 base-planning phase [RE: ai-base.md] -----------------------------
+// Everything an AI house needs, resolved ONCE by main.cpp (assets/rules) and
+// handed to World::enable_ai_house. World stays asset-free: the roster here
+// is the same BuildingTypeDef list main.cpp already resolves (ba.roster),
+// buildup_totals mirrors ba.art[t].buildup_total, groups mirrors ba.groups.
+struct AiHouseConfig {
+    AiDifficulty difficulty = AiDifficulty::Normal;  // default group [RE-FALLBACK: ai-base.md §4]
+    AiCatalog catalog;
+    AiRules ai;
+    DifficultyMods mods;  // difficulty_mods(difficulty, groups)
+    std::vector<BuildingTypeDef> roster;
+    std::vector<double> buildup_totals;  // per roster index (0.0 = instant flip)
+    std::vector<std::pair<std::string, std::vector<std::string>>> groups;
+    double build_speed = 0.7;            // rules [General] BuildSpeed
+    double low_power_penalty = 1.0;      // rules LowPowerPenaltyModifier
+    double start_credits = 0.0;          // [RE-GATE APPLIED: ai-base.md §4 —
+                                         // NO starting-credit multiplier
+                                         // exists in the difficulty sections;
+                                         // this is the lobby/MPlayer money,
+                                         // passed through unmodified]
+};
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
 // Units, the passability grid, and a cell-occupancy grid derived from the
@@ -470,6 +476,23 @@ public:
     // false, the queue continues). Mirrors ps_tick's ConYard-died cancel gate.
     bool factory_category_lost(const std::vector<int>& factory_types, int house) const;
 
+    // --- AI-1 base-planning phase [RE: ai-base.md] ---
+    // Flag `house` as AI-driven with the given config. The planner then runs
+    // inside step() (step_ai_houses), driving the EXISTING ProductionQueues /
+    // placement_check / add_building machinery — no new production or
+    // placement code. BYTE-IDENTITY FIREWALL: a World that never calls this
+    // steps EXACTLY as before (step_ai_houses early-returns on a single
+    // bool), and none of the AI fields is read by any hash.
+    void enable_ai_house(int house, AiHouseConfig cfg);
+    bool ai_enabled(int house) const;
+    // Test/demo accessors (read-only views of the per-house AI record;
+    // nullptr / 0 / -1 when `house` is not AI-flagged).
+    const AiBaseState* ai_state(int house) const;
+    double ai_credits(int house) const;
+    // Roster type building in the AI house's Structure (cat 0) or Defense
+    // (cat 1) queue; -1 = idle.
+    int ai_producing(int house, int cat01) const;
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -489,6 +512,20 @@ private:
     // (no backward snap) and the unit starts walking. No-op if idx is out of
     // range.
     void order_unit_move(int idx, int gx, int gy);
+
+    // --- AI-1 base-planning phase [RE: ai-base.md] ---
+    struct HouseAiRec {
+        bool is_ai = false;
+        AiHouseConfig cfg;
+        AiBaseState state;
+        ProductionQueues queues;  // ONLY the Structure/Defense slots are used
+        double credits = 0.0;
+    };
+    std::vector<HouseAiRec> ai_houses_;  // index = house id (grown on demand)
+    bool ai_any_ = false;                // the step() firewall bool
+    void step_ai_houses(double dt);
+    BaseView make_ai_base_view(int house, const HouseAiRec& rec) const;
+    bool ai_place_ready(int house, HouseAiRec& rec, QueueCat cat);
 
     // Fully-defined-inline POD mirror of HarvestEvent (kind stored as int,
     // via static_cast to/from HarvestEvent::Kind) -- see the forward-

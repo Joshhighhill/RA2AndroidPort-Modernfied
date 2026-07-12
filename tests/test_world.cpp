@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -1582,4 +1583,175 @@ TEST_CASE("World/production: factory-lost cancel refunds spend into the shared p
     // Cancel refunds ALL spend, so the pool returns to exactly the start value.
     CHECK(q.credits() == doctest::Approx(5000.0));
     CHECK(q.producing(ra2engine::QueueCat::Vehicle) == -1);  // slot cleared
+}
+
+// --- AI-1 base-planning phase [RE: ai-base.md] ------------------------------
+
+TEST_CASE("World: step_ai_houses firewall - no AI house means a byte-identical step") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    CHECK_FALSE(world.ai_enabled(1));
+    CHECK(world.ai_state(1) == nullptr);
+    const std::size_t nb = world.buildings().size();
+    const std::size_t nu = world.units().size();
+    for (int i = 0; i < 60; ++i) world.step(1.0 / 15.0);
+    // No AI flagged -> the planner never runs: nothing new appears.
+    CHECK(world.buildings().size() == nb);
+    CHECK(world.units().size() == nu);
+}
+
+TEST_CASE("World: an AI house builds out through the EXISTING queue+placement machinery") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // Hand roster: [0]=conyard 1x1, [1]=power 1x1 (test values; ids Soviet-shaped).
+    ra2engine::AiHouseConfig cfg;
+    cfg.roster.resize(2);
+    cfg.roster[0].id = "NACNST"; cfg.roster[0].conyard = true;
+    cfg.roster[0].cost = 3000; cfg.roster[0].tech_level = 1;
+    cfg.roster[0].strength = 1000; cfg.roster[0].adjacent = 2;
+    cfg.roster[1].id = "NAPOWR"; cfg.roster[1].cost = 600;
+    cfg.roster[1].tech_level = 1; cfg.roster[1].strength = 750;
+    cfg.roster[1].power = 150; cfg.roster[1].adjacent = 2;
+    cfg.buildup_totals = {0.0, 0.0};
+    cfg.catalog.power = 1;  // only the power plant is in the build set ->
+                            // build_base_plan yields exactly ONE node
+                            // (catalog gaps skipped) [RE: ai-base.md §2]
+    ra2engine::DifficultyGroupRaw g[3];
+    for (int i = 0; i < 3; ++i) {
+        g[i].cost = ra2engine::kDifficultyCost[i];
+        g[i].build_time = ra2engine::kDifficultyBuildTime[i];
+        g[i].build_delay = ra2engine::kDifficultyBuildDelayMin[i];
+        g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];
+    }
+    cfg.difficulty = ra2engine::AiDifficulty::Normal;
+    cfg.mods = ra2engine::difficulty_mods(ra2engine::AiDifficulty::Normal, g);
+    cfg.build_speed = 0.1;      // fast builds for the test (54 frames for 600c)
+    cfg.start_credits = 10000;
+    // Seed the ConYard, then flag the house.
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.enable_ai_house(1, cfg);
+    CHECK(world.ai_enabled(1));
+    REQUIRE(world.ai_state(1) != nullptr);
+    CHECK(world.ai_credits(1) == doctest::Approx(10000.0));
+    // Step: the plan walk reaches its Power node -> the AI starts + places
+    // NAPOWR via the EXISTING ProductionQueues + placement_check +
+    // add_building path (the ~7 s tick + BuildDelay cadence paces the
+    // attempts [RE: ai-base.md §1] — 3000 frames covers dozens of passes).
+    const std::size_t nb = world.buildings().size();
+    for (int i = 0; i < 3000 && world.buildings().size() < nb + 1; ++i)
+        world.step(1.0 / 15.0);
+    REQUIRE(world.buildings().size() >= nb + 1);
+    const ra2engine::Building& nb1 = world.buildings()[nb];
+    CHECK(nb1.type == 1);
+    CHECK(nb1.house == 1);
+    // Placement is nearest-first from the ConYard. NOTE the AI BYPASSES the
+    // Adjacent= proximity check [RE-GATE APPLIED: ai-base.md §3]; locality
+    // comes from the Chebyshev ring scan + the AIBaseSpacing(1) gap.
+    CHECK(std::max(std::abs(nb1.cx - c->x), std::abs(nb1.cy - c->y)) <= 4);
+    // The planned-base list recorded the node [RE: ai-base.md §3].
+    REQUIRE(world.ai_state(1)->plan.size() >= 1);
+    CHECK(world.ai_state(1)->plan[0].type == 1);
+    CHECK(world.ai_state(1)->plan[0].building == (int)nb);
+    // Credits were charged through the queue economy (600 x cost_mul).
+    CHECK(world.ai_credits(1) <
+          10000.0 - 0.5 * 600.0 * ra2engine::kDifficultyCost[1]);
+    // Plan satisfied + no refinery/war factory in this catalog -> economy
+    // expansion has nothing to add [RE: ai-base.md §2 — expansion appends
+    // refineries/war factories only]: no further growth.
+    const std::size_t done = world.buildings().size();
+    for (int i = 0; i < 600; ++i) world.step(1.0 / 15.0);
+    CHECK(world.buildings().size() == done);
+}
+
+TEST_CASE("World: AI rebuild re-queues the destroyed planned node at its cell") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    ra2engine::AiHouseConfig cfg;  // same tiny 2-type cfg as the case above
+    cfg.roster.resize(2);
+    cfg.roster[0].id = "NACNST"; cfg.roster[0].conyard = true;
+    cfg.roster[0].cost = 3000; cfg.roster[0].tech_level = 1;
+    cfg.roster[0].strength = 1000; cfg.roster[0].adjacent = 2;
+    cfg.roster[1].id = "NAPOWR"; cfg.roster[1].cost = 600;
+    cfg.roster[1].tech_level = 1; cfg.roster[1].strength = 750;
+    cfg.roster[1].power = 150; cfg.roster[1].adjacent = 2;
+    cfg.buildup_totals = {0.0, 0.0};
+    cfg.catalog.power = 1;  // one-entry catalog -> the plan has exactly ONE
+                            // node, so the rebuild target is unambiguous
+    ra2engine::DifficultyGroupRaw g[3];
+    for (int i = 0; i < 3; ++i) {
+        g[i].cost = ra2engine::kDifficultyCost[i];
+        g[i].build_time = ra2engine::kDifficultyBuildTime[i];
+        g[i].build_delay = ra2engine::kDifficultyBuildDelayMin[i];
+        g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];
+    }
+    cfg.difficulty = ra2engine::AiDifficulty::Normal;
+    cfg.mods = ra2engine::difficulty_mods(ra2engine::AiDifficulty::Normal, g);
+    cfg.build_speed = 0.1;
+    cfg.start_credits = 10000;
+    world.add_building(0, c->x, c->y, 1, 1, 1, 1000, 0, 0.0, true);
+    world.enable_ai_house(1, cfg);
+    const std::size_t nb = world.buildings().size();
+    for (int i = 0; i < 3000 && world.buildings().size() < nb + 1; ++i)
+        world.step(1.0 / 15.0);
+    REQUIRE(world.buildings().size() == nb + 1);
+    const int node_cx = world.ai_state(1)->plan[0].cx;
+    const int node_cy = world.ai_state(1)->plan[0].cy;
+    // Kill the placed power plant; the planner re-queues THAT node.
+    ra2engine::kill_building(world.buildings()[nb]);
+    for (int i = 0; i < 4000 && !(world.ai_state(1)->plan[0].building > (int)nb); ++i)
+        world.step(1.0 / 15.0);
+    REQUIRE(world.ai_state(1)->plan.size() == 1);       // NOT a new expansion node
+    const ra2engine::PlannedNode& n = world.ai_state(1)->plan[0];
+    CHECK(n.type == 1);
+    CHECK_FALSE(n.dead);
+    REQUIRE(n.building > (int)nb);                      // a NEW building index
+    CHECK(world.buildings()[n.building].type == 1);
+    CHECK(world.buildings()[n.building].alive);
+    // Rebuilt at the exact stored cell [RE-GATE APPLIED: ai-base.md §5]
+    // (the dead building's rubble releases its cells, so the cell is free):
+    CHECK(world.buildings()[n.building].cx == node_cx);
+    CHECK(world.buildings()[n.building].cy == node_cy);
+}
+
+TEST_CASE("World: AI can_place rejects a partially-off-grid or partially-occupied foundation") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // Contract #1: the AI's placement validity (placement_check with
+    // bypass_adjacency=true, over the FULL foundation) must reject a location
+    // unless the ENTIRE foundation is on-grid, buildable, and unoccupied
+    // [RE-GATE APPLIED: ai-base.md §3]. A 2x2 foundation is used so a single
+    // off-grid or occupied cell makes the whole placement fail.
+    const int fw = 2, fh = 2;
+    // A fully-on-grid, empty interior cell passes (baseline sanity).
+    CHECK(ra2engine::placement_check(c->x, c->y, fw, fh, /*house=*/1, /*adjacent=*/2,
+                                     world.passable(), world.grid_w(), world.grid_h(),
+                                     world.occupancy(), world.buildings(),
+                                     /*bypass_adjacency=*/true).ok);
+    // Partial-off-grid: origin at the far bottom-right corner so the +1 cells
+    // of the 2x2 foundation fall off the grid -> at least one cell off-grid ->
+    // the whole placement fails (NOT ok).
+    CHECK_FALSE(ra2engine::placement_check(world.grid_w() - 1, world.grid_h() - 1, fw, fh,
+                                           /*house=*/1, /*adjacent=*/2, world.passable(),
+                                           world.grid_w(), world.grid_h(), world.occupancy(),
+                                           world.buildings(), /*bypass_adjacency=*/true).ok);
+    // Partial-occupied: drop a 1x1 building on ONE cell of the 2x2 footprint;
+    // the overlap must make the full-foundation placement fail.
+    world.add_building(0, c->x + 1, c->y + 1, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    CHECK_FALSE(ra2engine::placement_check(c->x, c->y, fw, fh, /*house=*/1, /*adjacent=*/2,
+                                           world.passable(), world.grid_w(), world.grid_h(),
+                                           world.occupancy(), world.buildings(),
+                                           /*bypass_adjacency=*/true).ok);
 }

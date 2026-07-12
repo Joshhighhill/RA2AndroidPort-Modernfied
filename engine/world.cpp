@@ -620,6 +620,261 @@ bool World::factory_category_lost(const std::vector<int>& factory_types, int hou
     return true;
 }
 
+// --- AI-1 base-planning phase [RE: ai-base.md] ------------------------------
+
+void World::enable_ai_house(int house, AiHouseConfig cfg) {
+    if (house < 0) return;
+    if ((int)ai_houses_.size() <= house) ai_houses_.resize(house + 1);
+    HouseAiRec& rec = ai_houses_[house];
+    rec.is_ai = true;
+    rec.cfg = std::move(cfg);
+    rec.state = AiBaseState{};
+    rec.state.difficulty = rec.cfg.difficulty;
+    rec.queues = ProductionQueues{};
+    rec.credits = rec.cfg.start_credits;
+    rec.queues.set_credits(rec.credits);
+    ai_any_ = true;
+}
+
+bool World::ai_enabled(int house) const {
+    return house >= 0 && house < (int)ai_houses_.size() && ai_houses_[house].is_ai;
+}
+
+const AiBaseState* World::ai_state(int house) const {
+    return ai_enabled(house) ? &ai_houses_[house].state : nullptr;
+}
+
+double World::ai_credits(int house) const {
+    return ai_enabled(house) ? ai_houses_[house].credits : 0.0;
+}
+
+int World::ai_producing(int house, int cat01) const {
+    if (!ai_enabled(house) || cat01 < 0 || cat01 > 1) return -1;
+    const QueueCat c = cat01 == 0 ? QueueCat::Structure : QueueCat::Defense;
+    return ai_houses_[house].queues.producing(c);
+}
+
+BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
+    BaseView v;
+    bool conyard_center = false;  // a ConYard's cell locked the center
+    bool any_center = false;      // some building set a provisional center
+    long long tx = 0, ty = 0, tn = 0;
+    std::vector<int> rival_counts;  // per-house alive-building counts (rivals)
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (b.house == house) {
+            BaseBuildingView bb;
+            bb.type = b.type;
+            bb.cx = b.cx; bb.cy = b.cy; bb.fw = b.fw; bb.fh = b.fh;
+            bb.operational = b.state == Building::State::Idle;
+            v.own.push_back(bb);
+            // Base center = the FIRST ConYard's origin cell; if the house
+            // owns none (yet), the FIRST building stands in.
+            const bool is_cy = b.type >= 0 && b.type < (int)rec.cfg.roster.size() &&
+                               rec.cfg.roster[b.type].conyard;
+            if (is_cy && !conyard_center) {
+                v.center_x = b.cx; v.center_y = b.cy;
+                conyard_center = true;
+            } else if (!conyard_center && !any_center) {
+                v.center_x = b.cx; v.center_y = b.cy;
+                any_center = true;
+            }
+        } else {
+            tx += b.cx; ty += b.cy; ++tn;  // threat = other houses' centroid
+            // rival_base_size = largest OTHER house's building count — the
+            // BaseSizeAdd cap basis (AI base <= rival + 3) [RE: ai-base.md §2].
+            if ((int)rival_counts.size() <= b.house) rival_counts.resize(b.house + 1, 0);
+            v.rival_base_size = std::max(v.rival_base_size, ++rival_counts[b.house]);
+        }
+    }
+    if (tn > 0) { v.threat_x = (int)(tx / tn); v.threat_y = (int)(ty / tn); }
+    else { v.threat_x = grid_w_ / 2; v.threat_y = grid_h_ / 2; }
+    v.credits = rec.credits;
+    const PowerTotals pt = power_totals(buildings_, rec.cfg.roster, house);
+    v.power_output = pt.output;
+    v.power_drain = pt.drain;
+    for (const Unit& u : units_)
+        if (u.alive && u.house == house && u.is_harvester) ++v.harvesters;
+    return v;
+}
+
+// Places queue `cat`'s READY building at its planned node's cell through the
+// EXISTING validity + add_building path [RE: ai-base.md §3/§6]. Returns true
+// if the slot was consumed (placed); false = HOLD (retry next frame).
+bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
+    const int q = cat == QueueCat::Structure ? 0 : 1;
+    if (!rec.queues.ready(cat)) return false;
+    const int node_i = rec.state.pending[q];
+    if (node_i < 0 || node_i >= (int)rec.state.plan.size()) {
+        rec.queues.placed(cat);  // defensive: orphaned ready slot
+        rec.state.pending[q] = -1;
+        return true;
+    }
+    PlannedNode& node = rec.state.plan[node_i];
+    const BuildingTypeDef& t = rec.cfg.roster[node.type];
+    auto can_place = [&](int cx, int cy) {
+        // AI validity [RE-GATE APPLIED: ai-base.md §3]: the AI BYPASSES the
+        // Adjacent= proximity check (FUN_004a8dc0 early-returns for
+        // non-local-human houses) -> bypass_adjacency=true; the shared
+        // per-cell buildable/unoccupied grid still applies, probed over the
+        // foundation expanded by the AIBaseSpacing(1) gap [RE-FALLBACK: gap
+        // modeled as an expanded-foundation probe].
+        const int s = rec.cfg.ai.base_spacing;
+        return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
+                               house, t.adjacent, passable_,
+                               grid_w_, grid_h_, occ_, buildings_,
+                               /*bypass_adjacency=*/true).ok;
+    };
+    int px = node.cx, py = node.cy;
+    if (!can_place(px, py)) {
+        // Something moved onto the node's cell: re-scan (deterministic).
+        const BaseView v = make_ai_base_view(house, rec);
+        const bool is_def = std::find(rec.cfg.catalog.defenses.begin(),
+                                      rec.cfg.catalog.defenses.end(),
+                                      node.type) != rec.cfg.catalog.defenses.end();
+        const Cellxy alt = find_build_location(v, is_def, can_place);
+        if (alt.x < 0) return false;  // boxed in -> HOLD the ready slot
+        px = alt.x; py = alt.y;
+        node.cx = px; node.cy = py;
+    }
+    const double buildup = node.type < (int)rec.cfg.buildup_totals.size()
+                               ? rec.cfg.buildup_totals[node.type] : 0.0;
+    const int idx = add_building(node.type, px, py, t.fw, t.fh, house, t.strength,
+                                 t.armor_ix, buildup, /*instant=*/false);
+    node.building = idx;
+    node.dead = false;
+    rec.queues.placed(cat);
+    rec.state.pending[q] = -1;
+    return true;
+}
+
+void World::step_ai_houses(double dt) {
+    for (int h = 0; h < (int)ai_houses_.size(); ++h) {
+        HouseAiRec& rec = ai_houses_[h];
+        if (!rec.is_ai) continue;
+        const AiHouseConfig& cfg = rec.cfg;
+
+        // 1) Income (the economy phase accumulates per-house unload income).
+        rec.credits += take_income(h);
+
+        // 2) Node-death detection [RE: ai-base.md §5].
+        for (PlannedNode& n : rec.state.plan) {
+            if (n.building < 0) continue;
+            const Building& b = buildings_[n.building];
+            if (!b.alive || b.state == Building::State::Dead) {
+                n.building = -1;
+                n.dead = true;
+            }
+        }
+
+        // 3) ConYard-lost cancels both building queues (the same rule the
+        //    player's prod_tick applies) [RE: ai-base.md §6].
+        bool conyard = false;
+        for (const Building& b : buildings_) {
+            if (b.alive && b.state == Building::State::Idle && b.house == h &&
+                b.type >= 0 && b.type < (int)cfg.roster.size() &&
+                cfg.roster[b.type].conyard) { conyard = true; break; }
+        }
+        if (!conyard) {
+            for (QueueCat c : {QueueCat::Structure, QueueCat::Defense})
+                if (rec.queues.producing(c) != -1) rec.queues.cancel(c);
+        }
+
+        // 4) Tick the queues: SAME power clamp as the player [RE: ai-base.md
+        //    §6], difficulty time handicap applied at start() (below).
+        const PowerTotals pt = power_totals(buildings_, cfg.roster, h);
+        const double pmul = build_speed_multiplier(pt, cfg.low_power_penalty);
+        rec.queues.set_credits(rec.credits);
+        const double sp[4] = {1.0, 1.0, 1.0, 1.0};  // one ConYard in AI-1 — no
+                                                    // MultipleFactory speedup
+        rec.queues.tick(dt, pmul, sp, cfg.roster);
+        rec.credits = rec.queues.credits();
+
+        // 5) Place READY slots (Structure then Defense — deterministic order).
+        ai_place_ready(h, rec, QueueCat::Structure);
+        ai_place_ready(h, rec, QueueCat::Defense);
+
+        // 6) Build clock [RE-GATE APPLIED: ai-base.md §1 — two timers stack
+        //    in the original: the AI tick SELF-RESCHEDULES 0x69 + rand(1,7)
+        //    = 105–112 frames (~7 s at 15 Hz), and the per-house BuildDelay
+        //    timer is seeded from the difficulty BuildDelay MINUTES
+        //    [RE-FALLBACK: secs = min x 60]. The jitter draw uses the
+        //    engine-local xorshift32 [RE-FALLBACK: ai-base.md deviations —
+        //    stands in for the lockstep game RNG; NEVER wall-clock].
+        rec.state.build_clock += dt;
+        if (rec.state.build_clock < rec.state.build_gate) continue;
+        rec.state.build_clock = 0.0;
+        rec.state.build_gate = std::max(
+            (double)(0x69 + 1 + (int)(ai_rand(rec.state.rng) % 7)) / 15.0,
+            cfg.mods.build_delay_min * 60.0);
+        if (!conyard) continue;  // no factory: nothing can start
+
+        // 7) Decide.
+        const BaseView view = make_ai_base_view(h, rec);
+        const BuildDecision d =
+            next_build(rec.state, view, cfg.catalog, cfg.roster, cfg.ai, cfg.mods);
+        if (d.type < 0) continue;  // nothing needed, or wait/bank
+
+        // 8) Route to the queue the player would use [RE: ai-base.md §6]:
+        //    defenses -> Defense queue, everything else -> Structure queue.
+        const bool is_def = std::find(cfg.catalog.defenses.begin(),
+                                      cfg.catalog.defenses.end(),
+                                      d.type) != cfg.catalog.defenses.end();
+        const QueueCat cat = is_def ? QueueCat::Defense : QueueCat::Structure;
+        const int q = is_def ? 1 : 0;
+        if (rec.queues.producing(cat) != -1 || rec.state.pending[q] != -1)
+            continue;  // slot busy — the single-slot queue IS the recovered
+                       // one-AI-structure-at-a-time gate (house+0x564c stays
+                       // set until placement) [RE-GATE APPLIED: ai-base.md §1]
+
+        // 9) Same prereq/tech/factory gate as the player (can_start —
+        //    EXISTING function) [RE: ai-base.md §6].
+        if (!can_start(rec.queues.state(cat), d.type, cfg.roster, buildings_, h,
+                       cfg.groups, conyard))
+            continue;
+
+        // 10) The decision names its plan node [RE-GATE APPLIED: ai-base.md
+        //     §3/§5 — every start fills a node of the ordered plan; next_build
+        //     already inserted/appended override nodes]. A REBUILD node keeps
+        //     its stored cell (re-validated by ai_place_ready); a FRESH node
+        //     ((0,0) = cell not yet chosen, the original's node+4 == 0) gets
+        //     its cell from the deterministic scan NOW and stores it.
+        const int node_i = d.node;
+        PlannedNode& pn = rec.state.plan[node_i];
+        if (!pn.dead && pn.cx == 0 && pn.cy == 0) {
+            const BuildingTypeDef& t = cfg.roster[d.type];
+            auto can_place = [&](int cx, int cy) {
+                // Same AI validity as ai_place_ready: Adjacent= BYPASSED +
+                // AIBaseSpacing(1) gap [RE-GATE APPLIED: ai-base.md §3].
+                const int s = cfg.ai.base_spacing;
+                return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
+                                       h, t.adjacent, passable_,
+                                       grid_w_, grid_h_, occ_, buildings_,
+                                       /*bypass_adjacency=*/true).ok;
+            };
+            const Cellxy loc = find_build_location(view, is_def, can_place);
+            if (loc.x < 0) continue;  // boxed in: try again next clock
+            pn.cx = loc.x; pn.cy = loc.y;
+        }
+
+        // 11) START on the EXISTING queue economy: difficulty cost handicap
+        //     on the charge, BuildTime handicap on the speed (Easy 0.8 =
+        //     faster; Normal/Difficult 1.0) [RE: ai-base.md §4].
+        //     (cfg.mods.build_slowdown is recorded but not consumed in AI-1
+        //     — it lands with the unit-production AI sub-phase.)
+        const BuildingTypeDef& t = cfg.roster[d.type];
+        const int basis = t.charge > 0 ? t.charge : t.cost;
+        const int ai_charge =
+            std::max(1, (int)(basis * cfg.mods.cost_mul));
+        rec.queues.set_credits(rec.credits);
+        start(rec.queues.state(cat), t.cost, ai_charge,
+              cfg.build_speed * cfg.mods.build_time_mul);
+        rec.queues.state(cat).slot.type = d.type;
+        rec.credits = rec.queues.credits();
+        rec.state.pending[q] = node_i;
+    }
+}
+
 void World::step(double dt) {
     step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
@@ -812,6 +1067,12 @@ void World::step(double dt) {
         if (!u.alive) continue;
         if (const ra2assets::MapCell* mc = map_->at(u.cell_x, u.cell_y)) u.level = mc->level;
     }
+
+    // AI-1 base-planning firewall [RE: ai-base.md §2]: the planner runs AFTER
+    // the existing production/economy step, and ONLY when a house is
+    // AI-flagged. The five demo scripts flag no AI house, so ai_any_ stays
+    // false and this is a no-op -> byte-identical to before this phase.
+    if (ai_any_) step_ai_houses(dt);
 }
 
 std::vector<int> unit_draw_order(const std::vector<Unit>& units) {

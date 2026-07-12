@@ -6,7 +6,7 @@
 // charge == cost — the FreeUnit charge subtraction is BuildingType-only). No SDL/OS.
 #include <string>
 #include <vector>
-#include "world.hpp"   // UnitCombat
+#include "unit_combat.hpp"   // UnitCombat
 
 namespace ra2engine {
 
