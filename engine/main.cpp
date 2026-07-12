@@ -2098,9 +2098,8 @@ void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
 // and tagged like the divergent READY overlay. `playfield_w` is the world
 // viewport width (window minus the sidebar strip).
 void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
-                            const BuildingAssets& ba, const ra2engine::Input& input,
-                            const Assets& a, const ra2engine::Camera& cam, int /*W*/,
-                            int playfield_w) {
+                            const ra2engine::Input& input, const Assets& a,
+                            const ra2engine::Camera& cam, int playfield_w) {
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     auto cell_center_px = [&](int cx, int cy, int& sx, int& sy) {
         const ra2assets::MapCell* mc = a.map.at(cx, cy);
@@ -2309,6 +2308,7 @@ int run_interactive(bool no_audio) {
                             const std::vector<int>& ft =
                                 (cat == ra2engine::QueueCat::Vehicle) ? veh_ft : inf_ft;
                             if (queues.producing(cat) == uslot) {
+                                queues.set_credits(player_credits);  // fold in this frame's income first
                                 queues.cancel(cat);            // click the producing cameo -> cancel
                                 queues.reconcile_refund();
                                 player_credits = queues.structure().credits;
@@ -2333,6 +2333,7 @@ int run_interactive(bool no_audio) {
                                 place_cat = bcat;
                                 input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
                             } else if (bq.slot.type == type) {
+                                queues.set_credits(player_credits);  // fold in this frame's income first
                                 queues.cancel(bcat);
                                 queues.reconcile_refund();
                                 player_credits = queues.structure().credits;
@@ -2538,8 +2539,7 @@ int run_interactive(bool no_audio) {
         // Production chrome [RE: production.md §1.2/§1.4; markers are cosmetic,
         // never touch sim state]: a filled triangle over each own primary unit
         // factory, and a rally X for the currently selected factory.
-        draw_production_chrome(ren, world, ba, input, a, cam, platform.width(),
-                               playfield_w);
+        draw_production_chrome(ren, world, input, a, cam, playfield_w);
         platform.present();
         SDL_Delay(16);  // ~60fps
     }

@@ -201,9 +201,10 @@ public:
     void tick(double dt, double power_mult, const double factory_speedup[4],
               const std::vector<BuildingTypeDef>& btypes);
 
-    // Reconcile the pool after a cancel(): a refund raises exactly one queue's
-    // balance above the shared tail, so set all four to the max. Caller reads
-    // credits() after. (No double-count: only the just-cancelled queue is high.)
+    // Reconcile the pool after cancel(): all four queues already share the same
+    // balance (cancel() broadcasts each refund into the pool as it happens — see
+    // below), so this is just a defensive re-broadcast of the max. Caller reads
+    // credits() after. Kept for API symmetry with the start/tick flow.
     void reconcile_refund() {
         double m = q_[0].credits;
         for (int i = 1; i < 4; ++i) m = std::max(m, q_[i].credits);
@@ -215,7 +216,21 @@ public:
     void start_unit(QueueCat c, int unit_type, const std::vector<UnitTypeDef>& unit_roster,
                     double build_speed);
 
-    void cancel(QueueCat c) { ra2engine::cancel(q_[(int)c]); }
+    // Cancel queue `c`: refund everything it spent, then BROADCAST the resulting
+    // balance to all four queues so the refund lands in the shared pool
+    // immediately. This makes multiple cancels in one frame ACCUMULATE — e.g. a
+    // lost ConYard cancels BOTH building queues (prod_tick), and each refund
+    // must survive. A prior version only raised the cancelled queue's own
+    // credits and relied on reconcile_refund's max(), which silently destroyed
+    // all but the largest refund when >1 queue was cancelled. Because tick()
+    // leaves all four queues at the same balance, the cancelled queue's
+    // post-refund credits IS the new shared total; broadcasting it lets the next
+    // cancel build on top of it.
+    void cancel(QueueCat c) {
+        ra2engine::cancel(q_[(int)c]);
+        const double pool = q_[(int)c].credits;
+        for (auto& q : q_) q.credits = pool;
+    }
     // Queue slot readiness (Task 5 consumes this for the unit queues).
     bool ready(QueueCat c) const { return q_[(int)c].slot.ready; }
     int producing(QueueCat c) const { return q_[(int)c].slot.type; }

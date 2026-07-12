@@ -268,6 +268,39 @@ TEST_CASE("production: FOUR queues advance concurrently and independently [RE-GA
     CHECK_FALSE(q.ready(QueueCat::Vehicle));
 }
 
+TEST_CASE("production: cancelling TWO queues in one frame refunds BOTH (no lost credits)") {
+    // Regression: a lost ConYard cancels BOTH building queues in one frame, so
+    // multiple cancels must each land in the shared pool. The prior
+    // reconcile-max kept only the largest refund; cancel() now broadcasts each
+    // refund so they accumulate. Uses the Infantry+Vehicle queues (same math).
+    auto u = unit_roster();
+    ProductionQueues q;
+    const double kStart = 10000.0;
+    q.set_credits(kStart);
+    q.start_unit(QueueCat::Infantry, 0, u, 0.7);   // E1  (cost 200)
+    q.start_unit(QueueCat::Vehicle, 1, u, 0.7);    // MTNK (cost 2000)
+    std::vector<BuildingTypeDef> bt;
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
+    // Advance until BOTH queues have actually spent (unequal amounts, so a
+    // max()-only reconcile would visibly drop the smaller refund).
+    for (int i = 0; i < 60; ++i) q.tick(1.0 / 15.0, 1.0, speedup, bt);
+    const double spent_inf = q.state(QueueCat::Infantry).slot.spent;
+    const double spent_veh = q.state(QueueCat::Vehicle).slot.spent;
+    REQUIRE(spent_inf > 0.0);
+    REQUIRE(spent_veh > 0.0);
+    REQUIRE(spent_inf != spent_veh);
+    CHECK(q.credits() == doctest::Approx(kStart - spent_inf - spent_veh));
+
+    // Cancel BOTH in the same frame, then reconcile: the shared pool must
+    // return to EXACTLY the pre-build total — both refunds landed.
+    q.cancel(QueueCat::Infantry);
+    q.cancel(QueueCat::Vehicle);
+    q.reconcile_refund();
+    CHECK(q.credits() == doctest::Approx(kStart));
+    CHECK(q.producing(QueueCat::Infantry) == -1);   // both slots cleared
+    CHECK(q.producing(QueueCat::Vehicle) == -1);
+}
+
 TEST_CASE("production: MultipleFactory speedup scales the vehicle queue [RE-GATE §1.2]") {
     auto u = unit_roster();
     // [RE-GATE APPLIED: production.md §1.2 — CONFIRMED: MultipleFactory = 0.8,
