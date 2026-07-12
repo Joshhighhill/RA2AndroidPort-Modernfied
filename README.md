@@ -168,6 +168,69 @@ never player-purchasable in this engine; and ore renders flat-cells-only —
 the 8 `NumSlopes` slope frames per tiberium type are unused (no sloped-tile
 ore rendering).
 
+The Unit Production phase brings the sidebar's other three tabs to life
+alongside Buildings (tab0). The player's Construction Yard now drives **four
+concurrent production queues** (`ra2engine::ProductionQueues`), one per
+sidebar tab: Structures (tab0), Defenses (tab1), Infantry (tab2), Vehicles
+(tab3, sharing the slot with Ships/Aircraft, out of scope here). Structures
+and Defenses are **separate** `FactoryClass` queues keyed on `BuildCat==Combat`
+(not `IsBaseDefense` — GAWALL/GTGCAN are `BuildCat=Combat` but
+`IsBaseDefense=None`, so the classifier can't be the flag), so a power plant
+and a pillbox build **at the same time** from the same ConYard
+(`docs/re/production.md` §1.1). The Allied defense roster (tab1) is GAPILL
+(pillbox); the Allied unit roster (tab3/tab2) is GI (`E1`), Guardian GI
+(`GGI`), Grizzly tank (`MTNK`), and IFV (`FV`) — whichever the loaded
+`rulesmd.ini`/art resolve. Each unit queue reuses the identical 54-step
+`FactoryClass` charge economy as buildings (`build_frames = trunc(Cost ×
+BuildSpeed × 0.9)`), with **no FreeUnit subtraction for units** (charge ==
+Cost, unlike refineries — `production.md` §1.5), and is gated by the matching
+producer building (Barracks for infantry, War Factory for vehicles) via the
+same prerequisite AND-mechanism buildings use.
+
+A finished unit is emitted by the queue's **primary factory** — the first-built
+building of that category by default, switchable with a second left-click on
+the already-selected factory (right-click is reserved for setting rally, see
+Deviations below). A second factory of the same category speeds up its class's
+build time via the recovered **MultipleFactory = 0.8** compounding (one extra
+same-class factory → ×0.8 build time; buildings share ONE ConYard count slot
+across Structures+Defenses for this multiplier, `production.md` §1.1/§1.2).
+On completion the unit is placed at its **exit cell** — an 8-ring first-free
+walk outward from the factory's foundation anchor (`ra2engine::exit_cell`,
+`production.md` §1.3) — then given a Move order to its **rally point**: the
+cell set by the player, or by default the exit-adjacent gather cell nearest
+the building's own coordinate (`FUN_00500020`, `production.md` §1.4).
+Calibration authority: `docs/re/production.md` (queue model, primary +
+MultipleFactory, exit cell, rally); companion of `docs/re/construction.md`
+and `docs/re/economy.md`.
+
+Deviations we take (adjudicated divergences from the recovered `production.md`
+ground truth — not bugs, do not "fix" in review):
+- **Queue depth is single-slot.** RA2 queues up to `MaximumQueuedObjects = 29`
+  items per factory (`production.md` §1.5); this engine keeps one item
+  building + one ready per queue — a deliberate simplification.
+- **Exit facing is deterministic**, not the lockstep game RNG the original
+  uses (`production.md` §1.3): south-first, then a fixed 8-ring walk order to
+  the true nearest free perimeter cell. Same reachable set as the original,
+  not bit-identical to its netgame RNG sequence. The `ExitCoord` sub-cell lean
+  (+0xEC8) is also dropped at our cell-resolution grid.
+- **Rally default = the exit-adjacent gather cell** (nearest free cell from
+  the building's own coordinate, `FUN_00500020`), matching the recovered
+  default — not the map center.
+- **Primary-building auto-first-on-placement** (a newly placed factory becomes
+  primary only if the house has none yet for its category) is the standard
+  RA2 rule; the auto-first-primary-on-placement path itself was recovered
+  **PROBABLE**, not pinned 1:1 in the disassembly.
+- **Primary-set input trigger differs**: the original toggles primary with a
+  right-click on the selected factory; this engine's right-click sets the
+  rally point instead, so primary-set is a second **left-click** on the
+  already-selected factory ([RE-FALLBACK adjudicated], Task 7).
+- **GATOW (Patriot Missile System) is absent** from this asset install, so its
+  SHP is dropped by the art guard; tab1 (Defenses) shows only GAPILL. This is
+  an environmental gap in the install, not an engine limitation.
+- **No leave-factory door animation.** The unit drives out under a Move order
+  to its exit/rally cell; no per-building door-open/close animation frames are
+  replicated.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -259,6 +322,14 @@ Headless/verification CLI modes (render one or more frames and exit):
   `PROC` is met, and crosses one ore-growth timer firing — then hashes the
   world state (ore field + credits included). Rendered and headless runs must
   be byte-identical.
+- `ra2engine.exe --demo-prod` — the Unit Production integration gate: queues a
+  Grizzly (`MTNK`) in the Vehicle queue and a GI (`E1`) in the Infantry queue
+  concurrently from the same base, confirms the tank exits at its computed
+  8-ring exit cell and drives to its rally, places a second War Factory,
+  proves `set_primary` routes the next tank to the new primary and that its
+  build time is exactly the recovered MultipleFactory ×0.8 of the
+  single-factory build — then hashes the world + queue state (`prod_hash`).
+  Rendered and headless runs must be byte-identical.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -266,18 +337,21 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These four headless demos are byte-identity regression gates: any change to
+These five headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
-above for `--demo-base`'s `roster=10`).
+above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster is now
+`roster=12` since the Unit Production phase's roster additions, hash
+unaffected).
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
 | `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
 | `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
-| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=10`, GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
+| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=12`, GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
+| `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 
 ## Android (arm64-v8a) cross-compile
 
