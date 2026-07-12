@@ -1,0 +1,24 @@
+#pragma once
+// One producible unit type's production-relevant stats, resolved ONCE by the
+// caller (main.cpp from Rules/Art, or a test by hand) — the UnitType mirror of
+// BuildingTypeDef. Index into the unit roster is the queue's `type` key.
+// Calibration: docs/re/production.md §1.5 (units have NO FreeUnit subtraction:
+// charge == cost — the FreeUnit charge subtraction is BuildingType-only). No SDL/OS.
+#include <string>
+#include <vector>
+#include "world.hpp"   // UnitCombat
+
+namespace ra2engine {
+
+struct UnitTypeDef {
+    std::string id;                         // "E1" / "MTNK"
+    int cost = 0;                           // Rules Cost=; charge == cost (§1.5)
+    int tech_level = 0;                     // Rules TechLevel=; <=0 = never buildable
+    bool is_vehicle = false;                // Infantry queue vs Vehicle queue
+    bool chrono_miner = false;              // CMIN flag (add_harvester path); unused for combat units
+    std::vector<std::string> prerequisite;  // uppercased tokens (BARRACKS/FACTORY groups or ids)
+    std::string cameo;                      // Art Cameo= ("" = never in sidebar)
+    UnitCombat combat;                      // resolved stats for World::add_combat_unit/add_harvester
+};
+
+}  // namespace ra2engine

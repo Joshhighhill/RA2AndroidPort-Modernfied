@@ -1,9 +1,11 @@
 #pragma once
 // Pure construction economy: the single BuildingType queue, credits, power.
 // Calibration: docs/re/construction.md (§ refs inline). No SDL/OS.
+#include <algorithm>
 #include <string>
 #include <vector>
 #include "building.hpp"
+#include "unit_type.hpp"
 
 namespace ra2engine {
 
@@ -121,5 +123,106 @@ void cancel(ProductionState& ps);
 
 // Placement succeeded: clear the slot (credits already fully spent).
 void placed(ProductionState& ps);
+
+// Scalar production entry point [RE-GATE APPLIED: production.md §1.5 — the
+// FactoryClass 54-step economy is shared by ALL categories (FactoryClass::Set
+// FUN_004C9B90 is the single entry for Structure/Defense/Infantry/Vehicle);
+// build_frames from raw Cost, immediate exit on completion for units,
+// READY-hold for structures/defenses].
+// Decouples the queue math from the BuildingType roster: total_frames =
+// build_frames(cost, build_speed); step_ticks = clamp(total_frames/54, 1, 255);
+// charge_basis = charge (caller passes cost when there is no FreeUnit — units
+// always do). tick()/cancel()/placed() are reused verbatim. The existing
+// start(ps, type, types, build_speed) becomes a one-line wrapper over this
+// (types[type].cost, and charge = types[type].charge>0 ? types[type].charge :
+// types[type].cost) so the BuildingType path stays BIT-IDENTICAL.
+void start(ProductionState& ps, int cost, int charge, double build_speed);
+
+// Can unit `unit_type` start in queue `ps`? factory_alive = an own alive Idle
+// factory of this queue's category exists; slot idle; TechLevel > 0; prereqs
+// met by scanning BUILDINGS (a unit's prereq is a BARRACKS/FACTORY building),
+// reusing prerequisites_met. Affordability is NOT gated (RA2 starts at any
+// credits and stalls at 0). `unit_roster`/`unit_type` name the UnitTypeDef.
+bool can_start_unit(const ProductionState& ps, int unit_type,
+                    const std::vector<UnitTypeDef>& unit_roster,
+                    const std::vector<Building>& buildings,
+                    const std::vector<BuildingTypeDef>& btypes, int house,
+                    const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
+                    bool factory_alive);
+
+// The FOUR concurrent production queues [RE-GATE APPLIED: production.md §1.1 —
+// per-house per-category FactoryClass queues; Structures (+0x53BC) and
+// Defenses (+0x53CC, BuildCat==Combat) are SEPARATE CONCURRENT queues, so this
+// phase's four sidebar tabs map 1:1 to four queues: tab0=Structure,
+// tab1=Defense, tab2=Infantry, tab3=Vehicle. Clicking a structure and a
+// defense builds BOTH at once from the same ConYard (two different
+// FactoryClass objects); both building queues gate on the ConYard-alive
+// factory group and share ONE ConYard factory-count slot (+0x5384) for the
+// MultipleFactory speedup — no struct/def split for the multiplier
+// (§1.1/§1.2)]. Additive: the Structure queue's ProductionState is
+// stepped/started EXACTLY as before (demo-base/demo-econ untouched — those
+// never construct a ProductionQueues; demo-base builds GAPOWR, a Structure,
+// so it stays byte-identical). Infantry/Vehicle queues draw from a
+// UnitTypeDef roster and, on completion, raise a ready-to-exit flag consumed
+// by World (Task 5); Structure/Defense queues READY-hold for placement.
+// DIVERGENCE (deliberate simplification — see Task 9 README, do not "fix" in
+// review): RA2 queues up to MaximumQueuedObjects=29 items per factory
+// (production.md §1.5); this phase keeps a SINGLE slot per queue (one item
+// building + ready).
+enum class QueueCat { Structure, Defense, Infantry, Vehicle };
+
+class ProductionQueues {
+public:
+    ProductionQueues() = default;
+
+    // The existing single-queue economy IS the Structure queue (demo-base
+    // builds GAPOWR, a Structure — byte-identical path).
+    ProductionState& structure() { return q_[0]; }
+    const ProductionState& structure() const { return q_[0]; }
+    ProductionState& state(QueueCat c) { return q_[(int)c]; }
+    const ProductionState& state(QueueCat c) const { return q_[(int)c]; }
+
+    // Wire the credit pool: all four queues SHARE the player's credits, so
+    // set the same value on every ProductionState each frame before tick()
+    // (mirrors how ps.credits is the single money pool). Call once at setup +
+    // whenever credits change outside tick (income, placement).
+    void set_credits(double credits) { for (auto& q : q_) q.credits = credits; }
+    double credits() const { return q_[0].credits; }
+
+    // Advance every non-idle queue by dt. Each queue's speed = power_mult x its
+    // MultipleFactory speedup (factory_speedup[cat]; Structure and Defense
+    // receive the SAME ConYard-count speedup — buildings collapse to one
+    // factory-count slot, §1.1). The four queues share ONE money pool, so tick
+    // SEQUENTIALLY (Structure -> Defense -> Infantry -> Vehicle) carrying the
+    // running balance across queues — total spend can never exceed the money,
+    // and the order is deterministic. Caller sets all four credits equal via
+    // set_credits() first; credits() reads the final pool balance after.
+    // [RE-GATE APPLIED: production.md §1.5 — shared FactoryClass timing]
+    void tick(double dt, double power_mult, const double factory_speedup[4],
+              const std::vector<BuildingTypeDef>& btypes);
+
+    // Reconcile the pool after a cancel(): a refund raises exactly one queue's
+    // balance above the shared tail, so set all four to the max. Caller reads
+    // credits() after. (No double-count: only the just-cancelled queue is high.)
+    void reconcile_refund() {
+        double m = q_[0].credits;
+        for (int i = 1; i < 4; ++i) m = std::max(m, q_[i].credits);
+        for (auto& q : q_) q.credits = m;
+    }
+
+    // Start a unit build in the Infantry/Vehicle queue (caller checked
+    // can_start_unit). charge == cost (§1.5, no FreeUnit).
+    void start_unit(QueueCat c, int unit_type, const std::vector<UnitTypeDef>& unit_roster,
+                    double build_speed);
+
+    void cancel(QueueCat c) { ra2engine::cancel(q_[(int)c]); }
+    // Queue slot readiness (Task 5 consumes this for the unit queues).
+    bool ready(QueueCat c) const { return q_[(int)c].slot.ready; }
+    int producing(QueueCat c) const { return q_[(int)c].slot.type; }
+    void placed(QueueCat c) { ra2engine::placed(q_[(int)c]); }
+
+private:
+    ProductionState q_[4];   // [0]=Structure, [1]=Defense, [2]=Infantry, [3]=Vehicle
+};
 
 }  // namespace ra2engine

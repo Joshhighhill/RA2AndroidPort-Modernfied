@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "../engine/production.hpp"
+#include "../engine/unit_type.hpp"
 using namespace ra2engine;
 
 static std::vector<BuildingTypeDef> roster() {
@@ -169,4 +170,139 @@ TEST_CASE("tick: FreeUnit charge split -- charge basis diverges from raw cost "
     tick(ps2, 504.0, 1.0, t2);
     CHECK(ps2.slot.ready);
     CHECK(ps2.credits == doctest::Approx(10000.0 - 800.0));
+}
+
+// --- Task 3: multi-queue production (scalar start, UnitTypeDef, ProductionQueues) ---
+
+static std::vector<UnitTypeDef> unit_roster() {
+    std::vector<UnitTypeDef> u(2);
+    u[0].id = "E1";   u[0].cost = 200; u[0].tech_level = 1; u[0].is_vehicle = false;
+    u[0].prerequisite = {"BARRACKS"};
+    u[1].id = "MTNK"; u[1].cost = 2000; u[1].tech_level = 2; u[1].is_vehicle = true;
+    u[1].prerequisite = {"FACTORY"};
+    return u;
+}
+static const std::vector<std::pair<std::string, std::vector<std::string>>> kUGroups = {
+    {"BARRACKS", {"GAPILE"}}, {"FACTORY", {"GAWEAP"}}, {"POWER", {"GAPOWR", "NAPOWR"}}};
+static Building livet(int type, int house = 0) {  // like live() but arbitrary building type roster
+    Building b; b.type = type; b.house = house; b.alive = true;
+    b.state = Building::State::Idle; b.hp = b.max_hp = 100; return b;
+}
+
+TEST_CASE("production: scalar start matches the BuildingType wrapper bit-for-bit") {
+    auto t = roster();  // GACNST/GAPOWR/GAPILE, no FreeUnit -> charge == cost
+    ProductionState a, b;
+    a.credits = b.credits = 10000;
+    start(a, 1, t, 0.7);                                   // GAPOWR via wrapper
+    start(b, t[1].cost, t[1].cost, 0.7);                   // scalar, charge==cost
+    CHECK(a.slot.total_frames == b.slot.total_frames);
+    CHECK(a.slot.step_ticks == b.slot.step_ticks);
+    CHECK(a.slot.charge_basis == b.slot.charge_basis);
+    // A FreeUnit type (charge < cost) still routes through the scalar correctly:
+    std::vector<BuildingTypeDef> refn(1);
+    refn[0].id = "GAREFN"; refn[0].cost = 2000; refn[0].charge = 600; refn[0].tech_level = 1;
+    ProductionState c, d;
+    c.credits = d.credits = 10000;
+    start(c, 0, refn, 0.7);
+    start(d, refn[0].cost, refn[0].charge, 0.7);
+    CHECK(c.slot.total_frames == 1260);                    // raw cost 2000
+    CHECK(c.slot.charge_basis == 600);                     // FreeUnit-subtracted
+    CHECK(c.slot.total_frames == d.slot.total_frames);
+    CHECK(c.slot.charge_basis == d.slot.charge_basis);
+}
+
+TEST_CASE("production: can_start_unit gates on TechLevel + building prereqs") {
+    auto u = unit_roster();
+    std::vector<BuildingTypeDef> bt(1); bt[0].id = "GAPILE";  // BARRACKS group member
+    ProductionState ps; ps.credits = 5000;
+    std::vector<Building> none;
+    CHECK_FALSE(can_start_unit(ps, 0, u, none, bt, 0, kUGroups, /*factory_alive=*/true)); // no barracks
+    std::vector<Building> barracks = {livet(0)};  // GAPILE idle
+    CHECK(can_start_unit(ps, 0, u, barracks, bt, 0, kUGroups, true));
+    CHECK_FALSE(can_start_unit(ps, 0, u, barracks, bt, 0, kUGroups, /*factory_alive=*/false));
+    // GI prereq met but MTNK needs FACTORY (not present) -> blocked:
+    CHECK_FALSE(can_start_unit(ps, 1, u, barracks, bt, 0, kUGroups, true));
+}
+
+TEST_CASE("production: infantry queue reproduces the 54-step economy for a unit") {
+    auto u = unit_roster();
+    ProductionQueues q;
+    q.set_credits(10000);
+    q.start_unit(QueueCat::Infantry, 0, u, 0.7);           // E1 cost 200
+    const ProductionState& inf = q.state(QueueCat::Infantry);
+    CHECK(inf.slot.total_frames == build_frames(200, 0.7));  // = 126
+    CHECK(inf.slot.step_ticks == std::max(1, 126 / 54));     // clamp(2,1,255)=2
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
+    std::vector<BuildingTypeDef> bt;
+    // Drive to completion; charge_basis == cost (no FreeUnit).
+    for (int i = 0; i < 10000 && !q.ready(QueueCat::Infantry); ++i)
+        q.tick(1.0 / 15.0, 1.0, speedup, bt);
+    CHECK(q.ready(QueueCat::Infantry));
+    CHECK(inf.slot.spent == doctest::Approx(200.0));
+}
+
+TEST_CASE("production: FOUR queues advance concurrently and independently [RE-GATE §1.1]") {
+    // [RE-GATE APPLIED: production.md §1.1] Structures and Defenses are
+    // SEPARATE concurrent queues — a structure and a defense build at once
+    // from the same ConYard, alongside the two unit queues. (The queue math is
+    // category-blind, so roster() entries stand in for both building queues.)
+    auto t = roster();
+    auto u = unit_roster();
+    ProductionQueues q;
+    q.set_credits(100000);
+    start(q.structure(), 1, t, 0.7);                       // GAPOWR in the Structure queue
+    start(q.state(QueueCat::Defense), 2, t, 0.7);          // Defense queue (GAPILE as stand-in)
+    q.start_unit(QueueCat::Infantry, 0, u, 0.7);           // E1
+    q.start_unit(QueueCat::Vehicle, 1, u, 0.7);            // MTNK
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
+    for (int i = 0; i < 5; ++i) q.tick(1.0 / 15.0, 1.0, speedup, t);
+    // All four queues are producing at once, each tracking its own slot:
+    CHECK(q.producing(QueueCat::Structure) == 1);
+    CHECK(q.producing(QueueCat::Defense) == 2);
+    CHECK(q.producing(QueueCat::Infantry) == 0);
+    CHECK(q.producing(QueueCat::Vehicle) == 1);
+    // Infantry (cheap, fast) reaches ready long before the vehicle:
+    for (int i = 0; i < 10000 && !q.ready(QueueCat::Infantry); ++i)
+        q.tick(1.0 / 15.0, 1.0, speedup, t);
+    CHECK(q.ready(QueueCat::Infantry));
+    CHECK_FALSE(q.ready(QueueCat::Vehicle));
+}
+
+TEST_CASE("production: MultipleFactory speedup scales the vehicle queue [RE-GATE §1.2]") {
+    auto u = unit_roster();
+    // [RE-GATE APPLIED: production.md §1.2 — CONFIRMED: MultipleFactory = 0.8,
+    // compounding x0.8 per EXTRA same-class factory (2 -> x0.8, 3 -> x0.64),
+    // applied as a build-TIME multiplier in Time_To_Build FUN_006F3D00] two war
+    // factories multiply the effective build time by 0.8 once (n-1 = 1) -> a
+    // build with 2 factories completes in FEWER frames than with 1.
+    ProductionQueues one, two;
+    one.set_credits(1e9); two.set_credits(1e9);
+    one.start_unit(QueueCat::Vehicle, 1, u, 0.7);
+    two.start_unit(QueueCat::Vehicle, 1, u, 0.7);
+    std::vector<BuildingTypeDef> bt;
+    const double s1[4] = {1.0, 1.0, 1.0, 1.0};
+    const double s2[4] = {1.0, 1.0, 1.0, 1.0 / 0.8};   // 2 factories: divide time by 0.8
+    int f1 = 0, f2 = 0;
+    while (!one.ready(QueueCat::Vehicle)) { one.tick(1.0/15.0, 1.0, s1, bt); ++f1; }
+    while (!two.ready(QueueCat::Vehicle)) { two.tick(1.0/15.0, 1.0, s2, bt); ++f2; }
+    CHECK(f2 < f1);
+}
+
+TEST_CASE("production: Structure (BuildingType) queue path is unchanged by the multi-queue layer") {
+    // The Structure queue reached via ProductionQueues behaves EXACTLY like a
+    // standalone ProductionState driven by start()+tick().
+    auto t = roster();
+    ProductionQueues q; q.set_credits(10000);
+    start(q.structure(), 1, t, 0.7);                // GAPOWR through the shared start()
+    ProductionState solo; solo.credits = 10000;
+    start(solo, 1, t, 0.7);
+    CHECK(q.structure().slot.total_frames == solo.slot.total_frames);
+    CHECK(q.structure().slot.step_ticks == solo.slot.step_ticks);
+    const double speedup[4] = {1.0, 1.0, 1.0, 1.0};
+    for (int i = 0; i < 10; ++i) {
+        q.tick(1.0/15.0, 1.0, speedup, t);
+        tick(solo, 1.0/15.0, 1.0, t);
+    }
+    CHECK(q.structure().slot.stage == solo.slot.stage);
+    CHECK(q.structure().slot.spent == doctest::Approx(solo.slot.spent));
 }

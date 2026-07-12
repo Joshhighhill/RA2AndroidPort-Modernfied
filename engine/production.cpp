@@ -73,19 +73,28 @@ bool can_start(const ProductionState& ps, int type,
     return prerequisites_met(types[type].prerequisite, buildings, types, house, groups);
 }
 
-void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& types,
-           double build_speed) {
+// [RE-GATE: production.md §1.5] Scalar entry point shared by ALL categories.
+// Reproduces the old BuildingType start() math EXACTLY (same operations, same
+// order, after ps.slot = QueueSlot{}) — see start(ps,type,types,...) below.
+void start(ProductionState& ps, int cost, int charge, double build_speed) {
     ps.slot = QueueSlot{};
-    ps.slot.type = type;
-    const BuildingTypeDef& t = types[type];
-    ps.slot.total_frames = std::max(1, build_frames(t.cost, build_speed));
+    ps.slot.type = 0;   // caller (wrapper / queue) overwrites with the real roster index
+    ps.slot.total_frames = std::max(1, build_frames(cost, build_speed));
     // [RE-GATE: construction.md §10 FUN_004C9DC0] frames per production step.
     ps.slot.step_ticks = std::clamp(ps.slot.total_frames / kProductionSteps, 1, 255);
     // [RE-GATE: economy.md §6a] charge basis: the caller's FreeUnit-subtracted
     // amount when set (> 0), else raw cost — resolved once here so tick()
-    // never has to special-case an unset BuildingTypeDef::charge (see
-    // QueueSlot::charge_basis).
-    ps.slot.charge_basis = t.charge > 0 ? t.charge : t.cost;
+    // never has to special-case an unset charge (see QueueSlot::charge_basis).
+    ps.slot.charge_basis = charge > 0 ? charge : cost;
+}
+
+void start(ProductionState& ps, int type, const std::vector<BuildingTypeDef>& types,
+           double build_speed) {
+    const BuildingTypeDef& t = types[type];
+    // charge==0 -> scalar falls back to cost, so this stays BIT-IDENTICAL to
+    // the pre-refactor body (max(1,build_frames(cost)), clamp, charge basis).
+    start(ps, t.cost, t.charge, build_speed);
+    ps.slot.type = type;   // preserve the roster index the old code set
 }
 
 void tick(ProductionState& ps, double dt, double speed_mult,
@@ -125,5 +134,39 @@ void cancel(ProductionState& ps) {
 }
 
 void placed(ProductionState& ps) { ps.slot = QueueSlot{}; }
+
+bool can_start_unit(const ProductionState& ps, int unit_type,
+                    const std::vector<UnitTypeDef>& unit_roster,
+                    const std::vector<Building>& buildings,
+                    const std::vector<BuildingTypeDef>& btypes, int house,
+                    const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
+                    bool factory_alive) {
+    if (unit_type < 0 || unit_type >= (int)unit_roster.size()) return false;
+    if (!factory_alive || ps.slot.type != -1) return false;
+    if (unit_roster[unit_type].tech_level <= 0) return false;
+    // A unit's prereq tokens name BUILDINGS (BARRACKS/FACTORY) -> scan buildings.
+    return prerequisites_met(unit_roster[unit_type].prerequisite, buildings, btypes, house, groups);
+}
+
+void ProductionQueues::start_unit(QueueCat c, int unit_type,
+                                  const std::vector<UnitTypeDef>& unit_roster, double build_speed) {
+    const UnitTypeDef& u = unit_roster[unit_type];
+    start(q_[(int)c], u.cost, u.cost, build_speed);   // §1.5: charge == cost (no FreeUnit)
+    q_[(int)c].slot.type = unit_type;                 // roster index into the UNIT roster
+}
+
+void ProductionQueues::tick(double dt, double power_mult, const double factory_speedup[4],
+                            const std::vector<BuildingTypeDef>& btypes) {
+    // Sequential single pool (deterministic Structure->Defense->Infantry->
+    // Vehicle): carry the running balance across queues so total spend never
+    // exceeds the money.
+    double money = q_[0].credits;   // caller set all four equal via set_credits
+    for (int i = 0; i < 4; ++i) {
+        q_[i].credits = money;
+        ra2engine::tick(q_[i], dt, power_mult * factory_speedup[i], btypes);
+        money = q_[i].credits;      // this queue's spend reduces the shared pool
+    }
+    for (auto& q : q_) q.credits = money;   // final balance to all four
+}
 
 }  // namespace ra2engine
