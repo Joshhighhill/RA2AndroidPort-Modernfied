@@ -531,7 +531,7 @@ the new AI-2 gate.
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
-| `--demo-ai-team` | `ai_team_hash=801510409ccd55e7` | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
+| `--demo-ai-team` | `ai_team_hash=312e92ed862a5e74` | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
