@@ -95,6 +95,132 @@ TEST_CASE("aimd: parse_aimd is deterministic") {
     for (std::size_t i = 0; i < a.teams.size(); ++i) CHECK(a.teams[i].id == b.teams[i].id);
 }
 
+namespace {
+// Real [AITriggerTypes] flat-line shapes [RE-GATE APPLIED: ai-trigger.md §1 —
+// the CONFIRMED 18-field comma order (Name,Team1,OwnerHouse,TechLevel,
+// ConditionType,ConditionObject,Conditions,StartWeight,MinWeight,MaxWeight,
+// IsForSkirmish,0,SideIndex,IsForBaseDefense,Team2,eE,eN,eH); ids/values are
+// fixture stand-ins in the recovered FORMAT; comparator blobs are the 64-hex
+// Conditions[4]: VALUE dword first, then the operator dword, LE, slots 1..3
+// zero [RE: ai-trigger.md §2]].
+const char* kTriggerFixture =
+    "[TaskForces]\n0=01000050-G\n"
+    "[ScriptTypes]\n0=03000015-G\n"
+    "[TeamTypes]\n0=02000010-G\n"
+    "[01000050-G]\nName=Rhino Pair\n0=2,HTNK\n"
+    "[03000015-G]\nName=March\n0=3,2\n1=49,0\n"
+    "[02000010-G]\nName=Sov Response\nHouse=<none>\nTaskForce=01000050-G\n"
+    "Script=03000015-G\nAutocreate=no\n"
+    "[AITriggerTypes]\n"
+    // Kept: enemy owns >= 3 GAWEAP -> create 02000010-G (building object).
+    "SOVT01=Sov Rhino Response,02000010-G,Russians,5,0,GAWEAP,"
+    "0300000003000000000000000000000000000000000000000000000000000000,"
+    "50.000000,10.000000,90.000000,1,0,2,0,02000010-G,1,1,1\n"
+    // Dropped: condition object ZZNOART resolves in NEITHER roster.
+    "SOVT02=Ghost Object,02000010-G,Russians,5,0,ZZNOART,"
+    "0100000003000000000000000000000000000000000000000000000000000000,"
+    "50.000000,10.000000,90.000000,1,0,2,0,<none>,1,1,1\n"
+    // Dropped: team1 09999999-G does not exist in AimdData::teams.
+    "SOVT03=Ghost Team,09999999-G,Russians,5,1,HTNK,"
+    "0100000003000000000000000000000000000000000000000000000000000000,"
+    "50.000000,10.000000,90.000000,1,0,2,0,<none>,1,1,1\n"
+    // Kept: owner owns < 2 HTNK (unit object); team2 <none> -> -1;
+    // Normal-only enable fields; not-for-skirmish; side any.
+    "SOVT04=Owner Owns Tanks,02000010-G,<all>,5,1,HTNK,"
+    "0200000000000000000000000000000000000000000000000000000000000000,"
+    "30.000000,0.000000,60.000000,0,0,0,0,<none>,0,1,0\n"
+    // [AITriggerTypesEnable]: SOVT04 disabled per-trigger; SOVT03 names a
+    // DROPPED trigger -> ignored, no crash; SOVT01 unlisted -> stays enabled
+    // [RE-GATE APPLIED: ai-trigger.md §5].
+    "[AITriggerTypesEnable]\nSOVT04=no\nSOVT03=yes\n";
+
+// Building resolver: GAWEAP -> 7, everything else unknown (-1).
+int test_building_index(const std::string& id) {
+    return id == "GAWEAP" ? 7 : -1;
+}
+}  // namespace
+
+TEST_CASE("aimd: decode_comparator unpacks the value-first Conditions[4] blob") {
+    ra2engine::TriggerComparator c;
+    // VALUE-FIRST [RE-GATE APPLIED: ai-trigger.md §2 — CONFIRMED]: dword0 =
+    // count/value N, dword1 = operator; 3 (>=) is the stock default op.
+    REQUIRE(decode_comparator(
+        "0300000003000000000000000000000000000000000000000000000000000000", c));
+    CHECK(c.value == 3);
+    CHECK(c.op == 3);                                    // 3 = >=
+    REQUIRE(decode_comparator(
+        "0a00000005000000000000000000000000000000000000000000000000000000", c));
+    CHECK(c.value == 10);
+    CHECK(c.op == 5);                                    // 5 = !=
+    // Reserved dwords [2..7] are hex-validated but IGNORED for meaning.
+    REQUIRE(decode_comparator(
+        "0100000000000000ffffffff000000000000000000000000000000000000ffff", c));
+    CHECK(c.value == 1);
+    CHECK(c.op == 0);                                    // 0 = <
+    CHECK_FALSE(decode_comparator("0a00000005000000", c));  // 16 chars: NOT a
+                                                     // full 32-byte blob
+    CHECK_FALSE(decode_comparator("03000000", c));       // too short
+    CHECK_FALSE(decode_comparator(                       // non-hex
+        "zz00000003000000000000000000000000000000000000000000000000000000", c));
+}
+
+TEST_CASE("aimd: parse_ai_triggers walks the flat list with art-guard-drop") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(kTriggerFixture);
+    ra2engine::AimdData d = parse_aimd(ini, test_unit_index);
+    REQUIRE(d.teams.size() == 1);                        // 02000010-G survived
+    parse_ai_triggers(ini, d, test_unit_index, test_building_index);
+    // SOVT02 (unresolvable object) and SOVT03 (missing team1) dropped WHOLE.
+    REQUIRE(d.triggers.size() == 2);
+    const ra2engine::AITriggerType& a = d.triggers[0];
+    CHECK(a.id == "SOVT01");
+    CHECK(a.name == "Sov Rhino Response");
+    CHECK(a.team1 == 0);
+    CHECK(a.team2 == 0);                                 // second team, ALSO
+                                                         // created [RE: §3]
+    CHECK(a.owner_house == "Russians");
+    CHECK(a.tech_level == 5);
+    CHECK(a.condition_type == 0);                        // enemy-owns
+    CHECK(a.condition_object.kind == ra2engine::TechnoKind::Building);
+    CHECK(a.condition_object.index == 7);                // GAWEAP
+    CHECK(a.comparator.value == 3);
+    CHECK(a.comparator.op == 3);
+    CHECK(a.starting_weight == 50.0);
+    CHECK(a.min_weight == 10.0);
+    CHECK(a.max_weight == 90.0);
+    CHECK(a.is_for_skirmish);
+    CHECK(a.side == 2);
+    CHECK_FALSE(a.base_defense);
+    CHECK(a.enabled[0]); CHECK(a.enabled[1]); CHECK(a.enabled[2]);
+    CHECK(a.is_enabled);                                 // unlisted in the
+                                                         // Enable section ->
+                                                         // default enabled
+    const ra2engine::AITriggerType& b = d.triggers[1];
+    CHECK(b.id == "SOVT04");
+    CHECK(b.condition_type == 1);                        // owner-owns
+    CHECK(b.condition_object.kind == ra2engine::TechnoKind::Unit);
+    CHECK(b.condition_object.index == 0);                // HTNK
+    CHECK(b.comparator.value == 2);
+    CHECK(b.comparator.op == 0);                         // <
+    CHECK(b.team2 == -1);                                // <none> tolerated
+    CHECK_FALSE(b.is_for_skirmish);
+    CHECK(b.side == 0);
+    CHECK_FALSE(b.enabled[0]); CHECK(b.enabled[1]); CHECK_FALSE(b.enabled[2]);
+    CHECK_FALSE(b.is_enabled);                           // [AITriggerTypesEnable]
+                                                         // SOVT04=no applied
+                                                         // [RE: ai-trigger.md §5]
+}
+
+TEST_CASE("aimd: parse_ai_triggers is deterministic") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(kTriggerFixture);
+    ra2engine::AimdData a = parse_aimd(ini, test_unit_index);
+    ra2engine::AimdData b = parse_aimd(ini, test_unit_index);
+    parse_ai_triggers(ini, a, test_unit_index, test_building_index);
+    parse_ai_triggers(ini, b, test_unit_index, test_building_index);
+    REQUIRE(a.triggers.size() == b.triggers.size());
+    for (std::size_t i = 0; i < a.triggers.size(); ++i)
+        CHECK(a.triggers[i].id == b.triggers[i].id);
+}
+
 static std::vector<uint8_t> slurp(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return {};
@@ -161,4 +287,16 @@ TEST_CASE("aimd: real aimd.ini parses with resolved cross-references") {
     CHECK(autocreate > 0);   // the autocreate pool AI-2 draws from is nonempty
     MESSAGE("real aimd: tf=" << d.taskforces.size() << " sc=" << d.scripts.size()
             << " teams=" << d.teams.size() << " autocreate=" << autocreate);
+
+    // AI-3: the real [AITriggerTypes] parses under permissive resolvers.
+    ra2engine::AimdData dt = d;
+    parse_ai_triggers(ini, dt, [](const std::string&) { return 0; },
+                      [](const std::string&) { return 0; });
+    CHECK(dt.triggers.size() > 50);   // the real file carries hundreds
+    for (const ra2engine::AITriggerType& t : dt.triggers) {
+        REQUIRE(t.team1 >= 0);
+        REQUIRE(t.team1 < (int)dt.teams.size());
+        REQUIRE(t.max_weight >= t.min_weight);
+    }
+    MESSAGE("real aimd: triggers=" << dt.triggers.size());
 }
