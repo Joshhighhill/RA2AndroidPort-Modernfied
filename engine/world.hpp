@@ -47,6 +47,15 @@ enum class HarvState : std::uint8_t {
     Unloading,     // draining bales into credits
 };
 
+// CB-2 Aircraft [RE: aircraft.md]: the flight-locomotor state machine. A
+// Grounded unit is on the map (holds its cell); TakingOff ascends to cruise
+// (ground cell released); Cruising translates straight-line at altitude
+// holding no cell; Descending lowers toward the ground. Order-driven
+// transitions (Grounded->TakingOff, Cruising->Descending) are set by World;
+// altitude-driven ones (TakingOff->Cruising, Descending->Grounded) by
+// flight::advance_flight_state. Default Grounded is INERT (spec §8).
+enum class FlightState { Grounded, TakingOff, Cruising, Descending };
+
 // A single visible/controllable actor in the world: its map cell + height
 // level (raw IsoMapPack5 coordinate space -- see ra2assets::MapCell), the
 // SHP base image name (a `Rules::image()` result, e.g. unit id "E1" ->
