@@ -1940,7 +1940,8 @@ std::vector<ra2engine::Cellxy> make_ai_waypoints(int px, int py) {
 ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const UnitRoster& ur_ai,
                                             const Rules& rules, const ra2assets::Ini& aimd_ini,
                                             ra2engine::AiDifficulty difficulty,
-                                            int player_x, int player_y) {
+                                            int player_x, int player_y,
+                                            bool enable_triggers = false) {
     ra2engine::AiTeamConfig tc;
     tc.enabled = true;
     tc.unit_roster = ur_ai.defs;
@@ -1952,6 +1953,27 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
         return -1;
     };
     tc.aimd = ra2engine::parse_aimd(aimd_ini, unit_ix);
+    // AI-3 [RE: ai-trigger.md §1]: parse [AITriggerTypes] HOUSE-SCOPED through
+    // the SAME resolver scoping as the teams above — UNIT condition objects
+    // resolve in this house's (Soviet) unit roster, BUILDING objects in the
+    // full shared building roster; an unresolvable object or a dropped/missing
+    // team1 art-guard-drops the trigger whole, so only fieldable/resolvable
+    // triggers survive. Parsed unconditionally (cheap, deterministic, cerr
+    // only); the FIREWALL is triggers_enabled below.
+    auto bld_ix = [&](const std::string& id) -> int {
+        const int i = roster_index(ba, id);
+        return (i >= 0 && i < (int)ba.art.size() && ba.art[i].ok) ? i : -1;
+    };
+    ra2engine::parse_ai_triggers(aimd_ini, tc.aimd, unit_ix, bld_ix);
+    tc.triggers_enabled = enable_triggers;
+    tc.trigger_side = 2;         // Soviet [RE-GATE APPLIED: ai-trigger.md §5 —
+                                 // CONFIRMED SideIndex encoding 0=any,
+                                 // 1=Allied, 2=Soviet, 3=Yuri]
+    tc.trigger_tech_level = 10;  // skirmish tech ceiling [RE-FALLBACK: no
+                                 // recovered per-house tech input; TechLevel
+                                 // gates pass at 10]
+    std::cerr << "[ai-trigger] aimd triggers parsed=" << tc.aimd.triggers.size()
+              << " enabled=" << (enable_triggers ? "yes" : "no") << "\n";
     tc.inf_factory_types = factory_types_for(ba, "NAHAND");   // tab2 [RE: ai-base.md §2]
     tc.veh_factory_types = factory_types_for(ba, "NAWEAP");   // tab3
     tc.house_name = "Russians";  // [RE-GATE APPLIED: ai-team.md §1/§4] — the
@@ -2425,7 +2447,8 @@ int run_interactive(bool no_audio) {
                                /*start_credits=*/(double)rules.mp_money());
             acfg.team = make_ai_team_config(ba, ur_ai, rules, aimd_ini,
                                             ra2engine::AiDifficulty::Normal,
-                                            /*player base:*/ sc->x, sc->y + 4);
+                                            /*player base:*/ sc->x, sc->y + 4,
+                                            /*enable_triggers=*/true);
             world.enable_ai_house(1, acfg);
             // Register the AI infantry anims so launched conscripts animate
             // (vehicles ignore this; missing anims fall back to default_anim).
