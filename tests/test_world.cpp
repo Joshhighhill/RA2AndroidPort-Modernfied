@@ -2252,6 +2252,49 @@ ra2engine::AiHouseConfig ai3_cfg(bool triggers_enabled, int total_team_cap = 30)
     cfg.team.rules.total_team_cap = total_team_cap;
     return cfg;
 }
+
+// AI-3 non-Normal difficulty fixture [RE-GATE STOP: the 2-difficulty edge].
+// Drives the house at AiDifficulty::Difficult (engine enum 2, 0 = EASIEST) with
+// TWO triggers that differ ONLY in their per-difficulty enable slot, sharing
+// one always-satisfiable enemy-owns condition and equal weight so the enable
+// slot alone decides eligibility:
+//   TRG_HARD (index 0) -> team TT2, enabled = {easy=0, normal=0, hard=1}
+//   TRG_EASY (index 1) -> team TT3, enabled = {easy=1, normal=0, hard=0}
+// The World converts the enum to the pure engine's 0 = HARDEST convention, so a
+// Difficult AI consults the HARD flag: TRG_HARD is eligible/fires, TRG_EASY is
+// NOT. Under the pre-fix non-inverted fill the two SWAP (Easy fires, Hard is
+// excluded), so this pins the world<->engine difficulty-convention seam.
+ra2engine::AiHouseConfig ai3_cfg_difficult() {
+    ra2engine::AiHouseConfig cfg = ai3_cfg(/*triggers_enabled=*/true);
+    cfg.difficulty = ra2engine::AiDifficulty::Difficult;   // enum 2 (0 = EASIEST)
+    ra2engine::DifficultyGroupRaw g[3];
+    for (int i = 0; i < 3; ++i) {
+        g[i].cost = ra2engine::kDifficultyCost[i];
+        g[i].build_time = ra2engine::kDifficultyBuildTime[i];
+        g[i].build_delay = ra2engine::kDifficultyBuildDelayMin[i];
+        g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];
+    }
+    cfg.mods = ra2engine::difficulty_mods(ra2engine::AiDifficulty::Difficult, g);
+    // Second trigger-only team TT3 (teams index 2), reachable ONLY via TRG_EASY.
+    ra2engine::TeamType tt3;
+    tt3.id = "TT3"; tt3.house = "Russians";
+    tt3.taskforce = 0; tt3.script = 0; tt3.priority = 5; tt3.max = 1;
+    tt3.autocreate = false;
+    cfg.team.aimd.teams.push_back(tt3);   // index 2
+    // Rebuild the trigger pool as exactly the two enable-slot variants off the
+    // ai3_cfg TRG1 template (same condition/comparator/weights/side/tech).
+    const ra2engine::AITriggerType base = cfg.team.aimd.triggers[0];
+    cfg.team.aimd.triggers.clear();
+    ra2engine::AITriggerType hard = base;
+    hard.id = "TRG_HARD"; hard.team1 = 1;   // TT2
+    hard.enabled[0] = false; hard.enabled[1] = false; hard.enabled[2] = true;
+    ra2engine::AITriggerType easy = base;
+    easy.id = "TRG_EASY"; easy.team1 = 2;   // TT3
+    easy.enabled[0] = true; easy.enabled[1] = false; easy.enabled[2] = false;
+    cfg.team.aimd.triggers.push_back(hard);   // index 0
+    cfg.team.aimd.triggers.push_back(easy);   // index 1
+    return cfg;
+}
 }  // namespace
 
 TEST_CASE("World: a trigger fires, creates its team via the trigger path, and the disband outcome adjusts its weight") {
@@ -2340,6 +2383,96 @@ TEST_CASE("World: a trigger create is skipped at TotalAITeamCap") {
     REQUIRE(ts != nullptr);
     CHECK(ts->triggers_fired == 0);              // at cap -> create skipped
     CHECK(world.ai_team_state(1)->teams_created == 0);
+}
+
+// The world<->engine difficulty-convention seam [RE-GATE STOP: non-inverted
+// difficulty]. A Difficult AI (engine enum 2) MUST consult the HARD enable
+// slot, not Easy: the World converts the enum (0 = EASIEST) to the pure
+// engine's 0 = HARDEST convention, which trigger_filters_pass re-inverts as
+// enabled[2-difficulty]. The Hard-slot-only trigger fires; the Easy-slot-only
+// trigger is INELIGIBLE and never fires. Under the pre-fix non-inverted fill
+// these SWAP, so this fails without the world.cpp `2 - (int)difficulty` fix.
+TEST_CASE("World: a Difficult AI consults the HARD enable slot, not Easy [RE-GATE: 2-difficulty edge]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
+    // One IDLE house-1 unit so the fired team fills instantly and runs to disband.
+    ra2engine::UnitCombat uc;
+    uc.strength = 100; uc.image = "AITEST";
+    uc.damage = 10; uc.rof = 15; uc.range = 4.0;
+    uc.verses = std::vector<int>(11, 100);
+    world.add_combat_unit(c->x + 3, c->y + 2, /*house=*/1, uc);
+    world.enable_ai_house(1, ai3_cfg_difficult());
+    const ra2engine::AiTriggerState* ts0 = world.ai_trigger_state(1);
+    REQUIRE(ts0 != nullptr);
+    REQUIRE(ts0->weights.size() == 2);
+    const int kHard = 0, kEasy = 1;
+    CHECK(ts0->weights[kHard] == 50.0);
+    CHECK(ts0->weights[kEasy] == 50.0);
+    for (int i = 0; i < 4500 && world.ai_trigger_state(1)->triggers_fired < 1; ++i)
+        world.step(1.0 / 15.0);
+    const ra2engine::AiTriggerState* ts = world.ai_trigger_state(1);
+    REQUIRE(ts != nullptr);
+    CHECK(ts->triggers_fired >= 1);
+    CHECK(ts->last_fired == kHard);              // the Hard-slot trigger fired
+    // The Easy-slot trigger is INELIGIBLE for a Difficult AI: TT3 is never
+    // created, so its weight is never adjusted (adjustment runs only at the
+    // disband of a team whose Team1 == the trigger's team) — it stays at start.
+    CHECK(ts->weights[kEasy] == 50.0);
+}
+
+// World-level FAILURE attribution end-to-end [RE: ai-trigger.md §4/§6]. The
+// trigger fires + creates its team; the recruited member is WIPED before the
+// script reaches kOpDisband, so completed_success stays FALSE and the disband
+// scan takes the RegisterFailure path. Success attribution is covered above;
+// this pins the failure branch through the World glue. Weight math (E=0, first
+// outcome, no track term): 50 + (-50) = 0, CLAMPED to min_weight 10.
+TEST_CASE("World: a trigger whose team is WIPED before it completes takes the FAILURE weight path [RE: ai-trigger.md 4/6]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
+    ra2engine::UnitCombat uc;
+    uc.strength = 100; uc.image = "AITEST";
+    uc.damage = 10; uc.rof = 15; uc.range = 4.0;
+    uc.verses = std::vector<int>(11, 100);
+    world.add_combat_unit(c->x + 3, c->y + 2, /*house=*/1, uc);
+    world.enable_ai_house(1, ai3_cfg(/*triggers_enabled=*/true));
+    REQUIRE(world.ai_trigger_state(1) != nullptr);
+    REQUIRE(world.ai_trigger_state(1)->weights.size() == 1);
+    CHECK(world.ai_trigger_state(1)->weights[0] == 50.0);
+    // Fire the trigger + recruit the idle unit into the team (Gathering is
+    // movement-bound, so this lands well before the bare-disband op).
+    int member = -1;
+    for (int i = 0; i < 4500 && member < 0; ++i) {
+        world.step(1.0 / 15.0);
+        const ra2engine::AiTeamState* tst = world.ai_team_state(1);
+        if (tst)
+            for (const ra2engine::TeamInstance& t : tst->teams)
+                if (!t.members.empty()) { member = t.members[0]; break; }
+    }
+    REQUIRE(member >= 0);
+    REQUIRE(world.ai_trigger_state(1)->adjustments == 0);   // not yet disbanded
+    world.units()[member].alive = false;                    // WIPE mid-script
+    for (int i = 0; i < 4500 && world.ai_trigger_state(1)->adjustments < 1; ++i)
+        world.step(1.0 / 15.0);
+    const ra2engine::AiTriggerState* ts = world.ai_trigger_state(1);
+    REQUIRE(ts != nullptr);
+    REQUIRE(ts->adjustments == 1);
+    CHECK(ts->last_adjusted == 0);
+    CHECK_FALSE(ts->last_success);               // wipe -> completed_success FALSE
+    CHECK(ts->times_executed[0] == 1);           // E incremented every outcome
+    CHECK(ts->times_completed[0] == 0);          // C NOT incremented on failure
+    CHECK(ts->weights[0] == 10.0);               // 50 - 50 = 0 -> clamp to min 10
+    CHECK(ts->last_old_weight == 50.0);
+    CHECK(ts->last_new_weight == 10.0);
 }
 
 // Direct step_team coverage the Task-3 review flagged, now that the World

@@ -1570,9 +1570,15 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
     v.credits = rec.credits;  // OWNER house credits — ct=4 HouseCredits reads
                               // the CALLING house's money scalar [RE-GATE
                               // APPLIED: ai-trigger.md §2 — NOT enemy credits]
-    v.difficulty = (int)rec.cfg.difficulty;   // index 0 = HARDEST; the enable
-                                              // inversion lives in
-                                              // trigger_filters_pass [RE: §5]
+    // Convert the engine's AiDifficulty enum (Easy=0/Normal=1/Difficult=2, i.e.
+    // 0 = EASIEST) into the pure engine's TriggerView convention, where index
+    // 0 = HARDEST (ai_trigger.hpp ~87) — the two are INVERTED relative to each
+    // other. trigger_filters_pass then consults enabled[2-difficulty], so the
+    // NET map is Easy->enabled[0], Normal->enabled[1], Difficult->enabled[2]
+    // (the on-disk Easy/Normal/Hard slots) [RE: §5]. Normal (1) is the 2-x
+    // fixed point and is unchanged; the raw fill silently gave a Difficult AI
+    // the Easy pool (and vice-versa) — the RE-GATE non-inverted-difficulty drift.
+    v.difficulty = 2 - (int)rec.cfg.difficulty;
     v.house_name = tc.house_name;
     v.side = tc.trigger_side;                 // 1=Allied/2=Soviet/3=Yuri [RE: §5]
     v.tech_level = tc.trigger_tech_level;
