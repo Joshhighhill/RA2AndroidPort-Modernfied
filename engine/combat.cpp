@@ -59,7 +59,8 @@ double dist_leptons(double x1, double y1, double x2, double y2) {
 bool valid_target(const std::vector<Unit>& units, int self_house, int idx) {
     if (idx < 0 || idx >= static_cast<int>(units.size())) return false;
     const Unit& v = units[idx];
-    return v.alive && v.die_time < 0.0 && v.house != self_house;
+    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && v.house != self_house;
+    // carried: untargetable; an attacker whose target boards drops it here (CB-1)
 }
 
 // Fires `u`'s weapon at `v` (caller has already range/cooldown-checked).
@@ -143,6 +144,10 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
         // only ever flips false via the die_time path above), but a unit
         // spawned pre-dead should still never act.
         if (!u.alive) continue;
+
+        // (b2) CB-1: a CARRIED unit is off-map -- it cannot fire, cool down,
+        // acquire, or pursue [spec §4].
+        if (u.cargo_of >= 0) continue;
 
         // (c) ROF cooldown + fire-flash decay -- every living, non-dying
         // unit, every call, regardless of target state. docs/re/combat.md

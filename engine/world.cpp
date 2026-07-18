@@ -5,6 +5,7 @@
 #include <map>
 #include <utility>
 
+#include "cargo.hpp"          // can_load/cargo_total_size/next_eject/eject_cell (CB-1)
 #include "combat.hpp"         // armor_index, step_combat, MoveRequest
 #include "factory.hpp"        // exit_cell/primary_factory/set_primary (Production phase)
 #include "group_move.hpp"     // assign_formation
@@ -94,7 +95,7 @@ bool vehicle_aimed(const Unit& u, double target_facing) {
 
 void step_turrets(std::vector<Unit>& units, const std::vector<Building>& buildings, double dt) {
     for (auto& u : units) {
-        if (!u.is_vehicle || !u.alive || u.die_time >= 0.0) continue;
+        if (!u.is_vehicle || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         double want = u.body_facing;
         if (u.target >= 0 && u.target < static_cast<int>(units.size())) {
             const Unit& t = units[u.target];
@@ -330,6 +331,11 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.is_vehicle = c.is_vehicle;
     u.speed_cps = c.speed_cps;
     u.rot_u16_per_sec = c.rot * kRotU16PerRotPerSec;
+    // CB-1 [RE: transport-cargo.md §1]: cargo stats, inert unless the caller
+    // resolved them (default passengers=0 = not a transport).
+    u.passengers_max = c.passengers;
+    u.size_limit = c.size_limit;
+    u.size = c.size;
     return u;
 }
 
@@ -381,6 +387,7 @@ void World::order_harvest(int x, int y) {
         u.harv = HarvState::MoveToOre;
         u.harv_timer = 0.0;
         u.manual_hold = false;
+        u.enter_target = -1;  // CB-1: a harvest order supersedes an enter order
         order_unit_move(static_cast<int>(i), x, y);
     }
 }
@@ -411,7 +418,7 @@ void World::clear_selection() {
 int World::unit_at_cell(int x, int y) const {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         const Unit& u = units_[i];
-        if (!u.alive || u.die_time >= 0.0) continue;  // corpses/dying: unpickable
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;  // carried: unpickable
         if (u.cell_x == x && u.cell_y == y) return static_cast<int>(i);
     }
     return -1;
@@ -474,6 +481,13 @@ void World::order_move_selected(int goal_x, int goal_y) {
         u.target = -1;
         u.target_building = -1;
         u.attack_order = false;
+        // CB-1: a new move order supersedes a pending enter/unload
+        // [RE-GATE APPLIED: transport-cargo.md §3/§4 -- kept: our
+        // order-model convention; the hunt pinned no contrary rule].
+        // Provably no-op in every existing demo (fields hold their inert
+        // defaults).
+        u.enter_target = -1;
+        u.unload_pending = false;
         // Economy phase [RE: economy.md §1 auto-resume]: a player move order
         // parks the harvester mission FSM (step_harvest's manual_hold branch)
         // for the duration of this walk; it resumes at SeekOre the instant
@@ -607,6 +621,246 @@ bool World::factory_category_lost(const std::vector<int>& factory_types, int hou
             if (b.type == t) return false;   // a survivor
     }
     return true;
+}
+
+// --- CB-1 Transports/Cargo [RE: transport-cargo.md] --------------------------
+
+void World::order_enter_transport(int t_idx) {
+    if (t_idx < 0 || t_idx >= static_cast<int>(units_.size())) return;
+    const Unit& t = units_[t_idx];
+    if (!t.alive || t.die_time >= 0.0 || t.house != 0 || t.passengers_max <= 0) return;
+    // Gather eligible movers: selected house-0, alive, non-dying, not the
+    // transport itself, passing can_load NOW (capacity re-checked at
+    // boarding -- orders may oversubscribe) [spec §3].
+    std::vector<int> movers;
+    std::vector<Cellxy> cur;
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+        const Unit& u = units_[i];
+        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (static_cast<int>(i) == t_idx) continue;
+        if (!can_load(units_, t_idx, static_cast<int>(i))) continue;
+        movers.push_back(static_cast<int>(i));
+        cur.push_back({units_[i].cell_x, units_[i].cell_y});
+    }
+    if (movers.empty()) return;
+    cargo_any_ = true;   // the step_cargo firewall opens on the FIRST order (spec §8)
+    // Batch per transport into assign_formation around the transport's cell,
+    // so each passenger gets a DISTINCT free nearby cell (the same batching
+    // step() uses for combat approach requests) [spec §3].
+    const std::vector<Cellxy> targets =
+        assign_formation({t.cell_x, t.cell_y}, cur, passable_, grid_w_, grid_h_, occ_);
+    for (std::size_t k = 0; k < movers.size(); ++k) {
+        Unit& u = units_[movers[k]];
+        u.target = -1;               // an enter order supersedes engagement
+        u.target_building = -1;
+        u.attack_order = false;
+        u.unload_pending = false;    // ...and any pending unload on the mover
+        u.enter_target = t_idx;
+        // A harvester passenger parks its mission FSM for the approach --
+        // data-unreachable with HTK (SizeLimit=2 < harvester Size=3), guarded
+        // anyway [spec §4].
+        if (u.is_harvester) u.manual_hold = true;
+        order_unit_move(movers[k], targets[k].x, targets[k].y);
+    }
+}
+
+void World::order_unload_selected() {
+    for (Unit& u : units_) {
+        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (u.passengers_max <= 0 || u.cargo.empty()) continue;
+        u.unload_pending = true;
+        cargo_any_ = true;
+    }
+}
+
+std::vector<CargoEvent> World::take_cargo_events() {
+    std::vector<CargoEvent> out = std::move(cargo_events_);
+    cargo_events_.clear();
+    return out;
+}
+
+void World::step_cargo(double /*dt*/) {
+    // FIREWALL (spec §8): until the first enter/unload order ever, this whole
+    // function is one branch -- the only cost every existing demo pays.
+    if (!cargo_any_) return;
+
+    auto free_cell = [this](int x, int y) {
+        // The SAME free predicate launch_unit uses: walkable + occ_.is_free,
+        // which sees mid-hop reservations [spec §5].
+        return walkable(x, y) && occ_.is_free(x, y);
+    };
+
+    // 1) Transport-death disposition [RE-GATE APPLIED: transport-cargo.md §5
+    //    -- CONFIRMED: every death path in the original (FUN_00700DA0 /
+    //    FUN_00707130 / ~UnitClass) deletes each passenger with NO survival
+    //    branch; OpenTopped grants NO death survival (it governs fire-out
+    //    while alive -- an RE-documented carry-forward for the fire-out
+    //    phase, not CB-1 code). Every carried unit dies WITH the transport,
+    //    tombstoned directly (alive=false, no die anim -- it was never
+    //    on-screen), coords stamped to the transport's cell.] A transport
+    //    killed by step_combat in frame N is handled here
+    //    in frame N+1 (step_cargo precedes step_combat in the step order) --
+    //    a one-frame lag, deterministic, documented.
+    for (std::size_t ti = 0; ti < units_.size(); ++ti) {
+        Unit& t = units_[ti];
+        if (t.cargo.empty()) continue;
+        if (t.alive && t.die_time < 0.0) continue;   // transport still fine
+        for (int p : t.cargo) {
+            if (p < 0 || p >= static_cast<int>(units_.size())) continue;
+            Unit& u = units_[p];
+            u.alive = false;          // tombstone directly (no die anim)
+            u.die_time = -1.0;
+            u.hp = 0;
+            u.cargo_of = -1;
+            u.cell_x = t.cell_x;      // coords stamped to the transport's cell
+            u.cell_y = t.cell_y;
+            u.fx = t.cell_x;
+            u.fy = t.cell_y;
+        }
+        t.cargo.clear();
+        t.unload_pending = false;
+    }
+
+    // 2) Boarding pass -- ascending unit index (the deterministic last-slot
+    //    winner [RE-GATE APPLIED: transport-cargo.md §6 -- the original's
+    //    container ops consult NO RNG (FUN_007C4D00 is ftol, not a draw);
+    //    the last slot goes to whichever arrival is processed first, so
+    //    ascending-index processing is the faithful analogue -- and under
+    //    LIFO the LAST-processed boarder sits at the back and ejects FIRST]).
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+        Unit& u = units_[i];
+        if (u.enter_target < 0) continue;
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) {
+            u.enter_target = -1;
+            continue;
+        }
+        const int ti = u.enter_target;
+        if (ti < 0 || ti >= static_cast<int>(units_.size())) {
+            u.enter_target = -1;
+            continue;
+        }
+        Unit& t = units_[ti];
+        if (!t.alive || t.die_time >= 0.0) {   // transport died: cancel cleanly
+            u.enter_target = -1;               // (unit stands) [spec §3]
+            continue;
+        }
+        const int adx = u.cell_x - t.cell_x, ady = u.cell_y - t.cell_y;
+        const int cheb = std::max(adx < 0 ? -adx : adx, ady < 0 ? -ady : ady);
+        if (cheb <= 1) {
+            // Boarding trigger point = Chebyshev adjacency [RE-GATE APPLIED:
+            // transport-cargo.md §3 -- DOCUMENTED DEVIATION: the original
+            // boards on CO-LOCATION (the passenger paths onto the
+            // transport's own tile, FUN_004D8ED0 case 0x12); our
+            // one-unit-per-cell grid has no walk-onto-occupied notion, so
+            // adjacency <= 1 is the adjudicated stand-in (same reachable
+            // set, deterministic)].
+            if (can_load(units_, ti, static_cast<int>(i))) {
+                // Remove-from-map: release ALL occupancy (current cell AND
+                // any mid-hop reservation -- keep-cell (-1,-1) matches
+                // nothing), clear path/selection/targets, THEN link [spec §3].
+                occ_.release_all_of(static_cast<int>(i), -1, -1);
+                u.path.clear();
+                u.path_idx = 0;
+                u.selected = false;        // boarding force-clears selection (spec §4)
+                u.target = -1;
+                u.target_building = -1;
+                u.attack_order = false;
+                u.wait_time = 0.0;
+                t.cargo.push_back(static_cast<int>(i));
+                u.cargo_of = static_cast<int>(ti);
+                u.enter_target = -1;
+                cargo_events_.push_back({CargoEvent::Kind::Board, static_cast<int>(i),
+                                         static_cast<int>(ti),
+                                         static_cast<int>(t.cargo.size()),
+                                         t.passengers_max});   // x = COUNT after
+                                                               // the board [§1]
+            } else {
+                // Arrived but REFUSED (full / no longer eligible): the enter
+                // order cancels cleanly, the unit stands [spec §3; the §7
+                // capacity-refusal witness].
+                u.enter_target = -1;
+                cargo_events_.push_back({CargoEvent::Kind::Refuse, static_cast<int>(i),
+                                         static_cast<int>(ti),
+                                         static_cast<int>(t.cargo.size()),
+                                         t.passengers_max});   // x = COUNT (full)
+            }
+        } else if (!u.moving()) {
+            // Not adjacent and stopped (its approach path completed/cancelled
+            // while the transport moved): re-path to the nearest free cell
+            // around the transport's CURRENT cell via the EXISTING pure
+            // nearest_free_cells helper (group_move.hpp) -- deterministic
+            // (our stand-in for the original's staggered pursuit re-path;
+            // documented deviation) [spec §3]. No free cell nearby -> keep
+            // standing, retried next frame.
+            const std::vector<Cellxy> g = nearest_free_cells(
+                {t.cell_x, t.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
+            if (!g.empty()) order_unit_move(static_cast<int>(i), g[0].x, g[0].y);
+        }
+    }
+
+    // 3) Unload pass -- ONE eject per transport per logic frame [RE-GATE
+    //    APPLIED: transport-cargo.md §4 -- CONFIRMED one per mission tick
+    //    (FUN_00415EE0: if a passenger remains, eject one and return). The
+    //    DeployTime deploy-START delay is NOT implemented in CB-1 (its scale
+    //    is unpinned -- documented carry-forward), so ejection begins
+    //    immediately at one-per-tick].
+    for (std::size_t ti = 0; ti < units_.size(); ++ti) {
+        Unit& t = units_[ti];
+        if (!t.unload_pending) continue;
+        if (!t.alive || t.die_time >= 0.0) { t.unload_pending = false; continue; }
+        if (t.cargo.empty()) { t.unload_pending = false; continue; }
+        if (t.moving()) continue;              // a STATIONARY transport ejects [spec §5]
+        const int p = next_eject(t);           // LIFO -- the LAST-boarded leaves
+                                               // first [RE-GATE APPLIED:
+                                               // transport-cargo.md §6 -- CONFIRMED]
+        if (p < 0 || p >= static_cast<int>(units_.size())) {  // defensive: drop a
+            t.cargo.pop_back();                               // corrupt entry (the
+            continue;                                         // one next_eject saw)
+        }
+        // The recovered facing-scatter picker [RE-GATE APPLIED:
+        // transport-cargo.md §4]: one step out along body_facing +/- 0x4000,
+        // the side alternating per eject via eject_counter's low bit;
+        // nearest-free-neighbour fallback. CB-1 transports are vehicles
+        // (HTK/FV) so body_facing is live; a non-vehicle transport would
+        // eject along its spawn default -- data-unreachable on our roster.
+        const Cellxy cell = eject_cell(t.cell_x, t.cell_y, t.body_facing,
+                                       t.eject_counter, free_cell);
+        if (cell.x < 0) continue;              // boxed in: HOLD -- passenger stays
+                                               // aboard, unload_pending stays set,
+                                               // retried every frame [RE-GATE
+                                               // APPLIED: transport-cargo.md §4 --
+                                               // CONFIRMED put-back (AddPassenger
+                                               // back), never a drop or an abort]
+        Unit& u = units_[p];
+        u.cell_x = cell.x;                     // stamp coords fresh on eject
+        u.cell_y = cell.y;
+        u.fx = cell.x;
+        u.fy = cell.y;
+        occ_.set(cell.x, cell.y, p);           // claim occupancy BEFORE combat
+                                               // targeting sees the unit again
+        u.cargo_of = -1;
+        u.guard_x = cell.x;                    // guard anchor = the eject cell
+        u.guard_y = cell.y;
+        const int f = facing_from_delta(cell.x - t.cell_x, cell.y - t.cell_y);
+        if (f >= 0) u.facing = f;              // eject facing = OUTWARD along the
+                                               // eject delta (= the +/-90-deg
+                                               // scatter side when the primary
+                                               // cell was taken) [RE-GATE APPLIED:
+                                               // transport-cargo.md §4 -- outward
+                                               // CONFIRMED structurally; the final
+                                               // facing is PROBABLE]
+        if (u.is_vehicle) {
+            u.body_facing = facing_u16_from_delta(cell.x - t.cell_x, cell.y - t.cell_y);
+            u.turret_facing = u.body_facing;
+        }
+        if (const ra2assets::MapCell* mc = map_->at(cell.x, cell.y)) u.level = mc->level;
+        t.cargo.pop_back();                    // LIFO pop (the entry next_eject saw)
+        ++t.eject_counter;                     // alternate the scatter side next
+                                               // eject [transport-cargo.md §4]
+        cargo_events_.push_back({CargoEvent::Kind::Eject, p, static_cast<int>(ti),
+                                 cell.x, cell.y});
+        if (t.cargo.empty()) t.unload_pending = false;
+    }
 }
 
 // --- AI-1 base-planning phase [RE: ai-base.md] ------------------------------
@@ -983,7 +1237,8 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
     std::vector<IdleUnitView> out;
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
-        if (!u.alive || u.die_time >= 0.0 || u.house != house || u.is_harvester)
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house ||
+            u.is_harvester)
             continue;
         if (u.moving() || u.attack_order) continue;
         const int t = ai_unit_type_of(rec, u);
@@ -1001,7 +1256,7 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
 
 bool World::ai_quarry_exists(int house, int quarry) const {
     for (const Unit& u : units_)
-        if (u.alive && u.die_time < 0.0 && u.house != house &&
+        if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && u.house != house &&
             quarry_unit_match(quarry, u))
             return true;
     if (quarry_wants_buildings(quarry))
@@ -1021,7 +1276,7 @@ int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
     long long bestd = 0;
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
-        if (!u.alive || u.die_time >= 0.0 || u.house == house) continue;
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house == house) continue;
         if (!quarry_unit_match(quarry, u)) continue;
         const long long dx = u.cell_x - nx, dy = u.cell_y - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
@@ -1059,6 +1314,11 @@ void World::commit_attack_target(int unit_idx, int target_unit, int target_build
     u.target = target_unit;
     u.target_building = target_building;
     u.attack_order = true;
+    // CB-1: an attack order supersedes a pending enter/unload [RE-GATE
+    // APPLIED: transport-cargo.md §3/§4 -- kept: our order-model
+    // convention; the hunt pinned no contrary rule].
+    u.enter_target = -1;
+    u.unload_pending = false;
     occ_.release_all_of(unit_idx, u.cell_x, u.cell_y);
     occ_.set(u.cell_x, u.cell_y, unit_idx);
     u.path.clear();
@@ -1587,6 +1847,13 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 void World::step(double dt) {
     step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
+    // CB-1 Transports/Cargo [RE: transport-cargo.md]: boarding resolves the
+    // frame the passenger lands adjacent; ejects claim occupancy before
+    // combat targeting. A pure INSERTION between step_units and step_turrets
+    // -- no existing unit-step logic is reordered; `if (!cargo_any_) return;`
+    // inside is the only cost every existing demo pays [spec §8].
+    step_cargo(dt);
+
     // Slew vehicle turrets AFTER movement and BEFORE combat so the aim gate
     // (vehicle_aimed) in step_combat sees this frame's post-slew turret
     // facing (docs/re/voxel-render.md §5). No-op for infantry.
@@ -1792,7 +2059,8 @@ std::vector<int> unit_draw_order(const std::vector<Unit>& units) {
     std::vector<int> order;
     order.reserve(units.size());
     for (int i = 0; i < static_cast<int>(units.size()); ++i)
-        if (units[i].alive) order.push_back(i);  // dying still renders; tombstoned excluded
+        if (units[i].alive && units[i].cargo_of < 0)
+            order.push_back(i);  // dying still renders; tombstoned/carried excluded
     std::sort(order.begin(), order.end(), [&](int a, int b) {
         const double da = units[a].fx + units[a].fy;
         const double db = units[b].fx + units[b].fy;
@@ -1834,7 +2102,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         // falling through to the idle branch below would resurrect a
         // corpse's claim on its cell and wrongly block living units from
         // entering it.
-        if (!u.alive || u.die_time >= 0.0) continue;
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
 
         if (!u.moving()) {
             occ.set(u.cell_x, u.cell_y, self);  // idle units own their cell

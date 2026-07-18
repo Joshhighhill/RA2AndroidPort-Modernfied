@@ -11,6 +11,7 @@
 #include "ai_team.hpp"        // AI-2 offensive-teams: AiTeamState/TeamInstance/opcodes
 #include "aimd_parse.hpp"     // AI-2: AimdData/TaskForce/ScriptType/TeamType
 #include "building.hpp"
+#include "cargo.hpp"          // CB-1: eject_cell -- the eject-cell witness
 #include "factory.hpp"        // Production phase: exit_cell/primary_factory/set_primary
 #include "harvest.hpp"        // Economy phase: HarvState/HarvestEvent/OreValues/kUnloadSecsPerBale
 #include "iso_project.hpp"   // cell_to_screen / screen_to_cell
@@ -2527,4 +2528,311 @@ TEST_CASE("step_team: completed_success TRUE at kOpDisband, FALSE on member wipe
         CHECK(t.state == ra2engine::TeamState::Disbanding);
         CHECK_FALSE(t.completed_success);                       // wipe -> failure witness
     }
+}
+
+// ---- CB-1 Transports/Cargo (guarded real map) [RE: transport-cargo.md] ----
+namespace {
+// HTK-shaped transport stats scaled for tests: a real vehicle profile with a
+// cargo pool. Task 4 resolves real HTK numbers from rulesmd; tests hand-pick
+// small pools to hit boundaries fast.
+ra2engine::UnitCombat transport_stats(int passengers, int size_limit) {
+    ra2engine::UnitCombat c;
+    c.strength = 200;
+    c.armor = "light";
+    c.image = "HTK";
+    c.is_vehicle = true;
+    c.rot = 5;
+    c.speed_cps = 4.0;
+    c.passengers = passengers;
+    c.size_limit = size_limit;
+    c.size = 3;
+    return c;
+}
+// First free walkable cell scanning east from (x0, y).
+bool free_cell_east(ra2engine::World& w, int x0, int y, int& outx) {
+    for (int dx = 0; dx < 12; ++dx)
+        if (w.walkable(x0 + dx, y) && w.unit_at_cell(x0 + dx, y) < 0) {
+            outx = x0 + dx;
+            return true;
+        }
+    return false;
+}
+// True iff NO occupancy cell anywhere is owned by unit `idx`.
+bool owns_no_cell(const ra2engine::World& w, int idx) {
+    const ra2engine::Occupancy& occ = w.occupancy();
+    for (int y = 0; y < occ.height(); ++y)
+        for (int x = 0; x < occ.width(); ++x)
+            if (occ.at(x, y) == idx) return false;
+    return true;
+}
+}  // namespace
+
+TEST_CASE("World: cargo boarding takes the passenger off-map and releases ALL occupancy") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    int tx = -1;
+    REQUIRE(free_cell_east(world, c->x, c->y, tx));
+    world.add_combat_unit(tx, c->y, 0, transport_stats(2, 2));   // unit 0: transport
+    int gx = -1;
+    REQUIRE(free_cell_east(world, tx + 3, c->y, gx));
+    world.add_combat_unit(gx, c->y, 0, gi_stats());              // unit 1: passenger
+    world.units()[1].selected = true;
+    world.order_enter_transport(0);
+    CHECK(world.units()[1].enter_target == 0);
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 300 && world.units()[1].cargo_of < 0; ++f) world.step(dt);
+    REQUIRE(world.units()[1].cargo_of == 0);                     // boarded
+    REQUIRE(world.units()[0].cargo.size() == 1);
+    CHECK(world.units()[0].cargo[0] == 1);
+    CHECK(world.units()[1].enter_target == -1);
+    CHECK_FALSE(world.units()[1].selected);                      // force-cleared
+    CHECK(owns_no_cell(world, 1));      // ALL occupancy released (incl. any
+                                        // mid-hop reservation) -- spec §9
+    // Off-map: unpickable, undrawn, untargetable.
+    CHECK(world.unit_at_cell(world.units()[1].cell_x, world.units()[1].cell_y) != 1);
+    for (int i : ra2engine::unit_draw_order(world.units())) CHECK(i != 1);
+    int ex = -1;
+    REQUIRE(free_cell_east(world, tx + 1, c->y + 2, ex));
+    world.add_combat_unit(ex, c->y + 2, 1, cons_stats());        // unit 2: enemy
+    world.step(dt);                                              // auto-acquire pass
+    CHECK(world.units()[2].target != 1);                         // never the carried unit
+    // One-unit-per-cell audit stays green among on-map units.
+    for (std::size_t a = 0; a < world.units().size(); ++a)
+        for (std::size_t b = a + 1; b < world.units().size(); ++b) {
+            const ra2engine::Unit& ua = world.units()[a];
+            const ra2engine::Unit& ub = world.units()[b];
+            if (!ua.alive || ua.cargo_of >= 0 || !ub.alive || ub.cargo_of >= 0) continue;
+            CHECK((ua.cell_x != ub.cell_x || ua.cell_y != ub.cell_y));
+        }
+}
+
+TEST_CASE("World: cargo eject uses the facing-scatter eject_cell, stamps coords/facing, LIFO one per frame") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    int tx = -1;
+    REQUIRE(free_cell_east(world, c->x, c->y, tx));
+    world.add_combat_unit(tx, c->y, 0, transport_stats(3, 2));   // unit 0: Passengers=3
+    const double dt = 1.0 / 15.0;
+    for (int k = 0; k < 2; ++k) {                                // units 1, 2
+        int gx = -1;
+        REQUIRE(free_cell_east(world, tx + 2 + k, c->y + 1, gx));
+        world.add_combat_unit(gx, c->y + 1, 0, gi_stats());
+    }
+    world.units()[1].selected = true;
+    world.units()[2].selected = true;
+    world.order_enter_transport(0);
+    for (int f = 0; f < 300 && world.units()[0].cargo.size() < 2; ++f) world.step(dt);
+    REQUIRE(world.units()[0].cargo.size() == 2);
+    const std::vector<int> board_order = world.units()[0].cargo;   // boarding order;
+                                                                   // LIFO ejects the
+                                                                   // BACK first
+    (void)world.take_cargo_events();                               // drain the boards
+    world.clear_selection();
+    world.units()[0].selected = true;
+    world.order_unload_selected();
+    CHECK(world.units()[0].unload_pending);
+    // The eject cell must be EXACTLY the pure picker's answer [RE-GATE
+    // APPLIED: transport-cargo.md §4 -- facing-scatter, NOT a ring walk].
+    auto free_cell = [&](int x, int y) {
+        return world.walkable(x, y) && world.occupancy().is_free(x, y);
+    };
+    const int ttx = world.units()[0].cell_x, tty = world.units()[0].cell_y;
+    const ra2engine::Cellxy expect = ra2engine::eject_cell(
+        ttx, tty, world.units()[0].body_facing, world.units()[0].eject_counter, free_cell);
+    REQUIRE(expect.x >= 0);
+    world.step(dt);                                                // one eject per frame
+    std::vector<ra2engine::CargoEvent> ev = world.take_cargo_events();
+    REQUIRE(ev.size() == 1);
+    CHECK(ev[0].kind == ra2engine::CargoEvent::Kind::Eject);
+    CHECK(ev[0].unit == board_order[1]);                           // LIFO: the LAST
+                                                                   // boarded leaves
+                                                                   // FIRST [RE-GATE
+                                                                   // APPLIED: transport-
+                                                                   // cargo.md §6]
+    CHECK(ev[0].x == expect.x);                                    // the scatter cell
+    CHECK(ev[0].y == expect.y);
+    const ra2engine::Unit& p0 = world.units()[board_order[1]];
+    CHECK(p0.cargo_of == -1);
+    CHECK(p0.cell_x == expect.x);                                  // coords stamped
+    CHECK(p0.cell_y == expect.y);
+    CHECK(p0.fx == doctest::Approx((double)expect.x));
+    CHECK(world.occupancy().at(expect.x, expect.y) == board_order[1]);  // claimed
+    CHECK(p0.guard_x == expect.x);                                 // guard anchor
+    CHECK(p0.facing >= 0);
+    CHECK(p0.facing < 8);
+    CHECK(world.units()[0].eject_counter == 1);                    // side alternator
+                                                                   // bumped [§4]
+    CHECK(world.units()[0].cargo.size() == 1);                     // ONE per frame
+    world.step(dt);
+    ev = world.take_cargo_events();
+    REQUIRE(ev.size() == 1);
+    CHECK(ev[0].unit == board_order[0]);                           // LIFO: the FIRST
+                                                                   // boarded leaves LAST
+    CHECK(world.units()[0].cargo.empty());
+    CHECK_FALSE(world.units()[0].unload_pending);                  // cleared when empty
+}
+
+TEST_CASE("World: cargo boxed-in unload HOLDs, then resumes when a neighbouring cell frees") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    int tx = -1;
+    REQUIRE(free_cell_east(world, c->x, c->y, tx));
+    const int ty = c->y;
+    world.add_combat_unit(tx, ty, 0, transport_stats(2, 2));     // unit 0
+    int gx = -1;
+    REQUIRE(free_cell_east(world, tx + 2, ty, gx));
+    world.add_combat_unit(gx, ty, 0, gi_stats());                // unit 1
+    world.units()[1].selected = true;
+    world.order_enter_transport(0);
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 300 && world.units()[1].cargo_of < 0; ++f) world.step(dt);
+    REQUIRE(world.units()[1].cargo_of == 0);
+    (void)world.take_cargo_events();  // drain the board event so the HOLD check
+                                      // below sees ONLY unload-pass activity
+    // Box the transport in: fill EVERY free walkable cell at Chebyshev
+    // r <= 2 (eject_cell's whole reach -- the r=1 primary/fallback plus the
+    // r=2 fallback ring) with plain units. Track one OUTER (r == 2) blocker
+    // to release later -- inner blockers stay put.
+    int mover = -1;
+    for (int dy = -2; dy <= 2; ++dy)
+        for (int dx = -2; dx <= 2; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            const int x = tx + dx, y = ty + dy;
+            if (!world.walkable(x, y) || world.unit_at_cell(x, y) >= 0) continue;
+            world.add_unit(x, y, "GI");
+            const int bi = static_cast<int>(world.units().size()) - 1;
+            if (mover < 0 && std::max(std::abs(dx), std::abs(dy)) == 2) mover = bi;
+        }
+    REQUIRE(mover >= 0);
+    world.clear_selection();
+    world.units()[0].selected = true;
+    world.order_unload_selected();
+    for (int f = 0; f < 5; ++f) world.step(dt);
+    CHECK(world.units()[0].cargo.size() == 1);                   // HOLD: still aboard
+    CHECK(world.units()[0].unload_pending);                      // order persists
+    CHECK(world.take_cargo_events().empty());                    // no eject happened
+    // Free one outer (r=2 fallback) cell: walk the tracked blocker away.
+    world.clear_selection();
+    world.units()[mover].selected = true;
+    world.order_move_selected(tx + 8, ty + 8);
+    for (int f = 0; f < 400 && world.units()[0].cargo.size() == 1; ++f) world.step(dt);
+    CHECK(world.units()[0].cargo.empty());                       // resumed + ejected
+    CHECK(world.units()[1].cargo_of == -1);
+    CHECK_FALSE(world.units()[0].unload_pending);
+}
+
+TEST_CASE("World: cargo transport death tombstones its cargo; enter orders cancel cleanly") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    int tx = -1;
+    REQUIRE(free_cell_east(world, c->x, c->y, tx));
+    world.add_combat_unit(tx, c->y, 0, transport_stats(2, 2));   // unit 0
+    int gx = -1;
+    REQUIRE(free_cell_east(world, tx + 2, c->y, gx));
+    world.add_combat_unit(gx, c->y, 0, gi_stats());              // unit 1: boards
+    int hx = -1;
+    REQUIRE(free_cell_east(world, tx + 2, c->y + 3, hx));
+    world.add_combat_unit(hx, c->y + 3, 0, gi_stats());          // unit 2: en route
+    world.units()[1].selected = true;
+    world.order_enter_transport(0);
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 300 && world.units()[1].cargo_of < 0; ++f) world.step(dt);
+    REQUIRE(world.units()[1].cargo_of == 0);
+    world.clear_selection();
+    world.units()[2].selected = true;
+    world.order_enter_transport(0);
+    REQUIRE(world.units()[2].enter_target == 0);
+    // Kill the transport the way combat does (die_time flips >= 0).
+    world.units()[0].die_time = 0.0;
+    world.step(dt);
+    CHECK_FALSE(world.units()[1].alive);                         // died WITH it
+    CHECK(world.units()[1].cargo_of == -1);
+    CHECK(world.units()[1].cell_x == world.units()[0].cell_x);   // coords stamped
+    CHECK(world.units()[1].cell_y == world.units()[0].cell_y);
+    CHECK(world.units()[0].cargo.empty());
+    CHECK(world.units()[2].enter_target == -1);                  // cancelled cleanly
+    CHECK(world.units()[2].alive);                               // ...and unharmed
+}
+
+TEST_CASE("World: cargo capacity refusal at boarding; a new order supersedes enter/unload") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    int tx = -1;
+    REQUIRE(free_cell_east(world, c->x, c->y, tx));
+    world.add_combat_unit(tx, c->y, 0, transport_stats(1, 2));   // unit 0: ONE slot
+    for (int k = 0; k < 2; ++k) {                                // units 1, 2
+        int gx = -1;
+        REQUIRE(free_cell_east(world, tx + 2 + k, c->y + 1, gx));
+        world.add_combat_unit(gx, c->y + 1, 0, gi_stats());
+    }
+    world.units()[1].selected = true;
+    world.units()[2].selected = true;
+    world.order_enter_transport(0);                              // oversubscribed
+    const double dt = 1.0 / 15.0;
+    int boards = 0, refusals = 0;
+    for (int f = 0; f < 400 && boards + refusals < 2; ++f) {
+        world.step(dt);
+        for (const ra2engine::CargoEvent& e : world.take_cargo_events()) {
+            if (e.kind == ra2engine::CargoEvent::Kind::Board) ++boards;
+            if (e.kind == ra2engine::CargoEvent::Kind::Refuse) ++refusals;
+        }
+    }
+    CHECK(boards == 1);                                          // exactly one fits
+    CHECK(refusals == 1);                                        // one REFUSED at full
+    CHECK(world.units()[0].cargo.size() == 1);
+    // A new move order on the transport supersedes a pending unload.
+    world.clear_selection();
+    world.units()[0].selected = true;
+    world.order_unload_selected();
+    CHECK(world.units()[0].unload_pending);
+    world.order_move_selected(tx + 6, c->y + 6);
+    CHECK_FALSE(world.units()[0].unload_pending);                // superseded
+    // A new move order on an en-route passenger supersedes its enter order.
+    int wx = -1;
+    REQUIRE(free_cell_east(world, tx + 2, c->y + 4, wx));
+    world.add_combat_unit(wx, c->y + 4, 0, gi_stats());          // unit 3
+    int vx = -1;
+    REQUIRE(free_cell_east(world, wx + 1, c->y + 4, vx));
+    world.add_combat_unit(vx, c->y + 4, 0, transport_stats(2, 2));  // unit 4
+    world.clear_selection();
+    world.units()[3].selected = true;
+    world.order_enter_transport(4);
+    REQUIRE(world.units()[3].enter_target == 4);
+    world.order_move_selected(tx, c->y + 6);                     // unit 3 still selected
+    CHECK(world.units()[3].enter_target == -1);                  // superseded
 }

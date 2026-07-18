@@ -164,6 +164,23 @@ struct Unit {
                                  // [transport-cargo.md §4]
 };
 
+// One cargo event (board / capacity-refusal / eject), drained by callers per
+// frame via World::take_cargo_events -- the take_harvest_events pattern:
+// main.cpp turns these into demo witness lines and the guarded Enter/
+// LeaveTransportSound hook [RE: transport-cargo.md; spec §6/§7]. Defined
+// HERE (not cargo.hpp) so World can store a vector without an include cycle.
+struct CargoEvent {
+    enum class Kind { Board, Refuse, Eject };
+    Kind kind = Kind::Board;
+    int unit = -1;       // the passenger
+    int transport = -1;  // the transport
+    // Board/Refuse: x = the passenger COUNT after the event resolved
+    // (capacity is a COUNT [RE-GATE APPLIED: transport-cargo.md §1]), y =
+    // the transport's passengers_max (the "K/5" witness pair). Eject:
+    // (x, y) = the eject cell.
+    int x = 0, y = 0;
+};
+
 // Per-image (per-unit-type), facing-aware animation data -- REPLACES the
 // Task 7 empirically-eyeballed table, which had two confirmed frame bugs
 // (CONS fire played half of Die2's frames; die played Idle2/Prone frames).
@@ -541,6 +558,26 @@ public:
     // false, the queue continues). Mirrors ps_tick's ConYard-died cancel gate.
     bool factory_category_lost(const std::vector<int>& factory_types, int house) const;
 
+    // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
+    // Enter order: every SELECTED house-0, alive, non-dying unit that passes
+    // can_load NOW (capacity is re-checked at boarding -- orders may
+    // oversubscribe) gets enter_target = t_idx, drops any engagement, and
+    // paths toward the transport through assign_formation around its cell
+    // (a raw move to the transport's own occupied cell would cancel as
+    // unreachable) [spec §3]. No-op if t_idx is not an own, alive, non-dying
+    // transport. Sets the cargo_any_ firewall.
+    void order_enter_transport(int t_idx);
+    // Unload order: sets unload_pending on every SELECTED house-0, alive,
+    // non-dying transport with non-empty cargo [spec §5]. Any new move/
+    // attack order on the transport clears unload_pending (an order
+    // supersedes -- our order-model convention, not overturned by the hunt).
+    // Sets the cargo_any_ firewall.
+    void order_unload_selected();
+    // Drain the board/refuse/eject events accumulated by step_cargo since
+    // the last call (the take_harvest_events pattern). Empty if no cargo
+    // activity ever happened.
+    std::vector<CargoEvent> take_cargo_events();
+
     // --- AI-1 base-planning phase [RE: ai-base.md] ---
     // Flag `house` as AI-driven with the given config. The planner then runs
     // inside step() (step_ai_houses), driving the EXISTING ProductionQueues /
@@ -630,6 +667,14 @@ private:
 
     // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
     void ai_fill_trigger_view(int house, const HouseAiRec& rec, TriggerView& v) const;
+
+    // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
+    // Boarding / carry / eject / transport-death, called between step_units
+    // and step_turrets (a pure insertion -- spec §8). Early-returns unless
+    // cargo_any_ (the firewall: false until the first enter/unload order).
+    void step_cargo(double dt);
+    bool cargo_any_ = false;
+    std::vector<CargoEvent> cargo_events_;
 
     // Fully-defined-inline POD mirror of HarvestEvent (kind stored as int,
     // via static_cast to/from HarvestEvent::Kind) -- see the forward-
