@@ -2836,3 +2836,60 @@ TEST_CASE("World: cargo capacity refusal at boarding; a new order supersedes ent
     world.order_move_selected(tx, c->y + 6);                     // unit 3 still selected
     CHECK(world.units()[3].enter_target == -1);                  // superseded
 }
+
+// [CB-1 off-map invariant] A carried unit is off-map/invisible to census --
+// ai_fill_trigger_view's own-unit count must exclude cargo_of>=0 units the
+// same way it already excludes corpses (!alive / die_time>=0). Regression
+// for the widening: mark the ONLY roster-type-0 unit as carried (cargo_of/
+// cargo set directly -- order_enter_transport/order_unload_selected are
+// house-0-only player orders and can't drive an AI-house [house=1] unit),
+// key a trigger on kCondOwnerOwns unit-count >= 1, and confirm it never
+// fires while the unit is carried, then DOES fire once un-carried (the same
+// unit, now genuinely on-map) -- proving the harness actually exercises the
+// census path rather than being vacuously green.
+TEST_CASE("World: ai_fill_trigger_view excludes a carried unit from the own-unit census [CB-1]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);  // AI conyard
+    int tx = -1;
+    REQUIRE(free_cell_east(world, c->x + 3, c->y, tx));
+    world.add_combat_unit(tx, c->y, /*house=*/1, transport_stats(2, 2));  // unit 0: transport
+    int gx = -1;
+    REQUIRE(free_cell_east(world, tx + 3, c->y, gx));
+    ra2engine::UnitCombat uc;
+    uc.strength = 100;
+    uc.image = "AITEST";                 // matches ai2_cfg's unit_roster[0]
+    uc.damage = 10; uc.rof = 15; uc.range = 4.0;
+    uc.verses = std::vector<int>(11, 100);
+    world.add_combat_unit(gx, c->y, /*house=*/1, uc);   // unit 1: the ONLY
+                                                        // roster-type-0 unit
+    // Mark unit 1 carried directly -- exercises the exact fields the census
+    // fix guards, without needing the (house-0-only) player boarding orders.
+    world.units()[1].cargo_of = 0;
+    world.units()[0].cargo.push_back(1);
+    ra2engine::AiHouseConfig cfg = ai3_cfg(/*triggers_enabled=*/true);
+    // Rekey TRG1 off kCondEnemyOwns/building onto kCondOwnerOwns/unit-type-0
+    // (>= 1 of the roster's OWN unit type) -- the exact slice this fix guards.
+    cfg.team.aimd.triggers[0].condition_type = ra2engine::kCondOwnerOwns;
+    cfg.team.aimd.triggers[0].condition_object =
+        ra2engine::TriggerObject{ra2engine::TechnoKind::Unit, 0};
+    cfg.team.aimd.triggers[0].comparator =
+        ra2engine::TriggerComparator{1, ra2engine::kCompGreaterEq};
+    world.enable_ai_house(1, cfg);
+    REQUIRE(world.ai_trigger_state(1) != nullptr);
+    const double dt = 1.0 / 15.0;
+    for (int i = 0; i < 900; ++i) world.step(dt);   // many 1 s check passes
+    CHECK(world.ai_trigger_state(1)->triggers_fired == 0);   // carried -> NOT
+                                                              // counted -> never
+                                                              // eligible
+    // Control: un-carry the SAME unit and confirm the trigger now fires --
+    // proving the census (and this test) is live, not toothless.
+    world.units()[1].cargo_of = -1;
+    world.units()[0].cargo.clear();
+    for (int i = 0; i < 900 && world.ai_trigger_state(1)->triggers_fired < 1; ++i)
+        world.step(dt);
+    CHECK(world.ai_trigger_state(1)->triggers_fired == 1);   // now counted
+}

@@ -941,7 +941,8 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
     v.power_output = pt.output;
     v.power_drain = pt.drain;
     for (const Unit& u : units_)
-        if (u.alive && u.house == house && u.is_harvester) ++v.harvesters;
+        // Carried units are off-map/invisible to census [CB-1 off-map invariant].
+        if (u.alive && u.house == house && u.is_harvester && u.cargo_of < 0) ++v.harvesters;
     return v;
 }
 
@@ -1815,7 +1816,8 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
     v.neutral_units.clear();
     v.neutral_buildings.clear();
     for (const Unit& u : units_) {
-        if (!u.alive || u.die_time >= 0.0) continue;
+        // Carried units are off-map/invisible to census [CB-1 off-map invariant].
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         const int t = ai_unit_type_of(rec, u);
         if (t < 0) continue;
         if (u.house == house) ++v.own_units[t];
