@@ -495,6 +495,117 @@ list):
   hash, the witness chain, or any gate). The START screenshot renders
   correctly; fixing this is deferred to a future rendering-polish task.
 
+The CB-1 phase gives units a ride: transports that load, carry, and unload
+passengers. The pure module, `engine/cargo` (`can_load`, `cargo_total_size`,
+`next_eject`, `eject_cell`), recovers the original's capacity/eject model:
+capacity is a passenger **COUNT** — `can_load` gates on the cargo list's
+current size being less than the transport's `Passengers=`, plus a
+per-passenger `Size <= SizeLimit` cap — while `cargo_total_size` is a
+separate, **pip-only** Σ-Size metric (the original `GetTotalSize` has no
+capacity caller at all, so the count gate and the pip-total are deliberately
+different quantities fed by the same cargo list). `next_eject` is **LIFO**
+(`cargo.back()`) — the original container is a head-pushed/head-popped stack,
+so the last unit to board is the first to leave. `eject_cell` is the
+facing±90° scatter picker recovered from the original unload: it alternates
+sides per eject and falls back to the nearest free cell of the immediate
+neighbourhood (row-major, r=1 then r=2) when the scatter cell itself is
+blocked, returning `{-1,-1}` only when fully boxed in. `factory.cpp`/
+`exit_cell` are **untouched** — the original unload does not reuse the
+`KickOutUnit` ring, so the pre-hunt plan to extract a shared ring helper was
+dropped at RE-GATE.
+
+The World integration layer, `World::order_enter_transport` /
+`World::step_cargo`, wires this into the existing sim with no new movement,
+combat, targeting, selection, render, or AI-recruitment machinery:
+`order_enter_transport` batches the ordered movers onto the transport's cell
+through the existing `assign_formation` group-move path; boarding itself
+happens at Chebyshev adjacency ≤ 1 with capacity re-checked at the moment of
+arrival (so a late arrival can be refused even if it wasn't when the order was
+given, and the refusal is witnessed); a boarded unit is released from ALL
+occupancy and carried **OFF-MAP** via one added clause on every existing
+corpse-skip site (unpickable, undrawn, untargetable, non-colliding) — its
+coordinates go **STALE by design** while carried (stamped fresh only on
+eject or death), matching the original's own passenger-limbo semantics.
+`step_cargo` is firewalled behind `cargo_any_` and runs between `step_units`
+and `step_turrets`, ejecting **one passenger per logic frame** in LIFO order
+via `eject_cell`, claiming the destination cell's occupancy before combat
+targeting runs that same frame; a fully boxed-in transport HOLDs and retries
+next frame, mirroring the original's put-back-and-retry (and `launch_unit`'s
+own precedent). Transport death **tombstones its cargo** — confirmed at
+three original sweep sites with no survival branch; `OpenTopped` grants no
+death-survival (it only governs fire-out while alive, a documented
+carry-forward, not CB-1 code).
+
+The wiring layer adds the HTK Flak Track as the primary transport (art-guarded,
+with the FV IFV as a script-scaled fallback if HTK art ever regresses), a
+right-click-on-own-transport enter gesture, a `D` key to unload the selected
+transport's cargo, a loaded-pip row that reuses the HP-bar chrome (filled by
+the pip-only `cargo_total_size`, not the COUNT capacity), and
+Enter/LeaveTransportSound routed through the existing chrono-sound-style
+guarded audio hook. Byte-identity discipline follows the same strategy every
+prior phase used: `world_hash` is **untouched** (strategy (a) — it reads only
+cell/hp/alive, none of which a non-cargo unit's carry state perturbs), and the
+eight legacy gates were re-verified byte-identical both at the additive
+Task-2 commit and again at this finalize. Calibration authority:
+`docs/re/transport-cargo.md` (capacity/eject recovery, boarding trigger,
+carry-guard sweep, unload flow, death disposition, deviations).
+
+Deviations we take for CB-1 (adjudicated divergences from the recovered
+`transport-cargo.md` ground truth — not bugs, do not "fix" in review;
+mirrors the hunt doc's own "Deviations we will take", adjudicated at
+RE-GATE `0cef283`):
+- **Boarding at Chebyshev adjacency** — the original boards on CO-LOCATION
+  (the passenger paths onto the transport's own tile, `FUN_004D8ED0` case
+  0x12); our one-unit-per-cell occupancy has no "walk onto an occupied cell"
+  notion, so adjacency ≤ 1 is the adjudicated deviation (same reachable set,
+  deterministic) [`transport-cargo.md` §3].
+- **Deterministic ordering with NO RNG** — the original's container ops
+  consult no RNG (the suspected `FUN_007C4D00` is ftol, not a draw); the
+  last slot goes to whichever boarder's arrival is processed first, so our
+  ascending-unit-index boarding tie-break is the faithful analogue
+  [`transport-cargo.md` §6].
+- **Eject fine-placement fallback** — the eject DIRECTION (facing ±90°,
+  sides alternating per eject) and the one-per-tick cadence are the
+  RECOVERED behavior; `FUN_00481090`'s exact fine placement is unpinned, so
+  a blocked scatter cell falls back to the first free cell of the immediate
+  neighbourhood (deterministic row-major, r=1 then r=2). The `KickOutUnit`
+  `DAT_0089E5F8` 8-ring is NOT shared with unload — it stays `exit_cell`-only
+  [`transport-cargo.md` §4].
+- **No DeployTime deploy-start delay** — `DeployTime` is a real countdown
+  timer in the original (`FUN_004A5150`) but its scale/application point is
+  unpinned; CB-1 begins ejecting immediately at one-per-tick (documented
+  carry-forward) [`transport-cargo.md` §4].
+- **Same-house loading only** — the original gate is `IsAlliedWith` (same
+  house OR same side OR ally bitmask, `FUN_004F98B0`); allies are unmodeled
+  in CB-1 (one house per side), and `can_load`'s house clause is where allied
+  loading would attach [`transport-cargo.md` §2].
+- **No nested loaded transports** — `can_load` rejects a passenger with
+  non-empty cargo (data-unreachable with HTK `SizeLimit=2` < vehicle `Size=3`)
+  [spec Out-of-scope; `transport-cargo.md` deviations].
+- **Passenger coords are STALE while carried** (stamped on eject/death); the
+  original limbos carried passengers the same way — they live only in the
+  passenger list [`transport-cargo.md` notes].
+- **Transport-death default**: cargo dies with the transport — CONFIRMED,
+  three sweep sites, no survival branch; `OpenTopped` grants NO death
+  survival (it governs fire-out while alive — an RE-documented
+  carry-forward for the fire-out phase, not CB-1 code) [`transport-cargo.md`
+  §5].
+- **Sub-cell eject lean dropped** at our cell resolution (the established
+  `ExitCoord` divergence); the ±90° scatter side survives as the CELL choice
+  + the outward eject facing [`transport-cargo.md` §4].
+- **Enter cursor art / full pip row rendering are cosmetic**: default cursor;
+  minimal tick-rect indicator filled with the SIZE-SUM (`cargo_total_size` —
+  the original `GetTotalSize` is pip-only, capacity is the COUNT)
+  [`transport-cargo.md` §1].
+- **AI use of transports stays inert**: ScriptType opcodes 0x2e/0x2f remain
+  inert in the AI-2 interpreter; flipping them implementable atop this
+  subsystem is a recorded carry-forward.
+
+The pre-existing scratch-path/`--out-dir` debt shared with prior gates (demo
+screenshots write to the harness scratchpad rather than a configurable
+output directory) is unchanged by this phase — carried forward, not CB-1
+scope.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -622,6 +733,21 @@ Headless/verification CLI modes (render one or more frames and exit):
   clamped `+20`/`−50` track-record rule (`docs/re/ai-trigger.md`) — then
   hashes the trigger/team/credit state (`ai_trigger_hash`). Runs twice and
   both runs must produce identical witness lines and hash.
+- `ra2engine.exe --demo-transport` — the CB-1 Transports/Cargo integration
+  gate: spawns one HTK Flak Track (art-guarded; FV IFV fallback with the
+  script scaled to capacity 1) plus capacity+1 GIs, orders all GIs aboard
+  (capacity is a passenger COUNT — one board per arrival, the surplus GI is
+  REFUSED at the full transport; the exact-fill boundary and the refusal
+  both witnessed), carries them to a distant cell (no passenger rendered or
+  occupying a cell), unloads one passenger per logic frame in LIFO order
+  (last in, first out — the original's head-pushed passenger stack) onto
+  facing±90° scatter cells that alternate sides per eject (`eject_cell`;
+  nearest-free-neighbour fallback, boxed-in HOLD), then runs a fixed
+  resume window — and hashes cargo membership + positions at four
+  checkpoints (`transport_hash`). Runs twice (rendered + headless); both
+  runs must produce identical witness lines and hash; wedge guards exit
+  non-zero if no board, no eject, no capacity refusal, or a non-LIFO eject
+  order ever happens.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -629,15 +755,15 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These eight headless demos are byte-identity regression gates: any change to
+These nine headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=18` as of the AI-1 phase
-— with the gated hash unaffected each time). The first seven are the legacy
-gates re-verified unchanged by every subsequent phase; `--demo-ai-trigger` is
-the new AI-3 gate.
+— with the gated hash unaffected each time). The first EIGHT are the legacy
+gates re-verified unchanged by every subsequent phase; `--demo-transport` is
+the new CB-1 gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -649,6 +775,7 @@ the new AI-3 gate.
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
 | `--demo-ai-team` | `ai_team_hash=312e92ed862a5e74` | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
 | `--demo-ai-trigger` | `ai_trigger_hash=8334a6ca1531cabc` | `deterministic=yes`; a Soviet AI house (Normal difficulty) with an intrinsically-eligible ct=4 HouseCredits exemplar (`0D2C41EC-G`, weight band `[10..70]`, runtime-scanned, not hardcoded) fires by the recovered cumulative-sum draw over `round(current weight)`, creates its Team1 through the AI-2 path, and the created teams' script-completion disband outcomes adjust every trigger sharing that Team1 by the clamped `+20`/`−50` track-record rule (witnessed weight movement `40→60`, `50→70`, `60→70` across the run) (`docs/re/ai-trigger.md`) |
+| `--demo-transport` | `transport_hash=fe500f946e913645` | `deterministic=yes`; variant=HTK (Passengers=5 SizeLimit=2 on this install; FV fallback documented if art ever regresses); 5 boards to the exact-fill COUNT boundary + 1 refusal at full; carry with zero carried-unit draw/occupancy folded into the hash; 5 LIFO ejects one-per-frame onto facing±90° scatter cells (`eject_cell`); wedge guards armed (`docs/re/transport-cargo.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
