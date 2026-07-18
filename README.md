@@ -391,6 +391,110 @@ cited list):
   skirmish/campaign path never auto-dissolves an unfilled team on the timer
   (`ai-team.md` §2); a `Full=no` team launches as soon as it has a member.
 
+The AI-3 phase gives the enemy judgement: it composes on AI-2's team
+machinery by deciding **which** team to create and **when**, adaptively,
+instead of only ever drawing from the always-eligible autocreate pool. The
+recovered flat-line `[AITriggerTypes]` + `[AITriggerTypesEnable]` data model is
+an extension of the same reader every other table uses
+(`engine/aimd_parse`'s `parse_ai_triggers`): one full `AITriggerType` per
+`<id>=Name,field,...` key in the CONFIRMED 18-field order, its
+`condition_object` resolved through the same two caller-supplied
+unit/building roster resolvers `parse_ai_triggers` already takes into a
+`{TechnoKind, roster index}` pair, its comparator decoded from the
+**value-first** on-disk `Conditions[4]` blob (count/value then operator —
+only slot `[0]` is ever meaningful), and the whole trigger art-guard-dropped
+when its object or its `Team1` (the REQUIRED, attribution-key team) fails to
+resolve; `[AITriggerTypesEnable]`'s per-id flag lands as `is_enabled`. The
+pure brain, `engine/ai_trigger` (`AiTriggerState`, `select_trigger`,
+`adjust_weight`), dispatches the FULL recovered `ConditionType` enum
+(`kCondNone`..`kCondCivilianHouseOwns`, −1..7) over a per-pass `TriggerView`
+snapshot — `EnemyHouseOwns`/`OwnerHouseOwns`/`CivilianHouseOwns` count the
+condition object against the comparator, `HouseCredits` compares the OWNER
+house's real credits (not "enemy credits"), and every other value (the
+superweapon-charge pair, the two unused inline house-metrics) evaluates
+FALSE rather than crashing — through the recovered enable-filter matrix
+(base-defense reject, `is_enabled`, skirmish-only, the **INVERTED**
+per-difficulty `enabled[2 − difficulty]` consult, owner-house, side,
+tech-level). An eligible trigger set is drawn by the recovered
+**cumulative-sum walk over `round(current weight)`** — a 5000-weight
+trigger anywhere in the pool restricts the draw to the mandatory 5000 tier —
+off a dedicated, seeded xorshift32 stream (`AiTriggerState::rng`, separate
+from `AiTeamState::rng`), returning the fired trigger's id plus **both**
+Team1 and Team2 to create. `World`'s trigger-eval step rides inside AI-2's
+existing TeamDelays check pass, right beside `select_autocreate_team` — a
+SECOND creation path into the same `st.teams` list, gated by the
+per-house `triggers_enabled` firewall (default `false`) so the seven legacy
+gates stay bit-identical whether or not the new step ever runs. The only
+additive change to AI-2 itself is `TeamInstance::completed_success`, set
+`true` exclusively by the `kOpDisband` script action (success is
+**script-completion**, not survivor count — the recovered definition);
+World's disband handler scans the trigger table for every trigger whose
+`Team1` equals the disbanding team's TeamType (there is no team→trigger
+back-pointer) and feeds each one's `completed_success` outcome through
+`adjust_weight`'s additive **+20 success / −50 failure** rule plus a
+track-record term, clamped to `[min_weight, max_weight]` — so a shared
+Team1 moves every trigger that names it, and a Team2-only-created team
+feeds nothing back. The interactive enemy Soviet house now runs all three AI
+layers at once: the AI-1 base brain, AI-2 autocreate teams, and AI-3's
+adaptive trigger mix, all through `make_ai_team_config(..., enable_triggers)`.
+Calibration authority: `docs/re/ai-trigger.md` (field layout + comparator
+packing §1/§2, the full ConditionType dispatch §2, weighted selection +
+weight dynamics §3/§4, enable filters + cadence §5, composition/attribution
+§6); companion of `docs/re/ai-team.md` and `docs/re/ai-base.md`. **AI-3 is
+the trigger-selection/adaptive-weight layer composing on AI-2's team
+machinery — it does not add superweapons, aircraft, or naval play.**
+
+Deviations we take for AI-3 (adjudicated divergences from the recovered
+`ai-trigger.md` ground truth — not bugs, do not "fix" in review; see
+`docs/re/ai-trigger.md`'s "Deviations we take" section for the full, cited
+list):
+- **Engine xorshift32 in a SEPARATE, dedicated `AiTriggerState::rng` stream**
+  for the weighted draw vs the original's lockstep game RNG
+  (`FUN_0065c220(1,Σw)`) — same distribution, not bit-identical to the
+  netgame sequence; enabling triggers never perturbs the AI-2 draw sequence
+  (protects `ai_team_hash`) [ai-trigger.md deviations].
+- **ct=4 HouseCredits implemented as a REAL `credits OP N` compare** — every
+  stock use is `N=0, op>=` (effectively always-true), but our economy
+  exposes the owner house credits, so a mod-supplied non-zero `N` works
+  [ai-trigger.md §2/deviations].
+- **Inert conditions**: ct=5 (IronCurtainCharged) and ct=6
+  (ChronoSphereCharged) evaluate FALSE until a superweapon subsystem exists;
+  ct=2/ct=3 are recovered-but-unused inline house-metrics left unimplemented
+  (FALSE); ct=7 (CivilianHouseOwns) evaluates FALSE unless a neutral/civilian
+  house exists (none in this engine) [ai-trigger.md §2/deviations].
+- **Enemy aggregation**: the original's `ConditionMet` receives the house's
+  ONE current enemy (`house+0x5600`); our `World` aggregates ALL rival
+  houses for the enemy-owns count (the `ai-team.md` convention)
+  [ai-trigger.md deviations].
+- **One additive AI-2 flag**: the spec's "zero AI-2 changes" is relaxed to
+  `TeamInstance::completed_success` (set at `kOpDisband`) — required because
+  the recovered success definition is script-completion (`team+0x84`), not
+  survivors-at-disband [ai-trigger.md §4].
+- **Trigger cadence CONFIRMED shared**: no separate AITrigger clock exists —
+  eval runs inside AI-2's team-management (TeamDelays) pass; the original's
+  per-house probability gate (`house+0x565c`=100) is always-true by default
+  and modeled as always-run [ai-trigger.md §5].
+- **Base-defense split simplified [RE-FALLBACK]**: base-defense triggers are
+  rejected (offensive scope; ALL stock triggers are `IsForBaseDefense=0`)
+  because the recovered defensive-need inputs (`Rules+0x1394[diff]`,
+  `house+0x566c`) are not tracked [ai-trigger.md §5].
+- **Team-buildable predicate deferred [RE-FALLBACK]**: the original's
+  `FUN_0041ff00` buildable check is deferred to AI-2's recruit/produce
+  machinery — an unfillable team idles and disbands as a failure
+  [ai-trigger.md §5/§6].
+- **Unit-object conditions resolve within the AI house's own roster scope**
+  (enemy-owns-UNIT triggers naming types outside it art-guard-drop);
+  building objects use the full shared building roster.
+- **Skirmish-only engine**: triggers with `IsForSkirmish=0` are never
+  eligible (all stock are 1); the campaign enable path (non-inverted) is not
+  implemented — plus every remaining `[RE-FALLBACK]` recorded in
+  `ai-trigger.md`, cited by §.
+- **Known cosmetic issue**: `--demo-ai-trigger`'s END screenshot renders
+  black (a long-run SDL backbuffer/device-loss effect over the demo's
+  ~13500 un-presented frames; screenshot-only — it does **not** affect the
+  hash, the witness chain, or any gate). The START screenshot renders
+  correctly; fixing this is deferred to a future rendering-polish task.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -506,6 +610,18 @@ Headless/verification CLI modes (render one or more frames and exit):
   (`docs/re/ai-team.md`) — then hashes the team/production/credit state
   (`ai_team_hash`). Runs twice and both runs must produce identical witness
   lines and hash.
+- `ra2engine.exe --demo-ai-trigger` — the AI-3 adaptive-trigger integration
+  gate: a Soviet AI house (house 1, a pre-built base, Normal difficulty,
+  `triggers_enabled=true`) parses the real `aimd.ini` `[AITriggerTypes]`
+  table, runs a deterministic runtime scan (no hardcoded id) for an
+  intrinsically-eligible exemplar, then lets the trigger loop run for a fixed
+  frame budget: condition met → trigger selected by the recovered
+  cumulative-sum draw over `round(current weight)` → Team1 (and Team2, when
+  set) created through the AI-2 path → the created team's script-completion
+  disband outcome adjusts every trigger sharing that Team1's identity by the
+  clamped `+20`/`−50` track-record rule (`docs/re/ai-trigger.md`) — then
+  hashes the trigger/team/credit state (`ai_trigger_hash`). Runs twice and
+  both runs must produce identical witness lines and hash.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -513,15 +629,15 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These seven headless demos are byte-identity regression gates: any change to
+These eight headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=18` as of the AI-1 phase
-— with the gated hash unaffected each time). The first six are the legacy
-gates re-verified unchanged by every subsequent phase; `--demo-ai-team` is
-the new AI-2 gate.
+— with the gated hash unaffected each time). The first seven are the legacy
+gates re-verified unchanged by every subsequent phase; `--demo-ai-trigger` is
+the new AI-3 gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -532,6 +648,7 @@ the new AI-2 gate.
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
 | `--demo-ai-team` | `ai_team_hash=312e92ed862a5e74` | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
+| `--demo-ai-trigger` | `ai_trigger_hash=8334a6ca1531cabc` | `deterministic=yes`; a Soviet AI house (Normal difficulty) with an intrinsically-eligible ct=4 HouseCredits exemplar (`0D2C41EC-G`, weight band `[10..70]`, runtime-scanned, not hardcoded) fires by the recovered cumulative-sum draw over `round(current weight)`, creates its Team1 through the AI-2 path, and the created teams' script-completion disband outcomes adjust every trigger sharing that Team1 by the clamped `+20`/`−50` track-record rule (witnessed weight movement `40→60`, `50→70`, `60→70` across the run) (`docs/re/ai-trigger.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
