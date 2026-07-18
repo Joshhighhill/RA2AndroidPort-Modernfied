@@ -606,6 +606,127 @@ screenshots write to the harness scratchpad rather than a configurable
 output directory) is unchanged by this phase — carried forward, not CB-1
 scope.
 
+## CB-2 — Aircraft & Flight Locomotor
+
+The CB-2 phase gives units flight: a pure `engine/flight` module plus a World
+integration that routes, moves, and fights an airborne unit without ever
+touching ground A*/occupancy. The pure module (`engine/flight.{hpp,cpp}`,
+no RNG, no World/Occupancy dependency) recovers the original's altitude and
+heading model: `step_altitude` climbs or descends toward a target altitude by
+an exact per-frame rate with no overshoot (clamped at the bound); `cruise_step`
+is a straight-line horizontal advance toward a goal cell that never consults
+`passable_`/`occ_` — an airborne unit takes no path, it flies; `heading_toward`
+turns by the shortest arc toward a target bearing at a capped per-frame rate,
+and is a no-op when the unit is `OmniFire` (a turretless flyer needs no facing
+to shoot); `altitude_to_screen_dy` converts the unit's current altitude into
+the raised-draw pixel offset used at render time; and `advance_flight_state`
+drives the `Grounded → TakingOff → Cruising → Descending` state machine off
+altitude thresholds alone.
+
+The World integration layer wires this into the existing sim with the same
+firewall discipline every prior phase used: `order_unit_move` grows an
+aircraft branch that assigns a flight goal (`flight_goal_x/y` + `TakingOff`)
+instead of routing through A*; `World::step_flight` is firewalled behind
+`aircraft_any_` and runs between `step_cargo` and `step_turrets` — takeoff
+releases the unit's held ground cell exactly once (climb and horizontal
+travel then overlap, not gated on reaching altitude first) and an airborne
+unit reserves no occupancy for the remainder of its flight; the corpse-skip
+site gains `|| u.is_aircraft` (an airborne unit is never eligible for ground
+movement) and `valid_target` gains `&& !v.is_aircraft` (ground units — and
+their auto-acquire — never target the aircraft, suppressing air-to-air and
+ground-AA-vs-air). Even while airborne, `cell_x/cell_y` keep tracking the
+rounded ground projection of `fx/fy` — used for the ground shadow and for
+combat range checks — but that projection claims no occupancy slot; it is
+the CB-1 "coordinates stale while carried" analogue, here live but
+unreserved.
+
+Air-to-ground combat needed no new targeting or damage machinery: the
+aircraft's move-to-attack-range request routes through the same flight-goal
+mechanism (not A*), and the vehicle aim gate is bypassed for `OmniFire` units
+so a turretless flyer fires from cruise without turning to face. The bomb
+itself is delivered instant-to-target-cell (the falling-bomb travel time is a
+documented carry-forward), but its `BlimpHE CellSpread=2 PercentAtMax=.5`
+damage is a REAL ~512-lepton 2-cell splash via `apply_spread_damage` (linear
+100%→50% falloff) — not collapsed to a single-target hit — gated on
+`CellSpread >= 1` in `try_fire` so every pre-existing sub-1-cell warhead
+(tank AP `CellSpread=.3`, infantry small arms) keeps its exact, byte-identical
+single-target path unchanged.
+
+Render adds one raised voxel draw (`altitude_to_screen_dy` folded into the
+existing `draw_voxel_sprite` as a trailing default-arg `extra_dy`, so every
+pre-existing call site is untouched) plus a new ground shadow — a dark
+translucent diamond plotted at the un-raised ground cell, CB-2's
+approximation of the original's `FUN_00755680` silhouette. The exemplar
+(`[ZEP]`, the Kirov Airship) is art-guarded with an ORCA/BEAG fallback if its
+art ever regresses.
+
+Byte-identity discipline follows the same strategy every prior phase used:
+`world_hash` is **untouched** (strategy (a) — flight fields are inert
+defaults for every non-aircraft unit and are never read by the hash); the
+nine legacy gates were re-verified byte-identical both at the first additive
+CB-2 commit and again at this finalize. Calibration authority:
+`docs/re/aircraft.md` (Jumpjet/Locomotor recovery, flight state machine,
+occupancy guard sweep, splash-damage adjudication, deviations).
+
+Deviations we take for CB-2 (adjudicated divergences from the recovered
+`aircraft.md` ground truth — not bugs, do not "fix" in review; mirrors the
+hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
+- **Instant projectile FLIGHT, but REAL 2-cell splash damage** — the bomb is
+  delivered instant-to-target-cell (the `BlimpBombP Vertical=yes`
+  falling-bomb travel-time is the documented carry-forward, `voxel-render.md`
+  §7), but the `BlimpHE CellSpread=2 PercentAtMax=.5` DAMAGE is implemented
+  as a genuine ~512-lepton 2-cell splash (`apply_spread_damage`, linear
+  100%→50% falloff, `combat.md` §7), NOT collapsed to single-target. The
+  applicator is gated on `CellSpread>=1` so every existing sub-1-cell
+  warhead (tank AP `CellSpread=.3`, infantry) keeps its exact single-target
+  path [`aircraft.md` §4 → `combat.md` §7].
+- **Spread falloff curve is a linear approximation** — `combat.md` §7 pins
+  the retaliation choice but the exact `CellSpread` damage-falloff curve
+  (`FUN_00489190`) was not fully unwound; the adjudicated linear
+  100%→`PercentAtMax` falloff over `round(CellSpread)` cells stands in until
+  pinned [`aircraft.md` §4 → `combat.md` §7].
+- **Ground-shadow approximation** — a dark translucent filled diamond at the
+  un-raised ground cell approximates the original's `FUN_00755680` (which
+  plots the model's column silhouette in color 1 with no z-test); the exact
+  silhouette/color is not pixel-matched [`aircraft.md` §3].
+- **Altitude→pixel factor [RE-FALLBACK]** — the raised-draw offset is
+  `(altitude/256)·36.74` px (voxel-render.md §6's up/z term); the hunt did
+  NOT unwind the loco pixel-offset formula, so this stays the one flagged
+  [RE-FALLBACK] to revisit [`aircraft.md` §3].
+- **No ground AA / air-to-air** — ground units never auto-acquire or target
+  the aircraft (`valid_target`'s `!v.is_aircraft` clause); the aircraft
+  attacks only ground targets. Ground-AA-vs-air is a documented
+  carry-forward [`aircraft.md` §4; spec §Out].
+- **No airfield/Ammo rearm cycle** — the exemplar (`[ZEP]`, no `Ammo=`,
+  `BalloonHover=yes`) is continuously armed and never lands; the
+  `FlyLocomotionClass`/`Ammo`/airfield-dock mechanism for `[AircraftTypes]`
+  (`ORCA`/`BEAG`/Harrier) is mapped-for-later, not CB-2 code [`aircraft.md`
+  §4; spec §Out].
+- **BalloonHover — descend/land unused** — the flyer takes off once and
+  holds cruise; the `Descending`→`Grounded` state exists so the machine is
+  complete but the exemplar never exercises it; a full land-cycle is a
+  carry-forward [`aircraft.md` §2; spec §3.4].
+- **No jumpjet wobble / pitch tilt** — `JumpjetNoWobbles=yes` removes the
+  sinusoidal wobble (kept out for determinism); the airborne sprite renders
+  level (`PitchSpeed`/`PitchAngle` dropped — the ground voxel "no slope
+  tilt" precedent) [`aircraft.md` §6; spec §Out].
+- **Aircraft coords are LIVE but claim no cell** — `cell_x/cell_y` track the
+  ground projection of `fx/fy` while airborne (for the shadow + combat
+  range) but reserve no `occ_` slot; the deliberate analogue of CB-1's
+  "coords stale while carried" [`aircraft.md` §1; spec §4].
+- **Speed/turn/climb conversions** — `flight_turn` is sourced from the
+  unit's `ROT` (× 2, the `Link_To_Object` FacingClass rate) — **not**
+  `JumpJetTurnRate`, which the hunt confirmed is vestigial for turn in this
+  build (`aircraft.md` §1); `flight_speed` is `JumpjetSpeed` (fallback base
+  `Speed`) converted via the engine's existing `kCellsPerSecPerSpeed`
+  vehicle-speed scale, and `climb_rate`/`descend_rate` are the recovered
+  per-frame `JumpjetClimb`/`JumpjetCrash` values — all converted to
+  per-second rates (×15) for the dt-based `step_flight`, the
+  `rot_u16_per_sec` precedent [`aircraft.md` §1/§2/§5].
+- **AI use of aircraft stays inert** — the AI never fields aircraft in CB-2;
+  aircraft-related ScriptType opcodes stay inert in the AI-2 interpreter (a
+  recorded carry-forward) [spec §Out].
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -748,6 +869,20 @@ Headless/verification CLI modes (render one or more frames and exit):
   runs must produce identical witness lines and hash; wedge guards exit
   non-zero if no board, no eject, no capacity refusal, or a non-LIFO eject
   order ever happens.
+- `ra2engine.exe --demo-aircraft` — the CB-2 Aircraft & Flight integration
+  gate: spawns one Kirov Airship (`[ZEP]`, art-guarded; ORCA/BEAG fallback)
+  for house 0 and TWO adjacent hostile ground GIs (one cell apart) for house 1,
+  then scripts TAKEOFF (releases its ground cell, ascends to cruise altitude 750
+  while climb and horizontal travel overlap, transitions to Cruising), FLY
+  (cruises in a straight line at altitude to a distant cell, reserving no cell —
+  folded into the hash), ATTACK (flies to within weapon range and drops ONE bomb
+  from cruise whose `BlimpHE CellSpread=2` 2-cell splash kills BOTH adjacent
+  targets), and RESUME (holds cruise — BalloonHover) — and hashes the flight
+  path + altitude + attack state + a zero-airborne-occupancy audit at four
+  checkpoints (`aircraft_hash`). Runs twice (rendered + headless); both runs
+  must produce identical witness lines and hash; wedge guards exit non-zero
+  unless a takeoff AND an airborne cruise with `occ_held=0` AND one bomb's
+  2-cell splash killing BOTH targets (2 kills) all actually happen.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -755,15 +890,15 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These nine headless demos are byte-identity regression gates: any change to
+These ten headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=18` as of the AI-1 phase
-— with the gated hash unaffected each time). The first EIGHT are the legacy
-gates re-verified unchanged by every subsequent phase; `--demo-transport` is
-the new CB-1 gate.
+— with the gated hash unaffected each time). The first NINE are the legacy
+gates re-verified unchanged by every subsequent phase; `--demo-aircraft` is
+the new CB-2 gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -776,6 +911,7 @@ the new CB-1 gate.
 | `--demo-ai-team` | `ai_team_hash=312e92ed862a5e74` | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
 | `--demo-ai-trigger` | `ai_trigger_hash=8334a6ca1531cabc` | `deterministic=yes`; a Soviet AI house (Normal difficulty) with an intrinsically-eligible ct=4 HouseCredits exemplar (`0D2C41EC-G`, weight band `[10..70]`, runtime-scanned, not hardcoded) fires by the recovered cumulative-sum draw over `round(current weight)`, creates its Team1 through the AI-2 path, and the created teams' script-completion disband outcomes adjust every trigger sharing that Team1 by the clamped `+20`/`−50` track-record rule (witnessed weight movement `40→60`, `50→70`, `60→70` across the run) (`docs/re/ai-trigger.md`) |
 | `--demo-transport` | `transport_hash=fe500f946e913645` | `deterministic=yes`; variant=HTK (Passengers=5 SizeLimit=2 on this install; FV fallback documented if art ever regresses); 5 boards to the exact-fill COUNT boundary + 1 refusal at full; carry with zero carried-unit draw/occupancy folded into the hash; 5 LIFO ejects one-per-frame onto facing±90° scatter cells (`eject_cell`); wedge guards armed (`docs/re/transport-cargo.md`) |
+| `--demo-aircraft` | `aircraft_hash=3a6c28ff49f07567` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
