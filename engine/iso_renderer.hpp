@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "ra2assets/ini.hpp"
+#include "ra2assets/land_type.hpp"  // LandType / TileSetClass (land_type_of_cell)
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
@@ -51,10 +52,18 @@ public:
     // (empty string if out of range).
     std::string filename_for_tile(uint32_t global_index) const;
 
+    // CB-3 Naval [RE-GATE APPLIED: naval.md §2]: the LandType of a global tile
+    // index -- resolves the tile's owning [TileSetNNNN] set and classifies it
+    // against the theater [General] indices (WaterSet -> Water, etc.). Returns
+    // LandType::Clear for an out-of-range index (land, never water). This is the
+    // recovered LandType source (the .tmp TerrainType byte was FALSIFIED).
+    ra2assets::LandType land_type_of_cell(uint32_t global_index) const;
+
 private:
     struct Slot {
         std::string file;  // FileName= (lower/verbatim from INI)
         int local;         // 1-based index within its tile set
+        int set;           // owning [TileSetNNNN] set index [RE: naval.md §2]
     };
 
     std::string entry_name(const Slot& s) const;
@@ -62,6 +71,7 @@ private:
     ra2assets::MixFile mix_;
     std::string ext_;
     std::vector<Slot> slots_;  // global index -> slot
+    ra2assets::TileSetClass general_;  // [General] tile-set classification [RE: naval.md §2]
     // filename -> decoded TmpFile (absent entries stored as a nullptr sentinel
     // via `misses_`); keeps repeated cells cheap.
     std::unordered_map<std::string, ra2assets::TmpFile> cache_;

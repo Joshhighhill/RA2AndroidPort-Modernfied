@@ -34,8 +34,17 @@ Theater::Theater(ra2assets::MixFile isotile_mix, const std::string& control_ini_
         if (!ini.has(sec)) break;
         const int tiles = ini.get_int(sec, "TilesInSet", 1);
         const std::string file = ini.get(sec, "FileName", "");
-        for (int i = 1; i <= tiles; ++i) slots_.push_back(Slot{file, i});
+        for (int i = 1; i <= tiles; ++i) slots_.push_back(Slot{file, i, set_idx});
     }
+    // CB-3 Naval [RE-GATE APPLIED: naval.md §2]: the [General] tile-set
+    // classification the game uses to stamp each tile's LandType. Absent keys
+    // stay -1 (never match a valid set index -> classified Clear).
+    general_.water        = ini.get_int("General", "WaterSet", -1);
+    general_.shore        = ini.get_int("General", "ShorePieces", -1);
+    general_.cliff        = ini.get_int("General", "CliffSet", -1);
+    general_.water_cliffs = ini.get_int("General", "WaterCliffs", -1);
+    general_.rough        = ini.get_int("General", "RoughTile", -1);
+    general_.clear        = ini.get_int("General", "ClearTile", -1);
 }
 
 std::string Theater::entry_name(const Slot& s) const {
@@ -47,6 +56,11 @@ std::string Theater::entry_name(const Slot& s) const {
 std::string Theater::filename_for_tile(uint32_t global_index) const {
     if (global_index >= slots_.size()) return std::string();
     return entry_name(slots_[global_index]);
+}
+
+ra2assets::LandType Theater::land_type_of_cell(uint32_t global_index) const {
+    if (global_index >= slots_.size()) return ra2assets::LandType::Clear;
+    return ra2assets::land_type_from_tile_set(slots_[global_index].set, general_);
 }
 
 const ra2assets::TmpFile* Theater::tmp_for_tile(uint32_t global_index) {
