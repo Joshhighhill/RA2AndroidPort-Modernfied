@@ -2992,3 +2992,74 @@ TEST_CASE("World: ground units do NOT auto-acquire an aircraft") {
     for (int f = 0; f < 200; ++f) world.step(dt);
     CHECK(world.units()[1].target == -1);        // enemy GI never targets the aircraft
 }
+
+TEST_CASE("World: an aircraft flies to a ground target and kills it (air-to-ground)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    ra2engine::UnitCombat z = zep_stats();
+    z.damage = 250;                              // BlimpBomb Damage
+    z.rof = 50;                                  // BlimpBomb ROF
+    z.range = 1.5;                               // BlimpBomb Range (cells)
+    z.strength = 2000;
+    world.add_combat_unit(20, 20, /*house=*/0, z);          // idx 0 aircraft
+    ra2engine::UnitCombat tgt = cons_stats();
+    tgt.strength = 200;                          // dies in one 250-dmg hit
+    ra2engine::Unit& victim = world.add_combat_unit(20, 30, /*house=*/1, tgt);  // idx 1 ground
+    victim.hp = victim.max_hp = 200;
+    // Take off + order the attack.
+    world.order_unit_move(0, 20, 20);            // takeoff in place
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 200 && world.units()[0].flight_state != ra2engine::FlightState::Cruising; ++f)
+        world.step(dt);
+    world.units()[0].selected = true;
+    world.order_attack(1);                       // commit_attack_target for the aircraft
+    bool died = false;
+    for (int f = 0; f < 3000 && !died; ++f) {
+        world.step(dt);
+        if (!world.units()[1].alive || world.units()[1].die_time >= 0.0) died = true;
+    }
+    CHECK(died);                                 // the ground target took a lethal air hit
+    CHECK(world.units()[0].alive);              // the aircraft survived (no ground AA)
+}
+
+TEST_CASE("World: one BlimpHE bomb 2-cell splash kills BOTH adjacent ground targets") {
+    // D5 [RE-GATE APPLIED: aircraft.md §4 -> combat.md §7]: CellSpread=2 is a
+    // REAL ~512-lepton splash. One bomb on target A must also kill target B one
+    // cell away (linear 100%->PercentAtMax falloff over round(CellSpread)=2).
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    ra2engine::UnitCombat z = zep_stats();
+    z.damage = 250;                              // BlimpBomb Damage
+    z.rof = 50;                                  // BlimpBomb ROF
+    z.range = 1.5;                               // BlimpBomb Range (cells)
+    z.strength = 2000;
+    z.cell_spread = 2.0;                         // BlimpHE CellSpread=2
+    z.percent_at_max = 0.5;                      // BlimpHE PercentAtMax=.5
+    world.add_combat_unit(20, 20, /*house=*/0, z);            // idx 0 aircraft
+    ra2engine::UnitCombat tgt = cons_stats();
+    ra2engine::Unit& a = world.add_combat_unit(20, 30, /*house=*/1, tgt);  // idx 1 (center)
+    ra2engine::Unit& b = world.add_combat_unit(21, 30, /*house=*/1, tgt);  // idx 2 (1 cell away)
+    a.hp = a.max_hp = 100;                       // center 250; edge falloff 250*.75=187
+    b.hp = b.max_hp = 100;                        // both die from the ONE splash
+    world.order_unit_move(0, 20, 20);            // takeoff in place
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 200 && world.units()[0].flight_state != ra2engine::FlightState::Cruising; ++f)
+        world.step(dt);
+    world.units()[0].selected = true;
+    world.order_attack(1);                       // attack target A only
+    auto dead = [&](int i) {
+        return !world.units()[i].alive || world.units()[i].die_time >= 0.0;
+    };
+    for (int f = 0; f < 3000 && !(dead(1) && dead(2)); ++f) world.step(dt);
+    CHECK(dead(1));                              // center target killed
+    CHECK(dead(2));                              // adjacent target killed by the SAME splash
+    CHECK(world.units()[0].alive);              // aircraft survived (no ground AA)
+}

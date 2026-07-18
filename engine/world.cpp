@@ -325,6 +325,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_rof = c.rof;
     u.w_range = c.range;
     u.w_verses = c.verses;
+    u.w_cell_spread = c.cell_spread;        // CB-2 [aircraft.md §4]: warhead splash
+    u.w_percent_at_max = c.percent_at_max;  // radius + edge scale (0 = single-target)
     // Voxel Vehicles phase (docs/re/voxel-render.md §5): vehicle locomotion
     // state. ROT= is converted to a u16/sec turn rate; speed_cps == 0 keeps
     // the unit on the World-wide move_cps. Infantry leave all of these at
@@ -1986,6 +1988,17 @@ void World::step(double dt) {
         if (r.unit < 0 || r.unit >= static_cast<int>(units_.size())) continue;
         const Unit& u = units_[r.unit];
         if (!u.alive || u.die_time >= 0.0) continue;  // died this same step
+        // CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §4]: an approach request
+        // for an aircraft routes straight to its FLIGHT GOAL (the target's cell) via
+        // order_unit_move's aircraft branch (no A*, no assign_formation
+        // firing-cell batching -- the flyer cruises nearly over the target,
+        // BlimpBomb Range=1.5). The ONE aircraft-aware branch in the
+        // MoveRequest dispatch; provably not taken in any existing demo
+        // (is_aircraft=false).
+        if (u.is_aircraft) {
+            order_unit_move(r.unit, r.goal_x, r.goal_y);
+            continue;
+        }
         if (r.approach)
             approach_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
         else

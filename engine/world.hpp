@@ -99,6 +99,8 @@ struct Unit {
     int w_rof = 0;                 // weapon ROF= (15Hz logic frames)
     double w_range = 0.0;          // weapon Range= (cells)
     std::vector<int> w_verses;     // warhead Verses percents (11 entries)
+    double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
+    double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
     int target = -1;               // unit index being attacked, -1 none
     int target_building = -1;      // building index being attacked, -1 none;
                                     // mutually exclusive with `target` --

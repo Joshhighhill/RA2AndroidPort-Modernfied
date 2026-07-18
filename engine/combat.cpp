@@ -73,34 +73,79 @@ bool valid_target(const std::vector<Unit>& units, int self_house, int idx) {
 // retaliation, and starts death if the hit is lethal. `attacker_idx`/
 // `victim_idx` are u/v's own indices in `units` (needed for the retaliation
 // target and occ.release_all_of).
-void try_fire(Unit& u, Unit& v, int attacker_idx, int victim_idx, Occupancy& occ) {
+// CB-2 air-to-ground splash [RE-GATE APPLIED: aircraft.md §4 -> combat.md §7,
+// FUN_00489190]. Damages every ENEMY, non-carried, non-aircraft unit within
+// round(cell_spread) cells of `center` (radius in leptons = round(cell_spread)
+// * kLeptonsPerCell; BlimpHE CellSpread=2 -> ftol(2*256)=512 leptons). Damage
+// falls off LINEARLY from 100% at the impact point to `percent_at_max` at the
+// edge (the adjudicated approximation of the un-unwound §7 curve), then runs
+// the standard damage_vs(Verses) truncated per victim (combat.md §3). Ground
+// AA is out of scope, so victims do NOT retaliate against the aircraft.
+void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& attacker,
+                         const Unit& center) {
+    const double radius_cells = std::round(attacker.w_cell_spread);   // round(CellSpread)
+    const double radius_lept = radius_cells * kLeptonsPerCell;        // splash radius (leptons)
+    const double pmax = attacker.w_percent_at_max;                    // edge scale (BlimpHE .5)
+    for (int j = 0; j < static_cast<int>(units.size()); ++j) {
+        Unit& w = units[j];
+        if (!w.alive || w.die_time >= 0.0) continue;                  // dead/dying: skip
+        if (w.cargo_of >= 0) continue;                               // carried: off-map
+        if (w.is_aircraft) continue;                                 // no air-to-air
+        if (w.house == attacker.house) continue;                     // enemies only
+        const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
+        if (d > radius_lept) continue;                               // outside the splash
+        const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
+        const double scale = 1.0 - (1.0 - pmax) * frac;             // 1.0 -> pmax linear
+        const int base = static_cast<int>(attacker.w_damage * scale);  // trunc (combat.md §3)
+        const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
+        w.hp -= dmg;
+        if (w.hp <= 0) {
+            w.die_time = 0.0;
+            occ.release_all_of(j, -1, -1);
+            w.target = -1;
+            w.path.clear();
+            w.path_idx = 0;
+        }
+    }
+}
+
+void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
+              int victim_idx, Occupancy& occ) {
     // docs/re/combat.md §5: RearmTimer := GetROF() (frames), converted to
     // seconds via kLogicFps; CONFIRMED no jitter/RNG in the reset.
     u.rof_cool = u.w_rof / kLogicFps;
     u.fire_flash = kFireFlashSecs;
-    const int dmg = damage_vs(u.w_damage, u.w_verses, v.armor_ix);
-    v.hp -= dmg;
-    // Return fire only if IDLE (spec: "return fire when hit" applies to
-    // idle/guarding units; a unit under a move order keeps walking rather
-    // than stopping to retaliate).
-    if (v.target == -1 && !v.moving()) {
-        // Idle victim retaliates (docs/re/combat.md §7: retaliation target
-        // choice confirmed). Also records ITS OWN guard anchor at its
-        // current position -- retaliation is a form of auto-acquire
-        // (attack_order stays false), so it needs the same "post to return
-        // to" bookkeeping the acquisition path below sets; without this the
-        // anchor would default to (0,0) and misfire the stray-leash check
-        // the next time this victim is processed.
-        v.target = attacker_idx;
-        v.guard_x = v.cell_x;
-        v.guard_y = v.cell_y;
-    }
-    if (v.hp <= 0) {
-        v.die_time = 0.0;
-        occ.release_all_of(victim_idx, -1, -1);
-        v.target = -1;
-        v.path.clear();
-        v.path_idx = 0;
+    if (u.w_cell_spread >= 1.0) {
+        // CB-2 [RE-GATE APPLIED: aircraft.md §4]: the BlimpHE 2-cell splash.
+        // Reached ONLY by CellSpread>=1 warheads (the Kirov); every existing
+        // weapon (tank AP=.3, infantry) has CellSpread<1 -> the else branch.
+        apply_spread_damage(units, occ, u, v);
+    } else {
+        // EXISTING single-target delivery -- UNCHANGED (byte-identical path).
+        const int dmg = damage_vs(u.w_damage, u.w_verses, v.armor_ix);
+        v.hp -= dmg;
+        // Return fire only if IDLE (spec: "return fire when hit" applies to
+        // idle/guarding units; a unit under a move order keeps walking rather
+        // than stopping to retaliate).
+        if (v.target == -1 && !v.moving()) {
+            // Idle victim retaliates (docs/re/combat.md §7: retaliation target
+            // choice confirmed). Also records ITS OWN guard anchor at its
+            // current position -- retaliation is a form of auto-acquire
+            // (attack_order stays false), so it needs the same "post to return
+            // to" bookkeeping the acquisition path below sets; without this the
+            // anchor would default to (0,0) and misfire the stray-leash check
+            // the next time this victim is processed.
+            v.target = attacker_idx;
+            v.guard_x = v.cell_x;
+            v.guard_y = v.cell_y;
+        }
+        if (v.hp <= 0) {
+            v.die_time = 0.0;
+            occ.release_all_of(victim_idx, -1, -1);
+            v.target = -1;
+            v.path.clear();
+            v.path_idx = 0;
+        }
     }
 }
 
@@ -207,7 +252,7 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
                         // step_combat, using this same facing). Infantry are
                         // exempt -- zero behavior change. rof_cool untouched
                         // while unaimed.
-                        if (u.is_vehicle &&
+                        if (u.is_vehicle && !u.omni_fire &&
                             !vehicle_aimed(u, facing_u16_from_delta(
                                                   static_cast<double>(nx) - u.fx,
                                                   static_cast<double>(ny) - u.fy)))
@@ -315,10 +360,10 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
                 // computing `want` from these same fx/fy, so the exact
                 // comparison in vehicle_aimed is well-defined). Infantry are
                 // exempt -- zero behavior change.
-                if (u.is_vehicle &&
+                if (u.is_vehicle && !u.omni_fire &&
                     !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
                     continue;  // hold fire this frame; rof_cool untouched
-                try_fire(u, v, i, u.target, occ);
+                try_fire(units, u, v, i, u.target, occ);
             }
         } else if (u.attack_order) {
             // Approach: ask the caller for a firing position near the target.

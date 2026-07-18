@@ -17,6 +17,14 @@ struct UnitCombat {
     int rof = 0;
     double range = 0.0;
     std::vector<int> verses;
+    // --- CB-2 air-to-ground splash [RE-GATE APPLIED: aircraft.md §4 ->
+    // combat.md §7] --- the primary weapon's warhead CellSpread / PercentAtMax
+    // (BlimpBomb -> BlimpHE CellSpread=2 PercentAtMax=.5). Default 0 = no
+    // spread (single-target). Fed to combat.cpp's apply_spread_damage, GATED on
+    // cell_spread >= 1 so every existing sub-1-cell warhead keeps its EXACT
+    // single-target path (the 9 gates stay byte-identical).
+    double cell_spread = 0.0;      // warhead CellSpread (cells; radius = round(.))
+    double percent_at_max = 1.0;   // warhead PercentAtMax (edge damage scale)
     // --- Voxel Vehicles phase (docs/re/voxel-render.md §5) ---
     int rot = 0;               // Rules ROT= (turn rate); 0 = no turning
     bool turret = false;       // has an independently-slewing turret
