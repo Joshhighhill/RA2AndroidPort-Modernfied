@@ -417,4 +417,25 @@ void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int vi
     }
 }
 
+void draw_cargo_pips(void* sdl_renderer, const Unit& unit, int pips_filled, int pips_max,
+                     const Camera& cam, int view_w, int view_h) {
+    if (pips_max <= 0) return;
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+    int cx, cy;
+    tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
+    // One row directly UNDER the HP bar (same anchor math as draw_hp_bar).
+    const int row_y = cy - kHpBarUp - kHpBarGap + kHpBarH + 2;
+    const int pip_w = 4, pip_h = 3, gap = 2;
+    const int total_w = pips_max * pip_w + (pips_max - 1) * gap;
+    int x = cx - total_w / 2;
+    if (x + total_w <= 0 || row_y + pip_h <= 0 || x >= view_w || row_y >= view_h) return;
+    for (int k = 0; k < pips_max; ++k) {
+        SDL_Rect r{x, row_y, pip_w, pip_h};
+        if (k < pips_filled) SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
+        else SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255);
+        SDL_RenderFillRect(renderer, &r);
+        x += pip_w + gap;
+    }
+}
+
 }  // namespace ra2engine

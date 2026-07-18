@@ -185,4 +185,19 @@ void draw_selection_box(void* sdl_renderer, int x0, int y0, int x1, int y1);
 void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h,
                  int width_px = 0);
 
+// CB-1 Transports/Cargo: the minimal loaded-count indicator [RE:
+// transport-cargo.md §1; spec §6] -- pips_max small tick rects in a row
+// directly UNDER the HP bar (same tile_center_screen anchor and SDL_Rect
+// fill primitive as draw_hp_bar; REUSE only, no new font/UI systems), the
+// first pips_filled of them filled light, the rest dark. The fill count is
+// the SIZE-SUM (cargo_total_size -- the original GetTotalSize, which is
+// pip-only [RE-GATE APPLIED: transport-cargo.md §1]) while capacity is the
+// COUNT, so a Size-2 passenger lights two pips yet consumes one slot; a
+// fill above pips_max saturates the row. Vanilla's PipScale=Passengers pip
+// row is the reference look, RE-documented but NOT pixel-matched in CB-1.
+// Caller decides WHETHER to draw (a selected transport); no-op if
+// pips_max <= 0.
+void draw_cargo_pips(void* sdl_renderer, const Unit& unit, int pips_filled, int pips_max,
+                     const Camera& cam, int view_w, int view_h);
+
 }  // namespace ra2engine

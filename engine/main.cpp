@@ -36,6 +36,7 @@
 #include "audio_mixer.hpp"
 #include "audio_sdl.hpp"
 #include "building.hpp"
+#include "cargo.hpp"        // cargo_total_size (pip fill) [CB-1 Transports/Cargo]
 #include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
 #include "factory.hpp"      // primary_factory (unit exit handoff)
@@ -389,6 +390,11 @@ struct AudioSystem {
     // Chrono Miner teleport sounds [RE: economy.md §3]: soundmd section names
     // from rulesmd [CMIN] ChronoOut/InSound ("" -> silent no-op on play).
     std::string chrono_out, chrono_in;
+    // CB-1 transport sounds [RE: transport-cargo.md; spec §6]: soundmd
+    // section names from rulesmd [HTK] EnterTransportSound/
+    // LeaveTransportSound, falling back to the [AudioVisual] defaults
+    // ("" -> silent no-op on play, the chrono pattern).
+    std::string enter_transport, leave_transport;
     bool enabled = false;
 };
 
@@ -509,6 +515,15 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
         for (const std::string& k : {audio.chrono_out, audio.chrono_in})
             if (!k.empty() && !pending.count(k))
                 pending[k] = resolve_sound_event(audio, sounds, idx, bag, k);
+        audio.enter_transport = cmin_ini.get("HTK", "EnterTransportSound", "");
+        if (audio.enter_transport.empty())
+            audio.enter_transport = cmin_ini.get("AudioVisual", "EnterTransportSound", "");
+        audio.leave_transport = cmin_ini.get("HTK", "LeaveTransportSound", "");
+        if (audio.leave_transport.empty())
+            audio.leave_transport = cmin_ini.get("AudioVisual", "LeaveTransportSound", "");
+        for (const std::string& k : {audio.enter_transport, audio.leave_transport})
+            if (!k.empty() && !pending.count(k))
+                pending[k] = resolve_sound_event(audio, sounds, idx, bag, k);
     }
 
     // EVA: "ceva064.wav" ("Unit lost") lives in the SAME audio.mix, decoded
@@ -562,6 +577,18 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
+
+    // CB-1 cargo stats [RE-GATE APPLIED: transport-cargo.md §1 -- absent-key
+    // defaults CONFIRMED: Passengers/SizeLimit -> 0, Size -> 1. In the
+    // binary Size/SizeLimit are doubles (type +0x380/+0x388); int is exact
+    // for the roster values (1/2/3). Capacity gates on the COUNT
+    // (NumPassengers < Passengers); Size/SizeLimit form the per-passenger
+    // cap and Size otherwise feeds only the pip display]. Real rulesmd
+    // ground truth: [HTK] Passengers=5 SizeLimit=2 Size=3, [FV] Passengers=1
+    // SizeLimit=1 Size=3, infantry Size=1.
+    r.combat.passengers = (int)rules.section_double(unit_id, "Passengers", 0.0);
+    r.combat.size_limit = (int)rules.section_double(unit_id, "SizeLimit", 0.0);
+    r.combat.size = (int)rules.section_double(unit_id, "Size", 1.0);
 
     std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
               << " strength=" << r.combat.strength << " armor=" << r.combat.armor
@@ -839,6 +866,42 @@ const VehicleAssets* miner_for_id(const MinerAssets& m, const std::string& id, b
     if (id == "HARV") { chrono = false; storage = m.harv_storage; return m.harv.ok ? &m.harv : nullptr; }
     if (id == "CMIN") { chrono = true;  storage = m.cmin_storage; return m.cmin.ok ? &m.cmin : nullptr; }
     return nullptr;
+}
+
+// CB-1: the demo/interactive multi-capacity transport [spec: Transport
+// choice; RE: transport-cargo.md §1]. HTK (Soviet Flak Track: Passengers=5
+// SizeLimit=2 Size=3, ground Drive, art PRESENT on this install) with FV
+// (IFV, Passengers=1, already producible) as the art-guard fallback;
+// multi-passenger logic is fully implemented regardless (capacity>1 is
+// covered host-only by the pure tests). load_vehicle_assets already
+// resolves the cargo stats via resolve_combat_unit, so a candidate is
+// usable iff its art loaded AND it is actually a transport.
+struct TransportAssets {
+    VehicleAssets va;      // voxel render assets + combat (cargo stats included)
+    std::string id;        // "HTK" or "FV"
+    bool ok = false;       // art present AND Passengers > 0
+};
+
+TransportAssets load_transport_assets(const std::string& dir, const ra2assets::MixFile& ra2,
+                                      const ra2assets::Palette& unit_pal) {
+    TransportAssets ta;
+    for (const char* id : {"HTK", "FV"}) {
+        VehicleAssets va = load_vehicle_assets(dir, ra2, unit_pal, id);
+        if (!va.ok || va.combat.passengers <= 0) continue;  // art-guard-drop ->
+        ta.va = std::move(va);                              // try the fallback
+        ta.id = id;
+        ta.ok = true;
+        break;
+    }
+    if (ta.ok)
+        std::cerr << "[transport] id=" << ta.id
+                  << " passengers=" << ta.va.combat.passengers
+                  << " size_limit=" << ta.va.combat.size_limit
+                  << " size=" << ta.va.combat.size << "\n";
+    else
+        std::cerr << "[transport] unavailable (HTK and FV art both missing); "
+                     "cargo gestures degrade to no-ops\n";
+    return ta;
 }
 
 // The Allied producible-unit roster + its render/cameo assets [RE-GATE
@@ -1697,8 +1760,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // Paths + selection markers first (under the sprites); skip dead/dying
     // units entirely (no path, no selection marker for a corpse-in-progress).
     for (const ra2engine::Unit& u : us) {
-        if (!u.alive || u.die_time >= 0.0) continue;
-        ra2engine::draw_path(ren, u, cam, W, H);
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;  // CB-1:
+        ra2engine::draw_path(ren, u, cam, W, H);       // carried units draw nothing
         if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
     }
     // Sprites back-to-front so nearer units overlap farther ones. Vehicles
@@ -1754,11 +1817,18 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             draw_one_unit(d.idx);
         }
     }
-    // HP bars after sprites, before the selection box: alive, non-dying units
-    // that are selected or currently damaged.
+    // HP bars after sprites, before the selection box: alive, non-dying,
+    // NON-CARRIED units that are selected or currently damaged. A selected
+    // transport also shows its loaded pip row -- filled with the SIZE-SUM
+    // (cargo_total_size), the pip-only metric [RE-GATE APPLIED:
+    // transport-cargo.md §1]; capacity itself is the COUNT [spec §6].
     for (const ra2engine::Unit& u : us) {
-        if (!u.alive || u.die_time >= 0.0) continue;
-        if (u.selected || u.hp < u.max_hp) ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+        if (u.selected || u.hp < u.max_hp)
+            ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
+        if (u.selected && u.passengers_max > 0)
+            ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
+                                       u.passengers_max, cam, W, H);
     }
     // Live selection box on top (interactive only).
     if (input) {
@@ -2385,6 +2455,9 @@ int run_interactive(bool no_audio) {
     Art art = Art::load(art_ini);
     BuildingAssets ba = load_building_assets(ra2, language, rules, art);
     MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+    // CB-1: the art-guarded transport (HTK, FV fallback) [spec §7]. Its cargo
+    // stats come from resolve_combat_unit inside load_vehicle_assets.
+    TransportAssets transport = load_transport_assets(dir, ra2, ua.pal);
     OreArt ore_art = load_ore_art(ra2);
     // Producible-unit roster [RE: production.md §1.6]; its vehicle voxel assets
     // are appended to the render vlist so launched MTNK/FV render as voxels.
@@ -2396,6 +2469,9 @@ int run_interactive(bool no_audio) {
     // demo-prod slots, and all gate outputs untouched.
     UnitRoster ur_ai = load_soviet_unit_roster(dir, ra2, ua, rules, art);
     for (const VehicleAssets& v : ur_ai.vehicles) vlist.push_back(&v);
+    // CB-1: the transport's hull renders via its own VehicleAssets (art-guarded;
+    // absent -> not pushed, FV fallback already covered by load_transport_assets).
+    if (transport.ok) vlist.push_back(&transport.va);
     // Register each infantry def's SHP + anim into the shared UnitAssets store
     // so launched infantry render (E1's "GI" is already present; other infantry
     // images are loaded on demand). Guarded: a missing SHP just leaves that unit
@@ -2430,6 +2506,23 @@ int run_interactive(bool no_audio) {
     // stepping in World::step (set_economy gates it on).
     if (ba.ok) wire_economy(world, ba, rules);
     if (va.ok) spawn_tank_squads(world, a, va, 3);
+    // CB-1: field one transport for the player (art-guarded; interactive
+    // only). Ring-scan from the start cell for a free walkable cell -- the
+    // same spawn discipline every other interactive extra uses.
+    if (transport.ok) {
+        const ra2assets::MapCell* tc0 = ra2engine::pick_start_cell(a.map);
+        bool placed = false;
+        for (int r = 1; tc0 && r <= 6 && !placed; ++r)
+            for (int dy = -r; dy <= r && !placed; ++dy)
+                for (int dx = -r; dx <= r && !placed; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                    const int x = tc0->x + dx, y = tc0->y + dy;
+                    if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                        world.add_combat_unit(x, y, /*house=*/0, transport.va.combat);
+                        placed = true;
+                    }
+                }
+    }
     // Player ConYard + enemy full base (with a refinery + War Miner) flanking
     // the squads.
     if (ba.ok) {
@@ -2525,6 +2618,8 @@ int run_interactive(bool no_audio) {
     // fire_flash/die_time seen last frame, per unit index (resized as units()
     // grows; never shrinks, matching World's own tombstone-not-erase model).
     std::vector<std::pair<double, double>> prev_audio_state;
+    // CB-1 unload key edge-detect state [spec §5].
+    bool prev_unload_key = false;
 
     Uint32 prev = SDL_GetTicks();
     while (!input.wants_quit()) {
@@ -2637,6 +2732,14 @@ int run_interactive(bool no_audio) {
         else if (my >= platform.height() - kEdge) pan_dy -= kPan;
         if (pan_dx || pan_dy) input.pan(pan_dx, pan_dy);
 
+        // CB-1 unload key [spec §5]: D (edge-detected) unloads every selected
+        // own transport with cargo -- routed by main.cpp like Escape ->
+        // placement-cancel (UI routing only; the sim rule lives in
+        // World::order_unload_selected + step_cargo).
+        const bool unload_key = ks[SDL_SCANCODE_D] != 0;
+        if (unload_key && !prev_unload_key) world.order_unload_selected();
+        prev_unload_key = unload_key;
+
         const Uint32 now = SDL_GetTicks();
         const double dt = (now - prev) / 1000.0;
         prev = now;
@@ -2687,6 +2790,20 @@ int run_interactive(bool no_audio) {
                         audio.mixer->play(audio.chrono_out);
                     else if (e.kind == ra2engine::HarvestEvent::Kind::ChronoIn)
                         audio.mixer->play(audio.chrono_in);
+                }
+        }
+        // CB-1 Enter/LeaveTransportSound (nice-to-have, NON-GATING [spec §6]
+        // -- cut this block first if the task runs long): the same guarded
+        // pattern as the chrono sounds above; absent audio degrades silently
+        // (mixer->play("") is a no-op). Refusals are silent.
+        {
+            const std::vector<ra2engine::CargoEvent> cev = world.take_cargo_events();
+            if (audio.enabled)
+                for (const ra2engine::CargoEvent& e : cev) {
+                    if (e.kind == ra2engine::CargoEvent::Kind::Board)
+                        audio.mixer->play(audio.enter_transport);
+                    else if (e.kind == ra2engine::CargoEvent::Kind::Eject)
+                        audio.mixer->play(audio.leave_transport);
                 }
         }
 

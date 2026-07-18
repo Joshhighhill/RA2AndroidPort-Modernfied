@@ -1168,3 +1168,47 @@ TEST_CASE("Input: an enemy factory is never selected or rallied (own-house gatin
     right_click(input, px, py, 2000);
     CHECK_FALSE(world.buildings()[b].has_rally);
 }
+
+TEST_CASE("Input: right-click on an own transport issues the enter order; carried units are unpickable") {
+    MapFile map;
+    if (!load_real_map(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    World world(map);
+    const MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // An FV-shaped transport (1 slot, SizeLimit 2) + a GI on nearby cells.
+    ra2engine::UnitCombat tc = gi_combat();
+    tc.image = "FV";
+    tc.is_vehicle = true;
+    tc.passengers = 1;
+    tc.size_limit = 2;
+    tc.size = 3;
+    int tx = -1, ty = -1, gx = -1, gy = -1;
+    for (int dx = 0; dx < 10 && gx < 0; ++dx) {
+        const int x = c->x + dx, y = c->y;
+        if (!world.walkable(x, y) || world.unit_at_cell(x, y) >= 0) continue;
+        if (tx < 0) { tx = x; ty = y; continue; }
+        gx = x; gy = y;
+    }
+    REQUIRE(gx >= 0);
+    world.add_combat_unit(tx, ty, 0, tc);            // unit 0: the transport
+    world.add_combat_unit(gx, gy, 0, gi_combat());   // unit 1: the GI
+    Camera cam;                                      // identity camera
+    Input in(world, cam, 4000, 4000);
+    world.units()[1].selected = true;
+    int px = 0, py = 0;
+    ground_px_for_unit(world.units()[0], px, py);
+    right_click(in, px, py, 10);
+    CHECK(world.units()[1].enter_target == 0);       // enter order, not a move
+    CHECK(world.units()[0].enter_target == -1);      // transport itself untouched
+    CHECK(world.units()[1].target == -1);            // no attack leaked through
+    // A CARRIED unit is unpickable (sweep site 12): stuff the GI aboard by
+    // hand and click its (stale) ground point -- nothing selects.
+    world.clear_selection();
+    world.units()[1].cargo_of = 0;
+    ground_px_for_unit(world.units()[1], px, py);
+    left_click(in, px, py, false, 500);
+    CHECK_FALSE(world.units()[1].selected);
+}

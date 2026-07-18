@@ -81,7 +81,8 @@ int Input::unit_under(int px, int py) const {
     long best_d2 = 0;
     for (std::size_t i = 0; i < us.size(); ++i) {
         const Unit& u = us[i];
-        if (!u.alive || u.die_time >= 0.0) continue;  // dead/dying: unpickable
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;  // dead/dying/
+                                                     // CARRIED: unpickable (CB-1)
         int gx, gy;
         unit_ground_px(u, gx, gy);
         if (px < gx - kHitHalfW || px > gx + kHitHalfW) continue;
@@ -210,10 +211,11 @@ void Input::commit_box(bool shift) {
     y0 = std::min(down_y_, cur_y_); y1 = std::max(down_y_, cur_y_);
     if (!shift) world_.clear_selection();  // plain box replaces; Shift+box adds
     for (Unit& u : world_.units()) {
-        // A box drag never selects hostiles or corpses -- house != 0 units
-        // and dead/dying units are skipped even if their ground point falls
+        // A box drag never selects hostiles, corpses, or CARRIED units --
+        // house != 0, dead/dying, and cargo_of >= 0 (aboard a transport,
+        // off-map [CB-1]) are skipped even if their ground point falls
         // inside the dragged rectangle.
-        if (u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (u.house != 0 || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         int gx, gy;
         unit_ground_px(u, gx, gy);
         if (gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1) u.selected = true;
@@ -230,10 +232,13 @@ void Input::commit_double(int px, int py) {
     const std::string type = world_.units()[idx].image;
     world_.clear_selection();
     for (Unit& u : world_.units()) {
-        // The "same type" scan is also house-0-only and skips corpses (a
-        // hostile or a dead unit sharing the clicked unit's image must never
+        // The "same type" scan is also house-0-only and skips corpses AND
+        // CARRIED units (a hostile, a dead unit, or one aboard a transport
+        // (cargo_of >= 0 [CB-1]) sharing the clicked unit's image must never
         // join the selection).
-        if (u.house != 0 || u.image != type || !u.alive || u.die_time >= 0.0) continue;
+        if (u.house != 0 || u.image != type || !u.alive || u.die_time >= 0.0 ||
+            u.cargo_of >= 0)
+            continue;
         int gx, gy;
         unit_ground_px(u, gx, gy);
         if (gx >= 0 && gx < view_w_ && gy >= 0 && gy < view_h_) u.selected = true;  // on-screen
@@ -384,7 +389,12 @@ void Input::handle(const InputEvent& ev) {
                         bool any_other = false;
                         for (std::size_t i = 0; i < world_.units().size(); ++i) {
                             const Unit& su = world_.units()[i];
-                            if (!su.selected || !su.alive || su.die_time >= 0.0) continue;
+                            // CB-1: also skip CARRIED units (cargo_of >= 0, aboard a
+                            // transport / off-map) -- a widening of the corpse/
+                            // validity skip, the fourth carry-guard site.
+                            if (!su.selected || !su.alive || su.die_time >= 0.0 ||
+                                su.cargo_of >= 0)
+                                continue;
                             if (su.is_harvester && su.house == 0)
                                 harv_idx.push_back(i);
                             else
@@ -407,6 +417,37 @@ void Input::handle(const InputEvent& ev) {
                         is_refinery_type(world_.buildings()[here_b].type)) {
                         world_.order_return();
                         break;  // handled
+                    }
+                    // CB-1 enter-transport gesture [RE: transport-cargo.md
+                    // §2/§3; spec §3]: a right-click on an OWN, alive,
+                    // non-dying TRANSPORT (passengers_max > 0 -- the Unit
+                    // carries the roster knowledge, the same way the
+                    // refinery-return gesture reads roster types) with a
+                    // selection containing at least one eligible
+                    // NON-transport unit issues the enter order instead of a
+                    // group move. Resolved AFTER the harvester branches (ore/
+                    // refinery win for miners) and BEFORE attack-building/
+                    // move. The original's "enter" cursor is cosmetic; ours
+                    // stays default (noted divergence, no new UI systems).
+                    if (idx >= 0 && world_.units()[idx].house == 0 &&
+                        world_.units()[idx].passengers_max > 0) {
+                        bool eligible = false;
+                        for (std::size_t si = 0; si < world_.units().size(); ++si) {
+                            const Unit& su = world_.units()[si];
+                            if (!su.selected || su.house != 0 || !su.alive ||
+                                su.die_time >= 0.0 || static_cast<int>(si) == idx)
+                                continue;
+                            if (su.passengers_max > 0) continue;  // transports
+                            eligible = true;                      // do not ride
+                            break;
+                        }
+                        if (eligible) {
+                            const int actor = lowest_selected();
+                            world_.order_enter_transport(idx);
+                            actions_.move_ordered = true;   // move-ack voice
+                            actions_.actor = actor;
+                            break;  // handled: no attack/move for this click
+                        }
                     }
                     // Interactive attack-building (Task 4 machinery wired to the
                     // player here): if the resolved ground cell lands on a
