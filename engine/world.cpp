@@ -228,6 +228,21 @@ std::vector<std::uint8_t> build_passability(const std::vector<ra2assets::MapCell
     return passable;
 }
 
+std::vector<std::uint8_t> build_water_passability(
+        const std::vector<ra2assets::LandType>& land_types,
+        const std::vector<std::uint8_t>& passable, int grid_w, int grid_h) {
+    std::vector<std::uint8_t> water(static_cast<size_t>(grid_w) * grid_h, 0);
+    const size_t n = std::min(land_types.size(), water.size());
+    for (size_t i = 0; i < n; ++i)
+        // [RE-GATE APPLIED: naval.md §1/§2] Water-land-type AND materialized: a
+        // ship never paths on a non-materialized water cell (intersect the Land
+        // grid). BINARY (matches the game's Ground[land][Float]==0.0 gate).
+        if (land_types[i] == ra2assets::LandType::Water &&
+            i < passable.size() && passable[i])
+            water[i] = 1;   // Water & passable -> passable to a Float ship
+    return water;
+}
+
 // Screen-space bounding box (camera-local projected pixels, level included)
 // of every cell in `map`. Declared in iso_renderer.hpp (it's conceptually a
 // renderer/camera helper -- main.cpp's centered_camera uses it), but defined

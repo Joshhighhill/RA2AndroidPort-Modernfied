@@ -12,6 +12,7 @@
 #include "ore.hpp"  // OreField/OreKind/OreRng (Economy phase)
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
+#include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "ra2assets/map.hpp"
 #include "unit_combat.hpp"  // UnitCombat (moved here to break the include cycle
                             // production.hpp -> unit_type.hpp -> world.hpp)
@@ -55,6 +56,13 @@ enum class HarvState : std::uint8_t {
 // altitude-driven ones (TakingOff->Cruising, Descending->Grounded) by
 // flight::advance_flight_state. Default Grounded is INERT (spec §8).
 enum class FlightState { Grounded, TakingOff, Cruising, Descending };
+
+// CB-3 Naval [RE: naval.md §1]: the movement domain a unit's A* reads. Land
+// (the DEFAULT -- every existing unit) resolves to the UNCHANGED passable_
+// grid; Water resolves to the new water_passable_ grid. Land = 0 so a
+// value-initialized/legacy Unit is Land (inert -- spec §8). Amphibious is
+// reserved for a later phase (land<->water transition is out of scope).
+enum class MovementDomain { Land = 0, Water = 1 };
 
 // A single visible/controllable actor in the world: its map cell + height
 // level (raw IsoMapPack5 coordinate space -- see ra2assets::MapCell), the
@@ -355,6 +363,23 @@ const ra2assets::MapCell* pick_start_cell(const ra2assets::MapFile& map);
 // with a hand-built cell vector without constructing a full MapFile.
 std::vector<std::uint8_t> build_passability(const std::vector<ra2assets::MapCell>& cells,
                                             int& grid_w, int& grid_h);
+
+// Builds the WATER passability grid in the SAME raw IsoMapPack5 (x, y) space
+// and the SAME grid_w*grid_h shape as build_passability -- a cell is water-
+// passable (1) iff its resolved LandType is Water AND it is materialized
+// (`passable[cell]`), else 0 [RE-GATE APPLIED: naval.md §1/§2 -- BINARY
+// passability (the game's Ground[LandType][SpeedType]==0.0 gate), intersected
+// with the Land grid so a ship never paths on a non-materialized water cell
+// ("Land grid filtered by Float passability"); a speed-weighted cost is a
+// carry-forward]. `land_types` is the per-cell LandType array main.cpp resolves
+// from the Theater (resolve_land_types), indexed cell = y*grid_w + x, same as
+// passable_. `passable` is the UNCHANGED Land grid (build_passability output).
+// Cells beyond either array's size stay 0. Free function (not a World member) so
+// it is unit-testable with hand-built LandType/passable vectors. Does NOT touch
+// passable_ / build_passability -- the Land grid is literally unchanged (spec §8).
+std::vector<std::uint8_t> build_water_passability(
+    const std::vector<ra2assets::LandType>& land_types,
+    const std::vector<std::uint8_t>& passable, int grid_w, int grid_h);
 
 // --- AI-1 base-planning phase [RE: ai-base.md] -----------------------------
 // Everything an AI house needs, resolved ONCE by main.cpp (assets/rules) and

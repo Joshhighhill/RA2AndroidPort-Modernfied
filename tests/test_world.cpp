@@ -3104,3 +3104,53 @@ TEST_CASE("World: one BlimpHE bomb 2-cell splash kills BOTH adjacent ground targ
     CHECK(dead(2));                              // adjacent target killed by the SAME splash
     CHECK(world.units()[0].alive);              // aircraft survived (no ground AA)
 }
+
+TEST_CASE("water passability: Water cells are 1, Clear/Beach/Rock are 0") {
+    using ra2assets::LandType;
+    // A 3x2 grid: row 0 = Clear, Water, Beach; row 1 = Rock, Water, Clear.
+    std::vector<LandType> lt = {
+        LandType::Clear, LandType::Water, LandType::Beach,
+        LandType::Rock,  LandType::Water, LandType::Clear,
+    };
+    // All cells materialized (Land grid all-1): water = LandType==Water.
+    std::vector<std::uint8_t> pass(6, 1);
+    std::vector<std::uint8_t> w = ra2engine::build_water_passability(lt, pass, 3, 2);
+    REQUIRE(w.size() == 6u);
+    CHECK(w[0] == 0);   // Clear
+    CHECK(w[1] == 1);   // Water
+    CHECK(w[2] == 0);   // Beach (0% for plain Float)
+    CHECK(w[3] == 0);   // Rock
+    CHECK(w[4] == 1);   // Water
+    CHECK(w[5] == 0);   // Clear
+}
+
+TEST_CASE("water passability: a Water cell that is NOT materialized stays 0") {
+    // [RE-GATE APPLIED: naval.md §1] the intersection with the Land grid -- a
+    // ship never paths on a non-materialized water cell.
+    using ra2assets::LandType;
+    std::vector<LandType> lt = { LandType::Water, LandType::Water };
+    std::vector<std::uint8_t> pass = { 1, 0 };   // cell 1 not materialized
+    std::vector<std::uint8_t> w = ra2engine::build_water_passability(lt, pass, 2, 1);
+    REQUIRE(w.size() == 2u);
+    CHECK(w[0] == 1);   // Water AND materialized
+    CHECK(w[1] == 0);   // Water but NOT materialized -> blocked
+}
+
+TEST_CASE("water passability: an empty/short LandType array yields an all-0 grid") {
+    std::vector<std::uint8_t> pass(12, 1);
+    std::vector<std::uint8_t> w = ra2engine::build_water_passability({}, pass, 4, 3);
+    CHECK(w.size() == 12u);
+    for (std::uint8_t v : w) CHECK(v == 0);   // default-empty water grid (spec §8)
+}
+
+TEST_CASE("water passability: build_passability output is byte-identical to today") {
+    // Regression pin: adding the water grid must not perturb the Land grid.
+    std::vector<ra2assets::MapCell> cells;
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) { ra2assets::MapCell c; c.x = x; c.y = y; cells.push_back(c); }
+    int gw = 0, gh = 0;
+    std::vector<std::uint8_t> land = ra2engine::build_passability(cells, gw, gh);
+    CHECK(gw == 4);
+    CHECK(gh == 4);
+    for (std::uint8_t v : land) CHECK(v == 1);   // all 16 materialized -> walkable, unchanged
+}
