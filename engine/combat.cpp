@@ -323,7 +323,16 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
         // executing a move order walks on without stopping to fight; it will
         // acquire on arrival if a hostile is still in range.
         if (u.target == -1) {
-            if (u.moving()) { /* no auto-acquire while under a move order */ }
+            // No auto-acquire while under a move order. A ground unit's move is
+            // its A* path (moving()); an aircraft cruising or taking off toward
+            // a flight goal (has_flight_goal, with an empty ground path) is the
+            // flight analog -- it flies its route without stopping to fight,
+            // exactly as a ground unit walks on [RE-GATE APPLIED: aircraft.md §6
+            // -- a Move order overrides auto-attack; an explicit order_attack
+            // sets u.target and skips this block, so air-to-ground attack is
+            // unaffected]. Cannot change the 9 ground-only gates: has_flight_goal
+            // is always false there.
+            if (u.moving() || u.has_flight_goal) { /* no auto-acquire under a move order */ }
             else {
                 int best = -1;
                 double best_d = 0.0;

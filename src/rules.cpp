@@ -262,7 +262,10 @@ std::string Rules::free_unit(const std::string& id) const {
 }
 
 std::string Rules::locomotor(const std::string& id) const {
-    return ini_->get(id, "Locomotor", "");
+    // The real [ZEP] Locomotor value carries an inline comment
+    // ("{92612C46-...} ;Jumpjet"); strip it (as every other Rules accessor
+    // and the game's own INI reader do) so the CLSID compares clean.
+    return strip_inline_comment(ini_->get(id, "Locomotor", ""));
 }
 
 bool Rules::balloon_hover(const std::string& id) const {

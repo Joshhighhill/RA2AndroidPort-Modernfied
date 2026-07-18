@@ -5930,6 +5930,285 @@ int run_demo_transport() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-aircraft helpers -------------------------------------------------
+
+// FNV fold of the flight-phase state [spec §7]: every unit's (cell_x, cell_y,
+// alive, hp) PLUS each aircraft's (round(altitude), flight_state, target) and
+// the occupancy-held count for airborne units (must be 0). Folded at the
+// demo's four fixed checkpoints (post-takeoff, post-fly, post-attack, end). A
+// NEW accumulator; world_hash and every prior *_hash UNTOUCHED.
+uint64_t aircraft_fold(uint64_t h, const ra2engine::World& world) {
+    const std::vector<ra2engine::Unit>& us = world.units();
+    for (const ra2engine::Unit& u : us) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+    }
+    for (const ra2engine::Unit& u : us) {
+        if (!u.is_aircraft) continue;
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(u.altitude)));
+        h = fnv_mix(h, static_cast<uint64_t>(static_cast<int>(u.flight_state)));
+        h = fnv_mix(h, static_cast<uint64_t>(u.target + 1));
+    }
+    // Airborne units own NO cell [spec §7 step 2].
+    uint64_t airborne_cells = 0;
+    const ra2engine::Occupancy& occ = world.occupancy();
+    for (int y = 0; y < occ.height(); ++y)
+        for (int x = 0; x < occ.width(); ++x) {
+            const int o = occ.at(x, y);
+            if (o >= 0 && o < static_cast<int>(us.size()) && us[o].is_aircraft &&
+                us[o].flight_state != ra2engine::FlightState::Grounded)
+                ++airborne_cells;
+        }
+    h = fnv_mix(h, airborne_cells);
+    return h;
+}
+
+struct DemoAircraftResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the aircraft demo [spec §7] (headless or rendered --
+// bit-identical): on the standard demo map, spawn one ZEP (house 0) + TWO
+// adjacent hostile ground GI targets (house 1, one cell apart), all scripted
+// (no player input):
+//   1. TAKEOFF: order a move -> release the ground cell, ascend to cruise.
+//   2. FLY: cruise straight-line to a distant cell over any obstacle
+//      (occ_held=0 while airborne, folded into the hash).
+//   3. ATTACK: order the aircraft to attack target A; it flies to range and
+//      drops ONE bomb whose BlimpHE 2-cell splash must kill BOTH adjacent
+//      targets (A at the impact cell + B one cell away) [D5].
+//   4. RESUME: run fixed frames; the Kirov holds cruise (BalloonHover).
+// aircraft_hash = FNV folded at the four checkpoints. Wedge guards: takeoff
+// observed AND airborne cruise (occ_held=0) observed AND both splash targets
+// dead, else ok=false (exit 1 -- the gate can never pass vacuously).
+DemoAircraftResult simulate_aircraft(Assets& a, UnitAssets& ua, const AircraftAssets& aa,
+                                     const std::vector<const VehicleAssets*>& vlist,
+                                     bool render, SDL_Renderer* ren,
+                                     ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                                     int W, int H, const std::string& start_png,
+                                     const std::string& end_png) {
+    DemoAircraftResult r;
+    if (!aa.ok) { r.ok = false; return r; }
+    ra2engine::World world = build_world(a, ua, 0);
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    if (!pc) { r.ok = false; return r; }
+
+    // Spawn the aircraft (unit 0) + TWO adjacent hostile ground GI targets
+    // (units 1 & 2, one cell apart) so ONE BlimpHE 2-cell splash kills BOTH
+    // [RE-GATE APPLIED: aircraft.md §4 -> combat.md §7, D5]. ua.gi is a
+    // UnitCombat; its warhead CellSpread<1 does not matter -- the ATTACKER's
+    // (ZEP) CellSpread=2 drives the splash.
+    world.add_combat_unit(pc->x, pc->y, /*house=*/0, aa.va.combat);
+    const int z_idx = 0;
+    world.add_combat_unit(pc->x + 8, pc->y + 6, /*house=*/1, ua.gi);  // target A (splash center)
+    world.add_combat_unit(pc->x + 9, pc->y + 6, /*house=*/1, ua.gi);  // target B (1 cell away)
+    const int tgt_idx = 1;
+    const int tgt2_idx = 2;
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[aircraft] variant=%s cruise_alt=%.0f speed=%.3f climb=%.0f omni=%s",
+                      aa.id.c_str(), aa.va.combat.cruise_altitude, aa.va.combat.flight_speed,
+                      aa.va.combat.climb_rate, aa.va.combat.omni_fire ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    const double dt = 1.0 / 15.0;
+    long frame = 0;
+    bool took_off = false, cruised_airborne = false;
+    int hits = 0;
+    int splash_kills = 0;                        // D5: how many of the 2 targets died
+    int prev_hp = world.units()[tgt_idx].hp;
+    uint64_t h = 0xcbf29ce484222325ull;         // FNV-1a offset basis
+
+    auto dead = [&](int i) {
+        return !world.units()[i].alive || world.units()[i].die_time >= 0.0;
+    };
+
+    auto airborne_occ = [&]() {
+        int held = 0;
+        const ra2engine::Occupancy& occ = world.occupancy();
+        for (int y = 0; y < occ.height(); ++y)
+            for (int x = 0; x < occ.width(); ++x) {
+                const int o = occ.at(x, y);
+                if (o == z_idx && world.units()[z_idx].flight_state != ra2engine::FlightState::Grounded)
+                    ++held;
+            }
+        return held;
+    };
+    auto step_one = [&]() {
+        world.step(dt);
+        const ra2engine::Unit& z = world.units()[z_idx];
+        if (z.flight_state != ra2engine::FlightState::Grounded && z.altitude > 0.0)
+            took_off = true;
+        if (z.flight_state == ra2engine::FlightState::Cruising && z.altitude > 0.0 &&
+            airborne_occ() == 0)
+            cruised_airborne = true;
+        const int hp = world.units()[tgt_idx].hp;
+        if (hp < prev_hp) { ++hits; }
+        prev_hp = hp;
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+        }
+    };
+
+    // 1) TAKEOFF: order a move -> release cell, ascend to cruise.
+    world.order_unit_move(z_idx, pc->x, pc->y);        // takeoff in place
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+    while (frame < 600 && world.units()[z_idx].flight_state != ra2engine::FlightState::Cruising)
+        step_one();
+    h = aircraft_fold(h, world);                        // checkpoint 1: post-takeoff
+    {
+        char b[120];
+        std::snprintf(b, sizeof b, "[air] takeoff alt=%.0f/%.0f cell_released=%s frame=%ld",
+                      world.units()[z_idx].altitude, aa.va.combat.cruise_altitude,
+                      airborne_occ() == 0 ? "yes" : "no", frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 2) FLY: cruise straight to a distant cell (over any obstacle).
+    world.order_unit_move(z_idx, pc->x + 14, pc->y + 10);
+    while (frame < 2400 && world.units()[z_idx].has_flight_goal) step_one();
+    h = aircraft_fold(h, world);                        // checkpoint 2: post-fly
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[air] cruise arrived=(%d,%d) alt=%.0f occ_held=%d frame=%ld",
+                      world.units()[z_idx].cell_x, world.units()[z_idx].cell_y,
+                      world.units()[z_idx].altitude, airborne_occ(), frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 3) ATTACK: order the aircraft to attack ground target A; it flies to
+    //    range and drops ONE bomb whose BlimpHE 2-cell splash must kill BOTH
+    //    adjacent targets (A at the impact cell + B one cell away) [D5].
+    world.clear_selection();
+    world.units()[z_idx].selected = true;
+    world.order_attack(tgt_idx);
+    while (frame < 5000 && !(dead(tgt_idx) && dead(tgt2_idx)))
+        step_one();
+    h = aircraft_fold(h, world);                        // checkpoint 3: post-attack
+    splash_kills = (dead(tgt_idx) ? 1 : 0) + (dead(tgt2_idx) ? 1 : 0);
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[air] hit target=%d dead=%s | target=%d dead=%s | splash_kills=%d hits=%d frame=%ld",
+                      tgt_idx, dead(tgt_idx) ? "yes" : "no",
+                      tgt2_idx, dead(tgt2_idx) ? "yes" : "no",
+                      splash_kills, hits, frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 4) RESUME: fixed window; the Kirov holds cruise (BalloonHover).
+    const long resume_until = frame + 150;
+    while (frame < resume_until) step_one();
+    h = aircraft_fold(h, world);                        // checkpoint 4: end
+    r.hash = h;
+
+    {
+        char b[144];
+        std::snprintf(b, sizeof b,
+                      "[aircraft] final took_off=%s cruised=%s hits=%d splash_kills=%d frame=%ld",
+                      took_off ? "yes" : "no", cruised_airborne ? "yes" : "no",
+                      hits, splash_kills, frame);
+        r.witness.emplace_back(b);
+    }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[aircraft] aircraft_hash=%016llx",
+                  static_cast<unsigned long long>(r.hash));
+    r.witness.emplace_back(hb);
+
+    // Wedge guards [spec §7]: the gate can never pass vacuously.
+    if (!took_off) { r.ok = false; r.witness.emplace_back("[aircraft] WEDGE: no takeoff"); }
+    if (!cruised_airborne) {
+        r.ok = false;
+        r.witness.emplace_back("[aircraft] WEDGE: no airborne cruise with occ_held=0");
+    }
+    // D5: strengthened -- ONE bomb's BlimpHE 2-cell splash must kill BOTH
+    // adjacent targets, proving the splash (not just a single hit).
+    if (splash_kills < 2) {
+        r.ok = false;
+        r.witness.emplace_back(
+            "[aircraft] WEDGE: BlimpHE splash did not kill BOTH adjacent targets (need 2 kills from one bomb)");
+    }
+    if (render) { capture_png(ren, end_png, W, H); }   // capture the ALREADY-rendered frame
+    return r;
+}
+
+// --demo-aircraft: the CB-2 flight integration gate (10th permanent
+// byte-identity gate). Mirrors run_demo_transport exactly: runs
+// simulate_aircraft rendered (hidden window + start/end screenshots) then
+// headless from a FRESH World, and byte-compares the two witness logs +
+// hashes. Exit 0 iff both runs are byte-identical AND both ok. NO hardcoded
+// hash literal -- compute-and-self-compare; the controller pins the observed
+// value in the README gate table.
+int run_demo_aircraft() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_aircraft_start.png";
+    const std::string end_png = scratch + "demo_aircraft_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    AircraftAssets aa = load_aircraft_assets(dir, ra2, ua.pal);
+    if (!aa.ok) {
+        std::cerr << "[demo-aircraft] FAILED: aircraft art unavailable (ZEP/ORCA/BEAG)\n";
+        return 1;
+    }
+    std::vector<const VehicleAssets*> vlist{&aa.va};
+
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(pc->x + 7, pc->y + 5, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    DemoAircraftResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-aircraft)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_aircraft(a, ua, aa, vlist, /*render=*/true, ren, &tc, &cam,
+                                   W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    DemoAircraftResult r2 = simulate_aircraft(a, ua, aa, vlist, /*render=*/false, nullptr,
+                                              nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-aircraft] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d aircraft_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -6017,6 +6296,7 @@ int main(int argc, char** argv) {
         bool demo_ai_team = false;
         bool demo_ai_trigger = false;
         bool demo_transport = false;
+        bool demo_aircraft = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -6069,6 +6349,8 @@ int main(int argc, char** argv) {
                 demo_ai_trigger = true;
             } else if (arg == "--demo-transport") {
                 demo_transport = true;
+            } else if (arg == "--demo-aircraft") {
+                demo_aircraft = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
@@ -6084,6 +6366,7 @@ int main(int argc, char** argv) {
         if (demo_ai_team) return run_demo_ai_team();
         if (demo_ai_trigger) return run_demo_ai_trigger();
         if (demo_transport) return run_demo_transport();
+        if (demo_aircraft) return run_demo_aircraft();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
