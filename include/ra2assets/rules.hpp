@@ -152,6 +152,15 @@ public:
     // [id] FreeUnit=, or "" if absent.
     std::string free_unit(const std::string& id) const;
 
+    // [id] Locomotor= (the CLSID string), or "" if absent [RE: aircraft.md §1].
+    std::string locomotor(const std::string& id) const;
+
+    // [id] BalloonHover=, true iff "yes"/"true" (case-insensitive) [aircraft.md §2].
+    bool balloon_hover(const std::string& id) const;
+
+    // [weapon] OmniFire=, true iff "yes"/"true" (case-insensitive) [aircraft.md §4].
+    bool weapon_omnifire(const std::string& weapon) const;
+
     // [id] NumberOfDocks=, or 0 if absent.
     int number_of_docks(const std::string& id) const;
 

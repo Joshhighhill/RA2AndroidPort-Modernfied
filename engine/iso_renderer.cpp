@@ -254,7 +254,7 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
 
 bool draw_voxel_sprite(void* sdl_renderer, TextureCache& tc, const std::string& key,
                        const VoxelSprite& s, double fx, double fy, int level,
-                       const Camera& cam, int view_w, int view_h) {
+                       const Camera& cam, int view_w, int view_h, int extra_dy) {
     if (s.w <= 0 || s.h <= 0) return false;
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
 
@@ -268,7 +268,8 @@ bool draw_voxel_sprite(void* sdl_renderer, TextureCache& tc, const std::string& 
     const int center_x =
         static_cast<int>(std::lround((fx - fy) * hw)) + cam.x + kTileW / 2;
     const int center_y =
-        static_cast<int>(std::lround((fx + fy) * hh - level * kLevelPx)) + cam.y + kTileH / 2;
+        static_cast<int>(std::lround((fx + fy) * hh - level * kLevelPx)) + cam.y +
+        kTileH / 2 - extra_dy;   // CB-2: raised-draw offset for airborne sprites
 
     SDL_Rect dst;
     dst.x = center_x - s.anchor_x;
@@ -296,6 +297,24 @@ static void tile_center_screen(double fx, double fy, int level, const Camera& ca
     out_x = static_cast<int>(std::lround((fx - fy) * hw)) + cam.x + kTileW / 2;
     out_y = static_cast<int>(std::lround((fx + fy) * hh - level * kLevelPx)) + cam.y +
             kTileH / 2;
+}
+
+void draw_ground_shadow(void* sdl_renderer, double fx, double fy, int level,
+                        int width_px, const Camera& cam, int view_w, int view_h) {
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+    int cx, cy;
+    tile_center_screen(fx, fy, level, cam, cx, cy);
+    const int w = width_px > 0 ? width_px : kTileW;
+    const int hh = w / 4;                         // 2:1 iso, half-height of the blob
+    if (cx + w < 0 || cy + hh < 0 || cx - w >= view_w || cy - hh >= view_h) return;
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 110);   // dark, translucent
+    // Filled iso diamond: horizontal scanlines whose half-width tapers to 0.
+    for (int dy = -hh; dy <= hh; ++dy) {
+        const int hw = (w / 2) * (hh - (dy < 0 ? -dy : dy)) / (hh == 0 ? 1 : hh);
+        SDL_Rect row{cx - hw, cy + dy, 2 * hw + 1, 1};
+        SDL_RenderFillRect(renderer, &row);
+    }
 }
 
 void draw_selection(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w,

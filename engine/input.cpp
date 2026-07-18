@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "flight.hpp"         // altitude_to_screen_dy (CB-2 raised-hitbox pick)
 #include "iso_project.hpp"    // screen_to_cell
 #include "ra2assets/map.hpp"  // MapCell (level lookup for the level-aware ground target)
 
@@ -85,6 +86,13 @@ int Input::unit_under(int px, int py) const {
                                                      // CARRIED: unpickable (CB-1)
         int gx, gy;
         unit_ground_px(u, gx, gy);
+        // CB-2 Aircraft [RE: aircraft.md §3]: an airborne unit is drawn RAISED
+        // by altitude_to_screen_dy, so its hit box lives at the raised screen
+        // position; shift the ground point up to match. A grounded aircraft
+        // (altitude 0) picks normally. Interactive-only -- the scripted demos
+        // don't hit-test, so this never affects a gate.
+        if (u.is_aircraft && u.altitude > 0.0)
+            gy -= ra2engine::altitude_to_screen_dy(u.altitude);
         if (px < gx - kHitHalfW || px > gx + kHitHalfW) continue;
         if (py < gy - kHitUp || py > gy + kHitDown) continue;
         const long dx = px - gx, dy = py - gy;

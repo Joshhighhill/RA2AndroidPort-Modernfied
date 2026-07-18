@@ -40,6 +40,7 @@
 #include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
 #include "factory.hpp"      // primary_factory (unit exit handoff)
+#include "flight.hpp"       // altitude_to_screen_dy (CB-2 raised-sprite draw)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "iso_project.hpp"
@@ -560,6 +561,20 @@ struct ResolvedUnit {
     int speed = 0;
 };
 
+// Movement pace tuning: iso cells/sec = rules Speed * this. rulesmd Speed for
+// E1 is 4, so 4 * 0.75 = 3 cells/sec -- fast enough to visibly stride between
+// tiles, slow enough to read as walking (not teleporting) and to cross a
+// ~25-cell demo path in well under the 15s cap. Falls back to World's own
+// default if Speed is missing (0). Defined HERE (ahead of resolve_combat_unit)
+// because CB-2's JumpjetSpeed fallback converts base Speed with the SAME scale.
+constexpr double kCellsPerSecPerSpeed = 0.75;
+
+// Case-insensitive lowercasing (CB-2 Locomotor CLSID compare). File-local.
+inline std::string to_lower(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
 // Resolves one unit id and logs it (extends the old load_unit_assets [unit]
 // log line with the new combat fields) so a real-install run visibly
 // confirms which numbers got pinned for E1/E2 (Task 8 ground truth: E1 GI
@@ -578,6 +593,15 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
 
+    // CB-2 air-to-ground splash [RE-GATE APPLIED: aircraft.md §4 -> combat.md
+    // §7]: the warhead's splash radius + edge scale (BlimpBomb -> BlimpHE
+    // CellSpread=2 PercentAtMax=.5). Fed to combat.cpp's apply_spread_damage,
+    // GATED on cell_spread >= 1 -- so every existing sub-1-cell warhead (tank
+    // AP CellSpread=.3, infantry) keeps its EXACT single-target path; only
+    // CellSpread>=1 warheads (BlimpHE=2) splash. Default 0 = single-target.
+    r.combat.cell_spread = rules.section_double(warhead, "CellSpread", 0.0);
+    r.combat.percent_at_max = rules.section_double(warhead, "PercentAtMax", 1.0);
+
     // CB-1 cargo stats [RE-GATE APPLIED: transport-cargo.md §1 -- absent-key
     // defaults CONFIRMED: Passengers/SizeLimit -> 0, Size -> 1. In the
     // binary Size/SizeLimit are doubles (type +0x380/+0x388); int is exact
@@ -589,6 +613,41 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.passengers = (int)rules.section_double(unit_id, "Passengers", 0.0);
     r.combat.size_limit = (int)rules.section_double(unit_id, "SizeLimit", 0.0);
     r.combat.size = (int)rules.section_double(unit_id, "Size", 1.0);
+
+    // CB-2 flight stats [RE-GATE APPLIED: aircraft.md §1/§2/§5]. is_aircraft iff
+    // the type carries the Jumpjet locomotor CLSID (CONFIRMED from [ZEP]
+    // Locomotor=). D1: flight_turn = ROT<<1 (ROT x2) -- the FacingClass rate
+    // Link_To_Object arms from TechnoType+0x71C; JumpJetTurnRate (+0xD70) is
+    // VESTIGIAL and NOT read. D2: flight_speed = JumpjetSpeed (fallback base
+    // Speed) via the engine's EXISTING vehicle-speed conversion
+    // (kCellsPerSecPerSpeed -- the SAME scale ground vehicles use; the vanilla
+    // 12 leptons/frame is the documented divergence, voxel-render.md §5).
+    // climb/crash are per-frame Jumpjet floats x15 -> leptons/sec (the
+    // rot_u16_per_sec precedent). All default INERT for a ground unit.
+    static const std::string kJumpjetClsid = "{92612C46-F71F-11d1-AC9F-006008055BB5}";
+    const std::string loco = rules.locomotor(unit_id);
+    r.combat.is_aircraft =
+        (!loco.empty() && to_lower(loco) == to_lower(kJumpjetClsid));
+    if (r.combat.is_aircraft) {
+        // D2: JumpjetSpeed, falling back to base Speed (r.speed) when absent.
+        const double jjspeed = rules.section_double(unit_id, "JumpjetSpeed",
+                                                    static_cast<double>(r.speed));
+        const double jjclimb = rules.section_double(unit_id, "JumpjetClimb", 6.0);
+        const double jjcrash = rules.section_double(unit_id, "JumpjetCrash", 12.0);
+        // D1: ROT is the turn source -- reuse the SAME resolver the voxel
+        // vehicle path uses (rules.rot), NOT JumpJetTurnRate.
+        const double rot = static_cast<double>(rules.rot(unit_id));
+        r.combat.cruise_altitude = rules.section_double(unit_id, "JumpjetHeight", 500.0);
+        // D2: same vehicle-speed conversion ground vehicles use (Speed 6 ->
+        // 4.5 cps); ZEP JumpjetSpeed=5 -> 3.75 cells/sec in engine scale.
+        r.combat.flight_speed = jjspeed * kCellsPerSecPerSpeed;   // cells/sec
+        r.combat.climb_rate   = jjclimb * 15.0;                   // leptons/sec
+        r.combat.descend_rate = jjcrash * 15.0;
+        // D1: FacingClass rate = (ROT<<1)*256 u16/frame; x15 -> u16/sec.
+        r.combat.flight_turn  = (rot * 2.0) * 256.0 * 15.0;      // u16/sec
+        r.combat.balloon_hover = rules.balloon_hover(unit_id);
+        r.combat.omni_fire = rules.weapon_omnifire(primary);
+    }
 
     std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
               << " strength=" << r.combat.strength << " armor=" << r.combat.armor
@@ -675,15 +734,6 @@ UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra
     ua.cons_speed = cons.speed;
     return ua;
 }
-
-// Constructs the World (places the unit on a passable Clear cell -- see
-// world.hpp/pick_start_cell) and tags its Unit with the resolved image.
-// Walk pace tuning: iso cells/sec = rules Speed * this. rulesmd Speed for E1
-// is 4, so 4 * 0.75 = 3 cells/sec -- fast enough to visibly stride between
-// tiles, slow enough to read as walking (not teleporting) and to cross a
-// ~25-cell demo path in well under the 15s cap. Falls back to World's own
-// default if Speed is missing (0).
-constexpr double kCellsPerSecPerSpeed = 0.75;
 
 // Spawns `count` combat units of the given type/house on distinct walkable,
 // unoccupied cells, spiralling ring-by-ring out from (origin_x, origin_y).
@@ -902,6 +952,37 @@ TransportAssets load_transport_assets(const std::string& dir, const ra2assets::M
         std::cerr << "[transport] unavailable (HTK and FV art both missing); "
                      "cargo gestures degrade to no-ops\n";
     return ta;
+}
+
+// CB-2 Aircraft render assets [RE: aircraft.md]. load_vehicle_assets already
+// resolves the flight stats via resolve_combat_unit, so a candidate is usable
+// iff its voxel art loaded AND it is actually a flight-locomotor unit.
+struct AircraftAssets {
+    VehicleAssets va;      // voxel render assets + combat (flight stats included)
+    std::string id;        // "ZEP", "ORCA", or "BEAG"
+    bool ok = false;       // art present AND is_aircraft
+};
+
+AircraftAssets load_aircraft_assets(const std::string& dir, const ra2assets::MixFile& ra2,
+                                    const ra2assets::Palette& unit_pal) {
+    AircraftAssets aa;
+    for (const char* id : {"ZEP", "ORCA", "BEAG"}) {
+        VehicleAssets va = load_vehicle_assets(dir, ra2, unit_pal, id);
+        if (!va.ok || !va.combat.is_aircraft) continue;   // art-guard-drop -> fallback
+        aa.va = std::move(va);
+        aa.id = id;
+        aa.ok = true;
+        break;
+    }
+    if (aa.ok)
+        std::cerr << "[aircraft] id=" << aa.id
+                  << " cruise_alt=" << aa.va.combat.cruise_altitude
+                  << " speed=" << aa.va.combat.flight_speed
+                  << " climb=" << aa.va.combat.climb_rate
+                  << " omni=" << (aa.va.combat.omni_fire ? "yes" : "no") << "\n";
+    else
+        std::cerr << "[aircraft] unavailable (ZEP/ORCA/BEAG art missing)\n";
+    return aa;
 }
 
 // The Allied producible-unit roster + its render/cameo assets [RE-GATE
@@ -1626,18 +1707,29 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
 
     const std::string& img = va.combat.image;
     const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
+
+    // CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §3]: an airborne unit is drawn RAISED
+    // by altitude_to_screen_dy, with a ground shadow at the un-raised cell.
+    // Guarded on is_aircraft && altitude > 0 -- no existing demo spawns an
+    // aircraft, so no existing screenshot changes [spec §8].
+    const int extra_dy =
+        (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
+    if (extra_dy > 0)
+        ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
+                                      va.hull[u.house].sprites[bi].w, cam, W, H);
+
     ra2engine::draw_voxel_sprite(
         ren, tc, "vxl:" + img + ":h:" + std::to_string(u.house) + ":" + std::to_string(bi),
-        va.hull[u.house].sprites[bi], u.fx, u.fy, u.level, cam, W, H);
+        va.hull[u.house].sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     if (va.has_turret) {
         const int ti = ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings);
         ra2engine::draw_voxel_sprite(
             ren, tc, "vxl:" + img + ":t:" + std::to_string(u.house) + ":" + std::to_string(ti),
-            va.turret[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H);
+            va.turret[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
         if (va.has_barrel)
             ra2engine::draw_voxel_sprite(
                 ren, tc, "vxl:" + img + ":b:" + std::to_string(u.house) + ":" + std::to_string(ti),
-                va.barrel[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H);
+                va.barrel[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
@@ -1657,7 +1749,8 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
             static_cast<int>(std::lround((mx - my) * 15.0 - (va.flh[2] / 256.0) * 36.74));
         const int cx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
         const int cy =
-            static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15;
+            static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15 -
+            extra_dy;   // CB-2: track the raised hull when airborne
         SDL_Rect fr{cx + flash_dx - 3, cy + flash_dy - 3, 6, 6};
         if (!(fr.x + fr.w <= 0 || fr.y + fr.h <= 0 || fr.x >= W || fr.y >= H)) {
             SDL_SetRenderDrawColor(ren, 255, 230, 120, 255);

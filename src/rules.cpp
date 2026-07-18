@@ -261,6 +261,18 @@ std::string Rules::free_unit(const std::string& id) const {
     return ini_->get(id, "FreeUnit", "");
 }
 
+std::string Rules::locomotor(const std::string& id) const {
+    return ini_->get(id, "Locomotor", "");
+}
+
+bool Rules::balloon_hover(const std::string& id) const {
+    return is_truthy(ini_->get(id, "BalloonHover", "no"));
+}
+
+bool Rules::weapon_omnifire(const std::string& weapon) const {
+    return is_truthy(ini_->get(weapon, "OmniFire", "no"));
+}
+
 int Rules::number_of_docks(const std::string& id) const {
     return ini_->get_int(id, "NumberOfDocks", 0);
 }

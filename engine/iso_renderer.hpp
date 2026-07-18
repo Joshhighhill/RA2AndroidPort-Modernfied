@@ -127,7 +127,15 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
 // false (nothing drawn) on an empty sprite or a fully off-screen rect.
 bool draw_voxel_sprite(void* sdl_renderer, TextureCache& tc, const std::string& key,
                        const VoxelSprite& s, double fx, double fy, int level,
-                       const Camera& cam, int view_w, int view_h);
+                       const Camera& cam, int view_w, int view_h, int extra_dy = 0);
+
+// CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §3 -- the original's FUN_00755680 plots
+// the model silhouette in color 1 at the un-raised ground projection with no
+// z-test; CB-2 approximates it with a dark translucent filled diamond at the
+// ground cell, sized to the hull sprite width]. Drawn at altitude 0 (extra_dy
+// omitted), so it stays anchored under the raised sprite.
+void draw_ground_shadow(void* sdl_renderer, double fx, double fy, int level,
+                        int width_px, const Camera& cam, int view_w, int view_h);
 
 // House palette remap for unit sprites. Unit palettes (unittem.pal) reserve
 // indices 16..31 as the "remap ramp" -- the strip of colors the game
