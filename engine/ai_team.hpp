@@ -149,6 +149,14 @@ struct TeamInstance {
                                      // stalled re-issues of the CURRENT Executing
                                      // move before the pc is force-advanced (the
                                      // wedge-freedom guarantee) [RE: ai-team.md §2].
+    bool completed_success = false;  // AI-3 [RE: ai-trigger.md §6]: set TRUE only
+                                     // when the team runs its script's Disband
+                                     // (kOpDisband) success action; stays FALSE
+                                     // when it goes Disbanding via wipe (zero
+                                     // members). Task 4 reads it at disband to
+                                     // pick RegisterSuccess vs RegisterFailure
+                                     // (adjust_weight). ADDITIVE — no AI-2
+                                     // lifecycle transition changes.
 };
 
 // Per-house team state [RE: ai-team.md §2/§4]. `rng` is the engine-local

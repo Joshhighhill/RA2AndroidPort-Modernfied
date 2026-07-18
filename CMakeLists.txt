@@ -166,6 +166,12 @@ target_sources(ra2assets_tests PRIVATE tests/test_aimd.cpp engine/aimd_parse.cpp
 # a read-only TeamView (docs/re/ai-team.md §2/§3). Compiled into both this test
 # binary and ra2engine from one source of truth (same pattern as aimd_parse.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_ai_team.cpp engine/ai_team.cpp)
+# ai_trigger.cpp is pure C++17 (no SDL): the AI-3 AITriggerTypes weighted
+# trigger engine -- condition eval + enable filters + weighted-random selection
+# + adaptive weight dynamics over a read-only TriggerView (docs/re/ai-trigger.md).
+# Compiled into both this test binary and ra2engine from one source of truth
+# (same pattern as ai_team.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_ai_trigger.cpp engine/ai_trigger.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)

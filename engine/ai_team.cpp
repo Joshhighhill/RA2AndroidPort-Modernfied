@@ -290,6 +290,12 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                 }
                 case OpClass::Disband: {
                     // 0x31 (49): set success flag then disband [RE: ai-team.md §3].
+                    // The team ran its script to the success/disband action, so
+                    // mark the outcome SUCCESS for AI-3's weight attribution
+                    // (Task 4 reads completed_success at disband -> adjust_weight
+                    // RegisterSuccess). A wipe-driven Disbanding leaves this FALSE
+                    // [RE: ai-trigger.md §6]. ADDITIVE — no lifecycle change.
+                    team.completed_success = true;
                     team.state = TeamState::Disbanding;
                     return c;
                 }
