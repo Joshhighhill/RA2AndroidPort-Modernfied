@@ -5563,6 +5563,280 @@ int run_demo_ai_trigger() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-transport helpers ------------------------------------------------
+
+// FNV fold of the cargo-phase state [spec §7]: every unit's (cell_x, cell_y,
+// alive, cargo_of), each transport's cargo list (in order) + the derived
+// pip total-size (cargo_total_size -- capacity's COUNT is the folded list
+// length) + its cell, plus the draw-order size and a carried-units-own-
+// no-cells occupancy audit -- folded at the demo's four fixed checkpoints
+// (post-load, post-carry, post-unload, end). A NEW accumulator; world_hash/
+// econ_hash/prod_hash/ai_base_hash/ai_team_hash/ai_trigger_hash UNTOUCHED.
+uint64_t transport_fold(uint64_t h, const ra2engine::World& world) {
+    const std::vector<ra2engine::Unit>& us = world.units();
+    for (const ra2engine::Unit& u : us) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cargo_of + 1));
+    }
+    for (const ra2engine::Unit& u : us) {
+        if (u.passengers_max <= 0) continue;   // transports only
+        h = fnv_mix(h, static_cast<uint64_t>(u.cargo.size()));
+        for (int p : u.cargo) h = fnv_mix(h, static_cast<uint64_t>(p));
+        h = fnv_mix(h, static_cast<uint64_t>(ra2engine::cargo_total_size(us, u)));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+    }
+    // No carried unit is rendered or owns a cell [spec §7 step 2].
+    h = fnv_mix(h, static_cast<uint64_t>(ra2engine::unit_draw_order(us).size()));
+    uint64_t carried_cells = 0;
+    const ra2engine::Occupancy& occ = world.occupancy();
+    for (int y = 0; y < occ.height(); ++y)
+        for (int x = 0; x < occ.width(); ++x) {
+            const int o = occ.at(x, y);
+            if (o >= 0 && o < static_cast<int>(us.size()) && us[o].cargo_of >= 0)
+                ++carried_cells;
+        }
+    h = fnv_mix(h, carried_cells);
+    return h;
+}
+
+struct DemoTransportResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the transport demo [spec §7] (headless or rendered --
+// bit-identical): on the standard demo map, spawn one transport (HTK on this
+// install; the FV fallback scales the script to capacity 1) + capacity+1 GIs
+// for house 0, all scripted (no player input):
+//   1. LOAD: order all GIs to enter -- capacity board (witnessed per board;
+//      capacity is the passenger COUNT [RE-GATE APPLIED: transport-cargo.md
+//      §1]), the last is REFUSED at capacity (the exact-fill boundary AND
+//      the refusal both witnessed).
+//   2. CARRY: order the loaded transport to a distant cell; run to arrival;
+//      no passenger is rendered/occupying (folded into the hash).
+//   3. UNLOAD: eject one per logic frame onto facing-scatter cells
+//      (eject_cell; ejection begins immediately -- the DeployTime deploy-
+//      START delay is unpinned and NOT implemented, a documented
+//      carry-forward), LIFO (reverse boarding) witnessed [RE-GATE APPLIED:
+//      transport-cargo.md §4/§6].
+//   4. RESUME: run fixed frames; ejected GIs stand idle/guard normally.
+// transport_hash = FNV folded at the four checkpoints. Wedge guards: >=1
+// board AND >=1 eject AND >=1 capacity refusal AND LIFO eject order, else
+// ok=false (exit 1 -- the gate can never pass vacuously).
+DemoTransportResult simulate_transport(Assets& a, UnitAssets& ua, const TransportAssets& ta,
+                                       const std::vector<const VehicleAssets*>& vlist,
+                                       bool render, SDL_Renderer* ren,
+                                       ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                                       int W, int H, const std::string& start_png,
+                                       const std::string& end_png) {
+    DemoTransportResult r;
+    if (!ta.ok) { r.ok = false; return r; }
+    ra2engine::World world = build_world(a, ua, 0);
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    if (!pc) { r.ok = false; return r; }
+
+    // Spawn the transport (unit 0) + capacity+1 GIs (units 1..n).
+    const int cap = ta.va.combat.passengers;
+    const int n_pass = cap + 1;
+    world.add_combat_unit(pc->x, pc->y, /*house=*/0, ta.va.combat);
+    const int t_idx = 0;
+    spawn_squad(world, pc->x - 4, pc->y, n_pass, /*house=*/0, ua.gi);
+    {
+        char b[160];
+        std::snprintf(b, sizeof b,
+                      "[transport] variant=%s passengers=%d size_limit=%d size=%d gis=%d",
+                      ta.id.c_str(), cap, ta.va.combat.size_limit, ta.va.combat.size,
+                      n_pass);
+        r.witness.emplace_back(b);
+    }
+
+    const double dt = 1.0 / 15.0;
+    long frame = 0;
+    int boards = 0, refusals = 0, ejects = 0;
+    std::vector<int> board_seq, eject_seq;   // LIFO witness material
+    uint64_t h = 0xcbf29ce484222325ull;      // FNV-1a offset basis (world_hash's)
+
+    auto step_one = [&]() {
+        world.step(dt);
+        for (const ra2engine::CargoEvent& e : world.take_cargo_events()) {
+            char b[140];
+            if (e.kind == ra2engine::CargoEvent::Kind::Board) {
+                ++boards;
+                board_seq.push_back(e.unit);
+                std::snprintf(b, sizeof b, "[cargo] board unit=%d count=%d/%d frame=%ld",
+                              e.unit, e.x, e.y, frame);
+            } else if (e.kind == ra2engine::CargoEvent::Kind::Refuse) {
+                ++refusals;
+                std::snprintf(b, sizeof b,
+                              "[cargo] refuse unit=%d (full) count=%d/%d frame=%ld",
+                              e.unit, e.x, e.y, frame);
+            } else {
+                ++ejects;
+                eject_seq.push_back(e.unit);
+                std::snprintf(b, sizeof b,
+                              "[cargo] eject unit=%d cell=(%d,%d) order=%d frame=%ld",
+                              e.unit, e.x, e.y, ejects, frame);
+            }
+            r.witness.emplace_back(b);
+        }
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+        }
+    };
+
+    // 1) LOAD: select every GI and issue the enter order (oversubscribed by
+    //    one -- the capacity refusal is part of the script).
+    for (int i = 1; i <= n_pass; ++i) world.units()[i].selected = true;
+    world.order_enter_transport(t_idx);
+
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+    while (frame < 900 && boards + refusals < n_pass) step_one();
+    h = transport_fold(h, world);                     // checkpoint 1: post-load
+    {
+        char b[120];
+        std::snprintf(b, sizeof b, "[cargo] loaded boards=%d refusals=%d cargo=%d",
+                      boards, refusals, (int)world.units()[t_idx].cargo.size());
+        r.witness.emplace_back(b);
+    }
+
+    // 2) CARRY: drive the loaded transport to a distant cell.
+    world.clear_selection();
+    world.units()[t_idx].selected = true;
+    world.order_move_selected(pc->x + 12, pc->y + 8);
+    while (frame < 2400 && world.units()[t_idx].moving()) step_one();
+    h = transport_fold(h, world);                     // checkpoint 2: post-carry
+    {
+        char b[120];
+        std::snprintf(b, sizeof b, "[cargo] carry arrived=(%d,%d) cargo=%d frame=%ld",
+                      world.units()[t_idx].cell_x, world.units()[t_idx].cell_y,
+                      (int)world.units()[t_idx].cargo.size(), frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 3) UNLOAD: one eject per frame via the facing-scatter eject_cell, LIFO.
+    world.clear_selection();
+    world.units()[t_idx].selected = true;
+    world.order_unload_selected();
+    while (frame < 3000 && !world.units()[t_idx].cargo.empty()) step_one();
+    h = transport_fold(h, world);                     // checkpoint 3: post-unload
+
+    // 4) RESUME: fixed frames; ejected GIs stand idle/guard normally.
+    const long resume_until = frame + 150;
+    while (frame < resume_until) step_one();
+    h = transport_fold(h, world);                     // checkpoint 4: end
+    r.hash = h;
+
+    {
+        char b[140];
+        std::snprintf(b, sizeof b,
+                      "[transport] final boards=%d refusals=%d ejects=%d drawn=%d frame=%ld",
+                      boards, refusals, ejects,
+                      (int)ra2engine::unit_draw_order(world.units()).size(), frame);
+        r.witness.emplace_back(b);
+    }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[transport] transport_hash=%016llx",
+                  static_cast<unsigned long long>(r.hash));
+    r.witness.emplace_back(hb);
+
+    // Wedge guards [spec §7]: the gate can never pass vacuously.
+    if (boards < 1) { r.ok = false; r.witness.emplace_back("[transport] WEDGE: no board"); }
+    if (ejects < 1) { r.ok = false; r.witness.emplace_back("[transport] WEDGE: no eject"); }
+    if (refusals < 1) {
+        r.ok = false;
+        r.witness.emplace_back("[transport] WEDGE: no capacity refusal");
+    }
+    const std::vector<int> lifo_expect(board_seq.rbegin(), board_seq.rend());
+    if (eject_seq != lifo_expect) { // LIFO: eject order == REVERSE boarding order
+        r.ok = false;               // [RE-GATE APPLIED: transport-cargo.md §6 --
+                                    // CONFIRMED head-push/head-pop stack]
+        r.witness.emplace_back(
+            "[transport] WEDGE: eject order != LIFO (reverse boarding) order");
+    }
+    // Capture the ALREADY-rendered final frame WITHOUT stepping again (the
+    // --demo-ai-team FIX-3 rule: an extra rendered-only step could append a
+    // witness line and false-RED the byte-compare).
+    if (render) { capture_png(ren, end_png, W, H); }
+    return r;
+}
+
+// --demo-transport: the CB-1 cargo integration gate (9th permanent
+// byte-identity gate). Mirrors run_demo_ai_trigger exactly: runs
+// simulate_transport rendered (hidden window + start/end screenshots) then
+// headless from a FRESH World, and byte-compares the two witness logs +
+// hashes. Exit 0 iff both runs are byte-identical AND both ok. NO hardcoded
+// hash literal -- compute-and-self-compare; the controller pins the observed
+// value in the README gate table.
+int run_demo_transport() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_transport_start.png";
+    const std::string end_png = scratch + "demo_transport_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    TransportAssets ta = load_transport_assets(dir, ra2, ua.pal);
+    if (!ta.ok) {
+        std::cerr << "[demo-transport] FAILED: transport art unavailable (HTK and FV)\n";
+        return 1;
+    }
+    std::vector<const VehicleAssets*> vlist{&ta.va};
+
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(pc->x + 6, pc->y + 4, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    // Run 1: rendered (hidden window) + start/end screenshots.
+    DemoTransportResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-transport)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_transport(a, ua, ta, vlist, /*render=*/true, ren, &tc, &cam,
+                                    W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    // Run 2: headless -- identical script from a FRESH World.
+    DemoTransportResult r2 = simulate_transport(a, ua, ta, vlist, /*render=*/false, nullptr,
+                                                nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-transport] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d transport_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -5649,6 +5923,7 @@ int main(int argc, char** argv) {
         bool demo_ai_base = false;
         bool demo_ai_team = false;
         bool demo_ai_trigger = false;
+        bool demo_transport = false;
         bool demo_audio = false;
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
@@ -5699,6 +5974,8 @@ int main(int argc, char** argv) {
                 demo_ai_team = true;
             } else if (arg == "--demo-ai-trigger") {
                 demo_ai_trigger = true;
+            } else if (arg == "--demo-transport") {
+                demo_transport = true;
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
@@ -5713,6 +5990,7 @@ int main(int argc, char** argv) {
         if (demo_ai_base) return run_demo_ai_base();
         if (demo_ai_team) return run_demo_ai_team();
         if (demo_ai_trigger) return run_demo_ai_trigger();
+        if (demo_transport) return run_demo_transport();
         if (demo_combat) return run_demo_combat(combat_seed);
         if (demo_audio) return mode_demo_audio();
         if (demo_group) return run_demo_group(group_n, group_x, group_y);
