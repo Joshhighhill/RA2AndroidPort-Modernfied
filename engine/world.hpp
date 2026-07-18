@@ -171,6 +171,25 @@ struct Unit {
     int eject_counter = 0;       // eject_cell scatter-side alternator (+/-90 deg
                                  // by low bit), bumped once per eject
                                  // [transport-cargo.md §4]
+
+    // --- CB-2 Aircraft/Flight [RE: aircraft.md] -----------------------------
+    // ALL defaults INERT (spec §8): no existing demo spawns an aircraft and no
+    // existing spawn path sets is_aircraft=true, so every field holds its
+    // default in every existing demo; world_hash reads only cell/hp/alive and
+    // is untouched (strategy (a)). altitude is DERIVED into a screen offset at
+    // draw time -- no stored screen offset.
+    bool is_aircraft = false;                          // flight-locomotor unit
+    double altitude = 0.0;                             // leptons; 0 = on the ground
+    FlightState flight_state = FlightState::Grounded;  // Grounded/TakingOff/Cruising/Descending
+    double cruise_altitude = 0.0;                      // JumpjetHeight (leptons)
+    double climb_rate = 0.0;                           // JumpjetClimb (leptons/sec)
+    double descend_rate = 0.0;                         // JumpjetCrash (leptons/sec)
+    double flight_speed = 0.0;                         // cruise speed (cells/sec)
+    double flight_turn = 0.0;                          // heading turn (u16/sec)
+    bool balloon_hover = false;                        // never lands
+    bool omni_fire = false;                            // fire without turning
+    bool has_flight_goal = false;                      // a cruise goal is set
+    int flight_goal_x = 0, flight_goal_y = 0;          // cruise goal cell (NOT A*)
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
@@ -624,7 +643,6 @@ public:
     // each still-alive unit's terrain level from the map for rendering height.
     void step(double dt);
 
-private:
     // Per-unit body shared by order_move_selected (per selected unit, given
     // its formation-assigned cell) and step's MoveRequest execution (per
     // pursuing/returning unit, given step_combat's requested cell): paths
@@ -635,8 +653,13 @@ private:
     // single-unit Finding-1 cancel branch); otherwise fx/fy are left alone
     // (no backward snap) and the unit starts walking. No-op if idx is out of
     // range.
+    // CB-2 [RE: aircraft.md §1/§6]: for an is_aircraft unit this instead sets a
+    // FLIGHT GOAL and initiates takeoff/re-launch (no A*, no occupancy). Public
+    // as the direct single-unit order seam the flight World tests drive (a
+    // compile-time access change only -- no gate reads it).
     void order_unit_move(int idx, int gx, int gy);
 
+private:
     // --- AI-1 base-planning phase [RE: ai-base.md] ---
     struct HouseAiRec {
         bool is_ai = false;
@@ -684,6 +707,14 @@ private:
     void step_cargo(double dt);
     bool cargo_any_ = false;
     std::vector<CargoEvent> cargo_events_;
+
+    // CB-2 Aircraft [RE: aircraft.md §3/§6]: the airborne movement pass --
+    // takeoff/cruise/descend + altitude integration. A NEW pass inserted
+    // between step_cargo and step_turrets in step(); firewalled behind
+    // aircraft_any_ (false until the first aircraft is ordered) so every
+    // existing demo pays only the early return [spec §8].
+    void step_flight(double dt);
+    bool aircraft_any_ = false;
 
     // Fully-defined-inline POD mirror of HarvestEvent (kind stored as int,
     // via static_cast to/from HarvestEvent::Kind) -- see the forward-

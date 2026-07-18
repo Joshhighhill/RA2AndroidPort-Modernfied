@@ -2893,3 +2893,102 @@ TEST_CASE("World: ai_fill_trigger_view excludes a carried unit from the own-unit
         world.step(dt);
     CHECK(world.ai_trigger_state(1)->triggers_fired == 1);   // now counted
 }
+
+// ---- CB-2 Aircraft/Flight: World integration [RE: aircraft.md] ----
+namespace {
+// A minimal Jumpjet-shaped combat stat block for the flight World tests
+// (hand-built -- no rulesmd/install needed) [RE-GATE APPLIED: aircraft.md §5].
+ra2engine::UnitCombat zep_stats() {
+    ra2engine::UnitCombat c = gi_stats();       // start from a valid infantry block
+    c.image = "ZEP";
+    c.is_vehicle = true;
+    c.is_aircraft = true;
+    c.cruise_altitude = 750.0;
+    c.climb_rate = 90.0;                          // 6 leptons/frame * 15 = 90/sec
+    c.descend_rate = 180.0;                       // 12 * 15
+    c.flight_speed = 0.7;                         // ~cells/sec (test-only value)
+    c.flight_turn = 30.0 * 256.0;                 // test-only u16/sec
+    c.balloon_hover = true;
+    c.omni_fire = true;
+    return c;
+}
+}  // namespace
+
+TEST_CASE("World: aircraft takeoff releases its ground cell; airborne holds none") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    ra2engine::Unit& z = world.add_combat_unit(20, 20, /*house=*/0, zep_stats());
+    (void)z;
+    const int ti = 0;
+    // Grounded: it occupies its spawn cell (add_unit set it).
+    CHECK(world.occupancy().at(20, 20) == ti);
+    // Order it to a distant cell -> takeoff releases the ground cell immediately.
+    world.order_unit_move(ti, 20, 30);
+    CHECK(world.occupancy().at(20, 20) < 0);     // released on takeoff
+    // Step until airborne+cruising; it must hold NO occ_ cell anywhere.
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 400 && world.units()[ti].flight_state != ra2engine::FlightState::Cruising; ++f)
+        world.step(dt);
+    CHECK(world.units()[ti].flight_state == ra2engine::FlightState::Cruising);
+    CHECK(world.units()[ti].altitude == doctest::Approx(750.0));
+    int held = 0;
+    const ra2engine::Occupancy& occ = world.occupancy();
+    for (int y = 0; y < occ.height(); ++y)
+        for (int x = 0; x < occ.width(); ++x)
+            if (occ.at(x, y) == ti) ++held;
+    CHECK(held == 0);                            // airborne: reserves no cell
+}
+
+TEST_CASE("World: a ground unit may occupy the cell beneath an airborne aircraft") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.add_combat_unit(20, 20, /*house=*/0, zep_stats());   // idx 0
+    world.order_unit_move(0, 20, 30);
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 200; ++f) world.step(dt);
+    // The aircraft is now airborne over some cell; a ground GI can claim it.
+    ra2engine::Unit& g = world.add_combat_unit(20, 20, /*house=*/0, gi_stats());  // idx 1
+    world.step(dt);
+    CHECK(world.occupancy().at(g.cell_x, g.cell_y) == 1);      // ground unit holds it
+}
+
+TEST_CASE("World: step_units never runs ground movement on an airborne aircraft") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.add_combat_unit(20, 20, /*house=*/0, zep_stats());
+    world.order_unit_move(0, 20, 30);
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 400; ++f) world.step(dt);
+    // It reached its goal via step_flight (straight-line), never via A*: path
+    // is empty the whole time and it arrived by fx/fy, not by walking cells.
+    CHECK(world.units()[0].path.empty());
+    CHECK(world.units()[0].cell_y > 20);         // it moved toward y=30
+}
+
+TEST_CASE("World: ground units do NOT auto-acquire an aircraft") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.add_combat_unit(20, 20, /*house=*/0, zep_stats());       // aircraft, house 0
+    world.order_unit_move(0, 20, 21);                              // take off, hover near
+    ra2engine::Unit& enemy = world.add_combat_unit(20, 22, /*house=*/1, gi_stats());
+    (void)enemy;
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 200; ++f) world.step(dt);
+    CHECK(world.units()[1].target == -1);        // enemy GI never targets the aircraft
+}

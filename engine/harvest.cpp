@@ -173,8 +173,10 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events) {
     for (int idx = 0; idx < (int)units.size(); ++idx) {
         Unit& u = units[idx];
-        if (!u.is_harvester || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0)
-            continue;  // carried harvester: mission FSM parks (CB-1)
+        if (!u.is_harvester || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 ||
+            u.is_aircraft)
+            continue;  // carried harvester: mission FSM parks (CB-1); CB-2: an
+                       // aircraft is never a harvester (data-unreachable, guarded)
 
         // Auto-resume after a manual move order [RE-GATE APPLIED §1 PROBABLE:
         // "was harvesting" flag restores the mission once the ordered move

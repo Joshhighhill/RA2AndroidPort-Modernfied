@@ -7,6 +7,7 @@
 
 #include "cargo.hpp"          // can_load/cargo_total_size/next_eject/eject_cell (CB-1)
 #include "combat.hpp"         // armor_index, step_combat, MoveRequest
+#include "flight.hpp"         // CB-2: step_altitude/cruise_step/heading_toward/advance_flight_state
 #include "factory.hpp"        // exit_cell/primary_factory/set_primary (Production phase)
 #include "group_move.hpp"     // assign_formation
 #include "harvest.hpp"        // step_harvest/HarvestMove/HarvestEvent/OreValues (Economy phase)
@@ -336,6 +337,16 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.passengers_max = c.passengers;
     u.size_limit = c.size_limit;
     u.size = c.size;
+    // CB-2 [RE: aircraft.md]: flight stats, inert unless the caller resolved
+    // them (default is_aircraft=false = a ground unit).
+    u.is_aircraft = c.is_aircraft;
+    u.cruise_altitude = c.cruise_altitude;
+    u.climb_rate = c.climb_rate;
+    u.descend_rate = c.descend_rate;
+    u.flight_speed = c.flight_speed;
+    u.flight_turn = c.flight_turn;
+    u.balloon_hover = c.balloon_hover;
+    u.omni_fire = c.omni_fire;
     return u;
 }
 
@@ -419,6 +430,11 @@ int World::unit_at_cell(int x, int y) const {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         const Unit& u = units_[i];
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;  // carried: unpickable
+        // CB-2 [RE-GATE APPLIED: aircraft.md §4/§6]: an airborne aircraft holds
+        // no occ_ cell; do not pick it out of a cell scan (a Grounded aircraft
+        // DOES hold its spawn cell and stays pickable). Data-driven no-op in
+        // every existing demo (is_aircraft=false).
+        if (u.is_aircraft && u.flight_state != FlightState::Grounded) continue;
         if (u.cell_x == x && u.cell_y == y) return static_cast<int>(i);
     }
     return -1;
@@ -427,6 +443,33 @@ int World::unit_at_cell(int x, int y) const {
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
+    // CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §1/§6]: an aircraft order sets
+    // a FLIGHT GOAL and takes off/cruises -- it never computes an A* path, never
+    // tests passable_, and reserves no occ_ cell while airborne (straight-line
+    // unpathed flight CONFIRMED; no RNG on the path). The ONE
+    // aircraft-aware branch in order_unit_move; ground units (is_aircraft
+    // false in every existing demo) take the exact existing path below.
+    if (u.is_aircraft) {
+        aircraft_any_ = true;                        // open the step_flight firewall
+        u.flight_goal_x = gx;
+        u.flight_goal_y = gy;
+        u.has_flight_goal = true;
+        if (u.flight_state == FlightState::Grounded) {
+            // Takeoff: release the ground cell ONCE (spec §3.2) -- add_unit
+            // claimed it at spawn; step_units skips aircraft so it is never
+            // re-set. altitude climbs in step_flight's TakingOff branch.
+            // keep=(-1,-1) releases ALL of this unit's cells including the
+            // ground cell (the combat.cpp release_all_of(idx,-1,-1) precedent);
+            // an airborne unit holds NO occupancy [spec §4].
+            occ_.release_all_of(idx, -1, -1);
+            u.flight_state = FlightState::TakingOff;
+        } else if (u.flight_state == FlightState::Descending) {
+            u.flight_state = FlightState::Cruising;  // re-launch mid-descent
+        }
+        u.path.clear();
+        u.path_idx = 0;
+        return;                                      // NO A*, NO occ reservation
+    }
     // Drop any stale next-cell reservation from an in-flight order (the
     // occupancy may still mark a cell this unit reserved but will now never
     // enter, which would block other units forever); re-assert only the
@@ -863,6 +906,48 @@ void World::step_cargo(double /*dt*/) {
     }
 }
 
+void World::step_flight(double dt) {
+    // FIREWALL (spec §8): until the first aircraft is ordered, this whole
+    // function is one branch -- the only cost every existing demo pays.
+    if (!aircraft_any_) return;
+
+    for (Unit& u : units_) {
+        if (!u.is_aircraft) continue;
+        if (!u.alive || u.die_time >= 0.0) continue;
+        if (u.flight_state == FlightState::Grounded) continue;  // parked: nothing to do
+
+        // 1) Altitude: ascend toward cruise (TakingOff) / descend toward 0
+        //    (Descending) at the state's rate; hold at cruise when Cruising
+        //    [RE-GATE APPLIED: aircraft.md §2].
+        const bool descending = (u.flight_state == FlightState::Descending);
+        const double target = descending ? 0.0 : u.cruise_altitude;
+        const double rate = descending ? u.descend_rate : u.climb_rate;
+        u.altitude = step_altitude(u.altitude, target, rate * dt);
+        u.flight_state = advance_flight_state(u.flight_state, u.altitude, u.cruise_altitude);
+
+        // 2) Cruise translation: turn toward the goal AND advance straight-line
+        //    the SAME frame (no heading-complete gate -- Process turns and
+        //    translates together; with OmniFire the flyer never needs to face
+        //    the target). Takeoff CLIMB and horizontal TRAVEL OVERLAP: the unit
+        //    translates while still ascending (TakingOff), it does NOT hold
+        //    horizontal until airborne -- the Kirov leaves the factory climbing
+        //    and moving at once [RE-GATE APPLIED: aircraft.md §1/§2/§3 -- D3].
+        //    cell_x/cell_y track the ground projection of fx/fy for the shadow
+        //    anchor + combat range, but claim NO occupancy [spec §4].
+        if ((u.flight_state == FlightState::Cruising ||
+             u.flight_state == FlightState::TakingOff) && u.has_flight_goal) {
+            const double gx = static_cast<double>(u.flight_goal_x);
+            const double gy = static_cast<double>(u.flight_goal_y);
+            u.body_facing = heading_toward(u.body_facing, gx - u.fx, gy - u.fy,
+                                           u.flight_turn * dt, u.omni_fire);
+            const bool arrived = cruise_step(u.fx, u.fy, gx, gy, u.flight_speed * dt);
+            u.cell_x = static_cast<int>(std::lround(u.fx));
+            u.cell_y = static_cast<int>(std::lround(u.fy));
+            if (arrived) u.has_flight_goal = false;   // hover at the goal (BalloonHover)
+        }
+    }
+}
+
 // --- AI-1 base-planning phase [RE: ai-base.md] ------------------------------
 
 void World::enable_ai_house(int house, AiHouseConfig cfg) {
@@ -1239,7 +1324,7 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house ||
-            u.is_harvester)
+            u.is_harvester || u.is_aircraft)  // CB-2: AI never fields/recruits aircraft
             continue;
         if (u.moving() || u.attack_order) continue;
         const int t = ai_unit_type_of(rec, u);
@@ -1257,8 +1342,8 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
 
 bool World::ai_quarry_exists(int house, int quarry) const {
     for (const Unit& u : units_)
-        if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && u.house != house &&
-            quarry_unit_match(quarry, u))
+        if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.is_aircraft &&
+            u.house != house && quarry_unit_match(quarry, u))  // CB-2: aircraft never a quarry
             return true;
     if (quarry_wants_buildings(quarry))
         for (const Building& b : buildings_)
@@ -1277,7 +1362,9 @@ int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
     long long bestd = 0;
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
-        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house == house) continue;
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft ||
+            u.house == house)
+            continue;  // CB-2: aircraft never a quarry
         if (!quarry_unit_match(quarry, u)) continue;
         const long long dx = u.cell_x - nx, dy = u.cell_y - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
@@ -1856,6 +1943,13 @@ void World::step(double dt) {
     // inside is the only cost every existing demo pays [spec §8].
     step_cargo(dt);
 
+    // CB-2 Aircraft [RE: aircraft.md §3.5/§6]: the airborne movement pass --
+    // takeoff/cruise/descend runs AFTER step_cargo and BEFORE step_turrets/
+    // step_combat, so the aircraft's post-move altitude/position is visible to
+    // combat targeting the SAME frame. A pure INSERTION; `if (!aircraft_any_)
+    // return;` inside is the only cost every existing demo pays [spec §8].
+    step_flight(dt);
+
     // Slew vehicle turrets AFTER movement and BEFORE combat so the aim gate
     // (vehicle_aimed) in step_combat sees this frame's post-slew turret
     // facing (docs/re/voxel-render.md §5). No-op for infantry.
@@ -2104,7 +2198,12 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         // falling through to the idle branch below would resurrect a
         // corpse's claim on its cell and wrongly block living units from
         // entering it.
-        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+        // CB-2 [RE-GATE APPLIED: aircraft.md §4/§6]: an airborne unit runs NO
+        // ground movement/occupancy; a Grounded aircraft keeps its spawn-set
+        // occ_ cell (add_unit set it; step_units never re-touches it) until
+        // takeoff releases it. Provably false in every existing demo
+        // (is_aircraft=false).
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft) continue;
 
         if (!u.moving()) {
             occ.set(u.cell_x, u.cell_y, self);  // idle units own their cell

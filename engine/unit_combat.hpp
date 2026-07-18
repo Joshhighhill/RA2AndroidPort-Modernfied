@@ -34,6 +34,24 @@ struct UnitCombat {
     int size = 1;              // Rules Size= (own bulk; pip weight only)
                                // [RE-GATE APPLIED: transport-cargo.md §1 --
                                // absent-key default 1 CONFIRMED]
+
+    // --- CB-2 Aircraft/Flight [RE: aircraft.md] ---
+    // Resolved once from Rules by main.cpp like every existing stat; ALL
+    // defaults inert (is_aircraft=false = a ground unit). Copied onto the Unit
+    // at add_combat_unit. Rates are per-SECOND (multiplied by dt in
+    // step_flight -- the rot_u16_per_sec precedent), converted from the
+    // recovered per-frame Jumpjet values at resolution time [RE-GATE APPLIED:
+    // aircraft.md §1/§2/§5].
+    bool is_aircraft = false;      // flight-locomotor type (Jumpjet CLSID)
+    double cruise_altitude = 0.0;  // JumpjetHeight (leptons)
+    double climb_rate = 0.0;       // JumpjetClimb (leptons/sec)
+    double descend_rate = 0.0;     // JumpjetCrash (leptons/sec)
+    double flight_speed = 0.0;     // cruise speed (cells/sec) from JumpjetSpeed
+                                   // (fallback base Speed) [D2, aircraft.md §1]
+    double flight_turn = 0.0;      // heading turn rate (u16/sec) from ROT x2 --
+                                   // NOT JumpJetTurnRate [D1, aircraft.md §1]
+    bool balloon_hover = false;    // BalloonHover: takes off once, never lands
+    bool omni_fire = false;        // weapon OmniFire: fire without turning
 };
 
 }  // namespace ra2engine

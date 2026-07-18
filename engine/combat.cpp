@@ -59,8 +59,13 @@ double dist_leptons(double x1, double y1, double x2, double y2) {
 bool valid_target(const std::vector<Unit>& units, int self_house, int idx) {
     if (idx < 0 || idx >= static_cast<int>(units.size())) return false;
     const Unit& v = units[idx];
-    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && v.house != self_house;
-    // carried: untargetable; an attacker whose target boards drops it here (CB-1)
+    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && !v.is_aircraft &&
+           v.house != self_house;
+    // carried: untargetable (CB-1). !v.is_aircraft: an airborne/ground aircraft
+    // is not a valid target -- air-to-air + ground AA are out [RE-GATE APPLIED:
+    // aircraft.md §4]. The aircraft's OWN targets are ground units (is_aircraft
+    // false), so its targeting is unaffected. Provably true (negation false) in
+    // every existing demo (is_aircraft=false).
 }
 
 // Fires `u`'s weapon at `v` (caller has already range/cooldown-checked).
