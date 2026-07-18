@@ -133,6 +133,35 @@ struct Unit {
                                      // or CMIN post-unload warp in transit)
     double harv_timer = 0.0;         // gulp/unload/rescan/warp accumulator
     bool manual_hold = false;        // player move order: pause auto-resume until arrival
+
+    // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---------------------
+    // ALL defaults INERT (spec §8): no existing demo issues a load/unload
+    // order and no existing spawn path sets passengers_max > 0, so every
+    // field below holds its default in every existing demo; world_hash reads
+    // only cell/hp/alive and is untouched. cargo/cargo_of/enter_target store
+    // unit INDICES -- stable for a World's lifetime (units are tombstoned,
+    // never erased; the same invariant `target` relies on).
+    int passengers_max = 0;      // capacity COUNT (Rules Passengers= bodies);
+                                 // 0 = not a transport [RE-GATE APPLIED:
+                                 // transport-cargo.md §1 -- NumPassengers <
+                                 // Passengers, a body count, NOT a Size pool]
+    int size_limit = 0;          // largest admissible passenger Size
+                                 // (SizeLimit=) -- a PER-PASSENGER cap [§1]
+    int size = 1;                // own bulk (Size=); feeds ONLY the pip display
+                                 // (cargo_total_size) [RE-GATE APPLIED:
+                                 // transport-cargo.md §1 -- absent-key defaults
+                                 // CONFIRMED: Passengers/SizeLimit -> 0,
+                                 // Size -> 1; Task 4 resolves real values]
+    std::vector<int> cargo;      // carried unit indices in boarding order;
+                                 // ejects pop the BACK (LIFO [RE-GATE APPLIED:
+                                 // transport-cargo.md §6])
+    int cargo_of = -1;           // >=0: index of the transport carrying this
+                                 // unit -- the unit is OFF-MAP (spec §4)
+    int enter_target = -1;       // pending enter order -> transport index
+    bool unload_pending = false; // pending unload order on this transport
+    int eject_counter = 0;       // eject_cell scatter-side alternator (+/-90 deg
+                                 // by low bit), bumped once per eject
+                                 // [transport-cargo.md §4]
 };
 
 // Per-image (per-unit-type), facing-aware animation data -- REPLACES the

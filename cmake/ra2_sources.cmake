@@ -58,6 +58,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/ore.cpp
     ${RA2_ROOT}/engine/harvest.cpp
     ${RA2_ROOT}/engine/factory.cpp
+    ${RA2_ROOT}/engine/cargo.cpp
     ${RA2_ROOT}/engine/ai_base.cpp
     ${RA2_ROOT}/engine/aimd_parse.cpp
     ${RA2_ROOT}/engine/ai_team.cpp

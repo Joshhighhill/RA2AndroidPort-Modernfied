@@ -150,6 +150,12 @@ target_sources(ra2assets_tests PRIVATE tests/test_harvest.cpp engine/harvest.cpp
 # (docs/re/production.md §1). Compiled into both this test binary and ra2engine
 # from one source of truth (same pattern as harvest.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_factory.cpp engine/factory.cpp)
+# cargo.cpp is pure C++17 (no SDL): CB-1 transport/cargo -- the COUNT
+# capacity can_load predicate, LIFO next_eject, the facing-scatter eject_cell
+# picker, and the pip-only cargo_total_size metric
+# (docs/re/transport-cargo.md). Compiled into both this test binary and
+# ra2engine from one source of truth (same pattern as factory.cpp above).
+target_sources(ra2assets_tests PRIVATE tests/test_cargo.cpp engine/cargo.cpp)
 # ai_base.cpp is pure C++17 (no SDL): the AI-1 base-planning brain --
 # difficulty mods, urgency ordering (next_build), placement scan
 # (find_build_location) over a read-only BaseView (docs/re/ai-base.md).
