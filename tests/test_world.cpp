@@ -2960,6 +2960,47 @@ TEST_CASE("World: a ground unit may occupy the cell beneath an airborne aircraft
     CHECK(world.occupancy().at(g.cell_x, g.cell_y) == 1);      // ground unit holds it
 }
 
+TEST_CASE("World: ordering an airborne aircraft to attack claims no ground cell") {
+    // CB-2 [airborne-no-cell invariant]: commit_attack_target must NOT re-assert
+    // ground occupancy for an airborne aircraft. Before the guard was added, the
+    // attack-commit re-claimed the aircraft's ground-projection cell, which
+    // nothing ever released -> a permanently stranded cell.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    world.add_combat_unit(20, 20, /*house=*/0, zep_stats());          // idx 0: aircraft
+    ra2engine::Unit& enemy = world.add_combat_unit(30, 10, /*house=*/1, gi_stats());  // idx 1
+    (void)enemy;
+    // Take off and reach cruise -> airborne, holds no cell.
+    world.order_unit_move(0, 20, 30);
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 400 && world.units()[0].flight_state != ra2engine::FlightState::Cruising; ++f)
+        world.step(dt);
+    CHECK(world.units()[0].flight_state == ra2engine::FlightState::Cruising);
+    // Its current ground-projection cell (must remain free after the attack order).
+    const int cx = world.units()[0].cell_x;
+    const int cy = world.units()[0].cell_y;
+    // Order the airborne aircraft to attack the ground enemy.
+    world.units()[0].selected = true;
+    world.order_attack(1);
+    CHECK(world.units()[0].attack_order);            // order took effect
+    // Airborne-occupancy audit: the aircraft holds NO cell anywhere.
+    int held = 0;
+    const ra2engine::Occupancy& occ = world.occupancy();
+    for (int y = 0; y < occ.height(); ++y)
+        for (int x = 0; x < occ.width(); ++x)
+            if (occ.at(x, y) == 0) ++held;
+    CHECK(held == 0);                                 // invariant: airborne holds none
+    CHECK(occ.at(cx, cy) != 0);                       // ground-projection cell not re-claimed
+    // And the cell is genuinely free: a ground unit may now occupy it.
+    ra2engine::Unit& g = world.add_combat_unit(cx, cy, /*house=*/0, gi_stats());  // idx 2
+    world.step(dt);
+    CHECK(world.occupancy().at(g.cell_x, g.cell_y) == 2);
+}
+
 TEST_CASE("World: step_units never runs ground movement on an airborne aircraft") {
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {

@@ -1409,8 +1409,15 @@ void World::commit_attack_target(int unit_idx, int target_unit, int target_build
     // convention; the hunt pinned no contrary rule].
     u.enter_target = -1;
     u.unload_pending = false;
-    occ_.release_all_of(unit_idx, u.cell_x, u.cell_y);
-    occ_.set(u.cell_x, u.cell_y, unit_idx);
+    // CB-2 [airborne-no-cell invariant]: only re-claim a ground cell when the
+    // unit is NOT airborne. An airborne aircraft released its cell at takeoff
+    // and nothing later re-releases it, so re-asserting occupancy here would
+    // permanently strand its ground-projection cell. A ground unit
+    // (!is_aircraft) still takes the release+set exactly as before.
+    if (!u.is_aircraft || u.flight_state == FlightState::Grounded) {
+        occ_.release_all_of(unit_idx, u.cell_x, u.cell_y);
+        occ_.set(u.cell_x, u.cell_y, unit_idx);
+    }
     u.path.clear();
     u.path_idx = 0;
 }
