@@ -619,6 +619,9 @@ void World::enable_ai_house(int house, AiHouseConfig cfg) {
     rec.cfg = std::move(cfg);
     rec.state = AiBaseState{};
     rec.team_state = AiTeamState{};  // AI-2: fresh team state per enable
+    rec.trigger_state = make_trigger_state(rec.cfg.team.aimd);  // AI-3: current
+                                    // weights seeded from starting_weight
+                                    // (NB reads rec.cfg — cfg was moved from)
     rec.state.difficulty = rec.cfg.difficulty;
     rec.queues = ProductionQueues{};
     rec.credits = rec.cfg.start_credits;
@@ -1312,6 +1315,52 @@ void World::step_ai_teams(double dt) {
                     ++st.teams_created;
                 }
             }
+            // AI-3 trigger-eval step [RE-GATE APPLIED: ai-trigger.md §5 —
+            // CONFIRMED: trigger eval lives INSIDE this team-management
+            // pass; no separate AITrigger clock exists]. A SECOND creation
+            // path BESIDE autocreate: both feed st.teams and reuse the whole
+            // AI-2 recruit/produce/gather/execute machinery (lifecycle
+            // transitions UNCHANGED) [spec §4]. BOTH sources respect
+            // TotalAITeamCap. NO team->trigger link is stored — attribution
+            // at disband is a Team1-identity scan [RE-GATE APPLIED:
+            // ai-trigger.md §6]. FIREWALL: triggers_enabled defaults false,
+            // so no existing gate ever reaches this block; the draw consumes
+            // trigger_state.rng (a separate stream), never st.rng.
+            if (tc.triggers_enabled && !tc.aimd.triggers.empty() &&
+                (int)st.teams.size() < tc.rules.total_team_cap) {
+                TriggerView tv;
+                ai_fill_trigger_view(h, rec, tv);
+                const TriggerDecision d =
+                    select_trigger(tc.aimd, rec.trigger_state.weights, st.teams,
+                                   tv, rec.trigger_state.rng);
+                if (d.teamtype1 >= 0) {
+                    // BOTH Team1 AND Team2 are created for the OWNING house
+                    // [RE-GATE APPLIED: ai-trigger.md §3 — CONFIRMED; Team2 is
+                    // NOT a reciprocal and may equal Team1 -> two instances].
+                    // Each create still respects TotalAITeamCap + the
+                    // per-TeamType Max (select_trigger pre-checked both; the
+                    // Team2 push re-checks against the just-pushed Team1).
+                    TeamInstance t1;
+                    t1.teamtype = d.teamtype1;  // AI-2's EXACT create path: the
+                    st.teams.push_back(t1);     // team enters st.teams and
+                    ++st.teams_created;         // lives the whole AI-2 lifecycle
+                    if (d.teamtype2 >= 0 &&
+                        (int)st.teams.size() < tc.rules.total_team_cap) {
+                        const int max2 = tc.aimd.teams[d.teamtype2].max;
+                        int cnt2 = 0;
+                        for (const TeamInstance& ti : st.teams)
+                            if (ti.teamtype == d.teamtype2) ++cnt2;
+                        if (max2 < 0 || cnt2 < max2) {   // Max<0 = uncapped
+                            TeamInstance t2;
+                            t2.teamtype = d.teamtype2;
+                            st.teams.push_back(t2);
+                            ++st.teams_created;
+                        }
+                    }
+                    ++rec.trigger_state.triggers_fired;
+                    rec.trigger_state.last_fired = d.trigger;
+                }
+            }
         }
 
         // 5) Recruit-idle first [RE: ai-team.md §2] (re-scanned per team so a
@@ -1437,6 +1486,23 @@ void World::step_ai_teams(double dt) {
                 }
             }
             if (t.state == TeamState::Disbanding) {
+                // AI-3 outcome attribution [RE-GATE APPLIED: ai-trigger.md
+                // §4/§6 — CONFIRMED]: NO team->trigger back-pointer exists;
+                // the original's TeamClass dtor scans the WHOLE trigger array
+                // and feeds EVERY trigger whose Team1 == the disbanding
+                // team's TeamType. So: a shared Team1 feeds ALL its triggers;
+                // a team created as some trigger's Team2 gives NO feedback
+                // (only Team1 matches); and autocreate-created teams sharing
+                // a trigger's Team1 ALSO feed it — exactly the original.
+                // Success = the team ran its script to kOpDisband
+                // (completed_success, the team+0x84 flag), NOT survivors
+                // [RE: §4]. Adjustment happens ONLY here, at disband.
+                if (tc.triggers_enabled) {
+                    for (int j = 0; j < (int)tc.aimd.triggers.size(); ++j)
+                        if (tc.aimd.triggers[j].team1 == t.teamtype)
+                            adjust_weight(rec.trigger_state, tc.aimd, j,
+                                          t.completed_success);
+                }
                 // Release survivors: stand each live member DOWN (stop any
                 // in-flight move) so the freed unit is IMMEDIATELY idle &
                 // re-recruitable — not left walking to an abandoned gather goal
@@ -1458,6 +1524,58 @@ void World::step_ai_teams(double dt) {
             }
         }
     }
+}
+
+// --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---------------------------
+
+const AiTriggerState* World::ai_trigger_state(int house) const {
+    return ai_enabled(house) ? &ai_houses_[house].trigger_state : nullptr;
+}
+
+void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
+                                 TriggerView& v) const {
+    const AiTeamConfig& tc = rec.cfg.team;
+    // Per-TechnoType counts, own vs enemy. "Enemy" aggregates EVERY other
+    // house [RE-GATE APPLIED: ai-trigger.md §2/deviations — the original's
+    // ConditionMet receives the house's ONE current enemy (house+0x5600);
+    // our World aggregates all rival houses, the ai-team.md convention].
+    // Unit typing maps through the house's OWN roster (ai_unit_type_of), so
+    // enemy-UNIT conditions count only types this roster resolves; BUILDING
+    // conditions index the full shared building roster directly (b.type), so
+    // enemy-owns-building conditions see the player's base. No new state —
+    // a per-pass snapshot [spec §4].
+    v.own_units.assign(tc.unit_roster.size(), 0);
+    v.enemy_units.assign(tc.unit_roster.size(), 0);
+    v.own_buildings.assign(rec.cfg.roster.size(), 0);
+    v.enemy_buildings.assign(rec.cfg.roster.size(), 0);
+    // No neutral/civilian house exists in this engine, so the neutral slices
+    // stay EMPTY and ct=7 (CivilianHouseOwns) evaluates FALSE [RE-GATE
+    // APPLIED: ai-trigger.md §2 — implementable-if-neutral-house; see the
+    // deviations list].
+    v.neutral_units.clear();
+    v.neutral_buildings.clear();
+    for (const Unit& u : units_) {
+        if (!u.alive || u.die_time >= 0.0) continue;
+        const int t = ai_unit_type_of(rec, u);
+        if (t < 0) continue;
+        if (u.house == house) ++v.own_units[t];
+        else ++v.enemy_units[t];
+    }
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (b.type < 0 || b.type >= (int)rec.cfg.roster.size()) continue;
+        if (b.house == house) ++v.own_buildings[b.type];
+        else ++v.enemy_buildings[b.type];
+    }
+    v.credits = rec.credits;  // OWNER house credits — ct=4 HouseCredits reads
+                              // the CALLING house's money scalar [RE-GATE
+                              // APPLIED: ai-trigger.md §2 — NOT enemy credits]
+    v.difficulty = (int)rec.cfg.difficulty;   // index 0 = HARDEST; the enable
+                                              // inversion lives in
+                                              // trigger_filters_pass [RE: §5]
+    v.house_name = tc.house_name;
+    v.side = tc.trigger_side;                 // 1=Allied/2=Soviet/3=Yuri [RE: §5]
+    v.tech_level = tc.trigger_tech_level;
 }
 
 void World::step(double dt) {

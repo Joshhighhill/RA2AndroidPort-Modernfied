@@ -6,6 +6,7 @@
 
 #include "ai_base.hpp"  // AI-1 base-planning: AiBaseState/BaseView/next_build/...
 #include "ai_team.hpp"  // AI-2 offensive-teams: AiTeamState/TeamInstance/TeamView/...
+#include "ai_trigger.hpp"  // AI-3 trigger engine: AiTriggerState/TriggerView/TriggerDecision
 #include "building.hpp"
 #include "occupancy.hpp"
 #include "ore.hpp"  // OreField/OreKind/OreRng (Economy phase)
@@ -299,6 +300,22 @@ struct AiTeamConfig {
     std::vector<Cellxy> waypoints;        // waypoint index -> cell (main.cpp table)
     std::string house_name;               // aimd House= token (e.g. "Russians")
     AiTeamRules rules;                    // recovered team knobs
+
+    // --- AI-3 AITriggerTypes [RE: ai-trigger.md] -----------------------------
+    // BYTE-IDENTITY FIREWALL: triggers_enabled defaults FALSE — every existing
+    // caller (including --demo-ai-team) gets a trigger-less brain, the trigger
+    // step never runs, and all SEVEN gates stay bit-identical. Only the
+    // interactive path and --demo-ai-trigger set it true.
+    bool triggers_enabled = false;  // the per-house trigger firewall
+    int trigger_side = 0;           // the house's side for the SideIndex
+                                    // filter (1=Allied, 2=Soviet, 3=Yuri;
+                                    // triggers with side 0 match any house)
+                                    // [RE-GATE APPLIED: ai-trigger.md §5 —
+                                    // CONFIRMED 1-based encoding]
+    int trigger_tech_level = 10;    // house tech level for the TechLevel
+                                    // filter (house >= field passes)
+                                    // [RE-FALLBACK: skirmish ceiling — no
+                                    // recovered per-house tech input]
 };
 
 struct AiHouseConfig {
@@ -520,6 +537,11 @@ public:
     // queue; -1 = idle.
     int ai_unit_producing(int house, int iv01) const;
 
+    // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
+    // Read-only trigger state (nullptr when `house` is not AI-flagged). NOT
+    // read by world_hash — the 8th gate hashes it separately (ai_trigger_hash).
+    const AiTriggerState* ai_trigger_state(int house) const;
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -548,6 +570,7 @@ private:
         ProductionQueues queues;  // ONLY the Structure/Defense slots are used
         double credits = 0.0;
         AiTeamState team_state;  // AI-2 [RE: ai-team.md]
+        AiTriggerState trigger_state;  // AI-3 [RE: ai-trigger.md]
     };
     std::vector<HouseAiRec> ai_houses_;  // index = house id (grown on demand)
     bool ai_any_ = false;                // the step() firewall bool
@@ -575,6 +598,9 @@ private:
     void ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
                                  const TeamCommand& c);
     bool ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat);
+
+    // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
+    void ai_fill_trigger_view(int house, const HouseAiRec& rec, TriggerView& v) const;
 
     // Fully-defined-inline POD mirror of HarvestEvent (kind stored as int,
     // via static_cast to/from HarvestEvent::Kind) -- see the forward-

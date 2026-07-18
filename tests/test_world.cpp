@@ -2203,3 +2203,195 @@ TEST_CASE("World: an Executing move whose ideal cell is unreachable does NOT wed
     // create) rather than accumulating a leaked wedged instance.
     CHECK((int)world.ai_team_state(1)->teams.size() <= 1);
 }
+
+// ---- AI-3 AITriggerTypes phase [RE: ai-trigger.md] : trigger-eval step ----
+
+namespace {
+// AI-3 trigger cfg: ai2_cfg(true) with the autocreate path SILENCED
+// (autocreate=false on every fixture TeamType — a TEST-ISOLATION device so
+// only the trigger path can create; ALL 163 stock TeamTypes are
+// Autocreate=yes and the trigger pool == the autocreate pool [RE-GATE
+// APPLIED: ai-trigger.md §6]) + ONE TeamType TT2 reachable ONLY through the
+// trigger path + ONE trigger keyed "enemy owns >= 1 of building roster type
+// 0 (NACNST)" with Team2 = <none>. Script overridden to bare disband so the
+// outcome lands fast (kOpDisband sets completed_success -> RegisterSuccess
+// [RE: ai-trigger.md §4]). Fast test clocks carry over from ai2_cfg.
+ra2engine::AiHouseConfig ai3_cfg(bool triggers_enabled, int total_team_cap = 30) {
+    ra2engine::AiHouseConfig cfg = ai2_cfg(/*teams_enabled=*/true);
+    cfg.team.aimd.teams[0].autocreate = false;   // silence AI-2 autocreate
+    cfg.team.aimd.scripts[0].actions =
+        {ra2engine::ScriptAction{ra2engine::kOpDisband, 0}};
+    ra2engine::TeamType tt;
+    tt.id = "TT2";
+    tt.house = "Russians";
+    tt.taskforce = 0;     // reuse TF1 (1 x type0)
+    tt.script = 0;        // reuse SC1 (now bare disband)
+    tt.priority = 5;
+    tt.max = 1;
+    tt.autocreate = false;                        // NON-autocreate: trigger-only
+    cfg.team.aimd.teams.push_back(tt);
+    ra2engine::AITriggerType tr;
+    tr.id = "TRG1";
+    tr.name = "player conyard seen";
+    tr.team1 = 1;                                 // TT2
+    tr.team2 = -1;
+    tr.owner_house = "<all>";
+    tr.tech_level = 0;
+    tr.condition_type = ra2engine::kCondEnemyOwns;
+    tr.condition_object =
+        ra2engine::TriggerObject{ra2engine::TechnoKind::Building, 0};
+    tr.comparator = ra2engine::TriggerComparator{1, ra2engine::kCompGreaterEq};
+    tr.starting_weight = 50.0; tr.min_weight = 10.0; tr.max_weight = 90.0;
+    tr.is_for_skirmish = true;
+    tr.side = 0;
+    tr.base_defense = false;
+    tr.enabled[0] = tr.enabled[1] = tr.enabled[2] = true;
+    tr.is_enabled = true;    // [AITriggerTypesEnable] default [RE: §5]
+    cfg.team.aimd.triggers.push_back(tr);
+    cfg.team.triggers_enabled = triggers_enabled;
+    cfg.team.rules.total_team_cap = total_team_cap;
+    return cfg;
+}
+}  // namespace
+
+TEST_CASE("World: a trigger fires, creates its team via the trigger path, and the disband outcome adjusts its weight") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // AI base (house 1) + the PLAYER conyard (house 0) that makes the
+    // enemy-owns condition TRUE, well outside auto-acquire reach.
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
+    // One IDLE house-1 combat unit so recruit-idle fills TT2 instantly.
+    ra2engine::UnitCombat uc;
+    uc.strength = 100;
+    uc.image = "AITEST";
+    uc.damage = 10; uc.rof = 15; uc.range = 4.0;
+    uc.verses = std::vector<int>(11, 100);
+    world.add_combat_unit(c->x + 3, c->y + 2, /*house=*/1, uc);
+    world.enable_ai_house(1, ai3_cfg(/*triggers_enabled=*/true));
+    REQUIRE(world.ai_trigger_state(1) != nullptr);
+    REQUIRE(world.ai_trigger_state(1)->weights.size() == 1);
+    CHECK(world.ai_trigger_state(1)->weights[0] == 50.0);   // starting_weight
+    // Step until the created team disbands and reports its outcome: fire on
+    // the first 1 s check pass -> recruit the idle unit -> gather -> execute
+    // bare disband -> Disbanding -> weight adjusted.
+    for (int i = 0; i < 4500 && world.ai_trigger_state(1)->adjustments < 1; ++i)
+        world.step(1.0 / 15.0);
+    const ra2engine::AiTriggerState* ts = world.ai_trigger_state(1);
+    REQUIRE(ts != nullptr);
+    CHECK(ts->triggers_fired == 1);              // fired once, then Max=1-capped
+    CHECK(ts->last_fired == 0);
+    REQUIRE(world.ai_team_state(1) != nullptr);
+    CHECK(world.ai_team_state(1)->teams_created == 1);   // the TRIGGER create —
+                                                 // autocreate silenced; Team2
+                                                 // is <none> -> ONE create
+    REQUIRE(ts->adjustments == 1);
+    CHECK(ts->last_adjusted == 0);               // Team1-identity scan found
+                                                 // TRG1 (Team1 == TT2)
+                                                 // [RE-GATE APPLIED:
+                                                 // ai-trigger.md §6]
+    CHECK(ts->last_success);                     // the bare-disband script ran
+                                                 // to kOpDisband -> the team's
+                                                 // completed_success flag; NOT
+                                                 // a survivors rule [RE-GATE
+                                                 // APPLIED: ai-trigger.md §4]
+    CHECK(ts->weights[0] == 50.0 + ra2engine::kAiTriggerSuccessWeightDelta);
+    CHECK(ts->last_old_weight == 50.0);          // first outcome: E=0 -> no
+                                                 // track-record term -> 50+20
+    CHECK(ts->last_new_weight ==
+          50.0 + ra2engine::kAiTriggerSuccessWeightDelta);
+    CHECK(ts->times_completed[0] == 1);          // C incremented on success
+    CHECK(ts->times_executed[0] == 1);           // E incremented every outcome
+}
+
+TEST_CASE("World: trigger firewall - triggers_enabled=false means no trigger ever fires") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
+    world.enable_ai_house(1, ai3_cfg(/*triggers_enabled=*/false));
+    for (int i = 0; i < 600; ++i) world.step(1.0 / 15.0);
+    const ra2engine::AiTriggerState* ts = world.ai_trigger_state(1);
+    REQUIRE(ts != nullptr);
+    CHECK(ts->triggers_fired == 0);              // firewall held
+    CHECK(ts->adjustments == 0);
+    CHECK(ts->weights[0] == 50.0);               // weight untouched
+    CHECK(world.ai_team_state(1)->teams_created == 0);  // autocreate silenced,
+                                                 // trigger path fenced off
+}
+
+TEST_CASE("World: a trigger create is skipped at TotalAITeamCap") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
+    world.enable_ai_house(1, ai3_cfg(/*triggers_enabled=*/true, /*total_team_cap=*/0));
+    for (int i = 0; i < 600; ++i) world.step(1.0 / 15.0);
+    const ra2engine::AiTriggerState* ts = world.ai_trigger_state(1);
+    REQUIRE(ts != nullptr);
+    CHECK(ts->triggers_fired == 0);              // at cap -> create skipped
+    CHECK(world.ai_team_state(1)->teams_created == 0);
+}
+
+// Direct step_team coverage the Task-3 review flagged, now that the World
+// consumes the flag [RE: ai-trigger.md §4]: completed_success is set TRUE only
+// when the script runs to kOpDisband (the original's team+0x84 success flag),
+// and stays FALSE when the team reaches Disbanding via a member wipe. This
+// pins the exact bit the AI-3 disband attribution keys success-vs-failure on.
+TEST_CASE("step_team: completed_success TRUE at kOpDisband, FALSE on member wipe [RE: ai-trigger.md 4]") {
+    ra2engine::AimdData aimd;
+    ra2engine::TaskForce tf; tf.id = "TF1"; tf.members = {{1, 0}};  // 1 x type0
+    aimd.taskforces.push_back(tf);
+    ra2engine::ScriptType sc; sc.id = "SC1";
+    sc.actions = {ra2engine::ScriptAction{ra2engine::kOpDisband, 0}};  // bare disband
+    aimd.scripts.push_back(sc);
+    ra2engine::TeamType tt; tt.id = "TT1"; tt.taskforce = 0; tt.script = 0;
+    tt.priority = 5; tt.max = 1; tt.full = false;
+    aimd.teams.push_back(tt);
+
+    // --- success path: script runs to kOpDisband ---
+    {
+        ra2engine::TeamInstance t; t.teamtype = 0;
+        t.members = {0}; t.member_types = {0};
+        ra2engine::TeamView v;
+        v.members.push_back(ra2engine::TeamMemberView{0, true, 5, 5, true});
+        v.base_x = 5; v.base_y = 5; v.enemy_x = 5; v.enemy_y = 5;
+        std::uint32_t rng = 0x2545F491u;
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // Recruiting -> Gathering
+        REQUIRE(t.state == ra2engine::TeamState::Gathering);
+        // Stand the member ON the realized gather cell so gather completes.
+        v.members[0].cx = t.gather_x; v.members[0].cy = t.gather_y;
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // Gathering: emit move
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // Gathering: within -> Executing
+        REQUIRE(t.state == ra2engine::TeamState::Executing);
+        CHECK_FALSE(t.completed_success);                       // not yet
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // Executing: kOpDisband
+        CHECK(t.state == ra2engine::TeamState::Disbanding);
+        CHECK(t.completed_success);                             // success flag set
+    }
+
+    // --- wipe path: all members die before the script completes ---
+    {
+        ra2engine::TeamInstance t; t.teamtype = 0;
+        t.members = {0}; t.member_types = {0};
+        ra2engine::TeamView v;
+        v.members.push_back(ra2engine::TeamMemberView{0, true, 5, 5, true});
+        v.base_x = 5; v.base_y = 5; v.enemy_x = 5; v.enemy_y = 5;
+        std::uint32_t rng = 0x2545F491u;
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // Recruiting -> Gathering
+        REQUIRE(t.state == ra2engine::TeamState::Gathering);
+        v.members[0].alive = false;                             // wiped
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // alive==0 -> Disbanding
+        CHECK(t.state == ra2engine::TeamState::Disbanding);
+        CHECK_FALSE(t.completed_success);                       // wipe -> failure witness
+    }
+}
