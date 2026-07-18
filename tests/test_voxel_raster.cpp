@@ -4,6 +4,7 @@
 #include "ra2assets/hva.hpp"
 #include "ra2assets/vpl.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -195,10 +196,11 @@ TEST_CASE("voxel_raster: real htnk hull renders deterministically") {
         MESSAGE("RA2 install absent; skipped");
         return;
     }
-    std::ifstream f(install / "ra2.mix", std::ios::binary);
-    std::vector<uint8_t> mixbytes((std::istreambuf_iterator<char>(f)), {});
-    REQUIRE_FALSE(mixbytes.empty());
-    ra2assets::MixFile outer = ra2assets::MixFile::open(std::move(mixbytes));
+    // Borrow the shared, load-once ra2.mix (asset_fixture) instead of
+    // re-slurping the ~268 MB archive; open_nested still exercises the real
+    // path. REQUIRE_FALSE kept (now on the shared bytes) so the count is unchanged.
+    REQUIRE_FALSE(ra2fixture::ra2_bytes().empty());
+    const ra2assets::MixFile& outer = ra2fixture::ra2_mix();
     // htnk.vxl + htnk.hva + voxels.vpl live in ra2.mix -> local.mix.
     ra2assets::MixFile local = outer.open_nested("local.mix");
     const ra2assets::MixEntry* ve = local.find("htnk.vxl");

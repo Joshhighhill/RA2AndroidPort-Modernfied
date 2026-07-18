@@ -638,53 +638,22 @@ TEST_CASE("ai_team: build_slowdown_blocks is the over-queue damp, not a time mul
 #include "ra2assets/rules.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdlib>
 #include <fstream>
 #include <string>
 
-static std::vector<uint8_t> slurp_ai_team(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
-
 TEST_CASE("ai_team: real rulesmd [AI] team knobs match the recovered constants") {
     using namespace ra2assets;
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp_ai_team(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    std::vector<uint8_t> rules_bytes;
-    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
-        rules_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
-                    rules_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-            }
-        }
-    }
-    if (rules_bytes.empty()) {
+    // Borrow the shared, load-once ra2md.mix + rulesmd parse (asset_fixture)
+    // instead of re-slurping the ~196 MB archive and re-parsing rulesmd.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) {
         MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
-    Rules rules = Rules::load(ini);
+    const Rules& rules = ra2fixture::rulesmd();
 
     // [RE-GATE APPLIED: ai-team.md §2/§4 — these pin the committed constants
     // against the REAL file so a rules/constant drift is caught.]

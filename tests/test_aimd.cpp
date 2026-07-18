@@ -2,6 +2,7 @@
 #include "../engine/aimd_parse.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -221,46 +222,14 @@ TEST_CASE("aimd: parse_ai_triggers is deterministic") {
         CHECK(a.triggers[i].id == b.triggers[i].id);
 }
 
-static std::vector<uint8_t> slurp(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
-
 TEST_CASE("aimd: real aimd.ini parses with resolved cross-references") {
     using namespace ra2assets;
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    // aimd.ini is NOT a top-level entry of ra2md.mix in a stock YR 1.001
-    // install -- it lives inside a nested mix. Try the top level first, then
-    // descend the usual homes: the local assets mix and the expansion mixes
-    // (same walk as tests/test_rules.cpp's real-rulesmd.ini case).
-    std::vector<uint8_t> bytes;
-    if (const MixEntry* e = top.find(mix_id("aimd.ini"))) {
-        bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("aimd.ini"))) {
-                    bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-                // Nested mix not present in this install/layout; try the next.
-            }
-        }
-    }
+    // Borrow the shared, load-once ra2md.mix (asset_fixture) instead of
+    // re-slurping the ~196 MB archive; aimd.ini is resolved via the SAME
+    // nested-candidate walk. This case keeps its own parse_aimd/parse_ai_triggers
+    // (its actual subject) under the permissive resolvers after the shared read.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    auto bytes = ra2fixture::resolve_nested_bytes("aimd.ini");
     if (bytes.empty()) {
         MESSAGE("skipped: aimd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");

@@ -2,6 +2,7 @@
 #include "ra2assets/ini.hpp"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/sounds.hpp"
+#include "asset_fixture.hpp"
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -72,50 +73,14 @@ TEST_CASE("sounds: variant list, $ stripping, control tokens, shifts") {
     CHECK(missing.limit == 5);
 }
 
-static std::vector<uint8_t> slurp(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
-
 TEST_CASE("sounds: real soundmd.ini pins") {
-    // Install guard + ra2md.mix nested-candidate loading: same shape as
-    // tests/test_art.cpp's real-artmd test / tests/test_rules.cpp's
-    // real-rulesmd test, but for "soundmd.ini" (lives in the same
-    // localmd.mix as artmd.ini/rulesmd.ini).
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    // soundmd.ini is NOT a top-level entry of ra2md.mix in a stock YR 1.001
-    // install -- it lives inside a nested mix. Try the top level first (some
-    // mod layouts flatten it there), then descend the usual homes: the local
-    // assets mix and the expansion mixes (same fallback chain as
-    // tests/test_art.cpp / tests/test_rules.cpp's real-asset tests).
-    std::vector<uint8_t> sound_bytes;
-    if (const MixEntry* e = top.find(mix_id("soundmd.ini"))) {
-        sound_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("soundmd.ini"))) {
-                    sound_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-                // Nested mix not present in this install/layout; try the next.
-            }
-        }
-    }
+    // Borrow the shared, load-once ra2md.mix (asset_fixture) instead of
+    // re-slurping the ~196 MB archive; soundmd.ini lives in the same
+    // localmd.mix as artmd.ini/rulesmd.ini and is resolved via the SAME
+    // nested-candidate walk. This case is loaded once, so it keeps its own
+    // Ini::parse + Sounds::load (its actual subject) after the shared read.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    auto sound_bytes = ra2fixture::resolve_nested_bytes("soundmd.ini");
     if (sound_bytes.empty()) {
         MESSAGE("skipped: soundmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");

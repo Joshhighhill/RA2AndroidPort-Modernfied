@@ -2,6 +2,7 @@
 #include "ra2assets/art.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -82,55 +83,16 @@ TEST_CASE("art: voxel getters") {
     CHECK(flh2[0] == -1);
 }
 
-static std::vector<uint8_t> slurp(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
-
 TEST_CASE("art: real artmd.ini pins (GISequence == ConSequence for our entries)") {
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    // artmd.ini is NOT a top-level entry of ra2md.mix in a stock YR 1.001
-    // install -- it lives inside a nested mix. Try the top level first (some
-    // mod layouts flatten it there), then descend the usual homes: the local
-    // assets mix and the expansion mixes (same fallback chain as
-    // tests/test_rules.cpp's real-asset test / engine/main.cpp:150's
-    // load_rules_ini).
-    std::vector<uint8_t> art_bytes;
-    if (const MixEntry* e = top.find(mix_id("artmd.ini"))) {
-        art_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("artmd.ini"))) {
-                    art_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-                // Nested mix not present in this install/layout; try the next.
-            }
-        }
-    }
-    if (art_bytes.empty()) {
+    // Borrow the shared, load-once ra2md.mix + artmd.ini parse (asset_fixture)
+    // instead of re-slurping the ~196 MB archive and re-parsing artmd per case.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::artmd_bytes().empty()) {
         MESSAGE("skipped: artmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    Ini ini = Ini::parse(std::string(art_bytes.begin(), art_bytes.end()));
-    Art art = Art::load(ini);
+    const Art& art = ra2fixture::artmd();
     CHECK(art.sequence_name("GI") == "GISequence");
     CHECK(art.sequence_name("CONS") == "ConSequence");
     CHECK(art.voxel("HTNK"));
@@ -171,41 +133,13 @@ TEST_CASE("art: building accessors (synthetic)") {
 }
 
 TEST_CASE("art: real artmd building pins") {
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    std::vector<uint8_t> art_bytes;
-    if (const MixEntry* e = top.find(mix_id("artmd.ini"))) {
-        art_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("artmd.ini"))) {
-                    art_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-            }
-        }
-    }
-    if (art_bytes.empty()) {
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::artmd_bytes().empty()) {
         MESSAGE("skipped: artmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    Ini ini = Ini::parse(std::string(art_bytes.begin(), art_bytes.end()));
-    Art art = Art::load(ini);
+    const Art& art = ra2fixture::artmd();
 
     int fw = -1, fh = -1;
     REQUIRE(art.foundation("GACNST", fw, fh));

@@ -2,6 +2,7 @@
 #include "ra2assets/hva.hpp"
 #include "ra2assets/vxl.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -453,9 +454,11 @@ TEST_CASE("vxl oracle: htnk.vxl + htnk.hva match the XCC dump line-for-line") {
         return;
     }
 
-    auto mixbytes = slurp_file(install / "ra2.mix");
-    REQUIRE_FALSE(mixbytes.empty());
-    MixFile outer = MixFile::open(std::move(mixbytes));
+    // Borrow the shared, load-once ra2.mix (asset_fixture) instead of
+    // re-slurping the ~268 MB archive; open_nested still exercises the real
+    // path. REQUIRE_FALSE kept (now on the shared bytes) so the count is unchanged.
+    REQUIRE_FALSE(ra2fixture::ra2_bytes().empty());
+    const MixFile& outer = ra2fixture::ra2_mix();
     MixFile local = outer.open_nested("local.mix");
 
     int lines_checked = 0;

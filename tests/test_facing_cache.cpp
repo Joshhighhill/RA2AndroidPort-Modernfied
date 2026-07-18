@@ -7,6 +7,7 @@
 #include "ra2assets/pal.hpp"
 #include "ra2assets/vpl.hpp"
 #include "ra2assets/vxl.hpp"
+#include "asset_fixture.hpp"
 
 #include <cstdint>
 #include <cstdlib>
@@ -94,10 +95,11 @@ TEST_CASE("facing_cache: real Rhino parts all render non-empty at every facing")
         MESSAGE("RA2 install absent; skipped");
         return;
     }
-    std::ifstream f(install / "ra2.mix", std::ios::binary);
-    std::vector<uint8_t> mixbytes((std::istreambuf_iterator<char>(f)), {});
-    REQUIRE_FALSE(mixbytes.empty());
-    ra2assets::MixFile outer = ra2assets::MixFile::open(std::move(mixbytes));
+    // Borrow the shared, load-once ra2.mix (asset_fixture) instead of
+    // re-slurping the ~268 MB archive; open_nested still exercises the real
+    // path. REQUIRE_FALSE kept (now on the shared bytes) so the count is unchanged.
+    REQUIRE_FALSE(ra2fixture::ra2_bytes().empty());
+    const ra2assets::MixFile& outer = ra2fixture::ra2_mix();
     ra2assets::MixFile local = outer.open_nested("local.mix");
 
     auto load_model = [&](const char* vxl_name, const char* hva_name,

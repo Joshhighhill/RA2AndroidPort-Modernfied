@@ -1,6 +1,7 @@
 #include "doctest.h"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/shp.hpp"
+#include "asset_fixture.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -46,9 +47,12 @@ TEST_CASE("indexed output matches XCC oracle byte-for-byte") {
     std::string mixname, shppath, framedir;
     int frames_checked = 0;
     while (mf >> mixname >> shppath >> framedir) {
-        auto mixbytes = slurp_file(install / mixname);
-        REQUIRE_FALSE(mixbytes.empty());
-        MixFile m = MixFile::open(std::move(mixbytes));
+        // Borrow the shared, load-once mix (asset_fixture): the manifest names
+        // ra2.mix on every line, so this reads/opens it once instead of once
+        // per line. REQUIRE_FALSE kept (now on the shared bytes) so the count
+        // is unchanged.
+        REQUIRE_FALSE(ra2fixture::mix_bytes_by_name(mixname).empty());
+        const MixFile& m = ra2fixture::mix_by_name(mixname);
         ShpFile s = ShpFile::load(read_path(m, shppath));
         for (int i = 0; i < s.count(); i++) {
             char fn[32]; std::snprintf(fn, sizeof fn, "frame%02d.raw", i);

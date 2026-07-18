@@ -1,6 +1,7 @@
 #include "doctest.h"
 #include "ra2assets/audio_bag.hpp"
 #include "ra2assets/mix.hpp"     // used by the Task-4 real-asset oracle test
+#include "asset_fixture.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -305,9 +306,11 @@ TEST_CASE("audio bag: real clips match XCC oracle byte-for-byte") {
     fs::path lang = install / "language.mix";
     if (!fs::exists(lang)) { MESSAGE("language.mix absent; skipped"); return; }
 
-    auto mixbytes = slurp_file(lang);
-    REQUIRE_FALSE(mixbytes.empty());
-    MixFile language = MixFile::open(std::move(mixbytes));
+    // Borrow the shared, load-once language.mix (asset_fixture); open_nested
+    // still exercises the real path. REQUIRE_FALSE kept (now on the shared
+    // bytes) so this case's assertion count is unchanged.
+    REQUIRE_FALSE(ra2fixture::mix_bytes_by_name("language.mix").empty());
+    const MixFile& language = ra2fixture::mix_by_name("language.mix");
     MixFile audio = language.open_nested("audio.mix");
     const MixEntry* ie = audio.find("audio.idx");
     REQUIRE(ie != nullptr);

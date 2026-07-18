@@ -1,6 +1,7 @@
 #include "doctest.h"
 #include "ra2assets/wav.hpp"
 #include "ra2assets/mix.hpp"      // used by the real-asset oracle pin test
+#include "asset_fixture.hpp"
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -70,20 +71,17 @@ TEST_CASE("wav: rejects non-IMA and stereo") {
 // real-asset case: skip cleanly (MESSAGE + return) if the install is
 // absent, so asset-free CI still builds and passes.
 // ---------------------------------------------------------------------------
-static std::vector<uint8_t> slurp_file(const fs::path& p) {
-    std::ifstream f(p, std::ios::binary);
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
-
 TEST_CASE("wav: real ceva064 (EVA 'Unit lost') pins") {
     const char* id = std::getenv("RA2_INSTALL_DIR");
     fs::path install = id ? id : "D:\\Red Alert 2";
     fs::path lang = install / "language.mix";
     if (!fs::exists(lang)) { MESSAGE("language.mix absent; skipped"); return; }
 
-    auto mixbytes = slurp_file(lang);
-    REQUIRE_FALSE(mixbytes.empty());
-    MixFile language = MixFile::open(std::move(mixbytes));
+    // Borrow the shared, load-once language.mix (asset_fixture); open_nested
+    // still exercises the real path. REQUIRE_FALSE kept (now on the shared
+    // bytes) so this case's assertion count is unchanged.
+    REQUIRE_FALSE(ra2fixture::mix_bytes_by_name("language.mix").empty());
+    const MixFile& language = ra2fixture::mix_by_name("language.mix");
     MixFile audio = language.open_nested("audio.mix");
     const MixEntry* we = audio.find("ceva064.wav");
     REQUIRE(we != nullptr);

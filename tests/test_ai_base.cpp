@@ -3,6 +3,7 @@
 #include "ra2assets/rules.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -62,48 +63,16 @@ TEST_CASE("ai_base: AiBaseState defaults are the documented seeds") {
 
 // --- Install-gated real-rulesmd pins (skip clean without an install, exactly
 //     like tests/test_rules.cpp's install-gated cases) ---
-static std::vector<uint8_t> slurp_ai(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
-
 TEST_CASE("ai_base: real rulesmd [AI]/difficulty pins match the recovered constants") {
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp_ai(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    ra2assets::MixFile top = ra2assets::MixFile::open(std::move(top_bytes));
-
-    std::vector<uint8_t> rules_bytes;
-    if (const ra2assets::MixEntry* e = top.find(ra2assets::mix_id("rulesmd.ini"))) {
-        rules_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                ra2assets::MixFile nested = top.open_nested(name);
-                if (const ra2assets::MixEntry* e2 = nested.find(ra2assets::mix_id("rulesmd.ini"))) {
-                    rules_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-            }
-        }
-    }
-    if (rules_bytes.empty()) {
+    // Borrow the shared, load-once ra2md.mix + rulesmd parse (asset_fixture)
+    // instead of re-slurping the ~196 MB archive and re-parsing rulesmd.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) {
         MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    ra2assets::Ini ini = ra2assets::Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
-    ra2assets::Rules rules = ra2assets::Rules::load(ini);
+    const ra2assets::Rules& rules = ra2fixture::rulesmd();
 
     // [RE-GATE APPLIED: ai-base.md §2/§4 — these assert the REAL file values
     // equal the committed constants, so a rules/constant drift is caught.

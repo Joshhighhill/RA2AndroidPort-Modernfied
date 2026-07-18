@@ -2,6 +2,7 @@
 #include "ra2assets/rules.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -43,53 +44,17 @@ TEST_CASE("rules: image() returns the explicit Image= value, not just the id") {
     CHECK(rules.speed("E1") == 4);
 }
 
-static std::vector<uint8_t> slurp(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
-
 TEST_CASE("rules: locates real rulesmd.ini from the install and reads GI (unit id E1)") {
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    // rulesmd.ini is NOT a top-level entry of ra2md.mix in a stock YR 1.001
-    // install -- it lives inside a nested mix. Try the top level first (some
-    // mod layouts flatten it there), then descend the usual homes: the local
-    // assets mix and the expansion mixes.
-    std::vector<uint8_t> rules_bytes;
-    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
-        rules_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
-                    rules_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-                // Nested mix not present in this install/layout; try the next.
-            }
-        }
-    }
-    if (rules_bytes.empty()) {
+    // Borrow the shared, load-once ra2md.mix + rulesmd.ini parse (asset_fixture)
+    // instead of re-slurping the ~196 MB archive and re-parsing rulesmd per case.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) {
         MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
-    Rules rules = Rules::load(ini);
+    const Ini& ini = ra2fixture::rulesmd_ini();
+    const Rules& rules = ra2fixture::rulesmd();
 
     // The real rulesmd.ini's rules-section id for the GI is "E1" -- "GI" is
     // only the unit's flavor Name= / Image= (SHP base name) value, not the
@@ -153,41 +118,13 @@ TEST_CASE("rules: vehicle getters") {
 }
 
 TEST_CASE("rules: real rulesmd combat values pin (E1/E2/M60/M1Carbine/SA)") {
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    std::vector<uint8_t> rules_bytes;
-    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
-        rules_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
-                    rules_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-            }
-        }
-    }
-    if (rules_bytes.empty()) {
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) {
         MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
-    Rules rules = Rules::load(ini);
+    const Rules& rules = ra2fixture::rulesmd();
 
     // E1 (GI) combat values
     CHECK(rules.strength("E1") == 125);
@@ -282,41 +219,13 @@ TEST_CASE("rules: economy accessors") {
 }
 
 TEST_CASE("rules: real rulesmd building pins") {
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    std::vector<uint8_t> rules_bytes;
-    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
-        rules_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
-                    rules_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-            }
-        }
-    }
-    if (rules_bytes.empty()) {
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) {
         MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
-    Rules rules = Rules::load(ini);
+    const Rules& rules = ra2fixture::rulesmd();
 
     CHECK(rules.cost("GAPOWR") == 800);
     CHECK(rules.cost("NAPOWR") == 600);
@@ -387,41 +296,13 @@ TEST_CASE("rules: build_category / is_infantry / is_vehicle classification") {
 }
 
 TEST_CASE("rules: real rulesmd classification pins") {
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto top_bytes = slurp(base + "\\ra2md.mix");
-    if (top_bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile top = MixFile::open(std::move(top_bytes));
-
-    std::vector<uint8_t> rules_bytes;
-    if (const MixEntry* e = top.find(mix_id("rulesmd.ini"))) {
-        rules_bytes = top.read(*e);
-    } else {
-        static const char* candidates[] = {
-            "localmd.mix",
-            "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
-            "expandmd04.mix", "expandmd05.mix", "expandmd99.mix",
-            "cachemd.mix", "conqmd.mix",
-        };
-        for (const char* name : candidates) {
-            try {
-                MixFile nested = top.open_nested(name);
-                if (const MixEntry* e2 = nested.find(mix_id("rulesmd.ini"))) {
-                    rules_bytes = nested.read(*e2);
-                    break;
-                }
-            } catch (const std::exception&) {
-            }
-        }
-    }
-    if (rules_bytes.empty()) {
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) {
         MESSAGE("skipped: rulesmd.ini not found in ra2md.mix top level or in "
                 "localmd.mix/expandmd*.mix/cachemd.mix/conqmd.mix");
         return;
     }
-
-    Ini ini = Ini::parse(std::string(rules_bytes.begin(), rules_bytes.end()));
-    Rules rules = Rules::load(ini);
+    const Rules& rules = ra2fixture::rulesmd();
 
     using BC = ra2assets::Rules::BuildCategory;
     CHECK(rules.build_category("E1") == BC::Infantry);     // GI

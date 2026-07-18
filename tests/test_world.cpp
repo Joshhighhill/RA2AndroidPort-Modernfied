@@ -23,6 +23,7 @@
 #include "ra2assets/pal.hpp"  // Palette/Rgba (pal_for_house tests)
 #include "unit_type.hpp"      // Production phase: UnitTypeDef (refund test)
 #include "world.hpp"
+#include "asset_fixture.hpp"  // shared load-once real map (mapsmd03.mix)
 
 using ra2assets::MapCell;
 using ra2engine::build_passability;
@@ -160,22 +161,13 @@ TEST_CASE("coordinate reconciliation: cell -> screen -> cell round-trips into th
 
 // ---- Multi-unit World integration (guarded real map) ----
 namespace {
-std::vector<uint8_t> slurp_ra2(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
 bool load_real_map_w(ra2assets::MapFile& out) {
-    const char* d = std::getenv("RA2_INSTALL_DIR");
-    std::string dir = d ? d : "D:\\Red Alert 2";
-    if (!dir.empty() && dir.back() != '/' && dir.back() != '\\') dir += '\\';
-    auto b = slurp_ra2(dir + "mapsmd03.mix");
-    if (b.empty()) return false;
-    ra2assets::MixFile mix = ra2assets::MixFile::open(std::move(b));
-    const ra2assets::MixEntry* e = mix.find(0x133a0cb2u);
-    if (!e) return false;
-    auto raw = mix.read(*e);
-    out = ra2assets::MapFile::parse(std::string(raw.begin(), raw.end()));
+    // Borrow the shared, load-once mapsmd03.mix map (asset_fixture) instead of
+    // re-slurping + re-parsing the same archive in every integration case.
+    // Same ok/false contract as before (archive present AND map entry found);
+    // the parsed map is copied into `out` so callers keep their own instance.
+    if (!ra2fixture::mapsmd03_available()) return false;
+    out = ra2fixture::mapsmd03_map();
     return true;
 }
 

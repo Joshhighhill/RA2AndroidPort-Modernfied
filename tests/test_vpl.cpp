@@ -1,6 +1,7 @@
 #include "doctest.h"
 #include "ra2assets/vpl.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -75,10 +76,12 @@ TEST_CASE("vpl: real voxels.vpl pins") {
         return;
     }
 
-    std::ifstream f(install / "ra2.mix", std::ios::binary);
-    std::vector<uint8_t> mixbytes((std::istreambuf_iterator<char>(f)), {});
-    REQUIRE_FALSE(mixbytes.empty());
-    MixFile outer = MixFile::open(std::move(mixbytes));
+    // Borrow the shared, load-once ra2.mix (asset_fixture) instead of
+    // re-slurping the ~268 MB archive; open_nested still exercises the real
+    // path. The REQUIRE_FALSE is kept (now on the shared bytes) so this case's
+    // assertion count is unchanged.
+    REQUIRE_FALSE(ra2fixture::ra2_bytes().empty());
+    const MixFile& outer = ra2fixture::ra2_mix();
     MixFile local = outer.open_nested("local.mix");
 
     const MixEntry* e = local.find("voxels.vpl");

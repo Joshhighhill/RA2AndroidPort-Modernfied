@@ -1,6 +1,7 @@
 #include "doctest.h"
 #include "ra2assets/theater_name.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -52,10 +53,11 @@ TEST_CASE("theater_candidates: real-install resolution pins") {
         return;
     }
 
-    std::ifstream f(install / "ra2.mix", std::ios::binary);
-    std::vector<uint8_t> mixbytes((std::istreambuf_iterator<char>(f)), {});
-    REQUIRE_FALSE(mixbytes.empty());
-    MixFile outer = MixFile::open(std::move(mixbytes));
+    // Borrow the shared, load-once ra2.mix (asset_fixture) instead of
+    // re-slurping the ~268 MB archive; open_nested still exercises the real
+    // path. REQUIRE_FALSE kept (now on the shared bytes) so the count is unchanged.
+    REQUIRE_FALSE(ra2fixture::ra2_bytes().empty());
+    const MixFile& outer = ra2fixture::ra2_mix();
 
     // Open the nested mixes that the candidate walk order names, keyed by
     // lowercase filename so lookups below can match theater_candidates()'s

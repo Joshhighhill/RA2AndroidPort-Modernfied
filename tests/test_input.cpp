@@ -16,6 +16,7 @@
 
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"  // shared load-once real map (mapsmd03.mix)
 
 using namespace ra2assets;
 using ra2engine::Camera;
@@ -25,22 +26,13 @@ using ra2engine::World;
 
 namespace {
 
-std::vector<uint8_t> slurp(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
 bool load_real_map(MapFile& out) {
-    const char* d = std::getenv("RA2_INSTALL_DIR");
-    std::string dir = d ? d : "D:\\Red Alert 2";
-    if (!dir.empty() && dir.back() != '/' && dir.back() != '\\') dir += '\\';
-    auto b = slurp(dir + "mapsmd03.mix");
-    if (b.empty()) return false;
-    MixFile mix = MixFile::open(std::move(b));
-    const MixEntry* e = mix.find(0x133a0cb2u);
-    if (!e) return false;
-    auto raw = mix.read(*e);
-    out = MapFile::parse(std::string(raw.begin(), raw.end()));
+    // Borrow the shared, load-once mapsmd03.mix map (asset_fixture) instead of
+    // re-slurping + re-parsing the same archive in every input case. Same
+    // ok/false contract as before (archive present AND map entry found); the
+    // parsed map is copied into `out` so callers keep their own instance.
+    if (!ra2fixture::mapsmd03_available()) return false;
+    out = ra2fixture::mapsmd03_map();
     return true;
 }
 

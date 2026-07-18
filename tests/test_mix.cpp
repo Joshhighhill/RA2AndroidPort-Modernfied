@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "ra2assets/mix.hpp"
+#include "asset_fixture.hpp"
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -126,18 +127,14 @@ TEST_CASE("mix rejects truncated and out-of-range input") {
     }
 }
 
-static std::vector<uint8_t> slurp(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return {};
-    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
-}
 TEST_CASE("mix opens a real encrypted archive from the install") {
     using namespace ra2assets;
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto bytes = slurp(base + "\\ra2md.mix");
-    if (bytes.empty()) { MESSAGE("skipped: ra2md.mix not found"); return; }
-    MixFile m = MixFile::open(std::move(bytes));
+    // Borrow the shared, load-once ra2md.mix (asset_fixture): top_mix() itself
+    // opened it via MixFile::open on the real encrypted bytes, so this still
+    // exercises the real loader path -- it just doesn't re-read the ~196 MB
+    // file from disk.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    const MixFile& m = ra2fixture::top_mix();
     CHECK(m.count() > 0);
     // ra2md.mix is a top-level container of nested mixes; entry count is stable.
     MESSAGE("ra2md.mix entries: " << m.count());
@@ -145,28 +142,20 @@ TEST_CASE("mix opens a real encrypted archive from the install") {
 
 TEST_CASE("mix_id resolves well-known nested mix names (stock assets)") {
     using namespace ra2assets;
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
     int archives_checked = 0;
-    {
-        auto bytes = slurp(base + "\\ra2.mix");
-        if (!bytes.empty()) {
-            MixFile m = MixFile::open(std::move(bytes));
-            CHECK(m.find(mix_id("cache.mix"))   != nullptr);
-            CHECK(m.find(mix_id("local.mix"))   != nullptr);
-            CHECK(m.find(mix_id("conquer.mix")) != nullptr);
-            archives_checked++;
-        }
+    if (ra2fixture::ra2_available()) {
+        const MixFile& m = ra2fixture::ra2_mix();
+        CHECK(m.find(mix_id("cache.mix"))   != nullptr);
+        CHECK(m.find(mix_id("local.mix"))   != nullptr);
+        CHECK(m.find(mix_id("conquer.mix")) != nullptr);
+        archives_checked++;
     }
-    {
-        auto bytes = slurp(base + "\\ra2md.mix");
-        if (!bytes.empty()) {
-            MixFile m = MixFile::open(std::move(bytes));
-            CHECK(m.find(mix_id("cachemd.mix")) != nullptr);
-            CHECK(m.find(mix_id("localmd.mix")) != nullptr);
-            CHECK(m.find(mix_id("conqmd.mix"))  != nullptr);
-            archives_checked++;
-        }
+    if (ra2fixture::assets_available()) {
+        const MixFile& m = ra2fixture::top_mix();
+        CHECK(m.find(mix_id("cachemd.mix")) != nullptr);
+        CHECK(m.find(mix_id("localmd.mix")) != nullptr);
+        CHECK(m.find(mix_id("conqmd.mix"))  != nullptr);
+        archives_checked++;
     }
     if (archives_checked == 0) {
         MESSAGE("skipped: no stock archives under RA2_INSTALL_DIR");
@@ -176,9 +165,10 @@ TEST_CASE("mix_id resolves well-known nested mix names (stock assets)") {
 
 TEST_CASE("mix_id matches real IDs via local mix database (if present)") {
     using namespace ra2assets;
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto bytes = slurp(base + "\\ecache01.mix");
+    // ecache01.mix is read exactly once across the suite, so it keeps a direct
+    // read (via the shared slurp helper) -- this case exercises local_names()/
+    // mix_id() against a real local mix database.
+    auto bytes = ra2fixture::slurp(ra2fixture::install_base() + "\\ecache01.mix");
     if (bytes.empty()) { MESSAGE("skipped: ecache01.mix not found"); return; }
     MixFile m = MixFile::open(std::move(bytes));
     auto names = m.local_names();
@@ -204,11 +194,10 @@ TEST_CASE("mix_id known vector") {
 
 TEST_CASE("open_nested opens a real child mix and throws on unknown names") {
     using namespace ra2assets;
-    const char* dir = std::getenv("RA2_INSTALL_DIR");
-    std::string base = dir ? dir : "D:\\Red Alert 2";
-    auto bytes = slurp(base + "\\ra2.mix");
-    if (bytes.empty()) { MESSAGE("skipped: ra2.mix not found"); return; }
-    MixFile m = MixFile::open(std::move(bytes));
+    // Borrow the shared, load-once ra2.mix (asset_fixture): open_nested is
+    // still exercised on the real archive, just without re-reading the file.
+    if (!ra2fixture::ra2_available()) { MESSAGE("skipped: ra2.mix not found"); return; }
+    const MixFile& m = ra2fixture::ra2_mix();
 
     // Open cache.mix as a nested archive
     MixFile cache_child = m.open_nested("cache.mix");
