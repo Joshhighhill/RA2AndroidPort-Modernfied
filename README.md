@@ -828,6 +828,120 @@ hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
   but no existing demo has one, so those coords are default-driven exactly
   as before [`naval.md` §6; spec §8].
 
+## CB-4 — Superweapons
+
+The CB-4 phase adds a recharge-timer superweapon framework that is
+AI-INDEPENDENT by construction: a new per-house registry `sw_houses_`/
+`sw_any_` on `World` works for the player house 0 — which is never present in
+`ai_houses_` — as readily as for any AI house. The data model is the pure,
+header-inline `Superweapon` lifecycle (`type`, `recharge_secs`, `timer`,
+`ready`, with `tick`/`is_ready`/`on_fired`/`charge_fraction`), embedded per
+house in `HouseSuperweapon` alongside the resolved effect parameters
+(`eff_damage`, `eff_cell_spread`, `eff_percent_at_max`, `eff_verses`).
+`grant_superweapon` is opt-in and is never called by any existing (pre-CB-4)
+demo, so `sw_any_` stays false and `step_superweapon` — inserted into
+`World::step` right after `step_flight` — early-returns as a firewalled
+no-op for every one of them.
+
+Target selection and fire mirror the existing placement-mode input pattern:
+the `N` keybind or a cameo click ARMS targeting, and the next map click FIRES
+via `fire_superweapon`, reusing the existing screen→cell pick
+(`input.cpp`'s placement block). `fire_superweapon` is refused unless the SW
+is READY, and a successful fire calls `on_fired()`, which resets the timer to
+0 and clears `ready` — the SW then recharges from scratch.
+
+The fired EFFECT reuses CB-2's area-damage applicator rather than inventing a
+new damage system: `fire_superweapon` builds a transient, never-added-to-
+`units_` virtual detonator `Unit` (house + target fx/fy + the four resolved
+warhead fields) and calls the EXISTING `apply_spread_damage` against it —
+`Unit` itself is untouched and `combat.cpp`'s behavior is unchanged. Because
+`apply_spread_damage` lived in `combat.cpp`'s anonymous namespace (internal
+linkage), it was promoted to the `ra2engine` namespace and declared in
+`combat.hpp` so `world.cpp` can call it — a linkage-only change; the function
+body and its existing caller (`try_fire`) are byte-for-byte unchanged. The
+`[NukeSpecial]`/`[NukePayload]`/`[NUKE]` values (`RechargeTime`, `Damage`,
+`CellSpread`, `PercentAtMax`, `Verses`) are resolved from `Rules` by
+`resolve_superweapon`. The detonation is enemies-only (the applicator's
+`w.house == attacker.house` skip spares the firing house) and instant
+(applies the frame `fire_superweapon` is called, no missile flight). It
+splashes both UNITS (via the reused applicator) and BUILDINGS in the blast
+radius — the hunt RE-GATE-confirmed (§5.3) that the real `[NUKE]` warhead
+damages every in-radius object with `Strength>0`, so `fire_superweapon` also
+runs an SW-only building-splash loop that mirrors the unit falloff exactly
+(round(`CellSpread`) radius, linear 1.0→`PercentAtMax` scale, `damage_vs`
+truncation, enemies-only) and destroys in-radius enemy structures via
+`kill_building`.
+
+The sidebar SW UI draws a `NukeIcon` cameo plus a `gclock2.shp` recharge
+clock (`gframe = round(charge_fraction·54)`) with a flashing-green READY
+tint, art-guarded and drawn only when house 0 has a granted SW — so no
+existing screenshot changes.
+
+Byte-identity discipline follows the same strategy every prior phase used:
+`Unit` and `world_hash` are **untouched** (strategy (a) — the SW timer/ready/
+type live in a separate per-house record and are never read by the hash);
+the combat edit is linkage-only (`apply_spread_damage`'s body and its
+`try_fire` call are unchanged); the eleven legacy gates were re-verified
+byte-identical both at the first additive CB-4 commit (Task 3) and again at
+this finalize. Calibration authority: `docs/re/superweapon.md` (superweapon
+data model + `[SuperWeaponTypes]` id map, recharge-timer lifecycle,
+target/fire, the `[NukePayload]`/`[NUKE]` fired effect + building-splash
+RE-GATE, sidebar UI art, determinism/no-RNG).
+
+Deviations we take for CB-4 (adjudicated divergences from the recovered
+`superweapon.md` ground truth — not bugs, do not "fix" in review; mirrors the
+hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
+- **`apply_spread_damage` promoted to external linkage (combat.cpp behavior
+  unchanged)** — the nuke REUSES the exact CB-2 area-damage applicator;
+  because it lived in `combat.cpp`'s anonymous namespace it was moved to the
+  `ra2engine` namespace + declared in `combat.hpp` so `world.cpp` can call
+  it. Linkage-only: the function body + its existing caller (`try_fire`) are
+  byte-for-byte unchanged and all twelve gate outputs are bit-identical.
+  This is the one departure from the spec's "`combat.cpp` literally
+  untouched" wording — the alternative (reimplementing the falloff loop) is
+  the "new damage system" §5/§8 forbid [`superweapon.md` §2; spec §5/§8].
+- **Instant area-damage detonation; missile flight deferred** — the effect
+  applies at the target cell the frame `fire_superweapon` is called (the
+  established instant/simplified-delivery precedent); the
+  `GiantNukeUp`/`GiantNukeDown` missile flight, `DetonationAltitude`, and the
+  `NUKEANIM` mushroom cloud are carry-forwards [`superweapon.md` §5; spec
+  §Out].
+- **Enemies-only splash** — the reused applicator's
+  `w.house == attacker.house` skip spares the firing house; the real nuke
+  damages friendlies too. The enemies-only splash is kept (a documented
+  divergence); friendly-fire splash is a carry-forward [`superweapon.md` §5;
+  spec §Out].
+- **Building splash (RE-GATE CONFIRMED)** — the hunt confirmed the `[NUKE]`
+  warhead damages every in-radius object with `Strength>0` (buildings
+  included; `WallAbsoluteDestroyer`/`Wood`), so `fire_superweapon` runs an
+  SW-only building-splash loop mirroring the unit falloff exactly
+  (round(`CellSpread`) radius, linear 1.0→`PercentAtMax` scale, `damage_vs`
+  truncation, enemies-only, `kill_building` on hp<=0). Reached only by the
+  SW call, so the gates stay byte-identical; friendly-fire on buildings is
+  the same documented enemies-only divergence as the unit splash
+  [`superweapon.md` §5.3; spec §Out].
+- **`RadLevel=500` lingering radiation dropped** — CB-4 applies the one-shot
+  `[NUKE]` splash only; the radiation field / over-time damage is out
+  [`superweapon.md` §2; spec §Out].
+- **SW granted directly, not via a Nuke Silo** — CB-4 grants the SW to a
+  house directly (like CB-1/2/3 spawned their exemplars directly); wiring
+  "build the Nuke Silo → unlock the SW" through the prerequisite/production
+  system is a carry-forward [spec §Out].
+- **Only the `MultiMissile`/Nuke `Type` implemented** — the full SW `Type`
+  enum (Iron Curtain, Chronosphere, Lightning Storm, Psychic Dominator, …) is
+  RE-documented and mapped (`SuperweaponType` + `superweapon_type_from_id`)
+  so each deferred kind starts from a mapped point; CB-4 ships only the
+  area-damage detonation effect [`superweapon.md` §4; spec §Out].
+- **AI does not use superweapons; the AI-3 inert SW-charge conditions stay
+  inert** — `AIDefendAgainst=yes` / the AI SuperDefense system stays inert;
+  the `ai-trigger.md` ct=5/ct=6 IronCurtainCharged/ChronoSphereCharged
+  conditions are NOT wired to this framework in CB-4 (CB-4 grants only the
+  Nuke, which neither names) — a carry-forward [spec §Out].
+- **SW state is LIVE but excluded from `world_hash`** — the SW timer/ready/
+  type is hashed only by `superweapon_hash` (strategy (a)); `world_hash` and
+  `Unit` are untouched; no existing demo grants a SW, so no existing hash
+  changes [`superweapon.md` §5; spec §8].
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -998,6 +1112,20 @@ Headless/verification CLI modes (render one or more frames and exit):
   (rendered + headless); both runs must produce identical witness lines and
   hash; wedge guards exit non-zero unless the ship MOVED on >=1 water cell AND
   was BLOCKED from a land cell AND at least one hit landed.
+- `ra2engine.exe --demo-superweapon` — the CB-4 Superweapons integration gate:
+  grants house 0 the Soviet Nuclear Missile (`[NukeSpecial]`, `Type=MultiMissile`)
+  via `grant_superweapon` with the recovered `[NukePayload]`/`[NUKE]` params
+  (Damage=600, CellSpread=10, PercentAtMax=.02), spawns a cluster of enemy units
+  (house 1) around a target cell within the nuke radius plus one own unit in-radius
+  and one far enemy out-of-radius, then scripts CHARGE (steps the real recharge
+  timer to READY), FIRE (`fire_superweapon` at the cell — returns true, resets the
+  timer), DETONATE (the reused `apply_spread_damage` kills the in-radius enemies,
+  spares the firing house, leaves the far enemy untouched), and RECHARGE (the SW
+  re-charges from 0) — and hashes every unit's cell/alive/hp + the firing house's
+  SW quantized-timer/ready/type + the target cell at four checkpoints
+  (`superweapon_hash`). Runs twice (rendered + headless); both runs must produce
+  identical witness lines and hash; wedge guards exit non-zero unless the SW
+  reached READY AND fired AND >=1 in-radius enemy was killed.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -1005,15 +1133,15 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These eleven headless demos are byte-identity regression gates: any change to
+These twelve headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=18` as of the AI-1 phase
-— with the gated hash unaffected each time). The first TEN are the legacy
-gates re-verified unchanged by every subsequent phase; `--demo-naval` is
-the new CB-3 gate.
+— with the gated hash unaffected each time). The first ELEVEN are the legacy
+gates re-verified unchanged by every subsequent phase; `--demo-superweapon` is
+the new CB-4 gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -1028,6 +1156,7 @@ the new CB-3 gate.
 | `--demo-transport` | `transport_hash=fe500f946e913645` | `deterministic=yes`; variant=HTK (Passengers=5 SizeLimit=2 on this install; FV fallback documented if art ever regresses); 5 boards to the exact-fill COUNT boundary + 1 refusal at full; carry with zero carried-unit draw/occupancy folded into the hash; 5 LIFO ejects one-per-frame onto facing±90° scatter cells (`eject_cell`); wedge guards armed (`docs/re/transport-cargo.md`) |
 | `--demo-aircraft` | `aircraft_hash=a69642564cf64773` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
 | `--demo-naval` | `naval_hash=6aee2c82bc024e86` | `deterministic=yes`; variant=HYD (Sea Scorpion, `Speed=8`, `ROT=6`, `FlakTrackGun` Damage=25/ROF=25/Range=5, Warhead `FlakTWH` CellSpread=1.0 on this install; DRED/DEST fallback documented if art regresses); sails across the `mapsmd03` water region (468 Water cells, 252-cell main body, bbox [71,11]–[95,40], runtime-classified from the theater `[General]` tile-sets) via A* on the water grid (every path cell Water, folded into the hash), refuses a land-cell order (empty/stay-put — the water/land inverse), approaches over water and fires FlakTrackGun to a kill, holds station on resume; voxel ship at altitude 0 (existing draw path); wedge guards armed (`docs/re/naval.md`) |
+| `--demo-superweapon` | `superweapon_hash=189496664f5eca68` | `deterministic=yes`; grants the Soviet Nuclear Missile (`[NukeSpecial]` `Type=MultiMissile`, `RechargeTime` -> recharge_secs, `[NukePayload]` Damage=600, `[NUKE]` CellSpread=10/PercentAtMax=.02/Verses); charges to READY, fires at the target cell, detonates via the REUSED `apply_spread_damage` (enemies-only, instant), spares the firing house, leaves out-of-radius units untouched, re-charges from 0; NukeIcon cameo + gclock2 recharge clock (art-guarded, placeholder if absent); wedge guards armed (`docs/re/superweapon.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
