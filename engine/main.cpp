@@ -6285,6 +6285,329 @@ int run_demo_aircraft() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-naval helpers ----------------------------------------------------
+
+// CB-3 Naval [RE-GATE APPLIED: naval.md §2]: pick a start Water cell and a
+// distant Water cell in the SAME 4-connected water region (the 252-cell main
+// body on mapsmd03), so the demo ship has a real path to sail. Returns false if
+// no water region of >= min_cells exists -- a defensive wedge guard only
+// (CONFIRMED not to fire on mapsmd03; the caller then errors out visibly).
+bool pick_water_cell(const std::vector<ra2assets::LandType>& lt, int gw, int gh,
+                     int min_cells, ra2engine::Cellxy& start, ra2engine::Cellxy& far_) {
+    const std::size_t n = static_cast<std::size_t>(gw) * gh;
+    std::vector<int> comp(n, -1);
+    int best_comp = -1, best_size = 0;
+    ra2engine::Cellxy best_a{0, 0}, best_b{0, 0};
+    for (int y = 0; y < gh; ++y)
+        for (int x = 0; x < gw; ++x) {
+            const std::size_t i = static_cast<std::size_t>(y) * gw + x;
+            if (lt[i] != ra2assets::LandType::Water || comp[i] != -1) continue;
+            const int id = static_cast<int>(i);
+            std::vector<ra2engine::Cellxy> stack{{x, y}};
+            comp[i] = id;
+            int size = 0;
+            ra2engine::Cellxy a{x, y}, b{x, y};   // extremes for a "distant" pair
+            while (!stack.empty()) {
+                const ra2engine::Cellxy c = stack.back(); stack.pop_back();
+                ++size;
+                if (c.x + c.y < a.x + a.y) a = c;
+                if (c.x + c.y > b.x + b.y) b = c;
+                const int dx[4] = {1, -1, 0, 0}, dy[4] = {0, 0, 1, -1};
+                for (int k = 0; k < 4; ++k) {
+                    const int nx = c.x + dx[k], ny = c.y + dy[k];
+                    if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+                    const std::size_t j = static_cast<std::size_t>(ny) * gw + nx;
+                    if (lt[j] == ra2assets::LandType::Water && comp[j] == -1) {
+                        comp[j] = id;
+                        stack.push_back({nx, ny});
+                    }
+                }
+            }
+            if (size > best_size) { best_size = size; best_comp = id; best_a = a; best_b = b; }
+        }
+    if (best_comp < 0 || best_size < min_cells) return false;
+    start = best_a;
+    far_ = best_b;
+    return true;
+}
+
+// FNV fold of the naval-phase state [spec §7]: every unit's (cell_x, cell_y,
+// alive, hp) PLUS each naval unit's (movement_domain, path.size(), target) and
+// a running count of DISTINCT water cells the ship has occupied. Folded at the
+// demo's four fixed checkpoints (post-move, post-land-block, post-attack, end).
+// A NEW accumulator; world_hash and every prior *_hash UNTOUCHED.
+uint64_t naval_fold(uint64_t h, const ra2engine::World& world, uint64_t water_cells) {
+    const std::vector<ra2engine::Unit>& us = world.units();
+    for (const ra2engine::Unit& u : us) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+    }
+    for (const ra2engine::Unit& u : us) {
+        if (!u.is_naval) continue;
+        h = fnv_mix(h, static_cast<uint64_t>(static_cast<int>(u.movement_domain)));
+        h = fnv_mix(h, static_cast<uint64_t>(u.path.size()));
+        h = fnv_mix(h, static_cast<uint64_t>(u.target + 1));
+    }
+    h = fnv_mix(h, water_cells);
+    return h;
+}
+
+struct DemoNavalResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+DemoNavalResult simulate_naval(Assets& a, UnitAssets& ua, const NavalAssets& na,
+                               const std::vector<const VehicleAssets*>& vlist,
+                               bool render, SDL_Renderer* ren,
+                               ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                               int W, int H, const std::string& start_png,
+                               const std::string& end_png) {
+    DemoNavalResult r;
+    if (!na.ok) { r.ok = false; return r; }
+    ra2engine::World world = build_world(a, ua, 0);
+    const int gw = world.grid_w(), gh = world.grid_h();
+
+    // Resolve the map's per-cell LandType and hand World the water grid.
+    std::vector<ra2assets::LandType> lt = resolve_land_types(a.map, a.theater, gw, gh);
+    world.set_water_terrain(lt);
+
+    // Find a water region: a start cell + a distant cell to sail to in the
+    // 252-cell main body [RE-GATE APPLIED: naval.md §2 -- mapsmd03 has 468 Water
+    // cells, bbox [71,11]-[95,40]]. The false path is a defensive wedge guard
+    // only (CONFIRMED not to fire on mapsmd03) -> fail visibly if it ever does.
+    ra2engine::Cellxy w_start{0, 0}, w_far{0, 0};
+    if (!pick_water_cell(lt, gw, gh, /*min_cells=*/12, w_start, w_far)) {
+        r.ok = false;
+        r.witness.emplace_back("[naval] WEDGE: no materialized contiguous water region");
+        return r;
+    }
+    // The target sits on a water cell near w_far (in-range of the ship's Range=5
+    // once it sails over); use w_far itself as the enemy cell and a cell a few
+    // steps in from w_start as the ship's mid-approach goal.
+    const ra2engine::Cellxy ship_cell = w_start;
+    const ra2engine::Cellxy enemy_cell = w_far;
+
+    world.add_combat_unit(ship_cell.x, ship_cell.y, /*house=*/0, na.va.combat);   // idx 0
+    const int s_idx = 0;
+    ra2engine::UnitCombat tgt = na.va.combat;    // a second Sea Scorpion (naval duel)
+    ra2engine::Unit& enemy = world.add_combat_unit(enemy_cell.x, enemy_cell.y, /*house=*/1, tgt);
+    const int t_idx = 1;
+    enemy.hp = enemy.max_hp;
+    {
+        char b[192];
+        std::snprintf(b, sizeof b,
+                      "[naval] variant=%s ship=(%d,%d) enemy=(%d,%d) range=%.1f",
+                      na.id.c_str(), ship_cell.x, ship_cell.y, enemy_cell.x, enemy_cell.y,
+                      na.va.combat.range);
+        r.witness.emplace_back(b);
+    }
+
+    const double dt = 1.0 / 15.0;
+    long frame = 0;
+    bool moved_on_water = false, land_blocked = false;
+    int hits = 0;
+    int prev_hp = world.units()[t_idx].hp;
+    uint64_t water_cells = 0;
+    int last_cx = ship_cell.x, last_cy = ship_cell.y;
+    uint64_t h = 0xcbf29ce484222325ull;          // FNV-1a offset basis
+
+    auto is_water = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= gw || y >= gh) return false;
+        return lt[static_cast<std::size_t>(y) * gw + x] == ra2assets::LandType::Water;
+    };
+    auto dead = [&](int i) {
+        return !world.units()[i].alive || world.units()[i].die_time >= 0.0;
+    };
+    auto step_one = [&]() {
+        world.step(dt);
+        const ra2engine::Unit& s = world.units()[s_idx];
+        if ((s.cell_x != last_cx || s.cell_y != last_cy) && is_water(s.cell_x, s.cell_y)) {
+            ++water_cells;
+            moved_on_water = true;
+        }
+        last_cx = s.cell_x; last_cy = s.cell_y;
+        const int hp = world.units()[t_idx].hp;
+        if (hp < prev_hp) ++hits;
+        prev_hp = hp;
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+        }
+    };
+
+    // 1) MOVE: sail across the water toward a mid-water cell short of the enemy.
+    const int mid_x = (ship_cell.x + enemy_cell.x) / 2;
+    const int mid_y = (ship_cell.y + enemy_cell.y) / 2;
+    world.order_unit_move(s_idx, mid_x, mid_y);
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+    while (frame < 4000 && world.units()[s_idx].moving()) step_one();
+    h = naval_fold(h, world, water_cells);       // checkpoint 1: post-move
+    {
+        char b[144];
+        std::snprintf(b, sizeof b,
+                      "[naval] moved cells=%llu path_water=%s arrived=(%d,%d) frame=%ld",
+                      static_cast<unsigned long long>(water_cells),
+                      moved_on_water ? "yes" : "no",
+                      world.units()[s_idx].cell_x, world.units()[s_idx].cell_y, frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 2) LAND-BLOCK: order the ship to a LAND cell; it must refuse (no water
+    //    path -> empty/stay-put), the inverse of a ground unit.
+    ra2engine::Cellxy land{0, 0};
+    for (int y = 0; y < gh && (land.x == 0 && land.y == 0); ++y)
+        for (int x = 0; x < gw; ++x)
+            if (!is_water(x, y) &&
+                lt[static_cast<std::size_t>(y) * gw + x] == ra2assets::LandType::Clear) {
+                land = {x, y}; break;
+            }
+    const int before_x = world.units()[s_idx].cell_x, before_y = world.units()[s_idx].cell_y;
+    world.order_unit_move(s_idx, land.x, land.y);
+    const bool empty_path = world.units()[s_idx].path.empty();
+    for (int f = 0; f < 60; ++f) step_one();
+    if (empty_path && world.units()[s_idx].cell_x == before_x &&
+        world.units()[s_idx].cell_y == before_y)
+        land_blocked = true;
+    h = naval_fold(h, world, water_cells);       // checkpoint 2: post-land-block
+    {
+        char b[144];
+        std::snprintf(b, sizeof b, "[naval] land-block ordered=(%d,%d) moved=%s frame=%ld",
+                      land.x, land.y, land_blocked ? "no" : "YES-BUG", frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 3) ATTACK: order the ship to attack the hostile ship; it approaches over
+    //    water (the combat-approach naval branch) and fires FlakTrackGun.
+    world.clear_selection();
+    world.units()[s_idx].selected = true;
+    world.order_attack(t_idx);
+    while (frame < 9000 && !dead(t_idx)) step_one();
+    h = naval_fold(h, world, water_cells);       // checkpoint 3: post-attack
+    {
+        char b[144];
+        std::snprintf(b, sizeof b, "[naval] hit target=%d dmg-events=%d target_dead=%s frame=%ld",
+                      t_idx, hits, dead(t_idx) ? "yes" : "no", frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 4) RESUME: fixed window; the ship holds station on the water.
+    const long resume_until = frame + 150;
+    while (frame < resume_until) step_one();
+    h = naval_fold(h, world, water_cells);       // checkpoint 4: end
+    r.hash = h;
+
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[naval] final moved_on_water=%s land_blocked=%s hits=%d water_cells=%llu frame=%ld",
+                      moved_on_water ? "yes" : "no", land_blocked ? "yes" : "no", hits,
+                      static_cast<unsigned long long>(water_cells), frame);
+        r.witness.emplace_back(b);
+    }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[naval] naval_hash=%016llx",
+                  static_cast<unsigned long long>(r.hash));
+    r.witness.emplace_back(hb);
+
+    // Wedge guards [spec §7]: the gate can never pass vacuously -- the ship must
+    // MOVE on >=1 water cell AND be BLOCKED from a land cell AND land >=1 hit.
+    if (!moved_on_water) { r.ok = false; r.witness.emplace_back("[naval] WEDGE: no move on water"); }
+    if (!land_blocked) { r.ok = false; r.witness.emplace_back("[naval] WEDGE: not blocked from land"); }
+    if (hits < 1) { r.ok = false; r.witness.emplace_back("[naval] WEDGE: no hit landed on the target"); }
+    if (render) { capture_png(ren, end_png, W, H); }   // capture the ALREADY-rendered frame
+    return r;
+}
+
+// --demo-naval: the CB-3 naval integration gate (11th permanent byte-identity
+// gate). Mirrors run_demo_aircraft exactly: runs simulate_naval rendered
+// (hidden window + start/end screenshots) then headless from a FRESH World, and
+// byte-compares the two witness logs + hashes. Exit 0 iff both runs are
+// byte-identical AND both ok. NO hardcoded hash literal -- compute-and-self-
+// compare; the controller pins the observed value in the README gate table.
+int run_demo_naval() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_naval_start.png";
+    const std::string end_png = scratch + "demo_naval_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    NavalAssets na = load_naval_assets(dir, ra2, ua.pal);
+    if (!na.ok) {
+        std::cerr << "[demo-naval] FAILED: naval art unavailable (HYD/DRED/DEST)\n";
+        return 1;
+    }
+    std::vector<const VehicleAssets*> vlist{&na.va};
+
+    ra2engine::Camera cam;   // centered on the water region so the ship is framed
+    {
+        // Center on the middle of the ship's water approach (start<->far midpoint
+        // of the same 252-cell body simulate_naval sails) so the start/end
+        // screenshots actually show the Sea Scorpion on water. The exact camera
+        // does NOT affect the hash (rendered/headless runs fold identical state);
+        // it only frames the rendered PNGs. Falls back to the map interior if the
+        // water pick ever fails (defensive -- CONFIRMED not to on mapsmd03).
+        ra2engine::World probe = build_world(a, ua, 0);
+        const int gw = probe.grid_w(), gh = probe.grid_h();
+        std::vector<ra2assets::LandType> lt = resolve_land_types(a.map, a.theater, gw, gh);
+        ra2engine::Cellxy ws{0, 0}, wf{0, 0};
+        int cx, cy;
+        if (pick_water_cell(lt, gw, gh, /*min_cells=*/12, ws, wf)) {
+            cx = (ws.x + wf.x) / 2;
+            cy = (ws.y + wf.y) / 2;
+        } else {
+            const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+            cx = pc ? pc->x : gw / 2;
+            cy = pc ? pc->y : gh / 2;
+        }
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    DemoNavalResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-naval)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_naval(a, ua, na, vlist, /*render=*/true, ren, &tc, &cam,
+                                W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    DemoNavalResult r2 = simulate_naval(a, ua, na, vlist, /*render=*/false, nullptr,
+                                        nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-naval] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d naval_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -6427,6 +6750,8 @@ int main(int argc, char** argv) {
                 demo_transport = true;
             } else if (arg == "--demo-aircraft") {
                 demo_aircraft = true;
+            } else if (arg == "--demo-naval") {
+                return run_demo_naval();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
