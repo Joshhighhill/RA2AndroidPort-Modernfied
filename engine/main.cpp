@@ -2140,7 +2140,7 @@ std::vector<int> sidebar_buildable(const BuildingAssets& ba);
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
                   const ra2engine::World& world, int credits_shown, double t_now, int active_tab,
-                  const UnitRoster* ur = nullptr);
+                  const UnitRoster* ur = nullptr, bool unit_factory_alive = true);
 
 int run_screenshot(const std::string& out_path) {
     const int W = 1280, H = 720;
@@ -2531,7 +2531,7 @@ void draw_sw_slot(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
                   const ra2engine::World& world, int credits_shown, double t_now, int active_tab,
-                  const UnitRoster* ur) {
+                  const UnitRoster* ur, bool unit_factory_alive) {
     // Opaque backdrop behind any gaps (missing optional chrome), then the
     // recovered top-to-bottom stack.
     shade_rect(ren, lay.bar, 255, 24, 24, 28);
@@ -2642,9 +2642,17 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
                 blit_shp(ren, tc, "cam:" + ba.roster[type].id, ba.art[type].cameo, 0, ba.cameo_pal,
                          c.rect.x, c.rect.y);
         }
-        const bool can =
-            !unit_tab && ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
-                                              conyard_alive(world, ba, 0));
+        // CB-5 [RE: techtree.md §1]: unit tabs now compute buildability too (was
+        // building-tabs-only). Unit cameo availability reuses can_start_unit
+        // against the SAME predicate; building cameos keep can_start. Render-only;
+        // no gate renders an interactive unit tab (spec §8).
+        bool can;
+        if (unit_tab)
+            can = ra2engine::can_start_unit(ps, type, ur->defs, world.buildings(), ba.roster, 0,
+                                            ba.groups, unit_factory_alive);
+        else
+            can = ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
+                                       conyard_alive(world, ba, 0));
         if (ps.slot.type == type && ps.slot.ready) {
             // Ready: 2 Hz brightness flash (green tint overlay; READY text is a
             // documented divergence -- no game font in this phase).
@@ -2656,8 +2664,8 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
             if (gframe >= ba.sb_gclock.count()) gframe = ba.sb_gclock.count() - 1;
             blit_shp(ren, tc, "sb:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
                      c.rect.x, c.rect.y);
-        } else if (active_tab < 2 && !can) {
-            shade_rect(ren, c.rect, 140);  // Disabled: ~55% black
+        } else if (!can) {
+            shade_rect(ren, c.rect, 140);  // Disabled: ~55% black (building AND unit tabs, CB-5)
         }
     }
     // CB-4 Superweapons [spec §6]: the SW cameo + recharge clock in an unused
@@ -3257,9 +3265,16 @@ int run_interactive(bool no_audio) {
                 : (active_tab == 2) ? ra2engine::QueueCat::Infantry
                 : (active_tab == 3) ? ra2engine::QueueCat::Vehicle
                                     : ra2engine::QueueCat::Structure;
+            // CB-5: the active unit tab's factory-alive gate for the cameo
+            // disabled-shade (Vehicle=GAWEAP, Infantry=GAPILE). Ignored for
+            // building tabs. Mirrors the start-a-unit check at main.cpp:2959.
+            const bool unit_fac_alive =
+                (active_tab == 3) ? !world.factory_category_lost(veh_ft, 0)
+              : (active_tab == 2) ? !world.factory_category_lost(inf_ft, 0)
+                                  : true;
             draw_sidebar(ren, tc, ba, lay, queues.state(vis_cat), world,
                          static_cast<int>(std::llround(credits_shown)), now / 1000.0, active_tab,
-                         &ur);
+                         &ur, unit_fac_alive);
         }
         // Production chrome [RE: production.md §1.2/§1.4; markers are cosmetic,
         // never touch sim state]: a filled triangle over each own primary unit
