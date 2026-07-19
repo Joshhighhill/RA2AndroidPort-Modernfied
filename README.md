@@ -727,6 +727,107 @@ hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
   aircraft-related ScriptType opcodes stay inert in the AI-2 interpreter (a
   recorded carry-forward) [spec §Out].
 
+## CB-3 — Naval & Water Movement
+
+The CB-3 phase gives units a second movement domain: water. The engine had no
+notion of a water cell before this phase, so the foundational piece is
+`LandType` — the net-new water-cell identification recovered by classifying
+each cell's owning theater tile-set against the theater `[General]` indices
+(`WaterSet`, `ShorePieces`, `CliffSet`, `WaterCliffs`, `RoughTile`,
+`ClearTile`) via `ra2engine::Theater` + the pure
+`ra2assets::land_type_from_tile_set`/`Theater::land_type_of_cell`, walked
+per-map-cell by `main.cpp`'s `resolve_land_types`. The pre-hunt `.tmp`
+`TerrainType` byte was FALSIFIED for this purpose (it carries values 9–15 and
+never Water on the real map) and is explicitly NOT used anywhere in the
+CB-3 path.
+
+On top of `LandType`, water passability is pure and binary:
+`MovementDomain { Land, Water }` plus `build_water_passability` — a cell is
+passable to a Float ship iff its `LandType` is `Water` AND it is materialized
+in the Land grid (the intersection with `passable_`); the Land grid itself
+(`passable_`, `build_passability`) is literally unchanged by any of this.
+
+World integration adds `grid_for(domain)`, which selects the existing Land
+grid for the DEFAULT `Land` domain — byte-identical to every prior phase —
+and the new `water_passable_` grid for `Water`; `set_water_terrain` is
+opt-in and is never called by any existing (pre-CB-3) demo. `order_unit_move`
+and `step_units`'s re-path both gained a domain-selected grid clause (ternary
+on `movement_domain`, provably `Land` for every non-naval unit), and the
+combat-approach branch gained a naval path that routes through the water
+grid. Occupancy is unchanged, and the water/land grids stay disjoint by
+construction — CB-3 does NOT retrofit ground-from-water blocking onto the
+Land grid.
+
+Naval combat needed no new acquire/targeting/damage machinery: the Sea
+Scorpion (`[HYD]`) acquires and fires `FlakTrackGun` through the EXISTING
+`step_combat`/`try_fire` path; only its approach differs, routing to a WATER
+A* path instead of the ground grid. Render is likewise a non-event: ships are
+voxels at altitude 0, drawn through the EXISTING `draw_vehicle_unit` path — no
+new render code, no shadow, no altitude offset (unlike CB-2's airborne
+units). The exemplar is art-guarded, with a DRED/DEST fallback if `[HYD]`'s
+art ever regresses.
+
+Byte-identity discipline follows the same strategy every prior phase used:
+`world_hash` is **untouched** (strategy (a) — naval fields are inert defaults
+for every non-naval unit and are never read by the hash); the ten legacy
+gates were re-verified byte-identical both at the first additive CB-3 commit
+(Task 4) and again at this finalize. Calibration authority: `docs/re/naval.md`
+(naval locomotor CLSID + movement-shape recovery, LandType→passability model,
+water occupancy/repath, naval combat + targeting, exemplar-stat formulas,
+determinism/no-RNG, map-water availability).
+
+Deviations we take for CB-3 (adjudicated divergences from the recovered
+`naval.md` ground truth — not bugs, do not "fix" in review; mirrors the
+hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
+- **Binary water passability, not speed-weighted terrain cost** — a cell is
+  water-passable to a Float ship iff `LandType==Water` AND it is materialized
+  (the game's `Ground[LandType][SpeedType] == 0.0` gate is binary, confirmed);
+  the `[Clear]`/`[Water]`/… speed-% → A* cost model is a documented
+  carry-forward [`naval.md` §2].
+- **LandType via the theater tile-set classification (NOT the `.tmp`
+  byte)** — a cell's land type is decoded by classifying its owning
+  `[TileSetNNNN]` set against the theater `[General]` set indices
+  (`WaterSet=21`, `ShorePieces=12`, `CliffSet=10`, `WaterCliffs=15`,
+  `RoughTile=13`, `ClearTile=0`) via `ra2engine::Theater`/
+  `land_type_from_tile_set`; the pre-hunt `.tmp TerrainType`-byte source was
+  FALSIFIED (it carries 9–15, zero Water) and is NOT used [`naval.md` §2].
+- **Ground-from-water blocking NOT retrofitted** — CB-3 does NOT change the
+  Land grid `passable_` to block ground units from water (that would perturb
+  the ten gates and is unnecessary — no existing demo paths a ground unit
+  through the lake); the water/land inverse is expressed by the separate
+  water grid the naval domain reads [`naval.md` §2; spec §Out].
+- **Instant single-target hit; splash reuses the existing
+  `apply_spread_damage`** — `FlakTrackGun` damage is delivered
+  instant-to-target-cell (the established projectile simplification,
+  `combat.md`), which drops the vanilla `FlakScatter`/`Inaccurate`
+  ballistic-scatter RNG. `FlakTWH CellSpread=1.0` (≥ 1.0, `PercentAtMax=1.0`
+  ⇒ no falloff) flows through CB-2's EXISTING `apply_spread_damage` one-ring
+  splash — NO new code, faithful. Only the `FlakTProj Speed=50` projectile
+  flight itself is a carry-forward [`naval.md` §4/§6]. `[HYD]` auto-acquires
+  both land and naval targets (no targeting keys) — faithful, not a
+  deviation.
+- **Naval duel target** — the demo's target is a second Sea Scorpion on
+  water, keeping every combat-approach cell on water (deterministic;
+  sidesteps the naval-to-shore firing-cell question); naval-to-shore
+  anti-surface fire is RE-documented but the demo does not depend on it
+  [`naval.md` §4].
+- **Pure-water ships** — CB-3 models the Float water-movement domain only;
+  the submarine cloak/submerge (`[SUB]` second CLSID), amphibious/hovercraft
+  land↔water transition (`SpeedType=Hover`/`Amphibious`, Beach/FloatBeach
+  crossing), and spawner naval delivery (`[DRED]`/`[DEST] Spawns=`) are
+  DEFERRED and mapped-for-later by the hunt [`naval.md` §1; spec §Out].
+- **No Naval Yard production** — CB-3 spawns the exemplar directly (like
+  CB-1/CB-2); production-queue + naval-yard-on-water placement are
+  carry-forwards [spec §Out].
+- **AI use of naval units stays inert** — the AI does not field ships in
+  CB-3; naval-related ScriptType opcodes stay inert in the AI interpreter (a
+  recorded carry-forward) [spec §Out].
+- **Naval fields are LIVE but excluded from `world_hash`** — `is_naval`/
+  `movement_domain` are hashed only by `naval_hash` (strategy (a));
+  `cell_x/cell_y` are hashed by `world_hash` and are live for a naval unit,
+  but no existing demo has one, so those coords are default-driven exactly
+  as before [`naval.md` §6; spec §8].
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -883,6 +984,20 @@ Headless/verification CLI modes (render one or more frames and exit):
   must produce identical witness lines and hash; wedge guards exit non-zero
   unless a takeoff AND an airborne cruise with `occ_held=0` AND one bomb's
   2-cell splash killing BOTH targets (2 kills) all actually happen.
+- `ra2engine.exe --demo-naval` — the CB-3 Naval & Water-Movement integration
+  gate: resolves the map's per-cell water mask (`set_water_terrain`), spawns one
+  Sea Scorpion (`[HYD]`, art-guarded; DRED/DEST fallback) for house 0 on a lake
+  cell and one hostile Sea Scorpion for house 1 on water within range, then
+  scripts MOVE (sails across the water via A* on the water grid — every path
+  cell is a Water cell, folded into the hash), LAND-BLOCK (ordered onto a land
+  cell, refuses with an empty/stay-put path — the inverse of a ground unit),
+  ATTACK (approaches to within weapon range over water and fires `FlakTrackGun`
+  until the target dies), and RESUME (holds station on the water) — and hashes
+  every unit's cell/alive/hp + each naval unit's domain/path-size/target + the
+  count of water cells traversed at four checkpoints (`naval_hash`). Runs twice
+  (rendered + headless); both runs must produce identical witness lines and
+  hash; wedge guards exit non-zero unless the ship MOVED on >=1 water cell AND
+  was BLOCKED from a land cell AND at least one hit landed.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -890,15 +1005,15 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These ten headless demos are byte-identity regression gates: any change to
+These eleven headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=18` as of the AI-1 phase
-— with the gated hash unaffected each time). The first NINE are the legacy
-gates re-verified unchanged by every subsequent phase; `--demo-aircraft` is
-the new CB-2 gate.
+— with the gated hash unaffected each time). The first TEN are the legacy
+gates re-verified unchanged by every subsequent phase; `--demo-naval` is
+the new CB-3 gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -912,6 +1027,7 @@ the new CB-2 gate.
 | `--demo-ai-trigger` | `ai_trigger_hash=8334a6ca1531cabc` | `deterministic=yes`; a Soviet AI house (Normal difficulty) with an intrinsically-eligible ct=4 HouseCredits exemplar (`0D2C41EC-G`, weight band `[10..70]`, runtime-scanned, not hardcoded) fires by the recovered cumulative-sum draw over `round(current weight)`, creates its Team1 through the AI-2 path, and the created teams' script-completion disband outcomes adjust every trigger sharing that Team1 by the clamped `+20`/`−50` track-record rule (witnessed weight movement `40→60`, `50→70`, `60→70` across the run) (`docs/re/ai-trigger.md`) |
 | `--demo-transport` | `transport_hash=fe500f946e913645` | `deterministic=yes`; variant=HTK (Passengers=5 SizeLimit=2 on this install; FV fallback documented if art ever regresses); 5 boards to the exact-fill COUNT boundary + 1 refusal at full; carry with zero carried-unit draw/occupancy folded into the hash; 5 LIFO ejects one-per-frame onto facing±90° scatter cells (`eject_cell`); wedge guards armed (`docs/re/transport-cargo.md`) |
 | `--demo-aircraft` | `aircraft_hash=a69642564cf64773` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
+| `--demo-naval` | `naval_hash=6aee2c82bc024e86` | `deterministic=yes`; variant=HYD (Sea Scorpion, `Speed=8`, `ROT=6`, `FlakTrackGun` Damage=25/ROF=25/Range=5, Warhead `FlakTWH` CellSpread=1.0 on this install; DRED/DEST fallback documented if art regresses); sails across the `mapsmd03` water region (468 Water cells, 252-cell main body, bbox [71,11]–[95,40], runtime-classified from the theater `[General]` tile-sets) via A* on the water grid (every path cell Water, folded into the hash), refuses a land-cell order (empty/stay-put — the water/land inverse), approaches over water and fires FlakTrackGun to a kill, holds station on resume; voxel ship at altitude 0 (existing draw path); wedge guards armed (`docs/re/naval.md`) |
 
 ## Android (arm64-v8a) cross-compile
 

@@ -3163,9 +3163,12 @@ namespace {
 // load-once mapsmd03 fixture map. That map is a long-lived function-local
 // static (asset_fixture.hpp), so the returned World's NON-owning map pointer
 // stays valid after the return. Overloads the bool load_real_map_w(MapFile&)
-// helper above by arity (both in this TU's anonymous namespace). These cases
-// run under RA2_INSTALL_DIR like the rest of the suite; if the install is
-// absent the World is empty-grid and the naval CHECKs simply won't hold.
+// helper above by arity (both in this TU's anonymous namespace). Callers MUST
+// gate on ra2fixture::mapsmd03_available() first (same as every other
+// real-map case in this file) -- an absent install means an empty-grid World
+// (grid_w()==grid_h()==0), and these cases hand-paint fixed cell indices
+// (e.g. lt[50*gw+60]) into a gw*gh-sized vector, which would be an
+// out-of-bounds WRITE (not a clean CHECK failure) against a zero-sized grid.
 ra2engine::World load_real_map_w() {
     return ra2engine::World(ra2fixture::mapsmd03_map());
 }
@@ -3189,6 +3192,10 @@ ra2engine::UnitCombat hyd_stats() {
 }  // namespace
 
 TEST_CASE("World: a naval unit paths across water via A* on water_passable_") {
+    if (!ra2fixture::mapsmd03_available()) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
     ra2engine::World world = load_real_map_w();
     // Paint a horizontal water corridor across materialized interior rows. The
     // real mapsmd03 grid is a 213x213 rotated diamond: at row y the materialized
@@ -3218,6 +3225,10 @@ TEST_CASE("World: a naval unit paths across water via A* on water_passable_") {
 }
 
 TEST_CASE("World: a naval unit ordered onto land is BLOCKED (empty/stay-put path)") {
+    if (!ra2fixture::mapsmd03_available()) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
     ra2engine::World world = load_real_map_w();
     using ra2assets::LandType;
     const int gw = world.grid_w(), gh = world.grid_h();
@@ -3234,6 +3245,10 @@ TEST_CASE("World: a naval unit ordered onto land is BLOCKED (empty/stay-put path
 }
 
 TEST_CASE("World: a ground unit's A* is byte-identical with and without a naval unit present") {
+    if (!ra2fixture::mapsmd03_available()) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
     // The parameterization must not perturb ground pathing.
     auto ground_path = [](bool with_naval) {
         ra2engine::World world = load_real_map_w();
@@ -3264,6 +3279,10 @@ TEST_CASE("World: a ground unit's A* is byte-identical with and without a naval 
 }
 
 TEST_CASE("World: a naval unit approaches over water and kills a naval target (FlakTrackGun)") {
+    if (!ra2fixture::mapsmd03_available()) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
     ra2engine::World world = load_real_map_w();
     using ra2assets::LandType;
     const int gw = world.grid_w(), gh = world.grid_h();
