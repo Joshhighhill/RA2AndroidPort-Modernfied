@@ -606,7 +606,8 @@ void World::order_attack(int target_idx) {
 }
 
 int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int strength,
-                        int armor_ix, double buildup_total, bool instant, int sight) {
+                        int armor_ix, double buildup_total, bool instant, int sight,
+                        bool grants_map_reveal) {
     Building b;
     b.type = type;
     b.cx = cx;
@@ -617,6 +618,7 @@ int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int
     b.hp = b.max_hp = strength;
     b.armor_ix = armor_ix;
     b.sight = sight;  // [RE: shroud.md §2] reveal radius; inert until Task 3
+    b.grants_map_reveal = grants_map_reveal;  // [RE: shroud.md §7A] SpySat/GPS reveal-all flag
     b.buildup_total = buildup_total;
     b.state = instant ? Building::State::Idle : Building::State::Buildup;
     buildings_.push_back(b);
@@ -1202,7 +1204,9 @@ bool World::infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purp
         case InfiltratePurpose::Factory:             // [RE: capture.md §B5] Task 6 wires the flag
             if (spy_house >= 0 && spy_house < 3) produced_veteran_[spy_house] = true;
             break;
-        case InfiltratePurpose::RadarLab:            // [RE-FALLBACK: capture.md §B6] inert (no shroud)
+        case InfiltratePurpose::RadarLab:            // [RE: shroud.md §7B] radar sabotage
+            reshroud_house(victim);                  // no-op if shroud off or SpySat-latched
+            break;
         case InfiltratePurpose::None:
             break;
     }
@@ -1520,8 +1524,28 @@ void World::reveal_source(int house, int cx, int cy, int sight) {
     reveal_disc(explored_[house], visible_[house], grid_w_, grid_h_, cx, cy, sight);
 }
 
+void World::reshroud_house(int h) {
+    if (h < 0 || h >= 3) return;
+    if (map_reveal_[h]) return;                 // §7B: SpySat-protected -> no sabotage
+    if (!explored_[h].empty()) std::fill(explored_[h].begin(), explored_[h].end(), (std::uint8_t)0);
+    if (!visible_[h].empty())  std::fill(visible_[h].begin(),  visible_[h].end(),  (std::uint8_t)0);
+}
+
+void World::reveal_all_house(int h) {
+    if (h < 0 || h >= 3) return;
+    if (!explored_[h].empty()) std::fill(explored_[h].begin(), explored_[h].end(), (std::uint8_t)1);
+    if (!visible_[h].empty())  std::fill(visible_[h].begin(),  visible_[h].end(),  (std::uint8_t)1);
+}
+
 void World::step_visibility() {
     if (!shroud_any_) return;                             // firewall (spec §Global)
+    // Shroud/Fog [RE: shroud.md §7A]: recompute the SpySat/GPS reveal latch from
+    // each house's alive grants_map_reveal buildings.
+    for (int h = 0; h < 3; ++h) map_reveal_[h] = false;
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (b.house >= 0 && b.house < 3 && b.grants_map_reveal) map_reveal_[b.house] = true;
+    }
     // 1) Clear visible_ (explored_ is sticky -- fog no-regrow §4).
     for (int h = 0; h < 3; ++h)
         if (!visible_[h].empty())
@@ -1546,6 +1570,9 @@ void World::step_visibility() {
             if (visible_at(h, u.cell_x, u.cell_y)) m |= (std::uint8_t)(1u << h);
         u.seen_by_mask = m;
     }
+    // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
+    for (int h = 0; h < 3; ++h)
+        if (map_reveal_[h]) reveal_all_house(h);
 }
 
 void World::ai_resync_captured_building(int b_idx, int old_house, int new_house) {

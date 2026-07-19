@@ -96,6 +96,11 @@ int Rules::sight(const std::string& unit_id) const {
     return s > 10 ? 10 : s;
 }
 
+bool Rules::spy_sat(const std::string& id) const {
+    // [RE: shroud.md §7A] SpySat=yes -> whole-map reveal provider (GASPYSAT).
+    return is_truthy(ini_->get(id, "SpySat", ""));
+}
+
 std::string Rules::armor(const std::string& unit_id) const {
     std::string a = ini_->get(unit_id, "Armor", "");
     return a.empty() ? "none" : a;

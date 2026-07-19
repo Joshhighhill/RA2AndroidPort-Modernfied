@@ -35,6 +35,11 @@ public:
     // default). A plain stat like strength/speed -- not read by world_hash.
     int sight(const std::string& id) const;
 
+    // Shroud/Fog phase [RE: shroud.md §7A]: [id] SpySat= (yes/true). True for a
+    // whole-map reveal provider (Allied GASPYSAT SpySat=yes); false when absent.
+    // Tolerant yes/true parse (SpySat=yes cannot go through section_double).
+    bool spy_sat(const std::string& id) const;
+
     // [unit_id] Armor=, or "none" if absent.
     std::string armor(const std::string& unit_id) const;
 

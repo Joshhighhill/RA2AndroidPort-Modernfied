@@ -651,7 +651,8 @@ public:
     // erased, only tombstoned). Precondition: the caller already validated
     // the placement via placement_check (this method does not re-check it).
     int add_building(int type, int cx, int cy, int fw, int fh, int house, int strength,
-                     int armor_ix, double buildup_total, bool instant, int sight = 0);
+                     int armor_ix, double buildup_total, bool instant, int sight = 0,
+                     bool grants_map_reveal = false);
 
     // Index of the alive, non-Dead building whose foundation contains (x, y),
     // or -1 if none (ascending index; foundations never overlap while both
@@ -898,6 +899,15 @@ public:
     // The firewalled per-frame visibility pass (see world.cpp). Public so the
     // gate can drive it directly if needed; normally called from World::step.
     void step_visibility();
+    // Re-shroud house h [RE: shroud.md §7B]: clear BOTH explored_[h] and
+    // visible_[h] (fully re-shrouded -- the victim must re-scout). No-op if the
+    // grid is empty (shroud off) or h out of range. shroud_any_ is NOT needed
+    // (only meaningful once enabled). The classic spy radar-sabotage.
+    void reshroud_house(int h);
+    // Reveal the whole map for house h [RE: shroud.md §7A]: set explored_[h]
+    // fully (and visible_[h] fully). Driven by owning a grants_map_reveal
+    // building; also the "reveal map / no-shroud" start option. No-op if empty.
+    void reveal_all_house(int h);
 
     // Test seam: directly seed a house's credits without running the full
     // harvest/unload pipeline (the cash-steal victim in the infiltrate tests).
@@ -1043,6 +1053,11 @@ private:
     std::vector<std::uint8_t> visible_[3];
     bool shroud_any_ = false;   // the step_visibility firewall (opened by
                                 // enable_shroud); false in every existing gate.
+    // SpySat/GPS latch per house [RE: shroud.md §7A]. Recomputed each tick from
+    // the house's alive grants_map_reveal buildings; when set, step_visibility
+    // keeps the whole map revealed and reshroud_house(h) is SUPPRESSED for h
+    // (the §7B "unless SpySat-protected" guard). Index 2 inert. Not hashed.
+    bool map_reveal_[3] = {false, false, false};
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
     // Boarding / carry / eject / transport-death, called between step_units

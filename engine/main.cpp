@@ -1513,6 +1513,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         art.foundation(id, d.fw, d.fh);
         d.strength = rules.strength(id);
         d.sight = rules.sight(id);  // [RE: shroud.md §2] reveal radius
+        d.grants_map_reveal = rules.spy_sat(id);  // [RE: shroud.md §7A] SpySat= whole-map reveal (inert: no rostered SpySat)
         d.armor_ix = ra2engine::armor_index(rules.armor(id));
         d.cost = rules.cost(id);
         // [RE: economy.md §6a] charge basis: cost normally; the FreeUnit-
@@ -1793,7 +1794,8 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
             if (chk.ok) {
                 const int idx =
                     world.add_building(type, tx, py, d.fw, d.fh, house, d.strength, d.armor_ix,
-                                       ba.art[type].buildup_total, /*instant=*/true, d.sight);
+                                       ba.art[type].buildup_total, /*instant=*/true, d.sight,
+                                       d.grants_map_reveal);
                 std::cerr << "[base] spawned " << d.id << " house=" << house << " at (" << tx << ","
                           << py << ")" << (k ? " probed+" + std::to_string(k) : "") << "\n";
                 return idx;
@@ -3431,7 +3433,8 @@ int run_interactive(bool no_audio) {
                     /*bypass_adjacency=*/false);
                 if (chk.ok) {
                     world.add_building(type, act.place_cx, act.place_cy, d.fw, d.fh, 0, d.strength,
-                                       d.armor_ix, ba.art[type].buildup_total, /*instant=*/false, d.sight);
+                                       d.armor_ix, ba.art[type].buildup_total, /*instant=*/false, d.sight,
+                                       d.grants_map_reveal);
                     queues.placed(place_cat);   // clear the slot on the queue this cameo came from
                     input.cancel_placement();
                     if (audio.enabled) audio.mixer->play("PlaceBuilding");
@@ -4368,7 +4371,8 @@ bool place_player_building(ra2engine::World& world, const BuildingAssets& ba, in
             world.occupancy(), world.buildings(), /*bypass_adjacency=*/false);
         if (chk.ok) {
             world.add_building(type, tx, py, d.fw, d.fh, 0, d.strength, d.armor_ix,
-                               ba.art[type].buildup_total, /*instant=*/true, d.sight);
+                               ba.art[type].buildup_total, /*instant=*/true, d.sight,
+                               d.grants_map_reveal);
             out_x = tx;
             out_y = py;
             return true;
@@ -5607,7 +5611,8 @@ DemoAiBaseResult simulate_ai_base(Assets& a, UnitAssets& ua, BuildingAssets& ba,
             /*bypass=*/true);
         if (!chk.ok) { r.ok = false; r.witness.emplace_back("[ai-base] ConYard placement FAILED"); return r; }
         world.add_building(nacnst, pc->x, pc->y, d.fw, d.fh, 1, d.strength, d.armor_ix,
-                           ba.art[nacnst].buildup_total, /*instant=*/true, d.sight);
+                           ba.art[nacnst].buildup_total, /*instant=*/true, d.sight,
+                           d.grants_map_reveal);
     }
 
     // Fixed difficulty + fixed credits + fixed seed (AiBaseState's rng seed
@@ -6217,7 +6222,8 @@ DemoAiTriggerResult simulate_ai_trigger(Assets& a, UnitAssets& ua, BuildingAsset
         for (int k = 0; k < need; ++k)
             world.add_building(bt, pc->x + 1 + k * (bd.fw + 1), pc->y + 9,
                                bd.fw, bd.fh, /*house=*/0, std::max(1, bd.strength),
-                               bd.armor_ix, 0.0, /*instant=*/true, bd.sight);
+                               bd.armor_ix, 0.0, /*instant=*/true, bd.sight,
+                               bd.grants_map_reveal);
     }
     world.enable_ai_house(1, acfg);
     {

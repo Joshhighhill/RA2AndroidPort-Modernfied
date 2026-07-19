@@ -49,6 +49,11 @@ struct BuildingTypeDef {
     int produce_cash_delay = 0;      // Rules ProduceCashDelay (frames between ticks)
     // Shroud/Fog phase [RE: shroud.md §2]: reveal radius in cells (clamped 10).
     int sight = 0;
+    // Shroud/Fog phase [RE: shroud.md §7A]: this building type GRANTS its house a
+    // whole-map reveal (SpySat/GPS, Allied GASPYSAT SpySat=yes). Inert default
+    // (false) -> not read by world_hash. If GASPYSAT is absent from the roster
+    // the mechanism ships inert until such a building exists (RE-GATE item 2).
+    bool grants_map_reveal = false;
 };
 
 // A placed building instance.
@@ -61,6 +66,11 @@ struct Building {
     int armor_ix = 0;                // armor_index(Rules armor); set by World::add_building
     // Shroud/Fog phase [RE: shroud.md §2]: reveal radius in cells (clamped 10).
     int sight = 0;
+    // Shroud/Fog phase [RE: shroud.md §7A]: this building GRANTS its house a
+    // whole-map reveal (SpySat/GPS). Copied from the type at placement. Inert
+    // default (false) -> not read by world_hash, so every existing gate is
+    // byte-identical; drives the map_reveal_ latch in step_visibility.
+    bool grants_map_reveal = false;
     enum class State { Buildup, Idle, Dead };
     State state = State::Buildup;
     double buildup_time = 0.0;       // seconds elapsed in Buildup

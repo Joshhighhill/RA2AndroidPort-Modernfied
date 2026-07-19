@@ -3999,3 +3999,49 @@ TEST_CASE("World shroud: fogged enemy is not auto-acquired; visible enemy is [RE
     CHECK((world.units()[foe_i].seen_by_mask & 0x01) != 0);
     CHECK(world.units()[scan_i].target == foe_i);        // visible foe IS auto-acquired
 }
+
+TEST_CASE("World shroud: reshroud_house clears the victim's explored map [RE: shroud.md §7B]") {
+    // NOTE (deviation from brief): the brief calls a hand-built `make_test_world()`
+    // helper; MapFile cannot inject cells, so this reuses the real-map fixture
+    // every other World shroud test uses (executes with RA2_INSTALL_DIR set).
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    REQUIRE(world.grid_w() > 8);
+    REQUIRE(world.grid_h() > 8);
+    ra2engine::UnitCombat c;
+    c.image = "E2"; c.strength = 100; c.armor = "none"; c.sight = 5;
+    world.add_combat_unit(6, 6, /*house=*/1, c);           // enemy scout
+    world.enable_shroud(true);
+    world.step_visibility();
+    CHECK(world.explored_at(1, 6, 6));                     // enemy explored its start
+    world.reshroud_house(1);                               // spy sabotages enemy radar
+    CHECK_FALSE(world.explored_at(1, 6, 6));               // victim map wiped
+    CHECK_FALSE(world.visible_at(1, 6, 6));
+}
+
+TEST_CASE("World shroud: SpySat building reveals the whole map + protects vs sabotage [RE: shroud.md §7A/§7B]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    REQUIRE(world.grid_w() > 8);
+    REQUIRE(world.grid_h() > 8);
+    world.enable_shroud(true);
+    // House 0 owns a SpySat building (grants_map_reveal=true).
+    const int b = world.add_building(/*type=*/0, /*cx=*/2, /*cy=*/2, /*fw=*/1, /*fh=*/1,
+                                     /*house=*/0, /*strength=*/100, /*armor_ix=*/0,
+                                     /*buildup_total=*/0.0, /*instant=*/true,
+                                     /*sight=*/4, /*grants_map_reveal=*/true);
+    REQUIRE(b >= 0);
+    world.step_visibility();
+    CHECK(world.explored_at(0, 0, 0));                     // whole map revealed
+    CHECK(world.explored_at(0, world.grid_w() - 1, world.grid_h() - 1));
+    world.reshroud_house(0);                               // sabotage SUPPRESSED (latched)
+    CHECK(world.explored_at(0, 0, 0));                     // still revealed
+}
