@@ -68,6 +68,13 @@ struct Building {
     bool primary = false;            // this house's primary factory of its category
     int rally_x = 0, rally_y = 0;    // rally-point cell (valid iff has_rally)
     bool has_rally = false;          // a rally point was set for this factory
+    // --- Engineer/Spy Capture phase [RE: capture.md §A3] ---
+    // True iff this building GRANTS its house a superweapon (a SW-building).
+    // Inert default (false) -> not read by world_hash (which hashes only
+    // type/cx/cy/hp/state), so every existing gate is byte-identical. Set by the
+    // caller when it spawns a SW-granting building; capture_building moves the
+    // house's SW grant when such a building is captured (transfer_superweapon).
+    bool grants_superweapon = false;
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

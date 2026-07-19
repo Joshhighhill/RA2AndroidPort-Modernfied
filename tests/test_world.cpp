@@ -3484,3 +3484,19 @@ TEST_CASE("World SW: the detonation splashes BUILDINGS -- in-radius damaged/dest
     CHECK(world.buildings()[far_enemy_b].hp == far_hp0);  // 40 cells away -> outside CellSpread=10
     CHECK(world.buildings()[far_enemy_b].state != ra2engine::Building::State::Dead);
 }
+
+TEST_CASE("World capture: capture_building flips ownership + resets primary [RE: capture.md §A3]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    // add_building(type, cx, cy, fw, fh, house, strength, armor_ix, buildup_total, instant)
+    const int bi = world.add_building(0, 20, 20, 1, 1, /*house=*/1, /*strength=*/100,
+                                      /*armor_ix=*/0, 0.0, /*instant=*/true);
+    REQUIRE(bi >= 0);
+    world.buildings()[bi].primary = true;
+    CHECK(world.buildings()[bi].house == 1);
+    CHECK(world.capture_building(bi, /*new_house=*/0, /*startup=*/0));
+    CHECK(world.buildings()[bi].house == 0);       // ownership flipped
+    CHECK_FALSE(world.buildings()[bi].primary);    // primary reset
+    CHECK_FALSE(world.capture_building(bi, 0, 0)); // no-op: already owned
+}

@@ -15,6 +15,7 @@
 #include "iso_renderer.hpp"  // terrain_screen_bounds / pal_for_house declarations
 #include "pathfind.hpp"
 #include "ra2assets/pal.hpp"  // Palette/Rgba (pal_for_house)
+#include "capture.hpp"        // grants_startup_from_neutral, kNeutralHouse (Capture phase)
 
 namespace ra2engine {
 
@@ -1124,6 +1125,71 @@ double World::sw_charge_fraction(int house) const {
 const Superweapon* World::sw_state(int house) const {
     if (house < 0 || house >= (int)sw_houses_.size() || !sw_houses_[house].has_sw) return nullptr;
     return &sw_houses_[house].sw;
+}
+
+// --- Engineer/Spy Capture phase [RE: capture.md] ---
+bool World::capture_building(int b_idx, int new_house, int startup) {
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
+    Building& b = buildings_[b_idx];
+    if (!b.alive || b.state == Building::State::Dead) return false;
+    const int old_house = b.house;
+    if (new_house == old_house) return false;   // ChangeOwner no-op if same owner
+
+    capture_any_ = true;                        // open the firewall
+
+    // (1) flip the flag -- power/economy/buildability/sidebar are per-frame
+    //     derived over b.house, so they re-home automatically (Approach A).
+    b.house = new_house;
+
+    // (2) SW move (only a SW-granting building).
+    if (b.grants_superweapon) transfer_superweapon(old_house, new_house);
+
+    // (3) AI base-node resync both sides (reuse the AI-1 mechanism).
+    ai_resync_captured_building(b_idx, old_house, new_house);
+
+    // (4) primary-factory flag reset (see the header rationale).
+    b.primary = false;
+
+    // (5) ProduceCashStartup -- only when captured FROM the neutral house
+    //     [RE: capture.md §A3]. Grant to the NEW owner once.
+    if (grants_startup_from_neutral(old_house) && startup > 0 &&
+        new_house >= 0 && new_house < 2) {
+        house_credits_[new_house] += (double)startup;
+    }
+    return true;
+}
+
+void World::transfer_superweapon(int old_house, int new_house) {
+    if (old_house < 0 || old_house >= (int)sw_houses_.size()) return;
+    if (!sw_houses_[old_house].has_sw) return;
+    if ((int)sw_houses_.size() <= new_house) sw_houses_.resize(new_house + 1);
+    sw_houses_[new_house] = sw_houses_[old_house];      // move the whole record
+    sw_houses_[old_house] = HouseSuperweapon{};          // old house loses it
+    sw_any_ = true;
+}
+
+void World::reset_superweapon(int house) {
+    if (house < 0 || house >= (int)sw_houses_.size() || !sw_houses_[house].has_sw) return;
+    sw_houses_[house].sw.on_fired();                     // timer->0, ready->false
+}
+
+void World::ai_resync_captured_building(int b_idx, int old_house, int new_house) {
+    for (int h = 0; h < (int)ai_houses_.size(); ++h) {
+        HouseAiRec& rec = ai_houses_[h];
+        if (!rec.is_ai) continue;
+        if (h == old_house) {                            // losing AI house drops it
+            for (PlannedNode& n : rec.state.plan)
+                if (n.building == b_idx) { n.building = -1; n.dead = true; }
+        } else if (h == new_house) {                     // gaining AI house adopts it
+            const Building& b = buildings_[b_idx];
+            for (PlannedNode& n : rec.state.plan) {
+                if (n.type == b.type && n.building < 0) {
+                    n.cx = b.cx; n.cy = b.cy; n.building = b_idx; n.dead = false;
+                    break;
+                }
+            }
+        }
+    }
 }
 
 int World::ai_producing(int house, int cat01) const {

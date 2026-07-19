@@ -66,4 +66,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/ai_team.cpp
     ${RA2_ROOT}/engine/ai_trigger.cpp
     ${RA2_ROOT}/engine/superweapon.cpp
+    ${RA2_ROOT}/engine/capture.cpp
 )

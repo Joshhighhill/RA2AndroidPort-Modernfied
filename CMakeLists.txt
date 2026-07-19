@@ -191,6 +191,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_ai_trigger.cpp engine/ai_trigg
 # (docs/re/superweapon.md §1/§4). Header-inline lifecycle; the .cpp holds only the
 # enum<->id map, exercised by test_superweapon.cpp.
 target_sources(ra2assets_tests PRIVATE tests/test_superweapon.cpp engine/superweapon.cpp)
+# Engineer/Spy Capture phase [RE: capture.md]: pure capture arithmetic
+# (cash-steal/blackout/veteran/startup). capture.cpp is header-inline (one anchor
+# symbol); the World mutation entry points live in engine/world.cpp (already on
+# test_world's line), so capture.cpp is NOT added to test_world's line.
+target_sources(ra2assets_tests PRIVATE tests/test_capture.cpp engine/capture.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)

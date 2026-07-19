@@ -722,6 +722,32 @@ public:
     double sw_charge_fraction(int house) const;
     const Superweapon* sw_state(int house) const;
 
+    // --- Engineer/Spy Capture phase [RE: capture.md] ------------------------
+    // Ownership transfer (Approach A) [RE: capture.md §A3 CONFIRMED]: flip
+    // buildings_[b_idx].house to new_house -> power/economy/buildability/sidebar
+    // follow for free (all per-frame derived). Then the targeted fix-ups:
+    //  (1) SW move: if the building grants_superweapon, transfer_superweapon
+    //      old_house -> new_house;
+    //  (2) AI base-node resync BOTH sides (the AI-1 mechanism): the losing AI
+    //      house drops the node that pointed at this building; a capturing AI
+    //      house adopts it into a matching unclaimed node;
+    //  (3) primary-flag reset: the captured factory's `primary` flag is cleared
+    //      (neither house treats a just-captured building as its established
+    //      primary; the caller's set_primary re-elects one);
+    //  (4) ProduceCashStartup: if captured FROM the neutral house, grant the
+    //      new owner `startup` credits once.
+    // Opens capture_any_. No-op returning false if b_idx is invalid, the
+    // building is Dead, or new_house == the current owner. `startup` is the
+    // captured building type's ProduceCashStartup (0 for a normal building).
+    bool capture_building(int b_idx, int new_house, int startup);
+    // Move a house's whole superweapon grant old_house -> new_house (the SW
+    // record + params); no-op if old_house has none. Reuses the CB-4 registry.
+    void transfer_superweapon(int old_house, int new_house);
+    // Reset a house's superweapon recharge to 0/not-ready [RE: capture.md §B4
+    // CONFIRMED - spy SW-building infiltrate resets the timer]; reuses
+    // Superweapon::on_fired(). No-op if the house has no granted SW.
+    void reset_superweapon(int house);
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -803,6 +829,18 @@ private:
     std::vector<HouseSuperweapon> sw_houses_;  // index = house id (grown on demand)
     bool sw_any_ = false;                      // the step() firewall bool
     void step_superweapon(double dt);          // firewalled World::step pass (§3)
+
+    // --- Engineer/Spy Capture phase [RE: capture.md] ---
+    bool capture_any_ = false;   // the step() firewall bool (opened by any
+                                 // capture/infiltrate/neutral-spawn/disguise)
+    // Resync AI base-node ownership after a capture [RE: capture.md §A3 -
+    // reuses the AI-1 standing-building<->node sync]. For the LOSING house (if
+    // AI): drop the node whose `building == b_idx` (n.building=-1, n.dead=true)
+    // -- a captured building is still ALIVE so node-death detection never fires.
+    // For the GAINING house (if AI): claim b_idx into the FIRST unclaimed plan
+    // node of the same type (the standing-building sync rule). The player
+    // (house 0) is never AI -> no node work when the player captures.
+    void ai_resync_captured_building(int b_idx, int old_house, int new_house);
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
     // Boarding / carry / eject / transport-death, called between step_units
