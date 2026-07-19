@@ -7517,8 +7517,326 @@ int run_demo_superweapon() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-capture helpers (Engineer/Spy Capture phase) ---------------------
+
+// FNV fold of the capture-phase state [spec §7]: per building (house, hp, alive,
+// state); both houses' credits (index 2 neutral folded too); both houses'
+// blackout_frames; the enemy house's SW ready flag (spy-reset proof); every
+// unit's (cell_x, cell_y, alive, hp, veteran_rank, disguised). A NEW
+// accumulator; world_hash + every prior *_hash UNTOUCHED. Folded at the demo's
+// fixed checkpoints.
+uint64_t capture_fold(uint64_t h, const ra2engine::World& world) {
+    for (const ra2engine::Building& b : world.buildings()) {
+        h = fnv_mix(h, static_cast<uint64_t>(b.house));
+        h = fnv_mix(h, static_cast<uint64_t>(b.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(b.alive ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(static_cast<int>(b.state)));
+    }
+    for (int hh = 0; hh < 3; ++hh) {
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(world.house_credits(hh))));
+        h = fnv_mix(h, static_cast<uint64_t>(world.blackout_frames(hh)));
+    }
+    h = fnv_mix(h, static_cast<uint64_t>(world.sw_ready(1) ? 1 : 0));
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(u.veteran_rank));
+        h = fnv_mix(h, static_cast<uint64_t>(u.disguised ? 1 : 0));
+    }
+    return h;
+}
+
+struct DemoCaptureResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the capture demo [spec §gate] (headless or rendered --
+// bit-identical; no RNG in any capture path). Exercises the whole Engineer/Spy
+// chain via DIRECT World:: calls (the --demo-* scripted precedent): engineer
+// capture of an enemy building + a neutral CAOILD, the four spy infiltration
+// effects, the produced-veteran chain, and the disguise/dog reveal. capture_fold
+// is FNV-folded at fixed checkpoints; wedge guards force exit 1 if any effect
+// fails to occur (the gate can never pass vacuously).
+DemoCaptureResult simulate_capture(Assets& a, UnitAssets& ua,
+                                   const std::vector<const VehicleAssets*>& vlist,
+                                   bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                   const ra2engine::Camera* cam, int W, int H,
+                                   const std::string& start_png, const std::string& end_png) {
+    using P = ra2engine::World::InfiltratePurpose;
+    DemoCaptureResult r;
+    ra2engine::World world = build_world(a, ua, 0);   // count=0 -> no pre-spawned units
+
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    const int bx = pc ? pc->x : 20;
+    const int by = pc ? pc->y : 20;
+
+    // 1) Base fragments. All instant (state Idle immediately). 1x1 foundations.
+    //    Player (house 0): a ConYard + a launchable factory. Enemy (house 1): a
+    //    refinery to capture, a second refinery to spy (cash), a power plant, a
+    //    SW-granting building, a factory. Neutral (house 2): a CAOILD.
+    world.add_building(0, bx,      by,     1, 1, /*house=*/0, 1000, 0, 0.0, true); // player ConYard
+    const int player_fac  = world.add_building(0, bx, by + 3, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
+    const int enemy_refA  = world.add_building(0, bx + 2,  by, 1, 1, /*house=*/1, 500, 0, 0.0, true);
+    const int enemy_refB  = world.add_building(0, bx + 4,  by, 1, 1, /*house=*/1, 500, 0, 0.0, true);
+    const int enemy_power = world.add_building(0, bx + 6,  by, 1, 1, /*house=*/1, 500, 0, 0.0, true);
+    const int enemy_sw    = world.add_building(0, bx + 8,  by, 1, 1, /*house=*/1, 500, 0, 0.0, true);
+    world.buildings()[enemy_sw].grants_superweapon = true;
+    const int enemy_fac   = world.add_building(0, bx + 10, by, 1, 1, /*house=*/1, 500, 0, 0.0, true);
+    const int oil         = world.add_building(0, bx + 12, by, 1, 1, /*house=*/ra2engine::kNeutralHouse,
+                                               500, 0, 0.0, true);
+    world.register_tech_income(oil, /*amount=*/20, /*delay=*/100);   // [CAOILD]
+
+    // Grant house 1 a Nuke (the spy-reset victim) BEFORE any stepping so the
+    // rendered run's pre-step charges it identically to the headless run's first
+    // charge-loop step (the superweapon-gate ordering -- keeps the reach-READY
+    // frame count byte-identical across the two runs).
+    std::array<int, 11> verses; verses.fill(100);
+    world.grant_superweapon(1, ra2engine::SuperweaponType::Nuke, /*recharge_secs=*/10.0,
+                            /*dmg=*/600, /*cell_spread=*/10.0, /*pmax=*/0.02, verses);
+
+    auto count_owned = [&](int house) {
+        int n = 0;
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.alive && b.state != ra2engine::Building::State::Dead && b.house == house) ++n;
+        return n;
+    };
+
+    const double dt = 1.0 / 15.0;
+    long frame = 0;
+    uint64_t h = 0xcbf29ce484222325ull;               // FNV-1a offset basis
+    auto step_one = [&]() {
+        world.step(dt);
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+        }
+    };
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+    h = capture_fold(h, world);                        // checkpoint 0: baseline
+
+    // 2) Charge the granted SW to READY. No RNG; the oil is still neutral so tech
+    //    income does NOT accrue yet (step_tech_structures skips a neutral owner).
+    const long charge_cap = (long)std::llround(10.0 * 15.0) + 100;
+    while (frame < charge_cap && !world.sw_ready(1)) step_one();
+    const bool sw_charged = world.sw_ready(1);
+    h = capture_fold(h, world);                        // checkpoint 1: SW charged
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[cap] enemy SW charged ready=%s frames=%ld",
+                      sw_charged ? "yes" : "no", frame);
+        r.witness.emplace_back(b);
+    }
+
+    // 3) Engineer captures an ENEMY building (ownership flip 1->0 + owned-count
+    //    delta = buildability/power re-home proof).
+    const int owned0_before = count_owned(0);
+    const bool cap_ret = world.capture_building(enemy_refA, /*new_house=*/0, /*startup=*/0);
+    const int owned0_after = count_owned(0);
+    const bool captured_enemy = cap_ret && world.buildings()[enemy_refA].house == 0;
+    const bool power_delta = owned0_after == owned0_before + 1;
+    h = capture_fold(h, world);                        // checkpoint 2: enemy capture
+    {
+        char b[144];
+        std::snprintf(b, sizeof b, "[cap] engineer captured enemy: house=%d owned0 %d->%d delta=%s",
+                      world.buildings()[enemy_refA].house, owned0_before, owned0_after,
+                      power_delta ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // 4) Engineer captures the NEUTRAL CAOILD: ownership 2->0 + ProduceCashStartup
+    //    1000 grant, then a +20 income tick after 100 frames.
+    const double cred0_pre_oil = world.house_credits(0);
+    const bool oil_ret = world.capture_building(oil, /*new_house=*/0, /*startup=*/1000);
+    const double cred0_post_startup = world.house_credits(0);
+    const bool captured_neutral = oil_ret && world.buildings()[oil].house == 0 &&
+                                  std::llround(cred0_post_startup - cred0_pre_oil) == 1000;
+    const long income_until = frame + 100;
+    while (frame < income_until) step_one();           // exactly one delay period
+    const double cred0_post_income = world.house_credits(0);
+    const bool income_ticked = std::llround(cred0_post_income - cred0_post_startup) == 20;
+    h = capture_fold(h, world);                        // checkpoint 3: neutral capture + income
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[cap] captured CAOILD: house=%d startup +%ld income +%ld (100 frames)",
+                      world.buildings()[oil].house,
+                      (long)std::llround(cred0_post_startup - cred0_pre_oil),
+                      (long)std::llround(cred0_post_income - cred0_post_startup));
+        r.witness.emplace_back(b);
+    }
+
+    // 5a) Spy infiltrates an ENEMY refinery -> cash moves 0.5x victim credits.
+    world.grant_credits_for_test(1, 1000.0);           // seed the victim's coffers
+    const double spy_cred0_pre = world.house_credits(0);
+    const double spy_cred1_pre = world.house_credits(1);
+    world.infiltrate_building(enemy_refB, /*spy_house=*/0, P::Refinery, 0.5, 1000);
+    const double spy_cred0_post = world.house_credits(0);
+    const double spy_cred1_post = world.house_credits(1);
+    const bool cash_moved = std::llround(spy_cred1_pre - spy_cred1_post) == 500 &&
+                            std::llround(spy_cred0_post - spy_cred0_pre) == 500;
+    h = capture_fold(h, world);                        // checkpoint 4: cash steal
+    {
+        char b[160];
+        std::snprintf(b, sizeof b, "[cap] spy refinery: house1 %ld->%ld house0 %ld->%ld (0.5x)",
+                      (long)std::llround(spy_cred1_pre), (long)std::llround(spy_cred1_post),
+                      (long)std::llround(spy_cred0_pre), (long)std::llround(spy_cred0_post));
+        r.witness.emplace_back(b);
+    }
+
+    // 5b) Spy infiltrates an ENEMY power plant -> blackout timer armed to 1000.
+    world.infiltrate_building(enemy_power, /*spy_house=*/0, P::PowerPlant, 0.5, 1000);
+    const bool blackout_armed = world.blackout_frames(1) == 1000;
+    h = capture_fold(h, world);                        // checkpoint 5: blackout
+    {
+        char b[96];
+        std::snprintf(b, sizeof b, "[cap] spy power plant: blackout_frames(1)=%d",
+                      world.blackout_frames(1));
+        r.witness.emplace_back(b);
+    }
+
+    // 5c) Spy infiltrates the ENEMY SW building -> the charged SW resets.
+    const bool sw_was_ready = world.sw_ready(1);
+    world.infiltrate_building(enemy_sw, /*spy_house=*/0, P::Superweapon, 0.5, 1000);
+    const bool sw_reset = sw_was_ready && !world.sw_ready(1);
+    h = capture_fold(h, world);                        // checkpoint 6: SW reset
+    {
+        char b[112];
+        std::snprintf(b, sizeof b, "[cap] spy SW building: ready %s->%s (reset)",
+                      sw_was_ready ? "yes" : "no", world.sw_ready(1) ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // 5d) Spy infiltrates the ENEMY factory -> produced-veteran flag for house 0;
+    //     the next unit house 0 launches spawns at veteran_rank 1.
+    world.infiltrate_building(enemy_fac, /*spy_house=*/0, P::Factory, 0.5, 1000);
+    const bool vet_flag = world.produced_veteran(0);
+    ra2engine::BuildingTypeDef fdef; fdef.id = "GAWEAP"; fdef.fw = fdef.fh = 1;
+    ra2engine::UnitCombat pc_stats;
+    pc_stats.image = "E1"; pc_stats.strength = 100; pc_stats.armor = "none"; pc_stats.damage = 40;
+    const int vet_idx = world.launch_unit(player_fac, fdef, pc_stats);
+    const bool produced_vet = vet_flag && vet_idx >= 0 && world.units()[vet_idx].veteran_rank == 1;
+    h = capture_fold(h, world);                        // checkpoint 7: produced veteran
+    {
+        char b[160];
+        std::snprintf(b, sizeof b, "[cap] spy factory: produced_veteran(0)=%s launched idx=%d rank=%d",
+                      vet_flag ? "yes" : "no", vet_idx,
+                      vet_idx >= 0 ? world.units()[vet_idx].veteran_rank : -1);
+        r.witness.emplace_back(b);
+    }
+
+    // 6) Disguise: a fresh weaponless house-0 spy disguised as an enemy E2 passes
+    //    a non-detector enemy (stays disguised), then a DOG reveals it. Placed
+    //    well away from the veteran/base so no cross auto-acquire perturbs it.
+    ra2engine::UnitCombat spyc;
+    spyc.image = "SPY"; spyc.strength = 100; spyc.armor = "flak"; spyc.damage = 0; spyc.range = 0.0;
+    ra2engine::Unit& spy2 = world.add_combat_unit(bx + 6, by + 10, /*house=*/0, spyc);
+    const int spy2_idx = (int)world.units().size() - 1;
+    (void)spy2;
+    world.set_disguise(spy2_idx, "E2", /*as_house=*/1);
+    const bool disguised_set = world.units()[spy2_idx].disguised;
+    // Non-detector enemy adjacent (within kDetectDisguiseRange, but never reveals).
+    ra2engine::UnitCombat gic;
+    gic.image = "E1"; gic.strength = 100; gic.armor = "none"; gic.damage = 0; gic.range = 0.0;
+    world.add_combat_unit(bx + 6, by + 11, /*house=*/1, gic);
+    step_one();                                        // step_tech_structures detection pass
+    const bool stayed_disguised = world.units()[spy2_idx].disguised;
+    h = capture_fold(h, world);                        // checkpoint 8: non-detector passed
+    // A DOG (DetectDisguise) within range reveals the spy.
+    ra2engine::UnitCombat dogc;
+    dogc.image = "DOG"; dogc.strength = 100; dogc.armor = "none"; dogc.damage = 0; dogc.range = 0.0;
+    world.add_combat_unit(bx + 6, by + 9, /*house=*/1, dogc);
+    world.units().back().detect_disguise = true;
+    step_one();                                        // detection pass with the dog present
+    const bool dog_revealed = disguised_set && stayed_disguised && !world.units()[spy2_idx].disguised;
+    h = capture_fold(h, world);                        // checkpoint 9: dog reveal
+    {
+        char b[144];
+        std::snprintf(b, sizeof b, "[cap] disguise: set=%s past_nondetector=%s dog_revealed=%s",
+                      disguised_set ? "yes" : "no", stayed_disguised ? "yes" : "no",
+                      world.units()[spy2_idx].disguised ? "still-disguised" : "revealed");
+        r.witness.emplace_back(b);
+    }
+
+    r.hash = h;
+
+    // Wedge guards [spec §gate]: the gate can never pass vacuously.
+    if (!captured_enemy)   { r.ok = false; r.witness.emplace_back("[cap] WEDGE: enemy capture did not flip ownership"); }
+    if (!captured_neutral) { r.ok = false; r.witness.emplace_back("[cap] WEDGE: neutral CAOILD capture/startup failed"); }
+    if (!income_ticked)    { r.ok = false; r.witness.emplace_back("[cap] WEDGE: CAOILD income did not tick +20"); }
+    if (!power_delta)      { r.ok = false; r.witness.emplace_back("[cap] WEDGE: capture produced no owned-count delta"); }
+    if (!cash_moved)       { r.ok = false; r.witness.emplace_back("[cap] WEDGE: cash-steal moved no credits"); }
+    if (!blackout_armed)   { r.ok = false; r.witness.emplace_back("[cap] WEDGE: blackout did not arm"); }
+    if (!sw_reset)         { r.ok = false; r.witness.emplace_back("[cap] WEDGE: SW did not reset"); }
+    if (!produced_vet)     { r.ok = false; r.witness.emplace_back("[cap] WEDGE: produced unit is not a veteran"); }
+    if (!dog_revealed)     { r.ok = false; r.witness.emplace_back("[cap] WEDGE: dog did not reveal the spy"); }
+
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[cap] capture_hash=%016llx",
+                  static_cast<unsigned long long>(r.hash));
+    r.witness.emplace_back(hb);
+    if (render) { capture_png(ren, end_png, W, H); }   // capture the already-rendered frame
+    return r;
+}
+
+// --demo-capture: the Engineer/Spy Capture integration gate (14th permanent
+// byte-identity gate). Runs simulate_capture rendered (hidden window + start/end
+// screenshots) then headless from a FRESH World, and byte-compares the two
+// witness logs + capture hashes. NO hardcoded hash literal -- compute-and-self-
+// compare; the controller pins the observed value in the README gate table.
+int run_demo_capture() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_capture_start.png";
+    const std::string end_png = scratch + "demo_capture_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
+
+    DemoCaptureResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-capture)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_capture(a, ua, vlist, /*render=*/true, ren, &tc, &cam,
+                                  W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+    }
+
+    DemoCaptureResult r2 = simulate_capture(a, ua, vlist, /*render=*/false, nullptr,
+                                            nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+    std::cerr << "[demo-capture] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d capture_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
+// Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
 // then:
 //  1) A DEVICELESS proof: play "GIAttack" and render straight into a plain
@@ -7665,6 +7983,8 @@ int main(int argc, char** argv) {
                 return run_demo_superweapon();
             } else if (arg == "--demo-techtree") {
                 return run_demo_techtree();
+            } else if (arg == "--demo-capture") {
+                return run_demo_capture();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
