@@ -1304,6 +1304,38 @@ void World::reset_superweapon(int house) {
     sw_houses_[house].sw.on_fired();                     // timer->0, ready->false
 }
 
+void World::register_tech_income(int b_idx, int amount, int delay) {
+    if (b_idx < 0 || amount <= 0 || delay <= 0) return;
+    for (const TechIncome& t : tech_income_) if (t.building == b_idx) return;  // idempotent
+    tech_income_.push_back(TechIncome{b_idx, amount, delay, 0});
+    capture_any_ = true;
+}
+
+void World::step_tech_structures(double dt) {
+    if (!capture_any_) return;                 // firewall (spec §8) -- no-op elsewhere
+    // Advance the logic-frame counter deterministically: one frame per dt at
+    // kLogicFps (the existing 1/15 s tick). Use the same frame-quantized math
+    // the SW timer uses so the gate is bit-stable across the dt accumulation.
+    const int frames = (int)std::llround(dt * 15.0);
+    // 1) Tech-structure income (oil derrick): every `delay` frames, credit the
+    //    CURRENT owner `amount`.
+    for (TechIncome& t : tech_income_) {
+        if (t.building < 0 || t.building >= (int)buildings_.size()) continue;
+        const Building& b = buildings_[t.building];
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (b.house < 0 || b.house >= 2) continue;    // neutral pays nobody
+        t.frames += frames;
+        while (t.frames >= t.delay) {
+            t.frames -= t.delay;
+            house_credits_[b.house] += (double)t.amount;
+        }
+    }
+    // 2) Blackout decay (index 2 inert -- never armed).
+    for (int h = 0; h < 3; ++h)
+        if (blackout_frames_[h] > 0) blackout_frames_[h] = std::max(0, blackout_frames_[h] - frames);
+    // 3) Disguise detection -- added in Task 7.
+}
+
 void World::ai_resync_captured_building(int b_idx, int old_house, int new_house) {
     for (int h = 0; h < (int)ai_houses_.size(); ++h) {
         HouseAiRec& rec = ai_houses_[h];
@@ -2313,6 +2345,11 @@ void World::step(double dt) {
     // outside the new gate). The detonation is fire-triggered, not step-
     // triggered, so this pass's ORDER is behaviorally irrelevant (spec §3.3).
     step_superweapon(dt);
+
+    // Engineer/Spy Capture [RE: capture.md §D1/§B2]: tech-structure income +
+    // blackout decay (+ disguise detection). Firewalled behind capture_any_
+    // (false in every existing demo -> a strict no-op).
+    step_tech_structures(dt);
 
     // Slew vehicle turrets AFTER movement and BEFORE combat so the aim gate
     // (vehicle_aimed) in step_combat sees this frame's post-slew turret

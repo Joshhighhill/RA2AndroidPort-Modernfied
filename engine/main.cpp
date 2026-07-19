@@ -37,6 +37,7 @@
 #include "audio_sdl.hpp"
 #include "building.hpp"
 #include "cargo.hpp"        // cargo_total_size (pip fill) [CB-1 Transports/Cargo]
+#include "capture.hpp"      // kNeutralHouse (Engineer/Spy Capture phase)
 #include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
 #include "factory.hpp"      // primary_factory (unit exit handoff)
@@ -1404,11 +1405,21 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // GATECH stays placeable/roster-findable (buildings are never dropped on art
     // failure), so the gate proves buildability art-independent. SREF art likewise
     // resolves on this install -- no unit fallback needed.
-    static const char* kRoster[19] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    // Engineer/Spy Capture [RE: capture.md §D1]: the neutral Tech Oil Derrick
+    // (CAOILD), appended LAST so every prior index -- and demo-base's world_hash
+    // -- is unchanged. It is a NEUTRAL (house 2) building placed only by the
+    // capture demo/helper -> no existing gate places it; the [base] roster=
+    // witness grows 19->20 (content-only, the CB-5/GATECH precedent). Real values
+    // (capture.md §D1): ProduceCashStartup=1000, ProduceCashAmount=20,
+    // ProduceCashDelay=100. CAOILD has TechLevel=-1 and a "CA" id (not "GA"), so
+    // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
+    // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
+    // placeholder (buildings are never dropped on art failure).
+    static const char* kRoster[20] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
-                                       "NAWALL", "NARADR", "GATECH"};
+                                       "NAWALL", "NARADR", "GATECH", "CAOILD"};
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -1460,8 +1471,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
 
-    ba.roster.reserve(19);
-    ba.art.reserve(19);
+    ba.roster.reserve(20);
+    ba.art.reserve(20);
     int ok_n = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
@@ -1487,6 +1498,12 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.buildup = art.buildup(id);
         d.cameo = art.cameo(id);
         d.explosion = rules.explosion_first(id);
+        // Engineer/Spy Capture [RE: capture.md §D1]: neutral tech-structure
+        // periodic income. Absent from every non-tech section -> 0 default keeps
+        // all prior types byte-identical ([CAOILD]: 1000 / 20 / 100).
+        d.produce_cash_startup = (int)rules.section_double(id, "ProduceCashStartup", 0.0);
+        d.produce_cash_amount = (int)rules.section_double(id, "ProduceCashAmount", 0.0);
+        d.produce_cash_delay = (int)rules.section_double(id, "ProduceCashDelay", 0.0);
 
         BuildingArt slot;
         try {
@@ -4163,6 +4180,32 @@ bool place_player_building(ra2engine::World& world, const BuildingAssets& ba, in
         }
     }
     return false;
+}
+
+// Engineer/Spy Capture [RE: capture.md §D1]: the ProduceCashStartup granted to
+// the NEW owner when a CAOILD-style tech structure is captured FROM neutral.
+// Returns the resolved [CAOILD] ProduceCashStartup for that roster type, 0 for a
+// normal building (every non-tech type resolves 0 at load).
+int building_startup_cash(const BuildingAssets& ba, int type) {
+    if (type < 0 || type >= static_cast<int>(ba.roster.size())) return 0;
+    return ba.roster[type].produce_cash_startup;
+}
+
+// Engineer/Spy Capture [RE: capture.md §D1]: place a neutral (house 2) Tech Oil
+// Derrick at (cx,cy) instant-Idle and arm its periodic income tick (the
+// resolved [CAOILD] ProduceCashAmount/ProduceCashDelay). Returns the building
+// index, or -1 if CAOILD is not in the roster / the cell is off-grid. The
+// startup grant is delivered by World::capture_building on capture-from-neutral,
+// so it is NOT credited here.
+int spawn_neutral_oil_derrick(ra2engine::World& world, const BuildingAssets& ba, int cx, int cy) {
+    const int type = roster_index(ba, "CAOILD");
+    if (type < 0) return -1;
+    const ra2engine::BuildingTypeDef& d = ba.roster[type];
+    const int bi = world.add_building(type, cx, cy, d.fw, d.fh, /*house=*/ra2engine::kNeutralHouse,
+                                      d.strength, d.armor_ix, ba.art[type].buildup_total,
+                                      /*instant=*/true);
+    world.register_tech_income(bi, d.produce_cash_amount, d.produce_cash_delay);
+    return bi;
 }
 
 struct DemoBaseResult {

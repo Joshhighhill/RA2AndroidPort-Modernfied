@@ -781,6 +781,20 @@ public:
     // demo issues it, so every gate stays byte-identical.
     void order_engineer_capture(int eng_idx, int b_idx);
 
+    // Register a captured/owned income building (an oil derrick) [RE: capture.md
+    // §D1]. Opens capture_any_. amount/delay are the resolved [CAOILD]
+    // ProduceCashAmount/ProduceCashDelay. Idempotent per building index; ignores
+    // a non-positive amount/delay or a negative b_idx.
+    void register_tech_income(int b_idx, int amount, int delay);
+    // Read-only Capture state for the gate (§gate) and the power path.
+    double house_credits(int house) const {
+        return (house >= 0 && house < 3) ? house_credits_[house] : 0.0;
+    }
+    int blackout_frames(int house) const {
+        return (house >= 0 && house < 3) ? blackout_frames_[house] : 0;
+    }
+    bool house_blacked_out(int house) const { return blackout_frames(house) > 0; }
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -883,6 +897,23 @@ private:
     // and clears the intent; a vanished/dead target clears the intent cleanly.
     void step_capture(double dt);
 
+    // Tech-structure periodic income [RE: capture.md §D1 CONFIRMED - CAOILD
+    // ProduceCashAmount=20 every ProduceCashDelay=100 frames]. One record per
+    // captured income building; the income accrues to whoever CURRENTLY owns
+    // the building (buildings_[b].house), so capturing an oil derrick transfers
+    // its future income for free (per-frame derived, Approach A).
+    struct TechIncome { int building = -1; int amount = 0; int delay = 0; int frames = 0; };
+    std::vector<TechIncome> tech_income_;
+    // Power blackout per house [RE: capture.md §B2 CONFIRMED - SpyPowerBlackout
+    // =1000 frames]. >0 -> that house's power OUTPUT is forced to 0 (see
+    // apply_blackout). Index 2 inert. Decays one per logic frame in
+    // step_tech_structures.
+    int blackout_frames_[3] = {0, 0, 0};
+    // The single firewalled Capture per-frame pass: tech-structure income +
+    // blackout decay (+ disguise detection, added in Task 7). First line is
+    // `if (!capture_any_) return;` -> a strict no-op in every existing demo.
+    void step_tech_structures(double dt);
+
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
     // Boarding / carry / eject / transport-death, called between step_units
     // and step_turrets (a pure insertion -- spec §8). Early-returns unless
@@ -937,7 +968,9 @@ private:
     double growth_interval_ = 0.0;
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
-    double house_credits_[2] = {0.0, 0.0};  // accumulated unload income, per house
+    double house_credits_[3] = {0.0, 0.0, 0.0};  // per-house income; index 2
+                                                  // (kNeutralHouse) inert -- neutral
+                                                  // holds no credits [RE: capture.md §D1]
     std::vector<PendingHarvestEvent> harvest_events_;  // pending take_harvest_events() drain
 };
 

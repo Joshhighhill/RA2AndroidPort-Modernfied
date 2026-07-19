@@ -40,6 +40,13 @@ struct BuildingTypeDef {
     std::string buildup;             // Art Buildup= ("" = place instantly Idle)
     std::string cameo;               // Art Cameo= ("" = never in sidebar)
     std::string explosion;           // Rules explosion_first(id)
+    // Engineer/Spy Capture [RE: capture.md §D1]: neutral tech-structure periodic
+    // income ([CAOILD] ProduceCashStartup=1000, ProduceCashAmount=20 every
+    // ProduceCashDelay=100 frames). 0 for every non-tech building (the keys are
+    // absent from their rules sections) -> byte-identical for all prior types.
+    int produce_cash_startup = 0;    // Rules ProduceCashStartup (granted on capture-from-neutral)
+    int produce_cash_amount = 0;     // Rules ProduceCashAmount (per-tick credit)
+    int produce_cash_delay = 0;      // Rules ProduceCashDelay (frames between ticks)
 };
 
 // A placed building instance.

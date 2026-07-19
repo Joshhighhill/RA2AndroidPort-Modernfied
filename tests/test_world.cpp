@@ -17,6 +17,7 @@
 #include "harvest.hpp"        // Economy phase: HarvState/HarvestEvent/OreValues/kUnloadSecsPerBale
 #include "iso_project.hpp"   // cell_to_screen / screen_to_cell
 #include "iso_renderer.hpp"  // pal_for_house
+#include "capture.hpp"        // Capture phase: kNeutralHouse
 #include "occupancy.hpp"
 #include "pathfind.hpp"
 #include "production.hpp"     // Production phase: ProductionQueues cancel/reconcile_refund
@@ -3560,4 +3561,24 @@ TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on 
     CHECK(world.buildings()[bi].house == 0);                    // captured -> house 0
     CHECK_FALSE(world.units()[0].alive);                        // engineer consumed on arrival
     CHECK(world.units()[0].capture_target == -1);               // intent cleared
+}
+
+TEST_CASE("World capture: neutral oil derrick pays its owner ONLY after capture [RE: capture.md §D1]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    // Place a neutral (house 2) income building; register its 20/100-frame tick.
+    // add_building(type, cx, cy, fw, fh, house, strength, armor_ix, buildup_total, instant)
+    const int oil = world.add_building(0, 20, 20, 1, 1, /*house=*/ra2engine::kNeutralHouse,
+                                       /*strength=*/100, /*armor_ix=*/0, 0.0, /*instant=*/true);
+    REQUIRE(oil >= 0);
+    world.register_tech_income(oil, /*amount=*/20, /*delay=*/100);
+    const double dt = 1.0 / 15.0;
+    for (int i = 0; i < 300; ++i) world.step(dt);              // neutral pays nobody
+    CHECK(world.house_credits(0) == doctest::Approx(0.0));
+    // Capture it (from neutral) -> startup 1000 to house 0, then income accrues.
+    CHECK(world.capture_building(oil, /*new_house=*/0, /*startup=*/1000));
+    CHECK(world.house_credits(0) == doctest::Approx(1000.0));  // startup granted once
+    for (int i = 0; i < 100; ++i) world.step(dt);              // one delay period
+    CHECK(world.house_credits(0) == doctest::Approx(1020.0));  // +20 amount
 }
