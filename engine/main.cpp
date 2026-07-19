@@ -2590,6 +2590,66 @@ void draw_sw_slot(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     }
 }
 
+// Shroud/Fog [RE: shroud.md §5 minimap]: the `Radar=yes` roster ids. A house
+// "owns an operational radar" if it has an alive, non-Dead building of one of
+// these types (a simple ownership scan; power gating is out of scope this
+// phase — the interactive/demo paths that flip shroud on also own a radar).
+static bool is_radar_id(const std::string& id) {
+    return id == "GAAIRC" || id == "AMRADR" || id == "NARADR" || id == "NAPSIS";
+}
+
+bool house_owns_operational_radar(const ra2engine::World& world, const BuildingAssets& ba,
+                                  int house) {
+    for (const ra2engine::Building& b : world.buildings()) {
+        if (b.house != house || !b.alive) continue;
+        if (b.state == ra2engine::Building::State::Dead) continue;
+        if (b.type < 0 || b.type >= static_cast<int>(ba.roster.size())) continue;
+        if (is_radar_id(ba.roster[b.type].id)) return true;
+    }
+    return false;
+}
+
+// Shroud/Fog [RE: shroud.md §5 minimap]: draw a minimap into lay.radar. Paint
+// ONLY cells EXPLORED by house 0 (terrain color); overlay unit blips ONLY for
+// cells VISIBLE to house 0 (own house-0 units always shown). Gated on house 0
+// owning an operational radar. Render-only; NOT part of any gate hash. With
+// shroud off the grids are empty (all-explored) -> this is only reached when a
+// radar is owned, matching today's behavior of showing the static logo
+// otherwise. Falls back to the static "sb:radar" blit when no radar is owned.
+void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
+                        const ra2engine::World& world, const BuildingAssets& ba) {
+    const int gw = world.grid_w(), gh = world.grid_h();
+    if (gw <= 0 || gh <= 0) return;
+    // Map grid -> the 168x110 radar box (integer scale, letterboxed).
+    const double sx = static_cast<double>(radar_rect.w) / gw;
+    const double sy = static_cast<double>(radar_rect.h) / gh;
+    for (int y = 0; y < gh; ++y)
+        for (int x = 0; x < gw; ++x) {
+            if (!world.explored_at(0, x, y)) continue;         // unexplored -> black (skip)
+            SDL_Rect px{radar_rect.x + static_cast<int>(x * sx),
+                        radar_rect.y + static_cast<int>(y * sy),
+                        std::max(1, static_cast<int>(sx)), std::max(1, static_cast<int>(sy))};
+            // terrain tint (dim if fogged, brighter if visible)
+            Uint8 g = world.visible_at(0, x, y) ? 120 : 60;
+            SDL_SetRenderDrawColor(ren, 30, g, 30, 255);
+            SDL_RenderFillRect(ren, &px);
+        }
+    // Unit blips: only in currently-VISIBLE cells (own units always shown).
+    // pal_for_house returns a full house-remapped palette (world.cpp:290); the
+    // house remap ramp lives at indices 16..31, so a mid-ramp entry (24) is the
+    // representative house color (blue=Allied, red=Soviet) — the same recolor
+    // the building/unit sprites use.
+    for (const ra2engine::Unit& u : world.units()) {
+        if (!u.alive) continue;
+        if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) continue;
+        SDL_Rect bp{radar_rect.x + static_cast<int>(u.cell_x * sx),
+                    radar_rect.y + static_cast<int>(u.cell_y * sy), 2, 2};
+        const ra2assets::Rgba col = ra2engine::pal_for_house(ba.unit_pal, u.house)[24];
+        SDL_SetRenderDrawColor(ren, col.r, col.g, col.b, 255);
+        SDL_RenderFillRect(ren, &bp);
+    }
+}
+
 // Draws the whole sidebar per the recovered composition [RE: construction.md
 // §11a — credits(0,0) -> top cap(0,16) -> radar(0,48) -> side1(0,158) w/
 // repair+sell -> tabs y=197 -> side2 x N rows from 227 -> side3 -> addon ->
@@ -2611,10 +2671,16 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         blit_shp(ren, tc, "sb:optb", ba.sb_optbtn, 0, ba.sb_pal, lay.bar.x + 11, 20);
         blit_shp(ren, tc, "sb:dipb", ba.sb_diplobtn, 0, ba.sb_pal, lay.bar.x + 83, 20);
     }
-    // Radar area: radar.shp frame 0 = the pre-radar side logo (no radar
-    // building exists this phase) [§11a].
-    if (ba.has_radar)
+    // Radar area: a minimap when house 0 owns an operational radar (Shroud/Fog
+    // [RE: shroud.md §5]); else radar.shp frame 0 = the pre-radar side logo
+    // (today's behavior, byte-identical with shroud off / no radar) [§11a]. The
+    // gate is behind world.shroud_enabled() (false in every existing gate), so
+    // the static-logo branch runs exactly as today.
+    if (world.shroud_enabled() && house_owns_operational_radar(world, ba, 0)) {
+        draw_radar_minimap(ren, lay.radar, world, ba);
+    } else if (ba.has_radar) {
         blit_shp(ren, tc, "sb:radar", ba.sb_radar, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
+    }
     // side1 band (carries the repair/sell socket art), then the buttons.
     blit_shp(ren, tc, "sb:side1", ba.sb_side1, 0, ba.sb_pal, lay.side1.x, lay.side1.y);
     if (ba.has_repair_sell) {
