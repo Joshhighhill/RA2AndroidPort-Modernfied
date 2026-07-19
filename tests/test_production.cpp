@@ -376,3 +376,48 @@ TEST_CASE("production: Structure (BuildingType) queue path is unchanged by the m
     CHECK(q.structure().slot.stage == solo.slot.stage);
     CHECK(q.structure().slot.spent == doctest::Approx(solo.slot.spent));
 }
+
+TEST_CASE("prerequisites_met: unit multi-token prereq incl. a TECH group token "
+          "[RE: techtree.md §1]") {
+    // The SREF shape: Prerequisite=GAWEAP,TECH. GAWEAP is a plain factory id;
+    // TECH is a group whose Allied member is GATECH (production.md §1.6).
+    std::vector<BuildingTypeDef> bt(3);
+    bt[0].id = "GAWEAP"; bt[1].id = "GATECH"; bt[2].id = "GAPILE";
+    const std::vector<std::pair<std::string, std::vector<std::string>>> groups = {
+        {"TECH", {"GATECH", "NATECH", "YATECH"}}, {"FACTORY", {"GAWEAP", "NAWEAP"}}};
+    const std::vector<std::string> sref = {"GAWEAP", "TECH"};
+
+    std::vector<Building> only_weap = {livet(0)};              // GAWEAP idle
+    CHECK_FALSE(prerequisites_met(sref, only_weap, bt, 0, groups));   // TECH unmet
+    std::vector<Building> weap_tech = {livet(0), livet(1)};    // + GATECH idle
+    CHECK(prerequisites_met(sref, weap_tech, bt, 0, groups));         // TECH satisfied
+    weap_tech[1].state = Building::State::Buildup;             // GATECH not finished
+    CHECK_FALSE(prerequisites_met(sref, weap_tech, bt, 0, groups));   // Buildup doesn't count
+}
+
+TEST_CASE("can_start_unit: TECH-gated advanced unit + plain-token unit unchanged "
+          "[RE: techtree.md §1/§5]") {
+    // Roster: [0]=E1 (plain GAPILE, the byte-identity anchor), [1]=SREF (GAWEAP,TECH).
+    std::vector<UnitTypeDef> u(2);
+    u[0].id = "E1";   u[0].cost = 200;  u[0].tech_level = 1; u[0].prerequisite = {"GAPILE"};
+    u[1].id = "SREF"; u[1].cost = 1200; u[1].tech_level = 5; u[1].prerequisite = {"GAWEAP", "TECH"};
+    std::vector<BuildingTypeDef> bt(3);
+    bt[0].id = "GAPILE"; bt[1].id = "GAWEAP"; bt[2].id = "GATECH";
+    const std::vector<std::pair<std::string, std::vector<std::string>>> groups = {
+        {"TECH", {"GATECH"}}};
+    ProductionState ps; ps.credits = 5000;
+
+    // E1: plain GAPILE resolves exactly as before (the anchor).
+    std::vector<Building> pile = {livet(0)};
+    CHECK(can_start_unit(ps, 0, u, pile, bt, 0, groups, /*factory_alive=*/true));
+    // SREF: only GAWEAP owned -> UNBUILDABLE (TECH unmet).
+    std::vector<Building> weap = {livet(1)};
+    CHECK_FALSE(can_start_unit(ps, 1, u, weap, bt, 0, groups, true));
+    // SREF: GAWEAP + GATECH -> BUILDABLE.
+    std::vector<Building> weap_tech = {livet(1), livet(2)};
+    CHECK(can_start_unit(ps, 1, u, weap_tech, bt, 0, groups, true));
+    // Factory-alive + tech-level gates still apply.
+    CHECK_FALSE(can_start_unit(ps, 1, u, weap_tech, bt, 0, groups, /*factory_alive=*/false));
+    u[1].tech_level = 0;                                        // TechLevel<=0 = never buildable
+    CHECK_FALSE(can_start_unit(ps, 1, u, weap_tech, bt, 0, groups, true));
+}

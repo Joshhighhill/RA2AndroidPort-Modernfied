@@ -1129,7 +1129,7 @@ struct UnitRosterEnt { const char* id; bool vehicle; const char* prereq; };
 // roster (load_unit_roster) and the AI-2 Soviet roster (load_soviet_unit_roster).
 UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFile& ra2,
                                   const UnitAssets& ua, const Rules& rules, const Art& art,
-                                  const UnitRosterEnt* ents, std::size_t n) {
+                                  const UnitRosterEnt* ents, std::size_t n, bool full_parse) {
     UnitRoster ur;
     // cameo.mix lives inside language.mix (same chain load_building_assets uses
     // for building cameos); opened once here, guarded so a missing archive just
@@ -1148,7 +1148,25 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
             d.cost = rules.cost(e.id);
             d.tech_level = rules.tech_level(e.id);
             d.is_vehicle = e.vehicle;
-            d.prerequisite = {e.prereq};   // plain building id [RE: production.md §1.6]
+            // CB-5 [RE-GATE APPLIED: techtree.md §1/§5]: the PLAYER roster full-parses
+            // the real rulesmd [<id>] Prerequisite= (the same list buildings already
+            // use, main.cpp:1435) so multi-token + group-token (TECH) unit prereqs
+            // resolve through the EXISTING prerequisites_met. The SOVIET AI roster
+            // keeps its hardcoded proxy token (APOC->NAWEAP) UNCHANGED to protect
+            // ai_team_hash (spec §8; real [APOC] Prerequisite=NAWEAP,NATECH -- the
+            // NATECH conjunct the AI base never builds, so dropping it in the proxy
+            // never makes APOC buildable where the real rule would not; techtree.md
+            // §5 CONFIRMED). Byte-identity anchor CONFIRMED (techtree.md §5):
+            // [E1]=GAPILE, [GGI]=GAPILE, [MTNK]=GAWEAP, [FV]=GAWEAP -- ALL single
+            // plain building tokens (no group token), so the full-parse resolves them
+            // BYTE-IDENTICALLY to the retired hardcoded tokens. Defensive fallback to
+            // the proxy token if rulesmd has no Prerequisite= for this id.
+            if (full_parse) {
+                d.prerequisite = rules.prerequisite(e.id);
+                if (d.prerequisite.empty()) d.prerequisite = {e.prereq};
+            } else {
+                d.prerequisite = {e.prereq};
+            }
             // DEVIATION from brief (`art.cameo(e.id)`): the cameo must come from
             // the unit's IMAGE art section (the one it actually renders as), not
             // the rules id. In this artmd.ini E1's section is [GI]
@@ -1205,7 +1223,7 @@ UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra
         {"E1",  false, "GAPILE"}, {"GGI", false, "GAPILE"},
         {"MTNK", true, "GAWEAP"}, {"FV",  true, "GAWEAP"},
     };
-    return load_unit_roster_table(dir, ra2, ua, rules, art, kUnits, 4);
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kUnits, 4, /*full_parse=*/true);
 }
 
 // The Soviet combat roster the exemplar aimd teams field [RE-GATE APPLIED:
@@ -1226,7 +1244,7 @@ UnitRoster load_soviet_unit_roster(const std::string& dir, const ra2assets::MixF
         {"APOC", true,  "NAWEAP"},   // Apocalypse
         {"HTK",  true,  "NAWEAP"},   // Flak Track
     };
-    return load_unit_roster_table(dir, ra2, ua, rules, art, kSoviet, 4);
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kSoviet, 4, /*full_parse=*/false);
 }
 
 // Spawns a harvester of `va`'s type at/next to (tx,ty): tries the target cell,
