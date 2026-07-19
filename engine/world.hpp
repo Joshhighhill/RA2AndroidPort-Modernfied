@@ -211,6 +211,15 @@ struct Unit {
     // reads differs (movement_domain -> grid_for).
     bool is_naval = false;                                // naval-locomotor unit
     MovementDomain movement_domain = MovementDomain::Land;  // Water for a naval unit
+
+    // --- Engineer/Spy Capture phase [RE: capture.md] ------------------------
+    // Default INERT (spec §8): no existing demo issues an engineer capture order
+    // and no spawn path sets it, so this field holds -1 in every existing demo;
+    // world_hash reads only cell/hp/alive and is untouched. Mirrors enter_target
+    // (a pending-order building INDEX, -1 = none). The step_capture arrival pass
+    // is a strict no-op for every unit with capture_target < 0.
+    int capture_target = -1;     // pending engineer capture/repair order ->
+                                 // building index (-1 = none)
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
@@ -759,6 +768,18 @@ public:
     // CONFIRMED - spy SW-building infiltrate resets the timer]; reuses
     // Superweapon::on_fired(). No-op if the house has no granted SW.
     void reset_superweapon(int house);
+    // Engineer capture/repair ORDER [RE: capture.md §A3/§A5]: record building
+    // b_idx as unit eng_idx's capture_target and path it to a free cell adjacent
+    // to the building's footprint (the transport/attack-building adjacency-
+    // approach analogue -- a raw move onto the occupied foundation would cancel
+    // as unreachable). It does NOT capture or consume here: step_capture performs
+    // the capture_building/repair_building + consume_unit when the engineer
+    // reaches adjacency (§A5: move-adjacent-then-act, like enter-transport).
+    // Supersedes any engagement/enter order on the engineer. Opens capture_any_
+    // (the step_capture firewall). No-op if eng_idx is not an alive, non-dying
+    // unit or b_idx is not an alive, non-Dead building. Interactive-only -- no
+    // demo issues it, so every gate stays byte-identical.
+    void order_engineer_capture(int eng_idx, int b_idx);
 
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
@@ -853,6 +874,14 @@ private:
     // node of the same type (the standing-building sync rule). The player
     // (house 0) is never AI -> no node work when the player captures.
     void ai_resync_captured_building(int b_idx, int old_house, int new_house);
+    // Engineer capture-arrival pass [RE: capture.md §A5], called from step()
+    // beside step_cargo (a pure insertion). Early-returns unless capture_any_
+    // (the firewall: false until the first capture/repair/order). For each unit
+    // with a live capture_target that has reached Chebyshev adjacency to its
+    // target building's footprint, performs capture_building (enemy/neutral) or
+    // repair_building (own damaged), consumes the engineer on a successful act,
+    // and clears the intent; a vanished/dead target clears the intent cleanly.
+    void step_capture(double dt);
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
     // Boarding / carry / eject / transport-death, called between step_units

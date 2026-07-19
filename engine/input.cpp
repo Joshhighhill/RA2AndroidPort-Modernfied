@@ -522,32 +522,42 @@ void Input::handle(const InputEvent& ev) {
                     }
                     // Engineer/Spy Capture gesture [RE-GATE APPLIED: capture.md
                     // §A3/§A5]: a SINGLE selected ENGINEER right-clicking a
-                    // building captures it (enemy OR neutral) or repairs it (own,
-                    // damaged); the engineer is consumed on either. Resolved
-                    // BEFORE the attack-building branch so an engineer never
-                    // issues a plain attack, and BEFORE the move fall-through.
-                    // Captures at ANY building health, always consumed (no damage
-                    // threshold -- EngineerCaptureLevel absent in YR-1.001 -> 1.0).
-                    // building_at_cell returns only alive, non-Dead foundations;
-                    // capture_building/repair_building re-guard internally.
-                    // ProduceCashStartup is 0 here (a normal building grants none;
-                    // the CAOILD=1000 roster value is wired in Task 4 via a
-                    // main.cpp-side startup injection, mirroring set_refinery_types).
+                    // building ORDERS it to move adjacent and then capture it
+                    // (enemy OR neutral) or repair it (own, damaged); the engineer
+                    // is consumed on arrival, NOT on the click. Like the enter-
+                    // transport sibling, the act (capture_building/repair_building
+                    // + consume_unit) is deferred to step_capture when the engineer
+                    // reaches adjacency -- an engineer no longer captures a
+                    // building across the map on a single click. Resolved BEFORE
+                    // the attack-building branch so an engineer never issues a
+                    // plain attack, and BEFORE the move fall-through. Captures at
+                    // ANY building health, always consumed on the successful act
+                    // (no damage threshold -- EngineerCaptureLevel absent in
+                    // YR-1.001 -> 1.0). building_at_cell returns only alive,
+                    // non-Dead foundations; order_engineer_capture and the
+                    // capture/repair calls it defers to re-guard internally. An
+                    // OWN, UNDAMAGED building is not a capture/repair target, so
+                    // the gesture falls through to the normal handling (a move) --
+                    // the recovered graceful fall-through. ProduceCashStartup is 0
+                    // here (a normal building grants none; the CAOILD=1000 roster
+                    // value is wired in Task 4 via a main.cpp-side startup
+                    // injection, mirroring set_refinery_types).
                     const int eng = sel_engineer_idx(world_);
                     if (eng >= 0) {
                         const int b_hit = world_.building_at_cell(cx, cy);
                         if (b_hit >= 0) {
                             const Building& tb = world_.buildings()[b_hit];
                             const int eng_house = world_.units()[eng].house;
-                            bool consumed = false;
-                            if (tb.house != eng_house)
-                                consumed = world_.capture_building(b_hit, eng_house, /*startup=*/0);
-                            else
-                                consumed = world_.repair_building(b_hit, eng_house);
-                            if (consumed) {
-                                world_.consume_unit(eng);   // engineer always consumed
-                                break;                      // handled: no attack/move
+                            const bool is_target =
+                                (tb.house != eng_house) ||   // enemy/neutral -> capture
+                                (tb.hp < tb.max_hp);         // own damaged -> repair
+                            if (is_target) {
+                                world_.order_engineer_capture(eng, b_hit);
+                                actions_.move_ordered = true;   // move-ack voice
+                                actions_.actor = eng;
+                                break;                          // handled: no attack/move
                             }
+                            // own & undamaged -> not a target; fall through below.
                         }
                     }
                     // Interactive attack-building (Task 4 machinery wired to the

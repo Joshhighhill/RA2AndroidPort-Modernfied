@@ -3515,3 +3515,49 @@ TEST_CASE("World capture: repair_building heals an own damaged building [RE: cap
     CHECK_FALSE(world.repair_building(bi, 0));         // already full -> no action
     CHECK_FALSE(world.repair_building(bi, 1));         // not owned by house 1
 }
+
+TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on ARRIVAL, "
+          "not the frame the order is issued [RE: capture.md §A5]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // Find an engineer cell with a clear walkable corridor `dist` cells east
+    // (the engineer's approach path + the 1x1 enemy building foundation).
+    const int dist = 6;
+    int ex = -1, ey = -1;
+    for (int dy = 0; dy < 12 && ex < 0; ++dy)
+        for (int dx = 0; dx < 12 && ex < 0; ++dx) {
+            const int x = c->x + dx, y = c->y + dy;
+            bool ok = true;
+            for (int k = 0; k <= dist; ++k)
+                if (!world.walkable(x + k, y)) { ok = false; break; }
+            if (ok) { ex = x; ey = y; }
+        }
+    REQUIRE(ex >= 0);
+    ra2engine::UnitCombat eng = gi_stats();
+    eng.image = "ENGINEER";
+    world.add_combat_unit(ex, ey, /*house=*/0, eng);            // unit 0: engineer
+    const int bx = ex + dist, by = ey;
+    const int bi = world.add_building(0, bx, by, 1, 1, /*house=*/1, /*strength=*/100,
+                                      /*armor_ix=*/0, 0.0, /*instant=*/true);   // enemy building
+    REQUIRE(bi >= 0);
+    world.units()[0].selected = true;
+    world.order_engineer_capture(0, bi);
+    // Order recorded; NOTHING happens on the same frame the order is issued.
+    CHECK(world.units()[0].capture_target == bi);
+    CHECK(world.units()[0].alive);                              // engineer NOT consumed yet
+    CHECK(world.buildings()[bi].house == 1);                    // still enemy-owned
+    // One frame in: the engineer is still far away -> no capture.
+    const double dt = 1.0 / 15.0;
+    world.step(dt);
+    CHECK(world.buildings()[bi].house == 1);
+    CHECK(world.units()[0].alive);
+    // Step to arrival: adjacency triggers the capture + consumes the engineer.
+    for (int f = 0; f < 400 && world.units()[0].alive; ++f) world.step(dt);
+    CHECK(world.buildings()[bi].house == 0);                    // captured -> house 0
+    CHECK_FALSE(world.units()[0].alive);                        // engineer consumed on arrival
+    CHECK(world.units()[0].capture_target == -1);               // intent cleared
+}

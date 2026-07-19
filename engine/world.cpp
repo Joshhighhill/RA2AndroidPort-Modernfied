@@ -1189,6 +1189,106 @@ void World::consume_unit(int idx) {
     u.path_idx = 0;
 }
 
+// Nearest foundation cell of building `b` to (px,py), and the nearest free
+// walkable cell adjacent to that foundation cell (the approach goal). Returns
+// false (leaving g unset) only if the building has no foundation cells.
+static bool engineer_approach_goal(const Building& b, int px, int py,
+                                   const std::vector<uint8_t>& passable, int w, int h,
+                                   const Occupancy& occ, Cellxy& g) {
+    const auto cells = foundation_cells(b.cx, b.cy, b.fw, b.fh);
+    if (cells.empty()) return false;
+    int best = -1, nx = cells[0].x, ny = cells[0].y;
+    for (const Cellxy& cell : cells) {
+        const int dx = px - cell.x, dy = py - cell.y;
+        const int cheb = std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy);
+        if (best < 0 || cheb < best) { best = cheb; nx = cell.x; ny = cell.y; }
+    }
+    // A raw move onto the occupied foundation cell would cancel as unreachable,
+    // so aim at the nearest FREE cell around it (same helper the transport
+    // re-path uses); the foundation cell itself is not walkable -> the first hit
+    // is adjacent to the footprint.
+    const std::vector<Cellxy> free = nearest_free_cells({nx, ny}, 1, passable, w, h, occ);
+    if (free.empty()) return false;
+    g = free[0];
+    return true;
+}
+
+void World::order_engineer_capture(int eng_idx, int b_idx) {
+    if (eng_idx < 0 || eng_idx >= static_cast<int>(units_.size())) return;
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return;
+    Unit& u = units_[eng_idx];
+    if (!u.alive || u.die_time >= 0.0) return;
+    const Building& b = buildings_[b_idx];
+    if (!b.alive || b.state == Building::State::Dead) return;
+    capture_any_ = true;             // open the step_capture firewall
+    // A capture order supersedes any engagement / pending enter (mirrors
+    // order_enter_transport's supersede tail).
+    u.target = -1;
+    u.target_building = -1;
+    u.attack_order = false;
+    u.unload_pending = false;
+    u.enter_target = -1;
+    u.capture_target = b_idx;
+    Cellxy g;
+    if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g))
+        order_unit_move(eng_idx, g.x, g.y);
+}
+
+void World::step_capture(double dt) {
+    (void)dt;
+    // FIREWALL (spec §8): until the first capture/repair/order ever, this whole
+    // pass is one branch -- the only cost every existing demo pays.
+    if (!capture_any_) return;
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+        Unit& u = units_[i];
+        if (u.capture_target < 0) continue;                    // no-op for every
+                                                               // non-engineer unit
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) {
+            u.capture_target = -1;
+            continue;
+        }
+        const int bi = u.capture_target;
+        if (bi < 0 || bi >= static_cast<int>(buildings_.size())) {
+            u.capture_target = -1;
+            continue;
+        }
+        Building& b = buildings_[bi];
+        if (!b.alive || b.state == Building::State::Dead) {     // target gone: cancel
+            u.capture_target = -1;                             // cleanly (no crash)
+            continue;
+        }
+        // Chebyshev adjacency to the NEAREST foundation cell -- the transport
+        // boarding-trigger analogue (step_cargo: cheb <= 1).
+        const auto cells = foundation_cells(b.cx, b.cy, b.fw, b.fh);
+        int best = -1;
+        for (const Cellxy& cell : cells) {
+            const int dx = u.cell_x - cell.x, dy = u.cell_y - cell.y;
+            const int cheb = std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy);
+            if (best < 0 || cheb < best) best = cheb;
+        }
+        if (best >= 0 && best <= 1) {
+            const int eng_house = u.house;
+            bool consumed = false;
+            if (b.house != eng_house)
+                consumed = capture_building(bi, eng_house, /*startup=*/0);   // enemy/neutral
+            else
+                consumed = repair_building(bi, eng_house);                   // own damaged
+            u.capture_target = -1;             // intent resolved on arrival regardless
+            if (consumed) consume_unit(static_cast<int>(i));  // engineer always consumed
+            // own-undamaged building -> repair_building returned false: the
+            // engineer arrived, did nothing, NOT consumed (graceful fall-through).
+        } else if (!u.moving()) {
+            // Arrived-but-not-adjacent / path cancelled while standing: re-path
+            // to a free cell adjacent to the footprint (the transport re-path
+            // analogue). No free cell nearby -> keep standing, retried next frame.
+            Cellxy g;
+            if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
+                                       g))
+                order_unit_move(static_cast<int>(i), g.x, g.y);
+        }
+    }
+}
+
 void World::transfer_superweapon(int old_house, int new_house) {
     if (old_house < 0 || old_house >= (int)sw_houses_.size()) return;
     if (new_house < 0) return;                  // lower-bound guard [Task-2 review Minor]
@@ -2192,6 +2292,13 @@ void World::step(double dt) {
     // -- no existing unit-step logic is reordered; `if (!cargo_any_) return;`
     // inside is the only cost every existing demo pays [spec §8].
     step_cargo(dt);
+
+    // Engineer/Spy Capture [RE: capture.md §A5]: the capture-arrival pass --
+    // an engineer with a live capture_target that has reached adjacency to its
+    // target building captures/repairs it and is consumed. A pure INSERTION
+    // beside step_cargo; `if (!capture_any_) return;` inside is the only cost
+    // every existing demo pays (no demo issues a capture order) [spec §8].
+    step_capture(dt);
 
     // CB-2 Aircraft [RE: aircraft.md §3.5/§6]: the airborne movement pass --
     // takeoff/cruise/descend runs AFTER step_cargo and BEFORE step_turrets/
