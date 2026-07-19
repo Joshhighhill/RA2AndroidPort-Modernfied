@@ -57,6 +57,7 @@
 #include "ra2assets/fileio.hpp"
 #include "ra2assets/hva.hpp"
 #include "ra2assets/ini.hpp"
+#include "ra2assets/land_type.hpp"  // CB-3 Naval: ra2assets::LandType (resolve_land_types)
 #include "ra2assets/map.hpp"
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
@@ -172,6 +173,27 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
               << " templates=" << th.template_count() << "\n";
 
     return Assets{std::move(map), pal, std::move(th)};
+}
+
+// CB-3 Naval [RE-GATE APPLIED: naval.md §2]: resolve every materialized map
+// cell's LandType into a grid_w*grid_h array (indexed y*grid_w + x, the SAME
+// space build_water_passability/passable_ use). For each MapCell, classify its
+// global tile index against the theater [General] tile-set indices via
+// Theater::land_type_of_cell (tile -> owning [TileSetNNNN] set -> LandType). The
+// .tmp TerrainType byte is NOT used (it was FALSIFIED for LandType). Cells with
+// no map entry stay Clear (land, never water). land_type_of_cell is const; `th`
+// is by ref only because the Assets member is non-const.
+std::vector<ra2assets::LandType> resolve_land_types(const ra2assets::MapFile& map,
+                                                    ra2engine::Theater& th,
+                                                    int grid_w, int grid_h) {
+    std::vector<ra2assets::LandType> lt(
+        static_cast<std::size_t>(grid_w) * grid_h, ra2assets::LandType::Clear);
+    for (const ra2assets::MapCell& c : map.cells()) {
+        if (c.x < 0 || c.y < 0 || c.x >= grid_w || c.y >= grid_h) continue;
+        lt[static_cast<std::size_t>(c.y) * grid_w + c.x] =
+            th.land_type_of_cell(c.tile);   // tile -> owning tile-set -> LandType
+    }
+    return lt;
 }
 
 // Loads the ore/gem overlay SHPs from the temperate theater chain [RE:
@@ -649,6 +671,25 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.omni_fire = rules.weapon_omnifire(primary);
     }
 
+    // CB-3 naval stats [RE-GATE APPLIED: naval.md §1/§5]. is_naval iff the type
+    // carries the naval locomotor CLSID (CONFIRMED from [HYD]/[DEST]/[SUB]/[DRED]
+    // Locomotor={2BEA74E1-...}). The [HYD] combat stats are resolved by the SAME
+    // ground-vehicle conversions with NO naval special-casing [RE-GATE APPLIED:
+    // naval.md §4/§5]: Primary=FlakTrackGun -> damage=25, rof=25 frames,
+    // range=5 cells (1280 leptons), verses from Warhead=FlakTWH
+    // (150,125,100,60,10,10,30,20,10,100,100); Speed=8/ROT=6 via voxel-render.md
+    // §5; Strength=400 -> hp. FlakTWH CellSpread=1.0 (>= 1.0) flows through CB-2's
+    // existing apply_spread_damage one-ring splash (PercentAtMax=1.0 -> no
+    // falloff) -- NO new code; the instant single-target-cell hit drops the
+    // vanilla FlakScatter/Inaccurate RNG (documented deviation). Naval adds only
+    // the domain flags. All default INERT for a ground unit (movement_domain=Land).
+    static const std::string kNavalClsid = "{2BEA74E1-7CCA-11d3-BE14-00104B62A16C}";
+    const std::string nloco = rules.locomotor(unit_id);
+    r.combat.is_naval =
+        (!nloco.empty() && to_lower(nloco) == to_lower(kNavalClsid));
+    if (r.combat.is_naval)
+        r.combat.movement_domain = ra2engine::MovementDomain::Water;
+
     std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
               << " strength=" << r.combat.strength << " armor=" << r.combat.armor
               << " primary=" << primary << " damage=" << r.combat.damage
@@ -983,6 +1024,41 @@ AircraftAssets load_aircraft_assets(const std::string& dir, const ra2assets::Mix
     else
         std::cerr << "[aircraft] unavailable (ZEP/ORCA/BEAG art missing)\n";
     return aa;
+}
+
+// CB-3 Naval render assets [RE: naval.md §5]. A ship is a voxel vehicle at
+// altitude 0 -- load_vehicle_assets already resolves the naval stats via
+// resolve_combat_unit, so a candidate is usable iff its voxel art loaded AND it
+// is actually a naval-locomotor unit. No new render work: the ship draws
+// through the EXISTING draw_vehicle_unit/draw_voxel_sprite + facing_cache path.
+struct NavalAssets {
+    VehicleAssets va;      // voxel render assets + combat (naval flags included)
+    std::string id;        // "HYD", "DRED", or "DEST"
+    bool ok = false;       // art present AND is_naval
+};
+
+NavalAssets load_naval_assets(const std::string& dir, const ra2assets::MixFile& ra2,
+                              const ra2assets::Palette& unit_pal) {
+    NavalAssets na;
+    for (const char* id : {"HYD", "DRED", "DEST"}) {
+        VehicleAssets va = load_vehicle_assets(dir, ra2, unit_pal, id);
+        if (!va.ok || !va.combat.is_naval) continue;   // art-guard-drop -> fallback
+        na.va = std::move(va);
+        na.id = id;
+        na.ok = true;
+        break;
+    }
+    if (na.ok)
+        std::cerr << "[naval] id=" << na.id
+                  << " strength=" << na.va.combat.strength
+                  << " speed=" << na.va.combat.speed_cps
+                  << " range=" << na.va.combat.range
+                  << " domain=" << (na.va.combat.movement_domain ==
+                                    ra2engine::MovementDomain::Water ? "water" : "land")
+                  << "\n";
+    else
+        std::cerr << "[naval] unavailable (HYD/DRED/DEST art missing or not naval)\n";
+    return na;
 }
 
 // The Allied producible-unit roster + its render/cameo assets [RE-GATE

@@ -155,6 +155,12 @@ public:
     // [id] Locomotor= (the CLSID string), or "" if absent [RE: aircraft.md §1].
     std::string locomotor(const std::string& id) const;
 
+    // [id] SpeedType= (Foot/Track/Wheel/Hover/Float/FloatBeach/Amphibious), or
+    // "" if absent [RE: naval.md §2]. Diagnostic/log use in CB-3 (the naval
+    // domain is decided by the Locomotor CLSID); the SpeedType speed table is a
+    // carry-forward.
+    std::string speed_type(const std::string& id) const;
+
     // [id] BalloonHover=, true iff "yes"/"true" (case-insensitive) [aircraft.md §2].
     bool balloon_hover(const std::string& id) const;
 

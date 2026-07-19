@@ -268,6 +268,10 @@ std::string Rules::locomotor(const std::string& id) const {
     return strip_inline_comment(ini_->get(id, "Locomotor", ""));
 }
 
+std::string Rules::speed_type(const std::string& id) const {
+    return ini_->get(id, "SpeedType", "");
+}
+
 bool Rules::balloon_hover(const std::string& id) const {
     return is_truthy(ini_->get(id, "BalloonHover", "no"));
 }
