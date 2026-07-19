@@ -7837,7 +7837,6 @@ int run_demo_capture() {
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
-// Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
 // then:
 //  1) A DEVICELESS proof: play "GIAttack" and render straight into a plain
 //     buffer (bypassing AudioOutput/SDL entirely) -- FAILS (exit 1) if every

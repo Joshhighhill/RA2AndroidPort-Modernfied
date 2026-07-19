@@ -1002,7 +1002,108 @@ Deviations we take for CB-5 (adjudicated divergences from the recovered
 
 **This completes the content-breadth arc** (CB-1 Transports → CB-2 Aircraft →
 CB-3 Naval → CB-4 Superweapons → CB-5 Tech-Tree). Thirteen permanent
-byte-identity gates now guard the engine.
+byte-identity gates guarded the engine at the close of that arc.
+
+## Engineer / Spy Capture
+
+The first content-mechanic phase after the content-breadth arc adds the two RA2
+"a unit enters an enemy/neutral building" mechanics — **engineer capture**
+(building-ownership transfer) and **spy infiltration** (per-building effects) —
+plus the spy's **disguise** and its **dog detection**. Calibrated from
+`gamemd.exe` + `rulesmd.ini` (`docs/re/capture.md`); the hunt overturned two
+pre-hunt assumptions before any code (see the RE-GATE below).
+
+**Ownership transfer (Approach A).** Ownership in this engine is per-frame
+derived — `power_totals` and `prerequisites_met` scan `buildings_` filtered by
+`b.house` on every call — so `World::capture_building` just flips `b.house`
+(matching `BuildingClass::ChangeOwner` `FUN_004481ab`) and power / buildability /
+the player sidebar follow for free. The only extra fix-ups are the things
+`ChangeOwner` does beyond the flag: move a superweapon grant
+(`transfer_superweapon`, via the inert `Building::grants_superweapon` bool), AI
+base-node resync on BOTH sides (the AI-1 standing-building↔node mechanism), a
+primary-factory flag reset, and `ProduceCashStartup` granted only when captured
+**from the neutral house**.
+
+**Engineer.** `ENGINEER` captures an enemy/neutral building at ANY health (no
+threshold — `EngineerCaptureLevel` is absent in YR-1.001 → ctor default 1.0; the
+Ares-era `EngineerDamage`/`EngineerAlwaysCaptureTech` keys do not exist in this
+build) and is always consumed; entering your own damaged building repairs it to
+full. The gesture is **deferred** — the engineer paths to a footprint-adjacent
+cell and the act fires on arrival in the firewalled `step_capture` (the
+`order_enter_transport` pattern), not instantly on click.
+
+**Neutral house + tech structures.** A neutral owner (house id 2; per-house
+arrays widened to 3 with index 2 inert) holds capturable tech structures. The
+`CAOILD` oil derrick pays its owner `ProduceCashAmount=20` every
+`ProduceCashDelay=100` frames (plus the one-time `ProduceCashStartup=1000` on
+capture-from-neutral) via the firewalled `step_tech_structures`. `CATHOSP`/
+`CAMACH`/`CAPOWR`/`CAAIRP` are recovered but their passive effects are minimal/
+deferred (`CAPOWR`'s +200 power arrives free via `power_totals` once owned).
+
+**Spy infiltration** (`BuildingClass::Infiltrate` `FUN_004571e0`, early-returns
+if the spy already owns it; also deferred to arrival): refinery → steal
+`SpyMoneyStealPercent=0.5` × the victim's credits; power plant → `SpyPowerBlackout
+=1000`-frame blackout (applied by the pure `apply_blackout` wrapper at the power
+read-sites — `power_totals` / `production.cpp` bodies stay byte-for-byte
+untouched); superweapon → recharge-timer reset (reuses CB-4's lifecycle); factory
+→ the SPY's own house gets a produced-veteran flag; radar / Battle Lab → reveal
+flags, **inert [RE-FALLBACK]** (no shroud in the engine yet).
+
+**Minimal veterancy.** `UnitCombat`/`Unit` gain a `veteran_rank` (default 0 →
+byte-identical). A unit produced by a house holding the produced-veteran flag
+spawns rank 1 with the recovered multipliers **spawn-baked** into `w_damage`/`hp`
+(rulesmd `[General]` `VeteranCombat=1.1` firepower, `VeteranArmor=1.5` armor;
+rank 1, `VeteranCap=2`) — `combat.cpp` is literally untouched, so the combat/tank
+gates stay bit-identical.
+
+**Disguise / detection.** A spy carries its side-default `PermaDisguise`
+(`AlliedDisguise=E1` / `SovietDisguise=E2`) and renders as that enemy infantry in
+the disguised house's palette (render-only). Per the RE-GATE, a spy has
+`PermaDisguise=yes` so it **never** drops its disguise by firing or being attacked
+(reveal-on-fire gates on `CanDisguise && !PermaDisguise`) — `commit_attack_target`
+is untouched. The ONLY thing that defeats the disguise is a `DetectDisguise` unit
+(the dogs `[ADOG]/[DOG]/[YDOG]`) within range, in the firewalled detection scan.
+A still-disguised spy is not auto-acquired (an inert `|| disguised` clause on the
+`combat.cpp` auto-acquire scan, byte-identical when no disguise exists); a dog
+reveal restores targetability automatically.
+
+Byte-identity discipline: a `capture_any_` firewall (every new step pass
+early-returns until the first capture/infiltrate/disguise), `veteran_rank=0`
+default, all new `Unit`/`Building` fields + per-house arrays inert and excluded
+from `world_hash`; `production.cpp` and `combat.cpp` bodies untouched. The 13
+prior gates were re-verified bit-identical at every ownership-touching commit and
+again at finalize; the 14th gate `--demo-capture` (`capture_hash=58b87b5bc63f7046`)
+hashes only the new state.
+
+RE-GATE (`docs/re/capture.md`, calibrate-first save #9) corrected two pre-hunt
+assumptions before code: (1) engineer captures at ANY health (no damage-only
+threshold — an Ares-era invention), and (2) the spy is PermaDisguise-EXEMPT from
+reveal-on-fire (my design had it revealing on attack; the real spy stays
+disguised, dog-only), plus pinned the veteran multipliers (×1.1/×1.5, not the
+×1.25 fallback).
+
+Deviations we take for Capture (adjudicated divergences from recovered
+`capture.md` ground truth — not bugs):
+- **Power blackout via `apply_blackout` wrapper, not by editing `power_totals`** —
+  keeps `production.cpp` byte-for-byte untouched; identity when not blacked out
+  [`capture.md` §B2; spec §8].
+- **Veteran multipliers spawn-baked in `world.cpp`, `combat.cpp` untouched** —
+  a rank-1 unit spawns with scaled firepower + HP; observably equivalent for a
+  minimal veteran; keeps combat 78 / tank 144 bit-identical [`capture.md` §B5].
+- **Radar / Battle-Lab reveal inert** — recognized but no-op; real reveal needs a
+  shroud phase [`capture.md` §B6; spec §Out].
+- **Neutral tech structures demo-spawned, not map-parsed** — `mapsmd03` isn't
+  parsed for pre-placed tech buildings; the gate spawns a `CAOILD` [`capture.md`
+  §D2; spec §Out].
+- **`--demo-capture` is pure-state / art-independent** — the gate loads only
+  GI/CONS art, so `ENGINEER`/`SPY`/`DOG`/`CAOILD` render as placeholders (their
+  SHPs exist in the install but the demo's minimal asset load doesn't pull them);
+  the hash folds sim state only, like `--demo-superweapon` [RE-FALLBACK].
+- **Carry-forwards:** engineer/spy CAPTURE is done; still deferred are MakeupKit
+  click-to-re-disguise, mirage disguise + fake-blink RNG, full veterancy
+  (kills-based promotion / elite / chevrons), real radar/shroud reveal,
+  map-parsed neutral roster + neutral AI, garrisonable buildings, and AI use of
+  engineers/spies [spec §Out].
 
 ## Building
 
@@ -1201,6 +1302,22 @@ Headless/verification CLI modes (render one or more frames and exit):
   literal — a compute-and-self-compare); wedge guards exit non-zero unless `SREF`
   is UNBUILDABLE before `GATECH` AND BUILDABLE after AND `MTNK` is buildable at
   baseline.
+- `ra2engine.exe --demo-capture` — the Engineer/Spy Capture integration gate:
+  builds a player ConYard + an enemy base fragment (refinery, power plant, an
+  SW-building granted the Nuke, factory) + a neutral `CAOILD` oil derrick, then
+  scripts an `ENGINEER` capturing an enemy building (ownership 1→0, an
+  owned-count/power/buildability delta follows) and the neutral `CAOILD` (2→0,
+  +1000 startup, then +20 every 100 frames), a `SPY` infiltrating the refinery
+  (cash 0.5×), power plant (blackout 1000f), SW-building (recharge reset), and
+  factory (produced units get `veteran_rank=1`, ×1.1 firepower / ×1.5 armor), and
+  a disguised spy revealed by a `DOG` (`DetectDisguise`). Hashes building
+  ownership + both houses' credits + blackout timers + SW ready + unit veteran/
+  disguise state at fixed checkpoints (`capture_hash`). Runs twice (rendered +
+  headless); both runs must produce identical witnesses + hash (no pinned literal);
+  nine wedge guards exit non-zero unless capture flips ownership AND cash-steal
+  moves credits AND blackout arms AND SW resets AND the dog reveals the spy. The
+  gate is pure-state / art-independent (loads only GI/CONS art → engineer/spy/dog/
+  derrick render as placeholders, like `--demo-superweapon`).
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -1208,21 +1325,22 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These thirteen headless demos are byte-identity regression gates: any change to
+These fourteen headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
-again with each subsequent roster addition — `roster=19` as of the CB-5 phase
-(the Battle Lab `GATECH`) — with the gated hash unaffected each time). The first
-TWELVE are the legacy gates re-verified unchanged by every subsequent phase;
-`--demo-techtree` is the new CB-5 gate.
+again with each subsequent roster addition — `roster=20` as of the Engineer/Spy
+Capture phase (the `CAOILD` oil derrick; `roster=19` was the CB-5 Battle Lab
+`GATECH`) — with the gated hash unaffected each time). The first THIRTEEN are the
+legacy gates re-verified unchanged by every subsequent phase; `--demo-capture` is
+the new Engineer/Spy Capture gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
 | `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
 | `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
-| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=19` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
+| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=20` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
@@ -1232,7 +1350,8 @@ TWELVE are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-aircraft` | `aircraft_hash=a69642564cf64773` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
 | `--demo-naval` | `naval_hash=6aee2c82bc024e86` | `deterministic=yes`; variant=HYD (Sea Scorpion, `Speed=8`, `ROT=6`, `FlakTrackGun` Damage=25/ROF=25/Range=5, Warhead `FlakTWH` CellSpread=1.0 on this install; DRED/DEST fallback documented if art regresses); sails across the `mapsmd03` water region (468 Water cells, 252-cell main body, bbox [71,11]–[95,40], runtime-classified from the theater `[General]` tile-sets) via A* on the water grid (every path cell Water, folded into the hash), refuses a land-cell order (empty/stay-put — the water/land inverse), approaches over water and fires FlakTrackGun to a kill, holds station on resume; voxel ship at altitude 0 (existing draw path); wedge guards armed (`docs/re/naval.md`) |
 | `--demo-superweapon` | `superweapon_hash=189496664f5eca68` | `deterministic=yes`; grants the Soviet Nuclear Missile (`[NukeSpecial]` `Type=MultiMissile`, `RechargeTime` -> recharge_secs, `[NukePayload]` Damage=600, `[NUKE]` CellSpread=10/PercentAtMax=.02/Verses); charges to READY, fires at the target cell, detonates via the REUSED `apply_spread_damage` (enemies-only, instant), spares the firing house, leaves out-of-radius units untouched, re-charges from 0; NukeIcon cameo + gclock2 recharge clock (art-guarded, placeholder if absent); wedge guards armed (`docs/re/superweapon.md`) |
-| `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=19 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
+| `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=20 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
+| `--demo-capture` | `capture_hash=58b87b5bc63f7046` | `deterministic=yes`; engineer capture (`ChangeOwner` flip + SW move + AI base-node resync + startup-from-neutral) of an enemy building AND a neutral `CAOILD` (Startup 1000, Amount 20 / Delay 100f); spy infiltrate (cash-steal 0.5×, power-blackout 1000f, SW recharge reset, factory→produced `veteran_rank=1` ×1.1 firepower/×1.5 armor, radar/lab inert); disguise + dog `DetectDisguise` reveal (spy stays disguised on attack — PermaDisguise); nine wedge guards armed (`docs/re/capture.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
