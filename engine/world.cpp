@@ -1132,6 +1132,7 @@ bool World::capture_building(int b_idx, int new_house, int startup) {
     if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
     Building& b = buildings_[b_idx];
     if (!b.alive || b.state == Building::State::Dead) return false;
+    if (new_house < 0) return false;            // lower-bound guard [Task-2 review Minor]
     const int old_house = b.house;
     if (new_house == old_house) return false;   // ChangeOwner no-op if same owner
 
@@ -1159,8 +1160,38 @@ bool World::capture_building(int b_idx, int new_house, int startup) {
     return true;
 }
 
+bool World::repair_building(int b_idx, int by_house) {
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
+    Building& b = buildings_[b_idx];
+    if (!b.alive || b.state == Building::State::Dead) return false;
+    if (b.house != by_house) return false;      // repair applies to OWN buildings
+    if (b.hp >= b.max_hp) return false;         // full HP -> no action (engineer NOT consumed)
+    capture_any_ = true;
+    b.hp = b.max_hp;                            // heal to full [RE-GATE APPLIED §A5]
+    return true;
+}
+
+void World::consume_unit(int idx) {
+    if (idx < 0 || idx >= (int)units_.size()) return;
+    Unit& u = units_[idx];
+    if (!u.alive) return;                        // already tombstoned
+    // Direct tombstone (no die anim -- the engineer walked INTO the building),
+    // mirroring the transport carried-unit death path, then release ALL cells
+    // (current + any mid-hop reservation) exactly as combat.cpp's kill path.
+    occ_.release_all_of(idx, -1, -1);
+    u.alive = false;
+    u.die_time = -1.0;
+    u.hp = 0;
+    u.selected = false;
+    u.target = -1;
+    u.target_building = -1;
+    u.path.clear();
+    u.path_idx = 0;
+}
+
 void World::transfer_superweapon(int old_house, int new_house) {
     if (old_house < 0 || old_house >= (int)sw_houses_.size()) return;
+    if (new_house < 0) return;                  // lower-bound guard [Task-2 review Minor]
     if (!sw_houses_[old_house].has_sw) return;
     if ((int)sw_houses_.size() <= new_house) sw_houses_.resize(new_house + 1);
     sw_houses_[new_house] = sw_houses_[old_house];      // move the whole record

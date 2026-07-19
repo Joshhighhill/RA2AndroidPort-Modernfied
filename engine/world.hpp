@@ -740,6 +740,18 @@ public:
     // building is Dead, or new_house == the current owner. `startup` is the
     // captured building type's ProduceCashStartup (0 for a normal building).
     bool capture_building(int b_idx, int new_house, int startup);
+    // Engineer repair [RE-GATE APPLIED: capture.md §A5]: heal building b_idx to
+    // full HP (a damaged OWN building) and open capture_any_. No-op returning
+    // false if b_idx is invalid, Dead, not owned by `by_house`, or already at
+    // full HP. The caller consumes the engineer on true.
+    bool repair_building(int b_idx, int by_house);
+    // Consume a unit (the capture/repair gesture spends its engineer, and any
+    // future "removed from map" consumer): tombstone it directly (no die anim --
+    // it walked INTO the building) and release its occupancy cell, reusing the
+    // combat.cpp death path (alive=false + occ_.release_all_of). No-op if idx is
+    // out of range or the unit is already tombstoned. Interactive-only -- no
+    // demo calls it, so every gate stays byte-identical.
+    void consume_unit(int idx);
     // Move a house's whole superweapon grant old_house -> new_house (the SW
     // record + params); no-op if old_house has none. Reuses the CB-4 registry.
     void transfer_superweapon(int old_house, int new_house);

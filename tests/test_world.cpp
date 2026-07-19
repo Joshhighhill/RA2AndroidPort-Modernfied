@@ -3500,3 +3500,18 @@ TEST_CASE("World capture: capture_building flips ownership + resets primary [RE:
     CHECK_FALSE(world.buildings()[bi].primary);    // primary reset
     CHECK_FALSE(world.capture_building(bi, 0, 0)); // no-op: already owned
 }
+
+TEST_CASE("World capture: repair_building heals an own damaged building [RE: capture.md §A5]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    // add_building(type, cx, cy, fw, fh, house, strength, armor_ix, buildup_total, instant)
+    const int bi = world.add_building(0, 20, 20, 1, 1, /*house=*/0, /*strength=*/100,
+                                      /*armor_ix=*/0, 0.0, /*instant=*/true);
+    REQUIRE(bi >= 0);
+    world.buildings()[bi].hp = world.buildings()[bi].max_hp / 2;   // damaged
+    CHECK(world.repair_building(bi, /*by_house=*/0));
+    CHECK(world.buildings()[bi].hp == world.buildings()[bi].max_hp);   // full
+    CHECK_FALSE(world.repair_building(bi, 0));         // already full -> no action
+    CHECK_FALSE(world.repair_building(bi, 1));         // not owned by house 1
+}

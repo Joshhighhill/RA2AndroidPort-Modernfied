@@ -2880,6 +2880,43 @@ int run_interactive(bool no_audio) {
                                 swp.damage, swp.cell_spread, swp.percent_at_max, swp.verses);
     }
 
+    // Engineer/Spy Capture phase [RE-GATE APPLIED: capture.md §A3/§A5]:
+    // INTERACTIVE-ONLY -- field one player (house 0) ENGINEER so the right-click
+    // capture/repair gesture (input.cpp) is exercisable against the enemy base
+    // / the player's own damaged buildings. FULLY ART-GUARDED (the GATOW/
+    // placeholder lesson): if ENGINEER.SHP fails to load we skip the spawn
+    // cleanly rather than field an unrenderable unit. Its combat stats come from
+    // resolve_combat_unit (image "ENGINEER"); the gesture keys on image ==
+    // "ENGINEER". No demo fields an engineer, so every gate stays byte-identical.
+    if (ba.ok) {
+        try {
+            MixFile conquer = ra2.open_nested("conquer.mix");
+            ResolvedUnit eng = resolve_combat_unit(rules, "ENGINEER");
+            if (!ua.shps.count(eng.combat.image)) {
+                ua.shps.emplace(eng.combat.image,
+                                load_unit_shp(conquer, eng.combat.image));  // throws if absent -> caught
+                ua.anims.emplace(eng.combat.image, anim_from_art(art, eng.combat.image));
+            }
+            world.set_anim(eng.combat.image,
+                           ua.anims.count(eng.combat.image) ? ua.anims.at(eng.combat.image)
+                                                            : ra2engine::default_anim());
+            const ra2assets::MapCell* ec = ra2engine::pick_start_cell(a.map);
+            bool placed = false;
+            for (int r = 1; ec && r <= 6 && !placed; ++r)
+                for (int dy = -r; dy <= r && !placed; ++dy)
+                    for (int dx = -r; dx <= r && !placed; ++dx) {
+                        if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                        const int x = ec->x + dx, y = ec->y + dy;
+                        if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                            world.add_combat_unit(x, y, /*house=*/0, eng.combat);
+                            placed = true;
+                        }
+                    }
+        } catch (const std::exception& ex) {
+            std::cerr << "[engineer] ENGINEER art unavailable, skipping spawn (" << ex.what() << ")\n";
+        }
+    }
+
     // Building-state tracker for FreeUnit grand-opening spawns (Buildup->Idle).
     std::vector<int> bstates;
 

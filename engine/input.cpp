@@ -32,6 +32,24 @@ static constexpr int kDragThreshold = 6;
 static constexpr uint32_t kDblMs = 400;
 static constexpr int kDblSlop = 6;
 
+// Engineer/Spy Capture phase [RE-GATE APPLIED: capture.md §A3/§A5]: index of the
+// SINGLE selected ENGINEER (Unit::image == "ENGINEER"), or -1. Requires exactly
+// one selected, alive, non-dying, house-0 unit and that it be an engineer -- a
+// mixed selection (engineer + anything else) resolves to -1 so the right-click
+// falls through to the normal group move. Interactive-only: no demo selects an
+// engineer, so no gate exercises this.
+static int sel_engineer_idx(const World& world) {
+    int found = -1;
+    for (int i = 0; i < static_cast<int>(world.units().size()); ++i) {
+        const Unit& u = world.units()[i];
+        if (!u.selected || !u.alive || u.die_time >= 0.0 || u.house != 0) continue;
+        if (found >= 0) return -1;                 // more than one unit selected
+        found = i;
+    }
+    if (found < 0) return -1;
+    return world.units()[found].image == "ENGINEER" ? found : -1;
+}
+
 Input::Input(World& world, Camera& camera, int view_w, int view_h)
     : world_(world), cam_(camera), view_w_(view_w), view_h_(view_h) {
     int mnx, mny, mxx, mxy;
@@ -500,6 +518,36 @@ void Input::handle(const InputEvent& ev) {
                             actions_.move_ordered = true;   // move-ack voice
                             actions_.actor = actor;
                             break;  // handled: no attack/move for this click
+                        }
+                    }
+                    // Engineer/Spy Capture gesture [RE-GATE APPLIED: capture.md
+                    // §A3/§A5]: a SINGLE selected ENGINEER right-clicking a
+                    // building captures it (enemy OR neutral) or repairs it (own,
+                    // damaged); the engineer is consumed on either. Resolved
+                    // BEFORE the attack-building branch so an engineer never
+                    // issues a plain attack, and BEFORE the move fall-through.
+                    // Captures at ANY building health, always consumed (no damage
+                    // threshold -- EngineerCaptureLevel absent in YR-1.001 -> 1.0).
+                    // building_at_cell returns only alive, non-Dead foundations;
+                    // capture_building/repair_building re-guard internally.
+                    // ProduceCashStartup is 0 here (a normal building grants none;
+                    // the CAOILD=1000 roster value is wired in Task 4 via a
+                    // main.cpp-side startup injection, mirroring set_refinery_types).
+                    const int eng = sel_engineer_idx(world_);
+                    if (eng >= 0) {
+                        const int b_hit = world_.building_at_cell(cx, cy);
+                        if (b_hit >= 0) {
+                            const Building& tb = world_.buildings()[b_hit];
+                            const int eng_house = world_.units()[eng].house;
+                            bool consumed = false;
+                            if (tb.house != eng_house)
+                                consumed = world_.capture_building(b_hit, eng_house, /*startup=*/0);
+                            else
+                                consumed = world_.repair_building(b_hit, eng_house);
+                            if (consumed) {
+                                world_.consume_unit(eng);   // engineer always consumed
+                                break;                      // handled: no attack/move
+                            }
                         }
                     }
                     // Interactive attack-building (Task 4 machinery wired to the
