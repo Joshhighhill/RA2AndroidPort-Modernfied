@@ -35,7 +35,7 @@
 
 **Plan-operational addenda (CB-1/2/3 precedent):**
 
-- **[RE-GATE] protocol — STATUS: PENDING.** Tasks 2–6 are written with best-known PRE-HUNT values; each consuming point is marked `[RE-GATE: superweapon.md §N]` with its fallback inline. After the Task-1 hunt lands (`docs/re/superweapon.md`), the **controller** runs the RE-GATE amendment step (Task 1, Step 8): diff the hunt against every `[RE-GATE: superweapon.md §N]` block, amend the plan, and flip each marker to `[RE-GATE APPLIED: superweapon.md §N]` — committed BEFORE dispatching Task 2. The **`RechargeTime` units→frames factor** (§1 item 1), the **`[NukePayload]`-vs-`[NukeCarrier]` damage attribution** (§1 item 2), and the **building-splash decision** (§5.3) are the likely [RE-FALLBACK]s / design-calls.
+- **[RE-GATE] protocol — STATUS: APPLIED (39999cd).** Tasks 2–6 were written with best-known PRE-HUNT values; each consuming point was marked `[RE-GATE: superweapon.md §N]` with its fallback inline. The Task-1 hunt landed (`docs/re/superweapon.md`, commit `39999cd`) and the **controller** ran the RE-GATE amendment step (Task 1, Step 8): every `[RE-GATE: superweapon.md §N]` block was diffed against the hunt, the plan amended, and each marker flipped to `[RE-GATE APPLIED: superweapon.md §N]` — committed BEFORE dispatching Task 2. Adjudications applied: the **`RechargeTime` units→frames factor** — CONFIRMED MINUTES, `trunc(RechargeTime·900)` frames (= `·60` s @ 15 fps), firing resets to a FULL recharge (§1); the **`[NukePayload]`/`[NUKE]` down-strike damage attribution** — CONFIRMED, NOT the `[NukeCarrier]`/`NukeMaker` up-launch (§2); the **SW `Type` enum order** — CONFIRMED, `AmerParaDrop` a DISTINCT entry (binary idx 6), `SpyPlane` idx 8 (§4); the **building-splash decision** — CONFIRMED buildings take splash → an SW-only building loop added to Task 4's `fire_superweapon` (§5.3); the **`NukeIcon`/`NUKEANIM` art** — present on this install (§art).
 - Run every build/test/demo **FOREGROUND, synchronously, blocking** (generous timeout, e.g. 600000 ms — rendered demos included) — do NOT background test runs and wait; prior phases lost subagents to that. NEVER pipe a native exe through `Select-Object -First N`. Run the twelve gate demos INDIVIDUALLY (a 12-in-one chain exceeds 600 s).
 - Desktop build: `cmake --build D:\ra2-android\build --target ra2assets_tests ra2engine`. Tests: `D:\ra2-android\build\ra2assets_tests.exe --test-case="<filter>*"`. Engine exe: `D:\ra2-android\build\ra2engine.exe`. doctest filters are name-based.
 - Tests skip cleanly without `RA2_INSTALL_DIR` — doctest `MESSAGE` + `return`. The Task 2 pure tests + the Task 3/4 pure-World tests use hand-built inputs and run host-only (no install needed).
@@ -68,7 +68,7 @@ The framework is small (a timer + a fire order + one detonation call) and this i
 | `engine/superweapon.hpp` + `engine/superweapon.cpp` (create, Task 2) | Pure CB-4 framework: `enum class SuperweaponType`, `struct Superweapon` (inline lifecycle) + the recovered enum↔`[SuperWeaponTypes]`-id mapping helpers. No SDL/World/RNG. Registered in BOTH cmake files |
 | `tests/test_superweapon.cpp` (create, Task 2) | Pure doctests: charges to READY at exactly `recharge_secs`, no overshoot, `on_fired` resets, enum order + id mapping |
 | `engine/world.hpp` (modify, Tasks 3–4) | Task 3: `#include "superweapon.hpp"` + `<array>`; `HouseSuperweapon` (private); `sw_houses_`/`sw_any_` members; `grant_superweapon`/`step_superweapon` decls; `sw_ready`/`sw_charge_fraction`/`sw_state` accessors. Task 4: `fire_superweapon` decl |
-| `engine/world.cpp` (modify, Tasks 3–4) | Task 3: `grant_superweapon`, `step_superweapon`, the accessors, the `World::step` insertion. Task 4: `fire_superweapon` (transient detonator + `apply_spread_damage`) + the building-splash [RE-GATE] |
+| `engine/world.cpp` (modify, Tasks 3–4) | Task 3: `grant_superweapon`, `step_superweapon`, the accessors, the `World::step` insertion. Task 4: `fire_superweapon` (transient detonator + `apply_spread_damage`) + the SW-only building-splash loop [RE-GATE APPLIED §5.3] |
 | `engine/combat.hpp` + `engine/combat.cpp` (modify, Task 4) | The ONE linkage-only edit: declare `apply_spread_damage` in `combat.hpp`; move its definition out of `combat.cpp`'s anonymous namespace into `ra2engine`. Body byte-for-byte unchanged |
 | `engine/main.cpp` (modify, Tasks 4–6) | Task 4: `SuperweaponParams` + `resolve_superweapon`. Task 5: `NukeIcon` cameo load + SW-slot draw + the `N`-keybind/cameo-click arm → map-click-fire wiring. Task 6: `superweapon_fold` + `simulate_superweapon` + `run_demo_superweapon` + the `--demo-superweapon` dispatch |
 | `engine/input.hpp` + `engine/input.cpp` (modify, Task 5) | SW-targeting mode mirroring placement mode: `arm_superweapon`/`sw_targeting`/`cancel_superweapon` + `InputActions::{sw_fire_confirmed,sw_cx,sw_cy}` reported on a left-click while armed (reusing the existing screen→cell pick) |
@@ -128,7 +128,7 @@ D:\ra2-android\build\ra2extract.exe "D:\Red Alert 2\ra2md.mix" --list | Select-S
 
 - [ ] **Step 7: Write `docs/re/superweapon.md`.** Sections §1–§5 mirroring the items above; the per-finding confidence table; the located-functions table; the "deviations we take" section (expected entries: instant detonation vs the `GiantNukeUp`/`GiantNukeDown` missile flight + `DetonationAltitude` + `NUKEANIM` mushroom cloud; enemies-only splash vs the real nuke hitting friendlies; `RadLevel=500` lingering radiation dropped; the linear `CellSpread` falloff approximation inherited from CB-2; the full `Type` enum documented but only `MultiMissile`/Nuke implemented; SW granted directly, not via a Nuke Silo).
 
-- [ ] **Step 8 (CONTROLLER, not the implementer): RE-GATE amendment. STATUS: PENDING.** After the hunt lands (`docs/re/superweapon.md`), the controller diffs it against every `[RE-GATE: superweapon.md §N]` block in Tasks 2–6, amends the plan (with the Fable trailer) BEFORE dispatching Task 2, and flips each marker to `[RE-GATE APPLIED: superweapon.md §N]` (the CB-1/2/3 precedent). Expected adjudications: (1) the **`RechargeTime`→frames/secs factor** (§1) — CONFIRM or [RE-FALLBACK] minutes→`·60` (Task 2/4 `recharge_secs` + `resolve_superweapon`); (2) the **damage attribution** (§2) — CONFIRM `[NukePayload]`/`[NUKE]` is the down-strike or [RE-FALLBACK] to it (Task 4 `resolve_superweapon`); (3) the **SW `Type` enum + id mapping** (§4) — CONFIRM the `[SuperWeaponTypes]` ids (Task 2 enum + `superweapon_type_from_id`); (4) the **building-splash decision** (§5.3) — CONFIRM buildings take splash → add the SW-only building loop in Task 4, or units-only → leave the [RE-GATE] block as a carry-forward comment; (5) the **`NukeIcon`/`NUKEANIM` art** (art-verify) — present → Task 5 loads them; absent → placeholder-tile fallback. If a fire-reset-to-partial value or a non-`apply_spread_damage` effect path is discovered, amend Task 2/4 accordingly.
+- [x] **Step 8 (CONTROLLER, not the implementer): RE-GATE amendment. STATUS: APPLIED (39999cd).** The hunt landed (`docs/re/superweapon.md`, 39999cd); the controller diffed it against every `[RE-GATE: superweapon.md §N]` block in Tasks 2–6, amended the plan (with the Fable trailer) BEFORE dispatching Task 2, and flipped each marker to `[RE-GATE APPLIED: superweapon.md §N]` (the CB-1/2/3 precedent). Adjudications applied: (1) the **`RechargeTime`→frames/secs factor** (§1) — CONFIRMED MINUTES, `trunc(RechargeTime·900)` frames = `·60` s @ 15 fps, firing resets to a FULL recharge (Task 2/4 `recharge_secs` + `resolve_superweapon`); (2) the **damage attribution** (§2) — CONFIRMED `[NukePayload]`/`[NUKE]` down-strike (NOT `[NukeCarrier]`/`NukeMaker`) (Task 4 `resolve_superweapon`); (3) the **SW `Type` enum + id mapping** (§4) — CONFIRMED, `AmerParaDrop` DISTINCT (binary idx 6), `SpyPlane` idx 8 (Task 2 enum + `superweapon_type_from_id`); (4) the **building-splash decision** (§5.3) — CONFIRMED buildings take splash → SW-only building loop added to Task 4's `fire_superweapon` + a World test; (5) the **`NukeIcon`/`NUKEANIM` art** (art-verify) — present (`language.mix/cameo.mix/nukeicon.shp`; `ra2.mix/conquer.mix/nukeanim.shp`) → Task 5 loads `NukeIcon` art-guarded (NUKEANIM mushroom-cloud stays a carry-forward, CB-4 is instant-detonation). No fire-reset-to-partial or non-`apply_spread_damage` effect path was found.
 
 ---
 
@@ -156,29 +156,38 @@ D:\ra2-android\build\ra2extract.exe "D:\Red Alert 2\ra2md.mix" --list | Select-S
 namespace ra2engine {
 
 // The superweapon roster, from the real rulesmd [SuperWeaponTypes]
-// [RE-GATE: superweapon.md §4 -- the hunt CONFIRMS the id->Type mapping; the
-// FALLBACK below is the pre-hunt reading of [SuperWeaponTypes]]. None = 0 so a
-// value-initialized record is inert. CB-4 acts ONLY on Nuke (Type=MultiMissile);
-// every other value is a mapped enum with no CB-4 effect (deferred, spec §Out).
+// [RE-GATE APPLIED: superweapon.md §4]. Ordering follows the RECOVERED binary
+// Type name-table at 0x841560 (MultiMissile..PsychicReveal, 12 entries), shifted
+// by +1 so our None=0 stays first and Nuke (= the binary's MultiMissile idx 0) is
+// the one ACTIVE type. Deltas the pre-hunt list missed: AmerParaDrop is a DISTINCT
+// entry (binary idx 6), NOT folded into ParaDrop; SpyPlane is binary idx 8 (after
+// PsychicDominator). None = 0 so a value-initialized record is inert. CB-4 acts
+// ONLY on Nuke (Type=MultiMissile); every other value is a mapped enum with no
+// CB-4 effect (deferred, spec §Out).
 enum class SuperweaponType {
     None             = 0,
-    Nuke             = 1,   // [NukeSpecial]           Type=MultiMissile  (ACTIVE)
-    IronCurtain      = 2,   // [IronCurtainSpecial]    Type=IronCurtain
-    LightningStorm   = 3,   // [LightningStormSpecial] Type=LightningStorm
-    ChronoSphere     = 4,   // [ChronoSphereSpecial]   Type=ChronoSphere
-    ChronoWarp       = 5,   // [ChronoWarpSpecial]     Type=ChronoWarp
-    ParaDrop         = 6,   // [ParaDropSpecial]/[AmericanParaDropSpecial]
-    PsychicDominator = 7,   // [PsychicDominatorSpecial]
-    GeneticConverter = 8,   // [GeneticConverterSpecial]
-    ForceShield      = 9,   // [ForceShieldSpecial]
-    PsychicReveal    = 10,  // [PsychicRevealSpecial]
-    SpyPlane         = 11,  // [SpyPlaneSpecial]
+    Nuke             = 1,   // [NukeSpecial]              Type=MultiMissile  (binary 0) (ACTIVE)
+    IronCurtain      = 2,   // [IronCurtainSpecial]       Type=IronCurtain     (binary 1)
+    LightningStorm   = 3,   // [LightningStormSpecial]    Type=LightningStorm  (binary 2)
+    ChronoSphere     = 4,   // [ChronoSphereSpecial]      Type=ChronoSphere    (binary 3)
+    ChronoWarp       = 5,   // [ChronoWarpSpecial]        Type=ChronoWarp      (binary 4)
+    ParaDrop         = 6,   // [ParaDropSpecial]          Type=ParaDrop        (binary 5)
+    AmerParaDrop     = 7,   // [AmericanParaDropSpecial]  Type=AmerParaDrop    (binary 6, DISTINCT)
+    PsychicDominator = 8,   // [PsychicDominatorSpecial]  Type=PsychicDominator(binary 7)
+    SpyPlane         = 9,   // [SpyPlaneSpecial]          Type=SpyPlane        (binary 8)
+    GeneticConverter = 10,  // [GeneticConverterSpecial]  Type=GeneticConverter(binary 9)
+    ForceShield      = 11,  // [ForceShieldSpecial]       Type=ForceShield     (binary 10)
+    PsychicReveal    = 12,  // [PsychicRevealSpecial]     Type=PsychicReveal   (binary 11)
 };
 
 // The pure per-superweapon recharge lifecycle over plain scalars (spec §2 data
 // model). `recharge_secs` is the recovered RechargeTime already converted to
-// SECONDS [RE-GATE: superweapon.md §1 -- minutes->secs factor; main.cpp's
-// resolve_superweapon does the RechargeTime*60 conversion]. No RNG, no World dep.
+// SECONDS [RE-GATE APPLIED: superweapon.md §1 -- RechargeTime is MINUTES,
+// converted at load by trunc(RechargeTime*900) int FRAMES (= *60 s @ 15 fps;
+// single FMUL [0x7F3100]=900.0 + _ftol, SWType+0xB0); [NukeSpecial]=10 -> 9000
+// frames = 600 s = 10 min. This engine carries the lifecycle in SECONDS, so
+// main.cpp's resolve_superweapon does the RechargeTime*60 conversion (the *900
+// frame form is *60 s * 15 fps)]. No RNG, no World dep.
 struct Superweapon {
     SuperweaponType type = SuperweaponType::None;
     double recharge_secs = 0.0;
@@ -197,8 +206,11 @@ struct Superweapon {
         }
     }
     bool is_ready() const { return ready; }
-    // Consume a fire: full re-charge from 0 [RE-GATE: superweapon.md §1 -- the
-    // hunt CONFIRMS reset-to-0 vs reset-to-partial; FALLBACK reset-to-0].
+    // Consume a fire: full re-charge from 0 [RE-GATE APPLIED: superweapon.md §1
+    // -- CONFIRMED firing resets to a FULL recharge (timer->0, ready->false; wait
+    // the ENTIRE RechargeTime again), NOT reset-to-partial. SuperClass::Fire
+    // (FUN_006cafa0) post-dispatch sets TimeLeft(+0x38)=type+0xB0, StartTime(+0x30)
+    // =CurrentFrame; [NukeSpecial] is non-charge-drain so it takes this branch].
     void on_fired() {
         timer = 0.0;
         ready = false;
@@ -215,7 +227,7 @@ struct Superweapon {
 const char* superweapon_type_name(SuperweaponType t);
 
 // Map a [SuperWeaponTypes] roster id (1..12 in the real rulesmd) to a
-// SuperweaponType [RE-GATE: superweapon.md §4]. Unknown/absent ids -> None.
+// SuperweaponType [RE-GATE APPLIED: superweapon.md §4]. Unknown/absent ids -> None.
 SuperweaponType superweapon_type_from_id(int id);
 
 }  // namespace ra2engine
@@ -237,21 +249,23 @@ const char* superweapon_type_name(SuperweaponType t) {
         case SuperweaponType::ChronoSphere:     return "ChronoSphere";
         case SuperweaponType::ChronoWarp:       return "ChronoWarp";
         case SuperweaponType::ParaDrop:         return "ParaDrop";
+        case SuperweaponType::AmerParaDrop:     return "AmerParaDrop";
         case SuperweaponType::PsychicDominator: return "PsychicDominator";
+        case SuperweaponType::SpyPlane:         return "SpyPlane";
         case SuperweaponType::GeneticConverter: return "GeneticConverter";
         case SuperweaponType::ForceShield:      return "ForceShield";
         case SuperweaponType::PsychicReveal:    return "PsychicReveal";
-        case SuperweaponType::SpyPlane:         return "SpyPlane";
     }
     return "None";
 }
 
-// [RE-GATE: superweapon.md §4] the recovered [SuperWeaponTypes] roster:
+// [RE-GATE APPLIED: superweapon.md §4] the recovered [SuperWeaponTypes] roster:
 // 1=NukeSpecial, 2=IronCurtainSpecial, 3=LightningStormSpecial,
 // 4=ChronoSphereSpecial, 5=ChronoWarpSpecial, 6=ParaDropSpecial,
 // 7=AmericanParaDropSpecial, 8=PsychicDominatorSpecial, 9=SpyPlaneSpecial,
 // 10=GeneticConverterSpecial, 11=ForceShieldSpecial, 12=PsychicRevealSpecial.
-// 6 and 7 are both ParaDrop kinds; 9 is SpyPlane. Only id 1 (Nuke) is active.
+// id 6 (ParaDrop) and id 7 (AmerParaDrop) are DISTINCT SW kinds (§4 delta); id 9
+// is SpyPlane. Only id 1 (Nuke) is active.
 SuperweaponType superweapon_type_from_id(int id) {
     switch (id) {
         case 1:  return SuperweaponType::Nuke;
@@ -260,7 +274,7 @@ SuperweaponType superweapon_type_from_id(int id) {
         case 4:  return SuperweaponType::ChronoSphere;
         case 5:  return SuperweaponType::ChronoWarp;
         case 6:  return SuperweaponType::ParaDrop;           // ParaDropSpecial
-        case 7:  return SuperweaponType::ParaDrop;           // AmericanParaDropSpecial
+        case 7:  return SuperweaponType::AmerParaDrop;       // AmericanParaDropSpecial (DISTINCT, §4)
         case 8:  return SuperweaponType::PsychicDominator;
         case 9:  return SuperweaponType::SpyPlane;           // SpyPlaneSpecial
         case 10: return SuperweaponType::GeneticConverter;
@@ -345,16 +359,24 @@ TEST_CASE("superweapon: charge_fraction tracks 0..1 and an uninitialized SW is i
 }
 
 TEST_CASE("superweapon: the SuperweaponType enum + [SuperWeaponTypes] id mapping") {
-    // [RE-GATE: superweapon.md §4] the recovered roster (only Nuke active).
+    // [RE-GATE APPLIED: superweapon.md §4] the recovered roster (only Nuke active).
+    // Enum follows the binary Type order (+1 for None=0): AmerParaDrop is DISTINCT
+    // (7), SpyPlane (9) comes after PsychicDominator (8).
     CHECK(static_cast<int>(SuperweaponType::None) == 0);
     CHECK(static_cast<int>(SuperweaponType::Nuke) == 1);
+    CHECK(static_cast<int>(SuperweaponType::ParaDrop) == 6);
+    CHECK(static_cast<int>(SuperweaponType::AmerParaDrop) == 7);       // distinct entry (§4)
+    CHECK(static_cast<int>(SuperweaponType::PsychicDominator) == 8);
+    CHECK(static_cast<int>(SuperweaponType::SpyPlane) == 9);           // idx 8 in binary, 9 here
     CHECK(superweapon_type_from_id(1) == SuperweaponType::Nuke);
     CHECK(superweapon_type_from_id(2) == SuperweaponType::IronCurtain);
-    CHECK(superweapon_type_from_id(6) == SuperweaponType::ParaDrop);
-    CHECK(superweapon_type_from_id(7) == SuperweaponType::ParaDrop);   // American too
+    CHECK(superweapon_type_from_id(6) == SuperweaponType::ParaDrop);        // ParaDropSpecial
+    CHECK(superweapon_type_from_id(7) == SuperweaponType::AmerParaDrop);    // American is DISTINCT (§4)
+    CHECK(superweapon_type_from_id(9) == SuperweaponType::SpyPlane);        // SpyPlaneSpecial
     CHECK(superweapon_type_from_id(0) == SuperweaponType::None);       // unknown -> None
     CHECK(superweapon_type_from_id(99) == SuperweaponType::None);
     CHECK(std::string(superweapon_type_name(SuperweaponType::Nuke)) == "Nuke");
+    CHECK(std::string(superweapon_type_name(SuperweaponType::AmerParaDrop)) == "AmerParaDrop");
 }
 ```
 
@@ -621,7 +643,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ### Task 4: the fired EFFECT — fire_superweapon detonation via apply_spread_damage + main.cpp resolve
 
 **Files:**
-- Modify: `engine/combat.hpp` (declare `apply_spread_damage`), `engine/combat.cpp` (move `apply_spread_damage` out of the anonymous namespace — linkage-only), `engine/world.cpp` (`fire_superweapon` definition + the building-splash [RE-GATE]), `engine/main.cpp` (`SuperweaponParams` + `resolve_superweapon`)
+- Modify: `engine/combat.hpp` (declare `apply_spread_damage`), `engine/combat.cpp` (move `apply_spread_damage` out of the anonymous namespace — linkage-only), `engine/world.cpp` (`fire_superweapon` definition + the SW-only building-splash loop [RE-GATE APPLIED §5.3]), `engine/main.cpp` (`SuperweaponParams` + `resolve_superweapon`)
 - Test: `tests/test_world.cpp` (append)
 
 **Interfaces:**
@@ -671,21 +693,52 @@ bool World::fire_superweapon(int house, int cx, int cy) {
     // Detonate: REUSE the EXACT CB-2 applicator (combat.cpp) -- virt is both the
     // attacker (house + warhead) and the center (fx/fy). Every alive, non-carried,
     // non-aircraft ENEMY unit within round(CellSpread)*kLeptonsPerCell of the cell
-    // takes damage_vs(round(Damage*scale), NUKE-Verses, armor) with scale falling
-    // LINEARLY 1.0 -> PercentAtMax across the radius; enemies-only spares the
+    // takes damage_vs(static_cast<int>(Damage*scale), NUKE-Verses, armor) with scale
+    // falling LINEARLY 1.0 -> PercentAtMax across the radius; enemies-only spares the
     // firing house. NO new damage math (spec §5/§8).
     apply_spread_damage(units_, occ_, virt, virt);
 
-    // [RE-GATE: superweapon.md §5.3] BUILDING SPLASH -- design-call routed to the
-    // RE-GATE. FALLBACK (pre-hunt): UNITS ONLY (apply_spread_damage's scope, the
-    // CB-2 aerial bomb). IF the Task-1 hunt CONFIRMS the nuke levels buildings in
-    // the radius, the controller amendment adds an SW-ONLY building loop HERE
-    // mirroring the unit falloff (round(CellSpread) radius, linear 1.0->PercentAtMax
-    // scale, damage_vs truncation over buildings_ + kill_building on hp<=0,
-    // combat.md §3 / building.cpp). It is an ADDED clause reached only by this
-    // SW-only call, so no existing demo is affected. The gate targets UNITS
-    // regardless, so it is building-splash-independent (§5.3). Do NOT add the
-    // building loop until the RE-GATE confirms it.
+    // [RE-GATE APPLIED: superweapon.md §5.3] BUILDING SPLASH -- CONFIRMED: the
+    // [NUKE] warhead area-damage (FUN_00489190) enumerates EVERY in-radius object
+    // with IsActive && Strength>0 -- buildings included (Strength>0), corroborated
+    // by [NUKE] WallAbsoluteDestroyer=yes + Wood=yes -- so the nuke levels
+    // structures in the blast. apply_spread_damage above damages UNITS only (the
+    // CB-2 aerial-bomb scope), so this SW-ONLY loop adds the building leg,
+    // mirroring the unit falloff EXACTLY: the same round(CellSpread) radius, the
+    // same linear 1.0->PercentAtMax scale, the same static_cast<int> damage
+    // truncation, damage_vs against the building's armor, and the same enemies-only
+    // rule (firing house spared -- the documented CB-4 divergence from vanilla
+    // friendly-fire, consistent with the unit splash). It is an ADDED clause
+    // reached ONLY by this fire_superweapon call, which no existing demo issues, so
+    // every gate stays byte-identical (buildings_ is untouched by it everywhere
+    // else). Distance is to the building's NEAREST foundation cell (a multi-cell
+    // footprint is hit at its EDGE -- combat.cpp's building-range convention,
+    // combat.cpp:233-244). hp<=0 -> kill_building (Dead + die_time=0, building.hpp);
+    // World::step's existing Dead-building pass (world.cpp:2006) releases the
+    // foundation blocking exactly once and step_buildings tombstones it -- no occ_
+    // handling needed here.
+    const double radius_cells = std::round(rec.eff_cell_spread);        // round(CellSpread)
+    const double radius_lept = radius_cells * 256.0;                    // kLeptonsPerCell = 256
+    const double b_pmax = rec.eff_percent_at_max;                       // [NUKE] PercentAtMax
+    const std::vector<int> nuke_verses(rec.eff_verses.begin(), rec.eff_verses.end());
+    for (Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead) continue;     // gone/already dying
+        if (b.house == house) continue;                                // enemies only (firing house spared)
+        double d = -1.0;                                               // nearest-foundation-cell distance (leptons)
+        for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+            const double dx = (static_cast<double>(cx) - static_cast<double>(cell.x)) * 256.0;
+            const double dy = (static_cast<double>(cy) - static_cast<double>(cell.y)) * 256.0;
+            const double dc = std::sqrt(dx * dx + dy * dy);
+            if (d < 0.0 || dc < d) d = dc;
+        }
+        if (d < 0.0 || d > radius_lept) continue;                     // outside the splash
+        const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
+        const double scale = 1.0 - (1.0 - b_pmax) * frac;             // 1.0 -> pmax linear (unit-identical, combat.cpp:98)
+        const int base = static_cast<int>(rec.eff_damage * scale);    // trunc (combat.cpp:99)
+        const int dmg = damage_vs(base, nuke_verses, b.armor_ix);     // [NUKE] Verses vs building armor
+        b.hp -= dmg;
+        if (b.hp <= 0) kill_building(b);                              // reuse the existing destroy path
+    }
 
     rec.sw.on_fired();   // reset timer=0, clear ready (§4)
     return true;
@@ -695,13 +748,15 @@ bool World::fire_superweapon(int house, int cx, int cy) {
 - Produces — `engine/main.cpp`: `SuperweaponParams` + `resolve_superweapon` (near the other Rules resolution, next to `resolve_combat_unit`). Resolves the recovered warhead values from Rules into the `grant_superweapon` params (like every existing stat resolution):
 
 ```cpp
-// CB-4 Superweapons [RE-GATE: superweapon.md §1/§2]: resolve the Nuclear Missile
-// grant params from the real rulesmd. RechargeTime is MINUTES (RA2-canonical) ->
-// recharge_secs = RechargeTime*60 [RE-GATE: superweapon.md §1 -- the hunt CONFIRMS
-// the unit/factor; FALLBACK *60]. The DAMAGING leg is [NukePayload]/[NUKE] (the
-// down-strike), NOT the SW's [NukeCarrier] up-launch [RE-GATE: superweapon.md §2 --
-// FALLBACK [NukePayload] Damage=600 + Warhead=NUKE]. Verses is the [NUKE] 11-slot
-// armor array (int percents). All values cite docs/re/superweapon.md.
+// CB-4 Superweapons [RE-GATE APPLIED: superweapon.md §1/§2]: resolve the Nuclear
+// Missile grant params from the real rulesmd. RechargeTime is MINUTES -- CONFIRMED
+// (single FMUL [0x7F3100]=900.0 + _ftol: frames = trunc(RechargeTime*900); this
+// engine keeps SECONDS, so recharge_secs = RechargeTime*60, the same value as
+// *900 frames / 15 fps) [RE-GATE APPLIED: superweapon.md §1]. The DAMAGING leg is
+// [NukePayload]/[NUKE] (the down-strike), NOT the SW's [NukeCarrier]/NukeMaker
+// up-launch (which carries no Damage/Verses -- zero area damage) -- CONFIRMED
+// [RE-GATE APPLIED: superweapon.md §2]. Verses is the [NUKE] 11-slot armor array
+// (int percents). All values cite docs/re/superweapon.md.
 struct SuperweaponParams {
     double recharge_secs = 0.0;
     int damage = 0;
@@ -820,11 +875,39 @@ TEST_CASE("World SW: the detonation falloff -- edge damage < center damage") {
     CHECK(e_dmg > 0);
     CHECK(e_dmg < c_dmg);                               // linear falloff toward the edge
 }
+
+TEST_CASE("World SW: the detonation splashes BUILDINGS -- in-radius damaged/destroyed, "
+          "own spared, out-of-radius untouched [RE-GATE APPLIED superweapon.md §5.3]") {
+    // The nuke levels structures in the blast (the SW-only building loop in
+    // fire_superweapon). Enemy building at the target cell is destroyed; an own
+    // building in-radius is spared (enemies-only); a far enemy building is
+    // untouched. armor "none" + Verses 100% -> full 600 damage at the center.
+    ra2engine::World world;
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, 1.0, 600, 10.0, 0.02,
+                            nuke_verses());
+    // add_building(type, cx, cy, fw, fh, house, strength, armor_ix, buildup_total, instant)
+    const int near_enemy_b = world.add_building(0, 20, 20, 1, 1, /*house=*/1, /*strength=*/100,
+                                                /*armor_ix=*/0, 0.0, /*instant=*/true);
+    const int own_b        = world.add_building(0, 22, 20, 1, 1, /*house=*/0, 100, 0, 0.0, true);
+    const int far_enemy_b  = world.add_building(0, 20, 60, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    const int own_hp0 = world.buildings()[own_b].hp;
+    const int far_hp0 = world.buildings()[far_enemy_b].hp;
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 30 && !world.sw_ready(0); ++f) world.step(dt);
+    REQUIRE(world.sw_ready(0));
+    REQUIRE(world.fire_superweapon(0, 20, 20));         // detonate AT the enemy building
+    CHECK(world.buildings()[near_enemy_b].hp <= 0);     // 600 dmg >> 100 hp -> destroyed
+    CHECK(world.buildings()[near_enemy_b].state == ra2engine::Building::State::Dead);
+    CHECK(world.buildings()[own_b].hp == own_hp0);      // firing house building SPARED (enemies-only)
+    CHECK(world.buildings()[own_b].state != ra2engine::Building::State::Dead);
+    CHECK(world.buildings()[far_enemy_b].hp == far_hp0);  // 40 cells away -> outside CellSpread=10
+    CHECK(world.buildings()[far_enemy_b].state != ra2engine::Building::State::Dead);
+}
 ```
 
   (The exact "near enemy dead" assertion above is written defensively; if `add_combat_unit`'s death path tombstones differently, assert `world.units()[0].hp <= 0` — 600 dmg vs 100 hp is unambiguously lethal. Keep the intent: near enemy lethal, own spared, far untouched, edge < center.)
 
-- [ ] **Step 3: Implement `fire_superweapon` + `resolve_superweapon`.** Apply the `world.cpp` `fire_superweapon` definition (with the building-splash [RE-GATE] comment block — do NOT add the building loop unless the RE-GATE confirmed it) and the `main.cpp` `SuperweaponParams`/`resolve_superweapon`.
+- [ ] **Step 3: Implement `fire_superweapon` + `resolve_superweapon`.** Apply the `world.cpp` `fire_superweapon` definition INCLUDING the SW-only building-splash loop ([RE-GATE APPLIED §5.3] — CONFIRMED buildings take nuke splash; the loop mirrors the unit falloff exactly, enemies-only, `kill_building` on hp<=0) and the `main.cpp` `SuperweaponParams`/`resolve_superweapon`.
 
 - [ ] **Step 4: Build + run FOREGROUND, blocking (timeout 600000 ms), expected PASS:**
 
@@ -835,7 +918,7 @@ D:\ra2-android\build\ra2assets_tests.exe --test-case="World SW:*"
 D:\ra2-android\build\ra2assets_tests.exe
 ```
 
-Expected: the new `World SW:*` fire/detonation/falloff cases pass; full suite 0 failed.
+Expected: the new `World SW:*` fire/detonation/falloff/building-splash cases pass; full suite 0 failed.
 
 - [ ] **Step 5: 11-gate re-verify FOREGROUND, blocking (timeout 600000 ms EACH).** Task 4 relocated `apply_spread_damage` (linkage-only) — the CB-2 `--demo-aircraft` splash path and the CB-3 `--demo-naval` FlakTWH splash both flow through it, so proving them bit-identical is the whole point of this step:
 
@@ -935,8 +1018,11 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     // CB-4 Superweapons [RE: superweapon.md; spec §6]: the SW cameo, loaded
     // through the EXISTING cameo.mix chain (main.cpp:1420-1426). Art-guarded --
     // if NukeIcon is absent the SW slot draws a placeholder shade and the sim is
-    // unaffected [RE-GATE: superweapon.md art-verify -- present on this install
-    // unless the art regresses]. sb_nukeicon.count()==0 signals "no art".
+    // unaffected [RE-GATE APPLIED: superweapon.md art -- NukeIcon =
+    // language.mix/cameo.mix/nukeicon.shp (2912 B), CONFIRMED present on this
+    // install; still art-guarded defensively]. sb_nukeicon.count()==0 signals "no
+    // art". (NUKEANIM = ra2.mix/conquer.mix/nukeanim.shp is also present but the
+    // mushroom-cloud anim stays a carry-forward -- CB-4 is instant-detonation.)
     ba.sw_has_cameo = false;
     try {
         MixFile language = /* the same language.mix handle the block above opened */;
@@ -1417,7 +1503,7 @@ Expected: `BUILD SUCCESSFUL`. Then nm-verify the new superweapon symbols in the 
 
 (The `Select-Object`/`Select-String` here filter an already-buffered file listing / bounded nm output stream — NOT the forbidden pattern of piping a LIVE native exe's stdout into `Select-Object -First N`; llvm-nm writes finite output and runs to completion.) Expected: at least one mangled/demangled match per symbol (`grant_superweapon`/`fire_superweapon`/`step_superweapon` are `World` members; `superweapon_type_from_id` is the pure mapping helper; `apply_spread_damage` is now the externally-linked combat applicator).
 
-- [ ] **Step 4: README — CB-4 section.** Add a "CB-4 — Superweapons" section after the CB-3 section documenting: the SW framework (a NEW AI-independent per-house registry `sw_houses_`/`sw_any_` that works for the player house 0 — which is never in `ai_houses_`; the pure `Superweapon` lifecycle `tick`/`is_ready`/`on_fired`; `grant_superweapon` opt-in, never called by an existing demo; the firewalled `step_superweapon` pass); target selection + fire (`fire_superweapon` refused unless READY, resets after firing; the `N`-keybind/cameo-click arm → map-click fire reusing the existing screen→cell pick); the fired EFFECT (a transient virtual detonator `Unit` + the REUSED `apply_spread_damage` — `Unit` untouched, `combat.cpp` behavior unchanged, the applicator promoted to external linkage so `world.cpp` can call it; the `[NukePayload]`/`[NUKE]` values resolved from Rules; enemies-only, instant delivery); the sidebar SW UI (`NukeIcon` cameo + `gclock2.shp` recharge clock + the flashing-green READY tint, art-guarded); and the byte-identity discipline (`Unit` + `world_hash` untouched — strategy (a); the combat linkage-only edit; the eleven legacy gates re-verified at the first additive commit (Task 3) and at finalize). Update the "Determinism gates (permanent)" intro from "eleven headless demos" to "twelve headless demos" and note `--demo-superweapon` is the new CB-4 gate.
+- [ ] **Step 4: README — CB-4 section.** Add a "CB-4 — Superweapons" section after the CB-3 section documenting: the SW framework (a NEW AI-independent per-house registry `sw_houses_`/`sw_any_` that works for the player house 0 — which is never in `ai_houses_`; the pure `Superweapon` lifecycle `tick`/`is_ready`/`on_fired`; `grant_superweapon` opt-in, never called by an existing demo; the firewalled `step_superweapon` pass); target selection + fire (`fire_superweapon` refused unless READY, resets after firing; the `N`-keybind/cameo-click arm → map-click fire reusing the existing screen→cell pick); the fired EFFECT (a transient virtual detonator `Unit` + the REUSED `apply_spread_damage` — `Unit` untouched, `combat.cpp` behavior unchanged, the applicator promoted to external linkage so `world.cpp` can call it; the `[NukePayload]`/`[NUKE]` values resolved from Rules; enemies-only, instant delivery; splashes both UNITS and BUILDINGS in the radius — the SW-only building loop mirrors the unit falloff and destroys in-radius enemy structures via `kill_building`, RE-GATE-confirmed §5.3); the sidebar SW UI (`NukeIcon` cameo + `gclock2.shp` recharge clock + the flashing-green READY tint, art-guarded); and the byte-identity discipline (`Unit` + `world_hash` untouched — strategy (a); the combat linkage-only edit; the eleven legacy gates re-verified at the first additive commit (Task 3) and at finalize). Update the "Determinism gates (permanent)" intro from "eleven headless demos" to "twelve headless demos" and note `--demo-superweapon` is the new CB-4 gate.
 
 Add the CLI bullet after the `--demo-naval` bullet:
 
@@ -1448,7 +1534,7 @@ Add to the "Deviations we take" pattern (a CB-4 list, each item cited to superwe
   - **`apply_spread_damage` promoted to external linkage (combat.cpp behavior unchanged)** — the nuke REUSES the exact CB-2 area-damage applicator; because it lived in `combat.cpp`'s anonymous namespace it was moved to the `ra2engine` namespace + declared in `combat.hpp` so `world.cpp` can call it. Linkage-only: the function body + its existing caller (`try_fire`) are byte-for-byte unchanged and all twelve gate outputs are bit-identical. This is the one departure from the spec's "`combat.cpp` literally untouched" wording — the alternative (reimplementing the falloff loop) is the "new damage system" §5/§8 forbid [`superweapon.md` §2; spec §5/§8].
   - **Instant area-damage detonation; missile flight deferred** — the effect applies at the target cell the frame `fire_superweapon` is called (the established instant/simplified-delivery precedent); the `GiantNukeUp`/`GiantNukeDown` missile flight, `DetonationAltitude`, and the `NUKEANIM` mushroom cloud are carry-forwards [`superweapon.md` §5; spec §Out].
   - **Enemies-only splash** — the reused applicator's `w.house == attacker.house` skip spares the firing house; the real nuke damages friendlies too. The enemies-only splash is kept (a documented divergence); friendly-fire splash is a carry-forward [`superweapon.md` §5; spec §Out].
-  - **Building splash per the RE-GATE** — if the hunt confirmed the nuke damages buildings, an SW-only building-splash loop mirrors the unit falloff; otherwise building damage is a carry-forward. The gate targets units regardless [`superweapon.md` §5.3; spec §Out].
+  - **Building splash (RE-GATE CONFIRMED)** — the hunt confirmed the `[NUKE]` warhead damages every in-radius object with `Strength>0` (buildings included; `WallAbsoluteDestroyer`/`Wood`), so `fire_superweapon` runs an SW-only building-splash loop mirroring the unit falloff exactly (round(CellSpread) radius, linear 1.0→PercentAtMax scale, `damage_vs` truncation, enemies-only, `kill_building` on hp<=0). Reached only by the SW call, so the gates stay byte-identical; friendly-fire on buildings is the same documented enemies-only divergence as the unit splash [`superweapon.md` §5.3; spec §Out].
   - **`RadLevel=500` lingering radiation dropped** — CB-4 applies the one-shot `[NUKE]` splash only; the radiation field / over-time damage is out [`superweapon.md` §2; spec §Out].
   - **SW granted directly, not via a Nuke Silo** — CB-4 grants the SW to a house directly (like CB-1/2/3 spawned their exemplars directly); wiring "build the Nuke Silo → unlock the SW" through the prerequisite/production system is a carry-forward [spec §Out].
   - **Only the `MultiMissile`/Nuke `Type` implemented** — the full SW `Type` enum (Iron Curtain, Chronosphere, Lightning Storm, Psychic Dominator, …) is RE-documented and mapped (`SuperweaponType` + `superweapon_type_from_id`) so each deferred kind starts from a mapped point; CB-4 ships only the area-damage detonation effect [`superweapon.md` §4; spec §Out].
@@ -1468,28 +1554,28 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-## Self-Review (performed at write time; PRE-HUNT — re-run after the RE-GATE amendment)
+## Self-Review (performed at write time PRE-HUNT; RE-RUN after the RE-GATE amendment, 39999cd)
 
-> **PRE-HUNT status.** This plan is authored BEFORE the Task-1 hunt. Every numeric/semantic uncertainty is tagged `[RE-GATE: superweapon.md §N]` with its pre-hunt FALLBACK inline; the controller flips each to `[RE-GATE APPLIED: superweapon.md §N]` at Task 1 Step 8 (STATUS: PENDING) and re-runs this self-review. The cross-task contract below is the pre-hunt design.
+> **POST-HUNT status (STATUS: APPLIED 39999cd).** This plan was authored BEFORE the Task-1 hunt; every numeric/semantic uncertainty was tagged `[RE-GATE: superweapon.md §N]` with its pre-hunt FALLBACK inline. The hunt landed (`docs/re/superweapon.md`, 39999cd) and the controller ran the RE-GATE amendment (Task 1 Step 8): every marker is now `[RE-GATE APPLIED: superweapon.md §N]` with the recovered value folded in. This self-review was RE-RUN focused on cross-task signature consistency after the amendment: the amended `SuperweaponType` enum order (AmerParaDrop distinct @7, SpyPlane @9, PsychicReveal @12) is consistent across Task 2 (enum + `superweapon_type_from_id` + tests), Task 3 (`grant_superweapon`/`Superweapon::type`), and Task 6 (`superweapon_fold`); the new SW-only building-splash loop in `fire_superweapon` (Task 4) + its World test are cross-consistent with the `Building`/`kill_building`/`foundation_cells`/`damage_vs` signatures; the recharge is `RechargeTime*60` s (= `*900` frames) with a full reset-to-0; the `[NukePayload]`/`[NUKE]` effect params resolve in `resolve_superweapon`. No `[RE-GATE]` block carries a stale value (no ×60-only-without-×900 note, no folded-AmerParaDrop enum, no units-only splash, no NukeCarrier-damage attribution).
 
 1. **Spec coverage:**
-   - Spec §1 (Ghidra hunt, five items + art-verify + building-splash question) → Task 1 questions 1–5 verbatim, each landing CONFIRMED/PROBABLE/[RE-FALLBACK] with a located-functions table + confidence table + deviations section; the REAL rulesmd extracted via ra2extract with `[NukeSpecial]`/`[NukePayload]`/`[NUKE]`/`[SuperWeaponTypes]` recorded verbatim in scratch; content-anchored headless sweep on `"RechargeTime"`/`"Type"`/`"NukeSpecial"`/`"MultiMissile"` xref-walked from the combat.md/ai-base.md entry maps; Step 5 art-verifies `NukeIcon`/`NUKEANIM`; Step 6 records the building-splash decision; Step 8 is the controller RE-GATE amendment step (STATUS: PENDING). The full `Type` enum mapping-for-later is in §4 + the deviations (spec §Out requirement).
+   - Spec §1 (Ghidra hunt, five items + art-verify + building-splash question) → Task 1 questions 1–5 verbatim, each landing CONFIRMED/PROBABLE/[RE-FALLBACK] with a located-functions table + confidence table + deviations section; the REAL rulesmd extracted via ra2extract with `[NukeSpecial]`/`[NukePayload]`/`[NUKE]`/`[SuperWeaponTypes]` recorded verbatim in scratch; content-anchored headless sweep on `"RechargeTime"`/`"Type"`/`"NukeSpecial"`/`"MultiMissile"` xref-walked from the combat.md/ai-base.md entry maps; Step 5 art-verifies `NukeIcon`/`NUKEANIM`; Step 6 records the building-splash decision; Step 8 is the controller RE-GATE amendment step (STATUS: APPLIED 39999cd). The full `Type` enum mapping-for-later is in §4 + the deviations (spec §Out requirement).
    - Spec §2 (architecture + data model) → the 7-task spine mirrors §2's list exactly (hunt → pure module → World registry → fired effect → sidebar UI+input → gate → finalize); the tripwire is stated (Task 5 sidebar UI is the split seam). The approved data model lands: `SuperweaponType { None=0, Nuke=1, … }` (12 named, only Nuke active), `Superweapon { type, recharge_secs, timer, ready }` with `tick`/`is_ready`/`on_fired`/`charge_fraction`, `HouseSuperweapon { has_sw, sw, eff_damage, eff_cell_spread, eff_percent_at_max, eff_verses }`, `World { sw_houses_, sw_any_ }` + `grant_superweapon`/`step_superweapon`/`fire_superweapon` + accessors, `Unit` UNCHANGED, `combat.cpp` behavior UNCHANGED (linkage-only export), the pure module registered in BOTH cmake files.
    - Spec §3 (recharge-timer lifecycle) → Task 3's `grant_superweapon` (grow + set params + open `sw_any_`), `step_superweapon` (firewalled tick in house-id order, no RNG), the `World::step` insertion after `step_flight`, the `sw_ready`/`sw_charge_fraction` accessors; determinism (no new RNG, no reordering, pure arithmetic on dt).
-   - Spec §4 (target selection & fire) → Task 5's `N`-keybind/cameo-click arm → map-click fire reusing the existing screen→cell pick (the placement-mode parallel in `Input`); Task 4's `fire_superweapon` refused unless READY, detonates, `on_fired` resets; the demo's direct `fire_superweapon(0, cx, cy)` call (Task 6, no synthetic input); no range cap (Range/LineMultiplier cosmetic, [RE-GATE §3]).
-   - Spec §5 (the fired EFFECT) → Task 4's transient virtual detonator `Unit` (house + fx/fy + the four warhead fields) + the REUSED `apply_spread_damage(units_, occ_, virt, virt)`; the building-splash [RE-GATE §5.3] block (fallback units-only); enemies-only + instant delivery documented; `combat.cpp` behavior unchanged (the one linkage-only edit is the documented refinement of the spec's "untouched" premise — see the Known-gap note below).
+   - Spec §4 (target selection & fire) → Task 5's `N`-keybind/cameo-click arm → map-click fire reusing the existing screen→cell pick (the placement-mode parallel in `Input`); Task 4's `fire_superweapon` refused unless READY, detonates, `on_fired` resets; the demo's direct `fire_superweapon(0, cx, cy)` call (Task 6, no synthetic input); no range cap (Range=7/LineMultiplier=2 stored but NOT a strike-range gate -- CONFIRMED cosmetic/targeting-aid, no Range comparison in the fire dispatcher, [RE-GATE APPLIED: superweapon.md §3]).
+   - Spec §5 (the fired EFFECT) → Task 4's transient virtual detonator `Unit` (house + fx/fy + the four warhead fields) + the REUSED `apply_spread_damage(units_, occ_, virt, virt)`; the SW-only building-splash loop [RE-GATE APPLIED §5.3] (CONFIRMED buildings take nuke splash → an added loop over `buildings_` mirroring the unit falloff exactly, enemies-only, `kill_building` on hp<=0, reached only by `fire_superweapon`) + its World test; enemies-only + instant delivery documented; `combat.cpp` behavior unchanged (the one linkage-only edit is the documented refinement of the spec's "untouched" premise — see the Known-gap note below).
    - Spec §6 (sidebar SW UI) → Task 5's `NukeIcon` cameo (art-guarded) + `gclock2.shp` recharge clock (`gframe = round(charge_fraction·54)`) + the flashing-green READY tint, drawn only when house 0 has a granted SW (no existing screenshot changes).
    - Spec §7 (gate) → Task 6: grant house 0 the Nuke, spawn an enemy cluster in-radius + own-in-radius + far-enemy, CHARGE → FIRE → DETONATE → RECHARGE, `superweapon_fold` over every unit's (cell_x, cell_y, alive, hp) + the SW (quantized timer, ready, type) + the target cell, four fixed checkpoints, FNV via `fnv_mix` + `world_hash`'s basis, two-run compute-and-self-compare with NO pinned literal (controller pins in README), wedge guards (READY AND fired AND ≥1 kill) exit 1, rendered ≡ headless. Step 3 proves the wedge fires (negative check, reverted).
    - Spec §8 (byte-identity) → copied into Global Constraints; enforced structurally (`Unit`/`world_hash` untouched, `combat.cpp` behavior unchanged, inert `sw_houses_`/`sw_any_` defaults, firewalled `step_superweapon`, detonation fires only on `fire_superweapon`, SW slot drawn only when granted) and empirically (11-gate re-runs in Tasks 3, 4, 5; the 12-demo runs in Tasks 6, 7).
    - Spec §9 (testing) → pure doctests `tests/test_superweapon.cpp` (charges at exactly recharge_secs, no overshoot, on_fired resets, is_ready threshold, enum + id mapping) + `tests/test_world.cpp` (grant materializes + opens sw_any_, step charges granted/leaves others inert, no-op when none granted, fire refused-before/succeeds-after + resets, detonation kills enemies/spares firing house/leaves out-of-radius untouched, falloff edge<center); integration (the `--demo-superweapon` gate with wedge guards + two-run self-compare, rendered ≡ headless); regression (11 gates byte-identical at the first additive commit AND at finalize, full suite both modes, arm64 nm-verify).
-   - Spec §Out-of-scope → nothing implements silo-grants-SW, other SW types, missile flight/mushroom-cloud, lingering radiation, friendly fire, AI SW use, power-suspend, or (unless the RE-GATE confirms) building splash; each is a documented deviation/carry-forward (Task 7 Step 4 + the superweapon.md deviations).
-2. **Placeholder scan:** no TODO/TBD/"similar to Task N" in any operative step; every code step shows complete code; every run step shows the exact PowerShell command + expected output. Deliberate non-code references that remain are legitimate anchors into the EXISTING tree (e.g. "world.cpp:1992", "the placement block at input.cpp:269", "the cameo/gclock2 block at main.cpp:2515–2528") with the inserted code given in full. All numeric/semantic uncertainties are tagged `[RE-GATE: superweapon.md §N]` with the FALLBACK inline (RechargeTime→secs ·60; `[NukePayload]`/`[NUKE]` attribution; the `[SuperWeaponTypes]` id map; building-splash; NukeIcon art). The `superweapon_hash` pin is extract-then-pin by the controller (Task 6 Step 7 → Task 7 Step 4), deliberately never a literal in code.
+   - Spec §Out-of-scope → nothing implements silo-grants-SW, other SW types, missile flight/mushroom-cloud, lingering radiation, friendly fire, AI SW use, or power-suspend; building splash IS now implemented (RE-GATE CONFIRMED, an SW-only loop); each remaining item is a documented deviation/carry-forward (Task 7 Step 4 + the superweapon.md deviations).
+2. **Placeholder scan:** no TODO/TBD/"similar to Task N" in any operative step; every code step shows complete code; every run step shows the exact PowerShell command + expected output. Deliberate non-code references that remain are legitimate anchors into the EXISTING tree (e.g. "world.cpp:1992", "the placement block at input.cpp:269", "the cameo/gclock2 block at main.cpp:2515–2528") with the inserted code given in full. All numeric/semantic uncertainties are now `[RE-GATE APPLIED: superweapon.md §N]` with the RECOVERED value inline (RechargeTime is MINUTES → secs ·60 = frames ·900 + full reset-to-0; `[NukePayload]`/`[NUKE]` down-strike attribution; the `[SuperWeaponTypes]` id map with AmerParaDrop distinct + SpyPlane @9; building-splash CONFIRMED → SW-only loop; NukeIcon art present). The `superweapon_hash` pin is extract-then-pin by the controller (Task 6 Step 7 → Task 7 Step 4), deliberately never a literal in code.
 3. **Type/signature consistency (checked across tasks):**
-   - `SuperweaponType` (superweapon.hpp, Task 2) `None=0, Nuke=1, IronCurtain=2, …, SpyPlane=11` — used by Task 2 (tests + `superweapon_type_from_id`), Task 3 (`grant_superweapon` param, `Superweapon::type`), Task 6 (`superweapon_fold` folds `static_cast<int>(sw->type)`), and the enum ordering/id map is [RE-GATE §4]. `None=0` so a value-initialized record is inert.
+   - `SuperweaponType` (superweapon.hpp, Task 2) `None=0, Nuke=1, IronCurtain=2, LightningStorm=3, ChronoSphere=4, ChronoWarp=5, ParaDrop=6, AmerParaDrop=7, PsychicDominator=8, SpyPlane=9, GeneticConverter=10, ForceShield=11, PsychicReveal=12` (the RECOVERED binary Type order +1 for None=0; AmerParaDrop DISTINCT, SpyPlane after PsychicDominator) — used by Task 2 (tests + `superweapon_type_from_id`), Task 3 (`grant_superweapon` param, `Superweapon::type`), Task 6 (`superweapon_fold` folds `static_cast<int>(sw->type)`), and the enum ordering/id map is [RE-GATE APPLIED §4]. `None=0` so a value-initialized record is inert.
    - `struct Superweapon { SuperweaponType type; double recharge_secs; double timer; bool ready; tick(double)/is_ready()/on_fired()/charge_fraction() }` (superweapon.hpp, Task 2, header-inline) — embedded in `HouseSuperweapon` (Task 3), read via `World::sw_state` (Tasks 3/6), ticked by `step_superweapon` (Task 3), reset by `fire_superweapon` (Task 4). `recharge_secs` is SECONDS throughout (main.cpp does the minutes→secs conversion in `resolve_superweapon`).
    - `HouseSuperweapon { bool has_sw; Superweapon sw; int eff_damage; double eff_cell_spread; double eff_percent_at_max; std::array<int,11> eff_verses }` (world.hpp private, Task 3) — written by `grant_superweapon`, read by `fire_superweapon`/accessors. **Deviation from spec §2 data model (double eff_damage / std::array<double,11> eff_verses):** `eff_damage` is `int` and `eff_verses` is `std::array<int,11>` to match the DESTINATION `Unit::w_damage` (int) and `Unit::w_verses` (`std::vector<int>`, consumed by `damage_vs(int, const std::vector<int>&, int)`) — the whole reuse hinges on feeding `apply_spread_damage` without touching combat, so the effect-param types must match its int-based inputs. `fire_superweapon` does `virt.w_verses.assign(eff_verses.begin(), eff_verses.end())`.
    - `void World::grant_superweapon(int house, SuperweaponType, double recharge_secs, int dmg, double cell_spread, double pmax, const std::array<int,11>& verses)` (Task 3) — consumed by the Task 3/4 World tests and by `simulate_superweapon` (Task 6) with `grant_superweapon(0, Nuke, p.recharge_secs, p.damage, p.cell_spread, p.percent_at_max, p.verses)` where `p` is `resolve_superweapon`'s `SuperweaponParams`. Field/param names line up 1:1.
-   - `bool World::fire_superweapon(int house, int cx, int cy)` (decl Task 3, def Task 4) — builds the transient detonator `Unit virt` with the field set `{house, fx, fy, w_damage, w_cell_spread, w_percent_at_max, w_verses}` (exactly the fields `apply_spread_damage` reads, verified against combat.cpp:84–101) and calls `apply_spread_damage(units_, occ_, virt, virt)`. Consumed by Task 4 tests, Task 5 input routing (`world.fire_superweapon(0, act.sw_cx, act.sw_cy)`), Task 6 gate.
+   - `bool World::fire_superweapon(int house, int cx, int cy)` (decl Task 3, def Task 4) — builds the transient detonator `Unit virt` with the field set `{house, fx, fy, w_damage, w_cell_spread, w_percent_at_max, w_verses}` (exactly the fields `apply_spread_damage` reads, verified against combat.cpp:84–101), calls `apply_spread_damage(units_, occ_, virt, virt)` for the UNIT leg, then runs the SW-only BUILDING-splash loop [RE-GATE APPLIED §5.3] over `buildings_` (nearest-foundation-cell distance, `std::round(eff_cell_spread)*256` radius, `1.0->pmax` linear scale, `damage_vs(static_cast<int>(eff_damage*scale), nuke_verses, b.armor_ix)`, enemies-only, `kill_building` on hp<=0 — using `foundation_cells`/`kill_building`/`Building::State::Dead` already available in world.cpp), and finally `rec.sw.on_fired()`. Consumed by Task 4 tests (incl. the building-splash case), Task 5 input routing (`world.fire_superweapon(0, act.sw_cx, act.sw_cy)`), Task 6 gate.
    - `void World::step_superweapon(double dt)` (Task 3, private) — firewalled `if (!sw_any_) return;`, inserted in `World::step` after `step_flight`. No caller outside `World::step`.
    - `bool World::sw_ready(int) const` / `double World::sw_charge_fraction(int) const` / `const Superweapon* World::sw_state(int) const` (Task 3) — consumed by Task 5 (`draw_sw_slot`, the `N`-key arm gate) and Task 6 (`simulate_superweapon`, `superweapon_fold`).
    - `void apply_spread_damage(std::vector<Unit>&, Occupancy&, const Unit& attacker, const Unit& center)` (combat.hpp decl + combat.cpp def, Task 4) — the exact existing signature (verified combat.cpp:84), now externally linked; called by `fire_superweapon` (Task 4) and (unchanged) `try_fire` (combat.cpp:122).
