@@ -749,6 +749,20 @@ public:
     // building is Dead, or new_house == the current owner. `startup` is the
     // captured building type's ProduceCashStartup (0 for a normal building).
     bool capture_building(int b_idx, int new_house, int startup);
+
+    // Spy infiltration [RE: capture.md §B CONFIRMED]. Per building purpose, keyed
+    // off `purpose` (resolved by the caller from the building type -- see
+    // InfiltratePurpose): Refinery -> steal cash_steal_amount(victim credits,
+    // steal_pct) into the spy house; PowerPlant -> arm blackout_frames_[victim]
+    // = blackout (1000); Superweapon -> reset_superweapon(victim); Factory ->
+    // set produced_veteran_[spy house] (Task 6); Radar/Lab -> inert (no shroud,
+    // [RE-FALLBACK] documented). No-op returning false if the spy already owns
+    // the building (self-spy) or b_idx is invalid/Dead. Opens capture_any_. The
+    // caller consumes the spy on true. steal_pct = SpyMoneyStealPercent (0.5),
+    // blackout = SpyPowerBlackout (1000).
+    enum class InfiltratePurpose { None, Refinery, PowerPlant, Superweapon, Factory, RadarLab };
+    bool infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purpose,
+                             double steal_pct, int blackout);
     // Engineer repair [RE-GATE APPLIED: capture.md §A5]: heal building b_idx to
     // full HP (a damaged OWN building) and open capture_any_. No-op returning
     // false if b_idx is invalid, Dead, not owned by `by_house`, or already at
@@ -794,6 +808,19 @@ public:
         return (house >= 0 && house < 3) ? blackout_frames_[house] : 0;
     }
     bool house_blacked_out(int house) const { return blackout_frames(house) > 0; }
+    // Produced-unit veterancy flag [RE: capture.md §B5]. Set by a factory
+    // infiltration; consumed by add_combat_unit/launch_unit in Task 6 (units
+    // this house produces thereafter spawn at veteran_rank 1). Index 2 inert.
+    bool produced_veteran(int house) const {
+        return house >= 0 && house < 3 && produced_veteran_[house];
+    }
+
+    // Test seam: directly seed a house's credits without running the full
+    // harvest/unload pipeline (the cash-steal victim in the infiltrate tests).
+    // Index 2 (neutral) inert. Interactive/demo code never calls it.
+    void grant_credits_for_test(int house, double amount) {
+        if (house >= 0 && house < 3) house_credits_[house] = amount;
+    }
 
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
@@ -909,6 +936,12 @@ private:
     // apply_blackout). Index 2 inert. Decays one per logic frame in
     // step_tech_structures.
     int blackout_frames_[3] = {0, 0, 0};
+    // Produced-unit veterancy flag [RE: capture.md §B5]. Set by a factory
+    // infiltration; consumed by add_combat_unit/launch_unit in Task 6 (units
+    // this house produces thereafter spawn at veteran_rank 1). Index 2 inert.
+    // Defaults false (INERT): no existing demo infiltrates a factory, so every
+    // gate is byte-identical.
+    bool produced_veteran_[3] = {false, false, false};
     // The single firewalled Capture per-frame pass: tech-structure income +
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.

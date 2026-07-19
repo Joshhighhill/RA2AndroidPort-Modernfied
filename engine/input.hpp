@@ -134,6 +134,21 @@ public:
     void set_infantry_factory_types(std::vector<int> t) { inf_factory_types_ = std::move(t); }
     void set_vehicle_factory_types(std::vector<int> t) { veh_factory_types_ = std::move(t); }
 
+    // Engineer/Spy Capture phase [RE: capture.md §B]: the per-roster-index
+    // infiltration purpose map (main.cpp resolves it from building ids:
+    // GAREFN/NAREFN->Refinery, GAPOWR/NAPOWR->PowerPlant, a SW building->
+    // Superweapon, GAPILE/NAHAND/GAWEAP/NAWEAP->Factory, radar/lab->RadarLab,
+    // else None) plus the two rules constants the spy gesture passes through
+    // (SpyMoneyStealPercent=0.5, SpyPowerBlackout=1000). Empty/unset (default)
+    // -> every building resolves to None and the spy gesture no-ops. Interactive-
+    // only: no demo selects a spy, so no gate exercises any of this.
+    void set_infiltrate_params(std::vector<World::InfiltratePurpose> purposes,
+                               double steal_pct, int blackout_frames) {
+        infiltrate_purposes_ = std::move(purposes);
+        spy_steal_pct_ = steal_pct;
+        spy_blackout_frames_ = blackout_frames;
+    }
+
     // The own (house 0) factory currently selected for rally/primary, or -1.
     // Consumed by main.cpp's rally-marker chrome.
     int selected_building() const { return selected_building_; }
@@ -179,6 +194,13 @@ private:
             if (r == t) return true;
         return false;
     }
+    // Engineer/Spy Capture [RE: capture.md §B]: the infiltration purpose for a
+    // building of roster type `t` (None if unset or out of range).
+    World::InfiltratePurpose infiltrate_purpose_of(int t) const {
+        return (t >= 0 && t < static_cast<int>(infiltrate_purposes_.size()))
+                   ? infiltrate_purposes_[t]
+                   : World::InfiltratePurpose::None;
+    }
     // Factory-select / primary-set on a non-drag left click [RE: production.md
     // §1.2]. If the click resolves to an own (house 0) alive unit-factory:
     // re-clicking the ALREADY-selected factory sets it primary; otherwise it
@@ -219,6 +241,13 @@ private:
     // factory (set_unit_factory_types / commit_factory_click). -1 = none.
     std::vector<int> unit_factory_types_, inf_factory_types_, veh_factory_types_;
     int selected_building_ = -1;
+
+    // Engineer/Spy Capture phase [RE: capture.md §B]: per-roster-index spy
+    // infiltration purpose + the two rules constants (set_infiltrate_params).
+    // Empty/defaults -> the spy gesture no-ops (interactive-only).
+    std::vector<World::InfiltratePurpose> infiltrate_purposes_;
+    double spy_steal_pct_ = 0.5;       // SpyMoneyStealPercent
+    int spy_blackout_frames_ = 1000;   // SpyPowerBlackout
 
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).

@@ -1160,6 +1160,39 @@ bool World::capture_building(int b_idx, int new_house, int startup) {
     return true;
 }
 
+bool World::infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purpose,
+                                double steal_pct, int blackout) {
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
+    Building& b = buildings_[b_idx];
+    if (!b.alive || b.state == Building::State::Dead) return false;
+    const int victim = b.house;
+    if (victim == spy_house) return false;          // self-spy no-op [RE: capture.md §B1]
+    capture_any_ = true;
+    switch (purpose) {
+        case InfiltratePurpose::Refinery: {          // [RE: capture.md §B3 CONFIRMED]
+            if (victim >= 0 && victim < 2 && spy_house >= 0 && spy_house < 2) {
+                const int steal = cash_steal_amount(house_credits_[victim], steal_pct);
+                house_credits_[victim] -= (double)steal;
+                house_credits_[spy_house] += (double)steal;
+            }
+            break;
+        }
+        case InfiltratePurpose::PowerPlant:          // [RE: capture.md §B2 CONFIRMED]
+            if (victim >= 0 && victim < 3) blackout_frames_[victim] = blackout;
+            break;
+        case InfiltratePurpose::Superweapon:         // [RE: capture.md §B4 CONFIRMED]
+            reset_superweapon(victim);
+            break;
+        case InfiltratePurpose::Factory:             // [RE: capture.md §B5] Task 6 wires the flag
+            if (spy_house >= 0 && spy_house < 3) produced_veteran_[spy_house] = true;
+            break;
+        case InfiltratePurpose::RadarLab:            // [RE-FALLBACK: capture.md §B6] inert (no shroud)
+        case InfiltratePurpose::None:
+            break;
+    }
+    return true;
+}
+
 bool World::repair_building(int b_idx, int by_house) {
     if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
     Building& b = buildings_[b_idx];

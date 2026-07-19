@@ -50,6 +50,23 @@ static int sel_engineer_idx(const World& world) {
     return world.units()[found].image == "ENGINEER" ? found : -1;
 }
 
+// Engineer/Spy Capture phase [RE: capture.md §B]: index of the SINGLE selected
+// SPY (Unit::image == "SPY"), or -1. Same one-of-one, alive, non-dying, house-0
+// rule as sel_engineer_idx -- a mixed selection resolves to -1 so the right-
+// click falls through to the normal group move. Interactive-only: no demo
+// selects a spy, so no gate exercises this.
+static int sel_spy_idx(const World& world) {
+    int found = -1;
+    for (int i = 0; i < static_cast<int>(world.units().size()); ++i) {
+        const Unit& u = world.units()[i];
+        if (!u.selected || !u.alive || u.die_time >= 0.0 || u.house != 0) continue;
+        if (found >= 0) return -1;                 // more than one unit selected
+        found = i;
+    }
+    if (found < 0) return -1;
+    return world.units()[found].image == "SPY" ? found : -1;
+}
+
 Input::Input(World& world, Camera& camera, int view_w, int view_h)
     : world_(world), cam_(camera), view_w_(view_w), view_h_(view_h) {
     int mnx, mny, mxx, mxy;
@@ -518,6 +535,42 @@ void Input::handle(const InputEvent& ev) {
                             actions_.move_ordered = true;   // move-ack voice
                             actions_.actor = actor;
                             break;  // handled: no attack/move for this click
+                        }
+                    }
+                    // Spy infiltration gesture [RE: capture.md §B CONFIRMED]: a
+                    // SINGLE selected SPY right-clicking an ENEMY/NEUTRAL building
+                    // infiltrates it -- refinery cash-steal, power blackout, SW
+                    // reset, factory veteran-flag, or (radar/lab) inert -- and the
+                    // spy is CONSUMED on the successful infiltration. Resolved
+                    // BEFORE the engineer/attack/move branches so a spy never
+                    // issues a plain attack. The purpose is resolved from the
+                    // building's roster type (set_infiltrate_params); an OWN
+                    // building is a self-spy no-op (infiltrate_building returns
+                    // false) so the gesture falls through to normal handling.
+                    // Interactive-only: no demo selects a spy, so every gate is
+                    // byte-identical. (Divergence from the engineer's deferred
+                    // move-adjacent-then-act: purpose resolution needs the roster
+                    // id, which lives at this gesture layer, so the effect fires
+                    // immediately on the click -- see the report.)
+                    const int spy = sel_spy_idx(world_);
+                    if (spy >= 0) {
+                        const int b_hit = world_.building_at_cell(cx, cy);
+                        if (b_hit >= 0) {
+                            const Building& tb = world_.buildings()[b_hit];
+                            const int spy_house = world_.units()[spy].house;
+                            if (tb.house != spy_house) {   // enemy/neutral only
+                                const World::InfiltratePurpose purpose =
+                                    infiltrate_purpose_of(tb.type);
+                                if (world_.infiltrate_building(b_hit, spy_house, purpose,
+                                                               spy_steal_pct_,
+                                                               spy_blackout_frames_)) {
+                                    world_.consume_unit(spy);       // spy consumed
+                                    actions_.move_ordered = true;   // move-ack voice
+                                    actions_.actor = spy;
+                                    break;                          // handled
+                                }
+                            }
+                            // own building -> not a spy target; fall through below.
                         }
                     }
                     // Engineer/Spy Capture gesture [RE-GATE APPLIED: capture.md

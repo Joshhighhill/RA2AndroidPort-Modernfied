@@ -1288,6 +1288,36 @@ std::vector<int> refinery_type_indices(const BuildingAssets& ba, const Rules& ru
     return v;
 }
 
+// Engineer/Spy Capture [RE: capture.md §B]: map every roster building TYPE to its
+// spy-infiltration purpose (the interactive spy right-click gesture; input.cpp).
+// Resolved ONCE from the id + power field, priority Refinery > PowerPlant >
+// Superweapon > Factory > RadarLab, else None (spy still enters, inert). Both
+// sides' ids are matched (a spy targets ENEMY buildings), unlike the player-only
+// factory lists. No demo selects a spy -> no gate exercises this.
+std::vector<ra2engine::World::InfiltratePurpose>
+infiltrate_purposes_for(const BuildingAssets& ba, const Rules& rules) {
+    using P = ra2engine::World::InfiltratePurpose;
+    const auto in = [](const std::string& id, std::initializer_list<const char*> set) {
+        for (const char* s : set)
+            if (id == s) return true;
+        return false;
+    };
+    std::vector<P> out(ba.roster.size(), P::None);
+    for (std::size_t i = 0; i < ba.roster.size(); ++i) {
+        const ra2engine::BuildingTypeDef& d = ba.roster[i];
+        const std::string& id = d.id;
+        if (!rules.free_unit(id).empty()) { out[i] = P::Refinery; continue; }  // GAREFN/NAREFN
+        if (d.power > 0) { out[i] = P::PowerPlant; continue; }                 // GAPOWR/NAPOWR
+        if (in(id, {"NAMISL", "GACHRO", "NAIRON", "GAWEAT", "GAWEATH", "GAAIRC",
+                    "YAPSYT", "YAGNTC"})) { out[i] = P::Superweapon; continue; }
+        if (in(id, {"GAPILE", "GAWEAP", "GAYARD", "NAHAND", "NAWEAP", "NAYARD",
+                    "YABRCK", "YAWEAP"})) { out[i] = P::Factory; continue; }
+        if (in(id, {"NARADR", "GARADR", "GATECH", "NATECH", "GACOMM", "NACOMM",
+                    "GASPYSAT"})) { out[i] = P::RadarLab; continue; }
+    }
+    return out;
+}
+
 // Wire the World's economy from Rules [RE: economy.md §4]: roster copy,
 // refinery type indices, ore/gem Values (Riparius 25 / Cruentus 50), and the
 // GrowthRate cadence (minutes->seconds) + Riparius growth/spread percentages.
@@ -2396,7 +2426,14 @@ double factory_speedup(const ra2engine::World& world, const std::vector<int>& ft
 void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const BuildingAssets& ba,
                double dt, double low_mod, double mf, const std::vector<int>& inf_ft,
                const std::vector<int>& veh_ft) {
-    const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+    // Engineer/Spy Capture [RE: capture.md §B2]: a spied power plant forces this
+    // house's power OUTPUT to 0 while the blackout timer runs (drain unaffected)
+    // -> the existing low-power clamp + offline defenses follow. apply_blackout
+    // is IDENTITY when !house_blacked_out, so every existing demo (never blacked
+    // out) is byte-identical (production.cpp untouched).
+    const ra2engine::PowerTotals pt =
+        ra2engine::apply_blackout(ra2engine::power_totals(world.buildings(), ba.roster, 0),
+                                  world.house_blacked_out(0));
     const double pmul = ra2engine::build_speed_multiplier(pt, low_mod);
     const std::vector<int> bld_ft = factory_types_for(ba, "GACNST");
     const double bsp = factory_speedup(world, bld_ft, mf);
@@ -2597,7 +2634,12 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     // Power meter [RE: construction.md §8 pip model, §11a geometry — the
     // column runs from the strip top at x=+5, capacity (strip_h+3)/3
     // precomputed by SidebarLayout].
-    const ra2engine::PowerTotals pt = ra2engine::power_totals(world.buildings(), ba.roster, 0);
+    // Engineer/Spy Capture [RE: capture.md §B2]: the HUD visibly blacks out while
+    // a spied power plant's timer runs (identity when !house_blacked_out(0), so
+    // every existing demo's readout is byte-identical).
+    const ra2engine::PowerTotals pt =
+        ra2engine::apply_blackout(ra2engine::power_totals(world.buildings(), ba.roster, 0),
+                                  world.house_blacked_out(0));
     const int output = pt.output, drain = pt.drain;
     int total_pips = lay.power_pips;
     if (total_pips < 1) total_pips = 1;
@@ -2978,6 +3020,15 @@ int run_interactive(bool no_audio) {
         input.set_infantry_factory_types(inf_ft);
         input.set_vehicle_factory_types(veh_ft);
     }
+    // Engineer/Spy Capture [RE: capture.md §B]: the spy right-click infiltration
+    // gesture -- per-type purpose map + the two rules constants (SpyMoneySteal
+    // Percent=0.5, SpyPowerBlackout=1000). Interactive-only; no gate/demo selects
+    // a spy so this changes no gate output.
+    if (ba.ok)
+        input.set_infiltrate_params(
+            infiltrate_purposes_for(ba, rules),
+            rules.general_double("SpyMoneyStealPercent", 0.5),
+            static_cast<int>(std::llround(rules.general_double("SpyPowerBlackout", 1000.0))));
     const int kPan = 40;
 
     // Player production: FOUR concurrent queues sharing one credit pool

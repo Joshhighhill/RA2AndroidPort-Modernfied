@@ -3582,3 +3582,86 @@ TEST_CASE("World capture: neutral oil derrick pays its owner ONLY after capture 
     for (int i = 0; i < 100; ++i) world.step(dt);              // one delay period
     CHECK(world.house_credits(0) == doctest::Approx(1020.0));  // +20 amount
 }
+
+TEST_CASE("World infiltrate: refinery cash steal moves 0.5x victim credits [RE: capture.md §B3]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    // add_building(type, cx, cy, fw, fh, house, strength, armor_ix, buildup_total, instant)
+    const int refn = world.add_building(0, 20, 20, 1, 1, /*house=*/1, /*strength=*/100,
+                                        /*armor_ix=*/0, 0.0, /*instant=*/true);   // enemy refinery
+    REQUIRE(refn >= 0);
+    world.grant_credits_for_test(0, 0.0);                 // spy house 0
+    world.grant_credits_for_test(1, 1000.0);              // victim house 1
+    using P = ra2engine::World::InfiltratePurpose;
+    CHECK(world.infiltrate_building(refn, /*spy_house=*/0, P::Refinery, 0.5, 1000));
+    CHECK(world.house_credits(1) == doctest::Approx(500.0));   // victim halved
+    CHECK(world.house_credits(0) == doctest::Approx(500.0));   // spy gained
+    CHECK_FALSE(world.infiltrate_building(refn, /*spy_house=*/1, P::Refinery, 0.5, 1000)); // self-spy
+    CHECK(world.house_credits(1) == doctest::Approx(500.0));   // self-spy left credits untouched
+}
+
+TEST_CASE("World infiltrate: power plant arms the blackout timer [RE: capture.md §B2]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    const int pow = world.add_building(0, 20, 20, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    REQUIRE(pow >= 0);
+    using P = ra2engine::World::InfiltratePurpose;
+    CHECK_FALSE(world.house_blacked_out(1));
+    CHECK(world.infiltrate_building(pow, /*spy_house=*/0, P::PowerPlant, 0.5, 1000));
+    CHECK(world.house_blacked_out(1));
+    CHECK(world.blackout_frames(1) == 1000);
+    // Decays in step (100 frames = ~6.67 s).
+    const double dt = 1.0 / 15.0;
+    for (int i = 0; i < 100; ++i) world.step(dt);
+    CHECK(world.blackout_frames(1) == 900);
+}
+
+TEST_CASE("World infiltrate: factory sets the produced-veteran flag for the spy house "
+          "[RE: capture.md §B5]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    const int fac = world.add_building(0, 20, 20, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    REQUIRE(fac >= 0);
+    using P = ra2engine::World::InfiltratePurpose;
+    CHECK_FALSE(world.produced_veteran(0));
+    CHECK(world.infiltrate_building(fac, /*spy_house=*/0, P::Factory, 0.5, 1000));
+    CHECK(world.produced_veteran(0));            // spy house's future units veteran
+    CHECK_FALSE(world.produced_veteran(1));      // victim unaffected
+}
+
+TEST_CASE("World infiltrate: superweapon building resets the victim SW recharge "
+          "[RE: capture.md §B4]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    const int swb = world.add_building(0, 20, 20, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    REQUIRE(swb >= 0);
+    std::array<int, 11> verses; verses.fill(100);
+    world.grant_superweapon(1, ra2engine::SuperweaponType::Nuke, /*recharge_secs=*/10.0,
+                            /*dmg=*/600, /*cell_spread=*/10.0, /*pmax=*/0.02, verses);
+    const double dt = 1.0 / 15.0;
+    for (int i = 0; i < 75; ++i) world.step(dt);              // ~5 s of a 10 s recharge
+    CHECK(world.sw_charge_fraction(1) > 0.0);                 // partially charged
+    using P = ra2engine::World::InfiltratePurpose;
+    CHECK(world.infiltrate_building(swb, /*spy_house=*/0, P::Superweapon, 0.5, 1000));
+    CHECK(world.sw_charge_fraction(1) == doctest::Approx(0.0));   // recharge reset
+    CHECK_FALSE(world.sw_ready(1));
+}
+
+TEST_CASE("World infiltrate: radar/lab is inert and invalid targets no-op [RE: capture.md §B6]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    const int rl = world.add_building(0, 20, 20, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    REQUIRE(rl >= 0);
+    using P = ra2engine::World::InfiltratePurpose;
+    CHECK(world.infiltrate_building(rl, /*spy_house=*/0, P::RadarLab, 0.5, 1000));  // recognized, no state change
+    CHECK_FALSE(world.house_blacked_out(1));
+    CHECK(world.house_credits(0) == doctest::Approx(0.0));
+    // Invalid index / self-spy no-op returns false.
+    CHECK_FALSE(world.infiltrate_building(-1, 0, P::Refinery, 0.5, 1000));
+    CHECK_FALSE(world.infiltrate_building(999, 0, P::Refinery, 0.5, 1000));
+}
