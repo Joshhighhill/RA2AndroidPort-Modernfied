@@ -101,10 +101,16 @@ bool terrain_screen_bounds(const ra2assets::MapFile& map, int& min_x, int& min_y
 // SDL_RenderCopy at (screen + camera, tile_w x tile_h). Cells whose rect is
 // fully outside [0,view_w) x [0,view_h) are skipped. Returns the number of
 // tiles actually drawn (for diagnostics).
+// Shroud/Fog overlay [RE: shroud.md §5]: if `vis` is non-null, each cell is
+// shaded per house 0's visibility -- SHROUDED (!explored) paints the cell
+// black and skips the terrain blit, FOGGED (explored && !visible) draws the
+// terrain then dims it, VISIBLE draws full-bright. `vis == nullptr` (shroud
+// off / no world) treats every cell as VISIBLE, so all existing callers and
+// the empty-grid path are pixel-identical.
 int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
                  const ra2assets::Palette& pal, const Camera& cam, int view_w,
-                 int view_h);
+                 int view_h, const World* vis = nullptr);
 
 // Draw a unit's current SHP frame on top of the terrain (call AFTER
 // draw_terrain so the sprite is not painted over). The unit's interpolated

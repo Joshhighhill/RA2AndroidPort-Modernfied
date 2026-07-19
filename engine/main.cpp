@@ -2069,7 +2069,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   int W, int H, const ra2engine::Input* input = nullptr,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
-    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H);
+    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world);
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H);
     const std::vector<ra2engine::Unit>& us = world.units();
@@ -2095,6 +2095,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // down the whole frame.
     auto draw_one_unit = [&](int idx) {
         const ra2engine::Unit& u = us[idx];
+        // Shroud/Fog [RE: shroud.md §5]: hide mobile objects in cells not
+        // currently VISIBLE to the local player (house 0). Inert with shroud
+        // off (visible_at returns true on empty grids) -> every existing render
+        // is pixel-identical. Own units (u.house == 0) are always drawn.
+        if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) return;
         // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
         // SHP for its disguise type (draw_unit then blits it in the disguised
         // house's palette). When NOT disguised draw_image == u.image -> this is

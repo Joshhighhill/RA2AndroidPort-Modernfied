@@ -97,7 +97,7 @@ const ra2assets::TmpFile* Theater::tmp_for_tile(uint32_t global_index) {
 int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
                  const ra2assets::Palette& pal, const Camera& cam, int view_w,
-                 int view_h) {
+                 int view_h, const World* vis) {
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
 
     // Back-to-front painter order. Cells with a smaller (x+y) project higher
@@ -136,6 +136,22 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
         // Cull tiles fully off-screen.
         if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h)
             continue;
+
+        // Shroud/Fog [RE: shroud.md §5]: consult house 0's visibility for this
+        // cell. SHROUDED (!explored) -> paint the cell black, skip the terrain
+        // blit. FOGGED (explored && !visible) -> draw the terrain, then dim it
+        // (below, after the extra-image blit). VISIBLE -> full-bright (default).
+        // vis == nullptr (shroud off / no world) -> treat as VISIBLE, so every
+        // existing render path is pixel-identical.
+        const bool explored = !vis || vis->explored_at(0, c.x, c.y);
+        const bool visible = !vis || vis->visible_at(0, c.x, c.y);
+        if (!explored) {
+            // Full-opaque black fill; no terrain blit for a shrouded cell.
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderFillRect(renderer, &dst);
+            continue;
+        }
 
         // Key the texture cache by template file + subtile: identical pixels
         // across every cell that references it. Decode only on a cache miss
@@ -195,6 +211,16 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
             if (!(edst.x + edst.w <= 0 || edst.y + edst.h <= 0 || edst.x >= view_w ||
                   edst.y >= view_h))
                 SDL_RenderCopy(renderer, etex, nullptr, &edst);
+        }
+
+        // Shroud/Fog [RE-GATE APPLIED: shroud.md §5 -- fog dim alpha]: an
+        // explored-but-not-currently-visible cell gets a translucent-black
+        // overlay. 128/255 is a cosmetic, unhashed value approximating
+        // BlendedFog=yes. Never reached when vis == nullptr (visible == true).
+        if (!visible) {
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 128);
+            SDL_RenderFillRect(renderer, &dst);
         }
     }
     return drawn;
