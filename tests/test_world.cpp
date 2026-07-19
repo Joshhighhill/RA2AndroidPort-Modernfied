@@ -3915,3 +3915,44 @@ TEST_CASE("World shroud: add_combat_unit copies sight; seen_by_mask defaults 0xF
     CHECK(u.sight == 5);
     CHECK(u.seen_by_mask == 0xFF);   // INERT default = seen by all houses
 }
+
+TEST_CASE("World shroud: step_visibility reveals around a unit; sticky fog; inert when off [RE: shroud.md §3/§4]") {
+    // NOTE (deviation from brief): the brief calls a `make_test_world()` helper
+    // for a hand-built >=12x12 map, but MapFile has no way to inject cells
+    // (cells_ is private, only fillable via MapFile::parse from a real
+    // [IsoMapPack5], and no LZO ENCODER exists in-tree to synthesize one). So
+    // this uses the SAME real-map fixture every other World integration test in
+    // this file uses; the visibility math itself is host-covered by
+    // test_visibility.cpp. The full suite (Step 6) / gates run with
+    // RA2_INSTALL_DIR set, so this executes rather than skips.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    REQUIRE(world.grid_w() > 12);
+    REQUIRE(world.grid_h() > 12);
+    ra2engine::UnitCombat c;
+    c.image = "E1"; c.strength = 100; c.armor = "none"; c.sight = 5;
+    world.add_combat_unit(6, 6, /*house=*/0, c);
+    // Shroud OFF: accessors report all-visible (inert).
+    CHECK(world.visible_at(0, 0, 0));
+    CHECK(world.explored_at(0, 0, 0));
+    // Enable + tick.
+    world.enable_shroud(true);
+    world.step_visibility();
+    CHECK(world.visible_at(0, 6, 6));                     // source cell visible
+    CHECK(world.explored_at(0, 6, 6));
+    CHECK_FALSE(world.visible_at(0, 0, 0));               // far corner shrouded
+    CHECK_FALSE(world.explored_at(0, 0, 0));
+    CHECK(world.units()[0].seen_by_mask == 0x01);         // seen only by house 0
+    // Move the unit far away, tick again: old cell stays EXPLORED (fog) but not
+    // VISIBLE (fog no-regrow §4).
+    const int ox = 6, oy = 6;
+    world.units()[0].cell_x = 1; world.units()[0].cell_y = 1;  // teleport for the test
+    world.step_visibility();
+    CHECK(world.explored_at(0, ox, oy));                  // still explored (sticky)
+    CHECK_FALSE(world.visible_at(0, ox, oy));             // no longer visible
+    CHECK(world.visible_at(0, 1, 1));                     // new location visible
+}

@@ -196,6 +196,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_superweapon.cpp engine/superwe
 # symbol); the World mutation entry points live in engine/world.cpp (already on
 # test_world's line), so capture.cpp is NOT added to test_world's line.
 target_sources(ra2assets_tests PRIVATE tests/test_capture.cpp engine/capture.cpp)
+# Shroud/Fog phase [RE: shroud.md]: pure near-circular reveal math
+# (engine/visibility.cpp) exercised by test_visibility.cpp; the World-layer
+# visibility grids + step_visibility live in engine/world.cpp (already on
+# test_world's line).
+target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibility.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)

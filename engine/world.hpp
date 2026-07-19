@@ -15,6 +15,7 @@
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "superweapon.hpp"  // CB-4 Superweapons: Superweapon/SuperweaponType lifecycle
+#include "visibility.hpp"  // Shroud/Fog: cell_in_sight/reveal_disc (pure reveal math)
 #include "ra2assets/map.hpp"
 #include "unit_combat.hpp"  // UnitCombat (moved here to break the include cycle
                             // production.hpp -> unit_type.hpp -> world.hpp)
@@ -877,6 +878,27 @@ public:
         return house >= 0 && house < 3 && produced_veteran_[house];
     }
 
+    // --- Shroud/Fog phase [RE: shroud.md] ---------------------------------
+    // Enable the per-house visibility layer: opens shroud_any_ and allocates
+    // explored_[h]/visible_[h] (grid_w_*grid_h_, zero-filled) for h in 0..2.
+    // Default OFF -> every existing gate leaves the grids EMPTY and step_visibility
+    // is a strict no-op. Idempotent (re-enabling with grids already sized is a
+    // no-op). enable(false) is not needed by any gate (left as a hard reset).
+    void enable_shroud(bool on);
+    bool shroud_enabled() const { return shroud_any_; }
+    // Is cell (x,y) currently VISIBLE / ever EXPLORED to house h? EMPTY grid
+    // (shroud off, or h out of range) -> true (all-visible / all-explored),
+    // so every consult is inert with shroud off. Out-of-bounds cell -> false.
+    bool visible_at(int house, int x, int y) const;
+    bool explored_at(int house, int x, int y) const;
+    // Stamp a near-circular sight disc for house h around (cx,cy) into
+    // visible_[h] + explored_[h] (delegates to reveal_disc). No-op if the grid
+    // is empty or h is out of range. The mutating entry for buildings/units.
+    void reveal_source(int house, int cx, int cy, int sight);
+    // The firewalled per-frame visibility pass (see world.cpp). Public so the
+    // gate can drive it directly if needed; normally called from World::step.
+    void step_visibility();
+
     // Test seam: directly seed a house's credits without running the full
     // harvest/unload pipeline (the cash-steal victim in the infiltrate tests).
     // Index 2 (neutral) inert. Interactive/demo code never calls it.
@@ -1008,6 +1030,19 @@ private:
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.
     void step_tech_structures(double dt);
+
+    // --- Shroud/Fog phase [RE: shroud.md §1/D1] ---
+    // Two independent per-house grids, sized grid_w_*grid_h_, index y*grid_w_+x
+    // (same as passable_). EMPTY (size 0) until enable_shroud allocates them ->
+    // accessors return all-visible -> inert with shroud off (the water_passable_
+    // precedent). explored_ is sticky (fog no-regrow §4): set on reveal, cleared
+    // ONLY by reshroud_house (Task 7). visible_ is cleared+recomputed each tick.
+    // House index 0=player, 1=enemy, 2=neutral (kNeutralHouse, left inert). NONE
+    // read by world_hash.
+    std::vector<std::uint8_t> explored_[3];
+    std::vector<std::uint8_t> visible_[3];
+    bool shroud_any_ = false;   // the step_visibility firewall (opened by
+                                // enable_shroud); false in every existing gate.
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
     // Boarding / carry / eject / transport-death, called between step_units

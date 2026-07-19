@@ -1488,6 +1488,66 @@ void World::step_tech_structures(double dt) {
     }
 }
 
+void World::enable_shroud(bool on) {
+    shroud_any_ = on;
+    for (int h = 0; h < 3; ++h) {
+        if (on) {
+            explored_[h].assign((size_t)grid_w_ * grid_h_, 0);
+            visible_[h].assign((size_t)grid_w_ * grid_h_, 0);
+        } else {
+            explored_[h].clear();
+            visible_[h].clear();
+        }
+    }
+}
+
+bool World::visible_at(int house, int x, int y) const {
+    if (house < 0 || house >= 3) return true;             // inert
+    if (visible_[house].empty()) return true;             // shroud off -> all-visible
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
+    return visible_[house][(size_t)y * grid_w_ + x] != 0;
+}
+
+bool World::explored_at(int house, int x, int y) const {
+    if (house < 0 || house >= 3) return true;             // inert
+    if (explored_[house].empty()) return true;            // shroud off -> all-explored
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
+    return explored_[house][(size_t)y * grid_w_ + x] != 0;
+}
+
+void World::reveal_source(int house, int cx, int cy, int sight) {
+    if (house < 0 || house >= 3 || visible_[house].empty()) return;
+    reveal_disc(explored_[house], visible_[house], grid_w_, grid_h_, cx, cy, sight);
+}
+
+void World::step_visibility() {
+    if (!shroud_any_) return;                             // firewall (spec §Global)
+    // 1) Clear visible_ (explored_ is sticky -- fog no-regrow §4).
+    for (int h = 0; h < 3; ++h)
+        if (!visible_[h].empty())
+            std::fill(visible_[h].begin(), visible_[h].end(), (std::uint8_t)0);
+    // 2) Reveal from every ALIVE unit (near-circular, radius = its sight).
+    for (const Unit& u : units_) {
+        if (!u.alive) continue;
+        reveal_source(u.house, u.cell_x, u.cell_y, u.sight);
+    }
+    // 3) Reveal from every ALIVE building, ONCE PER FOOTPRINT CELL (§3).
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        for (int fy = 0; fy < b.fh; ++fy)
+            for (int fx = 0; fx < b.fw; ++fx)
+                reveal_source(b.house, b.cx + fx, b.cy + fy, b.sight);
+    }
+    // 4) Stamp each unit's seen_by_mask: bit h set iff its cell is visible_ to h.
+    for (Unit& u : units_) {
+        if (!u.alive) continue;
+        std::uint8_t m = 0;
+        for (int h = 0; h < 3; ++h)
+            if (visible_at(h, u.cell_x, u.cell_y)) m |= (std::uint8_t)(1u << h);
+        u.seen_by_mask = m;
+    }
+}
+
 void World::ai_resync_captured_building(int b_idx, int old_house, int new_house) {
     for (int h = 0; h < (int)ai_houses_.size(); ++h) {
         HouseAiRec& rec = ai_houses_[h];
@@ -2480,6 +2540,11 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 
 void World::step(double dt) {
     step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
+
+    // Shroud/Fog [RE: shroud.md §3]: recompute per-house visibility after
+    // movement and before combat reads it (via seen_by_mask). Firewalled behind
+    // shroud_any_ (false in every existing demo -> a strict no-op).
+    step_visibility();
 
     // CB-1 Transports/Cargo [RE: transport-cargo.md]: boarding resolves the
     // frame the passenger lands adjacent; ejects claim occupancy before
