@@ -7887,6 +7887,283 @@ int run_demo_capture() {
     return bad ? 1 : 0;
 }
 
+// FNV fold of the shroud-phase state [spec §Testing]: per house h in 0..2, the
+// COUNT of explored cells and the COUNT of visible cells (order-stable scalar
+// summaries of the grids); plus a seen_by_mask sample -- the mask of every
+// alive unit (order = units_ order). A NEW accumulator; world_hash + every prior
+// *_hash UNTOUCHED. Folded at the demo's fixed checkpoints.
+uint64_t shroud_fold(uint64_t h, const ra2engine::World& world) {
+    const int gw = world.grid_w(), gh = world.grid_h();
+    for (int hh = 0; hh < 3; ++hh) {
+        uint64_t nexp = 0, nvis = 0;
+        for (int y = 0; y < gh; ++y)
+            for (int x = 0; x < gw; ++x) {
+                // NOTE: with shroud ENABLED, explored_at/visible_at read the real
+                // grid; a fully-shrouded cell returns false. (Empty-grid all-true
+                // only applies with shroud OFF, which this gate never uses.)
+                if (world.explored_at(hh, x, y)) ++nexp;
+                if (world.visible_at(hh, x, y))  ++nvis;
+            }
+        h = fnv_mix(h, nexp);
+        h = fnv_mix(h, nvis);
+    }
+    for (const ra2engine::Unit& u : world.units()) {
+        if (!u.alive) continue;
+        h = fnv_mix(h, (uint64_t)u.seen_by_mask);
+    }
+    return h;
+}
+
+struct DemoShroudResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the shroud/fog demo [spec §Testing] (headless or rendered
+// -- bit-identical; no RNG in any shroud path). Drives the whole Shroud/Fog
+// feature via DIRECT World:: calls (the --demo-* scripted precedent): initial
+// reveal around a starting unit, movement growing the explored map, sticky fog
+// after the source leaves, a fogged enemy that is not seen_by house 0, spy
+// radar-sabotage clearing the victim's map, and a SpySat building revealing the
+// whole map. shroud_fold is FNV-folded at six fixed checkpoints; wedge guards
+// force exit 1 if any invariant fails (the gate can never pass vacuously).
+DemoShroudResult simulate_shroud(Assets& a, UnitAssets& ua,
+                                 const std::vector<const VehicleAssets*>& vlist,
+                                 bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                 const ra2engine::Camera* cam, int W, int H,
+                                 const std::string& start_png, const std::string& end_png) {
+    using P = ra2engine::World::InfiltratePurpose;
+    DemoShroudResult r;
+    ra2engine::World world = build_world(a, ua, 0);    // count=0 -> no pre-spawned units
+    world.enable_shroud(true);
+
+    const int gw = world.grid_w(), gh = world.grid_h();
+    auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };
+
+    // Player start cell (clamped one cell inside the border so a full sight disc
+    // and an 8-cell march both stay on the grid).
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    const int bx = clampi(pc ? pc->x : 20, 1, gw - 2);
+    const int by = clampi(pc ? pc->y : 20, 1, gh - 2);
+    // March toward the interior (whichever horizontal half has room). Far corner
+    // for the enemy is chosen on the OPPOSITE side so it is well beyond sight 5.
+    const int mvdir = (bx < gw / 2) ? +1 : -1;
+    const int steps = 8;
+    const int ex = (bx < gw / 2) ? clampi(gw - 3, 1, gw - 2) : clampi(2, 1, gw - 2);
+    const int ey = (by < gh / 2) ? clampi(gh - 3, 1, gh - 2) : clampi(2, 1, gh - 2);
+    const int sticky_x = clampi(bx + mvdir * steps, 0, gw - 1);
+    const int sticky_y = by;
+
+    auto explored_count = [&](int house) {
+        int n = 0;
+        for (int y = 0; y < gh; ++y)
+            for (int x = 0; x < gw; ++x)
+                if (world.explored_at(house, x, y)) ++n;
+        return n;
+    };
+    auto visible_count = [&](int house) {
+        int n = 0;
+        for (int y = 0; y < gh; ++y)
+            for (int x = 0; x < gw; ++x)
+                if (world.visible_at(house, x, y)) ++n;
+        return n;
+    };
+
+    auto render_frame = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+    };
+
+    uint64_t h = 0xcbf29ce484222325ull;               // FNV-1a offset basis
+
+    // --- Stage 1: initial reveal around a starting unit -----------------------
+    ra2engine::UnitCombat pc_stats;
+    pc_stats.image = "GI"; pc_stats.strength = 100; pc_stats.armor = "none";
+    pc_stats.damage = 0; pc_stats.range = 0.0; pc_stats.sight = 5;
+    world.add_combat_unit(bx, by, /*house=*/0, pc_stats);
+    const int player_idx = (int)world.units().size() - 1;
+    ra2engine::UnitCombat en_stats;
+    en_stats.image = "CONS"; en_stats.strength = 100; en_stats.armor = "none";
+    en_stats.damage = 0; en_stats.range = 0.0; en_stats.sight = 5;
+    world.add_combat_unit(ex, ey, /*house=*/1, en_stats);
+    const int enemy_idx = (int)world.units().size() - 1;
+    world.step_visibility();                           // stamp initial discs + masks
+    const int exp0_initial = explored_count(0);
+    const bool initial_revealed = exp0_initial > 0;
+    h = shroud_fold(h, world);                          // checkpoint A: initial reveal
+    render_frame();
+    if (render) capture_png(ren, start_png, W, H);      // start screenshot
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[shroud] stage1 initial reveal: house0 explored=%d visible=%d",
+                      exp0_initial, visible_count(0));
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 2: movement grows the explored map -----------------------------
+    const int exp0_before_move = explored_count(0);
+    for (int k = 1; k <= steps; ++k) {
+        const int nx = clampi(bx + mvdir * k, 0, gw - 1);
+        world.units()[player_idx].cell_x = nx;
+        world.units()[player_idx].cell_y = by;
+        world.units()[player_idx].fx = (double)nx;
+        world.units()[player_idx].fy = (double)by;
+        world.step_visibility();
+    }
+    const int exp0_after_move = explored_count(0);
+    const bool movement_grew = exp0_after_move > exp0_before_move;
+    h = shroud_fold(h, world);                          // checkpoint B: movement growth
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[shroud] stage2 movement: house0 explored %d->%d grew=%s",
+                      exp0_before_move, exp0_after_move, movement_grew ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 3: fog stickiness (source leaves -> explored persists, visible clears)
+    world.units()[player_idx].cell_x = bx;
+    world.units()[player_idx].cell_y = by;
+    world.units()[player_idx].fx = (double)bx;
+    world.units()[player_idx].fy = (double)by;
+    world.step_visibility();
+    const int exp0_after_return = explored_count(0);
+    const bool sticky_explored = world.explored_at(0, sticky_x, sticky_y);
+    const bool sticky_not_visible = !world.visible_at(0, sticky_x, sticky_y);
+    const bool fog_sticky = (exp0_after_return >= exp0_after_move) &&
+                            sticky_explored && sticky_not_visible;
+    h = shroud_fold(h, world);                          // checkpoint C: fog stickiness
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[shroud] stage3 fog sticky: house0 explored %d->%d sticky(%d,%d) explored=%s visible=%s",
+                      exp0_after_move, exp0_after_return, sticky_x, sticky_y,
+                      sticky_explored ? "yes" : "no",
+                      world.visible_at(0, sticky_x, sticky_y) ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 4: fogged enemy is not seen_by house 0 -------------------------
+    world.units()[enemy_idx].cell_x = ex;              // (re)place the enemy in a fogged cell
+    world.units()[enemy_idx].cell_y = ey;
+    world.units()[enemy_idx].fx = (double)ex;
+    world.units()[enemy_idx].fy = (double)ey;
+    world.step_visibility();                            // restamp seen_by_mask
+    const std::uint8_t enemy_mask = world.units()[enemy_idx].seen_by_mask;
+    const bool enemy_unseen = (enemy_mask & 0x01) == 0;
+    h = shroud_fold(h, world);                          // checkpoint D: fogged enemy mask
+    {
+        char b[144];
+        std::snprintf(b, sizeof b,
+                      "[shroud] stage4 fogged enemy: enemy_idx=%d seen_by_mask=0x%02x house0_bit=%s",
+                      enemy_idx, (unsigned)enemy_mask, enemy_unseen ? "clear" : "SET");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 5: spy-radar sabotage clears the victim's map -------------------
+    // The enemy already explored around its scout (stage 4 step_visibility). A
+    // house-0 spy infiltrates the ENEMY radar (RadarLab) -> reshroud_house(1).
+    const int enemy_radar = world.add_building(0, ex, clampi(ey + 2, 0, gh - 1), 1, 1,
+                                               /*house=*/1, 500, 0, 0.0, /*instant=*/true);
+    const int exp1_before_sabotage = explored_count(1);
+    world.infiltrate_building(enemy_radar, /*spy_house=*/0, P::RadarLab, 0.5, 1000);
+    const int exp1_after_sabotage = explored_count(1);
+    const bool sabotage_cleared = exp1_after_sabotage == 0;
+    h = shroud_fold(h, world);                          // checkpoint E: sabotage
+    {
+        char b[144];
+        std::snprintf(b, sizeof b,
+                      "[shroud] stage5 spy-radar sabotage: house1 explored %d->%d cleared=%s",
+                      exp1_before_sabotage, exp1_after_sabotage, sabotage_cleared ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 6: SpySat reveal-all -------------------------------------------
+    // House 0 owns a grants_map_reveal building -> step_visibility latches the
+    // whole map explored (and visible) for house 0.
+    world.add_building(0, bx, clampi(by + 2, 0, gh - 1), 1, 1, /*house=*/0, 500, 0, 0.0,
+                       /*instant=*/true, /*sight=*/4, /*grants_map_reveal=*/true);
+    world.step_visibility();
+    const int exp0_reveal = explored_count(0);
+    const bool reveal_all_full = exp0_reveal == gw * gh;
+    h = shroud_fold(h, world);                          // checkpoint F: reveal-all
+    {
+        char b[144];
+        std::snprintf(b, sizeof b,
+                      "[shroud] stage6 reveal-all: house0 explored=%d full=%d (%dx%d) full=%s",
+                      exp0_reveal, gw * gh, gw, gh, reveal_all_full ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    r.hash = h;
+
+    // Wedge guards [spec §Testing]: exit 1 unless each invariant holds.
+    if (!initial_revealed)   { r.ok = false; r.witness.emplace_back("[shroud] WEDGE: initial reveal marked 0 cells explored"); }
+    if (!movement_grew)      { r.ok = false; r.witness.emplace_back("[shroud] WEDGE: movement did not grow explored"); }
+    if (!fog_sticky)         { r.ok = false; r.witness.emplace_back("[shroud] WEDGE: fog did not persist after the source left"); }
+    if (!enemy_unseen)       { r.ok = false; r.witness.emplace_back("[shroud] WEDGE: fogged enemy was still seen_by house 0"); }
+    if (!sabotage_cleared)   { r.ok = false; r.witness.emplace_back("[shroud] WEDGE: spy-radar sabotage did not clear the victim's map"); }
+    if (!reveal_all_full)    { r.ok = false; r.witness.emplace_back("[shroud] WEDGE: reveal-all did not set explored to full"); }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[shroud] shroud_hash=%016llx", (unsigned long long)r.hash);
+    r.witness.emplace_back(hb);
+    render_frame();
+    if (render) { capture_png(ren, end_png, W, H); }
+    return r;
+}
+
+// --demo-shroud: the Shroud/Fog-of-War integration gate (15th permanent byte-
+// identity gate). Runs simulate_shroud rendered (hidden window + start/end
+// screenshots) then headless from a FRESH World, and byte-compares the two
+// witness logs + shroud hashes. NO hardcoded hash literal -- compute-and-self-
+// compare; the controller pins the observed value in the README gate table.
+int run_demo_shroud() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_shroud_start.png";
+    const std::string end_png = scratch + "demo_shroud_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
+
+    DemoShroudResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-shroud)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_shroud(a, ua, vlist, /*render=*/true, ren, &tc, &cam,
+                                 W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+    }
+
+    DemoShroudResult r2 = simulate_shroud(a, ua, vlist, /*render=*/false, nullptr,
+                                          nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+    std::cerr << "[demo-shroud] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d shroud_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -8037,6 +8314,8 @@ int main(int argc, char** argv) {
                 return run_demo_techtree();
             } else if (arg == "--demo-capture") {
                 return run_demo_capture();
+            } else if (arg == "--demo-shroud") {
+                return run_demo_shroud();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
