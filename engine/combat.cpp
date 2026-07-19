@@ -73,42 +73,6 @@ bool valid_target(const std::vector<Unit>& units, int self_house, int idx) {
 // retaliation, and starts death if the hit is lethal. `attacker_idx`/
 // `victim_idx` are u/v's own indices in `units` (needed for the retaliation
 // target and occ.release_all_of).
-// CB-2 air-to-ground splash [RE-GATE APPLIED: aircraft.md §4 -> combat.md §7,
-// FUN_00489190]. Damages every ENEMY, non-carried, non-aircraft unit within
-// round(cell_spread) cells of `center` (radius in leptons = round(cell_spread)
-// * kLeptonsPerCell; BlimpHE CellSpread=2 -> ftol(2*256)=512 leptons). Damage
-// falls off LINEARLY from 100% at the impact point to `percent_at_max` at the
-// edge (the adjudicated approximation of the un-unwound §7 curve), then runs
-// the standard damage_vs(Verses) truncated per victim (combat.md §3). Ground
-// AA is out of scope, so victims do NOT retaliate against the aircraft.
-void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& attacker,
-                         const Unit& center) {
-    const double radius_cells = std::round(attacker.w_cell_spread);   // round(CellSpread)
-    const double radius_lept = radius_cells * kLeptonsPerCell;        // splash radius (leptons)
-    const double pmax = attacker.w_percent_at_max;                    // edge scale (BlimpHE .5)
-    for (int j = 0; j < static_cast<int>(units.size()); ++j) {
-        Unit& w = units[j];
-        if (!w.alive || w.die_time >= 0.0) continue;                  // dead/dying: skip
-        if (w.cargo_of >= 0) continue;                               // carried: off-map
-        if (w.is_aircraft) continue;                                 // no air-to-air
-        if (w.house == attacker.house) continue;                     // enemies only
-        const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
-        if (d > radius_lept) continue;                               // outside the splash
-        const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
-        const double scale = 1.0 - (1.0 - pmax) * frac;             // 1.0 -> pmax linear
-        const int base = static_cast<int>(attacker.w_damage * scale);  // trunc (combat.md §3)
-        const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
-        w.hp -= dmg;
-        if (w.hp <= 0) {
-            w.die_time = 0.0;
-            occ.release_all_of(j, -1, -1);
-            w.target = -1;
-            w.path.clear();
-            w.path_idx = 0;
-        }
-    }
-}
-
 void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
               int victim_idx, Occupancy& occ) {
     // docs/re/combat.md §5: RearmTimer := GetROF() (frames), converted to
@@ -150,6 +114,45 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
 }
 
 }  // namespace
+
+// CB-2 air-to-ground splash [RE-GATE APPLIED: aircraft.md §4 -> combat.md §7,
+// FUN_00489190]. Damages every ENEMY, non-carried, non-aircraft unit within
+// round(cell_spread) cells of `center` (radius in leptons = round(cell_spread)
+// * kLeptonsPerCell; BlimpHE CellSpread=2 -> ftol(2*256)=512 leptons). Damage
+// falls off LINEARLY from 100% at the impact point to `percent_at_max` at the
+// edge (the adjudicated approximation of the un-unwound §7 curve), then runs
+// the standard damage_vs(Verses) truncated per victim (combat.md §3). Ground
+// AA is out of scope, so victims do NOT retaliate against the aircraft.
+// CB-4 [RE: superweapon.md §2/§5]: PROMOTED to ra2engine (external linkage) so
+// World::fire_superweapon can REUSE it for the nuke detonation -- body BYTE-
+// IDENTICAL to the CB-2 anonymous-namespace original; only its linkage moved.
+void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& attacker,
+                         const Unit& center) {
+    const double radius_cells = std::round(attacker.w_cell_spread);   // round(CellSpread)
+    const double radius_lept = radius_cells * kLeptonsPerCell;        // splash radius (leptons)
+    const double pmax = attacker.w_percent_at_max;                    // edge scale (BlimpHE .5)
+    for (int j = 0; j < static_cast<int>(units.size()); ++j) {
+        Unit& w = units[j];
+        if (!w.alive || w.die_time >= 0.0) continue;                  // dead/dying: skip
+        if (w.cargo_of >= 0) continue;                               // carried: off-map
+        if (w.is_aircraft) continue;                                 // no air-to-air
+        if (w.house == attacker.house) continue;                     // enemies only
+        const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
+        if (d > radius_lept) continue;                               // outside the splash
+        const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
+        const double scale = 1.0 - (1.0 - pmax) * frac;             // 1.0 -> pmax linear
+        const int base = static_cast<int>(attacker.w_damage * scale);  // trunc (combat.md §3)
+        const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
+        w.hp -= dmg;
+        if (w.hp <= 0) {
+            w.die_time = 0.0;
+            occ.release_all_of(j, -1, -1);
+            w.target = -1;
+            w.path.clear();
+            w.path_idx = 0;
+        }
+    }
+}
 
 int armor_index(const std::string& armor) {
     const std::string lower = to_lower(armor);

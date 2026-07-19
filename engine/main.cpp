@@ -698,6 +698,41 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     return r;
 }
 
+// CB-4 Superweapons [RE-GATE APPLIED: superweapon.md §1/§2]: resolve the Nuclear
+// Missile grant params from the real rulesmd. RechargeTime is MINUTES -- CONFIRMED
+// (single FMUL [0x7F3100]=900.0 + _ftol: frames = trunc(RechargeTime*900); this
+// engine keeps SECONDS, so recharge_secs = RechargeTime*60, the same value as
+// *900 frames / 15 fps) [RE-GATE APPLIED: superweapon.md §1]. The DAMAGING leg is
+// [NukePayload]/[NUKE] (the down-strike), NOT the SW's [NukeCarrier]/NukeMaker
+// up-launch (which carries no Damage/Verses -- zero area damage) -- CONFIRMED
+// [RE-GATE APPLIED: superweapon.md §2]. Verses is the [NUKE] 11-slot armor array
+// (int percents). All values cite docs/re/superweapon.md.
+struct SuperweaponParams {
+    double recharge_secs = 0.0;
+    int damage = 0;
+    double cell_spread = 0.0;
+    double percent_at_max = 1.0;
+    std::array<int, 11> verses{};
+    bool ok = false;
+};
+
+SuperweaponParams resolve_superweapon(const ra2assets::Rules& rules) {
+    SuperweaponParams p;
+    const double recharge_min = rules.section_double("NukeSpecial", "RechargeTime", 10.0);
+    p.recharge_secs = recharge_min * 60.0;                        // minutes -> seconds
+    p.damage = (int)rules.section_double("NukePayload", "Damage", 600.0);
+    p.cell_spread = rules.section_double("NUKE", "CellSpread", 10.0);
+    p.percent_at_max = rules.section_double("NUKE", "PercentAtMax", 0.02);
+    const std::vector<int> v = rules.verses("NUKE");             // [NUKE] Verses (combat.md §1)
+    for (std::size_t i = 0; i < p.verses.size(); ++i)
+        p.verses[i] = i < v.size() ? v[i] : 100;                 // absent slot -> 100% (no mod)
+    p.ok = true;
+    std::cerr << "[sw] resolve nuke recharge_secs=" << p.recharge_secs
+              << " damage=" << p.damage << " cell_spread=" << p.cell_spread
+              << " percent_at_max=" << p.percent_at_max << "\n";
+    return p;
+}
+
 // Resolves one image's stand/walk/fire/die animation sequence from an
 // already-loaded Art (artmd.ini's [image] Sequence= -> that [SequenceName]
 // section's Ready/Walk/FireUp/Die1 entries -- docs/re/infantry-anim.md).

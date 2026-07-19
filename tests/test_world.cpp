@@ -3373,3 +3373,114 @@ TEST_CASE("World SW: an ungranted house stays inert and a no-SW World is a no-op
     for (int f = 0; f < 30; ++f) bare.step(dt);    // step_superweapon early-returns
     CHECK(bare.sw_state(0) == nullptr);
 }
+
+// --- CB-4 Superweapons: the fired EFFECT (Task 4) [RE: superweapon.md] --------
+
+namespace {
+// A minimal target combat-stat block (hand-built -- no weapon, so the charge-up
+// step()s never let these units fight each other before the nuke lands).
+ra2engine::UnitCombat sw_target_stats() {
+    ra2engine::UnitCombat c;
+    c.image = "E1";
+    c.strength = 100;
+    c.armor = "none";
+    return c;
+}
+// The [NUKE] verses (uniform 100%) as a full 11-slot array -- damage_vs identity,
+// keeps the test's armor math simple.
+std::array<int, 11> nuke_verses_arr() {
+    std::array<int, 11> v; v.fill(100);
+    return v;
+}
+}  // namespace
+
+TEST_CASE("World SW: fire_superweapon is refused before READY, succeeds after, resets") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, 5.0, 600, 10.0, 0.02,
+                            nuke_verses_arr());
+    world.add_combat_unit(20, 20, /*house=*/1, sw_target_stats());   // an enemy at the cell
+    CHECK_FALSE(world.fire_superweapon(0, 20, 20));   // not charged -> refused
+    CHECK(world.units()[0].hp == world.units()[0].max_hp);   // undamaged
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 200 && !world.sw_ready(0); ++f) world.step(dt);
+    REQUIRE(world.sw_ready(0));
+    CHECK(world.fire_superweapon(0, 20, 20));          // charged -> fires
+    CHECK_FALSE(world.sw_ready(0));                    // timer reset, ready cleared
+    CHECK(world.sw_charge_fraction(0) == doctest::Approx(0.0));
+}
+
+TEST_CASE("World SW: the detonation kills enemies in radius, spares the firing house, "
+          "leaves out-of-radius units untouched") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, 1.0, 600, 10.0, 0.02,
+                            nuke_verses_arr());
+    world.add_combat_unit(20, 20, /*house=*/1, sw_target_stats());   // idx 0: near enemy
+    world.add_combat_unit(21, 20, /*house=*/0, sw_target_stats());   // idx 1: own (firing house)
+    world.add_combat_unit(20, 90, /*house=*/1, sw_target_stats());   // idx 2: far enemy
+    const int own_hp0 = world.units()[1].hp, far_hp0 = world.units()[2].hp;
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 30 && !world.sw_ready(0); ++f) world.step(dt);
+    REQUIRE(world.sw_ready(0));
+    REQUIRE(world.fire_superweapon(0, 20, 20));         // detonate AT the enemy cluster cell
+    CHECK(world.units()[0].hp <= 0);                    // near enemy dead (600 dmg >> 100 hp)
+    CHECK(world.units()[1].hp == own_hp0);              // firing house SPARED (enemies-only)
+    CHECK(world.units()[2].hp == far_hp0);              // 70 cells away -> outside CellSpread=10
+}
+
+TEST_CASE("World SW: the detonation falloff -- edge damage < center damage") {
+    // Center takes full; a unit near the radius edge takes ~PercentAtMax*Damage.
+    // With CellSpread=10 the radius is round(10)=10 cells; a unit 9 cells out is
+    // near the edge. Use high hp so neither dies and we can compare damage taken.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, 1.0, 600, 10.0, 0.02,
+                            nuke_verses_arr());
+    ra2engine::UnitCombat tough = sw_target_stats();
+    tough.strength = 100000;                            // survive to measure damage
+    world.add_combat_unit(20, 20, /*house=*/1, tough);  // idx 0: center
+    world.add_combat_unit(29, 20, /*house=*/1, tough);  // idx 1: 9 cells out (near edge)
+    const int c_hp0 = world.units()[0].hp, e_hp0 = world.units()[1].hp;
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 30 && !world.sw_ready(0); ++f) world.step(dt);
+    REQUIRE(world.fire_superweapon(0, 20, 20));
+    const int c_dmg = c_hp0 - world.units()[0].hp;
+    const int e_dmg = e_hp0 - world.units()[1].hp;
+    CHECK(c_dmg > 0);
+    CHECK(e_dmg > 0);
+    CHECK(e_dmg < c_dmg);                               // linear falloff toward the edge
+}
+
+TEST_CASE("World SW: the detonation splashes BUILDINGS -- in-radius damaged/destroyed, "
+          "own spared, out-of-radius untouched [RE-GATE APPLIED superweapon.md §5.3]") {
+    // The nuke levels structures in the blast (the SW-only building loop in
+    // fire_superweapon). Enemy building at the target cell is destroyed; an own
+    // building in-radius is spared (enemies-only); a far enemy building is
+    // untouched. armor "none" + Verses 100% -> full 600 damage at the center.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, 1.0, 600, 10.0, 0.02,
+                            nuke_verses_arr());
+    // add_building(type, cx, cy, fw, fh, house, strength, armor_ix, buildup_total, instant)
+    const int near_enemy_b = world.add_building(0, 20, 20, 1, 1, /*house=*/1, /*strength=*/100,
+                                                /*armor_ix=*/0, 0.0, /*instant=*/true);
+    const int own_b        = world.add_building(0, 22, 20, 1, 1, /*house=*/0, 100, 0, 0.0, true);
+    const int far_enemy_b  = world.add_building(0, 20, 60, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    const int own_hp0 = world.buildings()[own_b].hp;
+    const int far_hp0 = world.buildings()[far_enemy_b].hp;
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 30 && !world.sw_ready(0); ++f) world.step(dt);
+    REQUIRE(world.sw_ready(0));
+    REQUIRE(world.fire_superweapon(0, 20, 20));         // detonate AT the enemy building
+    CHECK(world.buildings()[near_enemy_b].hp <= 0);     // 600 dmg >> 100 hp -> destroyed
+    CHECK(world.buildings()[near_enemy_b].state == ra2engine::Building::State::Dead);
+    CHECK(world.buildings()[own_b].hp == own_hp0);      // firing house building SPARED (enemies-only)
+    CHECK(world.buildings()[own_b].state != ra2engine::Building::State::Dead);
+    CHECK(world.buildings()[far_enemy_b].hp == far_hp0);  // 40 cells away -> outside CellSpread=10
+    CHECK(world.buildings()[far_enemy_b].state != ra2engine::Building::State::Dead);
+}

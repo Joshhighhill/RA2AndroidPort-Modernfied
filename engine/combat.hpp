@@ -39,6 +39,19 @@ int armor_index(const std::string& armor);
 // than indexing out of range.
 int damage_vs(int damage, const std::vector<int>& verses, int ai);
 
+// CB-4 Superweapons [RE: superweapon.md §2/§5]: the CB-2 area-damage applicator,
+// PROMOTED from combat.cpp's anonymous namespace to ra2engine so World::
+// fire_superweapon can REUSE it for the nuke detonation (a transient virtual
+// detonator Unit passed as BOTH attacker and center). LINKAGE-ONLY change: the
+// function body + its existing caller (try_fire) are byte-for-byte unchanged, so
+// every existing combat path computes identical results and all 11 gate outputs
+// stay bit-identical (re-verified below). This is the one deviation from the
+// spec's "combat.cpp literally untouched" wording -- necessitated because the
+// applicator has internal linkage and is otherwise uncallable from world.cpp;
+// reimplementing the falloff loop (a "new damage system") is what §5/§8 forbid.
+void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ,
+                         const Unit& attacker, const Unit& center);
+
 // A request from step_combat for World to path a unit toward a cell (pursuit
 // of an explicitly-ordered target, or return to a guard anchor). step_combat
 // never touches Unit::path/find_path itself -- it only asks; World (later

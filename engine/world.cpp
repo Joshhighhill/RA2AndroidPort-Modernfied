@@ -1032,6 +1032,79 @@ void World::grant_superweapon(int house, SuperweaponType type, double recharge_s
     sw_any_ = true;                                                       // open the firewall
 }
 
+bool World::fire_superweapon(int house, int cx, int cy) {
+    if (house < 0 || house >= (int)sw_houses_.size()) return false;
+    HouseSuperweapon& rec = sw_houses_[house];
+    if (!rec.has_sw || !rec.sw.is_ready()) return false;   // refused unless READY (§4)
+
+    // Transient virtual detonator [spec §5.1]: a value-initialized STACK Unit
+    // (Unit struct UNCHANGED -- no persistent field). Its house + fx/fy (target
+    // cell, in CELL-space: apply_spread_damage's dist_leptons scales by
+    // kLeptonsPerCell internally, combat.cpp:50/95, and an idle unit's fx/fy IS
+    // its integer cell) + the four warhead fields are EXACTLY and ONLY the fields
+    // apply_spread_damage reads from its attacker/center args.
+    Unit virt;
+    virt.house = house;
+    virt.fx = static_cast<double>(cx);
+    virt.fy = static_cast<double>(cy);
+    virt.w_damage = rec.eff_damage;                 // [NukePayload] Damage=600
+    virt.w_cell_spread = rec.eff_cell_spread;        // [NUKE] CellSpread=10
+    virt.w_percent_at_max = rec.eff_percent_at_max;  // [NUKE] PercentAtMax=.02
+    virt.w_verses.assign(rec.eff_verses.begin(), rec.eff_verses.end());  // [NUKE] Verses
+
+    // Detonate: REUSE the EXACT CB-2 applicator (combat.cpp) -- virt is both the
+    // attacker (house + warhead) and the center (fx/fy). Every alive, non-carried,
+    // non-aircraft ENEMY unit within round(CellSpread)*kLeptonsPerCell of the cell
+    // takes damage_vs(static_cast<int>(Damage*scale), NUKE-Verses, armor) with scale
+    // falling LINEARLY 1.0 -> PercentAtMax across the radius; enemies-only spares the
+    // firing house. NO new damage math (spec §5/§8).
+    apply_spread_damage(units_, occ_, virt, virt);
+
+    // [RE-GATE APPLIED: superweapon.md §5.3] BUILDING SPLASH -- CONFIRMED: the
+    // [NUKE] warhead area-damage (FUN_00489190) enumerates EVERY in-radius object
+    // with IsActive && Strength>0 -- buildings included (Strength>0), corroborated
+    // by [NUKE] WallAbsoluteDestroyer=yes + Wood=yes -- so the nuke levels
+    // structures in the blast. apply_spread_damage above damages UNITS only (the
+    // CB-2 aerial-bomb scope), so this SW-ONLY loop adds the building leg,
+    // mirroring the unit falloff EXACTLY: the same round(CellSpread) radius, the
+    // same linear 1.0->PercentAtMax scale, the same static_cast<int> damage
+    // truncation, damage_vs against the building's armor, and the same enemies-only
+    // rule (firing house spared -- the documented CB-4 divergence from vanilla
+    // friendly-fire, consistent with the unit splash). It is an ADDED clause
+    // reached ONLY by this fire_superweapon call, which no existing demo issues, so
+    // every gate stays byte-identical (buildings_ is untouched by it everywhere
+    // else). Distance is to the building's NEAREST foundation cell (a multi-cell
+    // footprint is hit at its EDGE -- combat.cpp's building-range convention,
+    // combat.cpp:233-244). hp<=0 -> kill_building (Dead + die_time=0, building.hpp);
+    // World::step's existing Dead-building pass releases the foundation blocking
+    // exactly once and step_buildings tombstones it -- no occ_ handling needed here.
+    const double radius_cells = std::round(rec.eff_cell_spread);        // round(CellSpread)
+    const double radius_lept = radius_cells * 256.0;                    // kLeptonsPerCell = 256
+    const double b_pmax = rec.eff_percent_at_max;                       // [NUKE] PercentAtMax
+    const std::vector<int> nuke_verses(rec.eff_verses.begin(), rec.eff_verses.end());
+    for (Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead) continue;     // gone/already dying
+        if (b.house == house) continue;                                // enemies only (firing house spared)
+        double d = -1.0;                                               // nearest-foundation-cell distance (leptons)
+        for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+            const double dx = (static_cast<double>(cx) - static_cast<double>(cell.x)) * 256.0;
+            const double dy = (static_cast<double>(cy) - static_cast<double>(cell.y)) * 256.0;
+            const double dc = std::sqrt(dx * dx + dy * dy);
+            if (d < 0.0 || dc < d) d = dc;
+        }
+        if (d < 0.0 || d > radius_lept) continue;                     // outside the splash
+        const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
+        const double scale = 1.0 - (1.0 - b_pmax) * frac;             // 1.0 -> pmax linear (unit-identical, combat.cpp:98)
+        const int base = static_cast<int>(rec.eff_damage * scale);    // trunc (combat.cpp:99)
+        const int dmg = damage_vs(base, nuke_verses, b.armor_ix);     // [NUKE] Verses vs building armor
+        b.hp -= dmg;
+        if (b.hp <= 0) kill_building(b);                              // reuse the existing destroy path
+    }
+
+    rec.sw.on_fired();   // reset timer=0, clear ready (§4)
+    return true;
+}
+
 void World::step_superweapon(double dt) {
     if (!sw_any_) return;                        // firewall (spec §8) -- no-op everywhere else
     for (HouseSuperweapon& rec : sw_houses_)     // house-id order; pure arithmetic, no RNG (§3.5)
