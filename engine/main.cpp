@@ -5029,6 +5029,270 @@ int run_demo_prod() {
     return bad ? 1 : 0;
 }
 
+// FNV fold of the tech-tree phase state [spec §6]: every unit's + building's
+// (cell/alive/hp/state) PLUS the BUILDABLE-SET snapshot -- can_start_unit for
+// {MTNK, SREF} and can_start for {GATECH, GAWEAP} at a fixed idle probe queue.
+// This is exactly the tech-tree state the phase adds. A NEW accumulator;
+// world_hash and every prior *_hash UNTOUCHED. udefs is the probe unit roster
+// (ur.defs, or ur.defs + a synthetic SREF when SREF art is absent, §6).
+uint64_t techtree_fold(uint64_t h, const ra2engine::World& world, const BuildingAssets& ba,
+                       const std::vector<ra2engine::UnitTypeDef>& udefs, int mtnk_slot,
+                       int sref_slot, int gatech_type, int gaweap_type, bool conyard_ok,
+                       bool veh_factory_alive) {
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+    }
+    for (const ra2engine::Building& b : world.buildings()) {
+        h = fnv_mix(h, static_cast<uint64_t>(b.type));
+        h = fnv_mix(h, static_cast<uint64_t>(b.cx));
+        h = fnv_mix(h, static_cast<uint64_t>(b.cy));
+        h = fnv_mix(h, static_cast<uint64_t>(b.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(b.state));
+    }
+    const ra2engine::ProductionState idle;   // slot.type == -1 (a fresh idle queue)
+    auto fold_unit = [&](int slot) {
+        const bool ok = slot >= 0 &&
+            ra2engine::can_start_unit(idle, slot, udefs, world.buildings(), ba.roster, 0,
+                                      ba.groups, veh_factory_alive);
+        h = fnv_mix(h, static_cast<uint64_t>(ok ? 1 : 0));
+    };
+    auto fold_bldg = [&](int type) {
+        const bool ok = type >= 0 &&
+            ra2engine::can_start(idle, type, ba.roster, world.buildings(), 0, ba.groups, conyard_ok);
+        h = fnv_mix(h, static_cast<uint64_t>(ok ? 1 : 0));
+    };
+    fold_unit(mtnk_slot);    // MTNK (tier-2 control)
+    fold_unit(sref_slot);    // SREF (tier-3, the gated unit)
+    fold_bldg(gatech_type);  // GATECH (the tech building)
+    fold_bldg(gaweap_type);  // GAWEAP (the factory)
+    return h;
+}
+
+struct DemoTechtreeResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the tech-tree demo (fixed 15 Hz dt, frame-driven, like
+// simulate_prod). Build a fresh Allied base (GACNST/GAPOWR/GAPILE/GAWEAP, NO
+// radar), resolve the probe roster with a synthetic-SREF fallback, fold the
+// buildable-set at BASELINE -> UNLOCK (place GATECH DIRECTLY, bypassing its
+// radar-gated Prerequisite) -> END. Wedge guards: SREF UNBUILDABLE before GATECH
+// AND BUILDABLE after. Rendered and headless runs must be byte-identical.
+DemoTechtreeResult simulate_techtree(Assets& a, UnitAssets& ua, BuildingAssets& ba, UnitRoster& ur,
+                                     const Rules& rules,
+                                     const std::vector<const VehicleAssets*>& vlist, bool render,
+                                     SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                     const ra2engine::Camera* cam, int W, int H,
+                                     const std::string& start_png, const std::string& end_png) {
+    DemoTechtreeResult r;
+    ra2engine::World world = build_world(a, ua, 0);
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    spawn_base(world, ba, /*house=*/0, pc->x, pc->y + 6);
+
+    const int gacnst = roster_index(ba, "GACNST");
+    const int gapowr = roster_index(ba, "GAPOWR");
+    const int gapile = roster_index(ba, "GAPILE");
+    const int gaweap = roster_index(ba, "GAWEAP");
+    const int gatech = roster_index(ba, "GATECH");   // always present (buildings never dropped;
+                                                     // art.ok may be false [RE-FALLBACK] but the
+                                                     // roster entry + placement are art-independent)
+    const ra2engine::Building cy_b =
+        [&]{ int i = find_building(world, gacnst, 0);
+             return i >= 0 ? world.buildings()[i] : ra2engine::Building{}; }();
+    { int ox = 0, oy = 0;
+      if (!place_player_building(world, ba, gapowr, cy_b.cx + cy_b.fw, cy_b.cy, ox, oy)) r.ok = false;
+      if (!place_player_building(world, ba, gapile, cy_b.cx, cy_b.cy + cy_b.fh, ox, oy)) r.ok = false;
+      if (!place_player_building(world, ba, gaweap, cy_b.cx + cy_b.fw, cy_b.cy + cy_b.fh, ox, oy)) r.ok = false; }
+
+    // Probe unit roster: ur.defs, plus a SYNTHETIC SREF if its art was dropped
+    // (spec §6 -- the sim/predicate is art-independent). MTNK is always present.
+    std::vector<ra2engine::UnitTypeDef> udefs = ur.defs;
+    int mtnk_slot = -1, sref_slot = -1;
+    for (int i = 0; i < (int)udefs.size(); ++i) {
+        if (udefs[i].id == "MTNK") mtnk_slot = i;
+        if (udefs[i].id == "SREF") sref_slot = i;
+    }
+    bool sref_synth = false;
+    if (sref_slot < 0) {                              // SREF art absent -> synthesize the probe def
+        ra2engine::UnitTypeDef s;
+        s.id = "SREF";
+        s.is_vehicle = true;
+        s.cost = std::max(1, rules.cost("SREF"));
+        s.tech_level = std::max(1, rules.tech_level("SREF"));
+        s.prerequisite = rules.prerequisite("SREF");
+        if (s.prerequisite.empty()) s.prerequisite = {"GAWEAP", "GATECH"};
+        udefs.push_back(std::move(s));
+        sref_slot = (int)udefs.size() - 1;
+        sref_synth = true;
+    }
+    if (mtnk_slot < 0) { r.ok = false; r.witness.emplace_back("[techtree] roster MISSING MTNK"); }
+
+    const std::vector<int> veh_ft = factory_types_for(ba, "GAWEAP");
+    auto veh_alive = [&]{ return !world.factory_category_lost(veh_ft, 0); };
+    auto cy_ok = [&]{ return conyard_alive(world, ba, 0); };
+    auto sref_buildable = [&]{
+        const ra2engine::ProductionState idle;
+        return ra2engine::can_start_unit(idle, sref_slot, udefs, world.buildings(), ba.roster, 0,
+                                         ba.groups, veh_alive());
+    };
+    auto mtnk_buildable = [&]{
+        const ra2engine::ProductionState idle;
+        return mtnk_slot >= 0 &&
+               ra2engine::can_start_unit(idle, mtnk_slot, udefs, world.buildings(), ba.roster, 0,
+                                         ba.groups, veh_alive());
+    };
+
+    const ra2engine::SidebarLayout lay =
+        ra2engine::SidebarLayout::compute(W, H, sidebar_buildable(ba));
+    const double dt = 1.0 / 15.0;
+    long frame = 0; double t = 0.0;
+    uint64_t h = 0xcbf29ce484222325ull;              // FNV-1a offset basis (world_hash's)
+    auto ps_idle = []{ return ra2engine::ProductionState{}; };
+    auto step_one = [&]() {
+        world.step(dt); ++frame; t += dt;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255); SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba, nullptr);
+            if (ba.sidebar_ok) draw_sidebar(ren, *tc, ba, lay, ps_idle(), world, 10000, t, 0);
+        }
+    };
+
+    {
+        char b[160];
+        std::snprintf(b, sizeof b, "[techtree] roster=%d sref_slot=%d sref_synth=%s gatech_idx=%d",
+                      (int)ba.roster.size(), sref_slot, sref_synth ? "yes" : "no", gatech);
+        r.witness.emplace_back(b);
+    }
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+
+    // 1) BASELINE: {GACNST,GAPOWR,GAPILE,GAWEAP} owned -> SREF UNBUILDABLE (GATECH
+    //    unmet), MTNK BUILDABLE (the tier-2 control -- the base is productive).
+    while (frame < 15) step_one();
+    const bool base_sref = sref_buildable();
+    const bool base_mtnk = mtnk_buildable();
+    h = techtree_fold(h, world, ba, udefs, mtnk_slot, sref_slot, gatech, gaweap, cy_ok(),
+                      veh_alive());
+    {
+        char b[160];
+        std::snprintf(b, sizeof b, "[techtree] SREF %s (GATECH unmet) can_start=%d ; MTNK can_start=%d",
+                      base_sref ? "buildable" : "unbuildable", base_sref ? 1 : 0, base_mtnk ? 1 : 0);
+        r.witness.emplace_back(b);
+    }
+
+    // 2) UNLOCK: place the Battle Lab (instant-Idle via place_player_building) so
+    //    the TECH group is satisfied. [RE-GATE APPLIED: techtree.md §4] DIRECT
+    //    placement: place_player_building does NOT go through the buildability
+    //    predicate (can_start), so GATECH's own radar-gated Prerequisite=GAWEAP,
+    //    RADAR,GACNST is bypassed and the demo base needs NO radar (the base above
+    //    places only GACNST/GAPOWR/GAPILE/GAWEAP). GATECH art may be absent
+    //    [RE-FALLBACK] -> it renders as the placeholder; placement + the TECH-group
+    //    satisfaction are art-independent. (If some future change makes placement
+    //    itself gated, add a RADAR-group building -- GAAIRC/NARADR/AMRADR/NAPSIS --
+    //    to the base so GATECH is placeable.)
+    int gx = 0, gy = 0;
+    const bool placed = place_player_building(world, ba, gatech, cy_b.cx, cy_b.cy - 1, gx, gy);
+    if (!placed) { r.ok = false; r.witness.emplace_back("[techtree] FAILED to place GATECH"); }
+    while (frame < 30) step_one();                   // settle frames (already Idle)
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[techtree] placed GATECH cell=(%d,%d) TECH group satisfied",
+                      gx, gy);
+        r.witness.emplace_back(b);
+    }
+
+    // 3) BUILDABLE: SREF now BUILDABLE (GATECH met).
+    const bool unlocked_sref = sref_buildable();
+    h = techtree_fold(h, world, ba, udefs, mtnk_slot, sref_slot, gatech, gaweap, cy_ok(),
+                      veh_alive());
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[techtree] SREF %s (GATECH met) can_start=%d",
+                      unlocked_sref ? "buildable" : "unbuildable", unlocked_sref ? 1 : 0);
+        r.witness.emplace_back(b);
+    }
+
+    // 4) END fold (a few more settle frames; state is stable).
+    while (frame < 45) step_one();
+    h = techtree_fold(h, world, ba, udefs, mtnk_slot, sref_slot, gatech, gaweap, cy_ok(),
+                      veh_alive());
+    r.hash = h;
+    { char b[64]; std::snprintf(b, sizeof b, "[techtree] techtree_hash=%016llx",
+                                static_cast<unsigned long long>(r.hash)); r.witness.emplace_back(b); }
+
+    // Wedge guards [spec §6]: the gate can never pass vacuously -- SREF must be
+    // UNBUILDABLE at baseline AND BUILDABLE after GATECH is placed. Both hold or exit 1.
+    if (base_sref)      { r.ok = false; r.witness.emplace_back("[techtree] WEDGE: SREF buildable BEFORE GATECH"); }
+    if (!unlocked_sref) { r.ok = false; r.witness.emplace_back("[techtree] WEDGE: SREF NOT buildable after GATECH"); }
+    if (!base_mtnk)     { r.ok = false; r.witness.emplace_back("[techtree] WEDGE: MTNK not buildable at baseline"); }
+    if (render) { capture_png(ren, end_png, W, H); }
+    return r;
+}
+
+// --demo-techtree: the CB-5 tech-tree integration gate (13th permanent
+// byte-identity gate). Runs simulate_techtree rendered (hidden window +
+// start/end screenshots) then headless, and byte-compares the two witness logs
+// + techtree hashes. NO hardcoded hash literal -- deterministic self-compare.
+// Exit 0 iff both runs are byte-identical AND both `ok`.
+int run_demo_techtree() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_techtree_start.png";
+    const std::string end_png = scratch + "demo_techtree_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) { std::cerr << "[demo-techtree] FAILED: building assets\n"; return 1; }
+    UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
+    std::vector<const VehicleAssets*> vlist;
+    for (const VehicleAssets& va : ur.vehicles) vlist.push_back(&va);
+
+    DemoTechtreeResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-techtree)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_techtree(a, ua, ba, ur, rules, vlist, /*render=*/true, ren, &tc, &cam,
+                                   W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+    }
+
+    DemoTechtreeResult r2 = simulate_techtree(a, ua, ba, ur, rules, vlist, /*render=*/false,
+                                              nullptr, nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+    std::cerr << "[demo-techtree] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d techtree_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // FNV hash of the AI-1 end state for --demo-ai-base's two-run byte-identity
 // gate [RE: ai-base.md]: the SORTED alive-building list [type, cell, hp] +
 // credits + power totals + the planned-node list. A NEW function; world_hash
@@ -7197,6 +7461,8 @@ int main(int argc, char** argv) {
                 return run_demo_naval();
             } else if (arg == "--demo-superweapon") {
                 return run_demo_superweapon();
+            } else if (arg == "--demo-techtree") {
+                return run_demo_techtree();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
