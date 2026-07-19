@@ -1275,6 +1275,7 @@ void World::order_engineer_capture(int eng_idx, int b_idx) {
     u.attack_order = false;
     u.unload_pending = false;
     u.enter_target = -1;
+    u.infiltrate_target = -1;        // a unit never carries both deferred intents
     u.capture_target = b_idx;
     Cellxy g;
     if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g))
@@ -1297,6 +1298,7 @@ void World::order_spy_infiltrate(int spy_idx, int b_idx, InfiltratePurpose purpo
     u.attack_order = false;
     u.unload_pending = false;
     u.enter_target = -1;
+    u.capture_target = -1;           // a unit never carries both deferred intents
     u.infiltrate_target = b_idx;
     u.infiltrate_purpose = static_cast<int>(purpose);   // pre-resolved at gesture layer
     u.infiltrate_steal_pct = steal_pct;
@@ -1341,8 +1343,15 @@ void World::step_capture(double dt) {
             if (best >= 0 && best <= 1) {
                 const int eng_house = u.house;
                 bool consumed = false;
-                if (b.house != eng_house)
-                    consumed = capture_building(bi, eng_house, /*startup=*/0);   // enemy/neutral
+                if (b.house != eng_house) {
+                    // ProduceCashStartup for the captured type (CAOILD=1000; 0 for
+                    // normal buildings) [RE: capture.md §A3/§D1]. capture_building
+                    // only grants it when captured FROM neutral, so this is inert
+                    // for enemy captures.
+                    const int startup = (b.type >= 0 && b.type < (int)types_.size())
+                                            ? types_[b.type].produce_cash_startup : 0;
+                    consumed = capture_building(bi, eng_house, startup);         // enemy/neutral
+                }
                 else
                     consumed = repair_building(bi, eng_house);                   // own damaged
                 u.capture_target = -1;             // intent resolved on arrival regardless
@@ -1538,7 +1547,13 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
     if (tn > 0) { v.threat_x = (int)(tx / tn); v.threat_y = (int)(ty / tn); }
     else { v.threat_x = grid_w_ / 2; v.threat_y = grid_h_ / 2; }
     v.credits = rec.credits;
-    const PowerTotals pt = power_totals(buildings_, rec.cfg.roster, house);
+    // Engineer/Spy Capture [RE: capture.md §B2]: a spied enemy power plant forces
+    // THIS house's power OUTPUT to 0 while its blackout timer runs, so the AI's
+    // own low-power view / build clamp go offline too. apply_blackout is IDENTITY
+    // when !house_blacked_out(house), so every existing demo (never blacked out)
+    // is byte-identical (the ai-base/ai-team/ai-trigger gates run this path).
+    const PowerTotals pt =
+        apply_blackout(power_totals(buildings_, rec.cfg.roster, house), house_blacked_out(house));
     v.power_output = pt.output;
     v.power_drain = pt.drain;
     for (const Unit& u : units_)
@@ -1692,7 +1707,12 @@ void World::step_ai_houses(double dt) {
 
         // 4) Tick the queues: SAME power clamp as the player [RE: ai-base.md
         //    §6], difficulty time handicap applied at start() (below).
-        const PowerTotals pt = power_totals(buildings_, cfg.roster, h);
+        //    Engineer/Spy Capture [RE: capture.md §B2]: a spied enemy power plant
+        //    forces this AI house's power OUTPUT to 0 while its blackout timer
+        //    runs -> the same low-power build clamp the player pays. Identity when
+        //    !house_blacked_out(h), so ai-base/ai-team/ai-trigger stay exact.
+        const PowerTotals pt =
+            apply_blackout(power_totals(buildings_, cfg.roster, h), house_blacked_out(h));
         const double pmul = build_speed_multiplier(pt, cfg.low_power_penalty);
         rec.queues.set_credits(rec.credits);
         const double sp[4] = {1.0, 1.0, 1.0, 1.0};  // one ConYard in AI-1 — no

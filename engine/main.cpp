@@ -4304,32 +4304,6 @@ bool place_player_building(ra2engine::World& world, const BuildingAssets& ba, in
     return false;
 }
 
-// Engineer/Spy Capture [RE: capture.md §D1]: the ProduceCashStartup granted to
-// the NEW owner when a CAOILD-style tech structure is captured FROM neutral.
-// Returns the resolved [CAOILD] ProduceCashStartup for that roster type, 0 for a
-// normal building (every non-tech type resolves 0 at load).
-int building_startup_cash(const BuildingAssets& ba, int type) {
-    if (type < 0 || type >= static_cast<int>(ba.roster.size())) return 0;
-    return ba.roster[type].produce_cash_startup;
-}
-
-// Engineer/Spy Capture [RE: capture.md §D1]: place a neutral (house 2) Tech Oil
-// Derrick at (cx,cy) instant-Idle and arm its periodic income tick (the
-// resolved [CAOILD] ProduceCashAmount/ProduceCashDelay). Returns the building
-// index, or -1 if CAOILD is not in the roster / the cell is off-grid. The
-// startup grant is delivered by World::capture_building on capture-from-neutral,
-// so it is NOT credited here.
-int spawn_neutral_oil_derrick(ra2engine::World& world, const BuildingAssets& ba, int cx, int cy) {
-    const int type = roster_index(ba, "CAOILD");
-    if (type < 0) return -1;
-    const ra2engine::BuildingTypeDef& d = ba.roster[type];
-    const int bi = world.add_building(type, cx, cy, d.fw, d.fh, /*house=*/ra2engine::kNeutralHouse,
-                                      d.strength, d.armor_ix, ba.art[type].buildup_total,
-                                      /*instant=*/true);
-    world.register_tech_income(bi, d.produce_cash_amount, d.produce_cash_delay);
-    return bi;
-}
-
 struct DemoBaseResult {
     std::vector<std::string> witness;  // order-pinned [base] lines
     uint64_t hash = 0;

@@ -1255,6 +1255,61 @@ TEST_CASE("world: add_building blocks passability, death restores it") {
     CHECK_FALSE(w.buildings()[bi].alive);  // tombstoned, never erased
 }
 
+TEST_CASE("world: AI-house power OUTPUT is zeroed by blackout at the AI production "
+          "site [RE: capture.md §B2]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World w(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+
+    // A walkable 2x2 for the enemy power plant.
+    int bx = -1, by = -1;
+    for (int dy = 0; dy < 12 && bx < 0; ++dy)
+        for (int dx = 0; dx < 12 && bx < 0; ++dx) {
+            const int x = c->x + dx, y = c->y + dy;
+            if (w.walkable(x, y) && w.walkable(x + 1, y) && w.walkable(x, y + 1) &&
+                w.walkable(x + 1, y + 1)) {
+                bx = x;
+                by = y;
+            }
+        }
+    REQUIRE(bx >= 0);
+
+    // Roster with one +200-output power plant type -- exactly the shape of the
+    // roster the AI site passes to power_totals(buildings(), roster, h).
+    std::vector<ra2engine::BuildingTypeDef> roster(1);
+    roster[0].power = 200;
+
+    // Enemy/AI house 1 owns the plant (instant -> Idle -> counted by power_totals).
+    const int bi = w.add_building(/*type*/ 0, bx, by, /*fw*/ 2, /*fh*/ 2, /*house*/ 1,
+                                  /*strength*/ 100, /*armor_ix*/ 0, /*buildup_total*/ 0.0,
+                                  /*instant*/ true);
+    REQUIRE(bi >= 0);
+
+    // Timer 0 -> the AI site's apply_blackout is IDENTITY: full output.
+    CHECK_FALSE(w.house_blacked_out(1));
+    const ra2engine::PowerTotals normal = ra2engine::apply_blackout(
+        ra2engine::power_totals(w.buildings(), roster, 1), w.house_blacked_out(1));
+    CHECK(normal.output == 200);
+
+    // A house-0 spy infiltrates the enemy plant -> blackout_frames[1] armed.
+    REQUIRE(w.infiltrate_building(bi, /*spy_house*/ 0,
+                                  ra2engine::World::InfiltratePurpose::PowerPlant,
+                                  /*steal_pct*/ 0.5, /*blackout*/ 1000));
+    CHECK(w.blackout_frames(1) == 1000);
+    CHECK(w.house_blacked_out(1));
+
+    // Now the AI site's apply_blackout forces the ENEMY's power OUTPUT to 0
+    // (its production + defenses go offline); drain is unaffected.
+    const ra2engine::PowerTotals blacked = ra2engine::apply_blackout(
+        ra2engine::power_totals(w.buildings(), roster, 1), w.house_blacked_out(1));
+    CHECK(blacked.output == 0);
+}
+
 TEST_CASE("world: order_attack_building sets exclusive target") {
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
