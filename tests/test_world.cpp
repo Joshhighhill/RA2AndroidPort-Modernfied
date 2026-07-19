@@ -3262,3 +3262,43 @@ TEST_CASE("World: a ground unit's A* is byte-identical with and without a naval 
         CHECK(a[i].y == b[i].y);                 // identical ground path either way
     }
 }
+
+TEST_CASE("World: a naval unit approaches over water and kills a naval target (FlakTrackGun)") {
+    ra2engine::World world = load_real_map_w();
+    using ra2assets::LandType;
+    const int gw = world.grid_w(), gh = world.grid_h();
+    // Water corridor along a MATERIALIZED interior row: the mapsmd03 diamond's
+    // passable span at row 50 is x in [54,152], so a corridor at x=56..96 sits
+    // solidly inside it (set_water_terrain keeps only Water-land-type AND
+    // passable_ cells) [RE-GATE APPLIED: naval.md §1; matches the Task-4 naval
+    // path tests' rows 50/51, x=60..90 region].
+    std::vector<LandType> lt(static_cast<size_t>(gw) * gh, LandType::Clear);
+    for (int x = 56; x <= 96; ++x) lt[static_cast<size_t>(50) * gw + x] = LandType::Water;
+    world.set_water_terrain(lt);
+
+    ra2engine::UnitCombat atk = hyd_stats();
+    atk.damage = 25;                             // FlakTrackGun Damage
+    atk.rof = 25;                                // FlakTrackGun ROF
+    atk.range = 5.0;                             // FlakTrackGun Range (cells)
+    atk.verses = {100, 100, 100, 100, 100};      // full damage vs the target armor
+    world.add_combat_unit(60, 50, /*house=*/0, atk);          // idx 0 attacker (naval)
+    ra2engine::UnitCombat tgt = hyd_stats();
+    tgt.strength = 100;                          // dies in a few 25-dmg hits
+    ra2engine::Unit& victim = world.add_combat_unit(92, 50, /*house=*/1, tgt);  // idx 1 (naval)
+    victim.hp = victim.max_hp = 100;
+
+    world.clear_selection();
+    world.units()[0].selected = true;
+    world.order_attack(1);                       // attack the hostile ship
+    const double dt = 1.0 / 15.0;
+    bool died = false;
+    for (int f = 0; f < 6000 && !died; ++f) {
+        world.step(dt);
+        if (!world.units()[1].alive || world.units()[1].die_time >= 0.0) died = true;
+    }
+    CHECK(died);                                 // approached over water + fired to a kill
+    CHECK(world.units()[0].alive);              // attacker survived
+    // The attacker moved along the water corridor toward the target.
+    CHECK(world.units()[0].cell_x > 60);
+    CHECK(world.units()[0].cell_y == 50);        // stayed on the water row
+}

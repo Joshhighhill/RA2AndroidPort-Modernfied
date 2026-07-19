@@ -2038,6 +2038,20 @@ void World::step(double dt) {
             order_unit_move(r.unit, r.goal_x, r.goal_y);
             continue;
         }
+        // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§4]: an approach request for a
+        // naval unit routes straight to a WATER A* path via order_unit_move's
+        // grid_for(Water) selection (Task 4) -- bypassing the assign_formation
+        // firing-cell batching, which paths over the LAND grid (passable_) and
+        // would never find a water firing cell. The ONE naval-aware branch in
+        // the MoveRequest dispatch, mirroring CB-2's aircraft branch above;
+        // provably not taken in any existing demo (is_naval=false). CONFIRMED:
+        // [HYD] sets no NavalTargeting/LandTargeting/CanPassiveAquire keys, so it
+        // auto-acquires both land and naval targets by the ordinary Verses>0 rule
+        // (no valid_target change -- a naval unit IS a valid target).
+        if (u.is_naval) {
+            order_unit_move(r.unit, r.goal_x, r.goal_y);
+            continue;
+        }
         if (r.approach)
             approach_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
         else
@@ -2394,11 +2408,13 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 const Cellxy goal = u.path.back();
                 // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§3]: re-path over the
                 // unit's domain grid -- Land (every existing unit) uses `passable`
-                // byte-identically; a naval unit uses `water_passable`. The
-                // per-unit selection is provably Land for all existing units.
-                // CONFIRMED: one occ_ cell + shared FootClass repath (§1/§3).
+                // byte-identically; Water uses `water_passable`. Keyed off
+                // movement_domain so ALL THREE A* sites (order_unit_move, this
+                // re-path, and the combat-approach naval branch) select on the
+                // SAME field; inert today (is_naval == Water-domain). CONFIRMED:
+                // one occ_ cell + shared FootClass repath (§1/§3).
                 const std::vector<std::uint8_t>& g =
-                    u.is_naval ? water_passable : passable;
+                    u.movement_domain == MovementDomain::Water ? water_passable : passable;
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
                 std::vector<Cellxy> np = find_path(p2, w, h, {u.cell_x, u.cell_y}, goal);
