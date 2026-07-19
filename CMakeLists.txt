@@ -185,6 +185,12 @@ target_sources(ra2assets_tests PRIVATE tests/test_ai_team.cpp engine/ai_team.cpp
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as ai_team.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_ai_trigger.cpp engine/ai_trigger.cpp)
+# superweapon.cpp is pure C++17 (no SDL/World/RNG): the CB-4 SuperweaponType enum
+# (recovered [SuperWeaponTypes] roster) + the per-house recharge-timer lifecycle
+# (tick/is_ready/on_fired/charge_fraction) + the id<->Type mapping helpers
+# (docs/re/superweapon.md §1/§4). Header-inline lifecycle; the .cpp holds only the
+# enum<->id map, exercised by test_superweapon.cpp.
+target_sources(ra2assets_tests PRIVATE tests/test_superweapon.cpp engine/superweapon.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
