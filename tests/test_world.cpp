@@ -3717,3 +3717,51 @@ TEST_CASE("World infiltrate: radar/lab is inert and invalid targets no-op [RE: c
     CHECK_FALSE(world.infiltrate_building(-1, 0, P::Refinery, 0.5, 1000));
     CHECK_FALSE(world.infiltrate_building(999, 0, P::Refinery, 0.5, 1000));
 }
+
+TEST_CASE("World veteran: rank-1 spawn scales firepower + HP; rank 0 identical [RE: capture.md §B5]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* sc = ra2engine::pick_start_cell(map);
+    REQUIRE(sc != nullptr);
+    ra2engine::UnitCombat c;
+    c.image = "E1"; c.strength = 100; c.armor = "none"; c.damage = 40;
+    ra2engine::Unit& base = world.add_combat_unit(sc->x, sc->y, /*house=*/0, c);
+    CHECK(base.w_damage == 40);
+    CHECK(base.max_hp == 100);
+    CHECK(base.hp == 100);
+    CHECK(base.veteran_rank == 0);
+    c.veteran_rank = 1;
+    ra2engine::Unit& vet = world.add_combat_unit(sc->x + 1, sc->y, /*house=*/0, c);
+    CHECK(vet.veteran_rank == 1);
+    CHECK(vet.w_damage == 44);    // 40 * 1.1 (VeteranCombat), round to nearest
+    CHECK(vet.max_hp == 150);     // 100 * 1.5 (VeteranArmor)
+    CHECK(vet.hp == 150);
+}
+
+TEST_CASE("World veteran: a spied factory makes produced units veteran [RE: capture.md §B5]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* sc = ra2engine::pick_start_cell(map);
+    REQUIRE(sc != nullptr);
+    // House 0's own launchable factory.
+    const int fac = world.add_building(/*type=*/0, sc->x, sc->y, /*fw=*/1, /*fh=*/1, /*house=*/0,
+                                       /*strength=*/100, /*armor_ix=*/0, /*buildup=*/0.0,
+                                       /*instant=*/true);
+    REQUIRE(fac >= 0);
+    // Enemy (house 1) factory that house 0's spy infiltrates -> produced_veteran_[0].
+    const int enemy_fac = world.add_building(0, 40, 40, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    REQUIRE(enemy_fac >= 0);
+    using P = ra2engine::World::InfiltratePurpose;
+    CHECK(world.infiltrate_building(enemy_fac, /*spy_house=*/0, P::Factory, 0.5, 1000));
+    CHECK(world.produced_veteran(0));
+    ra2engine::BuildingTypeDef fdef; fdef.id = "GAWEAP"; fdef.fw = fdef.fh = 1;
+    ra2engine::UnitCombat c;
+    c.image = "E1"; c.strength = 100; c.armor = "none"; c.damage = 40;
+    const int ui = world.launch_unit(fac, fdef, c);
+    REQUIRE(ui >= 0);
+    CHECK(world.units()[ui].veteran_rank == 1);   // produced as a veteran
+    CHECK(world.units()[ui].w_damage == 44);      // 40 * 1.1 (VeteranCombat)
+    CHECK(world.units()[ui].max_hp == 150);       // 100 * 1.5 (VeteranArmor)
+}

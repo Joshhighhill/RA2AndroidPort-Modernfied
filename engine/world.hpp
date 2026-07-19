@@ -232,6 +232,12 @@ struct Unit {
     int infiltrate_purpose = 0;         // resolved InfiltratePurpose as int (0=None)
     double infiltrate_steal_pct = 0.5;  // SpyMoneyStealPercent (arrives pre-resolved)
     int infiltrate_blackout = 1000;     // SpyPowerBlackout (arrives pre-resolved)
+
+    // --- Engineer/Spy Capture phase [RE: capture.md §B5] --------------------
+    // Instance veteran rank (copied from UnitCombat at add_combat_unit). Inert
+    // default (0) -> NOT read by world_hash (cell/hp/alive only); hashed only by
+    // capture_hash. Recorded so the gate can fold a produced unit's rank.
+    int veteran_rank = 0;
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per

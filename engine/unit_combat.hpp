@@ -80,6 +80,12 @@ struct UnitCombat {
     // is a voxel vehicle, is_vehicle=true); naval adds only the domain flags.
     bool is_naval = false;                                // naval-locomotor type (CLSID)
     MovementDomain movement_domain = MovementDomain::Land;  // Water for a naval unit
+
+    // --- Engineer/Spy Capture phase [RE-GATE APPLIED: capture.md §B5] ---
+    // Veteran rank: 0 = none (byte-identical), 1 = veteran. rank>0 scales
+    // firepower + HP at spawn (add_combat_unit) via veteran_firepower/veteran_hp;
+    // combat.cpp is UNTOUCHED (a veteran just spawns with higher w_damage + hp).
+    int veteran_rank = 0;
 };
 
 }  // namespace ra2engine

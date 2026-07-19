@@ -338,6 +338,15 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.hp = u.max_hp = c.strength;
     u.armor_ix = armor_index(c.armor);
     u.w_damage = c.damage;
+    // Engineer/Spy Capture [RE-GATE APPLIED: capture.md §B5]: a veteran unit
+    // spawns with scaled firepower + HP. rank 0 (every existing spawn) leaves
+    // w_damage/hp/max_hp EXACTLY as resolved above -> byte-identical.
+    u.veteran_rank = c.veteran_rank;
+    if (c.veteran_rank > 0) {
+        u.w_damage = veteran_firepower(u.w_damage, c.veteran_rank);
+        u.max_hp = veteran_hp(u.max_hp, c.veteran_rank);
+        u.hp = u.max_hp;
+    }
     u.w_rof = c.rof;
     u.w_range = c.range;
     u.w_verses = c.verses;
@@ -676,7 +685,12 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
     const int house = f.house;
     const bool has_rally = f.has_rally;
     const int rx = f.rally_x, ry = f.rally_y;
-    add_combat_unit(ex.x, ex.y, house, c);
+    // Engineer/Spy Capture [RE: capture.md §B5]: if this house's factory was
+    // spied, produced units spawn as veterans. produced_veteran_[house] is false
+    // in every existing demo -> cv.veteran_rank stays 0 -> byte-identical.
+    UnitCombat cv = c;
+    cv.veteran_rank = produced_veteran(house) ? 1 : 0;
+    add_combat_unit(ex.x, ex.y, house, cv);
     const int ui = static_cast<int>(units_.size()) - 1;
     int gx = rx, gy = ry;
     if (!has_rally) {
