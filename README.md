@@ -942,6 +942,68 @@ hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
   `Unit` are untouched; no existing demo grants a SW, so no existing hash
   changes [`superweapon.md` §5; spec §8].
 
+## CB-5 — Tech-Tree / Prerequisites
+
+The final content-breadth phase completes the **tech-tree / prerequisite
+progression**: buildability gated by the house's owned buildings through the
+real RA2 prerequisite system — including the group tokens (`POWER`/`FACTORY`/
+`BARRACKS`/`RADAR`/`TECH`) that any building in the category satisfies — with a
+**tech building (Battle Lab `GATECH`)** unlocking an advanced unit (**Prism Tank
+`SREF`**, `Prerequisite=GAWEAP,GATECH`, `TechLevel=8`). The buildability
+predicate (`prerequisites_met`/`can_start`/`can_start_unit` in
+`engine/production.cpp`) already existed and already handled group tokens from
+the Unit Production phase — CB-5 REUSES it verbatim (predicate bodies untouched)
+and only (a) full-parses the player unit roster's real `Prerequisite=` via
+`rules.prerequisite(id)`, (b) appends `GATECH` to the building roster + `SREF` to
+the player unit roster (both art-guarded), (c) extends the sidebar cameo
+disabled-shade to unit tabs via `can_start_unit` (render-only), and (d) adds the
+`--demo-techtree` gate.
+
+Byte-identity discipline (this phase touches the production/buildability path, so
+the strategy is load-bearing): the player-unit full-parse resolves the real
+prereqs — `[E1]=GAPILE`, `[GGI]=GAPILE`, `[MTNK]=GAWEAP`, `[FV]=GAWEAP`, all
+single plain building tokens (no group token) — **identically** to the retired
+hardcoded tokens, and `--demo-prod` bypasses `can_start_unit` via a direct
+`start_unit` call anyway, so `prod_hash` is inert to player-unit data; the
+**Soviet AI unit roster is kept UNCHANGED** (the `APOC→NAWEAP` proxy — full-
+parsing it would make APOC require the unsatisfiable `NATECH` and move
+`ai_team_hash`); `GATECH` is an Allied `GA*` id absent from the Soviet AI catalog
+(`make_ai_config` names `NA*`), so `ai_base_hash` is safe; the roster grows
+`18→19` (content-only — the `--demo-base` `roster=` witness grows but the
+instance-based `base_hash` is unchanged); `world_hash` is untouched and the new
+tech-tree state is hashed only by `techtree_hash`. All twelve legacy gates were
+re-verified byte-identical at every buildability-touching commit and again at
+this finalize. Calibration authority: `docs/re/techtree.md` (the prereq
+mechanism `FUN_00505180` + `[General] Prerequisite<Group>` membership + the
+recovered `GATECH`/`SREF`/player-unit values; no RNG).
+
+Deviations we take for CB-5 (adjudicated divergences from the recovered
+`techtree.md` ground truth — not bugs, do not "fix" in review):
+- **`GATECH` placed DIRECTLY in the demo** — `GATECH`'s own prerequisite is
+  radar-gated (`GAWEAP,RADAR,GACNST`), but `--demo-techtree` places it via the
+  `place_player_building`/`spawn_base` base-build path, which bypasses the
+  buildability predicate (the same path `--demo-base`/`--demo-prod` use), so the
+  demo base needs no radar. The `SREF` proof depends only on `GATECH` being
+  OWNED so the `TECH`/specific-building prereq is satisfied, not on how it was
+  placed [`techtree.md` §4].
+- **Art is art-guarded, not required** — `GATECH`/`SREF` load through the normal
+  art path (which may resolve via the NewTheater generic-art munge); on this
+  install both resolve. If an install were missing the Allied SHP set, `GATECH`
+  would render as the placeholder (buildings are never dropped from the roster on
+  art failure) and `--demo-techtree` would synthesize an art-independent `SREF`
+  probe def — the gate proves buildability art-independent either way
+  [`techtree.md` §5; spec §6].
+- **Prereq gating only** — engineer/spy CAPTURE (building-ownership transfer),
+  building UPGRADES (`PowersUp`/`Upgrades=`), neutral tech-structure capture,
+  `BuildLimit`/one-of restrictions, and negative (`Prerequisite.Negative`)
+  prereqs are RE-documented but carry-forwards [spec §Out].
+- **AI does not consume the new tech unit** — the Soviet AI roster stays on the
+  proxy; wiring the AI to build `GATECH`/`SREF` is a carry-forward [spec §Out].
+
+**This completes the content-breadth arc** (CB-1 Transports → CB-2 Aircraft →
+CB-3 Naval → CB-4 Superweapons → CB-5 Tech-Tree). Thirteen permanent
+byte-identity gates now guard the engine.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -1126,6 +1188,19 @@ Headless/verification CLI modes (render one or more frames and exit):
   (`superweapon_hash`). Runs twice (rendered + headless); both runs must produce
   identical witness lines and hash; wedge guards exit non-zero unless the SW
   reached READY AND fired AND >=1 in-radius enemy was killed.
+- `ra2engine.exe --demo-techtree` — the CB-5 Tech-Tree integration gate: builds a
+  fresh Allied base (`GACNST`/`GAPOWR`/`GAPILE`/`GAWEAP`, no radar) and resolves
+  the probe unit roster (synthetic-`SREF` fallback if art is dropped), then folds
+  the buildable-set snapshot (`can_start_unit` for `MTNK`/`SREF`, `can_start` for
+  `GATECH`/`GAWEAP`) at BASELINE — where `SREF` is UNBUILDABLE (`GATECH` unmet)
+  and `MTNK` is buildable — places the Battle Lab `GATECH` DIRECTLY (bypassing its
+  own radar-gated prerequisite) so the `TECH` group is satisfied, and re-folds at
+  UNLOCK, where `SREF` is now BUILDABLE — then hashes the world/building state +
+  the buildable-set at three checkpoints (`techtree_hash`). Runs twice (rendered +
+  headless) and both runs must produce identical witness lines and hash (no pinned
+  literal — a compute-and-self-compare); wedge guards exit non-zero unless `SREF`
+  is UNBUILDABLE before `GATECH` AND BUILDABLE after AND `MTNK` is buildable at
+  baseline.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -1133,21 +1208,21 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These twelve headless demos are byte-identity regression gates: any change to
+These thirteen headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
-again with each subsequent roster addition — `roster=18` as of the AI-1 phase
-— with the gated hash unaffected each time). The first ELEVEN are the legacy
-gates re-verified unchanged by every subsequent phase; `--demo-superweapon` is
-the new CB-4 gate.
+again with each subsequent roster addition — `roster=19` as of the CB-5 phase
+(the Battle Lab `GATECH`) — with the gated hash unaffected each time). The first
+TWELVE are the legacy gates re-verified unchanged by every subsequent phase;
+`--demo-techtree` is the new CB-5 gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
 | `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
 | `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
-| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=18` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
+| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=19` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
@@ -1157,6 +1232,7 @@ the new CB-4 gate.
 | `--demo-aircraft` | `aircraft_hash=a69642564cf64773` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
 | `--demo-naval` | `naval_hash=6aee2c82bc024e86` | `deterministic=yes`; variant=HYD (Sea Scorpion, `Speed=8`, `ROT=6`, `FlakTrackGun` Damage=25/ROF=25/Range=5, Warhead `FlakTWH` CellSpread=1.0 on this install; DRED/DEST fallback documented if art regresses); sails across the `mapsmd03` water region (468 Water cells, 252-cell main body, bbox [71,11]–[95,40], runtime-classified from the theater `[General]` tile-sets) via A* on the water grid (every path cell Water, folded into the hash), refuses a land-cell order (empty/stay-put — the water/land inverse), approaches over water and fires FlakTrackGun to a kill, holds station on resume; voxel ship at altitude 0 (existing draw path); wedge guards armed (`docs/re/naval.md`) |
 | `--demo-superweapon` | `superweapon_hash=189496664f5eca68` | `deterministic=yes`; grants the Soviet Nuclear Missile (`[NukeSpecial]` `Type=MultiMissile`, `RechargeTime` -> recharge_secs, `[NukePayload]` Damage=600, `[NUKE]` CellSpread=10/PercentAtMax=.02/Verses); charges to READY, fires at the target cell, detonates via the REUSED `apply_spread_damage` (enemies-only, instant), spares the firing house, leaves out-of-radius units untouched, re-charges from 0; NukeIcon cameo + gclock2 recharge clock (art-guarded, placeholder if absent); wedge guards armed (`docs/re/superweapon.md`) |
+| `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=19 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
