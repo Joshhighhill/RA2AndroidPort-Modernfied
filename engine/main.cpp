@@ -2093,13 +2093,18 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // down the whole frame.
     auto draw_one_unit = [&](int idx) {
         const ra2engine::Unit& u = us[idx];
-        if (const VehicleAssets* va = va_for_image(vlist, u.image)) {
+        // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
+        // SHP for its disguise type (draw_unit then blits it in the disguised
+        // house's palette). When NOT disguised draw_image == u.image -> this is
+        // byte-identical to the pre-Task-7 lookup.
+        const std::string& draw_image = u.disguised ? u.disguised_as_type : u.image;
+        if (const VehicleAssets* va = va_for_image(vlist, draw_image)) {
             draw_vehicle_unit(ren, tc, u, *va, cam, W, H);
             return;
         }
-        auto it = ua.shps.find(u.image);
+        auto it = ua.shps.find(draw_image);
         if (it == ua.shps.end()) {
-            std::cerr << "[render] no SHP loaded for image=" << u.image << " (unit " << idx
+            std::cerr << "[render] no SHP loaded for image=" << draw_image << " (unit " << idx
                       << "); skipping\n";
             return;
         }
@@ -2973,6 +2978,72 @@ int run_interactive(bool no_audio) {
                     }
         } catch (const std::exception& ex) {
             std::cerr << "[engineer] ENGINEER art unavailable, skipping spawn (" << ex.what() << ")\n";
+        }
+    }
+
+    // Engineer/Spy Capture phase [RE: capture.md §C]: INTERACTIVE-ONLY -- field a
+    // house-0 SPY (renders PERMA-disguised as its own side's basic infantry,
+    // §C1/§C2 -- the ONLY defeat is an enemy DetectDisguise dog, §C4/§C6: no
+    // reveal-on-attack) and a house-0 DOG (DetectDisguise=yes -> reveals enemy
+    // spies). FULLY ART-GUARDED like the engineer; no demo fields either, and
+    // set_disguise arms capture_any_ only on this interactive path, so every gate
+    // stays byte-identical (capture_any_ false in all demos).
+    if (ba.ok) {
+        // AlliedDisguise=E1 / SovietDisguise=E2 [RE: capture.md §C2]: the spy's
+        // PermaDisguise default is its OWN side's basic infantry; resolve that
+        // unit's SHP image (E1->GI, E2->CONS -- already loaded) so the render swap
+        // has art.
+        auto side_default_disguise = [&](int house) -> std::string {
+            return resolve_combat_unit(rules, house == 1 ? "E2" : "E1").combat.image;
+        };
+        auto place_near_start = [&](const ra2engine::UnitCombat& combat, int house) -> int {
+            const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
+            for (int r = 1; sc && r <= 6; ++r)
+                for (int dy = -r; dy <= r; ++dy)
+                    for (int dx = -r; dx <= r; ++dx) {
+                        if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                        const int x = sc->x + dx, y = sc->y + dy;
+                        if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                            world.add_combat_unit(x, y, house, combat);
+                            return (int)world.units().size() - 1;
+                        }
+                    }
+            return -1;
+        };
+        // SPY (house 0) -- spawns PermaDisguised as its own side's basic infantry.
+        try {
+            MixFile conquer = ra2.open_nested("conquer.mix");
+            ResolvedUnit spy = resolve_combat_unit(rules, "SPY");
+            if (!ua.shps.count(spy.combat.image)) {
+                ua.shps.emplace(spy.combat.image, load_unit_shp(conquer, spy.combat.image));
+                ua.anims.emplace(spy.combat.image, anim_from_art(art, spy.combat.image));
+            }
+            world.set_anim(spy.combat.image,
+                           ua.anims.count(spy.combat.image) ? ua.anims.at(spy.combat.image)
+                                                            : ra2engine::default_anim());
+            const std::string dimg = side_default_disguise(0);   // must be loaded to render
+            if (ua.shps.count(dimg)) {
+                const int si = place_near_start(spy.combat, /*house=*/0);
+                if (si >= 0) world.set_disguise(si, dimg, /*as_house=*/0);
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[spy] SPY art unavailable, skipping spawn (" << ex.what() << ")\n";
+        }
+        // DOG (house 0) -- DetectDisguise detector.
+        try {
+            MixFile conquer = ra2.open_nested("conquer.mix");
+            ResolvedUnit dog = resolve_combat_unit(rules, "ADOG");
+            if (!ua.shps.count(dog.combat.image)) {
+                ua.shps.emplace(dog.combat.image, load_unit_shp(conquer, dog.combat.image));
+                ua.anims.emplace(dog.combat.image, anim_from_art(art, dog.combat.image));
+            }
+            world.set_anim(dog.combat.image,
+                           ua.anims.count(dog.combat.image) ? ua.anims.at(dog.combat.image)
+                                                            : ra2engine::default_anim());
+            const int di = place_near_start(dog.combat, /*house=*/0);
+            if (di >= 0) world.units()[di].detect_disguise = true;
+        } catch (const std::exception& ex) {
+            std::cerr << "[dog] ADOG art unavailable, skipping spawn (" << ex.what() << ")\n";
         }
     }
 

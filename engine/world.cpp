@@ -1428,6 +1428,17 @@ void World::register_tech_income(int b_idx, int amount, int delay) {
     capture_any_ = true;
 }
 
+void World::set_disguise(int unit_idx, const std::string& as_type, int as_house) {
+    if (unit_idx < 0 || unit_idx >= (int)units_.size()) return;
+    Unit& u = units_[unit_idx];
+    u.disguised = true; u.disguised_as_type = as_type; u.disguised_as_house = as_house;
+    capture_any_ = true;                         // arm the detection firewall
+}
+void World::clear_disguise(int unit_idx) {
+    if (unit_idx < 0 || unit_idx >= (int)units_.size()) return;
+    units_[unit_idx].disguised = false;
+}
+
 void World::step_tech_structures(double dt) {
     if (!capture_any_) return;                 // firewall (spec §8) -- no-op elsewhere
     // Advance the logic-frame counter deterministically: one frame per dt at
@@ -1450,7 +1461,20 @@ void World::step_tech_structures(double dt) {
     // 2) Blackout decay (index 2 inert -- never armed).
     for (int h = 0; h < 3; ++h)
         if (blackout_frames_[h] > 0) blackout_frames_[h] = std::max(0, blackout_frames_[h] - frames);
-    // 3) Disguise detection -- added in Task 7.
+    // 3) Disguise detection [RE: capture.md §C4 CONFIRMED - DetectDisguise sees
+    //    through PermaDisguise; deterministic, no RNG]. A disguised unit within
+    //    kDetectDisguiseRange cells of an alive, non-dying ENEMY detector is
+    //    revealed (disguise cleared). Ascending index order. NO reveal-on-attack
+    //    -- the spy is PermaDisguise-exempt (§C6); a dog is the only defeat.
+    for (Unit& d : units_) {
+        if (!d.alive || d.die_time >= 0.0 || !d.detect_disguise) continue;
+        for (Unit& s : units_) {
+            if (!s.disguised || !s.alive || s.house == d.house) continue;
+            const double dx = s.fx - d.fx, dy = s.fy - d.fy;
+            if (dx * dx + dy * dy <= kDetectDisguiseRange * kDetectDisguiseRange)
+                s.disguised = false;
+        }
+    }
 }
 
 void World::ai_resync_captured_building(int b_idx, int old_house, int new_house) {

@@ -59,4 +59,10 @@ inline int veteran_hp(int base_hp, int rank) {
     return static_cast<int>(v + 0.5);
 }
 
+// Disguise detection radius [RE-FALLBACK: capture.md §C4 DetectDisguiseRange
+// default]. A disguised unit within this many cells of an alive, non-dying
+// ENEMY DetectDisguise unit (a dog) is revealed (disguise cleared). Deterministic
+// (no RNG -- §C5: dog-vs-PermaDisguise is a flag test, not a roll).
+constexpr double kDetectDisguiseRange = 6.0;  // cells
+
 }  // namespace ra2engine

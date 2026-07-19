@@ -254,12 +254,19 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     // house's unit sharing that image:frame would silently render in the
     // wrong color. pal_for_house is only ever called below, on a cache MISS,
     // so steady-state per-frame cost is unchanged (Task 7).
+    // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit draws as its
+    // disguise type in the disguised house's palette (render-only). When NOT
+    // disguised these equal unit.image/unit.house -> the cache key + palette are
+    // byte-identical to the pre-Task-7 path (the caller already selected the SHP
+    // matching draw_image). No gate renders a disguised unit.
+    const std::string& draw_image = unit.disguised ? unit.disguised_as_type : unit.image;
+    const int draw_house = unit.disguised ? unit.disguised_as_house : unit.house;
     char key[80];
-    std::snprintf(key, sizeof key, "unit:%s:%d:h%d", unit.image.c_str(), unit.frame, unit.house);
+    std::snprintf(key, sizeof key, "unit:%s:%d:h%d", draw_image.c_str(), unit.frame, draw_house);
     SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
     if (!tex) {
         std::vector<uint8_t> idx = shp.decode_indexed(unit.frame);
-        const ra2assets::Palette house_pal = pal_for_house(pal, unit.house);
+        const ra2assets::Palette house_pal = pal_for_house(pal, draw_house);
         tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, house_pal));
     }
     SDL_RenderCopy(renderer, tex, nullptr, &dst);

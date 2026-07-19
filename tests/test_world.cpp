@@ -3765,3 +3765,58 @@ TEST_CASE("World veteran: a spied factory makes produced units veteran [RE: capt
     CHECK(world.units()[ui].w_damage == 44);      // 40 * 1.1 (VeteranCombat)
     CHECK(world.units()[ui].max_hp == 150);       // 100 * 1.5 (VeteranArmor)
 }
+
+TEST_CASE("World disguise: a dog reveals a disguised enemy spy; non-detector does not "
+          "[RE: capture.md §C4]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    ra2engine::UnitCombat spyc = gi_stats();
+    spyc.image = "SPY"; spyc.strength = 100; spyc.armor = "flak";
+    world.add_combat_unit(10, 10, /*house=*/0, spyc);
+    const int spy_i = (int)world.units().size() - 1;
+    world.set_disguise(spy_i, "E2", /*as_house=*/1);
+    CHECK(world.units()[spy_i].disguised);
+    // A non-detector enemy nearby does NOT reveal.
+    ra2engine::UnitCombat gic = gi_stats();
+    gic.image = "E1"; gic.strength = 100; gic.armor = "none";
+    world.add_combat_unit(11, 10, /*house=*/1, gic);
+    const double dt = 1.0 / 15.0;
+    world.step(dt);
+    CHECK(world.units()[spy_i].disguised);             // still disguised
+    // A DOG (detect_disguise) within range reveals.
+    ra2engine::UnitCombat dogc = gi_stats();
+    dogc.image = "DOG"; dogc.strength = 100; dogc.armor = "none";
+    world.add_combat_unit(12, 10, /*house=*/1, dogc);
+    world.units().back().detect_disguise = true;
+    world.step(dt);
+    CHECK_FALSE(world.units()[spy_i].disguised);       // revealed
+}
+
+TEST_CASE("World disguise: spy STAYS disguised on attack; only a DetectDisguise dog reveals it "
+          "[RE: capture.md §C4 REVERSAL]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    ra2engine::UnitCombat spyc = gi_stats();
+    spyc.image = "SPY"; spyc.strength = 100; spyc.armor = "flak";
+    spyc.damage = 10; spyc.range = 5.0; spyc.rof = 10;
+    world.add_combat_unit(10, 10, /*house=*/0, spyc);
+    const int spy_i = (int)world.units().size() - 1;
+    world.set_disguise(spy_i, "E2", 1);                   // sets capture_any_
+    ra2engine::UnitCombat foe = gi_stats();
+    foe.image = "E1"; foe.strength = 100; foe.armor = "none";
+    world.add_combat_unit(12, 10, /*house=*/1, foe);
+    world.clear_selection();
+    world.units()[spy_i].selected = true;
+    world.order_attack((int)world.units().size() - 1);    // spy attacks the foe
+    world.step(1.0 / 15.0);
+    CHECK(world.units()[spy_i].disguised);                // PermaDisguise: attacking does NOT reveal
+    // A DetectDisguise dog within range reveals it (the ONLY defeat).
+    ra2engine::UnitCombat dogc = gi_stats();
+    dogc.image = "DOG"; dogc.strength = 100; dogc.armor = "none";
+    ra2engine::Unit& dog = world.add_combat_unit(11, 10, /*house=*/1, dogc);
+    dog.detect_disguise = true;
+    world.step(1.0 / 15.0);                               // step_tech_structures detection pass
+    CHECK_FALSE(world.units()[spy_i].disguised);          // dog defeats the disguise
+}

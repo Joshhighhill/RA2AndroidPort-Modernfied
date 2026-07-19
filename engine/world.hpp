@@ -238,6 +238,17 @@ struct Unit {
     // default (0) -> NOT read by world_hash (cell/hp/alive only); hashed only by
     // capture_hash. Recorded so the gate can fold a produced unit's rank.
     int veteran_rank = 0;
+
+    // --- Engineer/Spy Capture phase: disguise [RE: capture.md §C] ---
+    // A disguised unit RENDERS as `disguised_as_type` (a SHP image id) in
+    // `disguised_as_house`'s palette; a still-disguised enemy spy is not
+    // auto-acquired by the enemy (treated as friendly). detect_disguise units
+    // (dogs) see through it. ALL inert defaults -> NOT read by world_hash;
+    // hashed only by capture_hash.
+    bool disguised = false;
+    std::string disguised_as_type;   // SHP image id shown while disguised (e.g. "E1")
+    int disguised_as_house = 0;      // palette house shown while disguised
+    bool detect_disguise = false;    // DetectDisguise=yes (dogs) -> reveals spies
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
@@ -833,6 +844,13 @@ public:
     // ProduceCashAmount/ProduceCashDelay. Idempotent per building index; ignores
     // a non-positive amount/delay or a negative b_idx.
     void register_tech_income(int b_idx, int amount, int delay);
+
+    // Set/clear a unit's disguise [RE: capture.md §C1/§C2]. set_disguise opens
+    // capture_any_ (the step_tech_structures detection firewall). Both no-op on
+    // an out-of-range index. clear_disguise leaves the type/house fields alone
+    // (only the flag matters for render/detection).
+    void set_disguise(int unit_idx, const std::string& as_type, int as_house);
+    void clear_disguise(int unit_idx);
     // Read-only Capture state for the gate (§gate) and the power path.
     double house_credits(int house) const {
         return (house >= 0 && house < 3) ? house_credits_[house] : 0.0;
