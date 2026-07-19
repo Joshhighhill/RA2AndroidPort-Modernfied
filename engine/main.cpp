@@ -6736,6 +6736,256 @@ int run_demo_naval() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-superweapon helpers ----------------------------------------------
+
+// FNV fold of the superweapon-phase state [spec §7]: every unit's (cell_x,
+// cell_y, alive, hp) PLUS the firing house's SW (quantized timer, ready, type)
+// and the target cell (cx, cy). The timer is folded as an integer frame count
+// (round(timer*15)) to stay bit-stable across the dt accumulation. Folded at
+// the demo's four fixed checkpoints (post-charge, post-fire, post-detonate,
+// end). A NEW accumulator; world_hash and every prior *_hash UNTOUCHED.
+uint64_t superweapon_fold(uint64_t h, const ra2engine::World& world, int house,
+                          int cx, int cy) {
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+    }
+    if (const ra2engine::Superweapon* sw = world.sw_state(house)) {
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(sw->timer * 15.0)));  // quantized frames
+        h = fnv_mix(h, static_cast<uint64_t>(sw->ready ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(static_cast<int>(sw->type)));
+    }
+    h = fnv_mix(h, static_cast<uint64_t>(cx));
+    h = fnv_mix(h, static_cast<uint64_t>(cy));
+    return h;
+}
+
+struct DemoSuperweaponResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the superweapon demo [spec §7] (headless or rendered --
+// bit-identical): grant house 0 the Nuclear Missile (resolved params), spawn a
+// tight enemy cluster (house 1) within the nuke radius + one OWN (house 0) unit
+// in-radius (to prove enemies-only sparing) + one FAR enemy out-of-radius (to
+// prove out-of-radius is untouched), all scripted (no player input):
+//   1. CHARGE: step until the SW reaches READY (the real recharge countdown).
+//   2. FIRE: fire_superweapon(0, cx, cy) returns true; the timer resets.
+//   3. DETONATE: the in-radius enemies are damaged/killed; own spared, far
+//      untouched.
+//   4. RECHARGE: a fixed window; the SW begins re-charging from 0.
+// superweapon_hash = FNV folded at the four checkpoints. Wedge guards: reached
+// READY AND fire returned true AND >=1 in-radius kill, else ok=false (exit 1 --
+// the gate can never pass vacuously). The SW cameo is sidebar-only, so the gate
+// hashes pure sim state (art-independent).
+DemoSuperweaponResult simulate_superweapon(Assets& a, UnitAssets& ua,
+                                           const std::vector<const VehicleAssets*>& vlist,
+                                           bool render, SDL_Renderer* ren,
+                                           ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                                           int W, int H, const std::string& start_png,
+                                           const std::string& end_png,
+                                           const ra2assets::Rules& rules) {
+    DemoSuperweaponResult r;
+    ra2engine::World world = build_world(a, ua, 0);
+
+    // A hand-built target stat block (the sim is exemplar-art-independent -- the
+    // gate hashes pure state, not art; targets render if E1 anim is available).
+    auto target_stats = []() {
+        ra2engine::UnitCombat c; c.image = "E1"; c.strength = 100; c.armor = "none"; return c;
+    };
+    if (ua.anims.count("E1")) world.set_anim("E1", ua.anims.at("E1"));
+
+    // Target cell + an enemy cluster within the nuke radius (CellSpread=10), one
+    // OWN (house 0) unit in-radius (to prove enemies-only sparing), and one FAR
+    // enemy well outside the radius (to prove out-of-radius is untouched).
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    const int cx = pc ? pc->x + 6 : 30;
+    const int cy = pc ? pc->y + 6 : 30;
+    std::vector<int> in_radius;                       // enemy indices expected to die
+    for (int d = 0; d < 6; ++d) {
+        const int ex = cx + (d % 3) - 1;              // a tight 3-wide cluster on the cell
+        const int ey = cy + (d / 3) - 1;
+        ra2engine::Unit& e = world.add_combat_unit(ex, ey, /*house=*/1, target_stats());
+        (void)e;
+        in_radius.push_back((int)world.units().size() - 1);
+    }
+    world.add_combat_unit(cx + 2, cy, /*house=*/0, target_stats());       // OWN unit in-radius
+    const int own_idx = (int)world.units().size() - 1;
+    world.add_combat_unit(cx, cy + 40, /*house=*/1, target_stats());      // FAR enemy (out of radius)
+    const int far_idx = (int)world.units().size() - 1;
+    const int own_hp0 = world.units()[own_idx].hp;
+    const int far_hp0 = world.units()[far_idx].hp;
+
+    // Grant house 0 the Nuclear Missile with the recovered params. The framework
+    // charges the REAL recharge value; resolve_superweapon supplied it.
+    SuperweaponParams p = resolve_superweapon(rules);
+    std::array<int, 11> verses = p.verses;
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, p.recharge_secs,
+                            p.damage, p.cell_spread, p.percent_at_max, verses);
+    {
+        char b[192];
+        std::snprintf(b, sizeof b,
+                      "[sw] granted recharge_secs=%.1f damage=%d cell_spread=%.1f pmax=%.3f "
+                      "target=(%d,%d) enemies=%d", p.recharge_secs, p.damage, p.cell_spread,
+                      p.percent_at_max, cx, cy, (int)in_radius.size());
+        r.witness.emplace_back(b);
+    }
+
+    const double dt = 1.0 / 15.0;
+    long frame = 0;
+    uint64_t h = 0xcbf29ce484222325ull;               // FNV-1a offset basis
+    auto step_one = [&]() {
+        world.step(dt);
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+        }
+    };
+    if (render) { step_one(); capture_png(ren, start_png, W, H); }
+
+    // 1) CHARGE: step until READY (the real recharge; RechargeTime*60*15 frames
+    //    is a headless-fast countdown -- the --demo-naval 9000-frame precedent).
+    bool reached_ready = false;
+    const long charge_cap = (long)std::llround(p.recharge_secs * 15.0) + 100;
+    while (frame < charge_cap && !world.sw_ready(0)) step_one();
+    reached_ready = world.sw_ready(0);
+    h = superweapon_fold(h, world, 0, cx, cy);         // checkpoint 1: post-charge
+    {
+        char b[144];
+        std::snprintf(b, sizeof b, "[sw] charging recharge_secs=%.1f frames_to_ready=%ld ready=%s",
+                      p.recharge_secs, frame, reached_ready ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // 2) FIRE at the target cell; assert it fires + resets.
+    const bool fired = world.fire_superweapon(0, cx, cy);
+    const bool reset_ok = !world.sw_ready(0) && world.sw_charge_fraction(0) < 1.0;
+    h = superweapon_fold(h, world, 0, cx, cy);         // checkpoint 2: post-fire
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[sw] fired target=(%d,%d) returned=%s reset_timer=%s",
+                      cx, cy, fired ? "yes" : "no", reset_ok ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // 3) DETONATE: count the in-radius kills + confirm own spared / far untouched.
+    int killed = 0, damaged = 0;
+    for (int idx : in_radius) {
+        const ra2engine::Unit& u = world.units()[idx];
+        if (u.hp <= 0 || !u.alive) ++killed;
+        else if (u.hp < 100) ++damaged;
+    }
+    const bool own_spared = world.units()[own_idx].hp == own_hp0;
+    const bool far_untouched = world.units()[far_idx].hp == far_hp0;
+    h = superweapon_fold(h, world, 0, cx, cy);         // checkpoint 3: post-detonate
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[sw] detonate killed=%d damaged=%d in_radius=%d own_spared=%s far_untouched=%s",
+                      killed, damaged, (int)in_radius.size(), own_spared ? "yes" : "no",
+                      far_untouched ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // 4) RECHARGE: a fixed window; the SW begins re-charging from 0.
+    const long resume_until = frame + 150;
+    while (frame < resume_until) step_one();
+    h = superweapon_fold(h, world, 0, cx, cy);         // checkpoint 4: end
+    r.hash = h;
+    {
+        char b[128];
+        std::snprintf(b, sizeof b, "[sw] recharging charge_fraction=%.3f frame=%ld",
+                      world.sw_charge_fraction(0), frame);
+        r.witness.emplace_back(b);
+    }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[sw] superweapon_hash=%016llx",
+                  static_cast<unsigned long long>(r.hash));
+    r.witness.emplace_back(hb);
+
+    // Wedge guards [spec §7]: the gate can never pass vacuously -- the SW must
+    // reach READY AND fire_superweapon must return true AND >=1 in-radius kill.
+    if (!reached_ready) { r.ok = false; r.witness.emplace_back("[sw] WEDGE: never reached READY"); }
+    if (!fired) { r.ok = false; r.witness.emplace_back("[sw] WEDGE: fire_superweapon refused"); }
+    if (killed < 1) { r.ok = false; r.witness.emplace_back("[sw] WEDGE: no in-radius kill"); }
+    if (render) { capture_png(ren, end_png, W, H); }   // capture the already-rendered frame
+    return r;
+}
+
+// --demo-superweapon: the CB-4 superweapon integration gate (12th permanent
+// byte-identity gate). Mirrors run_demo_naval exactly: runs simulate_superweapon
+// rendered (hidden window + start/end screenshots) then headless from a FRESH
+// World, and byte-compares the two witness logs + hashes. Exit 0 iff both runs
+// are byte-identical AND both ok. NO hardcoded hash literal -- compute-and-self-
+// compare; the controller pins the observed value in the README gate table.
+int run_demo_superweapon() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_superweapon_start.png";
+    const std::string end_png = scratch + "demo_superweapon_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    std::vector<const VehicleAssets*> vlist;           // no voxel units in this gate
+
+    // Assets carries no Rules; load rulesmd.ini here so resolve_superweapon can
+    // read [NukeSpecial]/[NukePayload]/[NUKE] (the same source load_unit_assets
+    // uses). Resolved once and passed to both sim runs for determinism.
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p =
+            ra2engine::cell_to_screen(pc->x + 6, pc->y + 6, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    DemoSuperweaponResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-superweapon)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_superweapon(a, ua, vlist, /*render=*/true, ren, &tc, &cam,
+                                      W, H, start_png, end_png, rules);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    DemoSuperweaponResult r2 = simulate_superweapon(a, ua, vlist, /*render=*/false, nullptr,
+                                                    nullptr, nullptr, W, H, "", "", rules);
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-superweapon] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d superweapon_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -6880,6 +7130,8 @@ int main(int argc, char** argv) {
                 demo_aircraft = true;
             } else if (arg == "--demo-naval") {
                 return run_demo_naval();
+            } else if (arg == "--demo-superweapon") {
+                return run_demo_superweapon();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
