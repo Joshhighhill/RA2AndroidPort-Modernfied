@@ -90,8 +90,14 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         v.hp -= dmg;
         // Return fire only if IDLE (spec: "return fire when hit" applies to
         // idle/guarding units; a unit under a move order keeps walking rather
-        // than stopping to retaliate).
-        if (v.target == -1 && !v.moving()) {
+        // than stopping to retaliate). Engineer/Spy Capture [RE: capture.md
+        // §Design 6]: a still-DISGUISED attacker is treated as friendly, so the
+        // victim does NOT retaliate-acquire it (the return-fire analog of the
+        // auto-acquire skip below) -- keeping a disguised unit un-targeted even
+        // if it fires. Inert for byte-identity: u.disguised defaults false and
+        // no gate ever calls set_disguise, so `!u.disguised` is always true ->
+        // the guard is unchanged in every gate.
+        if (v.target == -1 && !v.moving() && !u.disguised) {
             // Idle victim retaliates (docs/re/combat.md §7: retaliation target
             // choice confirmed). Also records ITS OWN guard anchor at its
             // current position -- retaliation is a form of auto-acquire
@@ -340,7 +346,21 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
                 int best = -1;
                 double best_d = 0.0;
                 for (int j = 0; j < n; ++j) {
-                    if (j == i || !valid_target(units, u.house, j)) continue;
+                    // Engineer/Spy Capture [RE: capture.md §Design 6]: a still-
+                    // disguised unit is treated as FRIENDLY -- never auto-
+                    // acquired (a disguised spy walks through enemy territory
+                    // unfired-upon). Byte-identity: Unit::disguised defaults
+                    // false and no gate ever calls set_disguise (capture_any_
+                    // stays false), so this clause is false for every candidate
+                    // in every gate -> inert (combat 78 / tank 144 unchanged).
+                    // The skip lives ONLY in this AUTO-acquire scan, NOT in
+                    // valid_target (which also gates the explicit-attack /
+                    // stale-target-drop path (d)) -- an explicit order_attack on
+                    // a known spy is never blocked. A dog's DetectDisguise clears
+                    // `disguised` -> the spy is targetable again next scan (no
+                    // extra code needed).
+                    if (j == i || !valid_target(units, u.house, j) || units[j].disguised)
+                        continue;
                     const Unit& v = units[j];
                     const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
                     if (d <= u.w_range * kLeptonsPerCell && (best == -1 || d < best_d)) {

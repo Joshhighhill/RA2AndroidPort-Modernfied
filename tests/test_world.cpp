@@ -3820,3 +3820,33 @@ TEST_CASE("World disguise: spy STAYS disguised on attack; only a DetectDisguise 
     world.step(1.0 / 15.0);                               // step_tech_structures detection pass
     CHECK_FALSE(world.units()[spy_i].disguised);          // dog defeats the disguise
 }
+
+TEST_CASE("World disguise: an idle enemy unit does NOT auto-acquire a disguised spy, "
+          "then DOES once revealed [RE: capture.md §Design 6]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    // House-0 spy with NO weapon (range 0) so it never fires -- isolates the
+    // ENEMY's auto-acquire path as the only way the enemy could target it.
+    ra2engine::UnitCombat spyc = gi_stats();
+    spyc.image = "SPY"; spyc.strength = 100; spyc.armor = "flak";
+    spyc.damage = 0; spyc.range = 0.0;
+    world.add_combat_unit(10, 10, /*house=*/0, spyc);
+    const int spy_i = (int)world.units().size() - 1;
+    world.set_disguise(spy_i, "E2", /*as_house=*/1);
+    CHECK(world.units()[spy_i].disguised);
+    // Idle enemy (house 1) combat unit ADJACENT to the spy (range 4.0 covers it).
+    ra2engine::UnitCombat foe = gi_stats();
+    foe.image = "E1"; foe.strength = 100; foe.armor = "none";
+    world.add_combat_unit(11, 10, /*house=*/1, foe);
+    const int foe_i = (int)world.units().size() - 1;
+    const double dt = 1.0 / 15.0;
+    world.step(dt);
+    // Disguised -> treated as friendly -> NOT auto-acquired (no target set).
+    CHECK(world.units()[foe_i].target == -1);
+    // Reveal (as a dog's DetectDisguise would) -> now a valid target again.
+    world.clear_disguise(spy_i);
+    CHECK_FALSE(world.units()[spy_i].disguised);
+    world.step(dt);
+    CHECK(world.units()[foe_i].target == spy_i);          // auto-acquired once revealed
+}

@@ -241,10 +241,13 @@ struct Unit {
 
     // --- Engineer/Spy Capture phase: disguise [RE: capture.md §C] ---
     // A disguised unit RENDERS as `disguised_as_type` (a SHP image id) in
-    // `disguised_as_house`'s palette; a still-disguised enemy spy is not
-    // auto-acquired by the enemy (treated as friendly). detect_disguise units
-    // (dogs) see through it. ALL inert defaults -> NOT read by world_hash;
-    // hashed only by capture_hash.
+    // `disguised_as_house`'s palette; a still-disguised enemy spy is treated as
+    // FRIENDLY -- the step_combat idle auto-acquire scan (combat.cpp) skips any
+    // candidate with disguised==true, so no enemy unit auto-fires on it (an
+    // explicit order_attack is unaffected -- the skip lives only in the auto-
+    // acquire scan, not valid_target). detect_disguise units (dogs) clear the
+    // flag (step_tech_structures), restoring targetability. ALL inert defaults
+    // -> NOT read by world_hash; hashed only by capture_hash.
     bool disguised = false;
     std::string disguised_as_type;   // SHP image id shown while disguised (e.g. "E1")
     int disguised_as_house = 0;      // palette house shown while disguised
