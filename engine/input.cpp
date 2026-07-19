@@ -261,6 +261,51 @@ void Input::handle(const InputEvent& ev) {
     // and is cleared only by take_actions(), the game loop's once-per-frame
     // consume point. See InputActions in input.hpp for the rationale.
 
+    // CB-4 Superweapons [spec §4]: while SW-targeting is armed, a left Down+Up
+    // (no drag) commits the target cell -- resolved via the SAME level-aware
+    // screen->cell pick the placement path uses (resolve_ground_cell) -- and
+    // disarms; a right-click cancels; PointerMove just tracks the cursor.
+    // Checked BEFORE placement/selection so an armed SW consumes the click
+    // first. UI state only -- the sim is untouched until main.cpp calls
+    // World::fire_superweapon. No existing flow arms this, so this branch is
+    // never entered in any existing demo. Quit still propagates.
+    if (sw_targeting_) {
+        switch (ev.kind) {
+            case InputEvent::Quit:
+                quit_ = true;
+                break;
+            case InputEvent::PointerMove:
+                cur_x_ = ev.x;
+                cur_y_ = ev.y;
+                break;
+            case InputEvent::PointerDown:
+                if (ev.button == InputEvent::Right) {
+                    sw_targeting_ = false;   // cancel
+                } else {
+                    l_down_ = true;
+                    dragging_ = false;
+                    down_x_ = cur_x_ = ev.x;
+                    down_y_ = cur_y_ = ev.y;
+                }
+                break;
+            case InputEvent::PointerUp:
+                if (ev.button == InputEvent::Left && l_down_ && !dragging_) {
+                    int cx = 0, cy = 0;
+                    resolve_ground_cell(ev.x, ev.y, cx, cy);
+                    actions_.sw_fire_confirmed = true;
+                    actions_.sw_cx = cx;
+                    actions_.sw_cy = cy;
+                    sw_targeting_ = false;   // one-shot
+                }
+                l_down_ = false;
+                dragging_ = false;
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
     // Placement mode (Task 7a) intercepts the whole gesture model: a left
     // Down+Up (no drag) confirms at the hovered foundation origin; a right
     // click cancels; PointerMove just tracks the cursor (so placement_cell

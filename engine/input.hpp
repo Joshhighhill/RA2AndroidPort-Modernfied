@@ -35,6 +35,13 @@ struct InputActions {
     bool place_confirmed = false;   // left-click confirmed a placement this batch
     bool place_cancelled = false;   // right-click/Esc cancelled placement this batch
     int place_cx = 0, place_cy = 0; // confirmed foundation ORIGIN cell
+
+    // CB-4 Superweapons [spec §4]: a left-click committed a SW target cell while
+    // SW-targeting was armed (mirrors place_confirmed/place_cx/cy). main.cpp
+    // routes this to World::fire_superweapon. Default inert (no existing flow
+    // arms SW-targeting, so no existing demo/frame reports it).
+    bool sw_fire_confirmed = false;
+    int sw_cx = 0, sw_cy = 0;
 };
 
 // Translates pointer InputEvents (Task 0 Platform) into actions on a World +
@@ -82,6 +89,16 @@ public:
     void begin_placement(int roster_type, int fw, int fh);
     void cancel_placement();
     bool placement_active() const { return place_type_ >= 0; }
+
+    // CB-4: arm/disarm SW-targeting -- a lightweight parallel of placement mode.
+    // While armed, a left-click on the map reports sw_fire_confirmed + sw_cx/cy
+    // (via the SAME level-aware screen->cell pick placement uses); a right-click/
+    // Esc cancels. UI state only -- the sim is untouched until main.cpp calls
+    // World::fire_superweapon. No existing flow arms this, so this branch is
+    // never entered in any existing demo.
+    void arm_superweapon() { sw_targeting_ = true; }
+    void cancel_superweapon() { sw_targeting_ = false; }
+    bool sw_targeting() const { return sw_targeting_; }
     int placement_type() const { return place_type_; }
     // Hovered foundation ORIGIN cell for the CURRENT pointer position:
     // resolve_ground_cell(cur) minus half the foundation, so the cursor sits
@@ -190,6 +207,10 @@ private:
     // that roster type; place_fw_/fh_ is its foundation size.
     int place_type_ = -1;
     int place_fw_ = 1, place_fh_ = 1;
+
+    // CB-4 Superweapons: true while SW-targeting is armed (a click on the map
+    // then reports sw_fire_confirmed). Default false -- inert in every demo.
+    bool sw_targeting_ = false;
 
     // Economy phase: refinery roster types (set_refinery_types).
     std::vector<int> refinery_types_;

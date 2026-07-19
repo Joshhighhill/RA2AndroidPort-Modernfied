@@ -327,6 +327,11 @@ struct BuildingAssets {
     // 0 = pre-radar eagle logo), side3 bottom cap, addon tail, scroll
     // buttons, repair/sell and options/diplomacy button chrome.
     ra2assets::ShpFile sb_top, sb_side1, sb_side2, sb_tabs[4], sb_powerp, sb_credits, sb_gclock;
+    // CB-4 Superweapons [RE: superweapon.md; spec §6]: the SW cameo (NukeIcon),
+    // loaded through the EXISTING cameo.mix chain. Art-guarded -- sw_has_cameo
+    // is false if NukeIcon is absent (the SW slot then draws a placeholder shade).
+    ra2assets::ShpFile sb_nukeicon;
+    bool sw_has_cameo = false;
     ra2assets::ShpFile sb_radar, sb_side3, sb_addon, sb_rup, sb_rdn, sb_repair, sb_sell,
                        sb_optbtn, sb_diplobtn;
     bool has_radar = false, has_side3 = false, has_addon = false, has_scroll = false,
@@ -1532,6 +1537,22 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         ba.sidebar_ok = false;
     }
 
+    // CB-4 Superweapons [RE: superweapon.md; spec §6]: the SW cameo, loaded
+    // through the EXISTING cameo.mix chain (reusing the `language` handle this
+    // function was handed). Art-guarded -- if NukeIcon is absent the SW slot
+    // draws a placeholder shade and the sim is unaffected [RE-GATE APPLIED:
+    // NukeIcon = language.mix/cameo.mix/nukeicon.shp, CONFIRMED present on this
+    // install; still guarded defensively]. sw_has_cameo==false signals "no art".
+    ba.sw_has_cameo = false;
+    try {
+        MixFile cameo_mix = language.open_nested("cameo.mix");
+        if (const MixEntry* ce = cameo_mix.find(std::string("nukeicon.shp"))) {
+            ba.sb_nukeicon = ShpFile::load(cameo_mix.read(*ce));
+            ba.sw_has_cameo = ba.sb_nukeicon.count() > 0;
+        }
+    } catch (const std::exception&) { ba.sw_has_cameo = false; }
+    std::cerr << "[sw] NukeIcon cameo " << (ba.sw_has_cameo ? "loaded" : "absent") << "\n";
+
     // Shared death explosion (TWLT070) from conquer.mix + anim.pal (guarded;
     // render-only). Mirrors the vehicle death-anim path [RE: building-render.md §4].
     ba.explosion_pal = ba.unit_pal;
@@ -2426,6 +2447,33 @@ void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint
     SDL_RenderFillRect(ren, &rc);
 }
 
+// CB-4 Superweapons [spec §6]: draw the SW cameo + recharge indicator in a
+// sidebar slot, reusing the EXISTING gclock2.shp 55-frame chrome + the flashing-
+// green READY tint. Drawn ONLY when house 0 has a granted SW, so no existing
+// demo (which grants none) changes its sidebar. `slot` is the target rect.
+void draw_sw_slot(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
+                  const ra2engine::World& world, const ra2engine::SbRect& slot, double t_now) {
+    const ra2engine::Superweapon* sw = world.sw_state(0);
+    if (!sw) return;                                    // no SW granted -> nothing drawn
+    // Cameo (art-guarded): NukeIcon, else a placeholder shade.
+    if (ba.sw_has_cameo)
+        blit_shp(ren, tc, "swcam:nukeicon", ba.sb_nukeicon, 0, ba.cameo_pal, slot.x, slot.y);
+    else
+        shade_rect(ren, slot, 140);                     // placeholder tile
+    if (world.sw_ready(0)) {
+        // READY: 2 Hz flashing-green tint (the existing production-ready state).
+        if (static_cast<int>(t_now * 2) % 2 == 0) shade_rect(ren, slot, 90, 0, 200, 0);
+    } else {
+        // Charging: gclock2 frame over a shade (the build-clock chrome, §6).
+        shade_rect(ren, slot, 90);
+        int gframe = (int)std::lround(world.sw_charge_fraction(0) * 54.0);
+        if (gframe < 0) gframe = 0;
+        if (gframe >= ba.sb_gclock.count()) gframe = ba.sb_gclock.count() - 1;
+        blit_shp(ren, tc, "sw:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
+                 slot.x, slot.y);
+    }
+}
+
 // Draws the whole sidebar per the recovered composition [RE: construction.md
 // §11a — credits(0,0) -> top cap(0,16) -> radar(0,48) -> side1(0,158) w/
 // repair+sell -> tabs y=197 -> side2 x N rows from 227 -> side3 -> addon ->
@@ -2562,6 +2610,12 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
             shade_rect(ren, c.rect, 140);  // Disabled: ~55% black
         }
     }
+    // CB-4 Superweapons [spec §6]: the SW cameo + recharge clock in an unused
+    // slot (the radar-area top-left). draw_sw_slot no-ops unless house 0 has a
+    // granted SW, so no existing demo (which grants none) changes its sidebar.
+    const ra2engine::SbRect sw_slot{lay.bar.x + ra2engine::kCameoX, lay.radar.y + 2,
+                                    ra2engine::kCameoW, ra2engine::kCameoH};
+    draw_sw_slot(ren, tc, ba, world, sw_slot, t_now);
 }
 
 // Placement cursor: draw the fw*fh foundation cell diamonds green (cell OK) /
@@ -2757,6 +2811,17 @@ int run_interactive(bool no_audio) {
                                        : ra2engine::default_anim());
         }
     }
+    // CB-4 Superweapons [RE: superweapon.md; spec §4/§6]: INTERACTIVE-ONLY grant.
+    // Resolve the Nuclear Missile params from the real rulesmd ([NukePayload]/
+    // [NUKE]) and grant house 0 the SW so the sidebar SW slot draws and the
+    // N-keybind / cameo-click -> map-click fire works. No demo path calls this,
+    // so every gate stays byte-identical (sw_state(0) is nullptr in all demos).
+    {
+        const SuperweaponParams swp = resolve_superweapon(rules);
+        world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, swp.recharge_secs,
+                                swp.damage, swp.cell_spread, swp.percent_at_max, swp.verses);
+    }
+
     // Building-state tracker for FreeUnit grand-opening spawns (Buildup->Idle).
     std::vector<int> bstates;
 
@@ -2824,6 +2889,8 @@ int run_interactive(bool no_audio) {
     std::vector<std::pair<double, double>> prev_audio_state;
     // CB-1 unload key edge-detect state [spec §5].
     bool prev_unload_key = false;
+    // CB-4 Superweapons: N-key edge-detect state [spec §4].
+    bool prev_sw_key = false;
 
     Uint32 prev = SDL_GetTicks();
     while (!input.wants_quit()) {
@@ -2842,6 +2909,20 @@ int run_interactive(bool no_audio) {
             if (sidebar_up && ev.kind == ra2engine::InputEvent::PointerDown &&
                 lay.contains(ev.x, ev.y)) {
                 if (ev.button == ra2engine::InputEvent::Left) {
+                    // CB-4 Superweapons [spec §4]: a left-click on the SW cameo
+                    // slot arms SW-targeting when house 0's SW is READY (the same
+                    // effect as the N keybind); not READY -> refused. The slot
+                    // rect mirrors draw_sidebar's sw_slot. Only meaningful once a
+                    // SW is granted (interactive-only), so demos never hit this.
+                    if (world.sw_state(0)) {
+                        const ra2engine::SbRect sw_slot{lay.bar.x + ra2engine::kCameoX,
+                                                        lay.radar.y + 2, ra2engine::kCameoW,
+                                                        ra2engine::kCameoH};
+                        if (sw_slot.contains(ev.x, ev.y)) {
+                            if (world.sw_ready(0)) input.arm_superweapon();
+                            continue;  // consumed by the SW slot
+                        }
+                    }
                     // Tab-click switching first: a click on a different tab
                     // recomputes the buildable list + layout and consumes the
                     // event (no cameo handling this frame).
@@ -2944,6 +3025,13 @@ int run_interactive(bool no_audio) {
         if (unload_key && !prev_unload_key) world.order_unload_selected();
         prev_unload_key = unload_key;
 
+        // CB-4 Superweapons [spec §4]: N arms SW-targeting when house 0's SW is
+        // READY (edge-detected). If not READY the arm is refused (no-op). A
+        // click on the sidebar SW cameo could also arm; N is the primary bind.
+        const bool sw_key = ks[SDL_SCANCODE_N] != 0;
+        if (sw_key && !prev_sw_key && world.sw_ready(0)) input.arm_superweapon();
+        prev_sw_key = sw_key;
+
         const Uint32 now = SDL_GetTicks();
         const double dt = (now - prev) / 1000.0;
         prev = now;
@@ -3043,6 +3131,11 @@ int run_interactive(bool no_audio) {
                 }
             }
         }
+
+        // CB-4 Superweapons [spec §4]: a committed SW target cell -> fire. no-op
+        // unless the SW is READY (World::fire_superweapon re-checks and resets
+        // the recharge). Refused fires are silent (the arm was already consumed).
+        if (act.sw_fire_confirmed) world.fire_superweapon(0, act.sw_cx, act.sw_cy);
 
         // Audio event collection + acks (Task 6, Step 3). Gated on
         // audio.enabled so a --no-audio run or a failed device open touches
