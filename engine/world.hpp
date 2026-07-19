@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -13,6 +14,7 @@
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
+#include "superweapon.hpp"  // CB-4 Superweapons: Superweapon/SuperweaponType lifecycle
 #include "ra2assets/map.hpp"
 #include "unit_combat.hpp"  // UnitCombat (moved here to break the include cycle
                             // production.hpp -> unit_type.hpp -> world.hpp)
@@ -694,6 +696,32 @@ public:
     // read by world_hash — the 8th gate hashes it separately (ai_trigger_hash).
     const AiTriggerState* ai_trigger_state(int house) const;
 
+    // --- CB-4 Superweapons [RE: superweapon.md] -----------------------------
+    // A NEW per-house superweapon registry, INDEPENDENT of the AI registry so
+    // it works for the PLAYER house 0 (which is never in ai_houses_). Default
+    // INERT: no house has a SW until grant_superweapon, which no existing demo
+    // calls -> sw_houses_ empty, sw_any_ false, step_superweapon a strict no-op
+    // (spec §8). Unit and combat.cpp behavior are untouched.
+    //
+    // Grant `house` a superweapon: grow sw_houses_ to cover it, store the pure
+    // lifecycle (type + recharge_secs already in SECONDS) and the resolved
+    // detonation params ([NukePayload] Damage + [NUKE] CellSpread/PercentAtMax/
+    // Verses), and open the sw_any_ firewall. verses is the 11-slot armor array
+    // (int percents, matching Unit::w_verses / damage_vs).
+    void grant_superweapon(int house, SuperweaponType type, double recharge_secs,
+                           int dmg, double cell_spread, double pmax,
+                           const std::array<int, 11>& verses);
+    // Fire `house`'s superweapon at cell (cx, cy): no-op returning false unless
+    // that house's SW is READY; on fire it detonates at the cell (§5) and resets
+    // the timer (§4). Returns whether it fired (the wedge guard reads this).
+    // [Task 4 lands the detonation body; Task 3 lands the registry it uses.]
+    bool fire_superweapon(int house, int cx, int cy);
+    // Read-only SW state for the sidebar (§6) and the gate (§7). false / 0 /
+    // nullptr when `house` has no granted SW.
+    bool sw_ready(int house) const;
+    double sw_charge_fraction(int house) const;
+    const Superweapon* sw_state(int house) const;
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -757,6 +785,24 @@ private:
 
     // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
     void ai_fill_trigger_view(int house, const HouseAiRec& rec, TriggerView& v) const;
+
+    // --- CB-4 Superweapons [RE: superweapon.md] ---
+    // Per-house SW record: the pure lifecycle + the resolved detonation params.
+    // Mirrors HouseAiRec's shape but INDEPENDENT of ai_houses_ (spec §2). All
+    // defaults INERT (has_sw=false). eff_verses is the [NUKE] 11-slot armor
+    // array as int percents (assigned straight into the transient detonator's
+    // Unit::w_verses in fire_superweapon -- damage_vs takes std::vector<int>).
+    struct HouseSuperweapon {
+        bool has_sw = false;
+        Superweapon sw;
+        int eff_damage = 0;                 // [NukePayload] Damage=600
+        double eff_cell_spread = 0.0;       // [NUKE] CellSpread=10
+        double eff_percent_at_max = 1.0;    // [NUKE] PercentAtMax=.02
+        std::array<int, 11> eff_verses{};   // [NUKE] Verses (armor percents)
+    };
+    std::vector<HouseSuperweapon> sw_houses_;  // index = house id (grown on demand)
+    bool sw_any_ = false;                      // the step() firewall bool
+    void step_superweapon(double dt);          // firewalled World::step pass (§3)
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
     // Boarding / carry / eject / transport-death, called between step_units

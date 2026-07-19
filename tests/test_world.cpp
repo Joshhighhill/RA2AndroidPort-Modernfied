@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -3320,4 +3321,55 @@ TEST_CASE("World: a naval unit approaches over water and kills a naval target (F
     // The attacker moved along the water corridor toward the target.
     CHECK(world.units()[0].cell_x > 60);
     CHECK(world.units()[0].cell_y == 50);        // stayed on the water row
+}
+
+// --- CB-4 Superweapons: World registry (Task 3) [RE: superweapon.md] ---------
+
+TEST_CASE("World SW: grant_superweapon materializes the record and opens sw_any_") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    CHECK_FALSE(world.sw_ready(0));
+    CHECK(world.sw_charge_fraction(0) == doctest::Approx(0.0));
+    CHECK(world.sw_state(0) == nullptr);          // no SW granted yet
+    std::array<int, 11> verses;
+    verses.fill(100);
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, /*recharge_secs=*/10.0,
+                            /*dmg=*/600, /*cell_spread=*/10.0, /*pmax=*/0.02, verses);
+    REQUIRE(world.sw_state(0) != nullptr);
+    CHECK(world.sw_state(0)->type == ra2engine::SuperweaponType::Nuke);
+    CHECK_FALSE(world.sw_ready(0));               // not charged yet
+}
+
+TEST_CASE("World SW: step_superweapon charges the granted house to READY at recharge_secs") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    std::array<int, 11> verses; verses.fill(100);
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, 10.0, 600, 10.0, 0.02, verses);
+    const double dt = 1.0 / 15.0;
+    int frames = 0;
+    for (; frames < 100000 && !world.sw_ready(0); ++frames) world.step(dt);
+    CHECK(world.sw_ready(0));
+    CHECK(world.sw_charge_fraction(0) == doctest::Approx(1.0));
+    // ~10s / (1/15 s) = 150 frames; allow the exact clamp frame.
+    CHECK(frames >= 150);
+    CHECK(frames <= 152);
+}
+
+TEST_CASE("World SW: an ungranted house stays inert and a no-SW World is a no-op") {
+    // step_superweapon must not touch an ungranted house, and a World that never
+    // grants a SW steps exactly as before (sw_any_ false -> strict no-op, §8).
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    std::array<int, 11> verses; verses.fill(100);
+    world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, 5.0, 600, 10.0, 0.02, verses);
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 30; ++f) world.step(dt);
+    CHECK(world.sw_state(1) == nullptr);          // house 1 was never granted
+    CHECK_FALSE(world.sw_ready(1));
+    ra2engine::World bare(map);                     // never grants a SW
+    for (int f = 0; f < 30; ++f) bare.step(dt);    // step_superweapon early-returns
+    CHECK(bare.sw_state(0) == nullptr);
 }

@@ -1014,6 +1014,45 @@ double World::ai_credits(int house) const {
     return ai_enabled(house) ? ai_houses_[house].credits : 0.0;
 }
 
+// --- CB-4 Superweapons [RE: superweapon.md] ---
+void World::grant_superweapon(int house, SuperweaponType type, double recharge_secs,
+                              int dmg, double cell_spread, double pmax,
+                              const std::array<int, 11>& verses) {
+    if (house < 0) return;
+    if ((int)sw_houses_.size() <= house) sw_houses_.resize(house + 1);   // enable_ai_house precedent
+    HouseSuperweapon& rec = sw_houses_[house];
+    rec.has_sw = true;
+    rec.sw = Superweapon{};
+    rec.sw.type = type;
+    rec.sw.recharge_secs = recharge_secs;
+    rec.eff_damage = dmg;
+    rec.eff_cell_spread = cell_spread;
+    rec.eff_percent_at_max = pmax;
+    rec.eff_verses = verses;
+    sw_any_ = true;                                                       // open the firewall
+}
+
+void World::step_superweapon(double dt) {
+    if (!sw_any_) return;                        // firewall (spec §8) -- no-op everywhere else
+    for (HouseSuperweapon& rec : sw_houses_)     // house-id order; pure arithmetic, no RNG (§3.5)
+        if (rec.has_sw) rec.sw.tick(dt);
+}
+
+bool World::sw_ready(int house) const {
+    return house >= 0 && house < (int)sw_houses_.size() &&
+           sw_houses_[house].has_sw && sw_houses_[house].sw.is_ready();
+}
+
+double World::sw_charge_fraction(int house) const {
+    if (house < 0 || house >= (int)sw_houses_.size() || !sw_houses_[house].has_sw) return 0.0;
+    return sw_houses_[house].sw.charge_fraction();
+}
+
+const Superweapon* World::sw_state(int house) const {
+    if (house < 0 || house >= (int)sw_houses_.size() || !sw_houses_[house].has_sw) return nullptr;
+    return &sw_houses_[house].sw;
+}
+
 int World::ai_producing(int house, int cat01) const {
     if (!ai_enabled(house) || cat01 < 0 || cat01 > 1) return -1;
     const QueueCat c = cat01 == 0 ? QueueCat::Structure : QueueCat::Defense;
@@ -1990,6 +2029,13 @@ void World::step(double dt) {
     // combat targeting the SAME frame. A pure INSERTION; `if (!aircraft_any_)
     // return;` inside is the only cost every existing demo pays [spec §8].
     step_flight(dt);
+
+    // CB-4 Superweapons [RE: superweapon.md §3]: advance each granted house's
+    // recharge timer. A pure INSERTION after step_flight; `if (!sw_any_) return;`
+    // inside is the only cost every existing demo pays (no house is granted a SW
+    // outside the new gate). The detonation is fire-triggered, not step-
+    // triggered, so this pass's ORDER is behaviorally irrelevant (spec §3.3).
+    step_superweapon(dt);
 
     // Slew vehicle turrets AFTER movement and BEFORE combat so the aim gate
     // (vehicle_aimed) in step_combat sees this frame's post-slew turret
