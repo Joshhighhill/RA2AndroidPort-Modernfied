@@ -342,6 +342,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // spawns with scaled firepower + HP. rank 0 (every existing spawn) leaves
     // w_damage/hp/max_hp EXACTLY as resolved above -> byte-identical.
     u.veteran_rank = c.veteran_rank;
+    u.sight = c.sight;  // [RE: shroud.md §2] reveal radius; inert until Task 3
     if (c.veteran_rank > 0) {
         u.w_damage = veteran_firepower(u.w_damage, c.veteran_rank);
         u.max_hp = veteran_hp(u.max_hp, c.veteran_rank);
@@ -605,7 +606,7 @@ void World::order_attack(int target_idx) {
 }
 
 int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int strength,
-                        int armor_ix, double buildup_total, bool instant) {
+                        int armor_ix, double buildup_total, bool instant, int sight) {
     Building b;
     b.type = type;
     b.cx = cx;
@@ -615,6 +616,7 @@ int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int
     b.house = house;
     b.hp = b.max_hp = strength;
     b.armor_ix = armor_ix;
+    b.sight = sight;  // [RE: shroud.md §2] reveal radius; inert until Task 3
     b.buildup_total = buildup_total;
     b.state = instant ? Building::State::Idle : Building::State::Buildup;
     buildings_.push_back(b);

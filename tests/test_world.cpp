@@ -3905,3 +3905,13 @@ TEST_CASE("World disguise: an idle enemy unit does NOT auto-acquire a disguised 
     world.step(dt);
     CHECK(world.units()[foe_i].target == spy_i);          // auto-acquired once revealed
 }
+
+TEST_CASE("World shroud: add_combat_unit copies sight; seen_by_mask defaults 0xFF [RE: shroud.md §2]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    ra2engine::UnitCombat c;
+    c.image = "E1"; c.strength = 100; c.armor = "none"; c.sight = 5;
+    ra2engine::Unit& u = world.add_combat_unit(5, 5, /*house=*/0, c);
+    CHECK(u.sight == 5);
+    CHECK(u.seen_by_mask == 0xFF);   // INERT default = seen by all houses
+}

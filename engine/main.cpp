@@ -613,6 +613,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.image = rules.image(unit_id);
     r.speed = rules.speed(unit_id);
     r.combat.strength = rules.strength(unit_id);
+    r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
     const std::string primary = rules.primary(unit_id);
     r.combat.damage = rules.weapon_damage(primary);
@@ -1511,6 +1512,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.fw = d.fh = 1;
         art.foundation(id, d.fw, d.fh);
         d.strength = rules.strength(id);
+        d.sight = rules.sight(id);  // [RE: shroud.md §2] reveal radius
         d.armor_ix = ra2engine::armor_index(rules.armor(id));
         d.cost = rules.cost(id);
         // [RE: economy.md §6a] charge basis: cost normally; the FreeUnit-
@@ -1791,7 +1793,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
             if (chk.ok) {
                 const int idx =
                     world.add_building(type, tx, py, d.fw, d.fh, house, d.strength, d.armor_ix,
-                                       ba.art[type].buildup_total, /*instant=*/true);
+                                       ba.art[type].buildup_total, /*instant=*/true, d.sight);
                 std::cerr << "[base] spawned " << d.id << " house=" << house << " at (" << tx << ","
                           << py << ")" << (k ? " probed+" + std::to_string(k) : "") << "\n";
                 return idx;
@@ -3358,7 +3360,7 @@ int run_interactive(bool no_audio) {
                     /*bypass_adjacency=*/false);
                 if (chk.ok) {
                     world.add_building(type, act.place_cx, act.place_cy, d.fw, d.fh, 0, d.strength,
-                                       d.armor_ix, ba.art[type].buildup_total, /*instant=*/false);
+                                       d.armor_ix, ba.art[type].buildup_total, /*instant=*/false, d.sight);
                     queues.placed(place_cat);   // clear the slot on the queue this cameo came from
                     input.cancel_placement();
                     if (audio.enabled) audio.mixer->play("PlaceBuilding");
@@ -4295,7 +4297,7 @@ bool place_player_building(ra2engine::World& world, const BuildingAssets& ba, in
             world.occupancy(), world.buildings(), /*bypass_adjacency=*/false);
         if (chk.ok) {
             world.add_building(type, tx, py, d.fw, d.fh, 0, d.strength, d.armor_ix,
-                               ba.art[type].buildup_total, /*instant=*/true);
+                               ba.art[type].buildup_total, /*instant=*/true, d.sight);
             out_x = tx;
             out_y = py;
             return true;
@@ -5534,7 +5536,7 @@ DemoAiBaseResult simulate_ai_base(Assets& a, UnitAssets& ua, BuildingAssets& ba,
             /*bypass=*/true);
         if (!chk.ok) { r.ok = false; r.witness.emplace_back("[ai-base] ConYard placement FAILED"); return r; }
         world.add_building(nacnst, pc->x, pc->y, d.fw, d.fh, 1, d.strength, d.armor_ix,
-                           ba.art[nacnst].buildup_total, /*instant=*/true);
+                           ba.art[nacnst].buildup_total, /*instant=*/true, d.sight);
     }
 
     // Fixed difficulty + fixed credits + fixed seed (AiBaseState's rng seed
@@ -6144,7 +6146,7 @@ DemoAiTriggerResult simulate_ai_trigger(Assets& a, UnitAssets& ua, BuildingAsset
         for (int k = 0; k < need; ++k)
             world.add_building(bt, pc->x + 1 + k * (bd.fw + 1), pc->y + 9,
                                bd.fw, bd.fh, /*house=*/0, std::max(1, bd.strength),
-                               bd.armor_ix, 0.0, /*instant=*/true);
+                               bd.armor_ix, 0.0, /*instant=*/true, bd.sight);
     }
     world.enable_ai_house(1, acfg);
     {

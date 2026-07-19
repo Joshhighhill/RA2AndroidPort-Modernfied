@@ -47,6 +47,8 @@ struct BuildingTypeDef {
     int produce_cash_startup = 0;    // Rules ProduceCashStartup (granted on capture-from-neutral)
     int produce_cash_amount = 0;     // Rules ProduceCashAmount (per-tick credit)
     int produce_cash_delay = 0;      // Rules ProduceCashDelay (frames between ticks)
+    // Shroud/Fog phase [RE: shroud.md §2]: reveal radius in cells (clamped 10).
+    int sight = 0;
 };
 
 // A placed building instance.
@@ -57,6 +59,8 @@ struct Building {
     int house = 0;
     int hp = 1, max_hp = 1;
     int armor_ix = 0;                // armor_index(Rules armor); set by World::add_building
+    // Shroud/Fog phase [RE: shroud.md §2]: reveal radius in cells (clamped 10).
+    int sight = 0;
     enum class State { Buildup, Idle, Dead };
     State state = State::Buildup;
     double buildup_time = 0.0;       // seconds elapsed in Buildup

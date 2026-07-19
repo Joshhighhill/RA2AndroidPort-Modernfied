@@ -90,6 +90,12 @@ int Rules::strength(const std::string& unit_id) const {
     return ini_->get_int(unit_id, "Strength", 0);
 }
 
+int Rules::sight(const std::string& unit_id) const {
+    // [RE: shroud.md §2] hard cap 10 cells; absent -> 0.
+    int s = ini_->get_int(unit_id, "Sight", 0);
+    return s > 10 ? 10 : s;
+}
+
 std::string Rules::armor(const std::string& unit_id) const {
     std::string a = ini_->get(unit_id, "Armor", "");
     return a.empty() ? "none" : a;

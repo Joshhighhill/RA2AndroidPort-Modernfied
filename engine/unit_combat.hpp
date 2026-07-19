@@ -86,6 +86,13 @@ struct UnitCombat {
     // firepower + HP at spawn (add_combat_unit) via veteran_firepower/veteran_hp;
     // combat.cpp is UNTOUCHED (a veteran just spawns with higher w_damage + hp).
     int veteran_rank = 0;
+
+    // --- Shroud/Fog phase [RE: shroud.md §2] ---
+    // Reveal radius in cells, from rules.sight(id) (hard-clamped to 10). Copied
+    // onto Unit at add_combat_unit. Inert default 0 (a source with sight 0
+    // reveals only its own cell / nothing, and is meaningless while the
+    // visibility grids are empty). NOT read by world_hash.
+    int sight = 0;
 };
 
 }  // namespace ra2engine

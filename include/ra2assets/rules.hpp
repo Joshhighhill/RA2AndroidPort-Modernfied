@@ -30,6 +30,11 @@ public:
     // [unit_id] Strength=, or 0 if the section/key is absent.
     int strength(const std::string& unit_id) const;
 
+    // Shroud/Fog phase [RE: shroud.md §2]: Sight= in whole cells, hard-clamped
+    // to 10 (the recovered "Vegas crash" cap). 0 when absent (no [General]
+    // default). A plain stat like strength/speed -- not read by world_hash.
+    int sight(const std::string& id) const;
+
     // [unit_id] Armor=, or "none" if absent.
     std::string armor(const std::string& unit_id) const;
 

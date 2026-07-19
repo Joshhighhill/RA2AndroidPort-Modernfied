@@ -239,6 +239,14 @@ struct Unit {
     // capture_hash. Recorded so the gate can fold a produced unit's rank.
     int veteran_rank = 0;
 
+    // --- Shroud/Fog phase [RE: shroud.md §2/§3] ---
+    int sight = 0;                 // reveal radius (cells); copied from UnitCombat
+    std::uint8_t seen_by_mask = 0xFF;  // bit h set iff this unit's cell is visible
+                                       // to house h. DEFAULT 0xFF = seen by all =
+                                       // INERT (the combat.cpp:362 clause never
+                                       // fires). Overwritten only by step_visibility
+                                       // (behind shroud_any_). NOT read by world_hash.
+
     // --- Engineer/Spy Capture phase: disguise [RE: capture.md §C] ---
     // A disguised unit RENDERS as `disguised_as_type` (a SHP image id) in
     // `disguised_as_house`'s palette; a still-disguised enemy spy is treated as
@@ -642,7 +650,7 @@ public:
     // erased, only tombstoned). Precondition: the caller already validated
     // the placement via placement_check (this method does not re-check it).
     int add_building(int type, int cx, int cy, int fw, int fh, int house, int strength,
-                     int armor_ix, double buildup_total, bool instant);
+                     int armor_ix, double buildup_total, bool instant, int sight = 0);
 
     // Index of the alive, non-Dead building whose foundation contains (x, y),
     // or -1 if none (ascending index; foundations never overlap while both

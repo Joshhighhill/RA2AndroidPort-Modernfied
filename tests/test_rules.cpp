@@ -337,3 +337,17 @@ TEST_CASE("rules: section_double reads the [AI] and difficulty sections") {
     CHECK(r.section_double("Easy", "Missing", 7.0) == doctest::Approx(7.0));   // fallback
     CHECK(r.section_double("NoSection", "Cost", 3.0) == doctest::Approx(3.0)); // fallback
 }
+
+TEST_CASE("rules: Sight= read in cells, hard-clamped to 10 [RE: shroud.md §2]") {
+    // Gated behind the real-rulesmd fixture (same guard the install-backed cases
+    // above use) so it skips cleanly without the install.
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("skipped: rulesmd.ini not found"); return; }
+    const ra2assets::Rules& r = ra2fixture::rulesmd();
+    CHECK(r.sight("E1") == 5);       // GI
+    CHECK(r.sight("MTNK") == 8);     // Grizzly
+    CHECK(r.sight("DOG") == 9);      // Attack Dog
+    CHECK(r.sight("NARADR") == 10);  // Soviet Radar Tower (exactly the cap)
+    CHECK(r.sight("NAPSIS") == 10);  // Psychic Sensor (Sight=10)
+    CHECK(r.sight("NONEXISTENT_ID_XYZ") == 0);  // absent -> 0
+}
