@@ -364,10 +364,20 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.flight_turn = c.flight_turn;
     u.balloon_hover = c.balloon_hover;
     u.omni_fire = c.omni_fire;
+    // CB-3 [RE: naval.md §1]: naval flags, inert unless the caller resolved them
+    // (default is_naval=false / movement_domain=Land = a ground unit).
+    u.is_naval = c.is_naval;
+    u.movement_domain = c.movement_domain;
     return u;
 }
 
 void World::set_anim(const std::string& image, const UnitAnimSeq& seq) { anims_[image] = seq; }
+
+void World::set_water_terrain(const std::vector<ra2assets::LandType>& land_types) {
+    // [RE-GATE APPLIED: naval.md §1] intersect with the Land grid (passable_) so
+    // a ship never paths on a non-materialized water cell.
+    water_passable_ = build_water_passability(land_types, passable_, grid_w_, grid_h_);
+}
 
 // --- Economy phase [RE: economy.md] ---
 
@@ -493,8 +503,15 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // current cell.
     occ_.release_all_of(idx, u.cell_x, u.cell_y);
     occ_.set(u.cell_x, u.cell_y, idx);
+    // CB-3 Naval [RE-GATE APPLIED: naval.md §1]: select the domain grid -- Land
+    // (the DEFAULT, every existing unit) resolves to the SAME passable_ object
+    // (byte-identical); Water resolves to water_passable_. CONFIRMED: the naval
+    // loco is Drive-shaped and shares the FootClass A* + one occ_ cell, so a
+    // naval unit uses the EXACT ground occupancy path above (release_all_of + set
+    // + find_path); only the grid differs. naval_any_ is a diagnostics flag.
+    if (u.is_naval) naval_any_ = true;
     std::vector<Cellxy> path =
-        find_path(passable_, grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
+        find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
     if (path.size() <= 1) {
         // Assigned its own cell / unreachable: stay put, snap cleanly
         // (mirrors the single-unit Finding-1 cancel branch).
@@ -1958,7 +1975,7 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 }
 
 void World::step(double dt) {
-    step_units(units_, passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
+    step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
     // CB-1 Transports/Cargo [RE: transport-cargo.md]: boarding resolves the
     // frame the passenger lands adjacent; ejects claim occupancy before
@@ -2220,7 +2237,8 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
     return out;
 }
 
-void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable, int w, int h,
+void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
+                const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
@@ -2374,8 +2392,15 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 // resumes the walk the moment the blocker steps off. Only the
                 // kGiveUpAfter timeout abandons the order.
                 const Cellxy goal = u.path.back();
+                // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§3]: re-path over the
+                // unit's domain grid -- Land (every existing unit) uses `passable`
+                // byte-identically; a naval unit uses `water_passable`. The
+                // per-unit selection is provably Land for all existing units.
+                // CONFIRMED: one occ_ cell + shared FootClass repath (§1/§3).
+                const std::vector<std::uint8_t>& g =
+                    u.is_naval ? water_passable : passable;
                 std::vector<std::uint8_t> p2 =
-                    passable_minus_units(passable, w, h, occ, self, u.cell_x, u.cell_y);
+                    passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
                 std::vector<Cellxy> np = find_path(p2, w, h, {u.cell_x, u.cell_y}, goal);
                 if (np.size() > 1) {
                     u.path = std::move(np);

@@ -146,14 +146,14 @@ TEST_CASE("vehicle: turns in place before rolling, then moves at its own speed")
     const ra2engine::AnimTable anims;
 
     // First small step: facing is ~180 degrees off -> must rotate, not move.
-    ra2engine::step_units(units, grid, 16, 16, occ, 1.0 / 60.0, 3.0, anims);
+    ra2engine::step_units(units, grid, grid, 16, 16, occ, 1.0 / 60.0, 3.0, anims);
     CHECK(units[0].fx == doctest::Approx(5.0));
     CHECK(units[0].fy == doctest::Approx(5.0));
     CHECK(units[0].body_facing != doctest::Approx(32768.0));  // it turned
 
     // Run 2 sim-seconds: ROT=5 covers 180 degrees in ~1.7s, then it rolls.
     for (int i = 0; i < 120; ++i)
-        ra2engine::step_units(units, grid, 16, 16, occ, 1.0 / 60.0, 3.0, anims);
+        ra2engine::step_units(units, grid, grid, 16, 16, occ, 1.0 / 60.0, 3.0, anims);
     CHECK((units[0].fx != doctest::Approx(5.0) || units[0].fy != doctest::Approx(5.0)));
 
     // Per-unit speed: a fresh tank on a long straight path outruns move_cps.
@@ -169,8 +169,8 @@ TEST_CASE("vehicle: turns in place before rolling, then moves at its own speed")
     ra2engine::Occupancy o2(16, 16), o3(16, 16);
     o2.set(1, 8, 0); o3.set(1, 8, 0);
     for (int i = 0; i < 60; ++i) {
-        ra2engine::step_units(fast, grid, 16, 16, o2, 1.0 / 60.0, 3.0, anims);
-        ra2engine::step_units(slow, grid, 16, 16, o3, 1.0 / 60.0, 3.0, anims);
+        ra2engine::step_units(fast, grid, grid, 16, 16, o2, 1.0 / 60.0, 3.0, anims);
+        ra2engine::step_units(slow, grid, grid, 16, 16, o3, 1.0 / 60.0, 3.0, anims);
     }
     CHECK(fast[0].fx > slow[0].fx);  // 4.5 cps vs 3.0 cps after 1s
 }

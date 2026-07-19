@@ -57,12 +57,11 @@ enum class HarvState : std::uint8_t {
 // flight::advance_flight_state. Default Grounded is INERT (spec §8).
 enum class FlightState { Grounded, TakingOff, Cruising, Descending };
 
-// CB-3 Naval [RE: naval.md §1]: the movement domain a unit's A* reads. Land
-// (the DEFAULT -- every existing unit) resolves to the UNCHANGED passable_
-// grid; Water resolves to the new water_passable_ grid. Land = 0 so a
-// value-initialized/legacy Unit is Land (inert -- spec §8). Amphibious is
-// reserved for a later phase (land<->water transition is out of scope).
-enum class MovementDomain { Land = 0, Water = 1 };
+// CB-3 Naval [RE: naval.md §1]: MovementDomain { Land=0, Water=1 } is defined
+// in unit_combat.hpp (UnitCombat carries a field of it, and that header is
+// included above at line 17). world.hpp sees it transitively -- Land (the
+// DEFAULT, every existing unit) resolves to the UNCHANGED passable_ grid via
+// grid_for; Water resolves to water_passable_.
 
 // A single visible/controllable actor in the world: its map cell + height
 // level (raw IsoMapPack5 coordinate space -- see ra2assets::MapCell), the
@@ -200,6 +199,16 @@ struct Unit {
     bool omni_fire = false;                            // fire without turning
     bool has_flight_goal = false;                      // a cruise goal is set
     int flight_goal_x = 0, flight_goal_y = 0;          // cruise goal cell (NOT A*)
+
+    // --- CB-3 Naval/Water [RE: naval.md §1] ---------------------------------
+    // ALL defaults INERT (spec §8): no existing demo spawns a naval unit and no
+    // existing spawn path sets is_naval=true, so every field holds its default
+    // in every existing demo; world_hash reads only cell/hp/alive and is
+    // untouched (strategy (a)). A naval unit reuses path/path_idx/fx/fy/
+    // cell_x/cell_y/occ_ exactly like a ground vehicle; only the GRID its A*
+    // reads differs (movement_domain -> grid_for).
+    bool is_naval = false;                                // naval-locomotor unit
+    MovementDomain movement_domain = MovementDomain::Land;  // Water for a naval unit
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
@@ -320,7 +329,13 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 // docs/re/infantry-anim.md §5) drives frame selection (seq_frame). Does NOT
 // modify Unit::level -- rendering height is patched separately from the map
 // by World::step. Pure: takes a passability grid + occupancy, no MapFile/SDL.
-void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable, int w, int h,
+// CB-3 Naval [RE-GATE APPLIED: naval.md §1/§3]: `water_passable` is the SECOND
+// grid (immediately after `passable`) -- the blocked re-path selects it per unit
+// (u.is_naval ? water_passable : passable). Every existing caller passes the
+// (empty in every existing demo) water grid and no existing (Land) unit reads
+// it, so ground re-pathing is byte-identical.
+void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
+                const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
@@ -484,6 +499,22 @@ public:
     int grid_w() const { return grid_w_; }
     int grid_h() const { return grid_h_; }
     const std::vector<std::uint8_t>& passable() const { return passable_; }
+    // CB-3 Naval [RE: naval.md §1]: the passability grid for a movement domain.
+    // Land (the DEFAULT -- every existing unit) returns the SAME passable_
+    // object every existing A* site already reads (byte-identical); Water
+    // returns the new water_passable_ grid. Structural byte-identity: a
+    // default-Land unit resolves to the identical grid object (spec §8).
+    const std::vector<std::uint8_t>& grid_for(MovementDomain d) const {
+        return d == MovementDomain::Water ? water_passable_ : passable_;
+    }
+    // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§2]: build the WATER grid from a
+    // per-cell LandType array (main.cpp's resolve_land_types, indexed y*grid_w+x),
+    // intersected with the Land grid passable_ (a ship never paths on a non-
+    // materialized water cell). Opt-in -- called ONLY by the naval demo; no
+    // existing demo calls it, so water_passable_ stays empty and no naval path is
+    // ever computed elsewhere (spec §8). World stays asset-free: it takes the
+    // resolved array, not a map.
+    void set_water_terrain(const std::vector<ra2assets::LandType>& land_types);
     bool walkable(int x, int y) const;
     const Occupancy& occupancy() const { return occ_; }
 
@@ -753,6 +784,13 @@ private:
     std::vector<Unit> units_;
     std::vector<Building> buildings_;
     std::vector<std::uint8_t> passable_;
+    // CB-3 Naval [RE: naval.md §1]: the WATER passability grid, empty by default
+    // (built only by set_water_terrain -- the naval demo). Same grid_w_*grid_h_
+    // shape as passable_. naval_any_ is a diagnostics/guard flag opened by the
+    // first naval order (naval movement reuses step_units -- no separate step to
+    // firewall, unlike flight's step_flight).
+    std::vector<std::uint8_t> water_passable_;
+    bool naval_any_ = false;
     Occupancy occ_;
     int grid_w_ = 0;
     int grid_h_ = 0;

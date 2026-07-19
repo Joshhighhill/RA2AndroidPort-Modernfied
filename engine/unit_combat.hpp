@@ -4,6 +4,18 @@
 
 namespace ra2engine {
 
+// CB-3 Naval [RE: naval.md §1]: the movement domain a unit's A* reads. Land
+// (the DEFAULT -- every existing unit) resolves to the UNCHANGED passable_
+// grid; Water resolves to the new water_passable_ grid. Land = 0 so a
+// value-initialized/legacy Unit is Land (inert -- spec §8). Amphibious is
+// reserved for a later phase (land<->water transition is out of scope).
+//
+// Defined HERE (not world.hpp) because UnitCombat below carries a
+// MovementDomain field, and unit_combat.hpp is included by BOTH world.hpp and
+// unit_type.hpp BEFORE world.hpp's own body -- so the enum must be visible at
+// this point. world.hpp gets it transitively via its unit_combat.hpp include.
+enum class MovementDomain { Land = 0, Water = 1 };
+
 // Per-unit combat stats resolved once by the caller (main.cpp, from Rules)
 // and handed to World::add_combat_unit to fill in a spawned Unit's hp/armor/
 // weapon fields. Mirrors the Rules-derived values Task 2 exposes (strength,
@@ -60,6 +72,14 @@ struct UnitCombat {
                                    // NOT JumpJetTurnRate [D1, aircraft.md §1]
     bool balloon_hover = false;    // BalloonHover: takes off once, never lands
     bool omni_fire = false;        // weapon OmniFire: fire without turning
+
+    // --- CB-3 Naval/Water [RE: naval.md §1] ---
+    // Resolved once from Rules by main.cpp like every existing stat; ALL
+    // defaults inert (is_naval=false = a ground unit). Copied onto the Unit at
+    // add_combat_unit. A ship reuses speed_cps/rot/damage/rof/range/verses (it
+    // is a voxel vehicle, is_vehicle=true); naval adds only the domain flags.
+    bool is_naval = false;                                // naval-locomotor type (CLSID)
+    MovementDomain movement_domain = MovementDomain::Land;  // Water for a naval unit
 };
 
 }  // namespace ra2engine

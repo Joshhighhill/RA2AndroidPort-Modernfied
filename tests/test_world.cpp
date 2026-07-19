@@ -3154,3 +3154,111 @@ TEST_CASE("water passability: build_passability output is byte-identical to toda
     CHECK(gh == 4);
     for (std::uint8_t v : land) CHECK(v == 1);   // all 16 materialized -> walkable, unchanged
 }
+
+// ===========================================================================
+// CB-3 Naval / Water integration [RE-GATE APPLIED: naval.md §1/§3]
+// ===========================================================================
+namespace {
+// Zero-arg World builder for the naval cases: binds a World to the shared,
+// load-once mapsmd03 fixture map. That map is a long-lived function-local
+// static (asset_fixture.hpp), so the returned World's NON-owning map pointer
+// stays valid after the return. Overloads the bool load_real_map_w(MapFile&)
+// helper above by arity (both in this TU's anonymous namespace). These cases
+// run under RA2_INSTALL_DIR like the rest of the suite; if the install is
+// absent the World is empty-grid and the naval CHECKs simply won't hold.
+ra2engine::World load_real_map_w() {
+    return ra2engine::World(ra2fixture::mapsmd03_map());
+}
+
+// A minimal naval combat-stat block for the World naval tests (hand-built --
+// no rulesmd/install needed) [RE-GATE APPLIED: naval.md §5].
+ra2engine::UnitCombat hyd_stats() {
+    ra2engine::UnitCombat c;
+    c.image = "HYD";
+    c.strength = 400;
+    c.armor = "heavy";
+    c.is_vehicle = true;
+    c.is_naval = true;
+    c.movement_domain = ra2engine::MovementDomain::Water;
+    c.speed_cps = 3.0;
+    c.rot = 5;  // a ship is a voxel vehicle -- it must be able to turn to face
+                // its heading before it rolls (step_units's vehicle turn gate),
+                // so a nonzero ROT is required for it to move at all.
+    return c;
+}
+}  // namespace
+
+TEST_CASE("World: a naval unit paths across water via A* on water_passable_") {
+    ra2engine::World world = load_real_map_w();
+    // Paint a horizontal water corridor across materialized interior rows. The
+    // real mapsmd03 grid is a 213x213 rotated diamond: at row y the materialized
+    // span is x in [104-y, 102+y] (empirically verified), so rows 50/51 x=60..90
+    // sit solidly inside it -- the set_water_terrain intersection (water =
+    // Water-land-type AND passable_) keeps them [RE-GATE APPLIED: naval.md §1].
+    using ra2assets::LandType;
+    const int gw = world.grid_w(), gh = world.grid_h();
+    std::vector<LandType> lt(static_cast<size_t>(gw) * gh, LandType::Clear);
+    for (int x = 60; x <= 90; ++x) {
+        lt[static_cast<size_t>(50) * gw + x] = LandType::Water;
+        lt[static_cast<size_t>(51) * gw + x] = LandType::Water;
+    }
+    world.set_water_terrain(lt);
+    ra2engine::Unit& s = world.add_combat_unit(60, 50, /*house=*/0, hyd_stats());
+    (void)s;
+    world.order_unit_move(0, 90, 50);            // order across the water corridor
+    CHECK(world.units()[0].path.size() > 1);     // a real water path was found
+    for (const ra2engine::Cellxy& c : world.units()[0].path) {
+        const std::size_t i = static_cast<std::size_t>(c.y) * gw + c.x;
+        CHECK(lt[i] == LandType::Water);         // every path cell is Water
+    }
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 4000 && world.units()[0].moving(); ++f) world.step(dt);
+    CHECK(world.units()[0].cell_x == 90);
+    CHECK(world.units()[0].cell_y == 50);        // arrived across the water
+}
+
+TEST_CASE("World: a naval unit ordered onto land is BLOCKED (empty/stay-put path)") {
+    ra2engine::World world = load_real_map_w();
+    using ra2assets::LandType;
+    const int gw = world.grid_w(), gh = world.grid_h();
+    std::vector<LandType> lt(static_cast<size_t>(gw) * gh, LandType::Clear);
+    lt[static_cast<size_t>(50) * gw + 60] = LandType::Water;   // one materialized water cell
+    world.set_water_terrain(lt);
+    world.add_combat_unit(60, 50, /*house=*/0, hyd_stats());
+    world.order_unit_move(0, 70, 50);            // (70,50) is Clear/land -> unreachable
+    CHECK(world.units()[0].path.empty());        // no water path -> stay put
+    const double dt = 1.0 / 15.0;
+    for (int f = 0; f < 60; ++f) world.step(dt);
+    CHECK(world.units()[0].cell_x == 60);        // did not move onto land
+    CHECK(world.units()[0].cell_y == 50);
+}
+
+TEST_CASE("World: a ground unit's A* is byte-identical with and without a naval unit present") {
+    // The parameterization must not perturb ground pathing.
+    auto ground_path = [](bool with_naval) {
+        ra2engine::World world = load_real_map_w();
+        if (with_naval) {
+            using ra2assets::LandType;
+            const int gw = world.grid_w(), gh = world.grid_h();
+            std::vector<LandType> lt(static_cast<size_t>(gw) * gh, LandType::Clear);
+            lt[static_cast<size_t>(50) * gw + 60] = LandType::Water;
+            world.set_water_terrain(lt);
+            world.add_combat_unit(60, 50, /*house=*/0, hyd_stats());   // idx 0 naval
+        }
+        // Ground unit at a materialized interior cell so its A* yields a REAL
+        // (non-empty) path -- the byte-identity check is only meaningful on a
+        // non-trivial path.
+        ra2engine::Unit& g = world.add_combat_unit(90, 50, /*house=*/0, gi_stats());  // ground
+        const int gi_idx = with_naval ? 1 : 0;
+        (void)g;
+        world.order_unit_move(gi_idx, 94, 54);
+        return world.units()[gi_idx].path;
+    };
+    const std::vector<ra2engine::Cellxy> a = ground_path(false);
+    const std::vector<ra2engine::Cellxy> b = ground_path(true);
+    REQUIRE(a.size() == b.size());
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i].x == b[i].x);
+        CHECK(a[i].y == b[i].y);                 // identical ground path either way
+    }
+}
