@@ -421,3 +421,16 @@ TEST_CASE("can_start_unit: TECH-gated advanced unit + plain-token unit unchanged
     u[1].tech_level = 0;                                        // TechLevel<=0 = never buildable
     CHECK_FALSE(can_start_unit(ps, 1, u, weap_tech, bt, 0, groups, true));
 }
+
+TEST_CASE("prerequisites_met: killing the TECH building flips an advanced unit back "
+          "to unbuildable [RE: techtree.md §4]") {
+    std::vector<BuildingTypeDef> bt(2);
+    bt[0].id = "GAWEAP"; bt[1].id = "GATECH";
+    const std::vector<std::pair<std::string, std::vector<std::string>>> groups = {
+        {"TECH", {"GATECH", "NATECH", "YATECH"}}};
+    const std::vector<std::string> sref = {"GAWEAP", "TECH"};
+    std::vector<Building> bs = {livet(0), livet(1)};          // GAWEAP + GATECH idle
+    CHECK(prerequisites_met(sref, bs, bt, 0, groups));        // buildable
+    kill_building(bs[1]);                                     // Battle Lab destroyed
+    CHECK_FALSE(prerequisites_met(sref, bs, bt, 0, groups));  // TECH unmet again
+}

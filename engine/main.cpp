@@ -1222,8 +1222,20 @@ UnitRoster load_unit_roster(const std::string& dir, const ra2assets::MixFile& ra
     static const UnitRosterEnt kUnits[] = {
         {"E1",  false, "GAPILE"}, {"GGI", false, "GAPILE"},
         {"MTNK", true, "GAWEAP"}, {"FV",  true, "GAWEAP"},
+        // CB-5 [RE-GATE APPLIED: techtree.md §4]: the Prism Tank (advanced tier-3
+        // unit), appended at index 4 so E1/GGI/MTNK/FV (0..3) stay stable ->
+        // --demo-prod's mtnk_slot/gi_slot lookups + prod_hash unaffected.
+        // full_parse=true (Task 2) resolves its CONFIRMED real Prerequisite=GAWEAP,
+        // GATECH (techtree.md §4; TechLevel=8, Cost=1200); the "GAWEAP" token here is
+        // only the Task-2 defensive fallback. SREF art is PRESENT on this install
+        // (sref.vxl+sref.hva in local.mix, cameo sreficon.shp in cameo.mix -- the
+        // Prism Tank renders; techtree.md §4/§5) so NO synthetic unit fallback is
+        // needed, but the art-guard stays defensively: were SREF SHP/cameo absent it
+        // would be dropped from ur.defs and --demo-techtree would synthesize a probe
+        // def (spec §6).
+        {"SREF", true, "GAWEAP"},
     };
-    return load_unit_roster_table(dir, ra2, ua, rules, art, kUnits, 4, /*full_parse=*/true);
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kUnits, 5, /*full_parse=*/true);
 }
 
 // The Soviet combat roster the exemplar aimd teams field [RE-GATE APPLIED:
@@ -1372,11 +1384,29 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // too. Missing SHPs just leave art[i].ok=false (existing guard) and
     // make_ai_config drops them from the AI catalog (never a crash) -- the
     // GATOW lesson.
-    static const char* kRoster[18] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    // CB-5 [RE-GATE APPLIED: techtree.md §4]: GATECH (Allied Battle Lab, the
+    // TECH-group member) appended LAST so every prior index -- and demo-base's
+    // world_hash -- is unchanged; spawn_base never places it by name; it is a GA* id
+    // so it does NOT enter the Soviet AI catalog (make_ai_config names NA* ids).
+    // Content-only roster growth: the [base] roster= witness grows 18->19, the gated
+    // hash is unaffected. Buildings are never DROPPED from ba.roster on art failure
+    // (unlike units) -- a missing SHP just leaves ba.art[i].ok=false (placeholder
+    // render). CONFIRMED values (techtree.md §4): [GATECH] Prerequisite=GAWEAP,RADAR,
+    // GACNST, TechLevel=8, Cost=2000. GATECH is itself radar-gated, BUT the
+    // --demo-techtree gate PLACES GATECH DIRECTLY via spawn_base/place_player_building
+    // (the base-build path bypasses the buildability predicate), so GATECH's own
+    // radar-gated prereq is NEVER evaluated and the demo base needs NO radar.
+    // GATECH building ART is ABSENT on this partial install [RE-FALLBACK: techtree.md
+    // §4/§5] (Soviet natek / Yuri ngtek Battle-Lab art present, but the base-RA2
+    // Allied building SHP set is absent) -- kept in ba.roster with ba.art[i].ok=false
+    // + placeholder; roster=19 is UNCONDITIONAL and GATECH stays placeable/
+    // roster-findable, so the gate proves buildability art-independent (Task 6
+    // deviation). SREF art, by contrast, IS present -- no unit fallback needed.
+    static const char* kRoster[19] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
-                                       "NAWALL", "NARADR"};
+                                       "NAWALL", "NARADR", "GATECH"};
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -1428,8 +1458,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
 
-    ba.roster.reserve(18);
-    ba.art.reserve(18);
+    ba.roster.reserve(19);
+    ba.art.reserve(19);
     int ok_n = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
