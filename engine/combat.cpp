@@ -359,7 +359,17 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
                     // a known spy is never blocked. A dog's DetectDisguise clears
                     // `disguised` -> the spy is targetable again next scan (no
                     // extra code needed).
-                    if (j == i || !valid_target(units, u.house, j) || units[j].disguised)
+                    // Shroud/Fog [RE: shroud.md §6]: a candidate whose cell is
+                    // NOT visible to the scanning house cannot be auto-acquired
+                    // (mirrors the disguise precedent above). seen_by_mask
+                    // defaults 0xFF and only step_visibility (behind shroud_any_)
+                    // ever changes it, so with shroud off
+                    // (0xFF & (1<<u.house)) != 0 -> the clause is always false ->
+                    // combat 78 / tank 144 byte-identical. This lives ONLY in the
+                    // AUTO-acquire scan, NOT valid_target (an explicit
+                    // order_attack on a known unit is never blocked, §6).
+                    if (j == i || !valid_target(units, u.house, j) || units[j].disguised
+                        || !(units[j].seen_by_mask & (1u << u.house)))
                         continue;
                     const Unit& v = units[j];
                     const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);

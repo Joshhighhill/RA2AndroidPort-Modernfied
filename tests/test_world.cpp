@@ -3956,3 +3956,46 @@ TEST_CASE("World shroud: step_visibility reveals around a unit; sticky fog; iner
     CHECK_FALSE(world.visible_at(0, ox, oy));             // no longer visible
     CHECK(world.visible_at(0, 1, 1));                     // new location visible
 }
+
+TEST_CASE("World shroud: fogged enemy is not auto-acquired; visible enemy is [RE: shroud.md §6]") {
+    // Drives the ACTUAL step_combat auto-acquire scan (via world.step): the new
+    // targeting clause skips a candidate whose cell is not seen_by_mask-visible
+    // to the scanning house. The load-bearing assertion is scanner.target: it
+    // FAILS before the clause exists (a fogged, in-range foe would be acquired).
+    // Uses the same real-map fixture the other World shroud tests use; the gates
+    // and full suite run with RA2_INSTALL_DIR set, so this executes.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    REQUIRE(world.grid_w() > 16);
+    REQUIRE(world.grid_h() > 8);
+    // Scanner: house 0, SMALL sight (3) but LARGE weapon range (6.0) -> there is
+    // a band that is in weapon range yet outside its own sight (fogged).
+    ra2engine::UnitCombat sc;
+    sc.image = "E1"; sc.strength = 200; sc.armor = "none"; sc.sight = 3;
+    sc.damage = 40; sc.rof = 20; sc.range = 6.0; sc.verses = {100};
+    world.add_combat_unit(6, 6, /*house=*/0, sc);
+    const int scan_i = (int)world.units().size() - 1;
+    // Enemy at dx=5: in weapon range (5<=6) but OUTSIDE sight (25>9) -> fogged
+    // for house 0 (only the scanner reveals for house 0).
+    ra2engine::UnitCombat en;
+    en.image = "E2"; en.strength = 100; en.armor = "none"; en.sight = 3;
+    world.add_combat_unit(11, 6, /*house=*/1, en);
+    const int foe_i = (int)world.units().size() - 1;
+    world.enable_shroud(true);
+    const double dt = 1.0 / 15.0;
+    world.step(dt);                                       // step_visibility + step_combat
+    CHECK_FALSE(world.visible_at(0, 11, 6));              // foe cell fogged for house 0
+    CHECK((world.units()[foe_i].seen_by_mask & 0x01) == 0);
+    CHECK(world.units()[scan_i].target == -1);           // clause: fogged foe NOT acquired
+    // Move the foe INTO sight+range (dx=3: in range 3<=6, in sight 9<=9).
+    world.units()[foe_i].cell_x = 9; world.units()[foe_i].cell_y = 6;
+    world.units()[foe_i].fx = 9;    world.units()[foe_i].fy = 6;   // fx/fy are cell-space
+    world.step(dt);
+    CHECK(world.visible_at(0, 9, 6));                     // now visible to house 0
+    CHECK((world.units()[foe_i].seen_by_mask & 0x01) != 0);
+    CHECK(world.units()[scan_i].target == foe_i);        // visible foe IS auto-acquired
+}
