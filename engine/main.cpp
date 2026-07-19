@@ -1396,12 +1396,14 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // --demo-techtree gate PLACES GATECH DIRECTLY via spawn_base/place_player_building
     // (the base-build path bypasses the buildability predicate), so GATECH's own
     // radar-gated prereq is NEVER evaluated and the demo base needs NO radar.
-    // GATECH building ART is ABSENT on this partial install [RE-FALLBACK: techtree.md
-    // §4/§5] (Soviet natek / Yuri ngtek Battle-Lab art present, but the base-RA2
-    // Allied building SHP set is absent) -- kept in ba.roster with ba.art[i].ok=false
-    // + placeholder; roster=19 is UNCONDITIONAL and GATECH stays placeable/
-    // roster-findable, so the gate proves buildability art-independent (Task 6
-    // deviation). SREF art, by contrast, IS present -- no unit fallback needed.
+    // GATECH building ART is art-guarded, NOT hard-required: it loads through the
+    // same Allied-building-art path as the other GA* buildings (which may resolve
+    // via the NewTheater generic-art munge). On this install it RESOLVES (ok=true,
+    // cameo present); on a partial install missing the Allied SHP set it would leave
+    // ba.art[i].ok=false + placeholder. Either way roster=19 is UNCONDITIONAL and
+    // GATECH stays placeable/roster-findable (buildings are never dropped on art
+    // failure), so the gate proves buildability art-independent. SREF art likewise
+    // resolves on this install -- no unit fallback needed.
     static const char* kRoster[19] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
