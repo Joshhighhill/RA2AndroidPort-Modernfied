@@ -3563,6 +3563,58 @@ TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on 
     CHECK(world.units()[0].capture_target == -1);               // intent cleared
 }
 
+TEST_CASE("World spy infiltrate: a DISTANT order defers -- the effect (cash steal) happens on "
+          "ARRIVAL, not the frame the order is issued [RE: capture.md §B]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    world.set_move_speed(4.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // Find a spy cell with a clear walkable corridor `dist` cells east (the
+    // spy's approach path + the 1x1 enemy refinery foundation).
+    const int dist = 6;
+    int sx = -1, sy = -1;
+    for (int dy = 0; dy < 12 && sx < 0; ++dy)
+        for (int dx = 0; dx < 12 && sx < 0; ++dx) {
+            const int x = c->x + dx, y = c->y + dy;
+            bool ok = true;
+            for (int k = 0; k <= dist; ++k)
+                if (!world.walkable(x + k, y)) { ok = false; break; }
+            if (ok) { sx = x; sy = y; }
+        }
+    REQUIRE(sx >= 0);
+    ra2engine::UnitCombat spy = gi_stats();
+    spy.image = "SPY";
+    world.add_combat_unit(sx, sy, /*house=*/0, spy);           // unit 0: spy
+    const int bx = sx + dist, by = sy;
+    const int refn = world.add_building(0, bx, by, 1, 1, /*house=*/1, /*strength=*/100,
+                                        /*armor_ix=*/0, 0.0, /*instant=*/true);   // enemy refinery
+    REQUIRE(refn >= 0);
+    world.grant_credits_for_test(0, 0.0);                      // spy house 0
+    world.grant_credits_for_test(1, 1000.0);                   // victim house 1
+    world.units()[0].selected = true;
+    using P = ra2engine::World::InfiltratePurpose;
+    world.order_spy_infiltrate(0, refn, P::Refinery, 0.5, 1000);
+    // Order recorded; NOTHING happens on the same frame the order is issued.
+    CHECK(world.units()[0].infiltrate_target == refn);
+    CHECK(world.units()[0].alive);                             // spy NOT consumed yet
+    CHECK(world.house_credits(1) == doctest::Approx(1000.0));  // victim untouched
+    CHECK(world.house_credits(0) == doctest::Approx(0.0));     // spy untouched
+    // One frame in: the spy is still far away -> no infiltration.
+    const double dt = 1.0 / 15.0;
+    world.step(dt);
+    CHECK(world.house_credits(1) == doctest::Approx(1000.0));
+    CHECK(world.house_credits(0) == doctest::Approx(0.0));
+    CHECK(world.units()[0].alive);
+    // Step to arrival: adjacency triggers the infiltration + consumes the spy.
+    for (int f = 0; f < 400 && world.units()[0].alive; ++f) world.step(dt);
+    CHECK(world.house_credits(1) == doctest::Approx(500.0));   // victim halved on arrival
+    CHECK(world.house_credits(0) == doctest::Approx(500.0));   // spy gained on arrival
+    CHECK_FALSE(world.units()[0].alive);                       // spy consumed on arrival
+    CHECK(world.units()[0].infiltrate_target == -1);           // intent cleared
+}
+
 TEST_CASE("World capture: neutral oil derrick pays its owner ONLY after capture [RE: capture.md §D1]") {
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }

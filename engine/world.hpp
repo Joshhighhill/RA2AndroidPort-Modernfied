@@ -220,6 +220,18 @@ struct Unit {
     // is a strict no-op for every unit with capture_target < 0.
     int capture_target = -1;     // pending engineer capture/repair order ->
                                  // building index (-1 = none)
+    // Spy infiltration order [RE: capture.md §B]: same deferred move-adjacent-
+    // then-act model as capture_target, but the effect (infiltrate_building) is
+    // resolved-purpose-driven -- the InfiltratePurpose is decided at the gesture
+    // layer (World is asset-free) and stored here PRE-RESOLVED, so step_capture
+    // acts on arrival without the roster. Default INERT: -1 target + None(0)
+    // purpose -> the step_capture spy pass is a strict no-op in every existing
+    // demo; world_hash reads none of these. infiltrate_purpose holds the int
+    // value of World::InfiltratePurpose (defined below Unit; 0 = None).
+    int infiltrate_target = -1;         // pending spy infiltrate -> building idx
+    int infiltrate_purpose = 0;         // resolved InfiltratePurpose as int (0=None)
+    double infiltrate_steal_pct = 0.5;  // SpyMoneyStealPercent (arrives pre-resolved)
+    int infiltrate_blackout = 1000;     // SpyPowerBlackout (arrives pre-resolved)
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
@@ -794,6 +806,21 @@ public:
     // unit or b_idx is not an alive, non-Dead building. Interactive-only -- no
     // demo issues it, so every gate stays byte-identical.
     void order_engineer_capture(int eng_idx, int b_idx);
+
+    // Spy infiltrate ORDER [RE: capture.md §B]: the deferred sibling of
+    // order_engineer_capture. Records building b_idx as unit spy_idx's
+    // infiltrate_target and paths it to a free cell adjacent to the footprint;
+    // the PRE-RESOLVED purpose + steal_pct/blackout are stored on the unit so
+    // step_capture calls infiltrate_building (and consume_unit) on Chebyshev
+    // arrival WITHOUT the roster (World is asset-free -- the caller resolved the
+    // purpose from the building type at the gesture layer). It does NOT
+    // infiltrate or consume here -- the effect fires only on arrival, so a spy
+    // no longer infiltrates across the map on a single click. Supersedes any
+    // engagement/enter order. Opens capture_any_. No-op if spy_idx is not an
+    // alive, non-dying unit or b_idx is not an alive, non-Dead building.
+    // Interactive-only -- no demo issues it, so every gate stays byte-identical.
+    void order_spy_infiltrate(int spy_idx, int b_idx, InfiltratePurpose purpose,
+                              double steal_pct, int blackout);
 
     // Register a captured/owned income building (an oil derrick) [RE: capture.md
     // §D1]. Opens capture_any_. amount/delay are the resolved [CAOILD]

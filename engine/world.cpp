@@ -1267,57 +1267,127 @@ void World::order_engineer_capture(int eng_idx, int b_idx) {
         order_unit_move(eng_idx, g.x, g.y);
 }
 
+void World::order_spy_infiltrate(int spy_idx, int b_idx, InfiltratePurpose purpose,
+                                 double steal_pct, int blackout) {
+    if (spy_idx < 0 || spy_idx >= static_cast<int>(units_.size())) return;
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return;
+    Unit& u = units_[spy_idx];
+    if (!u.alive || u.die_time >= 0.0) return;
+    const Building& b = buildings_[b_idx];
+    if (!b.alive || b.state == Building::State::Dead) return;
+    capture_any_ = true;             // open the step_capture firewall
+    // An infiltrate order supersedes any engagement / pending enter (mirrors
+    // order_engineer_capture's supersede tail).
+    u.target = -1;
+    u.target_building = -1;
+    u.attack_order = false;
+    u.unload_pending = false;
+    u.enter_target = -1;
+    u.infiltrate_target = b_idx;
+    u.infiltrate_purpose = static_cast<int>(purpose);   // pre-resolved at gesture layer
+    u.infiltrate_steal_pct = steal_pct;
+    u.infiltrate_blackout = blackout;
+    Cellxy g;
+    if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g))
+        order_unit_move(spy_idx, g.x, g.y);
+}
+
 void World::step_capture(double dt) {
     (void)dt;
-    // FIREWALL (spec §8): until the first capture/repair/order ever, this whole
-    // pass is one branch -- the only cost every existing demo pays.
+    // FIREWALL (spec §8): until the first capture/repair/infiltrate order ever,
+    // this whole pass is one branch -- the only cost every existing demo pays.
     if (!capture_any_) return;
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
-        if (u.capture_target < 0) continue;                    // no-op for every
-                                                               // non-engineer unit
-        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) {
-            u.capture_target = -1;
-            continue;
+        // --- Engineer capture/repair arrival [RE: capture.md §A5] ---
+        if (u.capture_target >= 0) {
+            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) {
+                u.capture_target = -1;
+                continue;
+            }
+            const int bi = u.capture_target;
+            if (bi < 0 || bi >= static_cast<int>(buildings_.size())) {
+                u.capture_target = -1;
+                continue;
+            }
+            Building& b = buildings_[bi];
+            if (!b.alive || b.state == Building::State::Dead) {     // target gone: cancel
+                u.capture_target = -1;                             // cleanly (no crash)
+                continue;
+            }
+            // Chebyshev adjacency to the NEAREST foundation cell -- the transport
+            // boarding-trigger analogue (step_cargo: cheb <= 1).
+            const auto cells = foundation_cells(b.cx, b.cy, b.fw, b.fh);
+            int best = -1;
+            for (const Cellxy& cell : cells) {
+                const int dx = u.cell_x - cell.x, dy = u.cell_y - cell.y;
+                const int cheb = std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy);
+                if (best < 0 || cheb < best) best = cheb;
+            }
+            if (best >= 0 && best <= 1) {
+                const int eng_house = u.house;
+                bool consumed = false;
+                if (b.house != eng_house)
+                    consumed = capture_building(bi, eng_house, /*startup=*/0);   // enemy/neutral
+                else
+                    consumed = repair_building(bi, eng_house);                   // own damaged
+                u.capture_target = -1;             // intent resolved on arrival regardless
+                if (consumed) consume_unit(static_cast<int>(i));  // engineer always consumed
+                // own-undamaged building -> repair_building returned false: the
+                // engineer arrived, did nothing, NOT consumed (graceful fall-through).
+            } else if (!u.moving()) {
+                // Arrived-but-not-adjacent / path cancelled while standing: re-path
+                // to a free cell adjacent to the footprint (the transport re-path
+                // analogue). No free cell nearby -> keep standing, retried next frame.
+                Cellxy g;
+                if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
+                                           g))
+                    order_unit_move(static_cast<int>(i), g.x, g.y);
+            }
+            continue;   // a unit never holds both a capture and an infiltrate intent
         }
-        const int bi = u.capture_target;
-        if (bi < 0 || bi >= static_cast<int>(buildings_.size())) {
-            u.capture_target = -1;
-            continue;
-        }
-        Building& b = buildings_[bi];
-        if (!b.alive || b.state == Building::State::Dead) {     // target gone: cancel
-            u.capture_target = -1;                             // cleanly (no crash)
-            continue;
-        }
-        // Chebyshev adjacency to the NEAREST foundation cell -- the transport
-        // boarding-trigger analogue (step_cargo: cheb <= 1).
-        const auto cells = foundation_cells(b.cx, b.cy, b.fw, b.fh);
-        int best = -1;
-        for (const Cellxy& cell : cells) {
-            const int dx = u.cell_x - cell.x, dy = u.cell_y - cell.y;
-            const int cheb = std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy);
-            if (best < 0 || cheb < best) best = cheb;
-        }
-        if (best >= 0 && best <= 1) {
-            const int eng_house = u.house;
-            bool consumed = false;
-            if (b.house != eng_house)
-                consumed = capture_building(bi, eng_house, /*startup=*/0);   // enemy/neutral
-            else
-                consumed = repair_building(bi, eng_house);                   // own damaged
-            u.capture_target = -1;             // intent resolved on arrival regardless
-            if (consumed) consume_unit(static_cast<int>(i));  // engineer always consumed
-            // own-undamaged building -> repair_building returned false: the
-            // engineer arrived, did nothing, NOT consumed (graceful fall-through).
-        } else if (!u.moving()) {
-            // Arrived-but-not-adjacent / path cancelled while standing: re-path
-            // to a free cell adjacent to the footprint (the transport re-path
-            // analogue). No free cell nearby -> keep standing, retried next frame.
-            Cellxy g;
-            if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
-                                       g))
-                order_unit_move(static_cast<int>(i), g.x, g.y);
+        // --- Spy infiltrate arrival [RE: capture.md §B] ---
+        // Mirrors the engineer arrival exactly; only the act differs -- the
+        // PRE-RESOLVED purpose/steal/blackout stored at order time drive
+        // infiltrate_building, so no roster is needed here.
+        if (u.infiltrate_target >= 0) {
+            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) {
+                u.infiltrate_target = -1;
+                continue;
+            }
+            const int bi = u.infiltrate_target;
+            if (bi < 0 || bi >= static_cast<int>(buildings_.size())) {
+                u.infiltrate_target = -1;
+                continue;
+            }
+            Building& b = buildings_[bi];
+            if (!b.alive || b.state == Building::State::Dead) {     // target gone: cancel
+                u.infiltrate_target = -1;                          // cleanly (no crash)
+                continue;
+            }
+            const auto cells = foundation_cells(b.cx, b.cy, b.fw, b.fh);
+            int best = -1;
+            for (const Cellxy& cell : cells) {
+                const int dx = u.cell_x - cell.x, dy = u.cell_y - cell.y;
+                const int cheb = std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy);
+                if (best < 0 || cheb < best) best = cheb;
+            }
+            if (best >= 0 && best <= 1) {
+                const int spy_house = u.house;
+                const auto purpose = static_cast<InfiltratePurpose>(u.infiltrate_purpose);
+                const bool acted = infiltrate_building(bi, spy_house, purpose,
+                                                       u.infiltrate_steal_pct,
+                                                       u.infiltrate_blackout);
+                u.infiltrate_target = -1;          // intent resolved on arrival regardless
+                if (acted) consume_unit(static_cast<int>(i));   // spy consumed on success
+                // self-spy / no-op -> infiltrate_building returned false: the spy
+                // arrived, did nothing, NOT consumed (graceful fall-through).
+            } else if (!u.moving()) {
+                Cellxy g;
+                if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
+                                           g))
+                    order_unit_move(static_cast<int>(i), g.x, g.y);
+            }
         }
     }
 }

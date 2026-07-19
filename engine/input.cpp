@@ -539,19 +539,22 @@ void Input::handle(const InputEvent& ev) {
                     }
                     // Spy infiltration gesture [RE: capture.md §B CONFIRMED]: a
                     // SINGLE selected SPY right-clicking an ENEMY/NEUTRAL building
-                    // infiltrates it -- refinery cash-steal, power blackout, SW
-                    // reset, factory veteran-flag, or (radar/lab) inert -- and the
-                    // spy is CONSUMED on the successful infiltration. Resolved
-                    // BEFORE the engineer/attack/move branches so a spy never
-                    // issues a plain attack. The purpose is resolved from the
-                    // building's roster type (set_infiltrate_params); an OWN
-                    // building is a self-spy no-op (infiltrate_building returns
-                    // false) so the gesture falls through to normal handling.
-                    // Interactive-only: no demo selects a spy, so every gate is
-                    // byte-identical. (Divergence from the engineer's deferred
-                    // move-adjacent-then-act: purpose resolution needs the roster
-                    // id, which lives at this gesture layer, so the effect fires
-                    // immediately on the click -- see the report.)
+                    // ORDERS it to move adjacent and then infiltrate it --
+                    // refinery cash-steal, power blackout, SW reset, factory
+                    // veteran-flag, or (radar/lab) inert -- and the spy is
+                    // CONSUMED on the successful infiltration ON ARRIVAL, NOT on
+                    // the click. Like the engineer sibling, the act
+                    // (infiltrate_building + consume_unit) is deferred to
+                    // step_capture when the spy reaches adjacency -- a spy no
+                    // longer infiltrates a building across the map on a single
+                    // click. The one wrinkle: the InfiltratePurpose is resolved
+                    // from the building's roster type HERE (set_infiltrate_params;
+                    // World is asset-free) and stored PRE-RESOLVED on the unit, so
+                    // step_capture acts without the roster. Resolved BEFORE the
+                    // engineer/attack/move branches so a spy never issues a plain
+                    // attack. An OWN building is not a spy target so the gesture
+                    // falls through to normal handling. Interactive-only: no demo
+                    // selects a spy, so every gate is byte-identical.
                     const int spy = sel_spy_idx(world_);
                     if (spy >= 0) {
                         const int b_hit = world_.building_at_cell(cx, cy);
@@ -561,14 +564,12 @@ void Input::handle(const InputEvent& ev) {
                             if (tb.house != spy_house) {   // enemy/neutral only
                                 const World::InfiltratePurpose purpose =
                                     infiltrate_purpose_of(tb.type);
-                                if (world_.infiltrate_building(b_hit, spy_house, purpose,
-                                                               spy_steal_pct_,
-                                                               spy_blackout_frames_)) {
-                                    world_.consume_unit(spy);       // spy consumed
-                                    actions_.move_ordered = true;   // move-ack voice
-                                    actions_.actor = spy;
-                                    break;                          // handled
-                                }
+                                world_.order_spy_infiltrate(spy, b_hit, purpose,
+                                                            spy_steal_pct_,
+                                                            spy_blackout_frames_);
+                                actions_.move_ordered = true;   // move-ack voice
+                                actions_.actor = spy;
+                                break;                          // handled: no attack/move
                             }
                             // own building -> not a spy target; fall through below.
                         }
