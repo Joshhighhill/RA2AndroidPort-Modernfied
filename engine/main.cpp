@@ -1263,6 +1263,41 @@ UnitRoster load_soviet_unit_roster(const std::string& dir, const ra2assets::MixF
     return load_unit_roster_table(dir, ra2, ua, rules, art, kSoviet, 4, /*full_parse=*/false);
 }
 
+// [RE: roster.md §2, D1] The broaden-roster content units — 7 Soviet + 5 Allied,
+// all art-present on this install. A BRAND-NEW table: kUnits (player slots 0-4)
+// and kSoviet (AI proxy) are UNTOUCHED, so --demo-prod slots + ai-base/ai-team
+// hashes are unperturbed. full_parse=true resolves each unit's REAL rulesmd
+// Prerequisite= (the `prereq` column is only the defensive fallback). The vehicle
+// flag routes voxel units through load_vehicle_assets (which resolves the voxel by
+// rules.image(id) -> Image= overrides honored: APOC->MTNK, MGTK->RTNK, ORCA->FALC,
+// V3->V3, ZEP->ZEP); infantry route through resolve_combat_unit (Image= via
+// rules.image: TERROR->TRST, GHOST->SEAL). resolve_combat_unit resolves each
+// weapon/warhead/verses GENERICALLY per-id -> basic combat is free; each type's
+// UNIQUE ACTIVE ABILITY is content-only-deferred (D5; see README). APOC is the
+// promoted proxy: real prereq NAWEAP,NATECH here, the kSoviet APOC proxy left
+// byte-for-byte unchanged. Called ONLY by the --demo-roster gate (Task 6); no
+// existing gate consumes it -> all 17 gate hashes stay byte-identical.
+[[maybe_unused]] UnitRoster load_roster_units(const std::string& dir, const ra2assets::MixFile& ra2,
+                             const UnitAssets& ua, const Rules& rules, const Art& art) {
+    static const UnitRosterEnt kRosterUnits[] = {
+        // Soviet (art image in comment where Image= overrides the id)
+        {"DRON",    false, "NAWEAP"},          // Terror Drone
+        {"V3",      true,  "NAWEAP"},          // V3 Launcher (NAWEAP,NARADR full-parsed)
+        {"ZEP",     true,  "NAWEAP"},          // Kirov (NAWEAP,NATECH full-parsed)
+        {"SHK",     false, "NAHAND"},          // Tesla/Shock Trooper
+        {"DESO",    false, "NAHAND"},          // Desolator (NAHAND,RADAR full-parsed)
+        {"APOC",    true,  "NAWEAP"},          // Apocalypse, Image=MTNK (NAWEAP,NATECH full-parsed)
+        {"TERROR",  false, "NAHAND"},          // Terrorist, Image=TRST (NAHAND,RADAR full-parsed)
+        // Allied
+        {"GHOST",   false, "GAPILE"},          // Navy SEAL, Image=SEAL (GAPILE,RADAR full-parsed)
+        {"CLEG",    false, "GAPILE"},          // Chrono Legionnaire (GAPILE,TECH full-parsed)
+        {"JUMPJET", false, "GAPILE"},          // Rocketeer, Image=ROCK (GAPILE,RADAR full-parsed)
+        {"MGTK",    true,  "GAWEAP"},           // Mirage Tank, Image=RTNK (GAWEAP,GATECH full-parsed)
+        {"ORCA",    true,  "RADAR"},            // Nighthawk, Image=FALC (RADAR full-parsed; docks GAAIRC)
+    };
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kRosterUnits, 12, /*full_parse=*/true);
+}
+
 // Spawns a harvester of `va`'s type at/next to (tx,ty): tries the target cell,
 // then rings outward, for the first walkable + unoccupied cell (add_harvester's
 // placement precondition). Returns the new unit index or -1 if none is free.
