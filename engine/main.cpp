@@ -62,8 +62,10 @@
 #include "ra2assets/ini.hpp"
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: ra2assets::LandType (resolve_land_types)
 #include "ra2assets/map.hpp"
+#include "ra2assets/fnt.hpp"       // Westwood shell font (menu labels) [Task 5]
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
+#include "ra2assets/pcx.hpp"       // logo.pcx/title.pcx decode [Task 5]
 #include "ra2assets/rules.hpp"
 #include "ra2assets/shp.hpp"
 #include "ra2assets/sounds.hpp"
@@ -2658,6 +2660,114 @@ void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string&
     SDL_RenderCopy(ren, tex, nullptr, &dst);
 }
 
+// [Task 5] Return the cached SDL_Texture* for one SHP frame (decode+palettize
+// once via `key`), so a caller can SDL_RenderCopy it into an ARBITRARY dst rect
+// (blit_shp always draws at native size; the faithful menu needs the backdrop +
+// buttons scaled/letterboxed). nullptr on an empty/out-of-range frame.
+SDL_Texture* shp_frame_tex(ra2engine::TextureCache& tc, const std::string& key,
+                           const ra2assets::ShpFile& shp, int frame,
+                           const ra2assets::Palette& pal) {
+    if (frame < 0 || frame >= shp.count()) return nullptr;
+    const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+    if (f.w <= 0 || f.h <= 0) return nullptr;
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) {
+        std::vector<uint8_t> idx = shp.decode_indexed(frame);
+        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal));
+    }
+    return tex;
+}
+
+// [Task 5] Blit a decoded PCX (opaque, a=255 for every pixel) at screen (x,y)
+// through the TextureCache's ready-RGBA path (index-0-transparent does NOT apply
+// -- PCX logos use index 0 as a real color). Cached by `key` (position-indep).
+void blit_pcx(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
+              const ra2assets::PcxImage& img, int x, int y) {
+    if (img.w <= 0 || img.h <= 0) return;
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) {
+        std::vector<uint8_t> rgba = img.rgba();
+        tex = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img.w, img.h));
+    }
+    SDL_Rect dst{x, y, img.w, img.h};
+    SDL_RenderCopy(ren, tex, nullptr, &dst);
+}
+
+// [Task 5] Scaled variant of blit_pcx: fit the logo/title into a target width
+// (preserving aspect), returned height via out_h. Used to size logo.pcx above
+// the button column without distortion.
+void blit_pcx_scaled(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
+                     const ra2assets::PcxImage& img, int cx, int y, int target_w, int* out_h) {
+    if (img.w <= 0 || img.h <= 0) { if (out_h) *out_h = 0; return; }
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) {
+        std::vector<uint8_t> rgba = img.rgba();
+        tex = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img.w, img.h));
+    }
+    const double s = static_cast<double>(target_w) / img.w;
+    const int w = target_w;
+    const int h = static_cast<int>(std::lround(img.h * s));
+    SDL_Rect dst{cx - w / 2, y, w, h};
+    SDL_RenderCopy(ren, tex, nullptr, &dst);
+    if (out_h) *out_h = h;
+}
+
+// [Task 5] The Westwood shell font stores per-pixel values as a small
+// shading/bevel RAMP (0 = transparent, ~1..N = increasing "lit" level), NOT
+// menu-palette indices -- routing them through cache.mix/palette.pal (whose low
+// indices are near-black) is exactly the "garbled/near-invisible text" trap the
+// brief flagged. So draw_fnt_text is given a SYNTHETIC ramp palette built here:
+// index 0 transparent (handled by TextureCache::get), 1.. mapped to a warm
+// metallic gold gradient that reads as the RA2 bevelled menu face.
+ra2assets::Palette make_font_palette() {
+    ra2assets::Palette p;
+    for (int i = 0; i < 256; ++i) {
+        int lvl = 40 + i * 55;                 // 1->95, 2->150, 3->205, 4->255...
+        if (lvl > 255) lvl = 255;
+        p[i] = ra2assets::Rgba{static_cast<uint8_t>(lvl),
+                               static_cast<uint8_t>(lvl * 92 / 100),
+                               static_cast<uint8_t>(lvl * 55 / 100), 255};
+    }
+    p[0] = ra2assets::Rgba{0, 0, 0, 0};        // (never used: idx 0 = transparent)
+    return p;
+}
+
+// [Task 5] Pixel width of a string in the shell font (for centering labels).
+int fnt_text_width(const ra2assets::Font& font, const std::string& s) {
+    int w = 0;
+    for (unsigned char ch : s) {
+        const int cw = font.width(ch);
+        w += (cw > 0 ? cw : font.height() / 2);
+    }
+    return w;
+}
+
+// [Task 5] Draw a string in the Westwood .fnt shell font at (x,y): each glyph is
+// blitted as an indexed sprite through `pal` (the make_font_palette ramp; index
+// 0 transparent), advancing x by the per-glyph width. `keypfx` namespaces the
+// per-glyph TextureCache entries. `scale` enlarges the (small ~16px) glyphs to
+// the 1280x720 menu.
+void draw_fnt_text(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::Font& font,
+                   const ra2assets::Palette& pal, const std::string& s, int x, int y,
+                   const std::string& keypfx, int scale = 1) {
+    int cx = x;
+    for (unsigned char ch : s) {
+        const int w = font.width(ch);
+        if (ch != ' ' && ch >= font.first() && ch <= font.last() && w > 0) {
+            const ra2assets::FntGlyph& g = font.glyph(ch);
+            if (g.w > 0 && g.h > 0) {
+                const std::string key = keypfx + std::to_string((int)ch);
+                SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+                if (!tex)
+                    tex = static_cast<SDL_Texture*>(tc.get(key, g.pixels.data(), g.w, g.h, pal));
+                SDL_Rect dst{cx, y, g.w * scale, g.h * scale};
+                SDL_RenderCopy(ren, tex, nullptr, &dst);
+            }
+        }
+        cx += (w > 0 ? w : font.height() / 2) * scale;   // space/missing glyph advance
+    }
+}
+
 void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint8 rr = 0,
                 Uint8 gg = 0, Uint8 bb = 0) {
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -3473,6 +3583,188 @@ int run_interactive(bool no_audio) {
 }
 
 // ============================================================================
+// [Task 5] Faithful menu art + music, loaded once in run_menu and held BY
+// REFERENCE by the menu scenes (outlives them, like `rules_`).
+// ============================================================================
+
+// Looping menu voice (theme.mix/grinder.wav, stereo IMA -> mono). Owned by
+// run_menu; a nullptr/`!enabled` bundle just means "no menu music" (silent,
+// never a crash). Reuses AudioSystem so the SoundBank/Mixer/AudioOutput
+// lifetime rules (bank stable before Mixer built over it) are identical.
+struct MenuAudio {
+    AudioSystem sys;
+};
+
+// Faithful menu art bundle. All fields optional -- a nullptr/empty member falls
+// back to the rect-font placeholder for that element, so a partial-asset install
+// still runs. [RE: mainmenu.md §1/§5]
+struct MenuArt {
+    ra2assets::ShpFile* bg = nullptr;         // neutral.mix/mnscrnl.shp (frame 0)
+    ra2assets::ShpFile* btn = nullptr;        // local.mix/mnbttn.shp (3 state frames)
+    ra2assets::ShpFile* dlg = nullptr;        // sidec01.mix/bkgdlg.shp (setup panel)
+    ra2assets::Palette* pal = nullptr;        // cache.mix/palette.pal (T1-pinned)
+    ra2assets::Palette* dlg_pal = nullptr;    // sidec01.mix/uibkgd.pal (dialog chrome)
+    ra2assets::PcxImage* logo = nullptr;      // local.mix/logo.pcx
+    ra2assets::PcxImage* title = nullptr;     // local.mix/title.pcx
+    ra2assets::Font* font = nullptr;          // cache.mix/12metfnt.fnt
+    const ra2assets::Palette* font_pal = nullptr;  // synthetic ramp (make_font_palette)
+    MenuAudio* audio = nullptr;               // looping grinder.wav (or null)
+    bool ok = false;                          // essentials (bg+pal) decoded
+    // The classic-format .fnt DECODER (Task 3) currently produces sheared/garbled
+    // glyph bitmaps (the 70-byte glyph blocks don't de-shear under any 8bpp/4bpp/
+    // row/column reading -- a real Westwood-font-format RE task, out of scope for
+    // this composition). Per the brief's sanctioned fallback, labels use the
+    // reliable rect-font while this stays false; draw_fnt_text stays wired for
+    // when the decoder is corrected. [RE: mainmenu.md §3]
+    bool fnt_ok = false;
+};
+
+// Owns the decoded menu assets (run_menu / --menu-shot lifetime); `art` holds
+// non-owning pointers into it that the scenes reference. Must not be moved once
+// `art` is populated (art.font_pal points at the value member below).
+struct MenuArtStore {
+    std::unique_ptr<ra2assets::ShpFile> bg, btn, dlg;
+    std::unique_ptr<ra2assets::Palette> pal, dlg_pal;
+    std::unique_ptr<ra2assets::PcxImage> logo, title;
+    std::unique_ptr<ra2assets::Font> font;
+    ra2assets::Palette font_pal{};
+    std::unique_ptr<MenuAudio> audio;
+    MenuArt art;
+};
+
+// [Task 5] Decode theme.mix/grinder.wav (stereo IMA, T4) and downmix to the mono
+// SDL sink, register as the looping "menu:grinder" voice. Best-effort: any
+// failure leaves sys.enabled=false (menu simply runs silent). Honors no_audio at
+// the call site (run_menu skips this entirely when no_audio).
+std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
+    auto ma = std::make_unique<MenuAudio>();
+    try {
+        MixFile theme = MixFile::open(read_file(dir + "theme.mix"));
+        const MixEntry* e = theme.find("grinder.wav");
+        if (!e) { std::cerr << "[menu-music] grinder.wav not in theme.mix\n"; return ma; }
+        std::vector<uint8_t> bytes = theme.read(*e);
+        ra2assets::WavInfo info;
+        std::vector<int16_t> pcm = ra2assets::load_wav_ima(bytes.data(), bytes.size(), info);
+        std::vector<int16_t> mono;
+        if (info.channels == 2) {
+            mono.resize(pcm.size() / 2);
+            for (size_t i = 0; i < mono.size(); ++i)
+                mono[i] = static_cast<int16_t>(
+                    (static_cast<int>(pcm[2 * i]) + static_cast<int>(pcm[2 * i + 1])) / 2);
+        } else {
+            mono = std::move(pcm);
+        }
+        const int id = ma->sys.bank.add(std::move(mono));
+        ma->sys.mixer = std::make_unique<ra2engine::Mixer>(ma->sys.bank, kAudioRngSeed);
+        ra2engine::MixerSound ms;
+        ms.variants.push_back(id);
+        ms.volume = 100;
+        ms.global = true;          // non-positional: floor at min_volume, never attenuate
+        ms.min_volume = 100;
+        ms.range = 1000.0;
+        ms.limit = 1;              // single looping instance
+        ma->sys.mixer->register_sound("menu:grinder", ms);
+        ma->sys.out.open();
+        ma->sys.enabled = ma->sys.out.ok();
+        std::cerr << "[menu-music] grinder.wav " << (info.channels == 2 ? "stereo->mono" : "mono")
+                  << " @" << info.sample_rate << "Hz device="
+                  << (ma->sys.enabled ? "ok" : "none") << "\n";
+    } catch (const std::exception& ex) {
+        std::cerr << "[menu-music] unavailable: " << ex.what() << "\n";
+    }
+    return ma;
+}
+
+// [Task 5] Load every menu asset best-effort into `store` and wire `store.art`
+// pointers. A per-asset failure leaves that element null (that element falls
+// back to the rect-font/placeholder path); art.ok is set only when the
+// essentials (bg + palette) decoded. Never throws -> a partial install still
+// runs the menu. All ids live in ra2.mix nested containers (RE mainmenu.md §1/§2).
+void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
+    store.font_pal = make_font_palette();
+    auto try_shp = [](MixFile& m, const char* name) -> std::unique_ptr<ra2assets::ShpFile> {
+        try {
+            const MixEntry* e = m.find(std::string(name));
+            if (!e) { std::cerr << "[menu-art] " << name << " not found\n"; return nullptr; }
+            return std::make_unique<ra2assets::ShpFile>(ra2assets::ShpFile::load(m.read(*e)));
+        } catch (const std::exception& ex) {
+            std::cerr << "[menu-art] " << name << ": " << ex.what() << "\n"; return nullptr;
+        }
+    };
+    auto try_pcx = [](MixFile& m, const char* name) -> std::unique_ptr<ra2assets::PcxImage> {
+        try {
+            const MixEntry* e = m.find(std::string(name));
+            if (!e) { std::cerr << "[menu-art] " << name << " not found\n"; return nullptr; }
+            return std::make_unique<ra2assets::PcxImage>(ra2assets::decode_pcx(m.read(*e)));
+        } catch (const std::exception& ex) {
+            std::cerr << "[menu-art] " << name << ": " << ex.what() << "\n"; return nullptr;
+        }
+    };
+    try {
+        MixFile ra2 = MixFile::open(read_file(dir + "ra2.mix"));
+        try { MixFile neutral = ra2.open_nested("neutral.mix");
+              store.bg = try_shp(neutral, "mnscrnl.shp"); }
+        catch (const std::exception& ex) { std::cerr << "[menu-art] neutral.mix: " << ex.what() << "\n"; }
+        try { MixFile local = ra2.open_nested("local.mix");
+              store.btn   = try_shp(local, "mnbttn.shp");
+              store.logo  = try_pcx(local, "logo.pcx");
+              store.title = try_pcx(local, "title.pcx"); }
+        catch (const std::exception& ex) { std::cerr << "[menu-art] local.mix: " << ex.what() << "\n"; }
+        try {
+            MixFile cache = ra2.open_nested("cache.mix");
+            if (const MixEntry* pe = cache.find(std::string("palette.pal"))) {
+                std::vector<uint8_t> pb = cache.read(*pe);
+                store.pal = std::make_unique<ra2assets::Palette>(
+                    ra2assets::Palette::load(pb.data(), pb.size()));
+            } else std::cerr << "[menu-art] palette.pal not found\n";
+            if (const MixEntry* fe = cache.find(std::string("12metfnt.fnt"))) {
+                try { store.font = std::make_unique<ra2assets::Font>(
+                          ra2assets::load_fnt(cache.read(*fe))); }
+                catch (const std::exception& ex) {
+                    std::cerr << "[menu-art] 12metfnt.fnt: " << ex.what() << "\n"; }
+            } else std::cerr << "[menu-art] 12metfnt.fnt not found\n";
+        } catch (const std::exception& ex) { std::cerr << "[menu-art] cache.mix: " << ex.what() << "\n"; }
+        try { MixFile sidec = ra2.open_nested("sidec01.mix");
+              store.dlg = try_shp(sidec, "bkgdlg.shp");
+              // bkgdlg.shp has its OWN palette (uibkgd.pal); the cache menu
+              // palette renders it as rainbow noise.
+              if (const MixEntry* ue = sidec.find(std::string("uibkgd.pal"))) {
+                  std::vector<uint8_t> ub = sidec.read(*ue);
+                  store.dlg_pal = std::make_unique<ra2assets::Palette>(
+                      ra2assets::Palette::load(ub.data(), ub.size()));
+              } else std::cerr << "[menu-art] uibkgd.pal not found\n"; }
+        catch (const std::exception& ex) { std::cerr << "[menu-art] sidec01.mix: " << ex.what() << "\n"; }
+    } catch (const std::exception& ex) {
+        std::cerr << "[menu-art] ra2.mix: " << ex.what() << "\n";
+    }
+    if (!no_audio) store.audio = load_menu_music(dir);
+
+    store.art.bg       = store.bg.get();
+    store.art.btn      = store.btn.get();
+    store.art.dlg      = store.dlg.get();
+    store.art.pal      = store.pal.get();
+    store.art.dlg_pal  = store.dlg_pal.get();
+    store.art.logo     = store.logo.get();
+    store.art.title    = store.title.get();
+    store.art.font     = store.font.get();
+    store.art.font_pal = &store.font_pal;
+    store.art.audio    = store.audio.get();
+    store.art.ok       = (store.art.bg && store.art.pal);
+    // FNT labels DISABLED (fnt_ok stays false): the decoder yields garbled
+    // glyphs (see MenuArt::fnt_ok). Rect-font is used instead -- do not ship
+    // garbled text (brief). Flip to true once fnt.cpp is corrected.
+    store.art.fnt_ok   = false;
+    std::cerr << "[menu-art] bg=" << (store.art.bg ? "y" : "n")
+              << " pal=" << (store.art.pal ? "y" : "n")
+              << " btn=" << (store.art.btn ? "y" : "n")
+              << " logo=" << (store.art.logo ? "y" : "n")
+              << " title=" << (store.art.title ? "y" : "n")
+              << " font=" << (store.art.font ? "y" : "n")
+              << " dlg=" << (store.art.dlg ? "y" : "n")
+              << " ok=" << (store.art.ok ? "y" : "n") << "\n";
+}
+
+// ============================================================================
 // [RE: skirmish.md §1/§2, D6] Shell scenes: MainMenuScene + SkirmishSetupScene.
 // Additive + NOT hashed: reachable ONLY via run_scene_driver from the two
 // non-gate main() seams (Android + desktop fallthrough). The 17 gates never
@@ -3503,9 +3795,10 @@ class SkirmishSetupScene;
 // Campaign/Multiplayer/Load/Options greyed stubs. Hit-test via SbRect::contains.
 class MainMenuScene : public Scene {
 public:
-    explicit MainMenuScene(const Rules& rules, bool no_audio = false)
-        : rules_(rules), no_audio_(no_audio) {}
+    MainMenuScene(const Rules& rules, bool no_audio, const MenuArt& art)
+        : rules_(rules), no_audio_(no_audio), art_(art) {}
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs SkirmishSetupScene
+    void   update(double dt) override;                         // pumps the looping menu music
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
     bool   wants_quit() const override { return quit_; }
@@ -3528,40 +3821,133 @@ private:
     }
     const Rules& rules_;
     bool         no_audio_ = false;
+    const MenuArt& art_;
+    int          mx_ = -1, my_ = -1;   // last pointer position (for hover state)
+    bool         down_ = false;        // left button currently held (pressed state)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
 };
 
+// Pump the looping menu theme once per frame while this scene is active; re-play
+// when the single voice has finished (loop). Silent + no-op under --no-audio or
+// when the track failed to load. Music stops naturally on the transition to
+// GameScene (this scene is destroyed -> nobody pumps -> the ~200ms SDL queue
+// drains). [RE: mainmenu.md §4]
+void MainMenuScene::update(double dt) {
+    (void)dt;
+    if (!art_.audio || !art_.audio->sys.enabled || !art_.audio->sys.mixer) return;
+    if (art_.audio->sys.mixer->active_voices() == 0)
+        art_.audio->sys.mixer->play("menu:grinder");
+    art_.audio->sys.out.pump(*art_.audio->sys.mixer);
+}
+
 void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) {
-    (void)tc;
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-    // Title (draw_text is a 5x7 bitmap font; 6*scale px per char).
-    {
+
+    // --- Art-guarded fallback: no bg/palette -> the Phase-3 rect-font placeholder.
+    if (!art_.ok || !art_.bg || !art_.pal) {
         const char* title = "RED ALERT 2";
         const int scale = 6;
         const int tw = static_cast<int>(std::string(title).size()) * 6 * scale;
         draw_text(ren, title, (kWinW - tw) / 2, 90, scale, 220, 60, 50);
+        auto button = [&](const ra2engine::SbRect& r, const char* label, bool active) {
+            SDL_Rect fr{r.x, r.y, r.w, r.h};
+            SDL_SetRenderDrawColor(ren, active ? 34 : 20, active ? 52 : 26, active ? 84 : 34, 255);
+            SDL_RenderFillRect(ren, &fr);
+            SDL_SetRenderDrawColor(ren, active ? 120 : 60, active ? 160 : 72, active ? 210 : 90, 255);
+            SDL_RenderDrawRect(ren, &fr);
+            const int s = 3;
+            const int lw = static_cast<int>(std::string(label).size()) * 6 * s;
+            const int tx = r.x + (r.w - lw) / 2;
+            const int ty = r.y + (r.h - 7 * s) / 2;
+            draw_text(ren, label, tx, ty, s, active ? 235 : 96, active ? 240 : 100,
+                      active ? 250 : 116);
+        };
+        const Buttons bb = layout();
+        button(bb.skirmish, "SKIRMISH",    true);
+        button(bb.campaign, "CAMPAIGN",    false);
+        button(bb.mp,       "MULTIPLAYER", false);
+        button(bb.load,     "LOAD GAME",   false);
+        button(bb.options,  "OPTIONS",     false);
+        button(bb.quit,     "QUIT",        true);
+        return;
     }
-    auto button = [&](const ra2engine::SbRect& r, const char* label, bool active) {
-        SDL_Rect fr{r.x, r.y, r.w, r.h};
-        SDL_SetRenderDrawColor(ren, active ? 34 : 20, active ? 52 : 26, active ? 84 : 34, 255);
-        SDL_RenderFillRect(ren, &fr);
-        SDL_SetRenderDrawColor(ren, active ? 120 : 60, active ? 160 : 72, active ? 210 : 90, 255);
-        SDL_RenderDrawRect(ren, &fr);
-        const int scale = 3;
-        const int tw = static_cast<int>(std::string(label).size()) * 6 * scale;
-        const int tx = r.x + (r.w - tw) / 2;
-        const int ty = r.y + (r.h - 7 * scale) / 2;
-        if (active) draw_text(ren, label, tx, ty, scale, 235, 240, 250);
-        else        draw_text(ren, label, tx, ty, scale, 96, 100, 116);
-    };
+
+    const ra2assets::Palette& pal = *art_.pal;
+
+    // --- Background: uniform scale + letterbox of the 632x568 SHP into 1280x720.
+    const ra2assets::ShpFile::Frame bf = art_.bg->frame_info(0);
+    const double sc = std::min(static_cast<double>(kWinW) / bf.w,
+                               static_cast<double>(kWinH) / bf.h);
+    const int bw = static_cast<int>(std::lround(bf.w * sc));
+    const int bh = static_cast<int>(std::lround(bf.h * sc));
+    const int bx = (kWinW - bw) / 2, by = (kWinH - bh) / 2;
+    // Letterbox bars: a dark neutral (a bright palette-idx-254 border reads as a
+    // bug at 1280x720; the backdrop image itself carries the RE-pinned colors).
+    SDL_SetRenderDrawColor(ren, 8, 10, 8, 255);
+    SDL_RenderClear(ren);
+    if (SDL_Texture* tex = shp_frame_tex(tc, "menu:bg", *art_.bg, 0, pal)) {
+        SDL_Rect dst{bx, by, bw, bh};
+        SDL_RenderCopy(ren, tex, nullptr, &dst);
+    }
+
+    // --- Logo (PCX) centered above the button column.
+    if (art_.logo)
+        blit_pcx_scaled(ren, tc, "menu:logo", *art_.logo, kWinW / 2, 40, 420, nullptr);
+
+    // --- Buttons: 3-state mnbttn.shp scaled into each EXISTING layout() rect,
+    // so hit-testing (handle(), shared layout()) stays pixel-consistent.
+    // frame 0 normal / 1 pressed / 2 hover.  Greyed items dimmed via color mod.
     const Buttons b = layout();
-    button(b.skirmish, "SKIRMISH",     true);
-    button(b.campaign, "CAMPAIGN",     false);
-    button(b.mp,       "MULTIPLAYER",  false);
-    button(b.load,     "LOAD GAME",    false);
-    button(b.options,  "OPTIONS",      false);
-    button(b.quit,     "QUIT",         true);
+    struct Item { ra2engine::SbRect r; const char* label; bool active; };
+    const Item items[] = {
+        {b.skirmish, "SKIRMISH",    true},
+        {b.campaign, "CAMPAIGN",    false},
+        {b.mp,       "MULTIPLAYER", false},
+        {b.load,     "LOAD GAME",   false},
+        {b.options,  "OPTIONS",     false},
+        {b.quit,     "QUIT",        true},
+    };
+    for (const Item& it : items) {
+        const bool hover = it.active && it.r.contains(mx_, my_);
+        int frame = 0;
+        if (hover) frame = (down_ ? 1 : 2);
+        if (frame >= art_.btn->count()) frame = 0;
+        SDL_Texture* bt = shp_frame_tex(tc, "menu:btn" + std::to_string(frame),
+                                        *art_.btn, frame, pal);
+        if (bt) {
+            // Greyed items: dim to read as disabled. Restore mod afterwards.
+            if (!it.active) SDL_SetTextureColorMod(bt, 110, 110, 120);
+            else            SDL_SetTextureColorMod(bt, 255, 255, 255);
+            SDL_Rect dst{it.r.x, it.r.y, it.r.w, it.r.h};
+            SDL_RenderCopy(ren, bt, nullptr, &dst);
+        }
+        // Label: FNT shell font (scaled) when available + verified, else rect-font.
+        if (art_.font && art_.font_pal && art_.fnt_ok) {
+            const int gscale = 2;
+            const int lw = fnt_text_width(*art_.font, it.label) * gscale;
+            const int lh = art_.font->height() * gscale;
+            const int tx = it.r.x + (it.r.w - lw) / 2;
+            const int ty = it.r.y + (it.r.h - lh) / 2;
+            // Greyed items get a dim key prefix so their cached glyphs differ.
+            draw_fnt_text(ren, tc, *art_.font, *art_.font_pal, it.label, tx, ty,
+                          "fntg:", gscale);
+            if (!it.active) {
+                // overlay a translucent dark veil to convey disabled
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(ren, 20, 22, 26, 120);
+                SDL_Rect veil{it.r.x, it.r.y, it.r.w, it.r.h};
+                SDL_RenderFillRect(ren, &veil);
+            }
+        } else {
+            const int s = 3;
+            const int lw = static_cast<int>(std::string(it.label).size()) * 6 * s;
+            const int tx = it.r.x + (it.r.w - lw) / 2;
+            const int ty = it.r.y + (it.r.h - 7 * s) / 2;
+            draw_text(ren, it.label, tx, ty, s, it.active ? 235 : 110,
+                      it.active ? 240 : 112, it.active ? 250 : 124);
+        }
+    }
 }
 
 // [RE: skirmish.md §1/§3, D6] Exposes the recovered lobby subset (T1 item 1):
@@ -3573,9 +3959,11 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
 // Start -> GameScene(launch_skirmish(cfg_)); Back -> MainMenuScene.
 class SkirmishSetupScene : public Scene {
 public:
-    explicit SkirmishSetupScene(const Rules& rules, bool no_audio = false)
-        : rules_(rules), no_audio_(no_audio), cfg_(ra2engine::default_skirmish_config(rules)) {}
+    SkirmishSetupScene(const Rules& rules, bool no_audio, const MenuArt& art)
+        : rules_(rules), no_audio_(no_audio), art_(art),
+          cfg_(ra2engine::default_skirmish_config(rules)) {}
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs MainMenuScene + GameScene
+    void   update(double dt) override;                         // keeps the menu music looping
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
 
@@ -3695,24 +4083,55 @@ private:
 
     const Rules&           rules_;
     bool                   no_audio_ = false;
+    const MenuArt&         art_;
     ra2engine::SkirmishConfig cfg_;       // seeded from shipped defaults
     Scene*                 next_ = nullptr;
 };
 
+// Same looping-music pump as MainMenuScene: the theme carries across the
+// MainMenu -> SkirmishSetup transition (both are menu scenes), and stops when
+// GameScene takes over. [RE: mainmenu.md §4]
+void SkirmishSetupScene::update(double dt) {
+    (void)dt;
+    if (!art_.audio || !art_.audio->sys.enabled || !art_.audio->sys.mixer) return;
+    if (art_.audio->sys.mixer->active_voices() == 0)
+        art_.audio->sys.mixer->play("menu:grinder");
+    art_.audio->sys.out.pump(*art_.audio->sys.mixer);
+}
+
 void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) {
-    (void)tc;
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+    // Dialog chrome: the bkgdlg.shp framed panel behind the controls, scaled to
+    // cover the working area. Art-guarded: no panel art -> plain dark fill (the
+    // Phase-3 look). All control geometry (global_rect/slot_cell/start/back) is
+    // UNCHANGED -- a visual reskin only.
+    SDL_SetRenderDrawColor(ren, 10, 14, 20, 255);
+    SDL_RenderClear(ren);
+    const ra2assets::Palette* dpal = art_.dlg_pal ? art_.dlg_pal : art_.pal;
+    if (art_.dlg && dpal) {
+        if (SDL_Texture* pnl = shp_frame_tex(tc, "menu:dlg", *art_.dlg, 0, *dpal)) {
+            SDL_Rect dst{20, 20, kWinW - 40, kWinH - 40};
+            SDL_RenderCopy(ren, pnl, nullptr, &dst);
+        }
+    }
+    const bool use_fnt = (art_.font && art_.font_pal && art_.fnt_ok);
+    auto label = [&](const std::string& s, int x, int y, int rectscale, uint8_t r,
+                     uint8_t g, uint8_t bl) {
+        if (use_fnt) draw_fnt_text(ren, tc, *art_.font, *art_.font_pal, s, x, y, "fnts:", 1);
+        else         draw_text(ren, s, x, y, rectscale, r, g, bl);
+    };
     // Small helper to draw a bordered box + label + value.
     auto box = [&](const ra2engine::SbRect& r, bool active) {
         SDL_Rect fr{r.x, r.y, r.w, r.h};
-        SDL_SetRenderDrawColor(ren, active ? 30 : 22, active ? 44 : 30, active ? 70 : 40, 255);
+        SDL_SetRenderDrawColor(ren, active ? 30 : 22, active ? 44 : 30, active ? 70 : 40, 220);
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
         SDL_RenderFillRect(ren, &fr);
         SDL_SetRenderDrawColor(ren, active ? 110 : 64, active ? 140 : 76, active ? 190 : 96, 255);
         SDL_RenderDrawRect(ren, &fr);
     };
     // Title + fixed single map.
-    draw_text(ren, "SKIRMISH SETUP", 60, 60, 4, 220, 220, 235);
-    draw_text(ren, "MAP: MAPSMD03", 640, 60, 3, 180, 200, 180);
+    label("SKIRMISH SETUP", 60, 56, 4, 220, 220, 235);
+    label("MAP: MAPSMD03", 640, 60, 3, 180, 200, 180);
     // Global option rows: label (left), value (right of row).
     for (int i = 0; i < G_COUNT; ++i) {
         const ra2engine::SbRect r = global_rect(i);
@@ -3766,11 +4185,21 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
 // out-of-line handles (both scene types now complete; GameScene defined above) ---
 
 void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
+    // Track pointer position + button state for the 3-state button rendering.
+    if (ev.kind == ra2engine::InputEvent::PointerMove ||
+        ev.kind == ra2engine::InputEvent::PointerDown ||
+        ev.kind == ra2engine::InputEvent::PointerUp) {
+        mx_ = ev.x; my_ = ev.y;
+    }
+    if (ev.button == ra2engine::InputEvent::Left) {
+        if (ev.kind == ra2engine::InputEvent::PointerDown) down_ = true;
+        if (ev.kind == ra2engine::InputEvent::PointerUp)   down_ = false;
+    }
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
         ev.button != ra2engine::InputEvent::Left)
         return;
     const Buttons b = layout();
-    if (b.skirmish.contains(ev.x, ev.y)) { next_ = new SkirmishSetupScene(rules_, no_audio_); return; }
+    if (b.skirmish.contains(ev.x, ev.y)) { next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return; }
     if (b.quit.contains(ev.x, ev.y))     { quit_ = true; return; }
     // Campaign / Multiplayer / Load / Options are greyed stubs: no-op.
 }
@@ -3785,7 +4214,7 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
         return;
     }
     if (back_rect().contains(ev.x, ev.y)) {
-        next_ = new MainMenuScene(rules_, no_audio_);
+        next_ = new MainMenuScene(rules_, no_audio_, art_);
         return;
     }
     // Global option rows: left half = decrement/cycle-back, right half = increment.
@@ -3830,8 +4259,42 @@ int run_menu(bool no_audio) {
     Rules rules = Rules::load(rules_ini);
     ra2engine::Platform plat = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(plat.renderer());
-    // GameScene owns its own audio init; MainMenuScene/SkirmishSetupScene are silent.
-    return run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio));
+    // Faithful menu art + looping theme (best-effort; outlives the scenes, held
+    // by reference like `rules`). GameScene owns its OWN audio init later.
+    MenuArtStore store;
+    load_menu_art(dir, no_audio, store);
+    return run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
+}
+
+// [Task 5] Render exactly one frame of the main menu (and one of the skirmish
+// setup screen) to PNGs and exit -- the eyeball-verification hook. `out_path`
+// gets the main menu; a "_setup" sibling gets the setup screen. Audio is off.
+int run_menu_shot(const std::string& out_path) {
+    const std::string dir = env_install_dir();
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    ra2engine::Platform plat = ra2engine::Platform::create("RA2 Engine (menu-shot)", 1280, 720);
+    ra2engine::TextureCache tc(plat.renderer());
+    SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+    MenuArtStore store;
+    load_menu_art(dir, /*no_audio=*/true, store);
+
+    // Main menu: render a couple of frames so texture uploads settle.
+    MainMenuScene menu(rules, /*no_audio=*/true, store.art);
+    for (int i = 0; i < 2; ++i) { plat.begin_frame(); menu.render(plat, tc); plat.present(); }
+    capture_png(ren, out_path, 1280, 720);
+    std::cerr << "[menu-shot] wrote " << out_path << "\n";
+
+    // Skirmish setup screen -> "<stem>_setup.png".
+    std::string setup_path = out_path;
+    const size_t dot = setup_path.find_last_of('.');
+    setup_path = (dot == std::string::npos) ? setup_path + "_setup"
+                                            : setup_path.substr(0, dot) + "_setup" + setup_path.substr(dot);
+    SkirmishSetupScene setup(rules, /*no_audio=*/true, store.art);
+    for (int i = 0; i < 2; ++i) { plat.begin_frame(); setup.render(plat, tc); plat.present(); }
+    capture_png(ren, setup_path, 1280, 720);
+    std::cerr << "[menu-shot] wrote " << setup_path << "\n";
+    return 0;
 }
 
 // Non-interactive verification of the whole select -> path -> walk pipeline:
@@ -9377,7 +9840,9 @@ int main(int argc, char** argv) {
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
-            if (arg == "--screenshot" && i + 1 < argc) {
+            if (arg == "--menu-shot" && i + 1 < argc) {
+                return run_menu_shot(argv[++i]);
+            } else if (arg == "--screenshot" && i + 1 < argc) {
                 screenshot = argv[++i];
             } else if (arg == "--demo-move" && i + 2 < argc) {
                 demo_move = true;
