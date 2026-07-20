@@ -1411,6 +1411,83 @@ recovered `skirmish.md` ground truth — not bugs, do not "fix" in review):
   field; no gate configures a skirmish, so no existing hash changes
   [`skirmish.md` §1; spec §Data model].
 
+## Broaden Unit/Building Roster
+
+The Broaden Roster phase widens the playable cast by 16 calibrated content types,
+all art-present on this install, with stats/prereqs recovered verbatim from
+`docs/re/roster.md §2`. Twelve are combat units held in a new `kRosterUnits`
+table — 7 Soviet (`DRON`, `V3`, `ZEP`, `SHK`, `DESO`, `APOC`, `TERROR`) and 5
+Allied (`GHOST`, `CLEG`, `JUMPJET`, `MGTK`, `ORCA`) — and four are buildings
+appended to `kRoster` at indices `[20..23]`: `NANRCT` (Soviet Nuclear Reactor),
+`ATESLA` (Allied Prism Tower, art `GAPRIS`), `NASAM` (Allied Patriot SAM) and
+`GAAIRC` (Allied Airforce Command HQ). `APOC` is promoted from a hardcoded
+`kSoviet` proxy token into a real content type (dual prereq `NAWEAP,NATECH`)
+while the old `kSoviet` proxy entry is left byte-for-byte alone.
+
+Everything resolves through the existing generic paths — the four buildings via
+`load_building_assets`' resolve loop over the grown `kRoster`, the twelve units
+via `resolve_combat_unit` reading `ra2assets::Rules` — and both honor each type's
+`Image=` art override (e.g. `APOC`→`MTNK`, `TERROR`→`TRST`, `MGTK`→`RTNK`,
+`ORCA`→`FALC`, `GHOST`→`SEAL`, `ATESLA`→`GAPRIS`), so a type renders under its
+declared art without any per-type code. `spawn_base` gains a trailing
+default-false `bool allied_full`: when set (and non-Soviet) it lays down a
+symmetric Allied full base (ConYard + power + barracks + war factory + airforce
+command); every determinism gate leaves it false, and only the interactive Allied
+skirmish player now gets the full base.
+
+The change is strictly APPEND-ONLY: `kRoster` grew `[20]`→`[24]` (every prior
+index preserved), `kRosterUnits` is a brand-new table, and `kUnits`/`kSoviet`
+(the player/AI-proxy tables) are untouched. `world_hash` is **untouched** and
+folds instances by index, so all seventeen legacy gate hashes stay bit-identical
+— only the `roster=N` content-count witness re-pins from `20` to `24` on
+`--demo-base` and `--demo-techtree` (hashes `5273b5e71ca009e1` /
+`e73adae61ff6f71f` unchanged). Each type's unique active ability (see Deviations)
+is content-only-deferred this phase: stats, weapon, armor, prereq, art,
+buildability and basic combat land now; the special mechanic is a future
+mini-phase. The new eighteenth determinism gate `--demo-roster` pins
+`roster_hash=333cd43d8b5ece6a` (INSTALL-SPECIFIC — see the gate table note).
+
+Deviations we take for Broaden Roster (adjudicated divergences from the recovered
+`roster.md` ground truth — not bugs, do not "fix" in review):
+- **Append-only roster growth** — 4 buildings at `kRoster[20..23]` + a new
+  `kRosterUnits` table; every existing index preserved; `world_hash` folds
+  instances by index, so all 17 gate hashes stay bit-identical and only the
+  `roster=N` witness re-pins 20→24 [`roster.md` §2/§4].
+- **`kUnits`/`kSoviet` untouched; APOC promoted separately** — the 12 units live
+  in `kRosterUnits`, not the player/AI-proxy tables; APOC becomes a real content
+  type (dual prereq `NAWEAP,NATECH`) while the `kSoviet` APOC proxy is left
+  byte-for-byte alone, so `--demo-prod`/ai-base/ai-team hashes are unperturbed.
+  NATECH-gated live buildability of APOC is a carry-forward (NATECH not rostered
+  this phase) [`roster.md` §2/§5].
+- **Symmetric Allied base behind a default-false flag** — `spawn_base` gains a
+  trailing `bool allied_full`; the interactive Allied skirmish player now gets a
+  full base; every gate leaves it false [`roster.md` §3].
+- **Each type's unique active ability is content-only-deferred** — stats/weapon/
+  armor/prereq/art/buildability + basic combat land now; the special mechanic is
+  a future mini-phase:
+
+```
+  DRON burrow-into-vehicle parasite; V3 rocket-projectile flight (V3ROCKET);
+  ZEP bomb-drop + slow jumpjet flight; SHK power-up-Tesla-coil + EMP;
+  DESO radiation field + deploy-fire; APOC dual weapon (AA MammothTusk);
+  TERROR suicide detonation; GHOST C4 demolition + amphibious;
+  CLEG teleport-erase (ChronoBeam) + target freeze; JUMPJET jumpjet air movement
+  (basic flight allowed this phase iff the Jumpjet CLSID resolves, T1 item 2);
+  MGTK tree-disguise when still; ORCA transport + dock/rearm (needs GAAIRC dock).
+```
+
+- **Carry-forwards (documented, not implemented):** all the above unique
+  abilities; ORCA/JUMPJET true jumpjet/air flight (basic flight only when the
+  CLSID resolves); NATECH-gated APOC buildability; the `ATESLA` render (art
+  `GAPRIS` absent on this install, so no instance is placed — the gate still
+  asserts it resolves as a building); GASPYSAT + the shroud-T7 reveal-ordering
+  fix; GAYARD naval yard + DEST/AEGIS naval pair; ROBO/GAROBO (art absent); Yuri
+  faction (NATBNK/YA*, Side::Yuri); TTNK/GTGCAN drop-in extras (bounded batch of
+  16); per-country bonuses; the remaining ~70 cast members; multi-human input;
+  the Task-5 skirmish Allied-base wiring is now live via `allied_full` but no gate
+  exercises it; all prior-phase carry-forwards [`roster.md` §5; spec
+  §Scope/non-goals].
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -1659,6 +1736,18 @@ Headless/verification CLI modes (render one or more frames and exit):
   wedge guards exit non-zero unless launch_skirmish produced the expected
   house_count AND the AI slot is enabled AND victory+shroud are enabled AND the
   sim advanced deterministically.
+- `ra2engine.exe --demo-roster` — the Broaden Unit/Building Roster integration
+  gate: resolves all 16 new types from Rules/kRoster (12 units via
+  resolve_combat_unit, 4 buildings from kRoster), asserts cost/tech/strength +
+  a key weapon/stat per type, then spawns them into a fresh World (the 4
+  buildings via the Allied full base spawn_base(allied_full=true) + explicit
+  add_building; the 12 units via add_combat_unit) and steps N fixed dt=1/15
+  frames. Hashes every spawned instance (like world_hash) + a per-new-type
+  resolved sample + the resolved count (roster_hash). Runs twice (rendered +
+  headless); both runs must produce identical witnesses + hash; wedge guards
+  exit non-zero unless every new type resolves AND spawns AND the Allied full
+  base placed >1 building AND a spot stat matches rules (APOC strength 800,
+  ATESLA a building).
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -1666,22 +1755,23 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These seventeen headless demos are byte-identity regression gates: any change to
+These eighteen headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
-again with each subsequent roster addition — `roster=20` as of the Engineer/Spy
-Capture phase (the `CAOILD` oil derrick; `roster=19` was the CB-5 Battle Lab
-`GATECH`) — with the gated hash unaffected each time). The first SIXTEEN are the
-legacy gates re-verified unchanged by every subsequent phase; `--demo-skirmish`
-is the new Skirmish Shell + Main Menu gate.
+again with each subsequent roster addition — `roster=24` as of the Broaden
+Roster phase (the `NANRCT`/`ATESLA`/`NASAM`/`GAAIRC` buildings; `roster=20` was
+the Engineer/Spy Capture phase — the `CAOILD` oil derrick; `roster=19` was the
+CB-5 Battle Lab `GATECH`) — with the gated hash unaffected each time. The first
+SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
+`--demo-roster` is the new Broaden Unit/Building Roster gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
 | `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
 | `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
-| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=20` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
+| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=24` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
@@ -1691,11 +1781,12 @@ is the new Skirmish Shell + Main Menu gate.
 | `--demo-aircraft` | `aircraft_hash=a69642564cf64773` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
 | `--demo-naval` | `naval_hash=6aee2c82bc024e86` | `deterministic=yes`; variant=HYD (Sea Scorpion, `Speed=8`, `ROT=6`, `FlakTrackGun` Damage=25/ROF=25/Range=5, Warhead `FlakTWH` CellSpread=1.0 on this install; DRED/DEST fallback documented if art regresses); sails across the `mapsmd03` water region (468 Water cells, 252-cell main body, bbox [71,11]–[95,40], runtime-classified from the theater `[General]` tile-sets) via A* on the water grid (every path cell Water, folded into the hash), refuses a land-cell order (empty/stay-put — the water/land inverse), approaches over water and fires FlakTrackGun to a kill, holds station on resume; voxel ship at altitude 0 (existing draw path); wedge guards armed (`docs/re/naval.md`) |
 | `--demo-superweapon` | `superweapon_hash=189496664f5eca68` | `deterministic=yes`; grants the Soviet Nuclear Missile (`[NukeSpecial]` `Type=MultiMissile`, `RechargeTime` -> recharge_secs, `[NukePayload]` Damage=600, `[NUKE]` CellSpread=10/PercentAtMax=.02/Verses); charges to READY, fires at the target cell, detonates via the REUSED `apply_spread_damage` (enemies-only, instant), spares the firing house, leaves out-of-radius units untouched, re-charges from 0; NukeIcon cameo + gclock2 recharge clock (art-guarded, placeholder if absent); wedge guards armed (`docs/re/superweapon.md`) |
-| `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=20 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
+| `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=24 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
 | `--demo-capture` | `capture_hash=58b87b5bc63f7046` | `deterministic=yes`; engineer capture (`ChangeOwner` flip + SW move + AI base-node resync + startup-from-neutral) of an enemy building AND a neutral `CAOILD` (Startup 1000, Amount 20 / Delay 100f); spy infiltrate (cash-steal 0.5×, power-blackout 1000f, SW recharge reset, factory→produced `veteran_rank=1` ×1.1 firepower/×1.5 armor, radar/lab inert); disguise + dog `DetectDisguise` reveal (spy stays disguised on attack — PermaDisguise); nine wedge guards armed (`docs/re/capture.md`) |
 | `--demo-shroud` | `shroud_hash=d302852aa9517661` | `deterministic=yes`; per-house visibility (near-circular Sight reveal, dx2+dy2<=sight2, cap 10), fog no-regrow (explored sticky), fogged-enemy untargetable (seen_by_mask), spy->enemy-radar reshroud (RadarLab), SpySat reveal-all; wedge guards armed (`docs/re/shroud.md`) |
 | `--demo-multihouse` | `multihouse_hash=39412ae996cce8ae` | `deterministic=yes`; N-player HouseRec table + alliances (is_enemy/are_allied, FFA default a!=b), AllyReveal shared sight, last-team-standing victory (ShortGame=last-building), per-house side/color (8 MP colors); wedge guards armed (`docs/re/multihouse.md`) |
 | `--demo-skirmish` | `skirmish_hash=e9ad3f1fd88495f9` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, 3 combatant slots in two alliance-teams (0+2 allied vs 1, no neutral); wedge guards armed (`docs/re/skirmish.md`) |
+| `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
 
 ## Android (arm64-v8a) cross-compile
 
