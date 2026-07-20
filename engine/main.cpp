@@ -50,6 +50,7 @@
 #include "production.hpp"
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
+#include "skirmish.hpp"
 #include "voxel_raster.hpp"
 #include "world.hpp"
 
@@ -8211,6 +8212,54 @@ struct DemoMultihouseResult { std::vector<std::string> witness; uint64_t hash = 
 // pass vacuously). All combat units carry Damage=0 so auto-acquire happens but
 // nobody dies -> the only elimination is the scripted kill_building, keeping the
 // two runs byte-identical.
+// [RE: skirmish.md §3, D2] Build a ready-to-run World from a SkirmishConfig.
+// Modeled 1:1 on simulate_multihouse + run_interactive's setup block. Calls the
+// pure configure_skirmish_houses (skirmish.cpp) for the house table + toggles,
+// then does the asset-dependent spawn + full AI config. PURELY ADDITIVE: no gate
+// calls it (the 16 gates build worlds directly); world_hash untouched.
+ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
+                                 Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                 const Rules& rules) {
+    ra2engine::World world = build_world(a, ua, 0);          // count=0 -> launcher spawns everything
+    ra2engine::configure_skirmish_houses(world, cfg);       // house table + toggles + credit seed + minimal AI
+    const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
+    const int gw = world.grid_w(), gh = world.grid_h();
+    (void)gh;
+    // Per-combatant spawn: a base at a fanned-out cell + unit_count combat units
+    // (+ MCV placeholder) ring-scanned like the existing transport/engineer spawns.
+    for (int i = 0; i < (int)cfg.slots.size(); ++i) {
+        const ra2engine::SkirmishSlot& s = cfg.slots[i];
+        if (!s.combatant) continue;
+        const int bx = sc ? sc->x + (i * 14) % std::max(1, gw - 14) : 6 + i * 6;
+        const int by = sc ? sc->y : 6 + i * 4;
+        if (ba.ok) spawn_base(world, ba, /*house=*/i, bx, by);
+        // unit_count starting units (ring-scan for free walkable cells).
+        ra2engine::UnitCombat uc = resolve_combat_unit(
+            rules, s.side == ra2engine::World::Side::Soviet ? "E2" : "E1").combat;
+        int placed = 0;
+        for (int r = 1; r <= 8 && placed < cfg.unit_count; ++r)
+            for (int dy = -r; dy <= r && placed < cfg.unit_count; ++dy)
+                for (int dx = -r; dx <= r && placed < cfg.unit_count; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                    const int x = bx + dx, y = by + dy;
+                    if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                        world.add_combat_unit(x, y, /*house=*/i, uc);
+                        ++placed;
+                    }
+                }
+        // Full roster-backed AI config OVER-WRITES the minimal one from the core.
+        if (s.is_ai && ba.ok)
+            world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash));
+        // Superweapon grant per slot.
+        if (cfg.superweapons) {
+            const SuperweaponParams swp = resolve_superweapon(rules);
+            world.grant_superweapon(i, ra2engine::SuperweaponType::Nuke, swp.recharge_secs,
+                                    swp.damage, swp.cell_spread, swp.percent_at_max, swp.verses);
+        }
+    }
+    return world;
+}
+
 DemoMultihouseResult simulate_multihouse(Assets& a, UnitAssets& ua,
                                          const std::vector<const VehicleAssets*>& vlist,
                                          bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
