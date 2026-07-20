@@ -1512,7 +1512,15 @@ gate):
   directly (not the 6-bit `Palette::load` VGA expansion).
 - **Westwood FNT** (`ra2assets::load_fnt` / `Font`, `src/fnt.cpp`) — variable-
   width bitmap font (per-glyph width table + palettized rows), for authentic
-  bevelled menu labels; consumed by `draw_fnt_text` (`mainmenu.md` §3).
+  bevelled menu labels; consumed by `draw_fnt_text` (`mainmenu.md` §3). This
+  font is now **LIVE** (`fnt_ok`/`font=y`): the decoder was corrected to the
+  real Westwood on-disk format — glyphs are **8bpp** (one byte per pixel, a
+  low-nibble intensity ramp; advance = glyph `width`), **not** 4bpp-packed
+  (2px/byte, 2·width advance), and per-glyph pixel offsets are read
+  **relative to the header `image_ofs`**, which was the one true bug. The
+  correction was anchored by a byte-oracle over the glyph table and a legible
+  render (`menufix.md` CORRECTION). Menu labels now paint in the authentic
+  gold bevelled face instead of the previous rect-font fallback.
 - **Stereo IMA-ADPCM** (the `channels==2` branch in `ra2assets::load_wav_ima`,
   `src/wav.cpp`) — MS-IMA interleaved L/R decode for the looping menu theme
   `grinder.wav` (RIFF/IMA, 2ch, 22050 Hz — `mainmenu.md` §4). The `channels==1`
@@ -1528,28 +1536,40 @@ chrome on the skirmish-setup screen; the looping `grinder.wav` menu track. The
 background palette is pinned to **`cache.mix/palette.pal`** (the decisive
 render-sweep winner in `mainmenu.md` §7 item 1 — the only palette that renders a
 coherent East-Coast relief map; `fsscrn.pal` is rejected as the dark red/blue
-speckle).
+speckle). The button stack and logo are **right-aligned** in a fixed column
+mirroring the shell layout, and the backdrop's harsh red land-shading is
+corrected: `palette.pal` indices **230–239** (the theater highlight/remap band,
+formerly a pure-red ramp that tinted the whole map) are **remapped to a muted
+olive ramp at menu-background render time**, yielding the military-map olive
+relief the original shows.
 
 **Byte-identity discipline:** the menu is interactive-only, the three decoders
 live in new/guarded code paths, and mono-WAV decode is byte-unchanged, so
 `world_hash` and all eighteen gate hashes are bit-identical and **no new gate was
 added** — verification is a `--menu-shot` screenshot (a hidden-window single-
 frame capture of `MainMenuScene` + `SkirmishSetupScene` to PNG) plus the
-ra2assets host tests, not a determinism pin.
+ra2assets host tests, not a determinism pin. The subsequent fidelity upgrade
+(authentic 8bpp FNT live, olive-remapped backdrop, right-aligned composition)
+touches only these interactive render/decoder paths — re-verified at finalize,
+all eighteen gate hashes plus the ra2assets suite (both install and no-install
+modes) remain bit-identical, and the arm64 APK still links the FNT decoder.
 
 **Deviations we take** (adjudicated against `mainmenu.md`, not bugs):
 - **Approximate button/logo coordinates** — the exact per-button pixel rects are
-  hard-coded in `gamemd.exe` (not data-driven), so the layout is approximated
-  from the SHP sizes (backdrop fit ≈1.267 into 1280×720, buttons ~200×40 at
-  x≈980); a Ghidra pass on the shell dialog init to recover pixel-exact rects is
-  a carry-forward (`mainmenu.md` §5 / §7 item 2).
-- **Backdrop red shading** — `palette.pal`'s 232–239 band is the theater
-  highlight/remap slots, so the land carries heavy red shading. This reads as the
-  intended military-map styling and is faithful; the pixel-exact shell palette
-  may be embedded in the exe (a Ghidra carry-forward to refine the 232–239 band)
-  (`mainmenu.md` §7 item 1 caveat).
-- **FNT glyph-decode gap** — where a glyph fails to resolve, text falls back to
-  the engine's rect-font rather than dropping characters (`mainmenu.md` §3 / §6).
+  hard-coded in `gamemd.exe` (not data-driven), so the right-aligned layout is
+  approximated from the SHP sizes (backdrop fit ≈1.267 into 1280×720, buttons
+  ~200×40 at x≈980); a Ghidra pass on the shell dialog init to recover
+  pixel-exact rects is a carry-forward (`mainmenu.md` §5 / §7 item 2).
+- **Backdrop olive remap** — `palette.pal`'s 230–239 band is the theater
+  highlight/remap slots, on disk a pure-red ramp; rendering it verbatim tinted
+  the whole land red, so those indices are remapped to a muted olive ramp at
+  menu-background render, matching the original's military-map relief. The
+  pixel-exact shell shading is likely embedded in the exe, so a Ghidra pass to
+  refine the 230–239 band remains a carry-forward (`mainmenu.md` §7 item 1
+  caveat).
+- **FNT glyph-decode gap** — the authentic 8bpp font is live; only where an
+  individual glyph fails to resolve does text fall back to the engine's
+  rect-font rather than dropping characters (`mainmenu.md` §3 / §6).
 - **Letterbox composition** — the backdrop is scaled uniformly and centered with
   side bars filled by the palette background color (olive land-base, idx 254),
   mirroring the shell's border fill (`mainmenu.md` §7 item 2).
@@ -1557,8 +1577,10 @@ ra2assets host tests, not a determinism pin.
   22050 Hz sink; menu audio idles the device when muted (`--menu-shot` / no-audio
   runs open no device) (`mainmenu.md` §4).
 
-**Carry-forwards (documented, not implemented):** pixel-exact button coords via a
-Ghidra shell-dialog pass; the shell palette's exact 232–239 band; Campaign /
+**Carry-forwards (documented, not implemented):** the two remaining fidelity
+refinements are **pixel-exact button rects via a Ghidra shell-dialog-init pass**
+and **exact shell-palette shading (the 230–239 band) recovered from the exe**;
+also Campaign /
 Network / Internet / Load / Options / Sneak Peeks as greyed stubs (LIVE =
 Skirmish + Quit, `mainmenu.md` §7 item 3); the Allied/Soviet loadscreens
 (`aloadlg.pcx` / `rloadlg.pcx`) between menu and game; the intro movie; animated
