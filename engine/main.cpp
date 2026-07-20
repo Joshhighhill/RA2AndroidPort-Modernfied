@@ -3938,27 +3938,16 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
         SDL_RenderCopy(ren, bt, nullptr, &d);
     }
 
-    // 7. Logo emblem over the CRT screen (static stand-in for the missing ra2ts
-    //    VQA): logo.pcx is the full 640x480 title with identical chrome, so its
-    //    left screen region == the emblem-over-tanks art. Blit the top portion so
-    //    the red radar coastline still reads at the bottom of the screen.
-    if (art.logo && art.logo->w > 0 && art.logo->h > 0) {
-        SDL_Texture* lt = static_cast<SDL_Texture*>(tc.peek("shell:logo"));
-        if (!lt) {
-            std::vector<uint8_t> rgba = art.logo->rgba();
-            lt = static_cast<SDL_Texture*>(
-                tc.get_rgba("shell:logo", rgba.data(), art.logo->w, art.logo->h));
-        }
-        if (lt) {
-            const double sx = art.logo->w / 640.0, sy = art.logo->h / 480.0;
-            const int crop_lw = 472, crop_lh = 300;    // emblem+tanks; map shows below
-            SDL_Rect src{ 0, 0,
-                          static_cast<int>(std::lround(crop_lw * sx)),
-                          static_cast<int>(std::lround(crop_lh * sy)) };
-            SDL_Rect d = dev(0, 0, crop_lw, crop_lh);
-            SDL_RenderCopy(ren, lt, &src, &d);
-        }
-    }
+    // 7. CRT screen content. The ORIGINAL menu plays a looping VQA movie
+    //    (neutral: ra2ts_s.vqa 640 / ra2ts_l.vqa 800) here — the animated radar
+    //    sweep + Statue of Liberty + RA2 logo that "covers the background". In
+    //    THIS install movies01/02.mix are 4-byte "MYTH" stubs, so the VQA is
+    //    absent (the retail game itself shows only the radar map when the movie
+    //    is missing). We therefore draw NO fake logo (cropping logo.pcx — the
+    //    tanks title art — is not the menu design). The mnscrns radar backdrop
+    //    (layer 1) is the faithful stand-in. If a real ra2ts VQA is supplied,
+    //    decode + blit its current frame into (0,0,472,448) here for the exact
+    //    original look. [RE: mainmenu_true.md §0/§2]
 
     // 8. Gold 12metfnt labels centered in each button + "Main Menu" header +
     //    version line. Native glyph is ~16px; pick an integer scale keyed to the
