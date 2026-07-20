@@ -2554,6 +2554,12 @@ void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string&
               const ra2assets::ShpFile& shp, int frame, const ra2assets::Palette& pal, int x, int y) {
     if (frame < 0 || frame >= shp.count()) return;
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+    // An empty frame (0-dim, e.g. gclock2.shp frame 0 -- the build/recharge clock
+    // starts its progress art at frame 1) draws nothing; skip it rather than let
+    // TextureCache::get throw on a 0x0 SDL_CreateTexture. Render-only guard; no
+    // gate folds textures (they fold world state), and any passing render path
+    // already avoids empty frames, so gate outputs are unaffected.
+    if (f.w <= 0 || f.h <= 0) return;
     SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
     if (!tex) {
         std::vector<uint8_t> idx = shp.decode_indexed(frame);
@@ -2899,653 +2905,482 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
     }
 }
 
-int run_interactive(bool no_audio) {
-    const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
-    Assets a = load_assets(dir, ra2);
-    UnitAssets ua = load_unit_assets(dir, ra2);
-    VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
+// [RE: skirmish.md §2, D4] launch_skirmish is DEFINED far below (near the demo
+// gates); forward-declare it here so GameScene's ctor can build its World from a
+// SkirmishConfig. Purely additive: the 16 gates never touch this path.
+ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
+                                 Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                 const Rules& rules);
 
-    // Building assets + a Rules kept alive for the whole run (production math +
-    // the audio voice getters both read it).
-    ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
-    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
-    Rules rules = Rules::load(rules_ini);
-    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
-    Art art = Art::load(art_ini);
-    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
-    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
-    // CB-1: the art-guarded transport (HTK, FV fallback) [spec §7]. Its cargo
-    // stats come from resolve_combat_unit inside load_vehicle_assets.
-    TransportAssets transport = load_transport_assets(dir, ra2, ua.pal);
-    OreArt ore_art = load_ore_art(ra2);
-    // Producible-unit roster [RE: production.md §1.6]; its vehicle voxel assets
-    // are appended to the render vlist so launched MTNK/FV render as voxels.
-    UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
-    std::vector<const VehicleAssets*> vlist{&va, &miners.harv, &miners.cmin};
-    for (const VehicleAssets& v : ur.vehicles) vlist.push_back(&v);
-    // AI-2: the Soviet combat roster the enemy's aimd teams field
-    // [RE: ai-team.md]. Separate from the player roster `ur` — sidebar,
-    // demo-prod slots, and all gate outputs untouched.
-    UnitRoster ur_ai = load_soviet_unit_roster(dir, ra2, ua, rules, art);
-    for (const VehicleAssets& v : ur_ai.vehicles) vlist.push_back(&v);
-    // CB-1: the transport's hull renders via its own VehicleAssets (art-guarded;
-    // absent -> not pushed, FV fallback already covered by load_transport_assets).
-    if (transport.ok) vlist.push_back(&transport.va);
-    // Register each infantry def's SHP + anim into the shared UnitAssets store
-    // so launched infantry render (E1's "GI" is already present; other infantry
-    // images are loaded on demand). Guarded: a missing SHP just leaves that unit
-    // unrenderable (render_world skips + logs), never a crash. Covers BOTH the
-    // player roster and the AI-2 Soviet roster (E2/conscript etc.).
-    try {
-        MixFile conquer = ra2.open_nested("conquer.mix");
-        for (const std::vector<ra2engine::UnitTypeDef>* defs : {&ur.defs, &ur_ai.defs})
-            for (const ra2engine::UnitTypeDef& d : *defs) {
-                if (d.is_vehicle || ua.shps.count(d.combat.image)) continue;
-                try {
-                    ua.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
-                    ua.anims.emplace(d.combat.image, anim_from_art(art, d.combat.image));
-                } catch (const std::exception& ex) {
-                    std::cerr << "[unit-roster] infantry SHP " << d.combat.image << " unavailable ("
-                              << ex.what() << ")\n";
-                }
-            }
-    } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
-    // aimd.ini next to the other INIs [RE: ai-team.md]. Empty fallback: a missing
-    // aimd.ini degrades to zero teams, never a crash.
-    Ini aimd_ini = Ini::parse("");
-    try { aimd_ini = load_ini_from_ra2md(dir, "aimd.ini"); }
-    catch (const std::exception& ex) { std::cerr << "[ai-team] aimd.ini unavailable (" << ex.what() << ")\n"; }
-    const double build_speed = rules.general_double("BuildSpeed", 0.7);
-    const double low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
-    // MultipleFactory build-time multiplier [RE-GATE §1.2: 0.8, CONFIRMED].
-    const double mf = rules.general_double("MultipleFactory", 0.8);
-
-    ra2engine::World world = build_world(a, ua, 5);
-    // Economy wiring [RE: economy.md]: enables ore growth/spread + harvester
-    // stepping in World::step (set_economy gates it on).
-    if (ba.ok) wire_economy(world, ba, rules);
-    if (va.ok) spawn_tank_squads(world, a, va, 3);
-    // CB-1: field one transport for the player (art-guarded; interactive
-    // only). Ring-scan from the start cell for a free walkable cell -- the
-    // same spawn discipline every other interactive extra uses.
-    if (transport.ok) {
-        const ra2assets::MapCell* tc0 = ra2engine::pick_start_cell(a.map);
-        bool placed = false;
-        for (int r = 1; tc0 && r <= 6 && !placed; ++r)
-            for (int dy = -r; dy <= r && !placed; ++dy)
-                for (int dx = -r; dx <= r && !placed; ++dx) {
-                    if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
-                    const int x = tc0->x + dx, y = tc0->y + dy;
-                    if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
-                        world.add_combat_unit(x, y, /*house=*/0, transport.va.combat);
-                        placed = true;
-                    }
-                }
+// [RE: skirmish.md §2, D4] Minimal polymorphic scene interface. Additive: driven
+// ONLY at the two non-gate main() seams (Android + desktop fallthrough); no gate
+// constructs or enters it. NOT hashed.
+struct Scene {
+    virtual void   handle(const ra2engine::InputEvent& ev) { (void)ev; }
+    virtual void   update(double dt)                        { (void)dt; }
+    virtual void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) {
+        (void)plat; (void)tc;
     }
-    // Player ConYard + enemy full base (with a refinery + War Miner) flanking
-    // the squads.
-    if (ba.ok) {
-        const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
-        if (sc) {
-            spawn_base(world, ba, /*house=*/0, sc->x, sc->y + 4);
-            spawn_base(world, ba, /*house=*/1, sc->x + 14, sc->y, /*with_refinery=*/true,
-                       miners.harv.ok ? &miners.harv : nullptr, /*harv_chrono=*/false,
-                       miners.harv_storage);
-            // AI-1 + AI-2: the enemy house gets the base brain AND the
-            // offensive-team brain [RE: ai-base.md; ai-team.md]. Interactive
-            // path ONLY — no demo/screenshot path enables teams.
-            ra2engine::AiHouseConfig acfg =
-                make_ai_config(ba, rules, ra2engine::AiDifficulty::Normal,
-                               /*start_credits=*/(double)rules.mp_money());
-            acfg.team = make_ai_team_config(ba, ur_ai, rules, aimd_ini,
-                                            ra2engine::AiDifficulty::Normal,
-                                            /*player base:*/ sc->x, sc->y + 4,
-                                            /*enable_triggers=*/true);
-            world.enable_ai_house(1, acfg);
-            // Register the AI infantry anims so launched conscripts animate
-            // (vehicles ignore this; missing anims fall back to default_anim).
-            for (const ra2engine::UnitTypeDef& d : acfg.team.unit_roster)
-                if (!d.is_vehicle)
-                    world.set_anim(d.combat.image,
-                                   ua.anims.count(d.combat.image)
-                                       ? ua.anims.at(d.combat.image)
-                                       : ra2engine::default_anim());
-        }
-    }
-    // CB-4 Superweapons [RE: superweapon.md; spec §4/§6]: INTERACTIVE-ONLY grant.
-    // Resolve the Nuclear Missile params from the real rulesmd ([NukePayload]/
-    // [NUKE]) and grant house 0 the SW so the sidebar SW slot draws and the
-    // N-keybind / cameo-click -> map-click fire works. No demo path calls this,
-    // so every gate stays byte-identical (sw_state(0) is nullptr in all demos).
-    {
-        const SuperweaponParams swp = resolve_superweapon(rules);
-        world.grant_superweapon(0, ra2engine::SuperweaponType::Nuke, swp.recharge_secs,
-                                swp.damage, swp.cell_spread, swp.percent_at_max, swp.verses);
-    }
+    virtual Scene* next()                                   { return nullptr; }  // non-null => transition (takes ownership)
+    virtual bool   wants_quit() const                       { return false; }
+    virtual ~Scene()                                        = default;
+};
 
-    // Engineer/Spy Capture phase [RE-GATE APPLIED: capture.md §A3/§A5]:
-    // INTERACTIVE-ONLY -- field one player (house 0) ENGINEER so the right-click
-    // capture/repair gesture (input.cpp) is exercisable against the enemy base
-    // / the player's own damaged buildings. FULLY ART-GUARDED (the GATOW/
-    // placeholder lesson): if ENGINEER.SHP fails to load we skip the spawn
-    // cleanly rather than field an unrenderable unit. Its combat stats come from
-    // resolve_combat_unit (image "ENGINEER"); the gesture keys on image ==
-    // "ENGINEER". No demo fields an engineer, so every gate stays byte-identical.
-    if (ba.ok) {
-        try {
-            MixFile conquer = ra2.open_nested("conquer.mix");
-            ResolvedUnit eng = resolve_combat_unit(rules, "ENGINEER");
-            if (!ua.shps.count(eng.combat.image)) {
-                ua.shps.emplace(eng.combat.image,
-                                load_unit_shp(conquer, eng.combat.image));  // throws if absent -> caught
-                ua.anims.emplace(eng.combat.image, anim_from_art(art, eng.combat.image));
-            }
-            world.set_anim(eng.combat.image,
-                           ua.anims.count(eng.combat.image) ? ua.anims.at(eng.combat.image)
-                                                            : ra2engine::default_anim());
-            const ra2assets::MapCell* ec = ra2engine::pick_start_cell(a.map);
-            bool placed = false;
-            for (int r = 1; ec && r <= 6 && !placed; ++r)
-                for (int dy = -r; dy <= r && !placed; ++dy)
-                    for (int dx = -r; dx <= r && !placed; ++dx) {
-                        if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
-                        const int x = ec->x + dx, y = ec->y + dy;
-                        if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
-                            world.add_combat_unit(x, y, /*house=*/0, eng.combat);
-                            placed = true;
-                        }
-                    }
-        } catch (const std::exception& ex) {
-            std::cerr << "[engineer] ENGINEER art unavailable, skipping spawn (" << ex.what() << ")\n";
-        }
-    }
-
-    // Engineer/Spy Capture phase [RE: capture.md §C]: INTERACTIVE-ONLY -- field a
-    // house-0 SPY (renders PERMA-disguised as its own side's basic infantry,
-    // §C1/§C2 -- the ONLY defeat is an enemy DetectDisguise dog, §C4/§C6: no
-    // reveal-on-attack) and a house-0 DOG (DetectDisguise=yes -> reveals enemy
-    // spies). FULLY ART-GUARDED like the engineer; no demo fields either, and
-    // set_disguise arms capture_any_ only on this interactive path, so every gate
-    // stays byte-identical (capture_any_ false in all demos).
-    if (ba.ok) {
-        // AlliedDisguise=E1 / SovietDisguise=E2 [RE: capture.md §C2]: the spy's
-        // PermaDisguise default is its OWN side's basic infantry; resolve that
-        // unit's SHP image (E1->GI, E2->CONS -- already loaded) so the render swap
-        // has art.
-        auto side_default_disguise = [&](int house) -> std::string {
-            // Multi-house [RE: multihouse.md §1]: default house_side(1)==Soviet
-            // reproduces `house == 1 ? "E2" : "E1"`. Image name is render-only
-            // (NOT in world_hash); routed through house_side for consistency.
-            const bool soviet = (world.house_side(house) == ra2engine::World::Side::Soviet);
-            return resolve_combat_unit(rules, soviet ? "E2" : "E1").combat.image;
-        };
-        auto place_near_start = [&](const ra2engine::UnitCombat& combat, int house) -> int {
-            const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
-            for (int r = 1; sc && r <= 6; ++r)
-                for (int dy = -r; dy <= r; ++dy)
-                    for (int dx = -r; dx <= r; ++dx) {
-                        if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
-                        const int x = sc->x + dx, y = sc->y + dy;
-                        if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
-                            world.add_combat_unit(x, y, house, combat);
-                            return (int)world.units().size() - 1;
-                        }
-                    }
-            return -1;
-        };
-        // SPY (house 0) -- spawns PermaDisguised as its own side's basic infantry.
-        try {
-            MixFile conquer = ra2.open_nested("conquer.mix");
-            ResolvedUnit spy = resolve_combat_unit(rules, "SPY");
-            if (!ua.shps.count(spy.combat.image)) {
-                ua.shps.emplace(spy.combat.image, load_unit_shp(conquer, spy.combat.image));
-                ua.anims.emplace(spy.combat.image, anim_from_art(art, spy.combat.image));
-            }
-            world.set_anim(spy.combat.image,
-                           ua.anims.count(spy.combat.image) ? ua.anims.at(spy.combat.image)
-                                                            : ra2engine::default_anim());
-            const std::string dimg = side_default_disguise(0);   // must be loaded to render
-            if (ua.shps.count(dimg)) {
-                const int si = place_near_start(spy.combat, /*house=*/0);
-                if (si >= 0) world.set_disguise(si, dimg, /*as_house=*/0);
-            }
-        } catch (const std::exception& ex) {
-            std::cerr << "[spy] SPY art unavailable, skipping spawn (" << ex.what() << ")\n";
-        }
-        // DOG (house 0) -- DetectDisguise detector.
-        try {
-            MixFile conquer = ra2.open_nested("conquer.mix");
-            ResolvedUnit dog = resolve_combat_unit(rules, "ADOG");
-            if (!ua.shps.count(dog.combat.image)) {
-                ua.shps.emplace(dog.combat.image, load_unit_shp(conquer, dog.combat.image));
-                ua.anims.emplace(dog.combat.image, anim_from_art(art, dog.combat.image));
-            }
-            world.set_anim(dog.combat.image,
-                           ua.anims.count(dog.combat.image) ? ua.anims.at(dog.combat.image)
-                                                            : ra2engine::default_anim());
-            const int di = place_near_start(dog.combat, /*house=*/0);
-            if (di >= 0) world.units()[di].detect_disguise = true;
-        } catch (const std::exception& ex) {
-            std::cerr << "[dog] ADOG art unavailable, skipping spawn (" << ex.what() << ")\n";
-        }
-    }
-
-    // Building-state tracker for FreeUnit grand-opening spawns (Buildup->Idle).
-    std::vector<int> bstates;
-
-    ra2engine::Platform platform = ra2engine::Platform::create("RA2 Engine", 1280, 720);
-    ra2engine::TextureCache tc(platform.renderer());
-
-    // Sidebar layout first: the sidebar OWNS its screen strip, so the world
-    // viewport (camera centering, clamping, on-screen tests) is the PLAYFIELD
-    // left of the bar, not the full window (the spec's "viewport shrinks by
-    // the sidebar width" rule — final-review M5).
-    // Active sidebar tab (0=Structures, 1=Defenses, 2=Infantry, 3=Vehicles);
-    // the buildable list + layout are recomputed whenever the tab changes.
-    int active_tab = 0;
-    auto tab_buildable = [&](int tab) -> std::vector<int> {
-        if (tab == 0) return building_buildable_tab(ba, /*defenses=*/false);
-        if (tab == 1) return building_buildable_tab(ba, /*defenses=*/true);
-        std::vector<int> v;   // tabs 2 (Infantry) / 3 (Vehicle): unit-roster indices
-        const bool want_veh = (tab == 3);
-        for (int i = 0; i < static_cast<int>(ur.defs.size()); ++i)
-            if (ur.defs[i].is_vehicle == want_veh) v.push_back(i);
-        return v;
-    };
-    std::vector<int> buildable = tab_buildable(active_tab);
-    ra2engine::SidebarLayout lay =
-        ra2engine::SidebarLayout::compute(platform.width(), platform.height(), buildable);
-    const bool sidebar_up = ba.ok && ba.sidebar_ok;
-    const int playfield_w = platform.width() - (sidebar_up ? lay.bar.w : 0);
-
-    ra2engine::Camera cam = centered_camera(a.map, playfield_w, platform.height());
-    ra2engine::Input input(world, cam, playfield_w, platform.height());
-    // Refinery gate for the right-click "return" order (fix round: brief says
-    // own alive REFINERY only): the same type list wire_economy passes.
-    if (ba.ok) input.set_refinery_types(refinery_type_indices(ba, rules));
-    // Unit-factory type lists for the factory-select / rally / primary gestures
-    // [RE: production.md §1.2/§1.4], own-house 0 only (Input gates on house 0).
-    const std::vector<int> inf_ft = factory_types_for(ba, "GAPILE");
-    const std::vector<int> veh_ft = factory_types_for(ba, "GAWEAP");
-    {
-        std::vector<int> unit_ft = inf_ft;
-        unit_ft.insert(unit_ft.end(), veh_ft.begin(), veh_ft.end());
-        input.set_unit_factory_types(unit_ft);
-        input.set_infantry_factory_types(inf_ft);
-        input.set_vehicle_factory_types(veh_ft);
-    }
-    // Engineer/Spy Capture [RE: capture.md §B]: the spy right-click infiltration
-    // gesture -- per-type purpose map + the two rules constants (SpyMoneySteal
-    // Percent=0.5, SpyPowerBlackout=1000). Interactive-only; no gate/demo selects
-    // a spy so this changes no gate output.
-    if (ba.ok)
-        input.set_infiltrate_params(
-            infiltrate_purposes_for(ba, rules),
-            rules.general_double("SpyMoneyStealPercent", 0.5),
-            static_cast<int>(std::llround(rules.general_double("SpyPowerBlackout", 1000.0))));
-    const int kPan = 40;
-
-    // Player production: FOUR concurrent queues sharing one credit pool
-    // [RE-GATE APPLIED: production.md §1.1]. queues.structure() IS the old
-    // single Structure queue (byte-identical path); state(Defense/Infantry/
-    // Vehicle) are the new concurrent queues for tabs 1/2/3.
-    ra2engine::ProductionQueues queues;
-    double player_credits = rules.mp_money();
-    queues.set_credits(player_credits);
-    double credits_shown = player_credits;
-    // Which building queue a ready cameo entered placement from, so the
-    // placement-confirm branch clears the right queue's slot.
-    ra2engine::QueueCat place_cat = ra2engine::QueueCat::Structure;
-
-    // Audio wiring (Task 6): --no-audio skips init_audio entirely. `rules`
-    // above is reused for the voice getters -- no second parse.
-    AudioSystem audio;
-    if (!no_audio) init_audio(audio, dir, rules);
-    // fire_flash/die_time seen last frame, per unit index (resized as units()
-    // grows; never shrinks, matching World's own tombstone-not-erase model).
-    std::vector<std::pair<double, double>> prev_audio_state;
-    // CB-1 unload key edge-detect state [spec §5].
-    bool prev_unload_key = false;
-    // CB-4 Superweapons: N-key edge-detect state [spec §4].
-    bool prev_sw_key = false;
-
+// The scene-loop driver: owns the active Scene*, pumps input -> handle, ticks
+// update(dt) with the real wall-clock dt, calls render, and on a non-null next()
+// swaps scenes (deleting the old). Returns 0 on clean quit.
+int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Scene* initial) {
+    std::unique_ptr<Scene> scene(initial);
     Uint32 prev = SDL_GetTicks();
-    while (!input.wants_quit()) {
+    while (scene && !scene->wants_quit()) {
         ra2engine::InputEvent ev;
-        while (platform.poll(ev)) {
-            // The sidebar consumes EVERY PointerDown inside the bar BEFORE
-            // Input (so Input never needs to know the sidebar exists): left
-            // clicks act on the cameo grid, right/other buttons are no-ops —
-            // a gesture can never START under the bar, so box-selects and
-            // world orders can't leak beneath it (final-review M5).
-            // PointerUp/Move still pass through: a drag that STARTED in the
-            // world must end cleanly wherever the button is released.
-            // Cameo click: Available -> start; Building -> cancel;
-            // Ready -> begin_placement (building tabs) / launch on completion
-            // (unit tabs). Tab clicks switch the active tab (all four live).
-            if (sidebar_up && ev.kind == ra2engine::InputEvent::PointerDown &&
-                lay.contains(ev.x, ev.y)) {
-                if (ev.button == ra2engine::InputEvent::Left) {
-                    // CB-4 Superweapons [spec §4]: a left-click on the SW cameo
-                    // slot arms SW-targeting when house 0's SW is READY (the same
-                    // effect as the N keybind); not READY -> refused. The slot
-                    // rect mirrors draw_sidebar's sw_slot. Only meaningful once a
-                    // SW is granted (interactive-only), so demos never hit this.
-                    if (world.sw_state(0)) {
-                        const ra2engine::SbRect sw_slot{lay.bar.x + ra2engine::kCameoX,
-                                                        lay.radar.y + 2, ra2engine::kCameoW,
-                                                        ra2engine::kCameoH};
-                        if (sw_slot.contains(ev.x, ev.y)) {
-                            if (world.sw_ready(0)) input.arm_superweapon();
-                            continue;  // consumed by the SW slot
+        while (plat.poll(ev)) {
+            if (ev.kind == ra2engine::InputEvent::Quit) return 0;
+            scene->handle(ev);
+        }
+        const Uint32 now = SDL_GetTicks();
+        const double dt = (now - prev) / 1000.0;
+        prev = now;
+        scene->update(dt);
+        plat.begin_frame();
+        scene->render(plat, tc);
+        plat.present();
+        if (Scene* nx = scene->next()) scene.reset(nx);   // transition (variable dt continues)
+        SDL_Delay(16);
+    }
+    return 0;
+}
+
+// [RE: skirmish.md §2, D4] The playable game as a Scene. Its ctor builds the World
+// via launch_skirmish(config) (replacing run_interactive's hardcoded 2964-3132
+// setup block) and initializes assets/audio/camera/input/sidebar; update(dt) runs
+// ONE iteration of the former run_interactive loop body at the interactive
+// VARIABLE dt (NOT a gate); render(plat,tc) draws render_world + draw_sidebar. All
+// loop-local state of the old run_interactive is hoisted to members. Additive: no
+// gate constructs GameScene. NOT hashed.
+class GameScene : public Scene {
+public:
+    GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
+        : no_audio_(no_audio),
+          dir_(env_install_dir()),
+          ra2_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "ra2.mix"))),
+          a_(load_assets(dir_, ra2_)),
+          ua_(load_unit_assets(dir_, ra2_)),
+          va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
+          language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
+          // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
+          // rules_ini_/art_ini_ are members constructed before rules_/art_ (mirrors
+          // the old run_interactive's named-local Inis kept alive for the whole run).
+          rules_ini_(load_ini_from_ra2md(dir_, "rulesmd.ini")),
+          rules_(Rules::load(rules_ini_)),
+          art_ini_(load_ini_from_ra2md(dir_, "artmd.ini")),
+          art_(Art::load(art_ini_)),
+          ba_(load_building_assets(ra2_, language_, rules_, art_)),
+          miners_(load_miner_assets(dir_, ra2_, ua_.pal, rules_)),
+          transport_(load_transport_assets(dir_, ra2_, ua_.pal)),
+          ore_art_(load_ore_art(ra2_)),
+          ur_(load_unit_roster(dir_, ra2_, ua_, rules_, art_)),
+          ur_ai_(load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)),
+          // Hardcoded 2964-3132 scenario REPLACED by launch_skirmish [D4].
+          world_(launch_skirmish(cfg, a_, ua_, ba_, rules_)),
+          buildable_(building_buildable_tab(ba_, /*defenses=*/false)),   // active_tab_ starts at 0
+          lay_(ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_)),
+          sidebar_up_(ba_.ok && ba_.sidebar_ok),
+          playfield_w_(kWinW - (sidebar_up_ ? lay_.bar.w : 0)),
+          cam_(centered_camera(a_.map, playfield_w_, kWinH)),
+          input_(world_, cam_, playfield_w_, kWinH) {
+        // --- vehicle render list (voxel hulls for launched MTNK/FV/etc.) ---
+        vlist_ = {&va_, &miners_.harv, &miners_.cmin};
+        for (const VehicleAssets& v : ur_.vehicles) vlist_.push_back(&v);
+        for (const VehicleAssets& v : ur_ai_.vehicles) vlist_.push_back(&v);
+        if (transport_.ok) vlist_.push_back(&transport_.va);
+
+        // Register each infantry def's SHP + anim into the shared UnitAssets store
+        // so launched infantry (player + AI-2 Soviet rosters) render. Guarded: a
+        // missing SHP just leaves that unit unrenderable, never a crash.
+        try {
+            MixFile conquer = ra2_.open_nested("conquer.mix");
+            for (const std::vector<ra2engine::UnitTypeDef>* defs : {&ur_.defs, &ur_ai_.defs})
+                for (const ra2engine::UnitTypeDef& d : *defs) {
+                    if (d.is_vehicle || ua_.shps.count(d.combat.image)) continue;
+                    try {
+                        ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
+                        ua_.anims.emplace(d.combat.image, anim_from_art(art_, d.combat.image));
+                    } catch (const std::exception& ex) {
+                        std::cerr << "[unit-roster] infantry SHP " << d.combat.image
+                                  << " unavailable (" << ex.what() << ")\n";
+                    }
+                }
+        } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+
+        // Production math constants (read every frame in update()).
+        build_speed_ = rules_.general_double("BuildSpeed", 0.7);
+        low_mod_ = rules_.general_double("LowPowerPenaltyModifier", 1.0);
+        mf_ = rules_.general_double("MultipleFactory", 0.8);   // [RE-GATE §1.2: 0.8]
+
+        // Input wiring: refinery-return + factory-select/rally + spy-infiltrate.
+        if (ba_.ok) input_.set_refinery_types(refinery_type_indices(ba_, rules_));
+        inf_ft_ = factory_types_for(ba_, "GAPILE");
+        veh_ft_ = factory_types_for(ba_, "GAWEAP");
+        {
+            std::vector<int> unit_ft = inf_ft_;
+            unit_ft.insert(unit_ft.end(), veh_ft_.begin(), veh_ft_.end());
+            input_.set_unit_factory_types(unit_ft);
+            input_.set_infantry_factory_types(inf_ft_);
+            input_.set_vehicle_factory_types(veh_ft_);
+        }
+        if (ba_.ok)
+            input_.set_infiltrate_params(
+                infiltrate_purposes_for(ba_, rules_),
+                rules_.general_double("SpyMoneyStealPercent", 0.5),
+                static_cast<int>(std::llround(rules_.general_double("SpyPowerBlackout", 1000.0))));
+
+        // Production queues + rolling credits display.
+        player_credits_ = rules_.mp_money();
+        queues_.set_credits(player_credits_);
+        credits_shown_ = player_credits_;
+
+        // Audio (--no-audio skips init_audio entirely; rules_ reused for voices).
+        if (!no_audio_) init_audio(audio_, dir_, rules_);
+    }
+
+    // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
+    // then Input. Escape-cancels-placement is retained here for fidelity (the
+    // driver intercepts Quit before handle, so it is dormant on that path).
+    void handle(const ra2engine::InputEvent& ev) override {
+        if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
+            lay_.contains(ev.x, ev.y)) {
+            if (ev.button == ra2engine::InputEvent::Left) {
+                // SW cameo slot: left-click arms SW-targeting when house 0's SW is READY.
+                if (world_.sw_state(0)) {
+                    const ra2engine::SbRect sw_slot{lay_.bar.x + ra2engine::kCameoX,
+                                                    lay_.radar.y + 2, ra2engine::kCameoW,
+                                                    ra2engine::kCameoH};
+                    if (sw_slot.contains(ev.x, ev.y)) {
+                        if (world_.sw_ready(0)) input_.arm_superweapon();
+                        return;  // consumed by the SW slot
+                    }
+                }
+                // Tab-click switching: recompute the buildable list + layout.
+                const int tab = lay_.tab_at(ev.x, ev.y);
+                if (tab >= 0 && tab != active_tab_) {
+                    active_tab_ = tab;
+                    buildable_ = tab_buildable(active_tab_);
+                    lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
+                    return;  // consumed: switched tab
+                }
+                // Cameo start/cancel/place dispatched by the active tab.
+                const int ci = lay_.cameo_at(ev.x, ev.y);
+                if (ci >= 0 && ci < static_cast<int>(buildable_.size())) {
+                    if (active_tab_ >= 2) {
+                        const ra2engine::QueueCat cat = (active_tab_ == 3)
+                            ? ra2engine::QueueCat::Vehicle
+                            : ra2engine::QueueCat::Infantry;
+                        const int uslot = buildable_[ci];   // unit-roster index
+                        const std::vector<int>& ft =
+                            (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
+                        if (queues_.producing(cat) == uslot) {
+                            queues_.set_credits(player_credits_);
+                            queues_.cancel(cat);
+                            queues_.reconcile_refund();
+                            player_credits_ = queues_.structure().credits;
+                        } else if (ra2engine::can_start_unit(
+                                       queues_.state(cat), uslot, ur_.defs, world_.buildings(),
+                                       ba_.roster, 0, ba_.groups,
+                                       !world_.factory_category_lost(ft, 0))) {
+                            queues_.set_credits(player_credits_);
+                            queues_.start_unit(cat, uslot, ur_.defs, build_speed_);
                         }
-                    }
-                    // Tab-click switching first: a click on a different tab
-                    // recomputes the buildable list + layout and consumes the
-                    // event (no cameo handling this frame).
-                    const int tab = lay.tab_at(ev.x, ev.y);
-                    if (tab >= 0 && tab != active_tab) {
-                        active_tab = tab;
-                        buildable = tab_buildable(active_tab);
-                        lay = ra2engine::SidebarLayout::compute(platform.width(),
-                                                                platform.height(), buildable);
-                        continue;  // consumed: switched tab
-                    }
-                    // Cameo start/cancel/place, dispatched by the active tab.
-                    // Tabs 0/1 drive the SEPARATE concurrent Structure/Defense
-                    // building queues; tabs 2/3 the Infantry/Vehicle unit queues
-                    // [RE-GATE APPLIED: production.md §1.1]. All four gate on
-                    // their own factory group (conyard_alive / factory group).
-                    const int ci = lay.cameo_at(ev.x, ev.y);
-                    if (ci >= 0 && ci < static_cast<int>(buildable.size())) {
-                        if (active_tab >= 2) {
-                            const ra2engine::QueueCat cat = (active_tab == 3)
-                                ? ra2engine::QueueCat::Vehicle
-                                : ra2engine::QueueCat::Infantry;
-                            const int uslot = buildable[ci];   // unit-roster index
-                            const std::vector<int>& ft =
-                                (cat == ra2engine::QueueCat::Vehicle) ? veh_ft : inf_ft;
-                            if (queues.producing(cat) == uslot) {
-                                queues.set_credits(player_credits);  // fold in this frame's income first
-                                queues.cancel(cat);            // click the producing cameo -> cancel
-                                queues.reconcile_refund();
-                                player_credits = queues.structure().credits;
-                            } else if (ra2engine::can_start_unit(
-                                           queues.state(cat), uslot, ur.defs, world.buildings(),
-                                           ba.roster, 0, ba.groups,
-                                           !world.factory_category_lost(ft, 0))) {
-                                queues.set_credits(player_credits);
-                                queues.start_unit(cat, uslot, ur.defs, build_speed);
-                            }
-                        } else {
-                            // Tabs 0/1: building start/cancel/ready->place on the
-                            // tab's OWN queue. Record place_cat when entering
-                            // placement so the confirm branch clears the right
-                            // queue's slot.
-                            const ra2engine::QueueCat bcat = (active_tab == 1)
-                                ? ra2engine::QueueCat::Defense
-                                : ra2engine::QueueCat::Structure;
-                            ra2engine::ProductionState& bq = queues.state(bcat);
-                            const int type = buildable[ci];
-                            if (bq.slot.type == type && bq.slot.ready) {
-                                place_cat = bcat;
-                                input.begin_placement(type, ba.roster[type].fw, ba.roster[type].fh);
-                            } else if (bq.slot.type == type) {
-                                queues.set_credits(player_credits);  // fold in this frame's income first
-                                queues.cancel(bcat);
-                                queues.reconcile_refund();
-                                player_credits = queues.structure().credits;
-                            } else if (ra2engine::can_start(bq, type, ba.roster, world.buildings(),
-                                                            0, ba.groups,
-                                                            conyard_alive(world, ba, 0))) {
-                                queues.set_credits(player_credits);
-                                ra2engine::start(bq, type, ba.roster, build_speed);
-                            }
+                    } else {
+                        const ra2engine::QueueCat bcat = (active_tab_ == 1)
+                            ? ra2engine::QueueCat::Defense
+                            : ra2engine::QueueCat::Structure;
+                        ra2engine::ProductionState& bq = queues_.state(bcat);
+                        const int type = buildable_[ci];
+                        if (bq.slot.type == type && bq.slot.ready) {
+                            place_cat_ = bcat;
+                            input_.begin_placement(type, ba_.roster[type].fw, ba_.roster[type].fh);
+                        } else if (bq.slot.type == type) {
+                            queues_.set_credits(player_credits_);
+                            queues_.cancel(bcat);
+                            queues_.reconcile_refund();
+                            player_credits_ = queues_.structure().credits;
+                        } else if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(),
+                                                        0, ba_.groups,
+                                                        conyard_alive(world_, ba_, 0))) {
+                            queues_.set_credits(player_credits_);
+                            ra2engine::start(bq, type, ba_.roster, build_speed_);
                         }
                     }
                 }
-                continue;  // consumed by the sidebar (right-click = no-op)
             }
-            // Escape (mapped to Quit by platform) cancels placement instead of
-            // quitting while a placement is in progress.
-            if (ev.kind == ra2engine::InputEvent::Quit && input.placement_active()) {
-                input.cancel_placement();
-                continue;
-            }
-            input.handle(ev);
+            return;  // consumed by the sidebar (right-click = no-op)
         }
+        // Escape (mapped to Quit) cancels placement instead of quitting.
+        if (ev.kind == ra2engine::InputEvent::Quit && input_.placement_active()) {
+            input_.cancel_placement();
+            return;
+        }
+        input_.handle(ev);
+    }
 
-        // Camera pan: arrow keys + screen-edge scroll (left-drag now box-selects).
+    // One step of the former loop body: camera pan, edge-detects, world.step,
+    // production, exit handoff, free units, audio events, placement/SW confirm.
+    void update(double dt) override {
+        const int kPan = 40;
         const Uint8* ks = SDL_GetKeyboardState(nullptr);
         int pan_dx = 0, pan_dy = 0;
         if (ks[SDL_SCANCODE_LEFT]) pan_dx += kPan;
         if (ks[SDL_SCANCODE_RIGHT]) pan_dx -= kPan;
         if (ks[SDL_SCANCODE_UP]) pan_dy += kPan;
         if (ks[SDL_SCANCODE_DOWN]) pan_dy -= kPan;
-        int mx = 0, my = 0;
-        SDL_GetMouseState(&mx, &my);
-        // px band at the WINDOW edge that scrolls — deliberately the true
-        // screen edge, not the playfield edge: vanilla RA2 edge-scrolls with
-        // the cursor over the sidebar too.
-        const int kEdge = 24;
-        if (mx <= kEdge) pan_dx += kPan;
-        else if (mx >= platform.width() - kEdge) pan_dx -= kPan;
-        if (my <= kEdge) pan_dy += kPan;
-        else if (my >= platform.height() - kEdge) pan_dy -= kPan;
-        if (pan_dx || pan_dy) input.pan(pan_dx, pan_dy);
+        SDL_GetMouseState(&mx_, &my_);
+        const int kEdge = 24;   // window-edge scroll band (true screen edge, incl. sidebar)
+        if (mx_ <= kEdge) pan_dx += kPan;
+        else if (mx_ >= kWinW - kEdge) pan_dx -= kPan;
+        if (my_ <= kEdge) pan_dy += kPan;
+        else if (my_ >= kWinH - kEdge) pan_dy -= kPan;
+        if (pan_dx || pan_dy) input_.pan(pan_dx, pan_dy);
 
-        // CB-1 unload key [spec §5]: D (edge-detected) unloads every selected
-        // own transport with cargo -- routed by main.cpp like Escape ->
-        // placement-cancel (UI routing only; the sim rule lives in
-        // World::order_unload_selected + step_cargo).
+        // CB-1 unload key (D, edge-detected) -> unload selected own transports.
         const bool unload_key = ks[SDL_SCANCODE_D] != 0;
-        if (unload_key && !prev_unload_key) world.order_unload_selected();
-        prev_unload_key = unload_key;
+        if (unload_key && !prev_unload_key_) world_.order_unload_selected();
+        prev_unload_key_ = unload_key;
 
-        // CB-4 Superweapons [spec §4]: N arms SW-targeting when house 0's SW is
-        // READY (edge-detected). If not READY the arm is refused (no-op). A
-        // click on the sidebar SW cameo could also arm; N is the primary bind.
+        // CB-4 Superweapons: N arms SW-targeting when house 0's SW is READY.
         const bool sw_key = ks[SDL_SCANCODE_N] != 0;
-        if (sw_key && !prev_sw_key && world.sw_ready(0)) input.arm_superweapon();
-        prev_sw_key = sw_key;
+        if (sw_key && !prev_sw_key_ && world_.sw_ready(0)) input_.arm_superweapon();
+        prev_sw_key_ = sw_key;
 
-        const Uint32 now = SDL_GetTicks();
-        const double dt = (now - prev) / 1000.0;
-        prev = now;
-        world.step(dt);
-        // Advance all four queues from the shared pool, then read the pool back
-        // (reconcile_refund left all four equal).
-        queues.set_credits(player_credits);
-        prod_tick(queues, world, ba, dt, low_mod, mf, inf_ft, veh_ft);
-        player_credits = queues.structure().credits;
-        // Harvest income -> player credits [RE: economy.md §2] (drain per frame).
-        player_credits += world.take_income(0);
+        now_ = SDL_GetTicks();   // frame clock for draw_sidebar's animation timing
+        world_.step(dt);
+        // Advance all four queues from the shared pool, then read the pool back.
+        queues_.set_credits(player_credits_);
+        prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_);
+        player_credits_ = queues_.structure().credits;
+        player_credits_ += world_.take_income(0);   // harvest income drain
 
-        // Exit handoff [RE: production.md §1.3/§1.4]: any ready unit queue
-        // launches its unit from the category's primary factory. A blocked exit
-        // (no free ring cell) HOLDs the ready slot and retries next frame.
+        // Exit handoff: any ready unit queue launches from its primary factory.
         for (ra2engine::QueueCat cat :
              {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
-            if (!queues.ready(cat)) continue;
-            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? inf_ft : veh_ft;
-            const int fi = ra2engine::primary_factory(world.buildings(), ft, 0);
-            if (fi < 0) continue;                    // no factory (queue cancelled elsewhere)
-            const int uslot = queues.producing(cat);
-            if (uslot < 0 || uslot >= static_cast<int>(ur.defs.size())) {
-                queues.placed(cat);
+            if (!queues_.ready(cat)) continue;
+            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? inf_ft_ : veh_ft_;
+            const int fi = ra2engine::primary_factory(world_.buildings(), ft, 0);
+            if (fi < 0) continue;
+            const int uslot = queues_.producing(cat);
+            if (uslot < 0 || uslot >= static_cast<int>(ur_.defs.size())) {
+                queues_.placed(cat);
                 continue;
             }
-            const ra2engine::BuildingTypeDef& fdef = ba.roster[world.buildings()[fi].type];
-            const int uidx = world.launch_unit(fi, fdef, ur.defs[uslot].combat);
+            const ra2engine::BuildingTypeDef& fdef = ba_.roster[world_.buildings()[fi].type];
+            const int uidx = world_.launch_unit(fi, fdef, ur_.defs[uslot].combat);
             if (uidx >= 0) {
-                // Register the unit's anim so infantry animate (vehicles ignore it).
-                world.set_anim(ur.defs[uslot].combat.image,
-                               ua.anims.count(ur.defs[uslot].combat.image)
-                                   ? ua.anims.at(ur.defs[uslot].combat.image)
+                world_.set_anim(ur_.defs[uslot].combat.image,
+                               ua_.anims.count(ur_.defs[uslot].combat.image)
+                                   ? ua_.anims.at(ur_.defs[uslot].combat.image)
                                    : ra2engine::default_anim());
-                queues.placed(cat);                  // slot cleared; unit is on the field
+                queues_.placed(cat);
             }
-            // else exit blocked -> HOLD ready this frame (retry next frame)
         }
         // FreeUnit grand-opening spawns (a just-built refinery drops its miner).
-        if (ba.ok) spawn_free_units_on_open(world, ba, rules, miners, bstates);
-        // Chrono Miner teleport sounds (drain the harvest event queue each frame;
-        // UnloadStart/End produce no sound [RE: economy.md §2]).
+        if (ba_.ok) spawn_free_units_on_open(world_, ba_, rules_, miners_, bstates_);
+        // Chrono Miner teleport sounds.
         {
-            std::vector<ra2engine::HarvestEvent> hev = world.take_harvest_events();
-            if (audio.enabled)
+            std::vector<ra2engine::HarvestEvent> hev = world_.take_harvest_events();
+            if (audio_.enabled)
                 for (const ra2engine::HarvestEvent& e : hev) {
                     if (e.kind == ra2engine::HarvestEvent::Kind::ChronoOut)
-                        audio.mixer->play(audio.chrono_out);
+                        audio_.mixer->play(audio_.chrono_out);
                     else if (e.kind == ra2engine::HarvestEvent::Kind::ChronoIn)
-                        audio.mixer->play(audio.chrono_in);
+                        audio_.mixer->play(audio_.chrono_in);
                 }
         }
-        // CB-1 Enter/LeaveTransportSound (nice-to-have, NON-GATING [spec §6]
-        // -- cut this block first if the task runs long): the same guarded
-        // pattern as the chrono sounds above; absent audio degrades silently
-        // (mixer->play("") is a no-op). Refusals are silent.
+        // CB-1 Enter/LeaveTransportSound (non-gating).
         {
-            const std::vector<ra2engine::CargoEvent> cev = world.take_cargo_events();
-            if (audio.enabled)
+            const std::vector<ra2engine::CargoEvent> cev = world_.take_cargo_events();
+            if (audio_.enabled)
                 for (const ra2engine::CargoEvent& e : cev) {
                     if (e.kind == ra2engine::CargoEvent::Kind::Board)
-                        audio.mixer->play(audio.enter_transport);
+                        audio_.mixer->play(audio_.enter_transport);
                     else if (e.kind == ra2engine::CargoEvent::Kind::Eject)
-                        audio.mixer->play(audio.leave_transport);
+                        audio_.mixer->play(audio_.leave_transport);
                 }
         }
-
-        // Rolling credits tally (display-only; never read by the sim).
+        // Rolling credits tally (display-only).
         {
-            const double target = player_credits;
-            const double rate = std::max(500.0, std::abs(target - credits_shown) / 0.5);
+            const double target = player_credits_;
+            const double rate = std::max(500.0, std::abs(target - credits_shown_) / 0.5);
             const double step = rate * dt;
-            if (credits_shown < target) credits_shown = std::min(target, credits_shown + step);
-            else credits_shown = std::max(target, credits_shown - step);
+            if (credits_shown_ < target) credits_shown_ = std::min(target, credits_shown_ + step);
+            else credits_shown_ = std::max(target, credits_shown_ - step);
         }
-
-        // Consume input actions ONCE per frame (audio acks + placement both
-        // read this single snapshot).
-        const ra2engine::InputActions act = input.take_actions();
-        // Placement confirm: re-run the validity check; on OK place the
-        // building (buildup anim), clear the queue slot, exit placement, and
-        // play the placement sound. On a bad click keep placing (RA2 bonk).
-        if (act.place_confirmed && input.placement_active()) {
-            const int type = input.placement_type();
-            if (type >= 0 && type < static_cast<int>(ba.roster.size())) {
-                const ra2engine::BuildingTypeDef& d = ba.roster[type];
+        // Consume input actions ONCE per frame.
+        const ra2engine::InputActions act = input_.take_actions();
+        // Placement confirm.
+        if (act.place_confirmed && input_.placement_active()) {
+            const int type = input_.placement_type();
+            if (type >= 0 && type < static_cast<int>(ba_.roster.size())) {
+                const ra2engine::BuildingTypeDef& d = ba_.roster[type];
                 const ra2engine::PlacementCheck chk = ra2engine::placement_check(
-                    act.place_cx, act.place_cy, d.fw, d.fh, 0, d.adjacent, world.passable(),
-                    world.grid_w(), world.grid_h(), world.occupancy(), world.buildings(),
+                    act.place_cx, act.place_cy, d.fw, d.fh, 0, d.adjacent, world_.passable(),
+                    world_.grid_w(), world_.grid_h(), world_.occupancy(), world_.buildings(),
                     /*bypass_adjacency=*/false);
                 if (chk.ok) {
-                    world.add_building(type, act.place_cx, act.place_cy, d.fw, d.fh, 0, d.strength,
-                                       d.armor_ix, ba.art[type].buildup_total, /*instant=*/false, d.sight,
-                                       d.grants_map_reveal);
-                    queues.placed(place_cat);   // clear the slot on the queue this cameo came from
-                    input.cancel_placement();
-                    if (audio.enabled) audio.mixer->play("PlaceBuilding");
+                    world_.add_building(type, act.place_cx, act.place_cy, d.fw, d.fh, 0, d.strength,
+                                       d.armor_ix, ba_.art[type].buildup_total, /*instant=*/false,
+                                       d.sight, d.grants_map_reveal);
+                    queues_.placed(place_cat_);
+                    input_.cancel_placement();
+                    if (audio_.enabled) audio_.mixer->play("PlaceBuilding");
                 }
             }
         }
+        // CB-4 Superweapons: a committed SW target cell -> fire.
+        if (act.sw_fire_confirmed) world_.fire_superweapon(0, act.sw_cx, act.sw_cy);
 
-        // CB-4 Superweapons [spec §4]: a committed SW target cell -> fire. no-op
-        // unless the SW is READY (World::fire_superweapon re-checks and resets
-        // the recharge). Refused fires are silent (the arm was already consumed).
-        if (act.sw_fire_confirmed) world.fire_superweapon(0, act.sw_cx, act.sw_cy);
-
-        // Audio event collection + acks (Task 6, Step 3). Gated on
-        // audio.enabled so a --no-audio run or a failed device open touches
-        // none of this (and, per input.hpp, Input::take_actions() -- the
-        // ONE place per frame the accumulated select/move/attack flags are
-        // consumed -- is only called here; nothing else in the engine reads
-        // InputActions today).
-        if (audio.enabled) {
-            const double view_center_px_x = platform.width() / 2.0 - cam.x;
-            const double view_center_px_y = platform.height() / 2.0 - cam.y;
-            const auto& units = world.units();
-            prev_audio_state.resize(units.size(), {0.0, -1.0});
+        // Audio event collection + acks (gated on audio_.enabled).
+        if (audio_.enabled) {
+            const double view_center_px_x = kWinW / 2.0 - cam_.x;
+            const double view_center_px_y = kWinH / 2.0 - cam_.y;
+            const auto& units = world_.units();
+            prev_audio_state_.resize(units.size(), {0.0, -1.0});
             for (std::size_t i = 0; i < units.size(); ++i) {
                 const auto& u = units[i];
-                // Game metric (docs/re/audio-playback.md, High): Chebyshev
-                // max(|dx|, 2|dy|) in SCREEN pixels from the view centre,
-                // /60 to cells (the game multiplies Range by 60 px/cell;
-                // dividing here keeps Mixer::gain_permille in cell units).
-                // Same iso projection the renderer uses (iso_renderer.cpp
-                // draw_unit / iso_project.hpp cell_to_screen(60,30,15)):
-                // screen = (fx-fy)*30 + cam.x, (fx+fy)*15 + cam.y (level
-                // ignored, per the brief's simplified formula).
                 const double sx = (u.fx - u.fy) * 30.0 - view_center_px_x;
                 const double sy = (u.fx + u.fy) * 15.0 - view_center_px_y;
                 const double dist = std::max(std::abs(sx), 2.0 * std::abs(sy)) / 60.0;
-                const auto& v = audio.voices[u.image];
-                if (u.fire_flash > prev_audio_state[i].first)  // rising edge: fired
-                    audio.mixer->play(v.report, dist);
-                if (u.die_time >= 0.0 && prev_audio_state[i].second < 0.0) {  // started dying
-                    audio.mixer->play(v.die, dist);
-                    if (u.house == 0 && audio.eva_unitlost >= 0)
-                        audio.mixer->play_eva(audio.eva_unitlost);
+                const auto& v = audio_.voices[u.image];
+                if (u.fire_flash > prev_audio_state_[i].first)
+                    audio_.mixer->play(v.report, dist);
+                if (u.die_time >= 0.0 && prev_audio_state_[i].second < 0.0) {
+                    audio_.mixer->play(v.die, dist);
+                    if (u.house == 0 && audio_.eva_unitlost >= 0)
+                        audio_.mixer->play_eva(audio_.eva_unitlost);
                 }
-                prev_audio_state[i] = {u.fire_flash, u.die_time};
+                prev_audio_state_[i] = {u.fire_flash, u.die_time};
             }
             if (act.actor >= 0) {
-                // Acks attenuate like every other event (docs/re/
-                // audio-playback.md, AMENDED: positional = !GLOBAL for ALL
-                // events -- acks inherit [Defaults] Type=SCREEN): same
-                // Chebyshev metric as the report/die path above, on the
-                // ACTOR unit's position. Usually near full volume, since
-                // the actor was just clicked on-screen.
-                const auto& au = world.units()[act.actor];
+                const auto& au = world_.units()[act.actor];
                 const double asx = (au.fx - au.fy) * 30.0 - view_center_px_x;
                 const double asy = (au.fx + au.fy) * 15.0 - view_center_px_y;
                 const double adist = std::max(std::abs(asx), 2.0 * std::abs(asy)) / 60.0;
-                const auto& av = audio.voices[au.image];
-                if (act.selected) audio.mixer->play(av.select, adist);
-                else if (act.attack_ordered) audio.mixer->play(av.attack, adist);
-                else if (act.move_ordered) audio.mixer->play(av.move, adist);
+                const auto& av = audio_.voices[au.image];
+                if (act.selected) audio_.mixer->play(av.select, adist);
+                else if (act.attack_ordered) audio_.mixer->play(av.attack, adist);
+                else if (act.move_ordered) audio_.mixer->play(av.move, adist);
             }
-            audio.out.pump(*audio.mixer);
+            audio_.out.pump(*audio_.mixer);
         }
-
-        platform.begin_frame();
-        SDL_Renderer* ren = static_cast<SDL_Renderer*>(platform.renderer());
-        render_world(ren, tc, a, ua, world, cam, platform.width(), platform.height(), &input,
-                     &vlist, ba.ok ? &ba : nullptr, ore_art.any ? &ore_art : nullptr);
-        // Placement cursor (suppressed while the mouse is over the sidebar —
-        // a Down there is consumed, so no placement can happen under the
-        // bar), then the sidebar chrome on top.
-        if (!(sidebar_up && lay.contains(mx, my)))
-            draw_placement_cursor(ren, world, ba, input, a, cam, platform.width(),
-                                  platform.height());
-        if (ba.ok && ba.sidebar_ok) {
-            // Each tab shows its OWN queue's build-clock/ready overlays.
-            const ra2engine::QueueCat vis_cat =
-                (active_tab == 1) ? ra2engine::QueueCat::Defense
-                : (active_tab == 2) ? ra2engine::QueueCat::Infantry
-                : (active_tab == 3) ? ra2engine::QueueCat::Vehicle
-                                    : ra2engine::QueueCat::Structure;
-            // CB-5: the active unit tab's factory-alive gate for the cameo
-            // disabled-shade (Vehicle=GAWEAP, Infantry=GAPILE). Ignored for
-            // building tabs. Mirrors the start-a-unit check at main.cpp:2959.
-            const bool unit_fac_alive =
-                (active_tab == 3) ? !world.factory_category_lost(veh_ft, 0)
-              : (active_tab == 2) ? !world.factory_category_lost(inf_ft, 0)
-                                  : true;
-            draw_sidebar(ren, tc, ba, lay, queues.state(vis_cat), world,
-                         static_cast<int>(std::llround(credits_shown)), now / 1000.0, active_tab,
-                         &ur, unit_fac_alive);
-        }
-        // Production chrome [RE: production.md §1.2/§1.4; markers are cosmetic,
-        // never touch sim state]: a filled triangle over each own primary unit
-        // factory, and a rally X for the currently selected factory.
-        draw_production_chrome(ren, world, input, a, cam, playfield_w);
-        platform.present();
-        SDL_Delay(16);  // ~60fps
     }
-    return 0;
+
+    // render_world + placement cursor + sidebar chrome + production chrome.
+    // begin_frame/present are the driver's responsibility.
+    void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
+        SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+        render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
+                     &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
+        if (!(sidebar_up_ && lay_.contains(mx_, my_)))
+            draw_placement_cursor(ren, world_, ba_, input_, a_, cam_, kWinW, kWinH);
+        if (ba_.ok && ba_.sidebar_ok) {
+            const ra2engine::QueueCat vis_cat =
+                (active_tab_ == 1) ? ra2engine::QueueCat::Defense
+                : (active_tab_ == 2) ? ra2engine::QueueCat::Infantry
+                : (active_tab_ == 3) ? ra2engine::QueueCat::Vehicle
+                                     : ra2engine::QueueCat::Structure;
+            const bool unit_fac_alive =
+                (active_tab_ == 3) ? !world_.factory_category_lost(veh_ft_, 0)
+              : (active_tab_ == 2) ? !world_.factory_category_lost(inf_ft_, 0)
+                                   : true;
+            draw_sidebar(ren, tc, ba_, lay_, queues_.state(vis_cat), world_,
+                         static_cast<int>(std::llround(credits_shown_)), now_ / 1000.0,
+                         active_tab_, &ur_, unit_fac_alive);
+        }
+        draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
+    }
+
+    bool wants_quit() const override { return input_.wants_quit(); }
+
+private:
+    // The window is always created at 1280x720 (see run_interactive); the sidebar
+    // layout/camera/input all key off these, so the driver's plat matches.
+    static constexpr int kWinW = 1280;
+    static constexpr int kWinH = 720;
+
+    // Active sidebar tab (0=Structures,1=Defenses,2=Infantry,3=Vehicles).
+    std::vector<int> tab_buildable(int tab) const {
+        if (tab == 0) return building_buildable_tab(ba_, /*defenses=*/false);
+        if (tab == 1) return building_buildable_tab(ba_, /*defenses=*/true);
+        std::vector<int> v;   // tabs 2/3: unit-roster indices
+        const bool want_veh = (tab == 3);
+        for (int i = 0; i < static_cast<int>(ur_.defs.size()); ++i)
+            if (ur_.defs[i].is_vehicle == want_veh) v.push_back(i);
+        return v;
+    }
+
+    // --- loaded assets (constructed in declaration order in the init list) ---
+    bool                 no_audio_;
+    std::string          dir_;
+    ra2assets::MixFile   ra2_;
+    Assets               a_;
+    UnitAssets           ua_;
+    VehicleAssets        va_;
+    ra2assets::MixFile   language_;
+    Ini                  rules_ini_;   // kept alive: rules_ references it
+    Rules                rules_;
+    Ini                  art_ini_;     // kept alive: art_ references it
+    Art                  art_;
+    BuildingAssets       ba_;
+    MinerAssets          miners_;
+    TransportAssets      transport_;
+    OreArt               ore_art_;
+    UnitRoster           ur_;
+    UnitRoster           ur_ai_;
+    ra2engine::World     world_;
+    // --- sidebar / camera / input ---
+    int                      active_tab_ = 0;
+    std::vector<int>         buildable_;
+    ra2engine::SidebarLayout lay_;
+    bool                     sidebar_up_ = false;
+    int                      playfield_w_ = 0;
+    ra2engine::Camera        cam_;
+    ra2engine::Input         input_;
+    // --- production / economy ---
+    ra2engine::ProductionQueues queues_;
+    double               player_credits_ = 0.0;
+    double               credits_shown_  = 0.0;
+    ra2engine::QueueCat  place_cat_ = ra2engine::QueueCat::Structure;
+    std::vector<int>     inf_ft_;
+    std::vector<int>     veh_ft_;
+    double               build_speed_ = 0.7;
+    double               low_mod_ = 1.0;
+    double               mf_ = 0.8;
+    // --- audio ---
+    AudioSystem          audio_;
+    std::vector<std::pair<double, double>> prev_audio_state_;
+    bool                 prev_unload_key_ = false;
+    bool                 prev_sw_key_ = false;
+    // --- render helpers + FreeUnit tracker + frame-transient state ---
+    std::vector<const VehicleAssets*> vlist_;
+    std::vector<int>     bstates_;
+    int                  mx_ = 0, my_ = 0;
+    Uint32               now_ = 0;
+};
+
+// Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
+// the old inline scenario (default_skirmish_config reproduces the 1v1). SAME
+// signature so every existing reference (Android + desktop main() seams) still
+// compiles. Creates the Platform + TextureCache and drives a single GameScene
+// through run_scene_driver.
+int run_interactive(bool no_audio) {
+    const std::string dir = env_install_dir();
+    // Named local: Rules wraps the Ini by reference, so it must outlive `rules`
+    // (which default_skirmish_config reads before GameScene construction).
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    ra2engine::Platform plat = ra2engine::Platform::create("RA2 Engine", 1280, 720);
+    ra2engine::TextureCache tc(plat.renderer());
+    return run_scene_driver(plat, tc,
+                            new GameScene(no_audio, ra2engine::default_skirmish_config(rules)));
 }
 
 // Non-interactive verification of the whole select -> path -> walk pipeline:
