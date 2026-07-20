@@ -1197,6 +1197,110 @@ Deviations we take for Shroud (adjudicated divergences from the recovered
   demo enables shroud, so no existing hash changes [`shroud.md` §1; spec §Data
   model].
 
+## Multi-house / Alliances
+
+The Multi-house phase generalizes the engine from its hardwired two-combatants-
+plus-neutral world to N houses bound into alliance-teams. All new state lives on
+a per-house `HouseRec` table (`houses_`, a `std::vector<HouseRec>` carrying each
+house's `Side`, MP color index, `alliance_team`, and combatant flag) gated by a
+single `houses_configured_` firewall: until a caller populates the table, every
+side/color/enmity/victory query **falls back to today's derivation** (house 0 =
+Allied, house 1 = Soviet, house 2 = Neutral; the alliance sentinel resolves to
+each house's own id, i.e. free-for-all), so no pre-existing demo sees any change.
+`enum Side { Allied, Soviet, Yuri, Neutral }` names the four roster classes;
+`house_side`/`house_color`/`house_count`/`house_team`/`house_combatant`/
+`set_house` are the accessors.
+
+Enmity is now a **pairwise predicate** rather than an inlined `house != self`:
+`is_enemy(a,b)` and `are_allied(a,b)` read the table. With the firewall off
+`is_enemy(a,b) == (a != b)` — byte-identical to the old test. A **neutral /
+non-combatant house is never an enemy** and a house is **always its own ally**;
+two combatant houses are allied iff they share an `alliance_team` (the sentinel
+value → own id, so distinct-id houses are FFA enemies by default). Every inlined
+enmity site now routes through the predicate: combat auto-acquire (`valid_target`,
+signature widened to take the scanning house + world), nuke/superweapon splash
+target selection, repair-vs-attack and capture own-vs-enemy decisions, disguise
+detection, and the AI's quarry/attack selection. **Area/splash damage still hurts
+allies** — `apply_spread_damage` keeps its `w.house == attacker.house` own-house-
+only spare rather than routing to `is_enemy`, faithful to RA2 friendly-fire.
+
+**AllyReveal** shares the shroud **map** (not targeting): at the end of
+`step_visibility` each configured house's `explored_`/`visible_` grids are
+snapshotted and OR-merged with its allies' (deterministic, order-independent),
+firewalled behind `houses_configured_` && `shroud_any_` so the shroud gate stays
+byte-identical. The auto-acquire `seen_by_mask` still reflects each house's **own**
+sight, so shared vision reveals the map without silently widening targeting.
+
+**Last-team-standing victory** is greenfield and firewalled behind
+`victory_enabled_`: `step_victory` marks a combatant house `house_defeated` when
+it has no units and no buildings (ShortGame = last-**building**), never marks
+neutral/non-combatant houses, and resolves `winning_team` to the sole surviving
+alliance-team (sentinel until one remains). Neutral never wins or loses. With
+victory disabled (every legacy demo) the pass is a no-op.
+
+**Per-house side and color** drive spawns and rendering: `house_side` selects the
+spawned Building/unit **TYPES** (`spawn_base` builds a Soviet or Allied ConYard +
+base per side), and `house_color` + `pal_for_color` map a house's MP color index
+to one of the **8 multiplayer colors** (HSV spread → RGB remap of the unit
+palette), entered for render via `house_palette`. The defaults reproduce exactly
+today's world — house 1 = Soviet/red, everyone else Allied/blue — so the spawned
+`Building{type}` is byte-identical and `world_hash` is unaffected.
+
+Six formerly-`[3]` per-house arrays were vectorized to `std::vector` sized
+`house_count()` (`blackout_frames_`, `produced_veteran_`, `explored_`, `visible_`,
+`map_reveal_`, `house_credits_`), with the `<3` accessor guards, the `take_income`
+bound, and the `step_visibility` per-house loops widened accordingly. The one
+exception is the per-unit `seen_by_mask` stamp, which stays a `uint8_t` capped at
+**8 combatants** (RA2 `MaxPlayers=8`); neutral/non-combatant houses are excluded
+from that targeting bitmask.
+
+Byte-identity discipline is unchanged from prior phases: `world_hash` is
+**untouched** (all new house/victory/vectorized state is appended after the hashed
+set and read only by the new `multihouse_hash`); every new field is inert by
+default; the `houses_configured_` and `victory_enabled_` firewalls keep the new
+behavior off until a caller opts in; and the fifteen legacy gates were re-verified
+bit-identical at every multi-house-touching commit and again at this finalize.
+Calibration authority: `docs/re/multihouse.md`.
+
+Deviations we take for Multi-house / Alliances (adjudicated divergences from the
+recovered `multihouse.md` ground truth — not bugs, do not "fix" in review):
+- **Enmity via a pairwise `is_enemy`/`are_allied` predicate, not `house != self_house`** —
+  every inlined enmity site routes through the table-driven relationship; the
+  default (`houses_configured_` off) returns `a != b`, exactly today [`multihouse.md`
+  §3/§4; spec §Architecture C].
+- **Area/splash damage still hurts allies (only the attacker's own house is spared)** —
+  `apply_spread_damage` keeps its `w.house == attacker.house` own-house spare
+  rather than routing to `is_enemy`, faithful to RA2 friendly splash [`multihouse.md`
+  §4].
+- **Neutral / non-combatant is a THIRD relationship (never an enemy, never auto-acquired, but still capturable)** —
+  the engine gained the Neutral state it lacked; `step_capture` captures neutral
+  (not-allied) buildings while repairing own/allied [`multihouse.md` §3].
+- **AllyReveal shares the shroud MAP, not targeting** — allied `explored_`/`visible_`
+  grids OR-merge for render/reveal, but `seen_by_mask` (auto-acquire) still
+  reflects each house's OWN sight [`multihouse.md` §3; spec §Architecture D].
+- **Last-team-standing victory is greenfield + firewalled** — `step_victory` runs
+  only when `victory_enabled_`; ShortGame=last-building; neutral/non-combatant
+  never win or lose [`multihouse.md` §5; spec §Architecture E].
+- **`seen_by_mask` stays `uint8_t` (8-combatant cap == MaxPlayers)** — not widened;
+  neutral/non-combatant houses are excluded from the targeting bitmask
+  [`multihouse.md` §1; spec §Architecture G].
+- **Country/lobby default colors are the derived house1=Soviet/red else Allied/blue
+  defaults, not per-country lobby picks** — the calibrated defaults reproduce
+  today's world; per-country color assignment from a lobby is a carry-forward
+  [`multihouse.md` §2 RE-GATE].
+- **`draw_unit`/`draw_building` carry a per-house color forward via `house_palette`,
+  not a per-object recolor** — rendering remaps the unit palette by the house's MP
+  color index (cosmetic, unhashed); no gate hash depends on it [`multihouse.md`
+  §2].
+- **Per-country bonuses, the Yuri roster, in-game alliance-request UI, shared
+  control/economy, AI diplomacy, AIDifficulty handicaps, and multi-human input are
+  carry-forwards** — documented, not implemented this phase [`multihouse.md`
+  §1/§3/§7; spec §Scope/non-goals].
+- **Multi-house state is LIVE but excluded from `world_hash`** — `houses_`/
+  predicates/victory/vectorized arrays are hashed only by `multihouse_hash`; no
+  existing demo configures alliances, so no existing hash changes [`multihouse.md`
+  §1; spec §Data model].
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -1423,6 +1527,18 @@ Headless/verification CLI modes (render one or more frames and exit):
   initial reveal marks >0 cells AND movement grows explored AND fog persists AND
   the fogged enemy is unseen AND the sabotage clears the victim's map AND
   reveal-all fills explored.
+- `ra2engine.exe --demo-multihouse` — the Multi-house / Alliances integration
+  gate: configures >=3 combatant houses into 2 alliance-teams (houses 0+2 vs 1)
+  plus a neutral house owning a structure, enables shroud + AllyReveal + victory,
+  then scripts allied units NOT auto-acquiring each other but acquiring the enemy
+  team (is_enemy/are_allied), AllyReveal sharing a scout's sight with its ally,
+  one team eliminated -> house_defeated true, and last-team-standing ->
+  winning_team resolves. Hashes per-house alive building+unit counts + a per-pair
+  relationship sample + defeated flags + winning_team at fixed checkpoints
+  (multihouse_hash). Runs twice (rendered + headless); both runs must produce
+  identical witnesses + hash; wedge guards exit non-zero unless allies don't
+  fight AND the enemy is acquired AND AllyReveal shares sight AND the eliminated
+  house is marked defeated AND the surviving team wins.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -1430,16 +1546,16 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These fifteen headless demos are byte-identity regression gates: any change to
+These sixteen headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=20` as of the Engineer/Spy
 Capture phase (the `CAOILD` oil derrick; `roster=19` was the CB-5 Battle Lab
-`GATECH`) — with the gated hash unaffected each time). The first FOURTEEN are the
-legacy gates re-verified unchanged by every subsequent phase; `--demo-shroud` is
-the new Shroud / Fog-of-War gate.
+`GATECH`) — with the gated hash unaffected each time). The first FIFTEEN are the
+legacy gates re-verified unchanged by every subsequent phase; `--demo-multihouse`
+is the new Multi-house / Alliances gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -1458,6 +1574,7 @@ the new Shroud / Fog-of-War gate.
 | `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=20 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
 | `--demo-capture` | `capture_hash=58b87b5bc63f7046` | `deterministic=yes`; engineer capture (`ChangeOwner` flip + SW move + AI base-node resync + startup-from-neutral) of an enemy building AND a neutral `CAOILD` (Startup 1000, Amount 20 / Delay 100f); spy infiltrate (cash-steal 0.5×, power-blackout 1000f, SW recharge reset, factory→produced `veteran_rank=1` ×1.1 firepower/×1.5 armor, radar/lab inert); disguise + dog `DetectDisguise` reveal (spy stays disguised on attack — PermaDisguise); nine wedge guards armed (`docs/re/capture.md`) |
 | `--demo-shroud` | `shroud_hash=d302852aa9517661` | `deterministic=yes`; per-house visibility (near-circular Sight reveal, dx2+dy2<=sight2, cap 10), fog no-regrow (explored sticky), fogged-enemy untargetable (seen_by_mask), spy->enemy-radar reshroud (RadarLab), SpySat reveal-all; wedge guards armed (`docs/re/shroud.md`) |
+| `--demo-multihouse` | `multihouse_hash=39412ae996cce8ae` | `deterministic=yes`; N-player HouseRec table + alliances (is_enemy/are_allied, FFA default a!=b), AllyReveal shared sight, last-team-standing victory (ShortGame=last-building), per-house side/color (8 MP colors); wedge guards armed (`docs/re/multihouse.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
