@@ -208,3 +208,15 @@ Layout for a 1280×720 window (right-aligned buttons + logo upper):
 Exact per-button pixel rects are hard-coded in `gamemd.exe` (not data-driven; OpenRA has no RA2
 mod to borrow) — a Ghidra pass on the shell dialog init is the only way to pin them to the
 pixel. The above is a faithful-*looking* **[RE-FALLBACK]** approximation. [ANCHORED]
+
+---
+## §CORRECTION (2026-07-20, verified during fnt.cpp fix — supersedes §1.1/§1.3/§1.4 bit-depth claims)
+Implementation + an independent byte-level oracle proved the ONLY real bug was the
+image_ofs-relative offset (doc bug #2). The other two doc claims were WRONG:
+- The font is **8bpp (1 byte/pixel, ramp index in the low nibble, high nibble 0)** — NOT
+  4bpp/2-px-per-byte. The 4bpp attempt produced comb/striped garbage (blank column between
+  every pixel). The offset-gap argument is consistent with both; raw nibble content decides = 8bpp.
+- **Advance/width = `w`** (original semantics), NOT `2*w`.
+Correct fnt.cpp decode: glyph base `data + image_ofs + offset_table[i]`; read `w*rows` bytes
+row-major, 1 byte/pixel (mask low nibble for the shade ramp); width=`w`. Verified: 'I'/'H'
+exact-bitmap + menu labels legible (menu_fnt2_zoom.png). fnt_ok=TRUE.
