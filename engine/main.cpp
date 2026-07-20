@@ -3609,6 +3609,18 @@ struct MenuArt {
     ra2assets::Font* font = nullptr;          // cache.mix/12metfnt.fnt
     const ra2assets::Palette* font_pal = nullptr;  // synthetic ramp (make_font_palette)
     MenuAudio* audio = nullptr;               // looping grinder.wav (or null)
+    // [Task 1] True-design shell chrome (sidebar/bottom-bar SHPs) + shell/button
+    // palettes. Loaded here so the next task can composite them; nothing renders
+    // these yet. All null/false on a partial install (never crashes).
+    ra2assets::ShpFile* bg_s = nullptr;       // neutral.mix/mnscrns.shp (472x448)
+    ra2assets::ShpFile* lwscrn = nullptr;     // neutral.mix/lwscrns.shp (bottom bar)
+    ra2assets::ShpFile* sdtp = nullptr;       // neutral.mix/sdtp.shp (sidebar top, 2 fr)
+    ra2assets::ShpFile* sdbtm = nullptr;      // neutral.mix/sdbtm.shp (sidebar bottom)
+    ra2assets::ShpFile* sdbtnbkgd = nullptr;  // neutral.mix/sdbtnbkgd.shp (per-button slice)
+    ra2assets::Palette shell_pal{};           // cache.mix/shell.pal (chrome palette)
+    ra2assets::Palette mainbttn_pal{};        // local.mix/mainbttn.pal (button palette)
+    bool shell_pal_ok = false;
+    bool mainbttn_pal_ok = false;
     bool ok = false;                          // essentials (bg+pal) decoded
     // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
     // in the low nibble) with image_ofs-relative glyph offsets (the real bug was
@@ -3624,6 +3636,11 @@ struct MenuArt {
 // `art` is populated (art.font_pal points at the value member below).
 struct MenuArtStore {
     std::unique_ptr<ra2assets::ShpFile> bg, btn, dlg;
+    // [Task 1] True-design chrome SHPs.
+    std::unique_ptr<ra2assets::ShpFile> bg_s, lwscrn, sdtp, sdbtm, sdbtnbkgd;
+    // [Task 1] Chrome/button palettes (value type; validity tracked by *_ok bools).
+    ra2assets::Palette shell_pal{}, mainbttn_pal{};
+    bool shell_pal_ok = false, mainbttn_pal_ok = false;
     std::unique_ptr<ra2assets::Palette> pal, dlg_pal;
     std::unique_ptr<ra2assets::PcxImage> logo, title;
     std::unique_ptr<ra2assets::Font> font;
@@ -3703,12 +3720,24 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     try {
         MixFile ra2 = MixFile::open(read_file(dir + "ra2.mix"));
         try { MixFile neutral = ra2.open_nested("neutral.mix");
-              store.bg = try_shp(neutral, "mnscrnl.shp"); }
+              store.bg = try_shp(neutral, "mnscrnl.shp");
+              // [Task 1] True-design shell chrome (loaded, not yet composited).
+              store.bg_s      = try_shp(neutral, "mnscrns.shp");
+              store.lwscrn    = try_shp(neutral, "lwscrns.shp");
+              store.sdtp      = try_shp(neutral, "sdtp.shp");
+              store.sdbtm     = try_shp(neutral, "sdbtm.shp");
+              store.sdbtnbkgd = try_shp(neutral, "sdbtnbkgd.shp"); }
         catch (const std::exception& ex) { std::cerr << "[menu-art] neutral.mix: " << ex.what() << "\n"; }
         try { MixFile local = ra2.open_nested("local.mix");
               store.btn   = try_shp(local, "mnbttn.shp");
               store.logo  = try_pcx(local, "logo.pcx");
-              store.title = try_pcx(local, "title.pcx"); }
+              store.title = try_pcx(local, "title.pcx");
+              // [Task 1] Button palette (mnbttn.shp is drawn under mainbttn.pal).
+              if (const MixEntry* be = local.find(std::string("mainbttn.pal"))) {
+                  std::vector<uint8_t> bb = local.read(*be);
+                  store.mainbttn_pal = ra2assets::Palette::load(bb.data(), bb.size());
+                  store.mainbttn_pal_ok = true;
+              } else std::cerr << "[menu-art] mainbttn.pal not found\n"; }
         catch (const std::exception& ex) { std::cerr << "[menu-art] local.mix: " << ex.what() << "\n"; }
         try {
             MixFile cache = ra2.open_nested("cache.mix");
@@ -3723,6 +3752,12 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
                 catch (const std::exception& ex) {
                     std::cerr << "[menu-art] 12metfnt.fnt: " << ex.what() << "\n"; }
             } else std::cerr << "[menu-art] 12metfnt.fnt not found\n";
+            // [Task 1] Shell chrome palette (mnscrns/lwscrns/sdtp/sdbtm/sdbtnbkgd).
+            if (const MixEntry* se = cache.find(std::string("shell.pal"))) {
+                std::vector<uint8_t> sb = cache.read(*se);
+                store.shell_pal = ra2assets::Palette::load(sb.data(), sb.size());
+                store.shell_pal_ok = true;
+            } else std::cerr << "[menu-art] shell.pal not found\n";
         } catch (const std::exception& ex) { std::cerr << "[menu-art] cache.mix: " << ex.what() << "\n"; }
         try { MixFile sidec = ra2.open_nested("sidec01.mix");
               store.dlg = try_shp(sidec, "bkgdlg.shp");
@@ -3749,6 +3784,16 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.font     = store.font.get();
     store.art.font_pal = &store.font_pal;
     store.art.audio    = store.audio.get();
+    // [Task 1] Wire true-design chrome + palettes (non-owning views into store).
+    store.art.bg_s          = store.bg_s.get();
+    store.art.lwscrn        = store.lwscrn.get();
+    store.art.sdtp          = store.sdtp.get();
+    store.art.sdbtm         = store.sdbtm.get();
+    store.art.sdbtnbkgd     = store.sdbtnbkgd.get();
+    store.art.shell_pal     = store.shell_pal;
+    store.art.mainbttn_pal  = store.mainbttn_pal;
+    store.art.shell_pal_ok  = store.shell_pal_ok;
+    store.art.mainbttn_pal_ok = store.mainbttn_pal_ok;
     store.art.ok       = (store.art.bg && store.art.pal);
     // FNT labels ENABLED: fnt.cpp now decodes the classic Westwood 8bpp glyph
     // format correctly (image_ofs-relative offsets; menufix.md §CORRECTION; anti-shear regression test in
@@ -3761,6 +3806,13 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               << " title=" << (store.art.title ? "y" : "n")
               << " font=" << (store.art.font ? "y" : "n")
               << " dlg=" << (store.art.dlg ? "y" : "n")
+              << " bg_s=" << (store.art.bg_s ? "y" : "n")
+              << " lwscrn=" << (store.art.lwscrn ? "y" : "n")
+              << " sdtp=" << (store.art.sdtp ? "y" : "n")
+              << " sdbtm=" << (store.art.sdbtm ? "y" : "n")
+              << " sdbtnbkgd=" << (store.art.sdbtnbkgd ? "y" : "n")
+              << " shell_pal=" << (store.art.shell_pal_ok ? "y" : "n")
+              << " mainbttn_pal=" << (store.art.mainbttn_pal_ok ? "y" : "n")
               << " ok=" << (store.art.ok ? "y" : "n") << "\n";
 }
 
