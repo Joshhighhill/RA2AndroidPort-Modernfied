@@ -331,10 +331,19 @@ void World::ensure_houses_default() {
     houses_[1] = HouseRec{Side::Soviet,  kMpColorRed,  "", 1, true};
     houses_[2] = HouseRec{Side::Neutral, kMpColorBlue, "", 2, false};
     // houses_configured_ stays FALSE -> accessors use today's derivation.
+    grow_house_arrays(3);   // T3: size the six per-house vectors to 3 (indices 0/1/2).
 }
 
-void World::grow_house_arrays(int /*n*/) {
-    // Task 3 stub: resizes the six per-house vectors + house_defeated_ here.
+void World::grow_house_arrays(int n) {
+    // T3 [RE: multihouse.md §D2]: grow the six per-house vectors to n, preserving
+    // existing values. With n==3 (default) each is length 3 -> byte-identical to
+    // the old [3] arrays. NONE feeds world_hash.
+    if ((int)blackout_frames_.size()  < n) blackout_frames_.resize(n, 0);
+    if ((int)produced_veteran_.size() < n) produced_veteran_.resize(n, 0);
+    if ((int)explored_.size()         < n) explored_.resize(n);   // empty grids (shroud off)
+    if ((int)visible_.size()          < n) visible_.resize(n);
+    if ((int)map_reveal_.size()       < n) map_reveal_.resize(n, 0);
+    if ((int)house_credits_.size()    < n) house_credits_.resize(n, 0.0);
 }
 
 World::Side World::house_side(int h) const {
@@ -466,7 +475,7 @@ void World::set_economy(std::vector<BuildingTypeDef> types, std::vector<int> ref
 }
 
 double World::take_income(int house) {
-    if (house < 0 || house > 1) return 0.0;
+    if (house < 0 || house >= house_count()) return 0.0;   // T3: was house > 1
     const double v = house_credits_[house];
     house_credits_[house] = 0.0;
     return v;
@@ -1535,7 +1544,7 @@ void World::step_tech_structures(double dt) {
         }
     }
     // 2) Blackout decay (index 2 inert -- never armed).
-    for (int h = 0; h < 3; ++h)
+    for (int h = 0; h < house_count(); ++h)
         if (blackout_frames_[h] > 0) blackout_frames_[h] = std::max(0, blackout_frames_[h] - frames);
     // 3) Disguise detection [RE: capture.md §C4 CONFIRMED - DetectDisguise sees
     //    through PermaDisguise; deterministic, no RNG]. A disguised unit within
@@ -1555,7 +1564,7 @@ void World::step_tech_structures(double dt) {
 
 void World::enable_shroud(bool on) {
     shroud_any_ = on;
-    for (int h = 0; h < 3; ++h) {
+    for (int h = 0; h < house_count(); ++h) {
         if (on) {
             explored_[h].assign((size_t)grid_w_ * grid_h_, 0);
             visible_[h].assign((size_t)grid_w_ * grid_h_, 0);
@@ -1567,33 +1576,33 @@ void World::enable_shroud(bool on) {
 }
 
 bool World::visible_at(int house, int x, int y) const {
-    if (house < 0 || house >= 3) return true;             // inert
+    if (house < 0 || house >= house_count()) return true; // inert
     if (visible_[house].empty()) return true;             // shroud off -> all-visible
     if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
     return visible_[house][(size_t)y * grid_w_ + x] != 0;
 }
 
 bool World::explored_at(int house, int x, int y) const {
-    if (house < 0 || house >= 3) return true;             // inert
+    if (house < 0 || house >= house_count()) return true; // inert
     if (explored_[house].empty()) return true;            // shroud off -> all-explored
     if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
     return explored_[house][(size_t)y * grid_w_ + x] != 0;
 }
 
 void World::reveal_source(int house, int cx, int cy, int sight) {
-    if (house < 0 || house >= 3 || visible_[house].empty()) return;
+    if (house < 0 || house >= house_count() || visible_[house].empty()) return;
     reveal_disc(explored_[house], visible_[house], grid_w_, grid_h_, cx, cy, sight);
 }
 
 void World::reshroud_house(int h) {
-    if (h < 0 || h >= 3) return;
+    if (h < 0 || h >= house_count()) return;
     if (map_reveal_[h]) return;                 // §7B: SpySat-protected -> no sabotage
     if (!explored_[h].empty()) std::fill(explored_[h].begin(), explored_[h].end(), (std::uint8_t)0);
     if (!visible_[h].empty())  std::fill(visible_[h].begin(),  visible_[h].end(),  (std::uint8_t)0);
 }
 
 void World::reveal_all_house(int h) {
-    if (h < 0 || h >= 3) return;
+    if (h < 0 || h >= house_count()) return;
     if (!explored_[h].empty()) std::fill(explored_[h].begin(), explored_[h].end(), (std::uint8_t)1);
     if (!visible_[h].empty())  std::fill(visible_[h].begin(),  visible_[h].end(),  (std::uint8_t)1);
 }
@@ -1602,13 +1611,13 @@ void World::step_visibility() {
     if (!shroud_any_) return;                             // firewall (spec §Global)
     // Shroud/Fog [RE: shroud.md §7A]: recompute the SpySat/GPS reveal latch from
     // each house's alive grants_map_reveal buildings.
-    for (int h = 0; h < 3; ++h) map_reveal_[h] = false;
+    for (int h = 0; h < house_count(); ++h) map_reveal_[h] = false;
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead) continue;
-        if (b.house >= 0 && b.house < 3 && b.grants_map_reveal) map_reveal_[b.house] = true;
+        if (b.house >= 0 && b.house < house_count() && b.grants_map_reveal) map_reveal_[b.house] = true;
     }
     // 1) Clear visible_ (explored_ is sticky -- fog no-regrow §4).
-    for (int h = 0; h < 3; ++h)
+    for (int h = 0; h < house_count(); ++h)
         if (!visible_[h].empty())
             std::fill(visible_[h].begin(), visible_[h].end(), (std::uint8_t)0);
     // 2) Reveal from every ALIVE unit (near-circular, radius = its sight).
@@ -1627,12 +1636,14 @@ void World::step_visibility() {
     for (Unit& u : units_) {
         if (!u.alive) continue;
         std::uint8_t m = 0;
-        for (int h = 0; h < 3; ++h)
+        // T3: seen_by_mask bit-stamp stays capped at 8 combatant houses (the
+        // uint8_t mask, D7) even as house_count() may exceed 3.
+        for (int h = 0; h < house_count() && h < 8; ++h)
             if (visible_at(h, u.cell_x, u.cell_y)) m |= (std::uint8_t)(1u << h);
         u.seen_by_mask = m;
     }
     // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
-    for (int h = 0; h < 3; ++h)
+    for (int h = 0; h < house_count(); ++h)
         if (map_reveal_[h]) reveal_all_house(h);
 }
 
@@ -2757,7 +2768,7 @@ void World::step(double dt) {
         std::vector<HarvestEvent> h_events;
         step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
                     grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
-                    house_credits_, h_moves, h_events);
+                    house_credits_.data(), h_moves, h_events);
         // Path each requested move the same way step_combat's MoveRequests
         // are executed above (order_unit_move mirrors that pattern).
         for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);

@@ -4081,3 +4081,37 @@ TEST_CASE("World multihouse: set_house opens the firewall + grows the table [RE:
     CHECK(world.house_team(3) == 7);          // shared team
     CHECK(world.house_side(0) == ra2engine::World::Side::Allied);
 }
+
+// --- Multi-house / Alliances phase, Task 3 [RE: multihouse.md §D2] ----------
+// The six per-house [3] arrays are now std::vector sized house_count() (default
+// 3). Parity at indices 0/1/2 + out-of-range reject; growth via set_house.
+// NOTE (deviation from brief): uses a default-constructed MapFile (no
+// make_test_world() helper in-tree), matching the Task 2 cases above.
+TEST_CASE("World multihouse: six per-house arrays vectorized, parity at 0/1/2 [RE: multihouse.md §D2]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    CHECK(world.house_count() == 3);
+    // house_credits read/write parity at 0/1/2 + out-of-range reject.
+    world.grant_credits_for_test(0, 100.0);
+    world.grant_credits_for_test(1, 250.0);
+    world.grant_credits_for_test(2, 7.0);
+    CHECK(world.house_credits(0) == doctest::Approx(100.0));
+    CHECK(world.house_credits(1) == doctest::Approx(250.0));
+    CHECK(world.house_credits(2) == doctest::Approx(7.0));
+    CHECK(world.house_credits(3) == doctest::Approx(0.0));   // out of range -> 0
+    CHECK(world.house_credits(-1) == doctest::Approx(0.0));
+    // take_income zeros only the taken index; neutral has no income path.
+    CHECK(world.take_income(0) == doctest::Approx(100.0));
+    CHECK(world.house_credits(0) == doctest::Approx(0.0));
+    CHECK(world.take_income(3) == doctest::Approx(0.0));     // >= house_count() -> 0
+}
+
+TEST_CASE("World multihouse: per-house arrays grow with set_house [RE: multihouse.md §D2]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_house(4, {ra2engine::World::Side::Soviet, 1, "Russians", 4, true});
+    CHECK(world.house_count() == 5);
+    world.grant_credits_for_test(4, 42.0);                   // index 4 now valid
+    CHECK(world.house_credits(4) == doctest::Approx(42.0));
+    CHECK(world.take_income(4) == doctest::Approx(42.0));    // widened bound
+}

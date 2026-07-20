@@ -898,17 +898,17 @@ public:
     void clear_disguise(int unit_idx);
     // Read-only Capture state for the gate (§gate) and the power path.
     double house_credits(int house) const {
-        return (house >= 0 && house < 3) ? house_credits_[house] : 0.0;
+        return (house >= 0 && house < house_count()) ? house_credits_[house] : 0.0;
     }
     int blackout_frames(int house) const {
-        return (house >= 0 && house < 3) ? blackout_frames_[house] : 0;
+        return (house >= 0 && house < house_count()) ? blackout_frames_[house] : 0;
     }
     bool house_blacked_out(int house) const { return blackout_frames(house) > 0; }
     // Produced-unit veterancy flag [RE: capture.md §B5]. Set by a factory
     // infiltration; consumed by add_combat_unit/launch_unit in Task 6 (units
     // this house produces thereafter spawn at veteran_rank 1). Index 2 inert.
     bool produced_veteran(int house) const {
-        return house >= 0 && house < 3 && produced_veteran_[house];
+        return house >= 0 && house < house_count() && produced_veteran_[house];
     }
 
     // --- Shroud/Fog phase [RE: shroud.md] ---------------------------------
@@ -945,7 +945,7 @@ public:
     // harvest/unload pipeline (the cash-steal victim in the infiltrate tests).
     // Index 2 (neutral) inert. Interactive/demo code never calls it.
     void grant_credits_for_test(int house, double amount) {
-        if (house >= 0 && house < 3) house_credits_[house] = amount;
+        if (house >= 0 && house < house_count()) house_credits_[house] = amount;
     }
 
     // Advance all units by dt seconds: step_units (collision-aware movement)
@@ -1061,13 +1061,18 @@ private:
     // =1000 frames]. >0 -> that house's power OUTPUT is forced to 0 (see
     // apply_blackout). Index 2 inert. Decays one per logic frame in
     // step_tech_structures.
-    int blackout_frames_[3] = {0, 0, 0};
+    // T3 [RE: multihouse.md §D2]: [3] -> std::vector sized house_count() (default
+    // 3 -> indices 0/1/2 identical). NOT hashed. Sized in ensure_houses_default /
+    // grow_house_arrays.
+    std::vector<int> blackout_frames_;
     // Produced-unit veterancy flag [RE: capture.md §B5]. Set by a factory
     // infiltration; consumed by add_combat_unit/launch_unit in Task 6 (units
     // this house produces thereafter spawn at veteran_rank 1). Index 2 inert.
     // Defaults false (INERT): no existing demo infiltrates a factory, so every
     // gate is byte-identical.
-    bool produced_veteran_[3] = {false, false, false};
+    // T3 [RE: multihouse.md §D2]: bool[3] -> std::vector<uint8_t> sized
+    // house_count(). NOT hashed. Sized in ensure_houses_default/grow_house_arrays.
+    std::vector<std::uint8_t> produced_veteran_;
     // The single firewalled Capture per-frame pass: tech-structure income +
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.
@@ -1081,15 +1086,21 @@ private:
     // ONLY by reshroud_house (Task 7). visible_ is cleared+recomputed each tick.
     // House index 0=player, 1=enemy, 2=neutral (kNeutralHouse, left inert). NONE
     // read by world_hash.
-    std::vector<std::uint8_t> explored_[3];
-    std::vector<std::uint8_t> visible_[3];
+    // T3 [RE: multihouse.md §D2]: outer [3] -> std::vector sized house_count()
+    // (each inner grid still grid_w_*grid_h_). NOT hashed. Sized in
+    // ensure_houses_default/grow_house_arrays (inner grids stay EMPTY until
+    // enable_shroud).
+    std::vector<std::vector<std::uint8_t>> explored_;
+    std::vector<std::vector<std::uint8_t>> visible_;
     bool shroud_any_ = false;   // the step_visibility firewall (opened by
                                 // enable_shroud); false in every existing gate.
     // SpySat/GPS latch per house [RE: shroud.md §7A]. Recomputed each tick from
     // the house's alive grants_map_reveal buildings; when set, step_visibility
     // keeps the whole map revealed and reshroud_house(h) is SUPPRESSED for h
     // (the §7B "unless SpySat-protected" guard). Index 2 inert. Not hashed.
-    bool map_reveal_[3] = {false, false, false};
+    // T3 [RE: multihouse.md §D2]: bool[3] latch -> std::vector<uint8_t> sized
+    // house_count(). NOT hashed. Sized in ensure_houses_default/grow_house_arrays.
+    std::vector<std::uint8_t> map_reveal_;
 
     // --- Multi-house / Alliances phase [RE: multihouse.md §1/D1] ---
     // The single source of truth for every house. Populated with 3 defaults at
@@ -1159,9 +1170,11 @@ private:
     double growth_interval_ = 0.0;
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
-    double house_credits_[3] = {0.0, 0.0, 0.0};  // per-house income; index 2
-                                                  // (kNeutralHouse) inert -- neutral
-                                                  // holds no credits [RE: capture.md §D1]
+    // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
+    // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
+    // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/
+    // grow_house_arrays.
+    std::vector<double> house_credits_;
     std::vector<PendingHarvestEvent> harvest_events_;  // pending take_harvest_events() drain
 };
 
