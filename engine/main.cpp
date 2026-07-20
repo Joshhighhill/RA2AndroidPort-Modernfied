@@ -3807,9 +3807,13 @@ private:
     // Button rects, laid out identically in render() and handle() (deterministic).
     struct Buttons { ra2engine::SbRect skirmish, campaign, mp, load, options, quit; };
     Buttons layout() const {
+        // [menufix.md §3] RIGHT-ALIGNED button stack in the right third. mnbttn.shp
+        // (126x25) scaled ~1.75x -> 220x44; left edge x=980 (right edge 1200, ~80px
+        // margin), first y=250, 10px gap. Both render() and handle() call this, so
+        // the drawn rects and the hit-test rects are the SAME geometry.
         Buttons b;
-        const int bw = 380, bh = 50, gap = 14, x = (kWinW - bw) / 2;
-        int y = 210;
+        const int bw = 220, bh = 44, gap = 10, x = 980;
+        int y = 250;
         b.skirmish = {x, y, bw, bh}; y += bh + gap;
         b.campaign = {x, y, bw, bh}; y += bh + gap;
         b.mp       = {x, y, bw, bh}; y += bh + gap;
@@ -3874,25 +3878,61 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
 
     const ra2assets::Palette& pal = *art_.pal;
 
-    // --- Background: uniform scale + letterbox of the 632x568 SHP into 1280x720.
+    // [menufix.md §2, candidate C — CONFIRMED] Backdrop-only red-tint fix. The
+    // cache palette's indices 230..239 are a pure-red highlight ramp
+    // (252,0,0)->(100,0,0); mnscrnl.shp uses those slots for ~20% of the land,
+    // producing the heavy saturated-red speckle. Remap that band to a muted
+    // olive-brown keyed off each slot's red component (R*0.42, R*0.40, R*0.28) so
+    // the land reads as muted olive with only faint coastline relief. Scoped to a
+    // LOCAL copy used ONLY for the backdrop blit below -- the shared art_.pal
+    // (buttons/chrome + the live in-game 230..239 house-remap band) is untouched.
+    ra2assets::Palette bg_pal = pal;
+    for (int i = 230; i <= 239; ++i) {
+        const int R = pal[i].r;
+        bg_pal[i] = ra2assets::Rgba{
+            static_cast<uint8_t>(R * 0.42),
+            static_cast<uint8_t>(R * 0.40),
+            static_cast<uint8_t>(R * 0.28), 255};
+    }
+
+    // --- Background: scale the 632x568 SHP to FILL 1280x720 (cover, minor crop),
+    // centered -- matches cand_C/real RA2 (menufix.md §3). RenderCopy clips the
+    // overscan.
     const ra2assets::ShpFile::Frame bf = art_.bg->frame_info(0);
-    const double sc = std::min(static_cast<double>(kWinW) / bf.w,
+    const double sc = std::max(static_cast<double>(kWinW) / bf.w,
                                static_cast<double>(kWinH) / bf.h);
     const int bw = static_cast<int>(std::lround(bf.w * sc));
     const int bh = static_cast<int>(std::lround(bf.h * sc));
     const int bx = (kWinW - bw) / 2, by = (kWinH - bh) / 2;
-    // Letterbox bars: a dark neutral (a bright palette-idx-254 border reads as a
-    // bug at 1280x720; the backdrop image itself carries the RE-pinned colors).
     SDL_SetRenderDrawColor(ren, 8, 10, 8, 255);
     SDL_RenderClear(ren);
-    if (SDL_Texture* tex = shp_frame_tex(tc, "menu:bg", *art_.bg, 0, pal)) {
+    if (SDL_Texture* tex = shp_frame_tex(tc, "menu:bg", *art_.bg, 0, bg_pal)) {
         SDL_Rect dst{bx, by, bw, bh};
         SDL_RenderCopy(ren, tex, nullptr, &dst);
     }
 
-    // --- Logo (PCX) centered above the button column.
-    if (art_.logo)
-        blit_pcx_scaled(ren, tc, "menu:logo", *art_.logo, kWinW / 2, 40, 420, nullptr);
+    // --- Logo (PCX): logo.pcx is the full 640x480 shell splash (RA2 box-art on
+    // the left, empty button wells on the right ~28% that would clash with our
+    // right-aligned stack). Crop to the box-art (left region) and place it in the
+    // upper-left/center area so the East-Coast map stays visible on the right.
+    if (art_.logo && art_.logo->w > 0 && art_.logo->h > 0) {
+        SDL_Texture* lt = static_cast<SDL_Texture*>(tc.peek("menu:logo"));
+        if (!lt) {
+            std::vector<uint8_t> rgba = art_.logo->rgba();
+            lt = static_cast<SDL_Texture*>(
+                tc.get_rgba("menu:logo", rgba.data(), art_.logo->w, art_.logo->h));
+        }
+        if (lt) {
+            const int cropw = art_.logo->w * 71 / 100;   // drop the right-side wells
+            const int croph = art_.logo->h * 95 / 100;    // drop the dark bottom border
+            SDL_Rect src{0, 0, cropw, croph};
+            const int tw = 470;                          // on-screen width of the box-art
+            const int th = static_cast<int>(
+                std::lround(static_cast<double>(tw) * croph / cropw));
+            SDL_Rect dst{60, 30, tw, th};
+            SDL_RenderCopy(ren, lt, &src, &dst);
+        }
+    }
 
     // --- Buttons: 3-state mnbttn.shp scaled into each EXISTING layout() rect,
     // so hit-testing (handle(), shared layout()) stays pixel-consistent.
