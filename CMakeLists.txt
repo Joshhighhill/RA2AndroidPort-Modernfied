@@ -64,6 +64,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_wav.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_vxl.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_vpl.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_csf.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_fnt.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_fileio.cpp)
 # iso_project.cpp is pure C++17 (no SDL) and lives under engine/ so it can be
 # compiled into BOTH this test binary and the ra2engine executable below
