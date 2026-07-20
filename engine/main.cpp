@@ -48,6 +48,7 @@
 #include "iso_renderer.hpp"
 #include "platform.hpp"
 #include "production.hpp"
+#include "rectfont.hpp"    // glyph_rows (5x7 rect-font for menu labels) [Task 5]
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
@@ -2546,6 +2547,26 @@ void draw_number_centered(SDL_Renderer* ren, int value, int center_x, int y, int
     const std::string s = std::to_string(value < 0 ? 0 : value);
     const int total_w = static_cast<int>(s.size()) * 6 * scale;
     draw_number(ren, value, center_x + total_w / 2, y, scale);
+}
+
+// [RE: skirmish.md §UI, D5] Draw a string as filled rects, same technique as
+// draw_number. scale = pixel size of one glyph cell; 6px advance per glyph
+// (5 wide + 1 space). Render-only; unhashed -- consumed only by the menu scenes
+// (no byte-identity gate calls it), so it cannot affect any gate hash.
+void draw_text(SDL_Renderer* ren, const std::string& s, int x, int y, int scale,
+               std::uint8_t r = 255, std::uint8_t g = 255, std::uint8_t b = 255) {
+    SDL_SetRenderDrawColor(ren, r, g, b, 255);
+    int cx = x;
+    for (char ch : s) {
+        const std::array<std::uint8_t, 7>& rows = ra2engine::glyph_rows(ch);
+        for (int row = 0; row < 7; ++row)
+            for (int col = 0; col < 5; ++col)
+                if (rows[row] & (1 << (4 - col))) {
+                    SDL_Rect px{cx + col * scale, y + row * scale, scale, scale};
+                    SDL_RenderFillRect(ren, &px);
+                }
+        cx += 6 * scale;
+    }
 }
 
 // Blit one SHP frame at screen (x,y) (frame bbox offset applied), palettized

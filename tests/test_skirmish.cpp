@@ -61,3 +61,75 @@ TEST_CASE("skirmish: default_skirmish_config reproduces the 1v1 [RE: skirmish.md
     CHECK(cfg.slots[1].diff == ra2engine::AiDifficulty::Normal);
     CHECK_FALSE(cfg.slots[2].combatant);        // slot 2 = Neutral
 }
+
+// ---------------------------------------------------------------------------
+// Task 5: rect-font (pure engine/rectfont) glyph-coverage cases. Kept on the
+// ra2assets_tests / test_skirmish.cpp line; engine/rectfont.cpp is SDL-free.
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+#include "rectfont.hpp"
+
+TEST_CASE("rectfont: A-Z + space + unknown glyph coverage [RE: skirmish.md §UI]") {
+    // 'A' has a non-empty bitmap.
+    bool any = false;
+    for (std::uint8_t rowbits : ra2engine::glyph_rows('A')) any |= (rowbits != 0);
+    CHECK(any);
+    // Lowercase folds to uppercase.
+    CHECK(ra2engine::glyph_rows('a') == ra2engine::glyph_rows('A'));
+    // Space + unknown -> blank (all zero rows).
+    for (std::uint8_t rowbits : ra2engine::glyph_rows(' ')) CHECK(rowbits == 0);
+    for (std::uint8_t rowbits : ra2engine::glyph_rows('#')) CHECK(rowbits == 0);
+    // Every A-Z is non-blank (catches an un-authored letter).
+    for (char c = 'A'; c <= 'Z'; ++c) {
+        bool nonblank = false;
+        for (std::uint8_t rowbits : ra2engine::glyph_rows(c)) nonblank |= (rowbits != 0);
+        CHECK_MESSAGE(nonblank, "glyph not authored: ", c);
+    }
+    // Every 0-9 is non-blank (digit shapes reused from kDigits).
+    for (char c = '0'; c <= '9'; ++c) {
+        bool nonblank = false;
+        for (std::uint8_t rowbits : ra2engine::glyph_rows(c)) nonblank |= (rowbits != 0);
+        CHECK_MESSAGE(nonblank, "digit not authored: ", c);
+    }
+    // Basic punctuation authored: ':' '-' '.'.
+    for (char c : {':', '-', '.'}) {
+        bool nonblank = false;
+        for (std::uint8_t rowbits : ra2engine::glyph_rows(c)) nonblank |= (rowbits != 0);
+        CHECK_MESSAGE(nonblank, "punctuation not authored: ", c);
+    }
+    // Only the low 5 bits are ever used (bit 4 = leftmost column).
+    for (char c = 'A'; c <= 'Z'; ++c)
+        for (std::uint8_t rowbits : ra2engine::glyph_rows(c))
+            CHECK((rowbits & 0xE0) == 0);
+}
+
+TEST_CASE("rectfont: string->rects set-pixel geometry for a sample [RE: skirmish.md §UI]") {
+    // Reproduce draw_text's per-glyph advance (6*scale) and set-pixel geometry
+    // without SDL: collect the top-left of each set pixel for "A-1".
+    const std::string sample = "A-1";
+    const int scale = 2;
+    std::vector<std::pair<int,int>> got;
+    int cx = 0;
+    for (char ch : sample) {
+        const std::array<std::uint8_t, 7>& rows = ra2engine::glyph_rows(ch);
+        for (int row = 0; row < 7; ++row)
+            for (int col = 0; col < 5; ++col)
+                if (rows[row] & (1 << (4 - col)))
+                    got.emplace_back(cx + col * scale, row * scale);
+        cx += 6 * scale;
+    }
+    // 'A' row 0 = 0b01110 -> cols 1,2,3 set at cx=0: x = 2,4,6, y=0.
+    CHECK(std::find(got.begin(), got.end(), std::make_pair(2, 0)) != got.end());
+    CHECK(std::find(got.begin(), got.end(), std::make_pair(4, 0)) != got.end());
+    CHECK(std::find(got.begin(), got.end(), std::make_pair(6, 0)) != got.end());
+    // col 0 of 'A' row 0 is clear -> x=0,y=0 absent.
+    CHECK(std::find(got.begin(), got.end(), std::make_pair(0, 0)) == got.end());
+    // '-' is the 2nd glyph (cx=12): row 3 = 0b11111 -> col 0 set -> x=12, y=6.
+    CHECK(std::find(got.begin(), got.end(), std::make_pair(12, 6)) != got.end());
+    // '-' row 0 is empty -> nothing from that glyph at y=0 in its column span.
+    CHECK(std::find(got.begin(), got.end(), std::make_pair(12, 0)) == got.end());
+}

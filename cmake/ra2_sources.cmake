@@ -69,4 +69,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/capture.cpp
     ${RA2_ROOT}/engine/visibility.cpp
     ${RA2_ROOT}/engine/skirmish.cpp
+    ${RA2_ROOT}/engine/rectfont.cpp
 )

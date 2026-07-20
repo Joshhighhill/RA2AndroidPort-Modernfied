@@ -206,6 +206,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibili
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's
 # line above, so only the new module + its test are added here.
 target_sources(ra2assets_tests PRIVATE tests/test_skirmish.cpp engine/skirmish.cpp)
+# rectfont.cpp is pure C++17 (no SDL): the 5x7 rect-font glyph table + glyph_rows
+# extending the kDigits technique to A-Z/0-9/space/basic punctuation for menu
+# labels (Task 5, [RE: skirmish.md §UI]). Its coverage cases live in
+# test_skirmish.cpp above; draw_text (the SDL consumer) lives in engine/main.cpp.
+target_sources(ra2assets_tests PRIVATE engine/rectfont.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
