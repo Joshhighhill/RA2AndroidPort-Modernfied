@@ -1829,7 +1829,7 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
 // on a miss. All scripted spawns are instant (start Idle immediately).
 void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, int cx, int cy,
                 bool with_refinery = false, const VehicleAssets* harv_va = nullptr,
-                bool harv_chrono = false, int harv_storage = 0) {
+                bool harv_chrono = false, int harv_storage = 0, bool allied_full = false) {
     auto place = [&](int type, int px, int py, bool bypass) -> int {
         if (type < 0 || type >= static_cast<int>(ba.art.size()) || !ba.art[type].ok) return -1;
         const ra2engine::BuildingTypeDef& d = ba.roster[type];
@@ -1868,6 +1868,29 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
         // its spawn_base output -- and world_hash -- is byte-identical.
         if (with_refinery) {
             const int refn = place(roster_index(ba, "NAREFN"), cx + 9, cy + 4, /*bypass=*/true);
+            if (refn >= 0 && harv_va) {
+                const ra2engine::Building& rb = world.buildings()[refn];
+                spawn_harvester(world, *harv_va, harv_chrono, harv_storage, house,
+                                ra2engine::dock_cell_x(rb), ra2engine::dock_cell_y(rb));
+            }
+        }
+    }
+    // [RE: roster.md §3, D2] Symmetric Allied full base — mirrors the Soviet arm
+    // 1:1 behind the NEW default-false allied_full flag. Every EXISTING caller
+    // omits allied_full (=false) so its output -- and world_hash -- is byte-
+    // identical; ONLY --demo-roster (and, via SkirmishConfig, the interactive
+    // GameScene) passes true. The existing if(soviet) block above is UNCHANGED
+    // (this is a new if, not an else). GAREFN's FreeUnit is CMIN (Chrono Miner),
+    // supplied by the caller as harv_va/harv_chrono like the Soviet HARV; GAAIRC
+    // (radar, added to kRoster in T2) also satisfies the Allied RADAR prereq +
+    // the ORCA dock. Offsets [RE-GATE: roster.md §3 adjudication].
+    if (allied_full && !soviet) {
+        place(roster_index(ba, "GAPOWR"), cx + 6, cy, /*bypass=*/false);
+        place(roster_index(ba, "GAPILE"), cx + 6, cy + 4, /*bypass=*/false);
+        place(roster_index(ba, "GAWEAP"), cx - 1, cy + 6, /*bypass=*/false);
+        place(roster_index(ba, "GAAIRC"), cx + 3, cy + 8, /*bypass=*/false);
+        if (with_refinery) {
+            const int refn = place(roster_index(ba, "GAREFN"), cx + 9, cy + 4, /*bypass=*/true);
             if (refn >= 0 && harv_va) {
                 const ra2engine::Building& rb = world.buildings()[refn];
                 spawn_harvester(world, *harv_va, harv_chrono, harv_storage, house,
