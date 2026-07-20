@@ -805,6 +805,15 @@ public:
     void set_house(int h, HouseRec rec);
     bool houses_configured() const { return houses_configured_; }
 
+    // --- Multi-house / Alliances phase [RE: multihouse.md §3/§4, D3] ---
+    // Pairwise relationship predicates. With houses_configured_ FALSE ->
+    // is_enemy(a,b) == (a != b) and are_allied(a,b) == (a == b) -> EXACTLY today's
+    // behavior -> byte-identical in every gate. Neutral/non-combatant is NEVER an
+    // enemy of anyone (both directions) and never allied to a house it doesn't
+    // share a team with. Self is always allied to self. NOT read by world_hash.
+    bool are_allied(int a, int b) const;
+    bool is_enemy(int a, int b) const;
+
     // --- Engineer/Spy Capture phase [RE: capture.md] ------------------------
     // Ownership transfer (Approach A) [RE: capture.md §A3 CONFIRMED]: flip
     // buildings_[b_idx].house to new_house -> power/economy/buildability/sidebar

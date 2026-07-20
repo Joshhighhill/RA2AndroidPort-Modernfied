@@ -44,6 +44,17 @@ Unit make_soldier(int x, int y, int house, int idx, Occupancy& occ) {
     return u;
 }
 
+// Multi-house/Alliances [RE: multihouse.md §3/§4]: step_combat now takes a
+// const World& to consult World::is_enemy for target validation. These pure
+// combat tests configure NO houses, so is_enemy(a,b) == (a != b) -- exactly the
+// pre-alliances inlined `v.house != self_house` -- and a single shared default
+// World (empty map, firewall closed) is sufficient and stateless for all of them.
+const ra2engine::World& test_world() {
+    static ra2assets::MapFile map;
+    static ra2engine::World w(map);
+    return w;
+}
+
 }  // namespace
 
 TEST_CASE("armor_index maps the 11 class names, unknown -> none") {
@@ -84,7 +95,7 @@ TEST_CASE("step_combat: in-range hostile is auto-acquired and killed on exact RO
     std::vector<Building> bs;
     const double dt = 1.0 / 60.0;
     double t = 0;
-    while (units[1].die_time < 0 && t < 30.0) { ra2engine::step_combat(units, bs, occ, dt); t += dt; }
+    while (units[1].die_time < 0 && t < 30.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[1].die_time >= 0);          // died
     // 11th shot fires after 10 full cooldowns: t = 10 * (20/15) = 13.333s (+1 frame slop)
     CHECK(t >= 10.0 * (20.0 / 15.0) - 2 * dt);
@@ -101,7 +112,7 @@ TEST_CASE("step_combat: out-of-range hostile is NOT auto-acquired; explicit orde
     units.push_back(make_soldier(8, 0, 1, 1, occ));
 
     std::vector<Building> bs;
-    auto reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     CHECK(units[0].target == -1);
     CHECK(reqs.empty());
     // Explicit attack order pursues: target set + MoveRequest toward the victim.
@@ -109,7 +120,7 @@ TEST_CASE("step_combat: out-of-range hostile is NOT auto-acquired; explicit orde
     // resolves a distinct firing position near it rather than pathing the
     // unit exactly there (docs/re/infantry-anim.md §7).
     units[0].target = 1; units[0].attack_order = true;
-    reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     REQUIRE(reqs.size() == 1);
     CHECK(reqs[0].unit == 0);
     CHECK(reqs[0].goal_x == 8);
@@ -138,7 +149,7 @@ TEST_CASE("step_combat: attack_order approach — live path within weapon range 
     REQUIRE(units[0].moving());
 
     std::vector<Building> bs;
-    auto reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     CHECK(reqs.empty());
 }
 
@@ -161,7 +172,7 @@ TEST_CASE("step_combat: attack_order approach — target moving out of the live 
     units[1].fx = 13.0;
 
     std::vector<Building> bs;
-    auto reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     REQUIRE(reqs.size() == 1);
     CHECK(reqs[0].unit == 0);
     CHECK(reqs[0].approach == true);
@@ -182,7 +193,7 @@ TEST_CASE("step_combat: return fire — idle victim retaliates against its attac
     const double dt = 1.0 / 60.0;
     double t = 0;
     // Run until the first GI shot lands.
-    while (units[1].hp >= 125 && t < 5.0) { ra2engine::step_combat(units, bs, occ, dt); t += dt; }
+    while (units[1].hp >= 125 && t < 5.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[1].hp < 125);
     // After the first GI shot lands, the Conscript's target must be the GI.
     CHECK(units[1].target == 0);
@@ -199,7 +210,7 @@ TEST_CASE("step_combat: auto-acquired target dropped beyond guard stray; anchor 
     units[1].w_damage = 0;  // isolate: only the GI's own targeting is under test
 
     std::vector<Building> bs;
-    auto reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     REQUIRE(units[0].target == 1);
     CHECK(units[0].guard_x == 0);
     CHECK(units[0].guard_y == 0);
@@ -208,7 +219,7 @@ TEST_CASE("step_combat: auto-acquired target dropped beyond guard stray; anchor 
     // beyond weapon range (4) + kGuardStray (2) = 6.
     units[1].cell_x = 7;
     units[1].fx = 7.0;
-    reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     CHECK(units[0].target == -1);
     CHECK(reqs.empty());  // the GI never left its own anchor, so no return move is needed.
 }
@@ -226,15 +237,15 @@ TEST_CASE("step_combat: death invariants — dying then tombstoned, occupancy fr
     std::vector<Building> bs;
     const double dt = 1.0 / 60.0;
     double t = 0;
-    while (units[2].die_time < 0 && t < 20.0) { ra2engine::step_combat(units, bs, occ, dt); t += dt; }
+    while (units[2].die_time < 0 && t < 20.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[2].die_time >= 0);
     CHECK(occ.at(units[2].cell_x, units[2].cell_y) == ra2engine::Occupancy::kEmpty);
     // Both attackers' targets cleared by validation on the next step.
-    ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     CHECK(units[0].target == -1);
     CHECK(units[1].target == -1);
     // Die anim completes -> tombstone.
-    for (double t = 0; t < 1.5; t += 1.0 / 60.0) ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    for (double t = 0; t < 1.5; t += 1.0 / 60.0) ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     CHECK_FALSE(units[2].alive);
 }
 
@@ -250,7 +261,7 @@ TEST_CASE("step_combat: leash drop off-anchor emits a return-to-anchor move requ
     units[1].w_damage = 0;  // isolate: only the GI's targeting is under test
 
     std::vector<Building> bs;
-    auto reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     REQUIRE(units[0].target == 1);
     CHECK(units[0].guard_x == 0);
     CHECK(units[0].guard_y == 0);
@@ -264,7 +275,7 @@ TEST_CASE("step_combat: leash drop off-anchor emits a return-to-anchor move requ
     units[0].fy = 0.0;
     occ.set(8, 0, 0);
 
-    reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 60.0);
+    reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     // Target should be dropped due to leash violation (GI strayed too far).
     CHECK(units[0].target == -1);
     // Exactly one MoveRequest back to the ORIGINAL anchor.
@@ -295,10 +306,10 @@ TEST_CASE("combat: attack-building — range to nearest foundation cell, kill, t
 
     Occupancy occ(32, 32);
     occ.set(0, 0, 0);
-    auto reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);
     CHECK(reqs.empty());                            // in range -> no pursuit
     CHECK(b.hp == 90);                              // one 90-damage hit
-    ra2engine::step_combat(units, bs, occ, 1.0);     // rof elapses, second hit
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0);     // rof elapses, second hit
     CHECK(b.hp <= 0);
     CHECK(b.state == Building::State::Dead);
     CHECK(units[0].target_building == -1);          // target cleared on death
@@ -316,7 +327,7 @@ TEST_CASE("combat: attack-building out of range emits approach MoveRequest") {
     bs[0].state = Building::State::Idle; bs[0].alive = true; bs[0].house = 1;
     bs[0].cx = 6; bs[0].cy = 0; bs[0].fw = 2; bs[0].fh = 2; bs[0].hp = bs[0].max_hp = 50;
     Occupancy occ(32, 32);
-    auto reqs = ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);
     REQUIRE(reqs.size() == 1);
     CHECK(reqs[0].unit == 0);
     CHECK(reqs[0].goal_x == 6); CHECK(reqs[0].goal_y == 0);   // nearest foundation cell
@@ -340,7 +351,7 @@ TEST_CASE("combat: empty buildings vector == legacy behavior") {
     std::vector<Building> bs;  // empty -- legacy behavior guard
     const double dt = 1.0 / 60.0;
     double t = 0;
-    while (units[1].die_time < 0 && t < 30.0) { ra2engine::step_combat(units, bs, occ, dt); t += dt; }
+    while (units[1].die_time < 0 && t < 30.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[1].die_time >= 0);          // died
     CHECK(t >= 10.0 * (20.0 / 15.0) - 2 * dt);
     CHECK(t <= 10.0 * (20.0 / 15.0) + 2 * dt);

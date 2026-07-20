@@ -369,6 +369,27 @@ bool World::house_combatant(int h) const {
     return houses_[h].combatant;
 }
 
+// --- Multi-house / Alliances phase [RE: multihouse.md §3/§4, D3] -------------
+// Pairwise relationship predicates. With houses_configured_ FALSE they reduce
+// EXACTLY to today's identity comparisons -- is_enemy(a,b) == (a != b),
+// are_allied(a,b) == (a == b) -- so every routed enmity site is byte-identical
+// in every gate (the firewall is closed there). Neutral/non-combatant is NEVER
+// an enemy of anyone (both directions) and is never allied to a combatant; self
+// is always allied to self. NOT read by world_hash.
+bool World::are_allied(int a, int b) const {
+    if (a == b) return true;                       // self always allied to self
+    if (!houses_configured_) return false;         // today: only same-house is friendly
+    if (!house_combatant(a) || !house_combatant(b)) return false;   // neutral: not an ally
+    return house_team(a) == house_team(b);
+}
+
+bool World::is_enemy(int a, int b) const {
+    if (!houses_configured_) return a != b;        // EXACTLY today's behavior
+    if (a == b) return false;
+    if (!house_combatant(a) || !house_combatant(b)) return false;   // neutral NEVER an enemy
+    return !are_allied(a, b);
+}
+
 void World::set_house(int h, HouseRec rec) {
     if (h < 0) return;
     ensure_houses_default();
@@ -1287,7 +1308,7 @@ bool World::repair_building(int b_idx, int by_house) {
     if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
     Building& b = buildings_[b_idx];
     if (!b.alive || b.state == Building::State::Dead) return false;
-    if (b.house != by_house) return false;      // repair applies to OWN buildings
+    if (!are_allied(by_house, b.house)) return false;  // repair OWN + ALLIED (self-ally holds)
     if (b.hp >= b.max_hp) return false;         // full HP -> no action (engineer NOT consumed)
     capture_any_ = true;
     b.hp = b.max_hp;                            // heal to full [RE-GATE APPLIED §A5]
@@ -1419,7 +1440,10 @@ void World::step_capture(double dt) {
             if (best >= 0 && best <= 1) {
                 const int eng_house = u.house;
                 bool consumed = false;
-                if (b.house != eng_house) {
+                if (!are_allied(eng_house, b.house)) {
+                    // Capture ENEMY *and NEUTRAL* buildings (neutral is not an
+                    // enemy but IS capturable -- the oil-derrick case); own/ally
+                    // -> repair. are_allied(eng, neutral) is false -> captured.
                     // ProduceCashStartup for the captured type (CAOILD=1000; 0 for
                     // normal buildings) [RE: capture.md §A3/§D1]. capture_building
                     // only grants it when captured FROM neutral, so this is inert
@@ -1554,7 +1578,7 @@ void World::step_tech_structures(double dt) {
     for (Unit& d : units_) {
         if (!d.alive || d.die_time >= 0.0 || !d.detect_disguise) continue;
         for (Unit& s : units_) {
-            if (!s.disguised || !s.alive || s.house == d.house) continue;
+            if (!s.disguised || !s.alive || !is_enemy(d.house, s.house)) continue;  // detected only by an ENEMY observer
             const double dx = s.fx - d.fx, dy = s.fy - d.fy;
             if (dx * dx + dy * dy <= kDetectDisguiseRange * kDetectDisguiseRange)
                 s.disguised = false;
@@ -2040,11 +2064,11 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
 bool World::ai_quarry_exists(int house, int quarry) const {
     for (const Unit& u : units_)
         if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.is_aircraft &&
-            u.house != house && quarry_unit_match(quarry, u))  // CB-2: aircraft never a quarry
+            is_enemy(house, u.house) && quarry_unit_match(quarry, u))  // CB-2: aircraft never a quarry
             return true;
     if (quarry_wants_buildings(quarry))
         for (const Building& b : buildings_)
-            if (b.alive && b.state != Building::State::Dead && b.house != house)
+            if (b.alive && b.state != Building::State::Dead && is_enemy(house, b.house))
                 return true;
     return false;
 }
@@ -2060,8 +2084,8 @@ int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft ||
-            u.house == house)
-            continue;  // CB-2: aircraft never a quarry
+            !is_enemy(house, u.house))
+            continue;  // CB-2: aircraft never a quarry; skip self+ally+neutral
         if (!quarry_unit_match(quarry, u)) continue;
         const long long dx = u.cell_x - nx, dy = u.cell_y - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
@@ -2079,7 +2103,7 @@ int World::ai_pick_quarry_building(int house, int quarry, int nx, int ny,
     long long bestd = 0;
     for (int i = 0; i < (int)buildings_.size(); ++i) {
         const Building& b = buildings_[i];
-        if (!b.alive || b.state == Building::State::Dead || b.house == house) continue;
+        if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
         const long long dx = b.cx - nx, dy = b.cy - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);
@@ -2127,7 +2151,7 @@ void World::ai_order_attack(int unit_idx, int target_idx) {
     const Unit& u = units_[unit_idx];
     const Unit& tgt = units_[target_idx];
     if (!u.alive || u.die_time >= 0.0) return;
-    if (!tgt.alive || tgt.die_time >= 0.0 || tgt.house == u.house) return;  // AI guard
+    if (!tgt.alive || tgt.die_time >= 0.0 || !is_enemy(u.house, tgt.house)) return;  // AI guard: never attack self/ally/neutral
     commit_attack_target(unit_idx, target_idx, /*target_building=*/-1);
 }
 
@@ -2138,7 +2162,7 @@ void World::ai_order_attack_building(int unit_idx, int b_idx) {
     const Unit& u = units_[unit_idx];
     const Building& tgt = buildings_[b_idx];
     if (!u.alive || u.die_time >= 0.0) return;
-    if (!tgt.alive || tgt.state == Building::State::Dead || tgt.house == u.house) return;
+    if (!tgt.alive || tgt.state == Building::State::Dead || !is_enemy(u.house, tgt.house)) return;
     commit_attack_target(unit_idx, /*target_unit=*/-1, b_idx);
 }
 
@@ -2699,7 +2723,7 @@ void World::step(double dt) {
         }
     }
 
-    const std::vector<MoveRequest> reqs = step_combat(units_, buildings_, occ_, dt);
+    const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt);
     // Guard-return requests route directly. Approach requests are batched
     // per goal cell (one batch per target) and resolved to DISTINCT free
     // firing-position cells via assign_formation, so a group of attackers

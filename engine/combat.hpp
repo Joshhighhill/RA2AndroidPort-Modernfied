@@ -99,7 +99,12 @@ struct MoveRequest {
 // pointing at it); out of range with attack_order set, it emits a
 // MoveRequest at the nearest foundation cell (approach = true, same
 // firing-position-resolution contract as the unit-pursuit case).
-std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Building>& buildings,
-                                     Occupancy& occ, double dt);
+// Multi-house/Alliances [RE: multihouse.md §3/§4]: `world` is consulted ONLY
+// for the hostility predicate (World::is_enemy) used by target validation /
+// auto-acquire; nothing in `world` is mutated. With houses_configured_ FALSE
+// (every existing gate + host test), is_enemy(a,b) == (a != b) -> the targeting
+// scan is byte-identical to the pre-alliances inlined `v.house != self_house`.
+std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& units,
+                                     std::vector<Building>& buildings, Occupancy& occ, double dt);
 
 }  // namespace ra2engine

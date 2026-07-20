@@ -4115,3 +4115,40 @@ TEST_CASE("World multihouse: per-house arrays grow with set_house [RE: multihous
     CHECK(world.house_credits(4) == doctest::Approx(42.0));
     CHECK(world.take_income(4) == doctest::Approx(42.0));    // widened bound
 }
+
+// --- Multi-house / Alliances phase, Task 4 [RE: multihouse.md §3/§4] ---------
+// is_enemy/are_allied truth table. NOTE (deviation from brief): the brief calls a
+// `make_test_world()` helper; no such helper exists in-tree and the predicates are
+// map-independent (pure HouseRec table logic), so this uses a default-constructed
+// MapFile (host-only, no RA2_INSTALL_DIR needed), matching the Task 2/3 cases.
+TEST_CASE("World multihouse: is_enemy/are_allied truth table [RE: multihouse.md §3/§4]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    // (a) Default (houses_configured_ == false): is_enemy == a!=b, are_allied == a==b.
+    for (int a = 0; a < 3; ++a)
+        for (int b = 0; b < 3; ++b) {
+            CHECK(world.is_enemy(a, b)   == (a != b));   // the byte-identity contract
+            CHECK(world.are_allied(a, b) == (a == b));
+        }
+    // (b) Configured FFA: every house its own team.
+    world.set_house(0, {ra2engine::World::Side::Allied, 5, "", 0, true});
+    world.set_house(1, {ra2engine::World::Side::Soviet, 1, "", 1, true});
+    world.set_house(2, {ra2engine::World::Side::Neutral, 3, "", 2, false});
+    CHECK(world.is_enemy(0, 1));                          // cross-team combatants
+    CHECK(world.is_enemy(1, 0));
+    CHECK_FALSE(world.is_enemy(0, 0));                    // self never enemy
+    CHECK_FALSE(world.are_allied(0, 1));
+    // (c) Neutral / non-combatant: never enemy of anyone, both directions.
+    CHECK_FALSE(world.is_enemy(0, 2));
+    CHECK_FALSE(world.is_enemy(2, 0));
+    CHECK_FALSE(world.is_enemy(1, 2));
+    CHECK_FALSE(world.are_allied(0, 2));                  // not allied to a combatant
+    CHECK(world.are_allied(2, 2));                        // self-ally still holds
+    // (d) Configured team: 0+3 allied vs 1.
+    world.set_house(3, {ra2engine::World::Side::Soviet, 6, "", 0, true});   // team 0 with house 0
+    world.set_house(0, {ra2engine::World::Side::Allied, 5, "", 0, true});   // ensure team 0
+    CHECK(world.are_allied(0, 3));                        // teammates
+    CHECK_FALSE(world.is_enemy(0, 3));                    // allies never fight
+    CHECK(world.is_enemy(0, 1));                          // cross-team enemy
+    CHECK(world.is_enemy(3, 1));
+}

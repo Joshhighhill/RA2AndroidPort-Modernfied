@@ -57,6 +57,15 @@ ra2assets::Palette vh_gray_pal() {
     for (int i = 0; i < 256; ++i) raw[i*3] = raw[i*3+1] = raw[i*3+2] = static_cast<std::uint8_t>(i / 4);
     return ra2assets::Palette::load(raw, 768);
 }
+// Multi-house/Alliances [RE: multihouse.md §3/§4]: step_combat now takes a
+// const World& (for World::is_enemy). These vehicle tests configure NO houses,
+// so is_enemy(a,b) == (a != b) -- the pre-alliances inlined comparison -- and a
+// shared default World (empty map, firewall closed) is stateless and sufficient.
+const ra2engine::World& test_world() {
+    static ra2assets::MapFile map;
+    static ra2engine::World w(map);
+    return w;
+}
 }  // namespace
 
 TEST_CASE("vehicle: turn_toward takes the shortest arc with wraparound") {
@@ -207,14 +216,14 @@ TEST_CASE("vehicle: fire waits for turret aim; infantry does not") {
     occ.set(5, 5, 0); occ.set(7, 5, 1);
 
     std::vector<ra2engine::Building> bs;
-    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);
     CHECK(units[1].hp == 400);          // vehicle held fire (not aimed)
     CHECK(units[0].hp < 400);           // infantry-rules unit fired
 
     // Aim EXACTLY (tolerance 0): use the same delta step_combat computes,
     // (t.fx - u.fx, t.fy - u.fy) = (2, 0), so the doubles compare equal.
     units[0].turret_facing = facing_u16_from_delta(2.0, 0.0);
-    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);
     CHECK(units[1].hp < 400);           // vehicle fired once aimed
 }
 
@@ -243,7 +252,7 @@ TEST_CASE("vehicle: fire at a building waits for turret aim, then fires after st
     occ.set(5, 5, 0);
 
     // step_combat alone (no step_turrets) must never let it fire.
-    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);
     CHECK(b.hp == 180);           // vehicle held fire (not aimed)
 
     // Slew the turret via step_turrets toward the building's nearest cell.
@@ -251,6 +260,6 @@ TEST_CASE("vehicle: fire at a building waits for turret aim, then fires after st
     const double want = facing_u16_from_delta(7.0 - 5.0, 5.0 - 5.0);
     CHECK(units[0].turret_facing == doctest::Approx(want));
 
-    ra2engine::step_combat(units, bs, occ, 1.0 / 15.0);
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);
     CHECK(b.hp < 180);            // vehicle fired once aimed
 }

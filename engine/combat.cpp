@@ -56,11 +56,19 @@ double dist_leptons(double x1, double y1, double x2, double y2) {
 // A unit is a legal combat target iff it exists, is alive, isn't mid-death-
 // anim, and isn't friendly. docs/re/combat.md §1/§2 (GetFireError/
 // ReceiveDamage): a dying/dead unit is never a valid target.
-bool valid_target(const std::vector<Unit>& units, int self_house, int idx) {
+bool valid_target(const std::vector<Unit>& units, const World& world, int self_house, int idx) {
     if (idx < 0 || idx >= static_cast<int>(units.size())) return false;
     const Unit& v = units[idx];
     return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && !v.is_aircraft &&
-           v.house != self_house;
+           world.is_enemy(self_house, v.house);
+    // Multi-house/Alliances [RE: multihouse.md §3/§4]: hostility now routes
+    // through World::is_enemy (was the inlined `v.house != self_house`). With
+    // houses_configured_ FALSE, is_enemy(a,b) == (a != b) -> BYTE-IDENTICAL to
+    // the old clause in every gate. Auto-acquire + stale-drop both consult this,
+    // so both are alliance-aware (skip allies/neutral) once houses are set;
+    // explicit orders stay permissive because World::order_attack itself already
+    // refuses a friendly target at issue time (tgt.house guard), so a committed
+    // explicit target is always a real enemy that passes is_enemy here.
     // carried: untargetable (CB-1). !v.is_aircraft: an airborne/ground aircraft
     // is not a valid target -- air-to-air + ground AA are out [RE-GATE APPLIED:
     // aircraft.md §4]. The aircraft's OWN targets are ground units (is_aircraft
@@ -179,8 +187,8 @@ int damage_vs(int damage, const std::vector<int>& verses, int ai) {
     return damage * verses[idx] / 100;
 }
 
-std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Building>& buildings,
-                                     Occupancy& occ, double dt) {
+std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& units,
+                                     std::vector<Building>& buildings, Occupancy& occ, double dt) {
     std::vector<MoveRequest> requests;
     const int n = static_cast<int>(units.size());
 
@@ -317,7 +325,7 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
         // fresh acquisition below starts clean rather than inheriting a
         // stale "pursue indefinitely" flag for a target it hasn't picked
         // yet.
-        if (u.target != -1 && !valid_target(units, u.house, u.target)) {
+        if (u.target != -1 && !valid_target(units, world, u.house, u.target)) {
             u.target = -1;
             u.attack_order = false;
         }
@@ -368,7 +376,7 @@ std::vector<MoveRequest> step_combat(std::vector<Unit>& units, std::vector<Build
                     // combat 78 / tank 144 byte-identical. This lives ONLY in the
                     // AUTO-acquire scan, NOT valid_target (an explicit
                     // order_attack on a known unit is never blocked, §6).
-                    if (j == i || !valid_target(units, u.house, j) || units[j].disguised
+                    if (j == i || !valid_target(units, world, u.house, j) || units[j].disguised
                         || !(units[j].seen_by_mask & (1u << u.house)))
                         continue;
                     const Unit& v = units[j];
