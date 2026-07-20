@@ -8976,6 +8976,315 @@ int run_demo_skirmish() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-roster helpers (Broaden-Roster phase, 18th gate) -----------------
+
+// A resolved new-type sample for the roster gate's fold + asserts.
+struct ResolvedRosterType {
+    std::string id;
+    int  cost = 0, tech = 0, strength = 0, damage = 0;
+    bool is_building = false;
+    bool resolved = false;   // cost>0 && tech>0 (units) / present in kRoster (buildings)
+    bool spawned  = false;   // an instance of this type exists in the World
+    // Whether this type's ART is present on THIS install. Units always spawn via
+    // add_combat_unit (render art absence is only cosmetic), so art_present=true.
+    // A building whose SHP failed to resolve (the GATOW/ATESLA art-guard lesson --
+    // its DEF still resolves from kRoster) cannot be placed by add_building, so it
+    // is NOT expected to spawn on an install missing its art.
+    bool art_present = true;
+};
+
+// [RE: roster.md §2, D3] FNV fold of the roster-launch state. Folds every spawned
+// INSTANCE exactly like world_hash (Building{type,cx,cy,hp,state}, Unit{cell_x,
+// cell_y,hp,alive}) PLUS a per-new-type resolved sample (cost/tech/strength/damage)
+// + the resolved count. A NEW accumulator; world_hash + every prior *_hash
+// UNTOUCHED. Both runs fold identical state -> deterministic self-compare.
+uint64_t roster_fold(uint64_t h, const ra2engine::World& world,
+                     const std::vector<ResolvedRosterType>& types) {
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+    }
+    for (const ra2engine::Building& b : world.buildings()) {
+        h = fnv_mix(h, static_cast<uint64_t>(b.type));
+        h = fnv_mix(h, static_cast<uint64_t>(b.cx));
+        h = fnv_mix(h, static_cast<uint64_t>(b.cy));
+        h = fnv_mix(h, static_cast<uint64_t>(b.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(b.state));
+    }
+    for (const ResolvedRosterType& t : types) {
+        h = fnv_mix(h, static_cast<uint64_t>(t.cost));
+        h = fnv_mix(h, static_cast<uint64_t>(t.tech));
+        h = fnv_mix(h, static_cast<uint64_t>(t.strength));
+        h = fnv_mix(h, static_cast<uint64_t>(t.damage));
+    }
+    h = fnv_mix(h, static_cast<uint64_t>(types.size()));
+    return h;
+}
+
+struct DemoRosterResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the broaden-roster demo [RE: roster.md §2/§3]: resolve +
+// assert all 16 new types (12 units via resolve_combat_unit, 4 buildings from
+// kRoster), spawn the 4 buildings (GAAIRC via the Allied FULL base spawn_base
+// allied_full=true; NANRCT for a Soviet house; ATESLA/NASAM via explicit
+// add_building) + the 12 units via add_combat_unit, fold roster_fold at fixed
+// checkpoints, step N fixed dt=1/15 frames, record the wedge bools, and self-
+// compare rendered vs headless. Order-stable scalars only -> rendered ==
+// headless. NO pinned hash literal (Task 7 pins the observed value in README).
+DemoRosterResult simulate_roster(Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                 const Rules& rules,
+                                 const std::vector<const VehicleAssets*>& vlist,
+                                 bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                 const ra2engine::Camera* cam, int W, int H,
+                                 const std::string& start_png, const std::string& end_png) {
+    DemoRosterResult r;
+    if (!ba.ok) { r.ok = false; r.witness.emplace_back("[roster] WEDGE: building assets unavailable"); return r; }
+
+    // The 16 new type ids (12 units + 4 buildings). Buildings resolve from kRoster
+    // (roster_index + ba.roster fields); units resolve via resolve_combat_unit.
+    static const char* kUnitIds[12] = {"DRON","V3","ZEP","SHK","DESO","APOC","TERROR",
+                                        "GHOST","CLEG","JUMPJET","MGTK","ORCA"};
+    static const char* kBldIds[4]   = {"NANRCT","ATESLA","NASAM","GAAIRC"};
+
+    std::vector<ResolvedRosterType> types;
+    // Resolve + assert each unit (generic per-id from Rules).
+    std::vector<ra2engine::UnitCombat> unit_combat;
+    for (const char* id : kUnitIds) {
+        const ResolvedUnit ru = resolve_combat_unit(rules, id);
+        ResolvedRosterType t;
+        t.id = id; t.is_building = false;
+        t.cost = rules.cost(id); t.tech = rules.tech_level(id);
+        t.strength = ru.combat.strength; t.damage = ru.combat.damage;
+        t.resolved = (t.cost > 0 && t.tech > 0 && t.strength > 0);
+        types.push_back(t);
+        unit_combat.push_back(ru.combat);
+    }
+    // Resolve + assert each building from kRoster.
+    for (const char* id : kBldIds) {
+        const int idx = roster_index(ba, id);
+        ResolvedRosterType t;
+        t.id = id; t.is_building = true;
+        if (idx >= 0) {
+            const ra2engine::BuildingTypeDef& d = ba.roster[idx];
+            t.cost = d.cost; t.tech = d.tech_level; t.strength = d.strength; t.damage = 0;
+            t.resolved = true;
+            t.art_present = (idx < (int)ba.art.size() && ba.art[idx].ok);
+        }
+        types.push_back(t);
+    }
+
+    ra2engine::World world = build_world(a, ua, 0);
+    const int gw = world.grid_w(), gh = world.grid_h();
+    const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
+    const int bx = sc ? sc->x : gw / 2, by = sc ? sc->y : gh / 2;
+
+    // Allied FULL base (house 0) -> GAAIRC placed here (+ GACNST/GAPOWR/GAPILE/GAWEAP).
+    world.set_house(0, ra2engine::World::HouseRec{ra2engine::World::Side::Allied, 0, "Americans", 0, true});
+    world.set_house(1, ra2engine::World::HouseRec{ra2engine::World::Side::Soviet, 1, "Russians",  1, true});
+    spawn_base(world, ba, /*house=*/0, bx, by, /*with_refinery=*/false, nullptr, false, 0, /*allied_full=*/true);
+    const int allied_buildings = static_cast<int>(world.buildings().size());
+
+    // The Soviet building NANRCT (house 1), and the two Allied defenses ATESLA/NASAM
+    // (house 0), placed explicitly via add_building at fanned-out free cells.
+    auto place_explicit = [&](const char* id, int house, int px, int py) {
+        const int idx = roster_index(ba, id);
+        if (idx < 0 || idx >= (int)ba.art.size() || !ba.art[idx].ok) return;
+        const ra2engine::BuildingTypeDef& d = ba.roster[idx];
+        world.add_building(idx, px, py, d.fw, d.fh, house, d.strength, d.armor_ix,
+                           ba.art[idx].buildup_total, /*instant=*/true, d.sight, d.grants_map_reveal);
+    };
+    place_explicit("NANRCT", 1, bx - 8, by);
+    place_explicit("ATESLA", 0, bx - 4, by - 3);
+    place_explicit("NASAM",  0, bx - 2, by - 3);
+    // Mark each building type spawned.
+    for (ResolvedRosterType& t : types)
+        if (t.is_building)
+            for (const ra2engine::Building& b : world.buildings())
+                if (b.type == roster_index(ba, t.id)) { t.spawned = true; break; }
+
+    // Spawn each of the 12 units (ring-scan free cells around the base) via add_combat_unit.
+    int ui = 0;
+    for (int k = 0; k < 12; ++k) {
+        int placed = -1;
+        for (int rr = 2; rr <= 10 && placed < 0; ++rr)
+            for (int dy = -rr; dy <= rr && placed < 0; ++dy)
+                for (int dx = -rr; dx <= rr && placed < 0; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != rr) continue;
+                    const int x = bx + dx, y = by + dy;
+                    if (x < 0 || y < 0 || x >= gw || y >= gh) continue;
+                    if (world.walkable(x, y) && world.unit_at_cell(x, y) < 0) {
+                        const int house = (k < 7) ? 1 : 0;   // 0..6 Soviet, 7..11 Allied
+                        world.add_combat_unit(x, y, house, unit_combat[k]);
+                        placed = 1;
+                    }
+                }
+        if (placed > 0) types[k].spawned = true;   // units are types[0..11]
+        ++ui;
+    }
+    (void)ui;
+
+    uint64_t h = 0xcbf29ce484222325ull;            // FNV-1a offset basis (world_hash's)
+    auto render_frame = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+    };
+
+    // Checkpoint A: launched roster world.
+    world.step_visibility();
+    h = roster_fold(h, world, types);
+    render_frame();
+    if (render) capture_png(ren, start_png, W, H);
+    {
+        char b[192];
+        std::snprintf(b, sizeof b,
+                      "[roster] stage1 resolved=%d spawned_units=%d allied_base_buildings=%d total_buildings=%d",
+                      (int)types.size(),
+                      (int)std::count_if(types.begin(), types.end(),
+                                         [](const ResolvedRosterType& t){ return !t.is_building && t.spawned; }),
+                      allied_buildings, (int)world.buildings().size());
+        r.witness.emplace_back(b);
+    }
+    // Per-type witness (id resolved cost/tech/str + spawned).
+    for (const ResolvedRosterType& t : types) {
+        char b[160];
+        std::snprintf(b, sizeof b, "[roster] %-8s %s cost=%d tech=%d str=%d dmg=%d %s",
+                      t.id.c_str(), t.is_building ? "bld" : "unt", t.cost, t.tech, t.strength,
+                      t.damage,
+                      t.spawned ? "spawned" : (t.art_present ? "MISSING" : "no-art"));
+        r.witness.emplace_back(b);
+    }
+
+    // Checkpoint B: advance N fixed frames -> deterministic sim.
+    const int N = 30;
+    for (int k = 0; k < N; ++k) world.step(1.0 / 15.0);
+    h = roster_fold(h, world, types);
+    r.hash = h;
+
+    // Wedge guards [spec §Testing]: exit 1 unless each invariant holds.
+    const bool all_resolved = std::all_of(types.begin(), types.end(),
+                                           [](const ResolvedRosterType& t){ return t.resolved; });
+    // Every unit + every ART-PRESENT building must spawn; a building whose art is
+    // absent on this install (its def still resolves) is not expected to place
+    // (the GATOW/ATESLA art-guard lesson -- place_explicit correctly skips it).
+    const bool all_spawned  = std::all_of(types.begin(), types.end(),
+                                           [](const ResolvedRosterType& t){
+                                               return t.spawned || (t.is_building && !t.art_present);
+                                           });
+    // At least one new UNIT actually spawned+alive (never-vacuous liveness).
+    const bool unit_spawned = std::any_of(types.begin(), types.end(),
+                                          [](const ResolvedRosterType& t){ return !t.is_building && t.spawned; });
+    const bool allied_base_ok = allied_buildings > 1;   // full base placed > 1 building
+    // Spot stat checks vs the recovered rules: APOC strength 800 (a unit), ATESLA a
+    // building with a defensive weapon resolved (its kRoster def is a building).
+    const ResolvedRosterType* apoc  = nullptr;
+    const ResolvedRosterType* atesla = nullptr;
+    for (const ResolvedRosterType& t : types) {
+        if (t.id == "APOC")   apoc = &t;
+        if (t.id == "ATESLA") atesla = &t;
+    }
+    const bool spot_ok = apoc && apoc->strength == 800 && atesla && atesla->is_building;
+
+    if (!all_resolved)   { r.ok = false; r.witness.emplace_back("[roster] WEDGE: a new type failed to resolve from Rules/kRoster"); }
+    if (!all_spawned)    { r.ok = false; r.witness.emplace_back("[roster] WEDGE: an art-present new type could not be spawned into the World"); }
+    if (!unit_spawned)   { r.ok = false; r.witness.emplace_back("[roster] WEDGE: no new unit spawned+alive"); }
+    if (!allied_base_ok) { r.ok = false; r.witness.emplace_back("[roster] WEDGE: Allied full base placed <=1 building (allied_full not honored)"); }
+    if (!spot_ok)        { r.ok = false; r.witness.emplace_back("[roster] WEDGE: a spot stat did not match rules (APOC str 800 / ATESLA building)"); }
+
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[roster] roster_hash=%016llx", (unsigned long long)r.hash);
+    r.witness.emplace_back(hb);
+    render_frame();
+    if (render) capture_png(ren, end_png, W, H);
+    return r;
+}
+
+// --demo-roster: the broadened-roster content gate (18th permanent byte-identity
+// gate). Mirrors run_demo_skirmish: runs simulate_roster rendered (hidden window
+// + start/end screenshots) then headless from a FRESH World, and byte-compares
+// the two witness logs + hashes. NO hardcoded hash literal -- compute-and-self-
+// compare; the controller pins the observed value in the README gate table.
+int run_demo_roster() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_roster_start.png";
+    const std::string end_png = scratch + "demo_roster_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-roster] FAILED: building assets unavailable\n";
+        return 1;
+    }
+
+    // Best-effort vlist for the rendered run's voxel units (hash folds state, not
+    // pixels; a unit absent from vlist still spawns + folds). load_roster_units
+    // also proves the kRosterUnits table loads on this install.
+    UnitRoster ur = load_roster_units(dir, ra2, ua, rules, art);
+    std::vector<const VehicleAssets*> vlist;
+    for (const VehicleAssets& va : ur.vehicles) vlist.push_back(&va);
+
+    ra2engine::Camera cam;
+    {
+        ra2engine::World probe = build_world(a, ua, 0);
+        const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+        const int cx = pc ? pc->x : probe.grid_w() / 2, cy = pc ? pc->y : probe.grid_h() / 2;
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    DemoRosterResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-roster)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_roster(a, ua, ba, rules, vlist, /*render=*/true, ren, &tc, &cam,
+                                 W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+
+    DemoRosterResult r2 = simulate_roster(a, ua, ba, rules, vlist, /*render=*/false, nullptr,
+                                          nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+
+    std::cerr << "[demo-roster] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d roster_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -9132,6 +9441,8 @@ int main(int argc, char** argv) {
                 return run_demo_multihouse();
             } else if (arg == "--demo-skirmish") {
                 return run_demo_skirmish();
+            } else if (arg == "--demo-roster") {
+                return run_demo_roster();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
