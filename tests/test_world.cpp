@@ -4198,3 +4198,67 @@ TEST_CASE("World multihouse: AllyReveal inert when unconfigured (shroud gate con
     CHECK(world.visible_at(0, 8, 8));
     CHECK_FALSE(world.visible_at(1, 8, 8));                   // no sharing (houses_configured_ false)
 }
+
+// --- Multi-house / Alliances phase, Task 6 [RE: multihouse.md §5] ------------
+// Last-team-standing victory/defeat. ShortGame=yes -> a combatant house is
+// defeated when its last BUILDING is destroyed; a whole alliance-team wins
+// together; neutral/non-combatant houses never win or lose. NOTE (deviation
+// from brief): the brief calls a `make_test_world()` helper; none exists
+// in-tree. add_building/add_combat_unit are map-independent here (foundation
+// cells + occupancy clamp to grid bounds), so this uses a default-constructed
+// MapFile like the Task 2/3/4 cases, and kills a building via
+// ra2engine::kill_building (the helper every other building-death test uses)
+// instead of the brief's buildings_mut().
+TEST_CASE("World multihouse: last-team-standing victory (ShortGame) [RE: multihouse.md §5]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    // Teams: 0+2 (team 0) vs 1 (team 1); house 3 neutral non-combatant.
+    world.set_house(0, {ra2engine::World::Side::Allied,  5, "", 0, true});
+    world.set_house(1, {ra2engine::World::Side::Soviet,  1, "", 1, true});
+    world.set_house(2, {ra2engine::World::Side::Allied,  6, "", 0, true});
+    world.set_house(3, {ra2engine::World::Side::Neutral, 3, "", 3, false});
+    world.enable_victory(true, /*short_game=*/true);
+    // Give each combatant a building + the neutral one.
+    world.add_building(0, 2,  2,  1, 1, /*house=*/0, 100, 0, 0.0, true);
+    world.add_building(0, 20, 2,  1, 1, /*house=*/1, 100, 0, 0.0, true);
+    world.add_building(0, 2,  20, 1, 1, /*house=*/2, 100, 0, 0.0, true);
+    world.add_building(0, 20, 20, 1, 1, /*house=*/3, 100, 0, 0.0, true);
+    world.step_victory();
+    CHECK_FALSE(world.house_defeated(0));
+    CHECK_FALSE(world.house_defeated(1));
+    CHECK(world.winning_team() == -1);             // 2 combatant teams alive
+    CHECK_FALSE(world.house_defeated(3));           // neutral never defeated
+    // Destroy house 1's only building -> team 1 defeated -> team 0 wins.
+    for (auto& b : world.buildings())
+        if (b.house == 1) ra2engine::kill_building(b);
+    world.step_victory();
+    CHECK(world.house_defeated(1));
+    CHECK_FALSE(world.house_defeated(0));
+    CHECK_FALSE(world.house_defeated(2));
+    CHECK(world.winning_team() == 0);              // last team standing = team 0
+}
+
+// ShortGame=no: a house is defeated only with zero buildings AND zero units;
+// a neutral house never wins even as the sole "survivor".
+TEST_CASE("World multihouse: ShortGame=no needs zero units too; neutral never wins [RE: multihouse.md §5]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_house(0, {ra2engine::World::Side::Allied,  5, "", 0, true});
+    world.set_house(1, {ra2engine::World::Side::Soviet,  1, "", 1, true});
+    world.set_house(2, {ra2engine::World::Side::Neutral, 3, "", 2, false});
+    world.enable_victory(true, /*short_game=*/false);  // full game: buildings AND units
+    // House 0 keeps a building; house 1 has NO building but one surviving unit.
+    world.add_building(0, 2, 2, 1, 1, /*house=*/0, 100, 0, 0.0, true);
+    ra2engine::UnitCombat uc; uc.image = "E1"; uc.strength = 100; uc.armor = "none";
+    world.add_combat_unit(10, 10, /*house=*/1, uc);
+    world.step_victory();
+    CHECK_FALSE(world.house_defeated(1));   // ShortGame=no: a loose unit keeps house 1 alive
+    CHECK(world.winning_team() == -1);      // two combatant teams still stand
+    // Kill house 1's last unit -> zero buildings AND zero units -> defeated.
+    for (auto& u : world.units())
+        if (u.house == 1) u.alive = false;
+    world.step_victory();
+    CHECK(world.house_defeated(1));
+    CHECK(world.winning_team() == 0);       // team 0 sole combatant survivor
+    CHECK_FALSE(world.house_defeated(2));   // neutral (no buildings/units) never defeated
+}

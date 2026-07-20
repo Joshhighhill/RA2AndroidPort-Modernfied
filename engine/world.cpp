@@ -390,6 +390,55 @@ bool World::is_enemy(int a, int b) const {
     return !are_allied(a, b);
 }
 
+// --- Victory / defeat [RE: multihouse.md §5, D5] ----------------------------
+// Greenfield last-team-standing adjudication. Firewalled behind victory_enabled_
+// (false in every existing gate -> step_victory early-returns, no state feeds
+// world_hash). ShortGame=yes (default) -> a combatant house is defeated when its
+// last building falls; =no -> zero buildings AND zero units. Neutral/non-
+// combatant houses never win or lose. Computes only -- no side effects on the
+// sim (the gate/UI reads house_defeated/winning_team).
+void World::enable_victory(bool on, bool short_game) {
+    victory_enabled_ = on;
+    short_game_      = short_game;
+    if (on) { house_defeated_.assign(house_count(), 0); winning_team_ = -1; }
+}
+
+bool World::house_defeated(int h) const {
+    return h >= 0 && h < (int)house_defeated_.size() && house_defeated_[h] != 0;
+}
+
+int World::winning_team() const { return winning_team_; }
+
+void World::step_victory() {
+    if (!victory_enabled_) return;                           // firewall (spec §Global)
+    const int n = house_count();
+    if ((int)house_defeated_.size() != n) house_defeated_.resize(n, 0);
+    // Count alive buildings/units per house.
+    std::vector<int> blds(n, 0), unts(n, 0);
+    for (const Building& b : buildings_)
+        if (b.alive && b.state != Building::State::Dead &&
+            b.house >= 0 && b.house < n) ++blds[b.house];
+    for (const Unit& u : units_)
+        if (u.alive && u.die_time < 0.0 && u.house >= 0 && u.house < n) ++unts[u.house];
+    // Mark defeated combatant houses (sticky). Neutral never defeated.
+    for (int h = 0; h < n; ++h) {
+        if (!house_combatant(h) || house_defeated_[h]) continue;
+        const bool defeated = short_game_ ? (blds[h] == 0)
+                                          : (blds[h] == 0 && unts[h] == 0);
+        if (defeated) house_defeated_[h] = 1;
+    }
+    // WIN = exactly one alliance-team of combatant houses survives (last-team-
+    // standing). While >= 2 combatant teams survive -> -1. Neutral never counts.
+    int surviving_team = -1; bool multiple = false;
+    for (int h = 0; h < n; ++h) {
+        if (!house_combatant(h) || house_defeated_[h]) continue;
+        const int t = house_team(h);
+        if (surviving_team == -1) surviving_team = t;
+        else if (t != surviving_team) { multiple = true; break; }
+    }
+    winning_team_ = (!multiple && surviving_team != -1) ? surviving_team : -1;
+}
+
 void World::set_house(int h, HouseRec rec) {
     if (h < 0) return;
     ensure_houses_default();
@@ -2948,6 +2997,11 @@ void World::step(double dt) {
         step_ai_teams(dt);  // AFTER the base brain: base tick then team tick,
                             // fixed deterministic order [RE: ai-team.md; spec §5]
     }
+
+    // Multi-house [RE: multihouse.md §5]: evaluate last-team-standing victory
+    // AFTER combat has resolved this frame's deaths. Firewalled behind
+    // victory_enabled_ (false in every existing gate -> a strict no-op).
+    step_victory();
 }
 
 std::vector<int> unit_draw_order(const std::vector<Unit>& units) {

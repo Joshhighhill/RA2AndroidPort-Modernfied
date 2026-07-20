@@ -821,6 +821,16 @@ public:
     void enable_ally_reveal(bool on) { ally_reveal_ = on; }
     bool ally_reveal_ = true;
 
+    // --- Victory / defeat [RE: multihouse.md §5, D5] ---
+    // Enable the greenfield last-team-standing victory pass. short_game=true
+    // (ShortGame default) -> a combatant house is defeated when its last building
+    // falls; false -> zero buildings AND zero units. Default OFF -> step_victory
+    // early-returns -> gates run their fixed frame counts. NOT hashed.
+    void enable_victory(bool on, bool short_game = true);
+    bool house_defeated(int h) const;   // sticky; false if h out of range / neutral
+    int  winning_team() const;          // the sole surviving combatant team, or -1
+    void step_victory();                // firewalled per-frame pass (public for the gate)
+
     // --- Engineer/Spy Capture phase [RE: capture.md] ------------------------
     // Ownership transfer (Approach A) [RE: capture.md §A3 CONFIRMED]: flip
     // buildings_[b_idx].house to new_house -> power/economy/buildability/sidebar
@@ -1125,6 +1135,14 @@ private:
     std::vector<HouseRec> houses_;
     bool houses_configured_ = false;   // the side/color/enmity/AllyReveal firewall;
                                        // false in every existing gate.
+
+    // Victory / defeat state [RE: multihouse.md §5]. house_defeated_ sized
+    // house_count(); sticky. victory_enabled_ (the step_victory firewall) is
+    // false in every existing gate -> step_victory early-returns. NONE hashed.
+    bool victory_enabled_ = false;
+    bool short_game_      = true;
+    std::vector<std::uint8_t> house_defeated_;
+    int  winning_team_    = -1;
     // Populate houses_ with the 3 defaults if empty (idempotent). Called from the
     // constructor; harmless if invoked again.
     void ensure_houses_default();
