@@ -1448,11 +1448,21 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
     // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
     // placeholder (buildings are never dropped on art failure).
-    static const char* kRoster[20] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    static const char* kRoster[24] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
-                                       "NAWALL", "NARADR", "GATECH", "CAOILD"};
+                                       "NAWALL", "NARADR", "GATECH", "CAOILD",
+                                       // [RE: roster.md §2/§4, D1] APPEND-ONLY at indices
+                                       // 20-23. All four art-present (generic.mix);
+                                       // resolved generically by the loop below from
+                                       // Rules/Art (stats/prereq/power/cost/armor/sight +
+                                       // the defensive weapon for ATESLA/NASAM). Buildings
+                                       // are KEPT on art-fail (slot.ok=false). Every prior
+                                       // index 0-19 is preserved -> world_hash + all 17
+                                       // gate hashes UNCHANGED; only demo-base/techtree's
+                                       // roster= WITNESS grows 20->24 (re-pinned in README).
+                                       "NANRCT", "ATESLA", "NASAM", "GAAIRC"};
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -1504,8 +1514,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
 
-    ba.roster.reserve(20);
-    ba.art.reserve(20);
+    ba.roster.reserve(24);
+    ba.art.reserve(24);
     int ok_n = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
