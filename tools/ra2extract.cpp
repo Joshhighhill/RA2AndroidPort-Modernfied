@@ -4,7 +4,9 @@
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
 #include "ra2assets/shp.hpp"
+#include "ra2assets/pcx.hpp"
 #include <cstdio>
+#include <string>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -55,6 +57,61 @@ int main(int argc, char** argv){
             for (auto& n : t.local_names()) std::cout<<"  "<<n<<"\n";
             return 0;
         }
+        if (std::string(argv[2])=="--dumpall"){
+            // Bulk-dump every entry of a nested mix as PNG, auto-detecting PCX
+            // (byte0==0x0A) vs SHP (try frame 0). Names outputs by hash id so an
+            // asset can be located visually then reverse-matched. Palette used for
+            // SHP frames only (PCX is self-palettized).
+            // usage: <mix> --dumpall <nested-mix-path> <outdir> <pal-path>
+            if (argc<6){ std::cerr<<"need --dumpall <nested> <outdir> <pal>\n"; return 2; }
+            MixFile t = descend(std::move(m), argv[3]);
+            std::string outdir = argv[4];
+            std::vector<uint8_t> praw;
+            try { praw = read_file(argv[5]); } catch(...){}
+            // pal path may be nested in the ORIGINAL mix; reload for pal
+            Palette pal;
+            bool havepal=false;
+            try {
+                auto pbytes=read_file(argv[1]);
+                MixFile pm=MixFile::open(std::move(pbytes));
+                auto pr=read_path(pm, argv[5]);
+                pal=Palette::load(pr.data(),pr.size()); havepal=true;
+            } catch(...){}
+            int npcx=0,nshp=0,nfail=0;
+            for (auto& e : t.entries()){
+                std::vector<uint8_t> b;
+                try { b=t.read(e); } catch(...){ continue; }
+                if (b.empty()) continue;
+                char nm[1024];
+                if (b[0]==0x0A){ // PCX
+                    try {
+                        PcxImage img=decode_pcx(b);
+                        auto rgba=img.rgba();
+                        std::snprintf(nm,sizeof nm,"%s/pcx_%08X_%dx%d.png",outdir.c_str(),e.id,img.w,img.h);
+                        stbi_write_png(nm,img.w,img.h,4,rgba.data(),img.w*4);
+                        npcx++; continue;
+                    } catch(...){}
+                }
+                if (havepal){ // try SHP frame 0
+                    try {
+                        ShpFile s=ShpFile::load(b);
+                        if (s.count()>0){
+                            auto fi=s.frame_info(0);
+                            if (fi.w>0&&fi.h>0&&fi.w<4096&&fi.h<4096){
+                                auto idx=s.decode_indexed(0);
+                                auto rgba=ShpFile::palettize(idx,pal);
+                                std::snprintf(nm,sizeof nm,"%s/shp_%08X_%dx%d_f%d.png",outdir.c_str(),e.id,fi.w,fi.h,s.count());
+                                stbi_write_png(nm,fi.w,fi.h,4,rgba.data(),fi.w*4);
+                                nshp++; continue;
+                            }
+                        }
+                    } catch(...){}
+                }
+                nfail++;
+            }
+            std::cout<<"dumpall: pcx="<<npcx<<" shp="<<nshp<<" other="<<nfail<<"\n";
+            return 0;
+        }
         if (std::string(argv[2])=="--raw"){
             // Dump the raw extracted bytes of any nested asset to disk, so an
             // external oracle (e.g. XCC's own decoder) can be fed byte-identical
@@ -66,6 +123,18 @@ int main(int argc, char** argv){
             out.write(reinterpret_cast<const char*>(raw.data()), (std::streamsize)raw.size());
             std::cout<<"wrote "<<argv[4]<<" ("<<raw.size()<<" bytes)\n";
             return 0;
+        }
+        // PCX -> PNG: <mix> <pcx-path> <out.png>  (self-palettized 8-bit RLE PCX)
+        {
+            std::string p2(argv[2]);
+            if (p2.size()>=4 && p2.compare(p2.size()-4,4,".pcx")==0){
+                if (argc<4){ std::cerr<<"need <pcx-path> <out.png>\n"; return 2; }
+                PcxImage img = decode_pcx(read_path(m, argv[2]));
+                auto rgba = img.rgba();
+                stbi_write_png(argv[3], img.w, img.h, 4, rgba.data(), img.w*4);
+                std::cout<<"wrote "<<argv[3]<<" ("<<img.w<<"x"<<img.h<<", pcx)\n";
+                return 0;
+            }
         }
         if (argc<5){ std::cerr<<"need <shp-path> <pal-path> <out.png>\n"; return 2; }
         ShpFile s=ShpFile::load(read_path(m, argv[2]));
