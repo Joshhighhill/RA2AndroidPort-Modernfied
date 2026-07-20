@@ -1504,6 +1504,52 @@ decoders. It is **interactive/visual only and strictly additive** — no
 determinism gate renders the menu, no gate exercises the new decoders, and all
 eighteen gate hashes plus `world_hash` are bit-identical to the prior phase.
 
+> **True-design rebuild (supersedes the earlier composition below).** The menu
+> was subsequently rebuilt to the faithful RA2 shell recovered from `game.exe`
+> (dialog resource `0xE2` and its shell asset loaders; see
+> `docs/re/mainmenu_true.md`). This **supersedes the earlier `mnscrnl` +
+> `cache.mix/palette.pal` olive-remapped, right-aligned composition** described
+> in the paragraphs that follow — the shell now composes on a 640×480 logical
+> canvas (scaled + letterboxed into the window) from the recovered assets,
+> palettes, and dialog-template pixel rects:
+>
+> - **Backdrop:** `neutral.mix/mnscrns.shp` (472×448) under `cache.mix/shell.pal`
+>   — the dark-**red** US-East-Coast radar map with the beveled CRT frame baked
+>   in — at (0,0,472,448), with `neutral.mix/lwscrns.shp` as the 32 px bottom bar.
+> - **Full metal sidebar chrome** (168 px column) under `shell.pal`:
+>   `sdtp.shp` frame 0 (the mini-monitor showing the red **WARNING** screen +
+>   rising graph) at (472,0,168,199); `sdbtm.shp` V-console at (472,415,168,65);
+>   and a per-button `sdbtnbkgd.shp` metal slice behind each button row.
+> - **Buttons:** `local.mix/mnbttn.shp` (3-state: 0=up / 1=hover / 2=down) under
+>   `local.mix/mainbttn.pal`, stretched to 162×37 at the six **recovered
+>   dialog-`0xE2` template rects** (`MapDialogRect`-derived: Single Player
+>   (476,198), Internet (476,242), Network (476,286), Movies & Credits (476,330),
+>   Options (477,374), Exit Game (477,418)).
+> - **Gold labels** rendered with the authentic `12metfnt.fnt` Westwood font
+>   (`draw_fnt_text`), centered per button, plus the "Main Menu" header
+>   (477,2,162,16) and the version line (477,461).
+> - **Left "CRT screen" VQA is absent in this install** — the real menu loops
+>   `Ra2ts_s.vqa` / `Ra2ts_l.vqa` in a movie control, but `MOVIES01/02.MIX` are
+>   4-byte dummies here, so a **static stand-in** (the RA2 logo emblem cropped
+>   from `logo.pcx` composited over the red radar backdrop) is used instead.
+> - **Multi-page tree** (one reusable `draw_shell` per page, `ShellScene`):
+>   **Main** → **Single Player** (New Campaign / Load Saved Game greyed,
+>   **Skirmish** live → `SkirmishSetupScene`, Back) / **Movies & Credits**
+>   (greyed stubs + Back) / **Options** (Sound / Keyboard / Display greyed +
+>   Back) / Internet + Network greyed / **Exit Game**. Render rects and hit-test
+>   rects derive from a **single** `layout()` in logical space (click rects ==
+>   draw rects).
+>
+> Byte-identity is unchanged by this rebuild: only `main.cpp`'s menu region and
+> new menu helpers changed — no `--demo-*`/`simulate_*`/`run_demo_*`/`world_hash`
+> or any decoder was touched — so all eighteen gate hashes remain bit-identical
+> (re-verified one-per-run at finalize), the ra2assets suite passes 482/482 in
+> both install and no-install modes, and the arm64 APK still links the menu
+> symbols (`draw_shell` / `ShellScene` / `draw_fnt_text` / `load_menu_art`).
+> True-design carry-forwards: the exact Options CSF labels; Campaign and Load
+> pages as greyed stubs; VQA (`ra2ts_*`) left-screen playback; and the 800×600
+> ("large" `*L` asset) button redistribution — all deferred.
+
 **Three decoder additions** (each ADDITIVE + host-tested; none touched by any
 gate):
 - **PCX** (`ra2assets::decode_pcx`, `src/pcx.cpp`) — 8-bit RLE PCX with the
