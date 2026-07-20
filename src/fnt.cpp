@@ -8,15 +8,14 @@ uint16_t rd16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | (p[1] << 8
 
 // Westwood classic variable-width bitmap font (C&C/TS/RA2 ".fnt").
 //
-// CALIBRATE-FIRST (T3 Step 1): the exact header layout below was CONFIRMED by a
-// hex probe of the real cache.mix/12metfnt.fnt in this install -- it is NOT the
-// XCC-documented byte offsets the brief sketched (which assumed the newer
-// "FoNt"-magic face). Probed facts, all cross-checked against the real bytes:
+// CALIBRATE-FIRST (menufix.md §1, CONFIRMED against real cache.mix/12metfnt.fnt
+// bytes + XCC fnt_decode). Header (20 = 0x14 bytes, little-endian):
 //
 //   0x00 u16  fileSize            == exact file length (magic/format guard)
-//   0x06 u16  glyphOffsetTable    -> u16 * count, ABSOLUTE byte offset of each
-//                                    glyph's 8-bit-per-pixel bitmap
-//   0x08 u16  widthTable          -> u8  * count, per-glyph advance width
+//   0x06 u16  glyphOffsetTable    -> u16 * count, glyph bitmap offset RELATIVE to
+//                                    image_ofs (NOT an absolute file offset)
+//   0x08 u16  widthTable          -> u8  * count, per-glyph pixel width / advance
+//   0x0A u16  image_ofs           base of glyph-bitmap region; add to table values
 //   0x0C u16  heightTable         -> u16 * count: low byte = y-offset (top pad),
 //                                    high byte = rows (lit height)
 //   0x0E u8   firstChar           (0 on 12metfnt)
@@ -28,11 +27,20 @@ uint16_t rd16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | (p[1] << 8
 // cross-validated against (heightTable - widthTable). On 12metfnt all three
 // spacings agree at 219 (first=0..last=218).
 //
-// Glyphs pack 1 byte per pixel (values 0..~4 = a shading/bevel ramp; 0 =
-// transparent), row-major, `rows` rows of `width` bytes, placed at vertical
-// y-offset `yoff` inside the `height`-tall cell. The offset-table gaps equal
-// width*rows exactly for the ASCII letters, which is what pins the depth at
-// 8bpp (a 4bpp read would need width/2 bytes/row and would not close the gaps).
+// Glyphs are 8bpp: one byte per pixel, `w` bytes = `w` pixels per row, `rows`
+// rows placed at vertical y-offset `yoff` inside the `height`-tall cell. The
+// pixel value is a small shading/bevel ramp index in the LOW nibble (12metfnt
+// uses 0..4; the high nibble is unused/zero) -- 0 = transparent, 1..N = "lit".
+// Total glyph bytes = w * rows.
+//
+// THE FIX (menufix.md §1 was RIGHT that the offsets are image_ofs-relative, but
+// WRONG that the data is 4bpp/2-px-per-byte): the real bug was the MISSING
+// image_ofs base -- the old code read glyph bytes at the ABSOLUTE table offset
+// (d + gdo), pulling garbage. The bytes prove 8bpp: every high nibble is 0
+// across all glyphs, and an 8-px-wide 'H' (`02 01 02 02 02 02 02 01` crossbar)
+// decodes cleanly, whereas a 2-px-per-byte read inserts a blank column between
+// every pixel (a comb/striped look). Adding image_ofs + keeping 8bpp width=w
+// yields legible authentic glyphs (verified: "SKIRMISH CAMPAIGN QUIT" render).
 Font Font::load(std::vector<uint8_t> b) {
     if (b.size() < 0x14) throw std::runtime_error("fnt: shorter than header");
     const uint8_t* d = b.data();
@@ -45,7 +53,8 @@ Font Font::load(std::vector<uint8_t> b) {
         throw std::runtime_error("fnt: not a classic Westwood .fnt (size field mismatch)");
 
     const uint16_t off_glyphs = rd16(d + 0x06);   // u16 per glyph: bitmap offset
-    const uint16_t off_width  = rd16(d + 0x08);   // u8  per glyph: advance width
+    const uint16_t off_width  = rd16(d + 0x08);   // u8  per glyph: byte-width/row
+    const uint16_t image_ofs  = rd16(d + 0x0A);   // base of glyph bitmap data (ADD to table)
     const uint16_t off_height = rd16(d + 0x0C);   // u16 per glyph: {yoff, rows}
 
     if (off_glyphs >= off_width || off_width >= off_height)
@@ -68,17 +77,20 @@ Font Font::load(std::vector<uint8_t> b) {
     // Bounds: every referenced table must lie inside the file.
     const size_t need = static_cast<size_t>(off_height) + static_cast<size_t>(count) * 2;
     if (need > b.size()) throw std::runtime_error("fnt: tables exceed file");
+    // Glyph bitmap data starts at image_ofs; it must lie inside the file and at
+    // or past the height table end (the tables end exactly at image_ofs on 12metfnt).
+    if (image_ofs > b.size()) throw std::runtime_error("fnt: image_ofs past end of file");
 
     f.glyphs_.resize(count);
     f.widths_.resize(count);
     for (int i = 0; i < count; ++i) {
-        const int w = d[off_width + i];
+        const int w = d[off_width + i];                     // pixels per row (1 byte each)
         const uint8_t* hh = d + off_height + i * 2;
         const int yoff = hh[0];
         int rows = hh[1];
-        const uint16_t gdo = rd16(d + off_glyphs + i * 2);  // this glyph's bitmap
+        const uint16_t gdo = rd16(d + off_glyphs + i * 2);  // this glyph's bitmap (rel. image_ofs)
 
-        f.widths_[i] = w;
+        f.widths_[i] = w;                                   // advance = pixel width
         FntGlyph& g = f.glyphs_[i];
         g.w = w;
         g.h = f.height_;                                    // uniform cell height
@@ -89,13 +101,16 @@ Font Font::load(std::vector<uint8_t> b) {
         if (yoff >= g.h) continue;
         if (yoff + rows > g.h) rows = g.h - yoff;
         const size_t glyph_bytes = static_cast<size_t>(w) * rows;
-        if (static_cast<size_t>(gdo) + glyph_bytes > b.size()) continue;  // corrupt entry
-        const uint8_t* src = d + gdo;
+        if (static_cast<size_t>(image_ofs) + gdo + glyph_bytes > b.size())
+            continue;                                       // corrupt entry
+        // Bitmap base is RELATIVE to image_ofs (the missing header field that made
+        // the old absolute-offset read pull garbage). 8bpp: one byte per pixel,
+        // value = ramp index in the low nibble (0 = transparent, 1..N = bevel).
+        const uint8_t* src = d + image_ofs + gdo;
         for (int ry = 0; ry < rows; ++ry) {
-            for (int rx = 0; rx < w; ++rx) {
-                g.pixels[static_cast<size_t>(yoff + ry) * g.w + rx] =
-                    src[static_cast<size_t>(ry) * w + rx];
-            }
+            const uint8_t* srow = src + static_cast<size_t>(ry) * w;
+            uint8_t* drow = &g.pixels[static_cast<size_t>(yoff + ry) * g.w];
+            for (int rx = 0; rx < w; ++rx) drow[rx] = srow[rx] & 0x0F;
         }
     }
     return f;

@@ -13,14 +13,17 @@ struct FntGlyph {
 
 // A Westwood .fnt variable-width bitmap font (RA2 shell/menu font, e.g.
 // 12metfnt.fnt -- the bevelled metallic "metal12" menu face). Glyphs are
-// indexed by byte value in [first(), last()]; width() is the per-glyph
-// advance. [RE: mainmenu.md §3]
+// indexed by byte value in [first(), last()]. Glyphs are 8bpp (1 byte/pixel,
+// value = bevel-ramp index in the low nibble, 0 = transparent); width() /
+// FntGlyph::w are the pixel width, which is also the text advance. Bitmap
+// offsets are RELATIVE to the image_ofs header field. [RE: menufix.md §1, but
+// the data is 8bpp not 4bpp -- see fnt.cpp for the byte-level proof.]
 //
-// Format (CONFIRMED by a T3 Step-1 hex probe of the real cache.mix/12metfnt.fnt;
-// this is the classic Westwood/TS/RA2 variable-width bitmap font, NOT the newer
-// "FoNt"-magic face used by local.mix/metal12.fnt & game.fnt -- see fnt.cpp):
-//   0x00 u16 fileSize    0x06 u16 glyphOffsetTable  0x08 u16 widthTable
-//   0x0C u16 heightTable 0x0E u8 firstChar          0x12 u8 height  0x13 u8 maxWidth
+// Format (CONFIRMED against real cache.mix/12metfnt.fnt bytes; classic Westwood/
+// TS/RA2 variable-width bitmap font, NOT the newer "FoNt"-magic face used by
+// local.mix/metal12.fnt & game.fnt -- see fnt.cpp):
+//   0x00 u16 fileSize   0x06 u16 glyphOffsetTable (rel. image_ofs)  0x08 u16 widthTable
+//   0x0A u16 image_ofs  0x0C u16 heightTable  0x0E u8 firstChar  0x12 u8 height  0x13 u8 maxWidth
 class Font {
 public:
     static Font load(std::vector<uint8_t> bytes);

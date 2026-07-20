@@ -3610,12 +3610,11 @@ struct MenuArt {
     const ra2assets::Palette* font_pal = nullptr;  // synthetic ramp (make_font_palette)
     MenuAudio* audio = nullptr;               // looping grinder.wav (or null)
     bool ok = false;                          // essentials (bg+pal) decoded
-    // The classic-format .fnt DECODER (Task 3) currently produces sheared/garbled
-    // glyph bitmaps (the 70-byte glyph blocks don't de-shear under any 8bpp/4bpp/
-    // row/column reading -- a real Westwood-font-format RE task, out of scope for
-    // this composition). Per the brief's sanctioned fallback, labels use the
-    // reliable rect-font while this stays false; draw_fnt_text stays wired for
-    // when the decoder is corrected. [RE: mainmenu.md §3]
+    // fnt.cpp now decodes the classic Westwood .fnt as 4bpp PACKED (2 px/byte,
+    // image_ofs-relative offsets) -- the earlier shear is fixed (menufix.md §1),
+    // so the menu renders the authentic bevelled 12metfnt face. Set true in
+    // load_menu_art when the font decoded; rect-font remains the fallback if the
+    // font is absent. [RE: menufix.md §1]
     bool fnt_ok = false;
 };
 
@@ -3750,10 +3749,10 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.font_pal = &store.font_pal;
     store.art.audio    = store.audio.get();
     store.art.ok       = (store.art.bg && store.art.pal);
-    // FNT labels DISABLED (fnt_ok stays false): the decoder yields garbled
-    // glyphs (see MenuArt::fnt_ok). Rect-font is used instead -- do not ship
-    // garbled text (brief). Flip to true once fnt.cpp is corrected.
-    store.art.fnt_ok   = false;
+    // FNT labels ENABLED: fnt.cpp now decodes the classic Westwood 4bpp packed
+    // glyph format correctly (menufix.md §1; anti-shear regression test in
+    // tests/test_fnt.cpp), so the menu uses the authentic bevelled 12metfnt face.
+    store.art.fnt_ok   = (store.art.font != nullptr);
     std::cerr << "[menu-art] bg=" << (store.art.bg ? "y" : "n")
               << " pal=" << (store.art.pal ? "y" : "n")
               << " btn=" << (store.art.btn ? "y" : "n")
