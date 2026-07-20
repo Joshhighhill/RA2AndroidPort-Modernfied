@@ -1496,6 +1496,74 @@ Deviations we take for Broaden Roster (adjudicated divergences from the recovere
   defaulted false for the gate), so interactive Allied houses are ConYard-only for
   now; all prior-phase carry-forwards [`roster.md` §5; spec §Scope/non-goals].
 
+## Faithful Main Menu
+
+The Faithful Main Menu phase reskins the front-end to render from the real RA2
+shell art actually present on this install, driven by three new, self-contained
+decoders. It is **interactive/visual only and strictly additive** — no
+determinism gate renders the menu, no gate exercises the new decoders, and all
+eighteen gate hashes plus `world_hash` are bit-identical to the prior phase.
+
+**Three decoder additions** (each ADDITIVE + host-tested; none touched by any
+gate):
+- **PCX** (`ra2assets::decode_pcx`, `src/pcx.cpp`) — 8-bit RLE PCX with the
+  769-byte trailer palette, for the `logo.pcx` / `title.pcx` shell art and the
+  loadscreens (`mainmenu.md` §6). The trailer palette is written full-8-bit
+  directly (not the 6-bit `Palette::load` VGA expansion).
+- **Westwood FNT** (`ra2assets::load_fnt` / `Font`, `src/fnt.cpp`) — variable-
+  width bitmap font (per-glyph width table + palettized rows), for authentic
+  bevelled menu labels; consumed by `draw_fnt_text` (`mainmenu.md` §3).
+- **Stereo IMA-ADPCM** (the `channels==2` branch in `ra2assets::load_wav_ima`,
+  `src/wav.cpp`) — MS-IMA interleaved L/R decode for the looping menu theme
+  `grinder.wav` (RIFF/IMA, 2ch, 22050 Hz — `mainmenu.md` §4). The `channels==1`
+  mono path is **byte-unchanged** (mono synthetic + real-asset pins pass
+  unchanged); the mixer sink downmixes the stereo track to mono.
+
+**Faithful menu composition** (real assets, all present per `mainmenu.md` §2):
+`mnscrnl.shp` (632×568, uncompressed single-frame SHP) as the uniformly-scaled,
+letterboxed East-Coast situation-map background; `mnbttn.shp` (126×25, 3
+state-frames up/down/hover) as the right-side vertical button stack; `logo.pcx`
+/ `title.pcx`; `metal12.fnt` labels; `bkgdlg.shp` + `sidec01/sidec02` dialog
+chrome on the skirmish-setup screen; the looping `grinder.wav` menu track. The
+background palette is pinned to **`cache.mix/palette.pal`** (the decisive
+render-sweep winner in `mainmenu.md` §7 item 1 — the only palette that renders a
+coherent East-Coast relief map; `fsscrn.pal` is rejected as the dark red/blue
+speckle).
+
+**Byte-identity discipline:** the menu is interactive-only, the three decoders
+live in new/guarded code paths, and mono-WAV decode is byte-unchanged, so
+`world_hash` and all eighteen gate hashes are bit-identical and **no new gate was
+added** — verification is a `--menu-shot` screenshot (a hidden-window single-
+frame capture of `MainMenuScene` + `SkirmishSetupScene` to PNG) plus the
+ra2assets host tests, not a determinism pin.
+
+**Deviations we take** (adjudicated against `mainmenu.md`, not bugs):
+- **Approximate button/logo coordinates** — the exact per-button pixel rects are
+  hard-coded in `gamemd.exe` (not data-driven), so the layout is approximated
+  from the SHP sizes (backdrop fit ≈1.267 into 1280×720, buttons ~200×40 at
+  x≈980); a Ghidra pass on the shell dialog init to recover pixel-exact rects is
+  a carry-forward (`mainmenu.md` §5 / §7 item 2).
+- **Backdrop red shading** — `palette.pal`'s 232–239 band is the theater
+  highlight/remap slots, so the land carries heavy red shading. This reads as the
+  intended military-map styling and is faithful; the pixel-exact shell palette
+  may be embedded in the exe (a Ghidra carry-forward to refine the 232–239 band)
+  (`mainmenu.md` §7 item 1 caveat).
+- **FNT glyph-decode gap** — where a glyph fails to resolve, text falls back to
+  the engine's rect-font rather than dropping characters (`mainmenu.md` §3 / §6).
+- **Letterbox composition** — the backdrop is scaled uniformly and centered with
+  side bars filled by the palette background color (olive land-base, idx 254),
+  mirroring the shell's border fill (`mainmenu.md` §7 item 2).
+- **Mono sink downmix** — the stereo menu track is downmixed to the mixer's mono
+  22050 Hz sink; menu audio idles the device when muted (`--menu-shot` / no-audio
+  runs open no device) (`mainmenu.md` §4).
+
+**Carry-forwards (documented, not implemented):** pixel-exact button coords via a
+Ghidra shell-dialog pass; the shell palette's exact 232–239 band; Campaign /
+Network / Internet / Load / Options / Sneak Peeks as greyed stubs (LIVE =
+Skirmish + Quit, `mainmenu.md` §7 item 3); the Allied/Soviet loadscreens
+(`aloadlg.pcx` / `rloadlg.pcx`) between menu and game; the intro movie; animated
+menu elements; the Yuri faction; and all prior-phase carry-forwards.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
