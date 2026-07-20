@@ -3610,8 +3610,9 @@ struct MenuArt {
     const ra2assets::Palette* font_pal = nullptr;  // synthetic ramp (make_font_palette)
     MenuAudio* audio = nullptr;               // looping grinder.wav (or null)
     bool ok = false;                          // essentials (bg+pal) decoded
-    // fnt.cpp now decodes the classic Westwood .fnt as 4bpp PACKED (2 px/byte,
-    // image_ofs-relative offsets) -- the earlier shear is fixed (menufix.md §1),
+    // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
+    // in the low nibble) with image_ofs-relative glyph offsets (the real bug was
+    // the missing image_ofs base, NOT bit-depth -- see menufix.md §CORRECTION),
     // so the menu renders the authentic bevelled 12metfnt face. Set true in
     // load_menu_art when the font decoded; rect-font remains the fallback if the
     // font is absent. [RE: menufix.md §1]
@@ -3749,8 +3750,8 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.font_pal = &store.font_pal;
     store.art.audio    = store.audio.get();
     store.art.ok       = (store.art.bg && store.art.pal);
-    // FNT labels ENABLED: fnt.cpp now decodes the classic Westwood 4bpp packed
-    // glyph format correctly (menufix.md §1; anti-shear regression test in
+    // FNT labels ENABLED: fnt.cpp now decodes the classic Westwood 8bpp glyph
+    // format correctly (image_ofs-relative offsets; menufix.md §CORRECTION; anti-shear regression test in
     // tests/test_fnt.cpp), so the menu uses the authentic bevelled 12metfnt face.
     store.art.fnt_ok   = (store.art.font != nullptr);
     std::cerr << "[menu-art] bg=" << (store.art.bg ? "y" : "n")
