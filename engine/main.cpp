@@ -3817,6 +3817,149 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
 }
 
 // ============================================================================
+// [Task 2 / mainmenu_true.md §1+§6] The faithful RA2 shell composition.
+// ============================================================================
+
+// Shell button action codes. Only PAGE_SINGLE (routed to the Skirmish setup for
+// now, keeping Skirmish reachable) and ACT_QUIT are wired this task; the rest are
+// greyed stubs pending their later pages.
+enum ShellAction { ACT_NONE = 0, PAGE_SINGLE, PAGE_INTERNET, PAGE_NETWORK,
+                   PAGE_MOVIES, PAGE_OPTIONS, ACT_QUIT };
+
+// One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
+// render() (via draw_shell) and handle() both derive device rects from `rect`
+// with the SAME logical->device transform, so draw rects == hit rects.
+struct ShellButton {
+    ra2engine::SbRect rect;            // LOGICAL 640x480 rect
+    std::string       label;
+    bool              enabled = false; // greyed stubs are NOT hit-tested
+    int               action  = ACT_NONE;
+};
+
+// [mainmenu_true.md §1+§6] Paint ONE faithful RA2 shell page on the 640x480
+// logical canvas, scaled by `canvas_scale` and letterbox-centered in the window
+// (bars filled dark metal). 8-layer draw order (backdrop, bottom bar, sidebar
+// top/bottom, per-button metal slices, buttons, logo emblem, gold labels+header
+// +version). Every art layer is null-guarded: on a partial install a missing SHP
+// simply skips its layer and a missing button SHP leaves label-only buttons --
+// never crashes. Palettes fall back to art.pal when shell/button pals are absent.
+void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const MenuArt& art,
+                double canvas_scale, const std::vector<ShellButton>& buttons,
+                int hover_ix, int pressed_ix, const std::string& header,
+                const std::string& version) {
+    SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+    const int W = plat.width(), H = plat.height();
+    const double ox = (W - 640.0 * canvas_scale) / 2.0;
+    const double oy = (H - 480.0 * canvas_scale) / 2.0;
+    // The ONE logical->device transform (identical to MainMenuScene::to_device).
+    auto dev = [&](int lx, int ly, int lw, int lh) -> SDL_Rect {
+        return SDL_Rect{ static_cast<int>(std::lround(ox + lx * canvas_scale)),
+                         static_cast<int>(std::lround(oy + ly * canvas_scale)),
+                         static_cast<int>(std::lround(lw * canvas_scale)),
+                         static_cast<int>(std::lround(lh * canvas_scale)) };
+    };
+    // Palette fallbacks (partial-install robustness).
+    const ra2assets::Palette* shell_pal = (art.shell_pal_ok ? &art.shell_pal : art.pal);
+    const ra2assets::Palette* btn_pal   = (art.mainbttn_pal_ok ? &art.mainbttn_pal
+                                          : (art.shell_pal_ok ? &art.shell_pal : art.pal));
+
+    // Letterbox bars = dark metal tone; then paint the canvas over it.
+    SDL_SetRenderDrawColor(ren, 12, 12, 14, 255);
+    SDL_RenderClear(ren);
+
+    auto blit_layer = [&](const char* key, ra2assets::ShpFile* shp, int frame,
+                          const ra2assets::Palette* pal, int lx, int ly, int lw, int lh) {
+        if (!shp || !pal) return;
+        SDL_Texture* t = shp_frame_tex(tc, key, *shp, frame, *pal);
+        if (!t) return;
+        SDL_Rect d = dev(lx, ly, lw, lh);
+        SDL_SetTextureColorMod(t, 255, 255, 255);
+        SDL_RenderCopy(ren, t, nullptr, &d);
+    };
+
+    // 1. Backdrop: mnscrns red radar map (472x448) under shell.pal.
+    blit_layer("shell:bg_s", art.bg_s, 0, shell_pal, 0, 0, 472, 448);
+    // 2. Bottom bar under the screen.
+    blit_layer("shell:lwscrn", art.lwscrn, 0, shell_pal, 0, 448, 472, 32);
+    // 3. Sidebar top: metal panel + WARNING mini-monitor.
+    blit_layer("shell:sdtp", art.sdtp, 0, shell_pal, 472, 0, 168, 199);
+    // 4. Sidebar bottom: V-console + cables (bottom-anchored).
+    blit_layer("shell:sdbtm", art.sdbtm, 0, shell_pal, 472, 415, 168, 65);
+    // 5. Per-button metal slice (168x42) behind each button row.
+    for (const ShellButton& b : buttons)
+        blit_layer("shell:sdbtnbkgd", art.sdbtnbkgd, 0, shell_pal, 472, b.rect.y - 2, 168, 42);
+
+    // 6. Buttons: mnbttn frame 0=up / 1=hover / 2=down under mainbttn.pal,
+    //    stretched to each 162x37 rect. Greyed buttons: frame 0, dimmed.
+    for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
+        const ShellButton& b = buttons[i];
+        if (!art.btn) continue;                        // label-only if SHP absent
+        int frame = 0;
+        if (b.enabled && i == pressed_ix)    frame = 2;
+        else if (b.enabled && i == hover_ix) frame = 1;
+        if (frame >= art.btn->count()) frame = 0;
+        SDL_Texture* bt = shp_frame_tex(tc, "shell:btn" + std::to_string(frame),
+                                        *art.btn, frame, *btn_pal);
+        if (!bt) continue;
+        if (b.enabled) SDL_SetTextureColorMod(bt, 255, 255, 255);
+        else           SDL_SetTextureColorMod(bt, 120, 120, 130);   // disabled = dimmed
+        SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
+        SDL_RenderCopy(ren, bt, nullptr, &d);
+    }
+
+    // 7. Logo emblem over the CRT screen (static stand-in for the missing ra2ts
+    //    VQA): logo.pcx is the full 640x480 title with identical chrome, so its
+    //    left screen region == the emblem-over-tanks art. Blit the top portion so
+    //    the red radar coastline still reads at the bottom of the screen.
+    if (art.logo && art.logo->w > 0 && art.logo->h > 0) {
+        SDL_Texture* lt = static_cast<SDL_Texture*>(tc.peek("shell:logo"));
+        if (!lt) {
+            std::vector<uint8_t> rgba = art.logo->rgba();
+            lt = static_cast<SDL_Texture*>(
+                tc.get_rgba("shell:logo", rgba.data(), art.logo->w, art.logo->h));
+        }
+        if (lt) {
+            const double sx = art.logo->w / 640.0, sy = art.logo->h / 480.0;
+            const int crop_lw = 472, crop_lh = 300;    // emblem+tanks; map shows below
+            SDL_Rect src{ 0, 0,
+                          static_cast<int>(std::lround(crop_lw * sx)),
+                          static_cast<int>(std::lround(crop_lh * sy)) };
+            SDL_Rect d = dev(0, 0, crop_lw, crop_lh);
+            SDL_RenderCopy(ren, lt, &src, &d);
+        }
+    }
+
+    // 8. Gold 12metfnt labels centered in each button + "Main Menu" header +
+    //    version line. Native glyph is ~16px; pick an integer scale keyed to the
+    //    canvas scale and shrink per-label if a long label would overflow.
+    if (art.font && art.font_pal && art.fnt_ok) {
+        const ra2assets::Font& f = *art.font;
+        const int lbl_scale = std::max(1, static_cast<int>(std::lround(canvas_scale)));
+        const int hdr_scale = std::max(1, static_cast<int>(std::floor(canvas_scale)));
+        auto centered = [&](const std::string& s, int lx, int ly, int lw, int lh, int gscale) {
+            SDL_Rect box = dev(lx, ly, lw, lh);
+            int tw = fnt_text_width(f, s) * gscale;
+            while (gscale > 1 && tw > box.w) { --gscale; tw = fnt_text_width(f, s) * gscale; }
+            const int th = f.height() * gscale;
+            const int tx = box.x + (box.w - tw) / 2;
+            const int ty = box.y + (box.h - th) / 2;
+            draw_fnt_text(ren, tc, f, *art.font_pal, s, tx, ty, "shf:", gscale);
+        };
+        for (const ShellButton& b : buttons) {
+            centered(b.label, b.rect.x, b.rect.y, b.rect.w, b.rect.h, lbl_scale);
+            if (!b.enabled) {                          // dark veil conveys disabled
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(ren, 16, 16, 20, 120);
+                SDL_Rect vd = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
+                SDL_RenderFillRect(ren, &vd);
+            }
+        }
+        if (!header.empty())  centered(header, 477, 2, 162, 16, hdr_scale);
+        if (!version.empty()) centered(version, 477, 461, 162, 16, hdr_scale);
+    }
+}
+
+// ============================================================================
 // [RE: skirmish.md §1/§2, D6] Shell scenes: MainMenuScene + SkirmishSetupScene.
 // Additive + NOT hashed: reachable ONLY via run_scene_driver from the two
 // non-gate main() seams (Android + desktop fallthrough). The 17 gates never
@@ -3857,23 +4000,32 @@ public:
 
 private:
     static constexpr int kWinW = 1280, kWinH = 720;
-    // Button rects, laid out identically in render() and handle() (deterministic).
-    struct Buttons { ra2engine::SbRect skirmish, campaign, mp, load, options, quit; };
-    Buttons layout() const {
-        // [menufix.md §3] RIGHT-ALIGNED button stack in the right third. mnbttn.shp
-        // (126x25) scaled ~1.75x -> 220x44; left edge x=980 (right edge 1200, ~80px
-        // margin), first y=250, 10px gap. Both render() and handle() call this, so
-        // the drawn rects and the hit-test rects are the SAME geometry.
-        Buttons b;
-        const int bw = 220, bh = 44, gap = 10, x = 980;
-        int y = 250;
-        b.skirmish = {x, y, bw, bh}; y += bh + gap;
-        b.campaign = {x, y, bw, bh}; y += bh + gap;
-        b.mp       = {x, y, bw, bh}; y += bh + gap;
-        b.load     = {x, y, bw, bh}; y += bh + gap;
-        b.options  = {x, y, bw, bh}; y += bh + gap;
-        b.quit     = {x, y, bw, bh};
-        return b;
+    // The 640x480 canvas -> device scale (letterbox-centered). Fixed 1.5 at
+    // 1280x720; computed so render() and handle() agree.
+    static double canvas_scale() { return std::min(kWinW / 640.0, kWinH / 480.0); }
+    // The ONE logical(640x480)->device transform, shared by draw_shell (which
+    // computes the identical formula from plat.width()/height()) and handle()'s
+    // hit-test, so drawn rects == click rects (hard requirement, §T2 brief).
+    static ra2engine::SbRect to_device(const ra2engine::SbRect& lr) {
+        const double s = canvas_scale();
+        const double ox = (kWinW - 640.0 * s) / 2.0, oy = (kWinH - 480.0 * s) / 2.0;
+        return { static_cast<int>(std::lround(ox + lr.x * s)),
+                 static_cast<int>(std::lround(oy + lr.y * s)),
+                 static_cast<int>(std::lround(lr.w * s)),
+                 static_cast<int>(std::lround(lr.h * s)) };
+    }
+    // [mainmenu_true.md §1, dialog 0xE2] The SIX menu buttons in LOGICAL 640x480
+    // space. Single Player + Exit Game are live; the rest are greyed stubs. This
+    // is the SINGLE source of truth for both render() and handle().
+    std::vector<ShellButton> layout() const {
+        return {
+            { {476, 198, 162, 37}, "Single Player",    true,  PAGE_SINGLE   },
+            { {476, 242, 162, 37}, "Internet",         false, PAGE_INTERNET },
+            { {476, 286, 162, 37}, "Network",          false, PAGE_NETWORK  },
+            { {476, 330, 162, 37}, "Movies & Credits", false, PAGE_MOVIES   },
+            { {477, 374, 162, 37}, "Options",          false, PAGE_OPTIONS  },
+            { {477, 418, 162, 37}, "Exit Game",        true,  ACT_QUIT      },
+        };
     }
     const Rules& rules_;
     bool         no_audio_ = false;
@@ -3899,152 +4051,46 @@ void MainMenuScene::update(double dt) {
 
 void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) {
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+    const std::vector<ShellButton> btns = layout();
 
-    // --- Art-guarded fallback: no bg/palette -> the Phase-3 rect-font placeholder.
-    if (!art_.ok || !art_.bg || !art_.pal) {
+    // --- Art-guarded fallback: no essential chrome/palette (partial install) ->
+    // a plain rect-font placeholder using the SAME device rects as the real path,
+    // so the menu is still clickable and consistent with handle().
+    if (!art_.shell_pal_ok && !art_.pal) {
+        SDL_SetRenderDrawColor(ren, 12, 12, 14, 255);
+        SDL_RenderClear(ren);
         const char* title = "RED ALERT 2";
         const int scale = 6;
         const int tw = static_cast<int>(std::string(title).size()) * 6 * scale;
-        draw_text(ren, title, (kWinW - tw) / 2, 90, scale, 220, 60, 50);
-        auto button = [&](const ra2engine::SbRect& r, const char* label, bool active) {
+        draw_text(ren, title, (kWinW - tw) / 2, 60, scale, 220, 60, 50);
+        for (const ShellButton& b : btns) {
+            const ra2engine::SbRect r = to_device(b.rect);
             SDL_Rect fr{r.x, r.y, r.w, r.h};
-            SDL_SetRenderDrawColor(ren, active ? 34 : 20, active ? 52 : 26, active ? 84 : 34, 255);
+            SDL_SetRenderDrawColor(ren, b.enabled ? 60 : 26, b.enabled ? 26 : 26,
+                                   b.enabled ? 26 : 30, 255);
             SDL_RenderFillRect(ren, &fr);
-            SDL_SetRenderDrawColor(ren, active ? 120 : 60, active ? 160 : 72, active ? 210 : 90, 255);
+            SDL_SetRenderDrawColor(ren, b.enabled ? 210 : 90, b.enabled ? 70 : 90,
+                                   b.enabled ? 60 : 100, 255);
             SDL_RenderDrawRect(ren, &fr);
             const int s = 3;
-            const int lw = static_cast<int>(std::string(label).size()) * 6 * s;
-            const int tx = r.x + (r.w - lw) / 2;
-            const int ty = r.y + (r.h - 7 * s) / 2;
-            draw_text(ren, label, tx, ty, s, active ? 235 : 96, active ? 240 : 100,
-                      active ? 250 : 116);
-        };
-        const Buttons bb = layout();
-        button(bb.skirmish, "SKIRMISH",    true);
-        button(bb.campaign, "CAMPAIGN",    false);
-        button(bb.mp,       "MULTIPLAYER", false);
-        button(bb.load,     "LOAD GAME",   false);
-        button(bb.options,  "OPTIONS",     false);
-        button(bb.quit,     "QUIT",        true);
+            const int lw = static_cast<int>(b.label.size()) * 6 * s;
+            draw_text(ren, b.label.c_str(), r.x + (r.w - lw) / 2, r.y + (r.h - 7 * s) / 2, s,
+                      b.enabled ? 235 : 110, b.enabled ? 235 : 112, b.enabled ? 240 : 124);
+        }
         return;
     }
 
-    const ra2assets::Palette& pal = *art_.pal;
+    // --- Hover/press: the button under the last cursor position; Single Player
+    // (index 0) is the default hover when the cursor is off every button.
+    int hover_ix = -1;
+    for (int i = 0; i < static_cast<int>(btns.size()); ++i)
+        if (btns[i].enabled && to_device(btns[i].rect).contains(mx_, my_)) { hover_ix = i; break; }
+    if (hover_ix < 0) hover_ix = 0;                        // Single Player default hover
+    const int pressed_ix = (down_ && to_device(btns[hover_ix].rect).contains(mx_, my_))
+                               ? hover_ix : -1;
 
-    // [menufix.md §2, candidate C — CONFIRMED] Backdrop-only red-tint fix. The
-    // cache palette's indices 230..239 are a pure-red highlight ramp
-    // (252,0,0)->(100,0,0); mnscrnl.shp uses those slots for ~20% of the land,
-    // producing the heavy saturated-red speckle. Remap that band to a muted
-    // olive-brown keyed off each slot's red component (R*0.42, R*0.40, R*0.28) so
-    // the land reads as muted olive with only faint coastline relief. Scoped to a
-    // LOCAL copy used ONLY for the backdrop blit below -- the shared art_.pal
-    // (buttons/chrome + the live in-game 230..239 house-remap band) is untouched.
-    ra2assets::Palette bg_pal = pal;
-    for (int i = 230; i <= 239; ++i) {
-        const int R = pal[i].r;
-        bg_pal[i] = ra2assets::Rgba{
-            static_cast<uint8_t>(R * 0.42),
-            static_cast<uint8_t>(R * 0.40),
-            static_cast<uint8_t>(R * 0.28), 255};
-    }
-
-    // --- Background: scale the 632x568 SHP to FILL 1280x720 (cover, minor crop),
-    // centered -- matches cand_C/real RA2 (menufix.md §3). RenderCopy clips the
-    // overscan.
-    const ra2assets::ShpFile::Frame bf = art_.bg->frame_info(0);
-    const double sc = std::max(static_cast<double>(kWinW) / bf.w,
-                               static_cast<double>(kWinH) / bf.h);
-    const int bw = static_cast<int>(std::lround(bf.w * sc));
-    const int bh = static_cast<int>(std::lround(bf.h * sc));
-    const int bx = (kWinW - bw) / 2, by = (kWinH - bh) / 2;
-    SDL_SetRenderDrawColor(ren, 8, 10, 8, 255);
-    SDL_RenderClear(ren);
-    if (SDL_Texture* tex = shp_frame_tex(tc, "menu:bg", *art_.bg, 0, bg_pal)) {
-        SDL_Rect dst{bx, by, bw, bh};
-        SDL_RenderCopy(ren, tex, nullptr, &dst);
-    }
-
-    // --- Logo (PCX): logo.pcx is the full 640x480 shell splash (RA2 box-art on
-    // the left, empty button wells on the right ~28% that would clash with our
-    // right-aligned stack). Crop to the box-art (left region) and place it in the
-    // upper-left/center area so the East-Coast map stays visible on the right.
-    if (art_.logo && art_.logo->w > 0 && art_.logo->h > 0) {
-        SDL_Texture* lt = static_cast<SDL_Texture*>(tc.peek("menu:logo"));
-        if (!lt) {
-            std::vector<uint8_t> rgba = art_.logo->rgba();
-            lt = static_cast<SDL_Texture*>(
-                tc.get_rgba("menu:logo", rgba.data(), art_.logo->w, art_.logo->h));
-        }
-        if (lt) {
-            const int cropw = art_.logo->w * 71 / 100;   // drop the right-side wells
-            const int croph = art_.logo->h * 95 / 100;    // drop the dark bottom border
-            SDL_Rect src{0, 0, cropw, croph};
-            const int tw = 470;                          // on-screen width of the box-art
-            const int th = static_cast<int>(
-                std::lround(static_cast<double>(tw) * croph / cropw));
-            SDL_Rect dst{60, 30, tw, th};
-            SDL_RenderCopy(ren, lt, &src, &dst);
-        }
-    }
-
-    // --- Buttons: 3-state mnbttn.shp scaled into each EXISTING layout() rect,
-    // so hit-testing (handle(), shared layout()) stays pixel-consistent.
-    // frame 0 normal / 1 pressed / 2 hover.  Greyed items dimmed via color mod.
-    const Buttons b = layout();
-    struct Item { ra2engine::SbRect r; const char* label; bool active; };
-    const Item items[] = {
-        {b.skirmish, "SKIRMISH",    true},
-        {b.campaign, "CAMPAIGN",    false},
-        {b.mp,       "MULTIPLAYER", false},
-        {b.load,     "LOAD GAME",   false},
-        {b.options,  "OPTIONS",     false},
-        {b.quit,     "QUIT",        true},
-    };
-    for (const Item& it : items) {
-        const bool hover = it.active && it.r.contains(mx_, my_);
-        int frame = 0;
-        if (hover) frame = (down_ ? 1 : 2);
-        // Button graphic is best-effort: if mnbttn.shp failed to load (partial
-        // install) art_.btn is null — skip the frame; the label below still
-        // renders so the menu stays usable (mirrors the logo/dlg/font guards).
-        if (art_.btn) {
-            if (frame >= art_.btn->count()) frame = 0;
-            SDL_Texture* bt = shp_frame_tex(tc, "menu:btn" + std::to_string(frame),
-                                            *art_.btn, frame, pal);
-            if (bt) {
-                // Greyed items: dim to read as disabled. Restore mod afterwards.
-                if (!it.active) SDL_SetTextureColorMod(bt, 110, 110, 120);
-                else            SDL_SetTextureColorMod(bt, 255, 255, 255);
-                SDL_Rect dst{it.r.x, it.r.y, it.r.w, it.r.h};
-                SDL_RenderCopy(ren, bt, nullptr, &dst);
-            }
-        }
-        // Label: FNT shell font (scaled) when available + verified, else rect-font.
-        if (art_.font && art_.font_pal && art_.fnt_ok) {
-            const int gscale = 2;
-            const int lw = fnt_text_width(*art_.font, it.label) * gscale;
-            const int lh = art_.font->height() * gscale;
-            const int tx = it.r.x + (it.r.w - lw) / 2;
-            const int ty = it.r.y + (it.r.h - lh) / 2;
-            // Greyed items get a dim key prefix so their cached glyphs differ.
-            draw_fnt_text(ren, tc, *art_.font, *art_.font_pal, it.label, tx, ty,
-                          "fntg:", gscale);
-            if (!it.active) {
-                // overlay a translucent dark veil to convey disabled
-                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(ren, 20, 22, 26, 120);
-                SDL_Rect veil{it.r.x, it.r.y, it.r.w, it.r.h};
-                SDL_RenderFillRect(ren, &veil);
-            }
-        } else {
-            const int s = 3;
-            const int lw = static_cast<int>(std::string(it.label).size()) * 6 * s;
-            const int tx = it.r.x + (it.r.w - lw) / 2;
-            const int ty = it.r.y + (it.r.h - 7 * s) / 2;
-            draw_text(ren, it.label, tx, ty, s, it.active ? 235 : 110,
-                      it.active ? 240 : 112, it.active ? 250 : 124);
-        }
-    }
+    draw_shell(plat, tc, art_, canvas_scale(), btns, hover_ix, pressed_ix,
+               "Main Menu", "v1.006");
 }
 
 // [RE: skirmish.md §1/§3, D6] Exposes the recovered lobby subset (T1 item 1):
@@ -4295,10 +4341,20 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
         ev.button != ra2engine::InputEvent::Left)
         return;
-    const Buttons b = layout();
-    if (b.skirmish.contains(ev.x, ev.y)) { next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return; }
-    if (b.quit.contains(ev.x, ev.y))     { quit_ = true; return; }
-    // Campaign / Multiplayer / Load / Options are greyed stubs: no-op.
+    // Hit-test the SAME logical rects render() draws, mapped device via the SAME
+    // transform (to_device). Greyed (disabled) buttons are skipped.
+    for (const ShellButton& b : layout()) {
+        if (!b.enabled) continue;
+        if (!to_device(b.rect).contains(ev.x, ev.y)) continue;
+        switch (b.action) {
+            case ACT_QUIT:    quit_ = true; return;
+            // Single Player -> Task-3 page later; for now route straight to the
+            // Skirmish setup so Skirmish stays reachable (skirmish->GameScene path
+            // unchanged).
+            case PAGE_SINGLE: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
+            default:          return;   // greyed pages (Internet/Network/Movies/Options)
+        }
+    }
 }
 
 void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
