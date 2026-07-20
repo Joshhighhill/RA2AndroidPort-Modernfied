@@ -3820,11 +3820,20 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
 // [Task 2 / mainmenu_true.md §1+§6] The faithful RA2 shell composition.
 // ============================================================================
 
-// Shell button action codes. Only PAGE_SINGLE (routed to the Skirmish setup for
-// now, keeping Skirmish reachable) and ACT_QUIT are wired this task; the rest are
-// greyed stubs pending their later pages.
-enum ShellAction { ACT_NONE = 0, PAGE_SINGLE, PAGE_INTERNET, PAGE_NETWORK,
-                   PAGE_MOVIES, PAGE_OPTIONS, ACT_QUIT };
+// [mainmenu_true.md §3] The shell pages (Win32 dialog resources in game.exe).
+// Each is one draw_shell page: its own header + button column, Back at bottom.
+enum ShellPage {
+    PAGE_MAIN = 0,   // 0xE2  "Main Menu"
+    PAGE_SINGLE,     // 0x100 "Single Player"
+    PAGE_MOVIES,     // 0x101 "Movies & Credits"
+    PAGE_OPTIONS,    // 0xD5  "Options"
+    PAGE_CAMPAIGN,   // 0x94  "New Campaign" (greyed placeholder this task)
+};
+
+// What a menu button does when clicked. Navigation buttons carry a target
+// ShellPage in ShellButton::target; ACT_SKIRMISH is the ONLY live game path
+// (-> SkirmishSetupScene -> GameScene); ACT_QUIT exits.
+enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT };
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -3834,6 +3843,33 @@ struct ShellButton {
     std::string       label;
     bool              enabled = false; // greyed stubs are NOT hit-tested
     int               action  = ACT_NONE;
+    ShellPage         target  = PAGE_MAIN;   // ACT_GOTO destination
+};
+
+// [Task 3 transform-unify fix] The SINGLE logical(640x480)->device letterbox
+// transform, shared verbatim by draw_shell (rendering) and the scene hit-test
+// (handle()). Task 2 had two origins -- draw_shell used plat.width()/height()
+// while the hit-test used the kWinW/kWinH constants; provably equal at the fixed
+// 1280x720 window but a latent click!=draw hazard. Both now build this from the
+// same width/height, so there is exactly ONE source of the offset+scale.
+struct ShellXform {
+    double s = 1.0, ox = 0.0, oy = 0.0;
+    static ShellXform make(int W, int H) {
+        const double s = std::min(W / 640.0, H / 480.0);
+        return { s, (W - 640.0 * s) / 2.0, (H - 480.0 * s) / 2.0 };
+    }
+    SDL_Rect dev(int lx, int ly, int lw, int lh) const {
+        return SDL_Rect{ static_cast<int>(std::lround(ox + lx * s)),
+                         static_cast<int>(std::lround(oy + ly * s)),
+                         static_cast<int>(std::lround(lw * s)),
+                         static_cast<int>(std::lround(lh * s)) };
+    }
+    ra2engine::SbRect hit(const ra2engine::SbRect& r) const {
+        return { static_cast<int>(std::lround(ox + r.x * s)),
+                 static_cast<int>(std::lround(oy + r.y * s)),
+                 static_cast<int>(std::lround(r.w * s)),
+                 static_cast<int>(std::lround(r.h * s)) };
+    }
 };
 
 // [mainmenu_true.md §1+§6] Paint ONE faithful RA2 shell page on the 640x480
@@ -3844,19 +3880,14 @@ struct ShellButton {
 // simply skips its layer and a missing button SHP leaves label-only buttons --
 // never crashes. Palettes fall back to art.pal when shell/button pals are absent.
 void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const MenuArt& art,
-                double canvas_scale, const std::vector<ShellButton>& buttons,
+                const ShellXform& xf, const std::vector<ShellButton>& buttons,
                 int hover_ix, int pressed_ix, const std::string& header,
                 const std::string& version) {
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-    const int W = plat.width(), H = plat.height();
-    const double ox = (W - 640.0 * canvas_scale) / 2.0;
-    const double oy = (H - 480.0 * canvas_scale) / 2.0;
-    // The ONE logical->device transform (identical to MainMenuScene::to_device).
+    const double canvas_scale = xf.s;
+    // The ONE logical->device transform (shared verbatim with the hit-test).
     auto dev = [&](int lx, int ly, int lw, int lh) -> SDL_Rect {
-        return SDL_Rect{ static_cast<int>(std::lround(ox + lx * canvas_scale)),
-                         static_cast<int>(std::lround(oy + ly * canvas_scale)),
-                         static_cast<int>(std::lround(lw * canvas_scale)),
-                         static_cast<int>(std::lround(lh * canvas_scale)) };
+        return xf.dev(lx, ly, lw, lh);
     };
     // Palette fallbacks (partial-install robustness).
     const ra2assets::Palette* shell_pal = (art.shell_pal_ok ? &art.shell_pal : art.pal);
@@ -3983,15 +4014,20 @@ static const char* menu_diff_name(ra2engine::AiDifficulty d) {
     }
 }
 
-// Fwd decl: MainMenuScene::handle constructs a SkirmishSetupScene.
+// Fwd decl: ShellScene::handle constructs a SkirmishSetupScene.
 class SkirmishSetupScene;
 
-// [RE: skirmish.md §2, D6] Title + buttons: Skirmish [active], Quit [active];
-// Campaign/Multiplayer/Load/Options greyed stubs. Hit-test via SbRect::contains.
-class MainMenuScene : public Scene {
+// [mainmenu_true.md §3] The page-driven shell. One ShellScene renders ONE menu
+// page (its header + button column) via draw_shell; clicking a nav button
+// constructs the next ShellScene (page transition), Skirmish launches the game,
+// Exit quits. All pages share the SINGLE layout()+ShellXform transform, so the
+// click==draw invariant holds on every page. Back is just a nav button to the
+// parent page. `MainMenuScene` is an alias for the PAGE_MAIN entry (below).
+class ShellScene : public Scene {
 public:
-    MainMenuScene(const Rules& rules, bool no_audio, const MenuArt& art)
-        : rules_(rules), no_audio_(no_audio), art_(art) {}
+    ShellScene(const Rules& rules, bool no_audio, const MenuArt& art,
+               ShellPage page = PAGE_MAIN)
+        : rules_(rules), no_audio_(no_audio), art_(art), page_(page) {}
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs SkirmishSetupScene
     void   update(double dt) override;                         // pumps the looping menu music
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
@@ -4000,41 +4036,82 @@ public:
 
 private:
     static constexpr int kWinW = 1280, kWinH = 720;
-    // The 640x480 canvas -> device scale (letterbox-centered). Fixed 1.5 at
-    // 1280x720; computed so render() and handle() agree.
-    static double canvas_scale() { return std::min(kWinW / 640.0, kWinH / 480.0); }
-    // The ONE logical(640x480)->device transform, shared by draw_shell (which
-    // computes the identical formula from plat.width()/height()) and handle()'s
-    // hit-test, so drawn rects == click rects (hard requirement, §T2 brief).
+    // The ONE logical(640x480)->device transform (see ShellXform): built from the
+    // SAME kWinW/kWinH the window is created at, used by BOTH the hit-test here
+    // and draw_shell in render(). Single source -> drawn rects == click rects.
+    static ShellXform xform() { return ShellXform::make(kWinW, kWinH); }
     static ra2engine::SbRect to_device(const ra2engine::SbRect& lr) {
-        const double s = canvas_scale();
-        const double ox = (kWinW - 640.0 * s) / 2.0, oy = (kWinH - 480.0 * s) / 2.0;
-        return { static_cast<int>(std::lround(ox + lr.x * s)),
-                 static_cast<int>(std::lround(oy + lr.y * s)),
-                 static_cast<int>(std::lround(lr.w * s)),
-                 static_cast<int>(std::lround(lr.h * s)) };
+        return xform().hit(lr);
     }
-    // [mainmenu_true.md §1, dialog 0xE2] The SIX menu buttons in LOGICAL 640x480
-    // space. Single Player + Exit Game are live; the rest are greyed stubs. This
-    // is the SINGLE source of truth for both render() and handle().
+    // This page's header text ("Main Menu" / "Single Player" / ...).
+    const char* header() const {
+        switch (page_) {
+            case PAGE_SINGLE:   return "Single Player";
+            case PAGE_MOVIES:   return "Movies & Credits";
+            case PAGE_OPTIONS:  return "Options";
+            case PAGE_CAMPAIGN: return "New Campaign";
+            default:            return "Main Menu";
+        }
+    }
+    // [mainmenu_true.md §3] The button column for THIS page, in LOGICAL 640x480
+    // space -- the SINGLE source of truth for both render() and handle(). Right
+    // column at x=476/477, first row y=198, ~44px pitch; Back always at y=418.
+    // Greyed (enabled=false) buttons render dimmed and are NOT hit-tested.
     std::vector<ShellButton> layout() const {
-        return {
-            { {476, 198, 162, 37}, "Single Player",    true,  PAGE_SINGLE   },
-            { {476, 242, 162, 37}, "Internet",         false, PAGE_INTERNET },
-            { {476, 286, 162, 37}, "Network",          false, PAGE_NETWORK  },
-            { {476, 330, 162, 37}, "Movies & Credits", false, PAGE_MOVIES   },
-            { {477, 374, 162, 37}, "Options",          false, PAGE_OPTIONS  },
-            { {477, 418, 162, 37}, "Exit Game",        true,  ACT_QUIT      },
-        };
+        auto go   = [](int x, int y, const char* s, bool en, ShellPage t) {
+            return ShellButton{ {x, y, 162, 37}, s, en, ACT_GOTO, t }; };
+        switch (page_) {
+            case PAGE_SINGLE:   // dialog 0x100
+                return {
+                    { {476, 198, 162, 37}, "New Campaign",    true,  ACT_GOTO,     PAGE_CAMPAIGN },
+                    { {476, 242, 162, 37}, "Load Saved Game", false, ACT_GOTO,     PAGE_MAIN     },
+                    { {476, 286, 162, 37}, "Skirmish",        true,  ACT_SKIRMISH, PAGE_MAIN     },
+                    go(476, 418, "Back", true, PAGE_MAIN),
+                };
+            case PAGE_MOVIES:   // dialog 0x101
+                return {
+                    { {476, 198, 162, 37}, "Sneak Peeks",  false, ACT_GOTO, PAGE_MAIN },
+                    { {476, 242, 162, 37}, "Play Movies",  false, ACT_GOTO, PAGE_MAIN },
+                    { {476, 286, 162, 37}, "View Credits", false, ACT_GOTO, PAGE_MAIN },
+                    go(476, 418, "Back", true, PAGE_MAIN),
+                };
+            case PAGE_OPTIONS:  // dialog 0xD5 (sliders not required; labels greyed)
+                return {
+                    { {476, 198, 162, 37}, "Sound",    false, ACT_GOTO, PAGE_MAIN },
+                    { {476, 242, 162, 37}, "Keyboard", false, ACT_GOTO, PAGE_MAIN },
+                    { {476, 286, 162, 37}, "Display",  false, ACT_GOTO, PAGE_MAIN },
+                    go(477, 418, "Back", true, PAGE_MAIN),
+                };
+            case PAGE_CAMPAIGN: // dialog 0x94 (greyed placeholder this task)
+                return {
+                    { {476, 198, 162, 37}, "Allied Campaign", false, ACT_GOTO, PAGE_SINGLE },
+                    { {476, 242, 162, 37}, "Soviet Campaign", false, ACT_GOTO, PAGE_SINGLE },
+                    go(476, 418, "Back", true, PAGE_SINGLE),
+                };
+            default:            // PAGE_MAIN, dialog 0xE2
+                return {
+                    { {476, 198, 162, 37}, "Single Player",    true,  ACT_GOTO, PAGE_SINGLE  },
+                    { {476, 242, 162, 37}, "Internet",         false, ACT_GOTO, PAGE_MAIN    },
+                    { {476, 286, 162, 37}, "Network",          false, ACT_GOTO, PAGE_MAIN    },
+                    { {476, 330, 162, 37}, "Movies & Credits", true,  ACT_GOTO, PAGE_MOVIES  },
+                    { {477, 374, 162, 37}, "Options",          true,  ACT_GOTO, PAGE_OPTIONS },
+                    { {477, 418, 162, 37}, "Exit Game",        true,  ACT_QUIT, PAGE_MAIN    },
+                };
+        }
     }
     const Rules& rules_;
     bool         no_audio_ = false;
     const MenuArt& art_;
+    ShellPage    page_ = PAGE_MAIN;
     int          mx_ = -1, my_ = -1;   // last pointer position (for hover state)
     bool         down_ = false;        // left button currently held (pressed state)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
 };
+
+// The main-menu entry is just a ShellScene on PAGE_MAIN. Existing call sites
+// (run_menu, run_menu_shot, SkirmishSetupScene Back) keep using MainMenuScene.
+using MainMenuScene = ShellScene;
 
 // Pump the looping menu theme once per frame while this scene is active; re-play
 // when the single voice has finished (loop). Silent + no-op under --no-audio or
@@ -4059,7 +4136,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     if (!art_.shell_pal_ok && !art_.pal) {
         SDL_SetRenderDrawColor(ren, 12, 12, 14, 255);
         SDL_RenderClear(ren);
-        const char* title = "RED ALERT 2";
+        const char* title = header();
         const int scale = 6;
         const int tw = static_cast<int>(std::string(title).size()) * 6 * scale;
         draw_text(ren, title, (kWinW - tw) / 2, 60, scale, 220, 60, 50);
@@ -4080,17 +4157,21 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
         return;
     }
 
-    // --- Hover/press: the button under the last cursor position; Single Player
-    // (index 0) is the default hover when the cursor is off every button.
+    // --- Hover/press: the button under the last cursor position; the FIRST
+    // enabled button is the default hover when the cursor is off every button
+    // (Single Player on main; the top live row on sub-pages).
     int hover_ix = -1;
     for (int i = 0; i < static_cast<int>(btns.size()); ++i)
         if (btns[i].enabled && to_device(btns[i].rect).contains(mx_, my_)) { hover_ix = i; break; }
-    if (hover_ix < 0) hover_ix = 0;                        // Single Player default hover
-    const int pressed_ix = (down_ && to_device(btns[hover_ix].rect).contains(mx_, my_))
+    if (hover_ix < 0)
+        for (int i = 0; i < static_cast<int>(btns.size()); ++i)
+            if (btns[i].enabled) { hover_ix = i; break; }
+    const int pressed_ix = (hover_ix >= 0 && down_ &&
+                            to_device(btns[hover_ix].rect).contains(mx_, my_))
                                ? hover_ix : -1;
 
-    draw_shell(plat, tc, art_, canvas_scale(), btns, hover_ix, pressed_ix,
-               "Main Menu", "v1.006");
+    draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
+               header(), "v1.006");
 }
 
 // [RE: skirmish.md §1/§3, D6] Exposes the recovered lobby subset (T1 item 1):
@@ -4347,12 +4428,12 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         if (!b.enabled) continue;
         if (!to_device(b.rect).contains(ev.x, ev.y)) continue;
         switch (b.action) {
-            case ACT_QUIT:    quit_ = true; return;
-            // Single Player -> Task-3 page later; for now route straight to the
-            // Skirmish setup so Skirmish stays reachable (skirmish->GameScene path
-            // unchanged).
-            case PAGE_SINGLE: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
-            default:          return;   // greyed pages (Internet/Network/Movies/Options)
+            case ACT_QUIT:     quit_ = true; return;
+            // The ONLY live game path: Skirmish -> setup -> GameScene (unchanged).
+            case ACT_SKIRMISH: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
+            // Page transition (incl. Back): construct the target page's ShellScene.
+            case ACT_GOTO:     next_ = new ShellScene(rules_, no_audio_, art_, b.target); return;
+            default:           return;
         }
     }
 }
@@ -4419,9 +4500,10 @@ int run_menu(bool no_audio) {
     return run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
 }
 
-// [Task 5] Render exactly one frame of the main menu (and one of the skirmish
-// setup screen) to PNGs and exit -- the eyeball-verification hook. `out_path`
-// gets the main menu; a "_setup" sibling gets the setup screen. Audio is off.
+// [Task 5/Task 3] Render one frame of each shell page (+ the skirmish setup
+// screen) to PNGs and exit -- the eyeball-verification hook. `out_path` gets the
+// main menu; "<stem>_single/_movies/_options.png" get the sub-pages and
+// "<stem>_setup.png" the setup screen. Audio is off.
 int run_menu_shot(const std::string& out_path) {
     const std::string dir = env_install_dir();
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -4432,21 +4514,28 @@ int run_menu_shot(const std::string& out_path) {
     MenuArtStore store;
     load_menu_art(dir, /*no_audio=*/true, store);
 
-    // Main menu: render a couple of frames so texture uploads settle.
-    MainMenuScene menu(rules, /*no_audio=*/true, store.art);
-    for (int i = 0; i < 2; ++i) { plat.begin_frame(); menu.render(plat, tc); plat.present(); }
-    capture_png(ren, out_path, 1280, 720);
-    std::cerr << "[menu-shot] wrote " << out_path << "\n";
+    // "<stem>.png" -> "<stem><suffix>.png".
+    auto sibling = [&](const std::string& suffix) {
+        const size_t dot = out_path.find_last_of('.');
+        return (dot == std::string::npos) ? out_path + suffix
+                                          : out_path.substr(0, dot) + suffix + out_path.substr(dot);
+    };
+    auto shoot = [&](Scene& sc, const std::string& path) {
+        // Render a couple of frames so texture uploads settle, then capture.
+        for (int i = 0; i < 2; ++i) { plat.begin_frame(); sc.render(plat, tc); plat.present(); }
+        capture_png(ren, path, 1280, 720);
+        std::cerr << "[menu-shot] wrote " << path << "\n";
+    };
+
+    // Main menu + each shell sub-page (same draw_shell path, different page id).
+    ShellScene main_page(rules, true, store.art, PAGE_MAIN);    shoot(main_page, out_path);
+    ShellScene sp_page  (rules, true, store.art, PAGE_SINGLE);  shoot(sp_page,   sibling("_single"));
+    ShellScene mv_page  (rules, true, store.art, PAGE_MOVIES);  shoot(mv_page,   sibling("_movies"));
+    ShellScene op_page  (rules, true, store.art, PAGE_OPTIONS); shoot(op_page,   sibling("_options"));
 
     // Skirmish setup screen -> "<stem>_setup.png".
-    std::string setup_path = out_path;
-    const size_t dot = setup_path.find_last_of('.');
-    setup_path = (dot == std::string::npos) ? setup_path + "_setup"
-                                            : setup_path.substr(0, dot) + "_setup" + setup_path.substr(dot);
     SkirmishSetupScene setup(rules, /*no_audio=*/true, store.art);
-    for (int i = 0; i < 2; ++i) { plat.begin_frame(); setup.render(plat, tc); plat.present(); }
-    capture_png(ren, setup_path, 1280, 720);
-    std::cerr << "[menu-shot] wrote " << setup_path << "\n";
+    shoot(setup, sibling("_setup"));
     return 0;
 }
 
