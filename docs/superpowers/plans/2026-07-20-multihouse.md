@@ -518,7 +518,7 @@ if (w.house == attacker.house) continue;           // UNCHANGED -- own-house spa
 
 | Site (world.cpp line) | Before | After |
 |---|---|---|
-| nuke building-splash **1106** | `if (b.house == house) continue;` | `if (!is_enemy(house, b.house)) continue;` — a superweapon strike hits ENEMY buildings only (spares self + allies + neutral). |
+| nuke building-splash **1106** | `if (b.house == house) continue;` | **UNCHANGED — `if (b.house == house) continue;`** (controller RE-GATE amendment). A nuke is location-based AREA damage: per recovered §4 splash/area damage STILL hurts allies (and neutral), sparing ONLY the firing house — exactly like the unit splash `apply_spread_damage` (combat.cpp:145), which is also kept unchanged. Do NOT route this through `is_enemy` (that would wrongly spare allies + neutral from the blast). Byte-identical for the gates (unconfigured → `is_enemy` reduces to `a!=b`, so `!is_enemy(house,b.house)` == `b.house==house`); the two forms diverge ONLY once alliances are configured, where "spare own only" is the faithful one. Keep both splash sites consistent. |
 | `capture_building` **1155** | `if (new_house == old_house) return false;` | UNCHANGED — a same-owner ChangeOwner no-op, not an enmity test. Left as-is. |
 | `infiltrate_building` **1187** | `if (victim == spy_house) return false;` | UNCHANGED — self-spy no-op (identity, not enmity). Left as-is. |
 | `repair_building` **1220** | `if (b.house != by_house) return false;` | route to allies: `if (!are_allied(by_house, b.house)) return false;` — you may repair OWN and ALLIED buildings (self-ally holds, so own still repairs). |
