@@ -501,3 +501,15 @@ NATECH built.
 **Net:** all four items adjudicated; none needs human escalation. Plan tasks T2-T6
 consistent with these (append-only, kUnits/kSoviet untouched, allied_full flag,
 abilities content-only, APOC gate-spawned).
+
+### §Adjudication addendum — ATESLA/GAPRIS art reconciliation (2026-07-20)
+§4's raw `ra2extract` probe listed `ATESLA→GAPRIS` art as PRESENT, but the ENGINE's
+building loader (`resolve_shp` theater-munge path) does NOT resolve `GAPRIS` on this
+install → at runtime `--demo-roster` reports `ATESLA … no-art` and `place_explicit`
+art-guards it out (no instance placed). The LOADER's resolution is authoritative for
+the shipped gate: ATESLA is treated ART-ABSENT (like GATOW/NABNKR/TESLA). It still
+RESOLVES as a building (cost 1500/tech 6/str 600) — only its render/placement is
+guarded. The `roster_hash=333cd43d8b5ece6a` pin is INSTALL-SPECIFIC accordingly:
+were GAPRIS to resolve in the loader, an ATESLA instance would place and the hash
+would change. (The §4 raw-probe "Y" reflects a bare MIX-membership check, not the
+loader's theater-suffix resolution — the two legitimately differ.)

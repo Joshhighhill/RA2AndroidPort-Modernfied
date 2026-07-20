@@ -1432,8 +1432,12 @@ via `resolve_combat_unit` reading `ra2assets::Rules` — and both honor each typ
 declared art without any per-type code. `spawn_base` gains a trailing
 default-false `bool allied_full`: when set (and non-Soviet) it lays down a
 symmetric Allied full base (ConYard + power + barracks + war factory + airforce
-command); every determinism gate leaves it false, and only the interactive Allied
-skirmish player now gets the full base.
+command); every determinism gate leaves it false, and only the `--demo-roster`
+gate passes `true`. Wiring it into interactive skirmish (so an Allied human/AI
+player gets the full base) is a **deferred carry-forward (Task 5)** — doing so via
+the shared `launch_skirmish` spawn would drift `skirmish_hash`, so it needs an
+`allied_full` field on `SkirmishConfig` (default false for the gate); until then
+interactive Allied houses still get ConYard-only.
 
 The change is strictly APPEND-ONLY: `kRoster` grew `[20]`→`[24]` (every prior
 index preserved), `kRosterUnits` is a brand-new table, and `kUnits`/`kSoviet`
@@ -1460,8 +1464,10 @@ Deviations we take for Broaden Roster (adjudicated divergences from the recovere
   NATECH-gated live buildability of APOC is a carry-forward (NATECH not rostered
   this phase) [`roster.md` §2/§5].
 - **Symmetric Allied base behind a default-false flag** — `spawn_base` gains a
-  trailing `bool allied_full`; the interactive Allied skirmish player now gets a
-  full base; every gate leaves it false [`roster.md` §3].
+  trailing `bool allied_full`; only the `--demo-roster` gate passes it `true`
+  (every other caller, incl. `launch_skirmish` and the interactive base, leaves it
+  false). Wiring it into interactive skirmish is a deferred carry-forward (Task 5,
+  see below) [`roster.md` §3].
 - **Each type's unique active ability is content-only-deferred** — stats/weapon/
   armor/prereq/art/buildability + basic combat land now; the special mechanic is
   a future mini-phase:
@@ -1484,9 +1490,11 @@ Deviations we take for Broaden Roster (adjudicated divergences from the recovere
   fix; GAYARD naval yard + DEST/AEGIS naval pair; ROBO/GAROBO (art absent); Yuri
   faction (NATBNK/YA*, Side::Yuri); TTNK/GTGCAN drop-in extras (bounded batch of
   16); per-country bonuses; the remaining ~70 cast members; multi-human input;
-  the Task-5 skirmish Allied-base wiring is now live via `allied_full` but no gate
-  exercises it; all prior-phase carry-forwards [`roster.md` §5; spec
-  §Scope/non-goals].
+  the **Task-5 skirmish Allied-base wiring is DEFERRED** — the `allied_full`
+  mechanism exists on `spawn_base` but is not wired into interactive skirmish
+  (would drift `skirmish_hash`; needs a `SkirmishConfig.allied_full` field
+  defaulted false for the gate), so interactive Allied houses are ConYard-only for
+  now; all prior-phase carry-forwards [`roster.md` §5; spec §Scope/non-goals].
 
 ## Building
 
