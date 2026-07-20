@@ -1105,6 +1105,98 @@ Deviations we take for Capture (adjudicated divergences from recovered
   map-parsed neutral roster + neutral AI, garrisonable buildings, and AI use of
   engineers/spies [spec §Out].
 
+## Shroud / Fog-of-War
+
+The Shroud phase draws the veil back over the map: a per-house, three-state
+visibility model — **SHROUDED** (never seen, drawn black), **FOGGED** (explored
+but not currently in sight, drawn dim), **VISIBLE** (in a unit's current sight,
+drawn full) — carried on two independent per-house grids, `explored_[3]` and
+`visible_[3]`. Both are **empty until enabled** (the `water_passable_`
+precedent from CB-3): `World::enable_shroud(true)` is opt-in, allocates the
+grids, and sets the `shroud_any_` firewall flag; no pre-existing demo ever
+calls it, so every prior gate sees the grids unallocated and the visibility
+step short-circuited.
+
+Reveal is **near-circular**: `reveal_disc`/`reveal_source` mark every cell whose
+`dx²+dy² <= sight²` around a source, where `sight` is the unit/building's
+`Sight=` clamped to 10 (`rules.sight`); a building reveals from **each of its
+footprint cells**, so a multi-cell base lights a fatter disc than any single
+unit. Fog does **not** regrow: `step_visibility` recomputes `visible_` from
+scratch each pass but only ever **adds** to `explored_` (it is sticky), matching
+the shipped `FogOfWar=no` / `ShroudGrow=no` defaults — once you've seen a cell it
+stays lit (dim) forever, and cells drop back only from VISIBLE to FOGGED, never
+to SHROUDED.
+
+`World::step_visibility` is firewalled the same way every prior phase's new pass
+is: it runs **after `step_units`** (so movement is already applied) and
+**before combat**, and its first statement is `if (!shroud_any_) return;`. It
+rebuilds each enabled house's `visible_` grid from its live units/buildings,
+folds the newly-seen cells into `explored_`, and stamps every unit's
+`seen_by_mask` — a per-`Unit` bitmask of which houses currently see it.
+
+Targeting consults that mask **inertly**: `Unit::seen_by_mask` defaults to
+`0xFF` (seen by everyone), and combat's auto-acquire scan gained **one extra
+clause** at `combat.cpp:362` skipping a target the scanning house cannot see —
+byte-identical when shroud is off (mask stays `0xFF`), and structurally the twin
+of the Capture phase's `|| disguised` clause. `combat.cpp`'s scan arithmetic is
+otherwise untouched, so the combat=78 / tank=144 log gates stay exact.
+
+Render adds a per-cell overlay — **black** over SHROUDED, a translucent
+**dim** `shade_rect` over FOGGED, **full** over VISIBLE — consulted from the
+local player's (house 0) grids, and **hides enemy mobile objects** sitting in
+house 0's shroud/fog (a unit you can't see isn't drawn). The radar minimap is
+greenfield: it paints only what house 0 has explored, replacing the CB-era
+static radar frame. All render/minimap work is cosmetic and folds into no gate
+hash.
+
+The spy/radar reveal path resolves the Capture phase's INERT reveal item: the
+local house owning a **SpySat**-type building (`grants_map_reveal`) triggers
+`reveal_all_house` — `explored_` filled to the whole grid — and **latches**
+(`map_reveal_[3]`), so a subsequent re-shroud can't take that house's map back.
+A spy infiltrating an enemy **radar** (`InfiltratePurpose::RadarLab`, the real
+Capture-phase enum name) calls `reshroud_house(victim)`, clearing the victim's
+`explored_` map to 0 — **unless** the victim is SpySat-latched, in which case
+the sabotage is a no-op.
+
+Byte-identity discipline follows the established strategy: `world_hash` is
+**untouched** (the new `Unit`/`Building`/`World` fields are appended after the
+hashed set and never read by it — they are hashed only by the new
+`shroud_hash`); every new field is inert by default and excluded from
+`world_hash`; the `shroud_any_` firewall keeps `step_visibility` a no-op until a
+house enables shroud. The fourteen legacy gates were re-verified bit-identical
+at every shroud-touching commit and again at this finalize, and the fifteenth
+gate `--demo-shroud` (`shroud_hash=d302852aa9517661`) hashes only the new
+visibility state. Calibration authority: `docs/re/shroud.md` (three-state model,
+Sight reveal math, fog-no-regrow, targeting consult, spy/SpySat reveal,
+deviations).
+
+Deviations we take for Shroud (adjudicated divergences from the recovered
+`shroud.md` ground truth — not bugs, do not "fix" in review):
+- **Per-house visibility grids, not the original's local-player cell bits** —
+  RA2 stores cell shroud for the local player only (`DAT_00a82cb4`); we
+  generalize to per-house `explored_[3]`/`visible_[3]` (faithful per-MP-client,
+  required for the enemy-side targeting consult) [`shroud.md` §1/D1; spec
+  §Architecture A].
+- **Targeting consult via a per-unit `seen_by_mask`, not a per-cell lookup in
+  the scan** — the enemy auto-acquire skip reads a `Unit` bitmask stamped by
+  `step_visibility`, so `step_combat`'s signature is unchanged and the clause is
+  an inert `0xFF` default mirroring `disguised` [`shroud.md` §6; spec
+  §Architecture E].
+- **Fog dim factor = translucent-black `shade_rect` (alpha pinned at the
+  RE-GATE), cosmetic/unhashed** — approximates `BlendedFog=yes`; render is not
+  part of any gate hash [`shroud.md` §5 RE-GATE item 1].
+- **SpySat reveal driven by a `grants_map_reveal` type flag** — if `GASPYSAT`
+  is absent from the roster the mechanism ships inert until such a building
+  exists (RE-GATE item 2) [`shroud.md` §7A].
+- **GapGenerator, FogOfWar regrow, height sight bonus, cloak/`SensorsSight`
+  detection, AI fog-aware scouting, and `AllyReveal` map-sharing are
+  carry-forwards** — documented, not implemented this phase [`shroud.md`
+  §4/§3/§6/§8; spec §Scope/non-goals].
+- **Shroud state is LIVE but excluded from `world_hash`** — the new
+  `Unit`/`Building`/`World` fields are hashed only by `shroud_hash`; no existing
+  demo enables shroud, so no existing hash changes [`shroud.md` §1; spec §Data
+  model].
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -1318,6 +1410,19 @@ Headless/verification CLI modes (render one or more frames and exit):
   moves credits AND blackout arms AND SW resets AND the dog reveals the spy. The
   gate is pure-state / art-independent (loads only GI/CONS art → engineer/spy/dog/
   derrick render as placeholders, like `--demo-superweapon`).
+- `ra2engine.exe --demo-shroud` — the Shroud / Fog-of-War integration gate:
+  enables the per-house visibility layer, then scripts a player unit's initial
+  reveal (near-circular Sight disc), movement growing the explored map, fog
+  stickiness after the source leaves (explored persists, visible clears), an
+  enemy unit becoming unseen (seen_by_mask) when it sits in house 0's shroud, a
+  spy sabotaging an enemy radar (reshroud_house clears the victim's explored map
+  to 0), and a SpySat revealing the whole map (reveal_all_house -> explored ==
+  grid). Hashes per-house explored/visible cell counts + a seen_by_mask sample at
+  fixed checkpoints (shroud_hash). Runs twice (rendered + headless); both runs
+  must produce identical witnesses + hash; wedge guards exit non-zero unless the
+  initial reveal marks >0 cells AND movement grows explored AND fog persists AND
+  the fogged enemy is unseen AND the sabotage clears the victim's map AND
+  reveal-all fills explored.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -1325,16 +1430,16 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These fourteen headless demos are byte-identity regression gates: any change to
+These fifteen headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=20` as of the Engineer/Spy
 Capture phase (the `CAOILD` oil derrick; `roster=19` was the CB-5 Battle Lab
-`GATECH`) — with the gated hash unaffected each time). The first THIRTEEN are the
-legacy gates re-verified unchanged by every subsequent phase; `--demo-capture` is
-the new Engineer/Spy Capture gate.
+`GATECH`) — with the gated hash unaffected each time). The first FOURTEEN are the
+legacy gates re-verified unchanged by every subsequent phase; `--demo-shroud` is
+the new Shroud / Fog-of-War gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -1352,6 +1457,7 @@ the new Engineer/Spy Capture gate.
 | `--demo-superweapon` | `superweapon_hash=189496664f5eca68` | `deterministic=yes`; grants the Soviet Nuclear Missile (`[NukeSpecial]` `Type=MultiMissile`, `RechargeTime` -> recharge_secs, `[NukePayload]` Damage=600, `[NUKE]` CellSpread=10/PercentAtMax=.02/Verses); charges to READY, fires at the target cell, detonates via the REUSED `apply_spread_damage` (enemies-only, instant), spares the firing house, leaves out-of-radius units untouched, re-charges from 0; NukeIcon cameo + gclock2 recharge clock (art-guarded, placeholder if absent); wedge guards armed (`docs/re/superweapon.md`) |
 | `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=20 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
 | `--demo-capture` | `capture_hash=58b87b5bc63f7046` | `deterministic=yes`; engineer capture (`ChangeOwner` flip + SW move + AI base-node resync + startup-from-neutral) of an enemy building AND a neutral `CAOILD` (Startup 1000, Amount 20 / Delay 100f); spy infiltrate (cash-steal 0.5×, power-blackout 1000f, SW recharge reset, factory→produced `veteran_rank=1` ×1.1 firepower/×1.5 armor, radar/lab inert); disguise + dog `DetectDisguise` reveal (spy stays disguised on attack — PermaDisguise); nine wedge guards armed (`docs/re/capture.md`) |
+| `--demo-shroud` | `shroud_hash=d302852aa9517661` | `deterministic=yes`; per-house visibility (near-circular Sight reveal, dx2+dy2<=sight2, cap 10), fog no-regrow (explored sticky), fogged-enemy untargetable (seen_by_mask), spy->enemy-radar reshroud (RadarLab), SpySat reveal-all; wedge guards armed (`docs/re/shroud.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
