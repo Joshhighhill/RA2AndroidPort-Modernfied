@@ -1805,8 +1805,13 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
         return -1;
     };
 
-    place(roster_index(ba, house == 1 ? "NACNST" : "GACNST"), cx, cy, /*bypass=*/true);
-    if (house == 1) {
+    // Multi-house [RE: multihouse.md §1/D6]: side drives the ConYard/base TYPE
+    // (Building{type} feeds world_hash). Default house_side(1)==Soviet, else
+    // Allied -> reproduces `house == 1 ? NACNST : GACNST` and the house-1 base
+    // set EXACTLY -> the spawned types are byte-identical in every gate.
+    const bool soviet = (world.house_side(house) == ra2engine::World::Side::Soviet);
+    place(roster_index(ba, soviet ? "NACNST" : "GACNST"), cx, cy, /*bypass=*/true);
+    if (soviet) {
         place(roster_index(ba, "NAPOWR"), cx + 6, cy, /*bypass=*/false);
         place(roster_index(ba, "NAHAND"), cx + 6, cy + 4, /*bypass=*/false);
         place(roster_index(ba, "NAWEAP"), cx - 1, cy + 6, /*bypass=*/false);
@@ -2646,7 +2651,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
         if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) continue;
         SDL_Rect bp{radar_rect.x + static_cast<int>(u.cell_x * sx),
                     radar_rect.y + static_cast<int>(u.cell_y * sy), 2, 2};
-        const ra2assets::Rgba col = ra2engine::pal_for_house(ba.unit_pal, u.house)[24];
+        const ra2assets::Rgba col = world.house_palette(ba.unit_pal, u.house)[24];
         SDL_SetRenderDrawColor(ren, col.r, col.g, col.b, 255);
         SDL_RenderFillRect(ren, &bp);
     }
@@ -3069,7 +3074,11 @@ int run_interactive(bool no_audio) {
         // unit's SHP image (E1->GI, E2->CONS -- already loaded) so the render swap
         // has art.
         auto side_default_disguise = [&](int house) -> std::string {
-            return resolve_combat_unit(rules, house == 1 ? "E2" : "E1").combat.image;
+            // Multi-house [RE: multihouse.md §1]: default house_side(1)==Soviet
+            // reproduces `house == 1 ? "E2" : "E1"`. Image name is render-only
+            // (NOT in world_hash); routed through house_side for consistency.
+            const bool soviet = (world.house_side(house) == ra2engine::World::Side::Soviet);
+            return resolve_combat_unit(rules, soviet ? "E2" : "E1").combat.image;
         };
         auto place_near_start = [&](const ra2engine::UnitCombat& combat, int house) -> int {
             const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);

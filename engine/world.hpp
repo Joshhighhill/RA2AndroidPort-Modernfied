@@ -17,6 +17,7 @@
 #include "superweapon.hpp"  // CB-4 Superweapons: Superweapon/SuperweaponType lifecycle
 #include "visibility.hpp"  // Shroud/Fog: cell_in_sight/reveal_disc (pure reveal math)
 #include "ra2assets/map.hpp"
+#include "ra2assets/pal.hpp"  // ra2assets::Palette (house_palette render entry)
 #include "unit_combat.hpp"  // UnitCombat (moved here to break the include cycle
                             // production.hpp -> unit_type.hpp -> world.hpp)
 
@@ -795,6 +796,10 @@ public:
     // derivation (house 1 -> Soviet/red, else Allied/blue) -> byte-identical.
     Side house_side(int h) const;
     int  house_color(int h) const;
+    // Render entry [RE: multihouse.md §2/D6]: with houses_configured_ FALSE ->
+    // pal_for_house(unit_pal, house) EXACTLY (today's blue/red) -> pixel-identical.
+    // Configured -> the 8-MP-color spread from house_color(house). NOT hashed.
+    ra2assets::Palette house_palette(const ra2assets::Palette& unit_pal, int house) const;
     // Alliance team for h (sentinel -1 -> own id). Non-combatant houses keep their
     // own team but never ally/enemy anyone (see is_enemy/are_allied, Task 4).
     int  house_team(int h) const;

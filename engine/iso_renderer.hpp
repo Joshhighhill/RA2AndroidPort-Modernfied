@@ -171,6 +171,18 @@ void draw_ground_shadow(void* sdl_renderer, double fx, double fy, int level,
 // into world.cpp (same note already on terrain_screen_bounds).
 ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house);
 
+// [RE-GATE APPLIED: multihouse.md §2 -- 8 MP colors HSV->remap spread]. Generate
+// a house-color remap from one of the 8 MP color indices (0..7). Spreads the
+// color's hue across the art's reserved house-color band (indices 16..31) like
+// pal_for_house, at a Value taken from each source entry's brightness. color_ix
+// out of 0..7 -> unit_pal returned unchanged. Render-only; NOT read by
+// world_hash. Defined in world.cpp beside pal_for_house (SDL-free TU, so the
+// host tests can call it) -- see that file's declaration note. HSV triples
+// (RA2 hue 0..255): 0 Gold=43,239,255  1 DarkRed=0,230,255  2 Orange=25,230,255
+//   3 Magenta=221,102,255  4 Purple=201,201,189  5 DarkBlue=153,214,212
+//   6 DarkSky=131,200,230  7 DarkGreen=81,200,210
+ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_ix);
+
 // Draw a green isometric-diamond selection marker on the unit's tile
 // (at its interpolated fx/fy position). No-op if fully off-screen. Call
 // AFTER draw_terrain (so it's not painted over) and typically BEFORE

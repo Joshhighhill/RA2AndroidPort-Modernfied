@@ -4262,3 +4262,57 @@ TEST_CASE("World multihouse: ShortGame=no needs zero units too; neutral never wi
     CHECK(world.winning_team() == 0);       // team 0 sole combatant survivor
     CHECK_FALSE(world.house_defeated(2));   // neutral (no buildings/units) never defeated
 }
+
+// --- Multi-house / Alliances phase, Task 7 [RE: multihouse.md §1/§2/D6] ------
+// Per-house SIDE (drives spawn_base ConYard/base + unit TYPE) and COLOR (drives
+// the render palette). NOTE (deviation from brief): the brief calls a
+// `make_test_world()` helper; none exists in-tree, and house_side/house_color
+// are map-independent (pure HouseRec table logic), so this uses a
+// default-constructed MapFile (host-only, no RA2_INSTALL_DIR), matching Tasks
+// 2-6. The actual spawn-TYPE byte-identity is proven empirically by the base/
+// capture/econ/ai-* gates (Step 5); this locks the accessor defaults + colors.
+TEST_CASE("World multihouse: house_side drives spawn side; defaults reproduce today [RE: multihouse.md §1/D6]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    // Default (firewall off): house 1 -> Soviet, else Allied (the hashed branch).
+    // Soviet -> NACNST/NA* base + E2 unit; Allied -> GACNST + E1 (main.cpp routes
+    // through house_side): these defaults keep the spawned Building{type} identical.
+    CHECK(world.house_side(0) == ra2engine::World::Side::Allied);
+    CHECK(world.house_side(1) == ra2engine::World::Side::Soviet);
+    CHECK(world.house_side(2) == ra2engine::World::Side::Allied);
+    // Configured: house 0 can be Soviet, house 1 Allied (fully table-driven).
+    world.set_house(0, {ra2engine::World::Side::Soviet, 1, "Russians", 0, true});
+    world.set_house(1, {ra2engine::World::Side::Allied, 5, "Americans", 1, true});
+    CHECK(world.house_side(0) == ra2engine::World::Side::Soviet);
+    CHECK(world.house_side(1) == ra2engine::World::Side::Allied);
+}
+
+// pal_for_color: the 8 MP-color remap (HSV->RGB spread across the reserved
+// house-color band 16..31, like pal_for_house). Render-only, NOT hashed.
+TEST_CASE("pal_for_color: 8 MP colors are distinct + only the 16..31 band moves [RE: multihouse.md §2]") {
+    const ra2assets::Palette src = make_test_pal();
+    // Each of the 8 valid color indices produces a remapped palette; the ramp
+    // entry 20 (brightness 100 -> a mid Value) must differ pairwise across colors.
+    std::array<ra2assets::Rgba, 8> band{};
+    for (int c = 0; c < 8; ++c) {
+        const ra2assets::Palette out = ra2engine::pal_for_color(src, c);
+        band[c] = out[20];
+        // Non-ramp indices are untouched (mirrors pal_for_house's band-only rule).
+        CHECK(out[5].r == src[5].r);
+        CHECK(out[5].g == src[5].g);
+        CHECK(out[5].b == src[5].b);
+        CHECK(out[32].r == src[32].r);
+        CHECK(out[20].a == src[20].a);   // alpha preserved
+    }
+    for (int a = 0; a < 8; ++a)
+        for (int b = a + 1; b < 8; ++b)
+            CHECK((band[a].r != band[b].r || band[a].g != band[b].g ||
+                   band[a].b != band[b].b));   // 8 pairwise-distinct colors
+    // Out-of-range color index -> palette returned unchanged.
+    const ra2assets::Palette none = ra2engine::pal_for_color(src, 8);
+    for (int i = 0; i < 256; ++i) {
+        CHECK(none[i].r == src[i].r);
+        CHECK(none[i].g == src[i].g);
+        CHECK(none[i].b == src[i].b);
+    }
+}

@@ -309,6 +309,70 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house) 
     return out;
 }
 
+// Multi-house / Alliances phase [RE: multihouse.md §2]: the 8 MP-color remap.
+// Mirrors pal_for_house's band loop (indices 16..31), but instead of the fixed
+// blue ratio it spreads the chosen MP color's HUE/SATURATION across the band at
+// a Value taken from each source entry's brightness (so the art's shading ramp
+// is preserved). Render-only; NEVER read by world_hash. Declared in
+// iso_renderer.hpp; defined here (SDL-free TU) so ra2assets_tests can call it.
+ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_ix) {
+    ra2assets::Palette out = unit_pal;
+    if (color_ix < 0 || color_ix > 7) return out;   // out of range -> unchanged
+    // The 8 MP colors as RA2 HSV triples (hue/sat/val, each 0..255).
+    static const int kHsv[8][3] = {
+        { 43, 239, 255},  // 0 Gold
+        {  0, 230, 255},  // 1 DarkRed
+        { 25, 230, 255},  // 2 Orange
+        {221, 102, 255},  // 3 Magenta
+        {201, 201, 189},  // 4 Purple
+        {153, 214, 212},  // 5 DarkBlue
+        {131, 200, 230},  // 6 DarkSky
+        { 81, 200, 210},  // 7 DarkGreen
+    };
+    const double hue  = kHsv[color_ix][0] / 255.0;   // 0..1
+    const double sat  = kHsv[color_ix][1] / 255.0;   // 0..1
+    const double vtop = kHsv[color_ix][2] / 255.0;   // color's nominal ceiling
+    auto clamp_u8 = [](double v) -> std::uint8_t {
+        const int i = static_cast<int>(v + 0.5);
+        if (i < 0) return 0;
+        if (i > 255) return 255;
+        return static_cast<std::uint8_t>(i);
+    };
+    for (int i = 16; i <= 31; ++i) {
+        const ra2assets::Rgba src = unit_pal[i];
+        const int b = (static_cast<int>(src.r) + src.g + src.b) / 3;   // brightness
+        const double val = (b / 255.0) * vtop;   // Value spread by source brightness
+        // Standard HSV(h,s,v in 0..1) -> RGB.
+        const double h6 = hue * 6.0;
+        const int    seg = static_cast<int>(h6) % 6;
+        const double ff = h6 - std::floor(h6);
+        const double p = val * (1.0 - sat);
+        const double q = val * (1.0 - sat * ff);
+        const double t = val * (1.0 - sat * (1.0 - ff));
+        double r = 0.0, g = 0.0, bl = 0.0;
+        switch (seg) {
+            case 0: r = val; g = t;   bl = p;   break;
+            case 1: r = q;   g = val; bl = p;   break;
+            case 2: r = p;   g = val; bl = t;   break;
+            case 3: r = p;   g = q;   bl = val; break;
+            case 4: r = t;   g = p;   bl = val; break;
+            default: r = val; g = p;  bl = q;   break;   // case 5
+        }
+        out[i] = ra2assets::Rgba{clamp_u8(r * 255.0), clamp_u8(g * 255.0),
+                                 clamp_u8(bl * 255.0), src.a};
+    }
+    return out;
+}
+
+// house_palette [RE: multihouse.md §2/D6]: the render entry. With
+// houses_configured_ FALSE -> pal_for_house(unit_pal, house) EXACTLY (today's
+// blue/red) -> byte-identical / pixel-identical. Configured -> the 8-MP-color
+// spread from house_color(house). Render-only; NOT hashed.
+ra2assets::Palette World::house_palette(const ra2assets::Palette& unit_pal, int house) const {
+    if (!houses_configured_) return pal_for_house(unit_pal, house);   // today's derivation
+    return pal_for_color(unit_pal, house_color(house));
+}
+
 World::World(const ra2assets::MapFile& map) : map_(&map) {
     passable_ = build_passability(map.cells(), grid_w_, grid_h_);
     occ_ = Occupancy(grid_w_, grid_h_);
