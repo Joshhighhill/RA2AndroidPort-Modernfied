@@ -5,7 +5,9 @@
 #include "ra2assets/pal.hpp"
 #include "ra2assets/shp.hpp"
 #include "ra2assets/pcx.hpp"
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -36,7 +38,82 @@ static std::vector<uint8_t> read_path(const MixFile& m, const std::string& path)
     return read_path(inner, path.substr(s+1));
 }
 
+// --- magic scanning (menu video hunt) ---------------------------------------
+static size_t find_bytes(const std::vector<uint8_t>& hay, const char* needle, size_t from=0){
+    size_t nl=std::string(needle).size();
+    if (hay.size()<nl) return std::string::npos;
+    auto it=std::search(hay.begin()+from, hay.end(), (const uint8_t*)needle, (const uint8_t*)needle+nl);
+    return it==hay.end() ? std::string::npos : (size_t)(it-hay.begin());
+}
+
+static void scan_mix(const MixFile& t, const std::string& prefix, int depth,
+                     int& nent, int& nvqa, int& nshp, int& nmix){
+    for (auto& e : t.entries()){
+        std::vector<uint8_t> b;
+        try { b=t.read(e); } catch(...){ continue; }
+        if (b.empty()) continue;
+        nent++;
+        char loc[512];
+        std::snprintf(loc,sizeof loc,"%s%08X", prefix.c_str(), e.id);
+        // VQA signatures anywhere in the entry
+        if (b.size()>=12 && !memcmp(b.data(),"FORM",4) && !memcmp(b.data()+8,"WVQA",4)){
+            std::printf("[VQA-FILE] %s size=%zu\n", loc, b.size()); nvqa++;
+        } else {
+            for (const char* tag : {"WVQA","VQFL","VQFR"}){
+                size_t off=find_bytes(b, tag);
+                if (off!=std::string::npos){
+                    std::printf("[VQA-CHUNK] %s size=%zu tag=%s off=%zu\n", loc, b.size(), tag, off);
+                    nvqa++; break;
+                }
+            }
+        }
+        // multi-frame SHP candidates (menu animation hunt)
+        try {
+            ShpFile s=ShpFile::load(b);
+            if (s.count()>4 && s.width()>0 && s.height()>0 &&
+                s.width()<2048 && s.height()<2048 && (long)s.width()*s.height()>=2000){
+                std::printf("[SHP] %s size=%zu dims=%dx%d frames=%d\n",
+                            loc, b.size(), s.width(), s.height(), s.count()); nshp++;
+            }
+        } catch(...){}
+        // nested mix? recurse (content-detected; validated by successful reads)
+        if (depth<3 && b.size()>=16){
+            try {
+                MixFile inner=MixFile::open(b); // copy; b reused below only for size
+                if (inner.count()>0 && inner.count()<20000){
+                    // validate the first entry is readable before trusting it
+                    inner.read(inner.entries()[0]);
+                    std::printf("[MIX] %s size=%zu entries=%zu -> descending\n", loc, b.size(), inner.count());
+                    nmix++;
+                    scan_mix(inner, std::string(loc)+"/", depth+1, nent, nvqa, nshp, nmix);
+                }
+            } catch(...){}
+        }
+    }
+}
+
 int main(int argc, char** argv){
+    if (argc>=3 && std::string(argv[2])=="--scanraw"){
+        // scan a plain file's raw bytes for VQA signatures (no mix parsing)
+        auto b=read_file(argv[1]);
+        if (b.empty()){ std::cerr<<"cannot read "<<argv[1]<<"\n"; return 1; }
+        std::printf("scanraw %s size=%zu\n", argv[1], b.size());
+        // report ALL occurrences of each tag (up to 40)
+        for (const char* tag : {"FORM","WVQA","VQFL","VQFR","VQHD"}){
+            size_t from=0; int hits=0;
+            while (hits<40){
+                size_t off=find_bytes(b, tag, from);
+                if (off==std::string::npos) break;
+                std::printf("  tag=%s off=%zu", tag, off);
+                if (!strcmp(tag,"FORM") && off+12<=b.size())
+                    std::printf(" next8=%.8s", (const char*)b.data()+off+8);
+                std::printf("\n");
+                hits++; from=off+1;
+            }
+            if (!hits) std::printf("  tag=%s (none)\n", tag);
+        }
+        return 0;
+    }
     if (argc<3){
         std::cerr<<"usage: ra2extract <mix> --list [nested-path]\n"
                  <<"       ra2extract <mix> --raw <asset-path> <out.bin>\n"
@@ -55,6 +132,16 @@ int main(int argc, char** argv){
             for (auto& e : t.entries())
                 std::printf("  %08X  offset=%-10u size=%u\n", e.id, e.offset, e.size);
             for (auto& n : t.local_names()) std::cout<<"  "<<n<<"\n";
+            return 0;
+        }
+        if (std::string(argv[2])=="--scanmagic"){
+            // usage: <mix> --scanmagic [nested-path]
+            MixFile t = (argc>=4) ? descend(std::move(m), argv[3]) : std::move(m);
+            int nent=0,nvqa=0,nshp=0,nmix=0;
+            std::string prefix = std::string(argv[1]) + (argc>=4 ? std::string("/")+argv[3] : std::string()) + "/";
+            scan_mix(t, prefix, 0, nent, nvqa, nshp, nmix);
+            std::printf("scanmagic done: entries=%d vqa-hits=%d shp-candidates=%d nested-mixes=%d\n",
+                        nent, nvqa, nshp, nmix);
             return 0;
         }
         if (std::string(argv[2])=="--dumpall"){

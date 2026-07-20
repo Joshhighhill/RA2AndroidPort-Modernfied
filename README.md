@@ -1516,22 +1516,37 @@ eighteen gate hashes plus `world_hash` are bit-identical to the prior phase.
 > - **Backdrop:** `neutral.mix/mnscrns.shp` (472×448) under `cache.mix/shell.pal`
 >   — the dark-**red** US-East-Coast radar map with the beveled CRT frame baked
 >   in — at (0,0,472,448), with `neutral.mix/lwscrns.shp` as the 32 px bottom bar.
-> - **Full metal sidebar chrome** (168 px column) under `shell.pal`:
->   `sdtp.shp` frame 0 (the mini-monitor showing the red **WARNING** screen +
->   rising graph) at (472,0,168,199); `sdbtm.shp` V-console at (472,415,168,65);
->   and a per-button `sdbtnbkgd.shp` metal slice behind each button row.
-> - **Buttons:** `local.mix/mnbttn.shp` (3-state: 0=up / 1=hover / 2=down) under
->   `local.mix/mainbttn.pal`, stretched to 162×37 at the six **recovered
->   dialog-`0xE2` template rects** (`MapDialogRect`-derived: Single Player
->   (476,198), Internet (476,242), Network (476,286), Movies & Credits (476,330),
->   Options (477,374), Exit Game (477,418)).
+> - **Full metal sidebar chrome** (168 px column): `sdtp.shp` frame 0 (the
+>   console with the mini-monitor bezel) at (472,0,168,199) under `shell.pal`;
+>   `sdbtm.shp` V-console at (472,415,168,65); and a per-button `sdbtnbkgd.shp`
+>   metal slice under **`cache.mix/shell2.pal`** (the correct chrome palette;
+>   `shell.pal` on these pieces was a red-speckle source — `mainmenu_true.md`
+>   §7).
+> - **Animated WARNING monitor:** `neutral.mix/sdwrnanm.shp` (92×53, **91
+>   frames**) under `shell2.pal`, drawn into the dialog-`0xE2` monitor hole
+>   (control 0x71C, rect 508,47,92,53) on top of `sdtp` — the red **WARNING**
+>   screen + rising graph + launch flash. It **animates live** (~1.1 s loop):
+>   `ShellScene::update(dt)` advances the frame index each tick.
+> - **Buttons:** the real sidebar buttons are **`neutral.mix/sdbtnanm.shp`**
+>   (156×42, 17 frames) under **`neutral.mix/sdbtnanm.pal`**, blitted **1:1
+>   (not stretched)** — frame **2** normal / **3** orange-glow hover / **4**
+>   yellow-hot pressed / **10** empty socket for button-less rows. Recovered
+>   from the owner-draw painter (game.exe 0x5F0400): geometry is x=484
+>   (=screenRight−156), y=199+42·row, pitch 42, one 156×42 control per row —
+>   this **supersedes** the earlier (wrong) stretched `mnbttn.shp` (which is in
+>   fact the *popup-dialog* button). Pressed labels shift (+2,+5) px.
 > - **Gold labels** rendered with the authentic `12metfnt.fnt` Westwood font
 >   (`draw_fnt_text`), centered per button, plus the "Main Menu" header
 >   (477,2,162,16) and the version line (477,461).
-> - **Left "CRT screen" VQA is absent in this install** — the real menu loops
->   `Ra2ts_s.vqa` / `Ra2ts_l.vqa` in a movie control, but `MOVIES01/02.MIX` are
->   4-byte dummies here, so a **static stand-in** (the RA2 logo emblem cropped
->   from `logo.pcx` composited over the red radar backdrop) is used instead.
+> - **Left "CRT screen" is a VQA that is absent everywhere in this install** —
+>   the real menu loops `Ra2ts_s.vqa` / `Ra2ts_l.vqa` (radar sweep + Statue of
+>   Liberty + logo) in a movie control, but an exhaustive magic-byte scan of
+>   every mix (base/YR/expansion/maps/nested — `--scanmagic`) found **zero
+>   VQAs**; `MOVIES01/02.MIX` are 4-byte `"MYTH"` dummies. So **no fake logo is
+>   drawn** (cropping `logo.pcx` — the tanks title art — is not the menu
+>   design); the `mnscrns` red radar map is the faithful stand-in, matching what
+>   retail RA2 shows when the movie is missing. A supplied `ra2ts_*.vqa` can be
+>   blitted into the CRT rect for the exact original look.
 > - **Multi-page tree** (one reusable `draw_shell` per page, `ShellScene`):
 >   **Main** → **Single Player** (New Campaign / Load Saved Game greyed,
 >   **Skirmish** live → `SkirmishSetupScene`, Back) / **Movies & Credits**
@@ -1547,8 +1562,10 @@ eighteen gate hashes plus `world_hash` are bit-identical to the prior phase.
 > both install and no-install modes, and the arm64 APK still links the menu
 > symbols (`draw_shell` / `ShellScene` / `draw_fnt_text` / `load_menu_art`).
 > True-design carry-forwards: the exact Options CSF labels; Campaign and Load
-> pages as greyed stubs; VQA (`ra2ts_*`) left-screen playback; and the 800×600
-> ("large" `*L` asset) button redistribution — all deferred.
+> pages as greyed stubs; VQA (`ra2ts_*`) left-screen playback (needs a VQA
+> decoder + the movie file, absent here); the `sdwrntmp` page-transition
+> power-on and header shimmer; and the 800×600 ("large" `*L` asset) button
+> redistribution — all deferred.
 
 **Three decoder additions** (each ADDITIVE + host-tested; none touched by any
 gate):
