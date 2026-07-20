@@ -13,10 +13,14 @@ struct WavInfo { int sample_rate = 0; int channels = 1; int bits = 16; };
 // containers use the identical IMA cascade, confirmed independently against
 // two separate copies of the game's own decoder.
 //
+// Mono (channels==1) yields one sample per frame; stereo (channels==2, e.g.
+// the menu theme theme.mix/grinder.wav) decodes the MS IMA-ADPCM stereo
+// layout -- an 8-byte per-block dual header (L then R: int16 predictor + u8
+// step index + u8 reserved) followed by interleaved 4-byte words (ch0 word
+// then ch1 word) -- into interleaved L,R,L,R samples with out_info.channels=2.
+//
 // Throws std::runtime_error on: non-RIFF/WAVE input, missing fmt/data
-// chunks, a fmt tag other than 0x0011, or channels != 1 (all real EVA
-// speech is mono; docs/re/audio.md's stereo note documents the game's
-// N-channel chunk shape for anyone adding stereo support later).
+// chunks, a fmt tag other than 0x0011, or channels outside {1, 2}.
 std::vector<int16_t> load_wav_ima(const uint8_t* data, std::size_t len, WavInfo& out_info);
 
 }  // namespace ra2assets

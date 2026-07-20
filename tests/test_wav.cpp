@@ -51,15 +51,51 @@ TEST_CASE("wav: tiny synthetic IMA block decodes to the documented vector") {
     CHECK(pcm[4] == 13);
 }
 
-TEST_CASE("wav: rejects non-IMA and stereo") {
+TEST_CASE("wav: rejects non-IMA and truncated") {
     std::vector<uint8_t> w = tiny_ima_wav();
     w[20] = 0x01;                        // fmt tag -> 0x0001 PCM
     WavInfo info;
     CHECK_THROWS(load_wav_ima(w.data(), w.size(), info));
-    std::vector<uint8_t> w2 = tiny_ima_wav();
-    w2[22] = 2;                          // channels -> 2
-    CHECK_THROWS(load_wav_ima(w2.data(), w2.size(), info));
-    CHECK_THROWS(load_wav_ima(w2.data(), 8, info));  // truncated
+    CHECK_THROWS(load_wav_ima(w.data(), 8, info));   // truncated
+}
+
+// A minimal fmt-0x0011 STEREO IMA WAV: block_align 16 = 8 header (L:{pred=0,
+// idx=0}, R:{pred=0,idx=0}) + 8 data (ch0 word {0x07,0x80,0,0}, ch1 word all 0).
+// The L nibble stream 7,0,0,8 decodes to the documented {0,11,13,14,13,...}
+// vector; R stays 0. Output is interleaved L,R.
+static std::vector<uint8_t> tiny_stereo_ima_wav() {
+    const uint16_t block_align = 16, channels = 2, tag = 0x0011, bits = 4;
+    const uint32_t rate = 22050;
+    const uint16_t spb = 1 + (4 * 2);    // samples per channel per block = 9
+    std::vector<uint8_t> v;
+    auto u16 = [&](uint16_t x){ v.push_back(x & 0xff); v.push_back(x >> 8); };
+    auto u32 = [&](uint32_t x){ for (int i=0;i<4;++i) v.push_back((x >> (8*i)) & 0xff); };
+    auto tag4 = [&](const char* t){ v.insert(v.end(), t, t + 4); };
+    tag4("RIFF"); u32(4 + 26 + 12 + 16); tag4("WAVE");
+    tag4("fmt "); u32(20); u16(tag); u16(channels); u32(rate); u32(44100);
+    u16(block_align); u16(bits); u16(2); u16(spb);
+    tag4("fact"); u32(4); u32(spb);      // 9 samples per channel
+    tag4("data"); u32(block_align);
+    u16(0); v.push_back(0); v.push_back(0);     // L header pred=0 idx=0 rsvd=0
+    u16(0); v.push_back(0); v.push_back(0);     // R header pred=0 idx=0 rsvd=0
+    v.push_back(0x07); v.push_back(0x80); v.push_back(0); v.push_back(0);  // ch0 word
+    v.push_back(0x00); v.push_back(0x00); v.push_back(0); v.push_back(0);  // ch1 word
+    return v;
+}
+
+TEST_CASE("wav: stereo IMA decodes both channels, interleaved") {
+    std::vector<uint8_t> w = tiny_stereo_ima_wav();
+    WavInfo info;
+    std::vector<int16_t> pcm = load_wav_ima(w.data(), w.size(), info);
+    CHECK(info.channels == 2);
+    CHECK(info.sample_rate == 22050);
+    REQUIRE(pcm.size() == 9 * 2);        // 9 samples/channel * 2 channels, fact-capped
+    CHECK(pcm[0] == 0);                  // L predictor
+    CHECK(pcm[1] == 0);                  // R predictor
+    CHECK(pcm[2] == 11);                 // L sample 1 (documented cascade)
+    CHECK(pcm[3] == 0);                  // R sample 1 (silent channel)
+    CHECK(pcm[4] == 13);                 // L sample 2
+    CHECK(pcm[5] == 0);                  // R sample 2
 }
 
 // ---------------------------------------------------------------------------
