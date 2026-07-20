@@ -3617,9 +3617,16 @@ struct MenuArt {
     ra2assets::ShpFile* sdtp = nullptr;       // neutral.mix/sdtp.shp (sidebar top, 2 fr)
     ra2assets::ShpFile* sdbtm = nullptr;      // neutral.mix/sdbtm.shp (sidebar bottom)
     ra2assets::ShpFile* sdbtnbkgd = nullptr;  // neutral.mix/sdbtnbkgd.shp (per-button slice)
+    // [Task exact / mainmenu_true.md §7] TRUE main-menu button + monitor assets.
+    ra2assets::ShpFile* sdbtnanm = nullptr;   // neutral.mix/sdbtnanm.shp (156x42, 17fr) — the REAL buttons
+    ra2assets::ShpFile* sdwrnanm = nullptr;   // neutral.mix/sdwrnanm.shp (92x53, 91fr) — WARNING monitor loop
     ra2assets::Palette shell_pal{};           // cache.mix/shell.pal (chrome palette)
-    ra2assets::Palette mainbttn_pal{};        // local.mix/mainbttn.pal (button palette)
+    ra2assets::Palette shell2_pal{};          // cache.mix/shell2.pal (sdbtnbkgd + sdwrnanm palette)
+    ra2assets::Palette sdbtnanm_pal{};        // neutral.mix/sdbtnanm.pal (SDBTNANM own palette)
+    ra2assets::Palette mainbttn_pal{};        // local.mix/mainbttn.pal (popup-dialog button palette)
     bool shell_pal_ok = false;
+    bool shell2_pal_ok = false;
+    bool sdbtnanm_pal_ok = false;
     bool mainbttn_pal_ok = false;
     bool ok = false;                          // essentials (bg+pal) decoded
     // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
@@ -3638,9 +3645,12 @@ struct MenuArtStore {
     std::unique_ptr<ra2assets::ShpFile> bg, btn, dlg;
     // [Task 1] True-design chrome SHPs.
     std::unique_ptr<ra2assets::ShpFile> bg_s, lwscrn, sdtp, sdbtm, sdbtnbkgd;
+    // [Task exact] TRUE button + monitor animation SHPs.
+    std::unique_ptr<ra2assets::ShpFile> sdbtnanm, sdwrnanm;
     // [Task 1] Chrome/button palettes (value type; validity tracked by *_ok bools).
-    ra2assets::Palette shell_pal{}, mainbttn_pal{};
+    ra2assets::Palette shell_pal{}, mainbttn_pal{}, shell2_pal{}, sdbtnanm_pal{};
     bool shell_pal_ok = false, mainbttn_pal_ok = false;
+    bool shell2_pal_ok = false, sdbtnanm_pal_ok = false;
     std::unique_ptr<ra2assets::Palette> pal, dlg_pal;
     std::unique_ptr<ra2assets::PcxImage> logo, title;
     std::unique_ptr<ra2assets::Font> font;
@@ -3726,7 +3736,17 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               store.lwscrn    = try_shp(neutral, "lwscrns.shp");
               store.sdtp      = try_shp(neutral, "sdtp.shp");
               store.sdbtm     = try_shp(neutral, "sdbtm.shp");
-              store.sdbtnbkgd = try_shp(neutral, "sdbtnbkgd.shp"); }
+              store.sdbtnbkgd = try_shp(neutral, "sdbtnbkgd.shp");
+              // [Task exact / §7.2] The REAL shell buttons (156x42, 17fr) + the
+              // top-right WARNING monitor animation (92x53, 91fr). Both live in
+              // neutral.mix; SDBTNANM has its OWN palette (also in neutral.mix).
+              store.sdbtnanm  = try_shp(neutral, "sdbtnanm.shp");
+              store.sdwrnanm  = try_shp(neutral, "sdwrnanm.shp");
+              if (const MixEntry* ae = neutral.find(std::string("sdbtnanm.pal"))) {
+                  std::vector<uint8_t> ab = neutral.read(*ae);
+                  store.sdbtnanm_pal = ra2assets::Palette::load(ab.data(), ab.size());
+                  store.sdbtnanm_pal_ok = true;
+              } else std::cerr << "[menu-art] sdbtnanm.pal not found\n"; }
         catch (const std::exception& ex) { std::cerr << "[menu-art] neutral.mix: " << ex.what() << "\n"; }
         try { MixFile local = ra2.open_nested("local.mix");
               store.btn   = try_shp(local, "mnbttn.shp");
@@ -3758,6 +3778,12 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
                 store.shell_pal = ra2assets::Palette::load(sb.data(), sb.size());
                 store.shell_pal_ok = true;
             } else std::cerr << "[menu-art] shell.pal not found\n";
+            // [Task exact / §7.4] shell2.pal pairs with SDBTNBKGD + SDWRNANM.
+            if (const MixEntry* s2 = cache.find(std::string("shell2.pal"))) {
+                std::vector<uint8_t> s2b = cache.read(*s2);
+                store.shell2_pal = ra2assets::Palette::load(s2b.data(), s2b.size());
+                store.shell2_pal_ok = true;
+            } else std::cerr << "[menu-art] shell2.pal not found\n";
         } catch (const std::exception& ex) { std::cerr << "[menu-art] cache.mix: " << ex.what() << "\n"; }
         try { MixFile sidec = ra2.open_nested("sidec01.mix");
               store.dlg = try_shp(sidec, "bkgdlg.shp");
@@ -3790,9 +3816,15 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.sdtp          = store.sdtp.get();
     store.art.sdbtm         = store.sdbtm.get();
     store.art.sdbtnbkgd     = store.sdbtnbkgd.get();
+    store.art.sdbtnanm      = store.sdbtnanm.get();
+    store.art.sdwrnanm      = store.sdwrnanm.get();
     store.art.shell_pal     = store.shell_pal;
+    store.art.shell2_pal    = store.shell2_pal;
+    store.art.sdbtnanm_pal  = store.sdbtnanm_pal;
     store.art.mainbttn_pal  = store.mainbttn_pal;
     store.art.shell_pal_ok  = store.shell_pal_ok;
+    store.art.shell2_pal_ok = store.shell2_pal_ok;
+    store.art.sdbtnanm_pal_ok = store.sdbtnanm_pal_ok;
     store.art.mainbttn_pal_ok = store.mainbttn_pal_ok;
     store.art.ok       = (store.art.bg && store.art.pal);
     // FNT labels ENABLED: fnt.cpp now decodes the classic Westwood 8bpp glyph
@@ -3811,7 +3843,11 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               << " sdtp=" << (store.art.sdtp ? "y" : "n")
               << " sdbtm=" << (store.art.sdbtm ? "y" : "n")
               << " sdbtnbkgd=" << (store.art.sdbtnbkgd ? "y" : "n")
+              << " sdbtnanm=" << (store.art.sdbtnanm ? "y" : "n")
+              << " sdwrnanm=" << (store.art.sdwrnanm ? "y" : "n")
               << " shell_pal=" << (store.art.shell_pal_ok ? "y" : "n")
+              << " shell2_pal=" << (store.art.shell2_pal_ok ? "y" : "n")
+              << " sdbtnanm_pal=" << (store.art.sdbtnanm_pal_ok ? "y" : "n")
               << " mainbttn_pal=" << (store.art.mainbttn_pal_ok ? "y" : "n")
               << " ok=" << (store.art.ok ? "y" : "n") << "\n";
 }
@@ -3882,7 +3918,7 @@ struct ShellXform {
 void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const MenuArt& art,
                 const ShellXform& xf, const std::vector<ShellButton>& buttons,
                 int hover_ix, int pressed_ix, const std::string& header,
-                const std::string& version) {
+                const std::string& version, int monitor_frame) {
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
     const double canvas_scale = xf.s;
     // The ONE logical->device transform (shared verbatim with the hit-test).
@@ -3891,6 +3927,11 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
     };
     // Palette fallbacks (partial-install robustness).
     const ra2assets::Palette* shell_pal = (art.shell_pal_ok ? &art.shell_pal : art.pal);
+    // §7.4: SDBTNBKGD + SDWRNANM pair with SHELL2.PAL (fall back to shell.pal).
+    const ra2assets::Palette* shell2_pal = (art.shell2_pal_ok ? &art.shell2_pal : shell_pal);
+    // §7.2: SDBTNANM under its OWN sdbtnanm.pal (fall back to shell2, then shell).
+    const ra2assets::Palette* sdbtn_pal = (art.sdbtnanm_pal_ok ? &art.sdbtnanm_pal : shell2_pal);
+    // Popup-dialog button palette (mnbttn fallback path only).
     const ra2assets::Palette* btn_pal   = (art.mainbttn_pal_ok ? &art.mainbttn_pal
                                           : (art.shell_pal_ok ? &art.shell_pal : art.pal));
 
@@ -3912,30 +3953,78 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
     blit_layer("shell:bg_s", art.bg_s, 0, shell_pal, 0, 0, 472, 448);
     // 2. Bottom bar under the screen.
     blit_layer("shell:lwscrn", art.lwscrn, 0, shell_pal, 0, 448, 472, 32);
-    // 3. Sidebar top: metal panel + WARNING mini-monitor.
+    // 3. Sidebar top: metal panel + WARNING mini-monitor bezel (SDTP frame 0 has
+    //    the warning screen baked in; the animation draws INTO the hole on top).
     blit_layer("shell:sdtp", art.sdtp, 0, shell_pal, 472, 0, 168, 199);
+    // 3b. §7.3: animated WARNING monitor (SDWRNANM, shell2.pal) into ctrl-0x71C
+    //     hole at logical (508,47,92,53), current frame from the scene clock.
+    //     Null-guarded: absent SHP/pal simply leaves SDTP's baked screen showing.
+    if (art.sdwrnanm && shell2_pal && art.sdwrnanm->count() > 0) {
+        int mf = ((monitor_frame % art.sdwrnanm->count()) + art.sdwrnanm->count())
+                 % art.sdwrnanm->count();
+        SDL_Texture* mt = shp_frame_tex(tc, "shell:sdwrn" + std::to_string(mf),
+                                        *art.sdwrnanm, mf, *shell2_pal);
+        if (mt) {
+            SDL_SetTextureColorMod(mt, 255, 255, 255);
+            SDL_Rect md = dev(508, 47, 92, 53);
+            SDL_RenderCopy(ren, mt, nullptr, &md);
+        }
+    }
     // 4. Sidebar bottom: V-console + cables (bottom-anchored).
     blit_layer("shell:sdbtm", art.sdbtm, 0, shell_pal, 472, 415, 168, 65);
-    // 5. Per-button metal slice (168x42) behind each button row.
-    for (const ShellButton& b : buttons)
-        blit_layer("shell:sdbtnbkgd", art.sdbtnbkgd, 0, shell_pal, 472, b.rect.y - 2, 168, 42);
 
-    // 6. Buttons: mnbttn frame 0=up / 1=hover / 2=down under mainbttn.pal,
-    //    stretched to each 162x37 rect. Greyed buttons: frame 0, dimmed.
+    // 5. Sidebar button grid (§7.2). SDBTNBKGD (shell2.pal) tiles all 6 grid rows
+    //    — this fills the 12px metal strip left of each 156px button AND any empty
+    //    sub-page row. Empty rows additionally get SDBTNANM frame 10 (empty socket).
+    bool row_used[6] = { false, false, false, false, false, false };
+    for (const ShellButton& b : buttons) {
+        const int r = (b.rect.y - 199) / 42;
+        if (r >= 0 && r < 6) row_used[r] = true;
+    }
+    for (int r = 0; r < 6; ++r) {
+        const int ry = 199 + 42 * r;
+        blit_layer("shell:sdbtnbkgd", art.sdbtnbkgd, 0, shell2_pal, 472, ry, 168, 42);
+        if (!row_used[r] && art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 10) {
+            SDL_Texture* et = shp_frame_tex(tc, "shell:sdbtn10", *art.sdbtnanm, 10, *sdbtn_pal);
+            if (et) {
+                SDL_SetTextureColorMod(et, 255, 255, 255);
+                SDL_Rect ed = dev(484, ry, 156, 42);
+                SDL_RenderCopy(ren, et, nullptr, &ed);
+            }
+        }
+    }
+
+    // 6. Buttons (§7.2): SDBTNANM frame 2=normal / 3=hover / 4=pressed under
+    //    sdbtnanm.pal, blitted 1:1 at native 156x42 (NO stretch). Disabled buttons
+    //    render frame 2 dimmed. Fallback to the old stretched mnbttn (states 0/1/2)
+    //    only if SDBTNANM is absent; label-only if neither SHP is present.
     for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
         const ShellButton& b = buttons[i];
-        if (!art.btn) continue;                        // label-only if SHP absent
-        int frame = 0;
-        if (b.enabled && i == pressed_ix)    frame = 2;
-        else if (b.enabled && i == hover_ix) frame = 1;
-        if (frame >= art.btn->count()) frame = 0;
-        SDL_Texture* bt = shp_frame_tex(tc, "shell:btn" + std::to_string(frame),
-                                        *art.btn, frame, *btn_pal);
-        if (!bt) continue;
-        if (b.enabled) SDL_SetTextureColorMod(bt, 255, 255, 255);
-        else           SDL_SetTextureColorMod(bt, 120, 120, 130);   // disabled = dimmed
-        SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
-        SDL_RenderCopy(ren, bt, nullptr, &d);
+        if (art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 0) {
+            int frame = 2;                                       // normal
+            if (b.enabled && i == pressed_ix)    frame = 4;      // yellow-hot
+            else if (b.enabled && i == hover_ix) frame = 3;      // orange glow
+            if (frame >= art.sdbtnanm->count()) frame = 0;
+            SDL_Texture* bt = shp_frame_tex(tc, "shell:sdbtn" + std::to_string(frame),
+                                            *art.sdbtnanm, frame, *sdbtn_pal);
+            if (!bt) continue;
+            if (b.enabled) SDL_SetTextureColorMod(bt, 255, 255, 255);
+            else           SDL_SetTextureColorMod(bt, 120, 120, 130);   // disabled = dimmed
+            SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
+            SDL_RenderCopy(ren, bt, nullptr, &d);
+        } else if (art.btn) {                                    // legacy mnbttn fallback
+            int frame = 0;
+            if (b.enabled && i == pressed_ix)    frame = 2;
+            else if (b.enabled && i == hover_ix) frame = 1;
+            if (frame >= art.btn->count()) frame = 0;
+            SDL_Texture* bt = shp_frame_tex(tc, "shell:btn" + std::to_string(frame),
+                                            *art.btn, frame, *btn_pal);
+            if (!bt) continue;
+            SDL_SetTextureColorMod(bt, b.enabled ? 255 : 120, b.enabled ? 255 : 120,
+                                   b.enabled ? 255 : 130);
+            SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
+            SDL_RenderCopy(ren, bt, nullptr, &d);
+        }
     }
 
     // 7. CRT screen content. The ORIGINAL menu plays a looping VQA movie
@@ -3956,17 +4045,22 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
         const ra2assets::Font& f = *art.font;
         const int lbl_scale = std::max(1, static_cast<int>(std::lround(canvas_scale)));
         const int hdr_scale = std::max(1, static_cast<int>(std::floor(canvas_scale)));
-        auto centered = [&](const std::string& s, int lx, int ly, int lw, int lh, int gscale) {
+        // ldx/ldy = LOGICAL label shift (0 normally; §7.2 pressed = +2,+5).
+        auto centered = [&](const std::string& s, int lx, int ly, int lw, int lh,
+                            int gscale, int ldx = 0, int ldy = 0) {
             SDL_Rect box = dev(lx, ly, lw, lh);
             int tw = fnt_text_width(f, s) * gscale;
             while (gscale > 1 && tw > box.w) { --gscale; tw = fnt_text_width(f, s) * gscale; }
             const int th = f.height() * gscale;
-            const int tx = box.x + (box.w - tw) / 2;
-            const int ty = box.y + (box.h - th) / 2;
+            const int tx = box.x + (box.w - tw) / 2 + static_cast<int>(std::lround(ldx * canvas_scale));
+            const int ty = box.y + (box.h - th) / 2 + static_cast<int>(std::lround(ldy * canvas_scale));
             draw_fnt_text(ren, tc, f, *art.font_pal, s, tx, ty, "shf:", gscale);
         };
-        for (const ShellButton& b : buttons) {
-            centered(b.label, b.rect.x, b.rect.y, b.rect.w, b.rect.h, lbl_scale);
+        for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
+            const ShellButton& b = buttons[i];
+            const bool pressed = (i == pressed_ix);
+            centered(b.label, b.rect.x, b.rect.y, b.rect.w, b.rect.h, lbl_scale,
+                     pressed ? 2 : 0, pressed ? 5 : 0);
             if (!b.enabled) {                          // dark veil conveys disabled
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
                 SDL_SetRenderDrawColor(ren, 16, 16, 20, 120);
@@ -4042,49 +4136,55 @@ private:
             default:            return "Main Menu";
         }
     }
-    // [mainmenu_true.md §3] The button column for THIS page, in LOGICAL 640x480
-    // space -- the SINGLE source of truth for both render() and handle(). Right
-    // column at x=476/477, first row y=198, ~44px pitch; Back always at y=418.
-    // Greyed (enabled=false) buttons render dimmed and are NOT hit-tested.
+    // [mainmenu_true.md §7.2] The button column for THIS page, in LOGICAL 640x480
+    // space -- the SINGLE source of truth for both render() and handle(). Per §7
+    // the shell buttons are SDBTNANM frames at NATIVE 156x42, flush to the right
+    // screen edge (x = 640-156 = 484), first row at y = SDTP.cy = 199, row pitch
+    // = SDBTNBKGD.cy = 42 (rows y = 199,241,283,325,367,409), 6 rows at 640x480.
+    // Back always occupies the bottom (6th) grid row; intermediate empty rows are
+    // drawn by draw_shell as SDBTNANM frame-10 sockets. Greyed (enabled=false)
+    // buttons render dimmed frame 2 and are NOT hit-tested.
+    static constexpr int kBtnX = 484, kBtnW = 156, kBtnH = 42;
+    static int rowY(int k) { return 199 + 42 * k; }
     std::vector<ShellButton> layout() const {
-        auto go   = [](int x, int y, const char* s, bool en, ShellPage t) {
-            return ShellButton{ {x, y, 162, 37}, s, en, ACT_GOTO, t }; };
+        auto btn = [](int row, const char* s, bool en, int act, ShellPage t) {
+            return ShellButton{ {kBtnX, rowY(row), kBtnW, kBtnH}, s, en, act, t }; };
         switch (page_) {
             case PAGE_SINGLE:   // dialog 0x100
                 return {
-                    { {476, 198, 162, 37}, "New Campaign",    true,  ACT_GOTO,     PAGE_CAMPAIGN },
-                    { {476, 242, 162, 37}, "Load Saved Game", false, ACT_GOTO,     PAGE_MAIN     },
-                    { {476, 286, 162, 37}, "Skirmish",        true,  ACT_SKIRMISH, PAGE_MAIN     },
-                    go(476, 418, "Back", true, PAGE_MAIN),
+                    btn(0, "New Campaign",    true,  ACT_GOTO,     PAGE_CAMPAIGN),
+                    btn(1, "Load Saved Game", false, ACT_GOTO,     PAGE_MAIN),
+                    btn(2, "Skirmish",        true,  ACT_SKIRMISH, PAGE_MAIN),
+                    btn(5, "Back",            true,  ACT_GOTO,     PAGE_MAIN),
                 };
             case PAGE_MOVIES:   // dialog 0x101
                 return {
-                    { {476, 198, 162, 37}, "Sneak Peeks",  false, ACT_GOTO, PAGE_MAIN },
-                    { {476, 242, 162, 37}, "Play Movies",  false, ACT_GOTO, PAGE_MAIN },
-                    { {476, 286, 162, 37}, "View Credits", false, ACT_GOTO, PAGE_MAIN },
-                    go(476, 418, "Back", true, PAGE_MAIN),
+                    btn(0, "Sneak Peeks",  false, ACT_GOTO, PAGE_MAIN),
+                    btn(1, "Play Movies",  false, ACT_GOTO, PAGE_MAIN),
+                    btn(2, "View Credits", false, ACT_GOTO, PAGE_MAIN),
+                    btn(5, "Back",         true,  ACT_GOTO, PAGE_MAIN),
                 };
             case PAGE_OPTIONS:  // dialog 0xD5 (sliders not required; labels greyed)
                 return {
-                    { {476, 198, 162, 37}, "Sound",    false, ACT_GOTO, PAGE_MAIN },
-                    { {476, 242, 162, 37}, "Keyboard", false, ACT_GOTO, PAGE_MAIN },
-                    { {476, 286, 162, 37}, "Display",  false, ACT_GOTO, PAGE_MAIN },
-                    go(477, 418, "Back", true, PAGE_MAIN),
+                    btn(0, "Sound",    false, ACT_GOTO, PAGE_MAIN),
+                    btn(1, "Keyboard", false, ACT_GOTO, PAGE_MAIN),
+                    btn(2, "Display",  false, ACT_GOTO, PAGE_MAIN),
+                    btn(5, "Back",     true,  ACT_GOTO, PAGE_MAIN),
                 };
             case PAGE_CAMPAIGN: // dialog 0x94 (greyed placeholder this task)
                 return {
-                    { {476, 198, 162, 37}, "Allied Campaign", false, ACT_GOTO, PAGE_SINGLE },
-                    { {476, 242, 162, 37}, "Soviet Campaign", false, ACT_GOTO, PAGE_SINGLE },
-                    go(476, 418, "Back", true, PAGE_SINGLE),
+                    btn(0, "Allied Campaign", false, ACT_GOTO, PAGE_SINGLE),
+                    btn(1, "Soviet Campaign", false, ACT_GOTO, PAGE_SINGLE),
+                    btn(5, "Back",            true,  ACT_GOTO, PAGE_SINGLE),
                 };
             default:            // PAGE_MAIN, dialog 0xE2
                 return {
-                    { {476, 198, 162, 37}, "Single Player",    true,  ACT_GOTO, PAGE_SINGLE  },
-                    { {476, 242, 162, 37}, "Internet",         false, ACT_GOTO, PAGE_MAIN    },
-                    { {476, 286, 162, 37}, "Network",          false, ACT_GOTO, PAGE_MAIN    },
-                    { {476, 330, 162, 37}, "Movies & Credits", true,  ACT_GOTO, PAGE_MOVIES  },
-                    { {477, 374, 162, 37}, "Options",          true,  ACT_GOTO, PAGE_OPTIONS },
-                    { {477, 418, 162, 37}, "Exit Game",        true,  ACT_QUIT, PAGE_MAIN    },
+                    btn(0, "Single Player",    true,  ACT_GOTO, PAGE_SINGLE),
+                    btn(1, "Internet",         false, ACT_GOTO, PAGE_MAIN),
+                    btn(2, "Network",          false, ACT_GOTO, PAGE_MAIN),
+                    btn(3, "Movies & Credits", true,  ACT_GOTO, PAGE_MOVIES),
+                    btn(4, "Options",          true,  ACT_GOTO, PAGE_OPTIONS),
+                    btn(5, "Exit Game",        true,  ACT_QUIT, PAGE_MAIN),
                 };
         }
     }
@@ -4096,6 +4196,15 @@ private:
     bool         down_ = false;        // left button currently held (pressed state)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
+    // [Task exact / §7.3] WARNING-monitor animation clock. update(dt) advances
+    // accum_; the current SDWRNANM frame = floor(accum_/FRAME_DT) % 91. FRAME_DT
+    // ~= 0.012s => ~1.1s loop (§7: SetTimer clamped to ~10-16ms/tick).
+    static constexpr double kMonFrameDt = 0.012;
+    static constexpr int    kMonFrames  = 91;
+    double       mon_accum_ = 0.0;
+    int monitor_frame() const {
+        return static_cast<int>(mon_accum_ / kMonFrameDt) % kMonFrames;
+    }
 };
 
 // The main-menu entry is just a ShellScene on PAGE_MAIN. Existing call sites
@@ -4108,7 +4217,9 @@ using MainMenuScene = ShellScene;
 // GameScene (this scene is destroyed -> nobody pumps -> the ~200ms SDL queue
 // drains). [RE: mainmenu.md §4]
 void MainMenuScene::update(double dt) {
-    (void)dt;
+    // [Task exact / §7.3] Advance the WARNING-monitor animation clock every frame
+    // (the scene driver calls update()+render() per frame, so it loops live).
+    mon_accum_ += dt;
     if (!art_.audio || !art_.audio->sys.enabled || !art_.audio->sys.mixer) return;
     if (art_.audio->sys.mixer->active_voices() == 0)
         art_.audio->sys.mixer->play("menu:grinder");
@@ -4160,7 +4271,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
                                ? hover_ix : -1;
 
     draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
-               header(), "v1.006");
+               header(), "v1.006", monitor_frame());
 }
 
 // [RE: skirmish.md §1/§3, D6] Exposes the recovered lobby subset (T1 item 1):
