@@ -1301,6 +1301,116 @@ recovered `multihouse.md` ground truth — not bugs, do not "fix" in review):
   existing demo configures alliances, so no existing hash changes [`multihouse.md`
   §1; spec §Data model].
 
+## Skirmish Shell + Main Menu
+
+The Skirmish Shell phase turns the hardwired scenario into a config-driven local
+skirmish, fronted by a real main menu. The data model is two plain structs
+(`engine/skirmish.hpp`): a `SkirmishSlot` — `{ World::Side side; int color_ix;
+std::string country; int alliance_team; bool combatant; bool is_ai; AiDifficulty
+diff; }`, whose first five fields map 1:1 into the LIVE `World::HouseRec` while
+`is_ai`/`diff` drive `enable_ai_house` — and a `SkirmishConfig` carrying the
+shipped `[MultiplayerDialogSettings]` defaults recovered in Task 1:
+`starting_cash = 10000` (slider range 5000–10000), `unit_count = 10` (0–10, the
+extra starting units beyond the MCV), `tech_level = 10` (1–10), `shroud = true`
+(always-on this phase), `crates = false`, `superweapons = true`,
+`short_game = true`, and a single static `map_id = "mapsmd03"`; AI difficulty is
+the recovered 0/1/2 = Easy/Normal/Difficult index. `alliance_team = -1` is the
+FFA sentinel (a slot allied only with itself). GameSpeed is deliberately NOT a
+field (see Deviations).
+
+The launch path splits along the same pure-core / asset-wrapper line the
+Multi-house and Economy phases used. The pure, host-testable core lives in
+`engine/skirmish.cpp`: `configure_skirmish_houses(World&, const SkirmishConfig&)`
+applies the config's house table + toggles + per-house credit seed to a `World`
+using ONLY existing `World` APIs — `set_house(i, HouseRec{side, color_ix,
+country, alliance_team, combatant})` per slot, then `enable_shroud` /
+`enable_ally_reveal` / `enable_victory(true, short_game)`, a
+`grant_credits_for_test(i, starting_cash)` seed per combatant, and
+`enable_ai_house(i, {difficulty})` per AI slot (a minimal config that makes
+`ai_enabled(i)==true`); it never spawns anything, so it is fully unit-tested on a
+hand-built `World`. `default_skirmish_config(const Rules&)` returns the 1v1
+quick-start (slot 0 Allied human, slot 1 Soviet AI Normal, slot 2 Neutral
+non-combatant; `starting_cash = rules.mp_money()`) reproducing exactly the world
+the old `run_interactive` built. The asset-dependent `launch_skirmish(cfg,
+Assets&, UnitAssets&, BuildingAssets&, Rules&)` stays in `main.cpp` (it needs the
+main-local asset statics): it `build_world`s, calls `configure_skirmish_houses`,
+then per-slot spawns a base (`spawn_base`) + `unit_count` starting units + an MCV,
+re-calls `enable_ai_house` with the full roster-backed `make_ai_config` per AI
+slot (last-call-wins overwrite of the minimal config), and grants each combatant
+its superweapon — the Allied Construction Yard being the only base type spawned
+this phase.
+
+The front-end is a small `Scene` framework: an abstract `Scene`
+(`handle`/`update`/`render`/`next`/`wants_quit`) driven by `run_scene_driver`,
+with three subclasses — `MainMenuScene`, `SkirmishSetupScene`, and `GameScene`
+(a verbatim lift of the old `run_interactive` body with the scenario replaced by
+`launch_skirmish`). The menu → setup → game flow: the main menu shows Skirmish
+and Quit live with the other entries (Campaign, Multiplayer, Load, Options,
+Movies, Credits) drawn as greyed stubs; Skirmish opens the setup screen (per-slot
+side/color/AI-difficulty, cash/unit-count/tech sliders, alliance teams); Start
+builds a `SkirmishConfig` and hands it to `GameScene`, which calls
+`launch_skirmish`. The framework is wired only at the two NON-gate `main()`
+seams — the gate-dispatch ladder (all seventeen `--demo-*` arms) runs and returns
+FIRST, so no gate ever constructs a `Scene`. Text is drawn by the in-house
+`engine/rectfont` module: an A–Z (+0–9) 5×7 glyph table extending the existing
+`kDigits`/`draw_number` bit-per-pixel technique, exposed as `glyph_rows(char)`
+and `draw_text(...)`, with no external font dependency (honoring
+`iso_renderer.hpp`'s "REUSE only, no new font systems").
+
+Byte-identity discipline is the same as every prior phase: `world_hash` is
+**untouched** — the launcher adds no `World` field, and scenes/font/config are a
+pure UI/config layer none of the seventeen hashes read. No gate configures a
+skirmish through the menu; the new `--demo-skirmish` gate drives a FIXED
+`SkirmishConfig` straight through `launch_skirmish` (not the interactive scenes),
+so the sixteen legacy gates were re-verified byte-identical at Tasks 3/4/6 and
+again at this finalize, and `--demo-skirmish` pins `skirmish_hash=e9ad3f1fd88495f9`.
+Calibration authority: `docs/re/skirmish.md` (lobby settings + ranges §1, menu
+structure §2, config→launch architecture §3, GameSpeed/pacing §4, UI/rect-font
+§UI).
+
+Deviations we take for the Skirmish Shell (adjudicated divergences from the
+recovered `skirmish.md` ground truth — not bugs, do not "fix" in review):
+- **Config-driven launch replaces the hardcoded scenario** — `SkirmishConfig` →
+  `launch_skirmish` → `World`; `run_interactive` is now a thin
+  `default_skirmish_config()` → `GameScene` wrapper; the launcher only calls
+  existing `World` APIs and is purely additive [`skirmish.md` §3; spec
+  §Architecture B].
+- **GameSpeed is presentation-only** — our fixed deterministic `dt = 1/15` step
+  is unchanged; `GameSpeed` is NOT stored in `SkirmishConfig` and cannot alter
+  `world_hash`; the setup screen omits it this phase; `GameSpeedBias=1.6`
+  movement reconciliation is a carry-forward (movement gates already calibrated)
+  [`skirmish.md` §4].
+- **The 5 DESUPPORTED lobby keys are hidden** — `Bases`/`ShadowGrow`/
+  `CaptureTheFlag`/`HarvesterTruce`/`MultiEngineer` parse in the rules schema but
+  were cut in retail YR; the setup screen never surfaces them [`skirmish.md` §1].
+- **Single static map (`mapsmd03`)** — no MIX map enumeration path exists; a map
+  browser + `.mpr`/`.map`/`.yrm` parsing is a carry-forward; the map's
+  start-waypoint count caps the slot count [`skirmish.md` §1/§3].
+- **Minimal in-house rect-font (no font system)** — `engine/rectfont` extends the
+  existing `kDigits` 5×7 technique with an A–Z glyph table + `draw_text`; no
+  external font dependency (honors `iso_renderer.hpp:227` "REUSE only, no new font
+  systems") [`skirmish.md` §UI].
+- **Allied Construction Yard only at spawn** — `launch_skirmish` spawns the Allied
+  ConYard base type for every slot this phase; a per-country/side base-unit spawn
+  table is a carry-forward [`skirmish.md` §3].
+- **The menu is interactive, not hashed** — `MainMenuScene`/`SkirmishSetupScene`/
+  `GameScene` are UI, exercised by boot-alive + build + screenshots, NOT by a
+  determinism gate; only the config→launch path (`--demo-skirmish`) is hashed
+  [`skirmish.md` §2].
+- **Skirmish-first menu; the rest are stubs** — Campaign/Multiplayer-net/Load/
+  Options/Movies/Credits are greyed menu stubs; Skirmish is a local MP match with
+  AI-filled slots and no netcode [`skirmish.md` §2].
+- **Carry-forwards (documented, not implemented):** map browser / MIX
+  enumeration; campaign; multiplayer networking; load/save; options persistence;
+  map editor; movies/credits; GameSpeed pacing control + GameSpeedBias movement
+  reconciliation; full country roster / Yuri side; multi-human input; in-game
+  alliance-request UI; per-house on-screen color rendering; skirmish-preset
+  save/load [`skirmish.md` §1/§2/§3/§4; spec §Scope/non-goals].
+- **Skirmish state is additive + excluded from `world_hash`** —
+  `SkirmishConfig`/scenes/font are UI/config-layer; the launcher adds no `World`
+  field; no gate configures a skirmish, so no existing hash changes
+  [`skirmish.md` §1; spec §Data model].
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -1539,6 +1649,16 @@ Headless/verification CLI modes (render one or more frames and exit):
   identical witnesses + hash; wedge guards exit non-zero unless allies don't
   fight AND the enemy is acquired AND AllyReveal shares sight AND the eliminated
   house is marked defeated AND the surviving team wins.
+- `ra2engine.exe --demo-skirmish` — the Skirmish Shell integration gate: builds
+  a FIXED SkirmishConfig (3 combatant slots in 2 alliance-teams, houses 0+2 vs 1,
+  plus a neutral non-combatant), launches it via launch_skirmish, enables shroud +
+  victory + superweapons, then steps N fixed dt=1/15 frames. Hashes per-house
+  alive building+unit counts + ai_enabled flags + credits + a per-pair
+  relationship sample + winning_team at fixed checkpoints (skirmish_hash). Runs
+  twice (rendered + headless); both runs must produce identical witnesses + hash;
+  wedge guards exit non-zero unless launch_skirmish produced the expected
+  house_count AND the AI slot is enabled AND victory+shroud are enabled AND the
+  sim advanced deterministically.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -1546,16 +1666,16 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These sixteen headless demos are byte-identity regression gates: any change to
+These seventeen headless demos are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
 again with each subsequent roster addition — `roster=20` as of the Engineer/Spy
 Capture phase (the `CAOILD` oil derrick; `roster=19` was the CB-5 Battle Lab
-`GATECH`) — with the gated hash unaffected each time). The first FIFTEEN are the
-legacy gates re-verified unchanged by every subsequent phase; `--demo-multihouse`
-is the new Multi-house / Alliances gate.
+`GATECH`) — with the gated hash unaffected each time). The first SIXTEEN are the
+legacy gates re-verified unchanged by every subsequent phase; `--demo-skirmish`
+is the new Skirmish Shell + Main Menu gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -1575,6 +1695,7 @@ is the new Multi-house / Alliances gate.
 | `--demo-capture` | `capture_hash=58b87b5bc63f7046` | `deterministic=yes`; engineer capture (`ChangeOwner` flip + SW move + AI base-node resync + startup-from-neutral) of an enemy building AND a neutral `CAOILD` (Startup 1000, Amount 20 / Delay 100f); spy infiltrate (cash-steal 0.5×, power-blackout 1000f, SW recharge reset, factory→produced `veteran_rank=1` ×1.1 firepower/×1.5 armor, radar/lab inert); disguise + dog `DetectDisguise` reveal (spy stays disguised on attack — PermaDisguise); nine wedge guards armed (`docs/re/capture.md`) |
 | `--demo-shroud` | `shroud_hash=d302852aa9517661` | `deterministic=yes`; per-house visibility (near-circular Sight reveal, dx2+dy2<=sight2, cap 10), fog no-regrow (explored sticky), fogged-enemy untargetable (seen_by_mask), spy->enemy-radar reshroud (RadarLab), SpySat reveal-all; wedge guards armed (`docs/re/shroud.md`) |
 | `--demo-multihouse` | `multihouse_hash=39412ae996cce8ae` | `deterministic=yes`; N-player HouseRec table + alliances (is_enemy/are_allied, FFA default a!=b), AllyReveal shared sight, last-team-standing victory (ShortGame=last-building), per-house side/color (8 MP colors); wedge guards armed (`docs/re/multihouse.md`) |
+| `--demo-skirmish` | `skirmish_hash=e9ad3f1fd88495f9` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, two alliance-teams + neutral; wedge guards armed (`docs/re/skirmish.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
