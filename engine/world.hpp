@@ -814,6 +814,13 @@ public:
     bool are_allied(int a, int b) const;
     bool is_enemy(int a, int b) const;
 
+    // AllyReveal [RE: multihouse.md §3, D4]: allied houses share revealed shroud.
+    // Firewalled behind houses_configured_ + shroud_any_ -> OFF in every gate.
+    // Default true (matches rules AllyReveal=yes) but only ACTIVE when alliances
+    // are configured AND shroud is enabled. NOT hashed.
+    void enable_ally_reveal(bool on) { ally_reveal_ = on; }
+    bool ally_reveal_ = true;
+
     // --- Engineer/Spy Capture phase [RE: capture.md] ------------------------
     // Ownership transfer (Approach A) [RE: capture.md §A3 CONFIRMED]: flip
     // buildings_[b_idx].house to new_house -> power/economy/buildability/sidebar

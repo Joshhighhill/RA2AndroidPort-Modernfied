@@ -4152,3 +4152,49 @@ TEST_CASE("World multihouse: is_enemy/are_allied truth table [RE: multihouse.md 
     CHECK(world.is_enemy(0, 1));                          // cross-team enemy
     CHECK(world.is_enemy(3, 1));
 }
+
+// --- Multi-house / Alliances phase, Task 5 [RE: multihouse.md §3] ------------
+// AllyReveal: allied houses share revealed shroud. NOTE (deviation from brief):
+// the brief calls a hand-built `make_test_world()` helper; no such helper exists
+// in-tree and MapFile cannot inject cells, so these use the SAME real-map fixture
+// every other World shroud test uses (executes with RA2_INSTALL_DIR set).
+TEST_CASE("World multihouse: AllyReveal shares explored/visible between allies [RE: multihouse.md §3]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    REQUIRE(world.grid_w() > 16);
+    REQUIRE(world.grid_h() > 16);
+    // Houses 0 and 1 allied (team 0); house 1 has no vision source of its own here.
+    world.set_house(0, {ra2engine::World::Side::Allied, 5, "", 0, true});
+    world.set_house(1, {ra2engine::World::Side::Allied, 6, "", 0, true});   // ally of 0
+    world.set_house(2, {ra2engine::World::Side::Soviet, 1, "", 2, true});   // enemy
+    world.enable_shroud(true);
+    world.enable_ally_reveal(true);
+    ra2engine::UnitCombat c; c.image = "E1"; c.strength = 100; c.armor = "none"; c.sight = 5;
+    world.add_combat_unit(8, 8, /*house=*/0, c);              // only house 0 has a scout
+    world.step_visibility();
+    CHECK(world.visible_at(0, 8, 8));                         // house 0 sees its scout
+    CHECK(world.visible_at(1, 8, 8));                         // ally house 1 SHARES it
+    CHECK(world.explored_at(1, 8, 8));
+    CHECK_FALSE(world.visible_at(2, 8, 8));                   // enemy does NOT share
+}
+
+TEST_CASE("World multihouse: AllyReveal inert when unconfigured (shroud gate contract) [RE: multihouse.md §3]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    REQUIRE(world.grid_w() > 16);
+    REQUIRE(world.grid_h() > 16);
+    world.enable_shroud(true);                                // shroud on, alliances NOT configured
+    ra2engine::UnitCombat c; c.image = "E1"; c.strength = 100; c.armor = "none"; c.sight = 5;
+    world.add_combat_unit(8, 8, /*house=*/0, c);
+    world.step_visibility();
+    CHECK(world.visible_at(0, 8, 8));
+    CHECK_FALSE(world.visible_at(1, 8, 8));                   // no sharing (houses_configured_ false)
+}

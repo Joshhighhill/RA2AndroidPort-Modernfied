@@ -1669,6 +1669,28 @@ void World::step_visibility() {
     // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
     for (int h = 0; h < house_count(); ++h)
         if (map_reveal_[h]) reveal_all_house(h);
+    // AllyReveal [RE: multihouse.md §3, D4]: OR-merge allied houses' explored_/
+    // visible_ (shroud sharing) AFTER per-house sight + seen_by_mask are computed,
+    // so targeting still uses each house's OWN sight (seen_by_mask), while
+    // rendering/reveal reflects shared sight. Firewalled: OFF unless alliances are
+    // configured AND AllyReveal is on. Snapshot-then-merge = order-independent.
+    if (houses_configured_ && ally_reveal_) {
+        const int n = house_count();
+        const std::vector<std::vector<std::uint8_t>> exp_src = explored_;   // snapshot
+        const std::vector<std::vector<std::uint8_t>> vis_src = visible_;
+        for (int a = 0; a < n; ++a) {
+            if (a >= (int)explored_.size() || explored_[a].empty()) continue;
+            for (int b = 0; b < n; ++b) {
+                if (a == b || !are_allied(a, b)) continue;
+                if (b >= (int)exp_src.size() || exp_src[b].size() != explored_[a].size()) continue;
+                for (size_t i = 0; i < explored_[a].size(); ++i) {
+                    explored_[a][i] |= exp_src[b][i];
+                    if (!visible_[a].empty() && vis_src[b].size() == visible_[a].size())
+                        visible_[a][i] |= vis_src[b][i];
+                }
+            }
+        }
+    }
 }
 
 void World::ai_resync_captured_building(int b_idx, int old_house, int new_house) {
