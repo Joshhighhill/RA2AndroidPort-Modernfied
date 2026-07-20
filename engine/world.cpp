@@ -287,6 +287,12 @@ bool terrain_screen_bounds(const ra2assets::MapFile& map, int& min_x, int& min_y
 // returns it unchanged; house 0 (Allied) rescales each ramp entry's ORIGINAL
 // brightness (average of its own r/g/b, integer division) onto a blue ramp
 // instead, preserving alpha. Integer math throughout -> deterministic.
+// Multi-house / Alliances phase [RE: multihouse.md §1]: named MP-color indices
+// (into the 8 MP colors). Consulted ONLY when houses_configured_ (render-only,
+// unhashed), so any two distinct valid 0..7 values are acceptable.
+constexpr int kMpColorBlue = 2;
+constexpr int kMpColorRed  = 1;
+
 ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house) {
     ra2assets::Palette out = unit_pal;
     if (house == 1) return out;  // Soviet: native red ramp, unchanged
@@ -310,6 +316,61 @@ World::World(const ra2assets::MapFile& map) : map_(&map) {
     // section) so ore() is always valid; set_economy gates whether it ever
     // steps (byte-identity guard -- see types_'s comment in world.hpp).
     ore_ = OreField::from_map(map, grid_w_, grid_h_);
+    // Multi-house / Alliances phase [RE: multihouse.md §1]: populate the 3
+    // default houses so house_count()==3 and today's world is reproduced. The
+    // firewall (houses_configured_) stays FALSE -> accessors use today's
+    // derivation -> byte-identical. NOT hashed.
+    ensure_houses_default();
+}
+
+// --- Multi-house / Alliances phase [RE: multihouse.md §1] -------------------
+void World::ensure_houses_default() {
+    if (!houses_.empty()) return;
+    houses_.resize(3);
+    houses_[0] = HouseRec{Side::Allied,  kMpColorBlue, "", 0, true};
+    houses_[1] = HouseRec{Side::Soviet,  kMpColorRed,  "", 1, true};
+    houses_[2] = HouseRec{Side::Neutral, kMpColorBlue, "", 2, false};
+    // houses_configured_ stays FALSE -> accessors use today's derivation.
+}
+
+void World::grow_house_arrays(int /*n*/) {
+    // Task 3 stub: resizes the six per-house vectors + house_defeated_ here.
+}
+
+World::Side World::house_side(int h) const {
+    if (!houses_configured_) return (h == 1) ? Side::Soviet : Side::Allied;  // today's derivation
+    if (h < 0 || h >= (int)houses_.size()) return Side::Allied;
+    return houses_[h].side;
+}
+
+int World::house_color(int h) const {
+    if (!houses_configured_) return (h == 1) ? kMpColorRed : kMpColorBlue;   // today's red/blue
+    if (h < 0 || h >= (int)houses_.size()) return kMpColorBlue;
+    return houses_[h].color_ix;
+}
+
+int World::house_team(int h) const {
+    if (h < 0 || h >= (int)houses_.size()) return h;   // unknown -> own id
+    const int t = houses_[h].alliance_team;
+    return (t < 0) ? h : t;                             // sentinel -> own id (FFA)
+}
+
+bool World::house_combatant(int h) const {
+    if (h < 0 || h >= (int)houses_.size()) return true;   // unknown -> combatant (inert)
+    return houses_[h].combatant;
+}
+
+void World::set_house(int h, HouseRec rec) {
+    if (h < 0) return;
+    ensure_houses_default();
+    if (h >= (int)houses_.size()) {
+        const int old = (int)houses_.size();
+        houses_.resize(h + 1);
+        for (int i = old; i <= h; ++i) houses_[i] = HouseRec{};   // default combatant
+        grow_house_arrays((int)houses_.size());   // T3: resize the six vectors + house_defeated_
+    }
+    houses_[h] = rec;
+    houses_configured_ = true;   // open the firewall
 }
 
 bool World::walkable(int x, int y) const {

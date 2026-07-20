@@ -4045,3 +4045,39 @@ TEST_CASE("World shroud: SpySat building reveals the whole map + protects vs sab
     world.reshroud_house(0);                               // sabotage SUPPRESSED (latched)
     CHECK(world.explored_at(0, 0, 0));                     // still revealed
 }
+
+// --- Multi-house / Alliances phase, Task 2 [RE: multihouse.md §1] -----------
+// NOTE (deviation from brief): the brief calls a `make_test_world()` helper, but
+// no such helper exists in-tree and MapFile cannot inject cells. HouseRec and its
+// accessors are map-independent (pure table + derivation), so these use a
+// default-constructed MapFile -> host-only, no RA2_INSTALL_DIR needed.
+TEST_CASE("World multihouse: HouseRec defaults reproduce today's 0/1/2 world [RE: multihouse.md §1]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    CHECK(world.house_count() == 3);
+    // Defaults (houses_configured_ == false -> today's derivation):
+    CHECK(world.house_side(0) == ra2engine::World::Side::Allied);
+    CHECK(world.house_side(1) == ra2engine::World::Side::Soviet);   // the hashed spawn branch
+    CHECK(world.house_side(2) == ra2engine::World::Side::Allied);   // !=1 -> Allied
+    CHECK(world.house_combatant(0));
+    CHECK(world.house_combatant(1));
+    CHECK_FALSE(world.houses_configured());
+    // alliance_team sentinel resolves to own id (FFA) before configure:
+    CHECK(world.house_team(0) == 0);
+    CHECK(world.house_team(1) == 1);
+    CHECK(world.house_team(2) == 2);
+}
+
+TEST_CASE("World multihouse: set_house opens the firewall + grows the table [RE: multihouse.md §1/D1]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    // Configure houses 0+3 onto team 7 (FFA otherwise), house 3 is new (grows).
+    world.set_house(0, {ra2engine::World::Side::Allied, 5, "Americans", 7, true});
+    world.set_house(3, {ra2engine::World::Side::Soviet, 1, "Russians", 7, true});
+    CHECK(world.houses_configured());
+    CHECK(world.house_count() == 4);
+    CHECK(world.house_side(3) == ra2engine::World::Side::Soviet);
+    CHECK(world.house_team(0) == 7);
+    CHECK(world.house_team(3) == 7);          // shared team
+    CHECK(world.house_side(0) == ra2engine::World::Side::Allied);
+}

@@ -773,6 +773,38 @@ public:
     double sw_charge_fraction(int house) const;
     const Superweapon* sw_state(int house) const;
 
+    // --- Multi-house / Alliances phase [RE: multihouse.md §1/§2, D1] ---------
+    // On-screen sides (the [Sides] legacy GDI=Allied / Nod=Soviet / ThirdSide=Yuri
+    // are resolved to these). Neutral = Civilian/Special (non-combatant).
+    enum class Side { Allied, Soviet, Yuri, Neutral };
+    // One record per house (including player 0). Defaults reproduce today's world
+    // 0=player Allied / 1=enemy Soviet / 2=neutral EXACTLY. NEVER read by
+    // world_hash. color_ix indexes the 8 MP colors (or a default). alliance_team
+    // sentinel -1 resolves to the house's own id (self-only team = FFA).
+    struct HouseRec {
+        Side        side          = Side::Allied;
+        int         color_ix      = 0;      // 0..7 into the 8 MP colors
+        std::string country       = "";
+        int         alliance_team = -1;     // sentinel; -1 -> own id on read
+        bool        combatant     = true;
+    };
+    // Number of houses (default 3). The six per-house vectors + house_defeated_
+    // are sized to this. Grows via set_house.
+    int  house_count() const { return houses_.empty() ? 3 : (int)houses_.size(); }
+    // Side / color for house h. With houses_configured_ FALSE -> today's exact
+    // derivation (house 1 -> Soviet/red, else Allied/blue) -> byte-identical.
+    Side house_side(int h) const;
+    int  house_color(int h) const;
+    // Alliance team for h (sentinel -1 -> own id). Non-combatant houses keep their
+    // own team but never ally/enemy anyone (see is_enemy/are_allied, Task 4).
+    int  house_team(int h) const;
+    bool house_combatant(int h) const;
+    // Configure house h. Grows houses_ (and the per-house vectors, once T3 lands)
+    // to h+1 with defaults if needed, sets houses_[h]=rec, and OPENS the firewall
+    // (houses_configured_ = true). No existing gate calls this -> byte-identical.
+    void set_house(int h, HouseRec rec);
+    bool houses_configured() const { return houses_configured_; }
+
     // --- Engineer/Spy Capture phase [RE: capture.md] ------------------------
     // Ownership transfer (Approach A) [RE: capture.md §A3 CONFIRMED]: flip
     // buildings_[b_idx].house to new_house -> power/economy/buildability/sidebar
@@ -1058,6 +1090,20 @@ private:
     // keeps the whole map revealed and reshroud_house(h) is SUPPRESSED for h
     // (the §7B "unless SpySat-protected" guard). Index 2 inert. Not hashed.
     bool map_reveal_[3] = {false, false, false};
+
+    // --- Multi-house / Alliances phase [RE: multihouse.md §1/D1] ---
+    // The single source of truth for every house. Populated with 3 defaults at
+    // construction (0=Allied/team0/comb, 1=Soviet/team1/comb, 2=Neutral/team2/
+    // non-comb) so house_count()==3 and today's world is reproduced. NOT hashed.
+    std::vector<HouseRec> houses_;
+    bool houses_configured_ = false;   // the side/color/enmity/AllyReveal firewall;
+                                       // false in every existing gate.
+    // Populate houses_ with the 3 defaults if empty (idempotent). Called from the
+    // constructor; harmless if invoked again.
+    void ensure_houses_default();
+    // T3: resize the six per-house vectors + house_defeated_ to n. Stub in Task 2
+    // (declared here so set_house compiles).
+    void grow_house_arrays(int n);
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---
     // Boarding / carry / eject / transport-death, called between step_units
