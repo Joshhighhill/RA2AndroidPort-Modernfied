@@ -8173,6 +8173,263 @@ int run_demo_shroud() {
     return bad ? 1 : 0;
 }
 
+// FNV fold of the multi-house state [spec §Testing]: for each house h -> alive
+// building count, alive unit count, house_defeated flag; for each ordered pair
+// (a,b) -> is_enemy(a,b) sampled; plus winning_team(). A NEW accumulator;
+// world_hash + every prior *_hash UNTOUCHED. Folded at the demo's fixed checkpoints.
+uint64_t multihouse_fold(uint64_t h, const ra2engine::World& world) {
+    const int n = world.house_count();
+    for (int hh = 0; hh < n; ++hh) {
+        uint64_t nb = 0, nu = 0;
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.alive && b.state != ra2engine::Building::State::Dead && b.house == hh) ++nb;
+        for (const ra2engine::Unit& u : world.units())
+            if (u.alive && u.die_time < 0.0 && u.house == hh) ++nu;
+        h = fnv_mix(h, nb);
+        h = fnv_mix(h, nu);
+        h = fnv_mix(h, (uint64_t)(world.house_defeated(hh) ? 1 : 0));
+    }
+    for (int a = 0; a < n; ++a)
+        for (int b = 0; b < n; ++b)
+            h = fnv_mix(h, (uint64_t)(world.is_enemy(a, b) ? 1 : 0));
+    h = fnv_mix(h, (uint64_t)(int64_t)world.winning_team());
+    return h;
+}
+
+struct DemoMultihouseResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the multi-house / Alliances demo [spec §Testing] (headless
+// or rendered -- bit-identical; no RNG in any path). Drives the whole feature via
+// DIRECT World:: calls (the --demo-* scripted precedent): three combatant houses
+// in two alliance-teams (houses 0 + 2 on team 0 vs house 1 on team 1) plus a
+// neutral house (3) owning a structure. The scenario demonstrates, at five fixed
+// checkpoints folded into multihouse_fold: (A) configured alliances,
+// (B) allies/neutrals are NOT auto-acquired while an enemy IS, (C) AllyReveal
+// shares an ally scout's revealed sight, (D) an eliminated house is marked
+// defeated, and (E) the last team standing wins while the neutral never wins or
+// loses. Wedge guards force exit 1 if any invariant fails (the gate can never
+// pass vacuously). All combat units carry Damage=0 so auto-acquire happens but
+// nobody dies -> the only elimination is the scripted kill_building, keeping the
+// two runs byte-identical.
+DemoMultihouseResult simulate_multihouse(Assets& a, UnitAssets& ua,
+                                         const std::vector<const VehicleAssets*>& vlist,
+                                         bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                         const ra2engine::Camera* cam, int W, int H,
+                                         const std::string& start_png, const std::string& end_png) {
+    DemoMultihouseResult r;
+    ra2engine::World world = build_world(a, ua, 0);    // count=0 -> no pre-spawned units
+
+    // --- Stage 1: configure houses + alliances; enable shroud/AllyReveal/victory
+    world.set_house(0, {ra2engine::World::Side::Allied,  5, "Americans", 0, true});
+    world.set_house(1, {ra2engine::World::Side::Soviet,  1, "Russians",  1, true});
+    world.set_house(2, {ra2engine::World::Side::Allied,  6, "British",   0, true});   // ally of 0
+    world.set_house(3, {ra2engine::World::Side::Neutral, 3, "Civilian",  3, false});  // neutral
+    world.enable_shroud(true);
+    world.enable_ally_reveal(true);
+    world.enable_victory(true, /*short_game=*/true);
+
+    const int gw = world.grid_w(), gh = world.grid_h();
+    auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };
+
+    // Base cell (clamped well inside the border so all five unit cells + four
+    // building cells stay on the grid).
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    const int bx = clampi(pc ? pc->x : 20, 6, gw - 7);
+    const int by = clampi(pc ? pc->y : 20, 6, gh - 7);
+    // House-2 far scout cell: the OPPOSITE side of the map so neither house 0's
+    // nor house 1's own sight reaches it -- house 0 sees it ONLY via AllyReveal.
+    const int fx = (bx < gw / 2) ? clampi(gw - 4, 0, gw - 1) : clampi(3, 0, gw - 1);
+    const int fy = (by < gh / 2) ? clampi(gh - 4, 0, gh - 1) : clampi(3, 0, gh - 1);
+
+    auto mk = [](const char* img, int strength, double range, int sight) {
+        ra2engine::UnitCombat c;
+        c.image = img; c.strength = strength; c.armor = "none";
+        c.damage = 0; c.rof = 10; c.range = range; c.sight = sight;   // Damage=0 -> no deaths
+        return c;
+    };
+
+    // Combat units. u0 (house 0) sees + ranges the ally (house 2), the enemy
+    // (house 1) and the neutral (house 3); only the enemy is a valid auto-target.
+    world.add_combat_unit(bx,     by,     /*house=*/0, mk("GI",   100, 5.0, 5));
+    const int u0_idx = (int)world.units().size() - 1;
+    world.add_combat_unit(bx - 2, by,     /*house=*/2, mk("GI",   100, 3.0, 3));  // ally, in u0 range
+    world.add_combat_unit(bx + 3, by,     /*house=*/1, mk("CONS", 100, 3.0, 3));  // enemy, in u0 range
+    world.add_combat_unit(bx,     by - 2, /*house=*/3, mk("GI",   100, 0.0, 2));  // neutral, in u0 range
+    world.add_combat_unit(fx,     fy,     /*house=*/2, mk("GI",   100, 0.0, 5));  // ally far scout (AllyReveal)
+
+    // A ConYard-ish building per combatant + the neutral's structure.
+    world.add_building(0, bx,     by + 2, 1, 1, /*house=*/0, 500, 0, 0.0, /*instant=*/true);
+    world.add_building(0, bx - 2, by + 2, 1, 1, /*house=*/2, 500, 0, 0.0, /*instant=*/true);
+    const int b1_idx =
+        world.add_building(0, bx + 3, by + 2, 1, 1, /*house=*/1, 500, 0, 0.0, /*instant=*/true);
+    world.add_building(0, bx,     by - 4, 1, 1, /*house=*/3, 500, 0, 0.0, /*instant=*/true);  // neutral
+
+    auto render_frame = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+    };
+
+    uint64_t h = 0xcbf29ce484222325ull;               // FNV-1a offset basis
+
+    world.step_visibility();                           // stamp initial discs + masks
+    h = multihouse_fold(h, world);                     // checkpoint A: configured + spawned
+    render_frame();
+    if (render) capture_png(ren, start_png, W, H);      // start screenshot
+    {
+        char b[192];
+        std::snprintf(b, sizeof b,
+                      "[mh] stage1 configure: houses=%d team(0,1,2,3)=(%d,%d,%d,%d) allied(0,2)=%s enemy(0,1)=%s house3=%s",
+                      world.house_count(), world.house_team(0), world.house_team(1),
+                      world.house_team(2), world.house_team(3),
+                      world.are_allied(0, 2) ? "yes" : "no",
+                      world.is_enemy(0, 1) ? "yes" : "no",
+                      world.house_combatant(3) ? "combatant" : "noncombatant");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 2: allies/neutrals are NOT auto-acquired; the enemy IS ----------
+    bool enemy_acquired = false;
+    bool ally_or_neutral_targeted = false;
+    const int steps = 30;
+    for (int k = 0; k < steps; ++k) {
+        world.step(1.0 / 15.0);                         // 15Hz logic frames
+        for (const ra2engine::Unit& u : world.units()) {
+            if (!u.alive || u.house != 0 || u.target < 0) continue;
+            const int th = world.units()[u.target].house;
+            if (th == 1) enemy_acquired = true;
+            if (th == 2 || th == 3) ally_or_neutral_targeted = true;
+        }
+    }
+    const bool allies_dont_fight = !ally_or_neutral_targeted;
+    h = multihouse_fold(h, world);                     // checkpoint B: acquisition
+    {
+        char b[192];
+        const int u0t = world.units()[u0_idx].target;
+        std::snprintf(b, sizeof b,
+                      "[mh] stage2 acquire: house0 u%d target=%d target_house=%d enemy_acquired=%s allies_dont_fight=%s",
+                      u0_idx, u0t, u0t >= 0 ? world.units()[u0t].house : -1,
+                      enemy_acquired ? "yes" : "no", allies_dont_fight ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 3: AllyReveal shares house 2's far-scout sight with house 0 -----
+    world.step_visibility();
+    const bool see0 = world.visible_at(0, fx, fy);      // ally -> shared
+    const bool see1 = world.visible_at(1, fx, fy);      // enemy -> NOT shared
+    const bool see2 = world.visible_at(2, fx, fy);      // scout's own house
+    const bool ally_reveal_shared = see2 && see0 && !see1;
+    h = multihouse_fold(h, world);                     // checkpoint C: ally reveal
+    {
+        char b[192];
+        std::snprintf(b, sizeof b,
+                      "[mh] stage3 ally-reveal: scout(%d,%d) vis house2=%s house0(ally)=%s house1(enemy)=%s shared=%s",
+                      fx, fy, see2 ? "yes" : "no", see0 ? "yes" : "no", see1 ? "yes" : "no",
+                      ally_reveal_shared ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 4: destroy house 1's last building -> defeat detected -----------
+    if (b1_idx >= 0 && b1_idx < (int)world.buildings().size())
+        ra2engine::kill_building(world.buildings()[b1_idx]);
+    world.step_victory();
+    const bool defeat_detected = world.house_defeated(1);
+    h = multihouse_fold(h, world);                     // checkpoint D: defeat
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[mh] stage4 defeat: killed b%d house1_defeated=%s house0_defeated=%s house2_defeated=%s",
+                      b1_idx, defeat_detected ? "yes" : "no",
+                      world.house_defeated(0) ? "yes" : "no", world.house_defeated(2) ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 5: last team standing (team 0) wins; neutral never wins/loses ---
+    world.step_victory();
+    const int wteam = world.winning_team();
+    const bool neutral_safe = !world.house_defeated(3);
+    const bool team_wins = (wteam == 0) && neutral_safe;
+    h = multihouse_fold(h, world);                     // checkpoint E: team wins
+    {
+        char b[176];
+        std::snprintf(b, sizeof b,
+                      "[mh] stage5 victory: winning_team=%d neutral(3)_defeated=%s team_wins=%s",
+                      wteam, world.house_defeated(3) ? "yes" : "no", team_wins ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    r.hash = h;
+
+    // Wedge guards [spec §Testing]: exit 1 unless each invariant holds.
+    if (!allies_dont_fight)  { r.ok = false; r.witness.emplace_back("[mh] WEDGE: an allied/neutral unit was auto-acquired"); }
+    if (!enemy_acquired)     { r.ok = false; r.witness.emplace_back("[mh] WEDGE: the enemy team was never auto-acquired"); }
+    if (!ally_reveal_shared) { r.ok = false; r.witness.emplace_back("[mh] WEDGE: AllyReveal did not share the scout's sight"); }
+    if (!defeat_detected)    { r.ok = false; r.witness.emplace_back("[mh] WEDGE: eliminated house was not marked defeated"); }
+    if (!team_wins)          { r.ok = false; r.witness.emplace_back("[mh] WEDGE: last team standing did not win"); }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[mh] multihouse_hash=%016llx", (unsigned long long)r.hash);
+    r.witness.emplace_back(hb);
+    render_frame();
+    if (render) { capture_png(ren, end_png, W, H); }
+    return r;
+}
+
+// --demo-multihouse: the Multi-house / Alliances integration gate (16th
+// permanent byte-identity gate). Runs simulate_multihouse rendered (hidden
+// window + start/end screenshots) then headless from a FRESH World, and byte-
+// compares the two witness logs + multihouse hashes. NO hardcoded hash literal
+// -- compute-and-self-compare; the controller pins the observed value in the
+// README gate table.
+int run_demo_multihouse() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_multihouse_start.png";
+    const std::string end_png = scratch + "demo_multihouse_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
+
+    DemoMultihouseResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-multihouse)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_multihouse(a, ua, vlist, /*render=*/true, ren, &tc, &cam,
+                                     W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+    }
+
+    DemoMultihouseResult r2 = simulate_multihouse(a, ua, vlist, /*render=*/false, nullptr,
+                                                  nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+    std::cerr << "[demo-multihouse] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d multihouse_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -8325,6 +8582,8 @@ int main(int argc, char** argv) {
                 return run_demo_capture();
             } else if (arg == "--demo-shroud") {
                 return run_demo_shroud();
+            } else if (arg == "--demo-multihouse") {
+                return run_demo_multihouse();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
