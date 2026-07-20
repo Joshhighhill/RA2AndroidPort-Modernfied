@@ -3912,15 +3912,20 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
         const bool hover = it.active && it.r.contains(mx_, my_);
         int frame = 0;
         if (hover) frame = (down_ ? 1 : 2);
-        if (frame >= art_.btn->count()) frame = 0;
-        SDL_Texture* bt = shp_frame_tex(tc, "menu:btn" + std::to_string(frame),
-                                        *art_.btn, frame, pal);
-        if (bt) {
-            // Greyed items: dim to read as disabled. Restore mod afterwards.
-            if (!it.active) SDL_SetTextureColorMod(bt, 110, 110, 120);
-            else            SDL_SetTextureColorMod(bt, 255, 255, 255);
-            SDL_Rect dst{it.r.x, it.r.y, it.r.w, it.r.h};
-            SDL_RenderCopy(ren, bt, nullptr, &dst);
+        // Button graphic is best-effort: if mnbttn.shp failed to load (partial
+        // install) art_.btn is null — skip the frame; the label below still
+        // renders so the menu stays usable (mirrors the logo/dlg/font guards).
+        if (art_.btn) {
+            if (frame >= art_.btn->count()) frame = 0;
+            SDL_Texture* bt = shp_frame_tex(tc, "menu:btn" + std::to_string(frame),
+                                            *art_.btn, frame, pal);
+            if (bt) {
+                // Greyed items: dim to read as disabled. Restore mod afterwards.
+                if (!it.active) SDL_SetTextureColorMod(bt, 110, 110, 120);
+                else            SDL_SetTextureColorMod(bt, 255, 255, 255);
+                SDL_Rect dst{it.r.x, it.r.y, it.r.w, it.r.h};
+                SDL_RenderCopy(ren, bt, nullptr, &dst);
+            }
         }
         // Label: FNT shell font (scaled) when available + verified, else rect-font.
         if (art_.font && art_.font_pal && art_.fnt_ok) {
