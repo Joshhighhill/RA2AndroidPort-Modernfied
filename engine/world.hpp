@@ -832,6 +832,7 @@ public:
     // falls; false -> zero buildings AND zero units. Default OFF -> step_victory
     // early-returns -> gates run their fixed frame counts. NOT hashed.
     void enable_victory(bool on, bool short_game = true);
+    bool victory_enabled() const { return victory_enabled_; }  // read-only; not hashed
     bool house_defeated(int h) const;   // sticky; false if h out of range / neutral
     int  winning_team() const;          // the sole surviving combatant team, or -1
     void step_victory();                // firewalled per-frame pass (public for the gate)

@@ -8479,6 +8479,217 @@ int run_demo_multihouse() {
     return bad ? 1 : 0;
 }
 
+// FNV fold of the skirmish-launch state [spec §Testing]: for each house h ->
+// alive building count, alive unit count, ai_enabled flag, house_credits; for
+// each ordered pair (a,b) -> is_enemy(a,b); plus house_count + winning_team. A
+// NEW accumulator; world_hash + every prior *_hash UNTOUCHED. Order-stable
+// scalars only (no pointers/RNG/wall-clock/unordered iteration) -> rendered ==
+// headless. Folded at the demo's fixed checkpoints.
+uint64_t skirmish_fold(uint64_t h, const ra2engine::World& world) {
+    const int n = world.house_count();
+    h = fnv_mix(h, (uint64_t)n);
+    for (int hh = 0; hh < n; ++hh) {
+        uint64_t nb = 0, nu = 0;
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.alive && b.state != ra2engine::Building::State::Dead && b.house == hh) ++nb;
+        for (const ra2engine::Unit& u : world.units())
+            if (u.alive && u.die_time < 0.0 && u.house == hh) ++nu;
+        h = fnv_mix(h, nb);
+        h = fnv_mix(h, nu);
+        h = fnv_mix(h, (uint64_t)(world.ai_enabled(hh) ? 1 : 0));
+        h = fnv_mix(h, (uint64_t)(int64_t)std::llround(world.house_credits(hh)));
+    }
+    for (int a = 0; a < n; ++a)
+        for (int b = 0; b < n; ++b)
+            h = fnv_mix(h, (uint64_t)(world.is_enemy(a, b) ? 1 : 0));
+    h = fnv_mix(h, (uint64_t)(int64_t)world.winning_team());
+    return h;
+}
+
+struct DemoSkirmishResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the Skirmish-launch demo [RE-GATE: skirmish.md
+// §Adjudication item 4] (headless or rendered -- bit-identical; no RNG in any
+// path). Drives the whole SkirmishConfig -> launch_skirmish -> World path with
+// the ADJUDICATED fixed config: 3 combatant slots in 2 alliance teams -- slot 0
+// (Allied, team 0, human) + slot 2 (Allied, team 0, AI Easy) allied vs slot 1
+// (Soviet, team 1, AI Normal). NO neutral house (keeps clear of the
+// capture/infiltrate <2/<3 writer-guard carry). shroud + short_game +
+// superweapons on; crates off; starting_cash 10000, unit_count 10, tech_level
+// 10. It launches the world, folds at two fixed checkpoints, steps N=300 fixed
+// dt=1/15 frames, records the wedge bools, and does the rendered/headless self-
+// compare via run_demo_skirmish. PURELY ADDITIVE: no gate calls it; world_hash
+// untouched; NO pinned hash literal (Task 7 pins the observed value in README).
+DemoSkirmishResult simulate_skirmish(Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                     const Rules& rules,
+                                     const std::vector<const VehicleAssets*>& vlist,
+                                     bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                     const ra2engine::Camera* cam, int W, int H,
+                                     const std::string& start_png, const std::string& end_png) {
+    DemoSkirmishResult r;
+    // FIXED adjudicated config [RE-GATE: skirmish.md §Adjudication item 4].
+    ra2engine::SkirmishConfig cfg;
+    cfg.starting_cash = 10000.0;
+    cfg.unit_count    = 10;
+    cfg.tech_level    = 10;
+    cfg.shroud = true; cfg.short_game = true; cfg.superweapons = true; cfg.crates = false;
+    cfg.slots = {
+        {ra2engine::World::Side::Allied, 5, "Americans", 0, true, false, ra2engine::AiDifficulty::Normal},
+        {ra2engine::World::Side::Soviet, 1, "Russians",  1, true, true,  ra2engine::AiDifficulty::Normal},
+        {ra2engine::World::Side::Allied, 6, "British",   0, true, true,  ra2engine::AiDifficulty::Easy},
+    };
+    ra2engine::World world = launch_skirmish(cfg, a, ua, ba, rules);
+
+    uint64_t h = 0xcbf29ce484222325ull;    // FNV-1a offset basis (world_hash's)
+    auto render_frame = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+    };
+
+    // A deterministic per-house (alive building count, alive unit count,
+    // credits) signature -> the liveness/determinism witness. Order-stable
+    // scalars only, so it is identical in the rendered and headless runs.
+    auto state_sig = [&]() -> uint64_t {
+        uint64_t s = 0xcbf29ce484222325ull;
+        const int n = world.house_count();
+        for (int hh = 0; hh < n; ++hh) {
+            uint64_t nb = 0, nu = 0;
+            for (const ra2engine::Building& b : world.buildings())
+                if (b.alive && b.state != ra2engine::Building::State::Dead && b.house == hh) ++nb;
+            for (const ra2engine::Unit& u : world.units())
+                if (u.alive && u.die_time < 0.0 && u.house == hh) ++nu;
+            s = fnv_mix(s, nb);
+            s = fnv_mix(s, nu);
+            s = fnv_mix(s, (uint64_t)(int64_t)std::llround(world.house_credits(hh)));
+        }
+        return s;
+    };
+
+    // Checkpoint A: launched world shape.
+    world.step_visibility();
+    h = skirmish_fold(h, world);
+    render_frame();
+    if (render) capture_png(ren, start_png, W, H);
+
+    const bool house_count_ok    = (world.house_count() >= 3);
+    // slot 0 human, slots 1 + 2 AI.
+    const bool ai_ok             = world.ai_enabled(1) && world.ai_enabled(2) && !world.ai_enabled(0);
+    // 0 + 2 allied on team 0; 0 vs 1 enemies across teams.
+    const bool relationship_ok   = world.are_allied(0, 2) && world.is_enemy(0, 1);
+    // Both firewalls opened by the config launch (configure_skirmish_houses).
+    const bool victory_shroud_ok = world.victory_enabled() && world.shroud_enabled();
+    const double cash_before     = world.house_credits(0);
+    const uint64_t sig_before    = state_sig();
+    {
+        char b[256];
+        std::snprintf(b, sizeof b,
+                      "[sk] stage1 launch: houses=%d ai(0)=%s ai(1)=%s ai(2)=%s team(0,2)=%s enemy(0,1)=%s victory=%s shroud=%s cash0=%.0f",
+                      world.house_count(), world.ai_enabled(0) ? "yes" : "no",
+                      world.ai_enabled(1) ? "yes" : "no", world.ai_enabled(2) ? "yes" : "no",
+                      world.are_allied(0, 2) ? "yes" : "no", world.is_enemy(0, 1) ? "yes" : "no",
+                      world.victory_enabled() ? "yes" : "no", world.shroud_enabled() ? "yes" : "no",
+                      cash_before);
+        r.witness.emplace_back(b);
+    }
+
+    // Checkpoint B: advance N fixed frames -> deterministic state change.
+    const int N = 300;
+    for (int k = 0; k < N; ++k) world.step(1.0 / 15.0);
+    h = skirmish_fold(h, world);
+    const double cash_after = world.house_credits(0);
+    const uint64_t sig_after = state_sig();
+    const bool advanced_ok  = (sig_after != sig_before);
+    {
+        char b[224];
+        std::snprintf(b, sizeof b,
+                      "[sk] stage2 stepped: N=%d cash0=%.0f->%.0f sig=%016llx->%016llx advanced=%s",
+                      N, cash_before, cash_after, (unsigned long long)sig_before,
+                      (unsigned long long)sig_after, advanced_ok ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    r.hash = h;
+    // Wedge guards [spec §Testing]: exit 1 unless each invariant holds.
+    if (!house_count_ok)     { r.ok = false; r.witness.emplace_back("[sk] WEDGE: launch_skirmish did not produce the expected house_count"); }
+    if (!ai_ok)              { r.ok = false; r.witness.emplace_back("[sk] WEDGE: AI slots (1,2) not enabled / human slot 0 wrongly AI"); }
+    if (!relationship_ok)    { r.ok = false; r.witness.emplace_back("[sk] WEDGE: alliance(0,2) / enemy(0,1) relationships not configured"); }
+    if (!victory_shroud_ok)  { r.ok = false; r.witness.emplace_back("[sk] WEDGE: victory/shroud not enabled by the config launch"); }
+    if (!advanced_ok)        { r.ok = false; r.witness.emplace_back("[sk] WEDGE: the sim did not advance deterministically"); }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[sk] skirmish_hash=%016llx", (unsigned long long)r.hash);
+    r.witness.emplace_back(hb);
+    render_frame();
+    if (render) capture_png(ren, end_png, W, H);
+    return r;
+}
+
+// --demo-skirmish: the Skirmish-launch integration gate (17th permanent byte-
+// identity gate). Runs simulate_skirmish rendered (hidden window + start/end
+// screenshots) then headless from a FRESH World, and byte-compares the two
+// witness logs + skirmish hashes. NO hardcoded hash literal -- compute-and-
+// self-compare; the controller pins the observed value in the README gate table.
+int run_demo_skirmish() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_skirmish_start.png";
+    const std::string end_png = scratch + "demo_skirmish_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-skirmish] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
+
+    DemoSkirmishResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-skirmish)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_skirmish(a, ua, ba, rules, vlist, /*render=*/true, ren, &tc, &cam,
+                                   W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+    }
+
+    DemoSkirmishResult r2 = simulate_skirmish(a, ua, ba, rules, vlist, /*render=*/false, nullptr,
+                                              nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+    std::cerr << "[demo-skirmish] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d skirmish_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -8633,6 +8844,8 @@ int main(int argc, char** argv) {
                 return run_demo_shroud();
             } else if (arg == "--demo-multihouse") {
                 return run_demo_multihouse();
+            } else if (arg == "--demo-skirmish") {
+                return run_demo_skirmish();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
