@@ -36,6 +36,7 @@ set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/vpl.cpp
     ${RA2_ROOT}/src/csf.cpp
     ${RA2_ROOT}/src/fileio.cpp
+    ${RA2_ROOT}/src/bink.cpp
 )
 
 # ra2engine app/library sources (uses SDL). Same set feeds the desktop
