@@ -1567,6 +1567,72 @@ eighteen gate hashes plus `world_hash` are bit-identical to the prior phase.
 > power-on and header shimmer; and the 800×600 ("large" `*L` asset) button
 > redistribution — all deferred.
 
+### Bink CRT animation
+
+The CRT "screen" is **not** a static radar stand-in — it plays the **real RA2
+menu animation** (logo + rotating red radar sweep + Statue of Liberty scene),
+decoded live by a **from-scratch Bink1 video decoder** in `ra2assets`
+(`include/ra2assets/bink.hpp` + `src/bink.cpp`, new self-contained TU with
+`tests/test_bink.cpp`). This **corrects the earlier "left CRT VQA is absent /
+static" assumption above**: the animation was never a VQA — it is a **Bink
+video** (`language.mix/ra2ts_s.bik`), present in the install all along, and it
+plays because the shell tries the `.bik` name **before** the (stubbed) `.vqa`.
+The `--scanmagic` VQA sweep found nothing precisely because the asset is Bink,
+not FORM/WVQA.
+
+The decoder is a complete Bink1 (`BIKi`, revision `'i'`) implementation built
+against `docs/re/bink.md` (spec + tables) and `docs/re/bink_proof_decoder.py`
+(byte-exact reference):
+
+- **Container** (`BinkFile`) — 44-byte LE header (`BIKi` magic, dimensions,
+  frame count, fps ratio, video flags, audio-track count) + the
+  `num_frames+1` u32 absolute frame-offset index (bit0 = keyframe flag, masked
+  off for the real offset).
+- **LSB-first bit reader** + **Huffman** (`read_tree` on-the-fly trees) and the
+  full **bundle** protocol (block-types, colors, patterns, motion X/Y, intra/
+  inter DC, run) with per-row RLE refills.
+- **All block types** (SKIP, SCALED, MOTION, RUN, RESIDUE, INTRA, FILL, INTER,
+  PATTERN, RAW) + the **Bink integer IDCT** + intra/inter dequant + motion
+  compensation from the previous frame, honoring every exact-arithmetic trap
+  (32-bit wrapping `MUL`/dequant with `>>11`, no-clamp pixel adds mod 256,
+  scan-vs-raster quant indexing, quantizer read after coefficients, DC
+  dequantized, 32-bit align after each plane, the skipped leading per-packet
+  u32, plane order **Y, V, U**, COLORS bytes used raw).
+- **BT.601 limited-range** YUV420→RGBA (`c=298·(Y−16)`, `R=c+409·e`,
+  `G=c−100·d−208·e`, `B=c+516·d`, RGB clamped, nearest-neighbour chroma
+  upsample, `A=255`).
+
+**`language.mix/ra2ts_s.bik`** is **472×450, 431 frames @ 15 fps**. The decoder
+is validated against an ffmpeg oracle: **431/431 frames byte-exact** vs
+`ffmpeg -pix_fmt yuv420p` (dev-time direct `.yuv` memcmp + committed FNV pins on
+frames 0 and 130 for CI without the reference), and **RGBA within ±2 per
+channel** vs the `bikframes/f%04d.png` reference (swscale dithers the
+limited-range conversion; `bink.md` notes the ±2). The 13 bink test cases pass
+in both install and no-install modes (real-asset cases skip cleanly when
+`RA2_INSTALL_DIR` is unset).
+
+**Playback** (`engine/main.cpp` menu region, interactive-only): `load_menu_art`
+opens `language.mix`, reads `ra2ts_s.bik`, and holds a heap
+`BinkFile`+`BinkVideoDecoder` in the menu-art store. `ShellScene::update(dt)`
+advances a 15 fps accumulator, decoding **one frame per step** and rewinding to
+the keyframe (frame 0) at the end to loop. `draw_shell` uploads the current
+RGBA frame into **one reused streaming `SDL_Texture`** (re-uploaded only when the
+frame index changes) and blits it 1:1 into the CRT rect (logical `0,0,472,448`)
+over `mnscrns`, under the sidebar console. A null guard falls back to the static
+`mnscrns` backdrop on a partial install (no `.bik`). This is strictly additive —
+`draw_shell` gained a defaulted trailing parameter; no `--demo-*` /
+`simulate_*` / `run_demo_*` / `world_hash` or any existing decoder was touched,
+so all eighteen gate hashes stay bit-identical (re-verified one-per-run at
+finalize) and the arm64 APK links the Bink symbols (`BinkFile` /
+`BinkVideoDecoder`).
+
+**Carry-forwards:** Bink **audio** tracks are not parsed (RA2's `ra2ts_s.bik`
+has 0 audio tracks, so none needed here); **pause-on-focus-loss** and
+**per-page CRT restart** (the animation currently free-runs across page
+transitions); and **runtime decode performance** — decoding is currently
+one-frame-per-tick on the main thread (fine at 472×450/15 fps, but a background
+decode thread or frame cache would be the scale-up path).
+
 **Three decoder additions** (each ADDITIVE + host-tested; none touched by any
 gate):
 - **PCX** (`ra2assets::decode_pcx`, `src/pcx.cpp`) — 8-bit RLE PCX with the
