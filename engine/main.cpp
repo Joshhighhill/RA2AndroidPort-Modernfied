@@ -57,6 +57,7 @@
 
 #include "ra2assets/art.hpp"
 #include "ra2assets/audio_bag.hpp"
+#include "ra2assets/bink.hpp"      // from-scratch Bink decoder (menu CRT movie) [Task 5]
 #include "ra2assets/fileio.hpp"
 #include "ra2assets/hva.hpp"
 #include "ra2assets/ini.hpp"
@@ -3628,6 +3629,16 @@ struct MenuArt {
     bool shell2_pal_ok = false;
     bool sdbtnanm_pal_ok = false;
     bool mainbttn_pal_ok = false;
+    // [Task 5 / mainmenu_true.md §9] The REAL animated CRT movie: language.mix/
+    // ra2ts_s.bik (472x450, 431fr, 15fps), decoded by the from-scratch Bink
+    // decoder. `bink_dec` is a NON-owning pointer into MenuArtStore (the decoder +
+    // its BinkFile are heap-owned there and outlive every scene). Non-const so a
+    // scene holding `const MenuArt&` can still drive decode_frame() (const applies
+    // to the pointer, not the pointee). Null on a partial install (language.mix or
+    // ra2ts_s.bik absent / parse failure) -> the static mnscrns backdrop shows.
+    ra2assets::BinkVideoDecoder* bink_dec = nullptr;
+    int bink_frames = 0;                      // ra2ts_s.bik frame count (431)
+    int bink_w = 0, bink_h = 0;               // native movie dims (472x450)
     bool ok = false;                          // essentials (bg+pal) decoded
     // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
     // in the low nibble) with image_ofs-relative glyph offsets (the real bug was
@@ -3656,6 +3667,12 @@ struct MenuArtStore {
     std::unique_ptr<ra2assets::Font> font;
     ra2assets::Palette font_pal{};
     std::unique_ptr<MenuAudio> audio;
+    // [Task 5] The Bink CRT movie: the parsed container (owns the 7MB file bytes)
+    // and the streaming decoder that references it. bink_dec holds a const& to
+    // *bink_file, so both are heap-owned (unique_ptr) -- bink_file stays at a fixed
+    // address even if the store moves, keeping the decoder's reference valid.
+    std::unique_ptr<ra2assets::BinkFile> bink_file;
+    std::unique_ptr<ra2assets::BinkVideoDecoder> bink_dec;
     MenuArt art;
 };
 
@@ -3798,6 +3815,29 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     } catch (const std::exception& ex) {
         std::cerr << "[menu-art] ra2.mix: " << ex.what() << "\n";
     }
+    // [Task 5 / mainmenu_true.md §9] The animated CRT movie. language.mix is a
+    // SEPARATE top-level mix in the install dir (NOT nested in ra2.mix); its
+    // top-level entry ra2ts_s.bik (472x450, 431fr, 15fps) is the radar-sweep +
+    // Statue-of-Liberty + RA2-logo scene the real menu plays in the CRT screen.
+    // Best-effort + fully null-guarded: any failure (mix absent, entry absent,
+    // parse error) leaves bink_dec null -> draw_shell falls back to the static
+    // mnscrns radar map (partial-install safe, never crashes).
+    try {
+        MixFile language = MixFile::open(read_file(dir + "language.mix"));
+        if (const MixEntry* be = language.find(std::string("ra2ts_s.bik"))) {
+            store.bink_file = std::make_unique<ra2assets::BinkFile>(
+                ra2assets::BinkFile::parse(language.read(*be)));
+            store.bink_dec = std::make_unique<ra2assets::BinkVideoDecoder>(*store.bink_file);
+            std::cerr << "[menu-art] ra2ts_s.bik " << store.bink_file->width << "x"
+                      << store.bink_file->height << " " << store.bink_file->num_frames
+                      << "fr @" << store.bink_file->fps_num << "/"
+                      << store.bink_file->fps_den << "\n";
+        } else std::cerr << "[menu-art] ra2ts_s.bik not found in language.mix\n";
+    } catch (const std::exception& ex) {
+        std::cerr << "[menu-art] language.mix/ra2ts_s.bik: " << ex.what() << "\n";
+        store.bink_dec.reset();
+        store.bink_file.reset();
+    }
     if (!no_audio) store.audio = load_menu_music(dir);
 
     store.art.bg       = store.bg.get();
@@ -3826,6 +3866,11 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.shell2_pal_ok = store.shell2_pal_ok;
     store.art.sdbtnanm_pal_ok = store.sdbtnanm_pal_ok;
     store.art.mainbttn_pal_ok = store.mainbttn_pal_ok;
+    // [Task 5] Wire the Bink CRT movie (non-owning view into store).
+    store.art.bink_dec    = store.bink_dec.get();
+    store.art.bink_frames = store.bink_file ? store.bink_file->num_frames : 0;
+    store.art.bink_w      = store.bink_file ? store.bink_file->width : 0;
+    store.art.bink_h      = store.bink_file ? store.bink_file->height : 0;
     store.art.ok       = (store.art.bg && store.art.pal);
     // FNT labels ENABLED: fnt.cpp now decodes the classic Westwood 8bpp glyph
     // format correctly (image_ofs-relative offsets; menufix.md §CORRECTION; anti-shear regression test in
@@ -3849,6 +3894,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               << " shell2_pal=" << (store.art.shell2_pal_ok ? "y" : "n")
               << " sdbtnanm_pal=" << (store.art.sdbtnanm_pal_ok ? "y" : "n")
               << " mainbttn_pal=" << (store.art.mainbttn_pal_ok ? "y" : "n")
+              << " bink=" << (store.art.bink_dec ? "y" : "n")
               << " ok=" << (store.art.ok ? "y" : "n") << "\n";
 }
 
@@ -3918,7 +3964,8 @@ struct ShellXform {
 void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const MenuArt& art,
                 const ShellXform& xf, const std::vector<ShellButton>& buttons,
                 int hover_ix, int pressed_ix, const std::string& header,
-                const std::string& version, int monitor_frame) {
+                const std::string& version, int monitor_frame,
+                SDL_Texture* bink_tex = nullptr) {
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
     const double canvas_scale = xf.s;
     // The ONE logical->device transform (shared verbatim with the hit-test).
@@ -4027,16 +4074,22 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
         }
     }
 
-    // 7. CRT screen content. The ORIGINAL menu plays a looping VQA movie
-    //    (neutral: ra2ts_s.vqa 640 / ra2ts_l.vqa 800) here — the animated radar
-    //    sweep + Statue of Liberty + RA2 logo that "covers the background". In
-    //    THIS install movies01/02.mix are 4-byte "MYTH" stubs, so the VQA is
-    //    absent (the retail game itself shows only the radar map when the movie
-    //    is missing). We therefore draw NO fake logo (cropping logo.pcx — the
-    //    tanks title art — is not the menu design). The mnscrns radar backdrop
-    //    (layer 1) is the faithful stand-in. If a real ra2ts VQA is supplied,
-    //    decode + blit its current frame into (0,0,472,448) here for the exact
-    //    original look. [RE: mainmenu_true.md §0/§2]
+    // 7. CRT screen content. The ORIGINAL menu plays a looping Bink movie here —
+    //    the animated radar sweep + Statue of Liberty + RA2 logo. It is NOT a VQA:
+    //    the loader tries .BIK before .VQA and language.mix/ra2ts_s.bik (472x450,
+    //    431fr, 15fps) is present in this install (mainmenu_true.md §9). When the
+    //    decoder is available the caller passes the current decoded frame as a
+    //    streaming texture (bink_tex); we blit it 1:1 into the CRT screen rect
+    //    (0,0,472,448 logical -> device via the same ShellXform as the backdrop),
+    //    OVER the mnscrns radar map (layer 1). Its native height (450) is squashed
+    //    2px into the 448 screen area. If bink_tex is null (partial install /
+    //    absent .bik), the static mnscrns backdrop from layer 1 remains — exactly
+    //    the retail no-movie fallback. [RE: mainmenu_true.md §9.3]
+    if (bink_tex) {
+        SDL_SetTextureColorMod(bink_tex, 255, 255, 255);
+        SDL_Rect crt = dev(0, 0, 472, 448);
+        SDL_RenderCopy(ren, bink_tex, nullptr, &crt);
+    }
 
     // 8. Gold 12metfnt labels centered in each button + "Main Menu" header +
     //    version line. Native glyph is ~16px; pick an integer scale keyed to the
@@ -4205,6 +4258,62 @@ private:
     int monitor_frame() const {
         return static_cast<int>(mon_accum_ / kMonFrameDt) % kMonFrames;
     }
+    // [Task 5 / mainmenu_true.md §9] The Bink CRT movie clock + streaming texture.
+    // update(dt) advances the frame at the file's 15 fps (accumulator; one
+    // decode_frame per step) and loops frame 430 -> 0 (decode_frame(0) rewinds to
+    // the keyframe transparently). render() uploads the current decoded frame into
+    // ONE reused STREAMING texture (bink_tex_) only when the frame index changes,
+    // then draw_shell blits it. We never cache the 431 frames -- one streaming
+    // texture is the entire GPU footprint. bink_tex_ is owned here and freed in the
+    // dtor. All null-guarded on art_.bink_dec.
+    static constexpr double kBinkFrameDt = 1.0 / 15.0;   // ra2ts_s.bik = 15 fps
+    double        bink_accum_   = 0.0;
+    int           bink_frame_   = -1;   // current decoded/display frame (-1 = none yet)
+    bool          bink_started_ = false;
+    SDL_Texture*  bink_tex_     = nullptr;   // reused streaming texture (bink_w x bink_h)
+    int           bink_tex_frame_ = -1;      // frame index currently uploaded to bink_tex_
+    // Advance the Bink clock and decode the current frame (called from update()).
+    void bink_advance(double dt) {
+        if (!art_.bink_dec || art_.bink_frames <= 0) return;
+        if (!bink_started_) {                 // first tick: decode the keyframe (frame 0)
+            art_.bink_dec->decode_frame(0);
+            bink_frame_ = 0;
+            bink_started_ = true;
+            return;                           // show frame 0 for its full 1/15s
+        }
+        bink_accum_ += dt;
+        while (bink_accum_ >= kBinkFrameDt) {
+            bink_accum_ -= kBinkFrameDt;
+            int next = bink_frame_ + 1;
+            if (next >= art_.bink_frames) next = 0;   // seamless loop back to keyframe
+            art_.bink_dec->decode_frame(next);        // sequential; rewinds to 0 if next==0
+            bink_frame_ = next;
+        }
+    }
+    // Upload the current decoded frame to the reused streaming texture when it
+    // changed; return it for draw_shell (or null if no movie / not yet decoded).
+    SDL_Texture* bink_texture(SDL_Renderer* ren) {
+        if (!art_.bink_dec || art_.bink_frames <= 0 || bink_frame_ < 0) return nullptr;
+        const int w = art_.bink_w, h = art_.bink_h;
+        if (w <= 0 || h <= 0) return nullptr;
+        if (!bink_tex_) {
+            bink_tex_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA32,
+                                          SDL_TEXTUREACCESS_STREAMING, w, h);
+            if (!bink_tex_) return nullptr;
+            SDL_SetTextureBlendMode(bink_tex_, SDL_BLENDMODE_NONE);
+            bink_tex_frame_ = -1;
+        }
+        if (bink_tex_frame_ != bink_frame_) {
+            const std::vector<uint8_t> rgba = art_.bink_dec->rgba();
+            if (static_cast<int>(rgba.size()) == w * h * 4)
+                SDL_UpdateTexture(bink_tex_, nullptr, rgba.data(), w * 4);
+            bink_tex_frame_ = bink_frame_;
+        }
+        return bink_tex_;
+    }
+
+public:
+    ~ShellScene() override { if (bink_tex_) SDL_DestroyTexture(bink_tex_); }
 };
 
 // The main-menu entry is just a ShellScene on PAGE_MAIN. Existing call sites
@@ -4220,6 +4329,8 @@ void MainMenuScene::update(double dt) {
     // [Task exact / §7.3] Advance the WARNING-monitor animation clock every frame
     // (the scene driver calls update()+render() per frame, so it loops live).
     mon_accum_ += dt;
+    // [Task 5 / §9] Advance the Bink CRT movie at 15 fps (decode one frame/step).
+    bink_advance(dt);
     if (!art_.audio || !art_.audio->sys.enabled || !art_.audio->sys.mixer) return;
     if (art_.audio->sys.mixer->active_voices() == 0)
         art_.audio->sys.mixer->play("menu:grinder");
@@ -4270,8 +4381,12 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
                             to_device(btns[hover_ix].rect).contains(mx_, my_))
                                ? hover_ix : -1;
 
+    // [Task 5 / §9] Upload the current decoded Bink frame to the reused streaming
+    // texture (only when the frame changed); draw_shell blits it into the CRT rect
+    // over the mnscrns backdrop. Null when the movie is absent -> static backdrop.
+    SDL_Texture* bink_tex = bink_texture(ren);
     draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
-               header(), "v1.006", monitor_frame());
+               header(), "v1.006", monitor_frame(), bink_tex);
 }
 
 // [RE: skirmish.md §1/§3, D6] Exposes the recovered lobby subset (T1 item 1):
@@ -4621,6 +4736,11 @@ int run_menu_shot(const std::string& out_path) {
                                           : out_path.substr(0, dot) + suffix + out_path.substr(dot);
     };
     auto shoot = [&](Scene& sc, const std::string& path) {
+        // [Task 5] Tick update() ~75 steps at 15 fps first so the Bink CRT movie
+        // advances to a mid-sweep frame (radar sweep + Statue of Liberty visible)
+        // rather than the static frame 0 -- a single --menu-shot render otherwise
+        // captures whatever is current. Harmless for pages without a movie.
+        for (int i = 0; i < 75; ++i) sc.update(1.0 / 15.0);
         // Render a couple of frames so texture uploads settle, then capture.
         for (int i = 0; i < 2; ++i) { plat.begin_frame(); sc.render(plat, tc); plat.present(); }
         capture_png(ren, path, 1280, 720);
