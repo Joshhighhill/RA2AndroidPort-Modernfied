@@ -6,6 +6,7 @@
 #include "ra2assets/shp.hpp"
 #include "ra2assets/pcx.hpp"
 #include <algorithm>
+#include <map>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -37,6 +38,8 @@ static std::vector<uint8_t> read_path(const MixFile& m, const std::string& path)
     MixFile inner = m.open_nested(path.substr(0,s));
     return read_path(inner, path.substr(s+1));
 }
+
+static int rd16(const uint8_t* p){ return p[0] | (p[1] << 8); }
 
 // --- magic scanning (menu video hunt) ---------------------------------------
 static size_t find_bytes(const std::vector<uint8_t>& hay, const char* needle, size_t from=0){
@@ -144,6 +147,55 @@ int main(int argc, char** argv){
                         nent, nvqa, nshp, nmix);
             return 0;
         }
+        if (std::string(argv[2])=="--resolve"){
+            // Name every entry of a nested mix using a known-filenames list.
+            // usage: <mix> --resolve <nested> <namesfile>
+            if (argc<5){ std::cerr<<"need --resolve <nested> <namesfile>\n"; return 2; }
+            MixFile t = descend(std::move(m), argv[3]);
+            std::ifstream nf(argv[4]);
+            std::string line; std::map<uint32_t,std::string> id2name;
+            while (std::getline(nf, line)){
+                // take first whitespace/tab-delimited token as the filename
+                size_t e = line.find_first_of(" \t\r\n");
+                std::string nm = (e==std::string::npos)? line : line.substr(0,e);
+                if (nm.empty()) continue;
+                id2name[mix_id(nm)] = nm;
+            }
+            int named=0, unnamed=0;
+            for (auto& en : t.entries()){
+                auto it = id2name.find(en.id);
+                if (it != id2name.end()){ std::printf("  %08X  %-24s size=%u\n", en.id, it->second.c_str(), en.size); named++; }
+                else { std::printf("  %08X  <?>                      size=%u\n", en.id, en.size); unnamed++; }
+            }
+            std::printf("resolved %d / %d (unnamed %d)\n", named, named+unnamed, unnamed);
+            return 0;
+        }
+        if (std::string(argv[2])=="--frames"){
+            // Render ALL frames of ONE entry (located by hex hash id) of a nested
+            // mix to PNGs. usage: <mix> --frames <nested-mix> <hexid> <pal> <outdir>
+            if (argc<7){ std::cerr<<"need --frames <nested> <hexid> <pal> <outdir>\n"; return 2; }
+            MixFile t = descend(std::move(m), argv[3]);
+            uint32_t want = (uint32_t)std::strtoul(argv[4], nullptr, 16);
+            Palette pal;
+            { auto pb=read_file(argv[1]); MixFile pm=MixFile::open(std::move(pb));
+              auto pr=read_path(pm, argv[5]); pal=Palette::load(pr.data(),pr.size()); }
+            std::string outdir=argv[6];
+            for (auto& e : t.entries()){
+                if (e.id!=want) continue;
+                ShpFile s=ShpFile::load(t.read(e));
+                for (int f=0; f<s.count(); ++f){
+                    auto fi=s.frame_info(f);
+                    auto idx=s.decode_indexed(f);
+                    auto rgba=ShpFile::palettize(idx,pal);
+                    char nm[1024];
+                    std::snprintf(nm,sizeof nm,"%s/f%08X_%02d.png",outdir.c_str(),e.id,f);
+                    stbi_write_png(nm,fi.w,fi.h,4,rgba.data(),fi.w*4);
+                }
+                std::printf("frames: %08X %d frames %dx%d\n", e.id, s.count(), s.width(), s.height());
+                return 0;
+            }
+            std::cerr<<"hash not found\n"; return 1;
+        }
         if (std::string(argv[2])=="--dumpall"){
             // Bulk-dump every entry of a nested mix as PNG, auto-detecting PCX
             // (byte0==0x0A) vs SHP (try frame 0). Names outputs by hash id so an
@@ -216,7 +268,36 @@ int main(int argc, char** argv){
             std::string p2(argv[2]);
             if (p2.size()>=4 && p2.compare(p2.size()-4,4,".pcx")==0){
                 if (argc<4){ std::cerr<<"need <pcx-path> <out.png>\n"; return 2; }
-                PcxImage img = decode_pcx(read_path(m, argv[2]));
+                auto pb = read_path(m, argv[2]);
+                int nplanes = pb.size()>66 ? pb[65] : 1;
+                int bpp     = pb.size()>3  ? pb[3]  : 8;
+                if (nplanes==3 && bpp==8){
+                    // 24-bit RLE PCX (R,G,B planes per scanline) — decode locally.
+                    int xmin=rd16(&pb[4]), ymin=rd16(&pb[6]), xmax=rd16(&pb[8]), ymax=rd16(&pb[10]);
+                    int w=xmax-xmin+1, h=ymax-ymin+1, bpl=rd16(&pb[66]);
+                    std::vector<uint8_t> rgba((size_t)w*h*4, 255);
+                    size_t sp=128; const int stride=bpl*3;
+                    std::vector<uint8_t> row(stride);
+                    for (int y=0; y<h && sp<pb.size(); ++y){
+                        int x=0;
+                        while (x<stride && sp<pb.size()){
+                            uint8_t b=pb[sp++]; int run=1; uint8_t v;
+                            if ((b&0xC0)==0xC0){ run=b&0x3F; v=(sp<pb.size())?pb[sp++]:0; }
+                            else v=b;
+                            while (run-- && x<stride) row[x++]=v;
+                        }
+                        for (int px=0; px<w; ++px){
+                            size_t o=((size_t)y*w+px)*4;
+                            rgba[o+0]=row[px];            // R plane
+                            rgba[o+1]=row[bpl+px];        // G plane
+                            rgba[o+2]=row[2*bpl+px];      // B plane
+                        }
+                    }
+                    stbi_write_png(argv[3], w, h, 4, rgba.data(), w*4);
+                    std::cout<<"wrote "<<argv[3]<<" ("<<w<<"x"<<h<<", pcx24)\n";
+                    return 0;
+                }
+                PcxImage img = decode_pcx(pb);
                 auto rgba = img.rgba();
                 stbi_write_png(argv[3], img.w, img.h, 4, rgba.data(), img.w*4);
                 std::cout<<"wrote "<<argv[3]<<" ("<<img.w<<"x"<<img.h<<", pcx)\n";
