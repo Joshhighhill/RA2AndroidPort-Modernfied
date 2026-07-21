@@ -308,3 +308,108 @@ TEST_CASE("bink: static tables match bink.md verbatim (integrity)") {
         for (int i = 0; i < 64; ++i) CHECK(seen[i] == true);
     }
 }
+
+// ===========================================================================
+// Frame decoder (Task 3): byte-exact vs ffmpeg's binkvideo YUV420p output.
+//
+// The decisive oracle is ffmpeg's raw planar YUV:
+//   ffmpeg -i ra2ts_s.bik -f rawvideo -pix_fmt yuv420p ra2ts_s.yuv
+// = 431 frames x 318,600 bytes (472x450 Y + 236x225 U + 236x225 V, planar
+// Y then U then V). Committing that 137 MB file is not viable, so this test
+// PINS an FNV-1a-64 hash of the cropped Y/U/V planes of two checked frames
+// (a keyframe and a mid-stream interframe). The pins were computed from THIS
+// decoder AFTER a dev-time run confirmed all 431 decoded frames are BYTE-FOR-
+// BYTE identical to the real ra2ts_s.yuv oracle (431/431). When that oracle
+// .yuv is present at the scratchpad path below, the test additionally does a
+// direct memcmp of the two checked frames against it.
+//
+// [RE: docs/re/bink.md §2-§10; ported from docs/re/bink_proof_decoder.py.]
+// ===========================================================================
+#include <cstring>
+#include <fstream>
+
+namespace {
+// FNV-1a 64 over the cropped (display-size) Y, U, V planes, walking each plane
+// row by row so the buffer's block-padding stride is excluded.
+uint64_t bink_fnv_planes(const BinkVideoDecoder& d) {
+    uint64_t h = 1469598103934665603ull;
+    auto absorb = [&](const uint8_t* p, int w, int hgt, int stride) {
+        for (int r = 0; r < hgt; ++r)
+            for (int c = 0; c < w; ++c) { h ^= p[static_cast<size_t>(r) * stride + c]; h *= 1099511628211ull; }
+    };
+    absorb(d.y(),  d.y_w(),  d.y_h(),  d.y_stride());
+    absorb(d.u(), d.uv_w(), d.uv_h(), d.uv_stride());
+    absorb(d.v(), d.uv_w(), d.uv_h(), d.uv_stride());
+    return h;
+}
+
+// Pack the decoder's current cropped planes into a tight planar Y,U,V buffer
+// (matching ffmpeg's yuv420p layout) for a direct memcmp against the oracle.
+std::vector<uint8_t> bink_pack_planes(const BinkVideoDecoder& d) {
+    const size_t ysz = static_cast<size_t>(d.y_w()) * d.y_h();
+    const size_t csz = static_cast<size_t>(d.uv_w()) * d.uv_h();
+    std::vector<uint8_t> out(ysz + 2 * csz);
+    size_t o = 0;
+    for (int r = 0; r < d.y_h(); ++r)  { std::memcpy(&out[o], d.y()  + static_cast<size_t>(r) * d.y_stride(),  d.y_w());  o += d.y_w(); }
+    for (int r = 0; r < d.uv_h(); ++r) { std::memcpy(&out[o], d.u() + static_cast<size_t>(r) * d.uv_stride(), d.uv_w()); o += d.uv_w(); }
+    for (int r = 0; r < d.uv_h(); ++r) { std::memcpy(&out[o], d.v() + static_cast<size_t>(r) * d.uv_stride(), d.uv_w()); o += d.uv_w(); }
+    return out;
+}
+}  // namespace
+
+TEST_CASE("bink: frame decoder byte-exact vs ffmpeg YUV oracle (ra2ts_s.bik)") {
+    const std::vector<uint8_t>& lang = ra2fixture::mix_bytes_by_name("language.mix");
+    if (lang.empty()) { MESSAGE("language.mix absent; skipped"); return; }
+    const MixFile& mix = ra2fixture::mix_by_name("language.mix");
+    const MixEntry* e = mix.find("ra2ts_s.bik");
+    REQUIRE(e != nullptr);
+    BinkFile bf = BinkFile::parse(mix.read(*e));
+    REQUIRE(bf.width == 472);
+    REQUIRE(bf.height == 450);
+    REQUIRE(bf.num_frames == 431);
+
+    BinkVideoDecoder dec(bf);
+    CHECK(dec.y_w() == 472);
+    CHECK(dec.y_h() == 450);
+    CHECK(dec.uv_w() == 236);
+    CHECK(dec.uv_h() == 225);
+    CHECK(dec.y_stride() == 472);    // Y: bw=59 -> stride 472 (== display width)
+    CHECK(dec.uv_stride() == 240);   // chroma: bw=30 -> stride 240 (> display 236)
+
+    // Pinned FNV-1a-64 of the cropped Y/U/V planes. Validated at dev time: this
+    // decoder reproduced the real ffmpeg ra2ts_s.yuv oracle byte-for-byte on all
+    // 431 frames. Frame 0 is the (only) keyframe; frame 130 is a mid interframe
+    // reached by sequential decode 0..130 (exercises SKIP/INTER/RESIDUE/MOTION).
+    const uint64_t kPinFrame0   = 0x571f5990b1d73e54ull;
+    const uint64_t kPinFrame130 = 0xc1eb441aeaa85a2full;
+
+    // Optional direct byte-exact compare when the ffmpeg oracle .yuv is present.
+    const char* kYuvPath =
+        "C:/Users/Omar/AppData/Local/Temp/claude/d--Red-Alert-2/"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426/scratchpad/ra2ts_s.yuv";
+    std::ifstream ora(kYuvPath, std::ios::binary);
+    const size_t fsz = static_cast<size_t>(472) * 450 + 2 * (static_cast<size_t>(236) * 225);
+    std::vector<uint8_t> ref(fsz);
+    auto compare_oracle = [&](int frame) {
+        if (!ora.good()) return;
+        ora.seekg(static_cast<std::streamoff>(frame) * fsz);
+        ora.read(reinterpret_cast<char*>(ref.data()), fsz);
+        if (ora.gcount() != static_cast<std::streamsize>(fsz)) return;
+        CHECK(std::memcmp(bink_pack_planes(dec).data(), ref.data(), fsz) == 0);
+    };
+
+    // Frame 0 (keyframe).
+    dec.decode_frame(0);
+    CHECK(bink_fnv_planes(dec) == kPinFrame0);
+    compare_oracle(0);
+
+    // Frame 130 (sequential decode through the interframes).
+    dec.decode_frame(130);
+    CHECK(bink_fnv_planes(dec) == kPinFrame130);
+    compare_oracle(130);
+
+    // Random-access rewind: requesting frame 0 again re-decodes from the
+    // keyframe and reproduces the identical planes.
+    dec.decode_frame(0);
+    CHECK(bink_fnv_planes(dec) == kPinFrame0);
+}

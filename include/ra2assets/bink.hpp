@@ -36,4 +36,57 @@ struct BinkFile {
     static BinkFile parse(std::vector<uint8_t> bytes);
 };
 
+// ---------------------------------------------------------------------------
+// Bink 1 ("BIKi" revision 'i') VIDEO decoder. Decodes a frame into YUV 4:2:0
+// planes (Y full resolution, U/V half resolution), byte-exact vs ffmpeg's
+// binkvideo decoder. [RE: docs/re/bink.md §2-§10; ported statement-for-statement
+// from docs/re/bink_proof_decoder.py, which is byte-exact on all 431 frames of
+// ra2ts_s.bik.]
+//
+// The decoder holds the current and previous frame's planes internally
+// (INTER/MOTION/RESIDUE/SKIP blocks reference the previous frame). Because inter
+// frames depend on the previous frame, decode is SEQUENTIAL: decode_frame(n)
+// requires frame n-1 to have been decoded. Callers may request any frame in any
+// order -- decode_frame() transparently (re)decodes forward from the nearest
+// preceding keyframe when the requested frame is not the immediate successor of
+// the last one decoded. (In the RA2 files only frame 0 is a keyframe, so a
+// random-access request rewinds to frame 0.)
+//
+// Planes are MPEG/limited-range BT.601. Plane buffers are padded to whole 8x8
+// blocks (stride = block_cols*8, rows = block_rows*8); the accessors expose the
+// padded buffer pointer plus its stride and the cropped DISPLAY dimensions, so a
+// consumer reads y_w() bytes from each of the first y_h() rows (row r starts at
+// y() + r*y_stride()), and likewise for chroma.
+//
+// The referenced BinkFile must outlive the decoder.
+class BinkVideoDecoder {
+public:
+    explicit BinkVideoDecoder(const BinkFile& file);
+    ~BinkVideoDecoder();
+    BinkVideoDecoder(const BinkVideoDecoder&) = delete;
+    BinkVideoDecoder& operator=(const BinkVideoDecoder&) = delete;
+
+    // Decode frame n (0-based). Sequential; see the class comment for the
+    // random-access / rewind behavior. Throws std::out_of_range if n is out of
+    // range. After the call the y()/u()/v() accessors expose frame n.
+    void decode_frame(int n);
+
+    // Decoded-plane accessors (valid after the first decode_frame call).
+    // y()/u()/v() point at the padded plane buffers (storage: Y, U, V).
+    const uint8_t* y() const;
+    const uint8_t* u() const;
+    const uint8_t* v() const;
+
+    int y_w() const;   // Y display width  (= file width)
+    int y_h() const;   // Y display height (= file height)
+    int uv_w() const;  // chroma display width  = (width+1)/2
+    int uv_h() const;  // chroma display height = (height+1)/2
+    int y_stride() const;   // Y  buffer row stride (>= y_w)
+    int uv_stride() const;  // UV buffer row stride (>= uv_w)
+
+private:
+    struct Impl;
+    Impl* impl_;
+};
+
 }  // namespace ra2assets
