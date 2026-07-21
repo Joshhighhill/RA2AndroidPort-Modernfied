@@ -1307,4 +1307,53 @@ int BinkVideoDecoder::uv_h() const { return impl_->geom[1].ch; }
 int BinkVideoDecoder::y_stride() const { return impl_->geom[0].stride; }
 int BinkVideoDecoder::uv_stride() const { return impl_->geom[1].stride; }
 
+// YUV 4:2:0 -> RGBA8888, integer BT.601 LIMITED range (color_range=tv).
+// [RE: docs/re/bink.md §11.]  The chroma planes are half-resolution and cosited
+// top-left; they are upsampled to full resolution by pixel duplication (nearest:
+// chroma sample (cx,cy) covers luma pixels (2cx,2cy)..(2cx+1,2cy+1)), which is
+// what ffmpeg's decoded output uses for this 4:2:0 content.
+//
+// Coefficients (BT.601, limited range, from bink.md §11's integer form):
+//   c = 298*(Y-16);  d = U-128;  e = V-128
+//   R = (c            + 409*e) >> 8
+//   G = (c - 100*d - 208*e)    >> 8
+//   B = (c + 516*d           ) >> 8
+// then clamp each to 0..255 (clamping the RGB output is correct here, unlike the
+// wrap-around YUV pixel arithmetic in the block decoder).  The shift is a plain
+// arithmetic right shift (floor); no +128 rounding bias is added -- empirically
+// the un-rounded (floor) result stays within +/-2 of ffmpeg's swscale-dithered
+// PNG export on frame 0 (max 2, well-centered), whereas the textbook +128
+// rounding overshoots it to a max of 3.  Clamping absorbs the sub-LSB sign of
+// the shift for negative intermediates, so the result is compiler-independent.
+std::vector<uint8_t> BinkVideoDecoder::rgba() const {
+    const int w = impl_->geom[0].cw;
+    const int h = impl_->geom[0].ch;
+    if (impl_->decoded_upto < 0 || w <= 0 || h <= 0) return {};
+    const int ys = impl_->geom[0].stride;
+    const int cs = impl_->geom[1].stride;
+    const uint8_t* Y = impl_->cur[0].data();
+    const uint8_t* U = impl_->cur[1].data();
+    const uint8_t* V = impl_->cur[2].data();
+    std::vector<uint8_t> out(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4u);
+    auto clip = [](int x) -> uint8_t {
+        return static_cast<uint8_t>(x < 0 ? 0 : (x > 255 ? 255 : x));
+    };
+    std::size_t o = 0;
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* yr = Y + static_cast<std::size_t>(y) * static_cast<std::size_t>(ys);
+        const uint8_t* ur = U + static_cast<std::size_t>(y >> 1) * static_cast<std::size_t>(cs);
+        const uint8_t* vr = V + static_cast<std::size_t>(y >> 1) * static_cast<std::size_t>(cs);
+        for (int x = 0; x < w; ++x) {
+            const int c = 298 * (static_cast<int>(yr[x]) - 16);
+            const int d = static_cast<int>(ur[x >> 1]) - 128;
+            const int e = static_cast<int>(vr[x >> 1]) - 128;
+            out[o++] = clip((c + 409 * e) >> 8);
+            out[o++] = clip((c - 100 * d - 208 * e) >> 8);
+            out[o++] = clip((c + 516 * d) >> 8);
+            out[o++] = 255u;
+        }
+    }
+    return out;
+}
+
 }  // namespace ra2assets

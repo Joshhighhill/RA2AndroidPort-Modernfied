@@ -413,3 +413,105 @@ TEST_CASE("bink: frame decoder byte-exact vs ffmpeg YUV oracle (ra2ts_s.bik)") {
     dec.decode_frame(0);
     CHECK(bink_fnv_planes(dec) == kPinFrame0);
 }
+
+// ===========================================================================
+// YUV420 -> RGBA color conversion (Task 4): BT.601 limited-range, chroma
+// upsampled to full resolution by pixel duplication (nearest).  [RE:
+// docs/re/bink.md §11.]
+//
+// The decisive oracle is ffmpeg's RGBA PNG export
+// (scratchpad/bikframes/f0001.png .. f0431.png), which went through swscale and
+// therefore DITHERS -- so the bar is +/-2 per channel, not bit-exact (bink.md
+// §12 item 2).  Committing the PNG is not viable and the project has no PNG
+// reader, so this test:
+//   (a) always PINS an FNV-1a-64 of rgba() for frame 0.  The pin was computed
+//       from the byte-exact YUV oracle (ra2ts_s.yuv) run through the identical
+//       integer conversion, and the frame-0 YUV planes are themselves pinned
+//       byte-exact above -- so a matching FNV proves rgba() reproduces the
+//       intended conversion exactly.
+//   (b) does a direct +/-2 per-channel comparison against a raw RGBA dump of
+//       f0001.png when that dump is present at the scratchpad path below
+//       (generate with:
+//         ffmpeg -i bikframes/f0001.png -f rawvideo -pix_fmt rgba f0001.rgba).
+//       Dev-time result: max abs diff = 2, mean = 0.36 (well within +/-2).
+//   (c) sanity-checks known-color pixels: the bright-red radar area vs a dark
+//       corner.
+// ===========================================================================
+namespace {
+uint64_t bink_fnv_bytes(const std::vector<uint8_t>& v) {
+    uint64_t h = 1469598103934665603ull;
+    for (uint8_t b : v) { h ^= b; h *= 1099511628211ull; }
+    return h;
+}
+}  // namespace
+
+TEST_CASE("bink: YUV420->RGBA BT.601 limited-range vs ffmpeg oracle (ra2ts_s.bik)") {
+    const std::vector<uint8_t>& lang = ra2fixture::mix_bytes_by_name("language.mix");
+    if (lang.empty()) { MESSAGE("language.mix absent; skipped"); return; }
+    const MixFile& mix = ra2fixture::mix_by_name("language.mix");
+    const MixEntry* e = mix.find("ra2ts_s.bik");
+    REQUIRE(e != nullptr);
+    BinkFile bf = BinkFile::parse(mix.read(*e));
+    REQUIRE(bf.width == 472);
+    REQUIRE(bf.height == 450);
+
+    BinkVideoDecoder dec(bf);
+    dec.decode_frame(0);
+    std::vector<uint8_t> px = dec.rgba();
+
+    // Size: tightly packed w*h*4, RGBA.
+    const int W = 472, H = 450;
+    REQUIRE(px.size() == static_cast<size_t>(W) * H * 4);
+
+    // Alpha is a constant 255 everywhere (the RA2 files carry no alpha plane).
+    bool all_opaque = true;
+    for (size_t i = 3; i < px.size(); i += 4) if (px[i] != 255) { all_opaque = false; break; }
+    CHECK(all_opaque);
+
+    // (a) Pinned FNV-1a-64 of the full RGBA image. Computed from the byte-exact
+    // YUV oracle through this exact integer BT.601 limited-range conversion
+    // (floor, nearest chroma upsample). See header comment.
+    const uint64_t kPinRgbaFrame0 = 0x4e4bde376c751152ull;
+    CHECK(bink_fnv_bytes(px) == kPinRgbaFrame0);
+
+    auto at = [&](int y, int x, int ch) -> int {
+        return px[(static_cast<size_t>(y) * W + x) * 4 + ch];
+    };
+
+    // (c) Sanity: bright-red radar pixel (near-pure red) vs a dark corner.
+    // Oracle f0001.png: (112,138) = [251,0,0], corner (449,0) = [0,0,0].
+    CHECK(at(112, 138, 0) > 200);   // R high
+    CHECK(at(112, 138, 1) < 20);    // G low
+    CHECK(at(112, 138, 2) < 20);    // B low
+    CHECK(at(449, 0, 0) < 10);      // dark corner, all channels low
+    CHECK(at(449, 0, 1) < 10);
+    CHECK(at(449, 0, 2) < 10);
+
+    // (b) Direct +/-2 comparison against ffmpeg's dithered RGBA export, when the
+    // raw dump is present. Bar per bink.md §12: max abs diff <= 2 per channel.
+    const char* kRgbaPath =
+        "C:/Users/Omar/AppData/Local/Temp/claude/d--Red-Alert-2/"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426/scratchpad/f0001.rgba";
+    std::ifstream ora(kRgbaPath, std::ios::binary);
+    if (ora.good()) {
+        std::vector<uint8_t> ref(static_cast<size_t>(W) * H * 4);
+        ora.read(reinterpret_cast<char*>(ref.data()), static_cast<std::streamsize>(ref.size()));
+        if (ora.gcount() == static_cast<std::streamsize>(ref.size())) {
+            int maxdiff = 0;
+            double sum = 0.0;
+            size_t n = 0;
+            for (size_t i = 0; i < px.size(); ++i) {
+                if ((i & 3) == 3) continue;   // skip alpha
+                int diff = std::abs(int(px[i]) - int(ref[i]));
+                if (diff > maxdiff) maxdiff = diff;
+                sum += diff; ++n;
+            }
+            MESSAGE("rgba vs f0001.png oracle: max abs diff = " << maxdiff
+                    << ", mean = " << (sum / n));
+            CHECK(maxdiff <= 2);
+            CHECK(sum / n < 1.0);
+        }
+    } else {
+        MESSAGE("f0001.rgba oracle absent; relying on pinned FNV + sanity pixels");
+    }
+}

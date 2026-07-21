@@ -84,6 +84,17 @@ public:
     int y_stride() const;   // Y  buffer row stride (>= y_w)
     int uv_stride() const;  // UV buffer row stride (>= uv_w)
 
+    // Convert the currently-decoded frame (the last decode_frame call) to a
+    // tightly-packed RGBA8888 image, y_w()*y_h()*4 bytes, row-major, R,G,B,A
+    // order with A = 255 (the RA2 files carry no alpha plane). Uses integer
+    // BT.601 LIMITED-range (color_range=tv) YUV->RGB with the 4:2:0 chroma
+    // planes upsampled to full resolution by pixel duplication (nearest, cosited
+    // top-left), matching ffmpeg's decoded frames within +/-2 per channel
+    // (ffmpeg's PNG export path dithers through swscale). [RE: docs/re/bink.md
+    // §11.] Must be called after decode_frame(); returns an empty vector if no
+    // frame has been decoded yet.
+    std::vector<uint8_t> rgba() const;
+
 private:
     struct Impl;
     Impl* impl_;
