@@ -608,3 +608,154 @@ hardcoded sov07tmd map** through `build_world`/`pick_start_cell`/
 # parse with the repo's own MapFile (scratch tool, links build/libra2assets.a):
 #   g++ -I include mapdump.cpp -L build -lra2assets  → theater/size/cells/waypoints/preview
 ```
+
+## §9 Adjudication (RE-GATE)
+
+Pins the eight items §1–§8 left open, so the map-browser implementation depends
+on measured values rather than recollection. Evidence is reproducible against
+this install (`D:\Red Alert 2`) with `build/ra2extract.exe` plus a scratch probe
+linked against the repo's own `libra2assets.a` and the prebuilt `ra2engine`
+objects (`engine/iso_renderer.cpp` supplies `ra2engine::Theater`).
+
+### §9.1 NewTheater art letters — OVERTURNS the pre-gate assumption
+
+Probing every `g?cnst / n?cnst / g?refn / g?powr / g?weap` variant across all
+theater art mixes returns exactly two hits per building:
+
+```
+gacnst.shp -> ra2.mix/snow.mix      ggcnst.shp -> ra2.mix/generic.mix
+nacnst.shp -> ra2.mix/snow.mix      ngcnst.shp -> ra2.mix/generic.mix
+garefn.shp -> ra2.mix/snow.mix      ggrefn.shp -> ra2.mix/generic.mix
+gapowr.shp -> ra2.mix/snow.mix      ggpowr.shp -> ra2.mix/generic.mix
+gaweap.shp -> ra2.mix/snow.mix      ggweap.shp -> ra2.mix/generic.mix
+```
+
+There is no `gtcnst` / `gucnst` / `gncnst` / `gdcnst` / `glcnst` anywhere.
+
+**CONFIRMED:** on this install only SNOW has dedicated building art (letter
+`A`, i.e. *arctic*). TEMPERATE, URBAN, NEWURBAN, DESERT and LUNAR all resolve
+through the generic `G` art in `ra2.mix/generic.mix` — which is exactly what the
+engine's existing `G`-fallback retry already does (`building-render.md` §1).
+
+Consequence: the per-theater letter is near-irrelevant for art resolution. The
+letters `N` / `D` / `L` stay in the table for completeness but are unexercised,
+so they carry no risk and are recorded as `[RE-FALLBACK: unexercised]`.
+`T` / `A` / `U` remain as already recovered.
+
+### §9.2 Building-art mix names + parent archive — CONFIRMED
+
+`temperat.mix` (237 entries), `snow.mix` (377), `urban.mix` (237) are nested in
+**`ra2.mix`**; `urbann.mix` (241), `desert.mix` (241), `lunar.mix` (242) are
+nested in **`ra2md.mix`**. The marker mixes `ubn.mix` / `des.mix` / `lun.mix`
+(and `tem/sno/urb.mix`) hold 3 entries each and are NOT the art mixes — they
+must not be used as such. No `*md` art variant exists except `snowmd.mix` (80).
+
+### §9.3 Theater / unit / iso palettes — CONFIRMED
+
+All 18 exist, in exactly two containers. `ra2.mix/cache.mix`:
+`isotem/isosno/isourb.pal`, `temperat/snow/urban.pal`,
+`unittem/unitsno/uniturb.pal`. `ra2md.mix/cachemd.mix`:
+`isoubn/isodes/isolun.pal`, `urbann/desert/lunar.pal`,
+`unitubn/unitdes/unitlun.pal`. Every pre-gate fallback name was correct.
+
+### §9.4 Render chains — CONFIRMED for all five MP theaters (item had no fallback)
+
+Constructing `ra2engine::Theater(iso_mix, control_ini, ext)` per theater and
+resolving every distinct tile of a real map of that theater:
+
+| Theater | control INI | tile mix that resolves | sample map | distinct tiles resolved |
+|---|---|---|---|---:|
+| TEMPERATE | `localmd.mix/temperatmd.ini` | `ra2.mix/isotemp.mix` | `xmp01t4.map` 105x95 | **270 / 270** |
+| SNOW | `localmd.mix/snowmd.ini` | `ra2.mix/isosnow.mix` | `xmp31s2.map` 70x83 | **164 / 164** |
+| URBAN | `localmd.mix/urbanmd.ini` | `ra2.mix/isourb.mix` | `xmp29u2.map` 60x60 | **116 / 116** |
+| NEWURBAN | `localmd.mix/urbannmd.ini` | `ra2md.mix/isoubn.mix` | `fight.map` 81x52 | **154 / 155** |
+| DESERT | `localmd.mix/desertmd.ini` | `ra2md.mix/isodes.mix` | `dunepatr.map` 60x52 | **103 / 103** |
+| LUNAR | `localmd.mix/lunarmd.ini` | `ra2md.mix/isolun.mix` | *(no MP map exists)* | untested |
+
+**All five multiplayer theaters are PLAYABLE.** Two findings that would have
+broken a naive implementation:
+
+1. **The `*md` tile mixes are OVERLAYS, not the tile set.** `isotemmd.mix`,
+   `isosnomd.mix`, `isourbmd.mix`, `isoubnmd.mix` and `isodesmd.mix` each
+   resolve **0** of the sample tiles, with `first-miss = Clear01.<ext>` at index
+   0 — they do not even carry the clear tile. The **base** mix is authoritative;
+   a loader that opens only the `md` variant renders an empty map. Search base
+   first, then the `md` overlay.
+2. **The control INI must be the `md` variant for every theater**, including
+   TEMPERATE (`temperatmd.ini`, in `ra2md.mix/localmd.mix`) — the same file the
+   engine already reaches through its `load_ini_from_ra2md` chain.
+
+NEWURBAN's single miss is `stdmrb01.ubn` (template index 950) on `fight.map`:
+one absent terrain template out of 155. Recorded as a known cosmetic gap —
+NEWURBAN stays playable, and the renderer must tolerate an unresolved template
+(draw nothing) rather than assume every index resolves. LUNAR has 0 MP maps
+(§6), so it is excluded from the browser and its chain stays unverified.
+
+### §9.5 Lobby-slot to start-waypoint binding — ADJUDICATED (not recovered)
+
+Not addressed by the hunt and not recoverable from map data. We adopt
+**deterministic ascending binding**: combatant slot *k* takes
+`start_waypoints()[k]`. The original's randomized assignment is recorded as
+`[RE-FALLBACK: randomized lobby-to-start assignment]` — deliberately not
+reproduced, consistent with every prior phase's substitution of a deterministic
+rule for the lockstep RNG.
+
+### §9.6 Census re-verification — CONFIRMED, all four numbers re-measured
+
+- **161** active `[MultiMaps]` entries in `missionsmd.pkt`.
+- **161 / 161** exist in `multimd.mix` (which holds 173 entries — 12 unlisted).
+  The existence filter therefore drops nothing on this install, but stays
+  mandatory: RA2's `missions.pkt` lists 58 maps that do not exist (§2).
+- **91** carry `GameMode=standard`.
+- Gate map `xmp31s2.map` = SNOW, 70x83, 2 start waypoints, `GameMode=standard`,
+  124,908 bytes — all four confirmed.
+
+Start decoding re-confirmed on five maps across four theaters; the count of
+`[Waypoints]` keys 0–7 equals `[Header] NumberStartingPoints` on every one:
+
+```
+xmp31s2  (SNOW)      starts=2  0=(54,53)  1=(94,111)
+xmp01t4  (TEMPERATE) starts=4  0=(57,98)  1=(99,148) 2=(152,96) 3=(110,55)
+fight    (NEWURBAN)  starts=2  0=(49,113) 1=(85,26)
+dunepatr (DESERT)    starts=2  0=(34,79)  1=(79,34)
+xmp29u2  (URBAN)     starts=2  0=(52,97)  1=(65,20)
+```
+
+### §9.7 CSF access path — CONFIRMED
+
+`ra2md.csf` is a direct entry of top-level `langmd.mix` (id `BD835079`,
+573,137 bytes), beside `missionsmd.pkt` (id `480B82E4`, 21,142 bytes). The
+repo's `CsfStrings::load` parses it to **5,208 labels**, and `find` is
+case-insensitive as required:
+
+```
+find("DESC:MP01DU") = find("desc:mp01du") = find("Desc:Mp01Du") = "South Pacific (2-4)"
+find("DESC:MP31U2") = "May Day (2)"
+find("DESC:MP02T2") = "Isle of War (2)"
+find("NAME:MP01DU") = (null)
+```
+
+**`DESC:` is the correct and only prefix** — the `NAME:` form does not exist.
+
+### §9.8 LocalSize — ADJUDICATED: IGNORED this phase
+
+The full `[Map] Size` rect renders as today. `LocalSize` (the playable sub-rect
+the original clips the camera to) is left for a later camera/bounds pass.
+
+### §9 TheaterChain table (copy verbatim)
+
+| name | letter | iso mix (base, authoritative) | iso mix (md overlay) | art mix | control INI | iso pal | theater pal | unit pal | ext | yr_only | playable |
+|---|:--:|---|---|---|---|---|---|---|:--:|:--:|:--:|
+| TEMPERATE | T | `ra2.mix/isotemp.mix` | `ra2md.mix/isotemmd.mix` | `ra2.mix/temperat.mix` | `ra2md.mix/localmd.mix/temperatmd.ini` | `ra2.mix/cache.mix/isotem.pal` | `ra2.mix/cache.mix/temperat.pal` | `ra2.mix/cache.mix/unittem.pal` | `.tem` | no | **yes** |
+| SNOW | A | `ra2.mix/isosnow.mix` | `ra2md.mix/isosnomd.mix` | `ra2.mix/snow.mix` | `ra2md.mix/localmd.mix/snowmd.ini` | `ra2.mix/cache.mix/isosno.pal` | `ra2.mix/cache.mix/snow.pal` | `ra2.mix/cache.mix/unitsno.pal` | `.sno` | no | **yes** |
+| URBAN | U | `ra2.mix/isourb.mix` | `ra2md.mix/isourbmd.mix` | `ra2.mix/urban.mix` | `ra2md.mix/localmd.mix/urbanmd.ini` | `ra2.mix/cache.mix/isourb.pal` | `ra2.mix/cache.mix/urban.pal` | `ra2.mix/cache.mix/uniturb.pal` | `.urb` | no | **yes** |
+| NEWURBAN | N* | `ra2md.mix/isoubn.mix` | `ra2md.mix/isoubnmd.mix` | `ra2md.mix/urbann.mix` | `ra2md.mix/localmd.mix/urbannmd.ini` | `ra2md.mix/cachemd.mix/isoubn.pal` | `ra2md.mix/cachemd.mix/urbann.pal` | `ra2md.mix/cachemd.mix/unitubn.pal` | `.ubn` | yes | **yes** |
+| DESERT | D* | `ra2md.mix/isodes.mix` | `ra2md.mix/isodesmd.mix` | `ra2md.mix/desert.mix` | `ra2md.mix/localmd.mix/desertmd.ini` | `ra2md.mix/cachemd.mix/isodes.pal` | `ra2md.mix/cachemd.mix/desert.pal` | `ra2md.mix/cachemd.mix/unitdes.pal` | `.des` | yes | **yes** |
+| LUNAR | L* | `ra2md.mix/isolun.mix` | `ra2md.mix/isolunmd.mix` | `ra2md.mix/lunar.mix` | `ra2md.mix/localmd.mix/lunarmd.ini` | `ra2md.mix/cachemd.mix/isolun.pal` | `ra2md.mix/cachemd.mix/lunar.pal` | `ra2md.mix/cachemd.mix/unitlun.pal` | `.lun` | yes | **no** (0 MP maps) |
+
+`*` = `[RE-FALLBACK: unexercised]` per §9.1 — no building art uses these letters
+on this install; resolution falls through to `generic.mix`.
+
+**TEMPERATE row check:** it must stay behaviourally identical to the literals
+`main.cpp` hardcodes today, so the default path — and therefore all 18
+byte-identity gates — is unchanged.
