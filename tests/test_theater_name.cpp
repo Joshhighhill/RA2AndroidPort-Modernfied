@@ -9,6 +9,8 @@
 #include <vector>
 
 using ra2assets::theater_candidates;
+using ra2assets::theater_chain;
+using ra2assets::TheaterChain;
 using ra2assets::MixFile;
 using ra2assets::MixEntry;
 namespace fs = std::filesystem;
@@ -93,4 +95,59 @@ TEST_CASE("theater_candidates: real-install resolution pins") {
     auto [cnstmk_mix, cnstmk_size] = resolve_first("GACNSTMK", ".shp");
     CHECK(cnstmk_mix == "isotemp.mix");
     CHECK(cnstmk_size == 428080);
+}
+
+// --- TheaterChain table [RE: maps.md §6 + §9 RE-GATE] ---------------------
+TEST_CASE("theater_chain: TEMPERATE row reproduces today's hardcoded literals") {
+    // maps.md §7 rule 4 / §9: this identity is what keeps every existing
+    // candidate walk -- and therefore all 18 gates -- byte-identical.
+    const TheaterChain* t = theater_chain("TEMPERATE");
+    REQUIRE(t != nullptr);
+    CHECK(std::string(t->name) == "TEMPERATE");
+    CHECK(t->letter == 'T');
+    CHECK(std::string(t->iso_mix) == "isotemp.mix");
+    CHECK(std::string(t->art_mix) == "temperat.mix");
+    CHECK(std::string(t->control_ini) == "temperat.ini");
+    CHECK(std::string(t->iso_pal) == "isotem.pal");
+    CHECK(std::string(t->theater_pal) == "temperat.pal");
+    CHECK(std::string(t->unit_pal) == "unittem.pal");
+    CHECK(std::string(t->ext) == "tem");
+    CHECK_FALSE(t->yr_only);
+    CHECK(t->playable);
+}
+
+TEST_CASE("theater_chain: all six theaters resolve, case-insensitively") {
+    CHECK(theater_chain("SNOW") != nullptr);
+    CHECK(theater_chain("snow") != nullptr);          // case-insensitive
+    CHECK(theater_chain("Snow") != nullptr);
+    CHECK(theater_chain("URBAN") != nullptr);
+    CHECK(theater_chain("NEWURBAN") != nullptr);
+    CHECK(theater_chain("DESERT") != nullptr);
+    CHECK(theater_chain("LUNAR") != nullptr);
+    CHECK(theater_chain("NOSUCHTHEATER") == nullptr);
+    CHECK(theater_chain("") == nullptr);
+}
+
+TEST_CASE("theater_chain: SNOW/URBAN use the *md* control INI [RE: maps.md §9.4]") {
+    // Task 1 proved snowmd.ini resolves 164/164 and urbanmd.ini 116/116; the
+    // non-md files differ in size and were never validated.
+    CHECK(std::string(theater_chain("SNOW")->control_ini) == "snowmd.ini");
+    CHECK(std::string(theater_chain("URBAN")->control_ini) == "urbanmd.ini");
+    CHECK(theater_chain("SNOW")->letter == 'A');       // arctic, the ONE real letter
+    CHECK(std::string(theater_chain("SNOW")->ext) == "sno");
+    CHECK(std::string(theater_chain("URBAN")->ext) == "urb");
+}
+
+TEST_CASE("theater_chain: YR theaters are yr_only; LUNAR is not playable") {
+    // maps.md §3: 0 LUNAR multiplayer maps exist, so its chain is unverified.
+    CHECK(theater_chain("NEWURBAN")->yr_only);
+    CHECK(theater_chain("DESERT")->yr_only);
+    CHECK(theater_chain("LUNAR")->yr_only);
+    CHECK_FALSE(theater_chain("TEMPERATE")->yr_only);
+    CHECK_FALSE(theater_chain("SNOW")->yr_only);
+    CHECK_FALSE(theater_chain("URBAN")->yr_only);
+
+    CHECK(theater_chain("NEWURBAN")->playable);
+    CHECK(theater_chain("DESERT")->playable);
+    CHECK_FALSE(theater_chain("LUNAR")->playable);     // rejected by the browser
 }

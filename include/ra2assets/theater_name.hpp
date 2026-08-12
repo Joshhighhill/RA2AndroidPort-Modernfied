@@ -36,4 +36,34 @@ std::vector<TheaterCandidate> theater_candidates(const std::string& image,
                                                  const std::string& theater_mix,
                                                  const std::string& ext);
 
+// One theater's complete asset chain [RE: maps.md §6 + §9 RE-GATE items 1-4].
+// Everything a generic theater loader needs, following the exact naming
+// pattern the temperate chain already uses. `yr_only` theaters (NEWURBAN/
+// DESERT/LUNAR) live under ra2md.mix + localmd.mix/cachemd.mix instead of
+// ra2.mix + local.mix/cache.mix. `playable` is false for LUNAR: maps.md §3
+// confirms NO LUNAR multiplayer map exists on this install.
+// All string members are static storage -- safe to hold as const char*.
+//
+// [RE-GATE APPLIED: maps.md §9.4] `iso_mix` is the BASE mix and is
+// AUTHORITATIVE. The same-named `*md` variants (isotemmd.mix, isosnomd.mix,
+// isourbmd.mix, isoubnmd.mix, isodesmd.mix) are OVERLAYS: each resolves 0 of a
+// real map's tiles and lacks even Clear01 at index 0, so a loader that opens
+// only the md variant renders an EMPTY MAP.
+struct TheaterChain {
+    const char* name;         // "TEMPERATE"    -- [Map] Theater= value
+    char        letter;       // NewTheater art letter for theater_candidates
+    const char* iso_mix;      // "isotemp.mix"  -- tile templates (BASE, authoritative)
+    const char* art_mix;      // "temperat.mix" -- building/overlay art
+    const char* control_ini;  // "temperat.ini" -- [TileSetNNNN] config
+    const char* iso_pal;      // "isotem.pal"   -- iso TILE palette
+    const char* theater_pal;  // "temperat.pal" -- ore/gem overlay palette
+    const char* unit_pal;     // "unittem.pal"  -- shared unit palette
+    const char* ext;          // "tem"          -- tile extension, NO dot
+    bool        yr_only;      // true -> ra2md.mix/localmd.mix/cachemd.mix
+    bool        playable;     // false -> reject (LUNAR: 0 MP maps, §3)
+};
+
+// Case-insensitive lookup of a [Map] Theater= value. nullptr if unknown.
+const TheaterChain* theater_chain(const std::string& theater_name);
+
 } // namespace ra2assets
