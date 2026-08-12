@@ -1,6 +1,7 @@
 #include "ra2assets/map.hpp"
 #include "ra2assets/ini.hpp"
 #include "ra2assets/mappack.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 // MapFile: [Map] Theater/Size + [IsoMapPack5] terrain, sitting on top of Ini
@@ -140,6 +141,32 @@ MapFile MapFile::parse(const std::string& ini_text) {
     map.overlay_ = collect_overlay("OverlayPack");
     map.overlay_data_ = collect_overlay("OverlayDataPack");
 
+    // [Waypoints] -> decoded start/script cells [RE: maps.md §4.3, CONFIRMED].
+    // ADDITIVE ONLY (maps.md §7 rule 1): this block reads a section nothing
+    // else touches and writes a NEW member. Theater/Size/cells/overlay and
+    // their parse order above are UNCHANGED, so every existing consumer --
+    // and every byte-identity gate built on the default map -- is unaffected.
+    // Malformed keys/values are skipped, never thrown: a map must still load.
+    {
+        const auto& wps = ini.section("Waypoints");
+        map.waypoints_.reserve(wps.size());
+        for (const auto& kv : wps) {
+            int idx = 0, packed = 0;
+            try {
+                idx = std::stoi(kv.first);
+                packed = std::stoi(kv.second);
+            } catch (...) { continue; }
+            if (idx < 0 || packed < 0) continue;
+            MapWaypoint w;
+            w.index = idx;
+            w.x = packed % 1000;    // [RE: maps.md §4.3] x = v % 1000
+            w.y = packed / 1000;    //                    y = v / 1000
+            map.waypoints_.push_back(w);
+        }
+        std::sort(map.waypoints_.begin(), map.waypoints_.end(),
+                  [](const MapWaypoint& a, const MapWaypoint& b) { return a.index < b.index; });
+    }
+
     return map;
 }
 
@@ -160,5 +187,14 @@ int MapFile::overlay_data_at(int x, int y) const {
     if (overlay_at(x, y) < 0) return -1;   // data byte is meaningless without an overlay
     return overlay_data_[static_cast<size_t>(x) + static_cast<size_t>(y) * 512];
 }
+
+std::vector<MapWaypoint> MapFile::start_waypoints() const {
+    std::vector<MapWaypoint> out;                       // [RE: maps.md §4.3 item 2]
+    for (const MapWaypoint& w : waypoints_)
+        if (w.index >= 0 && w.index <= 7) out.push_back(w);   // already ascending
+    return out;
+}
+
+int MapFile::start_count() const { return (int)start_waypoints().size(); }
 
 } // namespace ra2assets

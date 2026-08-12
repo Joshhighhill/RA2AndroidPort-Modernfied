@@ -409,3 +409,84 @@ TEST_CASE("map: real reference map has ore overlay (pins)") {
     CHECK(m.overlay_at(140, 63) == 127);   // TIB2 base
     CHECK(m.overlay_data_at(140, 63) == 0);
 }
+
+// --- [Waypoints] decode [RE: maps.md §4.3] --------------------------------
+TEST_CASE("map: [Waypoints] decode x=v%1000 y=v/1000, starts are keys 0..7") {
+    const std::string text =
+        "[Map]\nTheater=TEMPERATE\nSize=0,0,105,95\n"
+        "[Waypoints]\n"
+        "0=98057\n"        // -> (57, 98)   (maps.md §4.3's own xmp01t4 example)
+        "1=148099\n"       // -> (99, 148)
+        "2=96152\n"        // -> (152, 96)
+        "3=55110\n"        // -> (110, 55)
+        "26=93052\n"       // > 7 -> NOT a start
+        "699=100100\n"     // map center -> NOT a start
+        "bogus=1\n"        // non-numeric key   -> skipped, no throw
+        "9=notanumber\n";  // non-numeric value -> skipped, no throw
+
+    MapFile m = MapFile::parse(text);
+    REQUIRE(m.waypoints().size() == 6);           // 4 starts + 26 + 699
+    CHECK(m.waypoints()[0].index == 0);
+    CHECK(m.waypoints()[0].x == 57);
+    CHECK(m.waypoints()[0].y == 98);
+    CHECK(m.waypoints()[1].x == 99);
+    CHECK(m.waypoints()[1].y == 148);
+    CHECK(m.waypoints()[4].index == 26);          // ascending by index
+    CHECK(m.waypoints()[5].index == 699);
+
+    const std::vector<MapWaypoint> starts = m.start_waypoints();
+    REQUIRE(starts.size() == 4);
+    CHECK(m.start_count() == 4);
+    CHECK(starts[0].index == 0);
+    CHECK(starts[3].index == 3);
+    CHECK(starts[3].x == 110);
+    CHECK(starts[3].y == 55);
+}
+
+TEST_CASE("map: no [Waypoints] section still parses (campaign/regression guard)") {
+    MapFile m = MapFile::parse("[Map]\nTheater=TEMPERATE\nSize=0,0,10,10\n");
+    CHECK(m.waypoints().empty());
+    CHECK(m.start_count() == 0);
+    CHECK(m.theater() == "TEMPERATE");            // existing behavior UNCHANGED
+    CHECK(m.width() == 10);
+    CHECK(m.height() == 10);
+}
+
+// --- REAL ASSETS (guarded): the multiplayer maps --------------------------
+TEST_CASE("map: real xmp01t4.map -> TEMPERATE 105x95, 4 starts [RE: maps.md §3/§4]") {
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    const std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto bytes = slurp(base + "\\multimd.mix");
+    if (bytes.empty()) { MESSAGE("skipped: multimd.mix not found under " << base); return; }
+    MixFile mix = MixFile::open(std::move(bytes));
+    const MixEntry* e = mix.find(std::string("xmp01t4.map"));
+    if (!e) { MESSAGE("skipped: xmp01t4.map not in multimd.mix"); return; }
+    auto raw = mix.read(*e);
+    MapFile m = MapFile::parse(std::string(raw.begin(), raw.end()));
+
+    CHECK(m.theater() == "TEMPERATE");
+    CHECK(m.width() == 105);
+    CHECK(m.height() == 95);
+    CHECK(m.cells().size() == 19855);             // (2w-1)*h  [maps.md §4.2]
+    REQUIRE(m.start_count() == 4);
+    CHECK(m.start_waypoints()[0].x == 57);        // 0=98057
+    CHECK(m.start_waypoints()[0].y == 98);
+}
+
+TEST_CASE("map: real xmp31s2.map -> SNOW 70x83, 2 starts (the --demo-maps map)") {
+    const char* dir = std::getenv("RA2_INSTALL_DIR");
+    const std::string base = dir ? dir : "D:\\Red Alert 2";
+    auto bytes = slurp(base + "\\multimd.mix");
+    if (bytes.empty()) { MESSAGE("skipped: multimd.mix not found under " << base); return; }
+    MixFile mix = MixFile::open(std::move(bytes));
+    const MixEntry* e = mix.find(std::string("xmp31s2.map"));
+    if (!e) { MESSAGE("skipped: xmp31s2.map not in multimd.mix"); return; }
+    auto raw = mix.read(*e);
+    MapFile m = MapFile::parse(std::string(raw.begin(), raw.end()));
+    CHECK(m.theater() == "SNOW");
+    CHECK(m.width() == 70);
+    CHECK(m.height() == 83);
+    CHECK(m.start_count() == 2);
+    // Every start must land on a real IsoMapPack5 cell (maps.md §4.3).
+    for (const MapWaypoint& w : m.start_waypoints()) CHECK(m.at(w.x, w.y) != nullptr);
+}

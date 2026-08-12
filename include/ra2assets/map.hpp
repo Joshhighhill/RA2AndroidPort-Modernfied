@@ -66,6 +66,19 @@ namespace detail {
 std::vector<MapCell> parse_cell_records(const uint8_t* data, size_t len);
 } // namespace detail
 
+// One [Waypoints] entry, decoded [RE: maps.md §4.3, CONFIRMED]. The INI value
+// is a PACKED cell: x = value % 1000, y = value / 1000, giving a cell in the
+// SAME coordinate space as the [IsoMapPack5] cell records (MapCell::x/y).
+// Triple-sourced: OpenRA ImportGen2MapCommand.ReadWaypoints, XCC
+// map_ts_ini_reader, and this install's own [Header] affine cross-check
+// (HeaderY = round((x+y)/2), HeaderX = (x-y)/2 + 255.5+-0.5 hold ONLY under
+// this decode order). Waypoints 0..7 are the MULTIPLAYER START POSITIONS and
+// their count equals [Header] NumberStartingPoints on 267/267 MP maps.
+// [RE-FALLBACK: maps.md §4.3 item 4 -- the meaning of waypoints > 7 (10-55,
+// 98, 99, 699=map center) was NOT determined; in-map script references were
+// ruled out. Only 0..7 matter for house placement.]
+struct MapWaypoint { int index = 0; int x = 0; int y = 0; };
+
 class MapFile {
 public:
     // Parses a full map/.mpr INI: `[Map] Theater=`/`Size=`, and the
@@ -104,12 +117,26 @@ public:
     int overlay_at(int x, int y) const;
     int overlay_data_at(int x, int y) const;
 
+    // ALL [Waypoints] entries, ascending by index. Empty if the section is
+    // absent (campaign maps have one; a map without the section is legal).
+    // [RE: maps.md §4.3]
+    const std::vector<MapWaypoint>& waypoints() const { return waypoints_; }
+
+    // The MULTIPLAYER START POSITIONS: waypoint indices 0..7 only, ascending.
+    // The start count is simply how many of the keys 0..7 are present
+    // (2..8, never more, on all 267 MP maps). [RE: maps.md §4.3 item 2]
+    std::vector<MapWaypoint> start_waypoints() const;
+
+    // Convenience: start_waypoints().size(). 0 for a map with no starts.
+    int start_count() const;
+
 private:
     int width_ = 0;
     int height_ = 0;
     std::string theater_;
     std::vector<MapCell> cells_;
     std::vector<uint8_t> overlay_, overlay_data_;
+    std::vector<MapWaypoint> waypoints_;
 };
 
 } // namespace ra2assets
