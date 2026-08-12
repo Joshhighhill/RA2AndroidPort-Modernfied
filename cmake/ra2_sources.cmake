@@ -75,4 +75,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/skirmish.cpp
     ${RA2_ROOT}/engine/rectfont.cpp
     ${RA2_ROOT}/engine/maplist.cpp
+    ${RA2_ROOT}/engine/repair_sell.cpp
 )

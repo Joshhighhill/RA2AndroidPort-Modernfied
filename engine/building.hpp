@@ -54,6 +54,17 @@ struct BuildingTypeDef {
     // (false) -> not read by world_hash. If GASPYSAT is absent from the roster
     // the mechanism ships inert until such a building exists (RE-GATE item 2).
     bool grants_map_reveal = false;
+    // --- Repair & Sell phase [RE: repair-sell.md §A4/§B1/§B3/§B5] ---
+    // Absent from every stock building section EXCEPT ClickRepairable, whose
+    // recovered default is YES [§A4]. Resolved by load_building_assets.
+    bool unsellable       = false;  // Unsellable=      [§B5] [RE-GATE APPLIED §D0: CAOILD
+                                    // DOES set Unsellable=yes -- the hunt's "no stock
+                                    // building sets it" was WRONG. Verified in rulesmd.]
+    bool click_repairable = true;   // ClickRepairable= [§A4] DEFAULT YES
+    bool crewed           = false;  // Crewed=          [§B3] gates survivor spawn
+    int  soylent          = 0;      // Soylent=         [§B1] absolute refund override
+                                    // [RE-GATE APPLIED §D0: GAREFN/NAREFN set Soylent=300,
+                                    // so this override is load-bearing, not dead code.]
 };
 
 // A placed building instance.
@@ -96,6 +107,15 @@ struct Building {
     // caller when it spawns a SW-granting building; capture_building moves the
     // house's SW grant when such a building is captured (transfer_superweapon).
     bool grants_superweapon = false;
+    // --- Repair & Sell phase [RE: repair-sell.md §A2/§B2] ---
+    // ALL FOUR are inert by default and are NOT read by world_hash (which folds
+    // only type/cx/cy/hp/state), so every existing gate is byte-identical. They
+    // are set ONLY by World::set_repair / World::begin_sell, which no existing
+    // demo calls.
+    bool   being_repaired = false;  // [§A2 bldg+0x6E8] the per-building wrench toggle
+    bool   selling        = false;  // [§B2] mission 0x13 (Selling) is running
+    double sell_time      = 0.0;    // seconds elapsed in the MIRRORED buildup [§B2]
+    bool   sold           = false;  // died via sell, not combat (suppresses the explosion)
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

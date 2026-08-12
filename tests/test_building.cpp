@@ -119,3 +119,21 @@ TEST_CASE("kill_building + death tombstone") {
     CHECK_FALSE(v[0].alive);
     CHECK(v[0].state == Building::State::Dead);
 }
+
+TEST_CASE("building: Repair & Sell fields are inert by default [RE: repair-sell.md §A2/§B2]") {
+    ra2engine::Building b;
+    CHECK_FALSE(b.being_repaired);
+    CHECK_FALSE(b.selling);
+    CHECK(b.sell_time == doctest::Approx(0.0));
+    CHECK_FALSE(b.sold);
+    ra2engine::BuildingTypeDef t;
+    CHECK_FALSE(t.unsellable);
+    CHECK(t.click_repairable);          // the recovered DEFAULT YES
+    CHECK_FALSE(t.crewed);
+    CHECK(t.soylent == 0);
+    // kill_building must not disturb any of them (sell sets `sold` itself).
+    b.being_repaired = true;
+    ra2engine::kill_building(b);
+    CHECK(b.being_repaired);
+    CHECK_FALSE(b.sold);
+}

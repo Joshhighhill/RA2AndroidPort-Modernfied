@@ -211,6 +211,13 @@ target_sources(ra2assets_tests PRIVATE tests/test_capture.cpp engine/capture.cpp
 # visibility grids + step_visibility live in engine/world.cpp (already on
 # test_world's line).
 target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibility.cpp)
+# Repair & Sell phase [RE: repair-sell.md]: pure repair/sell arithmetic + the
+# refusal predicates (14-frame global cadence, the two-integer-division
+# stepCost, the FLAT refund, the survivor divisors, the mirrored buildup
+# frame). World-free -- it sees only Building/BuildingTypeDef, like
+# production.cpp. The World mutation entry points live in engine/world.cpp
+# (already on test_world's line), so world.cpp is NOT added here.
+target_sources(ra2assets_tests PRIVATE tests/test_repair_sell.cpp engine/repair_sell.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's
