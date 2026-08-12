@@ -27,6 +27,7 @@ set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/theater_name.cpp
     ${RA2_ROOT}/src/sounds.cpp
     ${RA2_ROOT}/src/map.cpp
+    ${RA2_ROOT}/src/pkt.cpp
     ${RA2_ROOT}/src/theater.cpp
     ${RA2_ROOT}/src/land_type.cpp
     ${RA2_ROOT}/src/audio_bag.cpp
