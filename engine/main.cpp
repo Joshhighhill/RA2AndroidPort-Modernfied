@@ -2464,13 +2464,35 @@ std::vector<ra2engine::Cellxy> make_ai_waypoints(int px, int py) {
     return w;
 }
 
+// Real map waypoints for scripted AI move-to-waypoint arguments [RE: maps.md
+// §4.3]. Index i is the map's waypoint i when the map defines it, else the
+// synthetic ring entry from make_ai_waypoints(px,py) -- so a script naming a
+// waypoint the map does not define still resolves to something sane. This
+// RETIRES the [RE-FALLBACK] at make_ai_waypoints for every index the map
+// actually defines. INTERACTIVE PATH ONLY: the two gate call sites of
+// make_ai_team_config pass no map, so their tc.waypoints stay the pure ring
+// (maps.md §7 rule 3).
+// [RE-FALLBACK: maps.md §4.3 item 4 -- the PURPOSE of waypoints > 7 (10-55,
+// 98, 99, 699=map center) was not determined; in-map script references were
+// ruled out. We use them as positional nodes, which cannot contradict
+// anything maps.md pinned.]
+std::vector<ra2engine::Cellxy> make_ai_waypoints_from_map(const ra2assets::MapFile& map,
+                                                          int px, int py) {
+    std::vector<ra2engine::Cellxy> w = make_ai_waypoints(px, py);   // 32-entry ring baseline
+    for (const ra2assets::MapWaypoint& mw : map.waypoints())
+        if (mw.index >= 0 && mw.index < (int)w.size())
+            w[(size_t)mw.index] = ra2engine::Cellxy{mw.x, mw.y};
+    return w;
+}
+
 // Resolve the AI-2 team config from the real aimd.ini + the Soviet unit
 // roster [RE: ai-team.md]. (player_x, player_y) anchors the waypoint table.
 ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const UnitRoster& ur_ai,
                                             const Rules& rules, const ra2assets::Ini& aimd_ini,
                                             ra2engine::AiDifficulty difficulty,
                                             int player_x, int player_y,
-                                            bool enable_triggers = false) {
+                                            bool enable_triggers = false,
+                                            const ra2assets::MapFile* map = nullptr) {
     ra2engine::AiTeamConfig tc;
     tc.enabled = true;
     tc.unit_roster = ur_ai.defs;
@@ -2512,7 +2534,10 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
                                  // roster can field the TaskForce (parse_aimd
                                  // art-guard-drop). Interactive path is skirmish:
                                  // tc.rules.multiplay stays false (no dissolve).
-    tc.waypoints = make_ai_waypoints(player_x, player_y);
+    // nullptr => EXACTLY the historical synthetic ring (the gate call sites).
+    tc.waypoints = (map && !map->waypoints().empty())
+                       ? make_ai_waypoints_from_map(*map, player_x, player_y)
+                       : make_ai_waypoints(player_x, player_y);
     // Team knobs from the real rulesmd, constants as fallbacks
     // [RE: ai-team.md §2/§4]. TeamDelays= is a CSV and section_double would
     // read only its head, so the per-difficulty value comes from the PINNED
@@ -9481,13 +9506,29 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
     const int gw = world.grid_w(), gh = world.grid_h();
     (void)gh;
+    // [RE: maps.md §4.3 + §9.5] Real multiplayer starts when the config opts
+    // in; otherwise the historical fan-out. --demo-skirmish leaves
+    // use_map_starts=false and so keeps its hash (maps.md §7 rule 3).
+    // [RE-FALLBACK §9.5: the original randomizes the lobby-slot -> start
+    // assignment; we bind combatant k -> start_waypoints()[k] ascending so the
+    // placement is deterministic.]
+    const std::vector<ra2assets::MapWaypoint> starts =
+        cfg.use_map_starts ? a.map.start_waypoints() : std::vector<ra2assets::MapWaypoint>{};
+    int combatant_ix = 0;
     // Per-combatant spawn: a base at a fanned-out cell + unit_count combat units
     // (+ MCV placeholder) ring-scanned like the existing transport/engineer spawns.
     for (int i = 0; i < (int)cfg.slots.size(); ++i) {
         const ra2engine::SkirmishSlot& s = cfg.slots[i];
-        if (!s.combatant) continue;
-        const int bx = sc ? sc->x + (i * 14) % std::max(1, gw - 14) : 6 + i * 6;
-        const int by = sc ? sc->y : 6 + i * 4;
+        if (!s.combatant) continue;             // non-combatants consume no start
+        int bx, by;
+        if (!starts.empty()) {
+            const ra2assets::MapWaypoint& w = starts[(size_t)(combatant_ix % (int)starts.size())];
+            bx = w.x; by = w.y;
+        } else {
+            bx = sc ? sc->x + (i * 14) % std::max(1, gw - 14) : 6 + i * 6;
+            by = sc ? sc->y : 6 + i * 4;
+        }
+        ++combatant_ix;
         if (ba.ok) spawn_base(world, ba, /*house=*/i, bx, by);
         // unit_count starting units (ring-scan for free walkable cells).
         ra2engine::UnitCombat uc = resolve_combat_unit(

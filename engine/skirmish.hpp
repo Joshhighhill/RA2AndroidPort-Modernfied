@@ -23,7 +23,22 @@ struct SkirmishSlot {
 // shipped [MultiplayerDialogSettings] values. GameSpeed is PRESENTATION-only and
 // is NOT stored here (it cannot affect the deterministic dt=1/15 step / world_hash).
 struct SkirmishConfig {
-    std::string               map_id        = "mapsmd03";  // only one map; browser = carry-forward
+    std::string               map_id        = "mapsmd03";  // legacy label; see map_file below
+
+    // [RE: maps.md §1/§2] Which multiplayer map to load, as a multimd.mix
+    // entry name (e.g. "xmp31s2.map"). EMPTY = the engine's historical default
+    // map (mapsmd03.mix / 0x133a0cb2 = the CAMPAIGN mission sov07tmd.map,
+    // maps.md §1) -- which is what every byte-identity gate loads. Never
+    // repoint the default (maps.md §7 rule 2).
+    std::string               map_file      = "";
+
+    // [RE: maps.md §4.3 + §9.5] Place each combatant house at the map's real
+    // [Waypoints] 0-7 start (combatant k -> start_waypoints()[k], ascending).
+    // FALSE (the default) keeps launch_skirmish's historical pick_start_cell +
+    // i*14 fan-out, so --demo-skirmish stays byte-identical (maps.md §7 rule 3).
+    // [RE-FALLBACK: the original randomizes the lobby-slot -> start-location
+    // assignment; a byte-identity gate needs determinism, so we bind ascending.]
+    bool                      use_map_starts = false;
     std::vector<SkirmishSlot> slots;                       // index 0 = the human player
     double                    starting_cash = 10000.0;     // slider 5000-10000
     int                       unit_count    = 10;          // 0-10 (MCV extra)
