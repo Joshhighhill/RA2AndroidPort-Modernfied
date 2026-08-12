@@ -109,6 +109,22 @@ struct Assets {
     MapFile map;
     Palette pal;
     ra2engine::Theater theater;
+    // The resolved chain for this map's theater [RE: maps.md §6/§9]. Non-null
+    // after load_assets; the art loaders consult it so they stop hardcoding the
+    // temperate names. For the DEFAULT map this is the TEMPERATE row, whose
+    // fields are the exact literals used before this existed.
+    const ra2assets::TheaterChain* chain = nullptr;
+};
+
+// Which map load_assets should read [RE: maps.md §7 rule 2]. The DEFAULT
+// reproduces today's hardcoded selection EXACTLY -- mapsmd03.mix entry
+// 0x133a0cb2, which the hunt identified as the campaign mission sov07tmd.map --
+// so every gate path that calls load_assets(dir, ra2) is unchanged. The map
+// browser passes a real multiplayer map from multimd.mix instead.
+struct MapSelection {
+    std::string mix  = "mapsmd03.mix";   // top-level mix holding the map
+    uint32_t    id   = 0x133a0cb2u;      // entry id; used when `name` is empty
+    std::string name;                    // entry NAME; takes precedence when set
 };
 
 // Ore/gem overlay art [RE: economy.md §5]: one SHP per [OverlayTypes] name,
@@ -140,45 +156,74 @@ struct OreArt {
 // load_unit_assets(), instead of each loader slurping the 268 MB file
 // independently (was 79 s cold start; see docs/superpowers/specs/
 // 2026-07-09-foundation-batch-design.md, sub-project 4).
-Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
-    // Map: read the temperate reference map INI out of mapsmd03.mix.
-    MixFile maps = MixFile::open(ra2assets::read_file(dir + "mapsmd03.mix"));
-    const MixEntry* me = maps.find(0x133a0cb2u);
-    if (!me) throw std::runtime_error("map entry 0x133a0cb2 not found in mapsmd03.mix");
+Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
+                   const MapSelection& sel = MapSelection{}) {
+    // Map: read the selected map INI. The default selection is byte-for-byte
+    // the old hardcoded one (mapsmd03.mix / 0x133a0cb2).
+    MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+    const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
+    if (!me) throw std::runtime_error("map entry not found in " + sel.mix + ": " +
+                                      (sel.name.empty() ? "id 0x133a0cb2" : sel.name));
     auto map_raw = maps.read(*me);
     MapFile map = MapFile::parse(std::string(map_raw.begin(), map_raw.end()));
 
+    // Theater chain [RE: maps.md §6 + §9.4]. Replaces the old TEMPERATE-only
+    // throw: every theater now resolves through the recovered table, and the
+    // TEMPERATE row's fields are the exact literals this function used before,
+    // so the default path is unchanged (maps.md §7 rule 4).
     const std::string theater = map.theater();
-    if (theater != "TEMPERATE") {
-        // Milestone 1 wires temperate only; other theaters map the same way
-        // (isosnow.mix/snow.ini/.sno, isourb.mix/urban.ini/.urb).
-        throw std::runtime_error("unsupported theater (only TEMPERATE wired): " + theater);
-    }
+    const ra2assets::TheaterChain* chain = ra2assets::theater_chain(theater);
+    if (!chain) throw std::runtime_error("unknown theater: " + theater);
+    if (!chain->playable)
+        throw std::runtime_error("theater has no multiplayer maps: " + theater);
 
-    // Palette: isotem.pal lives in cache.mix.
-    MixFile cache = ra2.open_nested("cache.mix");
-    const MixEntry* pe = cache.find(std::string("isotem.pal"));
-    if (!pe) throw std::runtime_error("isotem.pal not found in ra2.mix/cache.mix");
+    // Where this theater's containers live [RE: maps.md §9.2/§9.3]. Tiles and
+    // palettes for TEMPERATE/SNOW/URBAN are under ra2.mix; the YR theaters
+    // (NEWURBAN/DESERT/LUNAR) are under ra2md.mix. The control INI is the one
+    // exception: SNOW/URBAN use the *md* variants, which live in
+    // ra2md.mix/localmd.mix even though their tiles are under ra2.mix
+    // [RE-GATE APPLIED: maps.md §9.4].
+    const std::string ini_name = chain->control_ini;
+    const bool ini_is_md = ini_name.size() > 6 &&
+                           ini_name.compare(ini_name.size() - 6, 6, "md.ini") == 0;
+    // ra2md.mix is opened ONLY when this theater actually needs it, so the
+    // default TEMPERATE path never touches it (maps.md §7 rule 5).
+    std::unique_ptr<MixFile> yr;
+    if (chain->yr_only || ini_is_md)
+        yr.reset(new MixFile(MixFile::open(ra2assets::read_file(dir + "ra2md.mix"))));
+    const MixFile& parent = chain->yr_only ? *yr : ra2;
+
+    // Palette: the iso TILE palette.
+    const char* cache_name = chain->yr_only ? "cachemd.mix" : "cache.mix";
+    MixFile cache = parent.open_nested(cache_name);
+    const MixEntry* pe = cache.find(std::string(chain->iso_pal));
+    if (!pe) throw std::runtime_error(std::string(chain->iso_pal) + " not found in " +
+                                      cache_name);
     auto pal_raw = cache.read(*pe);
     Palette pal = Palette::load(pal_raw.data(), pal_raw.size());
 
-    // Tile-set control INI: temperat.ini lives in local.mix.
-    MixFile local = ra2.open_nested("local.mix");
-    const MixEntry* ce = local.find(std::string("temperat.ini"));
-    if (!ce) throw std::runtime_error("temperat.ini not found in ra2.mix/local.mix");
+    // Tile-set control INI. For TEMPERATE this is ra2.mix/local.mix/temperat.ini
+    // -- the exact lookup this function did before.
+    const char* local_name = (chain->yr_only || ini_is_md) ? "localmd.mix" : "local.mix";
+    MixFile local = (chain->yr_only || ini_is_md) ? yr->open_nested(local_name)
+                                                  : ra2.open_nested(local_name);
+    const MixEntry* ce = local.find(ini_name);
+    if (!ce) throw std::runtime_error(ini_name + " not found in " + local_name);
     auto ini_raw = local.read(*ce);
     std::string ini_text(ini_raw.begin(), ini_raw.end());
 
-    // Tiles: the .tem templates live in isotemp.mix.
-    MixFile isotemp = ra2.open_nested("isotemp.mix");
+    // Tiles: the templates live in the BASE iso mix. [RE-GATE APPLIED:
+    // maps.md §9.4] the same-named *md mix is an OVERLAY that resolves 0 tiles
+    // (it lacks even Clear01) -- opening it instead renders an empty map.
+    MixFile iso = parent.open_nested(chain->iso_mix);
 
-    ra2engine::Theater th(std::move(isotemp), ini_text, "tem");
+    ra2engine::Theater th(std::move(iso), ini_text, chain->ext);
 
     std::cerr << "[assets] theater=" << theater << " size=" << map.width() << "x"
               << map.height() << " cells=" << map.cells().size()
               << " templates=" << th.template_count() << "\n";
 
-    return Assets{std::move(map), pal, std::move(th)};
+    return Assets{std::move(map), pal, std::move(th), chain};
 }
 
 // CB-3 Naval [RE-GATE APPLIED: naval.md §2]: resolve every materialized map
