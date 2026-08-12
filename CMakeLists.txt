@@ -58,6 +58,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_theater_name.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_sounds.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_map.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_pkt.cpp)
+# maplist.cpp is pure C++17 (no SDL): the pkt -> existence -> mode -> CSF map
+# catalog. Reached only by the skirmish setup UI and --demo-maps, never by a
+# gate path (maps.md §7 rule 5).
+target_sources(ra2assets_tests PRIVATE tests/test_maplist.cpp engine/maplist.cpp)
+target_include_directories(ra2assets_tests PRIVATE engine)
 target_sources(ra2assets_tests PRIVATE tests/test_theater.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_land_type.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_audio.cpp)
