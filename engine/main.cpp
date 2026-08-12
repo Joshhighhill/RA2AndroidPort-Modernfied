@@ -49,6 +49,7 @@
 #include "platform.hpp"
 #include "production.hpp"
 #include "rectfont.hpp"    // glyph_rows (5x7 rect-font for menu labels) [Task 5]
+#include "repair_sell.hpp" // RepairSellRules (Repair & Sell phase)
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
@@ -401,6 +402,12 @@ struct BuildingAssets {
     // damaged building frame) [RE: task-7 review "ConditionYellow"], read via
     // rules.general_double in load_building_assets; 0.5 is only the fallback.
     double condition_yellow = 0.5;
+    // Repair & Sell phase [RE: repair-sell.md §A1/§B3]: the four [General]
+    // scalars + the three survivor divisors, resolved ONCE here and handed to
+    // World::set_repair_sell_rules. The struct's own defaults ARE this
+    // install's real values, so a caller that never resolves them still
+    // behaves like the original.
+    ra2engine::RepairSellRules repair_sell;
 };
 
 // Loads `name` (e.g. "rulesmd.ini", "artmd.ini") from ra2md.mix ONCE per mode
@@ -1553,6 +1560,26 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // damaged-vs-healthy building frame) [RE: task-7 review "ConditionYellow"].
     ba.condition_yellow = rules.general_double("ConditionYellow", 50.0) / 100.0;
 
+    // rulesmd [General] repair/sell scalars [RE: repair-sell.md §A1/§B3,
+    // CONFIRMED]. general_double reads [General] then [AudioVisual] and uses
+    // strtod, which stops at '%', so "RepairPercent=15%" reads back as 15.0 --
+    // hence the /100.0, exactly as ConditionYellow above.
+    // TRAP [§A2]: RepairRate is MINUTES per step; the frame interval is
+    // trunc(RepairRate*900) = 14 at .016, NOT 15. repair_interval_frames owns
+    // that truncation -- do not pre-compute it here.
+    // NOTE [§Ground truth]: URepairStep / URepairPercent DO NOT EXIST in this
+    // build, and SurvivorRate is a dead key. Do not add reads for them.
+    ba.repair_sell.repair_step    = static_cast<int>(rules.general_double("RepairStep", 8.0));
+    ba.repair_sell.repair_percent = rules.general_double("RepairPercent", 15.0) / 100.0;
+    ba.repair_sell.repair_rate    = rules.general_double("RepairRate", 0.016);
+    ba.repair_sell.refund_percent = rules.general_double("RefundPercent", 50.0) / 100.0;
+    ba.repair_sell.allied_survivor_divisor =
+        static_cast<int>(rules.general_double("AlliedSurvivorDivisor", 500.0));
+    ba.repair_sell.soviet_survivor_divisor =
+        static_cast<int>(rules.general_double("SovietSurvivorDivisor", 250.0));
+    ba.repair_sell.third_survivor_divisor =
+        static_cast<int>(rules.general_double("ThirdSurvivorDivisor", 750.0));
+
     // Palettes (both verified present in cache.mix): buildings draw with
     // unittem.pal (+ house remap), cameos with cameo.pal [RE: building-render.md §6].
     MixFile cache = ra2.open_nested("cache.mix");
@@ -1633,6 +1660,20 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.produce_cash_startup = (int)rules.section_double(id, "ProduceCashStartup", 0.0);
         d.produce_cash_amount = (int)rules.section_double(id, "ProduceCashAmount", 0.0);
         d.produce_cash_delay = (int)rules.section_double(id, "ProduceCashDelay", 0.0);
+
+        // Repair & Sell [RE: repair-sell.md §A4/§B1/§B3/§B5, RE-GATE §D0].
+        // Measured against the real rulesmd, NOT the hunt's original claims:
+        //   Unsellable=yes  -> CAOILD only (the refusal IS reachable);
+        //   Soylent=300     -> GAREFN/NAREFN (a refinery refunds 300, not 1000);
+        //   Crewed=yes      -> 14 of the 24 rostered ids (incl. GAPOWR);
+        //   ClickRepairable -> absent everywhere but NABNKR (explicit yes), so
+        //                      the fallback here MUST be `true`, not `false`.
+        // GATOW has no rulesmd section at all -> every fallback applies.
+        // Nothing reads these fields until Task 4, so this resolve is inert.
+        d.unsellable       = rules.section_flag(id, "Unsellable", false);
+        d.click_repairable = rules.section_flag(id, "ClickRepairable", true);
+        d.crewed           = rules.section_flag(id, "Crewed", false);
+        d.soylent          = (int)rules.section_double(id, "Soylent", 0.0);
 
         BuildingArt slot;
         try {

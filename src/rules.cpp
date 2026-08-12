@@ -236,6 +236,16 @@ double Rules::section_double(const std::string& section, const std::string& key,
     return std::strtod(v.c_str(), nullptr);
 }
 
+bool Rules::section_flag(const std::string& id, const std::string& key, bool fallback) const {
+    // [RE: repair-sell.md §A4/§B3/§B5] the caller owns the absent-key default:
+    // ClickRepairable's is YES while Unsellable's and Crewed's are NO, so this
+    // must NOT bake one in. Present values go through the same tolerant
+    // is_truthy() as is_construction_yard/spy_sat/has_turret.
+    const std::string v = ini_->get(id, key, "");
+    if (v.empty()) return fallback;
+    return is_truthy(v);
+}
+
 int Rules::mp_money() const {
     return ini_->get_int("MultiplayerDialogSettings", "Money", 10000);
 }

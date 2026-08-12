@@ -136,6 +136,14 @@ public:
     double section_double(const std::string& section, const std::string& key,
                           double fallback) const;
 
+    // Generic per-section BOOLEAN key with an explicit fallback. Same shape as
+    // section_double, but yes/1/true-style values via the same is_truthy the
+    // dedicated flag readers (is_construction_yard, spy_sat) already use.
+    // Needed because the Repair & Sell phase reads THREE per-type flags whose
+    // absent-key defaults DIFFER: Unsellable -> false, Crewed -> false,
+    // ClickRepairable -> TRUE [RE: repair-sell.md §A4/§B3/§B5].
+    bool section_flag(const std::string& id, const std::string& key, bool fallback) const;
+
     // [MultiplayerDialogSettings] Money=, fallback 10000 if absent.
     int mp_money() const;
 

@@ -351,3 +351,90 @@ TEST_CASE("rules: Sight= read in cells, hard-clamped to 10 [RE: shroud.md §2]")
     CHECK(r.sight("NAPSIS") == 10);  // Psychic Sensor (Sight=10)
     CHECK(r.sight("NONEXISTENT_ID_XYZ") == 0);  // absent -> 0
 }
+
+
+TEST_CASE("rules: section_flag honours per-key fallbacks [RE: repair-sell.md §A4]") {
+    // Synthetic: the point of section_flag is that the ABSENT-KEY default is the
+    // CALLER's, because the three Repair & Sell flags disagree about it
+    // (Unsellable -> false, Crewed -> false, ClickRepairable -> TRUE).
+    const std::string text =
+        "[GACNST]\n"
+        "Cost=3000\n"
+        "Strength=1000\n"
+        "Crewed=yes\n"
+        "[GAPOWR]\n"
+        "Cost=800\n"
+        "Strength=750\n"
+        "Crewed=no\n"
+        "ClickRepairable=no\n"
+        "[GAREFN]\n"
+        "Crewed=TRUE\n"
+        "Unsellable=Yes\n";
+    const ra2assets::Ini ini = ra2assets::Ini::parse(text);
+    const ra2assets::Rules r = ra2assets::Rules::load(ini);
+    CHECK(r.section_flag("GACNST", "Crewed", false));
+    CHECK_FALSE(r.section_flag("GAPOWR", "Crewed", false));
+    // Case-insensitive yes/true, same tolerant parse the dedicated flag readers use.
+    CHECK(r.section_flag("GAREFN", "Crewed", false));
+    CHECK(r.section_flag("GAREFN", "Unsellable", false));
+    // absent key -> the CALLER's fallback, which differs per key
+    CHECK(r.section_flag("GACNST", "ClickRepairable", true));  // absent -> default YES
+    CHECK_FALSE(r.section_flag("GAPOWR", "ClickRepairable", true));  // explicit no wins
+    CHECK_FALSE(r.section_flag("GACNST", "Unsellable", false));
+    // absent SECTION -> the caller's fallback too (GATOW has no rulesmd section)
+    CHECK_FALSE(r.section_flag("NOSUCH", "Crewed", false));
+    CHECK(r.section_flag("NOSUCH", "ClickRepairable", true));
+    CHECK_FALSE(r.section_flag("NOSUCH", "Unsellable", false));
+}
+
+TEST_CASE("rules: the real rulesmd repair/sell scalars [RE: repair-sell.md §Ground truth]") {
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("skipped: rulesmd.ini not found"); return; }
+    const ra2assets::Rules& rules = ra2fixture::rulesmd();
+
+    // [General] scalars -- the whole phase's arithmetic is downstream of these.
+    // strtod stops at '%', so "15%"/"50%" read back as 15 / 50.
+    CHECK(rules.general_double("RepairStep", -1.0) == doctest::Approx(8.0));
+    CHECK(rules.general_double("RepairPercent", -1.0) == doctest::Approx(15.0));
+    CHECK(rules.general_double("RepairRate", -1.0) == doctest::Approx(0.016));
+    CHECK(rules.general_double("RefundPercent", -1.0) == doctest::Approx(50.0));
+    CHECK(rules.general_double("AlliedSurvivorDivisor", -1.0) == doctest::Approx(500.0));
+    CHECK(rules.general_double("SovietSurvivorDivisor", -1.0) == doctest::Approx(250.0));
+    CHECK(rules.general_double("ThirdSurvivorDivisor", -1.0) == doctest::Approx(750.0));
+    // URepairStep / URepairPercent DO NOT EXIST in this build (§Ground truth) --
+    // there is exactly ONE RepairStep/RepairPercent shared by buildings and
+    // vehicles. (URepairRate DOES exist; it is a rate, not a step, and is out of
+    // scope for buildings.) The fallback must survive untouched.
+    CHECK(rules.general_double("URepairStep", -1.0) == doctest::Approx(-1.0));
+    CHECK(rules.general_double("URepairPercent", -1.0) == doctest::Approx(-1.0));
+
+    // Per-type flags [RE-GATE: repair-sell.md §D item 9 -- use the MEASURED row].
+    // GAPOWR is Crewed=YES / Strength=750; the hunt's "Crewed=no, Strength=1000"
+    // was overturned by §D0.1, and this case is the pin that keeps it overturned.
+    CHECK(rules.section_flag("GACNST", "Crewed", false));
+    CHECK(rules.section_flag("GAPOWR", "Crewed", false));
+    CHECK(rules.strength("GAPOWR") == 750);
+    CHECK_FALSE(rules.section_flag("GAPILL", "Crewed", false));  // defenses: Crewed=no
+    CHECK_FALSE(rules.section_flag("NAWALL", "Crewed", false));  // absent -> false
+    CHECK_FALSE(rules.section_flag("GATOW", "Crewed", false));   // no section at all
+
+    // Soylent [§B1, RE-GATE §D0.2]: the refineries DO set it, so the absolute
+    // refund override is load-bearing -- GAREFN refunds 300, NOT 50% x 2000.
+    CHECK(rules.section_double("GAREFN", "Soylent", 0.0) == doctest::Approx(300.0));
+    CHECK(rules.section_double("NAREFN", "Soylent", 0.0) == doctest::Approx(300.0));
+    CHECK(rules.section_double("GACNST", "Soylent", 0.0) == doctest::Approx(0.0));
+    CHECK(rules.section_double("GATOW", "Soylent", 0.0) == doctest::Approx(0.0));
+
+    // Unsellable [§B5, RE-GATE §D0.3]: CAOILD DOES set it -- the sell refusal is
+    // reachable on the roster, not dead code.
+    CHECK(rules.section_flag("CAOILD", "Unsellable", false));
+    CHECK_FALSE(rules.section_flag("GACNST", "Unsellable", false));
+    CHECK_FALSE(rules.section_flag("GAREFN", "Unsellable", false));
+
+    // ClickRepairable [§A4]: absent from every rostered building EXCEPT NABNKR,
+    // which sets it explicitly to yes. No rostered building sets it to `no`, so
+    // the recovered default of YES is what makes the wrench work at all.
+    CHECK(rules.section_flag("GACNST", "ClickRepairable", true));
+    CHECK(rules.section_flag("NABNKR", "ClickRepairable", true));  // explicit yes
+    CHECK(rules.section_flag("GATOW", "ClickRepairable", true));   // no section -> yes
+}
