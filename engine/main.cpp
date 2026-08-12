@@ -3235,7 +3235,12 @@ public:
         : no_audio_(no_audio),
           dir_(env_install_dir()),
           ra2_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "ra2.mix"))),
-          a_(load_assets(dir_, ra2_)),
+          // [RE: maps.md §2/§7 rule 2] Load the config's chosen multiplayer map
+          // when one is set; an EMPTY map_file keeps the engine's historical
+          // default selection, so nothing that does not pick a map changes.
+          a_(load_assets(dir_, ra2_,
+                         cfg.map_file.empty() ? MapSelection{}
+                                              : MapSelection{"multimd.mix", 0u, cfg.map_file})),
           ua_(load_unit_assets(dir_, ra2_)),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
           language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
@@ -4471,7 +4476,16 @@ class SkirmishSetupScene : public Scene {
 public:
     SkirmishSetupScene(const Rules& rules, bool no_audio, const MenuArt& art)
         : rules_(rules), no_audio_(no_audio), art_(art),
-          cfg_(ra2engine::default_skirmish_config(rules)) {}
+          cfg_(ra2engine::default_skirmish_config(rules)) {
+        // [RE: maps.md §2] Load the real multiplayer map list (manifest ->
+        // existence filter -> GameMode=standard -> CSF names). Guarded: on a
+        // partial install the list stays empty and the scene falls back to the
+        // engine's historical default map, exactly as before this existed.
+        try {
+            maps_ = ra2engine::load_yr_map_catalog(env_install_dir(), "standard").entries;
+            if (!maps_.empty()) map_ix_ = 0;
+        } catch (const std::exception&) { maps_.clear(); map_ix_ = -1; }
+    }
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs MainMenuScene + GameScene
     void   update(double dt) override;                         // keeps the menu music looping
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
@@ -4497,6 +4511,16 @@ private:
     }
     ra2engine::SbRect start_rect() const { return {60,  630, 220, 56}; }
     ra2engine::SbRect back_rect()  const { return {320, 630, 220, 56}; }
+    // The map selector row [RE: maps.md §2]. Occupies the space the fixed
+    // "MAP: MAPSMD03" caption used to sit in; all other geometry is unchanged.
+    ra2engine::SbRect map_rect()   const { return {640, 96, 600, 40}; }
+
+    // Cycle the selected map by `d`, clamped to the catalog.
+    void adjust_map(int d) {
+        if (maps_.empty()) return;
+        const int n = static_cast<int>(maps_.size());
+        map_ix_ = std::max(0, std::min(n - 1, map_ix_ + d));
+    }
 
     // --- derived state over cfg_.slots ---
     int ai_players() const {
@@ -4595,6 +4619,10 @@ private:
     bool                   no_audio_ = false;
     const MenuArt&         art_;
     ra2engine::SkirmishConfig cfg_;       // seeded from shipped defaults
+    // The real multiplayer map list + the current pick [RE: maps.md §2/§3].
+    // Empty on a partial install -> the historical default map is used.
+    std::vector<ra2engine::MapEntry> maps_;
+    int map_ix_ = -1;
     Scene*                 next_ = nullptr;
 };
 
@@ -4639,9 +4667,36 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
         SDL_SetRenderDrawColor(ren, active ? 110 : 64, active ? 140 : 76, active ? 190 : 96, 255);
         SDL_RenderDrawRect(ren, &fr);
     };
-    // Title + fixed single map.
+    // Title + the map selector [RE: maps.md §2]. Replaces the fixed
+    // "MAP: MAPSMD03" caption with a live pick from the real 91-map
+    // GameMode=standard catalog; click the row's halves to step (its outer
+    // 44 px step by 10), the same left/right convention the option rows use.
     label("SKIRMISH SETUP", 60, 56, 4, 220, 220, 235);
-    label("MAP: MAPSMD03", 640, 60, 3, 180, 200, 180);
+    {
+        const ra2engine::SbRect mr = map_rect();
+        box(mr, true);
+        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size())) {
+            const ra2engine::MapEntry& m = maps_[static_cast<size_t>(map_ix_)];
+            // The rect-font is A-Z + 0-9 only, so punctuation would silently
+            // vanish: spell the count and draw the step arrows as triangles.
+            char cnt[48];
+            std::snprintf(cnt, sizeof cnt, "%d OF %d   %d P", map_ix_ + 1,
+                          static_cast<int>(maps_.size()), m.max_players);
+            std::string nm = m.display_name;
+            if (nm.size() > 26) nm.resize(26);
+            draw_text(ren, nm, mr.x + 34, mr.y + 12, 2, 250, 240, 160);
+            const int cw = static_cast<int>(std::string(cnt).size()) * 6 * 2;
+            draw_text(ren, cnt, mr.x + mr.w - cw - 34, mr.y + 12, 2, 170, 190, 210);
+            SDL_SetRenderDrawColor(ren, 210, 220, 240, 255);
+            for (int t = 0; t < 9; ++t) {                    // left arrow
+                SDL_RenderDrawLine(ren, mr.x + 10 + t, mr.y + 20 - t, mr.x + 10 + t, mr.y + 20 + t);
+                SDL_RenderDrawLine(ren, mr.x + mr.w - 10 - t, mr.y + 20 - t,   // right arrow
+                                   mr.x + mr.w - 10 - t, mr.y + 20 + t);
+            }
+        } else {
+            draw_text(ren, "MAP: DEFAULT (no map list)", mr.x + 8, mr.y + 12, 2, 180, 180, 180);
+        }
+    }
     // Global option rows: label (left), value (right of row).
     for (int i = 0; i < G_COUNT; ++i) {
         const ra2engine::SbRect r = global_rect(i);
@@ -4730,8 +4785,26 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
         return;
     // Start / Back first.
     if (start_rect().contains(ev.x, ev.y)) {
+        // [RE: maps.md §2/§4.3] Hand the chosen multiplayer map to the launcher
+        // and place houses on its real [Waypoints] starts. With no catalog the
+        // fields stay empty/false, i.e. exactly the pre-browser behavior.
+        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size())) {
+            cfg_.map_file       = maps_[static_cast<size_t>(map_ix_)].file_name;
+            cfg_.use_map_starts = true;
+        }
         next_ = new GameScene(no_audio_, cfg_);   // GameScene ctor runs launch_skirmish(cfg_)
         return;
+    }
+    // Map selector: outer 44 px step by 10, inner halves by 1.
+    {
+        const ra2engine::SbRect mr = map_rect();
+        if (mr.contains(ev.x, ev.y)) {
+            if (ev.x < mr.x + 44)                 adjust_map(-10);
+            else if (ev.x > mr.x + mr.w - 44)     adjust_map(+10);
+            else if (ev.x < mr.x + mr.w / 2)      adjust_map(-1);
+            else                                  adjust_map(+1);
+            return;
+        }
     }
     if (back_rect().contains(ev.x, ev.y)) {
         next_ = new MainMenuScene(rules_, no_audio_, art_);
