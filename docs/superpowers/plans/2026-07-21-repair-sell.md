@@ -10,6 +10,36 @@
 
 ## Global Constraints
 
+> ### RE-GATE AMENDMENT (controller, after `ca4d480`) — READ BEFORE ANY TASK
+>
+> The RE-GATE **contradicted the hunt in four places**. All four were
+> re-verified directly against the real `rulesmd.ini`; the hunt text is wrong
+> and **these values govern**:
+>
+> | Item | `repair-sell.md` said | ACTUAL (verified) |
+> |---|---|---|
+> | `GAPOWR` | `Strength=1000`, `Crewed=no` | **`Strength=750`, `Crewed=yes`** |
+> | `Soylent` | "no stock building sets it" | **`GAREFN`/`NAREFN` set `Soylent=300`** |
+> | `Unsellable` | "none in stock rules" | **`CAOILD` sets `Unsellable=yes`** |
+> | `GATOW` | assumed rostered | **has NO `rulesmd` section** (Cost/Strength 0) |
+>
+> Consequences that are now MANDATORY, not optional:
+> 1. The **Soylent override is load-bearing**: a refinery refunds **300**, not
+>    `50% × 2000 = 1000`. Getting this wrong is a 3.3x economy error on the most
+>    commonly sold building in the game.
+> 2. The **`Unsellable` refusal is reachable** — `CAOILD` (the capturable oil
+>    derrick, already in this engine via the Capture phase) must refuse selling.
+> 3. `GAPOWR` **yields survivors** and its `stepCost` derivation changes
+>    (`750/8=93`, `800/93=8`, `trunc(8×0.15)=1` — same result, different path).
+> 4. **No wedge guard may assert `cost > 0` or `strength > 0` over the whole
+>    roster** — `GATOW` is rostered with neither.
+>
+> Item 9's measured 24-row table in `repair-sell.md` §D is the authority for
+> every expected number in Tasks 2 and 7. Also pinned: crew types are
+> `AlliedCrew=E1` / `SovietCrew=E2`; the 25% engineer-crew special is CUT
+> (no key string exists to anchor it).
+
+
 (Copied from the spec's §Global Constraints — every task's requirements implicitly include this section.)
 
 - **All 19 existing byte-identity gates MUST stay bit-identical:** combat logs=78, tank logs=144, base `5273b5e71ca009e1`, econ `7fed96cb98b68017`, prod `f0f4e1207ecd713c`, ai-base `cd1f7c6a29933f0a`, ai-team `312e92ed862a5e74`, ai-trigger `8334a6ca1531cabc`, transport `fe500f946e913645`, aircraft `a69642564cf64773`, naval `6aee2c82bc024e86`, superweapon `189496664f5eca68`, techtree `e73adae61ff6f71f`, capture `58b87b5bc63f7046`, shroud `d302852aa9517661`, multihouse `39412ae996cce8ae`, skirmish `e9ad3f1fd88495f9`, roster `333cd43d8b5ece6a`, maps `6e516005f120a1bb`. Adds the **20th: `--demo-repair`**.
@@ -216,7 +246,9 @@ git -C "D:\ra2-android" commit -m "$(printf 'docs(re): repair-sell RE-GATE adjud
     // --- Repair & Sell phase [RE: repair-sell.md §A4/§B1/§B3/§B5] ---
     // Absent from every stock building section EXCEPT ClickRepairable, whose
     // recovered default is YES [§A4]. Resolved by load_building_assets.
-    bool unsellable       = false;  // Unsellable=      [§B5] (set by NO stock RA2 building)
+    bool unsellable       = false;  // Unsellable=      [§B5] [RE-GATE APPLIED §D0: CAOILD
+                                    // DOES set Unsellable=yes -- the hunt's "no stock
+                                    // building sets it" was WRONG. Verified in rulesmd.]
     bool click_repairable = true;   // ClickRepairable= [§A4] DEFAULT YES
     bool crewed           = false;  // Crewed=          [§B3] gates survivor spawn
     int  soylent          = 0;      // Soylent=         [§B1] absolute refund override
@@ -275,7 +307,8 @@ bool repair_due(std::uint64_t frame, int interval);
 // [RE: §A2, CONFIRMED -- FUN_00711470, whole function].
 // BOTH divisions are INTEGER and truncating; only then does the RepairPercent
 // multiply happen, and __ftol truncates that too. Worked from the real rules
-// (RepairStep=8, RepairPercent=0.15): GAPOWR 800/1000 -> 1 (125 to full),
+// (RepairStep=8, RepairPercent=0.15): GAPOWR 800/750 -> 1 [RE-GATE APPLIED §D0:
+// Strength is 750, NOT 1000 -- 750/8=93, 800/93=8, trunc(8*0.15)=1],
 // GACNST 3000/1000 -> 3 (375 to full), GAWEAP 2000/1000 -> 2 (250 to full).
 // Do NOT "simplify" to cost*percent*damage_fraction: that yields 450 for a
 // GACNST, ~17% wrong. Depends only on the TYPE, so callers may cache it.
@@ -301,7 +334,8 @@ int survivor_divisor(const RepairSellRules& r, int side_ix);
 // [RE: §B3, CONFIRMED -- FUN_00451320]. Zero when the type is not Crewed (or
 // the instance has no crew). The divisor is DOUBLED for a captured building.
 // SurvivorRate is never read (dead key). Worked: GACNST refund 1500 -> Allied
-// 3, Soviet 5 (clamped from 6), Yuri 2; GAPOWR (Crewed=no) -> 0.
+// 3, Soviet 5 (clamped from 6), Yuri 2; GAPOWR is Crewed=YES -> 1
+// [RE-GATE APPLIED §D0: the hunt recorded Crewed=no, which was WRONG].
 int survivor_count(int refund, int divisor, bool crewed, bool has_been_captured);
 
 // Can_Be_Click_Repaired [RE: §A4, CONFIRMED -- FUN_00452620]: alive, not dead,
@@ -503,7 +537,7 @@ TEST_CASE("repair: the tick is a GLOBAL frame phase [RE: §A2]") {
 }
 
 TEST_CASE("repair: stepCost uses TWO integer divisions [RE: §A2 worked table]") {
-    // GAPOWR 800/1000: 1000/8 = 125; 800/125 = 6; 6*0.15 = 0.90 -> trunc 0 -> clamp 1
+    // GAPOWR 800/750 [RE-GATE APPLIED §D0]: 750/8 = 93; 800/93 = 8; 8*0.15 = 1.2 -> 1
     CHECK(repair_step_cost(800, 1000, 8, 0.15) == 1);
     // GACNST 3000/1000: 125; 3000/125 = 24; 24*0.15 = 3.60 -> 3
     CHECK(repair_step_cost(3000, 1000, 8, 0.15) == 3);
@@ -551,7 +585,7 @@ TEST_CASE("sell: survivor divisors and the clamp [RE: §B3 worked table]") {
     CHECK(survivor_count(1000, 500, true, false) == 2);
     CHECK(survivor_count(1000, 250, true, false) == 4);
     CHECK(survivor_count(1000, 750, true, false) == 1);
-    // GAPOWR: Crewed=no -> ZERO regardless of refund
+    // [RE-GATE APPLIED §D0] GAPOWR is Crewed=YES; use a Crewed=no type here instead
     CHECK(survivor_count(400, 500, false, false) == 0);
     // floor 1: a Crewed building always yields at least one
     CHECK(survivor_count(400, 500, true, false) == 1);
