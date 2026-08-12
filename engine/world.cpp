@@ -1425,7 +1425,95 @@ bool World::repair_building(int b_idx, int by_house) {
     if (b.hp >= b.max_hp) return false;         // full HP -> no action (engineer NOT consumed)
     capture_any_ = true;
     b.hp = b.max_hp;                            // heal to full [RE-GATE APPLIED §A5]
+    b.being_repaired = false;   // off-ramp 5 [RE: repair-sell.md §A4/§A6]:
+                                // Repair_To_Full (vtbl+0x40C) calls Repair(0).
+                                // A no-op wherever the flag was never set, so
+                                // --demo-capture stays byte-identical.
     return true;
+}
+
+bool World::set_repair(int b_idx, int by_house, int control) {
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return false;
+    Building& b = buildings_[b_idx];
+    if (!b.alive || b.state == Building::State::Dead) return false;
+    // Ownership [RE: repair-sell.md §C1] -- the network REPAIR event resolves
+    // the target and the SELL event checks Owner->[0x30] == ev.HouseIndex.
+    // OWN house only: unlike the engineer path (repair_building), the wrench is
+    // not an allied action.
+    if (b.house != by_house) return false;
+    if (b.type < 0 || b.type >= static_cast<int>(types_.size())) return false;
+    const bool cur = b.being_repaired;
+    bool next = cur;
+    if (control < 0) next = !cur;              // -1 toggle
+    else if (control == 0) next = false;       //  0 off
+    else next = true;                          //  1 on
+    if (next == cur) return false;
+    if (next) {
+        // [RE: §A4, FUN_00452620] Only turning ON is gated -- turning OFF must
+        // always work (off-ramps 2 and 5 call Repair(0) unconditionally).
+        if (!can_be_click_repaired(b, types_[b.type])) return false;
+        if (b.selling) return false;           // [§B2] a selling building cannot repair
+        b.being_repaired = true;
+        repair_sell_any_ = true;               // open the firewall
+    } else {
+        b.being_repaired = false;
+    }
+    return true;
+}
+
+void World::step_repair_sell(double dt) {
+    // The cadence counter advances UNCONDITIONALLY, above the firewall, so the
+    // phase is ABSOLUTE [RE: repair-sell.md §A2 -- `Frame % interval`, not a
+    // per-building timer]. Incrementing a counter nothing hashes is byte-safe.
+    const std::uint64_t frame = repair_frame_++;
+    // FIREWALL (spec §Global Constraints): until the first repair/sell order
+    // ever, this whole pass is one branch -- the only cost every existing demo
+    // pays. world_hash is untouched either way.
+    if (!repair_sell_any_) return;
+
+    // --- Sell missions land in Task 5; the repair tick is below. ---
+    (void)dt;
+
+    // [RE: §A2] interval = trunc(RepairRate * 900) = 14 at .016 -- a GLOBAL
+    // phase shared by every repairing building of every house.
+    const int interval = repair_interval_frames(repair_rules_.repair_rate);
+    if (!repair_due(frame, interval)) return;
+
+    // Ascending building index -- deterministic, and it matches the original's
+    // object-order walk (one shared Available_Money() consulted per building,
+    // so an early building CAN drain the pool and switch a later one off the
+    // same frame; §A3).
+    for (Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (!b.being_repaired) continue;
+        if (b.selling) { b.being_repaired = false; continue; }   // [§B2 entry: Repair(0)]
+        if (b.type < 0 || b.type >= static_cast<int>(types_.size())) {
+            b.being_repaired = false;
+            continue;
+        }
+        const BuildingTypeDef& t = types_[b.type];
+        // [RE: §A2, FUN_00711470] BOTH divisions integer. Depends only on the
+        // type, so this is a pure function of (Cost, Strength, rules).
+        const int cost =
+            repair_step_cost(t.cost, t.strength, repair_rules_.repair_step,
+                             repair_rules_.repair_percent);
+        if (b.house < 0 || b.house >= house_count()) { b.being_repaired = false; continue; }
+        // [RE: §A3, CONFIRMED] The affordability check is BEFORE the spend:
+        // too poor -> the flag is CLEARED, no partial step, no free repair, no
+        // EVA line. The player must click the wrench again after refilling.
+        if (house_credits_[b.house] < static_cast<double>(cost)) {
+            b.being_repaired = false;
+            continue;
+        }
+        house_credits_[b.house] -= static_cast<double>(cost);
+        // [RE: §A2] +RepairStep HP flat (8), clamped to Strength. The original
+        // advances Health AND EstimatedHealth; the clone has one hp field.
+        b.hp += repair_rules_.repair_step;
+        if (b.hp >= b.max_hp) {
+            b.hp = b.max_hp;
+            b.being_repaired = false;          // AUTO-STOP at full health [§A2]
+        }
+    }
 }
 
 void World::consume_unit(int idx) {
@@ -2857,6 +2945,16 @@ void World::step(double dt) {
             b.blocking_released = true;
         }
     }
+
+    // Repair & Sell [RE: repair-sell.md §A2/§B2]: the wrench tick + the sell
+    // missions. A pure INSERTION beside step_cargo/step_capture -- it runs
+    // AFTER step_buildings (so a building that flipped Buildup->Idle this frame
+    // is already repairable, and a building sold LAST frame has already had its
+    // foundation released above) and BEFORE step_combat (so a completed sale is
+    // Dead before targeting runs). `if (!repair_sell_any_) return;` inside is
+    // the only cost every existing demo pays -- no demo issues a repair or sell
+    // order [spec §Global Constraints].
+    step_repair_sell(dt);
 
     const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt);
     // Guard-return requests route directly. Approach requests are batched

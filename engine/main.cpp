@@ -1421,6 +1421,15 @@ void wire_economy(ra2engine::World& world, const BuildingAssets& ba, const Rules
                       rules.growth_rate_minutes() * 60.0,
                       rules.growth_percentage("Riparius"),
                       rules.spread_percentage("Riparius"));
+    // Repair & Sell [RE: repair-sell.md §A1]: hand the World the REAL [General]
+    // scalars resolved from rulesmd.ini. This install's values happen to equal
+    // RepairSellRules' struct defaults, so omitting this call would fail
+    // SILENTLY here and be wrong on any install whose [General] differs -- hence
+    // it lives beside set_economy, which is what makes a World repair-capable in
+    // the first place (the tick prices a step from types_[b.type]'s Cost/
+    // Strength). Byte-safe: repair_rules_ is not hashed and is read only inside
+    // step_repair_sell, past the repair_sell_any_ firewall no demo ever opens.
+    world.set_repair_sell_rules(ba.repair_sell);
 }
 
 // FreeUnit grand-opening spawn [RE: economy.md §6]: for every building that
@@ -9618,6 +9627,12 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  const Rules& rules) {
     ra2engine::World world = build_world(a, ua, 0);          // count=0 -> launcher spawns everything
     ra2engine::configure_skirmish_houses(world, cfg);       // house table + toggles + credit seed + minimal AI
+    // Repair & Sell [RE: repair-sell.md §A1]: the interactive game's World never
+    // routes through wire_economy, so the rulesmd-resolved [General] scalars are
+    // handed over here too. NOT byte-relevant (repair_rules_ is unhashed and read
+    // only past the repair_sell_any_ firewall), but omitting it would leave the
+    // wrench silently running on struct defaults on any install whose rules differ.
+    world.set_repair_sell_rules(ba.repair_sell);
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
     const int gw = world.grid_w(), gh = world.grid_h();
     (void)gh;

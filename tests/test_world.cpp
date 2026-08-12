@@ -4316,3 +4316,255 @@ TEST_CASE("pal_for_color: 8 MP colors are distinct + only the 16..31 band moves 
         CHECK(none[i].b == src[i].b);
     }
 }
+
+// --- Repair & Sell phase, Task 4 [RE: repair-sell.md §A2/§A3/§A4/§C1] -------
+// These cases run on a DEFAULT MapFile (0x0 grid): add_building's foundation
+// write, step_units/step_combat and OreField::step are all bounds-guarded on an
+// empty grid, and the repair tick itself is pure Building/BuildingTypeDef
+// arithmetic -- so no RA2_INSTALL_DIR is needed and nothing can silently skip.
+namespace {
+
+// The roster the repair cases price against. Indices are load-bearing:
+//   0 GACNST-like  Cost 3000 / Strength 1000 -> stepCost 3   [RE: §D9 measured]
+//   1 GAPOWR-like  Cost  800 / Strength  750 -> stepCost 1   [RE: §D0.1]
+//   2 ClickRepairable=no (the §A4 type opt-out)
+std::vector<ra2engine::BuildingTypeDef> repair_roster() {
+    std::vector<ra2engine::BuildingTypeDef> t(3);
+    t[0].id = "GACNST"; t[0].cost = 3000; t[0].strength = 1000;
+    t[1].id = "GAPOWR"; t[1].cost = 800;  t[1].strength = 750;
+    t[2].id = "NOCLICK"; t[2].cost = 1000; t[2].strength = 1000;
+    t[2].click_repairable = false;
+    return t;
+}
+
+// set_economy is what populates World::types_ -- repair needs Cost/Strength to
+// price a step, so a World that never called it refuses every wrench click.
+// Growth parked at 1000 s so the short runs below never tick ore.
+void wire_repair_economy(ra2engine::World& world) {
+    world.set_economy(repair_roster(), {}, ra2engine::OreValues{}, /*growth_interval*/ 1000.0,
+                      /*growth_pct*/ 0.0, /*spread_pct*/ 0.0);
+}
+
+}  // namespace
+
+TEST_CASE("world: step_repair_sell is a strict no-op with the firewall closed [RE: repair-sell.md]") {
+    // A stock world nobody ever ordered to repair must be untouched by the new
+    // pass -- this is the byte-identity guarantee in test form.
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    const int b = world.add_building(/*type*/ 0, 5, 5, /*fw*/ 5, /*fh*/ 4, /*house*/ 0,
+                                     /*strength*/ 1000, /*armor_ix*/ 0, /*buildup*/ 0.0,
+                                     /*instant*/ true);
+    world.buildings()[b].hp = 500;
+    world.grant_credits_for_test(0, 10000.0);
+
+    const int before_hp = world.buildings()[b].hp;
+    const double before_credits = world.house_credits(0);
+    for (int k = 0; k < 100; ++k) world.step(1.0 / 15.0);
+    CHECK(world.buildings()[b].hp == before_hp);
+    CHECK(world.house_credits(0) == doctest::Approx(before_credits));
+    CHECK_FALSE(world.building_repairing(b));
+    CHECK(world.repair_frame() == 100);        // the counter still advanced
+}
+
+TEST_CASE("world: set_repair refuses per the recovered gates [RE: repair-sell.md §A4/§C1]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    const int e = world.add_building(0, 20, 5, 5, 4, /*house*/ 1, 1000, 0, 0.0, true);
+    const int f = world.add_building(0, 35, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    const int u = world.add_building(0, 50, 5, 5, 4, /*house*/ 0, 1000, 0, /*buildup*/ 5.0,
+                                     /*instant*/ false);
+    const int nc = world.add_building(2, 65, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    world.buildings()[b].hp = 500;
+    world.buildings()[e].hp = 500;
+    world.buildings()[u].hp = 500;
+    world.buildings()[nc].hp = 500;            // f stays at full health
+
+    CHECK_FALSE(world.set_repair(-1, 0, 1));                 // bad index
+    CHECK_FALSE(world.set_repair(999, 0, 1));                // bad index
+    CHECK_FALSE(world.set_repair(e, 0, 1));                  // NOT your building
+    CHECK_FALSE(world.set_repair(f, 0, 1));                  // nothing to repair
+    CHECK_FALSE(world.set_repair(u, 0, 1));                  // under construction
+    CHECK_FALSE(world.set_repair(nc, 0, 1));                 // ClickRepairable=no
+    CHECK(world.set_repair(b, 0, 1));                        // arms
+    CHECK(world.building_repairing(b));
+    CHECK_FALSE(world.set_repair(b, 0, 1));                  // already on -> no change
+    CHECK(world.toggle_repair(b, 0));                        // -1 toggles OFF
+    CHECK_FALSE(world.building_repairing(b));
+    CHECK(world.toggle_repair(b, 0));                        // -1 toggles ON
+    CHECK(world.building_repairing(b));
+    CHECK(world.set_repair(b, 0, 0));                        // 0 turns OFF
+    CHECK_FALSE(world.building_repairing(b));
+    CHECK_FALSE(world.set_repair(b, 0, 0));                  // already off -> no change
+    // [§B2] a building already running the sell mission cannot be armed.
+    world.buildings()[b].selling = true;
+    CHECK_FALSE(world.set_repair(b, 0, 1));
+    world.buildings()[b].selling = false;
+    // A Dead building refuses both directions.
+    world.buildings()[b].state = ra2engine::Building::State::Dead;
+    CHECK_FALSE(world.set_repair(b, 0, 1));
+    CHECK_FALSE(world.set_repair(b, 0, 0));
+}
+
+TEST_CASE("world: the repair tick is a 14-frame GLOBAL phase, +8 HP, charged [RE: §A2]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    world.buildings()[b].hp = 500;
+    world.grant_credits_for_test(0, 10000.0);
+    REQUIRE(world.set_repair(b, 0, 1));
+
+    const int step_cost = ra2engine::repair_step_cost(3000, 1000, 8, 0.15);   // 3
+    CHECK(step_cost == 3);
+    std::vector<std::uint64_t> hit_frames;
+    int prev_hp = world.buildings()[b].hp;
+    double prev_credits = world.house_credits(0);
+    for (int k = 0; k < 60; ++k) {
+        const std::uint64_t f = world.repair_frame();
+        world.step(1.0 / 15.0);
+        if (world.buildings()[b].hp != prev_hp) {
+            hit_frames.push_back(f);
+            CHECK(world.buildings()[b].hp == prev_hp + 8);           // +8 flat
+            CHECK(world.house_credits(0) == doctest::Approx(prev_credits - step_cost));
+            prev_hp = world.buildings()[b].hp;
+            prev_credits = world.house_credits(0);
+        } else {
+            CHECK(world.house_credits(0) == doctest::Approx(prev_credits));  // no idle drain
+        }
+    }
+    REQUIRE(hit_frames.size() >= 4);
+    for (std::size_t i = 1; i < hit_frames.size(); ++i)
+        CHECK(hit_frames[i] - hit_frames[i - 1] == 14);               // NOT 15
+    for (std::uint64_t f : hit_frames) CHECK(f % 14 == 0);            // an ABSOLUTE phase
+}
+
+TEST_CASE("world: repairing buildings step TOGETHER on the global phase [RE: §A2]") {
+    // Two buildings armed on DIFFERENT frames still share one cadence: the
+    // phase is `Frame % interval`, not a per-building timer.
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    const int b0 = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    const int b1 = world.add_building(1, 20, 5, 3, 3, /*house*/ 0, 750, 0, 0.0, true);
+    world.buildings()[b0].hp = 500;
+    world.buildings()[b1].hp = 300;
+    world.grant_credits_for_test(0, 10000.0);
+
+    REQUIRE(world.set_repair(b0, 0, 1));
+    for (int k = 0; k < 5; ++k) world.step(1.0 / 15.0);   // frames 0..4 (0 fires for b0)
+    REQUIRE(world.set_repair(b1, 0, 1));                  // armed mid-interval
+    const int hp0 = world.buildings()[b0].hp;
+    const int hp1 = world.buildings()[b1].hp;
+    // Frames 5..13 are off-phase for BOTH; frame 14 steps BOTH at once.
+    for (int k = 5; k < 14; ++k) world.step(1.0 / 15.0);
+    CHECK(world.buildings()[b0].hp == hp0);
+    CHECK(world.buildings()[b1].hp == hp1);
+    const double credits_before = world.house_credits(0);
+    world.step(1.0 / 15.0);                                // frame 14
+    CHECK(world.buildings()[b0].hp == hp0 + 8);
+    CHECK(world.buildings()[b1].hp == hp1 + 8);
+    // GACNST 3000/1000 -> 3, GAPOWR 800/750 -> 1 [RE: §D9 measured table].
+    CHECK(world.house_credits(0) == doctest::Approx(credits_before - 4.0));
+}
+
+TEST_CASE("world: repair auto-stops at full health [RE: §A2]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    world.buildings()[b].hp = world.buildings()[b].max_hp - 4;   // < one 8-HP step
+    world.grant_credits_for_test(0, 10000.0);
+    REQUIRE(world.set_repair(b, 0, 1));
+    for (int k = 0; k < 30; ++k) world.step(1.0 / 15.0);
+    CHECK(world.buildings()[b].hp == world.buildings()[b].max_hp);    // clamped, never over
+    CHECK_FALSE(world.building_repairing(b));                        // cleared itself
+    CHECK(world.house_credits(0) == doctest::Approx(10000.0 - 3.0));  // charged exactly once
+}
+
+TEST_CASE("world: out of credits STOPS repair silently, with no partial step [RE: §A3]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    world.buildings()[b].hp = 500;
+    world.grant_credits_for_test(0, 2.0);                            // less than one step
+    REQUIRE(world.set_repair(b, 0, 1));
+    const int hp0 = world.buildings()[b].hp;
+    for (int k = 0; k < 30; ++k) world.step(1.0 / 15.0);
+    CHECK(world.buildings()[b].hp == hp0);                           // NO partial repair
+    CHECK(world.house_credits(0) == doctest::Approx(2.0));           // and NO free repair
+    CHECK_FALSE(world.building_repairing(b));                        // the flag was cleared
+    // Refilling does NOT resume by itself -- the player must click again (§A3).
+    world.grant_credits_for_test(0, 10000.0);
+    for (int k = 0; k < 30; ++k) world.step(1.0 / 15.0);
+    CHECK(world.buildings()[b].hp == hp0);
+}
+
+TEST_CASE("world: the engineer path clears the wrench flag (off-ramp 5) [RE: §A4/§A6]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    world.buildings()[b].hp = 500;
+    world.grant_credits_for_test(0, 10000.0);
+    REQUIRE(world.set_repair(b, 0, 1));
+    CHECK(world.repair_building(b, 0));            // instant, free, separate path
+    CHECK(world.buildings()[b].hp == world.buildings()[b].max_hp);
+    CHECK_FALSE(world.building_repairing(b));
+}
+
+TEST_CASE("world: the repair tick reads the INJECTED rules, not RepairSellRules defaults "
+          "[RE: repair-sell.md §A1/§D9]") {
+    // THE SILENT-FAILURE GUARD. This install's rulesmd.ini values happen to EQUAL
+    // the RepairSellRules struct defaults, so a World that ignored
+    // set_repair_sell_rules entirely would still look correct here and be wrong
+    // on any install whose [General] differs. Every number below is DELIBERATELY
+    // NOT a default, and each of the three the tick consumes moves an OBSERVABLE:
+    //   repair_rate    0.035 -> trunc(31.5) = 31-frame cadence (default: 14)
+    //   repair_step    20    -> +20 HP per step                (default: +8)
+    //   repair_percent 0.50  -> stepCost trunc((3000/(1000/20))*0.5) = 30 (default: 3)
+    // Delete the wire-up and this case fails on all three.
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    wire_repair_economy(world);
+    ra2engine::RepairSellRules r;
+    r.repair_rate = 0.035;
+    r.repair_step = 20;
+    r.repair_percent = 0.50;
+    world.set_repair_sell_rules(r);
+    CHECK(world.repair_sell_rules().repair_step == 20);
+    CHECK(world.repair_sell_rules().repair_rate == doctest::Approx(0.035));
+    CHECK(ra2engine::repair_interval_frames(0.035) == 31);
+    CHECK(ra2engine::repair_step_cost(3000, 1000, 20, 0.50) == 30);
+
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    world.buildings()[b].hp = 100;
+    world.grant_credits_for_test(0, 10000.0);
+    REQUIRE(world.set_repair(b, 0, 1));
+
+    std::vector<std::uint64_t> hit_frames;
+    int prev_hp = world.buildings()[b].hp;
+    double prev_credits = world.house_credits(0);
+    for (int k = 0; k < 70; ++k) {
+        const std::uint64_t f = world.repair_frame();
+        world.step(1.0 / 15.0);
+        if (world.buildings()[b].hp != prev_hp) {
+            hit_frames.push_back(f);
+            CHECK(world.buildings()[b].hp == prev_hp + 20);      // injected RepairStep
+            CHECK(world.house_credits(0) == doctest::Approx(prev_credits - 30.0));
+            prev_hp = world.buildings()[b].hp;
+            prev_credits = world.house_credits(0);
+        }
+    }
+    // The DEFAULT cadence (14) would have fired at 0/14/28/42/56 for +8 and -3.
+    REQUIRE(hit_frames.size() == 3);
+    CHECK(hit_frames[0] == 0);
+    CHECK(hit_frames[1] == 31);
+    CHECK(hit_frames[2] == 62);
+    CHECK(world.buildings()[b].hp == 160);
+    CHECK(world.house_credits(0) == doctest::Approx(10000.0 - 90.0));
+}

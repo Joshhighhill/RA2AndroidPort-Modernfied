@@ -14,6 +14,7 @@
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
+#include "repair_sell.hpp"  // Repair & Sell: RepairSellRules + the pure tick arithmetic
 #include "superweapon.hpp"  // CB-4 Superweapons: Superweapon/SuperweaponType lifecycle
 #include "visibility.hpp"  // Shroud/Fog: cell_in_sight/reveal_disc (pure reveal math)
 #include "ra2assets/map.hpp"
@@ -874,6 +875,40 @@ public:
     // false if b_idx is invalid, Dead, not owned by `by_house`, or already at
     // full HP. The caller consumes the engineer on true.
     bool repair_building(int b_idx, int by_house);
+
+    // --- Repair & Sell phase [RE: repair-sell.md] -------------------------
+    // The four [General] scalars + the three survivor divisors. The struct's
+    // defaults ARE this install's real values, so a World that never calls
+    // this already behaves like the original; main.cpp overrides from rulesmd.
+    void set_repair_sell_rules(const RepairSellRules& r) { repair_rules_ = r; }
+    const RepairSellRules& repair_sell_rules() const { return repair_rules_; }
+
+    // BuildingClass::Repair(control) [RE: repair-sell.md §A4, vtbl+0x19C].
+    // control: -1 toggle / 0 off / 1 on -- the classic Westwood convention.
+    // Returns true iff the flag CHANGED. Refuses (false, no change) unless:
+    //   * b_idx names an alive, non-Dead building,
+    //   * b.house == by_house (the network REPAIR/SELL event is authoritative
+    //     about ownership, §C1 -- you cannot repair someone else's building),
+    //   * types_ covers b.type (set_economy must have run; repair needs Cost
+    //     and Strength to price a step), and
+    //   * turning ON additionally passes can_be_click_repaired (§A4).
+    // Turning ON opens repair_sell_any_. Turning OFF is always allowed on a
+    // live building (it is off-ramp 1/2/5 -- see step_repair_sell for 3/4).
+    bool set_repair(int b_idx, int by_house, int control);
+    bool toggle_repair(int b_idx, int by_house) { return set_repair(b_idx, by_house, -1); }
+    bool building_repairing(int b_idx) const {
+        return b_idx >= 0 && b_idx < static_cast<int>(buildings_.size()) &&
+               buildings_[b_idx].being_repaired;
+    }
+    // The GLOBAL repair cadence counter [RE: §A2]. It advances EVERY frame,
+    // above the firewall, so `frame % interval == 0` is an ABSOLUTE phase --
+    // all repairing buildings step together and a newly-armed one waits
+    // 0..interval-1 frames, exactly like the original's `Frame % interval`.
+    std::uint64_t repair_frame() const { return repair_frame_; }
+    // The firewalled per-frame Repair & Sell pass. Public so a gate/test can
+    // drive it directly; normally called from World::step.
+    void step_repair_sell(double dt);
+
     // Consume a unit (the capture/repair gesture spends its engineer, and any
     // future "removed from map" consumer): tombstone it directly (no die anim --
     // it walked INTO the building) and release its occupancy cell, reusing the
@@ -1216,6 +1251,15 @@ private:
     // grow_house_arrays.
     std::vector<double> house_credits_;
     std::vector<PendingHarvestEvent> harvest_events_;  // pending take_harvest_events() drain
+
+    // --- Repair & Sell phase [RE: repair-sell.md] -------------------------
+    // ALL inert by default. repair_sell_any_ is opened ONLY by set_repair
+    // (turning ON) and begin_sell, neither of which ANY existing demo calls --
+    // so step_repair_sell costs every existing gate one increment and one
+    // branch, and none of this state is read by world_hash.
+    RepairSellRules repair_rules_;              // recovered defaults [§A1]
+    bool            repair_sell_any_ = false;   // the firewall
+    std::uint64_t   repair_frame_ = 0;          // the global cadence phase [§A2]
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by
