@@ -52,6 +52,7 @@
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
+#include "maplist.hpp"
 #include "voxel_raster.hpp"
 #include "world.hpp"
 
@@ -10213,6 +10214,270 @@ DemoRosterResult simulate_roster(Assets& a, UnitAssets& ua, BuildingAssets& ba,
     return r;
 }
 
+// --- --demo-maps helpers -----------------------------------------------------
+
+// FNV fold of the map-browser end state [RE: maps.md §2/§3/§4.3]. Same shape as
+// skirmish_fold (house count; per-house alive buildings/units, ai_enabled,
+// credits; the full is_enemy matrix; winning_team). world_hash UNTOUCHED.
+uint64_t maps_fold(uint64_t h, const ra2engine::World& world) {
+    const int n = world.house_count();
+    h = fnv_mix(h, (uint64_t)n);
+    for (int hh = 0; hh < n; ++hh) {
+        uint64_t nb = 0, nu = 0;
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.alive && b.state != ra2engine::Building::State::Dead && b.house == hh) ++nb;
+        for (const ra2engine::Unit& u : world.units())
+            if (u.alive && u.die_time < 0.0 && u.house == hh) ++nu;
+        h = fnv_mix(h, nb);
+        h = fnv_mix(h, nu);
+        h = fnv_mix(h, (uint64_t)(world.ai_enabled(hh) ? 1 : 0));
+        h = fnv_mix(h, (uint64_t)(int64_t)std::llround(world.house_credits(hh)));
+    }
+    for (int a = 0; a < n; ++a)
+        for (int b = 0; b < n; ++b)
+            h = fnv_mix(h, (uint64_t)(world.is_enemy(a, b) ? 1 : 0));
+    h = fnv_mix(h, (uint64_t)(int64_t)world.winning_team());
+    return h;
+}
+
+struct DemoMapsResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// The gate's fixed map [RE: maps.md §3 -- "May Day (2)", SNOW, 70x83, 2 starts,
+// GameMode=standard]. SNOW uses the ra2.mix base chain and the ALREADY-RECOVERED
+// 'A' NewTheater letter, so the gate does not hinge on an unexercised YR letter.
+constexpr const char* kDemoMapsFile = "xmp31s2.map";
+
+// One scripted run of the map-browser demo (headless or rendered -- bit-identical;
+// no RNG in any path). Drives the WHOLE new path: catalog (pkt + existence filter
+// + GameMode=standard + CSF names) -> load a non-temperate map BY NAME -> real
+// [Waypoints] 0-7 starts -> launch_skirmish -> 300 fixed dt=1/15 frames. PURELY
+// ADDITIVE: no other gate calls it; world_hash untouched.
+DemoMapsResult simulate_maps(Assets& a, UnitAssets& ua, BuildingAssets& ba, const Rules& rules,
+                             const std::vector<ra2engine::MapEntry>& catalog,
+                             const std::vector<const VehicleAssets*>& vlist,
+                             bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                             const ra2engine::Camera* cam, int W, int H,
+                             const std::string& start_png, const std::string& end_png) {
+    DemoMapsResult r;
+    uint64_t h = 0xcbf29ce484222325ull;             // FNV-1a offset basis
+
+    // --- Checkpoint A: the catalog signature (order-stable scalars only).
+    h = fnv_mix(h, (uint64_t)catalog.size());
+    bool gate_map_listed = false;
+    for (const ra2engine::MapEntry& e : catalog) {
+        for (char c : e.file_name) h = fnv_mix(h, (uint64_t)(unsigned char)c);
+        h = fnv_mix(h, (uint64_t)(int64_t)e.min_players);
+        h = fnv_mix(h, (uint64_t)(int64_t)e.max_players);
+        h = fnv_mix(h, (uint64_t)e.game_modes.size());
+        if (e.file_name == kDemoMapsFile) gate_map_listed = true;
+    }
+    {
+        char b[192];
+        std::snprintf(b, sizeof b, "[mp] stage1 catalog: standard_maps=%d gate_map=%s listed=%s",
+                      (int)catalog.size(), kDemoMapsFile, gate_map_listed ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Checkpoint B: the loaded map's own signature.
+    h = fnv_mix(h, (uint64_t)a.map.width());
+    h = fnv_mix(h, (uint64_t)a.map.height());
+    h = fnv_mix(h, (uint64_t)a.map.cells().size());
+    for (char c : a.map.theater()) h = fnv_mix(h, (uint64_t)(unsigned char)c);
+    const std::vector<ra2assets::MapWaypoint> starts = a.map.start_waypoints();
+    h = fnv_mix(h, (uint64_t)starts.size());
+    for (const ra2assets::MapWaypoint& w : starts) {
+        h = fnv_mix(h, (uint64_t)(int64_t)w.index);
+        h = fnv_mix(h, (uint64_t)(int64_t)w.x);
+        h = fnv_mix(h, (uint64_t)(int64_t)w.y);
+    }
+    const bool map_ok = (a.map.theater() == "SNOW") && a.map.width() == 70 &&
+                        a.map.height() == 83 && (int)starts.size() == 2;
+    {
+        char b[224];
+        std::snprintf(b, sizeof b,
+                      "[mp] stage2 map: file=%s theater=%s size=%dx%d cells=%d starts=%d "
+                      "wp0=(%d,%d) wp1=(%d,%d)",
+                      kDemoMapsFile, a.map.theater().c_str(), a.map.width(), a.map.height(),
+                      (int)a.map.cells().size(), (int)starts.size(),
+                      starts.size() > 0 ? starts[0].x : -1, starts.size() > 0 ? starts[0].y : -1,
+                      starts.size() > 1 ? starts[1].x : -1, starts.size() > 1 ? starts[1].y : -1);
+        r.witness.emplace_back(b);
+    }
+
+    // --- Launch a 2-slot skirmish ON THE MAP'S REAL STARTS.
+    ra2engine::SkirmishConfig cfg;
+    cfg.map_file       = kDemoMapsFile;
+    cfg.use_map_starts = true;             // [RE: maps.md §4.3]
+    cfg.starting_cash  = 10000.0;
+    cfg.unit_count     = 10;
+    cfg.tech_level     = 10;
+    cfg.shroud = true; cfg.short_game = true; cfg.superweapons = true; cfg.crates = false;
+    cfg.slots = {
+        {ra2engine::World::Side::Allied, 5, "Americans", 0, true, false, ra2engine::AiDifficulty::Normal},
+        {ra2engine::World::Side::Soviet, 1, "Russians",  1, true, true,  ra2engine::AiDifficulty::Normal},
+    };
+    ra2engine::World world = launch_skirmish(cfg, a, ua, ba, rules);
+
+    auto render_frame = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+    };
+    auto state_sig = [&]() -> uint64_t {
+        uint64_t s = 0xcbf29ce484222325ull;
+        const int n = world.house_count();
+        for (int hh = 0; hh < n; ++hh) {
+            uint64_t nb = 0, nu = 0;
+            for (const ra2engine::Building& b : world.buildings())
+                if (b.alive && b.state != ra2engine::Building::State::Dead && b.house == hh) ++nb;
+            for (const ra2engine::Unit& u : world.units())
+                if (u.alive && u.die_time < 0.0 && u.house == hh) ++nu;
+            s = fnv_mix(s, nb);
+            s = fnv_mix(s, nu);
+            s = fnv_mix(s, (uint64_t)(int64_t)std::llround(world.house_credits(hh)));
+        }
+        return s;
+    };
+
+    // --- Checkpoint C: the launched world, and the load-bearing assertion that
+    // each combatant house's base sits ON its map start waypoint.
+    world.step_visibility();
+    h = maps_fold(h, world);
+    render_frame();
+    if (render) capture_png(ren, start_png, W, H);
+
+    bool starts_used = (starts.size() == 2);
+    for (size_t k = 0; k < starts.size() && starts_used; ++k) {
+        bool found = false;
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.alive && b.house == (int)k && b.cx == starts[k].x && b.cy == starts[k].y)
+                found = true;
+        if (!found) starts_used = false;
+    }
+    const uint64_t sig_before = state_sig();
+    {
+        char b[224];
+        std::snprintf(b, sizeof b,
+                      "[mp] stage3 launch: houses=%d ai(0)=%s ai(1)=%s enemy(0,1)=%s "
+                      "starts_used=%s cash0=%.0f",
+                      world.house_count(), world.ai_enabled(0) ? "yes" : "no",
+                      world.ai_enabled(1) ? "yes" : "no", world.is_enemy(0, 1) ? "yes" : "no",
+                      starts_used ? "yes" : "no", world.house_credits(0));
+        r.witness.emplace_back(b);
+    }
+
+    // --- Checkpoint D: advance N fixed frames.
+    const int N = 300;
+    for (int k = 0; k < N; ++k) world.step(1.0 / 15.0);
+    h = maps_fold(h, world);
+    const uint64_t sig_after = state_sig();
+    const bool advanced_ok = (sig_after != sig_before);
+    {
+        char b[224];
+        std::snprintf(b, sizeof b, "[mp] stage4 stepped: N=%d sig=%016llx->%016llx advanced=%s",
+                      N, (unsigned long long)sig_before, (unsigned long long)sig_after,
+                      advanced_ok ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    r.hash = h;
+    // Wedge guards -> exit 1 unless each invariant holds (the gate can never
+    // pass vacuously).
+    if (catalog.empty())    { r.ok = false; r.witness.emplace_back("[mp] WEDGE: map catalog is empty (pkt/CSF/existence pipeline failed)"); }
+    if (!gate_map_listed)   { r.ok = false; r.witness.emplace_back("[mp] WEDGE: xmp31s2.map missing from the GameMode=standard catalog"); }
+    if (!map_ok)            { r.ok = false; r.witness.emplace_back("[mp] WEDGE: gate map is not SNOW 70x83 with 2 start waypoints"); }
+    if (!starts_used)       { r.ok = false; r.witness.emplace_back("[mp] WEDGE: houses were not placed on the map's [Waypoints] starts"); }
+    if (world.house_count() < 2) { r.ok = false; r.witness.emplace_back("[mp] WEDGE: launch_skirmish did not produce 2 houses"); }
+    if (!advanced_ok)       { r.ok = false; r.witness.emplace_back("[mp] WEDGE: the sim did not advance deterministically"); }
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[mp] maps_hash=%016llx", (unsigned long long)r.hash);
+    r.witness.emplace_back(hb);
+    render_frame();
+    if (render) capture_png(ren, end_png, W, H);
+    return r;
+}
+
+// --demo-maps: the Map-Browser integration gate (19th permanent byte-identity
+// gate). Runs simulate_maps rendered (hidden window + start/end screenshots) then
+// headless from a FRESH World, and byte-compares the two witness logs + hashes.
+// NO hardcoded hash literal -- compute-and-self-compare; the controller pins the
+// observed value in the README gate table. INSTALL-SPECIFIC (like --demo-roster):
+// the hash folds the catalog, so a different map set yields a different hash.
+int run_demo_maps() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_maps_start.png";
+    const std::string end_png   = scratch + "demo_maps_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+
+    // The catalog (multimd.mix + langmd.mix) -- opened HERE, in the gate, never
+    // inside load_assets (maps.md §7 rule 5).
+    std::vector<ra2engine::MapEntry> catalog;
+    try {
+        catalog = ra2engine::load_yr_map_catalog(dir, "standard").entries;
+    } catch (const std::exception& ex) {
+        std::cerr << "[demo-maps] FAILED: map catalog unavailable (" << ex.what() << ")\n";
+        return 1;
+    }
+
+    // Load the SNOW gate map BY NAME through the generic selector.
+    Assets a = load_assets(dir, ra2, MapSelection{"multimd.mix", 0u, kDemoMapsFile});
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    // NOTE: building art still resolves through the temperate/generic candidate
+    // walk; a chain-aware art loader (so SNOW buildings use snow.mix's dedicated
+    // 'A' art) is a recorded carry-forward -- it does not affect this gate, whose
+    // assertions are map/start/sim state, not art selection.
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok || !ba.sidebar_ok) {
+        std::cerr << "[demo-maps] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    std::vector<const VehicleAssets*> vlist;        // no voxel units in this gate
+
+    DemoMapsResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-maps)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_maps(a, ua, ba, rules, catalog, vlist, /*render=*/true, ren, &tc, &cam,
+                               W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+    const DemoMapsResult r2 = simulate_maps(a, ua, ba, rules, catalog, vlist, /*render=*/false,
+                                            nullptr, nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    std::cerr << "[demo-maps] run1 lines=" << r1.witness.size()
+              << " run2 lines=" << r2.witness.size() << "\n";
+    for (const std::string& s : r2.witness) std::cout << s << "\n";
+    char mh[64];
+    std::snprintf(mh, sizeof mh, "%016llx", (unsigned long long)r2.hash);
+    std::cout << "[demo-maps] deterministic=" << (identical ? "yes" : "no")
+              << " maps_hash=" << mh << "\n";
+    if (!identical || !r1.ok || !r2.ok) return 1;
+    return 0;
+}
+
 // --demo-roster: the broadened-roster content gate (18th permanent byte-identity
 // gate). Mirrors run_demo_skirmish: runs simulate_roster rendered (hidden window
 // + start/end screenshots) then headless from a FRESH World, and byte-compares
@@ -10456,6 +10721,8 @@ int main(int argc, char** argv) {
                 return run_demo_skirmish();
             } else if (arg == "--demo-roster") {
                 return run_demo_roster();
+            } else if (arg == "--demo-maps") {
+                return run_demo_maps();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
