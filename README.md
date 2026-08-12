@@ -1715,6 +1715,117 @@ Skirmish + Quit, `mainmenu.md` §7 item 3); the Allied/Soviet loadscreens
 (`aloadlg.pcx` / `rloadlg.pcx`) between menu and game; the intro movie; animated
 menu elements; the Yuri faction; and all prior-phase carry-forwards.
 
+## Map Browser / Multi-Map Skirmish
+
+Until this phase the engine loaded exactly **one** map, hardcoded as
+`mapsmd03.mix` entry `0x133a0cb2`. The hunt (`docs/re/maps.md`) established
+what that map actually is: **`sov07tmd.map`, a Yuri's Revenge Soviet campaign
+mission** — so every "skirmish" ever played in this clone was fought on a
+mission map, with both sides fanned out from one derived cell because the
+maps' own spawn data was never parsed. This phase replaces all of that with the
+real multiplayer map set.
+
+**Enumeration is manifest-driven, not a directory scan.** The original does not
+list "every map in the archive"; it reads a `.pkt` manifest
+(`langmd.mix/missionsmd.pkt`) whose `[MultiMaps]` index names each map and whose
+per-map section carries `Description`, `GameMode`, `MinPlayers`/`MaxPlayers` and
+`CD`. `ra2assets::PktFile` decodes it. `ra2engine::build_map_catalog` then
+applies the recovered pipeline in order: parse → **existence filter** → **mode
+filter** → **CSF display names** → stable sort. The existence filter is
+mandatory, not defensive: RA2's own `missions.pkt` lists **58 maps that do not
+exist**, so a manifest-only list would offer unloadable maps. On this install
+the YR manifest yields **161 active entries, all present**, of which **91 are
+`GameMode=standard`** — the Battle list, the only mode that admits AI players,
+and therefore the skirmish list. Names come from the game's string table
+(`ra2md.csf`, 5,208 labels): `Description=` is a *label*, not a name, and no
+stock map sets `[Basic] Name=` (0 of 281), so an unresolved label falls back to
+the raw base name.
+
+**Player starts are real.** `[Waypoints]` keys **0–7** are the multiplayer
+start positions, packed as `x = v % 1000`, `y = v / 1000` in the same cell space
+as the terrain records — triple-sourced (OpenRA, XCC, and this install's own
+`[Header]` preview waypoints, which are an exact affine transform of the decoded
+cells *only* under this decode order; the key count equals
+`NumberStartingPoints` on **267/267** multiplayer maps). `MapFile` exposes them
+as new fields, and `launch_skirmish` places combatant *k* at
+`start_waypoints()[k]` when `SkirmishConfig::use_map_starts` is set. The map's
+waypoints also overlay the AI's synthetic waypoint ring, retiring that
+`[RE-FALLBACK]` for every index a map actually defines.
+
+**All five multiplayer theaters render.** `ra2assets::TheaterChain` carries each
+theater's tile mix, art mix, control INI, iso/theater/unit palettes and tile
+extension. `load_assets` resolves any theater through that table instead of
+throwing on everything but temperate, and takes a `MapSelection` that defaults
+to the historical entry — which is what keeps every gate path unchanged.
+
+Two RE-GATE findings (`maps.md` §9) overturned assumptions that would have
+produced a broken loader:
+
+- **The `*md` tile archives are overlays, not tile sets.** `isotemmd.mix`,
+  `isosnomd.mix`, `isourbmd.mix`, `isoubnmd.mix` and `isodesmd.mix` each resolve
+  **0** of a real map's tiles and lack even `Clear01` at index 0. The **base**
+  archive is authoritative; opening only the `md` variant — the natural reading
+  of the naming convention — renders an empty map.
+- **Only SNOW has dedicated building art** (letter `'A'`, *arctic*). There is no
+  `gtcnst`/`gucnst`/`gncnst`/`gdcnst`/`glcnst` anywhere; every other theater
+  resolves through the generic `'G'` fallback the engine already implements, so
+  the per-theater art letter is nearly irrelevant.
+
+Chains proven by constructing each theater and resolving every distinct tile of
+a real map of that theater: TEMPERATE **270/270**, SNOW **164/164**, URBAN
+**116/116**, DESERT **103/103**, NEWURBAN **154/155**. LUNAR is excluded — zero
+multiplayer maps use it. Note also that SNOW/URBAN take their control INI from
+the *expansion* archive (`snowmd.ini`/`urbanmd.ini` in `localmd.mix`) while their
+tiles come from the base one — an asymmetry detected by filename suffix, so the
+expansion archive is opened only when a theater needs it and the default path's
+startup cost is unchanged.
+
+The skirmish setup screen now carries a **map selector** over the 91-map list
+(arrows step by 1, the row's outer edges by 10) showing each map's CSF name and
+player count. Because the in-house rect-font is A–Z plus 0–9 only, punctuation
+would silently vanish, so the position is spelled `1 OF 91` and the step arrows
+are drawn as triangles.
+
+The **19th determinism gate**, `--demo-maps`, drives the whole path headlessly:
+catalog → load `xmp31s2.map` ("May Day (2)", SNOW 70x83) **by name** → real
+starts → 300 fixed frames, run once rendered and once headless and byte-compared.
+It pins `maps_hash=6e516005f120a1bb` and carries six wedge guards (empty
+catalog, unlisted gate map, wrong theater/size/starts, starts not used, too few
+houses, sim did not advance) so it can never pass vacuously. Its
+`starts_used=yes` witness is the load-bearing check that houses really sit on
+the map's waypoints rather than silently falling back to the old fan-out.
+INSTALL-SPECIFIC, like `--demo-roster`: the hash folds the catalog.
+
+All eighteen prior gates were re-verified **bit-identical** after every
+behaviour-touching commit and again at finalize; the ra2assets suite is
+510/510; the arm64 APK builds with the new symbols linked.
+
+**Deviations we take** (adjudicated against `maps.md`, not bugs):
+- **Slot → start binding is deterministic ascending** (combatant *k* →
+  `start_waypoints()[k]`). The original randomizes the assignment; a
+  byte-identity gate needs determinism [`maps.md` §9.5, `[RE-FALLBACK]`].
+- **`LocalSize` is ignored** — the full `[Map] Size` rect renders; clipping the
+  camera to the playable sub-rect is a later pass [`maps.md` §9.8].
+- **The meaning of waypoints > 7** was never determined (in-map script
+  references were ruled out); they are used only as positional nodes, which
+  cannot contradict anything the hunt pinned [`maps.md` §4.3].
+- **The default map is never repointed** — gates keep loading the campaign map
+  they always did; map choice is a parameter that defaults to current behavior
+  [`maps.md` §7 rule 2].
+
+**Carry-forwards (documented, not implemented):** `[PreviewPack]` lobby
+thumbnails (decodable — Format5 + **LZO**, *not* LCW as folklore holds: LCW
+fails 267/267 while LZO decodes 267/267 — but a second UI subsystem for no
+simulation value); **pre-placed `[Units]`/`[Infantry]`/`[Structures]`/
+`[Terrain]`**, which 85 of 267 multiplayer maps carry — *blocked on
+calibration*, since the object record's field tail is only PROBABLE from a
+third-party reader and no owner-string → house mapping has been recovered;
+chain-aware building art (SNOW should use `snow.mix`'s dedicated `'A'` art
+rather than the generic set); the RA2 `MULTI.MIX` map set; non-`standard` game
+modes; LUNAR; loose `.mpr`/`.yrm` files; and a scrollable/filterable browser
+with previews in place of the stepper.
+
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
