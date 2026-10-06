@@ -3452,8 +3452,8 @@ public:
                 {ra2engine::World::Side::Allied, "AlliedCrew"},
                 {ra2engine::World::Side::Soviet, "SovietCrew"}};
             for (const auto& [side, key] : crews) {
-                const std::string id = rules_ini_.get(
-                    "General", key, side == ra2engine::World::Side::Soviet ? "E2" : "E1");
+                const std::string id = rules_.general_string(
+                    key, side == ra2engine::World::Side::Soviet ? "E2" : "E1");
                 const ResolvedUnit ru = resolve_combat_unit(rules_, id);
                 world_.set_survivor_crew(static_cast<int>(side), ru.combat);
                 if (ua_.anims.count(ru.combat.image))
@@ -10857,6 +10857,466 @@ int run_demo_roster() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-repair helpers ---------------------------------------------------
+
+// FNV fold of the Repair & Sell state [RE: repair-sell.md]. Folds EXACTLY the
+// new state plus what it moves -- per-building hp/flags/state, per-house
+// credits, the unit roll (survivors) and the global cadence counter.
+// world_hash is UNTOUCHED; this gate owns its own fold, like every previous
+// phase.
+uint64_t repair_fold(uint64_t h, const ra2engine::World& world) {
+    for (int i = 0; i < (int)world.buildings().size(); ++i) {
+        const ra2engine::Building& b = world.buildings()[i];
+        h = fnv_mix(h, (uint64_t)(int64_t)b.type);
+        h = fnv_mix(h, (uint64_t)(int64_t)b.hp);
+        h = fnv_mix(h, (uint64_t)(b.being_repaired ? 1 : 0));
+        h = fnv_mix(h, (uint64_t)(b.selling ? 1 : 0));
+        // sell_time is a double; quantize to ms so the fold is exact.
+        h = fnv_mix(h, (uint64_t)(int64_t)std::llround(b.sell_time * 1000.0));
+        h = fnv_mix(h, (uint64_t)(b.sold ? 1 : 0));
+        h = fnv_mix(h, (uint64_t)(b.alive ? 1 : 0));
+        h = fnv_mix(h, (uint64_t)(int)b.state);
+    }
+    for (int hh = 0; hh < world.house_count(); ++hh)
+        h = fnv_mix(h, (uint64_t)(int64_t)std::llround(world.house_credits(hh)));
+    h = fnv_mix(h, (uint64_t)world.units().size());
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, (uint64_t)(int64_t)u.cell_x);
+        h = fnv_mix(h, (uint64_t)(int64_t)u.cell_y);
+        h = fnv_mix(h, (uint64_t)(int64_t)u.house);
+        h = fnv_mix(h, (uint64_t)(u.alive ? 1 : 0));
+        for (char c : u.image) h = fnv_mix(h, (uint64_t)(unsigned char)c);
+    }
+    h = fnv_mix(h, world.repair_frame());
+    return h;
+}
+
+struct DemoRepairResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the Repair & Sell demo (headless or rendered --
+// bit-identical; NO RNG is reachable in any path this drives: the 25%-chance
+// special crew type is CUT, so survivors are always the house's basic
+// infantry). Drives the WHOLE feature: the 14-frame global cadence + the
+// integer stepCost charge, the auto-stop, the silent out-of-credits stop, every
+// reachable recovered refusal (AND the one that does NOT exist), and two sell
+// missions -- the ConYard (FLAT 1500, 3 survivors) and the refinery (the
+// load-bearing Soylent=300 override, §D0.2). PURELY ADDITIVE: no other gate
+// calls it; world_hash untouched; NO pinned hash literal (README pins it).
+// Exemplar numbers per the §D9 measured table: GACNST 3000/1000 -> stepCost 3,
+// refund 1500, Allied survivors 3; GAPOWR 800/750 -> stepCost 1; GAREFN
+// Soylent=300 -> refund 300, survivors 1; CAOILD Unsellable=yes.
+DemoRepairResult simulate_repair(Assets& a, UnitAssets& ua, BuildingAssets& ba, const Rules& rules,
+                                 const std::vector<const VehicleAssets*>& vlist,
+                                 bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                 const ra2engine::Camera* cam, int W, int H,
+                                 const std::string& start_png, const std::string& mid_png,
+                                 const std::string& end_png) {
+    DemoRepairResult r;
+    uint64_t h = 0xcbf29ce484222325ull;             // FNV-1a offset basis
+
+    // --- Fixed world: an Allied base (house 0, human) far from a Soviet base
+    // (house 1) so no combat can perturb the scripted HP numbers.
+    ra2engine::World world = build_world(a, ua, 0);       // count=0 -> no pre-spawned units
+    wire_economy(world, ba, rules);                      // types_ (repair needs Cost/Strength)
+    world.set_repair_sell_rules(ba.repair_sell);         // the real rulesmd scalars
+    // Survivor crews [RE: §B3/§D1] from [General] AlliedCrew / SovietCrew.
+    const std::string allied_crew = rules.general_string("AlliedCrew", "E1");
+    const std::string soviet_crew = rules.general_string("SovietCrew", "E2");
+    world.set_survivor_crew(static_cast<int>(ra2engine::World::Side::Allied),
+                            resolve_combat_unit(rules, allied_crew).combat);
+    world.set_survivor_crew(static_cast<int>(ra2engine::World::Side::Soviet),
+                            resolve_combat_unit(rules, soviet_crew).combat);
+
+    const int gw = world.grid_w(), gh = world.grid_h();
+    auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    const int bx = clampi(pc ? pc->x : 20, 8, gw - 12);
+    const int by = clampi(pc ? pc->y : 20, 8, gh - 12);
+    spawn_base(world, ba, /*house=*/0, bx, by, /*with_refinery=*/true, /*harv_va=*/nullptr,
+               /*harv_chrono=*/false, /*harv_storage=*/0, /*allied_full=*/true);
+    spawn_base(world, ba, /*house=*/1, clampi(bx + 40, 8, gw - 12), clampi(by + 30, 8, gh - 12));
+    world.grant_credits_for_test(0, 10000.0);
+    world.grant_credits_for_test(1, 10000.0);
+
+    // Locate the exemplars by ROSTER ID (never by index or position).
+    auto find_own = [&](const char* id) -> int {
+        const int t = roster_index(ba, id);
+        for (int i = 0; i < (int)world.buildings().size(); ++i) {
+            const ra2engine::Building& b = world.buildings()[i];
+            if (b.alive && b.house == 0 && b.type == t) return i;
+        }
+        return -1;
+    };
+    auto find_enemy_any = [&]() -> int {
+        for (int i = 0; i < (int)world.buildings().size(); ++i)
+            if (world.buildings()[i].alive && world.buildings()[i].house == 1) return i;
+        return -1;
+    };
+    const int cnst = find_own("GACNST");
+    const int powr = find_own("GAPOWR");
+    const int refn = find_own("GAREFN");
+    const int foe = find_enemy_any();
+    const int t_cnst = cnst >= 0 ? world.buildings()[cnst].type : -1;
+    const int t_powr = powr >= 0 ? world.buildings()[powr].type : -1;
+    const int t_refn = refn >= 0 ? world.buildings()[refn].type : -1;
+    const bool have_exemplars = (cnst >= 0 && powr >= 0 && refn >= 0 && foe >= 0);
+
+    // The EXPECTED numbers, computed from the SAME pure functions the sim uses
+    // (so a wrong constant fails a named wedge, not just the hash).
+    const int allied_ix = static_cast<int>(ra2engine::World::Side::Allied);
+    auto refund_of = [&](int t) {
+        return t < 0 ? 0
+                     : ra2engine::sell_refund(ba.roster[t].cost, ba.roster[t].soylent,
+                                              ba.repair_sell.refund_percent,
+                                              /*owner_is_human=*/true);
+    };
+    auto survivors_of = [&](int t) {
+        return t < 0 ? 0
+                     : ra2engine::survivor_count(
+                           refund_of(t), ra2engine::survivor_divisor(ba.repair_sell, allied_ix),
+                           ba.roster[t].crewed, /*has_been_captured=*/false);
+    };
+    const int cnst_cost = t_cnst >= 0
+        ? ra2engine::repair_step_cost(ba.roster[t_cnst].cost, ba.roster[t_cnst].strength,
+                                      ba.repair_sell.repair_step, ba.repair_sell.repair_percent)
+        : 0;
+    const int cnst_refund = refund_of(t_cnst), cnst_surv = survivors_of(t_cnst);
+    const int refn_refund = refund_of(t_refn), refn_surv = survivors_of(t_refn);
+    const int expect_interval = ra2engine::repair_interval_frames(ba.repair_sell.repair_rate);
+
+    auto render_frame = [&](const std::string& png) {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba);
+        capture_png(ren, png, W, H);
+    };
+
+    render_frame(start_png);
+    h = repair_fold(h, world);
+    {
+        char b[320];
+        std::snprintf(b, sizeof b,
+                      "[rs] stage0 setup: cnst=%s powr=%s refn=%s foe=%s crew=%s/%s interval=%d "
+                      "step_hp=%d step_cost=%d refund=%d survivors=%d refn_refund=%d refn_surv=%d",
+                      cnst >= 0 ? "yes" : "no", powr >= 0 ? "yes" : "no",
+                      refn >= 0 ? "yes" : "no", foe >= 0 ? "yes" : "no", allied_crew.c_str(),
+                      soviet_crew.c_str(), expect_interval, ba.repair_sell.repair_step, cnst_cost,
+                      cnst_refund, cnst_surv, refn_refund, refn_surv);
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 1: the 14-frame GLOBAL cadence + the integer stepCost charge.
+    // Damage the ConYard by an exact multiple of the step, arm the wrench, and
+    // step ONE frame at a time recording the frames on which hp moved.
+    std::vector<uint64_t> hit_frames;
+    int step_gaps_ok = 1, heal_ok = 1, charge_ok = 1;
+    if (cnst >= 0) {
+        const int max_hp = world.buildings()[cnst].max_hp;
+        world.buildings()[cnst].hp = max_hp - 8 * 6;      // 6 steps of damage
+        if (!world.toggle_repair(cnst, 0)) r.ok = false;
+        int prev_hp = world.buildings()[cnst].hp;
+        double prev_cr = world.house_credits(0);
+        for (int k = 0; k < 90; ++k) {
+            const uint64_t f = world.repair_frame();
+            world.step(1.0 / 15.0);
+            const int hp = world.buildings()[cnst].hp;
+            const double cr = world.house_credits(0);
+            if (hp != prev_hp) {
+                hit_frames.push_back(f);
+                if (hp != prev_hp + ba.repair_sell.repair_step && hp != max_hp) heal_ok = 0;
+                if (std::llround(prev_cr - cr) != cnst_cost) charge_ok = 0;
+            } else if (std::llround(prev_cr - cr) != 0) {
+                charge_ok = 0;                                // no idle drain
+            }
+            prev_hp = hp;
+            prev_cr = cr;
+        }
+        for (size_t i = 1; i < hit_frames.size(); ++i)
+            if (hit_frames[i] - hit_frames[i - 1] != (uint64_t)expect_interval) step_gaps_ok = 0;
+        for (uint64_t f : hit_frames)
+            if (expect_interval <= 0 || f % (uint64_t)expect_interval != 0) step_gaps_ok = 0;
+    }
+    h = repair_fold(h, world);
+    {
+        char b[256];
+        std::snprintf(b, sizeof b,
+                      "[rs] stage1 repair: steps=%d first=%llu gap=%d heal8=%s charge=%s "
+                      "hp=%d/%d credits=%.0f",
+                      (int)hit_frames.size(),
+                      (unsigned long long)(hit_frames.empty() ? 0 : hit_frames[0]),
+                      expect_interval, heal_ok ? "yes" : "no", charge_ok ? "yes" : "no",
+                      cnst >= 0 ? world.buildings()[cnst].hp : -1,
+                      cnst >= 0 ? world.buildings()[cnst].max_hp : -1, world.house_credits(0));
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 2: AUTO-STOP at full health.
+    const bool autostop_ok =
+        cnst >= 0 && world.buildings()[cnst].hp == world.buildings()[cnst].max_hp &&
+        !world.building_repairing(cnst);
+    {
+        char b[192];
+        std::snprintf(b, sizeof b, "[rs] stage2 autostop: full=%s flag_cleared=%s",
+                      (cnst >= 0 && world.buildings()[cnst].hp == world.buildings()[cnst].max_hp)
+                          ? "yes" : "no",
+                      (cnst >= 0 && !world.building_repairing(cnst)) ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+    h = repair_fold(h, world);
+
+    // --- Stage 3: out of credits STOPS repair silently, with NO partial step.
+    int broke_hp0 = -1, broke_hp1 = -1, powr_cost = 0;
+    bool broke_ok = false;
+    if (powr >= 0) {
+        world.buildings()[powr].hp = world.buildings()[powr].max_hp - 8 * 4;
+        powr_cost =
+            ra2engine::repair_step_cost(ba.roster[t_powr].cost, ba.roster[t_powr].strength,
+                                        ba.repair_sell.repair_step, ba.repair_sell.repair_percent);
+        world.grant_credits_for_test(0, (double)powr_cost - 1.0);   // one credit short
+        if (!world.toggle_repair(powr, 0)) r.ok = false;
+        broke_hp0 = world.buildings()[powr].hp;
+        for (int k = 0; k < 40; ++k) world.step(1.0 / 15.0);
+        broke_hp1 = world.buildings()[powr].hp;
+        broke_ok = (broke_hp1 == broke_hp0) && !world.building_repairing(powr) &&
+                   std::llround(world.house_credits(0)) == (long long)powr_cost - 1;
+    }
+    h = repair_fold(h, world);
+    {
+        char b[224];
+        std::snprintf(b, sizeof b,
+                      "[rs] stage3 broke: step_cost=%d hp=%d->%d unchanged=%s flag_cleared=%s "
+                      "credits=%.0f",
+                      powr_cost, broke_hp0, broke_hp1, (broke_hp0 == broke_hp1) ? "yes" : "no",
+                      (powr >= 0 && !world.building_repairing(powr)) ? "yes" : "no",
+                      world.house_credits(0));
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 4: the refusals -- exactly the recovered set, and NOT the one
+    // that does not exist. Fresh buildings are placed and tested BEFORE any
+    // further stepping (the Buildup one is still under construction).
+    world.grant_credits_for_test(0, 10000.0);
+    bool refuse_enemy = false, refuse_buildup = false, refuse_unsellable = false,
+         refuse_double = false, allow_conyard = false;
+    if (foe >= 0) refuse_enemy = !world.begin_sell(foe, 0);          // NOT your building
+    auto place_free = [&](const char* id, bool instant) -> int {
+        const int t = roster_index(ba, id);
+        if (t < 0) return -1;
+        const ra2engine::BuildingTypeDef& d = ba.roster[t];
+        for (int dy = 10; dy <= 22; ++dy)
+            for (int dx = -6; dx <= 12; ++dx) {
+                const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                    bx + dx, by + dy, d.fw, d.fh, 0, d.adjacent, world.passable(), world.grid_w(),
+                    world.grid_h(), world.occupancy(), world.buildings(), /*bypass=*/true);
+                if (chk.ok)
+                    return world.add_building(t, bx + dx, by + dy, d.fw, d.fh, 0, d.strength,
+                                              d.armor_ix, ba.art[t].buildup_total, instant,
+                                              d.sight, d.grants_map_reveal);
+            }
+        return -1;
+    };
+    const int ui = place_free("GAPOWR", /*instant=*/false);
+    if (ui >= 0) refuse_buildup = !world.begin_sell(ui, 0);          // under construction
+    const int oil = place_free("CAOILD", /*instant=*/true);
+    if (oil >= 0) refuse_unsellable = !world.begin_sell(oil, 0);      // Unsellable=yes (§D0.3)
+    if (cnst >= 0) {
+        // CONFIRMED BY ABSENCE (§B5): the ONLY, FULL-HEALTH Construction Yard
+        // IS sellable. There is no last-ConYard rule.
+        allow_conyard = world.begin_sell(cnst, 0);
+        refuse_double = !world.begin_sell(cnst, 0);                  // already selling
+    }
+    h = repair_fold(h, world);
+    {
+        char b[288];
+        std::snprintf(b, sizeof b,
+                      "[rs] stage4 refusals: enemy=%s under_construction=%s unsellable_caoild=%s "
+                      "already_selling=%s full_health_conyard_sellable=%s",
+                      refuse_enemy ? "refused" : "ALLOWED",
+                      refuse_buildup ? "refused" : "ALLOWED",
+                      refuse_unsellable ? "refused" : "ALLOWED",
+                      refuse_double ? "refused" : "ALLOWED",
+                      allow_conyard ? "yes" : "NO");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 5: the sell MISSION -- credits land ONLY on completion, FLAT.
+    const double cr_before = world.house_credits(0);
+    const int units_before = (int)world.units().size();
+    int sell_frames = 0;
+    bool paid_early = false;
+    while (cnst >= 0 && world.building_selling(cnst) && sell_frames < 300) {
+        world.step(1.0 / 15.0);
+        ++sell_frames;
+        if (sell_frames == 20) render_frame(mid_png);     // mid-mission: mirrored buildup
+        if (world.building_selling(cnst) &&
+            std::llround(world.house_credits(0)) != std::llround(cr_before))
+            paid_early = true;
+    }
+    const long long paid = cnst >= 0
+        ? std::llround(world.house_credits(0)) - std::llround(cr_before) : 0;
+    const int spawned = (int)world.units().size() - units_before;
+    const bool removed = cnst >= 0 && world.buildings()[cnst].sold &&
+                         world.buildings()[cnst].state == ra2engine::Building::State::Dead &&
+                         !world.buildings()[cnst].selling;
+    const bool footprint_free =
+        cnst >= 0 && world.walkable(world.buildings()[cnst].cx, world.buildings()[cnst].cy);
+    h = repair_fold(h, world);
+    {
+        char b[256];
+        std::snprintf(b, sizeof b,
+                      "[rs] stage5 sell: frames=%d paid_early=%s paid=%lld expect=%d "
+                      "survivors=%d expect=%d removed=%s footprint_free=%s",
+                      sell_frames, paid_early ? "YES" : "no", paid, cnst_refund, spawned,
+                      cnst_surv, removed ? "yes" : "no", footprint_free ? "yes" : "no");
+        r.witness.emplace_back(b);
+    }
+
+    // --- Stage 6: the Soylent override [RE: §B1 + §D0.2] -- the refinery
+    // refunds Soylent=300, NOT trunc(2000 * RefundPercent) = 1000.
+    const double cr_refn = world.house_credits(0);
+    const int units_refn = (int)world.units().size();
+    bool refn_started = false;
+    int refn_frames = 0;
+    if (refn >= 0) {
+        refn_started = world.begin_sell(refn, 0);
+        while (world.building_selling(refn) && refn_frames < 300) {
+            world.step(1.0 / 15.0);
+            ++refn_frames;
+        }
+    }
+    const long long refn_paid = std::llround(world.house_credits(0)) - std::llround(cr_refn);
+    const int refn_spawned = (int)world.units().size() - units_refn;
+    h = repair_fold(h, world);
+    {
+        char b[224];
+        std::snprintf(b, sizeof b,
+                      "[rs] stage6 soylent: started=%s frames=%d paid=%lld expect=%d "
+                      "survivors=%d expect=%d",
+                      refn_started ? "yes" : "no", refn_frames, refn_paid, refn_refund,
+                      refn_spawned, refn_surv);
+        r.witness.emplace_back(b);
+    }
+    render_frame(end_png);
+
+    r.hash = h;
+    // Wedge guards -> exit 1 unless each invariant holds (the gate can never
+    // pass vacuously). Each cites the § it defends.
+    auto wedge = [&](bool bad, const char* msg) {
+        if (!bad) return;
+        r.ok = false;
+        r.witness.emplace_back(std::string("[rs] WEDGE: ") + msg);
+    };
+    wedge(!have_exemplars, "GACNST/GAPOWR/GAREFN/enemy exemplars not spawned");
+    wedge(expect_interval != 14, "repair interval is not 14 frames (trunc(RepairRate*900), §A2)");
+    wedge(ba.repair_sell.repair_step != 8, "RepairStep is not 8 (§A1)");
+    wedge(cnst_cost != 3, "GACNST stepCost is not 3 -- the two-integer-division form was lost (§A2/§D9)");
+    wedge(powr_cost != 1, "GAPOWR stepCost is not 1 (§D9: 800/(750/8)=8, *0.15 -> max(1,1))");
+    wedge(cnst_refund != 1500 || cnst_surv != 3, "GACNST refund/survivors are not 1500/3 (§D9)");
+    wedge(refn_refund != 300 || refn_surv != 1, "GAREFN refund/survivors are not 300/1 -- the Soylent override was lost (§D0.2)");
+    wedge(hit_frames.size() < 5, "the wrench never stepped");
+    wedge(!step_gaps_ok, "repair steps are not on the absolute 14-frame phase (§A2)");
+    wedge(!heal_ok, "a repair step did not heal exactly RepairStep HP (§A2)");
+    wedge(!charge_ok, "a repair step did not charge exactly stepCost, or credits drained idle (§A2)");
+    wedge(!autostop_ok, "repair did not auto-stop at full health (§A2)");
+    wedge(!broke_ok, "out-of-credits did not stop silently with hp untouched (§A3)");
+    wedge(!refuse_enemy, "an enemy building was sellable (§C1 ownership)");
+    wedge(!refuse_buildup, "a building under construction was sellable (§B5)");
+    wedge(!refuse_unsellable, "CAOILD (Unsellable=yes) was sellable (§B5/§D0.3)");
+    wedge(!refuse_double, "an already-selling building was sellable again (§B5)");
+    wedge(!allow_conyard, "the only full-health Construction Yard was REFUSED -- an invented last-ConYard rule (§B5, CONFIRMED by absence)");
+    wedge(sell_frames < 2, "sell completed instantly -- it is a MISSION (§B2)");
+    wedge(paid_early, "credits landed before the mission completed (§B2)");
+    wedge(paid != (long long)cnst_refund, "the refund was not the FLAT recovered value (§B1 -- no HP scaling)");
+    wedge(spawned != cnst_surv, "the survivor count does not match clamp(refund/divisor,1,5) (§B3)");
+    wedge(!removed, "the sold building was not removed/marked sold (§B2)");
+    wedge(!footprint_free, "the sold building's foundation is still blocked");
+    wedge(!refn_started || refn_paid != (long long)refn_refund || refn_spawned != refn_surv,
+          "the refinery sale did not pay Soylent=300 with 1 survivor (§B1/§D0.2)");
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[rs] repair_hash=%016llx", (unsigned long long)r.hash);
+    r.witness.emplace_back(hb);
+    return r;
+}
+
+// --demo-repair: the Repair & Sell integration gate (20th permanent
+// byte-identity gate). Runs simulate_repair rendered (hidden window +
+// start/mid/end screenshots) then headless from a FRESH World, and
+// byte-compares the two witness logs + hashes. NO hardcoded hash literal --
+// compute-and-self-compare; the README pins the observed value.
+int run_demo_repair() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_repair_start.png";
+    const std::string mid_png = scratch + "demo_repair_mid.png";
+    const std::string end_png = scratch + "demo_repair_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok) {
+        std::cerr << "[demo-repair] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    std::vector<const VehicleAssets*> vlist;        // no voxel units in this gate
+
+    // Camera on the Allied base (the pick_start_cell anchor spawn_base uses).
+    ra2engine::Camera cam;
+    {
+        ra2engine::World probe = build_world(a, ua, 0);
+        const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+        const int cx = pc ? pc->x : probe.grid_w() / 2, cy = pc ? pc->y : probe.grid_h() / 2;
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    DemoRepairResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-repair)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_repair(a, ua, ba, rules, vlist, /*render=*/true, ren, &tc,
+                                 &cam, W, H, start_png, mid_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+    const DemoRepairResult r2 = simulate_repair(a, ua, ba, rules, vlist,
+                                                /*render=*/false, nullptr, nullptr, nullptr, W, H,
+                                                "", "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    std::cerr << "[demo-repair] run1 lines=" << r1.witness.size()
+              << " run2 lines=" << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& s : r1.witness) std::cout << s << "\n";
+    std::cout << "start_png=" << start_png << "\nmid_png=" << mid_png << "\nend_png=" << end_png
+              << "\n";
+    char mh[96];
+    std::snprintf(mh, sizeof mh, "deterministic=%s lines=%d repair_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  (unsigned long long)r1.hash);
+    std::cout << mh << "\n";
+    return (!identical || !r1.ok || !r2.ok) ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -11019,6 +11479,8 @@ int main(int argc, char** argv) {
                 return run_demo_roster();
             } else if (arg == "--demo-maps") {
                 return run_demo_maps();
+            } else if (arg == "--demo-repair") {
+                return run_demo_repair();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {

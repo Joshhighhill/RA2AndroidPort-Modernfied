@@ -130,6 +130,12 @@ public:
     // section actually holds them. Returns `fallback` if absent from both.
     double general_double(const std::string& key, double fallback) const;
 
+    // [General] key= as a STRING id with the inline ';' comment and trailing
+    // whitespace stripped (real rulesmd carries e.g. "AlliedCrew=E1   ; soldier
+    // that emerges..."). Returns `fallback` if absent or empty. Used for the
+    // survivor crew ids [RE: repair-sell.md §D1: AlliedCrew=E1/SovietCrew=E2].
+    std::string general_string(const std::string& key, const std::string& fallback) const;
+
     // [section] key= parsed as a double (same tolerant parse as
     // general_double), for the [AI] and difficulty sections the AI phase
     // reads [RE: ai-base.md §2/§4]. Returns `fallback` if absent.

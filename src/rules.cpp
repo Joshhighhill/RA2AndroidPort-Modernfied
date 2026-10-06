@@ -217,6 +217,11 @@ std::vector<std::string> Rules::prerequisite_group(const std::string& group) con
     return split_trim_upper(ini_->get("General", "Prerequisite" + group, ""));
 }
 
+std::string Rules::general_string(const std::string& key, const std::string& fallback) const {
+    const std::string v = strip_inline_comment(ini_->get("General", key, ""));
+    return v.empty() ? fallback : v;
+}
+
 double Rules::general_double(const std::string& key, double fallback) const {
     // [General] first (BuildSpeed/RefundPercent/LowPowerPenaltyModifier's
     // real home); [AudioVisual] second (ConditionYellow/ConditionRed's real

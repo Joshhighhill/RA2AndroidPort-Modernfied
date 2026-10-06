@@ -387,6 +387,21 @@ TEST_CASE("rules: section_flag honours per-key fallbacks [RE: repair-sell.md §A
     CHECK_FALSE(r.section_flag("NOSUCH", "Unsellable", false));
 }
 
+TEST_CASE("rules: general_string strips the inline comment [RE: repair-sell.md §D1]") {
+    // The real rulesmd line shape: an id, padding, then a ';' comment.
+    const std::string text =
+        "[General]\n"
+        "AlliedCrew=E1           ; soldier that emerges from destroyed unit or building\n"
+        "SovietCrew=E2\n"
+        "ThirdCrew=\n";
+    const ra2assets::Ini ini = ra2assets::Ini::parse(text);
+    const ra2assets::Rules r = ra2assets::Rules::load(ini);
+    CHECK(r.general_string("AlliedCrew", "X") == "E1");
+    CHECK(r.general_string("SovietCrew", "X") == "E2");
+    CHECK(r.general_string("ThirdCrew", "INIT") == "INIT");   // empty -> fallback
+    CHECK(r.general_string("NoSuchKey", "E1") == "E1");       // absent -> fallback
+}
+
 TEST_CASE("rules: the real rulesmd repair/sell scalars [RE: repair-sell.md §Ground truth]") {
     if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
     if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("skipped: rulesmd.ini not found"); return; }
