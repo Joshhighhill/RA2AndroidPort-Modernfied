@@ -1967,6 +1967,89 @@ mode, inert); the in-game options page and its GameSpeed slider; slider tick and
 volume-preview sounds; the tooltip status line; page power-on transitions.
 
 
+## Projectile Flight (real ballistics)
+
+Until this phase every weapon was instant-hit: `combat.cpp::try_fire` applied
+damage the frame the ROF timer expired. Calibrated against the `BulletClass`
+hunt (`docs/re/projectile.md`) and its implement-phase RE-GATE addendum (§12),
+non-`Inviso` weapons now fire a real projectile that flies on the recovered
+integrator and only then calls the **unchanged** damage layer:
+
+- **Ballistic** (`ROT==0`: `[Cannon]` Rhino/Grizzly/Apocalypse, `[FlakTProj]`
+  Flak Track, `[Ballistic]` Destroyer). Launch speed is **not** `Speed=` — it is
+  `ftol(sqrt(d·Gravity·1.2))` recomputed per shot (`FUN_00771E90` →
+  `FUN_0048AAA0`), capped at half the distance, with **`Gravity=6` read from
+  `[AudioVisual]`** (it does not exist in `[General]`). The launch angle comes
+  from the **unwound** arcing solver (`FUN_0048A8E0`, §12.1: an exact quadratic
+  in the horizontal speed squared, `θ = acos(√t/v)`, plus the wrapper's
+  `d+1` derivative test that recovers downward shots and a flat 45° whenever the
+  target is above the muzzle), quantised through the 16-bit binary angle like
+  `Fire`. Each logic frame: `V.z −= 6; pos = ftol(pos + V)` (semi-implicit Euler,
+  integer-lepton positions). A Rhino shell at max range flies ~16 frames.
+- **Vertical** (`[BlimpBombP]`, the Kirov bomb): leaves at **1 lepton/frame**
+  (§12.3), gains `Acceleration=1` per frame up to the weapon `Speed` (51),
+  direction frozen — **~37 frames (~2.5 s) from cruise height**, the single
+  largest error of the old instant model.
+- **Termination** (§7 + §12.2, `LevelHeight=104` now CONFIRMED from its static
+  initialiser): ground impact; arrival in the true target's cell below 208;
+  collision with the first hostile unit in the cell within 127 leptons (snaps onto
+  it unless `Inaccurate`); off-map removal without damage; out-of-speed; the
+  `IsBlocked` −416 floor. `Explode` snaps within 32 leptons.
+- **Detonation** reuses `apply_spread_damage` (CellSpread ≥ 1) or the extracted
+  `deliver_unit_hit` / `deliver_building_hit` — the old `try_fire` tails moved
+  verbatim. A target that moved away is a **miss**; a target that died mid-flight
+  leaves the shell to detonate on its cell (§8).
+- **Inviso weapons stay instant.** All infantry small arms are `[InvisibleLow]`,
+  a one-frame teleport in the original (§6.3) — the old path is already faithful.
+
+**Inaccuracy and the RNG decision.** `[FlakTProj]` scatter (§5.2,
+`Random(0, BallisticScatter)·dist/Range` around a uniform angle) and the §5.1
+`Random(BS/2, BS)` form are drawn from a **dedicated projectile RNG**: the
+project's xorshift32 with a fixed seed, consumed only by scatter draws in launch
+(ascending attacker) order, wrapped in an **exact** reproduction of
+`Randomizer::Random(lo,hi)`'s range mapping (`FUN_0065C220`: swap, top-bit
+mask, reject > range — inclusive and unbiased). The *distribution* is the
+original's; the *stream* is ours (the original's single lockstep
+`Scenario->Random` is unreachable). It is deliberately **not** shared with the
+ore or AI streams, so firing a Flak Track can never perturb ore growth or AI
+picks — each system's reproducibility stays independent.
+
+**The firewall.** Combat sits on nearly every gate path, so the flight behaviour
+is gated three ways: (1) `World::projectiles_enabled_` is opened only by
+`World::enable_projectiles`, called by the interactive `GameScene` and
+`--demo-projectile` and by nothing else; (2) `step_combat` gained a trailing
+`std::vector<ProjectileLaunch>* launches = nullptr` — `World::step` passes it
+only when enabled, and with `nullptr` every shot takes the pre-phase code
+(the moved damage tails are statement-for-statement identical); (3)
+`step_projectiles` is a pure insertion before `step_combat` that returns
+immediately when disabled. Projectile state, events and RNG are not read by
+`world_hash`, and the projectile draw list is empty in every existing demo.
+
+**Gate:** `--demo-projectile` (`projectile_hash=1ff09b8a3d3eecdd`) runs five
+scenarios, rendered then headless, and self-compares: *firewall* (no
+`enable_projectiles` → the Rhino's hit lands the frame it fires), *arc* (launch
+speed 90 == the §0.2 formula of the FLH muzzle→target distance, 13 flight
+frames, apex 175 > muzzle 100, the 90 damage lands only at detonation), *miss*
+(the Conscript walks off; the shell detonates harmlessly on its old cell),
+*kirov* (speed 1 from z=610 = 750−140 FLH, 37 frames, the 2-cell splash hits
+both Conscripts), *flak* (5 scattered `[FlakTProj]` shots, identical across
+runs). The mid-flight PNG shows both Rhinos' shells at the top of their arcs.
+
+**Deviations / cuts** (spec `docs/superpowers/specs/2026-10-06-projectile-design.md`):
+- **Homing (`ROT>0`) stays instant** — `FUN_005B1B20` steering is only partly
+  unwound and `MissileSpeedVar`/`MissileROTVar`/`Acceleration` defaults are not
+  pinned; implementing it now would be guessing.
+- `[FlakProj]` AA scatter (§5.3), the Inviso cliff/wall line trace, the lofted
+  root (needs an obstacle LOS model), `Bouncy`/`Airburst`/`Cluster`/`Shrapnel`
+  (no roster weapon sets them) — out of scope.
+- The combat plane is flat (floor 0, §11.6); libm `acos`/`sin`/`cos` replace the
+  game's trig tables; yaw is an exact direction vector (the 16-bit yaw
+  quantisation is < 0.2 lepton at these ranges).
+- The non-arcing pitch's sign toward a lower target and the unidentified
+  `TechnoType+0x6A4` gate on the speed-1 launch are PROBABLE (§12.3).
+- Projectile art (`120MM`/`ZBOMB` SHPs) is a cosmetic carry-forward — shells
+  draw as rimmed dots with a ground shadow.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -2279,6 +2362,8 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-skirmish` | `skirmish_hash=e9ad3f1fd88495f9` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, 3 combatant slots in two alliance-teams (0+2 allied vs 1, no neutral); wedge guards armed (`docs/re/skirmish.md`) |
 | `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
 | `--demo-repair` | `repair_hash=30e49667c9c6e52d` | `deterministic=yes lines=8`; repair = a GLOBAL 14-frame phase (`trunc(RepairRate*900)`, NOT 15) × +8 HP × `stepCost=max(1,trunc((Cost/(Strength/RepairStep))*RepairPercent))` with BOTH divisions integer (GACNST 3/step, GAPOWR 1/step); `steps=6 first=0 gap=14 heal8=yes charge=yes`; auto-stop at full; silent stop when broke (`hp=718->718`, no partial step, no free repair); refusals `enemy/under_construction/unsellable_caoild/already_selling=refused`, `full_health_conyard_sellable=yes` (NO last-ConYard rule); ConYard sell = a 30-frame MISSION, `paid_early=no paid=1500 survivors=3`, footprint freed; GAREFN `Soylent` sale `paid=300 survivors=1`; 25 wedge guards armed (`docs/re/repair-sell.md`) |
+
+| `--demo-projectile` | `projectile_hash=1ff09b8a3d3eecdd` | `deterministic=yes`; P2 Projectile flight: firewall (instant path when not enabled, `events=0`), Rhino arc (`speed=90` == `ftol(sqrt(d*6*1.2))`, 13 frames, apex 175, damage only at detonation), miss (target walked off -> `victim=-1 damage=0`), Kirov bomb (`speed=1` from `z=610`, 37 frames, both splash targets hit), Flak Track scatter (5/5 shots scattered by the dedicated RNG) (`docs/re/projectile.md` §12) |
 
 ## Android (arm64-v8a) cross-compile
 

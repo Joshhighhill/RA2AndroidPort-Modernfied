@@ -77,4 +77,6 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/maplist.cpp
     ${RA2_ROOT}/engine/repair_sell.cpp
     ${RA2_ROOT}/engine/settings.cpp
+
+    ${RA2_ROOT}/engine/projectile.cpp
 )

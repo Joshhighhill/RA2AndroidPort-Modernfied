@@ -150,6 +150,19 @@ std::string Rules::weapon_report(const std::string& w) const {
     return ini_->get(w, "Report", "");
 }
 
+std::string Rules::weapon_projectile(const std::string& w) const {
+    return ini_->get(w, "Projectile", "");
+}
+
+int Rules::weapon_speed(const std::string& w) const {
+    return ini_->get_int(w, "Speed", 0);
+}
+
+std::string Rules::section_string(const std::string& section, const std::string& key,
+                                  const std::string& fallback) const {
+    return ini_->get(section, key, fallback);
+}
+
 std::vector<int> Rules::verses(const std::string& warhead) const {
     // Verses=100%,80%,... -> percent ints, one per armor class, in ini order.
     // Tolerates spaces and a missing '%' (the game's parser reads the number).
