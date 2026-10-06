@@ -26,9 +26,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -50,6 +52,7 @@
 #include "production.hpp"
 #include "rectfont.hpp"    // glyph_rows (5x7 rect-font for menu labels) [Task 5]
 #include "repair_sell.hpp" // RepairSellRules (Repair & Sell phase)
+#include "settings.hpp"    // P8 Options: RA2.INI settings, slider math, edge-scroll table
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
@@ -2864,6 +2867,21 @@ ra2assets::Palette make_font_palette() {
     return p;
 }
 
+// [P8 / options.md §4] The same shade ramp, but toward a solid control colour
+// (the shell's control text is yellow 0x00FFFF, disabled dark red 0x00009F).
+ra2assets::Palette make_font_palette_tinted(int r, int g, int b) {
+    ra2assets::Palette p;
+    for (int i = 0; i < 256; ++i) {
+        int lvl = 40 + i * 55;
+        if (lvl > 255) lvl = 255;
+        p[i] = ra2assets::Rgba{static_cast<uint8_t>(r * lvl / 255),
+                               static_cast<uint8_t>(g * lvl / 255),
+                               static_cast<uint8_t>(b * lvl / 255), 255};
+    }
+    p[0] = ra2assets::Rgba{0, 0, 0, 0};
+    return p;
+}
+
 // [Task 5] Pixel width of a string in the shell font (for centering labels).
 int fnt_text_width(const ra2assets::Font& font, const std::string& s) {
     int w = 0;
@@ -2897,6 +2915,33 @@ void draw_fnt_text(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2asse
             }
         }
         cx += (w > 0 ? w : font.height() / 2) * scale;   // space/missing glyph advance
+    }
+}
+
+// [P8] draw_fnt_text with a FRACTIONAL scale (the options controls use a ~12px
+// face inside 16px logical rows, scaled by the letterbox factor). Glyph dst
+// rects are rounded from accumulated float positions so spacing stays even.
+void draw_fnt_text_f(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::Font& font,
+                     const ra2assets::Palette& pal, const std::string& s, double x, double y,
+                     const std::string& keypfx, double scale) {
+    double cx = x;
+    for (unsigned char ch : s) {
+        const int w = font.width(ch);
+        if (ch != ' ' && ch >= font.first() && ch <= font.last() && w > 0) {
+            const ra2assets::FntGlyph& g = font.glyph(ch);
+            if (g.w > 0 && g.h > 0) {
+                const std::string key = keypfx + std::to_string((int)ch);
+                SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+                if (!tex)
+                    tex = static_cast<SDL_Texture*>(tc.get(key, g.pixels.data(), g.w, g.h, pal));
+                const int x0 = static_cast<int>(std::lround(cx));
+                const int x1 = static_cast<int>(std::lround(cx + g.w * scale));
+                SDL_Rect dst{x0, static_cast<int>(std::lround(y)), x1 - x0,
+                             static_cast<int>(std::lround(g.h * scale))};
+                SDL_RenderCopy(ren, tex, nullptr, &dst);
+            }
+        }
+        cx += (w > 0 ? w : font.height() / 2) * scale;
     }
 }
 
@@ -3306,6 +3351,69 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  Assets& a, UnitAssets& ua, BuildingAssets& ba,
                                  const Rules& rules);
 
+// ============================================================================
+// [P8 Options + persistence, RE: docs/re/options.md] The user's RA2.INI.
+// ============================================================================
+// Published ONLY by run_menu (the interactive desktop default + Android entry)
+// after it loads the file; null everywhere else. No gate ever calls run_menu,
+// constructs GameScene or reads the settings file, and --menu-shot renders with
+// built-in defaults -- so the byte-identity gates cannot see a user's settings.
+ra2engine::Settings* g_user_settings = nullptr;
+
+// <SDL pref dir>/RA2.INI: %APPDATA%\ra2engine\RA2\ on Windows, the app's
+// internal (always writable) files dir on Android. Never the install dir. Empty
+// string if SDL cannot provide a writable path (settings then stay in memory).
+std::string settings_file_path() {
+    char* p = SDL_GetPrefPath("ra2engine", "RA2");
+    if (!p) return {};
+    std::string s = std::string(p) + "RA2.INI";
+    SDL_free(p);
+    return s;
+}
+
+// The whole file as an IniDoc (empty doc if absent/unreadable).
+ra2engine::IniDoc read_settings_doc(const std::string& path) {
+    if (path.empty()) return ra2engine::IniDoc::parse("");
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return ra2engine::IniDoc::parse("");
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ra2engine::IniDoc::parse(ss.str());
+}
+
+// FUN_005d8b00: absent file/keys -> the OptionsClass ctor defaults.
+ra2engine::Settings load_user_settings() {
+    const std::string path = settings_file_path();
+    ra2engine::Settings s = ra2engine::load_settings(read_settings_doc(path));
+    std::cerr << "[settings] " << (path.empty() ? "(no pref path)" : path)
+              << " scroll_rate=" << s.scroll_rate << " sound=" << s.sound_volume
+              << " voice=" << s.voice_volume << " score=" << s.score_volume << "\n";
+    return s;
+}
+
+// FUN_005d91b0: read-modify-write so every foreign section/key/comment of an
+// existing file survives; only the OptionsClass save list is rewritten.
+bool save_user_settings(const ra2engine::Settings& s) {
+    const std::string path = settings_file_path();
+    if (path.empty()) return false;
+    ra2engine::IniDoc doc = read_settings_doc(path);
+    ra2engine::store_settings(s, doc);
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f) { std::cerr << "[settings] cannot write " << path << "\n"; return false; }
+    const std::string text = doc.serialize();
+    f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    std::cerr << "[settings] saved " << path << "\n";
+    return static_cast<bool>(f);
+}
+
+// options.md §5: SoundVolume -> SFX bus, VoiceVolume -> speech/EVA bus,
+// ScoreVolume -> music bus; linear gain.
+void apply_audio_settings(ra2engine::Mixer& m, const ra2engine::Settings& s) {
+    m.set_bus_gain(ra2engine::AudioBus::Sound, ra2engine::volume_gain_permille(s.sound_volume));
+    m.set_bus_gain(ra2engine::AudioBus::Voice, ra2engine::volume_gain_permille(s.voice_volume));
+    m.set_bus_gain(ra2engine::AudioBus::Score, ra2engine::volume_gain_permille(s.score_volume));
+}
+
 // [RE: skirmish.md §2, D4] Minimal polymorphic scene interface. Additive: driven
 // ONLY at the two non-gate main() seams (Android + desktop fallthrough); no gate
 // constructs or enters it. NOT hashed.
@@ -3474,6 +3582,13 @@ public:
         } catch (const std::exception& ex) {
             std::cerr << "[repair-sell] mouse.shp unavailable (" << ex.what() << ")\n";
         }
+
+        // [P8 / options.md §5] The user's Sound/Voice/Score volumes -> mixer
+        // buses. Only when run_menu published settings (never in a gate).
+        if (g_user_settings && audio_.mixer) apply_audio_settings(*audio_.mixer, *g_user_settings);
+        // [P8 / options.md §5] Edge-scroll speed = the recovered 0x7F2BE8 table
+        // x [General] ScrollMultiplier (.07), capped by the user's ScrollRate.
+        scroll_mult_ = rules_.general_double("ScrollMultiplier", 0.07);
     }
 
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
@@ -3568,20 +3683,44 @@ public:
     // One step of the former loop body: camera pan, edge-detects, world.step,
     // production, exit handoff, free units, audio events, placement/SW confirm.
     void update(double dt) override {
-        const int kPan = 40;
+        // Scroll direction from the arrow keys + the window-edge band (unchanged).
         const Uint8* ks = SDL_GetKeyboardState(nullptr);
-        int pan_dx = 0, pan_dy = 0;
-        if (ks[SDL_SCANCODE_LEFT]) pan_dx += kPan;
-        if (ks[SDL_SCANCODE_RIGHT]) pan_dx -= kPan;
-        if (ks[SDL_SCANCODE_UP]) pan_dy += kPan;
-        if (ks[SDL_SCANCODE_DOWN]) pan_dy -= kPan;
+        int dir_x = 0, dir_y = 0;
+        if (ks[SDL_SCANCODE_LEFT]) dir_x += 1;
+        if (ks[SDL_SCANCODE_RIGHT]) dir_x -= 1;
+        if (ks[SDL_SCANCODE_UP]) dir_y += 1;
+        if (ks[SDL_SCANCODE_DOWN]) dir_y -= 1;
         SDL_GetMouseState(&mx_, &my_);
         const int kEdge = 24;   // window-edge scroll band (true screen edge, incl. sidebar)
-        if (mx_ <= kEdge) pan_dx += kPan;
-        else if (mx_ >= kWinW - kEdge) pan_dx -= kPan;
-        if (my_ <= kEdge) pan_dy += kPan;
-        else if (my_ >= kWinH - kEdge) pan_dy -= kPan;
-        if (pan_dx || pan_dy) input_.pan(pan_dx, pan_dy);
+        if (mx_ <= kEdge) dir_x += 1;
+        else if (mx_ >= kWinW - kEdge) dir_x -= 1;
+        if (my_ <= kEdge) dir_y += 1;
+        else if (my_ >= kWinH - kEdge) dir_y -= 1;
+        dir_x = (dir_x > 0) - (dir_x < 0);
+        dir_y = (dir_y > 0) - (dir_y < 0);
+        // [P8 / options.md §5, FUN_00669ec0] The original scrolls
+        // trunc(table[idx] * ScrollMultiplier) px per 16 ms tick, idx = 8-accel
+        // floored at ScrollRate+1 -- a slow start that accelerates one step per
+        // tick up to the rate's cap (default rate 3 -> 1,2,4,8,13 px). This
+        // replaces the old guessed constant 40 px/frame. accel resets when the
+        // scroll stops [RE-FALLBACK: reset point not traced]. GameScene is
+        // interactive-only (no gate constructs it).
+        if (dir_x || dir_y) {
+            const int rate = g_user_settings ? g_user_settings->scroll_rate
+                                             : ra2engine::Settings{}.scroll_rate;
+            const int cap = ra2engine::edge_scroll_accel_cap(rate);
+            scroll_tick_accum_ += dt;
+            int px = 0;
+            while (scroll_tick_accum_ >= kScrollTick) {
+                scroll_tick_accum_ -= kScrollTick;
+                px += ra2engine::edge_scroll_distance(rate, scroll_accel_, scroll_mult_);
+                if (scroll_accel_ < cap) ++scroll_accel_;
+            }
+            if (px) input_.pan(dir_x * px, dir_y * px);
+        } else {
+            scroll_accel_ = 0;
+            scroll_tick_accum_ = 0.0;
+        }
 
         // CB-1 unload key (D, edge-detected) -> unload selected own transports.
         const bool unload_key = ks[SDL_SCANCODE_D] != 0;
@@ -3850,6 +3989,12 @@ private:
     // --- Repair & Sell [RE: repair-sell.md §C1/§D8] ---
     ModeCursor           mouse_;
     bool                 os_cursor_hidden_ = false;
+
+    // --- [P8] edge-scroll acceleration (options.md §5) ---
+    static constexpr double kScrollTick = 0.016;   // timeGetTime()>>4 tick
+    double               scroll_mult_ = 0.07;      // [General] ScrollMultiplier
+    double               scroll_tick_accum_ = 0.0;
+    int                  scroll_accel_ = 0;
 };
 
 // Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
@@ -3925,6 +4070,19 @@ struct MenuArt {
     ra2assets::BinkVideoDecoder* bink_dec = nullptr;
     int bink_frames = 0;                      // ra2ts_s.bik frame count (431)
     int bink_w = 0, bink_h = 0;               // native movie dims (472x450)
+    // [P8 / options.md §4] Options-page control skins (local.mix PCX, own
+    // palettes): trackbar thumb + numeric readout well, checkbox lamps. Null
+    // on a partial install -> the control draws as plain red frames.
+    ra2assets::PcxImage* trakgrip = nullptr;  // 12x22 thumb
+    ra2assets::PcxImage* trofl = nullptr;     // 8x24  readout left cap
+    ra2assets::PcxImage* trofm = nullptr;     // 114x24 readout middle (stretched)
+    ra2assets::PcxImage* trofr = nullptr;     // 10x24 readout right cap
+    ra2assets::PcxImage* chk_off = nullptr;   // cue_i.pcx 18x18 (unchecked)
+    ra2assets::PcxImage* chk_on = nullptr;    // cce_i.pcx 18x18 (checked)
+    // Control text ramps (options.md §4: text yellow 0x00FFFF, disabled dark
+    // red 0x00009F) for the 12metfnt glyph shade values.
+    const ra2assets::Palette* font_pal_text = nullptr;
+    const ra2assets::Palette* font_pal_disabled = nullptr;
     bool ok = false;                          // essentials (bg+pal) decoded
     // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
     // in the low nibble) with image_ofs-relative glyph offsets (the real bug was
@@ -3950,8 +4108,11 @@ struct MenuArtStore {
     bool shell2_pal_ok = false, sdbtnanm_pal_ok = false;
     std::unique_ptr<ra2assets::Palette> pal, dlg_pal;
     std::unique_ptr<ra2assets::PcxImage> logo, title;
+    // [P8] Options-page control skins.
+    std::unique_ptr<ra2assets::PcxImage> trakgrip, trofl, trofm, trofr, chk_off, chk_on;
     std::unique_ptr<ra2assets::Font> font;
     ra2assets::Palette font_pal{};
+    ra2assets::Palette font_pal_text{}, font_pal_disabled{};   // [P8] yellow / dark red ramps
     std::unique_ptr<MenuAudio> audio;
     // [Task 5] The Bink CRT movie: the parsed container (owns the 7MB file bytes)
     // and the streaming decoder that references it. bink_dec holds a const& to
@@ -3993,6 +4154,7 @@ std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
         ms.min_volume = 100;
         ms.range = 1000.0;
         ms.limit = 1;              // single looping instance
+        ms.bus = ra2engine::AudioBus::Score;   // [P8] music = ScoreVolume bus (options.md §5)
         ma->sys.mixer->register_sound("menu:grinder", ms);
         ma->sys.out.open();
         ma->sys.enabled = ma->sys.out.ok();
@@ -4055,6 +4217,13 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               store.btn   = try_shp(local, "mnbttn.shp");
               store.logo  = try_pcx(local, "logo.pcx");
               store.title = try_pcx(local, "title.pcx");
+              // [P8 / options.md §4] Options-page trackbar + checkbox skins.
+              store.trakgrip = try_pcx(local, "trakgrip.pcx");
+              store.trofl    = try_pcx(local, "trofl.pcx");
+              store.trofm    = try_pcx(local, "trofm.pcx");
+              store.trofr    = try_pcx(local, "trofr.pcx");
+              store.chk_off  = try_pcx(local, "cue_i.pcx");
+              store.chk_on   = try_pcx(local, "cce_i.pcx");
               // [Task 1] Button palette (mnbttn.shp is drawn under mainbttn.pal).
               if (const MixEntry* be = local.find(std::string("mainbttn.pal"))) {
                   std::vector<uint8_t> bb = local.read(*be);
@@ -4135,6 +4304,17 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.title    = store.title.get();
     store.art.font     = store.font.get();
     store.art.font_pal = &store.font_pal;
+    // [P8] Options-page skins + control text ramps.
+    store.font_pal_text     = make_font_palette_tinted(255, 255, 0);   // 0x00FFFF yellow
+    store.font_pal_disabled = make_font_palette_tinted(159, 0, 0);     // 0x00009F dark red
+    store.art.font_pal_text     = &store.font_pal_text;
+    store.art.font_pal_disabled = &store.font_pal_disabled;
+    store.art.trakgrip = store.trakgrip.get();
+    store.art.trofl    = store.trofl.get();
+    store.art.trofm    = store.trofm.get();
+    store.art.trofr    = store.trofr.get();
+    store.art.chk_off  = store.chk_off.get();
+    store.art.chk_on   = store.chk_on.get();
     store.art.audio    = store.audio.get();
     // [Task 1] Wire true-design chrome + palettes (non-owning views into store).
     store.art.bg_s          = store.bg_s.get();
@@ -4413,6 +4593,196 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
 }
 
 // ============================================================================
+// [P8 / docs/re/options.md] The main-menu Options page = dialog 0xD5.
+// ============================================================================
+
+// Page-local control state (the dialog's controls), seeded from and committed
+// to a Settings exactly as DLGPROC 0x542590 / FUN_00542280 do (options.md §2).
+// All geometry is the §1 template rects in LOGICAL 640x480 space; the scene
+// maps it to device space with the same ShellXform as the shell chrome.
+struct OptionsPageState {
+    enum Slider { S_VISUAL, S_DIFFICULTY, S_SCROLL, S_MUSIC, S_SOUND, S_VOICE, S_COUNT };
+    enum Check  { C_TOOLTIPS, C_TARGETLINES, C_HIDDEN, C_COUNT };
+    struct SliderDef { ra2engine::SbRect r; int range; bool readout; };
+    static const SliderDef& slider(int i) {
+        static const SliderDef k[S_COUNT] = {
+            {{37, 73, 180, 21}, 1, false},     // 0x52B Visual Details (0..1)
+            {{37, 178, 180, 21}, 2, false},    // 0x50F Difficulty (0..2)
+            {{255, 284, 180, 21}, 6, false},   // 0x52A Scroll Rate (0..6, pos = 6-rate)
+            {{37, 406, 127, 21}, 10, true},    // 0x52F Music (Score) volume
+            {{183, 406, 127, 21}, 10, true},   // 0x532 Sound volume
+            {{330, 406, 127, 21}, 10, true},   // 0x536 Voice volume
+        };
+        return k[i];
+    }
+    static ra2engine::SbRect check_rect(int i) {
+        static const ra2engine::SbRect k[C_COUNT] = {
+            {37, 260, 195, 16},   // 0x602 Tooltips
+            {37, 284, 195, 16},   // 0x601 Target Lines (UnitActionLines)
+            {37, 308, 195, 16},   // 0x604 See Hidden Objects (ShowHidden)
+        };
+        return k[i];
+    }
+    static bool is_volume(int i) { return i == S_MUSIC || i == S_SOUND || i == S_VOICE; }
+
+    int  pos[S_COUNT] = {};
+    bool chk[C_COUNT] = {};
+    int  drag = -1;        // slider being dragged (-1 none)
+
+    void load(const ra2engine::Settings& s) {
+        pos[S_VISUAL]     = ra2engine::detail_to_slider(s.detail_level);
+        pos[S_DIFFICULTY] = std::max(0, std::min(2, s.difficulty));
+        pos[S_SCROLL]     = std::max(0, std::min(6, ra2engine::scroll_rate_to_slider(s.scroll_rate)));
+        pos[S_MUSIC]      = ra2engine::volume_to_slider(s.score_volume);
+        pos[S_SOUND]      = ra2engine::volume_to_slider(s.sound_volume);
+        pos[S_VOICE]      = ra2engine::volume_to_slider(s.voice_volume);
+        chk[C_TOOLTIPS]    = s.tooltips;
+        chk[C_TARGETLINES] = s.unit_action_lines;
+        chk[C_HIDDEN]      = s.show_hidden;
+    }
+    // FUN_00542280: every exit of the page writes the controls back.
+    void commit(ra2engine::Settings& s) const {
+        s.detail_level      = ra2engine::slider_to_detail(pos[S_VISUAL]);
+        s.difficulty        = pos[S_DIFFICULTY];
+        s.unit_action_lines = chk[C_TARGETLINES];
+        s.show_hidden       = chk[C_HIDDEN];
+        s.tooltips          = chk[C_TOOLTIPS];
+        s.scroll_rate       = ra2engine::slider_to_scroll_rate(pos[S_SCROLL]);
+        s.score_volume      = ra2engine::slider_to_volume(pos[S_MUSIC]);
+        s.sound_volume      = ra2engine::slider_to_volume(pos[S_SOUND]);
+        s.voice_volume      = ra2engine::slider_to_volume(pos[S_VOICE]);
+    }
+};
+
+// Draw the 0xD5 controls over the shell chrome (draw_shell already painted the
+// backdrop, sidebar, buttons and the "Options" header). Skins per options.md §4:
+// red (255,0,0) control lines, yellow text, dark red (159,0,0) when disabled;
+// trackbar thumb = trakgrip.pcx, readout well = trofl/trofm/trofr.pcx with the
+// integer position, checkbox = cue_i/cce_i.pcx + label at +26 px. Every PCX and
+// the font are null-guarded (missing art -> plain frames / no text).
+void draw_options_page(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& art,
+                       const ShellXform& xf, const OptionsPageState& st, bool audio_enabled,
+                       const std::string& resolution) {
+    auto dev = [&](int lx, int ly, int lw, int lh) { return xf.dev(lx, ly, lw, lh); };
+    auto frame = [&](const SDL_Rect& r, bool enabled) {
+        if (enabled) SDL_SetRenderDrawColor(ren, 255, 0, 0, 255);
+        else         SDL_SetRenderDrawColor(ren, 159, 0, 0, 255);
+        SDL_RenderDrawRect(ren, &r);
+    };
+    auto pcx = [&](const char* key, const ra2assets::PcxImage* img, const SDL_Rect& d) {
+        if (!img || img->w <= 0 || img->h <= 0) return false;
+        SDL_Texture* t = static_cast<SDL_Texture*>(tc.peek(key));
+        if (!t) {
+            std::vector<uint8_t> rgba = img->rgba();
+            t = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img->w, img->h));
+        }
+        if (!t) return false;
+        SDL_RenderCopy(ren, t, nullptr, &d);
+        return true;
+    };
+    const bool fnt = art.font && art.fnt_ok;
+    // align: 0 = left, 1 = centre, 2 = right; vertically centred in the rect.
+    auto text = [&](const std::string& s, int lx, int ly, int lw, int lh, int align,
+                    const ra2assets::Palette* pal, const char* keypfx, double logical_px) {
+        if (!fnt || !pal || s.empty()) return;
+        const ra2assets::Font& f = *art.font;
+        // 12metfnt cell = 16 px; snap to an integer glyph scale (fractional
+        // nearest-neighbour scaling visibly mangles the 1-px bevel strokes).
+        const double sc = std::max(1.0, std::round(xf.s * logical_px / 16.0));
+        const SDL_Rect box = dev(lx, ly, lw, lh);
+        const double tw = fnt_text_width(f, s) * sc;
+        const double th = f.height() * sc;
+        double tx = box.x;
+        if (align == 1) tx = box.x + (box.w - tw) / 2.0;
+        else if (align == 2) tx = box.x + box.w - tw;
+        draw_fnt_text_f(ren, tc, f, *pal, s, tx, box.y + (box.h - th) / 2.0, keypfx, sc);
+    };
+    const ra2assets::Palette* yel = art.font_pal_text;
+    const ra2assets::Palette* dim = art.font_pal_disabled;
+    auto lbl = [&](const char* s, int x, int y, int w, int h, int align, bool en = true) {
+        text(s, x, y, w, h, align, en ? yel : dim, en ? "opy:" : "opd:", 12.0);
+    };
+    auto header = [&](const char* s, int x, int y, int w, int h) {
+        text(s, x, y, w, h, 0, art.font_pal, "oph:", 14.0);
+    };
+
+    // Section headers 0x6EE..0x6F1 + static labels (options.md §1).
+    header("Display Options", 15, 16, 210, 16);
+    header("Game Options", 15, 121, 447, 16);
+    header("UI Options", 15, 227, 447, 16);
+    header("Audio Options", 15, 349, 447, 16);
+    lbl("Visual Details", 37, 48, 90, 16, 0);
+    lbl("Higher", 127, 48, 90, 16, 2);
+    lbl("Set Game Resolution", 255, 48, 180, 16, 0);
+    lbl("Difficulty", 37, 154, 90, 16, 0);
+    lbl("Harder", 127, 154, 90, 16, 2);
+    lbl("Scroll Rate", 255, 260, 90, 16, 0);
+    lbl("Faster", 345, 260, 90, 16, 2);
+    lbl("Music Volume", 37, 381, 127, 16, 1, audio_enabled);
+    lbl("Sound Volume", 183, 381, 127, 16, 1, audio_enabled);
+    lbl("Voice Volume", 330, 381, 127, 16, 1, audio_enabled);
+
+    // Resolution combobox 0x6ED (closed face; inert in this fixed-window port).
+    {
+        const SDL_Rect r = dev(255, 73, 180, 21);
+        frame(r, true);
+        lbl(resolution.c_str(), 259, 73, 172, 21, 0);
+    }
+
+    // Trackbars (skin proc 0x5FB270).
+    for (int i = 0; i < OptionsPageState::S_COUNT; ++i) {
+        const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
+        const bool en = !OptionsPageState::is_volume(i) || audio_enabled;
+        const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
+        if (d.readout) {   // readout well: trofm stretched, trofl/trofr caps
+            const int rx = d.r.x + d.r.w - ro + 1;
+            pcx("opt:trofm", art.trofm, dev(rx, d.r.y - 1, ro, 24));
+            pcx("opt:trofl", art.trofl, dev(rx, d.r.y - 1, 8, 24));
+            pcx("opt:trofr", art.trofr, dev(rx + ro - 10, d.r.y - 1, 10, 24));
+        }
+        const int tx = ra2engine::trackbar_thumb_x(st.pos[i], d.range, d.r.w, ro);
+        if (!pcx("opt:trakgrip", art.trakgrip,
+                 dev(d.r.x + tx, d.r.y, ra2engine::kTrackbarThumbW, d.r.h))) {
+            SDL_SetRenderDrawColor(ren, en ? 200 : 110, 0, 0, 255);
+            const SDL_Rect t = dev(d.r.x + tx, d.r.y, ra2engine::kTrackbarThumbW, d.r.h);
+            SDL_RenderFillRect(ren, &t);
+        }
+        frame(dev(d.r.x, d.r.y, d.r.w - ro, d.r.h), en);              // groove
+        if (d.readout) {
+            frame(dev(d.r.x + d.r.w - ro + 2, d.r.y, ro - 2, d.r.h), en);
+            const std::string v = std::to_string(st.pos[i]);
+            text(v, d.r.x + d.r.w - 49, d.r.y, 49, d.r.h, 1, en ? yel : dim,
+                 en ? "opy:" : "opd:", 12.0);
+        }
+        if (!en) {   // EnableWindow(FALSE): veil the disabled volume sliders
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 110);
+            const SDL_Rect v = dev(d.r.x, d.r.y, d.r.w, d.r.h);
+            SDL_RenderFillRect(ren, &v);
+        }
+    }
+
+    // Checkboxes (skin proc 0x5F3CF0).
+    static const char* kChk[OptionsPageState::C_COUNT] = {"Tooltips", "Target Lines",
+                                                          "See Hidden Objects"};
+    for (int i = 0; i < OptionsPageState::C_COUNT; ++i) {
+        const ra2engine::SbRect r = OptionsPageState::check_rect(i);
+        const SDL_Rect icon = dev(r.x, r.y - 1, 18, 18);
+        const bool drawn = st.chk[i] ? pcx("opt:chk_on", art.chk_on, icon)
+                                     : pcx("opt:chk_off", art.chk_off, icon);
+        if (!drawn) {
+            frame(icon, true);
+            if (st.chk[i]) {
+                SDL_SetRenderDrawColor(ren, 255, 160, 0, 255);
+                const SDL_Rect dot = dev(r.x + 5, r.y + 4, 8, 8);
+                SDL_RenderFillRect(ren, &dot);
+            }
+        }
+        lbl(kChk[i], r.x + 26, r.y, r.w - 26, r.h, 0);
+    }
+}
+
+// ============================================================================
 // [RE: skirmish.md §1/§2, D6] Shell scenes: MainMenuScene + SkirmishSetupScene.
 // Additive + NOT hashed: reachable ONLY via run_scene_driver from the two
 // non-gate main() seams (Android + desktop fallthrough). The 17 gates never
@@ -4449,7 +4819,12 @@ class ShellScene : public Scene {
 public:
     ShellScene(const Rules& rules, bool no_audio, const MenuArt& art,
                ShellPage page = PAGE_MAIN)
-        : rules_(rules), no_audio_(no_audio), art_(art), page_(page) {}
+        : rules_(rules), no_audio_(no_audio), art_(art), page_(page) {
+        // [P8] Options page: seed the controls from the user's settings (or
+        // the OptionsClass defaults when none are published, e.g. --menu-shot).
+        if (page_ == PAGE_OPTIONS)
+            opt_.load(g_user_settings ? *g_user_settings : ra2engine::Settings{});
+    }
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs SkirmishSetupScene
     void   update(double dt) override;                         // pumps the looping menu music
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
@@ -4503,12 +4878,14 @@ private:
                     btn(2, "View Credits", false, ACT_GOTO, PAGE_MAIN),
                     btn(5, "Back",         true,  ACT_GOTO, PAGE_MAIN),
                 };
-            case PAGE_OPTIONS:  // dialog 0xD5 (sliders not required; labels greyed)
+            case PAGE_OPTIONS:  // dialog 0xD5 [RE: options.md §1]
+                // Keyboard (0x5CE -> dlg 0xA3) and Network (0x5CD -> IPX dlg
+                // 0xD7) are greyed: no remappable command table / no netcode
+                // yet (P8 deferrals). "Main Menu" (0x686) commits + saves.
                 return {
-                    btn(0, "Sound",    false, ACT_GOTO, PAGE_MAIN),
-                    btn(1, "Keyboard", false, ACT_GOTO, PAGE_MAIN),
-                    btn(2, "Display",  false, ACT_GOTO, PAGE_MAIN),
-                    btn(5, "Back",     true,  ACT_GOTO, PAGE_MAIN),
+                    btn(0, "Keyboard",  false, ACT_GOTO, PAGE_MAIN),
+                    btn(1, "Network",   false, ACT_GOTO, PAGE_MAIN),
+                    btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
             case PAGE_CAMPAIGN: // dialog 0x94 (greyed placeholder this task)
                 return {
@@ -4531,6 +4908,30 @@ private:
     bool         no_audio_ = false;
     const MenuArt& art_;
     ShellPage    page_ = PAGE_MAIN;
+    // [P8] Options page (dialog 0xD5) controls; unused on other pages.
+    OptionsPageState opt_;
+    bool audio_live() const {
+        return art_.audio && art_.audio->sys.enabled && art_.audio->sys.mixer;
+    }
+    // Device point -> LOGICAL 640x480 (inverse of the shared ShellXform).
+    static void to_logical(int dx, int dy, int& lx, int& ly) {
+        const ShellXform xf = xform();
+        lx = static_cast<int>(std::floor((dx - xf.ox) / xf.s));
+        ly = static_cast<int>(std::floor((dy - xf.oy) / xf.s));
+    }
+    // Options-page pointer handling; returns true when the event was consumed.
+    bool options_handle(const ra2engine::InputEvent& ev);
+    // A volume slider moved: apply it live to the menu mixer bus (the original
+    // calls the volume setter on TB_THUMBTRACK, options.md §2).
+    void options_live_volume(int slider) {
+        if (!audio_live() || !OptionsPageState::is_volume(slider)) return;
+        const ra2engine::AudioBus bus =
+            slider == OptionsPageState::S_MUSIC ? ra2engine::AudioBus::Score
+            : slider == OptionsPageState::S_SOUND ? ra2engine::AudioBus::Sound
+                                                  : ra2engine::AudioBus::Voice;
+        art_.audio->sys.mixer->set_bus_gain(
+            bus, ra2engine::volume_gain_permille(ra2engine::slider_to_volume(opt_.pos[slider])));
+    }
     int          mx_ = -1, my_ = -1;   // last pointer position (for hover state)
     bool         down_ = false;        // left button currently held (pressed state)
     Scene*       next_ = nullptr;
@@ -4616,7 +5017,8 @@ void MainMenuScene::update(double dt) {
     // (the scene driver calls update()+render() per frame, so it loops live).
     mon_accum_ += dt;
     // [Task 5 / §9] Advance the Bink CRT movie at 15 fps (decode one frame/step).
-    bink_advance(dt);
+    // [P8] Dialog 0xD5 has no CRT movie control (options.md §1) -> no movie.
+    if (page_ != PAGE_OPTIONS) bink_advance(dt);
     if (!art_.audio || !art_.audio->sys.enabled || !art_.audio->sys.mixer) return;
     if (art_.audio->sys.mixer->active_voices() == 0)
         art_.audio->sys.mixer->play("menu:grinder");
@@ -4670,9 +5072,54 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     // [Task 5 / §9] Upload the current decoded Bink frame to the reused streaming
     // texture (only when the frame changed); draw_shell blits it into the CRT rect
     // over the mnscrns backdrop. Null when the movie is absent -> static backdrop.
-    SDL_Texture* bink_tex = bink_texture(ren);
+    SDL_Texture* bink_tex = (page_ == PAGE_OPTIONS) ? nullptr : bink_texture(ren);
     draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
                header(), "v1.006", monitor_frame(), bink_tex);
+    // [P8 / options.md §1/§4] The 0xD5 controls over the static MNSCRNS screen.
+    if (page_ == PAGE_OPTIONS) {
+        const std::string res = std::to_string(plat.width()) + " x " +
+                                std::to_string(plat.height()) + " x 16";
+        draw_options_page(ren, tc, art_, xform(), opt_, audio_live(), res);
+    }
+}
+
+// [P8 / options.md §2/§4] Trackbar click/drag + checkbox toggles on page 0xD5.
+bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
+    using ra2engine::InputEvent;
+    int lx = 0, ly = 0;
+    to_logical(ev.x, ev.y, lx, ly);
+    auto set_pos = [&](int i) {
+        const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
+        const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
+        const int p = ra2engine::trackbar_pos_from_x(lx - d.r.x, d.range, d.r.w, ro);
+        if (p != opt_.pos[i]) { opt_.pos[i] = p; options_live_volume(i); }
+    };
+    if (ev.kind == InputEvent::PointerMove && opt_.drag >= 0) { set_pos(opt_.drag); return true; }
+    if (ev.kind == InputEvent::PointerUp && ev.button == InputEvent::Left && opt_.drag >= 0) {
+        set_pos(opt_.drag);
+        opt_.drag = -1;
+        return true;
+    }
+    if (ev.kind != InputEvent::PointerDown || ev.button != InputEvent::Left) return false;
+    for (int i = 0; i < OptionsPageState::S_COUNT; ++i) {
+        const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
+        if (OptionsPageState::is_volume(i) && !audio_live()) continue;   // EnableWindow(FALSE)
+        const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
+        const ra2engine::SbRect track{d.r.x, d.r.y, d.r.w - ro, d.r.h};
+        if (!track.contains(lx, ly)) continue;
+        const int tx = d.r.x + ra2engine::trackbar_thumb_x(opt_.pos[i], d.range, d.r.w, ro);
+        // On the thumb: start a drag without moving; elsewhere: jump (skin proc 0x5FB270).
+        if (lx >= tx && lx < tx + ra2engine::kTrackbarThumbW) opt_.drag = i;
+        else set_pos(i);
+        return true;
+    }
+    for (int i = 0; i < OptionsPageState::C_COUNT; ++i) {
+        if (OptionsPageState::check_rect(i).contains(lx, ly)) {
+            opt_.chk[i] = !opt_.chk[i];   // BS_AUTOCHECKBOX
+            return true;
+        }
+    }
+    return false;
 }
 
 // [RE: skirmish.md §1/§3, D6] Exposes the recovered lobby subset (T1 item 1):
@@ -4970,6 +5417,8 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         if (ev.kind == ra2engine::InputEvent::PointerDown) down_ = true;
         if (ev.kind == ra2engine::InputEvent::PointerUp)   down_ = false;
     }
+    // [P8] Options page controls get the pointer first (sliders/checkboxes).
+    if (page_ == PAGE_OPTIONS && options_handle(ev)) return;
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
         ev.button != ra2engine::InputEvent::Left)
         return;
@@ -4983,7 +5432,17 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             // The ONLY live game path: Skirmish -> setup -> GameScene (unchanged).
             case ACT_SKIRMISH: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
             // Page transition (incl. Back): construct the target page's ShellScene.
-            case ACT_GOTO:     next_ = new ShellScene(rules_, no_audio_, art_, b.target); return;
+            case ACT_GOTO:
+                // [P8 / options.md §2] Leaving 0xD5: FUN_00542280 commits the
+                // controls, then FUN_005d91b0 saves RA2.INI. Only when run_menu
+                // published the user's settings (never under --menu-shot/gates).
+                if (page_ == PAGE_OPTIONS && g_user_settings) {
+                    opt_.commit(*g_user_settings);
+                    save_user_settings(*g_user_settings);
+                    if (audio_live()) apply_audio_settings(*art_.audio->sys.mixer, *g_user_settings);
+                }
+                next_ = new ShellScene(rules_, no_audio_, art_, b.target);
+                return;
             default:           return;
         }
     }
@@ -5066,7 +5525,16 @@ int run_menu(bool no_audio) {
     // by reference like `rules`). GameScene owns its OWN audio init later.
     MenuArtStore store;
     load_menu_art(dir, no_audio, store);
-    return run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
+    // [P8] The user's RA2.INI (absent -> OptionsClass defaults), published for
+    // the Options page + GameScene for the whole driver loop, and applied to
+    // the menu music bus right away. This is the ONLY reader of the file.
+    ra2engine::Settings user = load_user_settings();
+    g_user_settings = &user;
+    if (store.audio && store.audio->sys.mixer)
+        apply_audio_settings(*store.audio->sys.mixer, user);
+    const int rc = run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
+    g_user_settings = nullptr;
+    return rc;
 }
 
 // [Task 5/Task 3] Render one frame of each shell page (+ the skirmish setup

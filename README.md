@@ -1904,6 +1904,68 @@ garrison release; the 25% special crew; C4; the three unmodeled mode flags
 `[RE-FALLBACK]` stands for the fate of in-progress production on sell (§D4): a
 sold factory takes the existing building-death queue-cancel path.
 
+## Options + Persistence
+
+The main menu's **Options** button used to open a guessed page of three greyed
+stubs (Sound / Keyboard / Display). The hunt (`docs/re/options.md`, game.exe
+`FUN_00542460` → dialog **`0xD5`**, DLGPROC `0x00542590`) showed the real thing is
+**one combined page** with four sections — Display, Game, UI, Audio — plus two
+side buttons, **Keyboard** (dialog `0xA3`) and **Network** (the IPX page `0xD7`),
+and **Main Menu**. There is no separate Sound or Display page on this path, and no
+game-speed control (that lives only on the in-game page `0xBBB`).
+
+**The page** is drawn from the dialog template's own rects (MapDialogRect 6x13 on
+the 640x480 shell, letterboxed by the shared `ShellXform`): *Visual Details*
+(0..1), *Set Game Resolution* (combobox), *Difficulty* (0..2), *Tooltips* /
+*Target Lines* / *See Hidden Objects* checkboxes, *Scroll Rate* (0..6, shown
+reversed: `pos = 6 - ScrollRate`), and *Music / Sound / Voice Volume* (0..10 with
+a numeric readout). Controls use the shell skin engine's real art and colours:
+`trakgrip.pcx` thumbs, `trofl/trofm/trofr.pcx` readout wells, `cue_i/cce_i.pcx`
+checkbox lamps, red (255,0,0) frames, yellow text, dark-red when disabled (the
+volume sliders are disabled without an audio device, exactly as
+`EnableWindow(audio_present)`). The left screen shows the static MNSCRNS map — the
+dialog has no CRT movie control. Sliders click-jump/drag with the skin proc's own
+mapping; volume drags apply live; leaving via **Main Menu** commits the controls
+(`FUN_00542280`: `DetailLevel = pos ? 2 : 0`, `ScrollRate = 6 - pos`,
+`volume = pos * 0.1`) and saves.
+
+**The settings file** is the original's `RA2.INI` `[Options]`/`[Video]`/`[Audio]`
+keys with the `OptionsClass` constructor's defaults (`GameSpeed=3`,
+`Difficulty=1`, `ScrollRate=3`, `DetailLevel=2`, `SoundVolume=0.7`,
+`VoiceVolume=1.0`, `ScoreVolume=0.5`, ...), the loader's clamps and the Westwood
+INIClass value rules (`$hex` / `...h` ints, first-letter booleans, `%f` doubles
+with `%` scaling; written back as `%d` / `yes|no` / `%f` in the original's save
+order). It lives at `SDL_GetPrefPath("ra2engine","RA2")/RA2.INI`
+(`%APPDATA%\ra2engine\RA2\` on Windows, the app's internal files dir on Android)
+— never the install dir. Saving is read-modify-write through a case- and
+order-preserving `IniDoc`, so foreign sections and comments survive byte-for-byte
+(`tests/test_settings.cpp` pins the round trip).
+
+**What the settings drive:**
+- **Volumes → three mixer buses**, as the original routes them: SoundVolume → the
+  sound-effect pool, VoiceVolume → the EVA speech slot, ScoreVolume → music (the
+  menu theme). Linear gain (`Mixer::set_bus_gain`, permille).
+- **Scroll Rate → edge scroll.** The guessed constant 40 px/frame pan is replaced
+  by the recovered algorithm: distance table `{448,384,320,256,192,128,64,32,16}`
+  × `[General] ScrollMultiplier` (.07), index `8 - accel` floored at
+  `ScrollRate + 1`, `accel` climbing once per 16 ms tick while scrolling — a slow
+  start (1 px) accelerating to 13 px/tick at the default rate (26 at fastest, 2 at
+  slowest).
+- Everything else (Difficulty, Visual Details, Target Lines, Hidden Objects,
+  Tooltips, the `[Video]` keys, ...) is persisted faithfully but has no consumer
+  in the clone yet.
+
+**Gates are untouched by construction:** the file is read only by `run_menu` (the
+desktop default path and the Android entry); no gate calls it or constructs a
+menu/game scene, `--menu-shot` renders with built-in defaults, and every mixer bus
+defaults to identity gain with the pre-P8 arithmetic path preserved bit-for-bit.
+
+**Deferred:** the Keyboard page (`0xA3`, Keyboard.ini `[Hotkey]` remapping — the
+clone has no remappable command table) and the Network/IPX page are drawn greyed;
+resolution switching (fixed-window/Android port — the combobox shows the current
+mode, inert); the in-game options page and its GameSpeed slider; slider tick and
+volume-preview sounds; the tooltip status line; page power-on transitions.
+
 
 ## Building
 

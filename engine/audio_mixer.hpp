@@ -36,6 +36,12 @@
 
 namespace ra2engine {
 
+// [P8 / docs/re/options.md §5] The original routes every sound through one of
+// three volume buses set from RA2.INI [Audio]: SoundVolume -> the SFX voice
+// pool (DAT_00831458), VoiceVolume -> the speech/EVA streamer (DAT_00831450),
+// ScoreVolume -> the music/theme player (DAT_00831454). Linear gain.
+enum class AudioBus { Sound = 0, Voice = 1, Score = 2 };
+
 // One [SoundList] event's mixer-relevant fields (Task 6 fills these from a
 // parsed SoundEntry). `variants` are SoundBank clip ids; a sound with no
 // variants can never play (register_sound accepts it, play() rejects it).
@@ -53,6 +59,7 @@ struct MixerSound {
     bool global = false;          // Type contains GLOBAL: MinVolume floor (never silent)
     double range = 10.0;          // cells
     int min_volume = 50;          // 0..100; GLOBAL-only floor
+    AudioBus bus = AudioBus::Sound;   // [P8] volume bus (SFX by default)
 };
 
 // AMENDED: real 5-level scale (docs/re/audio-playback.md, table @0x815018):
@@ -78,6 +85,15 @@ private:
 class Mixer {
 public:
     static constexpr int kMaxVoices = 16;
+    using Bus = AudioBus;
+
+    // [P8] Per-bus gain in permille (0..1000, clamped). Defaults to 1000 on
+    // every bus = identity: render() takes the exact pre-P8 arithmetic path
+    // for an identity bus, so no gate/test output moves unless the
+    // interactive Options settings were applied. The EVA slot mixes on
+    // Bus::Voice.
+    void set_bus_gain(Bus bus, int permille);
+    int  bus_gain(Bus bus) const;
 
     // `bank` must outlive the Mixer (stored by reference; Task 6 owns both
     // with the same lifetime, same pattern as Occupancy/World elsewhere).
@@ -136,6 +152,7 @@ private:
         int vol_x_gain;      // volume * gain_permille, 0..100000
         int priority;
         std::uint64_t age;
+        Bus bus = Bus::Sound;   // [P8] latched from MixerSound::bus at play()
     };
 
     std::uint32_t next_rand_();
@@ -151,6 +168,7 @@ private:
 
     std::uint32_t rng_;
     std::uint64_t age_counter_ = 0;
+    int bus_gain_[3] = {1000, 1000, 1000};   // [P8] Sound / Voice / Score permille
 };
 
 }  // namespace ra2engine

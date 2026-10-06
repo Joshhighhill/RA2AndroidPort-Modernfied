@@ -164,3 +164,56 @@ TEST_CASE("mixer: unknown key or empty variants -> false, no crash") {
     m.register_sound("E", empty);
     CHECK_FALSE(m.play("E"));
 }
+
+// --- P8 Options: per-bus volume (docs/re/options.md §5: Sound / Voice / Score
+// buses, linear gain). Default gains are identity so nothing pre-P8 changes. ---
+
+TEST_CASE("mixer bus: default gains are identity (pre-P8 output unchanged)") {
+    int a, b;
+    SoundBank bank = two_clip_bank(a, b);
+    Mixer m(bank, 1);
+    CHECK(m.bus_gain(Mixer::Bus::Sound) == 1000);
+    CHECK(m.bus_gain(Mixer::Bus::Voice) == 1000);
+    CHECK(m.bus_gain(Mixer::Bus::Score) == 1000);
+    m.register_sound("A", plain(a));
+    CHECK(m.play("A"));
+    m.play_eva(b);
+    int16_t out[2] = {};
+    m.render(out, 2);
+    CHECK(out[0] == 700);   // 1000 + (-300), exactly as before buses existed
+}
+
+TEST_CASE("mixer bus: a Score-bus gain scales only Score voices") {
+    int a, b;
+    SoundBank bank = two_clip_bank(a, b);
+    Mixer m(bank, 1);
+    MixerSound music = plain(a);
+    music.bus = Mixer::Bus::Score;
+    m.register_sound("music", music);
+    m.register_sound("sfx", plain(b));
+    m.set_bus_gain(Mixer::Bus::Score, 500);
+    CHECK(m.play("music"));
+    CHECK(m.play("sfx"));
+    int16_t out[3] = {};
+    m.render(out, 3);
+    CHECK(out[0] == 200);   // 1000*0.5 + (-300)
+    CHECK(out[2] == 500);   // sfx finished; music still halved
+}
+
+TEST_CASE("mixer bus: EVA follows the Voice bus; gain 0 silences; gain clamps") {
+    int a, b;
+    SoundBank bank = two_clip_bank(a, b);
+    Mixer m(bank, 1);
+    m.set_bus_gain(Mixer::Bus::Voice, 250);
+    m.play_eva(a);
+    int16_t out[1] = {};
+    m.render(out, 1);
+    CHECK(out[0] == 250);
+    m.set_bus_gain(Mixer::Bus::Voice, 0);
+    m.render(out, 1);
+    CHECK(out[0] == 0);
+    m.set_bus_gain(Mixer::Bus::Sound, 5000);
+    CHECK(m.bus_gain(Mixer::Bus::Sound) == 1000);
+    m.set_bus_gain(Mixer::Bus::Sound, -5);
+    CHECK(m.bus_gain(Mixer::Bus::Sound) == 0);
+}
