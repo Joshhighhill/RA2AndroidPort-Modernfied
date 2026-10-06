@@ -161,7 +161,7 @@ public:
                 const ResolvedUnit ru = resolve_combat_unit(rules_, id);
                 t.combat = ru.combat;
                 t.combat.is_vehicle = false;
-                t.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+                t.combat.speed_cps = speed_to_cps(ru.speed);
                 const std::string& img = t.combat.image;
                 if (!ua_.shps.count(img)) {
                     MixFile conquer = ra2_.open_nested("conquer.mix");

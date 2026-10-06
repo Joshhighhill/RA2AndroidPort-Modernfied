@@ -667,13 +667,22 @@ struct ResolvedUnit {
     int speed = 0;
 };
 
-// Movement pace tuning: iso cells/sec = rules Speed * this. rulesmd Speed for
-// E1 is 4, so 4 * 0.75 = 3 cells/sec -- fast enough to visibly stride between
-// tiles, slow enough to read as walking (not teleporting) and to cross a
-// ~25-cell demo path in well under the 15s cap. Falls back to World's own
-// default if Speed is missing (0). Defined HERE (ahead of resolve_combat_unit)
-// because CB-2's JumpjetSpeed fallback converts base Speed with the SAME scale.
-constexpr double kCellsPerSecPerSpeed = 0.75;
+// Gap fix C (G-42) [RE: docs/re/gamespeed.md §2-§4]: the original is frame-
+// locked -- Speed= is stored as min(255, clamp(Speed,0,100)*256/100) leptons
+// per logic frame (voxel-render.md §5) and the house's GroundspeedBias =
+// [Difficulty] Groundspeed (1.0) x [General] GameSpeedBias (1.6) multiplies
+// it (HouseClass::AssignHandicap FUN_004f6dd0). The engine's convention is 15
+// logic frames per engine second (kLogicFps, = GameSpeed 4), so
+//   cells/sec = trunc(Speed*256/100) * GameSpeedBias * 15 / 256.
+// Replaces the old feel-tuned 0.75 cells/s per Speed point (~3.2x too fast
+// relative to ROF). g_game_speed_bias is this install's value until
+// resolve_combat_unit reads the live [General] key.
+double g_game_speed_bias = 1.6;
+inline double speed_to_cps(double speed) {
+    const double clamped = std::min(100.0, std::max(0.0, speed));
+    const int lept = std::min(255, static_cast<int>(clamped * 256.0 / 100.0));
+    return lept * g_game_speed_bias * 15.0 / 256.0;
+}
 
 // Case-insensitive lowercasing (CB-2 Locomotor CLSID compare). File-local.
 inline std::string to_lower(std::string s) {
@@ -690,6 +699,10 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     ResolvedUnit r;
     r.combat.image = rules.image(unit_id);
     r.speed = rules.speed(unit_id);
+    // Gap fix C (G-42): every unit carries its own recovered speed (infantry
+    // included -- they used to share World::move_cps).
+    g_game_speed_bias = rules.general_double("GameSpeedBias", g_game_speed_bias);
+    r.combat.speed_cps = speed_to_cps(r.speed);
     r.combat.strength = rules.strength(unit_id);
     r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
@@ -737,7 +750,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // Link_To_Object arms from TechnoType+0x71C; JumpJetTurnRate (+0xD70) is
     // VESTIGIAL and NOT read. D2: flight_speed = JumpjetSpeed (fallback base
     // Speed) via the engine's EXISTING vehicle-speed conversion
-    // (kCellsPerSecPerSpeed -- the SAME scale ground vehicles use; the vanilla
+    // (speed_to_cps -- the SAME recovered scale ground units use, G-42; the vanilla
     // 12 leptons/frame is the documented divergence, voxel-render.md §5).
     // climb/crash are per-frame Jumpjet floats x15 -> leptons/sec (the
     // rot_u16_per_sec precedent). All default INERT for a ground unit.
@@ -757,7 +770,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.cruise_altitude = rules.section_double(unit_id, "JumpjetHeight", 500.0);
         // D2: same vehicle-speed conversion ground vehicles use (Speed 6 ->
         // 4.5 cps); ZEP JumpjetSpeed=5 -> 3.75 cells/sec in engine scale.
-        r.combat.flight_speed = jjspeed * kCellsPerSecPerSpeed;   // cells/sec
+        r.combat.flight_speed = speed_to_cps(jjspeed);   // cells/sec
         r.combat.climb_rate   = jjclimb * 15.0;                   // leptons/sec
         r.combat.descend_rate = jjcrash * 15.0;
         // D1: FacingClass rate = (ROT<<1)*256 u16/frame; x15 -> u16/sec.
@@ -1138,7 +1151,7 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         va.combat.is_vehicle = true;
         va.combat.rot = rules.rot(unit_id);
         va.combat.turret = rules.has_turret(unit_id);
-        va.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;  // Speed 6 -> 4.5 cps
+        va.combat.speed_cps = speed_to_cps(ru.speed);  // Speed 6 -> 1.41 cps (G-42)
 
         const std::string image = va.combat.image;  // "HTNK"
         std::string base = image;
@@ -1513,7 +1526,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 const ResolvedUnit ru = resolve_combat_unit(rules, e.id);  // infantry combat + SHP image
                 d.combat = ru.combat;
                 d.combat.is_vehicle = false;
-                d.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+                d.combat.speed_cps = speed_to_cps(ru.speed);
             }
             ur.defs.push_back(std::move(d));
             ur.cameos.push_back(std::move(cshp));
@@ -1774,7 +1787,7 @@ void spawn_free_units_on_open(ra2engine::World& world, const BuildingAssets& ba,
 // and retaliate once combat starts (see engine/combat.cpp step_combat).
 ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
     ra2engine::World world(a.map);
-    if (ua.gi_speed > 0) world.set_move_speed(ua.gi_speed * kCellsPerSecPerSpeed);
+    if (ua.gi_speed > 0) world.set_move_speed(speed_to_cps(ua.gi_speed));
 
     // Register each image's real artmd.ini-resolved anim sequence BEFORE any
     // units are spawned (set_anim/anim_for_image, world.hpp) -- units spawned
@@ -13425,7 +13438,7 @@ DemoRoster2Result simulate_roster2(Assets& a, UnitAssets& ua, BuildingAssets& ba
             s.pad = pad;
             s.max_ammo = (int)rules.section_double(id, "Ammo", -1.0);
             s.ammo = s.max_ammo;
-            s.speed_lpf = ru.speed * kCellsPerSecPerSpeed / 15.0 * 256.0;
+            s.speed_lpf = speed_to_cps(ru.speed) / 15.0 * 256.0;
             s.range_leptons = static_cast<int>(ru.combat.range * 256.0);
             s.flight_level = (int)rules.general_double("FlightLevel", 1500.0);
             s.has_target = true;
@@ -14444,7 +14457,7 @@ DemoAbilitiesResult simulate_abilities(Assets& a, UnitAssets& ua, BuildingAssets
             ru.combat.rot = rules.rot(id);
             ru.combat.turret = rules.has_turret(id);
         }
-        ru.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+        ru.combat.speed_cps = speed_to_cps(ru.speed);
         w.add_combat_unit(x, y, house, ru.combat);
         const int idx = (int)w.units().size() - 1;
         if (disarm) w.units()[idx].w_damage = 0;
