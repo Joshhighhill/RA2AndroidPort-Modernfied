@@ -218,6 +218,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibili
 # production.cpp. The World mutation entry points live in engine/world.cpp
 # (already on test_world's line), so world.cpp is NOT added here.
 target_sources(ra2assets_tests PRIVATE tests/test_repair_sell.cpp engine/repair_sell.cpp)
+# P9 Map triggers [RE: map-triggers.md]: the pure map-trigger parser + runtime
+# (TagClass/TriggerClass/TEvent/TAction semantics over an abstract TriggerHost).
+# World-free; compiled into both this test binary and ra2engine.
+target_sources(ra2assets_tests PRIVATE tests/test_map_trigger.cpp engine/map_trigger.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's
