@@ -26,9 +26,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -50,6 +52,7 @@
 #include "production.hpp"
 #include "rectfont.hpp"    // glyph_rows (5x7 rect-font for menu labels) [Task 5]
 #include "repair_sell.hpp" // RepairSellRules (Repair & Sell phase)
+#include "settings.hpp"    // P8 Options: RA2.INI settings, slider math, edge-scroll table
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
@@ -3233,6 +3236,69 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  Assets& a, UnitAssets& ua, BuildingAssets& ba,
                                  const Rules& rules);
 
+// ============================================================================
+// [P8 Options + persistence, RE: docs/re/options.md] The user's RA2.INI.
+// ============================================================================
+// Published ONLY by run_menu (the interactive desktop default + Android entry)
+// after it loads the file; null everywhere else. No gate ever calls run_menu,
+// constructs GameScene or reads the settings file, and --menu-shot renders with
+// built-in defaults -- so the byte-identity gates cannot see a user's settings.
+ra2engine::Settings* g_user_settings = nullptr;
+
+// <SDL pref dir>/RA2.INI: %APPDATA%\ra2engine\RA2\ on Windows, the app's
+// internal (always writable) files dir on Android. Never the install dir. Empty
+// string if SDL cannot provide a writable path (settings then stay in memory).
+std::string settings_file_path() {
+    char* p = SDL_GetPrefPath("ra2engine", "RA2");
+    if (!p) return {};
+    std::string s = std::string(p) + "RA2.INI";
+    SDL_free(p);
+    return s;
+}
+
+// The whole file as an IniDoc (empty doc if absent/unreadable).
+ra2engine::IniDoc read_settings_doc(const std::string& path) {
+    if (path.empty()) return ra2engine::IniDoc::parse("");
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return ra2engine::IniDoc::parse("");
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ra2engine::IniDoc::parse(ss.str());
+}
+
+// FUN_005d8b00: absent file/keys -> the OptionsClass ctor defaults.
+ra2engine::Settings load_user_settings() {
+    const std::string path = settings_file_path();
+    ra2engine::Settings s = ra2engine::load_settings(read_settings_doc(path));
+    std::cerr << "[settings] " << (path.empty() ? "(no pref path)" : path)
+              << " scroll_rate=" << s.scroll_rate << " sound=" << s.sound_volume
+              << " voice=" << s.voice_volume << " score=" << s.score_volume << "\n";
+    return s;
+}
+
+// FUN_005d91b0: read-modify-write so every foreign section/key/comment of an
+// existing file survives; only the OptionsClass save list is rewritten.
+bool save_user_settings(const ra2engine::Settings& s) {
+    const std::string path = settings_file_path();
+    if (path.empty()) return false;
+    ra2engine::IniDoc doc = read_settings_doc(path);
+    ra2engine::store_settings(s, doc);
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f) { std::cerr << "[settings] cannot write " << path << "\n"; return false; }
+    const std::string text = doc.serialize();
+    f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    std::cerr << "[settings] saved " << path << "\n";
+    return static_cast<bool>(f);
+}
+
+// options.md §5: SoundVolume -> SFX bus, VoiceVolume -> speech/EVA bus,
+// ScoreVolume -> music bus; linear gain.
+void apply_audio_settings(ra2engine::Mixer& m, const ra2engine::Settings& s) {
+    m.set_bus_gain(ra2engine::AudioBus::Sound, ra2engine::volume_gain_permille(s.sound_volume));
+    m.set_bus_gain(ra2engine::AudioBus::Voice, ra2engine::volume_gain_permille(s.voice_volume));
+    m.set_bus_gain(ra2engine::AudioBus::Score, ra2engine::volume_gain_permille(s.score_volume));
+}
+
 // [RE: skirmish.md §2, D4] Minimal polymorphic scene interface. Additive: driven
 // ONLY at the two non-gate main() seams (Android + desktop fallthrough); no gate
 // constructs or enters it. NOT hashed.
@@ -3368,6 +3434,12 @@ public:
 
         // Audio (--no-audio skips init_audio entirely; rules_ reused for voices).
         if (!no_audio_) init_audio(audio_, dir_, rules_);
+        // [P8 / options.md §5] The user's Sound/Voice/Score volumes -> mixer
+        // buses. Only when run_menu published settings (never in a gate).
+        if (g_user_settings && audio_.mixer) apply_audio_settings(*audio_.mixer, *g_user_settings);
+        // [P8 / options.md §5] Edge-scroll speed = the recovered 0x7F2BE8 table
+        // x [General] ScrollMultiplier (.07), capped by the user's ScrollRate.
+        scroll_mult_ = rules_.general_double("ScrollMultiplier", 0.07);
     }
 
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
@@ -3453,20 +3525,44 @@ public:
     // One step of the former loop body: camera pan, edge-detects, world.step,
     // production, exit handoff, free units, audio events, placement/SW confirm.
     void update(double dt) override {
-        const int kPan = 40;
+        // Scroll direction from the arrow keys + the window-edge band (unchanged).
         const Uint8* ks = SDL_GetKeyboardState(nullptr);
-        int pan_dx = 0, pan_dy = 0;
-        if (ks[SDL_SCANCODE_LEFT]) pan_dx += kPan;
-        if (ks[SDL_SCANCODE_RIGHT]) pan_dx -= kPan;
-        if (ks[SDL_SCANCODE_UP]) pan_dy += kPan;
-        if (ks[SDL_SCANCODE_DOWN]) pan_dy -= kPan;
+        int dir_x = 0, dir_y = 0;
+        if (ks[SDL_SCANCODE_LEFT]) dir_x += 1;
+        if (ks[SDL_SCANCODE_RIGHT]) dir_x -= 1;
+        if (ks[SDL_SCANCODE_UP]) dir_y += 1;
+        if (ks[SDL_SCANCODE_DOWN]) dir_y -= 1;
         SDL_GetMouseState(&mx_, &my_);
         const int kEdge = 24;   // window-edge scroll band (true screen edge, incl. sidebar)
-        if (mx_ <= kEdge) pan_dx += kPan;
-        else if (mx_ >= kWinW - kEdge) pan_dx -= kPan;
-        if (my_ <= kEdge) pan_dy += kPan;
-        else if (my_ >= kWinH - kEdge) pan_dy -= kPan;
-        if (pan_dx || pan_dy) input_.pan(pan_dx, pan_dy);
+        if (mx_ <= kEdge) dir_x += 1;
+        else if (mx_ >= kWinW - kEdge) dir_x -= 1;
+        if (my_ <= kEdge) dir_y += 1;
+        else if (my_ >= kWinH - kEdge) dir_y -= 1;
+        dir_x = (dir_x > 0) - (dir_x < 0);
+        dir_y = (dir_y > 0) - (dir_y < 0);
+        // [P8 / options.md §5, FUN_00669ec0] The original scrolls
+        // trunc(table[idx] * ScrollMultiplier) px per 16 ms tick, idx = 8-accel
+        // floored at ScrollRate+1 -- a slow start that accelerates one step per
+        // tick up to the rate's cap (default rate 3 -> 1,2,4,8,13 px). This
+        // replaces the old guessed constant 40 px/frame. accel resets when the
+        // scroll stops [RE-FALLBACK: reset point not traced]. GameScene is
+        // interactive-only (no gate constructs it).
+        if (dir_x || dir_y) {
+            const int rate = g_user_settings ? g_user_settings->scroll_rate
+                                             : ra2engine::Settings{}.scroll_rate;
+            const int cap = ra2engine::edge_scroll_accel_cap(rate);
+            scroll_tick_accum_ += dt;
+            int px = 0;
+            while (scroll_tick_accum_ >= kScrollTick) {
+                scroll_tick_accum_ -= kScrollTick;
+                px += ra2engine::edge_scroll_distance(rate, scroll_accel_, scroll_mult_);
+                if (scroll_accel_ < cap) ++scroll_accel_;
+            }
+            if (px) input_.pan(dir_x * px, dir_y * px);
+        } else {
+            scroll_accel_ = 0;
+            scroll_tick_accum_ = 0.0;
+        }
 
         // CB-1 unload key (D, edge-detected) -> unload selected own transports.
         const bool unload_key = ks[SDL_SCANCODE_D] != 0;
@@ -3690,6 +3786,11 @@ private:
     std::vector<int>     bstates_;
     int                  mx_ = 0, my_ = 0;
     Uint32               now_ = 0;
+    // --- [P8] edge-scroll acceleration (options.md §5) ---
+    static constexpr double kScrollTick = 0.016;   // timeGetTime()>>4 tick
+    double               scroll_mult_ = 0.07;      // [General] ScrollMultiplier
+    double               scroll_tick_accum_ = 0.0;
+    int                  scroll_accel_ = 0;
 };
 
 // Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
@@ -3833,6 +3934,7 @@ std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
         ms.min_volume = 100;
         ms.range = 1000.0;
         ms.limit = 1;              // single looping instance
+        ms.bus = ra2engine::AudioBus::Score;   // [P8] music = ScoreVolume bus (options.md §5)
         ma->sys.mixer->register_sound("menu:grinder", ms);
         ma->sys.out.open();
         ma->sys.enabled = ma->sys.out.ok();
@@ -4906,7 +5008,16 @@ int run_menu(bool no_audio) {
     // by reference like `rules`). GameScene owns its OWN audio init later.
     MenuArtStore store;
     load_menu_art(dir, no_audio, store);
-    return run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
+    // [P8] The user's RA2.INI (absent -> OptionsClass defaults), published for
+    // the Options page + GameScene for the whole driver loop, and applied to
+    // the menu music bus right away. This is the ONLY reader of the file.
+    ra2engine::Settings user = load_user_settings();
+    g_user_settings = &user;
+    if (store.audio && store.audio->sys.mixer)
+        apply_audio_settings(*store.audio->sys.mixer, user);
+    const int rc = run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
+    g_user_settings = nullptr;
+    return rc;
 }
 
 // [Task 5/Task 3] Render one frame of each shell page (+ the skirmish setup
