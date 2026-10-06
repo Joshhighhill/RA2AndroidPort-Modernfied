@@ -244,5 +244,5 @@ TEST_CASE("roster2 rules: section_string strips the inline comment [RE: roster2.
     CHECK(rules.section_string("GAYARD", "Factory", "") == "UnitType");
     CHECK(rules.section_string("GAYARD", "WaterBound", "") == "yes");
     CHECK(rules.section_string("GAYARD", "Wall", "no") == "no");
-    CHECK_FALSE(rules.section_flag("GAYARD", "Naval", false));   // why section_string exists
+    CHECK(rules.section_flag("GAYARD", "Naval", false));   // RC-5: Ini now cuts the comment like the game
 }

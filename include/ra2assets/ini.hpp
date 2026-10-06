@@ -17,7 +17,10 @@ public:
     // Parse INI text (accepts bytes too via std::string(begin,end)). Accepts
     // both CRLF and LF line endings. Lines whose first non-whitespace
     // character is ';' or '#' are treated as full-line comments and
-    // ignored. Section names, keys, and values are trimmed of surrounding
+    // ignored. Every entry line is cut at its first ';' (an inline comment,
+    // exactly as the game's INIClass::Load does -- docs/re/ini-reader.md), and
+    // an entry whose key or value is empty after that is dropped (as the game
+    // drops it). Section names, keys, and values are trimmed of surrounding
     // whitespace; section names and keys are additionally normalized to a
     // canonical (upper) case for storage and lookup.
     static Ini parse(const std::string& text);

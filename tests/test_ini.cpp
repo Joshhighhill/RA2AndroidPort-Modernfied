@@ -168,3 +168,25 @@ TEST_CASE("ini: section_names lists parsed sections") {
     CHECK(ini.has("Alpha"));
     CHECK(ini.has("Beta"));
 }
+
+TEST_CASE("ini: inline ';' comments are cut like INIClass::Load (RC-5)") {
+    std::string text =
+        "[GAPILL]\n"
+        "Primary=Vulcan2 ;comment\n"
+        "Teleporter=yes;\n"
+        "Naval=yes ;GS\n"
+        "Empty=\n"
+        "OnlyComment= ; nothing\n"
+        "Dup=first\n"
+        "Dup=;shadow attempt\n"
+        "=novalue\n";
+    Ini ini = Ini::parse(text);
+    CHECK(ini.get("GAPILL", "Primary") == "Vulcan2");
+    CHECK(ini.get("GAPILL", "Teleporter") == "yes");
+    CHECK(ini.get("GAPILL", "Naval") == "yes");
+    // Empty values are not entries at all (game skips strlen==0 values).
+    CHECK(ini.get("GAPILL", "Empty", "def") == "def");
+    CHECK(ini.get("GAPILL", "OnlyComment", "def") == "def");
+    CHECK(ini.get("GAPILL", "Dup") == "first");
+    CHECK(ini.section("GAPILL").size() == 4);
+}
