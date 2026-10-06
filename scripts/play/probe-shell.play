@@ -1,0 +1,11 @@
+# Harness self-check: walk the shell, take shots, no gameplay claims.
+require scene == "shell:Main Menu"
+shot main
+click button "Single Player"
+wait 2
+assert scene == "shell:Single Player"
+click button Skirmish
+wait 2
+require scene == lobby
+shot lobby
+end
