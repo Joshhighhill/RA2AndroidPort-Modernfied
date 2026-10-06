@@ -310,8 +310,9 @@ private:
         }
         if (c->second.secs > 0) secs = c->second.secs;
         id = c->second.id;
-        // [RE-FALLBACK: RE-P1 inter-speech gap DAT_00b1c438 not yet read] 0 s gap.
-        busy_until_ = clock_ + secs;
+        // [RE: presentation.md §1.1 DAT_00b1c438] the next line also waits until
+        // 500 ms (wall clock) after this one started; INTERRUPT resets it.
+        busy_until_ = clock_ + std::max(secs, 0.5);
         char b[64];
         std::snprintf(b, sizeof b, " clip=%s len=%.2fs", clip.c_str(), secs);
         pres_log(frame_, "eva-play " + r.name + b);

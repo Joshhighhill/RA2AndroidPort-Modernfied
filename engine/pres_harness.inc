@@ -18,7 +18,8 @@ struct PresHarness {
         std::string stem = argv[i0];
         std::string map = "xmp31s2.map", script = "none", side = "allied";
         std::vector<double> secs = {2.0};
-        int ai = -1, color = -1;
+        int ai = -1, color = -1, mouse_x = -1, mouse_y = -1;
+        bool select_all = false;
         bool audio = false;
         for (int i = i0 + 1; i < argc; ++i) {
             const std::string a = argv[i];
@@ -29,6 +30,12 @@ struct PresHarness {
             else if (a == "--ai") ai = std::atoi(next().c_str());
             else if (a == "--color") color = std::atoi(next().c_str());
             else if (a == "--audio") audio = true;
+            else if (a == "--select") select_all = true;
+            else if (a == "--mouse") {
+                const std::string v = next();
+                mouse_x = std::atoi(v.c_str());
+                mouse_y = std::atoi(v.substr(v.find(',') + 1).c_str());
+            }
             else if (a == "--secs") {
                 secs.clear();
                 std::stringstream ss(next());
@@ -82,6 +89,9 @@ struct PresHarness {
             // The headless window has no mouse focus (SDL reports 0,0 -> edge
             // scroll); hold the scripted camera.
             if (scripted) { gs.cam_.x = cam_x_; gs.cam_.y = cam_y_; }
+            if (mouse_x >= 0) { gs.mx_ = mouse_x; gs.my_ = mouse_y; }
+            if (select_all)
+                for (auto& u : gs.world_.units()) u.selected = (u.house == 0 && u.alive);
             if (t + 1e-9 >= secs[next_shot]) {
                 // Look at the most interesting spot: for "fight" the centroid
                 // of the engaged units, else the scripted camera.

@@ -4943,9 +4943,14 @@ public:
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
-        const bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
-                          draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
-                                           world_.repair_frame());
+        bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
+                    draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
+                                     world_.repair_frame());
+        // G-08 (draw half): every other pointer is the MOUSE.SHP action cursor.
+        if (!drew)
+            drew = pres_.draw_cursor(ren, tc, mouse_, world_, input_, mx_, my_,
+                                     sidebar_up_ && lay_.contains(mx_, my_), playfield_w_, kWinW,
+                                     kWinH, world_.repair_frame());
         if (drew != os_cursor_hidden_) {
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;

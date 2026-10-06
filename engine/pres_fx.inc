@@ -17,7 +17,29 @@ struct FxAnimType {
     bool translucent = false;  // Translucent=yes -> 50 % blend
     std::string report;        // Report= sound event
     std::string next;          // Next= chained anim
-    double rate_fps = 15.0;    // [RE-FALLBACK: RE-P5 open] one SHP frame per 15 Hz game frame
+    // [RE: presentation.md §5] Rate= stores 900/Rate game frames per anim
+    // frame (no Rate -> 1); Start/End (End defaults to the image frames),
+    // LoopStart/LoopEnd (LoopEnd defaults to End), LoopCount (0/1 = once,
+    // -1 = 255): every pass but the last loops LoopStart..LoopEnd, the last
+    // runs to End, then Next= chains.
+    int delay = 1;
+    int start = 0, end = 0, loop_start = 0, loop_end = 0, loops = 1;
+    // Anim frame for game-frame tick 	, or -1 once finished.
+    int frame_at(long t) const {
+        if (delay <= 0) return start;
+        long step = t / delay;
+        const long first = loop_end - start;          // first pass to LoopEnd
+        const long mid = loop_end - loop_start;       // each middle pass
+        if (loops <= 1) return step < end - start ? static_cast<int>(start + step) : -1;
+        if (step < first) return static_cast<int>(start + step);
+        step -= first;
+        for (int k = 1; k < loops - 1; ++k) {
+            if (step < mid) return static_cast<int>(loop_start + step);
+            step -= mid;
+        }
+        const long last = end - loop_start;
+        return step < last ? static_cast<int>(loop_start + step) : -1;
+    }
 };
 
 struct FxWeapon {
@@ -111,6 +133,18 @@ public:
             t->frames = shadow ? std::max(1, shp->count() / 2) : shp->count();
             t->translucent = pres_lower(aget(key, "Translucent")).rfind("y", 0) == 0;
             t->report = aget(key, "Report");
+            auto num = [&](const char* k, int d) {
+                const std::string v = aget(key, k);
+                return v.empty() ? d : std::atoi(v.c_str());
+            };
+            const int rate = num("Rate", 0);
+            t->delay = rate > 0 ? (rate > 900 ? 0 : 900 / rate) : 1;
+            t->start = std::clamp(num("Start", 0), 0, t->frames - 1);
+            t->end = std::clamp(num("End", t->frames), t->start + 1, t->frames);
+            t->loop_start = std::clamp(num("LoopStart", t->start), t->start, t->end - 1);
+            t->loop_end = std::clamp(num("LoopEnd", t->end), t->loop_start + 1, t->end);
+            const int lc = num("LoopCount", 1);
+            t->loops = lc < 0 ? 255 : std::max(1, lc);
             t->next = aget(key, "Next");
         }
         const FxAnimType* raw = t.get();
@@ -137,7 +171,7 @@ public:
         std::vector<Anim> next;
         for (Anim& a : anims_) {
             a.age += dt;
-            if (static_cast<int>(a.age * a.t->rate_fps) < a.t->frames) continue;
+            if (a.t->frame_at(static_cast<long>(a.age * 15.0)) >= 0) continue;
             if (!a.t->next.empty())
                 if (const FxAnimType* n = type(a.t->next)) next.push_back(Anim{n, a.sx, a.sy, a.level, a.lift_px, 0, a.ox_px});
             a.t = nullptr;
@@ -149,7 +183,8 @@ public:
     void draw(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Camera& cam, int W,
               int H) {
         for (const Anim& a : anims_) {
-            const int fr = std::min(a.t->frames - 1, static_cast<int>(a.age * a.t->rate_fps));
+            const int fr = a.t->frame_at(static_cast<long>(a.age * 15.0));
+            if (fr < 0) continue;
             const int cx = static_cast<int>(std::lround((a.sx - a.sy) * 30.0 + a.ox_px)) + cam.x + 30;
             const int cy = static_cast<int>(std::lround((a.sx + a.sy) * 15.0 - a.level * 15 - a.lift_px)) +
                            cam.y + 15;
