@@ -4,6 +4,8 @@
 // the clone's model:] stop = finish the cell being entered, drop every order;
 // guard = stop + guard post at the current cell (idle units auto-acquire and
 // are leashed to it -- combat.cpp); scatter = step to a free adjacent cell.
+#include <cmath>
+
 #include "world.hpp"
 
 namespace ra2engine {
@@ -16,8 +18,23 @@ void World::order_stop(int idx) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
     if (!orderable(u)) return;
-    // Finish entering the cell already reserved, then stand (no backward snap).
-    if (u.moving()) u.path.resize(u.path_idx + 1);
+    if (u.is_aircraft) {   // [RE-FALLBACK: aircraft Stop = hover; not modelled]
+        u.target = -1; u.target_building = -1; u.attack_order = false;
+        return;
+    }
+    // A unit standing on its cell stops right there; one between cells finishes
+    // entering the cell already reserved, then stands (no backward snap).
+    if (u.moving()) {
+        const bool on_cell = std::abs(u.fx - u.cell_x) < 1e-6 && std::abs(u.fy - u.cell_y) < 1e-6;
+        if (on_cell) {
+            occ_.release_all_of(idx, u.cell_x, u.cell_y);
+            occ_.set(u.cell_x, u.cell_y, idx);
+            u.path.clear();
+            u.path_idx = 0;
+        } else {
+            u.path.resize(u.path_idx + 1);
+        }
+    }
     u.target = -1;
     u.target_building = -1;
     u.attack_order = false;
