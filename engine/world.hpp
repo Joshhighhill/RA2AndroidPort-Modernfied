@@ -15,6 +15,7 @@
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "repair_sell.hpp"  // Repair & Sell: RepairSellRules + the pure tick arithmetic
+#include "crate.hpp"  // P5 Crates: GameRandom/CrateRules/Powerup (pure)
 #include "abilities.hpp"    // P4 abilities: AbilityProfile/AbilityRules/RadField
 #include "superweapon.hpp"  // CB-4 Superweapons: Superweapon/SuperweaponType lifecycle
 #include "visibility.hpp"  // Shroud/Fog: cell_in_sight/reveal_disc (pure reveal math)
@@ -114,6 +115,10 @@ struct Unit {
     std::vector<int> w_verses;     // warhead Verses percents (11 entries)
     double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
     double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
+    // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
+    // (default kind=Instant = the pre-P2 instant-hit path). Read ONLY when the
+    // World's projectiles_enabled_ firewall is open; NOT read by world_hash.
+    ProjectileSpec w_proj;
     int target = -1;               // unit index being attacked, -1 none
     int target_building = -1;      // building index being attacked, -1 none;
                                     // mutually exclusive with `target` --
@@ -265,6 +270,13 @@ struct Unit {
     int disguised_as_house = 0;      // palette house shown while disguised
     bool detect_disguise = false;    // DetectDisguise=yes (dogs) -> reveals spies
 
+    // --- P5 Veterancy + Crates [RE: veterancy.md] ---------------------------
+    // Experience, rank memory, crate multipliers, the combat receive-hook flag
+    // and the type data copied from UnitCombat. ALL defaults inert (see
+    // veterancy.hpp UnitVet): read only past World's vet_any_ firewall, except
+    // vet.killed_by, a stamp combat.cpp writes at death and nothing else reads.
+    // NOT read by world_hash or any existing *_hash.
+    UnitVet vet;
     // --- P4 Unit special abilities [RE: abilities.md] -----------------------
     // ALL defaults INERT (spec §Global constraints): a profile reaches a unit
     // ONLY through World::register_ability_profile (bound by image in
@@ -930,6 +942,29 @@ public:
     // full HP. The caller consumes the engineer on true.
     bool repair_building(int b_idx, int by_house);
 
+    // --- Projectile phase (P2) [RE: projectile.md] -------------------------
+    // ALL inert by default. projectiles_enabled_ is opened ONLY by
+    // enable_projectiles; step_projectiles' first line is the early return, and
+    // World::step passes a launch sink to step_combat only when it is open. None
+    // of this state is read by world_hash.
+    bool projectiles_enabled_ = false;          // the firewall
+    ProjectileRules proj_rules_;                // Gravity / BallisticScatter
+    ProjRng proj_rng_;                          // dedicated scatter RNG (spec D3)
+    std::vector<Projectile> projectiles_;       // in flight, launch order
+    std::vector<ProjectileEvent> proj_events_;  // pending take_projectile_events
+    double proj_accum_ = 0.0;                   // dt accumulator -> 15 Hz frames
+    int proj_frame_ = 0;                        // logic-frame counter
+    // Firewalled World::step pass (pure insertion before step_combat): advance
+    // every projectile one logic frame per accumulated 1/15 s.
+    void step_projectiles(double dt);
+    void step_projectiles_frame();
+    // Turn one step_combat launch into a Projectile (muzzle via FLH, target
+    // coords, compute_launch incl. scatter draws). Refused shots log an event.
+    void launch_projectile(int attacker, int target_unit, int target_building);
+    // Detonate `p` at its position: Explode snap, then the EXISTING damage layer
+    // (apply_spread_damage / deliver_unit_hit / deliver_building_hit).
+    void detonate_projectile(Projectile& p, int victim);
+
     // --- Repair & Sell phase [RE: repair-sell.md] -------------------------
     // The four [General] scalars + the three survivor divisors. The struct's
     // defaults ARE this install's real values, so a World that never calls
@@ -1079,6 +1114,19 @@ public:
     // no-op). enable(false) is not needed by any gate (left as a hard reset).
     void enable_shroud(bool on);
     bool shroud_enabled() const { return shroud_any_; }
+
+    // --- Projectile phase (P2) [RE: projectile.md] ---------------------------
+    // Open the projectile firewall: from now on a shot whose Unit::w_proj
+    // flies() launches a real projectile (ballistic arc / falling bomb) whose
+    // damage lands at detonation, instead of the instant hit. Called ONLY by the
+    // interactive game (GameScene) and --demo-projectile; no byte-identity gate
+    // calls it, so every existing gate keeps the instant path bit-for-bit.
+    void enable_projectiles(const ProjectileRules& rules);
+    bool projectiles_enabled() const { return projectiles_enabled_; }
+    const std::vector<Projectile>& projectiles() const { return projectiles_; }
+    int projectile_frame() const { return proj_frame_; }
+    // Drain the projectile event log (launch/refused/detonate/removed).
+    std::vector<ProjectileEvent> take_projectile_events();
     // Is cell (x,y) currently VISIBLE / ever EXPLORED to house h? EMPTY grid
     // (shroud off, or h out of range) -> true (all-visible / all-explored),
     // so every consult is inert with shroud off. Out-of-bounds cell -> false.
@@ -1143,6 +1191,65 @@ public:
         if (house >= 0 && house < house_count()) house_credits_[house] = amount;
     }
 
+    // --- P5 Veterancy + Crates [RE: docs/re/veterancy.md] --------------------
+    // BYTE-IDENTITY FIREWALL: nothing below runs unless enable_veterancy (and,
+    // for crates, enable_crates) was called. No existing gate calls either --
+    // only GameScene (the interactive game) and --demo-veterancy do -- so
+    // step_crates/step_veterancy cost every existing gate one counter
+    // increment and two branches, and none of this state is read by
+    // world_hash or any existing *_hash.
+    //
+    // Open the veterancy system: the rank/kill/self-heal pass, the combat
+    // receive-damage hook on every unit + building, and the vet-aware spawn.
+    // `building_costs[type]` = Cost of building roster type (kill value of a
+    // destroyed building, V3); a type outside it is worth 0.
+    void enable_veterancy(const VeterancyRules& r, std::vector<int> building_costs = {});
+    bool veterancy_enabled() const { return vet_any_; }
+    const VeterancyRules& veterancy_rules() const { return vet_rules_; }
+    // Rank-change events (V12), drained by the caller (EVA/sound hook, witness).
+    struct VetEvent { int unit = -1; int old_rank = 0; int new_rank = 0; };
+    std::vector<VetEvent> take_vet_events();
+    // Recompute unit `idx`'s effective weapon/ROF/speed/sight from its base or
+    // elite weapon, rank abilities and crate multipliers (V5/V7/V8/V9/V10).
+    // No-op unless veterancy is enabled. Public: the crate effects + tests.
+    void refresh_vet_stats(int idx);
+    // Frames stepped so far (the global Frame for the self-heal phase, V11).
+    std::uint64_t vet_frame() const { return vet_frame_; }
+
+    // Crates (C1-C8). Requires veterancy (the multipliers live on its path);
+    // returns false (and opens nothing) when veterancy is off.
+    struct CrateConfig {
+        CrateRules rules;
+        std::uint32_t seed = 0;               // ScenarioClass::Random seed
+        int players = 1;                      // session human count (C2)
+        std::vector<UnitCombat> unit_pool;    // CrateGoodie=yes vehicles (Unit crate)
+        bool place_initial = true;            // drop the C2 initial crates now
+    };
+    // One Crates[256] slot. x < 0 = empty. powerup -1 = random (the overlay
+    // OverlayData >= 0x13 case); >= 0 = a typed crate (PlaceCrate(cell,type)).
+    struct Crate {
+        int x = -1, y = -1;
+        int powerup = -1;
+        std::uint64_t start = 0;              // vet_frame() at placement
+        int lifetime = 0;                     // frames (C4)
+    };
+    struct CrateEvent {
+        int picked = -1;      // powerup drawn/typed
+        int applied = -1;     // after the conversion rules (§3.3)
+        int house = -1, unit = -1, x = -1, y = -1;
+        int amount = 0;       // Money credits / spawned unit index
+        int affected = 0;     // area effects: objects changed
+    };
+    bool enable_crates(const CrateConfig& cfg);
+    bool crates_enabled() const { return crates_any_; }
+    // PlaceCrate(cell, type) (FUN_0056B9F0): nearest valid cell to (x,y), first
+    // free slot, lifetime drawn. powerup -1 = random. Returns success.
+    bool place_crate(int x, int y, int powerup = -1);
+    // PlaceRandomCrate (FUN_0056B870): up to 1000 random tries.
+    bool place_random_crate();
+    const std::vector<Crate>& crates() const { return crates_; }
+    std::vector<CrateEvent> take_crate_events();
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -1167,6 +1274,29 @@ public:
     void order_unit_move(int idx, int gx, int gy);
 
 private:
+    // --- P5 Veterancy + Crates [RE: veterancy.md] (all inert until enabled) ---
+    bool vet_any_ = false;                    // the veterancy firewall
+    VeterancyRules vet_rules_;
+    std::vector<int> vet_building_costs_;     // roster type -> Cost (V3)
+    std::uint64_t vet_frame_ = 0;             // global Frame (advances every step)
+    std::vector<VetEvent> vet_events_;
+    void init_unit_vet(Unit& u);              // arm recv + rank memory + refresh
+    void credit_kill(int killer, int victim_house, int victim_cost, float victim_vet,
+                     bool dont_score);
+    void step_veterancy();                    // firewalled pass after step_combat
+    bool crates_any_ = false;                 // the crate firewall
+    CrateRules crate_rules_;
+    GameRandom crate_rng_;
+    std::vector<UnitCombat> crate_pool_;
+    std::vector<Crate> crates_;               // Crates[256]
+    std::vector<CrateEvent> crate_events_;
+    bool cell_is_water(int x, int y) const;
+    bool crate_nearby_cell(int x, int y, bool water, int& ox, int& oy) const;
+    bool crate_cell_valid(int x, int y) const;
+    bool crate_slot_place(int slot, int x, int y, int powerup);
+    void collect_crate(int slot, int unit_idx);
+    void step_crates();                       // firewalled pass after step_units
+
     // --- AI-1 base-planning phase [RE: ai-base.md] ---
     struct HouseAiRec {
         bool is_ai = false;

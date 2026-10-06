@@ -14,7 +14,7 @@ namespace ra2engine {
 constexpr double kAbilityLeptonsPerCell = 256.0;
 
 // x87 __ftol (FUN_007C4D00): truncation toward zero.
-inline int ftol(double v) { return static_cast<int>(v); }
+inline int ability_ftol(double v) { return static_cast<int>(v); }
 
 // --- §A Radiation -----------------------------------------------------------
 // SetSpread (0x65AF10): SpreadInLeptons = n*256 + 128.
@@ -24,11 +24,11 @@ int rad_spread_leptons(int spread_cells);
 double rad_cell_amount(int d_leptons, int spread_leptons, int rad_level);
 // Activate (0x65AFC0): LevelSteps = RadDuration / RadLevelDelay (int div).
 int rad_level_steps(int duration, int level_delay);
-// Add (0x65AF70): the effective current level = ftol(L * left / duration).
+// Add (0x65AF70): the effective current level = ability_ftol(L * left / duration).
 int rad_add_current(int rad_level, int time_left, int duration);
 // Deactivate (0x65B590): per-cell removal = amt/steps * (left/delay + 1).
 double rad_deactivate_amount(double amt, int steps, int time_left, int level_delay);
-// FootClass::AI (0x4DA4E0): ftol(ftol(min(cell, RadLevelMax)) * RadLevelFactor);
+// FootClass::AI (0x4DA4E0): ability_ftol(ability_ftol(min(cell, RadLevelMax)) * RadLevelFactor);
 // 0 when the clamped level is not positive (no ReceiveDamage call at all).
 int rad_damage(double cell_level, const AbilityRules& r);
 // The cadence (Frame % RadApplicationDelay == 0, absolute phase).
@@ -88,7 +88,7 @@ int teleport_delay_frames(int dist_leptons, const AbilityRules& r);
 int warp_remaining_init(int type_strength);
 
 // --- §D C4 ----------------------------------------------------------------------
-// InfantryClass C4 plant (0x51A39E): ftol(C4Delay * 900.0) frames.
+// InfantryClass C4 plant (0x51A39E): ability_ftol(C4Delay * 900.0) frames.
 int c4_delay_frames(double c4_delay_minutes);
 
 // --- §E Ivan bombs --------------------------------------------------------------

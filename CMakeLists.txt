@@ -85,7 +85,9 @@ target_sources(ra2assets_tests PRIVATE tests/test_pathfind.cpp engine/pathfind.c
 # reconciliation are unit-tested here (test_world.cpp) alongside the projection
 # it must agree with. Compiled from the same single source of truth as the
 # ra2engine executable below (same pattern as iso_project.cpp / pathfind.cpp).
-target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp
+                                       engine/world_veterancy.cpp  # P5 World members
+                                       tests/test_world_veterancy.cpp)
 # input.cpp is SDL-free (only InputEvent, screen_to_cell, World -- see
 # engine/input.hpp) so it compiles into this test binary too (Task 12 review
 # Finding 3: Input previously had zero test coverage); it calls
@@ -218,6 +220,20 @@ target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibili
 # production.cpp. The World mutation entry points live in engine/world.cpp
 # (already on test_world's line), so world.cpp is NOT added here.
 target_sources(ra2assets_tests PRIVATE tests/test_repair_sell.cpp engine/repair_sell.cpp)
+# Projectile flight phase (P2) [RE: projectile.md]: the pure BulletClass core --
+# launch solver (Fire), ballistic/vertical integrators (Update), scatter, and the
+# deterministic projectile RNG. World-free; the collision/detonation pass lives in
+# engine/world.cpp (already on test_world's line).
+target_sources(ra2assets_tests PRIVATE tests/test_projectile.cpp engine/projectile.cpp)
+# P9 Map triggers [RE: map-triggers.md]: the pure map-trigger parser + runtime
+# (TagClass/TriggerClass/TEvent/TAction semantics over an abstract TriggerHost).
+# World-free; compiled into both this test binary and ra2engine.
+target_sources(ra2assets_tests PRIVATE tests/test_map_trigger.cpp engine/map_trigger.cpp)
+# P5 Veterancy + Crates [RE: veterancy.md]: the pure veterancy formulas and the
+# crate RNG/powerup math. engine/world.cpp (already on test_world's line) calls
+# into both, so they are compiled into the test binary here once.
+target_sources(ra2assets_tests PRIVATE tests/test_veterancy.cpp engine/veterancy.cpp
+                                       tests/test_crate.cpp engine/crate.cpp)
 # P4 Unit special abilities [RE: abilities.md]: the pure ability arithmetic +
 # the radiation field (engine/abilities.cpp, World-free) and the World-side
 # ability pass + orders (engine/world_abilities.cpp, a World member TU split out
@@ -233,6 +249,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_skirmish.cpp engine/skirmish.c
 # labels (Task 5, [RE: skirmish.md §UI]). Its coverage cases live in
 # test_skirmish.cpp above; draw_text (the SDL consumer) lives in engine/main.cpp.
 target_sources(ra2assets_tests PRIVATE engine/rectfont.cpp)
+# P8 Options + persistence: the PURE settings layer (RA2.INI IniDoc round-trip,
+# OptionsClass defaults/clamps/save list, slider/trackbar math, the recovered
+# edge-scroll table) [RE: docs/re/options.md]. SDL-free; main.cpp owns the UI.
+target_sources(ra2assets_tests PRIVATE tests/test_settings.cpp engine/settings.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)

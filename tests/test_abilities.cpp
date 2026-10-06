@@ -22,18 +22,18 @@ TEST_CASE("abilities: RadSite duration bookkeeping [RE: §A1/§A3]") {
     CHECK(rad_level_steps(500, 90) == 5);            // 500 frames / 90 (int div)
     CHECK(rad_level_steps(940, 90) == 10);
     CHECK(rad_level_steps(500, 0) == 0);             // defensive
-    CHECK(rad_add_current(500, 440, 500) == 440);    // ftol(L*left/duration)
+    CHECK(rad_add_current(500, 440, 500) == 440);    // ability_ftol(L*left/duration)
     CHECK(rad_add_current(500, 0, 0) == 0);
     // Deactivate owes (left/delay + 1) decrements of amt/steps.
     CHECK(rad_deactivate_amount(100.0, 5, 440, 90) == doctest::Approx(100.0));
     CHECK(rad_deactivate_amount(100.0, 5, 80, 90) == doctest::Approx(20.0));
 }
 
-TEST_CASE("abilities: radiation damage = ftol(ftol(min(lvl,500))*0.2) [RE: §A4 0x4DA502]") {
+TEST_CASE("abilities: radiation damage = ability_ftol(ability_ftol(min(lvl,500))*0.2) [RE: §A4 0x4DA502]") {
     const AbilityRules r;
     CHECK(rad_damage(500.0, r) == 100);
     CHECK(rad_damage(940.0, r) == 100);     // clamped to RadLevelMax at READ time
-    CHECK(rad_damage(261.9, r) == 52);      // ftol(261)=261 -> 52.2 -> 52
+    CHECK(rad_damage(261.9, r) == 52);      // ability_ftol(261)=261 -> 52.2 -> 52
     CHECK(rad_damage(4.9, r) == 0);         // 4 * 0.2 = 0.8 -> 0
     CHECK(rad_damage(0.5, r) == 0);         // level ftol's to 0 -> no damage call
     CHECK(rad_apply_due(0, r));
@@ -99,7 +99,7 @@ TEST_CASE("abilities: chrono erase budget is Strength*10 [RE: §C2 0x71A1A0]") {
     CHECK(frames == 157);
 }
 
-TEST_CASE("abilities: C4 timer is ftol(C4Delay*900) [RE: §D1 0x51A39E]") {
+TEST_CASE("abilities: C4 timer is ability_ftol(C4Delay*900) [RE: §D1 0x51A39E]") {
     CHECK(c4_delay_frames(0.03) == 27);
     CHECK(c4_delay_frames(0.0) == 0);
 }

@@ -116,6 +116,13 @@ struct Building {
     bool   selling        = false;  // [§B2] mission 0x13 (Selling) is running
     double sell_time      = 0.0;    // seconds elapsed in the MIRRORED buildup [§B2]
     bool   sold           = false;  // died via sell, not combat (suppresses the explosion)
+    // --- P5 Veterancy + Crates [RE: veterancy.md V3/V6/C6] --- ALL inert:
+    // vet_recv is set only by a vet-enabled World; killed_by is a plain stamp
+    // combat.cpp writes at the kill (read only by the firewalled credit pass).
+    bool   vet_recv       = false;  // receive-damage hook armed (ArmorMultiplier)
+    double armor_mult     = 1.0;    // ArmorMultiplier (Armor crate)
+    int    killed_by      = -1;     // unit index of the killer
+    bool   vet_credited   = false;  // kill credit resolved
     // --- P4 Unit special abilities [RE: abilities.md §C2/§D/§E] ---
     // ALL inert by default and NOT read by world_hash; set only by the P4
     // ability pass (World::step_abilities), which no pre-P4 gate arms.

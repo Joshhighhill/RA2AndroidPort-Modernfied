@@ -23,7 +23,7 @@ int rad_level_steps(int duration, int level_delay) {
 int rad_add_current(int rad_level, int time_left, int duration) {
     // 0x65AF74: FILD level; FILD left; FMULP; FILD duration; FDIVP; __ftol
     if (duration <= 0) return 0;
-    return ftol(static_cast<double>(rad_level) * static_cast<double>(time_left) /
+    return ability_ftol(static_cast<double>(rad_level) * static_cast<double>(time_left) /
                 static_cast<double>(duration));
 }
 
@@ -33,11 +33,11 @@ double rad_deactivate_amount(double amt, int steps, int time_left, int level_del
 }
 
 int rad_damage(double cell_level, const AbilityRules& r) {
-    // 0x487BC0: ftol(min(cell.RadLevel, RadLevelMax))
+    // 0x487BC0: ability_ftol(min(cell.RadLevel, RadLevelMax))
     const double capped = std::min(cell_level, static_cast<double>(r.rad_level_max));
-    const int lvl = ftol(capped);
+    const int lvl = ability_ftol(capped);
     if (lvl <= 0) return 0;                                 // 0x4DA502: CMP EAX,0; JLE skip
-    return ftol(static_cast<double>(lvl) * r.rad_level_factor);   // FILD; FMUL; __ftol
+    return ability_ftol(static_cast<double>(lvl) * r.rad_level_factor);   // FILD; FMUL; __ftol
 }
 
 bool rad_apply_due(std::uint64_t frame, const AbilityRules& r) {
@@ -66,7 +66,7 @@ void RadField::radiate(const RadSite& s, double scale, bool add) {
             if (x < 0 || y < 0 || x >= w_ || y >= h_) continue;
             const double dx = (x - s.cx) * kAbilityLeptonsPerCell;
             const double dy = (y - s.cy) * kAbilityLeptonsPerCell;
-            const int d = ftol(std::sqrt(dx * dx + dy * dy));   // FUN_004CAB60 + __ftol
+            const int d = ability_ftol(std::sqrt(dx * dx + dy * dy));   // FUN_004CAB60 + __ftol
             const double amt = rad_cell_amount(d, s.spread_leptons, s.rad_level);
             double& c = cell_[static_cast<std::size_t>(y) * w_ + x];
             if (add) {
@@ -94,7 +94,7 @@ void RadField::detonate(int cx, int cy, int spread, int level, std::uint64_t fra
     };
     for (RadSite& s : sites_) {
         if (!s.alive || s.cx != cx || s.cy != cy) continue;
-        // Add (0x65AF70): cur = ftol(L*left/dur); Deactivate; L = cur + level.
+        // Add (0x65AF70): cur = ability_ftol(L*left/dur); Deactivate; L = cur + level.
         const int cur = rad_add_current(s.rad_level, s.time_left, s.duration);
         if (s.level_steps > 0 && r.rad_level_delay > 0)
             radiate(s,
@@ -163,7 +163,7 @@ int warp_remaining_init(int type_strength) { return type_strength * 10; }   // [
 
 // --- §D -----------------------------------------------------------------------
 int c4_delay_frames(double c4_delay_minutes) {
-    return ftol(c4_delay_minutes * 900.0);   // FMUL [0x7E17F8]=900.0; __ftol
+    return ability_ftol(c4_delay_minutes * 900.0);   // FMUL [0x7E17F8]=900.0; __ftol
 }
 
 // --- §E -----------------------------------------------------------------------

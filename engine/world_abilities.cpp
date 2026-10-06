@@ -100,11 +100,11 @@ void World::teleport_unit(int idx, int gx, int gy) {
         dest = g[0];
     }
     if (dest.x == u.cell_x && dest.y == u.cell_y) return;
-    // [RE: abilities.md §C1, 0x718761..0x7188B0] dist = ftol(|dest - here|)
+    // [RE: abilities.md §C1, 0x718761..0x7188B0] dist = ability_ftol(|dest - here|)
     // (2-D leptons, the combat.md §6 divergence), delay = max(dist/48, 16).
     const double dx = (dest.x - u.cell_x) * kAbilityLeptonsPerCell;
     const double dy = (dest.y - u.cell_y) * kAbilityLeptonsPerCell;
-    const int dist = ftol(std::sqrt(dx * dx + dy * dy));
+    const int dist = ability_ftol(std::sqrt(dx * dx + dy * dy));
     const int delay = teleport_delay_frames(dist, ability_rules_);
     // The parasite is ejected by the teleport (0x7188D9 -> ExitUnit).
     const int old_x = u.cell_x, old_y = u.cell_y;
@@ -214,7 +214,7 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
         const double d = std::hypot((v.fx - cx) * kAbilityLeptonsPerCell, (v.fy - cy) * kAbilityLeptonsPerCell);
         const double s = area_scale(d, radius, w.percent_at_max);
         if (s < 0.0) continue;
-        const int dmg = damage_vs(ftol(damage * s), w.verses, v.armor_ix);
+        const int dmg = damage_vs(ability_ftol(damage * s), w.verses, v.armor_ix);
         if (dmg > 0) ability_damage_unit(j, dmg);
     }
     for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
@@ -223,7 +223,7 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
         const double d = nearest_foundation_leptons(bb, cx, cy);
         const double s = area_scale(d, radius, w.percent_at_max);
         if (s < 0.0) continue;
-        const int dmg = damage_vs(ftol(damage * s), w.verses, bb.armor_ix);
+        const int dmg = damage_vs(ability_ftol(damage * s), w.verses, bb.armor_ix);
         if (dmg > 0) ability_damage_building(b, dmg);
     }
 }
@@ -389,7 +389,7 @@ void World::ability_death_pass() {
                 ability_events_.push_back({Ev::Kind::DeathWeapon, i, -1, dw.damage, 0, false});
                 ability_area_damage(i, u.fx, u.fy, dw, dw.damage);
                 if (dw.rad_level > 0)
-                    rad_.detonate(u.cell_x, u.cell_y, ftol(dw.cell_spread), dw.rad_level,
+                    rad_.detonate(u.cell_x, u.cell_y, ability_ftol(dw.cell_spread), dw.rad_level,
                                   ability_frame_, ability_rules_);
             }
             // §E: the bombed object's death detonates its bomb at once.
@@ -492,7 +492,7 @@ void World::step_abilities(double dt) {
         ability_events_.push_back({Ev::Kind::Eruption, i, -1, u.cell_x, u.cell_y, false});
         ability_area_damage(i, u.fx, u.fy, w, w.damage);
         if (w.rad_level > 0)
-            rad_.detonate(u.cell_x, u.cell_y, ftol(w.cell_spread), w.rad_level, ability_frame_,
+            rad_.detonate(u.cell_x, u.cell_y, ability_ftol(w.cell_spread), w.rad_level, ability_frame_,
                           ability_rules_);
     }
 
