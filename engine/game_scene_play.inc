@@ -54,6 +54,20 @@
             }
             return false;
         }
+        if (kind == "radar") {   // radar:cx,cy -> a radar pixel that maps to that cell
+            const std::size_t comma = arg.find(',');
+            if (comma == std::string::npos) return false;
+            const int tx = std::atoi(arg.substr(0, comma).c_str()), ty = std::atoi(arg.substr(comma + 1).c_str());
+            int best = -1;
+            for (int py = lay_.radar.y; py < lay_.radar.y + lay_.radar.h; ++py)
+                for (int px = lay_.radar.x; px < lay_.radar.x + lay_.radar.w; ++px) {
+                    int cx = 0, cy = 0;
+                    if (!radar_cell_at(px, py, cx, cy)) continue;
+                    const int d = std::abs(cx - tx) + std::abs(cy - ty);
+                    if (best < 0 || d < best) { best = d; x = px; y = py; }
+                }
+            return best >= 0 && best <= 2;
+        }
         if (kind == "building") {   // building:H:ID[:n] -> footprint centre
             int h = 0, n = 0;
             std::string id;
