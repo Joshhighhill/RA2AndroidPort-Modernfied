@@ -14601,6 +14601,7 @@ struct SlTally {
     int produced = 0;      // player units launched from the factory
     int vet_events = 0;    // promotions
     int crate_events = 0;  // crate pickups
+    int ability_events = 0;  // P4 drone/chrono/bomb/deploy/radiation events
 };
 
 // Everything the skirmish scenario needs besides the World + scene record.
@@ -14612,6 +14613,7 @@ struct SlSkirmishEnv {
     const UnitRoster& ur;
     const UnitRoster& ur_ai;
     const MinerAssets& miners;
+    const Ini& rules_ini;
     ra2engine::SkirmishConfig cfg;
     std::vector<int> inf_ft, veh_ft;
     double low_mod = 1.0, mf = 0.8, build_speed = 0.7;
@@ -14654,6 +14656,24 @@ ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
             w.add_combat_unit(x, y + 5, 1, htnk);
             placed += 2;
             dx += 2;
+        }
+    // P4 abilities: the interactive game's wiring + a terror drone, a deployed
+    // desolator, an Ivan and a chrono legionnaire beside the tank duel, so
+    // drone attachments, radiation sites, bomb timers and erase state are live
+    // across the save point.
+    wire_abilities(w, e.rules, e.rules_ini);
+    int ab = 0;
+    const struct { const char* id; int house; } kAb[] = {
+        {"DRON", 1}, {"DESO", 1}, {"IVAN", 1}, {"CLEG", 0}, {"DRON", 0}};
+    for (int r = 8; r <= 24 && ab < 5; ++r)
+        for (int dx = -r; dx <= r && ab < 5; ++dx) {
+            const int x = bx + dx, y = by + r + 2;
+            if (!free_at(x, y)) continue;
+            const ra2engine::UnitCombat c = resolve_combat_unit(e.rules, kAb[ab].id).combat;
+            w.add_combat_unit(x, y, kAb[ab].house, c);
+            if (std::string(kAb[ab].id) == "DESO") w.order_deploy((int)w.units().size() - 1);
+            ++ab;
+            dx += 1;
         }
     return w;
 }
@@ -14698,6 +14718,7 @@ void sl_skirmish_frame(SlSkirmishEnv& e, ra2engine::World& w, ra2engine::save::S
     (void)w.take_cargo_events();
     t.vet_events += static_cast<int>(w.take_vet_events().size());
     t.crate_events += static_cast<int>(w.take_crate_events().size());
+    t.ability_events += static_cast<int>(w.take_ability_events().size());
 }
 
 uint64_t sl_skirmish_hash(const ra2engine::World& w, ra2engine::save::SceneSave& sc) {
@@ -14766,14 +14787,17 @@ SlResult sl_run_skirmish(SlSkirmishEnv& e, int N, int M) {
     r.b = sl_skirmish_hash(wb, sb);
     ra2engine::save::delete_save(path);
 
-    const bool active = t.launches > 0 && t.produced > 0 && shells_at_save > 0;
+    const bool active = t.launches > 0 && t.produced > 0 && shells_at_save > 0 &&
+                        t.ability_events > 0;
     r.ok = loaded && r.a == r.b && active;
     char buf[420];
     std::snprintf(buf, sizeof buf,
                   "[saveload] skirmish N=%d M=%d file=%s bytes=%d loaded=%s shells_at_save=%d "
-                  "launches=%d produced=%d vet=%d crates=%d A=%016llx B=%016llx match=%s",
+                  "launches=%d produced=%d vet=%d crates=%d abil=%d rad_sites=%d "
+                  "A=%016llx B=%016llx match=%s",
                   N, M, name.c_str(), (int)bytes.size(), loaded ? "yes" : "NO",
                   (int)shells_at_save, t.launches, t.produced, t.vet_events, t.crate_events,
+                  t.ability_events, (int)wa.rad_field().sites().size(),
                   (unsigned long long)r.a, (unsigned long long)r.b, r.a == r.b ? "yes" : "NO");
     r.line = buf;
     if (!active) r.line += "\n[saveload] WEDGE: skirmish scenario was vacuous (no shells in flight/production)";
@@ -14877,7 +14901,8 @@ int run_demo_saveload() {
     MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
 
     // --- scenario 1: skirmish (the interactive game's World + scene record).
-    SlSkirmishEnv env{a, ua, ba, rules, ur, ur_ai, miners, ra2engine::default_skirmish_config(rules)};
+    SlSkirmishEnv env{a,      ua,         ba, rules, ur, ur_ai, miners, rules_ini,
+                      ra2engine::default_skirmish_config(rules)};
     env.cfg.crates = true;
     env.inf_ft = factory_types_for(ba, "GAPILE");
     env.veh_ft = factory_types_for(ba, "GAWEAP");

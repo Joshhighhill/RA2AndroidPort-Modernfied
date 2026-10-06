@@ -2,6 +2,10 @@
 #include "doctest.h"
 
 #include <chrono>
+#include <fstream>
+#include <regex>
+#include <sstream>
+#include <set>
 #include <cstdio>
 #include <filesystem>
 #include <map>
@@ -151,6 +155,12 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(World::Crate);
     CHECK_ARITY(World::CrateEvent);
     CHECK_ARITY(World::VetEvent);
+    // P4 abilities
+    CHECK_ARITY(WeaponSpec);
+    CHECK_ARITY(AbilityProfile);
+    CHECK_ARITY(AbilityRules);
+    CHECK_ARITY(RadSite);
+    CHECK_ARITY(World::AbilityEvent);
     // Private nested aggregates (through the SaveAccess aliases).
     CHECK_ARITY(SaveAccess::HouseAiRec);
     CHECK_ARITY(SaveAccess::HouseSuperweapon);
@@ -168,14 +178,68 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 3280);
+    CHECK(sizeof(World) == 3600);
     CHECK(sizeof(MapTriggerSystem) == 360);
     CHECK(sizeof(OreField) == 88);
     CHECK(sizeof(Occupancy) == 32);
     CHECK(sizeof(ProductionQueues) == 224);
     CHECK(sizeof(GameRandom) == 1008);
+    CHECK(sizeof(RadField) == 56);
 #else
     MESSAGE("sizeof pins are only checked on the MinGW x64 desktop ABI");
+#endif
+}
+
+// Source-level tripwire for classes whose members cannot be counted: every
+// data member named `x_` declared in the class body must be visited by the
+// SaveAccess visitor (as `<obj>.x_`). Catches even a lone bool hiding in
+// padding. Needs the source tree (RA2_SOURCE_DIR); skips without it.
+namespace {
+std::string slurp_text(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+std::set<std::string> class_members(const std::string& src, const std::string& head) {
+    std::set<std::string> out;
+    std::string s;
+    for (char ch : src)
+        if (ch != '\r') s += ch;   // CRLF checkouts
+    const std::size_t b = s.find(head);
+    if (b == std::string::npos) return out;
+    const std::size_t e = s.find("\n};", b);
+    std::string body = s.substr(b, e == std::string::npos ? std::string::npos : e - b);
+    body = std::regex_replace(body, std::regex("//[^\\n]*"), "");
+    const std::regex mem(R"(\b([a-z_0-9]+_)\s*(=[^;()]*)?;)");
+    for (std::sregex_iterator it(body.begin(), body.end(), mem), end; it != end; ++it)
+        out.insert((*it)[1].str());
+    return out;
+}
+}  // namespace
+
+TEST_CASE("saveload: every World / MapTriggerSystem data member is visited (source scan)") {
+#ifdef RA2_SOURCE_DIR
+    const std::string root = RA2_SOURCE_DIR;
+    const std::string fields = slurp_text(root + "/engine/save_fields.hpp");
+    REQUIRE(!fields.empty());
+    struct Case { const char* header; const char* head; const char* obj; std::set<std::string> skip; };
+    const Case cases[] = {
+        {"/engine/world.hpp", "class World {", "w.", {"map_"}},
+        {"/engine/map_trigger.hpp", "class MapTriggerSystem {", "s.", {"d_"}},
+    };
+    for (const Case& c : cases) {
+        const std::set<std::string> m = class_members(slurp_text(root + c.header), c.head);
+        CHECK(m.size() > 5);
+        for (const std::string& name : m) {
+            if (c.skip.count(name)) continue;
+            INFO(c.head << " member " << name << " is not serialized: add `save::io(ar, "
+                        << c.obj << name << ");` to SaveAccess in engine/save_fields.hpp");
+            CHECK(fields.find(std::string(c.obj) + name + ")") != std::string::npos);
+        }
+    }
+#else
+    MESSAGE("RA2_SOURCE_DIR not defined; source scan skipped");
 #endif
 }
 
@@ -235,6 +299,20 @@ void populate(World& w) {
     w.enable_victory(true, true);
     w.enable_projectiles(ProjectileRules{});
     w.enable_veterancy(VeterancyRules{});
+    {
+        // P4: open the abilities firewall; the E2s get a death weapon that
+        // seeds radiation, the tanks a parasite-able default profile.
+        AbilityProfile deso;
+        deso.explodes = true;
+        deso.death.valid = true;
+        deso.death.damage = 50;
+        deso.death.cell_spread = 2.0;
+        deso.death.rad_level = 200;
+        deso.death.verses.assign(11, 100);
+        w.set_ability_rules(AbilityRules{});
+        w.register_ability_profile("E2", deso);
+        w.register_ability_profile("HTNK", AbilityProfile{});
+    }
     w.grant_superweapon(1, SuperweaponType::Nuke, 30.0, 600, 3.0, 0.2,
                         {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100});
     std::vector<BuildingTypeDef> types(2);

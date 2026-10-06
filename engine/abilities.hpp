@@ -52,6 +52,7 @@ struct RadSite {
 // divergence, abilities.md §A4 / combat.md §6).
 class RadField {
 public:
+    friend struct SaveAccess;  // P7 Save/Load (engine/save_fields.hpp)
     void init(int w, int h);
     bool empty() const { return w_ == 0; }
     int w() const { return w_; }

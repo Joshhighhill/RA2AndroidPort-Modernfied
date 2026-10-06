@@ -35,6 +35,12 @@ struct SaveAccess {
         save::io(ar, f.timer_);
     }
     template <class Ar> static void queues(Ar& ar, ProductionQueues& q) { save::io(ar, q.q_); }
+    template <class Ar> static void rad_field(Ar& ar, RadField& f) {   // P4 radiation
+        save::io(ar, f.cell_);
+        save::io(ar, f.sites_);
+        save::io(ar, f.w_);
+        save::io(ar, f.h_);
+    }
     template <class Ar> static void game_random(Ar& ar, GameRandom& g) {   // P5 crate RNG
         save::io(ar, g.table_);
         save::io(ar, g.idx1_);
@@ -154,6 +160,14 @@ struct SaveAccess {
         save::io(ar, w.crate_pool_);
         save::io(ar, w.crates_);
         save::io(ar, w.crate_events_);
+        // P4 abilities
+        save::io(ar, w.abilities_any_);
+        save::io(ar, w.ability_frame_);
+        save::io(ar, w.ability_rules_);
+        save::io(ar, w.ability_profiles_);
+        save::io(ar, w.rad_);
+        save::io(ar, w.no_c4_types_);
+        save::io(ar, w.ability_events_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -219,6 +233,7 @@ template <class Ar> void fields(Ar& ar, Occupancy& v) { SaveAccess::occupancy(ar
 template <class Ar> void fields(Ar& ar, OreField& v) { SaveAccess::ore_field(ar, v); }
 template <class Ar> void fields(Ar& ar, ProductionQueues& v) { SaveAccess::queues(ar, v); }
 template <class Ar> void fields(Ar& ar, GameRandom& v) { SaveAccess::game_random(ar, v); }
+template <class Ar> void fields(Ar& ar, RadField& v) { SaveAccess::rad_field(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::HouseAiRec& v) { SaveAccess::house_ai(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::HouseSuperweapon& v) { SaveAccess::house_sw(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::TechIncome& v) { SaveAccess::tech_income(ar, v); }
@@ -356,6 +371,70 @@ template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
 }
 template <class Ar> void fields(Ar& ar, World::VetEvent& v) {
     io(ar, v.unit); io(ar, v.old_rank); io(ar, v.new_rank);
+}
+
+// --- P4 abilities ---
+template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
+    io(ar, v.valid);
+    io(ar, v.damage);
+    io(ar, v.rof);
+    io(ar, v.range);
+    io(ar, v.verses);
+    io(ar, v.cell_spread);
+    io(ar, v.percent_at_max);
+    io(ar, v.rad_level);
+    io(ar, v.kind);
+}
+template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
+    io(ar, v.fire_kind);
+    io(ar, v.c4);
+    io(ar, v.c4_range);
+    io(ar, v.teleporter);
+    io(ar, v.explodes);
+    io(ar, v.death);
+    io(ar, v.deployer);
+    io(ar, v.deploy);
+    io(ar, v.immune_radiation);
+    io(ar, v.parasiteable);
+    io(ar, v.warpable);
+    io(ar, v.no_passive_acquire);
+    io(ar, v.no_retaliate);
+    io(ar, v.suppression_threshold);
+    io(ar, v.ifv_mode);
+    io(ar, v.gunner);
+    io(ar, v.ifv_weapons);
+    io(ar, v.infantry);
+}
+template <class Ar> void fields(Ar& ar, AbilityRules& v) {
+    io(ar, v.rad_duration_multiple);
+    io(ar, v.rad_application_delay);
+    io(ar, v.rad_level_max);
+    io(ar, v.rad_level_delay);
+    io(ar, v.rad_level_factor);
+    io(ar, v.rad_verses);
+    io(ar, v.chrono_distance_factor);
+    io(ar, v.chrono_trigger);
+    io(ar, v.chrono_minimum_delay);
+    io(ar, v.chrono_range_minimum);
+    io(ar, v.c4_delay_minutes);
+    io(ar, v.ivan_damage);
+    io(ar, v.ivan_timed_delay);
+    io(ar, v.ivan_warhead);
+}
+template <class Ar> void fields(Ar& ar, RadSite& v) {
+    io(ar, v.cx); io(ar, v.cy);
+    io(ar, v.spread);
+    io(ar, v.spread_leptons);
+    io(ar, v.rad_level);
+    io(ar, v.level_steps);
+    io(ar, v.duration);
+    io(ar, v.time_left);
+    io(ar, v.timer_start);
+    io(ar, v.timer_left);
+    io(ar, v.alive);
+}
+template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
+    io(ar, v.kind); io(ar, v.a); io(ar, v.b); io(ar, v.x); io(ar, v.y); io(ar, v.building);
 }
 
 // --- unit / building types ---
@@ -525,6 +604,27 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.disguised_as_house);
     io(ar, v.detect_disguise);
     io(ar, v.vet);   // P5
+    // P4 abilities
+    io(ar, v.abil);
+    io(ar, v.abil_bound);
+    io(ar, v.frozen);
+    io(ar, v.warp_until);
+    io(ar, v.ability_fired_unit);
+    io(ar, v.ability_fired_building);
+    io(ar, v.parasite_on_me);
+    io(ar, v.parasite_next_tick);
+    io(ar, v.suppress_until);
+    io(ar, v.last_hp);
+    io(ar, v.temporal_target);
+    io(ar, v.temporal_target_building);
+    io(ar, v.warp_remaining);
+    io(ar, v.bomb_frame);
+    io(ar, v.bomb_owner);
+    io(ar, v.bomb_house);
+    io(ar, v.deployed);
+    io(ar, v.deploy_next_fire);
+    io(ar, v.ifv_current);
+    io(ar, v.death_done);
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -554,6 +654,15 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.armor_mult);
     io(ar, v.killed_by);
     io(ar, v.vet_credited);
+    // P4 abilities
+    io(ar, v.c4_applied);
+    io(ar, v.c4_frame);
+    io(ar, v.c4_by);
+    io(ar, v.bomb_frame);
+    io(ar, v.bomb_owner);
+    io(ar, v.bomb_house);
+    io(ar, v.warp_remaining);
+    io(ar, v.ability_death_done);
 }
 
 // --- production ---
