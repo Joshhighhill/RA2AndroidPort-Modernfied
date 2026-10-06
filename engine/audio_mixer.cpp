@@ -93,9 +93,15 @@ bool Mixer::play(const std::string& key, double dist_cells) {
     }
 
     const int clip = s.variants[next_rand_() % s.variants.size()];
-    voices_.push_back({key, clip, 0, s.volume * gain, s.priority, age_counter_++});
+    voices_.push_back({key, clip, 0, s.volume * gain, s.priority, age_counter_++, s.bus});
     return true;
 }
+
+void Mixer::set_bus_gain(Bus bus, int permille) {
+    bus_gain_[static_cast<int>(bus)] = std::max(0, std::min(1000, permille));
+}
+
+int Mixer::bus_gain(Bus bus) const { return bus_gain_[static_cast<int>(bus)]; }
 
 void Mixer::play_eva(int clip_id) {
     if (eva_clip_ == -1) {
@@ -119,7 +125,11 @@ void Mixer::render(int16_t* out, std::size_t frames) {
             if (v.pos < pcm.size()) {
                 // int64 intermediate: pcm(<=32767) * vol_x_gain(<=100000)
                 // overflows int32, so this must not be done in 32-bit.
-                acc += static_cast<std::int64_t>(pcm[v.pos]) * v.vol_x_gain / 100000;
+                std::int64_t c = static_cast<std::int64_t>(pcm[v.pos]) * v.vol_x_gain / 100000;
+                // [P8] bus volume; identity (1000) keeps the exact pre-P8 value.
+                const int bg = bus_gain_[static_cast<int>(v.bus)];
+                if (bg != 1000) c = c * bg / 1000;
+                acc += c;
                 ++v.pos;
             }
         }
@@ -127,7 +137,12 @@ void Mixer::render(int16_t* out, std::size_t frames) {
         if (eva_clip_ != -1) {
             const std::vector<int16_t>& pcm = bank_.pcm(eva_clip_);
             if (eva_pos_ < pcm.size()) {
-                acc += pcm[eva_pos_];  // EVA: full volume, no gain scaling
+                // EVA: full volume, no attenuation; [P8] scaled by the Voice
+                // bus only when it is not identity.
+                std::int64_t c = pcm[eva_pos_];
+                const int vg = bus_gain_[static_cast<int>(Bus::Voice)];
+                if (vg != 1000) c = c * vg / 1000;
+                acc += c;
                 ++eva_pos_;
             }
             if (eva_pos_ >= pcm.size()) {

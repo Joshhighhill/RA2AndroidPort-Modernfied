@@ -1904,6 +1904,279 @@ garrison release; the 25% special crew; C4; the three unmodeled mode flags
 `[RE-FALLBACK]` stands for the fate of in-progress production on sell (§D4): a
 sold factory takes the existing building-death queue-cancel path.
 
+## Options + Persistence
+
+The main menu's **Options** button used to open a guessed page of three greyed
+stubs (Sound / Keyboard / Display). The hunt (`docs/re/options.md`, game.exe
+`FUN_00542460` → dialog **`0xD5`**, DLGPROC `0x00542590`) showed the real thing is
+**one combined page** with four sections — Display, Game, UI, Audio — plus two
+side buttons, **Keyboard** (dialog `0xA3`) and **Network** (the IPX page `0xD7`),
+and **Main Menu**. There is no separate Sound or Display page on this path, and no
+game-speed control (that lives only on the in-game page `0xBBB`).
+
+**The page** is drawn from the dialog template's own rects (MapDialogRect 6x13 on
+the 640x480 shell, letterboxed by the shared `ShellXform`): *Visual Details*
+(0..1), *Set Game Resolution* (combobox), *Difficulty* (0..2), *Tooltips* /
+*Target Lines* / *See Hidden Objects* checkboxes, *Scroll Rate* (0..6, shown
+reversed: `pos = 6 - ScrollRate`), and *Music / Sound / Voice Volume* (0..10 with
+a numeric readout). Controls use the shell skin engine's real art and colours:
+`trakgrip.pcx` thumbs, `trofl/trofm/trofr.pcx` readout wells, `cue_i/cce_i.pcx`
+checkbox lamps, red (255,0,0) frames, yellow text, dark-red when disabled (the
+volume sliders are disabled without an audio device, exactly as
+`EnableWindow(audio_present)`). The left screen shows the static MNSCRNS map — the
+dialog has no CRT movie control. Sliders click-jump/drag with the skin proc's own
+mapping; volume drags apply live; leaving via **Main Menu** commits the controls
+(`FUN_00542280`: `DetailLevel = pos ? 2 : 0`, `ScrollRate = 6 - pos`,
+`volume = pos * 0.1`) and saves.
+
+**The settings file** is the original's `RA2.INI` `[Options]`/`[Video]`/`[Audio]`
+keys with the `OptionsClass` constructor's defaults (`GameSpeed=3`,
+`Difficulty=1`, `ScrollRate=3`, `DetailLevel=2`, `SoundVolume=0.7`,
+`VoiceVolume=1.0`, `ScoreVolume=0.5`, ...), the loader's clamps and the Westwood
+INIClass value rules (`$hex` / `...h` ints, first-letter booleans, `%f` doubles
+with `%` scaling; written back as `%d` / `yes|no` / `%f` in the original's save
+order). It lives at `SDL_GetPrefPath("ra2engine","RA2")/RA2.INI`
+(`%APPDATA%\ra2engine\RA2\` on Windows, the app's internal files dir on Android)
+— never the install dir. Saving is read-modify-write through a case- and
+order-preserving `IniDoc`, so foreign sections and comments survive byte-for-byte
+(`tests/test_settings.cpp` pins the round trip).
+
+**What the settings drive:**
+- **Volumes → three mixer buses**, as the original routes them: SoundVolume → the
+  sound-effect pool, VoiceVolume → the EVA speech slot, ScoreVolume → music (the
+  menu theme). Linear gain (`Mixer::set_bus_gain`, permille).
+- **Scroll Rate → edge scroll.** The guessed constant 40 px/frame pan is replaced
+  by the recovered algorithm: distance table `{448,384,320,256,192,128,64,32,16}`
+  × `[General] ScrollMultiplier` (.07), index `8 - accel` floored at
+  `ScrollRate + 1`, `accel` climbing once per 16 ms tick while scrolling — a slow
+  start (1 px) accelerating to 13 px/tick at the default rate (26 at fastest, 2 at
+  slowest).
+- Everything else (Difficulty, Visual Details, Target Lines, Hidden Objects,
+  Tooltips, the `[Video]` keys, ...) is persisted faithfully but has no consumer
+  in the clone yet.
+
+**Gates are untouched by construction:** the file is read only by `run_menu` (the
+desktop default path and the Android entry); no gate calls it or constructs a
+menu/game scene, `--menu-shot` renders with built-in defaults, and every mixer bus
+defaults to identity gain with the pre-P8 arithmetic path preserved bit-for-bit.
+
+**Deferred:** the Keyboard page (`0xA3`, Keyboard.ini `[Hotkey]` remapping — the
+clone has no remappable command table) and the Network/IPX page are drawn greyed;
+resolution switching (fixed-window/Android port — the combobox shows the current
+mode, inert); the in-game options page and its GameSpeed slider; slider tick and
+volume-preview sounds; the tooltip status line; page power-on transitions.
+
+
+## Projectile Flight (real ballistics)
+
+Until this phase every weapon was instant-hit: `combat.cpp::try_fire` applied
+damage the frame the ROF timer expired. Calibrated against the `BulletClass`
+hunt (`docs/re/projectile.md`) and its implement-phase RE-GATE addendum (§12),
+non-`Inviso` weapons now fire a real projectile that flies on the recovered
+integrator and only then calls the **unchanged** damage layer:
+
+- **Ballistic** (`ROT==0`: `[Cannon]` Rhino/Grizzly/Apocalypse, `[FlakTProj]`
+  Flak Track, `[Ballistic]` Destroyer). Launch speed is **not** `Speed=` — it is
+  `ftol(sqrt(d·Gravity·1.2))` recomputed per shot (`FUN_00771E90` →
+  `FUN_0048AAA0`), capped at half the distance, with **`Gravity=6` read from
+  `[AudioVisual]`** (it does not exist in `[General]`). The launch angle comes
+  from the **unwound** arcing solver (`FUN_0048A8E0`, §12.1: an exact quadratic
+  in the horizontal speed squared, `θ = acos(√t/v)`, plus the wrapper's
+  `d+1` derivative test that recovers downward shots and a flat 45° whenever the
+  target is above the muzzle), quantised through the 16-bit binary angle like
+  `Fire`. Each logic frame: `V.z −= 6; pos = ftol(pos + V)` (semi-implicit Euler,
+  integer-lepton positions). A Rhino shell at max range flies ~16 frames.
+- **Vertical** (`[BlimpBombP]`, the Kirov bomb): leaves at **1 lepton/frame**
+  (§12.3), gains `Acceleration=1` per frame up to the weapon `Speed` (51),
+  direction frozen — **~37 frames (~2.5 s) from cruise height**, the single
+  largest error of the old instant model.
+- **Termination** (§7 + §12.2, `LevelHeight=104` now CONFIRMED from its static
+  initialiser): ground impact; arrival in the true target's cell below 208;
+  collision with the first hostile unit in the cell within 127 leptons (snaps onto
+  it unless `Inaccurate`); off-map removal without damage; out-of-speed; the
+  `IsBlocked` −416 floor. `Explode` snaps within 32 leptons.
+- **Detonation** reuses `apply_spread_damage` (CellSpread ≥ 1) or the extracted
+  `deliver_unit_hit` / `deliver_building_hit` — the old `try_fire` tails moved
+  verbatim. A target that moved away is a **miss**; a target that died mid-flight
+  leaves the shell to detonate on its cell (§8).
+- **Inviso weapons stay instant.** All infantry small arms are `[InvisibleLow]`,
+  a one-frame teleport in the original (§6.3) — the old path is already faithful.
+
+**Inaccuracy and the RNG decision.** `[FlakTProj]` scatter (§5.2,
+`Random(0, BallisticScatter)·dist/Range` around a uniform angle) and the §5.1
+`Random(BS/2, BS)` form are drawn from a **dedicated projectile RNG**: the
+project's xorshift32 with a fixed seed, consumed only by scatter draws in launch
+(ascending attacker) order, wrapped in an **exact** reproduction of
+`Randomizer::Random(lo,hi)`'s range mapping (`FUN_0065C220`: swap, top-bit
+mask, reject > range — inclusive and unbiased). The *distribution* is the
+original's; the *stream* is ours (the original's single lockstep
+`Scenario->Random` is unreachable). It is deliberately **not** shared with the
+ore or AI streams, so firing a Flak Track can never perturb ore growth or AI
+picks — each system's reproducibility stays independent.
+
+**The firewall.** Combat sits on nearly every gate path, so the flight behaviour
+is gated three ways: (1) `World::projectiles_enabled_` is opened only by
+`World::enable_projectiles`, called by the interactive `GameScene` and
+`--demo-projectile` and by nothing else; (2) `step_combat` gained a trailing
+`std::vector<ProjectileLaunch>* launches = nullptr` — `World::step` passes it
+only when enabled, and with `nullptr` every shot takes the pre-phase code
+(the moved damage tails are statement-for-statement identical); (3)
+`step_projectiles` is a pure insertion before `step_combat` that returns
+immediately when disabled. Projectile state, events and RNG are not read by
+`world_hash`, and the projectile draw list is empty in every existing demo.
+
+**Gate:** `--demo-projectile` (`projectile_hash=1ff09b8a3d3eecdd`) runs five
+scenarios, rendered then headless, and self-compares: *firewall* (no
+`enable_projectiles` → the Rhino's hit lands the frame it fires), *arc* (launch
+speed 90 == the §0.2 formula of the FLH muzzle→target distance, 13 flight
+frames, apex 175 > muzzle 100, the 90 damage lands only at detonation), *miss*
+(the Conscript walks off; the shell detonates harmlessly on its old cell),
+*kirov* (speed 1 from z=610 = 750−140 FLH, 37 frames, the 2-cell splash hits
+both Conscripts), *flak* (5 scattered `[FlakTProj]` shots, identical across
+runs). The mid-flight PNG shows both Rhinos' shells at the top of their arcs.
+
+**Deviations / cuts** (spec `docs/superpowers/specs/2026-10-06-projectile-design.md`):
+- **Homing (`ROT>0`) stays instant** — `FUN_005B1B20` steering is only partly
+  unwound and `MissileSpeedVar`/`MissileROTVar`/`Acceleration` defaults are not
+  pinned; implementing it now would be guessing.
+- `[FlakProj]` AA scatter (§5.3), the Inviso cliff/wall line trace, the lofted
+  root (needs an obstacle LOS model), `Bouncy`/`Airburst`/`Cluster`/`Shrapnel`
+  (no roster weapon sets them) — out of scope.
+- The combat plane is flat (floor 0, §11.6); libm `acos`/`sin`/`cos` replace the
+  game's trig tables; yaw is an exact direction vector (the 16-bit yaw
+  quantisation is < 0.2 lepton at these ranges).
+- The non-arcing pitch's sign toward a lower target and the unidentified
+  `TechnoType+0x6A4` gate on the speed-1 launch are PROBABLE (§12.3).
+- Projectile art (`120MM`/`ZBOMB` SHPs) is a cosmetic carry-forward — shells
+  draw as rimmed dots with a ground shadow.
+
+## Map Triggers / Scripting (P9)
+
+The campaign substrate. A map's own scripting — `[Triggers]`, `[Events]`,
+`[Actions]`, `[Tags]`, `[CellTags]`, `[VariableNames]` (with `[TeamTypes]` for
+team references) — is parsed and run with `gamemd.exe`'s semantics, recovered
+in `docs/re/map-triggers.md` from the ReadINI functions, `TagClass::RaiseEvent`,
+`TriggerClass::RegisterEvent`, `TEventClass::HasOccurred` (the 62-kind predicate
+switch), `TActionClass::Execute` (the 146-way action switch) and the two raise
+loops. This is a different system from the AI-3 `[AITriggerTypes]` engine.
+
+**What the original does (and we now do):**
+- **Two raise loops.** Every frame `LogicClass::AI` walks the *logic* tag list
+  in order and per tag tries kinds `27/28/36/37` (only when a variable changed),
+  `13`, `51`, then `14` (only when the mission timer just expired), stopping at
+  the first raise that fires. Every **8th** frame each house walks its own tag
+  list **last-to-first** raising kind `8` (AnyEvent). Tags join the lists at
+  scenario start from their triggers' attach flags.
+- **AND of events, latched only for repeating tags.** A trigger fires when all
+  its events hold in one evaluation; only Persistent tags latch one-shot object
+  events. Events are stored **reversed** (ReadINI prepends), which decides which
+  timer event wins when a trigger has two.
+- **Persistence.** Volatile fires once and **kills its whole tag** (sibling
+  triggers in the chain die with it); SemiPersistant fires when the last attached
+  object's events fire; Persistent fires every time and re-arms its timers.
+- **Timers.** ElapsedTime = `Value·15` frames, RandomDelay =
+  `(Value/2 + rand[0,Value])·15`, ElapsedScenarioTime = `Value ≤ frame/15`.
+  Timers re-arm on construction, on EnableTrigger (even if already enabled), on
+  a Persistent fire, and **whenever a referenced global/local changes** — so a
+  `LocalCleared + ElapsedTime` trigger restarts its countdown on every change.
+- **Index spaces.** House values index the rules `[Countries]` list with the
+  map's new countries appended (on `sov07tmd`, `_Lose` waits on `DestroyedAll 15`
+  = `Player`); BuildingType values index rules `[BuildingTypes]`
+  find-or-allocated (rulesmd lists `NAPSYA` twice, so the map's `300` is
+  `YACNST`; `24`/`54` are `NAIRON`/`NAMISL`, matching the trigger names).
+
+**Coverage, ranked by the 44 stock campaign maps** (4,341 triggers, 4,857
+events, 13,871 actions; usage counts in parentheses):
+
+| status | events | share | actions | share |
+|---|---|---:|---|---:|
+| **engine** — evaluated/executed in `MapTriggerSystem` | 13 (2022), 36 (551), 47 (342), 37 (298), 8 (103), 51 (59), 14 (8), 27/28 (4/4) | 69.8% | 53 (2706), 54 (1836), 56 (354), 57 (171), 12 (84), 3 (81), 74 (76), 2 (55), 1 (43), 27 (19), 23 (18), 28 (13), 0 (12), 24 (6), 22 (3), 75 (3), 68 (2), 25 (2) | 39.5% |
+| **host** — resolved by the engine, answered/executed by the `TriggerHost` | 32 (121), 57 (116), 11 (105), 61 (67), 19 (37), 10 (29), 9 (16), 17 (15), 20 (13), 21 (12), 30 (12), 16 (11), 15 (9), 58 (7), 60 (7), 52 (3), 22 (1) | 12.0% | 4 (1208), 7 (941), 17 (615), 80 (425), 5 (403), 107 (84), 6 (66), 125 (40), 16 (11) | 27.3% |
+| **API** — object/cell kinds, implemented behind `raise_tag`/`raise_cell`, not yet raised by the world | 1 (295), 48 (293), 4 (114), 6 (35), 44 (32), 33 (28), 29 (17), 31 (14), 7 (14), 59 (11), 26 (9), 25 (4), 41 (4), 40 (3), 39 (1), 43 (1), 2 (1) | 18.0% | — | — |
+| **recorded** — presentation only (speech, sound, text, movie, camera, radar, input lock, flashes), logged with parameters | — | — | 99 (1289), 21 (570), 11 (451), 55 (372), 19 (310), 112 (84), 100 (79), 48 (76), 41 (68), 113 (58), 46 (51), 116 (49), 47 (46), 104 (45), 114 (37), 115 (34), 131 (30), 103 (19), 10 (6), 20 (4) | 26.5% |
+| **unimplemented** — logged / evaluates false | 55 (4), 56 (4), 5 (1) | 0.2% | 14 (186), 108 (130), 63 (100), 38 (93), 36 (64), 32 (51), 101 (38), 9 (29), 81 (25), 37 (21), 60 (18), 88 (18), 135 (16), 121 (12), 40 (11), 111 (10), and 26 kinds with ≤ 9 uses each | 6.6% |
+
+The gate host answers house events from the live `World` (owned buildings /
+vehicles / infantry by house, per-BuildingType counts, credits, power ratio,
+`Factory=` buildings, techno counts) and executes reinforcements (7/80/107),
+reveal (16/17) and CreateBuilding (125); it does not track destroyed-object
+counters (15/16) or last-built types (19–22), and records CreateTeam /
+DestroyTeam / AllToHunt without executing them.
+
+**The 20th determinism gate**, `--demo-triggers`, runs the default gate map
+(`sov07tmd.map`, YR Soviet 7 — the map every gate already loads) **with its own
+126 triggers** for 2,700 frames: the map's 10 houses configured from `[Houses]`,
+its roster-known `[Structures]`/`[Units]`/`[Infantry]` placed, then the trigger
+system ticked at the top of every frame. It fires 18 triggers (14 from the logic
+loop, 4 from the house loop, 2 driven by a variable change — the crypt
+LocalSet at frame 0 firing two `Lights Out` triggers through raise kind 27 at
+frame 1), places TaskForce reinforcements at their team waypoints, and records
+the speech/lock-input lines. Rendered and headless runs are byte-compared;
+`trigger_hash=20347f4dfa462eb4`, `lines=76`. Wedge guards: no logic fire, no
+variable fire, no house fire, no structure placed.
+
+**Firewall.** `engine/map_trigger.{hpp,cpp}` is World-free; the only code that
+constructs a `MapTriggerSystem` is `run_demo_triggers`. `World`, `MapFile`,
+`load_assets` and every other gate path are untouched, so the 19 prior gates are
+unaffected by construction.
+
+**Deviations we take** (`map-triggers.md` §7): RandomDelay draws the original's
+inclusive range from our own seeded generator; presentation actions are recorded
+not rendered; object/cell events are not raised by world objects yet; map
+TeamTypes have no TeamClass, so reinforcements are placed directly at the
+waypoint (no transport delivery, no script) and CreateTeam is recorded; the
+game-over flag that stops raises after an outcome is not modelled.
+
+**Carry-forwards (P10):** the campaign object loader (tags on placed objects,
+`InstanceCount`, cell-entry raises), TeamClass execution for map teams,
+destroyed/last-built house counters, MakeAlly/MakeEnemy, ChangeHouse,
+CreateCrate, Apply100Damage, outcome → mission end.
+## Veterancy + Crates (P5)
+
+Calibration authority: `docs/re/veterancy.md` (Ghidra hunt of YR 1.001
+`gamemd.exe` + this install's `rulesmd.ini`); spec
+`docs/superpowers/specs/2026-10-06-veterancy-crates-design.md`, plan
+`docs/superpowers/plans/2026-10-06-veterancy-crates.md`.
+
+**Veterancy** replaces the capture phase's minimal spawn-baked rank-1:
+
+- Experience is the original's `float` (`Techno+0x150`): each kill adds
+  `victimCost / (killerCost * VeteranRatio)` (computed in double, cap compared on
+  the unrounded sum, stored as float); veteran victims count x2, elite x3,
+  allied 0; `DontScore` victims and `Trainable=no` killers give nothing;
+  destroyed buildings credit their roster Cost. Veteran = `[1,2)`, elite `>= 2`
+  (`VeteranCap=2`).
+- Per-type `VeteranAbilities`/`EliteAbilities` (elite inherits the veteran list)
+  gate the exact integer chains: FIREPOWER `ftol(d*1.1)`, STRONGER
+  `ftol(d/1.5)` then `max(d,1)` BEFORE the Verses, ROF `ftol(r*0.6)`, FASTER
+  `ftol(s*1.2)`, SIGHT (dead: `VeteranSight=0.0`). Elite swaps to `ElitePrimary`.
+- Elite `SELF_HEAL` (and `SelfHealing=yes` types such as HARV/APOC) gain +1 HP on
+  the global `ftol(RepairRate*900)=14`-frame phase.
+- Chevrons: YR `PIPS.SHP` frame 14 (veteran) / 15 (elite).
+- The x87 runs at 53-bit precision (CRT `_controlfp(_PC_53)`), so plain IEEE
+  double arithmetic reproduces every boundary (e.g. `5*0.6 == 3.0`).
+
+**Crates** (lobby CRATES toggle): exact `ScenarioClass::Random` port (R250 +
+psdes seeding) for all crate draws; `clamp(players, CrateMinimum, CrateMaximum)`
+initial crates; lifetime `ftol((A-B)*rand+B)` with `A=Regen*1800`,
+`B=Regen*450`, relocation on expiry; pickup = cumulative-weight `[Powerups]`
+pick, the multiplayer conversion rules (e.g. a second Armor crate on an armored
+unit becomes Money), replacement placed BEFORE the effect; effects Money
+`Random(2000,2900)`, Unit (CrateGoodie pool), HealBase, Reveal, Armor x1.5 /
+Firepower x2.0 (every Techno of any house within `CrateRadius`=768 leptons),
+Speed x1.2 (foot units), Veteran (+1 level).
+
+**Firewall:** everything runs only after `World::enable_veterancy` /
+`enable_crates`, called solely by `GameScene` (the interactive game) and
+`--demo-veterancy`. `launch_skirmish` (shared with `--demo-skirmish`) is
+untouched; a legacy World keeps the spawn-baked rank-1 path verbatim.
+
+**Cut / carried forward:** ROF `Random(0,2)` rearm jitter (found in the binary,
+contradicting combat.md section 5 -- would move every combat gate); promotion
+EVA/sound and the elite flash render; SCATTER/CLOAK/SENSORS/... abilities; the
+zero-weight powerups; the forced-MCV crate; spawner/occupant kill re-routing;
+aircraft FASTER; `NearbyLocation`/`MapRect` are ring-search/grid-bound
+fallbacks; the Unit crate draws once from the injected pool.
 
 ## Building
 
@@ -2217,6 +2490,9 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-skirmish` | `skirmish_hash=e9ad3f1fd88495f9` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, 3 combatant slots in two alliance-teams (0+2 allied vs 1, no neutral); wedge guards armed (`docs/re/skirmish.md`) |
 | `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
 | `--demo-repair` | `repair_hash=30e49667c9c6e52d` | `deterministic=yes lines=8`; repair = a GLOBAL 14-frame phase (`trunc(RepairRate*900)`, NOT 15) × +8 HP × `stepCost=max(1,trunc((Cost/(Strength/RepairStep))*RepairPercent))` with BOTH divisions integer (GACNST 3/step, GAPOWR 1/step); `steps=6 first=0 gap=14 heal8=yes charge=yes`; auto-stop at full; silent stop when broke (`hp=718->718`, no partial step, no free repair); refusals `enemy/under_construction/unsellable_caoild/already_selling=refused`, `full_health_conyard_sellable=yes` (NO last-ConYard rule); ConYard sell = a 30-frame MISSION, `paid_early=no paid=1500 survivors=3`, footprint freed; GAREFN `Soylent` sale `paid=300 survivors=1`; 25 wedge guards armed (`docs/re/repair-sell.md`) |
+| `--demo-projectile` | `projectile_hash=1ff09b8a3d3eecdd` | `deterministic=yes`; P2 Projectile flight: firewall (instant path when not enabled, `events=0`), Rhino arc (`speed=90` == `ftol(sqrt(d*6*1.2))`, 13 frames, apex 175, damage only at detonation), miss (target walked off -> `victim=-1 damage=0`), Kirov bomb (`speed=1` from `z=610`, 37 frames, both splash targets hit), Flak Track scatter (5/5 shots scattered by the dedicated RNG) (`docs/re/projectile.md` §12) |
+| `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
+| `--demo-veterancy` | `veterancy_hash=1f02e4c09dba0964` | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 
 ## Android (arm64-v8a) cross-compile
 

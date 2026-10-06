@@ -52,6 +52,27 @@ int damage_vs(int damage, const std::vector<int>& verses, int ai);
 void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ,
                          const Unit& attacker, const Unit& center);
 
+// Projectile phase (P2) [RE: projectile.md §10]: one shot whose projectile
+// flies. Emitted by step_combat ONLY when the caller passes a non-null
+// `launches` sink (World's projectiles_enabled_ firewall); World turns each
+// into a Projectile in launch (ascending attacker) order. Exactly one of
+// target_unit / target_building is >= 0.
+struct ProjectileLaunch {
+    int attacker = -1;
+    int target_unit = -1;
+    int target_building = -1;
+};
+
+// P2: the single-target damage tail (damage_vs, idle retaliation, death) --
+// the pre-P2 try_fire else-branch extracted verbatim, shared by the instant
+// path and World's projectile detonation.
+void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx, int victim_idx);
+
+// P2: the attack-building damage tail (damage_vs vs armor, kill_building, clear
+// attackers) -- extracted from step_combat's building branch.
+void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int attacker_idx, int b_idx);
+
 // A request from step_combat for World to path a unit toward a cell (pursuit
 // of an explicitly-ordered target, or return to a guard anchor). step_combat
 // never touches Unit::path/find_path itself -- it only asks; World (later
@@ -104,7 +125,12 @@ struct MoveRequest {
 // auto-acquire; nothing in `world` is mutated. With houses_configured_ FALSE
 // (every existing gate + host test), is_enemy(a,b) == (a != b) -> the targeting
 // scan is byte-identical to the pre-alliances inlined `v.house != self_house`.
+// Projectile phase (P2): `launches` (default nullptr) is the firewall. nullptr
+// -> every shot hits instantly exactly as before (byte-identical); non-null ->
+// a shot whose Unit::w_proj flies() appends a ProjectileLaunch instead of
+// dealing damage (ROF/fire_flash reset unchanged).
 std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& units,
-                                     std::vector<Building>& buildings, Occupancy& occ, double dt);
+                                     std::vector<Building>& buildings, Occupancy& occ, double dt,
+                                     std::vector<ProjectileLaunch>* launches = nullptr);
 
 }  // namespace ra2engine

@@ -150,6 +150,14 @@ std::string Rules::weapon_report(const std::string& w) const {
     return ini_->get(w, "Report", "");
 }
 
+std::string Rules::weapon_projectile(const std::string& w) const {
+    return ini_->get(w, "Projectile", "");
+}
+
+int Rules::weapon_speed(const std::string& w) const {
+    return ini_->get_int(w, "Speed", 0);
+}
+
 std::vector<int> Rules::verses(const std::string& warhead) const {
     // Verses=100%,80%,... -> percent ints, one per armor class, in ini order.
     // Tolerates spaces and a missing '%' (the game's parser reads the number).
@@ -217,12 +225,6 @@ std::vector<std::string> Rules::prerequisite_group(const std::string& group) con
     return split_trim_upper(ini_->get("General", "Prerequisite" + group, ""));
 }
 
-std::string Rules::section_string(const std::string& id, const std::string& key,
-                                  const std::string& fallback) const {
-    const std::string v = strip_inline_comment(ini_->get(id, key, ""));
-    return v.empty() ? fallback : v;
-}
-
 std::string Rules::general_string(const std::string& key, const std::string& fallback) const {
     const std::string v = strip_inline_comment(ini_->get("General", key, ""));
     return v.empty() ? fallback : v;
@@ -255,6 +257,18 @@ bool Rules::section_flag(const std::string& id, const std::string& key, bool fal
     const std::string v = ini_->get(id, key, "");
     if (v.empty()) return fallback;
     return is_truthy(v);
+}
+
+std::string Rules::section_string(const std::string& section, const std::string& key,
+                                  const std::string& fallback) const {
+    std::string v = ini_->get(section, key, "");
+    const std::size_t sc = v.find(';');
+    if (sc != std::string::npos) v = v.substr(0, sc);
+    while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
+    std::size_t a = 0;
+    while (a < v.size() && std::isspace(static_cast<unsigned char>(v[a]))) ++a;
+    v = v.substr(a);
+    return v.empty() ? fallback : v;
 }
 
 int Rules::mp_money() const {
