@@ -22,9 +22,9 @@ assert quits == 0                             @G-01:B
 if scene == "shell:Main Menu" then click button "Single Player"
 click button Skirmish
 require scene == lobby
+# Back (and Esc) return to the Skirmish page's parent, Single Player (SK-35).
 click back
-assert scene == "shell:Main Menu"
-click button "Single Player"
+assert scene == "shell:Single Player"
 click button Skirmish
 key esc                                       @G-01:B
 wait 2
@@ -34,6 +34,7 @@ if scene == lobby then click back
 if scene == "shell:Main Menu" then click button "Single Player"
 if scene == "shell:Single Player" then click button Skirmish
 require scene == lobby
+click slider:speed=3
 click start
 until 90 scene == game
 require scene == game
