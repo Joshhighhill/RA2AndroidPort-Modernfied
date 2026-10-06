@@ -1,0 +1,114 @@
+# controls -- agent B's --controls-selftest core folded into a --play script
+# (engine/controls_selftest_steps.inc is the full ~140-step version). The
+# ORIGINAL control scheme: left-click selects AND orders, right-click cancels /
+# deselects, Esc backs out of shell pages and opens the in-game options menu,
+# KeyboardMD.ini hotkeys. Uses B's dotted probe keys (absent = 0).
+set render_every 300
+set on_quit continue
+
+# --- shell: Esc never quits; it backs out --------------------------------------
+key esc                                       @G-01:B
+wait 2
+assert quits == 0                             @G-01:B
+click button "Single Player"
+key esc                                       @G-01:B
+wait 2
+assert scene == "shell:Main Menu"             @G-01:B
+click button "Single Player"
+click button Skirmish
+key esc                                       @G-01:B
+wait 2
+assert scene != lobby                         @G-01:B
+if scene == "shell:Main Menu" then click button "Single Player"
+if scene == "shell:Single Player" then click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+
+# --- Esc opens / closes the options menu ------------------------------------------
+key esc                                       @G-01:B
+wait 2
+assert menu == 1                              @G-01:B
+key esc                                       @G-01:B
+wait 2
+assert menu == 0                              @G-01:B
+
+# --- select, left-click move, right-click deselect ---------------------------------
+click unit 0:E1
+assert sel >= 1                               @G-05:B
+click unit 0:E1 +5 +0                         @G-05:B
+wait 3
+assert sel.moving >= 1                        @G-05:B
+click unit 0:E1 +5 +3 right                   @G-05:B
+wait 1
+assert sel == 0                               @G-05:B
+
+# --- building selection ----------------------------------------------------------
+click building 0:GACNST                       @G-10:B
+wait 1
+assert selb >= 0                              @G-10:B
+click building 0:GACNST +4 +4 right
+wait 1
+assert selb == -1                             @G-10:B
+
+# --- groups, stop, tabs, repair/sell ------------------------------------------------
+click unit 0:E1
+key 1 ctrl                                    @G-04:B
+click unit 0:E1 +8 +8 right
+wait 1
+assert sel == 0
+key 1                                         @G-04:B
+wait 1
+assert sel == 1                               @G-04:B
+click unit 0:E1 +6 +0
+wait 3
+assert moving.0 >= 1
+key s                                         @G-04:B
+until 30 moving.0 == 0                        @G-04:B
+key w                                         @G-04:B
+wait 1
+assert tab == 1                               @G-04:B
+key e                                         @G-04:B
+wait 1
+assert tab == 2                               @G-04:B
+key r                                         @G-04:B
+wait 1
+assert tab == 3                               @G-04:B
+key q                                         @G-04:B
+wait 1
+assert tab == 0                               @G-04:B
+key k                                         @G-04:B
+wait 1
+assert base_mode == repair                    @G-04:B
+key l                                         @G-04:B
+wait 1
+assert base_mode == sell                      @G-04:B
+click unit 0:E1 +8 +8 right                   @G-04:B
+wait 1
+assert base_mode == none                      @G-04:B
+
+# --- build-queue semantics: left start, right hold, left resume, right x2 abandon ---
+click cameo GAPOWR
+wait 1
+assert queue(structure) == GAPOWR
+click cameo GAPOWR right                      @G-07:B
+wait 1
+assert held == 1                              @G-07:B
+click cameo GAPOWR                            @G-07:B
+wait 1
+assert held == 0                              @G-07:B
+let c0 = credits
+click cameo GAPOWR right                      @G-07:B
+click cameo GAPOWR right                      @G-07:B
+wait 1
+assert queue(structure) == ""                 @G-07:B
+click cameo GAPOWR
+until 900 queue_ready(structure) == 1
+click cameo GAPOWR
+assert placing == 1
+key esc                                       @G-01:B
+wait 2
+assert placing == 0                           @G-01:B
+assert menu == 0                              @G-01:B
+end

@@ -2978,3 +2978,40 @@ and verified in the REAL scene tree by `ra2engine --controls-selftest <outdir>`
 - **Touch (G-70/G-71)**: tap = left click, drag = band box, long-press or
   two-finger tap = right click, two-finger drag = pan; SDL's synthetic mouse
   events are disabled, and touches never edge-scroll.
+
+## Real-play verification harness (`--play`, G0)
+
+`ra2engine --play <script.play> [--out <dir>]` plays the REAL game -- main menu
+-> Single Player -> lobby / New Campaign -> `GameScene` -- from a small text
+script, in a hidden window, at a fixed 1/15 s logic tick, and checks what the
+player would see. It is the acceptance bar for every gap fix ("real play"),
+not a byte-identity gate: no existing gate hash depends on it.
+
+* **Input** goes through the scenes' real `handle()` as scripted `InputEvent`s
+  (built on agent B's `EventSource` / `DriverHooks` / `run_scene_driver(src,
+  fixed_dt, hooks)` groundwork; keys via the production `key_event_from_sdl`).
+  Targets are semantic: `click button "Single Player"`, `click start`,
+  `click cameo:GAPOWR`, `click unit 0:E1 +5 +0`, `click building 0:GACNST`,
+  `place auto`, `key esc`, `key 1 ctrl`.
+* **State** comes from each scene's probe (G's typed `Scene::play_probe` merged
+  with B's integer `Scene::probe`): credits, units/buildings per house and type,
+  harvester states, sidebar contents and `can_build`, queues, armed modes,
+  menu/dialog state, victory (`outcome` = what the session shows,
+  `world_outcome` = the World's own verdict), campaign objectives/triggers.
+* **Checks**: `assert`, `require`, `until N <expr>`, `if <expr> then <cmd>`,
+  `let`; every check can carry `@<G-ID>:<owner>` so a failure names the gap
+  issue it belongs to. A missing probe key reports `missing-probe:<key>`
+  instead of crashing (scripts written for a later phase degrade gracefully).
+* **Output**: `PLAY PASS/FAIL` lines, PNG shots, `play_state` every 15 frames,
+  `play_result=PASS|FAIL`, a deterministic `play_hash`, `<out>/result.txt`;
+  exit code 0 / 1 (failures) / 2 (script error) / 3 (exception). RA2.INI and
+  saved games are isolated under `<out>/pref/` (`RA2_PREF_DIR`).
+
+Scripts live in `scripts/play/` (format and probe keys: `scripts/play/README.md`):
+`sk-a` / `sk-s` (Allied / Soviet skirmish playable core), `sk-a-lose`,
+`sk-end` (end of a skirmish), `m-all01` / `m-sov01` (campaign mission 1),
+`shell-smoke` (menus, Esc, save/load, Abort/Exit), `controls` (agent B's
+controls self-test as a script) and `probe-*` self-checks. Run them ONE at a
+time (`pwsh scripts/play/run-all.ps1`); ~15 s start-up, then ~400 frames/s with
+`set render_every 300`. Expected results per tree and the G-ID / owner of every
+failing step: `docs/gap/PLAYTEST-STATUS.md`.

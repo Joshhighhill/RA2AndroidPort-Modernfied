@@ -60,6 +60,7 @@ TEST_CASE("play_lang: expression evaluation, families, missing keys") {
     CHECK(eval_expr("units(1,E2) == 0", p, vars, d) == Eval::True);       // zero family
     CHECK(eval_expr("buildings(0) > 0", p, vars, d) == Eval::Missing);    // not a family
     CHECK(d == "missing-probe:buildings(0)");
+    CHECK(eval_expr("sel.moving == 0", p, vars, d) == Eval::True);        // B's dotted keys: absent = 0
     CHECK(eval_expr("scene == game", p, vars, d) == Eval::True);          // bare RHS literal
     CHECK(eval_expr("scene == \"game\"", p, vars, d) == Eval::True);
     CHECK(eval_expr("scene != shell", p, vars, d) == Eval::True);

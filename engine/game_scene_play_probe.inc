@@ -279,7 +279,14 @@
                 for (const UnitRoster* r : {&ur_, &ur_ai_})
                     for (const ra2engine::UnitTypeDef& d : r->defs)
                         if (!def && d.id == a[1]) def = &d;
-                if (!def) return "no roster def " + a[1] + " (player/AI rosters only)";
+                // Not in either roster: resolve straight from rules (as the crews are).
+                ra2engine::UnitTypeDef tmp;
+                if (!def) {
+                    tmp.id = a[1];
+                    tmp.combat = resolve_combat_unit(rules_, a[1]).combat;
+                    if (tmp.combat.image.empty()) return "unknown unit type " + a[1];
+                    def = &tmp;
+                }
                 const int h = std::atoi(a[2].c_str());
                 int x = 0, y = 0;
                 if (a[3] == "cell") {

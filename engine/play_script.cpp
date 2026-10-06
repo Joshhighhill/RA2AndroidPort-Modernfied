@@ -358,6 +358,14 @@ bool resolve_operand(const std::string& tok, const ProbeData& p,
     }
     if (auto it = p.n.find(tok); it != p.n.end()) { out.is_num = true; out.num = it->second; return true; }
     if (auto it = p.s.find(tok); it != p.s.end()) { out.is_num = false; out.str = it->second; return true; }
+    // Agent B's integer probe keys are dotted ("units.0.GI", "sel.moving") and
+    // read 0 when absent (B's contract) -- keep that for them.
+    if (tok.find('.') != std::string::npos && tok.find('(') == std::string::npos &&
+        tok[0] != '"') {
+        out.is_num = true;
+        out.num = 0.0;
+        return true;
+    }
     const std::size_t par = tok.find('(');
     if (par != std::string::npos && p.zero_families.count(tok.substr(0, par))) {
         out.is_num = true;

@@ -95,17 +95,19 @@ until 3000 units(1) > $u1                     @G-60:D
 until 6000 units_lost(0) > $ul0 or hp_lost(0) > $hl0 @G-60:D
 shot ai
 
-# --- 7. Tesla Coil kills attackers ------------------------------------------------------
+# --- 7. defences: the Tesla Coil is offered; a Sentry Gun kills attackers --------
 click tab:1
-click cameo:TESLA                             @G-26:A
-until 900 queue_ready(defense) == 1           @G-26:A
-click cameo:TESLA                             @G-26:A
-place auto                                    @G-26:A
-until 300 built(0,TESLA) == 1                 @G-26:A
+assert cameo(TESLA) == 1                      @G-26:A
+click cameo:NALASR
+until 900 queue_ready(defense) == 1
+click cameo:NALASR
+place auto
+until 300 built(0,NALASR) == 1
 let ul1 = units_lost(1)
-cheat spawn E1 1 building 0:TESLA +3 +0       @G-26:A
-cheat spawn E1 1 building 0:TESLA +3 +1       @G-26:A
+cheat spawn E1 1 building 0:NALASR +3 +0
+cheat spawn E1 1 building 0:NALASR +3 +1
 until 450 units_lost(1) >= $ul1+2             @G-40:C
+shot defence
 
 # --- 8. win path ----------------------------------------------------------------
 cheat kill_house 1
