@@ -1,0 +1,17 @@
+# sk-end -- the skirmish LOSE path, fast: start the default skirmish, remove
+# every house-0 object (dev cheat), and require the session to end LOST through
+# the real GameScene (BorrowedTime -> result scene). The WIN path is the last
+# section of sk-a.play. EXPECTED TO FAIL on master 63edea6 (G-02).
+set render_every 300
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+require scene == game
+cheat kill_house 0
+until 60 world_outcome == LOST
+until 900 outcome == LOST                     @G-02:F
+shot lost
+if scene == result then click menu
+until 60 scene == "shell:Main Menu"           @G-02:F
+end

@@ -1,0 +1,147 @@
+# SK-A -- playable core, human ALLIED vs 1 Soviet AI (Normal), stock MP map,
+# $10000, crates off (ROADMAP-playable.md "core playthroughs"; GAP-ANALYSIS.md
+# "Playable core"). Drives the REAL shell -> lobby -> GameScene.
+#
+# EXPECTED TO FAIL on master 63edea6. Every assertion carries @<G-ID>:<owner>;
+# the expected failures are tabled in docs/gap/PLAYTEST-STATUS.md. Soft
+# failures do not stop the run, so one run lists every broken step.
+# Control model = the ORIGINAL one (left-click orders the selection, G-05).
+set render_every 300
+set on_quit continue
+
+# --- lobby ------------------------------------------------------------------
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+assert side(0) == ALLIED
+assert side(1) == SOVIET
+assert opt(CRATES) == OFF
+assert cash == 10000
+click start
+until 90 scene == game
+require scene == game
+shot start
+
+# --- 1. start state -----------------------------------------------------------
+assert credits == 10000                       @G-21:A
+assert own_on_screen > 0                      @NEW-1:F
+assert units(0,AMCV) == 1                     @G-23:F
+assert buildings(0,GACNST) == 0               @G-23:F
+assert sw(0) == 0                             @G-25:A
+
+# --- 2. deploy the MCV (D) ---------------------------------------------------------
+click unit 0:AMCV                             @G-23:F
+key d                                         @G-23:F
+until 450 built(0,GACNST) == 1                @G-23:F
+view building 0:GACNST
+shot base
+
+# --- 3. select, move, stop (original model: left-click ground = move) -------------
+click unit 0:E1
+assert selected >= 1
+click unit 0:E1 +5 +1                         @G-05:B
+wait 3
+assert selected >= 1 and sel_moving == 1     @G-05:B
+key s                                         @G-04:B
+wait 2
+assert selected >= 1 and sel_moving == 0     @G-04:B
+
+# --- 4. base: power plant ---------------------------------------------------------
+click tab:0
+assert can_build(GAPOWR) == 1                 @G-23:F
+click cameo:GAPOWR
+until 900 queue_ready(structure) == 1
+click cameo:GAPOWR
+assert placing == 1
+place auto
+until 120 built(0,GAPOWR) == 1
+assert power_out > 0
+# Esc with nothing armed must not end the session; it opens the options menu,
+# and Esc again resumes ([Hotkey] Options=27 -> FUN_00646AE0 -> dialog 0xB5).
+key esc                                       @G-01:B
+wait 2
+assert quits == 0                             @G-01:B
+assert menu_open == 1                         @G-01:B
+key esc                                       @G-01:B
+wait 2
+assert menu_open == 0                         @G-01:B
+
+# --- 5. refinery -> miner -> income (the economy firewall) ---------------------------
+click tab:0
+click cameo:GAREFN
+until 1800 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 300 built(0,GAREFN) == 1
+until 120 harvesters(0) >= 1
+let c1 = credits
+until 1800 harv(0,Harvesting) >= 1            @G-20:A
+until 2700 credits > $c1                      @G-20:A
+shot economy
+
+# --- 6. barracks -> GI + Engineer -----------------------------------------------------
+click tab:0
+click cameo:GAPILE
+until 900 queue_ready(structure) == 1
+click cameo:GAPILE
+place auto
+until 300 built(0,GAPILE) == 1
+click tab:2
+assert cameo(ENGINEER) == 1                   @G-22:A
+let gi0 = units(0,E1)
+click cameo:E1
+until 600 units(0,E1) > $gi0
+click cameo:ENGINEER                          @G-22:A
+until 900 units(0,ENGINEER) >= 1              @G-22:A
+
+# --- 7. war factory -> Grizzly, Chrono Miner, MCV in the roster --------------------
+click tab:0
+click cameo:GAWEAP
+until 1800 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+until 300 built(0,GAWEAP) == 1
+click tab:3
+assert cameo(CMIN) == 1                       @G-22:A
+assert cameo(AMCV) == 1                       @G-22:A
+click cameo:MTNK
+until 1500 units(0,MTNK) >= 1
+click cameo:CMIN                              @G-22:A
+until 1800 units(0,CMIN) >= 2                 @G-22:A
+
+# --- 8. the AI plays: trains, attacks ----------------------------------------------
+let u1 = units(1)
+let ul0 = units_lost(0)
+let hl0 = hp_lost(0)
+until 3000 units(1) > $u1                     @G-60:D
+until 6000 units_lost(0) > $ul0 or hp_lost(0) > $hl0 @G-60:D
+shot ai
+
+# --- 9. every unit has a working weapon (Prism Tank: WeaponCount/Weapon1) -----------
+assert weapon_damage(E1) > 0
+assert weapon_damage(MTNK) > 0
+cheat spawn SREF 0 building 0:GAWEAP +4 +4
+wait 2
+assert weapon_damage(SREF) > 0                @G-41:C
+assert weapon_range(SREF) > 0                 @G-41:C
+
+# --- 10. a Pillbox kills attackers ------------------------------------------------
+click tab:1
+click cameo:GAPILL
+until 900 queue_ready(defense) == 1
+click cameo:GAPILL
+place auto
+until 300 built(0,GAPILL) == 1
+let ul1 = units_lost(1)
+cheat spawn E2 1 building 0:GAPILL +3 +0
+cheat spawn E2 1 building 0:GAPILL +3 +1
+cheat spawn E2 1 building 0:GAPILL +4 +0
+until 450 units_lost(1) >= $ul1+3           @G-40:C
+shot defence
+
+# --- 11. win path: the session ends with WON when the enemy is gone ----------------
+cheat kill_house 1
+until 60 world_outcome == WON
+until 900 outcome == WON                      @G-02:F
+shot won
+end expect WON                                @G-02:F

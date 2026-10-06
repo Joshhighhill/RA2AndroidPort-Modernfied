@@ -1,0 +1,23 @@
+# SK-A-lose -- the no-input variant of SK-A: human Allied, 1 Soviet AI on the
+# hardest lobby difficulty, the player does nothing. The AI must win: the
+# session ends LOST through the real GameScene within 20 game minutes.
+# EXPECTED TO FAIL on master 63edea6 (AI never attacks: G-60; no end: G-02).
+set render_every 900
+set on_quit continue
+
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click opt:DIFFICULTY:+
+click opt:DIFFICULTY:+
+assert opt(DIFFICULTY) == HARD
+click start
+until 90 scene == game
+require scene == game
+shot start
+let ul0 = units_lost(0)
+until 9000 units_lost(0) > $ul0               @G-60:D
+until 18000 defeated(0) == 1                  @G-60:D
+until 900 outcome == LOST                     @G-02:F
+shot lost
+end expect LOST                               @G-02:F

@@ -142,6 +142,20 @@ public:
         return new GameScene(no_audio_, cfg_);
     }
     bool wants_quit() const override { return quit_; }
+    // G0 --play: the loading screen's buttons + the chosen mission.
+    void play_probe(ra2play::Probe& p) override {
+        p.scene = "campaign-load";
+        p.set_s("map", cfg_.campaign_map);
+        p.set_s("side", cfg_.campaign_side);
+        p.set("difficulty", cfg_.campaign_difficulty);
+        for (int d = 0; d < 3; ++d) {
+            const CampButton b = diff_btn(d);
+            p.targets[std::string("diff:") + b.label] = ra2play::Rect{b.r.x, b.r.y, b.r.w, b.r.h};
+        }
+        const CampButton st = start_btn(), bk = back_btn();
+        p.targets["start"] = ra2play::Rect{st.r.x, st.r.y, st.r.w, st.r.h};
+        p.targets["back"] = ra2play::Rect{bk.r.x, bk.r.y, bk.r.w, bk.r.h};
+    }
 
 private:
     static CampButton diff_btn(int d) {
@@ -244,6 +258,18 @@ public:
         return nullptr;
     }
     bool wants_quit() const override { return quit_; }
+    // G0 --play: the result screen IS the session's verdict (outcome WON/LOST).
+    void play_probe(ra2play::Probe& p) override {
+        p.scene = "result";
+        p.set_s("outcome", outcome_ == 1 ? "WON" : "LOST");
+        p.set_s("map", cfg_.campaign_map);
+        p.set_s("next_map", next_);
+        p.set("result_frames", static_cast<double>(frames_));
+        const CampButton c = cont_btn(), r = retry_btn(), m = menu_btn();
+        if (c.enabled) p.targets["continue"] = ra2play::Rect{c.r.x, c.r.y, c.r.w, c.r.h};
+        p.targets["retry"] = ra2play::Rect{r.r.x, r.r.y, r.r.w, r.r.h};
+        p.targets["menu"] = ra2play::Rect{m.r.x, m.r.y, m.r.w, m.r.h};
+    }
 
 private:
     CampButton cont_btn() const {

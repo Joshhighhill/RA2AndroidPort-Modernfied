@@ -368,7 +368,13 @@
     // (grid scaled to the radar rect); if agent E moves the minimap to the
     // original 140x108 iso viewport, radar_cell_at must follow it.]
     bool radar_active() const {
-        return world_.shroud_enabled() && house_owns_operational_radar(world_, ba_, 0);
+        if (!world_.shroud_enabled() || !house_owns_operational_radar(world_, ba_, 0)) return false;
+        // The radar takes clicks only once its power-up animation has finished
+        // and the map picture is up (agent E's boot frames) [RE: RadarClass
+        // activation -- TS lineage IsRadarActive is set at the end of the
+        // activation animation].
+        if (g_radar && ba_.has_radar && g_radar->boot_frame(ba_.sb_radar.count()) != 0) return false;
+        return true;
     }
     bool radar_cell_at(int px, int py, int& cx, int& cy) const {
         // G-09 (E): the live isometric radar owns the pixel<->cell mapping.

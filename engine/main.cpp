@@ -4167,6 +4167,8 @@ bool pres_target_lines() { return g_user_settings ? g_user_settings->unit_action
 // internal (always writable) files dir on Android. Never the install dir. Empty
 // string if SDL cannot provide a writable path (settings then stay in memory).
 std::string settings_file_path() {
+    // G0 --play isolates RA2.INI + saves under its out dir (RA2_PREF_DIR).
+    if (const char* o = std::getenv("RA2_PREF_DIR")) return std::string(o) + "RA2.INI";
     char* p = SDL_GetPrefPath("ra2engine", "RA2");
     if (!p) return {};
     std::string s = std::string(p) + "RA2.INI";
@@ -4228,6 +4230,9 @@ struct Scene {
     }
     virtual Scene* next()                                   { return nullptr; }  // non-null => transition (takes ownership)
     virtual bool   wants_quit() const                       { return false; }
+    // G0 --play harness: report state + named click targets (play_driver.inc).
+    // Default: an unprobed scene ("unknown"). Never called outside --play.
+    virtual void   play_probe(ra2play::Probe& p)            { (void)p; }
     virtual ~Scene()                                        = default;
     // G0 --play harness hooks (engine/play_driver.inc). name() tags the probe;
     // locate() resolves a semantic target ("button:<label>", "cell:x,y",
@@ -4250,6 +4255,12 @@ struct DriverHooks {
     virtual bool begin(int f, Scene& s) = 0;
     virtual void end(int f, Scene& s, ra2engine::Platform& plat) = 0;
     virtual void quit(int f, Scene* s, const char* why) = 0;
+    // G0 --play additions (defaults = the behaviour above): render this frame?
+    // (end() still runs every frame); swallow a Quit event after recording it
+    // (`set on_quit continue`); a scene swap happened at frame f.
+    virtual bool want_render(int f) { (void)f; return true; }
+    virtual bool swallow_quit(int f) { (void)f; return false; }
+    virtual void transition(int f) { (void)f; }
     virtual ~DriverHooks() = default;
 };
 
@@ -4272,6 +4283,7 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         ra2engine::InputEvent ev;
         while (events.poll(ev)) {
             if (ev.kind == ra2engine::InputEvent::Quit) {
+                if (hooks && hooks->swallow_quit(frame)) continue;   // --play on_quit continue
                 if (hooks) hooks->quit(frame, scene.get(), "Quit event");
                 return 0;
             }
@@ -4281,11 +4293,16 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         const double dt = fixed_dt > 0.0 ? fixed_dt : (now - prev) / 1000.0;
         prev = now;
         scene->update(dt);
-        plat.begin_frame();
-        scene->render(plat, tc);
-        plat.present();
-        if (hooks) hooks->end(frame, *scene, plat);
-        if (Scene* nx = scene->next()) scene.reset(nx);   // transition (variable dt continues)
+        if (!hooks || hooks->want_render(frame)) {   // --play may render sparsely
+            plat.begin_frame();
+            scene->render(plat, tc);
+        }
+        if (hooks) hooks->end(frame, *scene, plat);   // captures read the back buffer
+        if (!hooks || hooks->want_render(frame)) plat.present();
+        if (Scene* nx = scene->next()) {   // transition (variable dt continues)
+            scene.reset(nx);
+            if (hooks) hooks->transition(frame);
+        }
         if (fixed_dt <= 0.0) SDL_Delay(16);
         ++frame;
     }
@@ -4342,10 +4359,11 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
 // <SDL pref dir>/Saved Games/ (created on demand). The install dir is never
 // written (read-only on Android). Empty when SDL has no writable path.
 std::string save_games_dir() {
-    char* p = SDL_GetPrefPath("ra2engine", "RA2");
-    if (!p) return {};
-    std::string s = std::string(p) + "Saved Games";
-    SDL_free(p);
+    const char* o = std::getenv("RA2_PREF_DIR");   // G0 --play isolation
+    char* p = o ? nullptr : SDL_GetPrefPath("ra2engine", "RA2");
+    if (!o && !p) return {};
+    std::string s = std::string(o ? o : p) + "Saved Games";
+    if (p) SDL_free(p);
     std::error_code ec;
     std::filesystem::create_directories(s, ec);
     return s;
@@ -4488,6 +4506,23 @@ public:
             button(ren, yes_rect(), "YES", true);
             button(ren, no_rect(), "NO", true);
         }
+    }
+    // G0 --play: the dialog's click targets + state (play_driver.inc).
+    void play_probe(ra2play::Probe& p) const {
+        if (!open_) return;
+        auto put = [&](const std::string& k, const ra2engine::SbRect& r) {
+            p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
+        };
+        p.set("dialog_open", 1);
+        p.set("dialog_mode", static_cast<int>(mode_));
+        p.set("dialog_rows", rows());
+        p.set("dialog_sel", sel_);
+        p.set("dialog_confirm", confirm_ ? 1 : 0);
+        p.set_s("dialog_message", message_);
+        put("dialog:action", action_rect());
+        put("dialog:back", back_rect());
+        for (int v = 0; v < kRows && top_ + v < rows(); ++v) put("dialog:row" + std::to_string(top_ + v), row_rect(v));
+        if (confirm_) { put("dialog:yes", yes_rect()); put("dialog:no", no_rect()); }
     }
 
 private:
@@ -4649,6 +4684,17 @@ public:
             SDL_RenderDrawRect(ren, &s);
             const int lw = static_cast<int>(std::string(kL[i]).size()) * 12;
             draw_text(ren, kL[i], r.x + (r.w - lw) / 2, r.y + 13, 2, 235, 235, 240);
+        }
+    }
+
+    // G0 --play: the menu's click targets (play_driver.inc).
+    void play_probe(ra2play::Probe& p) const {
+        p.set("menu_open", open_ ? 1 : 0);
+        if (!open_) return;
+        static const char* kL[5] = {"LOAD GAME", "SAVE GAME", "DELETE GAME", "ABORT MISSION", "RESUME MISSION"};
+        for (int i = 0; i < 5; ++i) {
+            const ra2engine::SbRect r = btn(i);
+            p.targets[std::string("menu:") + kL[i]] = ra2play::Rect{r.x, r.y, r.w, r.h};
         }
     }
 
@@ -5249,6 +5295,8 @@ public:
 #include "game_scene_play.inc"
     // Agent B controls/UI members (cursor state, building selection, hotkeys).
 #include "game_scene_controls.inc"
+    // Agent G --play extended probe (scripts/play/README.md).
+#include "game_scene_play_probe.inc"
 
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
@@ -5447,6 +5495,58 @@ private:
     // layout/camera/input all key off these, so the driver's plat matches.
     static constexpr int kWinW = 1280;
     static constexpr int kWinH = 720;
+
+    // --- G0 --play probe helpers -------------------------------------------
+    // Rules id of a live unit (the roster def whose Image matches), else its image.
+    std::string play_unit_id(const ra2engine::Unit& u) const {
+        for (const UnitRoster* r : {&ur_, &ur_ai_})
+            for (const ra2engine::UnitTypeDef& d : r->defs)
+                if (d.combat.image == u.image) return d.id;
+        if (u.is_harvester) return u.chrono_miner ? "CMIN" : "HARV";
+        return u.image;
+    }
+    // Sidebar entry id: tabs 0/1 index the building roster, 2/3 the unit roster.
+    std::string play_entry_id(int tab, int e) const {
+        if (tab < 2) return (e >= 0 && e < static_cast<int>(ba_.roster.size())) ? ba_.roster[e].id : "?";
+        return (e >= 0 && e < static_cast<int>(ur_.defs.size())) ? ur_.defs[e].id : "?";
+    }
+    // Would a left click on this cameo START it right now (same tests as handle()).
+    bool play_can_start(int tab, int e) const {
+        if (tab >= 2) {
+            const ra2engine::QueueCat cat = rp_cat_of_unit(e);   // same queue handle() uses
+            const std::vector<int>& ft = rp_ft_of(cat);
+            return ra2engine::can_start_unit(queues_.state(cat), e, ur_.defs, world_.buildings(), ba_.roster, 0,
+                                             ba_.groups, !world_.factory_category_lost(ft, 0));
+        }
+        const ra2engine::QueueCat bcat = (tab == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
+        return ra2engine::can_start(queues_.state(bcat), e, ba_.roster, world_.buildings(), 0, ba_.groups,
+                                    conyard_alive(world_, ba_, 0));
+    }
+    // "H:TYPE[:n]" (TYPE may be *).
+    static bool play_parse_spec(const std::string& spec, int& h, std::string& type, int& n) {
+        const std::size_t a = spec.find(':');
+        if (a == std::string::npos) return false;
+        h = std::atoi(spec.substr(0, a).c_str());
+        const std::size_t b = spec.find(':', a + 1);
+        type = spec.substr(a + 1, b == std::string::npos ? std::string::npos : b - a - 1);
+        n = b == std::string::npos ? 0 : std::atoi(spec.substr(b + 1).c_str());
+        return !type.empty();
+    }
+    int play_find_building(const std::string& spec) const {
+        int h = 0, n = 0;
+        std::string type;
+        if (!play_parse_spec(spec, h, type, n)) return -1;
+        for (int i = 0; i < static_cast<int>(world_.buildings().size()); ++i) {
+            const ra2engine::Building& b = world_.buildings()[i];
+            if (!b.alive || b.house != h || b.state == ra2engine::Building::State::Dead) continue;
+            if (type != "*" && (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) ||
+                                ba_.roster[b.type].id != type))
+                continue;
+            if (n-- > 0) continue;
+            return i;
+        }
+        return -1;
+    }
 
     // Active sidebar tab (0=Structures,1=Defenses,2=Infantry,3=Vehicles).
     std::vector<int> tab_buildable(int tab) const {
@@ -6489,6 +6589,19 @@ public:
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
     bool   wants_quit() const override { return quit_; }
+    // G0 --play: page name + every button (greyed ones report enabled=0).
+    void   play_probe(ra2play::Probe& p) override {
+        p.scene = std::string("shell:") + header();
+        p.set_s("page", header());
+        for (const ShellButton& b : layout()) {
+            const ra2engine::SbRect r = to_device(b.rect);
+            p.targets["button:" + b.label] = ra2play::Rect{r.x, r.y, r.w, r.h};
+            p.set("button_enabled(" + b.label + ")", b.enabled ? 1 : 0);
+        }
+        p.set("quit_requested", quit_ ? 1 : 0);
+        p.set("dialog_open", 0);
+        sld_.play_probe(p);
+    }
 
 private:
     static constexpr int kWinW = 1280, kWinH = 720;
@@ -6818,6 +6931,49 @@ public:
     }
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
+    // G0 --play: lobby state + click targets. Option rows split into a "-" and
+    // a "+" half ("opt:CASH:-"); slot cells cycle forward ("slot1:side").
+    void   play_probe(ra2play::Probe& p) override {
+        p.scene = "lobby";
+        auto put = [&](const std::string& k, const ra2engine::SbRect& r) {
+            p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
+        };
+        put("start", start_rect());
+        put("back", back_rect());
+        const ra2engine::SbRect mr = map_rect();
+        put("map:-", {mr.x + 50, mr.y, mr.w / 2 - 60, mr.h});
+        put("map:+", {mr.x + mr.w / 2 + 10, mr.y, mr.w / 2 - 60, mr.h});
+        put("map:-10", {mr.x, mr.y, 40, mr.h});
+        put("map:+10", {mr.x + mr.w - 40, mr.y, 40, mr.h});
+        for (int i = 0; i < G_COUNT; ++i) {
+            const ra2engine::SbRect r = global_rect(i);
+            std::string k = glabel(i);
+            for (char& c : k) if (c == ' ') c = '_';
+            put("opt:" + k + ":-", {r.x, r.y, r.w / 2 - 4, r.h});
+            put("opt:" + k + ":+", {r.x + r.w / 2 + 4, r.y, r.w / 2 - 4, r.h});
+            p.set_s("opt(" + k + ")", gvalue(i));
+        }
+        const std::vector<int> cs = combatant_slots();
+        for (int row = 0; row < static_cast<int>(cs.size()); ++row) {
+            const ra2engine::SkirmishSlot& sl = cfg_.slots[cs[row]];
+            const std::string k = "slot" + std::to_string(cs[row]);
+            put(k + ":side", slot_cell(row, 1));
+            put(k + ":color", slot_cell(row, 2));
+            put(k + ":team", slot_cell(row, 3));
+            p.set_s("side(" + std::to_string(cs[row]) + ")", menu_side_name(sl.side));
+            p.set("color(" + std::to_string(cs[row]) + ")", sl.color_ix);
+            p.set("team(" + std::to_string(cs[row]) + ")", sl.alliance_team);
+        }
+        p.set("ai_players", ai_players());
+        p.set("cash", cfg_.starting_cash);
+        p.set("crates", cfg_.crates ? 1 : 0);
+        p.set("map_ix", map_ix_);
+        p.set("map_count", static_cast<double>(maps_.size()));
+        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size())) {
+            p.set_s("map", maps_[static_cast<size_t>(map_ix_)].file_name);
+            p.set_s("map_name", maps_[static_cast<size_t>(map_ix_)].display_name);
+        }
+    }
 
 private:
     static constexpr int kWinW = 1280, kWinH = 720;
@@ -16194,6 +16350,8 @@ int run_demo_saveload() {
 
 // Agent B controls real-play self-test (dev-only, not a gate).
 #include "controls_selftest.inc"
+// G0 --play front end (agent G): scripted playthroughs (scripts/play/).
+#include "play_driver.inc"
 #include "realplay_probe.inc"   // gap owner A: --probe-realplay (real GameScene harness)
 #include "ai_soak.inc"   // gap owner D: --ai-soak (real GameScene AI acceptance harness)
 #include "realplay_combat_probe.inc"   // gap owner C: --probe-combat (real GameScene harness)
@@ -16209,6 +16367,12 @@ int main(int argc, char** argv) {
         (void)argv;
         return run_menu(/*no_audio=*/false);
 #else
+        // G0 verification harness: --play <script> [--out <dir>] drives the
+        // REAL shell scene tree with scripted input (engine/play_driver.inc).
+        if (argc >= 3 && std::string(argv[1]) == "--play") {
+            const std::string out = (argc >= 5 && std::string(argv[3]) == "--out") ? argv[4] : "";
+            return run_play(argv[2], out);
+        }
         std::string screenshot;
         std::string campaign_map;   // P10 --campaign <MAP>
         bool demo_move = false;

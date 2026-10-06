@@ -1,0 +1,54 @@
+# M-ALL01 -- Allied mission 1 (ALL01t, "Lone Guardian": Tanya + GIs, no base,
+# TechLevel 3) started from the REAL shell: Single Player -> New Campaign ->
+# Allied Campaign -> loading screen -> START. Checks the mission starts, its
+# objectives arm, reinforcements arrive and the TechLevel cap holds.
+# EXPECTED TO FAIL in places on master 63edea6 (docs/gap/PLAYTEST-STATUS.md).
+set render_every 300
+set on_quit continue
+
+click button "Single Player"
+click button "New Campaign"
+require scene == "shell:New Campaign"
+click button "Allied Campaign"
+until 30 scene == campaign-load
+require scene == campaign-load
+assert side == GDI
+shot loading
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+shot start
+
+# --- 1. the mission is live ----------------------------------------------------
+assert own_on_screen > 0
+assert units(0) > 0
+until 900 objectives >= 1
+assert triggers_fired > 0
+key f1
+wait 2
+assert briefing_open == 1
+key f1
+wait 2
+assert briefing_open == 0
+
+# --- 2. TechLevel 3 caps the sidebar (no Weather Device / Prism Tower / Battle Lab) --
+assert cameo(GAWEAT) == 0                     @G-15:F
+assert cameo(GATECH) == 0                     @G-15:F
+
+# --- 3. reinforcements (Tanya) arrive and the mission keeps running ------------------
+until 2700 units(0,TANY) >= 1                 @G-73:F
+wait 1800
+# With no player input the mission may be lost; it must then SAY so (the map's
+# "Lose 13" chain / house defeat -> BorrowedTime -> result screen).
+if units(0) == 0 then assert outcome == LOST  @NEW-2:F
+if units(0) > 0 then assert outcome == RUNNING
+shot f2400
+
+# --- 4. Esc mid-mission opens the options menu, not quit ------------------------------
+key esc                                       @G-01:B
+wait 2
+assert quits == 0                             @G-01:B
+assert menu_open == 1                         @G-01:B
+if menu_open == 1 then key esc
+end

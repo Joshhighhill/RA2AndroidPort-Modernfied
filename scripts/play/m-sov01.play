@@ -1,0 +1,51 @@
+# M-SOV01 -- Soviet mission 1 (SOV01t: SMCV + reinforcements, no base) from the
+# REAL shell: Single Player -> New Campaign -> Soviet Campaign -> START.
+# Checks the mission starts, objectives arm, the SMCV deploys into a ConYard,
+# the Soviet sidebar is used and the TechLevel cap holds.
+# EXPECTED TO FAIL in places on master 63edea6 (docs/gap/PLAYTEST-STATUS.md).
+set render_every 300
+set on_quit continue
+
+click button "Single Player"
+click button "New Campaign"
+require scene == "shell:New Campaign"
+click button "Soviet Campaign"
+until 30 scene == campaign-load
+require scene == campaign-load
+assert side == Nod
+shot loading
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+shot start
+
+# --- 1. the mission is live ----------------------------------------------------
+assert own_on_screen > 0
+assert units(0) > 0
+until 900 objectives >= 1
+assert triggers_fired > 0
+
+# --- 2. deploy the SMCV and build -------------------------------------------------
+until 900 units(0,SMCV) >= 1
+click unit 0:SMCV                             @G-23:F
+key d                                         @G-23:F
+until 450 built(0,NACNST) == 1                @G-23:F
+view building 0:NACNST                        @G-23:F
+shot base
+assert cameo(NAPOWR) == 1
+assert cameo(GAPOWR) == 0
+assert cameo(NAMISL) == 0                     @G-15:F
+click tab:0
+click cameo:NAPOWR                            @G-23:F
+until 900 queue_ready(structure) == 1         @G-23:F
+click cameo:NAPOWR                            @G-23:F
+place auto                                    @G-23:F
+until 120 built(0,NAPOWR) == 1                @G-23:F
+
+# --- 3. the mission keeps running --------------------------------------------------
+wait 1800
+assert units(0) > 0
+assert outcome == RUNNING
+shot f3600
+end

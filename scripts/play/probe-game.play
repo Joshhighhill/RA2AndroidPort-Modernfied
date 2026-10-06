@@ -1,0 +1,11 @@
+# Harness self-check: start the default skirmish, dump the probe.
+click button "Single Player"
+click button Skirmish
+click start
+until 30 scene == game
+shot start
+dump
+wait 150
+shot f150
+dump
+end
