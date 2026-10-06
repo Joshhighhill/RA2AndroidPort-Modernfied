@@ -216,8 +216,7 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
             if (cy >= 0 && scenario == "soviet") {
                 // The Soviet sidebar strip/roster is owner A's G-03 (prefix "GA"
                 // today); only the deploy half is F's to verify here.
-                std::cout << "gf_play NOTE Soviet build-from-sidebar depends on G-03 (owner A)
-";
+                std::cout << "gf_play NOTE Soviet build-from-sidebar depends on G-03 (owner A)\n";
             } else if (cy >= 0) {
                 const bool soviet = w.house_side(0) == ra2engine::World::Side::Soviet;
                 const bool built = build_from_sidebar(c, *g, soviet ? "NAPOWR" : "GAPOWR", cy);
