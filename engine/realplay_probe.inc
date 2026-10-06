@@ -86,6 +86,9 @@ struct RealPlayProbe {
     static bool has(const std::vector<std::string>& v, const char* id) {
         return std::find(v.begin(), v.end(), std::string(id)) != v.end();
     }
+    static const ra2engine::QueueSlot& qslot(GameScene& g, ra2engine::QueueCat c) {
+        return g.queues_.state(c).slot;
+    }
     static void run(GameScene& g, int frames) {
         for (int f = 0; f < frames; ++f) g.update(1.0 / 15.0);
     }
@@ -271,6 +274,92 @@ int run_probe_realplay() {
         }
         p.check(!sref && fv, "row 15 lobby TechLevel 3 drops the Prism Tank (TL8), keeps the IFV (TL3)");
         p.check(tnkd, "row 18 Germans get the Tank Destroyer (RequiredHouses=Germans)");
+    }
+
+    // ---- G-24 Naval Yard on water + ship production; G-30 walls ----
+    {
+        ra2engine::SkirmishConfig cfg = P::menu_config(rules);
+        GameScene g(/*no_audio=*/true, cfg);
+        ra2engine::World& w = P::world(g);
+        for (const char* id : {"GAPOWR", "GAREFN", "GAPILE", "GAWEAP"}) P::add_instant(g, id);
+        const std::vector<std::uint8_t>& water = w.grid_for(ra2engine::MovementDomain::Water);
+        int nwater = 0;
+        for (std::uint8_t v : water) nwater += v != 0;
+        std::cout << "[probe] water cells=" << nwater << "\n";
+        const int yard = roster_index(P::ba(g), "GAYARD");
+        // A land cell never takes the yard.
+        int lx = 0, ly = 0;
+        const int pw = roster_index(P::ba(g), "GAPOWR");
+        const bool land_spot = P::find_spot(g, pw, lx, ly);
+        p.check(land_spot && !g.placement_ok(yard, lx, ly), "G-24 GAYARD refused on a land cell");
+        // Grow an outpost to the nearest water (scripted, instant) so the yard
+        // can be adjacent, then place it through the real rule set.
+        int yx = -1, yy = -1;
+        const ra2engine::Building& cy0 = w.buildings()[P::own_index(g, "GACNST")];
+        int best = 1 << 30;
+        const ra2engine::BuildingTypeDef& yd = P::ba(g).roster[yard];
+        for (int y = 0; y < w.grid_h(); ++y)
+            for (int x = 0; x < w.grid_w(); ++x) {
+                if (!ra2engine::water_bound_ok(x, y, yd.fw, yd.fh, water, w.grid_w(), w.grid_h()))
+                    continue;
+                const int d = std::abs(x - cy0.cx) + std::abs(y - cy0.cy);
+                if (d < best) { best = d; yx = x; yy = y; }
+            }
+        if (yx >= 0) {
+            // outpost power plant on the nearest land cell next to the yard spot
+            for (int r = 1; r <= 6 && !g.placement_ok(yard, yx, yy); ++r)
+                for (int dy = -r; dy <= r; ++dy)
+                    for (int dx = -r; dx <= r; ++dx) {
+                        const ra2engine::BuildingTypeDef& d = P::ba(g).roster[pw];
+                        const ra2engine::PlacementCheck c = ra2engine::placement_check(
+                            yx + dx, yy + dy, d.fw, d.fh, 0, 0, w.passable(), w.grid_w(),
+                            w.grid_h(), w.occupancy(), w.buildings(), true);
+                        bool on_water = false;
+                        for (const ra2engine::Cellxy& fc : ra2engine::foundation_cells(yx + dx, yy + dy, d.fw, d.fh))
+                            on_water |= water[(size_t)fc.y * w.grid_w() + fc.x] != 0;
+                        if (c.ok && !on_water && !g.placement_ok(yard, yx, yy))
+                            w.add_building(pw, yx + dx, yy + dy, d.fw, d.fh, 0, d.strength, d.armor_ix,
+                                           0.0, true, d.sight, false);
+                    }
+        }
+        const bool yard_ok = yx >= 0 && g.place_building(yard, yx, yy);
+        p.check(yard_ok, "G-24 GAYARD placed on water (" + std::to_string(yx) + "," + std::to_string(yy) + ")");
+        if (yard_ok) {
+            P::run(g, 15 * 10);   // buildup
+            const int s = P::train(g, 3, "DEST", 15 * 200);
+            p.check(s >= 0 && w.units()[s].is_naval &&
+                        water[(size_t)w.units()[s].cell_y * w.grid_w() + w.units()[s].cell_x] != 0,
+                    "G-24 a sidebar-built Destroyer launched from the yard onto water");
+        }
+        // Walls: build time x3 and free line fill.
+        const int wall = roster_index(P::ba(g), "GAWALL");
+        P::click_item(g, 1, "GAWALL");
+        const ra2engine::QueueSlot& ws = P::qslot(g, ra2engine::QueueCat::Defense);
+        p.check(ws.type == wall &&
+                    ws.total_frames == ra2engine::wall_build_frames(P::ba(g).roster[wall].cost, 0.7),
+                "G-30 GAWALL builds at WallBuildSpeedCoefficient x3 (" +
+                    std::to_string(ws.total_frames) + " frames)");
+        int wx = 0, wy = 0;
+        bool placed = false;
+        for (int tries = 0; tries < 400 && !placed; ++tries) {
+            if (!P::find_spot(g, wall, wx, wy)) break;
+            // need wx+4 also legal and the 3 between clear
+            bool clear = true;
+            for (int k = 1; k <= 4; ++k) clear &= g.placement_ok(wall, wx + k, wy);
+            if (clear) placed = true;
+            else { // block this cell for the scan with a scripted wall elsewhere: shift search
+                w.add_building(wall, wx, wy, 1, 1, 0, 1, 0, 0.0, true, 0, false);
+            }
+        }
+        int before = 0, after = 0;
+        for (const ra2engine::Building& b : w.buildings()) before += b.alive && b.type == wall;
+        if (placed) {
+            g.place_building(wall, wx, wy);
+            g.place_building(wall, wx + 4, wy);
+        }
+        for (const ra2engine::Building& b : w.buildings()) after += b.alive && b.type == wall;
+        p.check(placed && after - before == 5,
+                "G-30 two walls 4 cells apart close the gap for free (+" + std::to_string(after - before) + ")");
     }
 
     std::cout << "[probe-realplay] " << (p.fails ? "FAILED" : "ok") << " fails=" << p.fails << "\n";

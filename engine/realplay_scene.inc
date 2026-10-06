@@ -5,29 +5,69 @@
 public:
     friend struct RealPlayProbe;   // --probe-realplay drives the real scene
 
-    // Is a building of roster type `type` placeable with its origin at
-    // (cx, cy) for the human? The one rule set the placement cursor confirm
-    // and the probe share [RE: construction.md §9].
-    bool placement_ok(int type, int cx, int cy) const {
-        if (type < 0 || type >= static_cast<int>(ba_.roster.size())) return false;
+    // Is a building of roster type 	ype placeable with its origin at
+    // (cx, cy) for the human? The one rule set the placement cursor and the
+    // confirm share [RE: construction.md §9]. Gap owner A: a WaterBound type
+    // (Naval Yard) needs every foundation cell on WATER (roster2.md TL;DR 6),
+    // and BaseNormal=no neighbours do not extend the base (G-28).
+    ra2engine::PlacementCheck placement_eval(int type, int cx, int cy) const {
+        if (type < 0 || type >= static_cast<int>(ba_.roster.size())) return {};
         const ra2engine::BuildingTypeDef& d = ba_.roster[type];
-        const ra2engine::PlacementCheck chk = ra2engine::placement_check(
-            cx, cy, d.fw, d.fh, 0, d.adjacent, world_.passable(), world_.grid_w(),
-            world_.grid_h(), world_.occupancy(), world_.buildings(),
-            /*bypass_adjacency=*/false);
-        return chk.ok;
+        const bool water = type < static_cast<int>(ba_.water_bound.size()) && ba_.water_bound[type];
+        const std::vector<std::uint8_t>& grid =
+            water ? world_.grid_for(ra2engine::MovementDomain::Water) : world_.passable();
+        if (water && grid.empty()) return {};
+        return ra2engine::placement_check(cx, cy, d.fw, d.fh, 0, d.adjacent, grid, world_.grid_w(),
+                                          world_.grid_h(), world_.occupancy(), world_.buildings(),
+                                          /*bypass_adjacency=*/false,
+                                          rp_on_ ? &rp_base_normal_ : nullptr);
     }
+    bool placement_ok(int type, int cx, int cy) const { return placement_eval(type, cx, cy).ok; }
 
     // Place a finished-in-the-queue building at (cx, cy): validity, then
     // add_building in Buildup (instant=false). Returns false (nothing placed)
-    // when the cell is illegal.
+    // when the cell is illegal. A wall closes the line to the next own wall
+    // within GuardRange for free (G-30, roster2.md TL;DR 4).
     bool place_building(int type, int cx, int cy) {
         if (!placement_ok(type, cx, cy)) return false;
-        const ra2engine::BuildingTypeDef& d = ba_.roster[type];
-        world_.add_building(type, cx, cy, d.fw, d.fh, 0, d.strength, d.armor_ix,
-                            ba_.art[type].buildup_total, /*instant=*/false, d.sight,
-                            d.grants_map_reveal);
+        auto add = [&](int x, int y) {
+            const ra2engine::BuildingTypeDef& d = ba_.roster[type];
+            world_.add_building(type, x, y, d.fw, d.fh, 0, d.strength, d.armor_ix,
+                                ba_.art[type].buildup_total, /*instant=*/false, d.sight,
+                                d.grants_map_reveal);
+            if (type < static_cast<int>(ba_.water_bound.size()) && ba_.water_bound[type])
+                world_.block_water_footprint(x, y, d.fw, d.fh);   // ships path around the yard
+        };
+        add(cx, cy);
+        if (rp_on_ && type < static_cast<int>(ba_.wall.size()) && ba_.wall[type]) {
+            auto own_wall = [&](int x, int y) {
+                const int bi = world_.building_at_cell(x, y);
+                return bi >= 0 && world_.buildings()[bi].type == type &&
+                       world_.buildings()[bi].house == 0;
+            };
+            auto can_place = [&](int x, int y) {
+                const ra2engine::PlacementCheck c = ra2engine::placement_check(
+                    x, y, 1, 1, 0, 0, world_.passable(), world_.grid_w(), world_.grid_h(),
+                    world_.occupancy(), world_.buildings(), /*bypass_adjacency=*/true);
+                return c.ok;
+            };
+            for (const ra2engine::Cellxy& c :
+                 ra2engine::wall_line_fill(cx, cy, ba_.wall_fill_range[type], own_wall, can_place))
+                add(c.x, c.y);
+        }
         return true;
+    }
+
+    // After a Structure/Defense start: a wall builds WallBuildSpeedCoefficient
+    // (rulesmd 3.0) times slower [RE: roster2.md TL;DR 5] (G-30).
+    void rp_after_building_start(ra2engine::ProductionState& ps, int type) {
+        if (!rp_on_ || type < 0 || type >= static_cast<int>(ba_.wall.size()) || !ba_.wall[type])
+            return;
+        const int wf = ra2engine::wall_build_frames(
+            ba_.roster[type].cost, build_speed_,
+            rules_.general_double("WallBuildSpeedCoefficient", ra2engine::kWallBuildSpeedCoefficient));
+        ps.slot.total_frames = std::max(1, wf);
+        ps.slot.step_ticks = std::clamp(ps.slot.total_frames / ra2engine::kProductionSteps, 1, 255);
     }
 private:
     // --- gap owner A state (skirmish real play; empty/false in a campaign) ---
@@ -37,6 +77,7 @@ private:
     std::vector<int>     nav_ft_;            // Naval=yes UnitType factories (GAYARD/NAYARD)
     std::vector<int>     air_ft_;            // AircraftType factories (GAAIRC/AMRADR)
     std::vector<int>     bld_ft_;            // BuildingType factories (the ConYards)
+    std::vector<char>    rp_base_normal_;    // per roster building: rules BaseNormal (default yes)
 
     // The roster the ctor init list loads for the human: the full side/country/
     // tech-level roster in skirmish (G-22), the historical tables in a campaign.
@@ -76,6 +117,11 @@ private:
         input_.set_unit_factory_types(unit_ft);
         input_.set_infantry_factory_types(inf_ft_);
         input_.set_vehicle_factory_types(any_veh);
+        rp_base_normal_.assign(ba_.roster.size(), 1);
+        for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
+            const std::string v = rules_.section_string(ba_.roster[i].id, "BaseNormal", "");
+            if (!v.empty()) rp_base_normal_[i] = rp_flag(rules_, ba_.roster[i].id, "BaseNormal");
+        }
         rp_bld_allowed_.assign(ba_.roster.size(), 0);
         for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
             const ra2engine::BuildingTypeDef& d = ba_.roster[i];

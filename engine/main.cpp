@@ -3762,14 +3762,17 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
 // red (cell blocked OR adjacency fails -> whole grid red) [RE: construction.md §9].
 void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
                            const BuildingAssets& ba, const ra2engine::Input& input,
-                           const Assets& a, const ra2engine::Camera& cam, int W, int H) {
+                           const Assets& a, const ra2engine::Camera& cam, int W, int H,
+                           const ra2engine::PlacementCheck* pre_chk = nullptr) {
     if (!input.placement_active()) return;
     const int type = input.placement_type();
     if (type < 0 || type >= static_cast<int>(ba.roster.size())) return;
     const ra2engine::BuildingTypeDef& d = ba.roster[type];
     int cx = 0, cy = 0;
     input.placement_cell(cx, cy);
-    const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+    // Gap owner A: the real game passes the scene's own rule set (water-bound
+    // Naval Yard, BaseNormal) so the cursor colour matches what a click does.
+    const ra2engine::PlacementCheck chk = pre_chk ? *pre_chk : ra2engine::placement_check(
         cx, cy, d.fw, d.fh, 0, d.adjacent, world.passable(), world.grid_w(), world.grid_h(),
         world.occupancy(), world.buildings(), /*bypass_adjacency=*/false);
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -4616,6 +4619,7 @@ public:
                                                         conyard_alive(world_, ba_, 0))) {
                             queues_.set_credits(player_credits_);
                             ra2engine::start(bq, type, ba_.roster, build_speed_);
+                            rp_after_building_start(bq, type);   // gap owner A: wall 3x time
                         }
                     }
                 }
@@ -4838,8 +4842,14 @@ public:
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
-        if (!(sidebar_up_ && lay_.contains(mx_, my_)))
-            draw_placement_cursor(ren, world_, ba_, input_, a_, cam_, kWinW, kWinH);
+        if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
+            int pcx = 0, pcy = 0;
+            input_.placement_cell(pcx, pcy);
+            const ra2engine::PlacementCheck pchk =
+                placement_eval(input_.placement_type(), pcx, pcy);   // gap owner A rules
+            draw_placement_cursor(ren, world_, ba_, input_, a_, cam_, kWinW, kWinH,
+                                  input_.placement_active() ? &pchk : nullptr);
+        }
         if (ba_.ok && ba_.sidebar_ok) {
             const ra2engine::QueueCat vis_cat =
                 (active_tab_ == 1) ? ra2engine::QueueCat::Defense
