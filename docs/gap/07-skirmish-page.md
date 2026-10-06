@@ -446,7 +446,7 @@ Main regions touched:
 ## 8. Fix status (branch `skirmish-page`)
 
 Implemented per §4 (steps 1-9, 11; step 10 partly). Evidence:
-`D:a2-re\out\gapsk_shotsixed\` (`lobby_menu_shot_1280x720.png` = `--menu-shot`
+`D:\ra2-re\out\gapsk_shots\fixed\` (`lobby_menu_shot_1280x720.png` = `--menu-shot`
 `_setup.png`; `lobby_first_run.png`, `lobby_ai_dropdown.png`, `lobby_configured.png`,
 `customize_battle.png`, `lobby_game_start.png` from `--play`), and
 `scripts/play/sk-lobby.play` (PASS: every page choice asserted in the game probe).
