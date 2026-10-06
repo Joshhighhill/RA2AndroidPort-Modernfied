@@ -371,6 +371,8 @@
         return world_.shroud_enabled() && house_owns_operational_radar(world_, ba_, 0);
     }
     bool radar_cell_at(int px, int py, int& cx, int& cy) const {
+        // G-09 (E): the live isometric radar owns the pixel<->cell mapping.
+        if (g_radar && g_radar->ok()) return g_radar->cell_at(px, py, cx, cy);
         const ra2engine::SbRect& r = lay_.radar;
         if (!r.contains(px, py) || world_.grid_w() <= 0 || world_.grid_h() <= 0) return false;
         const double sx = static_cast<double>(r.w) / world_.grid_w();

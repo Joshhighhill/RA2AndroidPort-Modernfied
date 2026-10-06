@@ -35,6 +35,10 @@ public:
 
     // Return the cached SDL_Texture* for `key`, or nullptr if not cached.
     // Lets callers skip decoding/palettizing work on a cache hit.
+    // G-84/G-90: index `shadow_index` -> black at `alpha` (baked SHP shadows).
+    void* get_shadowed(const std::string& key, const uint8_t* indices, int w, int h,
+                       const ra2assets::Palette& pal, int shadow_index, int alpha);
+
     void* peek(const std::string& key) const;
 
 private:

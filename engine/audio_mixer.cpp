@@ -112,6 +112,24 @@ void Mixer::play_eva(int clip_id) {
     }
 }
 
+void Mixer::stop_eva() {
+    eva_clip_ = -1;
+    eva_pos_ = 0;
+    eva_queue_.clear();
+}
+
+void Mixer::stop(const std::string& key) {
+    voices_.erase(std::remove_if(voices_.begin(), voices_.end(),
+                                 [&](const Voice& v) { return v.key == key; }),
+                  voices_.end());
+}
+
+bool Mixer::playing(const std::string& key) const {
+    for (const Voice& v : voices_)
+        if (v.key == key) return true;
+    return false;
+}
+
 int Mixer::active_voices() const { return static_cast<int>(voices_.size()); }
 bool Mixer::eva_active() const { return eva_clip_ != -1; }
 std::size_t Mixer::eva_queued() const { return eva_queue_.size(); }
