@@ -2631,7 +2631,7 @@ the P6 Roster Breadth gate.
 | `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
-| `--demo-saveload` | `saveload_hash=270b4fce163438f7` | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-saveload` | `saveload_hash=09caaddd6213883c` (G16 re-pin: save format 5 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + bridge grids; the gate's map has low bridges, file 1.38 MB -> 1.83 MB; master before G16 printed `81029e6eb282f849`, an earlier unpinned drift from the format-4 merges; `identical=yes` and two runs equal) | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
 | `--demo-campaign` | `campaign_hash=f10f9d4e6bd883cd` | `deterministic=yes lines=870`; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
@@ -3121,3 +3121,34 @@ controls self-test as a script) and `probe-*` self-checks. Run them ONE at a
 time (`pwsh scripts/play/run-all.ps1`); ~15 s start-up, then ~400 frames/s with
 `set render_every 300`. Expected results per tree and the G-ID / owner of every
 failing step: `docs/gap/PLAYTEST-STATUS.md`.
+
+## World depth: garrisons and bridges (G16, G-48 / G-49)
+
+RE'd from gamemd.exe (`docs/re/world-depth.md`, every rule with its address)
+and verified in the real game by `scripts/play/world-depth.play` (PASS).
+
+* **Garrisons.** Infantry with `Occupier=yes` (GI, Conscript, ...) clicked onto a
+  `CanBeOccupied=yes` building that is theirs or neutral walk in (up to
+  `MaxNumberOccupants`); the building turns to the first occupant's house and
+  back to the neutral house when emptied. It fires the current occupant's
+  `OccupyWeapon` (`EliteOccupyWeapon` when elite) round-robin over the
+  occupants: ROF / occupant count / `OccupyROFMultiplier`, damage x
+  `OccupyDamageMultiplier`, range = min(foundation W, H) / 2 +
+  `OccupyWeaponRange`. Deploy (`D`, or clicking the selected garrison) unloads
+  them; selling or losing the building lets them out. Skirmish maps' civilian
+  garrisons and bridge repair huts are now real neutral World buildings.
+* **Low bridges** (wood `LOBRDG*`, concrete `LOBRDB*`). Ground units cross the
+  river on them; ships do not pass under. A `Wall=yes` warhead exploding on a
+  section breaks it with probability `damage / BridgeStrength` (two stages:
+  damaged, then destroyed -- the 3-cell cross-section turns back into water and
+  a ground unit on it dies). Ctrl+click on the ground force-fires at a cell.
+  An Engineer entering a bridge repair hut (`CABHUT`) restores the bridge and
+  is consumed. Some maps (May Day) ship their crossings already blown.
+* The map dressing now indexes `[OverlayTypes]` by order of appearance (the
+  runtime index the map stores); every non-ore overlay used to draw with the
+  art of a neighbouring entry.
+* Not yet: high (tile) bridges' on/under layer and destruction, the Assaulter
+  (YR) garrison clearing, `DistributedFire`.
+* Dev modes: `--depth-survey` (bridges / huts / garrisonable structures per MP
+  map), `--depth-dump <map> x0 y0 x1 y1` (runtime overlay indices).
+

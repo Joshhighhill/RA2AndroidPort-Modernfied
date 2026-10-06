@@ -267,10 +267,10 @@ void World::step_garrison_combat(double dt) {
 void World::set_bridges(std::vector<int> overlay, std::vector<ra2assets::LandType> tile_land) {
     bridge_ovl_.assign(static_cast<std::size_t>(grid_w_) * grid_h_, -1);
     for (std::size_t i = 0; i < overlay.size() && i < bridge_ovl_.size(); ++i)
-        if (is_low_bridge_overlay(overlay[i])) bridge_ovl_[i] = overlay[i];
-    bridge_ovl0_ = bridge_ovl_;
-    bridge_tile_land_ = std::move(tile_land);
-    bridge_tile_land_.resize(bridge_ovl_.size(), ra2assets::LandType::Clear);
+        if (is_low_bridge_overlay(overlay[i])) bridge_ovl_[i] = static_cast<std::int16_t>(overlay[i]);
+    bridge_tile_land_.assign(bridge_ovl_.size(), static_cast<std::uint8_t>(ra2assets::LandType::Clear));
+    for (std::size_t i = 0; i < tile_land.size() && i < bridge_tile_land_.size(); ++i)
+        bridge_tile_land_[i] = static_cast<std::uint8_t>(tile_land[i]);
     ++bridge_version_;
 }
 
@@ -294,9 +294,10 @@ int World::bridge_cells_destroyed() const {
 // falls back to the tile's land type (water under the river span).
 void World::set_bridge_cell(int x, int y, int idx) {
     const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
-    bridge_ovl_[i] = idx;
-    const ra2assets::LandType lt =
-        low_bridge_destroyed(idx) ? bridge_tile_land_[i] : ra2assets::LandType::Road;
+    bridge_ovl_[i] = static_cast<std::int16_t>(idx);
+    const ra2assets::LandType lt = low_bridge_destroyed(idx)
+                                       ? static_cast<ra2assets::LandType>(bridge_tile_land_[i])
+                                       : ra2assets::LandType::Road;
     if (i < passable_.size()) passable_[i] = blocks_ground(lt) ? 0 : 1;
     if (i < water_passable_.size()) water_passable_[i] = (lt == ra2assets::LandType::Water) ? 1 : 0;
     ++bridge_version_;

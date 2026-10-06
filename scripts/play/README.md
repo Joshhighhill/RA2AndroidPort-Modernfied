@@ -74,7 +74,11 @@ A `"double quoted"` run is one argument.
 | `expect quit` | The next Quit is the expected end of the run. | 0 |
 | `end [expect WON\|LOST\|RUNNING]` | Stop; optionally check `outcome`. | - |
 
-**Targets.** `cell X Y` (map cell centre; the view is centred first when it is
+**Targets.** `point NAME [+dx +dy]` (G16 named map points relative to the
+player's first building: `garrison` (nearest empty neutral garrison),
+`garrisoned` (own occupied one), `hut` (bridge repair hut), `bridge` (nearest
+intact low-bridge centre cell), `bridge_near` / `bridge_far` (its two banks)),
+`cell X Y` (map cell centre; the view is centred first when it is
 off-screen), `xy X Y` (window pixels), `unit H:TYPE[:n] [+dx +dy]` (the n-th
 live unit of house H and rules id TYPE, `*` = any; optional signed cell offset),
 `building H:TYPE[:n] [+dx +dy]`, or a **named target** from the probe:
@@ -133,11 +137,15 @@ Always: `scene`, `f` (driver frame), `sf` (frames in this scene), `quits`
 | `menu_open`, `dialog_open`, `dialog_mode` (1 load, 2 save, 3 delete), `dialog_rows`, `dialog_sel`, `dialog_confirm`, `dialog_message`, `banner` | in-game menu / save-load dialog |
 | `map`, `cam_x`, `cam_y`, `playfield_w` | view |
 | campaign only: `campaign_frame`, `objectives`, `triggers_fired`, `campaign_outcome`, `briefing_open` | mission runtime |
+| `garrisonable`, `owned_garrisons(h)`, `garrisoned(h)`, `occupants(h)`, `in_garrison(h)`, `garrison_shots` | G16 garrisons |
+| `bridge_cells`, `bridge_destroyed`, `bridge_version`, `on_bridge(h)`, `pt_<name>_x/y`, `sel_dist_<name>` | G16 low bridges; named points below |
 
 **Cheats** (`game` only; dev hooks for reaching a state quickly — acceptance
 should prefer real input): `kill_house H`, `damage_building H:TYPE[:n] DMG`,
 `credits N`, `spawn TYPE H cell X Y`, `spawn TYPE H building H:TYPE[:n] +DX +DY`
-(TYPE from the player or AI roster).
+(TYPE from the player or AI roster, else resolved from rules),
+`spawn TYPE H point NAME +DX +DY`, `bridge_hit X Y DMG` (one bridge roll).
+`set cycle_max N` raises `cycle`'s click limit (default 8).
 
 Keys reserved for later phases (scripts already assert them and report
 `missing-probe` until a phase adds them): `confirm_open` + targets
@@ -154,6 +162,7 @@ Keys reserved for later phases (scripts already assert them and report
 | `m-all01.play` | Allied mission 1 from the shell: loading screen, objectives arm, briefing, TechLevel 3 cap, Tanya, Esc |
 | `m-sov01.play` | Soviet mission 1: objectives, SMCV deploy, Soviet sidebar, TechLevel cap |
 | `shell-smoke.play` | Menus, Options round trip, lobby round trip, Esc in menu/lobby/game/placement, F10 menu, save -> load -> resume, Abort/Exit confirmation |
-| `probe-*.play` | Harness self-checks (no gameplay claims; all pass on master) |
+| `world-depth.play` | G16: crush; garrison a civilian building, fire out, evict; May Day: engineer repairs the blown bridge at the hut, a tank drives across, Ctrl force-fire collapses a section, a hut repairs it |
+| `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
 
 The expected results on each tree are kept in `docs/gap/PLAYTEST-STATUS.md`.

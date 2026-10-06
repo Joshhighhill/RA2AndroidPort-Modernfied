@@ -179,7 +179,6 @@ struct SaveAccess {
         save::io(ar, w.garrison_shots_);
         save::io(ar, w.garrison_events_);
         save::io(ar, w.bridge_ovl_);
-        save::io(ar, w.bridge_ovl0_);
         save::io(ar, w.bridge_tile_land_);
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);

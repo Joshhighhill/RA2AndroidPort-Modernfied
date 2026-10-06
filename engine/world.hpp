@@ -1738,9 +1738,8 @@ private:
     bool garrison_any_ = false;                    // an occupy order was ever given
     long long garrison_shots_ = 0;                 // shots fired out of garrisons
     std::vector<GarrisonEvent> garrison_events_;
-    std::vector<int> bridge_ovl_;                  // current runtime overlay per cell (-1)
-    std::vector<int> bridge_ovl0_;                 // the map's original overlay (repair target)
-    std::vector<ra2assets::LandType> bridge_tile_land_;
+    std::vector<std::int16_t> bridge_ovl_;         // current runtime overlay per cell (-1)
+    std::vector<std::uint8_t> bridge_tile_land_;   // the tile's LandType under each cell
     std::uint32_t bridge_version_ = 0;
     ProjRng bridge_rng_{0x42524447u};              // Random(1, BridgeStrength) stand-in
     void occupy_now(int unit_idx, int b_idx);      // InfantryClass::Occupy (FUN_00522640)
