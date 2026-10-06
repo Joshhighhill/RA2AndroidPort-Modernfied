@@ -50,7 +50,7 @@ Register in `cmake/ra2_sources.cmake` and the `CMakeLists.txt` test line. Scoped
 
 - `combat.hpp`: `struct ProjectileLaunch { int attacker, target_unit, target_building; }`; `step_combat(..., std::vector<ProjectileLaunch>* launches = nullptr)`; `deliver_unit_hit(...)` extracted verbatim from `try_fire`; `deliver_building_hit(...)` extracted verbatim from the building branch. New branch only when `launches && u.w_proj.flies()`.
 - `World`: `enable_projectiles(const ProjectileRules&)`, `projectiles_enabled()`, `projectiles()`, `take_projectile_events()`, private `projectiles_`, `proj_rng_`, `proj_rules_`, `proj_accum_`, `proj_frame_`, `step_projectiles(dt)` (pure insertion before `step_combat`), `launch_projectile(...)`, `detonate_projectile(...)`.
-- Tests (`TEST_CASE("projectile world: ...")` in `tests/test_world.cpp`): firewall closed ⇒ same-frame instant hit and zero events; open ⇒ damage arrives after ≥2 frames; target moved away ⇒ miss; dead-target ⇒ detonates without damage; Vertical bomb from altitude; collision snap onto an interposed enemy; building target damage. Scoped run `--test-case="projectile world*"`.
+- Tests (`TEST_CASE("projectile world: ...")` in `tests/test_projectile.cpp` -- kept out of `tests/test_world.cpp` to avoid merge conflicts with parallel phases): firewall closed ⇒ same-frame instant hit and zero events; open ⇒ damage arrives after ≥2 frames; target moved away ⇒ miss; dead-target ⇒ detonates without damage; Vertical bomb from altitude; collision snap onto an interposed enemy; building target damage. Scoped run `--test-case="projectile world*"`.
 
 ## Task 5 — interactive game + rendering
 
@@ -64,3 +64,17 @@ Register in `cmake/ra2_sources.cmake` and the `CMakeLists.txt` test line. Scoped
 ## Task 7 — finalize
 
 README section (behaviour, firewall, RNG decision, deviations, gate hash); append the phase record to `D:\ra2-android\.superpowers\sdd\progress.md` (main tree, gitignored).
+
+---
+
+## Execution record
+
+| Task | Commit | Notes |
+|---|---|---|
+| 1 RE-GATE | `2348f33` | arcing solver unwound; LevelHeight=104 CONFIRMED (3 headless passes) |
+| 2 pure core | `45ac247` | 17 cases |
+| 3 rules | `503b639` | the clone's Ini keeps inline `;` comments -> game first-char bool parser |
+| 4 World | `34bd0b9` | 7 World cases; combat scoped cases green |
+| 5 game + render | `cb9e7d6` | |
+| 6 gate | `aaf5c37` | `projectile_hash=1ff09b8a3d3eecdd`; Kirov scenario takes off to cruise first |
+| 7 finalize | README + progress ledger | full suite + all gates left to the controller (user directive) |
