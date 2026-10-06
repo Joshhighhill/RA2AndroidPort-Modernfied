@@ -173,6 +173,15 @@ struct SaveAccess {
         save::io(ar, w.ability_events_);
         save::io(ar, w.fire_events_);   // Gap fix C
         save::io(ar, w.combat_rng_);
+        // G16 world depth (agent G)
+        save::io(ar, w.depth_rules_);
+        save::io(ar, w.garrison_any_);
+        save::io(ar, w.garrison_events_);
+        save::io(ar, w.bridge_ovl_);
+        save::io(ar, w.bridge_ovl0_);
+        save::io(ar, w.bridge_tile_land_);
+        save::io(ar, w.bridge_version_);
+        save::io(ar, w.bridge_rng_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -330,6 +339,15 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.aa);
     io(ar, v.ag);
     io(ar, v.omni_fire);
+    io(ar, v.wall);   // G16
+}
+// G16 world depth (agent G)
+template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
+    io(ar, v.occupy_damage_mult); io(ar, v.occupy_rof_mult); io(ar, v.occupy_weapon_range);
+    io(ar, v.bridge_strength); io(ar, v.bridge_destruction); io(ar, v.armed);
+}
+template <class Ar> void fields(Ar& ar, World::GarrisonEvent& v) {
+    io(ar, v.kind); io(ar, v.building); io(ar, v.house);
 }
 template <class Ar> void fields(Ar& ar, ProjectileEvent& v) {
     io(ar, v.kind);
@@ -519,6 +537,10 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.deploy_fire_slot);
     io(ar, v.crusher);
     io(ar, v.crushable);
+    io(ar, v.primary_wall);   // G16
+    io(ar, v.occupier);
+    io(ar, v.occupy_weapon);
+    io(ar, v.elite_occupy_weapon);
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -567,6 +589,10 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.rot);
     io(ar, v.turret);
     io(ar, v.guard_range);
+    io(ar, v.can_be_occupied);   // G16
+    io(ar, v.can_occupy_fire);
+    io(ar, v.max_occupants);
+    io(ar, v.bridge_repair_hut);
 }
 
 // --- the live objects ---
@@ -690,6 +716,15 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.deploy_fire_slot);
     io(ar, v.crusher);
     io(ar, v.crushable);
+    // G16 world depth
+    io(ar, v.p_wall);
+    io(ar, v.occupier);
+    io(ar, v.occupy_w);
+    io(ar, v.occupy_w_elite);
+    io(ar, v.garrison_of);
+    io(ar, v.occupy_target);
+    io(ar, v.attack_cell_x); io(ar, v.attack_cell_y);
+    io(ar, v.cell_shot);
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -735,6 +770,11 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.def_slot);
     io(ar, v.def_fire_flash);
     io(ar, v.def_offline);
+    // G16 garrison
+    io(ar, v.occupants);
+    io(ar, v.firing_occupant);
+    io(ar, v.garrison_rof_cool);
+    io(ar, v.garrison_target);
 }
 
 // --- production ---

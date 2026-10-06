@@ -16,6 +16,7 @@ public:
         int pal = 0;   // 0 iso/terrain palette, 1 theater (overlay) palette, 2 unit palette
         std::string key;
         bool centered = true;   // building-style anchor (foundation centre) vs ore-style top-left
+        int ovl_id = -1;        // G16: runtime overlay index (live bridge state lookup)
     };
 
     // `map_ini` = the raw map text, `defs` the playable building roster (for
@@ -60,9 +61,13 @@ public:
             smudges_.push_back(o);
         }
         // Non-ore overlays.
+        // G16 (agent G) [RE: world-depth.md §B1]: [OverlayPack] stores the
+        // RUNTIME index = order of appearance in [OverlayTypes]; the ini's own
+        // numbers start at 1 and skip 40/41/183, so keying by them shifted every
+        // overlay (BRIDGE1 read as DUMMY15, LOBRDG01 as PALET02, ...).
         std::map<int, std::string> otypes;
-        for (const auto& kv : rules_ini.section("OverlayTypes"))
-            otypes[std::atoi(kv.first.c_str())] = pres_upper(pres_clean(kv.second));
+        names_ = ra2engine::overlay_names_in_order(rules_ini.section("OverlayTypes"));
+        for (std::size_t i = 0; i < names_.size(); ++i) otypes[static_cast<int>(i)] = names_[i];
         if (map.has_overlay()) {
             for (const ra2assets::MapCell& c : map.cells()) {
                 const int id = map.overlay_at(c.x, c.y);
@@ -81,6 +86,7 @@ public:
                 o.level = c.level;
                 o.frame = map.overlay_data_at(c.x, c.y);
                 o.key = "ovl:" + name;
+                o.ovl_id = id;
                 const bool wall = pres_lower(rget(name, "Wall")).rfind("y", 0) == 0;
                 o.pal = wall ? 2 : 1;
                 o.centered = false;
@@ -155,6 +161,19 @@ public:
     void draw(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w, const Obj& o,
               const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
         if (!w.explored_at(0, o.x, o.y)) return;
+        // G16: a low bridge section shows its LIVE overlay (damaged / destroyed /
+        // repaired) -- World::bridge_overlay_at.
+        if (o.ovl_id >= 0 && w.bridges_enabled()) {
+            const int live = w.bridge_overlay_at(o.x, o.y);
+            if (live >= 0 && live != o.ovl_id && live < static_cast<int>(names_.size())) {
+                Obj alt = o;
+                alt.ovl_id = -1;
+                alt.shp = art_shp(names_[live]);
+                alt.key = "ovl:" + names_[live];
+                if (alt.shp) draw(ren, tc, w, alt, pals, cam, W, H);
+                return;
+            }
+        }
         const int images = std::max(1, o.shp->count() / 2);   // second half = shadows
         const int fr = std::clamp(o.frame, 0, std::max(0, std::min(images, o.shp->count()) - 1));
         const ra2assets::ShpFile::Frame f = o.shp->frame_info(fr);
@@ -241,6 +260,7 @@ private:
     std::map<std::string, std::unique_ptr<MixFile>> nested_;
     std::map<std::string, std::shared_ptr<ra2assets::ShpFile>> cache_;
     std::vector<Obj> objects_, smudges_, overlays_;
+    std::vector<std::string> names_;   // [OverlayTypes] by runtime index
     std::map<int, int> wall_ids_;
     std::vector<std::pair<int, int>> block_;
     int missing_ = 0, placed_ = 0, civ_ = 0;

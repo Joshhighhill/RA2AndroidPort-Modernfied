@@ -606,6 +606,10 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.deploy_fire_slot = c.deploy_fire_slot;
     u.crusher = c.crusher;
     u.crushable = c.crushable;
+    u.p_wall = c.primary_wall;                 // G16 (agent G)
+    u.occupier = c.occupier;
+    u.occupy_w = c.occupy_weapon;
+    u.occupy_w_elite = c.elite_occupy_weapon;
     // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
     // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
     // past this point unless vet_any_). Only a vet-enabled World arms the
@@ -1885,7 +1889,14 @@ void World::step_capture(double dt) {
             if (best >= 0 && best <= 1) {
                 const int eng_house = u.house;
                 bool consumed = false;
-                if (!are_allied(eng_house, b.house)) {
+                if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) &&
+                    btypes()[b.type].bridge_repair_hut) {
+                    // G16 (agent G) [RE: world-depth.md §B4, FUN_00519449]: an engineer
+                    // entering a BridgeRepairHut repairs the bridge and is consumed;
+                    // the hut itself is never captured.
+                    repair_bridge_near(bi);
+                    consumed = true;
+                } else if (!are_allied(eng_house, b.house)) {
                     // Capture ENEMY *and NEUTRAL* buildings (neutral is not an
                     // enemy but IS capturable -- the oil-derrick case); own/ally
                     // -> repair. are_allied(eng, neutral) is false -> captured.
@@ -3232,6 +3243,9 @@ void World::step(double dt) {
     // Gap fix C (G-40) [RE: docs/re/defenses.md]: base defenses acquire, aim
     // and fire. Only types resolved with a weapon (BuildingTypeDef::armed).
     step_building_combat(dt);
+    // G16 world depth (agent G): garrisons + ground shots / bridges. Inert
+    // unless a garrison order was given or a unit has a ground target.
+    step_depth(dt);
     // P5 Veterancy [RE: veterancy.md V2/V3/V11/V12]: kill credit for every unit/
     // building that died this step, rank-change detection + stat refresh, and
     // the 14-frame self-heal. A pure INSERTION right after step_combat; the
@@ -4061,6 +4075,14 @@ void World::detonate_projectile(Projectile& p, int victim) {
                 }
             }
         }
+    }
+    // G16 (agent G) [RE: world-depth.md §B2, FUN_00489190]: the shell's
+    // explosion may break a low bridge section in the impact cell (inert unless
+    // GameScene armed the depth rules and the map has low bridges).
+    if (depth_rules_.armed && !bridge_ovl_.empty() && p.attacker >= 0 &&
+        p.attacker < static_cast<int>(units_.size())) {
+        const Unit& att = units_[p.attacker];
+        bridge_explosion(icx, icy, att.w_damage, att.w_active == 1 ? att.w2.wall : att.p_wall);
     }
     if (restore_slot >= 0)
         activate_weapon_slot(units_[p.attacker], restore_slot, vet_any_ ? &vet_rules_ : nullptr);

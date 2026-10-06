@@ -91,6 +91,8 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/abilities.cpp
     ${RA2_ROOT}/engine/world_abilities.cpp
     ${RA2_ROOT}/engine/savegame.cpp
+    ${RA2_ROOT}/engine/bridges.cpp
+    ${RA2_ROOT}/engine/world_depth.cpp
     # Gap fix C (combat/units/movement)
     ${RA2_ROOT}/engine/weapon.cpp
     ${RA2_ROOT}/engine/weapon_unit.cpp

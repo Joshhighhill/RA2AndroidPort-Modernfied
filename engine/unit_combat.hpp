@@ -132,6 +132,11 @@ struct UnitCombat {
     int deploy_fire_slot = 1;         // DeployFireWeapon=
     bool crusher = false;             // Crusher=
     bool crushable = false;           // Crushable=
+    // --- G16 (agent G) [RE: docs/re/world-depth.md] ---
+    bool primary_wall = false;        // primary warhead Wall= (bridge damage, G-49)
+    bool occupier = false;            // Occupier= (may garrison CanBeOccupied buildings, G-48)
+    WeaponSlot occupy_weapon;         // OccupyWeapon= (fired from inside a garrison)
+    WeaponSlot elite_occupy_weapon;   // EliteOccupyWeapon=
 };
 
 }  // namespace ra2engine

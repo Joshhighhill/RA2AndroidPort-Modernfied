@@ -76,6 +76,11 @@ struct BuildingTypeDef {
     int rot = 0;                    // ROT= (turret slew rate)
     bool turret = false;            // Turret= (must face before firing)
     double guard_range = 0.0;       // GuardRange= (cells; 0 = weapon range)
+    // --- G16 world depth (agent G) [RE: docs/re/world-depth.md] ---
+    bool can_be_occupied = false;   // CanBeOccupied=     (BuildingType +0x157B)
+    bool can_occupy_fire = false;   // CanOccupyFire=     (+0x157C)
+    int max_occupants = 0;          // MaxNumberOccupants= (+0x1580)
+    bool bridge_repair_hut = false; // BridgeRepairHut=   (+0x16B6)
 };
 
 // A placed building instance.
@@ -153,6 +158,12 @@ struct Building {
     int def_slot = 0;                // weapon slot of the last shot
     double def_fire_flash = 0.0;     // seconds of muzzle flash left (renderer)
     bool def_offline = false;        // Powered=yes and the house is low on power
+    // --- G16 garrison (agent G, world_depth.cpp) --- BuildingClass::Occupants
+    // (+0x688) / FiringOccupantIndex (+0x69C). Inert; NOT read by world_hash.
+    std::vector<int> occupants;      // unit indices, in entry order
+    int firing_occupant = 0;
+    double garrison_rof_cool = 0.0;
+    int garrison_target = -1;
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

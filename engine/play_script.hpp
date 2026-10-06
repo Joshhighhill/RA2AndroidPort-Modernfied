@@ -144,6 +144,8 @@ struct Probe : ProbeData {
     std::function<bool(const std::string& spec, double& cx, double& cy)> find_building;
     // The nearest valid origin cell for the currently armed placement.
     std::function<bool(int& cx, int& cy)> auto_place;
+    // Named map points ("bridge", "bridge_near", "bridge_far", "garrison", "hut").
+    std::function<bool(const std::string& name, double& cx, double& cy)> find_point;
     // Dev cheats: returns "" on success or an error string.
     std::function<std::string(const std::vector<std::string>& args)> cheat;
 };

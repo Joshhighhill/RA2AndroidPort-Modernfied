@@ -451,6 +451,31 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             }
         }
 
+        // G16 (agent G, G-49): force-fire at a ground cell (Ctrl+click) -- the
+        // attack-building template above with a cell target. The shot itself
+        // is resolved by World::step_depth (explosion on the cell + the bridge
+        // roll); here: range, aim, ROF, and the approach request.
+        if (u.attack_cell_x >= 0) {
+            const double d = dist_leptons(u.fx, u.fy, static_cast<double>(u.attack_cell_x),
+                                          static_cast<double>(u.attack_cell_y));
+            const double range_leptons = u.w_range * kLeptonsPerCell;
+            if (d <= range_leptons) {
+                if (u.rof_cool <= 0.0) {
+                    if (u.is_vehicle && !u.omni_fire &&
+                        !vehicle_aimed(u, facing_u16_from_delta(
+                                              static_cast<double>(u.attack_cell_x) - u.fx,
+                                              static_cast<double>(u.attack_cell_y) - u.fy)))
+                        continue;
+                    u.rof_cool = rearm_secs(u.w_rof, rof_rng);
+                    u.fire_flash = kFireFlashSecs;
+                    u.cell_shot = true;
+                }
+            } else if (!u.moving()) {
+                requests.push_back({i, u.attack_cell_x, u.attack_cell_y, /*approach=*/true});
+            }
+            continue;
+        }
+
         // (d) Target validation: drop a stale target (gone from the vector,
         // dead, dying, or no longer hostile). Clearing also resets
         // attack_order -- an explicit order dies with its target, so a

@@ -29,6 +29,7 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.aa = rules.section_flag(proj, "AA", false);
     s.ag = rules.section_flag(proj, "AG", true);
     s.omni_fire = rules.weapon_omnifire(weapon);
+    s.wall = rules.section_flag(wh, "Wall", false);   // G16: WarheadType +0x144
     return s;
 }
 
@@ -98,6 +99,17 @@ void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& t
     // ctor default not read; rulesmd sets Crushable=yes/no explicitly on the
     // exceptions, e.g. DESO Crushable=no].
     c.crushable = rules.section_flag(type_id, "Crushable", rules.is_infantry(type_id));
+    // G16 (agent G) [RE: world-depth.md §A]: InfantryType Occupier (+0xEB4),
+    // OccupyWeapon (+0xE04) / EliteOccupyWeapon (+0xE20); primary warhead Wall=.
+    c.primary_wall = tw.slot[0].wall;
+    c.occupier = rules.section_flag(type_id, "Occupier", false);
+    c.occupy_weapon = resolve_weapon_slot(rules, rules.section_string(type_id, "OccupyWeapon", ""));
+    c.elite_occupy_weapon =
+        resolve_weapon_slot(rules, rules.section_string(type_id, "EliteOccupyWeapon", ""));
+    // OccupyWeapon "Defaults to 0 (Primary)" (rulesmd comment; GetWeapon falls
+    // back to the occupant's weapon 0 when the slot is empty, FUN_004526E0).
+    if (!c.occupy_weapon.valid) c.occupy_weapon = tw.slot[0];
+    if (!c.elite_occupy_weapon.valid) c.elite_occupy_weapon = c.occupy_weapon;
 }
 
 void fill_building_weapons(const ra2assets::Rules& rules, const std::string& type_id,
@@ -110,6 +122,12 @@ void fill_building_weapons(const ra2assets::Rules& rules, const std::string& typ
     d.rot = rules.rot(type_id);
     d.turret = rules.has_turret(type_id);
     d.guard_range = rules.section_double(type_id, "GuardRange", 0.0);
+    // G16 (agent G) [RE: world-depth.md §A1, BuildingTypeClass::LoadFromINI
+    // FUN_0045FE40]: the garrison / bridge-hut keys.
+    d.can_be_occupied = rules.section_flag(type_id, "CanBeOccupied", false);
+    d.can_occupy_fire = rules.section_flag(type_id, "CanOccupyFire", false);
+    d.max_occupants = static_cast<int>(rules.section_double(type_id, "MaxNumberOccupants", 0.0));
+    d.bridge_repair_hut = rules.section_flag(type_id, "BridgeRepairHut", false);
 }
 
 }  // namespace ra2engine

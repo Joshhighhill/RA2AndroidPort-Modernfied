@@ -126,6 +126,9 @@ target_sources(ra2assets_tests PRIVATE engine/weapon.cpp engine/weapon_unit.cpp
                                        engine/weapon_resolve.cpp engine/building_combat.cpp
                                        engine/unit_orders.cpp
                                        tests/test_gap_combat.cpp)
+# G16 world depth (agent G): bridges (pure) + the World garrison/bridge members.
+target_sources(ra2assets_tests PRIVATE engine/bridges.cpp engine/world_depth.cpp
+                                       tests/test_bridges.cpp)
 # building.cpp is pure C++17 (no SDL): BuildingTypeDef/Building struct defs,
 # foundation_cells row-major enumeration, placement_check validity (in-grid,
 # passable, unoccupied, no overlap, adjacency), building_frame/buildup_frame

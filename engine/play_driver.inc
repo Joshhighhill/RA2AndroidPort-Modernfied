@@ -447,6 +447,17 @@ private:
             cy = std::atof(c.args[i + 2].c_str());
             return true;
         }
+        if (k == "point") {   // G16: a named map point (+ optional offset)
+            if (c.args.size() < i + 2) { fail(c, "point NAME"); return false; }
+            if (!p.find_point) { fail(c, "missing-probe:find_point"); return false; }
+            if (!p.find_point(c.args[i + 1], cx, cy)) { fail(c, "no point " + c.args[i + 1]); return false; }
+            if (c.args.size() >= i + 4 && (c.args[i + 2][0] == '+' || c.args[i + 2][0] == '-') &&
+                (c.args[i + 3][0] == '+' || c.args[i + 3][0] == '-')) {
+                cx += std::atof(c.args[i + 2].c_str());
+                cy += std::atof(c.args[i + 3].c_str());
+            }
+            return true;
+        }
         if (k == "unit" || k == "building") {
             if (c.args.size() < i + 2) { fail(c, k + " H:TYPE[:n]"); return false; }
             auto& fn = (k == "unit") ? p.find_unit : p.find_building;
@@ -505,7 +516,7 @@ private:
             y = std::atoi(c.args[i + 2].c_str());
             return true;
         }
-        if (k == "cell" || k == "unit" || k == "building") {
+        if (k == "cell" || k == "unit" || k == "building" || k == "point") {
             double cx = 0, cy = 0;
             if (!locate(c, p, i, cx, cy)) return false;
             if (!p.cell_to_screen) { fail(c, "missing-probe:cell_to_screen (scene '" + p.scene + "')"); return false; }
