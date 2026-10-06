@@ -25,6 +25,22 @@
             p.set("house_credits(" + hs + ")", world_.house_credits(h));
             p.set("defeated(" + hs + ")", world_.house_defeated(h) ? 1 : 0);
             p.set("team(" + hs + ")", world_.house_team(h));
+            // [SK] what the Skirmish page handed the game, per house.
+            const ra2engine::World::Side hsd = world_.house_side(h);
+            p.set_s("side(" + hs + ")", hsd == ra2engine::World::Side::Soviet ? "SOVIET"
+                                        : hsd == ra2engine::World::Side::Allied ? "ALLIED"
+                                        : hsd == ra2engine::World::Side::Yuri ? "YURI" : "NEUTRAL");
+            p.set("house_color(" + hs + ")", world_.house_color(h));
+            if (h < static_cast<int>(cfg_.slots.size())) {
+                p.set_s("country(" + hs + ")", cfg_.slots[(size_t)h].country);
+                p.set("combatant(" + hs + ")", cfg_.slots[(size_t)h].combatant ? 1 : 0);
+            }
+            if (const ra2engine::AiHouseConfig* ac = world_.ai_config(h))
+                p.set_s("ai(" + hs + ")", ac->difficulty == ra2engine::AiDifficulty::Easy ? "Easy"
+                                          : ac->difficulty == ra2engine::AiDifficulty::Normal ? "Medium"
+                                          : "Brutal");
+            else
+                p.set_s("ai(" + hs + ")", "Human");
             p.set("sw(" + hs + ")", world_.sw_state(h) ? 1 : 0);
             p.set("sw_ready(" + hs + ")", world_.sw_ready(h) ? 1 : 0);
             p.set("units(" + hs + ")", 0);
@@ -124,6 +140,15 @@
         p.set_s("world_outcome", wo);
         p.set("victory_enabled", world_.victory_enabled() ? 1 : 0);
         p.set("winning_team", world_.winning_team());
+        // [SK] lobby options as the game consumes them.
+        p.set("game_speed", cfg_.game_speed >= 0 ? cfg_.game_speed
+                                                 : g_user_settings ? g_user_settings->game_speed : -1);
+        p.set("mcv_redeploys", world_.mcv_redeploys() ? 1 : 0);
+        p.set("sw_allowed", cfg_.superweapons ? 1 : 0);
+        p.set("short_game", cfg_.short_game ? 1 : 0);
+        p.set("crates_on", cfg_.crates ? 1 : 0);
+        p.set("unit_count_cfg", cfg_.unit_count);
+        p.set("start_cash", cfg_.starting_cash);
         // Power (house 0).
         const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, 0);
         p.set("power_out", pt.output);

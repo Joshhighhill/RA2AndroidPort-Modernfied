@@ -69,6 +69,16 @@ bool rp_country_allows(const Rules& rules, const std::string& id, const std::str
     return !rp_has(rp_list(rules, id, "ForbiddenHouses"), country);
 }
 
+// [SK-27] A structure the lobby's Superweapons checkbox removes: it carries a
+// SuperWeapon= (or SuperWeapon2=) and is not one of the [AI] BuildTech tech
+// centres (whose YR SuperWeapon= is the side special).
+bool rp_is_lobby_sw_building(const Rules& rules, const std::string& id) {
+    if (rules.section_string(id, "SuperWeapon", "").empty() &&
+        rules.section_string(id, "SuperWeapon2", "").empty())
+        return false;
+    return !rp_has(rp_list(rules, "AI", "BuildTech"), id);
+}
+
 // The human's country: the lobby slot's country when its [Country] Side=
 // matches the slot's side (GDI=Allied, Nod=Soviet), else the side's stock
 // default (Americans / Russians). The lobby's side button changes only the

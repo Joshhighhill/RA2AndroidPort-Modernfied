@@ -744,6 +744,14 @@ int run_play(const std::string& script_path, const std::string& out_dir_in) {
     std::filesystem::create_directories(pref, ec);
     const std::string pref_abs = std::filesystem::absolute(pref).string() + "/";
     SDL_setenv("RA2_PREF_DIR", pref_abs.c_str(), 1);
+    // SDL_setenv on a MinGW/Windows build writes the Win32 environment block
+    // only; settings_file_path() / the save dir read the CRT copy (getenv),
+    // so without this the isolation silently fell back to %APPDATA%.
+#ifdef _WIN32
+    _putenv_s("RA2_PREF_DIR", pref_abs.c_str());
+#else
+    setenv("RA2_PREF_DIR", pref_abs.c_str(), 1);
+#endif
 
     ra2play_drv::Runner r(std::move(s), out_dir);
     int rc = 0;
