@@ -684,6 +684,8 @@ public:
     // world, moving skirmish_hash and maps_hash. So the roster lands in its own
     // field and `btypes()` prefers whichever is populated.
     void set_building_types(std::vector<BuildingTypeDef> types) { lookup_types_ = std::move(types); }
+    // Gap owner A (G-27) [RE: economy.md §2]: rulesmd [General] PurifierBonus.
+    void set_purifier_bonus(double b) { purifier_bonus_ = b; }
 
     // The type roster for non-economy consumers (repair/sell). set_economy's
     // roster wins when present so gate worlds behave exactly as before.
@@ -703,6 +705,17 @@ public:
     // harvester starts hunting immediately, matching the original).
     Unit& add_harvester(int cell_x, int cell_y, int house, const UnitCombat& c,
                         bool chrono, int storage_bales);
+    // Gap owner A (G-22): a War Factory-built HARV/CMIN leaves through the
+    // ordinary launch_unit exit, then becomes a miner hunting ore exactly like
+    // add_harvester's (SeekOre). No-op on a bad index.
+    void make_harvester(int unit_idx, bool chrono, int storage_bales) {
+        if (unit_idx < 0 || unit_idx >= static_cast<int>(units_.size())) return;
+        Unit& u = units_[unit_idx];
+        u.is_harvester = true;
+        u.chrono_miner = chrono;
+        u.storage_bales = storage_bales;
+        u.harv = HarvState::SeekOre;
+    }
 
     // Player orders (selected house-0 harvesters only). Simplified per
     // economy.md §1: no separate "pinned" flag -- just pin harv_cell_* to
@@ -878,6 +891,23 @@ public:
     bool sw_ready(int house) const;
     double sw_charge_fraction(int house) const;
     const Superweapon* sw_state(int house) const;
+    // Gap owner A (G-25/G-29) [RE: superweapon.md §1 -- a house holds a SW
+    // while it owns the SuperWeapon= building; IsPowered=true pauses the
+    // charge under low power; construction.md §8 -- low power = output <
+    // drain]. revoke drops the grant (building lost); set_superweapon_powered
+    // records the SW type's IsPowered flag.
+    void revoke_superweapon(int house) {
+        if (house >= 0 && house < static_cast<int>(sw_houses_.size()))
+            sw_houses_[house] = HouseSuperweapon{};
+    }
+    void set_superweapon_powered(int house, bool is_powered) {
+        if (house >= 0 && house < static_cast<int>(sw_houses_.size()))
+            sw_houses_[house].is_powered = is_powered;
+    }
+    // Low power for `house`: Idle buildings' output (after a spy blackout) <
+    // their drain, over btypes(). The query every low-power consumer shares
+    // (SW charge here; radar, Powered=yes defences).
+    bool house_low_power(int house) const;
 
     // --- Multi-house / Alliances phase [RE: multihouse.md §1/§2, D1] ---------
     // On-screen sides (the [Sides] legacy GDI=Allied / Nod=Soviet / ThirdSide=Yuri
@@ -1419,6 +1449,7 @@ private:
         double eff_cell_spread = 0.0;       // [NUKE] CellSpread=10
         double eff_percent_at_max = 1.0;    // [NUKE] PercentAtMax=.02
         std::array<int, 11> eff_verses{};   // [NUKE] Verses (armor percents)
+        bool is_powered = false;            // SW type IsPowered= (gap owner A, G-29)
     };
     std::vector<HouseSuperweapon> sw_houses_;  // index = house id (grown on demand)
     bool sw_any_ = false;                      // the step() firewall bool
@@ -1575,6 +1606,7 @@ private:
     double growth_interval_ = 0.0;
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
+    double purifier_bonus_ = 0.0;   // rules [General] PurifierBonus (gap owner A, G-27)
     // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
     // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
     // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/

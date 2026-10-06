@@ -19,6 +19,12 @@ struct UnitTypeDef {
     std::vector<std::string> prerequisite;  // uppercased tokens (BARRACKS/FACTORY groups or ids)
     std::string cameo;                      // Art Cameo= ("" = never in sidebar)
     UnitCombat combat;                      // resolved stats for World::add_combat_unit/add_harvester
+    // Gap owner A (real-play roster, G-22/G-24): which factory queue builds it.
+    // Both false = Infantry (is_vehicle=false) or ground Vehicle (is_vehicle).
+    bool naval = false;                     // rules Naval=yes  -> Naval Yard / Ships queue
+    bool aircraft = false;                  // [AircraftTypes]  -> Airfield / Aircraft queue
+    bool harvester = false;                 // rules Harvester=yes -> launched as a miner
+    int storage = 0;                        // rules Storage= (bales) for a harvester
 };
 
 }  // namespace ra2engine

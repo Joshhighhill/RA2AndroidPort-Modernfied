@@ -28,11 +28,9 @@ std::vector<World::FireEvent> World::take_fire_events() {
 
 bool World::defense_power_ok(int house) const {
     // [RE: defenses.md §2] FUN_004555c0: Powered && drain > 0 && the house's
-    // output/drain ratio (FUN_004fcc50) < 1.0 -> not operational. A spy
-    // blackout zeroes the output (apply_blackout).
-    const PowerTotals pt =
-        apply_blackout(power_totals(buildings_, btypes(), house), house_blacked_out(house));
-    return pt.drain <= pt.output;
+    // output/drain ratio (FUN_004fcc50) < 1.0 -> not operational. Same
+    // predicate as A's house_low_power (blackout included).
+    return !house_low_power(house);
 }
 
 Unit World::defense_shooter(int b_idx, int slot) const {
