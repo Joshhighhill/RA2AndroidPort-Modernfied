@@ -61,7 +61,14 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   const std::vector<int>& refinery_types, OreField& ore,
                   const std::vector<std::uint8_t>& passable, int gw, int gh, Occupancy& occ,
                   double dt, const OreValues& values, double house_credits[2],
-                  std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events);
+                  std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events,
+                  int n_houses = 2, const int* purifiers = nullptr,
+                  double purifier_bonus = 0.0);
+// Gap owner A: `house_credits` has `n_houses` entries (every skirmish house
+// is paid, not just 0/1 -- house 2+ income used to land in house 0's pool).
+// [RE: economy.md §2 CONFIRMED] each unloaded bale also pays
+// purifiers[house] x PurifierBonus x Value as a separate add (nullptr = no
+// purifiers anywhere).
 
 // FreeUnit grand-opening edge detector [RE: economy.md §6, main.cpp's
 // spawn_free_units_on_open] -- Review Important-2: the Buildup->Idle edge
