@@ -17,21 +17,42 @@ C combat/movement, D AI, E render/audio, F MCV/start/win-lose/campaign.
 
 ## Summary
 
-| Script | 63edea6 | 7778b66 | play_hash @7778b66 |
-|---|---|---|---|
-| `sk-a` | FAIL, 28 failures | FAIL, 11 failures | `e83dfb8eb39f6228` |
-| `sk-s` | FAIL, 52 failures | FAIL, 14 failures | `394c1d9c7629c01b` |
-| `sk-end` | FAIL, 2 | FAIL, 2 | `b7a79473c7d8138c` |
-| `sk-a-lose` | FAIL, 4 | FAIL, 4 | `7bbaa6d56e273753` |
-| `m-all01` | FAIL, 5 | FAIL, 2 | `01fe9ec267dfa2e0` |
-| `m-sov01` | FAIL, 6 | FAIL, 6 | `d3e4d4b854b60010` |
-| `shell-smoke` | FAIL, 14 (+hard stop) | FAIL, 4 (+hard stop) | `57d260958ea5173e` |
-| `controls` | n/a | FAIL, 2 | `a6a838a2a270dbaf` |
-| `world-depth` | n/a | FAIL, 1 | `5a1576663741138f` |
-| `probe-shell`, `probe-game`, `probe-flow`, `probe-perf` | PASS | PASS | (self-checks) |
+The **current expectation is b049b40** (master with A, B, C and E merged; D and
+F pending). The per-script tables below show 63edea6 and 7778b66; the deltas
+at b049b40 are listed right after this table.
+
+| Script | 63edea6 | 7778b66 (A+B) | b049b40 (A+B+C+E) | play_hash @b049b40 |
+|---|---|---|---|---|
+| `sk-a` | FAIL, 28 | FAIL, 11 | FAIL, 8 | `07b084097ddfe20c` |
+| `sk-s` | FAIL, 52 | FAIL, 14 | FAIL, 13 | `a77d77282d5ecc4b` |
+| `sk-end` | FAIL, 2 | FAIL, 2 | FAIL, 2 | `bef7d78b1a86dcd5` |
+| `sk-a-lose` | FAIL, 4 | FAIL, 4 | FAIL, 4 | `3c90c0e249d1179c` |
+| `m-all01` | FAIL, 5 | FAIL, 2 | FAIL, 2 | `42e50f02da8522ab` |
+| `m-sov01` | FAIL, 6 | FAIL, 6 | FAIL, 6 | `be47fff77fd9072e` |
+| `shell-smoke` | FAIL, 14 (+hard stop) | FAIL, 4 (+hard stop) | FAIL, 4 (+hard stop) | `428731525d358c3e` |
+| `controls` | n/a | FAIL, 2 | FAIL, 2 | `1c6c1af2303f484e` |
+| `world-depth` | n/a | FAIL, 1 | **PASS** | `12d4c50213bae79a` |
+| `probe-*` self-checks | PASS | PASS | PASS | — |
+
+### Deltas at b049b40 (C combat + E render merged)
+
+| Script / step | 7778b66 | b049b40 | G-ID | Owner |
+|---|---|---|---|---|
+| sk-a L125-L126 Prism Tank has damage/range | FAIL | PASS | G-41 | C |
+| sk-a L139 Pillbox kills 3 Conscripts | FAIL | PASS | G-40 | C |
+| sk-s L109 Sentry Gun kills 2 GIs | FAIL | PASS | G-40 | C |
+| world-depth L20 Rhino kills the GI it is sent onto | FAIL | PASS | G-47 | C |
+| m-all01 L44 (no input -> all units dead -> must end LOST) | FAIL | not triggered (units survive to f≈2300 now), so NEW-2 is unconfirmed on this tree | NEW-2 | F |
+| m-all01 L36 TechLevel 3: no Weather Device in the ALL01 sidebar | PASS | **FAIL (regression: GAWEAT now offered)** | G-15 | F (cap) |
+
+Every other row keeps its 7778b66 verdict. Still failing at b049b40: NEW-1
+(camera), G-23 MCV start/deploy, G-22 AMCV/SMCV in the roster, G-02 skirmish
+end, G-60/G-64 AI attack + Allied AI, G-03 Yuri in the lobby, G-26 Tesla Coil,
+NEW-3 Soviet War Miner never unloads, G-15 campaign TechLevel, G-01 Esc
+mid-placement, G-14 Abort/Exit confirmation.
 
 Determinism: every script was run twice on the same tree with identical
-`play_hash` (checked on @7778b66 with `sk-end` and `controls`; the hash folds the full probe
+`play_hash` (checked on 7778b66 with `sk-end` and `controls`; the hash folds the full probe
 every 15 frames). No `play_hash` is pinned yet — a hash is pinned only once its
 script passes (ROADMAP-playable §G rule 6).
 
