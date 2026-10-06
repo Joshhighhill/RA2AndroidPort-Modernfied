@@ -14640,6 +14640,25 @@ ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
                 if (d.is_vehicle && d.combat.crate_goodie) cc.unit_pool.push_back(d.combat);
         w.enable_crates(cc);
     }
+    // The player's launch_skirmish base is a lone ConYard; give it the power
+    // plant + barracks the allied_full arm places (same offsets), instant, so
+    // the player's Infantry queue can run like a real game's.
+    for (const ra2engine::Building& b0 : std::vector<ra2engine::Building>(w.buildings())) {
+        if (b0.house != 0) continue;
+        const struct { const char* id; int dx, dy; } kAdd[] = {{"GAPOWR", 6, 0}, {"GAPILE", 6, 4}};
+        for (const auto& k : kAdd) {
+            const int ti = roster_index(e.ba, k.id);
+            if (ti < 0 || ti >= (int)e.ba.art.size() || !e.ba.art[ti].ok) continue;
+            const ra2engine::BuildingTypeDef& d = e.ba.roster[ti];
+            const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                b0.cx + k.dx, b0.cy + k.dy, d.fw, d.fh, 0, d.adjacent, w.passable(), w.grid_w(),
+                w.grid_h(), w.occupancy(), w.buildings(), /*bypass_adjacency=*/true);
+            if (chk.ok)
+                w.add_building(ti, b0.cx + k.dx, b0.cy + k.dy, d.fw, d.fh, 0, d.strength,
+                               d.armor_ix, 0.0, /*instant=*/true, d.sight, d.grants_map_reveal);
+        }
+        break;
+    }
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(e.a.map);
     const int bx = sc ? sc->x : w.grid_w() / 2, by = sc ? sc->y : w.grid_h() / 2;
     const ra2engine::UnitCombat htnk = resolve_combat_unit(e.rules, "HTNK").combat;
@@ -14752,6 +14771,9 @@ SlResult sl_run_skirmish(SlSkirmishEnv& e, int N, int M) {
     sa.queues.set_credits(sa.player_credits);
     sa.credits_shown = sa.player_credits;
     for (int f = 0; f < N; ++f) sl_skirmish_frame(e, wa, sa, t);
+    // Save with a shell IN FLIGHT: advance (deterministically) to the first
+    // frame >= N that has one, bounded; the loaded run starts from that frame.
+    for (int k = 0; k < 120 && wa.projectiles().empty(); ++k, ++N) sl_skirmish_frame(e, wa, sa, t);
     const std::size_t shells_at_save = wa.projectiles().size();
     ra2engine::save::SaveFile sf;
     sf.header = sl_header(e.a.map, "Skirmish", e.cfg.map_file, N);
@@ -14911,7 +14933,7 @@ int run_demo_saveload() {
     env.build_speed = rules.general_double("BuildSpeed", 0.7);
     for (int i = 0; i < (int)ur.defs.size(); ++i)
         if (upper_ascii(ur.defs[i].id) == "E1") env.e1 = i;
-    const SlResult s1 = sl_run_skirmish(env, 450, 900);
+    const SlResult s1 = sl_run_skirmish(env, 90, 900);
 
     // --- scenario 2: the P9 map triggers on sov07tmd.
     ra2assets::Ini map_ini = ra2assets::Ini::parse("");
