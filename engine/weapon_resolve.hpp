@@ -10,6 +10,7 @@
 
 #include "weapon.hpp"
 #include "unit_combat.hpp"
+#include "building.hpp"
 
 namespace ra2assets { class Rules; }
 
@@ -40,5 +41,10 @@ std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& typ
 // ability), Crusher= / Crushable=.
 void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& type_id,
                              const TypeWeapons& tw, UnitCombat& c);
+
+// Gap fix C (G-40) [RE: docs/re/defenses.md]: a building type's weapons
+// (same slot rule as units), Powered=, ROT=, Turret=, GuardRange=.
+void fill_building_weapons(const ra2assets::Rules& rules, const std::string& type_id,
+                           BuildingTypeDef& d);
 
 }  // namespace ra2engine

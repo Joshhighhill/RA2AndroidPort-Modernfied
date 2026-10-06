@@ -229,6 +229,7 @@ public:
                 }
             } catch (const std::exception&) {}
         }
+        ra2engine::fill_building_weapons(rules_, id, d);   // Gap fix C (G-40)
         ba.roster.push_back(d);
         ba.art.push_back(std::move(slot));
         ba.defense.push_back(rules_.is_buildcat_combat(id) ? 1 : 0);

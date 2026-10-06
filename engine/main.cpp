@@ -2046,6 +2046,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         for (size_t k = 0; k < d.prerequisite.size(); ++k)
             std::cerr << (k ? "," : "") << d.prerequisite[k];
         std::cerr << "]\n";
+        ra2engine::fill_building_weapons(rules, id, d);   // Gap fix C (G-40): defenses
         ba.roster.push_back(std::move(d));
         ba.art.push_back(std::move(slot));
         // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is

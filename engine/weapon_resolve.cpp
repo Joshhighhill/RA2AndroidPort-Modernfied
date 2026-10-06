@@ -96,4 +96,16 @@ void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& t
     c.crushable = rules.section_flag(type_id, "Crushable", false);
 }
 
+void fill_building_weapons(const ra2assets::Rules& rules, const std::string& type_id,
+                           BuildingTypeDef& d) {
+    const TypeWeapons tw = resolve_type_weapons(rules, type_id);
+    d.weapon[0] = tw.slot[0];
+    d.weapon[1] = tw.slot[1];
+    d.armed = tw.slot[0].valid && tw.slot[0].range > 0.0 && tw.slot[0].damage != 0;
+    d.powered = rules.section_flag(type_id, "Powered", false);
+    d.rot = rules.rot(type_id);
+    d.turret = rules.has_turret(type_id);
+    d.guard_range = rules.section_double(type_id, "GuardRange", 0.0);
+}
+
 }  // namespace ra2engine

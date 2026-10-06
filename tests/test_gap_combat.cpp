@@ -138,3 +138,43 @@ TEST_CASE("gapC deploy: a GI deploys into a firing post with Para, not a frozen 
     w.order_unit_move(0, 2, 4);
     CHECK_FALSE(w.units()[0].deployed);
 }
+
+TEST_CASE("gapC defenses: a pillbox acquires, turns and kills; Powered goes offline at low power (G-40)") {
+    ra2assets::MapFile map;
+    World w(map);
+    BuildingTypeDef pill;
+    pill.id = "GAPILL";
+    pill.strength = 400;
+    pill.weapon[0] = slot(false, true);
+    pill.weapon[0].damage = 20;
+    pill.weapon[0].rof = 10;
+    pill.weapon[0].range = 5.0;
+    pill.armed = true;
+    pill.turret = true;
+    pill.rot = 10;
+    BuildingTypeDef sam = pill;
+    sam.id = "NASAM";
+    sam.powered = true;
+    sam.power = -50;
+    sam.turret = false;
+    w.set_building_types({pill, sam});
+    w.add_building(0, 2, 2, 1, 1, 0, 400, 0, 0.0, /*instant=*/true);
+    UnitCombat e2;
+    e2.strength = 125;
+    w.add_combat_unit(5, 2, 1, e2);
+    for (int f = 0; f < 120; ++f) w.step(1.0 / 15.0);
+    CHECK(w.units()[0].hp <= 0);
+    bool fired = false;
+    for (const auto& ev : w.take_fire_events()) fired = fired || ev.building == 0;
+    CHECK(fired);
+
+    // Powered defense with no power plant: drain 50 > output 0 -> offline.
+    World w2(map);
+    w2.set_building_types({pill, sam});
+    w2.add_building(1, 2, 2, 1, 1, 0, 400, 0, 0.0, true);
+    w2.add_combat_unit(4, 2, 1, e2);
+    for (int f = 0; f < 60; ++f) w2.step(1.0 / 15.0);
+    CHECK(w2.units()[0].hp == 125);
+    CHECK(w2.buildings()[0].def_offline);
+    CHECK_FALSE(w2.defense_power_ok(0));
+}

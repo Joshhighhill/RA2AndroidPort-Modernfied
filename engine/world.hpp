@@ -1282,6 +1282,24 @@ public:
     const std::vector<Crate>& crates() const { return crates_; }
     std::vector<CrateEvent> take_crate_events();
 
+    // --- Gap fix C: base defenses + combat events [RE: docs/re/defenses.md] ---
+    // One shot fired this step (a unit or a base defense) for the renderer /
+    // audio owner (muzzle flash, report sound, tracer). Drained per frame.
+    struct FireEvent {
+        int unit = -1;             // firing unit, or -1
+        int building = -1;         // firing base defense, or -1
+        int target_unit = -1;
+        int target_building = -1;
+        int slot = 0;              // weapon slot fired (0 primary / 1 secondary)
+        std::string weapon;        // weapon id when known (defenses), else ""
+    };
+    std::vector<FireEvent> take_fire_events();
+    // Powered=yes defenses work only while the house's power output covers its
+    // drain (BuildingClass power check FUN_004555c0, ratio < 1.0 -> offline).
+    bool defense_power_ok(int house) const;
+    // The per-frame defense pass (public for tests; called from step()).
+    void step_building_combat(double dt);
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -1595,6 +1613,11 @@ private:
     void ability_damage_building(int b_idx, int dmg);
     void ability_apply_weapon_fields(Unit& u, const WeaponSpec& w);
     void ability_bind_unit(Unit& u);
+
+    // --- Gap fix C (building_combat.cpp) ---
+    std::vector<FireEvent> fire_events_;
+    void launch_defense_projectile(int b_idx, int target_unit, int slot);
+    Unit defense_shooter(int b_idx, int slot) const;
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by

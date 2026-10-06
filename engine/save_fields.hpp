@@ -169,6 +169,7 @@ struct SaveAccess {
         save::io(ar, w.rad_);
         save::io(ar, w.no_c4_types_);
         save::io(ar, w.ability_events_);
+        save::io(ar, w.fire_events_);   // Gap fix C
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -305,6 +306,12 @@ template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.launch_speed);
     io(ar, v.max_z);
     io(ar, v.weapon_slot);   // Gap fix C
+    io(ar, v.attacker_building);
+}
+// Gap fix C: one shot event (World::FireEvent).
+template <class Ar> void fields(Ar& ar, World::FireEvent& v) {
+    io(ar, v.unit); io(ar, v.building); io(ar, v.target_unit); io(ar, v.target_building);
+    io(ar, v.slot); io(ar, v.weapon);
 }
 // Gap fix C: one resolved weapon slot.
 template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
@@ -545,6 +552,13 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.click_repairable);
     io(ar, v.crewed);
     io(ar, v.soylent);
+    // Gap fix C: defense weapons
+    io(ar, v.weapon);
+    io(ar, v.armed);
+    io(ar, v.powered);
+    io(ar, v.rot);
+    io(ar, v.turret);
+    io(ar, v.guard_range);
 }
 
 // --- the live objects ---
@@ -706,6 +720,13 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.bomb_house);
     io(ar, v.warp_remaining);
     io(ar, v.ability_death_done);
+    // Gap fix C: defense combat state
+    io(ar, v.def_target);
+    io(ar, v.def_rof_cool);
+    io(ar, v.def_turret_facing);
+    io(ar, v.def_slot);
+    io(ar, v.def_fire_flash);
+    io(ar, v.def_offline);
 }
 
 // --- production ---

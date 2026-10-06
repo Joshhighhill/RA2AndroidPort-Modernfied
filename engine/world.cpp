@@ -3165,6 +3165,16 @@ void World::step(double dt) {
                                                       projectiles_enabled_ ? &launches : nullptr);
     for (const ProjectileLaunch& l : launches)
         launch_projectile(l.attacker, l.target_unit, l.target_building);
+    // Gap fix C: a FireEvent for every unit that fired this step (try_fire /
+    // the building branch stamp fire_flash = 0.4 exactly at the shot).
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        const Unit& u = units_[i];
+        if (u.fire_flash == 0.4 && u.alive && u.die_time < 0.0)
+            fire_events_.push_back({i, -1, u.target, u.target_building, u.w_active, ""});
+    }
+    // Gap fix C (G-40) [RE: docs/re/defenses.md]: base defenses acquire, aim
+    // and fire. Only types resolved with a weapon (BuildingTypeDef::armed).
+    step_building_combat(dt);
     // P5 Veterancy [RE: veterancy.md V2/V3/V11/V12]: kill credit for every unit/
     // building that died this step, rank-change detection + stat refresh, and
     // the 14-frame self-heal. A pure INSERTION right after step_combat; the
@@ -3745,9 +3755,13 @@ void World::step_projectiles_frame() {
             integrate_ballistic(p, proj_rules_.gravity);
 
         const int cx = lepton_to_cell(p.x), cy = lepton_to_cell(p.y);
-        const int owner_house =
+        int owner_house =
             (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) ? units_[p.attacker].house
                                                                                : -1;
+        // Gap fix C: a base defense's shell belongs to the building's house.
+        if (p.attacker < 0 && p.attacker_building >= 0 &&
+            p.attacker_building < static_cast<int>(buildings_.size()))
+            owner_house = buildings_[p.attacker_building].house;
         // ObjectAtCoord: the FIRST object in the bullet's cell (ascending unit
         // index stands in for the cell's occupier list). Carried units and
         // aircraft are not ground occupants (no AA in this phase).
@@ -3920,6 +3934,39 @@ void World::detonate_projectile(Projectile& p, int victim) {
                 const Unit& w = units_[v];
                 if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(att.house, w.house)) {
                     deliver_unit_hit(units_, occ_, p.attacker, v);
+                    ev.victim = v;
+                }
+            }
+        }
+    }
+    // Gap fix C (G-40): a base defense's shell -- the same damage layer with a
+    // transient shooter carrying the building's weapon slot.
+    if (p.attacker < 0 && p.attacker_building >= 0 &&
+        p.attacker_building < static_cast<int>(buildings_.size()) &&
+        buildings_[p.attacker_building].type >= 0 &&
+        buildings_[p.attacker_building].type < static_cast<int>(btypes().size())) {
+        const Unit shooter = defense_shooter(p.attacker_building, p.weapon_slot);
+        if (shooter.w_cell_spread >= 1.0) {
+            Unit center;
+            center.fx = ix / 256.0;
+            center.fy = iy / 256.0;
+            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
+                unit_airborne(units_[p.target_unit])) {
+                center.is_aircraft = true;
+                center.altitude = 1.0;
+            }
+            apply_spread_damage(units_, occ_, shooter, center);
+        } else {
+            int v = victim;
+            if (v < 0 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
+                const Unit& t = units_[p.target_unit];
+                if (lepton_to_cell(unit_lx(t)) == icx && lepton_to_cell(unit_ly(t)) == icy)
+                    v = p.target_unit;
+            }
+            if (v >= 0) {
+                const Unit& w = units_[v];
+                if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(shooter.house, w.house)) {
+                    deliver_hit_from(units_, occ_, shooter, -1, p.attacker_building, v);
                     ev.victim = v;
                 }
             }

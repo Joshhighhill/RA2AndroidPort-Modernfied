@@ -135,7 +135,16 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
 // else-branch (same statements, same order) so the instant path and the
 // projectile detonation path share one implementation.
 void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx, int victim_idx) {
-    Unit& u = units[attacker_idx];
+    deliver_hit_from(units, occ, units[attacker_idx], attacker_idx, -1, victim_idx);
+}
+
+// Gap fix C: the single-target hit generalized over the shooter -- a unit
+// (attacker_idx >= 0, `u` = units[attacker_idx]) or a base defense
+// (attacker_building >= 0, `u` = a transient shooter carrying the building's
+// weapon). Body = the P2 deliver_unit_hit tail; the retaliation target is the
+// attacking unit, or the attacking building for a defense shot.
+void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, int attacker_idx,
+                      int attacker_building, int victim_idx) {
     Unit& v = units[victim_idx];
     // P5 [RE: veterancy.md V6]: a vet-enabled World arms v.vet.recv; the
     // receive chain (ArmorMultiplier, STRONGER, max 1) runs BEFORE the Verses.
@@ -148,20 +157,16 @@ void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx
     // idle/guarding units; a unit under a move order keeps walking rather
     // than stopping to retaliate). Engineer/Spy Capture [RE: capture.md
     // §Design 6]: a still-DISGUISED attacker is treated as friendly, so the
-    // victim does NOT retaliate-acquire it (the return-fire analog of the
-    // auto-acquire skip below) -- keeping a disguised unit un-targeted even
-    // if it fires. Inert for byte-identity: u.disguised defaults false and
-    // no gate ever calls set_disguise, so `!u.disguised` is always true ->
-    // the guard is unchanged in every gate.
+    // victim does NOT retaliate-acquire it.
     if (v.target == -1 && !v.moving() && !u.disguised && !v.abil.no_retaliate) {
-        // Idle victim retaliates (docs/re/combat.md §7: retaliation target
-        // choice confirmed). Also records ITS OWN guard anchor at its
-        // current position -- retaliation is a form of auto-acquire
-        // (attack_order stays false), so it needs the same "post to return
-        // to" bookkeeping the acquisition path below sets; without this the
-        // anchor would default to (0,0) and misfire the stray-leash check
-        // the next time this victim is processed.
-        v.target = attacker_idx;
+        // Idle victim retaliates (docs/re/combat.md §7) and records ITS OWN
+        // guard anchor at its current position (retaliation is a form of
+        // auto-acquire: attack_order stays false).
+        if (attacker_idx >= 0) {
+            v.target = attacker_idx;
+        } else if (attacker_building >= 0 && v.target_building == -1) {
+            v.target_building = attacker_building;   // shoot back at the defense
+        }
         v.guard_x = v.cell_x;
         v.guard_y = v.cell_y;
     }
@@ -170,6 +175,7 @@ void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx
         v.vet.killed_by = attacker_idx;   // P5 [V3]: inert stamp (credit pass only)
         occ.release_all_of(victim_idx, -1, -1);
         v.target = -1;
+        v.target_building = -1;
         v.path.clear();
         v.path_idx = 0;
     }
@@ -420,6 +426,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         need = g_best > range_leptons;
                     }
                     if (need) requests.push_back({i, nx, ny, /*approach=*/true});
+                } else if (!u.attack_order) {
+                    // Gap fix C: a retaliation/auto target (not an explicit
+                    // order) out of range is dropped -- the unit goes back to
+                    // normal acquisition instead of staring at it forever.
+                    u.target_building = -1;
                 }
                 continue;  // handled -- skip the unit-vs-unit path entirely
             }
