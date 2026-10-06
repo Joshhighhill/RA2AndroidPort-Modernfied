@@ -44,6 +44,7 @@
 #include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
 #include "factory.hpp"      // primary_factory (unit exit handoff)
+#include "roster2.hpp"      // P6 walls / naval yard / airfield [RE: roster2.md]
 #include "flight.hpp"       // altitude_to_screen_dy (CB-2 raised-sprite draw)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
@@ -413,6 +414,14 @@ struct BuildingAssets {
     // install's real values, so a caller that never resolves them still
     // behaves like the original.
     ra2engine::RepairSellRules repair_sell;
+    // --- P6 Roster breadth [RE: roster2.md §B/§C/§D] --- index-aligned with
+    // `roster`; read ONLY by --demo-roster2 and the wall connection-frame render.
+    std::vector<char> wall;            // Wall=yes (GAWALL/NAWALL)
+    std::vector<char> naval;           // Naval=yes (GAYARD/NAYARD)
+    std::vector<char> water_bound;     // WaterBound=yes -> SpeedType Float placement
+    std::vector<std::string> factory_kind;   // Factory= (UnitType/InfantryType/...)
+    std::vector<int> wall_fill_range;  // GuardRange>>8 line-fill reach (walls: 5)
+    std::vector<std::vector<ra2engine::LeptonXY>> dock_offsets;  // art DockingOffsetN
 };
 
 // Loads `name` (e.g. "rulesmd.ini", "artmd.ini") from ra2md.mix ONCE per mode
@@ -999,13 +1008,38 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         for (char& ch : base) ch = static_cast<char>(std::tolower((unsigned char)ch));  // "htnk"
 
         MixFile local = ra2.open_nested("local.mix");
+        // [RE: roster2.md §A] P6: YR-only voxels (BFRT/SCHP/ROBO) live in
+        // ra2md.mix/localmd.mix. Opened LAZILY and consulted ONLY when a part is
+        // absent from local.mix, so every unit that already loaded resolves
+        // byte-identically (no existing caller asks for a local.mix-absent hull).
+        std::unique_ptr<MixFile> md_top, md_local;
+        bool md_tried = false;
+        auto md_mix = [&]() -> MixFile* {
+            if (!md_tried) {
+                md_tried = true;
+                try {
+                    md_top = std::make_unique<MixFile>(
+                        MixFile::open(ra2assets::read_file(dir + "ra2md.mix")));
+                    md_local = std::make_unique<MixFile>(md_top->open_nested("localmd.mix"));
+                } catch (const std::exception&) { md_local.reset(); }
+            }
+            return md_local.get();
+        };
         auto load_part = [&](const std::string& part_base, ra2assets::VxlModel& m,
                              ra2assets::HvaModel& h) -> bool {
+            MixFile* src = &local;
             const MixEntry* ve = local.find(part_base + ".vxl");
             const MixEntry* he = local.find(part_base + ".hva");
-            if (!ve || !he) return false;
-            auto vr = local.read(*ve);
-            auto hr = local.read(*he);
+            if (!ve || !he) {
+                MixFile* md = md_mix();
+                if (!md) return false;
+                ve = md->find(part_base + ".vxl");
+                he = md->find(part_base + ".hva");
+                if (!ve || !he) return false;
+                src = md;
+            }
+            auto vr = src->read(*ve);
+            auto hr = src->read(*he);
             m = ra2assets::load_vxl(vr.data(), vr.size());
             h = ra2assets::load_hva(hr.data(), hr.size());
             return true;
@@ -1429,6 +1463,54 @@ UnitRoster load_soviet_unit_roster(const std::string& dir, const ra2assets::MixF
     return load_unit_roster_table(dir, ra2, ua, rules, art, kRosterUnits, 12, /*full_parse=*/true);
 }
 
+// [RE: roster2.md §A] P6 roster breadth II -- the remaining Allied/Soviet
+// producibles (no Yuri). A BRAND-NEW table: kUnits/kSoviet/kRosterUnits are
+// UNTOUCHED, so every legacy slot index and hash is unperturbed. full_parse
+// resolves each REAL rulesmd Prerequisite= (the token column is only the
+// defensive fallback). Bodies/stats ONLY: Ivan's bomb, the carrier/dreadnought
+// spawners, the demo truck etc. are other phases' abilities. BEAG is the
+// Black Eagle fixed-wing (Ammo=1, docks GAAIRC/AMRADR -- its dock/rearm cycle
+// is driven by roster2.hpp's Sortie in --demo-roster2). Vehicles whose voxel is
+// absent from local.mix AND localmd.mix are art-guard-dropped (SQD/DLPH are not
+// listed: no voxel on this install). Called ONLY by --demo-roster2.
+[[maybe_unused]] UnitRoster load_roster2_units(const std::string& dir, const ra2assets::MixFile& ra2,
+                                               const UnitAssets& ua, const Rules& rules, const Art& art) {
+    static const UnitRosterEnt kRoster2Units[] = {
+        // naval (built at GAYARD/NAYARD)
+        {"DEST",    true,  "GAYARD"},   // Destroyer
+        {"AEGIS",   true,  "GAYARD"},   // Aegis Cruiser (GAYARD,RADAR)
+        {"CARRIER", true,  "GAYARD"},   // Aircraft Carrier (GAYARD,TECH)
+        {"LCRF",    true,  "GAYARD"},   // Landing Craft (amphibious)
+        {"SUB",     true,  "NAYARD"},   // Typhoon Attack Sub
+        {"HYD",     true,  "NAYARD"},   // Sea Scorpion (NAYARD,NARADR)
+        {"DRED",    true,  "NAYARD"},   // Dreadnought (NAYARD,NATECH)
+        {"SAPC",    true,  "NAYARD"},   // Armored Transport, Image=TRS (amphibious)
+        // ground vehicles
+        {"TNKD",    true,  "GAWEAP"},   // Tank Destroyer (Germans)
+        {"TTNK",    true,  "NAWEAP"},   // Tesla Tank (Russians)
+        {"DTRUCK",  true,  "NAWEAP"},   // Demolition Truck, Image=TRUCKA (Africans)
+        {"SHAD",    true,  "GAWEAP"},   // Night Hawk transport
+        {"BFRT",    true,  "GAWEAP"},   // Battle Fortress (localmd)
+        {"SCHP",    true,  "NAWEAP"},   // Siege Chopper (localmd)
+        {"ROBO",    true,  "GAWEAP"},   // Robot Tank (localmd; GAROBO art absent)
+        // aircraft (built at GAAIRC/AMRADR)
+        {"BEAG",    true,  "RADAR"},    // Black Eagle (Alliance)
+        // infantry
+        {"IVAN",    false, "NAHAND"},   // Crazy Ivan (body only)
+        {"SNIPE",   false, "GAPILE"},   // Sniper (British)
+        {"TANY",    false, "GAPILE"},   // Tanya
+        {"FLAKT",   false, "NAHAND"},   // Flak Trooper
+        {"SENGINEER", false, "NAHAND"}, // Soviet Engineer, Image=ENGINEER
+        {"BORIS",   false, "NAHAND"},   // Boris
+        {"CCOMAND", false, "GAPILE"},   // Chrono Commando (stolen tech)
+        {"PTROOP",  false, "GAPILE"},   // Psi-Corp Trooper (stolen tech)
+        {"CIVAN",   false, "NAHAND"},   // Chrono Ivan (stolen tech)
+    };
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kRoster2Units,
+                                  sizeof kRoster2Units / sizeof kRoster2Units[0],
+                                  /*full_parse=*/true);
+}
+
 // Spawns a harvester of `va`'s type at/next to (tx,ty): tries the target cell,
 // then rings outward, for the first walkable + unoccupied cell (add_harvester's
 // placement precondition). Returns the new unit index or -1 if none is free.
@@ -1623,7 +1705,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
     // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
     // placeholder (buildings are never dropped on art failure).
-    static const char* kRoster[24] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    static const char* kRoster[39] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
@@ -1637,7 +1719,21 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                        // index 0-19 is preserved -> world_hash + all 17
                                        // gate hashes UNCHANGED; only demo-base/techtree's
                                        // roster= WITNESS grows 20->24 (re-pinned in README).
-                                       "NANRCT", "ATESLA", "NASAM", "GAAIRC"};
+                                       "NANRCT", "ATESLA", "NASAM", "GAAIRC",
+                                       // [RE: roster2.md §A] P6 APPEND-ONLY at indices
+                                       // 24-38: the naval yards, the wall, the depots,
+                                       // the Soviet lab, the superweapon/tech buildings
+                                       // and the American airfield. Every prior index
+                                       // 0-23 resolves exactly as before (the Image=
+                                       // honouring below applies to >=24 ONLY), so
+                                       // world_hash + every legacy gate hash is
+                                       // unchanged; only the roster= WITNESS grows.
+                                       // GAWEAT/NAINDP art is absent on this install
+                                       // (kept, art.ok=false, never placed).
+                                       "GAYARD", "NAYARD", "GAWALL", "GADEPT", "NADEPT",
+                                       "NATECH", "NAIRON", "NAMISL", "GACSPH", "GAGAP",
+                                       "GAOREP", "GTGCAN", "AMRADR", "GAWEAT", "NAINDP"};
+    constexpr int kRoster2First = 24;   // first P6-appended index
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -1709,15 +1805,20 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
 
-    ba.roster.reserve(24);
-    ba.art.reserve(24);
+    ba.roster.reserve(39);
+    ba.art.reserve(39);
     int ok_n = 0;
+    int roster_i = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
+        // [RE: roster2.md §A, RE-FALLBACK] P6 indices honour rules Image= for the
+        // art lookups (AMRADR draws as GAAIRC); 0..23 keep the id (ATESLA stays
+        // art-absent -> the 18th gate's roster_hash is untouched).
+        const std::string art_id = (roster_i++ >= kRoster2First) ? rules.image(id) : id;
         ra2engine::BuildingTypeDef d;
         d.id = id;
         d.fw = d.fh = 1;
-        art.foundation(id, d.fw, d.fh);
+        art.foundation(art_id, d.fw, d.fh);
         d.strength = rules.strength(id);
         d.sight = rules.sight(id);  // [RE: shroud.md §2] reveal radius
         d.grants_map_reveal = rules.spy_sat(id);  // [RE: shroud.md §7A] SpySat= whole-map reveal (inert: no rostered SpySat)
@@ -1734,9 +1835,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.tech_level = rules.tech_level(id);
         d.conyard = rules.is_construction_yard(id);
         d.prerequisite = rules.prerequisite(id);
-        d.image = id;
-        d.buildup = art.buildup(id);
-        d.cameo = art.cameo(id);
+        d.image = art_id;
+        d.buildup = art.buildup(art_id);
+        d.cameo = art.cameo(art_id);
         d.explosion = rules.explosion_first(id);
         // Engineer/Spy Capture [RE: capture.md §D1]: neutral tech-structure
         // periodic income. Absent from every non-tech section -> 0 default keeps
@@ -1761,7 +1862,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
 
         BuildingArt slot;
         try {
-            slot.shp = resolve_shp(id);
+            slot.shp = resolve_shp(art_id);
             slot.ok = true;
             ++ok_n;
             if (!d.buildup.empty()) {
@@ -1807,6 +1908,30 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is
         // BuildCat==Combat, NOT IsBaseDefense]
         ba.defense.push_back(rules.is_buildcat_combat(id) ? 1 : 0);
+        // [RE: roster2.md §B/§C/§D] P6 per-type producer/wall flags (inert for
+        // every legacy consumer: only --demo-roster2 and the wall-frame render
+        // read them).
+        auto p6_flag = [&](const char* key) -> char {
+            std::string v = rules.section_string(id, key, "");
+            for (char& ch : v) ch = (char)std::tolower((unsigned char)ch);
+            return (v == "yes" || v == "true") ? 1 : 0;
+        };
+        ba.wall.push_back(p6_flag("Wall"));
+        ba.naval.push_back(p6_flag("Naval"));
+        ba.water_bound.push_back(p6_flag("WaterBound"));
+        ba.factory_kind.push_back(rules.section_string(id, "Factory", ""));
+        ba.wall_fill_range.push_back(
+            ra2engine::wall_fill_range(rules.section_double(id, "GuardRange", 0.0)));
+        {
+            std::vector<ra2engine::LeptonXY> offs;
+            const int ndocks = (int)rules.section_double(id, "NumberOfDocks", 0.0);
+            for (int k = 0; k < ndocks; ++k) {
+                int v[3] = {0, 0, 0};
+                art.docking_offset(art_id, k, v);
+                offs.push_back(ra2engine::LeptonXY{v[0], v[1]});
+            }
+            ba.dock_offsets.push_back(std::move(offs));
+        }
     }
     ba.ok = ok_n > 0;
 
@@ -2083,7 +2208,8 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 // origin cell's terrain level (buildings flatten their footprint).
 void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Building& b,
                    const BuildingAssets& ba, int level, double condition_yellow,
-                   const ra2engine::Camera& cam, int W, int H) {
+                   const ra2engine::Camera& cam, int W, int H,
+                   const std::vector<ra2engine::Building>* all = nullptr) {
     if (b.type < 0 || b.type >= static_cast<int>(ba.art.size())) return;
     const BuildingArt& art = ba.art[b.type];
     if (!art.ok) return;
@@ -2134,9 +2260,23 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     const bool buildup =
         selling || (b.state == ra2engine::Building::State::Buildup && art.has_buildup);
     const ra2assets::ShpFile& shp = buildup ? art.buildup : art.shp;
-    const int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
-                    : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
-                              : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
+              : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
+                        : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    // [RE: roster2.md TL;DR 2/3, §D] a wall draws its connection frame:
+    // stage*16 + the N/E/S/W same-wall/same-house mask (Wall_Update). Render-only.
+    if (!buildup && all && b.type < static_cast<int>(ba.wall.size()) && ba.wall[b.type] &&
+        art.shp.count() >= 32) {
+        auto same_wall = [&](int x, int y) {
+            for (const ra2engine::Building& o : *all)
+                if (o.alive && o.state != ra2engine::Building::State::Dead && o.type == b.type &&
+                    o.house == b.house && o.cx == x && o.cy == y)
+                    return true;
+            return false;
+        };
+        frame = ra2engine::wall_frame(ra2engine::wall_mask(b.cx, b.cy, same_wall),
+                                      ra2engine::wall_stage(b.hp, b.max_hp, condition_yellow));
+    }
     if (frame < 0 || frame >= shp.count()) return;
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     SDL_Rect dst{fcx - shp.width() / 2 + f.x, fcy - shp.height() / 2 + f.y, f.w, f.h};
@@ -2570,7 +2710,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (d.kind == 0) {
             const ra2engine::Building& b = world.buildings()[d.idx];
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
-            draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H);
+            draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
+                          &world.buildings());
         } else {
             draw_one_unit(d.idx);
         }
@@ -12154,6 +12295,401 @@ int run_demo_roster() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-roster2 (P6 Roster breadth + remaining producers, 21st gate) -----
+// [RE: roster2.md] One scripted run exercising every P6 mechanic on the real
+// install: (1) resolve + witness the 15 appended buildings and the kRoster2Units
+// bodies; (2) walls: place GAWALL, place a second 4 cells east -> the GuardRange
+// line fill closes the gap for free, then a vertical pair; every wall's N/E/S/W
+// connection mask + frame is witnessed; (3) naval yard: find a 4x4 all-water
+// spot, prove WaterBound placement (and its land refusal), place GAYARD, build a
+// DEST through the shared 54-step economy on the NAVAL category (GAWEAP is not a
+// naval factory) and launch it onto the water exit cell; (4) GAAIRC (Allied full
+// base) docks ORCA + BEAG on pads 0/1, both fly a strike, spend Ammo=1, RTB,
+// land and rearm after ReloadRate*900 = 270 frames. FNV fold of all of it; two
+// runs (rendered + headless) must agree. NO pinned literal (README pins it).
+
+struct DemoRoster2Result { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+DemoRoster2Result simulate_roster2(Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                   const Rules& rules, const UnitRoster& ur2,
+                                   const std::vector<const VehicleAssets*>& vlist,
+                                   bool render, SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                   const ra2engine::Camera* cam, int W, int H,
+                                   const std::string& start_png, const std::string& end_png) {
+    DemoRoster2Result r;
+    uint64_t h = 0xcbf29ce484222325ull;
+    auto wit = [&](const char* fmt, auto... args) {
+        char b[256];
+        std::snprintf(b, sizeof b, fmt, args...);
+        r.witness.emplace_back(b);
+    };
+    auto fail = [&](const char* why) {
+        r.ok = false;
+        r.witness.emplace_back(std::string("[roster2] WEDGE: ") + why);
+    };
+
+    // ---- (1) content -------------------------------------------------------
+    int bld_n = 0, bld_art = 0;
+    for (int i = 24; i < static_cast<int>(ba.roster.size()); ++i) {
+        const ra2engine::BuildingTypeDef& d = ba.roster[i];
+        ++bld_n;
+        if (ba.art[i].ok) ++bld_art;
+        wit("[roster2] bld %-7s cost=%d tech=%d str=%d power=%d fnd=%dx%d art=%s wall=%d naval=%d "
+            "water=%d factory=%s docks=%d",
+            d.id.c_str(), d.cost, d.tech_level, d.strength, d.power, d.fw, d.fh,
+            ba.art[i].ok ? "y" : "n", (int)ba.wall[i], (int)ba.naval[i], (int)ba.water_bound[i],
+            ba.factory_kind[i].empty() ? "-" : ba.factory_kind[i].c_str(),
+            (int)ba.dock_offsets[i].size());
+        h = fnv_mix(h, (uint64_t)d.cost);
+        h = fnv_mix(h, (uint64_t)d.strength);
+        h = fnv_mix(h, (uint64_t)(ba.art[i].ok ? 1 : 0));
+    }
+    for (const ra2engine::UnitTypeDef& d : ur2.defs) {
+        wit("[roster2] unt %-9s cost=%d tech=%d str=%d dmg=%d range=%.2f naval=%d veh=%d",
+            d.id.c_str(), d.cost, d.tech_level, d.combat.strength, d.combat.damage,
+            d.combat.range, d.combat.is_naval ? 1 : 0, d.is_vehicle ? 1 : 0);
+        h = fnv_mix(h, (uint64_t)d.cost);
+        h = fnv_mix(h, (uint64_t)d.combat.strength);
+        h = fnv_mix(h, (uint64_t)d.combat.damage);
+    }
+    wit("[roster2] stage1 buildings=%d art_present=%d units=%d", bld_n, bld_art,
+        (int)ur2.defs.size());
+    if (bld_n != 15) fail("expected 15 appended buildings (kRoster 24..38)");
+    if (ur2.defs.empty()) fail("no kRoster2Units body loaded");
+
+    // ---- world -------------------------------------------------------------
+    ra2engine::World world = build_world(a, ua, 0);
+    const int gw = world.grid_w(), gh = world.grid_h();
+    world.set_water_terrain(resolve_land_types(a.map, a.theater, gw, gh));
+    world.set_house(0, ra2engine::World::HouseRec{ra2engine::World::Side::Allied, 0, "Americans", 0, true});
+    world.set_house(1, ra2engine::World::HouseRec{ra2engine::World::Side::Soviet, 1, "Russians", 1, true});
+    const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
+    const int bx = sc ? sc->x : gw / 2, by = sc ? sc->y : gh / 2;
+    spawn_base(world, ba, /*house=*/0, bx, by, /*with_refinery=*/false, nullptr, false, 0,
+               /*allied_full=*/true);
+    const double build_speed = rules.general_double("BuildSpeed", 0.7);
+
+    auto add_bldg = [&](int type, int x, int y, int house) -> int {
+        const ra2engine::BuildingTypeDef& d = ba.roster[type];
+        return world.add_building(type, x, y, d.fw, d.fh, house, d.strength, d.armor_ix,
+                                  ba.art[type].buildup_total, /*instant=*/true, d.sight,
+                                  d.grants_map_reveal);
+    };
+    auto cell_clear = [&](int x, int y) {
+        return x >= 0 && y >= 0 && x < gw && y < gh && world.walkable(x, y) &&
+               world.unit_at_cell(x, y) < 0 && world.building_at_cell(x, y) < 0;
+    };
+
+    // ---- (2) walls ---------------------------------------------------------
+    const int gawall = roster_index(ba, "GAWALL");
+    std::vector<int> wall_idx;
+    if (gawall < 0 || !ba.art[gawall].ok) {
+        fail("GAWALL missing or art-absent");
+    } else {
+        // first 6x4 all-clear block scanning outward from the base
+        int wx = -1, wy = -1;
+        for (int rr = 6; rr <= 30 && wx < 0; ++rr)
+            for (int dy = -rr; dy <= rr && wx < 0; ++dy)
+                for (int dx = -rr; dx <= rr && wx < 0; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != rr) continue;
+                    bool okb = true;
+                    for (int j = 0; j < 4 && okb; ++j)
+                        for (int i = 0; i < 6 && okb; ++i) okb = cell_clear(bx + dx + i, by + dy + j);
+                    if (okb) { wx = bx + dx; wy = by + dy; }
+                }
+        if (wx < 0) {
+            fail("no clear 6x4 block for the wall line");
+        } else {
+            const int range = ba.wall_fill_range[gawall];
+            auto own_wall = [&](int x, int y) {
+                const int bi = world.building_at_cell(x, y);
+                return bi >= 0 && world.buildings()[bi].type == gawall && world.buildings()[bi].house == 0;
+            };
+            auto place_wall = [&](int x, int y) {
+                wall_idx.push_back(add_bldg(gawall, x, y, 0));
+                const std::vector<ra2engine::Cellxy> fill =
+                    ra2engine::wall_line_fill(x, y, range, own_wall, cell_clear);
+                for (const ra2engine::Cellxy& c : fill) wall_idx.push_back(add_bldg(gawall, c.x, c.y, 0));
+                wit("[roster2] wall placed (%d,%d) fill=%d (free) range=%d", x - wx, y - wy,
+                    (int)fill.size(), range);
+                h = fnv_mix(h, (uint64_t)fill.size());
+                return (int)fill.size();
+            };
+            const int f1 = place_wall(wx, wy);          // lone wall: nothing to close
+            const int f2 = place_wall(wx + 4, wy);      // 3 cells closed east-west
+            const int f3 = place_wall(wx, wy + 3);      // 2 cells closed north-south
+            if (f1 != 0 || f2 != 3 || f3 != 2) fail("wall line fill counts != 0/3/2");
+            int mask_sum = 0;
+            for (int bi : wall_idx) {
+                const ra2engine::Building& b = world.buildings()[bi];
+                const int m = ra2engine::wall_mask(b.cx, b.cy, own_wall);
+                const int fr = ra2engine::wall_frame(m, ra2engine::wall_stage(b.hp, b.max_hp, ba.condition_yellow));
+                wit("[roster2] wall (%d,%d) mask=%d frame=%d", b.cx - wx, b.cy - wy, m, fr);
+                mask_sum += m;
+                h = fnv_mix(h, (uint64_t)fr);
+            }
+            // corner (0,0) joins E+S; the east end (4,0) only W; the south end (0,3) only N.
+            const int corner = ra2engine::wall_mask(wx, wy, own_wall);
+            if (corner != (ra2engine::kWallE | ra2engine::kWallS)) fail("corner wall mask != E|S");
+            const int wf = ra2engine::wall_build_frames(ba.roster[gawall].cost, build_speed);
+            wit("[roster2] wall build_frames=%d (x%.1f of %d) walls=%d mask_sum=%d", wf,
+                ra2engine::kWallBuildSpeedCoefficient,
+                ra2engine::build_frames(ba.roster[gawall].cost, build_speed), (int)wall_idx.size(),
+                mask_sum);
+            h = fnv_mix(h, (uint64_t)wf);
+        }
+    }
+
+    // ---- (3) naval yard ----------------------------------------------------
+    const int gayard = roster_index(ba, "GAYARD");
+    const std::vector<std::uint8_t>& water = world.grid_for(ra2engine::MovementDomain::Water);
+    std::vector<bool> uf(ba.roster.size()), nv(ba.roster.size());
+    for (std::size_t i = 0; i < ba.roster.size(); ++i) {
+        uf[i] = ba.factory_kind[i] == "UnitType";
+        nv[i] = ba.naval[i] != 0;
+    }
+    const std::vector<int> naval_ft = ra2engine::unit_factory_types(uf, nv, true);
+    const std::vector<int> land_ft = ra2engine::unit_factory_types(uf, nv, false);
+    {
+        std::string ns, ls;
+        for (int t : naval_ft) ns += (ns.empty() ? "" : ",") + ba.roster[t].id;
+        for (int t : land_ft) ls += (ls.empty() ? "" : ",") + ba.roster[t].id;
+        wit("[roster2] naval_factories=%s land_factories=%s", ns.c_str(), ls.c_str());
+        if (std::find(naval_ft.begin(), naval_ft.end(), gayard) == naval_ft.end() ||
+            std::find(naval_ft.begin(), naval_ft.end(), roster_index(ba, "GAWEAP")) != naval_ft.end())
+            fail("naval/land factory split wrong");
+    }
+    int yard_bi = -1, ship_ui = -1;
+    {
+        const ra2engine::BuildingTypeDef& yd = ba.roster[gayard];
+        // nearest 4x4 all-water spot (ring 1 water too, so a ship can exit)
+        int yx = -1, yy = -1;
+        long best = LONG_MAX;
+        for (int y = 1; y + yd.fh + 1 < gh; ++y)
+            for (int x = 1; x + yd.fw + 1 < gw; ++x) {
+                if (!ra2engine::water_bound_ok(x - 1, y - 1, yd.fw + 2, yd.fh + 2, water, gw, gh)) continue;
+                const long d2 = (long)(x - bx) * (x - bx) + (long)(y - by) * (y - by);
+                if (d2 < best) { best = d2; yx = x; yy = y; }
+            }
+        const bool land_refused = !ra2engine::water_bound_ok(bx, by + 12, yd.fw, yd.fh, water, gw, gh);
+        if (yx < 0) {
+            fail("no 4x4 water spot on this map");
+        } else {
+            const bool water_ok = ra2engine::water_bound_ok(yx, yy, yd.fw, yd.fh, water, gw, gh);
+            yard_bi = add_bldg(gayard, yx, yy, 0);
+            world.block_water_footprint(yx, yy, yd.fw, yd.fh);   // ships never path through
+            const bool blocked = !ra2engine::water_bound_ok(yx, yy, 1, 1, water, gw, gh);
+            wit("[roster2] GAYARD placed=(%d,%d) water_ok=%d land_refused=%d water_blocked=%d", yx, yy,
+                (int)water_ok, (int)land_refused, (int)blocked);
+            if (!water_ok || !blocked) fail("GAYARD water placement/blocking wrong");
+            if (!land_refused) fail("WaterBound placement accepted a land foundation");
+            // produce a DEST on the naval category
+            const ra2engine::UnitTypeDef* dest = nullptr;
+            for (const ra2engine::UnitTypeDef& d : ur2.defs) if (d.id == "DEST") dest = &d;
+            if (!dest) {
+                fail("DEST body not loaded");
+            } else {
+                ra2engine::ProductionState ps;
+                ps.credits = 10000;
+                ra2engine::start(ps, dest->cost, dest->cost, build_speed);
+                int frames = 0;
+                while (!ps.slot.ready && frames < 5000) {
+                    ra2engine::tick(ps, 1.0 / 15.0, 1.0, ba.roster);
+                    ++frames;
+                }
+                const ra2engine::Cellxy ex = ra2engine::naval_exit_cell(
+                    world.buildings()[yard_bi], yd, water, gw, gh,
+                    [&](int x, int y) { return world.occupancy().is_free(x, y) && world.building_at_cell(x, y) < 0; });
+                wit("[roster2] DEST build total_frames=%d step_ticks=%d ready_after=%d spent=%.0f exit=(%d,%d)",
+                    ps.slot.total_frames, ps.slot.step_ticks, frames, ps.slot.spent, ex.x - yx, ex.y - yy);
+                h = fnv_mix(h, (uint64_t)frames);
+                if (!ps.slot.ready || ex.x < 0) {
+                    fail("DEST never became ready or had no water exit");
+                } else {
+                    world.add_combat_unit(ex.x, ex.y, 0, dest->combat);
+                    ship_ui = static_cast<int>(world.units().size()) - 1;
+                    if (water[(std::size_t)ex.y * gw + ex.x] == 0) fail("DEST exit cell is not water");
+                }
+            }
+        }
+    }
+
+    // ---- (4) airfield dock + rearm -----------------------------------------
+    const int gaairc = roster_index(ba, "GAAIRC");
+    int airc_bi = -1;
+    for (int i = 0; i < static_cast<int>(world.buildings().size()); ++i)
+        if (world.buildings()[i].type == gaairc && world.buildings()[i].house == 0) airc_bi = i;
+    std::vector<ra2engine::Sortie> sorties;
+    std::vector<std::string> sortie_ids;
+    if (airc_bi < 0) {
+        fail("Allied full base did not place GAAIRC");
+    } else {
+        const ra2engine::Building ab = world.buildings()[airc_bi];
+        const std::vector<ra2engine::LeptonXY>& offs = ba.dock_offsets[gaairc];
+        std::vector<int> pad_owner(offs.size(), -1);
+        wit("[roster2] GAAIRC at=(%d,%d) pads=%d reload_cycle=%d", ab.cx - bx, ab.cy - by,
+            (int)offs.size(), ra2engine::reload_cycle_frames(rules.general_double("ReloadRate", 0.3)));
+        for (const char* id : {"ORCA", "BEAG"}) {
+            const int pad = ra2engine::first_free_pad(pad_owner);
+            if (pad < 0) { fail("no free GAAIRC pad"); break; }
+            pad_owner[pad] = static_cast<int>(sorties.size());
+            const ResolvedUnit ru = resolve_combat_unit(rules, id);
+            ra2engine::Sortie s;
+            s.home = ra2engine::dock_pad_leptons(ab, pad, offs);
+            s.x = s.home.x; s.y = s.home.y;
+            s.pad = pad;
+            s.max_ammo = (int)rules.section_double(id, "Ammo", -1.0);
+            s.ammo = s.max_ammo;
+            s.speed_lpf = ru.speed * kCellsPerSecPerSpeed / 15.0 * 256.0;
+            s.range_leptons = static_cast<int>(ru.combat.range * 256.0);
+            s.flight_level = (int)rules.general_double("FlightLevel", 1500.0);
+            s.has_target = true;
+            s.target = ra2engine::LeptonXY{(bx + 18) * 256 + 128, (by - 6) * 256 + 128};
+            const ra2engine::Cellxy pc = ra2engine::lepton_cell(s.home);
+            wit("[roster2] %s pad=%d pad_cell=(%d,%d) ammo=%d speed_lpf=%.1f range=%d",
+                id, pad, pc.x - ab.cx, pc.y - ab.cy, s.ammo, s.speed_lpf, s.range_leptons);
+            if (s.max_ammo != 1) fail("Harrier/Black Eagle Ammo != 1");
+            sorties.push_back(s);
+            sortie_ids.emplace_back(id);
+        }
+    }
+
+    auto render_frame = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba);
+    };
+    world.step_visibility();
+    render_frame();
+    if (render) capture_png(ren, start_png, W, H);
+
+    const int reload_cycle = ra2engine::reload_cycle_frames(rules.general_double("ReloadRate", 0.3));
+    std::vector<int> reloaded_at(sorties.size(), -1), landed_at(sorties.size(), -1);
+    const int N = 700;
+    for (int f = 1; f <= N; ++f) {
+        world.step(1.0 / 15.0);
+        for (std::size_t k = 0; k < sorties.size(); ++k) {
+            const ra2engine::SortieEvent e = ra2engine::step_sortie(sorties[k], reload_cycle);
+            if (e == ra2engine::SortieEvent::None) continue;
+            static const char* kEv[] = {"None", "TookOff", "ReachedCruise", "Fired",
+                                        "StartedReturn", "Landed", "Reloaded"};
+            wit("[roster2] f=%d %s %s ammo=%d", f, sortie_ids[k].c_str(), kEv[(int)e], sorties[k].ammo);
+            h = fnv_mix(h, (uint64_t)f);
+            h = fnv_mix(h, (uint64_t)e);
+            if (e == ra2engine::SortieEvent::Landed) landed_at[k] = f;
+            if (e == ra2engine::SortieEvent::Reloaded) reloaded_at[k] = f;
+        }
+    }
+    for (std::size_t k = 0; k < sorties.size(); ++k) {
+        const ra2engine::Sortie& s = sorties[k];
+        wit("[roster2] %s end state=%s ammo=%d shots=%d", sortie_ids[k].c_str(),
+            ra2engine::sortie_state_name(s.state), s.ammo, s.shots);
+        h = fnv_mix(h, (uint64_t)s.ammo);
+        h = fnv_mix(h, (uint64_t)s.shots);
+        if (s.shots != 1 || s.ammo != 1 || s.state != ra2engine::Sortie::State::Docked ||
+            landed_at[k] < 0 || reloaded_at[k] - landed_at[k] != reload_cycle)
+            fail("a sortie did not strike once, land and rearm in one ReloadRate cycle");
+    }
+
+    // instance fold (world_hash's shape)
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, (uint64_t)u.cell_x);
+        h = fnv_mix(h, (uint64_t)u.cell_y);
+        h = fnv_mix(h, (uint64_t)u.hp);
+        h = fnv_mix(h, (uint64_t)(u.alive ? 1 : 0));
+    }
+    for (const ra2engine::Building& b : world.buildings()) {
+        h = fnv_mix(h, (uint64_t)b.type);
+        h = fnv_mix(h, (uint64_t)b.cx);
+        h = fnv_mix(h, (uint64_t)b.cy);
+        h = fnv_mix(h, (uint64_t)b.hp);
+    }
+    if (ship_ui >= 0) {
+        const ra2engine::Unit& u = world.units()[ship_ui];
+        wit("[roster2] DEST alive=%d on_water=%d", (int)u.alive,
+            (int)(water[(std::size_t)u.cell_y * gw + u.cell_x] != 0));
+    }
+    r.hash = h;
+    wit("[roster2] roster2_hash=%016llx", (unsigned long long)h);
+    render_frame();
+    if (render) capture_png(ren, end_png, W, H);
+    return r;
+}
+
+// --demo-roster2: the 21st permanent byte-identity gate (P6). INSTALL-SPECIFIC
+// like --demo-roster (art presence decides which bodies/buildings load).
+int run_demo_roster2() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "7fdac188-b617-4ae7-b05d-0ba2d5efcda9\\scratchpad\\";
+    const std::string start_png = scratch + "demo_roster2_start.png";
+    const std::string end_png = scratch + "demo_roster2_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok) {
+        std::cerr << "[demo-roster2] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    UnitRoster ur2 = load_roster2_units(dir, ra2, ua, rules, art);
+    std::vector<const VehicleAssets*> vlist;
+    for (const VehicleAssets& va : ur2.vehicles) vlist.push_back(&va);
+
+    ra2engine::Camera cam;
+    {
+        const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+        const int cx = pc ? pc->x : 50, cy = pc ? pc->y : 50;
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    DemoRoster2Result r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-roster2)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_roster2(a, ua, ba, rules, ur2, vlist, /*render=*/true, ren, &tc, &cam,
+                                  W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+    DemoRoster2Result r2 = simulate_roster2(a, ua, ba, rules, ur2, vlist, /*render=*/false,
+                                            nullptr, nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+    std::cerr << "[demo-roster2] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d roster2_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 // --- --demo-repair helpers ---------------------------------------------------
 
 // FNV fold of the Repair & Sell state [RE: repair-sell.md]. Folds EXACTLY the
@@ -13497,6 +14033,8 @@ int main(int argc, char** argv) {
                 return run_demo_skirmish();
             } else if (arg == "--demo-roster") {
                 return run_demo_roster();
+            } else if (arg == "--demo-roster2") {
+                return run_demo_roster2();
             } else if (arg == "--demo-maps") {
                 return run_demo_maps();
             } else if (arg == "--demo-repair") {

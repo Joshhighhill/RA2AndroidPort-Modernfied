@@ -582,6 +582,12 @@ public:
     // ever computed elsewhere (spec §8). World stays asset-free: it takes the
     // resolved array, not a map.
     void set_water_terrain(const std::vector<ra2assets::LandType>& land_types);
+    // P6 [RE: roster2.md §B]: a WaterBound building (GAYARD/NAYARD) sits ON the
+    // water grid -- add_building only blocks the Land grid, so the caller also
+    // clears its foundation from water_passable_ (ships never path through the
+    // yard; NumberImpassableRows not modelled). No-op when the water grid is
+    // empty. Called ONLY by --demo-roster2.
+    void block_water_footprint(int cx, int cy, int fw, int fh);
     bool walkable(int x, int y) const;
     const Occupancy& occupancy() const { return occ_; }
 
