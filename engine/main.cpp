@@ -2239,7 +2239,8 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         if (!rules.section_flag(d.id, "AIBuildThis", false)) continue;
         if (!aiside::owned_by(rules, d.id, side, country)) continue;
         const int t = ok_index(d.id.c_str());
-        if (t >= 0 && t != cfg.catalog.tech) cfg.catalog.superweapons.push_back(t);
+        if (t >= 0 && t != cfg.catalog.tech && t != cfg.catalog.radar)   // NARADR: SpyPlane
+            cfg.catalog.superweapons.push_back(t);
     }
     // [AI] knobs from the real rulesmd [RE: ai-base.md §2] (constants are the
     // committed pins; the file read keeps us honest if a mod changes them).
