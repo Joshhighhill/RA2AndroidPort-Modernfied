@@ -5,7 +5,7 @@
 namespace ra2engine {
 
 SidebarLayout SidebarLayout::compute(int view_w, int view_h,
-                                     const std::vector<int>& types) {
+                                     const std::vector<int>& types, int top_row) {
     SidebarLayout lay;
 
     // Whole sidebar column on the right edge, full window height
@@ -49,12 +49,15 @@ SidebarLayout SidebarLayout::compute(int view_w, int view_h,
     // 2 columns row-major — these land the 60x48 cameos INSIDE the socket
     // recesses baked into side2.shp [RE: §11a]. Cells beyond the visible
     // 2*N are not laid out (no strip scrolling with this roster).
+    // G-12: the strip starts at row top_row (clamped to the scrollable range).
+    lay.top_row = std::max(0, std::min(top_row, lay.max_top_row(static_cast<int>(types.size()))));
+    const std::size_t first = static_cast<std::size_t>(2 * lay.top_row);
     const std::size_t max_cells = static_cast<std::size_t>(2 * lay.side2_rows);
-    for (std::size_t i = 0; i < types.size() && i < max_cells; ++i) {
+    for (std::size_t i = 0; first + i < types.size() && i < max_cells; ++i) {
         const int col = static_cast<int>(i % 2);
         const int row = static_cast<int>(i / 2);
         CameoCell cell;
-        cell.type = types[i];
+        cell.type = types[first + i];
         cell.rect = {x0 + kCameoX + col * kCameoColPitch,
                      kStripTop + 1 + row * kCameoRowPitch, kCameoW, kCameoH};
         lay.cameos.push_back(cell);

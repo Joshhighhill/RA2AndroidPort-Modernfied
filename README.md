@@ -6,8 +6,8 @@ A portable C++17 library that decodes Red Alert 2 / Yuri's Revenge game data
 rules, `.map` cell grids, TMP theater tiles, CSF string tables, BAG/IDX audio
 decoded from Westwood IMA-ADPCM to PCM), plus `ra2engine` — an SDL2
 front-end that renders a real stock map with real theater terrain and lets you
-select and command a squad of units (RA2-classic controls: left-click / box /
-Shift to select, right-click to group-move) with A\* pathfinding,
+select and command a squad of units (the ORIGINAL controls, recovered from
+`gamemd.exe`: left-click / box / Shift to select, left-click to order, right-click to deselect or cancel -- see "Real-play controls") with A\* pathfinding,
 grid-occupancy collision avoidance, and walk animation — and fight: Allied
 GIs vs Soviet Conscripts with house-colored palettes, HP bars, fire/death
 animations, and a damage model (Damage × Verses, ROF, range, guard behavior)
@@ -1877,8 +1877,8 @@ not explode.
 
 **The two buttons are mutually exclusive toggle cursor modes** (§C1): placement
 wins, arming clears the selection, arming is refused when the player owns no
-buildings (`HouseClass+0x2F0`, §D5), losing the last building disarms the mode,
-and ESC/right-click cancels exactly one thing per press in the recovered order
+and right-click cancels exactly one thing per press in the recovered order
+placement → Repair → Sell → superweapon (correction, fixB hunt: that chain `FUN_004AAC40` is the right-mouse-up handler; ESC is the Options hotkey and opens the options dialog). The mode is not one-shot. While a mode
 placement → Repair → Sell → superweapon. The mode is not one-shot. While a mode
 is armed, the button shows its pressed frame and the pointer is the real
 `MOUSE.SHP` cursor (`cache.mix/mousepal.pal`). The cursor uses the wrench
@@ -1960,8 +1960,8 @@ desktop default path and the Android entry); no gate calls it or constructs a
 menu/game scene, `--menu-shot` renders with built-in defaults, and every mixer bus
 defaults to identity gain with the pre-P8 arithmetic path preserved bit-for-bit.
 
-**Deferred:** the Keyboard page (`0xA3`, Keyboard.ini `[Hotkey]` remapping — the
-clone has no remappable command table) and the Network/IPX page are drawn greyed;
+**Deferred:** the Keyboard page (`0xA3`, Keyboard.ini `[Hotkey]` remapping UI -- the
+bindings themselves ARE live since G-04, read from KeyboardMD.ini; see "Real-play controls") and the Network/IPX page are drawn greyed;
 resolution switching (fixed-window/Android port — the combobox shows the current
 mode, inert); the in-game options page and its GameSpeed slider; slider tick and
 volume-preview sounds; the tooltip status line; page power-on transitions.
@@ -2930,3 +2930,51 @@ RA2_INSTALL_DIR="D:\Red Alert 2" python scripts/preflight.py
 ```
 
 The script checks that `gamemd.exe` exists and matches the expected SHA1 hash for YR 1.001.
+
+## Real-play controls (agent B, G-01/04/05/06/07/08/09/10/12/13/70/71)
+
+Recovered from `gamemd.exe` (hunt "fixB", scripts `D:\ra2-re\scripts\fixB_*.py`)
+and verified in the REAL scene tree by `ra2engine --controls-selftest <outdir>`
+(MainMenu -> Skirmish lobby -> GameScene with scripted InputEvents at a fixed
+1/15 s tick in a hidden window; prints `selftest PASS` + a deterministic
+`probe_hash` and writes screenshots). Not a gate.
+
+- **Mouse (G-05)**: the original's tactical WndProc `FUN_00692AB0` dispatches
+  WM_LBUTTONUP to Left_Up `FUN_004AB8C0`: with a selection a LEFT click issues
+  the selected objects' action (move / attack / enter / harvest / dock /
+  capture / infiltrate / rally); a left click on an own unit re-selects (Shift
+  toggles, double-click selects the type on screen); with nothing selected a
+  ground click does nothing. RIGHT click (no drag) cancels one armed mode
+  (placement -> repair -> sell -> superweapon) else deselects everything
+  (`FUN_004AAC40` -> `FUN_0048DBA0`); right-drag scrolls [RE-FALLBACK 1:1].
+  Ctrl = force-fire, Alt = force-move. Clicking the selected deployable unit
+  itself = deploy/unload (ACTION_SELF). Attack targets are `is_enemy` houses
+  only (G-06). The legacy right-click-orders model survives only as
+  `Input::Scheme::Legacy` for old unit tests.
+- **Esc (G-01)**: never quits (only closing the window does). In game it opens
+  the options dialog (`[Hotkey] Options=27`, exec `FUN_00646AE0`); in dialogs
+  and shell pages it is Back. Android BACK = Esc.
+- **Hotkeys (G-04)**: the shipped `KeyboardMD.ini [Hotkey]` table (85 bindings,
+  VK + 256 Shift / 512 Ctrl / 1024 Alt), overridden by the install's file:
+  S stop, G guard, X scatter, D deploy, T type-select (screen, then map), H
+  centre base, K/L repair/sell, Q/W/E/R sidebar tabs, 1..0 select group,
+  Ctrl+n create, Shift+n add, Alt+n centre (n twice within 800 ms centres),
+  N/M next/previous unit, F1-F4 / Ctrl+F1-F4 view bookmarks, numpad 8/2 strip
+  scroll. Commands without a feature (beacons, planning, alliances, taunts...)
+  are consumed. N no longer arms the superweapon (it is NextObject).
+- **Build queues (G-07)**: StripClass action `FUN_006AA390`: left = start /
+  queue another unit (cap `MaximumQueuedObjects`) / resume a held item / place
+  a ready building; right = hold, then abandon with refund (Shift = abandon
+  all); count badge and HOLD marker on cameos.
+- **Building selection (G-10)**: any own building is selectable (bracket + HP
+  bar); rally/primary for factories.
+- **Cursor state (G-08)**: `Input::action_at` / `GameScene::cursor_action()`
+  give the action under the pointer for the cursor art.
+- **Radar (G-09)**: a click on the active radar re-centres the view, or orders
+  the selection there.
+- **Sidebar strip (G-12)**: r-up/r-dn and SidebarUp/Down scroll by one row.
+- **Logic tick (G-13)**: GameScene steps the World in fixed 1/15 s ticks
+  [RE-FALLBACK until the per-GameSpeed rate is pinned].
+- **Touch (G-70/G-71)**: tap = left click, drag = band box, long-press or
+  two-finger tap = right click, two-finger drag = pan; SDL's synthetic mouse
+  events are disabled, and touches never edge-scroll.
