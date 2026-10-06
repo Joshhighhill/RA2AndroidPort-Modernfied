@@ -23,10 +23,10 @@ at b049b40 are listed right after this table.
 
 | Script | 63edea6 | 7778b66 (A+B) | b049b40 (A+B+C+E) | play_hash @b049b40 |
 |---|---|---|---|---|
-| `sk-a` | FAIL, 28 | FAIL, 11 | FAIL, 8 | `07b084097ddfe20c` |
-| `sk-s` | FAIL, 52 | FAIL, 14 | FAIL, 13 | `a77d77282d5ecc4b` |
+| `sk-a` | FAIL, 28 | FAIL, 11 | FAIL, 8 (gD-ai: FAIL, 7 -- no D row left) | `07b084097ddfe20c` |
+| `sk-s` | FAIL, 52 | FAIL, 14 | FAIL, 13 (gD-ai: FAIL, 10 -- no D row left) | `a77d77282d5ecc4b` |
 | `sk-end` | FAIL, 2 | FAIL, 2 | FAIL, 2 | `bef7d78b1a86dcd5` |
-| `sk-a-lose` | FAIL, 4 | FAIL, 4 | FAIL, 4 | `3c90c0e249d1179c` |
+| `sk-a-lose` | FAIL, 4 | FAIL, 4 | FAIL, 4 (gD-ai: FAIL, 2 -- only G-02:F) | `3c90c0e249d1179c` |
 | `m-all01` | FAIL, 5 | FAIL, 2 | FAIL, 2 | `42e50f02da8522ab` |
 | `m-sov01` | FAIL, 6 | FAIL, 6 | FAIL, 6 | `be47fff77fd9072e` |
 | `shell-smoke` | FAIL, 14 (+hard stop) | FAIL, 4 (+hard stop) | FAIL, 4 (+hard stop) | `428731525d358c3e` |
@@ -77,7 +77,7 @@ script passes (ROADMAP-playable §G rule 6).
 | L106 | AMCV in the vehicle tab (rebuildable MCV) | FAIL | FAIL | G-22 / G-23 | A / F |
 | L109-L110 | train a 2nd Chrono Miner | FAIL | PASS | G-22 | A |
 | L116 | AI trains a unit within 3000 f | FAIL | PASS | G-60 | D |
-| L117 | AI damages the player within 6000 f more | FAIL | FAIL | G-60 | D |
+| L117 | AI damages the player within 6000 f more | FAIL | FAIL — **PASS on gD-ai** (G-60/G-61: teams + real script table + move-progress backstop) | G-60 | D |
 | L125-L126 | Prism Tank (SREF) has damage and range | FAIL (0 / 0) | FAIL | G-41 | C |
 | L139 | Pillbox kills 3 spawned Conscripts within 450 f | FAIL (1 died) | FAIL | G-40 | C |
 | L145, L147 | after the enemy is gone (`world_outcome == WON` PASSES), the session ends WON | FAIL (stays RUNNING) | FAIL | G-02 | F |
@@ -98,9 +98,9 @@ script passes (ROADMAP-playable §G rule 6).
 | L68 | credits rise within 2700 f | FAIL | **FAIL — the War Miner fills to 40 bales and stays in `ReturnToRef` forever, not moving (`probe-soviet-econ.play`)** | G-20 | A |
 | L73-L84 | NAWEAP -> Rhino; Flak Track + War Miner offered | FAIL | PASS | G-03 / G-22 | A |
 | L82 | SMCV offered | FAIL | FAIL | G-22 / G-23 | A / F |
-| L88-L90 | the Allied AI builds GA\* (GAPOWR), no NA\* | FAIL | FAIL (no GAPOWR in 3000 f) | G-64 | D |
-| L94 | the (Allied) AI trains a unit | FAIL | FAIL (the Soviet AI does, see sk-a L116) | G-60 / G-64 | D |
-| L95 | AI damages the player | FAIL | FAIL | G-60 | D |
+| L88-L90 | the Allied AI builds GA\* (GAPOWR), no NA\* | FAIL | FAIL (no GAPOWR in 3000 f) — **PASS on gD-ai** (side-correct catalog + side-consistent country, NEW-4) | G-64 | D |
+| L94 | the (Allied) AI trains a unit | FAIL | FAIL (the Soviet AI does, see sk-a L116) — **PASS on gD-ai** | G-60 / G-64 | D |
+| L95 | AI damages the player | FAIL | FAIL — **PASS on gD-ai** | G-60 | D |
 | L109 | Sentry Gun kills 2 spawned GIs within 450 f | n/a (step was Tesla-based) | FAIL (1 died) | G-40 | C |
 | L115, L117 | session ends WON | FAIL | FAIL | G-02 | F |
 
@@ -111,8 +111,8 @@ script passes (ROADMAP-playable §G rule 6).
 | sk-end L12 | `cheat kill_house 0` -> `world_outcome == LOST` | PASS | PASS | — | — |
 | sk-end L13 | session ends LOST (result scene) within 900 f | FAIL (RUNNING) | FAIL | G-02 | F |
 | sk-end L16 | result -> main menu | FAIL | FAIL | G-02 | F |
-| sk-a-lose L19 | hardest AI kills a player unit within 9000 f, no input | FAIL | FAIL | G-60 (G-63: lobby HARD indexes the easiest table) | D |
-| sk-a-lose L20 | player defeated within 18000 f more | FAIL | FAIL | G-60 | D |
+| sk-a-lose L19 | hardest AI kills a player unit within 9000 f, no input | FAIL | FAIL — **PASS on gD-ai** (f=5150; G-63 binds lobby HARD to [Easy] = house+0x184 0) | G-60 (G-63) | D |
+| sk-a-lose L20 | player defeated within 18000 f more | FAIL | FAIL — **PASS on gD-ai** (defeated at f=5150) | G-60 | D |
 | sk-a-lose L21, L23 | session ends LOST | FAIL | FAIL | G-02 | F |
 
 ### m-all01, m-sov01 — campaign mission 1
@@ -159,4 +159,4 @@ script passes (ROADMAP-playable §G rule 6).
 | NEW-1 | A skirmish opens with the camera on the map centre, not on the player's start: no own object is on screen at frame 1 (`sk-a` L27, `sk-s` L24, `probe-game` start.png shows only shroud and ore). | `own_on_screen == 0` | F (skirmish start) |
 | NEW-2 | ALL01 with no player input: every house-0 unit is dead by f≈2459 but the mission stays RUNNING (no LOST, no result screen). Needs RE of the map's `Lose 13` chain / house-defeat path before fixing. | `m-all01` L44 | F (campaign) |
 | NEW-3 | Soviet War Miner never unloads: full at 40 bales, `ReturnToRef` forever, not moving; the Allied Chrono Miner path works. | `sk-s` L68, `probe-soviet-econ.play` dumps | A (G-20) |
-| NEW-4 | The Allied AI slot neither builds GA\* power nor trains in 3000 frames, while the Soviet AI does train (sk-a L116 PASS). | `sk-s` L88-L94 | D (G-64) |
+| NEW-4 | The Allied AI slot neither builds GA\* power nor trains in 3000 frames, while the Soviet AI does train (sk-a L116 PASS). **Fixed on gD-ai:** the lobby cycled the slot to Allied but left country=Russians, so the Owner-filtered catalog picked NACNST as the plan head while the house stood on a GACNST; the AI country is now checked against rulesmd `[Sides]`. | `sk-s` L88-L94 | D (G-64) |
