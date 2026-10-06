@@ -1826,6 +1826,85 @@ modes; LUNAR; loose `.mpr`/`.yrm` files; and a scrollable/filterable browser
 with previews in place of the stepper.
 
 
+## Building Repair & Sell
+
+The sidebar's two remaining inert buttons now work, exactly as
+`docs/re/repair-sell.md` recovered them (§D is the RE-GATE adjudication and its
+24-row table measured against this install is the authority for every number
+below).
+
+**Repair is a per-building toggle on a GLOBAL 14-frame phase.** The cadence is
+`frame % trunc(RepairRate × 900) == 0`, and `.016 × 900 = 14.4` truncates to
+**14, not 15**. It is an *absolute* phase, not a per-building timer: every
+repairing building of every house steps on the same frames, and a newly armed
+one waits 0–13 frames for its first step. Each step heals a flat **+8 HP**
+(`RepairStep`) and charges
+`max(1, trunc((Cost / (Strength / RepairStep)) × RepairPercent))` with **both
+divisions integer**: GACNST 3/step (375 to full), GAWEAP 2/step (250), GAPOWR
+1/step (`Strength` is **750**, not 1000, so 94 steps to full). The naive
+`Cost × RepairPercent × damage_fraction` form gives 450 for a ConYard, about
+17% too much. Repair **auto-stops** at full health and **stops silently** when
+the owner cannot afford the next step. The check runs *before* the spend, so
+there is no partial step, no free repair and no EVA line. The flag is cleared,
+so the player has to click the wrench again. `URepairStep`/`URepairPercent` do
+not exist in this build.
+
+**Selling is a mission, not an instant action.** The buildup animation plays
+**mirrored** (`start + count − stage − 1`) over the same frame count, at the
+same rate the building took to appear (the engine's existing buildup duration,
+`image_frames × max(1, trunc(BuildupTime×900/image_frames)) / 15`. That is 30
+frames for GACNST and 50 for GAREFN on this install). Credits land and
+survivors spawn only on completion. Selling always calls `Repair(0)` first. A
+type with no buildup art takes the instant-removal branch. A sold building does
+not explode.
+
+- **The refund is flat:** `trunc(trunc(Cost × m2 × m1) × RefundPercent)`,
+  `RefundPercent=50%`, with **no HP scaling**. A building at 1 HP refunds the
+  same as one at full health. `Soylent` overrides and bypasses `RefundPercent`,
+  and that override matters here because **GAREFN/NAREFN set `Soylent=300`**, so
+  a refinery refunds 300, not 1000. `RefundPercent` applies **only to
+  human-controlled houses**. An AI house gets the unscaled value.
+- **Survivors** = `clamp(refund / SurvivorDivisor[side], 1, 5)`, with divisors
+  **500/250/750** and zero when `Crewed=no`. They are `[General] AlliedCrew=E1` /
+  `SovietCrew=E2`, and they exit onto the building's own foundation cells. A
+  survivor whose cell is blocked is deleted, not displaced. The 25% special-crew
+  branch is cut: it is un-anchored and it is an RNG draw.
+- **Refusals are exactly:** `Unsellable` (reachable: **CAOILD**), under
+  construction, already selling, and C4 applied. **There is no
+  last-Construction-Yard rule and no captured-building rule.** Both were searched
+  for in the binary and neither exists. The gate asserts that the only
+  full-health ConYard *is* sellable.
+
+**The two buttons are mutually exclusive toggle cursor modes** (§C1): placement
+wins, arming clears the selection, arming is refused when the player owns no
+buildings (`HouseClass+0x2F0`, §D5), losing the last building disarms the mode,
+and ESC/right-click cancels exactly one thing per press in the recovered order
+placement → Repair → Sell → superweapon. The mode is not one-shot. While a mode
+is armed, the button shows its pressed frame and the pointer is the real
+`MOUSE.SHP` cursor (`cache.mix/mousepal.pal`). The cursor uses the wrench
+150–169/170–189/190 or the dollar 129–138/139–148/149, at one cursor frame per 4
+game frames. Those indices and the centre hotspot come from the binary's own
+cursor table at `0x0082C038`. Which animated member means "over a valid target"
+is PROBABLE (§D8). The interactive game loads the building roster lookup-only
+(`World::set_building_types`), so the economy firewall stays shut. It also
+bridges the player's wallet into the World pool while a repair runs.
+
+The **20th determinism gate**, `--demo-repair`, pins
+`repair_hash=30e49667c9c6e52d`.
+
+**Carry-forwards (documented, not implemented):** `UndeploysInto`/MCV redeploy
+(no deploy machinery; the plain-refund branch the clone takes is a reachable
+configuration of the original, §D7); AI auto-repair/auto-sell (eight unanchored
+offsets plus a `Random(0,50)` draw that would perturb the AI gates, §D3); the
+Service Depot docked-unit sell (`GAAIRC` sets `UnitReload=yes` but nothing can
+dock, §D2); the mind-control sell veto (§D6); the captured-building ×2 survivor
+divisor (capture records no captured flag yet); upgrade peel-off; unit selling;
+garrison release; the 25% special crew; C4; the three unmodeled mode flags
+(power toggle, planning, beacons); and the Soviet/Yuri sidebar button offsets.
+`[RE-FALLBACK]` stands for the fate of in-progress production on sell (§D4): a
+sold factory takes the existing building-death queue-cancel path.
+
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -2086,6 +2165,17 @@ Headless/verification CLI modes (render one or more frames and exit):
   exit non-zero unless every new type resolves AND spawns AND the Allied full
   base placed >1 building AND a spot stat matches rules (APOC strength 800,
   ATESLA a building).
+- `ra2engine.exe --demo-repair` is the Building Repair & Sell integration gate.
+  On a real Allied base it drives the wrench and measures, frame by frame, the
+  14-frame global cadence, the +8 HP heal and the exact integer `stepCost`
+  charge. It then proves the auto-stop and the silent out-of-credits stop,
+  exercises every reachable sell refusal (enemy, under construction, CAOILD
+  `Unsellable`, already selling) **and** the one rule that does not exist (the
+  only full-health ConYard is sellable). Finally it runs two sell missions: the
+  ConYard (FLAT 1500 only on completion, 3 E1 survivors on the freed
+  foundation) and the refinery (`Soylent=300`, 1 survivor). Runs twice
+  (rendered + headless) and byte-compares; 25 wedge guards
+  (`docs/re/repair-sell.md`).
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -2093,7 +2183,8 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These eighteen headless demos are byte-identity regression gates: any change to
+These twenty headless demos (the table below plus `--demo-maps`, described in
+its own section, and `--demo-repair`) are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
@@ -2125,6 +2216,7 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-multihouse` | `multihouse_hash=39412ae996cce8ae` | `deterministic=yes`; N-player HouseRec table + alliances (is_enemy/are_allied, FFA default a!=b), AllyReveal shared sight, last-team-standing victory (ShortGame=last-building), per-house side/color (8 MP colors); wedge guards armed (`docs/re/multihouse.md`) |
 | `--demo-skirmish` | `skirmish_hash=e9ad3f1fd88495f9` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, 3 combatant slots in two alliance-teams (0+2 allied vs 1, no neutral); wedge guards armed (`docs/re/skirmish.md`) |
 | `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
+| `--demo-repair` | `repair_hash=30e49667c9c6e52d` | `deterministic=yes lines=8`; repair = a GLOBAL 14-frame phase (`trunc(RepairRate*900)`, NOT 15) × +8 HP × `stepCost=max(1,trunc((Cost/(Strength/RepairStep))*RepairPercent))` with BOTH divisions integer (GACNST 3/step, GAPOWR 1/step); `steps=6 first=0 gap=14 heal8=yes charge=yes`; auto-stop at full; silent stop when broke (`hp=718->718`, no partial step, no free repair); refusals `enemy/under_construction/unsellable_caoild/already_selling=refused`, `full_health_conyard_sellable=yes` (NO last-ConYard rule); ConYard sell = a 30-frame MISSION, `paid_early=no paid=1500 survivors=3`, footprint freed; GAREFN `Soylent` sale `paid=300 survivors=1`; 25 wedge guards armed (`docs/re/repair-sell.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
