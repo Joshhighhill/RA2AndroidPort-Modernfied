@@ -282,6 +282,10 @@ int run_campaign_survey() {
             if (!s || s->scenario.empty()) continue;
             const std::string map = s->scenario;
             if (camp::up(map).rfind("TRN", 0) == 0) continue;   // boot camp: not in P10 scope
+            // [G-69 dev aid] RA2_SURVEY_MAP=<map> limits the survey to one
+            // mission; RA2_SURVEY_FRAMES=<n> overrides the frame budget.
+            if (const char* only = std::getenv("RA2_SURVEY_MAP"))
+                if (camp::up(map) != camp::up(only)) continue;
             ++total;
             try {
                 MapSelection sel;
@@ -301,7 +305,20 @@ int run_campaign_survey() {
                 l.map = map;
                 l.side = side;
                 CampaignRuntime rt(l, dir, ra2, language, w, a, ua, ba, rules, art, rules_ini);
-                for (long f = 0; f < kSurveyFrames && !rt.finished(); ++f) { rt.frame(); w.step(1.0 / 15.0); }
+                long frames = kSurveyFrames;
+                if (const char* fe = std::getenv("RA2_SURVEY_FRAMES")) frames = std::atol(fe);
+                for (long f = 0; f < frames && !rt.finished(); ++f) { rt.frame(); w.step(1.0 / 15.0); }
+                for (const std::string& wl : rt.witness())   // [G-69] AI arming lines
+                    if (wl.find("production begins") != std::string::npos) std::cout << wl << "\n";
+                for (int h = 1; h < w.house_count(); ++h)
+                    if (w.ai_enabled(h)) {
+                        int nb = 0;
+                        for (const ra2engine::Building& b : w.buildings())
+                            if (b.alive && b.house == h && b.state != ra2engine::Building::State::Dead) ++nb;
+                        std::cout << "  [ai] house " << h << " buildings=" << nb
+                                  << " plan=" << (w.ai_state(h) ? (int)w.ai_state(h)->plan.size() : 0)
+                                  << " credits=" << (long)w.ai_credits(h) << "\n";
+                    }
                 std::string head;
                 for (const std::string& wl : rt.witness())
                     if (wl.rfind("[camp] ", 0) == 0) { head = wl; break; }

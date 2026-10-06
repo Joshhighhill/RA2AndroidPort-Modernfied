@@ -1302,6 +1302,42 @@ void World::enable_ai_house(int house, AiHouseConfig cfg) {
     ai_any_ = true;
 }
 
+void World::set_ai_base_nodes(int house, const std::vector<PlannedNode>& nodes) {
+    if (!ai_enabled(house) || nodes.empty()) return;
+    HouseAiRec& rec = ai_houses_[house];
+    rec.state.plan = nodes;
+    rec.state.next_node_id = 0;
+    for (int i = 0; i < (int)rec.state.plan.size(); ++i) {
+        PlannedNode& n = rec.state.plan[i];
+        n.id = i;
+        n.building = -1;
+        n.dead = false;
+        rec.state.next_node_id = i + 1;
+    }
+    // Standing-building sync (the same linkage step_ai_houses makes for a
+    // catalog plan): ascending building index, nearest unclaimed node of
+    // the same type. A node whose building is not standing is BUILT at its
+    // stored cell (ai_place_ready re-validates it) -- the campaign base
+    // build-out / rebuild.
+    for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+        const Building& b = buildings_[bi];
+        if (!b.alive || b.state == Building::State::Dead || b.house != house) continue;
+        int best = -1;
+        long long bd = 0;
+        for (int i = 0; i < (int)rec.state.plan.size(); ++i) {
+            const PlannedNode& n = rec.state.plan[i];
+            if (n.type != b.type || n.building >= 0) continue;
+            const long long dx = n.cx - b.cx, dy = n.cy - b.cy, d = dx * dx + dy * dy;
+            if (best < 0 || d < bd) { best = i; bd = d; }
+        }
+        if (best >= 0) {
+            rec.state.plan[best].building = bi;
+            rec.state.plan[best].cx = b.cx;
+            rec.state.plan[best].cy = b.cy;
+        }
+    }
+}
+
 bool World::ai_enabled(int house) const {
     return house >= 0 && house < (int)ai_houses_.size() && ai_houses_[house].is_ai;
 }

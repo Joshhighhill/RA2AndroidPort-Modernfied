@@ -827,6 +827,11 @@ public:
     // steps EXACTLY as before (step_ai_houses early-returns on a single
     // bool), and none of the AI fields is read by any hash.
     void enable_ai_house(int house, AiHouseConfig cfg);
+    // [G-69] Campaign houses: install an explicit base-node plan (the map's
+    // [<House>] NodeCount/NNN=TYPE,X,Y list) instead of the lazily built
+    // catalog plan, and link every standing own building to the node of its
+    // type (nearest node cell first). Call right after enable_ai_house.
+    void set_ai_base_nodes(int house, const std::vector<PlannedNode>& nodes);
     bool ai_enabled(int house) const;
     // Test/demo accessors (read-only views of the per-house AI record;
     // nullptr / 0 / -1 when `house` is not AI-flagged).

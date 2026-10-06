@@ -296,6 +296,7 @@ public:
             else if (o.kind != 3) types_.unit(o.type);
         for (const auto& tf : teams_data_.taskforces)
             for (const ra2engine::MapTaskMember& m : tf.second) types_.unit(m.type);
+        resolve_base_nodes();   // [G-69] before the roster is handed to the World
         w_.set_building_types(ba_.roster);
         w_.set_repair_sell_rules(ba_.repair_sell);
         place_objects(objs);
@@ -325,6 +326,7 @@ public:
         if (finished()) return;
         sys_->tick(host_);
         drain_log();
+        arm_production_houses();   // [G-69]
         poll_objects();
         step_teams();
         step_hunters();
@@ -553,6 +555,63 @@ private:
         destroyed_units_.assign(house_names_.size(), 0);
         destroyed_buildings_.assign(house_names_.size(), 0);
         last_built_.assign(house_names_.size(), {-1, -1, -1, -1});
+    }
+    // --- [G-69] campaign enemy base build-out ---------------------------------
+    // [RE: campaign.md §9; map [<House>] NodeCount= + NNN=TYPE,X,Y base nodes
+    // (TS/RA2 BaseClass::Read_INI lineage, the format on every RA2 map that
+    // has nodes); trigger action 3 "Production begins" sets the house's
+    // production flag (map_trigger.cpp house_flags bit0)]. Once a computer
+    // house's production flag is set it runs the AI-1 base brain over its
+    // OWN node list: builds missing nodes and rebuilds destroyed ones in
+    // place, repairs (G-65) and fires superweapons it owns (G-66).
+    // RE-FALLBACK (RE-A5 open): the DifficultyClass of a campaign computer
+    // house is taken as 2 - campaign difficulty (the skirmish binding);
+    // AI-2/AI-3 (action 74, aimd teams for map houses) are not armed yet.
+    void resolve_base_nodes() {
+        base_nodes_.assign(house_names_.size(), {});
+        for (std::size_t i = 1; i < house_names_.size(); ++i) {
+            const std::string& hn = house_names_[i];
+            const int n = map_.get_int(hn, "NodeCount", 0);
+            for (int k = 0; k < n; ++k) {
+                char key[8];
+                std::snprintf(key, sizeof key, "%03d", k);
+                const std::string v = map_.get(hn, key, "");
+                std::vector<std::string> f;
+                std::string cur;
+                for (char c : v + ",") {
+                    if (c == ',') { f.push_back(camp::trim_comment(cur)); cur.clear(); }
+                    else cur += c;
+                }
+                if (f.size() < 3) continue;
+                const int t = types_.building(ba_, f[0]);
+                if (t < 0) continue;
+                ra2engine::PlannedNode node;
+                node.type = t;
+                node.cx = std::atoi(f[1].c_str());
+                node.cy = std::atoi(f[2].c_str());
+                base_nodes_[i].push_back(node);
+            }
+        }
+    }
+    void arm_production_houses() {
+        for (std::size_t i = 1; i < house_names_.size(); ++i) {
+            if (i >= base_nodes_.size() || base_nodes_[i].empty()) continue;
+            if (w_.ai_enabled((int)i) || !w_.house_combatant((int)i)) continue;
+            if (!(sys_->house_flags(house_type((int)i)) & 1u)) continue;
+            const ra2engine::World::Side side = w_.house_side((int)i);
+            if (side == ra2engine::World::Side::Neutral) continue;
+            const Rules rules = Rules::load(rules_ini_);
+            const std::string country = camp::trim_comment(map_.get(house_names_[i], "Country", ""));
+            ra2engine::AiHouseConfig cfg = make_ai_config(
+                ba_, rules, static_cast<ra2engine::AiDifficulty>(launch_.difficulty),
+                /*start_credits=*/0.0, side, country);   // the house pool flows in via take_income
+            w_.enable_ai_house((int)i, std::move(cfg));
+            w_.set_ai_base_nodes((int)i, base_nodes_[i]);
+            char b[160];
+            std::snprintf(b, sizeof b, "[camp] f%ld production begins: %s nodes=%d", frame_,
+                          house_names_[i].c_str(), (int)base_nodes_[i].size());
+            witness_.emplace_back(b);
+        }
     }
     int engine_house_of_name(const std::string& name) const {
         const std::string u = camp::up(name);
@@ -1272,6 +1331,7 @@ private:
     std::vector<std::string> house_names_;
     std::vector<int> house_type_of_;
     std::vector<int> houses_order_ht_;
+    std::vector<std::vector<ra2engine::PlannedNode>> base_nodes_;   // [G-69] per engine house
     std::vector<std::string> ra2_vehicles_, ra2_infantry_;
     std::vector<int> destroyed_units_, destroyed_buildings_;
     std::vector<std::array<int, 4>> last_built_;
