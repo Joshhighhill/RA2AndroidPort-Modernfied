@@ -69,6 +69,35 @@ int low_bridge_next_stage(int idx) {
     return idx;
 }
 
+namespace {
+int wood_repaired(int i) {
+    switch (wood_axis(i)) {
+        case LowAxis::ColumnY:
+            if (i == 0x5D) return 0x5C;
+            if (i == 0x5F) return 0x5E;
+            if ((i >= 0x50 && i <= 0x52) || i == 100) return 0x4A;
+            return i;
+        case LowAxis::RowX:
+            if (i == 0x61) return 0x60;
+            if (i == 99) return 0x62;
+            if ((i >= 0x59 && i <= 0x5B) || i == 0x65) return 0x53;
+            return i;
+        default:
+            return i;
+    }
+}
+}  // namespace
+
+int low_bridge_repaired(int idx) {
+    const BridgeClass c = bridge_class_of_overlay(idx);
+    if (c == BridgeClass::LowWood) return wood_repaired(idx);
+    if (c == BridgeClass::LowConcrete) {
+        const int w = to_wood(idx);
+        return w >= 0 ? wood_repaired(w) + kConcreteOffset : idx;
+    }
+    return idx;
+}
+
 void low_bridge_section_cells(int cx, int cy, LowAxis axis, int out_x[3], int out_y[3]) {
     for (int k = 0; k < 3; ++k) {
         out_x[k] = cx + (axis == LowAxis::RowX ? k - 1 : 0);

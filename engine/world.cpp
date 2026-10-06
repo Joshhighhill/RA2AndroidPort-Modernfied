@@ -131,6 +131,9 @@ void step_turrets(std::vector<Unit>& units, const std::vector<Building>& buildin
                 want = facing_u16_from_delta(static_cast<double>(nx) - u.fx,
                                              static_cast<double>(ny) - u.fy);
             }
+        } else if (u.attack_cell_x >= 0) {   // G16: force-fire at a ground cell
+            want = facing_u16_from_delta(static_cast<double>(u.attack_cell_x) - u.fx,
+                                         static_cast<double>(u.attack_cell_y) - u.fy);
         }
         u.turret_facing = turn_toward(u.turret_facing, want, u.rot_u16_per_sec * dt);
     }
@@ -861,6 +864,8 @@ void World::order_move_selected(int goal_x, int goal_y) {
 
     for (std::size_t k = 0; k < sel.size(); ++k) {
         Unit& u = units_[sel[k]];
+        u.attack_cell_x = u.attack_cell_y = -1;   // G16: a move ends a ground fire order
+        u.occupy_target = -1;
         // An explicit move order CANCELS engagement (RTS convention, and the
         // spec's "idle/guarding" wording: a unit executing a player move is
         // neither): drop the target so the hold-at-range pass and pursuit
@@ -900,6 +905,7 @@ void World::order_attack(int target_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above (selected + house 0); the shared mutation
         // tail (target/attack_order + occupancy re-assert + path clear) is
         // extracted into commit_attack_target so there is ONE copy of the
@@ -954,6 +960,7 @@ void World::order_attack_building(int b_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above; shared mutation tail via commit_attack_target
         // [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
         commit_attack_target(static_cast<int>(i), /*target_unit=*/-1, b_idx);

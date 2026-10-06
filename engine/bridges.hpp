@@ -35,6 +35,11 @@ LowAxis low_bridge_axis(int idx);
 // intact -> damaged, damaged -> destroyed, end pieces once. Returns `idx`
 // unchanged when the section cannot take another step.
 int low_bridge_next_stage(int idx);
+// The repaired (intact) overlay of a damaged / destroyed section: the inverse
+// of low_bridge_next_stage onto the set's base intact piece (0x4A ColumnY,
+// 0x53 RowX; the end pieces back to their intact end) [RE-FALLBACK: the
+// restore walk FUN_0057EE70 / FUN_00573070 is not traced piece by piece].
+int low_bridge_repaired(int idx);
 
 // FUN_0057B4D0 / FUN_0057C720: the centre cell of the 3-cell cross-section
 // hit at (x, y). `overlay_at(x, y)` returns the runtime overlay index (or -1).

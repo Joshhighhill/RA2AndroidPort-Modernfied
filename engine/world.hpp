@@ -1437,6 +1437,7 @@ public:
     int bridge_explosion(int cx, int cy, int damage, bool wall_warhead);   // FUN_00489190 bridge part
     int repair_bridge_near(int b_idx);                       // engineer entered a BridgeRepairHut
     std::uint32_t bridge_version() const { return bridge_version_; }
+    long long garrison_shots() const { return garrison_shots_; }
     int bridge_cells_destroyed() const;
     // Force-fire at a ground cell (Ctrl+click, G-49 bridge demolition).
     void order_attack_cell(int unit_idx, int cx, int cy);
@@ -1735,6 +1736,7 @@ private:
     // --- G16 world depth (world_depth.cpp) ---
     DepthRules depth_rules_;
     bool garrison_any_ = false;                    // an occupy order was ever given
+    long long garrison_shots_ = 0;                 // shots fired out of garrisons
     std::vector<GarrisonEvent> garrison_events_;
     std::vector<int> bridge_ovl_;                  // current runtime overlay per cell (-1)
     std::vector<int> bridge_ovl0_;                 // the map's original overlay (repair target)

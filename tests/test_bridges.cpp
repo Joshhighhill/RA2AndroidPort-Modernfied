@@ -65,3 +65,17 @@ TEST_CASE("bridges: OverlayTypes runtime order skips the ini numbering gaps") {
     CHECK(n[1] == "B");
     CHECK(n[2] == "LOBRDG01");
 }
+
+TEST_CASE("bridges: repair maps every damaged/destroyed piece back to an intact one") {
+    CHECK(low_bridge_repaired(100) == 0x4A);
+    CHECK(low_bridge_repaired(0x51) == 0x4A);
+    CHECK(low_bridge_repaired(0x65) == 0x53);
+    CHECK(low_bridge_repaired(0x5A) == 0x53);
+    CHECK(low_bridge_repaired(99) == 0x62);
+    CHECK(low_bridge_repaired(0x5D) == 0x5C);
+    CHECK(low_bridge_repaired(0x53) == 0x53);       // intact stays
+    CHECK(low_bridge_repaired(0x65 + 131) == 0x53 + 131);
+    for (int i = 0x4A; i < 0x66; ++i) {             // repair(next(i)) is never destroyed
+        CHECK_FALSE(low_bridge_destroyed(low_bridge_repaired(low_bridge_next_stage(i))));
+    }
+}

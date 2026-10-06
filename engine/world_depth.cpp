@@ -249,6 +249,7 @@ void World::step_garrison_combat(double dt) {
         shooter.w_percent_at_max = w.percent_at_max;
         shooter.alive = false;
         fire_events_.push_back({-1, bi, b.garrison_target, -1, 0, w.id});
+        ++garrison_shots_;
         // UC weapons fly invisible projectiles: delivered as instant hits
         // [RE-FALLBACK: garrison shots are not routed through step_projectiles].
         if (w.cell_spread >= 1.0)
@@ -278,6 +279,8 @@ int World::bridge_overlay_at(int x, int y) const {
     return bridge_ovl_[static_cast<std::size_t>(y) * grid_w_ + x];
 }
 
+// Destroyed low-bridge cells right now (maps may ship a bridge already blown,
+// e.g. May Day's river crossings, to be repaired at the hut).
 int World::bridge_cells_destroyed() const {
     int n = 0;
     for (int v : bridge_ovl_)
@@ -343,9 +346,9 @@ int World::bridge_explosion(int cx, int cy, int damage, bool wall_warhead) {
 // FUN_00519449: engineer +0xEC3 && type +0x16B6): RepairBridgeSound, then the
 // bridge found within +-2 cells is restored (FUN_00573070 / FUN_0056FB80).
 // The clone restores every damaged/destroyed low section of the bridge run
-// connected to a low-bridge cell within 2 cells of the hut's foundation to its
-// map overlay [RE-FALLBACK: the per-section restore walk of FUN_0057EE70 is
-// not traced]. Returns the number of cells restored.
+// connected to a low-bridge cell within 2 cells of the hut's foundation to an
+// intact piece (low_bridge_repaired) [RE-FALLBACK: the per-section restore
+// walk of FUN_0057EE70 is not traced]. Returns the number of cells restored.
 int World::repair_bridge_near(int bi) {
     if (bridge_ovl_.empty() || bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
     const Building& b = buildings_[bi];
@@ -361,8 +364,9 @@ int World::repair_bridge_near(int bi) {
         const std::size_t i = static_cast<std::size_t>(c.y) * grid_w_ + c.x;
         if (seen[i]) continue;
         seen[i] = 1;
-        if (bridge_ovl_[i] != bridge_ovl0_[i]) {
-            set_bridge_cell(c.x, c.y, bridge_ovl0_[i]);
+        const int fixed = low_bridge_repaired(bridge_ovl_[i]);
+        if (fixed != bridge_ovl_[i]) {
+            set_bridge_cell(c.x, c.y, fixed);
             ++restored;
         }
         for (int dy = -1; dy <= 1; ++dy)

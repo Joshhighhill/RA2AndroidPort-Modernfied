@@ -5434,28 +5434,30 @@ private:
     static constexpr int kWinH = 720;
 
     // --- G16 named map points for --play scripts (agent G) ---
-    // Anchor = house 0's first live unit (else first building).
+    // Anchor = house 0's first live building (stable), else its first unit.
     bool play_anchor(int& ax, int& ay) const {
+        for (const ra2engine::Building& b : world_.buildings())
+            if (b.house == 0 && b.alive && b.state != ra2engine::Building::State::Dead) { ax = b.cx; ay = b.cy; return true; }
         for (const ra2engine::Unit& u : world_.units())
             if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) { ax = u.cell_x; ay = u.cell_y; return true; }
-        for (const ra2engine::Building& b : world_.buildings())
-            if (b.house == 0 && b.alive) { ax = b.cx; ay = b.cy; return true; }
         return false;
     }
     bool play_find_point(const std::string& name, double& cx, double& cy) const {
         int ax = 0, ay = 0;
         if (!play_anchor(ax, ay)) return false;
         auto d2 = [&](int x, int y) { return (x - ax) * (x - ax) + (y - ay) * (y - ay); };
-        if (name == "garrison" || name == "hut") {
+        if (name == "garrison" || name == "hut" || name == "garrisoned") {
             int best = -1, bd = 0;
             for (int bi = 0; bi < static_cast<int>(world_.buildings().size()); ++bi) {
                 const ra2engine::Building& b = world_.buildings()[bi];
                 if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
                 if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size())) continue;
                 const ra2engine::BuildingTypeDef& t = ba_.roster[b.type];
-                if (name == "garrison" ? !(t.can_be_occupied && b.occupants.empty() && !world_.house_combatant(b.house))
-                                       : !t.bridge_repair_hut)
-                    continue;
+                const bool ok = name == "garrison"
+                                    ? t.can_be_occupied && b.occupants.empty() && !world_.house_combatant(b.house)
+                                : name == "garrisoned" ? t.can_be_occupied && !b.occupants.empty() && b.house == 0
+                                                       : t.bridge_repair_hut;
+                if (!ok) continue;
                 const int d = d2(b.cx, b.cy);
                 if (best < 0 || d < bd) { best = bi; bd = d; }
             }
@@ -16417,6 +16419,9 @@ int main(int argc, char** argv) {
             }
             if (arg == "--menu-shot" && i + 1 < argc) {
                 return run_menu_shot(argv[++i]);
+            } else if (arg == "--depth-dump" && i + 5 < argc) {
+                return run_depth_dump(argv[i + 1], std::atoi(argv[i + 2]), std::atoi(argv[i + 3]),
+                                      std::atoi(argv[i + 4]), std::atoi(argv[i + 5]));
             } else if (arg == "--depth-survey") {
                 return run_depth_survey();   // G16 (agent G) dev survey
             } else if (arg == "--controls-selftest" && i + 1 < argc) {

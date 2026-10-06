@@ -235,6 +235,7 @@ private:
             else if (k == "park" && c.args.size() > 2) { park_x_ = std::atoi(v.c_str()); park_y_ = std::atoi(c.args[2].c_str()); }
             else if (k == "states") verbose_states_ = v != "off";
             else if (k == "on_quit") quit_continue_ = (v == "continue");
+            else if (k == "cycle_max") cycle_max_ = std::max(1, std::atoi(v.c_str()));
             else { fail(c, "unknown setting"); }
             ++pc_;
             return kNext;
@@ -361,8 +362,8 @@ private:
                 ++pc_;
                 return kNext;
             }
-            if (++cycle_n_ > 8) {
-                fail(c, d + " (after 8 clicks)");
+            if (++cycle_n_ > cycle_max_) {
+                fail(c, d + " (after " + std::to_string(cycle_max_) + " clicks)");
                 cycle_n_ = 0;
                 ++pc_;
                 return kNext;
@@ -687,6 +688,7 @@ private:
     std::size_t pc_ = 0;
     int wait_left_ = 0;
     int cycle_n_ = 0;
+    int cycle_max_ = 8;
     bool until_active_ = false;
     int until_left_ = 0;
     std::map<int, int> held_;   // scancode -> frames left

@@ -176,6 +176,7 @@ struct SaveAccess {
         // G16 world depth (agent G)
         save::io(ar, w.depth_rules_);
         save::io(ar, w.garrison_any_);
+        save::io(ar, w.garrison_shots_);
         save::io(ar, w.garrison_events_);
         save::io(ar, w.bridge_ovl_);
         save::io(ar, w.bridge_ovl0_);

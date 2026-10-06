@@ -51,3 +51,25 @@ int run_depth_survey() {
     (void)ovl;
     return 0;
 }
+
+// `--depth-dump <map> x0 y0 x1 y1`: the runtime overlay index (and overlay
+// data) of every cell in the rectangle (".." = none). Dev aid.
+int run_depth_dump(const std::string& mapname, int x0, int y0, int x1, int y1) {
+    const std::string dir = env_install_dir();
+    MixFile maps = MixFile::open(ra2assets::read_file(dir + "multimd.mix"));
+    const MixEntry* me = maps.find(mapname);
+    if (!me) { std::cerr << "no map " << mapname << "\n"; return 1; }
+    const auto raw = maps.read(*me);
+    const ra2assets::MapFile map = ra2assets::MapFile::parse(std::string(raw.begin(), raw.end()));
+    for (int y = y0; y <= y1; ++y) {
+        std::cout << (y < 100 ? " " : "") << y << ": ";
+        for (int x = x0; x <= x1; ++x) {
+            const int id = map.overlay_at(x, y);
+            const ra2assets::MapCell* c = map.at(x, y);
+            if (id < 0 || id == 255) std::cout << (c ? "  .." : "    ");
+            else std::cout << " " << (id < 100 ? " " : "") << id;
+        }
+        std::cout << "\n";
+    }
+    return 0;
+}
