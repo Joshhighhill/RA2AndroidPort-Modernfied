@@ -4340,6 +4340,8 @@ private:
     static ra2engine::SbRect btn(int i) { return {640 - 130, 360 - 120 + i * 58, 260, 42}; }
 };
 
+#include "realplay_economy.inc"   // gap owner A: real-play economy/production/base
+
 class GameScene : public Scene {
 public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
@@ -4438,7 +4440,11 @@ public:
                 static_cast<int>(std::llround(rules_.general_double("SpyPowerBlackout", 1000.0))));
 
         // Production queues + rolling credits display.
-        player_credits_ = rules_.mp_money();
+        // G-21 [RE: skirmish.md §1]: ONE wallet seeded ONCE with the lobby
+        // Money. launch_skirmish seeded house 0's World pool with
+        // cfg.starting_cash; move it here (was mp_money() PLUS that seed = 2x,
+        // and the slider only moved the bonus). Campaign overrides below.
+        player_credits_ = world_.take_income(0);
         queues_.set_credits(player_credits_);
         credits_shown_ = player_credits_;
 
@@ -4783,15 +4789,8 @@ public:
         if (act.place_confirmed && input_.placement_active()) {
             const int type = input_.placement_type();
             if (type >= 0 && type < static_cast<int>(ba_.roster.size())) {
-                const ra2engine::BuildingTypeDef& d = ba_.roster[type];
-                const ra2engine::PlacementCheck chk = ra2engine::placement_check(
-                    act.place_cx, act.place_cy, d.fw, d.fh, 0, d.adjacent, world_.passable(),
-                    world_.grid_w(), world_.grid_h(), world_.occupancy(), world_.buildings(),
-                    /*bypass_adjacency=*/false);
-                if (chk.ok) {
-                    world_.add_building(type, act.place_cx, act.place_cy, d.fw, d.fh, 0, d.strength,
-                                       d.armor_ix, ba_.art[type].buildup_total, /*instant=*/false,
-                                       d.sight, d.grants_map_reveal);
+                // Gap owner A: validity + add live in realplay_scene.inc.
+                if (place_building(type, act.place_cx, act.place_cy)) {
                     queues_.placed(place_cat_);
                     input_.cancel_placement();
                     if (audio_.enabled) audio_.mixer->play("PlaceBuilding");
@@ -5069,6 +5068,7 @@ private:
 public:
 
 private:
+#include "realplay_scene.inc"   // gap owner A: placement/production/roster members
     // The window is always created at 1280x720 (see run_interactive); the sidebar
     // layout/camera/input all key off these, so the driver's plat matches.
     static constexpr int kWinW = 1280;
@@ -11567,11 +11567,15 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     world.set_repair_sell_rules(ba.repair_sell);
     // ...and the type roster itself. Without this types_ is EMPTY here, so
     // set_repair/can_be_sold refuse every building and the two sidebar buttons
-    // are dead in the real game -- invisibly, since every gate builds its world
-    // through wire_economy instead [RE: repair-sell.md §A4]. Roster-only: it
-    // must NOT arm ore growth/harvest stepping (that is what would move
-    // skirmish_hash / maps_hash).
+    // are dead in the real game [RE: repair-sell.md §A4].
     world.set_building_types(ba.roster);
+    // G-20 [RE: economy.md §1-§4]: ARM THE ECONOMY. This is the real game's
+    // World (GameScene builds through here), so ore growth/spread and the
+    // harvester FSM must step, for the human AND every AI house. The old
+    // "roster-only, keep skirmish_hash" firewall left free miners frozen and
+    // income at 0 in every real game. Moves skirmish_hash/maps_hash (re-pinned
+    // in README, gap G-20).
+    real_play_arm_economy(world, ba, rules, a);
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
     const int gw = world.grid_w(), gh = world.grid_h();
     (void)gh;
@@ -11614,8 +11618,14 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                     }
                 }
         // Full roster-backed AI config OVER-WRITES the minimal one from the core.
-        if (s.is_ai && ba.ok)
+        if (s.is_ai && ba.ok) {
             world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash));
+            // G-21 [RE: skirmish.md §1 Sliders]: the lobby Money seeds a house ONCE.
+            // make_ai_config already holds it in the AI wallet; drop the
+            // configure_skirmish_houses pool seed so step_ai_houses' take_income
+            // does not hand it over a second time (was 2x the slider).
+            (void)world.take_income(i);
+        }
         // Superweapon grant per slot.
         if (cfg.superweapons) {
             const SuperweaponParams swp = resolve_superweapon(rules);
@@ -15743,6 +15753,8 @@ int run_demo_saveload() {
     return ok ? 0 : 1;
 }
 
+#include "realplay_probe.inc"   // gap owner A: --probe-realplay (real GameScene harness)
+
 int main(int argc, char** argv) {
     try {
 #ifdef __ANDROID__
@@ -15860,6 +15872,8 @@ int main(int argc, char** argv) {
                 return run_demo_campaign();   // P10 Campaign gate
             } else if (arg == "--campaign-survey") {
                 return run_campaign_survey();   // P10 dev aid (not a gate)
+            } else if (arg == "--probe-realplay") {
+                return run_probe_realplay();   // gap owner A: real-play economy/production probe
             } else if (arg == "--demo-saveload") {
                 return run_demo_saveload();   // P7 Save/Load gate
             } else if (arg == "--demo-veterancy") {
