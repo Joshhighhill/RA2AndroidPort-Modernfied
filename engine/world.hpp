@@ -1279,6 +1279,19 @@ public:
     // compile-time access change only -- no gate reads it).
     void order_unit_move(int idx, int gx, int gy);
 
+    // --- P10 Campaign [RE: campaign.md §7] -- per-unit entry points for the
+    // map-team scripts / trigger actions of ANY house. ADDITIVE forwarding
+    // wrappers over the existing private bodies (AI-2 / P4 paths); nothing
+    // that exists calls them, so every gate is unaffected.
+    void order_unit_attack(int unit_idx, int target_idx) { ai_order_attack(unit_idx, target_idx); }
+    void order_unit_attack_building(int unit_idx, int b_idx) {
+        ai_order_attack_building(unit_idx, b_idx);
+    }
+    void campaign_kill_unit(int idx) { ability_kill_unit(idx); }
+    void campaign_erase_unit(int idx) { ability_erase_unit(idx); }
+    void campaign_damage_unit(int idx, int dmg) { ability_damage_unit(idx, dmg); }
+    void campaign_damage_building(int b_idx, int dmg) { ability_damage_building(b_idx, dmg); }
+
 private:
     // --- P5 Veterancy + Crates [RE: veterancy.md] (all inert until enabled) ---
     bool vet_any_ = false;                    // the veterancy firewall

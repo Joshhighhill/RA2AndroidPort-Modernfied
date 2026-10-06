@@ -60,6 +60,8 @@
 #include "skirmish.hpp"
 #include "maplist.hpp"
 #include "map_trigger.hpp" // MapTriggerSystem (P9 Map triggers; --demo-triggers only)
+#include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
+#include "ra2assets/csf.hpp" // P10 briefing/objective text
 #include "voxel_raster.hpp"
 #include "world.hpp"
 
@@ -3967,6 +3969,9 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
     }
     return 0;
 }
+
+// P10 Campaign runtime (CampaignRuntime, camp::*) [RE: campaign.md].
+#include "campaign_runtime.inc"
 
 // [RE: skirmish.md §2, D4] The playable game as a Scene. Its ctor builds the World
 // via launch_skirmish(config) (replacing run_interactive's hardcoded 2964-3132
