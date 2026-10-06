@@ -62,6 +62,15 @@
             p.set("sel_cx", s0 ? std::floor(s0->fx + 0.5) : -1);
             p.set("sel_cy", s0 ? std::floor(s0->fy + 0.5) : -1);
             p.set("sel_moving", s0 && s0->moving() ? 1 : 0);
+            p.set("sel_occupier", s0 && s0->occupier ? 1 : 0);          // G16
+            p.set("sel_occupy_target", s0 ? s0->occupy_target : -1);
+            p.set("sel_attack_cell", s0 ? s0->attack_cell_x : -1);
+            p.set("sel_target", s0 ? s0->target : -1);
+            p.set("sel_rof_cool", s0 ? s0->rof_cool : -1);
+            p.set("sel_turret", s0 ? s0->turret_facing : -1);
+            p.set("sel_body", s0 ? s0->body_facing : -1);
+            p.set("sel_damage", s0 ? s0->w_damage : -1);
+            p.set("sel_wall", s0 ? (s0->w_active == 1 ? s0->w2.wall : s0->p_wall) : -1);
         }
         for (int h = 0; h < houses; ++h) {   // losses since the game began
             int lost = 0, blost = 0;
@@ -226,6 +235,63 @@
             cy = b.cy + b.fh / 2;
             return true;
         };
+        // ---- G16 world depth (agent G): garrisons + bridges ----
+        p.zero_families.insert("occupants");
+        p.zero_families.insert("garrisoned");
+        p.zero_families.insert("in_garrison");
+        p.zero_families.insert("on_bridge");
+        p.zero_families.insert("owned_garrisons");
+        int garrisonable = 0;
+        for (int bi = 0; bi < static_cast<int>(world_.buildings().size()); ++bi) {
+            const ra2engine::Building& b = world_.buildings()[bi];
+            if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
+            if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) || !ba_.roster[b.type].can_be_occupied)
+                continue;
+            ++garrisonable;
+            const std::string hs = std::to_string(b.house);
+            p.add("owned_garrisons(" + hs + ")", 1);
+            if (!b.occupants.empty()) {
+                p.add("garrisoned(" + hs + ")", 1);
+                p.add("occupants(" + hs + ")", static_cast<double>(b.occupants.size()));
+            }
+        }
+        p.set("garrisonable", garrisonable);
+        p.set("garrison_shots", static_cast<double>(world_.garrison_shots()));
+        for (const ra2engine::Unit& u : world_.units()) {
+            if (!u.alive || u.die_time >= 0.0) continue;
+            if (u.garrison_of >= 0) p.add("in_garrison(" + std::to_string(u.house) + ")", 1);
+            const int bo = world_.bridge_overlay_at(u.cell_x, u.cell_y);
+            if (u.cargo_of < 0 && ra2engine::is_low_bridge_overlay(bo) && !ra2engine::low_bridge_destroyed(bo))
+                p.add("on_bridge(" + std::to_string(u.house) + ")", 1);
+        }
+        {
+            int cells = 0;
+            for (int y = 0; y < world_.grid_h(); ++y)
+                for (int x = 0; x < world_.grid_w(); ++x)
+                    if (world_.bridge_overlay_at(x, y) >= 0) ++cells;
+            p.set("bridge_cells", cells);
+            p.set("bridge_destroyed", world_.bridge_cells_destroyed());
+            if (world_.bridges_enabled())
+                for (const char* nm : {"bridge", "bridge_near", "bridge_far", "hut"}) {
+                    double px = -1, py = -1;
+                    if (play_find_point(nm, px, py)) {
+                        p.set(std::string("pt_") + nm + "_x", px);
+                        p.set(std::string("pt_") + nm + "_y", py);
+                        // Chebyshev distance from the first selected unit to the point.
+                        for (const ra2engine::Unit& u : world_.units())
+                            if (u.selected && u.alive && u.die_time < 0.0) {
+                                p.set(std::string("sel_dist_") + nm,
+                                      std::max(std::abs(u.cell_x - px), std::abs(u.cell_y - py)));
+                                break;
+                            }
+                    }
+                }
+            p.set("bridge_version", world_.bridge_version());
+            p.set("depth_armed", world_.depth_rules().armed ? 1 : 0);
+        }
+        p.find_point = [this](const std::string& name, double& cx, double& cy) {
+            return play_find_point(name, cx, cy);
+        };
         p.auto_place = [this](int& cx, int& cy) {
             if (!input_.placement_active()) return false;
             const int type = input_.placement_type();
@@ -271,6 +337,11 @@
                 world_.campaign_damage_building(bi, std::atoi(a[2].c_str()));
                 return "";
             }
+            if (c == "bridge_hit" && a.size() >= 4) {   // G16 debug: one explosion roll
+                world_.bridge_explosion(std::atoi(a[1].c_str()), std::atoi(a[2].c_str()),
+                                        std::atoi(a[3].c_str()), true);
+                return "";
+            }
             if (c == "credits" && a.size() >= 2) {
                 player_credits_ += std::atof(a[1].c_str());
                 return "";
@@ -300,8 +371,13 @@
                     const ra2engine::Building& b = world_.buildings()[bi];
                     x = b.cx + std::atoi(a[5].c_str());
                     y = b.cy + std::atoi(a[6].c_str());
+                } else if (a[3] == "point" && a.size() >= 7) {   // G16: named map point
+                    double px = 0, py = 0;
+                    if (!play_find_point(a[4], px, py)) return "no point " + a[4];
+                    x = static_cast<int>(px) + std::atoi(a[5].c_str());
+                    y = static_cast<int>(py) + std::atoi(a[6].c_str());
                 } else {
-                    return "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY";
+                    return "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY | spawn TYPE H point NAME +DX +DY";
                 }
                 world_.add_combat_unit(x, y, h, def->combat);
                 world_.set_anim(def->combat.image, ua_.anims.count(def->combat.image)

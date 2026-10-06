@@ -31,7 +31,7 @@ at b049b40 are listed right after this table.
 | `m-sov01` | FAIL, 6 | FAIL, 6 | FAIL, 6 | `be47fff77fd9072e` |
 | `shell-smoke` | FAIL, 14 (+hard stop) | FAIL, 4 (+hard stop) | FAIL, 4 (+hard stop) | `428731525d358c3e` |
 | `controls` | n/a | FAIL, 2 | FAIL, 2 | `1c6c1af2303f484e` |
-| `world-depth` | n/a | FAIL, 1 | **PASS** | `12d4c50213bae79a` |
+| `world-depth` | n/a | FAIL, 1 | **PASS** (crush only) | `12d4c50213bae79a` (expanded script on gG2-depth: PASS `3af75244aa4d547e`) |
 | `probe-*` self-checks | PASS | PASS | PASS | — |
 
 ### Deltas at b049b40 (C combat + E render merged)
@@ -174,11 +174,24 @@ semantics in unit_orders.cpp) instead of asserting after exactly 2 frames;
 | shell-smoke L106-L109 | Exit Game asks for confirmation | FAIL (process would quit, hard stop) | FAIL | G-14 | F |
 | controls (all other steps: shell Esc, select / left-move / right-deselect, building select, Ctrl+1/1 groups, S stop, Q/W/E/R tabs, K/L modes, right-click cancel, queue hold / resume / abandon) | B's selftest behaviour | n/a | PASS | G-01, G-04, G-05, G-07, G-10 | B |
 
-### world-depth — G16 seeds
+### world-depth — G16 (gG2-depth: G-48 garrisons, G-49 bridges)
 
-| Step | Expected | Actual @63edea6 | Actual @7778b66 | G-ID | Owner |
-|---|---|---|---|---|---|
-| L20 | a selected Rhino left-clicked onto an enemy GI kills it within 300 f (crush on master after C's G-47; shot otherwise) | n/a | FAIL — the GI survives 300 f, neither crushed nor shot; not yet triaged (crush is on C's unmerged branch; the Rhino not firing may be G-06/G-41) | G-47 | C |
+Expanded script (Part A default map, Part B May Day; both parts now deploy
+the starting MCV first, as F's skirmish start requires). On gG2-depth (master
+98d5521 + G16, save v7): **PASS**, 0 failures, `play_hash=0b994340ca1d27be`
+(two runs equal); `sk-a` and `controls` also PASS on that tree. On master without G16 every @G-48/@G-49 step fails (no garrison
+order, no bridge state, bridge cells are water, no ground force-fire).
+
+| Step | Expected | Actual @gG2-depth | G-ID | Owner |
+|---|---|---|---|---|
+| L30 | a Rhino ordered onto an enemy GI kills it (crush) | PASS | G-47 | C |
+| L39-L43 | 3 GIs clicked onto the nearest neutral civilian building enter it; it turns house 0, 3 occupants | PASS | G-48 | G |
+| L52-L53 | 2 Conscripts spawned 4 cells away: shots fired out of the garrison, both die | PASS | G-48 | G |
+| L57-L63 | select the garrison, `D`: occupants walk out, the building returns to the neutral house | PASS | G-48 | G |
+| L86-L95 | May Day ships 48 destroyed low-bridge cells; an engineer enters the bridge hut, the span is repaired (48 -> 12), the engineer is consumed | PASS | G-49 | G |
+| L101-L106 | a Grizzly drives from the near bank over the bridge (`on_bridge(0) >= 1`) to the far bank | PASS | G-49 | G |
+| L118-L122 | back on the near bank, Ctrl+click force-fire on a middle section (`point bridge_span`): it collapses (+3 destroyed cells) | PASS | G-49 | G |
+| L118-L124 | a second engineer at the hut repairs it again (15 -> 12) | PASS | G-49 | G |
 
 ## New findings (not in GAP-ANALYSIS.md)
 

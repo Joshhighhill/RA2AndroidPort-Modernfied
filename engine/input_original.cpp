@@ -129,6 +129,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     if (ctrl) {
         if (idx >= 0 && !us[idx].selected && us[idx].house != 0) return Action::Attack;
         if (b >= 0 && world_.buildings()[b].house != 0) return Action::Attack;
+        if (idx < 0 && b < 0) return Action::Attack;   // G16: force-fire the ground cell
     }
     if (alt) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;   // force-move
     if (idx >= 0) {
@@ -165,6 +166,10 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     if (b >= 0) {
         const Building& B = world_.buildings()[b];
         if (harv && B.house == 0 && is_refinery_type(B.type)) return Action::Dock;
+        // G16 (agent G) [RE: world-depth.md §A2]: selected Occupier infantry on
+        // a building they may garrison (CanBeOccupiedBy) -> the enter cursor.
+        for (int si = 0; si < static_cast<int>(us.size()); ++si)
+            if (us[si].selected && us[si].house == 0 && world_.can_occupy(si, b)) return Action::Enter;
         if (lone_selected_with_image(world_, "SPY") >= 0 && B.house != 0) return Action::Infiltrate;
         if (lone_selected_with_image(world_, "ENGINEER") >= 0) {
             if (B.house != 0) return Action::Capture;
@@ -233,6 +238,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                     resolve_ground_cell(px, py, cx, cy);
                     const int b = world_.building_at_cell(cx, cy);
                     if (b >= 0) world_.order_attack_building(b);
+                    else world_.order_attack_cell_selected(cx, cy);   // G16: ground
                 }
                 actions_.attack_ordered = true;
                 actions_.actor = actor;

@@ -24,6 +24,7 @@ struct WeaponSlot {
     bool aa = false;               // projectile AA= (can hit airborne)
     bool ag = true;                // projectile AG= (can hit ground)
     bool omni_fire = false;        // weapon OmniFire=
+    bool wall = false;             // warhead Wall= (G-49: may break bridges, FUN_00489190)
 };
 
 // GetFireError's warhead gate [RE: combat.md §2, FUN_006fb5d0]: a weapon whose

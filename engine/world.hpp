@@ -335,7 +335,21 @@ struct Unit {
     int deploy_mission = 0;          // 0 none, 1 turning to DeployFacing, 2 driving to a spot
     int deploy_goal_x = 0, deploy_goal_y = 0;   // mission 2 destination
     bool deployed_away = false;      // consumed by a deploy (not a death)
+    // --- G16 world depth (agent G, world_depth.cpp) [RE: docs/re/world-depth.md] ---
+    // A garrisoned infantry is off the map like a passenger: cargo_of holds
+    // kGarrisonCargo (so every "cargo_of >= 0 -> off-map" test skips it) and
+    // garrison_of the building index. Inert defaults; NOT read by world_hash.
+    bool p_wall = false;             // primary warhead Wall= (bridge damage)
+    bool occupier = false;           // Occupier=
+    WeaponSlot occupy_w;             // OccupyWeapon=
+    WeaponSlot occupy_w_elite;       // EliteOccupyWeapon=
+    int garrison_of = -1;            // building index while garrisoned
+    int occupy_target = -1;          // pending "enter garrison" order -> building
+    int attack_cell_x = -1, attack_cell_y = -1;   // force-fire ground target (-1 none)
+    bool cell_shot = false;          // fired at attack_cell this step (World resolves it)
 };
+// G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
+constexpr int kGarrisonCargo = 0x3FFFFFFF;
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
 // frame via World::take_cargo_events -- the take_harvest_events pattern:
@@ -707,6 +721,12 @@ public:
     // world, moving skirmish_hash and maps_hash. So the roster lands in its own
     // field and `btypes()` prefers whichever is populated.
     void set_building_types(std::vector<BuildingTypeDef> types) { lookup_types_ = std::move(types); }
+    // G16 (agent G): the roster grew AFTER set_economy (map civilians / bridge
+    // huts registered by the live game) -- refresh whichever copy btypes() reads.
+    void refresh_building_types(const std::vector<BuildingTypeDef>& types) {
+        lookup_types_ = types;
+        if (!types_.empty()) types_ = types;
+    }
     // Gap owner A (G-27) [RE: economy.md §2]: rulesmd [General] PurifierBonus.
     void set_purifier_bonus(double b) { purifier_bonus_ = b; }
 
@@ -1452,6 +1472,44 @@ public:
     // -> MapClass reshroud of radius RevealTriggerRadius around the waypoint
     // for the player; a no-op while the house has the whole map revealed).
     void reshroud_area(int house, int cx, int cy, int radius);
+    // --- G16 world depth: garrisons (G-48) + bridges (G-49) [agent G,
+    // world_depth.cpp; RE: docs/re/world-depth.md]. Everything is inert until
+    // a caller opens it (set_depth_rules / set_bridges / an order), so every
+    // byte-identity gate is unaffected.
+    struct DepthRules {
+        double occupy_damage_mult = 1.0;   // [CombatDamage] OccupyDamageMultiplier (Rules+0xF40)
+        double occupy_rof_mult = 1.0;      // OccupyROFMultiplier (+0xF44)
+        int occupy_weapon_range = 0;       // OccupyWeaponRange (+0xF48), cells
+        int bridge_strength = 1500;        // BridgeStrength (+0x1740)
+        bool bridge_destruction = true;    // [CombatDamage] DestroyableBridges && BridgeDestruction
+        bool armed = false;                // set by the real game only (gates never)
+    };
+    void set_depth_rules(const DepthRules& r) { depth_rules_ = r; }
+    const DepthRules& depth_rules() const { return depth_rules_; }
+    // Garrisons.
+    bool can_occupy(int unit_idx, int b_idx) const;          // BuildingClass::CanBeOccupiedBy
+    void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
+    int order_occupy_selected(int b_idx);                    // house-0 selection; returns #ordered
+    void unload_occupants(int b_idx);                        // BuildingClass::UnloadOccupants
+    bool garrison_firing(int b_idx) const;                   // CanOccupyFire && occupants
+    double garrison_range(int b_idx) const;                  // cells
+    struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind; int building; int house; };
+    std::vector<GarrisonEvent> take_garrison_events();
+    // Bridges. `overlay` = per-cell RUNTIME overlay index (-1 none), `tile_land`
+    // = the cells' tile land types BEFORE overlay overrides (y*grid_w+x).
+    void set_bridges(std::vector<int> overlay, std::vector<ra2assets::LandType> tile_land);
+    bool bridges_enabled() const { return !bridge_ovl_.empty(); }
+    int bridge_overlay_at(int x, int y) const;               // current runtime index, -1 none
+    int bridge_explosion(int cx, int cy, int damage, bool wall_warhead);   // FUN_00489190 bridge part
+    int repair_bridge_near(int b_idx);                       // engineer entered a BridgeRepairHut
+    std::uint32_t bridge_version() const { return bridge_version_; }
+    long long garrison_shots() const { return garrison_shots_; }
+    int bridge_cells_destroyed() const;
+    // Force-fire at a ground cell (Ctrl+click, G-49 bridge demolition).
+    void order_attack_cell(int unit_idx, int cx, int cy);
+    int order_attack_cell_selected(int cx, int cy);
+    // The per-frame G16 pass (called from step()).
+    void step_depth(double dt);
 
 private:
     // --- P5 Veterancy + Crates [RE: veterancy.md] (all inert until enabled) ---
@@ -1757,6 +1815,21 @@ private:
     bool skirmish_session_ = false;
     bool try_undeploy(int b_idx);              // called by complete_sell
     void finish_deploy(int idx);
+
+    // --- G16 world depth (world_depth.cpp) ---
+    DepthRules depth_rules_;
+    bool garrison_any_ = false;                    // an occupy order was ever given
+    long long garrison_shots_ = 0;                 // shots fired out of garrisons
+    std::vector<GarrisonEvent> garrison_events_;
+    std::vector<std::int16_t> bridge_ovl_;         // current runtime overlay per cell (-1)
+    std::vector<std::uint8_t> bridge_tile_land_;   // the tile's LandType under each cell
+    std::uint32_t bridge_version_ = 0;
+    ProjRng bridge_rng_{0x42524447u};              // Random(1, BridgeStrength) stand-in
+    void occupy_now(int unit_idx, int b_idx);      // InfantryClass::Occupy (FUN_00522640)
+    void sync_garrison_owner(int b_idx);           // FUN_004581F0
+    void step_garrison_combat(double dt);
+    void set_bridge_cell(int x, int y, int idx);   // overlay + Recalc_Attributes analogue
+    int neutral_house() const;
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by

@@ -104,6 +104,12 @@
     // DeployObject (D): unload selected transports + toggle deployers (the
     // former raw-scancode path, now a real key event).
     void deploy_selected() {
+        // G16 (agent G) [RE: world-depth.md §A5]: Deploy on a selected own
+        // garrison = Mission_Unload -> UnloadOccupants (FUN_0044D880).
+        const int sb = input_.selected_building();
+        if (sb >= 0 && sb < static_cast<int>(world_.buildings().size()) &&
+            world_.buildings()[sb].house == 0 && !world_.buildings()[sb].occupants.empty())
+            world_.unload_occupants(sb);
         world_.order_unload_selected();
         for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
             if (world_.units()[i].selected && world_.units()[i].house == 0) world_.order_deploy(i);

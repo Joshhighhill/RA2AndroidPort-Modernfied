@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "audio_mixer.hpp"
+#include "bridges.hpp"      // G16 (agent G): bridge overlay classes
 #include "audio_sdl.hpp"
 #include "building.hpp"
 #include "cargo.hpp"        // cargo_total_size (pip fill) [CB-1 Transports/Cargo]
@@ -2471,7 +2472,8 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_audio.inc"    // G-80..G-82 (helpers also used by the FX layer)
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
-#include "pres_map.inc"      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
+#include "pres_map.inc"
+#include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
 // Draws one building in render_world's merged back-to-front pass. Anchors the
@@ -4779,6 +4781,7 @@ public:
         // --demo-projectile) -- every byte-identity gate keeps the instant path.
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
+        depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
 
         // --- vehicle render list (voxel hulls for launched MTNK/FV/etc.) ---
         vlist_ = {&va_, &miners_.harv, &miners_.cmin};
@@ -5214,7 +5217,11 @@ public:
                     if (!world_.house_combatant(h)) { neutral = h; break; }
                 map_dressing_.place_structures(map_ini, [&](const std::string& id, int x, int y, int hp256) {
                     if (neutral < 0) return false;
-                    const int bt = roster_index(ba_, id);
+                    int bt = roster_index(ba_, id);
+                    // G16 (agent G): garrisonable civilian buildings and bridge repair
+                    // huts become real (neutral) World buildings, not dressing.
+                    if (bt < 0 && depth_world_building(rules_, id))
+                        bt = depth_register_building(ba_, ra2_, rules_, art_, id);
                     if (bt < 0) return false;
                     const ra2engine::BuildingTypeDef& d = ba_.roster[static_cast<std::size_t>(bt)];
                     const ra2engine::PlacementCheck chk = ra2engine::placement_check(
@@ -5227,6 +5234,7 @@ public:
                         world_.buildings()[static_cast<std::size_t>(idx)].hp = std::max(1, d.strength * hp256 / 256);
                     return idx >= 0;
                 });
+                world_.refresh_building_types(ba_.roster);   // G16: newly registered types
             }
             for (const auto& [x, y] : map_dressing_.blocked()) world_.block_cell(x, y);
             map_pals_[0] = &a_.pal;
@@ -5432,6 +5440,7 @@ private:
                                 load_aimd_or_empty(dir_), &a_.map, ua_);
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
+        depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
             wire_abilities(world_, rules_, rules_ini_);
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
             init_map_dressing();   // G-87: the fresh world gets its map dressing again
@@ -5527,6 +5536,95 @@ private:
     // layout/camera/input all key off these, so the driver's plat matches.
     static constexpr int kWinW = 1280;
     static constexpr int kWinH = 720;
+
+    // --- G16 named map points for --play scripts (agent G) ---
+    // Anchor = house 0's first live building (stable), else its first unit.
+    bool play_anchor(int& ax, int& ay) const {
+        for (const ra2engine::Building& b : world_.buildings())
+            if (b.house == 0 && b.alive && b.state != ra2engine::Building::State::Dead) { ax = b.cx; ay = b.cy; return true; }
+        for (const ra2engine::Unit& u : world_.units())
+            if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) { ax = u.cell_x; ay = u.cell_y; return true; }
+        return false;
+    }
+    bool play_find_point(const std::string& name, double& cx, double& cy) const {
+        int ax = 0, ay = 0;
+        if (!play_anchor(ax, ay)) return false;
+        auto d2 = [&](int x, int y) { return (x - ax) * (x - ax) + (y - ay) * (y - ay); };
+        if (name == "garrison" || name == "hut" || name == "garrisoned") {
+            int best = -1, bd = 0;
+            for (int bi = 0; bi < static_cast<int>(world_.buildings().size()); ++bi) {
+                const ra2engine::Building& b = world_.buildings()[bi];
+                if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
+                if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size())) continue;
+                const ra2engine::BuildingTypeDef& t = ba_.roster[b.type];
+                const bool ok = name == "garrison"
+                                    ? t.can_be_occupied && b.occupants.empty() && !world_.house_combatant(b.house)
+                                : name == "garrisoned" ? t.can_be_occupied && !b.occupants.empty() && b.house == 0
+                                                       : t.bridge_repair_hut;
+                if (!ok) continue;
+                const int d = d2(b.cx, b.cy);
+                if (best < 0 || d < bd) { best = bi; bd = d; }
+            }
+            if (best < 0) return false;
+            const ra2engine::Building& b = world_.buildings()[best];
+            cx = b.cx + b.fw / 2;
+            cy = b.cy + b.fh / 2;
+            return true;
+        }
+        // Bridges: the nearest intact low-bridge CENTRE-line cell to the anchor,
+        // and its two banks along the span (the first passable non-bridge cell).
+        int bx = -1, by = -1, bd = 0;
+        for (int y = 0; y < world_.grid_h(); ++y)
+            for (int x = 0; x < world_.grid_w(); ++x) {
+                const int o = world_.bridge_overlay_at(x, y);
+                if (!ra2engine::is_low_bridge_overlay(o) || ra2engine::low_bridge_destroyed(o)) continue;
+                const ra2engine::LowAxis ax2 = ra2engine::low_bridge_axis(o);
+                const int sx = ax2 == ra2engine::LowAxis::RowX ? 1 : 0, sy = ax2 == ra2engine::LowAxis::ColumnY ? 1 : 0;
+                // centre line: bridge cells on both sides across the section
+                if (!ra2engine::is_low_bridge_overlay(world_.bridge_overlay_at(x - sx, y - sy)) ||
+                    !ra2engine::is_low_bridge_overlay(world_.bridge_overlay_at(x + sx, y + sy)))
+                    continue;
+                const int d = d2(x, y);
+                if (bx < 0 || d < bd) { bx = x; by = y; bd = d; }
+            }
+        if (bx < 0) return false;
+        if (name == "bridge") { cx = bx; cy = by; return true; }
+        const ra2engine::LowAxis ax3 = ra2engine::low_bridge_axis(world_.bridge_overlay_at(bx, by));
+        const int tx = ax3 == ra2engine::LowAxis::ColumnY ? 1 : 0, ty = ax3 == ra2engine::LowAxis::RowX ? 1 : 0;
+        auto bank = [&](int dir, int& ox, int& oy) {
+            int x = bx, y = by;
+            for (int k = 0; k < 64; ++k) {
+                x += dir * tx;
+                y += dir * ty;
+                if (x < 0 || y < 0 || x >= world_.grid_w() || y >= world_.grid_h()) return false;
+                if (world_.bridge_overlay_at(x, y) >= 0) continue;
+                if (!world_.passable()[static_cast<std::size_t>(y) * world_.grid_w() + x]) return false;
+                ox = x + dir * tx;   // one more cell onto the bank
+                oy = y + dir * ty;
+                return true;
+            }
+            return false;
+        };
+        int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+        const bool ok1 = bank(+1, x1, y1), ok2 = bank(-1, x2, y2);
+        if (!ok1 && !ok2) return false;
+        const bool first_near = ok1 && (!ok2 || d2(x1, y1) <= d2(x2, y2));
+        const bool want_near = name == "bridge_near";
+        if (name == "bridge_span") {
+            // A middle section: 3 cells into the bridge from the near bank (past
+            // the end piece, which only takes one damage step).
+            const bool n1 = ok1 && (!ok2 || d2(x1, y1) <= d2(x2, y2));
+            const int nx = n1 ? x1 : x2, ny = n1 ? y1 : y2;
+            const int dx = (bx > nx) - (bx < nx), dy = (by > ny) - (by < ny);
+            cx = nx + 4 * dx;
+            cy = ny + 4 * dy;
+            return ra2engine::is_low_bridge_overlay(world_.bridge_overlay_at(static_cast<int>(cx), static_cast<int>(cy)));
+        }
+        if (name != "bridge_near" && name != "bridge_far") return false;
+        if (first_near == want_near) { if (!ok1) return false; cx = x1; cy = y1; }
+        else { if (!ok2) return false; cx = x2; cy = y2; }
+        return true;
+    }
 
     // --- G0 --play probe helpers -------------------------------------------
     // Rules id of a live unit (the roster def whose Image matches), else its image.
@@ -12240,7 +12338,9 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     // longer drive across lakes and cliff faces. MUST follow the economy arm
     // (whose set_water_terrain intersects the still-open Land grid):
     // set_land_terrain rebuilds the water grid first, then closes the Land grid.
-    world.set_land_terrain(resolve_land_types(a.map, a.theater, world.grid_w(), world.grid_h()));
+    // G16 (agent G, G-49): ... plus the low-bridge overlays (Land=Road over the
+    // river) and the World's bridge state [RE: world-depth.md §B].
+    depth_set_terrain(world, a);
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
     const int gw = world.grid_w(), gh = world.grid_h();
     (void)gh;
@@ -16464,6 +16564,8 @@ int run_demo_saveload() {
 #include "controls_selftest.inc"
 // G0 --play front end (agent G): scripted playthroughs (scripts/play/).
 #include "play_driver.inc"
+// G16 (agent G): --depth-survey (bridges / huts / garrisonable structures per MP map).
+#include "world_depth_survey.inc"
 #include "realplay_probe.inc"   // gap owner A: --probe-realplay (real GameScene harness)
 #include "ai_soak.inc"   // gap owner D: --ai-soak (real GameScene AI acceptance harness)
 #include "realplay_combat_probe.inc"   // gap owner C: --probe-combat (real GameScene harness)
@@ -16517,6 +16619,11 @@ int main(int argc, char** argv) {
                 const std::string sc = argv[++i];
                 const std::string od = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : "gf_play_out";
                 return run_gf_play(sc, od);
+            } else if (arg == "--depth-dump" && i + 5 < argc) {
+                return run_depth_dump(argv[i + 1], std::atoi(argv[i + 2]), std::atoi(argv[i + 3]),
+                                      std::atoi(argv[i + 4]), std::atoi(argv[i + 5]));
+            } else if (arg == "--depth-survey") {
+                return run_depth_survey();   // G16 (agent G) dev survey
             } else if (arg == "--controls-selftest" && i + 1 < argc) {
                 return run_controls_selftest(argv[++i]);   // agent B dev check
             } else if (arg == "--screenshot" && i + 1 < argc) {

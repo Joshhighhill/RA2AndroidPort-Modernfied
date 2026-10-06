@@ -298,7 +298,7 @@ public:
         for (const auto& tf : teams_data_.taskforces)
             for (const ra2engine::MapTaskMember& m : tf.second) types_.unit(m.type);
         resolve_base_nodes();   // [G-69] before the roster is handed to the World
-        w_.set_building_types(ba_.roster);
+        w_.refresh_building_types(ba_.roster);   // G16: btypes() must see mission types
         w_.set_repair_sell_rules(ba_.repair_sell);
         place_objects(objs);
 
@@ -1307,7 +1307,7 @@ private:
                 x, y, d.fw, d.fh, eh, d.adjacent, w_.passable(), w_.grid_w(), w_.grid_h(),
                 w_.occupancy(), w_.buildings(), /*bypass=*/true);
             if (!chk.ok) return false;
-            w_.set_building_types(ba_.roster);
+            w_.refresh_building_types(ba_.roster);   // G16
             w_.add_building(bt, x, y, d.fw, d.fh, eh, d.strength, d.armor_ix, 0.0, true, d.sight,
                             d.grants_map_reveal);
             return true;
@@ -1458,7 +1458,8 @@ ra2engine::World build_campaign_world(Assets& a, UnitAssets& ua) {
     ra2engine::World world = build_world(a, ua, 0);
     const int gw = world.grid_w(), gh = world.grid_h();
     // Gap fix C (G-43): water grid + ground blocked on water/cliffs.
-    world.set_land_terrain(resolve_land_types(a.map, a.theater, gw, gh));
+    (void)gw; (void)gh;
+    depth_set_terrain(world, a);   // G16 (agent G): + low bridges [RE: world-depth.md §B]
     return world;
 }
 

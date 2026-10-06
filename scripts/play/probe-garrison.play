@@ -1,0 +1,22 @@
+# Diagnostic: garrison on the default lobby map (A Hill Between: 54 civilian garrisons).
+set render_every 300
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+view point garrison
+click unit 0:E1
+click unit 0:E1:1 shift
+click unit 0:E1:2 shift
+assert selected == 3
+click point garrison
+wait 3
+dump
+until 600 in_garrison(0) >= 3
+shot g1
+dump
+end

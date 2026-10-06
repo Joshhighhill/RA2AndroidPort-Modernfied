@@ -526,6 +526,20 @@ void Input::issue_order(int px, int py) {
         // attack. An OWN building is not a spy target so the gesture
         // falls through to normal handling. Interactive-only: no demo
         // selects a spy, so every gate is byte-identical.
+        // G16 (agent G) [RE: world-depth.md §A2]: selected Occupier infantry
+        // clicking a building they may garrison walk in (InfantryClass
+        // Mission_Enter -> Occupy on arrival).
+        {
+            const int gb = world_.building_at_cell(cx, cy);
+            if (gb >= 0) {
+                const int actor = lowest_selected();
+                if (world_.order_occupy_selected(gb) > 0) {
+                    actions_.move_ordered = true;
+                    actions_.actor = actor;
+                    return;
+                }
+            }
+        }
         const int spy = sel_spy_idx(world_);
         if (spy >= 0) {
             const int b_hit = world_.building_at_cell(cx, cy);

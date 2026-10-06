@@ -1,14 +1,28 @@
-# world-depth -- G16 acceptance seeds (ROADMAP-playable "G16 World depth").
-# Crush: a Rhino ordered over an enemy GI's cell kills it by driving over it.
-# Garrison / bridges have no probe keys yet (reserved: occupants(H,ID),
-# bridge_cells); add their steps when the phase lands.
+# world-depth -- G16 acceptance (ROADMAP-playable "G16 World depth"), through
+# the REAL shell -> lobby -> GameScene. docs/re/world-depth.md has the RE.
+#   Part A (default map "A Hill Between", 54 civilian garrisons):
+#     crush (G-47), garrison a civilian building, fire out of it, evict (G-48).
+#   Part B ("May Day" xmp31s2, river crossings shipped BLOWN + repair huts):
+#     engineer repairs the bridge at the hut, a tank drives across it, a tank
+#     force-fires (Ctrl+click) a section until it collapses, the hut repairs it
+#     again (G-49).
 set render_every 300
 set on_quit continue
+set cycle_max 100
+
+# ---------------------------------------------------------------- Part A
 click button "Single Player"
 click button Skirmish
+require scene == lobby
 click start
 until 90 scene == game
 require scene == game
+# The skirmish starts with an MCV (G-23): deploy it into the ConYard first.
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+
+# Crush: a Rhino ordered onto an enemy GI drives over it.
 cheat spawn HTNK 0 building 0:GACNST +4 +4
 cheat spawn E1 1 building 0:GACNST +9 +4
 wait 2
@@ -19,4 +33,101 @@ click unit 1:E1
 wait 2
 until 300 units_lost(1) > $l1                 @G-47:C
 shot crush
+
+# Garrison: three GIs enter the nearest civilian building; it turns ours.
+assert garrisonable > 0                       @G-48:G
+view point garrison
+click unit 0:E1
+click unit 0:E1:1 shift
+click unit 0:E1:2 shift
+assert selected == 3
+click point garrison                          @G-48:G
+until 900 in_garrison(0) >= 3                 @G-48:G
+assert garrisoned(0) == 1                     @G-48:G
+assert occupants(0) == 3                      @G-48:G
+view point garrisoned
+shot garrisoned
+
+# Fire out: enemies spawned within OccupyWeaponRange are shot from inside.
+let s0 = garrison_shots
+let k0 = units_lost(1)
+cheat spawn E2 1 point garrisoned +4 +0
+cheat spawn E2 1 point garrisoned +4 +1
+until 450 garrison_shots > $s0                @G-48:G
+until 900 units_lost(1) >= $k0+2              @G-48:G
+shot fire-out
+
+# Evict: select the garrison, Deploy (D) -> they walk out, it reverts to neutral.
+click point garrisoned
+assert selected_building >= 0                 @G-48:G
+key d                                         @G-48:G
+wait 3
+assert in_garrison(0) == 0                    @G-48:G
+assert garrisoned(0) == 0                     @G-48:G
+assert owned_garrisons(0) == 0                @G-48:G
+shot evicted
+
+# Back to the shell for Part B.
+key f10
+wait 2
+click "menu:ABORT MISSION"
+wait 2
+if confirm_open == 1 then click confirm:yes
+until 120 scene == "shell:Main Menu"
+require scene == "shell:Main Menu"
+
+# ---------------------------------------------------------------- Part B
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+cycle map:+ map == "xmp31s2.map"
+require map == "xmp31s2.map"
+click start
+until 90 scene == game
+require scene == game
+# The skirmish starts with an MCV (G-23): deploy it into the ConYard first.
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+assert bridge_cells > 0                       @G-49:G
+let d0 = bridge_destroyed
+require bridge_destroyed > 0
+
+# Repair: an engineer enters the bridge repair hut (consumed) -> the blown
+# span is whole again.
+cheat spawn ENGINEER 0 point bridge_near -1 +0
+wait 2
+click unit 0:ENGINEER
+click point hut                               @G-49:G
+until 600 bridge_destroyed < $d0              @G-49:G
+assert units(0,ENGINEER) == 0                 @G-49:G
+view point bridge
+shot repaired
+
+# Drive across: a Grizzly on the near bank crosses to the far bank over it.
+cheat spawn MTNK 0 point bridge_near +0 +0
+wait 2
+click unit 0:MTNK
+click point bridge_far                        @G-49:G
+until 600 on_bridge(0) >= 1                   @G-49:G
+shot on-bridge
+until 900 sel_dist_bridge_far <= 1            @G-49:G
+
+# Destroy: back on the near bank, force-fire (Ctrl) the first section until
+# it collapses (Random(1, BridgeStrength) < damage per shell, two stages).
+click point bridge_near                       @G-49:G
+until 900 sel_dist_bridge_near <= 1
+let d1 = bridge_destroyed
+click point bridge_span ctrl                  @G-49:G
+until 6000 bridge_destroyed > $d1            @G-49:G
+view point bridge
+shot destroyed
+
+# Repair again at the hut.
+let d2 = bridge_destroyed
+cheat spawn ENGINEER 0 point bridge_near -1 +0
+wait 2
+click unit 0:ENGINEER
+click point hut                               @G-49:G
+until 600 bridge_destroyed < $d2              @G-49:G
 end

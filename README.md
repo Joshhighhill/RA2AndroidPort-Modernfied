@@ -2637,7 +2637,7 @@ the P6 Roster Breadth gate.
 | `--demo-triggers` | `trigger_hash=b8cd267e98f5e002` | `deterministic=yes lines=76`; **re-pinned by gap F (G-95)**: bisected on the first-parent merges -- P5 84b8217 prints the old `20347f4dfa462eb4` with `placed structures=66`, P6 7e754d5 prints `02f4226456db131d` with 70, gap A 5948a41 (and master fddbcb3, and gF) print `b8cd267e98f5e002` with 82; the witness diffs ONLY in that placed-structure count and the end-of-run building total (the bigger rosters let `place_map_objects` resolve more of `sov07tmd`'s `[Structures]`), every trigger fire/action line is identical; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
-| `--demo-saveload` | `saveload_hash=4876e19f292871e3` (combined gap D + gap F re-pin) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-saveload` | `saveload_hash=7fde8a2b895cf6ae` (G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
 | `--demo-campaign` | `campaign_hash=b1d3c453c416e4fb` (combined gap D + gap F re-pin) | `deterministic=yes lines=737`; **combined re-pin**: gap D (`17830b0f7c233223`, lines 737: campaign enemy houses build out from ProductionBegins/AI triggers) plus gap F: actions 108 executed (logged `CreateCrate ... -> skipped` in the gate, whose World has no crate system), ALL01 reinforcement ships on water instead of the nearest land cell (fewer EnteredBy raises), death raises in the recovered order 7, 48, 29; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
@@ -3247,3 +3247,34 @@ interpreter shares the G-61 table, so `Guard` lines last arg x15 frames instead
 of x90 (A/B: with x90 restored this tree gives `8a0f07758cb0393f`, 730 lines --
 the remainder is master-side, gap C/E). `--demo-skirmish` / `--demo-maps`
 unchanged.
+
+## World depth: garrisons and bridges (G16, G-48 / G-49)
+
+RE'd from gamemd.exe (`docs/re/world-depth.md`, every rule with its address)
+and verified in the real game by `scripts/play/world-depth.play` (PASS).
+
+* **Garrisons.** Infantry with `Occupier=yes` (GI, Conscript, ...) clicked onto a
+  `CanBeOccupied=yes` building that is theirs or neutral walk in (up to
+  `MaxNumberOccupants`); the building turns to the first occupant's house and
+  back to the neutral house when emptied. It fires the current occupant's
+  `OccupyWeapon` (`EliteOccupyWeapon` when elite) round-robin over the
+  occupants: ROF / occupant count / `OccupyROFMultiplier`, damage x
+  `OccupyDamageMultiplier`, range = min(foundation W, H) / 2 +
+  `OccupyWeaponRange`. Deploy (`D`, or clicking the selected garrison) unloads
+  them; selling or losing the building lets them out. Skirmish maps' civilian
+  garrisons and bridge repair huts are now real neutral World buildings.
+* **Low bridges** (wood `LOBRDG*`, concrete `LOBRDB*`). Ground units cross the
+  river on them; ships do not pass under. A `Wall=yes` warhead exploding on a
+  section breaks it with probability `damage / BridgeStrength` (two stages:
+  damaged, then destroyed -- the 3-cell cross-section turns back into water and
+  a ground unit on it dies). Ctrl+click on the ground force-fires at a cell.
+  An Engineer entering a bridge repair hut (`CABHUT`) restores the bridge and
+  is consumed. Some maps (May Day) ship their crossings already blown.
+* The map dressing now indexes `[OverlayTypes]` by order of appearance (the
+  runtime index the map stores); every non-ore overlay used to draw with the
+  art of a neighbouring entry.
+* Not yet: high (tile) bridges' on/under layer and destruction, the Assaulter
+  (YR) garrison clearing, `DistributedFire`.
+* Dev modes: `--depth-survey` (bridges / huts / garrisonable structures per MP
+  map), `--depth-dump <map> x0 y0 x1 y1` (runtime overlay indices).
+

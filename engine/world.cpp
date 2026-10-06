@@ -131,6 +131,9 @@ void step_turrets(std::vector<Unit>& units, const std::vector<Building>& buildin
                 want = facing_u16_from_delta(static_cast<double>(nx) - u.fx,
                                              static_cast<double>(ny) - u.fy);
             }
+        } else if (u.attack_cell_x >= 0) {   // G16: force-fire at a ground cell
+            want = facing_u16_from_delta(static_cast<double>(u.attack_cell_x) - u.fx,
+                                         static_cast<double>(u.attack_cell_y) - u.fy);
         }
         u.turret_facing = turn_toward(u.turret_facing, want, u.rot_u16_per_sec * dt);
     }
@@ -623,6 +626,10 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
         for (std::size_t k = 0; k < bt.size(); ++k)
             if (bt[k].id == c.deploys_into) { u.deploys_into = static_cast<int>(k); break; }
     }
+    u.p_wall = c.primary_wall;                 // G16 (agent G)
+    u.occupier = c.occupier;
+    u.occupy_w = c.occupy_weapon;
+    u.occupy_w_elite = c.elite_occupy_weapon;
     // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
     // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
     // past this point unless vet_any_). Only a vet-enabled World arms the
@@ -874,6 +881,8 @@ void World::order_move_selected(int goal_x, int goal_y) {
 
     for (std::size_t k = 0; k < sel.size(); ++k) {
         Unit& u = units_[sel[k]];
+        u.attack_cell_x = u.attack_cell_y = -1;   // G16: a move ends a ground fire order
+        u.occupy_target = -1;
         // An explicit move order CANCELS engagement (RTS convention, and the
         // spec's "idle/guarding" wording: a unit executing a player move is
         // neither): drop the target so the hold-at-range pass and pursuit
@@ -913,6 +922,7 @@ void World::order_attack(int target_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above (selected + house 0); the shared mutation
         // tail (target/attack_order + occupancy re-assert + path clear) is
         // extracted into commit_attack_target so there is ONE copy of the
@@ -967,6 +977,7 @@ void World::order_attack_building(int b_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above; shared mutation tail via commit_attack_target
         // [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
         commit_attack_target(static_cast<int>(i), /*target_unit=*/-1, b_idx);
@@ -1953,7 +1964,14 @@ void World::step_capture(double dt) {
             if (best >= 0 && best <= 1) {
                 const int eng_house = u.house;
                 bool consumed = false;
-                if (!are_allied(eng_house, b.house)) {
+                if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) &&
+                    btypes()[b.type].bridge_repair_hut) {
+                    // G16 (agent G) [RE: world-depth.md §B4, FUN_00519449]: an engineer
+                    // entering a BridgeRepairHut repairs the bridge and is consumed;
+                    // the hut itself is never captured.
+                    repair_bridge_near(bi);
+                    consumed = true;
+                } else if (!are_allied(eng_house, b.house)) {
                     // Capture ENEMY *and NEUTRAL* buildings (neutral is not an
                     // enemy but IS capturable -- the oil-derrick case); own/ally
                     // -> repair. are_allied(eng, neutral) is false -> captured.
@@ -3522,6 +3540,9 @@ void World::step(double dt) {
     // Gap fix C (G-40) [RE: docs/re/defenses.md]: base defenses acquire, aim
     // and fire. Only types resolved with a weapon (BuildingTypeDef::armed).
     step_building_combat(dt);
+    // G16 world depth (agent G): garrisons + ground shots / bridges. Inert
+    // unless a garrison order was given or a unit has a ground target.
+    step_depth(dt);
     // P5 Veterancy [RE: veterancy.md V2/V3/V11/V12]: kill credit for every unit/
     // building that died this step, rank-change detection + stat refresh, and
     // the 14-frame self-heal. A pure INSERTION right after step_combat; the
@@ -4351,6 +4372,14 @@ void World::detonate_projectile(Projectile& p, int victim) {
                 }
             }
         }
+    }
+    // G16 (agent G) [RE: world-depth.md §B2, FUN_00489190]: the shell's
+    // explosion may break a low bridge section in the impact cell (inert unless
+    // GameScene armed the depth rules and the map has low bridges).
+    if (depth_rules_.armed && !bridge_ovl_.empty() && p.attacker >= 0 &&
+        p.attacker < static_cast<int>(units_.size())) {
+        const Unit& att = units_[p.attacker];
+        bridge_explosion(icx, icy, att.w_damage, att.w_active == 1 ? att.w2.wall : att.p_wall);
     }
     if (restore_slot >= 0)
         activate_weapon_slot(units_[p.attacker], restore_slot, vet_any_ ? &vet_rules_ : nullptr);

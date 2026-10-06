@@ -235,6 +235,7 @@ private:
             else if (k == "park" && c.args.size() > 2) { park_x_ = std::atoi(v.c_str()); park_y_ = std::atoi(c.args[2].c_str()); }
             else if (k == "states") verbose_states_ = v != "off";
             else if (k == "on_quit") quit_continue_ = (v == "continue");
+            else if (k == "cycle_max") cycle_max_ = std::max(1, std::atoi(v.c_str()));
             else { fail(c, "unknown setting"); }
             ++pc_;
             return kNext;
@@ -361,8 +362,8 @@ private:
                 ++pc_;
                 return kNext;
             }
-            if (++cycle_n_ > 8) {
-                fail(c, d + " (after 8 clicks)");
+            if (++cycle_n_ > cycle_max_) {
+                fail(c, d + " (after " + std::to_string(cycle_max_) + " clicks)");
                 cycle_n_ = 0;
                 ++pc_;
                 return kNext;
@@ -447,6 +448,17 @@ private:
             cy = std::atof(c.args[i + 2].c_str());
             return true;
         }
+        if (k == "point") {   // G16: a named map point (+ optional offset)
+            if (c.args.size() < i + 2) { fail(c, "point NAME"); return false; }
+            if (!p.find_point) { fail(c, "missing-probe:find_point"); return false; }
+            if (!p.find_point(c.args[i + 1], cx, cy)) { fail(c, "no point " + c.args[i + 1]); return false; }
+            if (c.args.size() >= i + 4 && (c.args[i + 2][0] == '+' || c.args[i + 2][0] == '-') &&
+                (c.args[i + 3][0] == '+' || c.args[i + 3][0] == '-')) {
+                cx += std::atof(c.args[i + 2].c_str());
+                cy += std::atof(c.args[i + 3].c_str());
+            }
+            return true;
+        }
         if (k == "unit" || k == "building") {
             if (c.args.size() < i + 2) { fail(c, k + " H:TYPE[:n]"); return false; }
             auto& fn = (k == "unit") ? p.find_unit : p.find_building;
@@ -505,7 +517,7 @@ private:
             y = std::atoi(c.args[i + 2].c_str());
             return true;
         }
-        if (k == "cell" || k == "unit" || k == "building") {
+        if (k == "cell" || k == "unit" || k == "building" || k == "point") {
             double cx = 0, cy = 0;
             if (!locate(c, p, i, cx, cy)) return false;
             if (!p.cell_to_screen) { fail(c, "missing-probe:cell_to_screen (scene '" + p.scene + "')"); return false; }
@@ -676,6 +688,7 @@ private:
     std::size_t pc_ = 0;
     int wait_left_ = 0;
     int cycle_n_ = 0;
+    int cycle_max_ = 8;
     bool until_active_ = false;
     int until_left_ = 0;
     std::map<int, int> held_;   // scancode -> frames left
