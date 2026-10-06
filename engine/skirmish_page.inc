@@ -215,9 +215,7 @@ public:
         std::cerr << "[lobby] maps=" << maps().size() << " map=" << map_file()
                   << " max=" << map_max() << " ai=" << ra2engine::lobby_ai_count(st_) << "\n";
     }
-    ~SkirmishSetupScene() override {
-        if (editing_) SDL_StopTextInput();
-    }
+    ~SkirmishSetupScene() override { set_editing(false); }
 
     void handle(const ra2engine::InputEvent& ev) override;
     void update(double dt) override {
@@ -437,7 +435,10 @@ private:
     void set_editing(bool on) {
         if (on == editing_) return;
         editing_ = on;
-        if (on) SDL_StartTextInput(); else SDL_StopTextInput();
+        // Show the soft keyboard on Android; restore the previous text-input
+        // state on leave (desktop SDL starts with text input active).
+        if (on) { text_was_active_ = SDL_IsTextInputActive(); SDL_StartTextInput(); }
+        else if (!text_was_active_) SDL_StopTextInput();
     }
     void play_ui(const char* key) const {
         if (art_.audio && art_.audio->sys.enabled && art_.audio->sys.mixer)
@@ -553,6 +554,7 @@ private:
     int combo_row_ = 0;
     ShellList list_, type_list_, map_list_;
     bool editing_ = false;
+    bool text_was_active_ = true;
     int drag_ = -1;
     int mx_ = -1, my_ = -1;
     bool down_ = false;

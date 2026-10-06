@@ -443,6 +443,64 @@ Main regions touched:
 - YR Team/Start columns would be an optional "YR mode" switch. The data
   (`alliance_team`, `use_map_starts`) already exists in `SkirmishConfig`.
 
+## 8. Fix status (branch `skirmish-page`)
+
+Implemented per §4 (steps 1-9, 11; step 10 partly). Evidence:
+`D:a2-re\out\gapsk_shotsixed\` (`lobby_menu_shot_1280x720.png` = `--menu-shot`
+`_setup.png`; `lobby_first_run.png`, `lobby_ai_dropdown.png`, `lobby_configured.png`,
+`customize_battle.png`, `lobby_game_start.png` from `--play`), and
+`scripts/play/sk-lobby.play` (PASS: every page choice asserted in the game probe).
+`sk-a`, `sk-s`, `sk-end`, `sk-a-lose`, `shell-smoke` PASS with migrated lobby steps.
+
+| ID | Status | Note |
+|---|---|---|
+| SK-01 | FIXED | `draw_shell(..., sdtp_frame=1)`, monitor/Bink off |
+| SK-02 | FIXED | all rects = §1 template px through `ShellXform` |
+| SK-03 | FIXED | Start Game r1 / Customize Battle r2 / Back r5, sockets 0/3/4 |
+| SK-04 | FIXED | header `GUI:SkirmishGame` |
+| SK-05 | FIXED | shared `ShellPainter` (12metfnt yellow / red lines / dark red disabled) |
+| SK-06 | FIXED | name edit, 19 chars, `[MultiPlayer] Handle` hex bytes; SDL text input (Android keyboard). [RE-FALLBACK] empty Handle shows "Player" |
+| SK-07 | FIXED | 8 fixed rows, visible = map max |
+| SK-08 | FIXED | per-row None/Easy/Medium/Brutal; `AiDifficulty = 2 - item data` (Brutal -> Difficult -> class 0) |
+| SK-09 | FIXED | Random (???) + 9 countries by `Name:*`, 7 visible, scroll strip |
+| SK-10 | FIXED | `usai..rusi/rani` PCX, magenta key (`obsi.pcx` absent on this install; unused in skirmish) |
+| SK-11 | FIXED | ??? + free colours only, swatches, lobby -> house colour table |
+| SK-12 | FIXED | Q2 resolved from `FUN_00672BB0`: country uniform over Multiplay countries, colour uniform 0..7 re-rolled while owned; human first, then AI rows |
+| SK-13 | FIXED | no Team column; every slot FFA (`alliance_team = -1`) |
+| SK-14 | WORKS | unchanged (no Start column in RA2-classic; the task's "start position dropdown" is YR-only and was not added) |
+| SK-15 | FIXED | None disables country/colour (-2), rows past max closed + hidden |
+| SK-16 | FIXED | `[PreviewPack]` LZO RGB, aspect-fit [RE-FALLBACK Q4] |
+| SK-17 | FIXED | `GUI:Battle` + map name (2 lines) |
+| SK-18 | FIXED | Customize Battle page (Game Type: Battle; Game Map list; Use Map / Cancel) |
+| SK-19 | FIXED (greyed) | Random Map button disabled: no RandMap generator |
+| SK-20 | FIXED | slider pos = 6 - speed; `cfg.game_speed` drives the tick rate; also `[Options] GameSpeed` (Q7 CONFIRMED: `0x6829F0` writes `DAT_00A40B18` = OptionsClass+0) |
+| SK-21 | FIXED | trackbar Min/MaxMoney step MoneyIncrement from rules; readout = value |
+| SK-22 | FIXED | trackbar Min/MaxUnitCount |
+| SK-23 | FIXED | row removed; `tech_level` = rules `[MultiplayerDialogSettings] TechLevel` |
+| SK-24 | FIXED | checkbox |
+| SK-25 | FIXED | checkbox -> `World::set_mcv_redeploys` (sold ConYard undeploys) |
+| SK-26 | FIXED | checkbox, default rules `Crates=yes` |
+| SK-27 | FIXED | off also removes `SuperWeapon=` structures from the sidebar and the AI plan. [RE-FALLBACK: `[AI] BuildTech` tech centres stay] |
+| SK-28 | FIXED | shown greyed (lamp on, dark red label), persisted untouched |
+| SK-29 | FIXED | trackbar/checkbox factored out of the Options page |
+| SK-30 | FIXED | `ShellList` dropdown (7/9 rows, scroll strip, swatches, Esc/Enter/Up/Down). [RE-FALLBACK Q3: arrow/list/scroll art drawn as red primitives] |
+| SK-31 | FIXED (page) | `STT:*` on the status line incl. per-item `STT:Player*`; honours `[Options] ToolTips`. Other shell pages still have none |
+| SK-32 | FIXED (page) | `MenuClick` / `MenuACBOpen` / `MenuACBClose` from soundmd + audio.bag on the menu mixer; slider tick not added |
+| SK-33 | OPEN | staggered SDBTNANM page transition not implemented (shell-wide, M) |
+| SK-34 | WORKS | grinder keeps looping (now `playing()`-checked so clicks don't stall it) |
+| SK-35 | FIXED | Back/Esc commit + save, return to Single Player (Q10 per mainmenu_true.md) |
+| SK-36 | FIXED | both messages via `GfConfirm` + `TXT_OK`; the too-small case is unreachable through the UI (rows past max are closed), covered by unit tests |
+| SK-37 | FIXED | load on entry, save on Start and Back; isolated under `--play` (`RA2_PREF_DIR` now also set in the CRT environment on Windows -- it silently fell back to `%APPDATA%` before) |
+| SK-38 | FIXED | first run per `FUN_0066F1F0(...,1,6)`: Slot01 = Easy / Random / Random, other rows None (supersedes the "AIPlayers=0" note above); human America/Gold [RE-FALLBACK] |
+| SK-39 | WORKS | no Yuri country |
+| SK-40 | CLOSED (no-op) | `MPBattleMD.ini` holds only `[MultiplayerDialogSettings] AlliesAllowed=yes`; nothing to layer for Battle |
+| SK-41 | FIXED | button hover/press; open combo face highlighted |
+| SK-42 | FIXED | scripts migrated; `start`/`back` aliases kept; new targets/keys in `scripts/play/README.md` |
+
+Open RE: Q1 (800x600 relayout), Q3, Q4, Q5 (Random Map UI), Q6, Q8 (`ScenIndex` is an
+index into the global scenario list `DAT_00A3D8DC`; the clone stores its catalog index
+plus `ScenFile=`), Q9.
+
 ## 7. Reproduce
 
 ```bash

@@ -86,7 +86,7 @@ live unit of house H and rules id TYPE, `*` = any; optional signed cell offset),
 | Scene (`scene`) | Named targets |
 |---|---|
 | `shell:<page>` (`shell:Main Menu`, `shell:Single Player`, `shell:New Campaign`, `shell:Options`, `shell:Movies & Credits`) | `button:<label>` (sugar: `click button "<label>"`), `dialog:*` when the Load dialog is open |
-| `lobby` | `start`, `back`, `map:-`, `map:+`, `map:-10`, `map:+10`, `opt:<ROW>:-` / `opt:<ROW>:+` (`AI_PLAYERS DIFFICULTY STARTING_CASH UNIT_COUNT TECH_LEVEL CRATES SUPERWEAPONS SHORT_GAME`), `slot<N>:side` / `slot<N>:color` / `slot<N>:team` |
+| `lobby` (Skirmish page 0x102 / Customize Battle 0x6B) | `button:Start Game`, `button:Customize Battle`, `button:Back` (aliases `start`, `back`), `edit:name`, `combo:ai<N>` (rows 1-7), `combo:country<N>` / `combo:color<N>` (active rows), with a list open `pick:<item label>` (`pick:Brutal Enemy`, `pick:Russia`, `pick:RED`), `item:<i>`, `list:up` / `list:down`; `check:short` / `check:mcv` / `check:crates` / `check:superweapons`; `slider:speed=<0..6>` / `slider:credits=<5000..10000>` / `slider:units=<0..10>`; on Customize Battle `button:Use Map`, `button:Cancel`, `map:<file>` (visible rows), `list:up` / `list:down`; `confirm:OK` / `confirm:yes` when a validation message is up |
 | `campaign-load` | `diff:EASY` `diff:NORMAL` `diff:HARD`, `start`, `back` |
 | `result` | `continue` (when enabled), `retry`, `menu` |
 | `game` | `tab:0..3`, `cameo:<ID>` (active tab), `repair`, `sell`, `options`, `sw` (when the house has a SW), `menu:LOAD GAME` / `menu:SAVE GAME` / `menu:DELETE GAME` / `menu:ABORT MISSION` / `menu:RESUME MISSION` (menu open), `dialog:action` `dialog:back` `dialog:row<N>` `dialog:yes` `dialog:no` (save/load dialog) |
@@ -107,9 +107,17 @@ Always: `scene`, `f` (driver frame), `sf` (frames in this scene), `quits`
 (Quit events seen), `transitions` (scene swaps), `quit_seen`.
 
 `shell:*`: `page`, `button_enabled(<label>)`, `quit_requested`, `dialog_*`.
-`lobby`: `side(N)` (`ALLIED`/`SOVIET`/`YURI`), `color(N)`, `team(N)`,
-`opt(<ROW>)` (displayed value), `ai_players`, `cash`, `crates`, `map`,
-`map_name`, `map_ix`, `map_count`.
+`lobby` (per row N = 0..7): `ai(N)` (`Human`/`None`/`Easy`/`Medium`/`Brutal`),
+`country(N)` (rules id or `Random`), `side(N)` (`ALLIED`/`SOVIET`/`RANDOM`),
+`color(N)` (lobby colour 0..7, -2 = Random), `row_active(N)`; `page`, `name`,
+`editing`, `ai_players`, `visible_rows`, `max_players`, `cash`, `unit_count`,
+`game_speed`, `check(<id>)`, `crates`, `combo_open` / `combo_row` /
+`combo_count`, `map`, `map_name`, `map_ix`, `map_count`, `map_sel` (Customize
+Battle), `status` (tooltip line), `confirm_open` / `confirm_text`.
+`game` adds, per house h: `side(h)`, `country(h)`, `house_color(h)`, `ai(h)`
+(`Human`/`Easy`/`Medium`/`Brutal`), `combatant(h)`; and `game_speed`,
+`mcv_redeploys`, `sw_allowed`, `short_game`, `crates_on`, `unit_count_cfg`,
+`start_cash` (the lobby options as the game consumes them).
 `campaign-load`: `map`, `side` (`GDI`/`Nod`), `difficulty`.
 `result`: `outcome` (`WON`/`LOST`), `map`, `next_map`, `result_frames`.
 
@@ -157,8 +165,9 @@ Keys reserved for later phases (scripts already assert them and report
 | Script | What it encodes |
 |---|---|
 | `sk-a.play` | Playable core SK-A: Allied vs 1 Soviet AI — start state, MCV deploy, select/move/stop, power/refinery/barracks/factory, income, GI/Engineer/Grizzly/Chrono Miner, AI trains + attacks, weapons, Pillbox fires, win path |
-| `sk-a-lose.play` | SK-A with no input on the hardest lobby difficulty: the AI must win and the session must end LOST |
+| `sk-a-lose.play` | SK-A with no input against a Brutal Enemy row: the AI must win and the session must end LOST |
 | `sk-s.play` | SK-S: Soviet vs 1 Allied AI — no Yuri, Soviet sidebar/roster, SMCV, Conscript/Rhino/Flak Track/War Miner, Tesla Coil, Allied AI builds GA\*, win path |
+| `sk-lobby.play` | The Skirmish page end to end: Customize Battle map pick, name edit, country/colour/AI dropdowns, exclusive colours, sliders, checkboxes, Back saves + restore, the two-players message, Start -> every choice asserted in the game probe |
 | `sk-end.play` | Fast lose path (`cheat kill_house 0`) -> LOST result -> main menu |
 | `m-all01.play` | Allied mission 1 from the shell: loading screen, objectives arm, briefing, TechLevel 3 cap, Tanya, Esc |
 | `m-sov01.play` | Soviet mission 1: objectives, SMCV deploy, Soviet sidebar, TechLevel cap |
