@@ -178,3 +178,26 @@ TEST_CASE("gapC defenses: a pillbox acquires, turns and kills; Powered goes offl
     CHECK(w2.buildings()[0].def_offline);
     CHECK_FALSE(w2.defense_power_ok(0));
 }
+
+TEST_CASE("gapC passability: water / cliff / wall cells close the Land grid, shore stays open (G-43)") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("no install"); return; }
+    World w(ra2fixture::mapsmd03_map());
+    const int gw = w.grid_w(), gh = w.grid_h();
+    REQUIRE(gw > 0);
+    // Pick four materialized land cells.
+    std::vector<int> picks;
+    for (int i = 0; i < gw * gh && picks.size() < 4; ++i)
+        if (w.passable()[i]) picks.push_back(i);
+    REQUIRE(picks.size() == 4);
+    std::vector<ra2assets::LandType> lt(static_cast<std::size_t>(gw) * gh, ra2assets::LandType::Clear);
+    lt[picks[0]] = ra2assets::LandType::Water;
+    lt[picks[1]] = ra2assets::LandType::Rock;
+    lt[picks[2]] = ra2assets::LandType::Wall;
+    lt[picks[3]] = ra2assets::LandType::Beach;
+    w.set_land_terrain(lt);
+    CHECK_FALSE(w.walkable(picks[0] % gw, picks[0] / gw));
+    CHECK_FALSE(w.walkable(picks[1] % gw, picks[1] / gw));
+    CHECK_FALSE(w.walkable(picks[2] % gw, picks[2] / gw));
+    CHECK(w.walkable(picks[3] % gw, picks[3] / gw));
+    CHECK(w.grid_for(MovementDomain::Water)[picks[0]] == 1);   // ships still sail it
+}

@@ -11592,6 +11592,10 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     // must NOT arm ore growth/harvest stepping (that is what would move
     // skirmish_hash / maps_hash).
     world.set_building_types(ba.roster);
+    // Gap fix C (G-43, G-24 water half): the real map's water/cliff cells --
+    // ground units no longer drive across lakes and cliff faces, and ships get
+    // their water grid in skirmish too.
+    world.set_land_terrain(resolve_land_types(a.map, a.theater, world.grid_w(), world.grid_h()));
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
     const int gw = world.grid_w(), gh = world.grid_h();
     (void)gh;

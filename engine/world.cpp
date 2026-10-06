@@ -647,6 +647,27 @@ void World::set_water_terrain(const std::vector<ra2assets::LandType>& land_types
     water_passable_ = build_water_passability(land_types, passable_, grid_w_, grid_h_);
 }
 
+static bool land_type_blocks_ground(ra2assets::LandType t) {
+    // [RE: naval.md §2 Ground[LandType][SpeedType]; rulesmd [Water]/[Rock]/
+    // [Wall] Foot=Track=Wheel=0%] -- the three ground SpeedTypes agree on
+    // every row, so one Land grid serves Foot/Track/Wheel.
+    // [Beach] is also 0% for them, but the clone's LandType is a per-TILE-SET
+    // classification (land_type.hpp): the ShorePieces set mixes land and water
+    // sub-tiles, so blocking it would wall off coasts the original lets units
+    // walk. Shore stays passable [RE-FALLBACK: per-sub-tile land type].
+    return t == ra2assets::LandType::Water || t == ra2assets::LandType::Rock ||
+           t == ra2assets::LandType::Wall;
+}
+
+void World::set_land_terrain(const std::vector<ra2assets::LandType>& land_types) {
+    // Water grid first (it is the materialized-Land intersection), then close
+    // the Land grid on water / cliffs (CliffSet + WaterCliffs -> Rock) / walls.
+    set_water_terrain(land_types);
+    const std::size_t n = std::min(land_types.size(), passable_.size());
+    for (std::size_t i = 0; i < n; ++i)
+        if (land_type_blocks_ground(land_types[i])) passable_[i] = 0;
+}
+
 void World::block_water_footprint(int cx, int cy, int fw, int fh) {
     if (water_passable_.empty()) return;
     for (const Cellxy& c : foundation_cells(cx, cy, fw, fh)) {

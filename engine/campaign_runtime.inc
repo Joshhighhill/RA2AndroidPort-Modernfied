@@ -1298,7 +1298,8 @@ private:
 ra2engine::World build_campaign_world(Assets& a, UnitAssets& ua) {
     ra2engine::World world = build_world(a, ua, 0);
     const int gw = world.grid_w(), gh = world.grid_h();
-    world.set_water_terrain(resolve_land_types(a.map, a.theater, gw, gh));
+    // Gap fix C (G-43): water grid + ground blocked on water/cliffs.
+    world.set_land_terrain(resolve_land_types(a.map, a.theater, gw, gh));
     return world;
 }
 

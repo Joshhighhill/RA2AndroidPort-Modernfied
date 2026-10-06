@@ -639,6 +639,12 @@ public:
     // ever computed elsewhere (spec §8). World stays asset-free: it takes the
     // resolved array, not a map.
     void set_water_terrain(const std::vector<ra2assets::LandType>& land_types);
+    // Gap fix C (G-43) [RE: naval.md §2]: set_water_terrain PLUS close the Land
+    // grid (passable_) on Water / Rock (cliffs, water cliffs) / Wall cells --
+    // Foot/Track/Wheel are 0% there. Called by launch_skirmish and the
+    // campaign world builder (the real game); gates that never call it keep
+    // the all-walkable grid.
+    void set_land_terrain(const std::vector<ra2assets::LandType>& land_types);
     // P6 [RE: roster2.md §B]: a WaterBound building (GAYARD/NAYARD) sits ON the
     // water grid -- add_building only blocks the Land grid, so the caller also
     // clears its foundation from water_passable_ (ships never path through the
