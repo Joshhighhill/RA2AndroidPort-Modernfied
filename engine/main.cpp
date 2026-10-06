@@ -24,6 +24,7 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -765,12 +766,73 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     if (r.combat.is_naval)
         r.combat.movement_domain = ra2engine::MovementDomain::Water;
 
+    // P5 Veterancy + Crates [RE: veterancy.md V3/V4/V10/V11/V14/C8]: the
+    // per-type experience/ability/elite-weapon keys. Inert unless a World
+    // enables veterancy (World copies them into Unit::vet and reads them only
+    // past that firewall), so resolving them here moves no existing gate.
+    r.combat.cost = rules.cost(unit_id);
+    r.combat.trainable = rules.section_flag(unit_id, "Trainable", true);      // default YES
+    r.combat.dont_score = rules.section_flag(unit_id, "DontScore", false);
+    r.combat.self_healing = rules.section_flag(unit_id, "SelfHealing", false);
+    r.combat.crate_goodie = rules.section_flag(unit_id, "CrateGoodie", false);  // default NO
+    r.combat.vet_abilities =
+        ra2engine::parse_abilities(rules.section_string(unit_id, "VeteranAbilities", ""));
+    r.combat.elite_abilities =
+        ra2engine::parse_abilities(rules.section_string(unit_id, "EliteAbilities", ""));
+    r.combat.rules_speed = r.speed;
+    const std::string elite = rules.section_string(unit_id, "ElitePrimary", "");
+    if (!elite.empty()) {
+        r.combat.has_elite = true;
+        r.combat.elite.damage = rules.weapon_damage(elite);
+        r.combat.elite.rof = rules.weapon_rof(elite);
+        r.combat.elite.range = rules.weapon_range(elite);
+        const std::string ewh = rules.weapon_warhead(elite);
+        r.combat.elite.verses = rules.verses(ewh);
+        r.combat.elite.cell_spread = rules.section_double(ewh, "CellSpread", 0.0);
+        r.combat.elite.percent_at_max = rules.section_double(ewh, "PercentAtMax", 1.0);
+    }
+
     std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
               << " strength=" << r.combat.strength << " armor=" << r.combat.armor
               << " primary=" << primary << " damage=" << r.combat.damage
               << " rof=" << r.combat.rof << " range=" << r.combat.range
               << " warhead=" << warhead << "\n";
     return r;
+}
+
+// P5 Veterancy [RE: veterancy.md §0]: the [General] veteran factors +
+// RepairRate (self-heal cadence) + [AudioVisual] EliteFlashTimer, read from the
+// real rulesmd (general_double falls back to [AudioVisual]). Struct defaults
+// are this install's values; the read makes any rules edit take effect.
+ra2engine::VeterancyRules resolve_veterancy_rules(const ra2assets::Rules& rules) {
+    ra2engine::VeterancyRules v;
+    v.ratio = rules.general_double("VeteranRatio", v.ratio);
+    v.combat = rules.general_double("VeteranCombat", v.combat);
+    v.speed = rules.general_double("VeteranSpeed", v.speed);
+    v.sight = rules.general_double("VeteranSight", v.sight);
+    v.armor = rules.general_double("VeteranArmor", v.armor);
+    v.rof = rules.general_double("VeteranROF", v.rof);
+    v.cap = rules.general_double("VeteranCap", v.cap);
+    v.repair_rate = rules.general_double("RepairRate", v.repair_rate);
+    v.elite_flash = (int)rules.general_double("EliteFlashTimer", (double)v.elite_flash);
+    return v;
+}
+
+// P5 Crates [RE: veterancy.md §0/C7]: [CrateRules] + [Powerups]. CrateRadius
+// is read in LEPTONS (ReadLeptons: cells * 256, truncated).
+ra2engine::CrateRules resolve_crate_rules(const ra2assets::Rules& rules) {
+    ra2engine::CrateRules c;
+    c.minimum = (int)rules.section_double("CrateRules", "CrateMinimum", c.minimum);
+    c.maximum = (int)rules.section_double("CrateRules", "CrateMaximum", c.maximum);
+    c.radius_leptons =
+        (int)(rules.section_double("CrateRules", "CrateRadius", c.radius_leptons / 256.0) * 256.0);
+    c.regen = rules.section_double("CrateRules", "CrateRegen", c.regen);
+    c.powerups = ra2engine::default_powerups();
+    for (int i = 0; i < ra2engine::kPowerupCount; ++i) {
+        const std::string v = rules.section_string("Powerups", ra2engine::powerup_name(i), "");
+        if (!v.empty()) c.powerups[i] = ra2engine::parse_powerup(v);
+    }
+    return c;
 }
 
 // CB-4 Superweapons [RE-GATE APPLIED: superweapon.md §1/§2]: resolve the Nuclear
@@ -2237,6 +2299,132 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
     }
 }
 
+// --- P5 Veterancy + Crates art [RE: veterancy.md V13/C3] ---------------------
+// PIPS.SHP (the YR conqmd.mix copy: frame 14 = veteran chevron, 15 = elite;
+// the RA2 conquer.mix copy is a different 19-frame layout and is only the
+// fallback), palette.pal (the PALETTE_PAL convert the binary draws pips with,
+// by YRpp-offset analogy -- PROBABLE), and the CRATE overlay (crate.tem in the
+// theater mix, drawn with the ore/overlay palette). Loaded ONLY by GameScene
+// and --demo-veterancy, published through g_p5_art; every other mode leaves
+// it null and render_world draws exactly what it drew before. Render-only
+// (no hash reads pixels).
+struct P5Art {
+    ra2assets::ShpFile pips;
+    bool has_pips = false;
+    ra2assets::Palette pips_pal;
+    bool has_pips_pal = false;
+    ra2assets::ShpFile crate;
+    bool has_crate = false;
+};
+const P5Art* g_p5_art = nullptr;
+
+P5Art load_p5_art(const std::string& dir, const ra2assets::MixFile& ra2) {
+    P5Art art;
+    try {
+        MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
+        MixFile conqmd = top.open_nested("conqmd.mix");
+        if (const MixEntry* e = conqmd.find(std::string("pips.shp"))) {
+            art.pips = ShpFile::load(conqmd.read(*e));
+            art.has_pips = true;
+        }
+    } catch (const std::exception&) {}
+    if (!art.has_pips) {
+        try {
+            MixFile conquer = ra2.open_nested("conquer.mix");
+            if (const MixEntry* e = conquer.find(std::string("pips.shp"))) {
+                art.pips = ShpFile::load(conquer.read(*e));
+                art.has_pips = true;
+            }
+        } catch (const std::exception&) {}
+    }
+    try {
+        MixFile cache = ra2.open_nested("cache.mix");
+        if (const MixEntry* pe = cache.find(std::string("palette.pal"))) {
+            auto raw = cache.read(*pe);
+            art.pips_pal = Palette::load(raw.data(), raw.size());
+            art.has_pips_pal = true;
+        }
+    } catch (const std::exception&) {}
+    try {
+        for (const auto& c : ra2assets::theater_candidates("crate", 'T', "isotemp.mix",
+                                                           "temperat.mix", ".tem")) {
+            MixFile m = ra2.open_nested(c.mix);
+            if (const MixEntry* e = m.find(c.file)) {
+                art.crate = ShpFile::load(m.read(*e));
+                art.has_crate = true;
+                break;
+            }
+        }
+    } catch (const std::exception&) {}
+    std::cerr << "[p5-art] pips=" << (art.has_pips ? art.pips.count() : 0)
+              << " palette.pal=" << (art.has_pips_pal ? "yes" : "no")
+              << " crate=" << (art.has_crate ? "yes" : "no") << "\n";
+    return art;
+}
+
+// Draws one SHP frame with its 16x16-style canvas CENTERED on (sx, sy).
+void draw_shp_centered(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ShpFile& shp,
+                       int frame, const ra2assets::Palette& pal, const char* tag, int sx, int sy,
+                       int W, int H) {
+    if (frame < 0 || frame >= shp.count()) return;
+    const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+    if (f.w <= 0 || f.h <= 0) return;
+    SDL_Rect dst{sx - shp.width() / 2 + f.x, sy - shp.height() / 2 + f.y, f.w, f.h};
+    if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) return;
+    char key[48];
+    std::snprintf(key, sizeof key, "p5:%s:%d", tag, frame);
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) {
+        std::vector<uint8_t> idx = shp.decode_indexed(frame);
+        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal));
+    }
+    SDL_RenderCopy(ren, tex, nullptr, &dst);
+}
+
+// [V13] Chevrons: PIPS frame 14 (veteran) / 15 (elite) at the object point
+// +(5,2) infantry / +(10,6) others. In a veterancy World the rank comes from
+// Unit::vet; otherwise the legacy veteran_rank (spy-factory units) shows one
+// chevron. Disguised units show none (the original skips disguised-as).
+void draw_p5_chevrons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
+                      const ra2assets::Palette& fallback_pal, const ra2engine::Camera& cam,
+                      int W, int H) {
+    if (!g_p5_art || !g_p5_art->has_pips) return;
+    const ra2assets::Palette& pal = g_p5_art->has_pips_pal ? g_p5_art->pips_pal : fallback_pal;
+    for (const ra2engine::Unit& u : world.units()) {
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.disguised) continue;
+        const int rank = world.veterancy_enabled() ? ra2engine::vet_rank(u.vet.veterancy)
+                                                   : (u.veteran_rank > 0 ? 1 : 0);
+        if (rank <= 0) continue;
+        const int frame = rank >= 2 ? 15 : 14;
+        const int sx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
+        const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15;
+        const int ox = u.is_vehicle ? 10 : 5, oy = u.is_vehicle ? 6 : 2;
+        draw_shp_centered(ren, tc, g_p5_art->pips, frame, pal, "pips", sx + ox, sy + oy, W, H);
+    }
+}
+
+// [C3] Crates: the CRATE overlay on every active crate cell.
+void draw_p5_crates(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
+                    const ra2assets::MapFile& map, const ra2assets::Palette& pal,
+                    const ra2engine::Camera& cam, int W, int H) {
+    if (!g_p5_art || !g_p5_art->has_crate || !world.crates_enabled()) return;
+    for (const ra2engine::World::Crate& c : world.crates()) {
+        if (c.x < 0) continue;
+        const ra2assets::MapCell* mc = map.at(c.x, c.y);
+        const int level = mc ? static_cast<int>(mc->level) : 0;
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(c.x, c.y, level, 60, 30, 15);
+        const ra2assets::ShpFile::Frame f = g_p5_art->crate.frame_info(0);
+        SDL_Rect dst{p.x + cam.x + f.x, p.y + cam.y + f.y, f.w, f.h};
+        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) continue;
+        SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek("p5:crate:0"));
+        if (!tex) {
+            std::vector<uint8_t> idx = g_p5_art->crate.decode_indexed(0);
+            tex = static_cast<SDL_Texture*>(tc.get("p5:crate:0", idx.data(), f.w, f.h, pal));
+        }
+        SDL_RenderCopy(ren, tex, nullptr, &dst);
+    }
+}
+
 // Finds the loaded VehicleAssets whose resolved image matches `image` (Rhino
 // HTNK and the two miners HARV/CMIN all render through the voxel path); nullptr
 // if none matches or the list is null. Lets render_world draw several distinct
@@ -2305,6 +2493,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world);
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H);
+    // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
+    draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
+                   cam, W, H);
     const std::vector<ra2engine::Unit>& us = world.units();
     // Hull sprite width for a vehicle unit (0 for infantry) -- sizes the
     // selection diamond + HP bar to the wider voxel sprite.
@@ -2401,6 +2592,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
                                        u.passengers_max, cam, W, H);
     }
+    // P5 [RE: veterancy.md V13]: veterancy chevrons (no-op unless g_p5_art).
+    draw_p5_chevrons(ren, tc, world, ua.pal, cam, W, H);
     // Live selection box on top (interactive only).
     if (input) {
         int x0, y0, x1, y1;
@@ -3509,6 +3702,33 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
 // VARIABLE dt (NOT a gate); render(plat,tc) draws render_world + draw_sidebar. All
 // loop-local state of the old run_interactive is hoisted to members. Additive: no
 // gate constructs GameScene. NOT hashed.
+// P5 Veterancy + Crates [RE: veterancy.md] -- the INTERACTIVE game only. The
+// veterancy system is always on in a real game; crates follow the lobby's
+// existing CRATES toggle (cfg.crates). launch_skirmish (shared with
+// --demo-skirmish) is deliberately NOT touched, so that gate's World never
+// opens either firewall.
+void enable_p5_features(ra2engine::World& world, const Rules& rules, const BuildingAssets& ba,
+                        const ra2engine::SkirmishConfig& cfg,
+                        const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& rosters) {
+    std::vector<int> bcost;
+    for (const ra2engine::BuildingTypeDef& t : ba.roster) bcost.push_back(t.cost);
+    world.enable_veterancy(resolve_veterancy_rules(rules), std::move(bcost));
+    if (!cfg.crates) return;
+    ra2engine::World::CrateConfig cc;
+    cc.rules = resolve_crate_rules(rules);
+    // ScenarioClass::Random is seeded per game in the original; the clone uses
+    // the wall clock (the interactive game is not a gate).
+    cc.seed = static_cast<std::uint32_t>(SDL_GetTicks()) ^ 0x52413252u;
+    int humans = 0;
+    for (const ra2engine::SkirmishSlot& sl : cfg.slots)
+        if (sl.combatant && !sl.is_ai) ++humans;
+    cc.players = humans;
+    for (const std::vector<ra2engine::UnitTypeDef>* defs : rosters)
+        for (const ra2engine::UnitTypeDef& d : *defs)
+            if (d.is_vehicle && d.combat.crate_goodie) cc.unit_pool.push_back(d.combat);
+    world.enable_crates(cc);
+}
+
 class GameScene : public Scene {
 public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
@@ -3644,6 +3864,14 @@ public:
         // [P8 / options.md §5] Edge-scroll speed = the recovered 0x7F2BE8 table
         // x [General] ScrollMultiplier (.07), capped by the user's ScrollRate.
         scroll_mult_ = rules_.general_double("ScrollMultiplier", 0.07);
+        // P5 Veterancy + Crates [RE: veterancy.md]: chevron/crate art + the two
+        // systems (interactive only -- see enable_p5_features).
+        p5_art_ = load_p5_art(dir_, ra2_);
+        g_p5_art = &p5_art_;
+        enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
+    }
+    ~GameScene() override {
+        if (g_p5_art == &p5_art_) g_p5_art = nullptr;
     }
 
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
@@ -3802,6 +4030,10 @@ public:
         }
         world_.step(dt);
         if (repair_bridge) player_credits_ += world_.take_income(0);
+        // P5: drain the promotion / crate events (the EVA/sound hook is a
+        // carry-forward -- veterancy.md §5); draining keeps the queues bounded.
+        (void)world_.take_vet_events();
+        (void)world_.take_crate_events();
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
         prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_);
@@ -4050,6 +4282,7 @@ private:
     double               scroll_mult_ = 0.07;      // [General] ScrollMultiplier
     double               scroll_tick_accum_ = 0.0;
     int                  scroll_accel_ = 0;
+    P5Art                p5_art_;   // P5: PIPS/crate art published via g_p5_art
 };
 
 // Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
@@ -12763,6 +12996,404 @@ int mode_demo_audio() {
     return 0;
 }
 
+// --- --demo-veterancy (P5 Veterancy + Crates) ---------------------------------
+
+// FNV fold of the P5 state [spec §gate]: per unit (cell, alive, hp, w_damage,
+// w_rof, veterancy bits, crate multipliers x1000); house 0..2 credits; every
+// active crate slot (x, y, powerup, start, lifetime); building hp. A NEW
+// accumulator -- world_hash and every prior *_hash are untouched.
+uint64_t veterancy_fold(uint64_t h, const ra2engine::World& world) {
+    for (const ra2engine::Unit& u : world.units()) {
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_x));
+        h = fnv_mix(h, static_cast<uint64_t>(u.cell_y));
+        h = fnv_mix(h, static_cast<uint64_t>(u.alive ? 1 : 0));
+        h = fnv_mix(h, static_cast<uint64_t>(u.hp));
+        h = fnv_mix(h, static_cast<uint64_t>(u.w_damage));
+        h = fnv_mix(h, static_cast<uint64_t>(u.w_rof));
+        std::uint32_t vb = 0;
+        std::memcpy(&vb, &u.vet.veterancy, sizeof vb);
+        h = fnv_mix(h, static_cast<uint64_t>(vb));
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(u.vet.armor_mult * 1000.0)));
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(u.vet.firepower_mult * 1000.0)));
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(u.vet.speed_mult * 1000.0)));
+    }
+    for (int hh = 0; hh < 3; ++hh)
+        h = fnv_mix(h, static_cast<uint64_t>(std::llround(world.house_credits(hh))));
+    for (const ra2engine::World::Crate& c : world.crates()) {
+        if (c.x < 0) continue;
+        h = fnv_mix(h, static_cast<uint64_t>(c.x));
+        h = fnv_mix(h, static_cast<uint64_t>(c.y));
+        h = fnv_mix(h, static_cast<uint64_t>(c.powerup + 1));
+        h = fnv_mix(h, static_cast<uint64_t>(c.start));
+        h = fnv_mix(h, static_cast<uint64_t>(c.lifetime));
+    }
+    for (const ra2engine::Building& b : world.buildings())
+        h = fnv_mix(h, static_cast<uint64_t>(b.hp));
+    return h;
+}
+
+struct DemoVeterancyResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+// One scripted run of the P5 gate (headless or rendered -- bit-identical: the
+// only RNG is the crate GameRandom with a FIXED seed). Real E1/E2 via
+// resolve_combat_unit + real [General]/[CrateRules]/[Powerups]. Stages:
+// (1) promotion by kills, (2) VeteranArmor, (3) elite self-heal, (4) crates.
+DemoVeterancyResult simulate_veterancy(Assets& a, UnitAssets& ua, const Rules& rules,
+                                       const std::vector<const VehicleAssets*>& vlist,
+                                       bool render, SDL_Renderer* ren,
+                                       ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                                       int W, int H, const std::string& start_png,
+                                       const std::string& end_png) {
+    DemoVeterancyResult r;
+    auto wit = [&](const char* fmt, auto... args) {
+        char b[256];
+        std::snprintf(b, sizeof b, fmt, args...);
+        r.witness.emplace_back(b);
+    };
+    ra2engine::World world = build_world(a, ua, 0);   // count=0 -> no pre-spawned units
+    const ra2engine::VeterancyRules vr = resolve_veterancy_rules(rules);
+    world.enable_veterancy(vr, {});
+    wit("[vet] rules ratio=%.2f combat=%.2f armor=%.2f rof=%.2f speed=%.2f sight=%.2f cap=%.2f "
+        "heal_interval=%d", vr.ratio, vr.combat, vr.armor, vr.rof, vr.speed, vr.sight, vr.cap,
+        ra2engine::self_heal_interval(vr.repair_rate));
+
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    const int bx = pc ? pc->x : 20;
+    const int by = pc ? pc->y : 20;
+    auto free_near = [&](int x0, int y0, int& ox, int& oy) {
+        for (int rr = 0; rr <= 10; ++rr)
+            for (int dy = -rr; dy <= rr; ++dy)
+                for (int dx = -rr; dx <= rr; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != rr) continue;
+                    if (world.walkable(x0 + dx, y0 + dy) && world.unit_at_cell(x0 + dx, y0 + dy) < 0) {
+                        ox = x0 + dx;
+                        oy = y0 + dy;
+                        return true;
+                    }
+                }
+        return false;
+    };
+
+    const double dt = 1.0 / 15.0;
+    long frame = 0;
+    uint64_t h = 0xcbf29ce484222325ull;
+    auto step_one = [&]() {
+        world.step(dt);
+        ++frame;
+        if (render) {
+            SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+            SDL_RenderClear(ren);
+            render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+        }
+    };
+
+    // --- Stage 1: promotion by kills -------------------------------------------
+    const ra2engine::UnitCombat e1 = resolve_combat_unit(rules, "E1").combat;
+    const ra2engine::UnitCombat e2 = resolve_combat_unit(rules, "E2").combat;
+    ra2engine::UnitCombat dummy = e2;                // weaponless real E2 (Cost 100)
+    dummy.damage = 0;
+    dummy.range = 0.0;
+    dummy.strength = 30;                             // 2 hits: gate scaffolding only
+    int hx = 0, hy = 0;
+    free_near(bx, by, hx, hy);
+    world.add_combat_unit(hx, hy, 0, e1);
+    const int hero = (int)world.units().size() - 1;
+    wit("[vet] hero E1 cost=%d dmg=%d rof=%d elite=%s(%d/%d) vetab=0x%x eliteab=0x%x",
+        e1.cost, world.units()[hero].w_damage, world.units()[hero].w_rof,
+        e1.has_elite ? "yes" : "no", e1.elite.damage, e1.elite.rof,
+        (unsigned)e1.vet_abilities, (unsigned)e1.elite_abilities);
+    step_one();                                    // same in BOTH modes (determinism)
+    if (render) capture_png(ren, start_png, W, H);
+    h = veterancy_fold(h, world);
+
+    long vet_frame_at = -1, elite_frame_at = -1;
+    int kills = 0;
+    int vet_dmg = -1, vet_rof = -1, elite_dmg = -1, elite_rof = -1;
+    bool doubled_seen = false;
+    for (int k = 0; k < 20 && elite_frame_at < 0; ++k) {
+        int tx = 0, ty = 0;
+        if (!free_near(hx + 1, hy, tx, ty)) break;
+        world.add_combat_unit(tx, ty, 1, dummy);
+        const int t = (int)world.units().size() - 1;
+        if (k == 7) world.units()[t].vet.veterancy = 1.0f;   // a VETERAN victim: x2 value
+        const float before = world.units()[hero].vet.veterancy;
+        for (int f = 0; f < 300 && world.units()[t].die_time < 0.0; ++f) step_one();
+        step_one();   // the credit pass runs right after step_combat
+        if (world.units()[t].die_time < 0.0) break;
+        ++kills;
+        const float after = world.units()[hero].vet.veterancy;
+        if (k == 7 && std::fabs((after - before) - 2.0f * 100.0f / 600.0f) < 1e-4f) doubled_seen = true;
+        for (const ra2engine::World::VetEvent& ev : world.take_vet_events()) {
+            if (ev.unit != hero) continue;
+            if (ev.new_rank == 1) {
+                vet_frame_at = frame;
+                vet_dmg = world.units()[hero].w_damage;
+                vet_rof = world.units()[hero].w_rof;
+            }
+            if (ev.new_rank == 2) {
+                elite_frame_at = frame;
+                elite_dmg = world.units()[hero].w_damage;
+                elite_rof = world.units()[hero].w_rof;
+            }
+        }
+        wit("[vet] kill %d frame=%ld veterancy=%.6f rank=%d dmg=%d rof=%d", kills, frame,
+            (double)after, ra2engine::vet_rank(after), world.units()[hero].w_damage,
+            world.units()[hero].w_rof);
+    }
+    h = veterancy_fold(h, world);
+    wit("[vet] veteran at frame %ld (dmg=%d rof=%d) elite at frame %ld (dmg=%d rof=%d) "
+        "veteran-victim x2=%s", vet_frame_at, vet_dmg, vet_rof, elite_frame_at, elite_dmg,
+        elite_rof, doubled_seen ? "yes" : "no");
+
+    // --- Stage 2: VeteranArmor -------------------------------------------------
+    // An armed real E2 shoots the ELITE hero (STRONGER) and a second one shoots a
+    // rookie control E1 far away: first-hit sizes differ by VeteranArmor.
+    int ex = 0, ey = 0, cx = 0, cy = 0, fx2 = 0, fy2 = 0;
+    free_near(hx + 2, hy, ex, ey);
+    world.add_combat_unit(ex, ey, 1, e2);
+    const int enemy = (int)world.units().size() - 1;
+    free_near(hx + 14, hy + 14, cx, cy);
+    world.add_combat_unit(cx, cy, 0, e1);
+    const int control = (int)world.units().size() - 1;
+    free_near(cx + 2, cy, fx2, fy2);
+    world.add_combat_unit(fx2, fy2, 1, e2);
+    const int hero_hp0 = world.units()[hero].hp, ctl_hp0 = world.units()[control].hp;
+    int hero_hit = -1, ctl_hit = -1;
+    for (int f = 0; f < 200 && (hero_hit < 0 || ctl_hit < 0); ++f) {
+        step_one();
+        if (hero_hit < 0 && world.units()[hero].hp < hero_hp0)
+            hero_hit = hero_hp0 - world.units()[hero].hp;
+        if (ctl_hit < 0 && world.units()[control].hp < ctl_hp0)
+            ctl_hit = ctl_hp0 - world.units()[control].hp;
+    }
+    // Let the hero's duel finish (the elite hero kills its E2).
+    for (int f = 0; f < 200 && world.units()[enemy].die_time < 0.0; ++f) step_one();
+    for (int f = 0; f < 20; ++f) step_one();
+    h = veterancy_fold(h, world);
+    wit("[vet] armor: elite hero first hit=%d  rookie control first hit=%d  (E2 dmg %d)",
+        hero_hit, ctl_hit, e2.damage);
+
+    // --- Stage 3: elite SELF_HEAL ------------------------------------------------
+    const int heal_hp0 = world.units()[hero].hp;
+    const int heal_max = world.units()[hero].max_hp;
+    for (int f = 0; f < 56; ++f) step_one();
+    const int healed = world.units()[hero].hp - heal_hp0;
+    h = veterancy_fold(h, world);
+    wit("[vet] self-heal: hp %d -> %d (+%d over 56 frames, max %d)", heal_hp0,
+        world.units()[hero].hp, healed, heal_max);
+
+    // --- Stage 4: crates ---------------------------------------------------------
+    ra2engine::World::CrateConfig cc;
+    cc.rules = resolve_crate_rules(rules);
+    cc.seed = 0x50355643u;              // fixed: the gate is deterministic
+    cc.players = 1;
+    cc.unit_pool.push_back(e1);         // stand-in pool (no CrateGoodie voxel art here)
+    const bool crates_on = world.enable_crates(cc);
+    int initial = 0;
+    int init_slot = -1;
+    for (int s = 0; s < (int)world.crates().size(); ++s)
+        if (world.crates()[s].x >= 0) {
+            ++initial;
+            if (init_slot < 0) init_slot = s;
+        }
+    const ra2engine::World::Crate first =
+        init_slot >= 0 ? world.crates()[init_slot] : ra2engine::World::Crate{};
+    wit("[crate] enabled=%s radius=%d regen=%.1f initial=%d at (%d,%d) lifetime=%d",
+        crates_on ? "yes" : "no", cc.rules.radius_leptons, cc.rules.regen, initial,
+        first.x, first.y, first.lifetime);
+    h = veterancy_fold(h, world);
+
+    // A fresh rookie collector + a damaged own building for HealBase.
+    int px = 0, py = 0;
+    free_near(bx - 8, by - 8, px, py);
+    world.add_combat_unit(px, py, 0, e1);
+    const int picker = (int)world.units().size() - 1;
+    int bxx = 0, byy = 0;
+    free_near(px - 4, py - 4, bxx, byy);
+    const int own_b = world.add_building(0, bxx, byy, 1, 1, 0, 800, 0, 0.0, true);
+    world.buildings()[own_b].hp = 300;
+
+    auto collect = [&](int powerup, ra2engine::World::CrateEvent& out) -> bool {
+        // Typed crate (PlaceCrate(cell,type)) a couple of cells from the picker.
+        // The placement predicate rejects ore/overlay cells exactly like the
+        // original's, so walk outward until one placement succeeds (a failed
+        // placement draws no RNG).
+        const int ux = world.units()[picker].cell_x, uy = world.units()[picker].cell_y;
+        const std::vector<ra2engine::World::Crate> before = world.crates();
+        bool placed = false;
+        for (int rr = 2; rr <= 8 && !placed; ++rr)
+            for (int dy = -rr; dy <= rr && !placed; ++dy)
+                for (int dx = -rr; dx <= rr && !placed; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != rr) continue;
+                    if (!world.walkable(ux + dx, uy + dy) || world.unit_at_cell(ux + dx, uy + dy) >= 0)
+                        continue;
+                    placed = world.place_crate(ux + dx, uy + dy, powerup);
+                }
+        if (!placed) return false;
+        int cx2 = -1, cy2 = -1;   // the slot that just became active
+        for (std::size_t s = 0; s < world.crates().size(); ++s)
+            if (world.crates()[s].x >= 0 && before[s].x < 0) {
+                cx2 = world.crates()[s].x;
+                cy2 = world.crates()[s].y;
+            }
+        if (cx2 < 0) return false;
+        world.units()[picker].selected = true;
+        world.order_move_selected(cx2, cy2);
+        world.units()[picker].selected = false;
+        for (int f = 0; f < 200; ++f) {
+            step_one();
+            const std::vector<ra2engine::World::CrateEvent> ev = world.take_crate_events();
+            for (const ra2engine::World::CrateEvent& e : ev)
+                if (e.unit == picker) { out = e; return true; }
+        }
+        return false;
+    };
+    const int typed[10] = {
+        (int)ra2engine::Powerup::Money,    (int)ra2engine::Powerup::Armor,
+        (int)ra2engine::Powerup::Armor,    (int)ra2engine::Powerup::Firepower,
+        (int)ra2engine::Powerup::Speed,    (int)ra2engine::Powerup::Veteran,
+        (int)ra2engine::Powerup::HealBase, (int)ra2engine::Powerup::Reveal,
+        (int)ra2engine::Powerup::Unit,     -1 /* random: the weighted pick */};
+    int applied[10];
+    bool collected_all = true;
+    for (int i = 0; i < 10; ++i) {
+        ra2engine::World::CrateEvent e;
+        const double cred0 = world.house_credits(0);
+        const int units0 = (int)world.units().size();
+        if (!collect(typed[i], e)) {
+            collected_all = false;
+            applied[i] = -2;
+            wit("[crate] %d: NOT collected", i);
+            continue;
+        }
+        applied[i] = e.applied;
+        wit("[crate] %d: picked=%s applied=%s at (%d,%d) amount=%d affected=%d credits+%ld units+%d",
+            i, ra2engine::powerup_name(e.picked), ra2engine::powerup_name(e.applied), e.x, e.y,
+            e.amount, e.affected, (long)std::llround(world.house_credits(0) - cred0),
+            (int)world.units().size() - units0);
+        h = veterancy_fold(h, world);
+    }
+    {
+        const ra2engine::Unit& pk = world.units()[picker];
+        wit("[crate] picker: armor=%.2f firepower=%.2f speed=%.2f veterancy=%.2f dmg=%d; base hp=%d/%d",
+            pk.vet.armor_mult, pk.vet.firepower_mult, pk.vet.speed_mult, (double)pk.vet.veterancy,
+            pk.w_damage, world.buildings()[own_b].hp, world.buildings()[own_b].max_hp);
+    }
+
+    // Expiry: run past the first crate's lifetime -> removed + relocated.
+    bool relocated = false;
+    if (init_slot >= 0) {
+        const long until = frame + first.lifetime + 2;
+        while (frame < until) step_one();
+        const ra2engine::World::Crate& now = world.crates()[init_slot];
+        relocated = now.start != first.start || now.x != first.x || now.y != first.y;
+        int active = 0;
+        for (const ra2engine::World::Crate& c : world.crates())
+            if (c.x >= 0) ++active;
+        wit("[crate] expiry: slot %d (%d,%d)@%llu -> (%d,%d)@%llu lifetime=%d active=%d", init_slot,
+            first.x, first.y, (unsigned long long)first.start, now.x, now.y,
+            (unsigned long long)now.start, now.lifetime, active);
+    }
+    h = veterancy_fold(h, world);
+    r.hash = h;
+
+    // Wedge guards: every stage is mandatory (the gate can never pass vacuously).
+    const int want_vet_dmg = ra2engine::fire_damage(e1.damage, 1.0, true, vr.combat);
+    const int want_rof = ra2engine::rof_frames(e1.rof, true, vr.rof);
+    const int want_elite_dmg = ra2engine::fire_damage(e1.has_elite ? e1.elite.damage : e1.damage,
+                                                      1.0, true, vr.combat);
+    auto wedge = [&](bool bad, const char* msg) {
+        if (bad) { r.ok = false; r.witness.emplace_back(msg); }
+    };
+    wedge(vet_frame_at < 0, "[vet] WEDGE: hero never became veteran");
+    wedge(elite_frame_at < 0, "[vet] WEDGE: hero never became elite");
+    wedge(vet_dmg != want_vet_dmg || vet_rof != want_rof, "[vet] WEDGE: veteran stats not refreshed");
+    wedge(elite_dmg != want_elite_dmg, "[vet] WEDGE: elite weapon/firepower not applied");
+    wedge(!doubled_seen, "[vet] WEDGE: veteran victim did not count double");
+    wedge(hero_hit != ra2engine::receive_damage(e2.damage, 1.0, true, vr.armor) || ctl_hit != e2.damage,
+          "[vet] WEDGE: VeteranArmor not applied");
+    wedge(healed != 4, "[vet] WEDGE: elite self-heal != +4 over 56 frames");
+    wedge(!crates_on || initial != 1, "[crate] WEDGE: crates not enabled / initial count != 1");
+    wedge(!collected_all, "[crate] WEDGE: a crate was never collected");
+    wedge(applied[0] != (int)ra2engine::Powerup::Money || applied[1] != (int)ra2engine::Powerup::Armor ||
+              applied[2] != (int)ra2engine::Powerup::Money ||
+              applied[3] != (int)ra2engine::Powerup::Firepower ||
+              applied[4] != (int)ra2engine::Powerup::Speed ||
+              applied[5] != (int)ra2engine::Powerup::Veteran ||
+              applied[6] != (int)ra2engine::Powerup::HealBase ||
+              applied[8] != (int)ra2engine::Powerup::Unit,
+          "[crate] WEDGE: typed crate effects / Armor->Money conversion wrong");
+    wedge(world.buildings()[own_b].hp != world.buildings()[own_b].max_hp,
+          "[crate] WEDGE: HealBase did not heal");
+    wedge(!relocated, "[crate] WEDGE: expired crate was not relocated");
+
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[vet] veterancy_hash=%016llx",
+                  static_cast<unsigned long long>(r.hash));
+    r.witness.emplace_back(hb);
+    if (render) capture_png(ren, end_png, W, H);
+    return r;
+}
+
+// --demo-veterancy: the P5 Veterancy + Crates integration gate. Rendered run
+// (hidden window + start/end screenshots, P5 art published) then a headless
+// run from a FRESH World; witness logs + hashes byte-compared. No hardcoded
+// hash literal -- compute-and-self-compare; the value is pinned in the README.
+int run_demo_veterancy() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_veterancy_start.png";
+    const std::string end_png = scratch + "demo_veterancy_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    std::vector<const VehicleAssets*> vlist;            // infantry-only gate
+    P5Art art = load_p5_art(dir, ra2);
+
+    DemoVeterancyResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-veterancy)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            g_p5_art = &art;
+            r1 = simulate_veterancy(a, ua, rules, vlist, /*render=*/true, ren, &tc, &cam, W, H,
+                                    start_png, end_png);
+            g_p5_art = nullptr;
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+    DemoVeterancyResult r2 = simulate_veterancy(a, ua, rules, vlist, /*render=*/false, nullptr,
+                                                nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    const bool bad = !identical || !r1.ok || !r2.ok;
+    std::cerr << "[demo-veterancy] run1 lines=" << r1.witness.size() << " run2 lines="
+              << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& line : r1.witness) std::cout << line << "\n";
+    std::cout << "start_png=" << start_png << "\nend_png=" << end_png << "\n";
+    char hb[112];
+    std::snprintf(hb, sizeof hb, "deterministic=%s lines=%d veterancy_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(),
+                  static_cast<unsigned long long>(r1.hash));
+    std::cout << hb << "\n";
+    return bad ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -12875,6 +13506,8 @@ int main(int argc, char** argv) {
                 return run_demo_projectile();
             } else if (arg == "--demo-triggers") {
                 return run_demo_triggers();
+            } else if (arg == "--demo-veterancy") {
+                return run_demo_veterancy();   // P5 Veterancy + Crates gate
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {

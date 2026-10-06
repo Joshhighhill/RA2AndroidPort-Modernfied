@@ -49,6 +49,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/iso_project.cpp
     ${RA2_ROOT}/engine/iso_renderer.cpp
     ${RA2_ROOT}/engine/world.cpp
+    ${RA2_ROOT}/engine/world_veterancy.cpp
     ${RA2_ROOT}/engine/pathfind.cpp
     ${RA2_ROOT}/engine/input.cpp
     ${RA2_ROOT}/engine/occupancy.cpp
@@ -80,4 +81,6 @@ set(RA2_ENGINE_SOURCES
 
     ${RA2_ROOT}/engine/projectile.cpp
     ${RA2_ROOT}/engine/map_trigger.cpp
+    ${RA2_ROOT}/engine/veterancy.cpp
+    ${RA2_ROOT}/engine/crate.cpp
 )
