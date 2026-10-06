@@ -123,6 +123,18 @@
             if (u.moving()) ++out["moving." + std::to_string(u.house)];
         }
         out["sel"] = sel;
+        for (const ra2engine::Unit& u : world_.units())   // first selected unit's cell
+            if (u.selected && u.alive && u.die_time < 0.0) {
+                out["sel.cx"] = u.cell_x;
+                out["sel.cy"] = u.cell_y;
+                break;
+            }
+        for (const ra2engine::Unit& u : world_.units())   // first own unit's cell
+            if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
+                out["own.cx"] = u.cell_x;
+                out["own.cy"] = u.cell_y;
+                break;
+            }
         for (const ra2engine::Building& b : world_.buildings()) {
             if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
             ++out["bld." + std::to_string(b.house)];

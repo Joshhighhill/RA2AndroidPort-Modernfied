@@ -129,12 +129,12 @@ void key_event_from_sdl(int k, int mod, InputEvent& ev) {
     ev.alt = (mod & KMOD_ALT) != 0;
     ev.vk = vk_from_sdl(k);
     ev.key = 0;
-    if (k == SDLK_ESCAPE) {
-        ev.kind = InputEvent::Quit;
-        return;
-    }
     // P7: the named keys the save/load UI + P10 briefing consume.
+    // G-01: Escape is an ordinary key (KeyboardMD.ini [Hotkey] Options=27 --
+    // the in-game options dialog; dialogs treat it as Back). Only the window
+    // close button (SDL_QUIT) quits the program.
     switch (k) {
+        case SDLK_ESCAPE: ev.key = kKeyEscape; break;
         case SDLK_BACKSPACE: ev.key = kKeyBackspace; break;
         case SDLK_RETURN: case SDLK_KP_ENTER: ev.key = kKeyEnter; break;
         case SDLK_UP: ev.key = kKeyUp; break;

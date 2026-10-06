@@ -4113,7 +4113,11 @@ public:
 
     Result handle(const ra2engine::InputEvent& ev) {
         if (!open_) return None;
-        if (ev.kind == ra2engine::InputEvent::Quit) { close(); return Back; }
+        if (ev.kind == ra2engine::InputEvent::Quit ||
+            (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape)) {
+            close();   // G-01: Esc = the dialog's Back/Cancel
+            return Back;
+        }
         if (confirm_) {   // modal yes/no
             if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left) {
                 if (yes_rect().contains(ev.x, ev.y)) { confirm_ = false; return commit(true); }
@@ -4338,7 +4342,11 @@ public:
     bool open_ = false;
     Choice handle(const ra2engine::InputEvent& ev) {
         if (!open_) return None;
-        if (ev.kind == ra2engine::InputEvent::Quit) { open_ = false; return Resume; }
+        if (ev.kind == ra2engine::InputEvent::Quit ||
+            (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape)) {
+            open_ = false;   // G-01: Esc on the options dialog = Resume
+            return Resume;
+        }
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left)
             return None;
         for (int i = 0; i < 5; ++i)
@@ -4558,8 +4566,8 @@ public:
     }
 
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
-    // then Input. Escape-cancels-placement is retained here for fidelity (the
-    // driver intercepts Quit before handle, so it is dormant on that path).
+    // then Input. G-01: Esc never reaches here as a quit -- ui_handle maps it to
+    // the options dialog (KeyboardMD.ini Options=27); right-click cancels modes.
     void handle(const ra2engine::InputEvent& ev) override {
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
@@ -4641,10 +4649,10 @@ public:
             }
             return;  // consumed by the sidebar (right-click = no-op)
         }
-        // Escape (mapped to Quit) cancels ONE armed thing instead of quitting,
-        // in the recovered priority order: placement -> Repair -> Sell -> SW
-        // [RE: repair-sell.md §C1, FUN_004AAC40].
-        if (ev.kind == ra2engine::InputEvent::Quit && input_.cancel_one_mode()) return;
+        // G-01 [RE: gamemd FUN_00692ab0 WM_RBUTTONUP -> FUN_004AAC40]: the
+        // one-mode cancel chain is the RIGHT-click-up handler (Input owns it);
+        // Esc is the Options hotkey (FUN_00646AE0 queues the options event and
+        // cancels nothing), handled in ui_handle.
         input_.handle(ev);
     }
 
@@ -5103,7 +5111,9 @@ private:
             show_briefing_ = !show_briefing_;   // P10: the mission briefing (Brief:<map>)
             return true;
         }
-        const bool open_key = ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyF10;
+        // G-01: Esc = [Hotkey] Options=27 (exec FUN_00646AE0 -> options dialog).
+        const bool open_key = ev.kind == ra2engine::InputEvent::Key &&
+                              (ev.key == ra2engine::kKeyF10 || ev.key == ra2engine::kKeyEscape);
         const bool open_btn = ev.kind == ra2engine::InputEvent::PointerDown &&
                               ev.button == ra2engine::InputEvent::Left && options_button_at(ev.x, ev.y);
         if (open_key || open_btn) {
@@ -6137,6 +6147,21 @@ public:
     }
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs SkirmishSetupScene
     void   update(double dt) override;                         // pumps the looping menu music
+    const char* name() const override { return "shell"; }    // scripted-input hooks
+    bool locate(const std::string& what, int& x, int& y) const override {
+        for (const ShellButton& b : layout())
+            if (what == std::string("button:") + b.label && b.enabled) {
+                const ra2engine::SbRect d = to_device(b.rect);
+                x = d.x + d.w / 2;
+                y = d.y + d.h / 2;
+                return true;
+            }
+        return false;
+    }
+    void probe(std::map<std::string, long long>& out) const override {
+        out["scene.shell"] = 1;
+        out["page"] = page_;
+    }
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
     bool   wants_quit() const override { return quit_; }
@@ -6458,6 +6483,15 @@ public:
     }
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs MainMenuScene + GameScene
     void   update(double dt) override;                         // keeps the menu music looping
+    const char* name() const override { return "lobby"; }    // scripted-input hooks
+    bool locate(const std::string& what, int& x, int& y) const override {
+        const ra2engine::SbRect r = (what == "button:Start") ? start_rect()
+                                  : (what == "button:Back")  ? back_rect() : ra2engine::SbRect{};
+        if (r.w == 0) return false;
+        x = r.x + r.w / 2;
+        y = r.y + r.h / 2;
+        return true;
+    }
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
 
@@ -6759,6 +6793,25 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         }
         return;
     }
+    // G-01: Esc is the dialog's Cancel -> press this page's bottom-row button
+    // (Back / Main Menu). On the main page that row is Exit Game, which Esc
+    // does not press [RE-FALLBACK: the main dialog's IDCANCEL handling is
+    // G-14's Exit-confirm, owned by the shell agent].
+    if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
+        if (page_ == PAGE_MAIN) return;
+        for (const ShellButton& b : layout())
+            if (b.enabled && b.rect.y == rowY(5) && b.action == ACT_GOTO) {
+                const ra2engine::SbRect d = to_device(b.rect);
+                ra2engine::InputEvent click;
+                click.kind = ra2engine::InputEvent::PointerDown;
+                click.button = ra2engine::InputEvent::Left;
+                click.x = d.x + d.w / 2;
+                click.y = d.y + d.h / 2;
+                handle(click);
+                return;
+            }
+        return;
+    }
     // [P8] Options page controls get the pointer first (sliders/checkboxes).
     if (page_ == PAGE_OPTIONS && options_handle(ev)) return;
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
@@ -6796,6 +6849,11 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
 }
 
 void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
+    // G-01: Esc = Back (the lobby dialog's Cancel), not program exit.
+    if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
+        next_ = new MainMenuScene(rules_, no_audio_, art_);
+        return;
+    }
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
         ev.button != ra2engine::InputEvent::Left)
         return;
@@ -15790,6 +15848,9 @@ int run_demo_saveload() {
     return ok ? 0 : 1;
 }
 
+// Agent B controls real-play self-test (dev-only, not a gate).
+#include "controls_selftest.inc"
+
 int main(int argc, char** argv) {
     try {
 #ifdef __ANDROID__
@@ -15826,6 +15887,8 @@ int main(int argc, char** argv) {
             std::string arg = argv[i];
             if (arg == "--menu-shot" && i + 1 < argc) {
                 return run_menu_shot(argv[++i]);
+            } else if (arg == "--controls-selftest" && i + 1 < argc) {
+                return run_controls_selftest(argv[++i]);   // agent B dev check
             } else if (arg == "--screenshot" && i + 1 < argc) {
                 screenshot = argv[++i];
             } else if (arg == "--demo-move" && i + 2 < argc) {
