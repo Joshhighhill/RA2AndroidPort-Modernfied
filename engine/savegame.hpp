@@ -46,6 +46,7 @@ public:
         const auto* b = static_cast<const std::uint8_t*>(p);
         buf.insert(buf.end(), b, b + n);
     }
+    bool ok() const { return true; }
     std::vector<std::uint8_t> buf;
 };
 
@@ -184,7 +185,7 @@ template <class Ar, class T> void io(Ar& ar, T& v) {
                              std::is_same_v<E, char>) {
             if (n) ar.bytes(v.data(), n);
         } else {
-            for (std::size_t i = 0; i < n && (!Ar::kLoading || ar.ok()); ++i) io(ar, v[i]);
+            for (std::size_t i = 0; i < n && ar.ok(); ++i) io(ar, v[i]);
         }
     } else if constexpr (detail::is_std_array<T>::value) {
         for (auto& e : v) io(ar, e);

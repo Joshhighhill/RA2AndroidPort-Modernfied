@@ -35,6 +35,11 @@ struct SaveAccess {
         save::io(ar, f.timer_);
     }
     template <class Ar> static void queues(Ar& ar, ProductionQueues& q) { save::io(ar, q.q_); }
+    template <class Ar> static void game_random(Ar& ar, GameRandom& g) {   // P5 crate RNG
+        save::io(ar, g.table_);
+        save::io(ar, g.idx1_);
+        save::io(ar, g.idx2_);
+    }
 
     // --- World private nested types ---
     template <class Ar> static void house_ai(Ar& ar, World::HouseAiRec& r) {
@@ -137,6 +142,18 @@ struct SaveAccess {
         save::io(ar, w.repair_frame_);
         save::io(ar, w.survivor_crew_);
         save::io(ar, w.survivor_crew_set_);
+        // P5 Veterancy + crates
+        save::io(ar, w.vet_any_);
+        save::io(ar, w.vet_rules_);
+        save::io(ar, w.vet_building_costs_);
+        save::io(ar, w.vet_frame_);
+        save::io(ar, w.vet_events_);
+        save::io(ar, w.crates_any_);
+        save::io(ar, w.crate_rules_);
+        save::io(ar, w.crate_rng_);
+        save::io(ar, w.crate_pool_);
+        save::io(ar, w.crates_);
+        save::io(ar, w.crate_events_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -201,6 +218,7 @@ namespace save {
 template <class Ar> void fields(Ar& ar, Occupancy& v) { SaveAccess::occupancy(ar, v); }
 template <class Ar> void fields(Ar& ar, OreField& v) { SaveAccess::ore_field(ar, v); }
 template <class Ar> void fields(Ar& ar, ProductionQueues& v) { SaveAccess::queues(ar, v); }
+template <class Ar> void fields(Ar& ar, GameRandom& v) { SaveAccess::game_random(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::HouseAiRec& v) { SaveAccess::house_ai(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::HouseSuperweapon& v) { SaveAccess::house_sw(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::TechIncome& v) { SaveAccess::tech_income(ar, v); }
@@ -283,6 +301,63 @@ template <class Ar> void fields(Ar& ar, ProjectileEvent& v) {
     io(ar, v.apex);
 }
 
+// --- P5 veterancy + crates ---
+template <class Ar> void fields(Ar& ar, VeterancyRules& v) {
+    io(ar, v.ratio);
+    io(ar, v.combat);
+    io(ar, v.speed);
+    io(ar, v.sight);
+    io(ar, v.armor);
+    io(ar, v.rof);
+    io(ar, v.cap);
+    io(ar, v.repair_rate);
+    io(ar, v.elite_flash);
+}
+template <class Ar> void fields(Ar& ar, WeaponStats& v) {
+    io(ar, v.damage); io(ar, v.rof); io(ar, v.range); io(ar, v.verses);
+    io(ar, v.cell_spread); io(ar, v.percent_at_max);
+}
+template <class Ar> void fields(Ar& ar, UnitVet& v) {
+    io(ar, v.veterancy);
+    io(ar, v.last_rank);
+    io(ar, v.elite_flash);
+    io(ar, v.firepower_mult);
+    io(ar, v.armor_mult);
+    io(ar, v.speed_mult);
+    io(ar, v.recv);
+    io(ar, v.vet_armor);
+    io(ar, v.killed_by);
+    io(ar, v.credited);
+    io(ar, v.cost);
+    io(ar, v.trainable);
+    io(ar, v.dont_score);
+    io(ar, v.self_healing);
+    io(ar, v.vet_abilities);
+    io(ar, v.elite_abilities);
+    io(ar, v.rules_speed);
+    io(ar, v.base);
+    io(ar, v.has_elite);
+    io(ar, v.elite);
+    io(ar, v.base_speed_cps);
+    io(ar, v.base_sight);
+}
+template <class Ar> void fields(Ar& ar, PowerupDef& v) {
+    io(ar, v.weight); io(ar, v.anim); io(ar, v.naval); io(ar, v.arg);
+}
+template <class Ar> void fields(Ar& ar, CrateRules& v) {
+    io(ar, v.minimum); io(ar, v.maximum); io(ar, v.radius_leptons); io(ar, v.regen); io(ar, v.powerups);
+}
+template <class Ar> void fields(Ar& ar, World::Crate& v) {
+    io(ar, v.x); io(ar, v.y); io(ar, v.powerup); io(ar, v.start); io(ar, v.lifetime);
+}
+template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
+    io(ar, v.picked); io(ar, v.applied); io(ar, v.house); io(ar, v.unit);
+    io(ar, v.x); io(ar, v.y); io(ar, v.amount); io(ar, v.affected);
+}
+template <class Ar> void fields(Ar& ar, World::VetEvent& v) {
+    io(ar, v.unit); io(ar, v.old_rank); io(ar, v.new_rank);
+}
+
 // --- unit / building types ---
 template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.strength);
@@ -314,6 +389,17 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.movement_domain);
     io(ar, v.veteran_rank);
     io(ar, v.sight);
+    // P5
+    io(ar, v.cost);
+    io(ar, v.trainable);
+    io(ar, v.dont_score);
+    io(ar, v.self_healing);
+    io(ar, v.crate_goodie);
+    io(ar, v.vet_abilities);
+    io(ar, v.elite_abilities);
+    io(ar, v.rules_speed);
+    io(ar, v.has_elite);
+    io(ar, v.elite);
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -438,6 +524,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.disguised_as_type);
     io(ar, v.disguised_as_house);
     io(ar, v.detect_disguise);
+    io(ar, v.vet);   // P5
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -462,6 +549,11 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.selling);
     io(ar, v.sell_time);
     io(ar, v.sold);
+    // P5
+    io(ar, v.vet_recv);
+    io(ar, v.armor_mult);
+    io(ar, v.killed_by);
+    io(ar, v.vet_credited);
 }
 
 // --- production ---
