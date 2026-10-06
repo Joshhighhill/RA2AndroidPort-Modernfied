@@ -157,11 +157,19 @@ void ProductionQueues::start_unit(QueueCat c, int unit_type,
 
 void ProductionQueues::tick(double dt, double power_mult, const double factory_speedup[4],
                             const std::vector<BuildingTypeDef>& btypes) {
+    const double sp[kQueueCats] = {factory_speedup[0], factory_speedup[1], factory_speedup[2],
+                                   factory_speedup[3], 1.0, 1.0};
+    tick_all(dt, power_mult, sp, btypes);
+}
+
+void ProductionQueues::tick_all(double dt, double power_mult,
+                                const double factory_speedup[kQueueCats],
+                                const std::vector<BuildingTypeDef>& btypes) {
     // Sequential single pool (deterministic Structure->Defense->Infantry->
     // Vehicle): carry the running balance across queues so total spend never
     // exceeds the money.
     double money = q_[0].credits;   // caller set all four equal via set_credits
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < kQueueCats; ++i) {
         q_[i].credits = money;
         ra2engine::tick(q_[i], dt, power_mult * factory_speedup[i], btypes);
         money = q_[i].credits;      // this queue's spend reduces the shared pool

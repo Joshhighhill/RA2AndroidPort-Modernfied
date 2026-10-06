@@ -62,6 +62,7 @@ struct BuildingTypeDef {
                                     // building sets it" was WRONG. Verified in rulesmd.]
     bool click_repairable = true;   // ClickRepairable= [§A4] DEFAULT YES
     bool crewed           = false;  // Crewed=          [§B3] gates survivor spawn
+    bool ore_purifier     = false;  // OrePurifier=     gap owner A (G-27) [RE: economy.md §2]
     int  soylent          = 0;      // Soylent=         [§B1] absolute refund override
                                     // [RE-GATE APPLIED §D0: GAREFN/NAREFN set Soylent=300,
                                     // so this override is load-bearing, not dead code.]
@@ -162,7 +163,13 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
                                const std::vector<std::uint8_t>& passable, int grid_w, int grid_h,
                                const Occupancy& occ,
                                const std::vector<Building>& buildings,
-                               bool bypass_adjacency);
+                               bool bypass_adjacency,
+                               const std::vector<char>* base_normal_by_type = nullptr);
+// Gap owner A (G-28) [RE: construction.md §9 -- the neighbour must be own AND
+// BaseNormal=yes; RE-E5 the +0x154F read is a pre-hunt citation]: when
+// `base_normal_by_type` is given, an own building whose type has
+// BaseNormal=no (walls, pillboxes, Naval Yard...) does not extend the base.
+// nullptr (every legacy caller) = every own building counts.
 
 // Frame selection for the MAIN building SHP [RE: building-render.md §4,
 // pre-hunt]: image frames are the first half (second half = shadows, like
