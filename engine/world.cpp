@@ -16,6 +16,7 @@
 #include "pathfind.hpp"
 #include "ra2assets/pal.hpp"  // Palette/Rgba (pal_for_house)
 #include "capture.hpp"        // grants_startup_from_neutral, kNeutralHouse (Capture phase)
+#include "roster2.hpp"        // naval_exit_cell (gap owner A: real-play Naval Yard)
 
 namespace ra2engine {
 
@@ -951,6 +952,25 @@ void World::set_primary(int b_idx, const std::vector<int>& factory_types) {
 int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, const UnitCombat& c) {
     if (factory_idx < 0 || factory_idx >= static_cast<int>(buildings_.size())) return -1;
     const Building& f = buildings_[factory_idx];   // rally scalars are copied to locals below
+    // Gap owner A (G-24) [RE: roster2.md TL;DR 8]: a ship leaves its Naval Yard
+    // onto the first free WATER ring cell (roster2's naval_exit_cell); every
+    // other unit keeps the land walk below.
+    if (c.is_naval) {
+        if (water_passable_.empty()) return -1;
+        const Cellxy wx = naval_exit_cell(f, factory_def, water_passable_, grid_w_, grid_h_,
+                                          [this](int x, int y) {
+                                              return occ_.is_free(x, y) && building_at_cell(x, y) < 0;
+                                          });
+        if (wx.x < 0) return -1;                    // boxed in: HOLD
+        UnitCombat cv = c;
+        cv.veteran_rank = produced_veteran(f.house) ? 1 : 0;
+        const bool has_rally = f.has_rally;
+        const int rx = f.rally_x, ry = f.rally_y;
+        add_combat_unit(wx.x, wx.y, f.house, cv);
+        const int ui = static_cast<int>(units_.size()) - 1;
+        if (has_rally) order_unit_move(ui, rx, ry);
+        return ui;
+    }
     auto free_cell = [this](int x, int y) {
         // occ_.is_free sees BOTH committed cells AND a mid-hop unit's next-cell
         // reservation (step_units reserves occ.set(next, self) while cell_x
@@ -1333,6 +1353,9 @@ bool World::fire_superweapon(int house, int cx, int cy) {
     if (house < 0 || house >= (int)sw_houses_.size()) return false;
     HouseSuperweapon& rec = sw_houses_[house];
     if (!rec.has_sw || !rec.sw.is_ready()) return false;   // refused unless READY (§4)
+    // Gap owner A: only the Nuke's detonation is implemented; any other type
+    // keeps its charge rather than "firing" a no-op.
+    if (rec.sw.type != SuperweaponType::Nuke) return false;
 
     // Transient virtual detonator [spec §5.1]: a value-initialized STACK Unit
     // (Unit struct UNCHANGED -- no persistent field). Its house + fx/fy (target
@@ -1404,8 +1427,20 @@ bool World::fire_superweapon(int house, int cx, int cy) {
 
 void World::step_superweapon(double dt) {
     if (!sw_any_) return;                        // firewall (spec §8) -- no-op everywhere else
-    for (HouseSuperweapon& rec : sw_houses_)     // house-id order; pure arithmetic, no RNG (§3.5)
-        if (rec.has_sw) rec.sw.tick(dt);
+    for (int h = 0; h < static_cast<int>(sw_houses_.size()); ++h) {   // house-id order, no RNG
+        HouseSuperweapon& rec = sw_houses_[h];
+        if (!rec.has_sw) continue;
+        // [RE: superweapon.md §1] IsPowered=true suspends the charge while the
+        // owner is on low power (gap owner A, G-29).
+        if (rec.is_powered && house_low_power(h)) continue;
+        rec.sw.tick(dt);
+    }
+}
+
+bool World::house_low_power(int house) const {
+    const PowerTotals p = apply_blackout(power_totals(buildings_, btypes(), house),
+                                         house_blacked_out(house));
+    return p.output < p.drain;   // [RE: construction.md §8] low power = output < drain
 }
 
 bool World::sw_ready(int house) const {
@@ -3253,9 +3288,21 @@ void World::step(double dt) {
         ore_.step(dt, growth_interval_, growth_pct_, spread_pct_, passable_, ore_rng_);
         std::vector<HarvestMove> h_moves;
         std::vector<HarvestEvent> h_events;
+        // Gap owner A (G-27): own operational Ore Purifiers per house.
+        std::vector<int> purifiers(house_credits_.size(), 0);
+        bool any_purifier = false;
+        for (const Building& b : buildings_)
+            if (b.alive && b.state == Building::State::Idle && b.type >= 0 &&
+                b.type < static_cast<int>(types_.size()) && types_[b.type].ore_purifier &&
+                b.house >= 0 && b.house < static_cast<int>(purifiers.size())) {
+                ++purifiers[b.house];
+                any_purifier = true;
+            }
         step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
                     grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
-                    house_credits_.data(), h_moves, h_events);
+                    house_credits_.data(), h_moves, h_events,
+                    static_cast<int>(house_credits_.size()),
+                    any_purifier ? purifiers.data() : nullptr, purifier_bonus_);
         // Path each requested move the same way step_combat's MoveRequests
         // are executed above (order_unit_move mirrors that pattern).
         for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);

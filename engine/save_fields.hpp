@@ -65,6 +65,7 @@ struct SaveAccess {
         save::io(ar, s.eff_cell_spread);
         save::io(ar, s.eff_percent_at_max);
         save::io(ar, s.eff_verses);
+        save::io(ar, s.is_powered);   // gap owner A (G-29)
     }
     template <class Ar> static void tech_income(Ar& ar, World::TechIncome& t) {
         save::io(ar, t.building);
@@ -141,6 +142,7 @@ struct SaveAccess {
         save::io(ar, w.growth_interval_);
         save::io(ar, w.growth_pct_);
         save::io(ar, w.spread_pct_);
+        save::io(ar, w.purifier_bonus_);   // gap owner A (G-27)
         save::io(ar, w.house_credits_);
         save::io(ar, w.harvest_events_);
         // Repair & Sell
@@ -507,6 +509,10 @@ template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.prerequisite);
     io(ar, v.cameo);
     io(ar, v.combat);
+    io(ar, v.naval);       // gap owner A (G-22/G-24)
+    io(ar, v.aircraft);
+    io(ar, v.harvester);
+    io(ar, v.storage);
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.id);
@@ -533,6 +539,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.click_repairable);
     io(ar, v.crewed);
     io(ar, v.deploy_facing);   // gF
+    io(ar, v.ore_purifier);   // gap owner A (G-27)
     io(ar, v.soylent);
 }
 

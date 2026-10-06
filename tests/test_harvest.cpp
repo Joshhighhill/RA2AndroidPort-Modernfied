@@ -667,3 +667,20 @@ TEST_CASE("harvest: free_unit_grand_openings ignores an out-of-range building ty
     auto opened = free_unit_grand_openings(bs, free_unit_of_type, prev_states);
     CHECK(opened.empty());
 }
+
+TEST_CASE("harvest: Ore Purifier bonus + house 2+ paid to its own pool (gap G-27) [RE: economy.md §2]") {
+    Rig r;
+    r.harv(2, 2);
+    r.units[0].house = 2;                 // a third skirmish house
+    r.units[0].harv = HarvState::Unloading;
+    r.units[0].dock_refinery = 0;
+    r.units[0].bales_ore = 1;
+    r.units[0].harv_timer = 0.0;
+    double credits[3] = {0, 0, 0};
+    const int purifiers[3] = {0, 0, 2};   // house 2 owns two purifiers
+    r.moves.clear(); r.events.clear();
+    step_harvest(r.units, r.buildings, r.types, r.ref_types, r.ore, r.pass, 20, 20, r.occ,
+                 kUnloadSecsPerBale, r.values, credits, r.moves, r.events, 3, purifiers, 0.25);
+    CHECK(credits[0] == 0);               // no longer misrouted to house 0
+    CHECK(credits[2] == doctest::Approx(25 + 2 * 0.25 * 25));   // 25 + 12.5
+}
