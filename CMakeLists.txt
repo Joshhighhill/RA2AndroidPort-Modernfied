@@ -218,6 +218,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibili
 # production.cpp. The World mutation entry points live in engine/world.cpp
 # (already on test_world's line), so world.cpp is NOT added here.
 target_sources(ra2assets_tests PRIVATE tests/test_repair_sell.cpp engine/repair_sell.cpp)
+# P6 Roster breadth + remaining producers [RE: roster2.md]: the PURE wall
+# (mask/frame/line-fill/3x time), water-bound naval yard (placement/exit/
+# category split) and airfield (pad coords, 270-frame rearm, sortie) mechanics.
+# World-free; factory.cpp/production.cpp are already on earlier test lines.
+target_sources(ra2assets_tests PRIVATE tests/test_roster2.cpp engine/roster2.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's
