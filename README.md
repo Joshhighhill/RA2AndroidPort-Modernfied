@@ -2545,7 +2545,69 @@ the P6 Roster Breadth gate.
 | `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=1f02e4c09dba0964` | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
+| `--demo-saveload` | `saveload_hash=b71d77c2b4abb7b8` | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=e510c5b98c089804` | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
+
+## Save / Load (P7)
+
+Calibration authority: `docs/re/saveload.md` (string scan + YRpp layout map +
+a headless Ghidra pass over `LoadOptionsClass` / `ScenarioClass::SaveGame`);
+spec `docs/superpowers/specs/2026-10-06-saveload-design.md`, plan
+`docs/superpowers/plans/2026-10-06-saveload.md`.
+
+**Guarantee.** `load(save(state))` continues bit-identically: the World
+(units incl. cargo/flight/naval/capture/disguise/veterancy/ability state,
+buildings incl. repair/sell/C4/bomb/erase state, houses/alliances/victory,
+credits, ore + ore RNG, shroud, occupancy/passability, AI base/team/trigger
+state and its resolved config, superweapons, projectiles in flight +
+`ProjRng`, crates + crate RNG, radiation field, every firewall bool and pending
+event buffer), the map-trigger runtime (`MapTriggerSystem`: tags, triggers,
+timers, latches, locals/globals, mission timer, RNG, log) and the GameScene
+record (camera, sidebar tab, the player's production queues, wallet, rolling
+credits, FreeUnit tracker). Transient input (armed repair/sell/placement)
+resets on load, as in the original.
+
+**Format (decision).** The original writes an OLE compound file of raw class
+memory images -- not reproducible. We keep its *naming* (`SAVE%04X.SAV`,
+random number retried until free), its header-first newest-first listing,
+the 80-char description and the UI flow, and use our own versioned binary:
+`RA2SAVE\0` magic, `u32` format version (`save::kFormatVersion`, a mismatch
+is listed but refused = the original's `IsWrongVersion`), a length-prefixed
+header (description, scenario kind, map file/id/signature, frame, time), then
+tagged sections `CONF`/`WRLD`/`TRIG`/`SCNE`/`HOST` (unknown tags skipped).
+Scalars are fixed-width little-endian; `long` is always 8 bytes; doubles are
+bit patterns. Files live in `<SDL pref dir>/Saved Games/`.
+
+**Growth.** `engine/save_fields.hpp` holds ONE visitor per struct, one line per
+field, shared by save, load and a counting archive; classes with private
+state carry one `friend struct SaveAccess;` line. Three tripwires in
+`tests/test_saveload.cpp` fail when state is added without a visitor line:
+aggregate arity == visited count for every serialized struct (mutation-checked),
+a source scan proving every `World` / `MapTriggerSystem` member is visited,
+and pinned `sizeof`s (MinGW x64) for the private-state classes. A rich-world
+round trip (shells in flight) must continue byte-identically for 90 frames.
+
+**UI.** In game, the sidebar **Options** button (or F10) opens the options menu
+(dialog 0xB5): Load / Save / Delete / Abort / Resume; the game is paused while
+it is open. The shared Load/Save/Delete dialog lists saves newest first; Save
+adds `<New Saved Game>` + a description edit (default the scenario name,
+empty refused), overwrite and delete confirm yes/no. The main menu's
+**Load Saved Game** (Single Player page) is now live.
+
+**Gate `--demo-saveload`.** Skirmish (economy, projectiles, veterancy, crates,
+P4 abilities, AI, the player's production pool) saved at the first frame
+>= 90 with shells in flight (121) and continued to 900; the sov07tmd trigger
+scenario saved at 900 and continued to 1900 (straddling the 1800-frame taunt);
+each save goes through a real `.SAV` file into a FRESH scenario, and the
+full-state hash (FNV over the serialized World + scene/trigger bytes, mixed
+with `world_hash`) must match. A third segment drives the real `GameScene`
+`save_game` -> load constructor and compares the complete state at load and
+after 120 more frames.
+
+**Cuts.** The interactive GameScene does not run map triggers yet (P10), so
+in-game saves have no `TRIG` section; audio state is not saved; no
+"Saving game..." bar graph; no free-disk check; Abort Mission exits the game
+(no MenuArt reachable from GameScene); visuals are our rect-font widgets.
 
 ## Unit Special Abilities (batch 1)
 

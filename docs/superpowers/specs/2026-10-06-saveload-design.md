@@ -112,31 +112,33 @@ with `world_hash`.
 Prints `saveload_hash=<A of skirmish ^ A of triggers>`; exit 1 on any
 mismatch or a vacuous run (no projectile/production/trigger activity).
 
-## 6. Checklist — state other branches must add (P4 / P5 / P6 / P10)
+## 6. Checklist — state other branches must add
 
-When your branch adds state, add **one `io(ar, x.field)` line** in the matching
-visitor in `engine/savegame.cpp`, then bump `kSaveFormatVersion`. The arity
-test names the struct that is out of sync.
+**Status at P7 finalize (after merging master fc36b96):** P4 abilities
+(Unit ability fields, Building C4/bomb/erase fields, `RadField` + sites,
+ability profiles/rules/frame/events), P5 veterancy + crates (`UnitVet`,
+Building vet/kill fields, `VeterancyRules`, crate list + `GameRandom` + crate
+pool/events, vet frame/events, new `UnitCombat` stats) and P6 roster2 (no new
+persistent World state; `block_water_footprint` only edits the serialized
+passability grids) are **all serialized** and covered by `--demo-saveload`.
 
-* **P4 abilities**: new `Unit` fields (terror-drone host/victim, desolator
-  deploy, chrono-legionnaire erase progress/target, C4 timers, IFV mode/weapon
-  swap, deployed state), any new `World` member (e.g. pending C4 list,
-  chrono-erase list) -> `SaveAccess::world`; any new projectile/warhead
-  fields -> `fields(Projectile)` / `fields(ProjectileSpec)`.
-* **P5 veterancy/crates**: `Unit` experience/kills/rank fields, `Building`
-  veterancy if any, crate list + crate RNG + crate timers in `World`, any
-  per-house veteran-production flags (beyond `produced_veteran_`).
-* **P6 roster/airfields**: aircraft ammo/rearm/dock fields on `Unit`, airfield
-  dock assignment on `Building`, naval-yard state, wall connectivity if
-  stored; new `UnitCombat`/`BuildingTypeDef` stats.
+How to add state (anyone, from now on): add **one `io(ar, x.field)` line** in
+the matching visitor in `engine/save_fields.hpp` (or `SaveAccess::world` for a
+World member), then bump `save::kFormatVersion`; a new struct type needs a
+`fields` overload + a `CHECK_ARITY` line. `tests/test_saveload.cpp` names the
+struct / member that is out of sync.
+
+Remaining:
+
 * **P10 campaign**: campaign/mission identity in the save **header**
-  (`scenario kind = Campaign`, mission id, difficulty), map triggers become
-  part of GameScene (save the `TRIG` section from the scene), mission
-  timers/briefing state, the `WorldTriggerHost` analogue's own state
-  (`HOST` section), and the default description = mission `UIName`
-  (`%sSav`, saveload.md §3).
+  (`ScenarioKind::Campaign`, mission id, difficulty); GameScene must own the
+  `MapTriggerSystem` + its host and write the `TRIG` (and `HOST` for host-side
+  state such as `unit_type_of`) sections — the load path re-parses
+  `MapTriggerData` from the mission map exactly as the gate does; mission
+  timers/briefing/outcome state in the scene record; default description =
+  the mission's CSF `UIName` (`%sSav`, saveload.md §3).
 * **Anyone adding a GameScene member** that affects simulation: add it to
-  `SceneSave` (`fields(SceneSave)`) and to `GameScene::capture/apply_save`.
+  `SceneSave` (`fields(SceneSave)`) and to `GameScene::capture_save/apply_save`.
 
 ## 7. Cuts / deferrals
 
@@ -147,3 +149,7 @@ test names the struct that is out of sync.
   sounds restart cleanly, as in the original.
 * No bar-graph / "Saving game..." progress banner; save is instantaneous.
 * Free-disk-space check (`SpaceRequirement`) omitted.
+* Abort Mission exits the game (GameScene cannot reach the menu art to build a
+  ShellScene); visuals are rect-font widgets, not the original dialog art.
+* The in-game menu opens from the sidebar Options button or F10 (Escape stays
+  the app's Quit, handled by the scene driver) [FALLBACK: hotkey not traced].
