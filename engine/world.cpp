@@ -547,7 +547,11 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // w_damage/hp/max_hp EXACTLY as resolved above -> byte-identical.
     u.veteran_rank = c.veteran_rank;
     u.sight = c.sight;  // [RE: shroud.md §2] reveal radius; inert until Task 3
-    if (c.veteran_rank > 0) {
+    // P5 [RE: veterancy.md V15]: in a veterancy-enabled World a produced
+    // veteran is Veterancy=1.0f (applied below), NOT the legacy spawn-baked
+    // HP/damage. The legacy baking is kept verbatim for every World that never
+    // enabled veterancy (the capture gate) -> byte-identical there.
+    if (c.veteran_rank > 0 && !vet_any_) {
         u.w_damage = veteran_firepower(u.w_damage, c.veteran_rank);
         u.max_hp = veteran_hp(u.max_hp, c.veteran_rank);
         u.hp = u.max_hp;
@@ -583,6 +587,33 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // (default is_naval=false / movement_domain=Land = a ground unit).
     u.is_naval = c.is_naval;
     u.movement_domain = c.movement_domain;
+    // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
+    // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
+    // past this point unless vet_any_). Only a vet-enabled World arms the
+    // combat hook, applies a requested rank and refreshes the stats.
+    u.vet.cost = c.cost;
+    u.vet.trainable = c.trainable;
+    u.vet.dont_score = c.dont_score;
+    u.vet.self_healing = c.self_healing;
+    u.vet.vet_abilities = c.vet_abilities;
+    u.vet.elite_abilities = c.elite_abilities;
+    u.vet.rules_speed = c.rules_speed;
+    u.vet.base.damage = c.damage;
+    u.vet.base.rof = c.rof;
+    u.vet.base.range = c.range;
+    u.vet.base.verses = c.verses;
+    u.vet.base.cell_spread = c.cell_spread;
+    u.vet.base.percent_at_max = c.percent_at_max;
+    u.vet.has_elite = c.has_elite;
+    u.vet.elite = c.elite;
+    u.vet.base_speed_cps = c.speed_cps;
+    u.vet.base_sight = c.sight;
+    if (vet_any_) {
+        // [V15] SetVeteran only if Trainable (FUN_00734490 L107-111).
+        if (c.veteran_rank > 0 && c.trainable)
+            u.vet.veterancy = c.veteran_rank >= 2 ? 2.0f : 1.0f;
+        init_unit_vet(u);
+    }
     return u;
 }
 
@@ -825,6 +856,7 @@ int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int
     b.grants_map_reveal = grants_map_reveal;  // [RE: shroud.md §7A] SpySat/GPS reveal-all flag
     b.buildup_total = buildup_total;
     b.state = instant ? Building::State::Idle : Building::State::Buildup;
+    b.vet_recv = vet_any_;   // P5 [RE: veterancy.md V6]: false in every legacy World
     buildings_.push_back(b);
     const int idx = static_cast<int>(buildings_.size()) - 1;
     for (const Cellxy& cell : foundation_cells(cx, cy, fw, fh)) {
@@ -2887,6 +2919,12 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 void World::step(double dt) {
     step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
+    // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
+    // crate cell, then lifetime expiry -> relocation. A pure INSERTION;
+    // `if (!crates_any_) return;` inside is the only cost every existing gate
+    // pays (no existing demo calls enable_crates).
+    step_crates();
+
     // Shroud/Fog [RE: shroud.md §3]: recompute per-house visibility after
     // movement and before combat reads it (via seen_by_mask). Firewalled behind
     // shroud_any_ (false in every existing demo -> a strict no-op).
@@ -2957,6 +2995,13 @@ void World::step(double dt) {
     step_repair_sell(dt);
 
     const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt);
+
+    // P5 Veterancy [RE: veterancy.md V2/V3/V11/V12]: kill credit for every unit/
+    // building that died this step, rank-change detection + stat refresh, and
+    // the 14-frame self-heal. A pure INSERTION right after step_combat; the
+    // frame counter advances unconditionally (nothing hashes it) and
+    // `if (!vet_any_) return;` is the only other cost every existing gate pays.
+    step_veterancy();
     // Guard-return requests route directly. Approach requests are batched
     // per goal cell (one batch per target) and resolved to DISTINCT free
     // firing-position cells via assign_formation, so a group of attackers

@@ -85,7 +85,9 @@ target_sources(ra2assets_tests PRIVATE tests/test_pathfind.cpp engine/pathfind.c
 # reconciliation are unit-tested here (test_world.cpp) alongside the projection
 # it must agree with. Compiled from the same single source of truth as the
 # ra2engine executable below (same pattern as iso_project.cpp / pathfind.cpp).
-target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp
+                                       engine/world_veterancy.cpp  # P5 World members
+                                       tests/test_world_veterancy.cpp)
 # input.cpp is SDL-free (only InputEvent, screen_to_cell, World -- see
 # engine/input.hpp) so it compiles into this test binary too (Task 12 review
 # Finding 3: Input previously had zero test coverage); it calls
@@ -218,6 +220,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibili
 # production.cpp. The World mutation entry points live in engine/world.cpp
 # (already on test_world's line), so world.cpp is NOT added here.
 target_sources(ra2assets_tests PRIVATE tests/test_repair_sell.cpp engine/repair_sell.cpp)
+# P5 Veterancy + Crates [RE: veterancy.md]: the pure veterancy formulas and the
+# crate RNG/powerup math. engine/world.cpp (already on test_world's line) calls
+# into both, so they are compiled into the test binary here once.
+target_sources(ra2assets_tests PRIVATE tests/test_veterancy.cpp engine/veterancy.cpp
+                                       tests/test_crate.cpp engine/crate.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's

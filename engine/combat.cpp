@@ -94,7 +94,13 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         apply_spread_damage(units, occ, u, v);
     } else {
         // EXISTING single-target delivery -- UNCHANGED (byte-identical path).
-        const int dmg = damage_vs(u.w_damage, u.w_verses, v.armor_ix);
+        // P5 [RE: veterancy.md V6]: a vet-enabled World arms v.vet.recv; the
+        // receive chain (ArmorMultiplier, STRONGER, max 1) then runs BEFORE
+        // the Verses. v.vet.recv is false in every legacy World -> raw ==
+        // u.w_damage exactly as before.
+        int raw = u.w_damage;
+        if (v.vet.recv) raw = vet_receive(raw, v.vet);
+        const int dmg = damage_vs(raw, u.w_verses, v.armor_ix);
         v.hp -= dmg;
         // Return fire only if IDLE (spec: "return fire when hit" applies to
         // idle/guarding units; a unit under a move order keeps walking rather
@@ -119,6 +125,7 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         }
         if (v.hp <= 0) {
             v.die_time = 0.0;
+            v.vet.killed_by = attacker_idx;   // P5 [V3]: inert stamp (credit pass only)
             occ.release_all_of(victim_idx, -1, -1);
             v.target = -1;
             v.path.clear();
@@ -155,11 +162,19 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         if (d > radius_lept) continue;                               // outside the splash
         const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
         const double scale = 1.0 - (1.0 - pmax) * frac;             // 1.0 -> pmax linear
-        const int base = static_cast<int>(attacker.w_damage * scale);  // trunc (combat.md §3)
+        // P5 [RE: veterancy.md V6]: the receive chain runs on the full hit
+        // before the falloff/Verses; only when the victim's hook is armed
+        // (never in a legacy World -> the base expression is unchanged).
+        const int full = w.vet.recv ? vet_receive(attacker.w_damage, w.vet) : attacker.w_damage;
+        const int base = static_cast<int>(full * scale);  // trunc (combat.md §3)
         const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
         w.hp -= dmg;
         if (w.hp <= 0) {
             w.die_time = 0.0;
+            // P5 [V3]: inert killer stamp; the attacker is a real unit only when
+            // it lives in `units` (the nuke's virtual detonator does not).
+            if (&attacker >= units.data() && &attacker < units.data() + units.size())
+                w.vet.killed_by = static_cast<int>(&attacker - units.data());
             occ.release_all_of(j, -1, -1);
             w.target = -1;
             w.path.clear();
@@ -276,9 +291,15 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             continue;  // hold fire this frame; rof_cool untouched
                         u.rof_cool = u.w_rof / kLogicFps;
                         u.fire_flash = kFireFlashSecs;
-                        const int dmg = damage_vs(u.w_damage, u.w_verses, b->armor_ix);
+                        // P5 [RE: veterancy.md V6]: a vet-enabled World arms
+                        // b->vet_recv (ArmorMultiplier, max 1, then Verses);
+                        // false in every legacy World -> unchanged.
+                        int raw = u.w_damage;
+                        if (b->vet_recv) raw = receive_damage(raw, b->armor_mult, false, 1.0);
+                        const int dmg = damage_vs(raw, u.w_verses, b->armor_ix);
                         b->hp -= dmg;
                         if (b->hp <= 0) {
+                            b->killed_by = i;   // P5 [V3]: inert stamp
                             kill_building(*b);
                             u.target_building = -1;
                             u.attack_order = false;
