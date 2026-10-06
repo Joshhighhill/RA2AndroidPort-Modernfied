@@ -90,7 +90,7 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
                                              const UnitRoster& ur_ai, const ra2assets::Ini& aimd,
                                              int anchor_x, int anchor_y,
                                              const ra2assets::MapFile* map) {
-    const std::string country = aiside::house_country(s.side, s.country);
+    const std::string country = aiside::house_country(s.side, s.country, &rules);
     ra2engine::AiHouseConfig acfg =
         make_ai_config(ba, rules, s.diff, start_cash, s.side, country);
     // This house's share of the AI roster (country/side ownership).

@@ -56,11 +56,21 @@ inline int planning_side(ra2engine::World::Side s) {
     return s == ra2engine::World::Side::Soviet ? 1 : 0;
 }
 
-// The lobby slot's country, or the side's first [Sides] country when the
-// slot left it blank ([Sides] GDI=British,...,Americans / Nod=Russians,...).
-inline std::string house_country(ra2engine::World::Side side, const std::string& slot_country) {
-    if (!slot_country.empty()) return slot_country;
-    return side == ra2engine::World::Side::Soviet ? "Russians" : "Americans";
+// The lobby slot's country when it belongs to the slot's side per rulesmd
+// [Sides] (GDI=British,French,Germans,Americans,Alliance / Nod=Russians,...);
+// otherwise (blank, or a lobby that cycled the side but kept the country --
+// e.g. side Allied + "Russians") the side's default country.
+inline std::string house_country(ra2engine::World::Side side, const std::string& slot_country,
+                                 const Rules* rules = nullptr) {
+    const bool soviet = side == ra2engine::World::Side::Soviet;
+    const std::string def = soviet ? "Russians" : "Americans";
+    if (slot_country.empty()) return def;
+    if (rules) {
+        const std::vector<std::string> members =
+            csv_tokens(rules->section_string("Sides", soviet ? "Nod" : "GDI", ""));
+        if (!members.empty() && !list_has(members, slot_country)) return def;
+    }
+    return slot_country;
 }
 
 // May a house of (side, country) own technotype `id`? (buildings AND units)

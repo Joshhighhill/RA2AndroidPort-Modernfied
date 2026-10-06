@@ -12212,7 +12212,7 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
         // Full roster-backed AI config OVER-WRITES the minimal one from the core.
         if (s.is_ai && ba.ok) {
             world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash, s.side,
-                                                    aiside::house_country(s.side, s.country)));
+                                                    aiside::house_country(s.side, s.country, &rules)));
             // G-21 [RE: skirmish.md §1 Sliders]: the lobby Money seeds a house ONCE.
             // make_ai_config already holds it in the AI wallet; drop the
             // configure_skirmish_houses pool seed so step_ai_houses' take_income
