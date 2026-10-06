@@ -16,3 +16,143 @@ void real_play_arm_economy(ra2engine::World& world, const BuildingAssets& ba, co
     wire_economy(world, ba, rules);
     world.set_water_terrain(resolve_land_types(a.map, a.theater, world.grid_w(), world.grid_h()));
 }
+
+// ---------------------------------------------------------------------------
+// G-22 / G-26 / G-19 / row 15 / row 18: the side-correct, country-correct,
+// lobby-TechLevel-correct producible roster for the human in real play.
+// ---------------------------------------------------------------------------
+
+std::string rp_upper(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// Upper-cased, trimmed comma list of rules [id] key (inline ';' stripped by
+// Rules::section_string).
+std::vector<std::string> rp_list(const Rules& rules, const std::string& id, const char* key) {
+    std::vector<std::string> out;
+    const std::string v = rules.section_string(id, key, "");
+    std::string cur;
+    auto flush = [&] {
+        std::size_t a = 0, b = cur.size();
+        while (a < b && std::isspace(static_cast<unsigned char>(cur[a]))) ++a;
+        while (b > a && std::isspace(static_cast<unsigned char>(cur[b - 1]))) --b;
+        if (b > a) out.push_back(rp_upper(cur.substr(a, b - a)));
+        cur.clear();
+    };
+    for (char c : v) {
+        if (c == ',') flush();
+        else cur += c;
+    }
+    flush();
+    return out;
+}
+bool rp_has(const std::vector<std::string>& v, const std::string& x) {
+    return std::find(v.begin(), v.end(), rp_upper(x)) != v.end();
+}
+bool rp_flag(const Rules& rules, const std::string& id, const char* key) {
+    const std::string v = rules.section_string(id, key, "");
+    return !v.empty() && (v[0] == 'y' || v[0] == 'Y' || v[0] == 't' || v[0] == 'T' || v[0] == '1');
+}
+
+// [RE: roster.md §1 "Side is from Owner="; RE-FALLBACK RE-E8: the
+// HouseTypeClass Owner bitmask + RequiredHouses/ForbiddenHouses binary checks
+// were not hunted -- the semantics below are the documented rules meaning]
+// May `country` build rules type `id`? Owner= must list the country (an
+// absent Owner= list allows everyone); RequiredHouses=, when present, must
+// list it; ForbiddenHouses= must not.
+bool rp_country_allows(const Rules& rules, const std::string& id, const std::string& country) {
+    const std::vector<std::string> owner = rp_list(rules, id, "Owner");
+    if (!owner.empty() && !rp_has(owner, country)) return false;
+    const std::vector<std::string> req = rp_list(rules, id, "RequiredHouses");
+    if (!req.empty() && !rp_has(req, country)) return false;
+    return !rp_has(rp_list(rules, id, "ForbiddenHouses"), country);
+}
+
+// The human's country: the lobby slot's country when its [Country] Side=
+// matches the slot's side (GDI=Allied, Nod=Soviet), else the side's stock
+// default (Americans / Russians). The lobby's side button changes only the
+// side, so a stale "Americans" on a Soviet slot must not leak through.
+std::string rp_player_country(const Rules& rules, const ra2engine::SkirmishSlot& s) {
+    const bool soviet = s.side == ra2engine::World::Side::Soviet;
+    const std::string want = soviet ? "NOD" : "GDI";
+    if (!s.country.empty() && rp_upper(rules.section_string(s.country, "Side", "")) == want)
+        return s.country;
+    return soviet ? "Russians" : "Americans";
+}
+
+// One unit queue category per rules type [RE: roster2.md TL;DR 7;
+// production.md §1.1]: [InfantryTypes] -> Infantry; [AircraftTypes] ->
+// Aircraft; [VehicleTypes] Naval=yes -> Naval; else Vehicle.
+ra2engine::QueueCat rp_unit_cat(const ra2engine::UnitTypeDef& d) {
+    if (d.aircraft) return ra2engine::QueueCat::Aircraft;
+    if (d.naval) return ra2engine::QueueCat::Naval;
+    return d.is_vehicle ? ra2engine::QueueCat::Vehicle : ra2engine::QueueCat::Infantry;
+}
+
+// The REAL-PLAY player roster: every [InfantryTypes]/[VehicleTypes]/
+// [AircraftTypes] entry this country may own, at or below the lobby
+// TechLevel, not stolen-tech-only, then the shared art/cost/cameo guards of
+// load_unit_roster_table. Prerequisites stay full-parsed (the sidebar shows
+// an item once they are met). Aircraft are included only when
+// `with_aircraft` (their producer is wired).
+UnitRoster load_player_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
+                                   const UnitAssets& ua, const Rules& rules, const Art& art,
+                                   const Ini& rules_ini, const std::string& country,
+                                   int lobby_tech, bool with_aircraft) {
+    std::vector<std::string> ids;
+    std::vector<char> veh;
+    std::vector<char> air;
+    const struct { const char* list; bool vehicle; bool aircraft; } kLists[] = {
+        {"InfantryTypes", false, false}, {"VehicleTypes", true, false},
+        {"AircraftTypes", true, true}};
+    for (const auto& L : kLists) {
+        if (L.aircraft && !with_aircraft) continue;
+        for (const std::string& id : ra2engine::ini_list_values(rules_ini, L.list)) {
+            const int tl = rules.tech_level(id);
+            if (tl <= 0 || tl > lobby_tech) continue;              // [RE: skirmish.md §1 Tech Level]
+            if (!rp_country_allows(rules, id, country)) continue;   // side + country units
+            if (rp_flag(rules, id, "RequiresStolenAlliedTech") ||
+                rp_flag(rules, id, "RequiresStolenSovietTech") ||
+                rp_flag(rules, id, "RequiresStolenThirdTech"))
+                continue;   // spy-infiltration unlocks: not modelled -> never buildable
+            if (std::find(ids.begin(), ids.end(), id) != ids.end()) continue;
+            ids.push_back(id);
+            veh.push_back(L.vehicle ? 1 : 0);
+            air.push_back(L.aircraft ? 1 : 0);
+        }
+    }
+    std::vector<UnitRosterEnt> ents;
+    ents.reserve(ids.size());
+    for (std::size_t i = 0; i < ids.size(); ++i)
+        ents.push_back(UnitRosterEnt{ids[i].c_str(), veh[i] != 0, ""});
+    UnitRoster ur = load_unit_roster_table(dir, ra2, ua, rules, art, ents.data(), ents.size(),
+                                           /*full_parse=*/true);
+    for (ra2engine::UnitTypeDef& d : ur.defs) {
+        for (std::size_t i = 0; i < ids.size(); ++i)
+            if (ids[i] == d.id) d.aircraft = air[i] != 0;
+        d.naval = d.is_vehicle && !d.aircraft && rp_flag(rules, d.id, "Naval");
+        d.harvester = rules.harvester(d.id);
+        if (d.harvester) {
+            d.storage = rules.storage(d.id);
+            d.chrono_miner = rp_upper(d.id) == "CMIN";   // [RE: economy.md §3] Teleporter miner
+        }
+    }
+    std::cerr << "[realplay-roster] country=" << country << " tech<=" << lobby_tech
+              << " producible=" << ur.defs.size() << "\n";
+    return ur;
+}
+
+// Roster indices of the buildings whose rules Factory= builds `factory` (and,
+// for UnitType, whose Naval= equals `naval`) [RE: roster2.md TL;DR 7].
+std::vector<int> rp_factory_types(const BuildingAssets& ba, const Rules& rules,
+                                  const char* factory, bool naval = false) {
+    std::vector<int> v;
+    for (int i = 0; i < static_cast<int>(ba.roster.size()); ++i) {
+        const std::string& id = ba.roster[i].id;
+        if (rp_upper(rules.section_string(id, "Factory", "")) != rp_upper(factory)) continue;
+        if (std::string(factory) == "UnitType" && rp_flag(rules, id, "Naval") != naval) continue;
+        v.push_back(i);
+    }
+    return v;
+}

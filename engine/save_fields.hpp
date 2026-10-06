@@ -492,6 +492,10 @@ template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.prerequisite);
     io(ar, v.cameo);
     io(ar, v.combat);
+    io(ar, v.naval);       // gap owner A (G-22/G-24)
+    io(ar, v.aircraft);
+    io(ar, v.harvester);
+    io(ar, v.storage);
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.id);

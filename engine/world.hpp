@@ -674,6 +674,17 @@ public:
     // harvester starts hunting immediately, matching the original).
     Unit& add_harvester(int cell_x, int cell_y, int house, const UnitCombat& c,
                         bool chrono, int storage_bales);
+    // Gap owner A (G-22): a War Factory-built HARV/CMIN leaves through the
+    // ordinary launch_unit exit, then becomes a miner hunting ore exactly like
+    // add_harvester's (SeekOre). No-op on a bad index.
+    void make_harvester(int unit_idx, bool chrono, int storage_bales) {
+        if (unit_idx < 0 || unit_idx >= static_cast<int>(units_.size())) return;
+        Unit& u = units_[unit_idx];
+        u.is_harvester = true;
+        u.chrono_miner = chrono;
+        u.storage_bales = storage_bales;
+        u.harv = HarvState::SeekOre;
+    }
 
     // Player orders (selected house-0 harvesters only). Simplified per
     // economy.md §1: no separate "pinned" flag -- just pin harv_cell_* to

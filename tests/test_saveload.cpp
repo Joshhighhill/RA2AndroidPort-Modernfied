@@ -183,7 +183,7 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
     CHECK(sizeof(MapTriggerSystem) == 368);   // P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 88);
     CHECK(sizeof(Occupancy) == 32);
-    CHECK(sizeof(ProductionQueues) == 224);
+    CHECK(sizeof(ProductionQueues) == 336);
     CHECK(sizeof(GameRandom) == 1008);
     CHECK(sizeof(RadField) == 56);
 #else

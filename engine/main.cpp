@@ -1949,9 +1949,14 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
         // [RE: roster2.md §A, RE-FALLBACK] P6 indices honour rules Image= for the
-        // art lookups (AMRADR draws as GAAIRC); 0..23 keep the id (ATESLA stays
-        // art-absent -> the 18th gate's roster_hash is untouched).
-        const std::string art_id = (roster_i++ >= kRoster2First) ? rules.image(id) : id;
+        // art lookups (AMRADR draws as GAAIRC). Gap owner A (G-26/G-64): ALL
+        // indices now honour Image= -- keeping the id for 0..23 left the Prism
+        // Tower (ATESLA Image=GAPRIS) and Tesla Coil (TESLA Image=NATSLA)
+        // art-absent, i.e. unbuildable for the player AND the AI. Moves the
+        // roster/AI gate witnesses (re-pinned).
+        (void)kRoster2First;
+        ++roster_i;
+        const std::string art_id = rules.image(id);
         ra2engine::BuildingTypeDef d;
         d.id = id;
         d.fw = d.fh = 1;
@@ -3175,7 +3180,10 @@ double factory_speedup(const ra2engine::World& world, const std::vector<int>& ft
 // own factory group. reconcile_refund settles the shared pool after a cancel.
 void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const BuildingAssets& ba,
                double dt, double low_mod, double mf, const std::vector<int>& inf_ft,
-               const std::vector<int>& veh_ft) {
+               const std::vector<int>& veh_ft,
+               const std::vector<int>& nav_ft = std::vector<int>{},
+               const std::vector<int>& air_ft = std::vector<int>{},
+               const std::vector<int>* bld_ft_in = nullptr) {
     // Engineer/Spy Capture [RE: capture.md §B2]: a spied power plant forces this
     // house's power OUTPUT to 0 while the blackout timer runs (drain unaffected)
     // -> the existing low-power clamp + offline defenses follow. apply_blackout
@@ -3185,11 +3193,14 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
         ra2engine::apply_blackout(ra2engine::power_totals(world.buildings(), ba.roster, 0),
                                   world.house_blacked_out(0));
     const double pmul = ra2engine::build_speed_multiplier(pt, low_mod);
-    const std::vector<int> bld_ft = factory_types_for(ba, "GACNST");
+    // Gap owner A: the real game passes its ConYard type list (GACNST+NACNST,
+    // side-correct); gates keep the historical GACNST-only count.
+    const std::vector<int> bld_ft = bld_ft_in ? *bld_ft_in : factory_types_for(ba, "GACNST");
     const double bsp = factory_speedup(world, bld_ft, mf);
-    const double sp[4] = {bsp, bsp,
-                          factory_speedup(world, inf_ft, mf), factory_speedup(world, veh_ft, mf)};
-    q.tick(dt, pmul, sp, ba.roster);
+    const double sp[ra2engine::kQueueCats] = {
+        bsp, bsp, factory_speedup(world, inf_ft, mf), factory_speedup(world, veh_ft, mf),
+        factory_speedup(world, nav_ft, mf), factory_speedup(world, air_ft, mf)};
+    q.tick_all(dt, pmul, sp, ba.roster);
     // ConYard-died cancels BOTH building queues (Structure AND Defense share the
     // ConYard-alive factory group) [RE: production.md §1.1].
     if (!conyard_alive(world, ba, 0)) {
@@ -3209,6 +3220,10 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
         q.cancel(ra2engine::QueueCat::Infantry);
     if (q.producing(ra2engine::QueueCat::Vehicle) != -1 && world.factory_category_lost(veh_ft, 0))
         q.cancel(ra2engine::QueueCat::Vehicle);
+    if (q.producing(ra2engine::QueueCat::Naval) != -1 && world.factory_category_lost(nav_ft, 0))
+        q.cancel(ra2engine::QueueCat::Naval);
+    if (q.producing(ra2engine::QueueCat::Aircraft) != -1 && world.factory_category_lost(air_ft, 0))
+        q.cancel(ra2engine::QueueCat::Aircraft);
     q.reconcile_refund();   // a refund raised one queue above the pool tail
 }
 
@@ -4372,8 +4387,8 @@ public:
           transport_(load_transport_assets(dir_, ra2_, ua_.pal)),
           ore_art_(load_ore_art(ra2_)),
           // P10: a Soviet campaign player builds from the Soviet roster.
-          ur_(soviet_campaign(cfg) ? load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)
-                                   : load_unit_roster(dir_, ra2_, ua_, rules_, art_)),
+          // G-22 (gap owner A): skirmish = the full side/country/tech roster.
+          ur_(rp_load_roster(dir_, ra2_, ua_, rules_, art_, rules_ini_, cfg)),
           ur_ai_(load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)),
           // Hardcoded 2964-3132 scenario REPLACED by launch_skirmish [D4].
           // P10: a campaign mission starts from the bare map world; its
@@ -4505,6 +4520,7 @@ public:
         p5_art_ = load_p5_art(dir_, ra2_);
         g_p5_art = &p5_art_;
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
+        rp_setup();   // gap owner A: side-correct factories + sidebar (skirmish)
     }
     // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
     // the save's skirmish config, then overwrite the World and the scene
@@ -4565,12 +4581,10 @@ public:
                 const int ci = lay_.cameo_at(ev.x, ev.y);
                 if (ci >= 0 && ci < static_cast<int>(buildable_.size())) {
                     if (active_tab_ >= 2) {
-                        const ra2engine::QueueCat cat = (active_tab_ == 3)
-                            ? ra2engine::QueueCat::Vehicle
-                            : ra2engine::QueueCat::Infantry;
                         const int uslot = buildable_[ci];   // unit-roster index
-                        const std::vector<int>& ft =
-                            (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
+                        // Gap owner A (G-24): the unit's own factory queue.
+                        const ra2engine::QueueCat cat = rp_cat_of_unit(uslot);
+                        const std::vector<int>& ft = rp_ft_of(cat);
                         if (queues_.producing(cat) == uslot) {
                             queues_.set_credits(player_credits_);
                             queues_.cancel(cat);
@@ -4708,32 +4722,15 @@ public:
         (void)world_.take_crate_events();
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
-        prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_);
+        prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_, nav_ft_, air_ft_,
+                  rp_on_ ? &bld_ft_ : nullptr);
         player_credits_ = queues_.structure().credits;
         player_credits_ += world_.take_income(0);   // harvest income drain
 
-        // Exit handoff: any ready unit queue launches from its primary factory.
-        for (ra2engine::QueueCat cat :
-             {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
-            if (!queues_.ready(cat)) continue;
-            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? inf_ft_ : veh_ft_;
-            const int fi = ra2engine::primary_factory(world_.buildings(), ft, 0);
-            if (fi < 0) continue;
-            const int uslot = queues_.producing(cat);
-            if (uslot < 0 || uslot >= static_cast<int>(ur_.defs.size())) {
-                queues_.placed(cat);
-                continue;
-            }
-            const ra2engine::BuildingTypeDef& fdef = ba_.roster[world_.buildings()[fi].type];
-            const int uidx = world_.launch_unit(fi, fdef, ur_.defs[uslot].combat);
-            if (uidx >= 0) {
-                world_.set_anim(ur_.defs[uslot].combat.image,
-                               ua_.anims.count(ur_.defs[uslot].combat.image)
-                                   ? ua_.anims.at(ur_.defs[uslot].combat.image)
-                                   : ra2engine::default_anim());
-                queues_.placed(cat);
-            }
-        }
+        // Exit handoff (gap owner A: all four unit queues, miners) + the
+        // sidebar strip following the buildable set.
+        rp_launch_ready_units();
+        rp_refresh_sidebar();
         // FreeUnit grand-opening spawns (a just-built refinery drops its miner).
         if (ba_.ok) spawn_free_units_on_open(world_, ba_, rules_, miners_, bstates_);
         // Chrono Miner teleport sounds.
@@ -4846,12 +4843,10 @@ public:
         if (ba_.ok && ba_.sidebar_ok) {
             const ra2engine::QueueCat vis_cat =
                 (active_tab_ == 1) ? ra2engine::QueueCat::Defense
-                : (active_tab_ == 2) ? ra2engine::QueueCat::Infantry
-                : (active_tab_ == 3) ? ra2engine::QueueCat::Vehicle
+                : (active_tab_ >= 2) ? rp_vis_unit_cat()   // gap owner A: veh/naval/air
                                      : ra2engine::QueueCat::Structure;
             const bool unit_fac_alive =
-                (active_tab_ == 3) ? !world_.factory_category_lost(veh_ft_, 0)
-              : (active_tab_ == 2) ? !world_.factory_category_lost(inf_ft_, 0)
+                (active_tab_ >= 2) ? !world_.factory_category_lost(rp_ft_of(vis_cat), 0)
                                    : true;
             const ra2engine::Input::BaseMode bm = input_.base_mode();
             draw_sidebar(ren, tc, ba_, lay_, queues_.state(vis_cat), world_,
@@ -5076,6 +5071,7 @@ private:
 
     // Active sidebar tab (0=Structures,1=Defenses,2=Infantry,3=Vehicles).
     std::vector<int> tab_buildable(int tab) const {
+        if (rp_on_) return rp_tab_buildable(tab);   // gap owner A (G-26): rules-driven strip
         const char* pfx = soviet_campaign(cfg_) ? "NA" : "GA";   // P10 player side
         if (tab == 0) return building_buildable_tab(ba_, /*defenses=*/false, pfx);
         if (tab == 1) return building_buildable_tab(ba_, /*defenses=*/true, pfx);

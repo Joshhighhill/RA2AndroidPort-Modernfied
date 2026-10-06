@@ -16,6 +16,7 @@
 #include "pathfind.hpp"
 #include "ra2assets/pal.hpp"  // Palette/Rgba (pal_for_house)
 #include "capture.hpp"        // grants_startup_from_neutral, kNeutralHouse (Capture phase)
+#include "roster2.hpp"        // naval_exit_cell (gap owner A: real-play Naval Yard)
 
 namespace ra2engine {
 
@@ -934,6 +935,25 @@ void World::set_primary(int b_idx, const std::vector<int>& factory_types) {
 int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, const UnitCombat& c) {
     if (factory_idx < 0 || factory_idx >= static_cast<int>(buildings_.size())) return -1;
     const Building& f = buildings_[factory_idx];   // rally scalars are copied to locals below
+    // Gap owner A (G-24) [RE: roster2.md TL;DR 8]: a ship leaves its Naval Yard
+    // onto the first free WATER ring cell (roster2's naval_exit_cell); every
+    // other unit keeps the land walk below.
+    if (c.is_naval) {
+        if (water_passable_.empty()) return -1;
+        const Cellxy wx = naval_exit_cell(f, factory_def, water_passable_, grid_w_, grid_h_,
+                                          [this](int x, int y) {
+                                              return occ_.is_free(x, y) && building_at_cell(x, y) < 0;
+                                          });
+        if (wx.x < 0) return -1;                    // boxed in: HOLD
+        UnitCombat cv = c;
+        cv.veteran_rank = produced_veteran(f.house) ? 1 : 0;
+        const bool has_rally = f.has_rally;
+        const int rx = f.rally_x, ry = f.rally_y;
+        add_combat_unit(wx.x, wx.y, f.house, cv);
+        const int ui = static_cast<int>(units_.size()) - 1;
+        if (has_rally) order_unit_move(ui, rx, ry);
+        return ui;
+    }
     auto free_cell = [this](int x, int y) {
         // occ_.is_free sees BOTH committed cells AND a mid-hop unit's next-cell
         // reservation (step_units reserves occ.set(next, self) while cell_x
