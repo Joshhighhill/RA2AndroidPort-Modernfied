@@ -1366,6 +1366,10 @@ public:
     void set_skirmish_session(bool on) { skirmish_session_ = on; }
     std::vector<DeployEvent> take_deploy_events();
     void step_deploy(double dt);
+    // gF G-75: trigger action 101 ReshroudMapAtWaypoint (TAction FUN_006E0FE0
+    // -> MapClass reshroud of radius RevealTriggerRadius around the waypoint
+    // for the player; a no-op while the house has the whole map revealed).
+    void reshroud_area(int house, int cx, int cy, int radius);
 
 private:
     // --- P5 Veterancy + Crates [RE: veterancy.md] (all inert until enabled) ---

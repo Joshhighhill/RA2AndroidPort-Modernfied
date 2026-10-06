@@ -932,6 +932,18 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         if (!campaign_mode_) goto unhandled;
         effect(th);
         return;
+    // gF G-75 [RE: docs/re/mcv-deploy.md §8, Execute jump table 0x6DF35C]:
+    // 108 CreateCrate = PlaceCrate(waypoint cell, Value) (case @0x6DEC0B ->
+    // FUN_0056B9F0); 101 ReshroudMapAtWaypoint (@0x6DDE27 -> FUN_006E0FE0);
+    // 9 FireSale on house Value (@0x6DE046: house state +0x250 = 4).
+    case 108: case 101:
+        if (!campaign_mode_) goto unhandled;
+        effect(a.kind == 101 ? player : th);
+        return;
+    case 9:
+        if (!campaign_mode_) goto unhandled;
+        effect(find_house(t, a.value, host));
+        return;
     default:
     unhandled:
         if (presentation_action(a.kind)) {

@@ -214,4 +214,18 @@ bool World::try_undeploy(int b_idx) {
     return true;
 }
 
+void World::reshroud_area(int house, int cx, int cy, int radius) {
+    if (house < 0 || house >= house_count()) return;
+    if (house < static_cast<int>(map_reveal_.size()) && map_reveal_[house]) return;
+    if (explored_.size() <= static_cast<std::size_t>(house) || explored_[house].empty()) return;
+    for (int y = cy - radius; y <= cy + radius; ++y)
+        for (int x = cx - radius; x <= cx + radius; ++x) {
+            if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) continue;
+            if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > radius * radius) continue;
+            const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+            explored_[house][i] = 0;
+            if (!visible_[house].empty()) visible_[house][i] = 0;
+        }
+}
+
 }  // namespace ra2engine

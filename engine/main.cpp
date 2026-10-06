@@ -4065,7 +4065,10 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     std::vector<int> bcost;
     for (const ra2engine::BuildingTypeDef& t : ba.roster) bcost.push_back(t.cost);
     world.enable_veterancy(resolve_veterancy_rules(rules), std::move(bcost));
-    if (!cfg.crates) return;
+    // gF G-75: a campaign has no random crates but its triggers place typed
+    // ones (action 108), so the crate system runs without the initial drop.
+    const bool campaign = !cfg.campaign_map.empty();
+    if (!cfg.crates && !campaign) return;
     ra2engine::World::CrateConfig cc;
     cc.rules = resolve_crate_rules(rules);
     // ScenarioClass::Random is seeded per game in the original; the clone uses
@@ -4078,6 +4081,7 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     for (const std::vector<ra2engine::UnitTypeDef>* defs : rosters)
         for (const ra2engine::UnitTypeDef& d : *defs)
             if (d.is_vehicle && d.combat.crate_goodie) cc.unit_pool.push_back(d.combat);
+    if (campaign) cc.place_initial = false;
     world.enable_crates(cc);
 }
 

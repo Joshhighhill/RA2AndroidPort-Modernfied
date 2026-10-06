@@ -295,6 +295,9 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
         std::string map = scenario.substr(9), side = "GDI";
         const std::size_t colon = map.find(':');
         if (colon != std::string::npos) { side = map.substr(colon + 1); map = map.substr(0, colon); }
+        int campaign_frames = 450;   // campaign:MAP:SIDE[:FRAMES]
+        const std::size_t c2 = side.find(':');
+        if (c2 != std::string::npos) { campaign_frames = std::atoi(side.c_str() + c2 + 1); side = side.substr(0, c2); }
         std::unique_ptr<GameScene> g(new GameScene(true, campaign_config(map, side, 1)));
         ra2engine::World& w = g->gf_world();
         std::cout << "gf_play campaign " << map << " player units=" << count_units(w, 0, false)
@@ -310,8 +313,12 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
             c.check(cy >= 0, "campaign MCV deployed into a ConYard");
             c.shot(*g, "gf_campaign_deployed.png");
         }
-        step(*g, 450);
-        std::cout << "gf_play campaign f=450 outcome=" << g->gf_outcome() << "\n";
+        step(*g, campaign_frames);
+        for (const std::string& l : g->gf_campaign_witness())
+            if (l.find(" a108 ") != std::string::npos || l.find(" a101 ") != std::string::npos ||
+                l.find(" a9 ") != std::string::npos || l.find("[camp] f=") != std::string::npos)
+                std::cout << "gf_play trig" << l << "\n";
+        std::cout << "gf_play campaign f=" << campaign_frames << " outcome=" << g->gf_outcome() << "\n";
         c.shot(*g, "gf_campaign_f450.png");
     } else {
         std::cout << "gf_play unknown scenario " << scenario << "\n";

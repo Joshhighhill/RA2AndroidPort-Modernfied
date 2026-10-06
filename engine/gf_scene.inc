@@ -266,3 +266,7 @@ public:
             out.push_back(tab >= 2 ? ur_.defs[(std::size_t)i].id : ba_.roster[(std::size_t)i].id);
         return out;
     }
+    // Campaign trigger witness (the --demo-campaign log) for the driver.
+    std::vector<std::string> gf_campaign_witness() const {
+        return campaign_ ? campaign_->witness() : std::vector<std::string>{};
+    }
