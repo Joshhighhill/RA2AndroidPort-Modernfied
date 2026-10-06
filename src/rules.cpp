@@ -246,6 +246,18 @@ bool Rules::section_flag(const std::string& id, const std::string& key, bool fal
     return is_truthy(v);
 }
 
+std::string Rules::section_string(const std::string& section, const std::string& key,
+                                  const std::string& fallback) const {
+    std::string v = ini_->get(section, key, "");
+    const std::size_t sc = v.find(';');
+    if (sc != std::string::npos) v = v.substr(0, sc);
+    while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
+    std::size_t a = 0;
+    while (a < v.size() && std::isspace(static_cast<unsigned char>(v[a]))) ++a;
+    v = v.substr(a);
+    return v.empty() ? fallback : v;
+}
+
 int Rules::mp_money() const {
     return ini_->get_int("MultiplayerDialogSettings", "Money", 10000);
 }

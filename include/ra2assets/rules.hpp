@@ -144,6 +144,14 @@ public:
     // ClickRepairable -> TRUE [RE: repair-sell.md §A4/§B3/§B5].
     bool section_flag(const std::string& id, const std::string& key, bool fallback) const;
 
+    // Generic per-section STRING key: the value with any inline ';' comment
+    // removed and whitespace trimmed (the Ini keeps inline comments), or
+    // `fallback` if absent/empty. P5 Veterancy +
+    // Crates [RE: veterancy.md §0] reads VeteranAbilities/EliteAbilities lists,
+    // ElitePrimary and the [Powerups] "weight,anim,naval,arg" tuples with it.
+    std::string section_string(const std::string& section, const std::string& key,
+                               const std::string& fallback) const;
+
     // [MultiplayerDialogSettings] Money=, fallback 10000 if absent.
     int mp_money() const;
 

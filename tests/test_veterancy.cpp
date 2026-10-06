@@ -1,5 +1,9 @@
 #include "doctest.h"
 #include "veterancy.hpp"
+#include "crate.hpp"
+#include "asset_fixture.hpp"
+#include "ra2assets/ini.hpp"
+#include "ra2assets/rules.hpp"
 using namespace ra2engine;
 
 // Every pin below is recovered from YR-1.001 gamemd.exe / this install's
@@ -117,4 +121,42 @@ TEST_CASE("veterancy: the Veteran-crate level loop [C6]") {
     CHECK(promote_levels(-0.25f, 1) == 0.0f);
     CHECK(promote_levels(0.0f, 2) == 2.0f);
     CHECK(promote_levels(0.0f, 0) == 0.0f);
+}
+
+TEST_CASE("rules: section_string strips the inline comment and trims [P5]") {
+    const ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[E1]\nVeteranAbilities=STRONGER,FIREPOWER ; gs note\nElitePrimary=  M60E  \n");
+    const ra2assets::Rules r = ra2assets::Rules::load(ini);
+    CHECK(r.section_string("E1", "VeteranAbilities", "") == "STRONGER,FIREPOWER");
+    CHECK(r.section_string("E1", "ElitePrimary", "") == "M60E");
+    CHECK(r.section_string("E1", "EliteAbilities", "none") == "none");
+    CHECK(r.section_string("NOSUCH", "X", "fb") == "fb");
+}
+
+TEST_CASE("veterancy: the real rulesmd [General]/[CrateRules]/[Powerups] values [RE: §0]") {
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("skipped: rulesmd.ini not found"); return; }
+    const ra2assets::Rules& rules = ra2fixture::rulesmd();
+    CHECK(rules.general_double("VeteranRatio", -1) == doctest::Approx(3.0));
+    CHECK(rules.general_double("VeteranCombat", -1) == doctest::Approx(1.1));
+    CHECK(rules.general_double("VeteranSpeed", -1) == doctest::Approx(1.2));
+    CHECK(rules.general_double("VeteranSight", -1) == doctest::Approx(0.0));
+    CHECK(rules.general_double("VeteranArmor", -1) == doctest::Approx(1.5));
+    CHECK(rules.general_double("VeteranROF", -1) == doctest::Approx(0.6));
+    CHECK(rules.general_double("VeteranCap", -1) == doctest::Approx(2.0));
+    CHECK(rules.general_double("EliteFlashTimer", -1) == doctest::Approx(150.0));  // [AudioVisual]
+    CHECK(rules.section_double("CrateRules", "CrateRegen", -1) == doctest::Approx(3.0));
+    CHECK(rules.section_double("CrateRules", "CrateRadius", -1) == doctest::Approx(3.0));
+    CHECK(rules.section_double("CrateRules", "CrateMinimum", -1) == doctest::Approx(1.0));
+    const auto m = ra2engine::parse_powerup(rules.section_string("Powerups", "Money", ""));
+    CHECK(m.weight == 20);
+    CHECK(m.arg == doctest::Approx(2000.0));
+    const auto e1v = ra2engine::parse_abilities(rules.section_string("E1", "VeteranAbilities", ""));
+    const auto e1e = ra2engine::parse_abilities(rules.section_string("E1", "EliteAbilities", ""));
+    CHECK(ra2engine::ability_bit(e1v, ra2engine::Ability::Rof));
+    CHECK(ra2engine::ability_bit(e1e, ra2engine::Ability::SelfHeal));
+    CHECK(rules.section_string("E1", "ElitePrimary", "") == "M60E");
+    CHECK_FALSE(rules.section_flag("DOG", "Trainable", true));
+    CHECK(rules.section_flag("HARV", "SelfHealing", false));
+    CHECK_FALSE(rules.section_flag("MTNK", "CrateGoodie", false));
 }
