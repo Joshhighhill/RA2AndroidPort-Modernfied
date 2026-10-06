@@ -8,10 +8,15 @@ class Presentation {
 public:
     // side_ix: 0 Allied, 1 Soviet (Russian clips), 2 Yuri.
     void init(const std::string& dir, const ra2assets::MixFile& ra2, AudioSystem& audio, bool audio_on,
-              const Rules& rules,
-              const Ini& rules_ini, const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs,
-              int side_ix) {
+              const Rules& rules, const Ini& rules_ini, const Ini& art_ini,
+              const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs, int side_ix) {
         audio_ = &audio;
+        // G-83: the effects layer (muzzle / impact / death anims, projectile art).
+        fx_.init(dir, ra2, rules_ini, art_ini);
+        for (const auto* list : defs)
+            for (const ra2engine::UnitTypeDef& d : *list) fx_.add_unit(d.id, d.combat.image);
+        for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) fx_.add_unit(id, rules.image(id));
+        g_fx = &fx_;
         rules_ini_ = &rules_ini;
         snd_.open(dir, &audio, audio_on || g_pres_log_on);
         snd_.set_side(side_ix);
@@ -50,6 +55,7 @@ public:
     }
     ~Presentation() {
         if (g_shroud_shp == shroud_.get()) g_shroud_shp = nullptr;
+        if (g_fx == &fx_) g_fx = nullptr;
     }
 
     PresAudio& sound() { return snd_; }
@@ -58,8 +64,18 @@ public:
     void update(double dt, const ra2engine::World& w, const ra2engine::ProductionQueues& q,
                 const BuildingAssets& ba, double credits, const ra2engine::InputActions& act,
                 const ra2engine::Camera& cam, int view_w, int view_h,
-                const std::vector<ra2engine::World::VetEvent>& vet) {
+                const std::vector<ra2engine::World::VetEvent>& vet,
+                const std::vector<ra2engine::ProjectileEvent>& pev) {
         ++frame_;
+        fx_.step(dt);
+        for (const ra2engine::ProjectileEvent& e : pev)
+            if (e.kind == ra2engine::ProjectileEvent::Detonate) {
+                const double fx = e.x / 256.0, fy = e.y / 256.0;
+                if (!w.visible_at(0, ra2engine::lepton_to_cell(e.x), ra2engine::lepton_to_cell(e.y))) continue;
+                const ra2engine::Unit* a = (e.attacker >= 0 && e.attacker < static_cast<int>(w.units().size()))
+                                               ? &w.units()[e.attacker] : nullptr;
+                if (a) impact(*a, e.damage, fx, fy, level_at(w, fx, fy), e.z * 36.74 / 256.0);
+            }
         clock_ += dt;
         snd_.set_frame(frame_);
         cam_ = cam;
@@ -85,6 +101,75 @@ public:
     long frame() const { return frame_; }
 
 private:
+    // ---- G-83 effects -------------------------------------------------------
+    static int level_at(const ra2engine::World&, double, double) { return 0; }
+    // Warhead AnimList impact + the anim's Report=.
+    // [RE-FALLBACK: RE-P5 open -- AnimList pick] index = damage / 25, clamped
+    // to the list (bigger hits -> later, larger anims).
+    void impact(const ra2engine::Unit& shooter, int damage, double fx, double fy, int level,
+                double lift_px) {
+        const FxWeapon* wp = fx_.weapon(shooter.image);
+        if (!wp || wp->anim_list.empty()) return;
+        const int n = static_cast<int>(wp->anim_list.size());
+        const int ix = std::clamp(damage / 25, 0, n - 1);
+        if (const FxAnimType* t = fx_.spawn(wp->anim_list[ix], fx, fy, level, lift_px))
+            snd_.play(t->report, dist_of(fx, fy), "impact");
+        pres_log(frame_, "fx impact " + wp->anim_list[ix]);
+    }
+    // Muzzle Anim= at the firing point; an instant (no flying projectile)
+    // weapon also lands its impact on the target now.
+    void fire_fx(const ra2engine::World& w, const ra2engine::Unit& u) {
+        const FxWeapon* wp = fx_.weapon(u.image);
+        if (!wp) return;
+        if (!wp->muzzle.empty()) {
+            std::string name = wp->muzzle.front();
+            double ox = 0, lift = 0;
+            if (u.is_vehicle) {
+                // FLH muzzle point, the projection draw_vehicle_unit uses
+                // (voxel-render.md §6).
+                const double yaw = ra2engine::index_to_yaw(
+                    ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings),
+                    ra2engine::kVehicleFacings);
+                const double fc = u.w_proj.flh[0] / 256.0, lc = u.w_proj.flh[1] / 256.0;
+                const double mx = fc * std::cos(yaw) - lc * std::sin(yaw);
+                const double my = fc * std::sin(yaw) + lc * std::cos(yaw);
+                ox = (mx + my) * 30.0;
+                lift = -((mx - my) * 15.0) + (u.w_proj.flh[2] / 256.0) * 36.74;
+            } else {
+                // Infantry: the 8 facing-ordered anims N,NE,E,SE,S,SW,W,NW;
+                // Unit::facing is 0=N counter-clockwise (infantry-anim.md §4).
+                if (wp->muzzle.size() >= 8) name = wp->muzzle[(8 - (u.facing & 7)) % 8];
+                lift = 15.0;   // [RE-FALLBACK: infantry PrimaryFireFLH not applied]
+            }
+            fx_.spawn(name, u.fx, u.fy, u.level, lift, ox);
+        }
+        if (!u.w_proj.flies()) {
+            const auto& us = w.units();
+            if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
+                const ra2engine::Unit& t = us[u.target];
+                impact(u, u.w_damage, t.fx, t.fy, t.level, t.is_vehicle ? 10.0 : 6.0);
+            } else if (u.target_building >= 0 &&
+                       u.target_building < static_cast<int>(w.buildings().size())) {
+                const ra2engine::Building& b = w.buildings()[u.target_building];
+                impact(u, u.w_damage, b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0, 0, 20.0);
+            }
+        }
+    }
+    // Building death: the type's Explosion= anims scattered over the
+    // foundation [RE-FALLBACK: RE-P5 open -- count/placement; one per
+    // foundation cell, cycling the list], each with its Report=.
+    void building_explode(const ra2engine::World&, const ra2engine::Building& b, const std::string& id) {
+        const auto* ex = fx_.explosions(id);
+        if (!ex || ex->empty()) return;
+        int k = 0;
+        for (int j = 0; j < b.fh; ++j)
+            for (int i = 0; i < b.fw; ++i, ++k) {
+                const std::string& name = (*ex)[k % ex->size()];
+                if (const FxAnimType* t = fx_.spawn(name, b.cx + i, b.cy + j, 0, 10.0 + 6.0 * (k % 3)))
+                    if (k == 0) snd_.play(t->report, dist_of(b.cx + i, b.cy + j), "building explosion");
+            }
+    }
+
     void add_voices(const Rules& rules, const std::string& id, const std::string& image) {
         if (image.empty() || audio_->voices.count(image)) return;
         UnitVoices v;
@@ -177,7 +262,12 @@ private:
                 const double half = 0.5 * b.max_hp;
                 if (p.hp > half && b.hp <= half) snd_.play(building_damage_, dist_of(cx, cy), "half strength");
             }
-            if (dead && !p.dead && !b.sold) snd_.play(building_die_, dist_of(cx, cy), "building die");
+            if (dead && !p.dead && !b.sold) {
+                snd_.play(building_die_, dist_of(cx, cy), "building die");
+                if (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()) &&
+                    pres_building_seen(w, b))
+                    building_explode(w, b, ba.roster[b.type].id);
+            }
             if (b.selling && !p.selling && b.house == 0) {
                 snd_.play(sell_sound_, dist_of(cx, cy), "sell");
                 snd_.eva("EVA_StructureSold");
@@ -209,9 +299,19 @@ private:
             const auto& u = units[i];
             const double dist = dist_of(u.fx, u.fy);
             const UnitVoices& v = audio_->voices[u.image];
-            if (u.fire_flash > prev_[i].first && u.cargo_of < 0) snd_.play(v.report, dist, "report");
+            if (u.fire_flash > prev_[i].first && u.cargo_of < 0) {
+                snd_.play(v.report, dist, "report");
+                if (u.house == 0 || w.visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
+            }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
                 snd_.play(v.die, dist, "die");
+                // Vehicle death: the Explosion= anim (drawn by draw_vehicle_unit)
+                // carries its own Report= sound.
+                if (u.is_vehicle && w.visible_at(0, u.cell_x, u.cell_y)) {
+                    const auto* ex = fx_.explosions(u.image);
+                    if (ex && !ex->empty())
+                        if (const FxAnimType* t = fx_.type(ex->front())) snd_.play(t->report, dist, "explosion");
+                }
                 if (u.house == 0) snd_.eva("EVA_UnitLost");
             }
             prev_[i] = {u.fire_flash, u.die_time};
@@ -249,6 +349,7 @@ private:
     static constexpr double kBaseAttackGap = 30.0;
 
     PresAudio snd_;
+    PresFx fx_;
     std::unique_ptr<ShpFile> shroud_;
     AudioSystem* audio_ = nullptr;
     const Ini* rules_ini_ = nullptr;

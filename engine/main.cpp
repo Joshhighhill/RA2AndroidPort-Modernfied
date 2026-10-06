@@ -2371,6 +2371,11 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
     }
 }
 
+// G-80..G-90 presentation layer (additive .inc files).
+#include "pres_audio.inc"    // G-80..G-82 (helpers also used by the FX layer)
+#include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
+#include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
+
 // Draws one building in render_world's merged back-to-front pass. Anchors the
 // SHP canvas CENTER at the foundation's screen bbox center [RE-GATE APPLIED:
 // building-render.md §2 center-center registration, replacing the pre-hunt
@@ -2405,7 +2410,8 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (b.state == ra2engine::Building::State::Dead) {
         // A SOLD building is Limbo()'d and deleted in the original -- it does
         // not explode [RE: repair-sell.md §B2 state 2].
-        if (ba.explosion && ba.explosion->count() > 0 && !b.sold) {
+        // G-83: in the live game the FX layer plays the type's Explosion= anims.
+        if (ba.explosion && ba.explosion->count() > 0 && !b.sold && !g_fx) {
             int frame = static_cast<int>(b.die_time * 15.0);
             frame = std::clamp(frame, 0, ba.explosion->count() - 1);
             const ra2assets::ShpFile::Frame f = ba.explosion->frame_info(frame);
@@ -2562,7 +2568,7 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
-    if (u.fire_flash > 0.0) {
+    if (u.fire_flash > 0.0 && !g_fx) {   // G-83: the FX layer draws the weapon's Anim= instead
         const double yaw = ra2engine::index_to_yaw(
             ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings),
             ra2engine::kVehicleFacings);
@@ -2799,8 +2805,12 @@ const VehicleAssets* va_for_image(const std::vector<const VehicleAssets*>* vlist
 // at 15 px, and height at 0.866*60/sqrt2 = 36.74 px per 256 leptons
 // (voxel-render.md §6). The projectile Image= SHPs (120MM/ZBOMB) are a recorded
 // cosmetic carry-forward.
+bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
+                          const ra2engine::World& world, const ra2engine::Projectile& p, int gx,
+                          int sy, int W, int H);   // G-83 (pres_fx.inc)
 void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
-                      const ra2assets::MapFile& map, const ra2engine::Camera& cam, int W, int H) {
+                      const ra2assets::MapFile& map, const ra2engine::Camera& cam, int W, int H,
+                      ra2engine::TextureCache* tc = nullptr) {
     for (const ra2engine::Projectile& p : world.projectiles()) {
         const double x = p.x / 256.0, y = p.y / 256.0;
         const ra2assets::MapCell* mc =
@@ -2813,6 +2823,8 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const int gy = static_cast<int>(std::lround((x + y) * 15.0 - level * 15)) + cam.y + 15;
         const int sy = gy - static_cast<int>(std::lround((p.z / 256.0) * 36.74));
         if (gx < -8 || gx > W + 8 || sy > H + 8 || gy < -8) continue;
+        // G-83: the projectile's Image= art when the live game's FX layer has it.
+        if (tc && pres_draw_projectile(ren, *tc, world, p, gx, sy, W, H)) continue;
         SDL_Rect shadow{gx - 2, gy - 1, 4, 2};
         SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
         SDL_RenderFillRect(ren, &shadow);
@@ -2830,7 +2842,6 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
     }
 }
 
-#include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 
 bool pres_target_lines();   // G-88: RA2.INI UnitActionLines (defined after g_user_settings)
 
@@ -2936,7 +2947,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // Projectile phase (P2): shells/bombs in flight, over the objects. EMPTY
     // unless enable_projectiles was called (the game + --demo-projectile), so
     // no existing demo screenshot changes.
-    draw_projectiles(ren, world, a.map, cam, W, H);
+    draw_projectiles(ren, world, a.map, cam, W, H, &tc);
+    if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
     // G-84: fog + shroud over every object, under the HUD bars.
     draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
@@ -4421,7 +4433,6 @@ private:
 
 // G-80..G-91 presentation layer (EVA / voices / music / effects / shroud /
 // cursors). Additive files; GameScene owns one Presentation.
-#include "pres_audio.inc"
 #include "pres_game.inc"
 
 class GameScene : public Scene {
@@ -4892,7 +4903,7 @@ public:
         // observation pass over this frame's state (pres_game.inc). Logs even
         // when there is no audio device; pumps the sink when there is one.
         pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
-                     vet_events);
+                     vet_events, world_.take_projectile_events());
     }
     void init_presentation() {
         // G-90: every resolved infantry anim table, in skirmish as in campaign
@@ -4900,7 +4911,7 @@ public:
         // default_anim and pick frames from the wrong SHP layout).
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
         const ra2engine::World::Side s = world_.house_side(0);
-        pres_.init(dir_, ra2_, audio_, audio_.enabled, rules_, rules_ini_, {&ur_.defs, &ur_ai_.defs},
+        pres_.init(dir_, ra2_, audio_, audio_.enabled, rules_, rules_ini_, art_ini_, {&ur_.defs, &ur_ai_.defs},
                    s == ra2engine::World::Side::Soviet ? 1 : s == ra2engine::World::Side::Yuri ? 2 : 0);
     }
 
