@@ -257,8 +257,11 @@ Objects/cells raise their own kinds (call sites in Techno/Foot/Building code:
 `RegisterEvent(kind, object, forceFire, persistent, source)`: returns false if
 the trigger is **disabled or destroyed**. Unless `forceFire`, for each event
 (bit `b` = position in the reversed list) whose bit is not already latched:
-`HasOccurred(kind, triggerHouse, object, &timer, &flag, source)`; any false ⇒ the
-trigger does not fire. An occurred (or already latched) event may set the
+`HasOccurred(kind, triggerHouse, object, &timer, &persistent, source)`; any false ⇒
+the trigger does not fire. HasOccurred receives the `persistent` flag **by
+reference** and *sets* it for kinds 1/24/25/26/59 (on entry), 19–22 (build
+events) and 32/57 (BuildingExists/DoesNotExist) — so a build event latches and a
+BuildingExists success re-arms timers even on a non-repeating tag. An occurred (or already latched) event may set the
 trigger's house override (`+0x2C`) from the event, and is **latched** (bit set)
 only when `persistent && StateA(ev) && StateB(ev)`, where StateA = "event kind is
 an object/raised kind" (`FUN_0071ebf0`: 1 2 3 4 6 7 18–26 29 31 33–35 38–44 48–50
@@ -444,6 +447,12 @@ list (`… House` sections, `Country=`).
 
 ---
 
+**BuildingType index space** (event 19/32/57 values) is the rules
+`[BuildingTypes]` list (map additions appended): on sov07tmd the trigger
+`Soviets Build Nuke (On-nuke silo)` waits on `19 BuildBuildingType 54` and its
+chained sibling `(On-Iron Curtain)` on `19 … 24` — rulesmd `[BuildingTypes]`
+index 54 = `NAMISL` (nuclear silo) and 24 = `NAIRON` (Iron Curtain). CONFIRMED.
+
 ## §7 Deviations / fall-backs we take
 
 1. **RNG** — RandomDelay draws from the original lockstep RNG; we draw the same
@@ -466,6 +475,9 @@ list (`… House` sections, `Country=`).
    [RE-FALLBACK: TeamClass execution for map teams]
 5. **InstanceCount** for SemiPersistant tags is only meaningful with attached
    objects (item 3).
+6. The game-over flag (`DAT_00a8dcd3`) that short-circuits RaiseEvent and the
+   object kinds is not modelled (the demo keeps simulating after an outcome).
+   [RE-FALLBACK: game-over gating]
 
 ## §8 Confidence summary
 

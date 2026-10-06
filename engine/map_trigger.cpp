@@ -356,10 +356,16 @@ struct Parser {
 
     void run(const std::vector<std::string>& rules_countries,
              const std::vector<std::string>& rules_buildings) {
-        d.house_types = rules_countries;
+        // Type lists are FindOrAllocate'd by name: a repeated entry does not
+        // take a new index (rulesmd [BuildingTypes] lists NAPSYA twice; the
+        // sov07tmd value 300 = YACNST only holds with the duplicate folded)
+        // [RE §6].
+        for (const std::string& c : rules_countries)
+            if (find_ci(d.house_types, c) < 0) d.house_types.push_back(c);
         for (const std::string& c : ini_list_values(ini, "Countries"))
             if (find_ci(d.house_types, c) < 0) d.house_types.push_back(c);
-        d.building_types = rules_buildings;
+        for (const std::string& b : rules_buildings)
+            if (find_ci(d.building_types, b) < 0) d.building_types.push_back(b);
         for (const std::string& b : ini_list_values(ini, "BuildingTypes"))
             if (find_ci(d.building_types, b) < 0) d.building_types.push_back(b);
 
@@ -802,9 +808,11 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         e.text = a.text;
         e.trigger_id = cur_trigger_;
         const bool ok = host.apply(e);
-        logf("  a%d %s team=%s wp=%d v=%d %s -> %s", a.kind, action_label(a.kind),
+        const std::string note = host.take_note();
+        logf("  a%d %s team=%s wp=%d v=%d %s -> %s%s%s", a.kind, action_label(a.kind),
              e.team.empty() ? "-" : e.team.c_str(), e.waypoint, e.value,
-             e.text.empty() ? "-" : e.text.c_str(), ok ? "ok" : "skipped");
+             e.text.empty() ? "-" : e.text.c_str(), ok ? "ok" : "skipped",
+             note.empty() ? "" : " ", note.c_str());
     };
     switch (a.kind) {
     case 0:

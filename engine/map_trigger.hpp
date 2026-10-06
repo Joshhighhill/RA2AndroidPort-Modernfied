@@ -183,6 +183,8 @@ public:
     virtual int techno_count(const std::string& id) const = 0;
     // Execute a host-level action. Returns the action's success (logged).
     virtual bool apply(const TriggerEffect& e) = 0;
+    // Optional detail about the last apply(), appended to its log line.
+    virtual std::string take_note() { return std::string(); }
 };
 
 // Context of an object/cell raise (RE §3.2 object kinds).

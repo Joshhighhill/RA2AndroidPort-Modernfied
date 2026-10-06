@@ -184,6 +184,11 @@ TEST_CASE("map_trigger: real sov07tmd.map parses [install-gated]") {
     CHECK(defined == (int)map.section("Triggers").size());
     CHECK(d.cell_tags.size() == map.section("CellTags").size());
     CHECK(d.local_names[5] == "Soviets Freed");
+    // BuildingType index space: rules list FindOrAllocate'd (NAPSYA is listed
+    // twice) -- the map's event values 24/54/300 name NAIRON/NAMISL/YACNST.
+    CHECK(d.building_types[24] == "NAIRON");
+    CHECK(d.building_types[54] == "NAMISL");
+    CHECK(d.building_types[300] == "YACNST");
 }
 
 // ===========================================================================
