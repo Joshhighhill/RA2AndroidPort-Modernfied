@@ -594,6 +594,14 @@ void World::set_water_terrain(const std::vector<ra2assets::LandType>& land_types
     water_passable_ = build_water_passability(land_types, passable_, grid_w_, grid_h_);
 }
 
+void World::block_water_footprint(int cx, int cy, int fw, int fh) {
+    if (water_passable_.empty()) return;
+    for (const Cellxy& c : foundation_cells(cx, cy, fw, fh)) {
+        if (c.x < 0 || c.y < 0 || c.x >= grid_w_ || c.y >= grid_h_) continue;
+        water_passable_[static_cast<std::size_t>(c.y) * grid_w_ + c.x] = 0;
+    }
+}
+
 // --- Economy phase [RE: economy.md] ---
 
 void World::set_economy(std::vector<BuildingTypeDef> types, std::vector<int> refinery_types,
