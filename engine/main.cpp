@@ -887,6 +887,18 @@ std::string ability_ini_str(const Ini& ini, const std::string& sec, const std::s
     return v.substr(b);
 }
 
+// Boolean INI key off the comment-stripped value ("Teleporter=yes;" carries a
+// trailing ';' on this install): y/t/1 -> true, n/f/0 -> false, absent -> def.
+bool ability_flag(const Ini& ini, const std::string& sec, const std::string& key, bool def) {
+    const std::string v = ability_ini_str(ini, sec, key);
+    if (v.empty()) return def;
+    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(v[0])));
+    if (c == 'y' || c == 't' || c == '1') return true;
+    if (c == 'n' || c == 'f' || c == '0') return false;
+    return def;
+}
+
+
 // One weapon id -> WeaponSpec. The ability KIND is data-driven from the flags
 // the hunt located: weapon Suicide (+0x144, checked FIRST -- the Fire early-out
 // precedes any bullet), warhead Parasite (+0x159), Temporal (+0x15A), IvanBomb
@@ -903,10 +915,10 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
     s.rad_level = static_cast<int>(rules.section_double(w, "RadLevel", 0.0));
-    if (rules.section_flag(w, "Suicide", false)) s.kind = ra2engine::AbilityKind::Suicide;
-    else if (rules.section_flag(wh, "Parasite", false)) s.kind = ra2engine::AbilityKind::Parasite;
-    else if (rules.section_flag(wh, "Temporal", false)) s.kind = ra2engine::AbilityKind::Temporal;
-    else if (rules.section_flag(wh, "IvanBomb", false)) s.kind = ra2engine::AbilityKind::IvanBomb;
+    if (ability_flag(ini, w, "Suicide", false)) s.kind = ra2engine::AbilityKind::Suicide;
+    else if (ability_flag(ini, wh, "Parasite", false)) s.kind = ra2engine::AbilityKind::Parasite;
+    else if (ability_flag(ini, wh, "Temporal", false)) s.kind = ra2engine::AbilityKind::Temporal;
+    else if (ability_flag(ini, wh, "IvanBomb", false)) s.kind = ra2engine::AbilityKind::IvanBomb;
     return s;
 }
 
@@ -917,24 +929,24 @@ ra2engine::AbilityProfile resolve_ability_profile(const Rules& rules, const Ini&
     const ra2engine::WeaponSpec sec =
         resolve_weapon_spec(rules, ini, ability_ini_str(ini, id, "Secondary"));
     p.fire_kind = prim.kind;
-    p.c4 = rules.section_flag(id, "C4", false);                              // §D
+    p.c4 = ability_flag(ini, id, "C4", false);                              // §D
     p.c4_range = sec.valid ? sec.range : 1.5;
-    p.teleporter = rules.section_flag(id, "Teleporter", false);              // §C1 +0xCD4
-    p.explodes = rules.section_flag(id, "Explodes", false);                  // §F +0xD15
+    p.teleporter = ability_flag(ini, id, "Teleporter", false);              // §C1 +0xCD4
+    p.explodes = ability_flag(ini, id, "Explodes", false);                  // §F +0xD15
     const std::string dw = ability_ini_str(ini, id, "DeathWeapon");          // §F +0xD18
     p.death = dw.empty() ? prim : resolve_weapon_spec(rules, ini, dw);
-    p.deployer = rules.section_flag(id, "Deployer", false) &&
-                 rules.section_flag(id, "DeployFire", false);                // §A +0x6AC
+    p.deployer = ability_flag(ini, id, "Deployer", false) &&
+                 ability_flag(ini, id, "DeployFire", false);                // §A +0x6AC
     if (p.deployer) p.deploy = sec;
-    p.immune_radiation = rules.section_flag(id, "ImmuneToRadiation", false); // +0xD37
-    p.parasiteable = rules.section_flag(id, "Parasiteable", true);           // +0xD38
-    p.warpable = rules.section_flag(id, "Warpable", true);                   // +0xD3A
-    p.no_passive_acquire = !rules.section_flag(id, "CanPassiveAquire", true);
-    p.no_retaliate = !rules.section_flag(id, "CanRetaliate", true);
+    p.immune_radiation = ability_flag(ini, id, "ImmuneToRadiation", false); // +0xD37
+    p.parasiteable = ability_flag(ini, id, "Parasiteable", true);           // +0xD38
+    p.warpable = ability_flag(ini, id, "Warpable", true);                   // +0xD3A
+    p.no_passive_acquire = !ability_flag(ini, id, "CanPassiveAquire", true);
+    p.no_retaliate = !ability_flag(ini, id, "CanRetaliate", true);
     p.suppression_threshold =
         static_cast<int>(rules.section_double(id, "SuppressionThreshold", 0.0));  // +0xD6C
     p.ifv_mode = static_cast<int>(rules.section_double(id, "IFVMode", 0.0));       // +0x688
-    p.gunner = rules.section_flag(id, "Gunner", false);                            // +0x805
+    p.gunner = ability_flag(ini, id, "Gunner", false);                            // +0x805
     if (p.gunner) {
         const int n = static_cast<int>(rules.section_double(id, "WeaponCount", 0.0));
         for (int k = 1; k <= n; ++k)
@@ -956,7 +968,7 @@ ra2engine::AbilityRules resolve_ability_rules(const Rules& rules, const Ini& ini
     const std::string rwh = ability_ini_str(ini, "Radiation", "RadSiteWarhead");
     if (!rwh.empty()) r.rad_verses = rules.verses(rwh);
     r.chrono_distance_factor = (int)rules.general_double("ChronoDistanceFactor", 48.0);
-    r.chrono_trigger = rules.section_flag("General", "ChronoTrigger", true);
+    r.chrono_trigger = ability_flag(ini, "General", "ChronoTrigger", true);
     r.chrono_minimum_delay = (int)rules.general_double("ChronoMinimumDelay", 16.0);
     r.chrono_range_minimum = (int)rules.general_double("ChronoRangeMinimum", 0.0);
     r.c4_delay_minutes = rules.section_double("CombatDamage", "C4Delay", 0.03);
@@ -13264,8 +13276,7 @@ DemoAbilitiesResult simulate_abilities(Assets& a, UnitAssets& ua, BuildingAssets
         bool phase16 = true;
         double center0 = -1.0, center_after_add = -1.0;
         if (ok) {
-            w.step(kDt);
-            w.order_deploy(ds);
+            w.order_deploy(ds);   // deploy at once: the armed RadBeam must not fire first
             for (int k = 0; k < 240; ++k) {
                 const uint64_t f = w.ability_frame();
                 w.step(kDt);
