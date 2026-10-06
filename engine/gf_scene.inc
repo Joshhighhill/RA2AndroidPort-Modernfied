@@ -217,7 +217,10 @@ public:
     // --- gF real-play driver seams (run_gf_play; read-only or input-shaped) ---
     ra2engine::World& gf_world() { return world_; }
     Scene* gf_peek_next() const { return next_scene_; }
-    int gf_outcome() const { return gf_outcome_; }
+    int gf_outcome() const {
+        if (campaign_) return campaign_->outcome() == 0 ? 0 : (campaign_->outcome() == 1 ? 1 : -1);
+        return gf_outcome_;
+    }
     double gf_credits() const { return player_credits_; }
     // Click the sidebar cameo of building `id` (structures tab) with a real
     // PointerDown/Up through handle(). false = not on the strip.

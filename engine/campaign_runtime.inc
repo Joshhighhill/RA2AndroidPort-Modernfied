@@ -592,6 +592,24 @@ private:
                 }
         return false;
     }
+    bool free_water_near(int x, int y, int& ox, int& oy, int maxr) const {
+        const std::vector<std::uint8_t>& wg = w_.grid_for(ra2engine::MovementDomain::Water);
+        if (wg.empty()) return false;
+        for (int r = 0; r <= maxr; ++r)
+            for (int dy = -r; dy <= r; ++dy)
+                for (int dx = -r; dx <= r; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                    const int cx = x + dx, cy = y + dy;
+                    if (cx < 0 || cy < 0 || cx >= w_.grid_w() || cy >= w_.grid_h()) continue;
+                    if (!wg[(std::size_t)cy * w_.grid_w() + cx]) continue;
+                    if (w_.unit_at_cell(cx, cy) >= 0 || w_.building_at_cell(cx, cy) >= 0) continue;
+                    if (!w_.occupancy().is_free(cx, cy)) continue;
+                    ox = cx;
+                    oy = cy;
+                    return true;
+                }
+        return false;
+    }
     bool waypoint_cell(int wp, int& x, int& y) const {
         for (const ra2assets::MapWaypoint& m : w_.map().waypoints())
             if (m.index == wp) { x = m.x; y = m.y; return true; }
@@ -632,7 +650,15 @@ private:
         const camp::UnitType* ut = types_.unit(type);
         if (!ut) return -1;
         int cx = 0, cy = 0;
-        if (!free_cell_near(x, y, cx, cy)) return -1;
+        // gF G-73: a ship is placed on the nearest free WATER cell (naval.md
+        // §1 water grid); a ground unit whose waypoint lies at sea goes to the
+        // nearest free shore cell within 12 [RE-FALLBACK §9.3: the original
+        // delivers by transport / edge entry; no TeamClass delivery yet].
+        if (ut->combat.is_naval) {
+            if (!free_water_near(x, y, cx, cy, 12)) return -1;
+        } else if (!free_cell_near(x, y, cx, cy) && !free_cell_near(x, y, cx, cy, 12)) {
+            return -1;
+        }
         w_.add_combat_unit(cx, cy, eh, ut->combat);
         const int idx = (int)w_.units().size() - 1;
         ra2engine::Unit& u = w_.units()[(std::size_t)idx];

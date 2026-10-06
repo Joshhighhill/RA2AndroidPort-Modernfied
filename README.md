@@ -2809,9 +2809,10 @@ Expected output: `machine=0xb7 AArch64`.
 `android/` is a self-contained SDL2 Android project that packages the whole
 engine (all of `engine/*.cpp` + the `ra2assets` library from `src/`) into an
 installable **arm64-v8a** APK. `SDLActivity` loads `libSDL2.so` + `libmain.so`
-and calls `SDL_main` (our `engine/main.cpp`), which on Android launches
-straight into the interactive scene — tap to select the unit, tap to move
-(A\* + walk animation), drag to pan. No menus.
+and calls `SDL_main` (our `engine/main.cpp`), which on Android opens the same
+main menu as the desktop build (`run_menu`: Single Player -> New Campaign /
+Skirmish / Load). Touch input is described in the controls section (gap
+owner B); this section only covers building and packaging.
 
 The native `.so` list and the source lists come from the same
 `cmake/ra2_sources.cmake` the desktop build uses, so the two cannot drift.
@@ -2842,8 +2843,11 @@ ndk.dir=D:/android-ndk-r27c
 ### Build the APK
 
 ```powershell
-$env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
+$env:JAVA_HOME = "C:\Program Files\Java\jdk-21.0.12"   # the installed JDK 21 dir (was jdk-21)
 $env:ANDROID_HOME = "D:\android-sdk"
+# A git worktree has no desktop build/_deps; point the jni build at any
+# SDL 2.30.9 source tree instead:
+# $env:RA2_SDL2_SRC_DIR = "D:\ra2-android\build\_deps\sdl2-src"
 Set-Location D:\ra2-android\android
 .\gradlew.bat assembleDebug
 ```
@@ -2880,10 +2884,25 @@ run time from the app's own external files dir.
    ```
 2. **Place your own game files** where the app reads them. The engine reads the
    mix chain from `SDL_AndroidGetExternalStoragePath()/ra2/`, i.e.
-   `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2/`. Push at least
-   `mapsmd03.mix`, `ra2.mix`, and `ra2md.mix` (the loader opens the
-   theater/config/palette/unit mixes nested inside `ra2.mix`/`ra2md.mix`, so
-   push the full set you own).
+   `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2/`. The menu,
+   skirmish and campaign open these files from that folder (gap G-72 — the old
+   three-file list made Skirmish/Campaign die with `fatal: cannot open file`):
+
+   | File | Needed by |
+   |---|---|
+   | `ra2.mix` | everything (rules/art/theaters/units/shell art, nested mixes) |
+   | `ra2md.mix` | rulesmd/artmd/soundmd/evamd, YR voxels |
+   | `language.mix` | audio.mix (voices, EVA), cameo.mix, CSF |
+   | `langmd.mix` | YR map names (skirmish map list) |
+   | `multimd.mix` | the skirmish maps |
+   | `mapsmd03.mix` | the engine's historical default map (no map picked) |
+   | `theme.mix` | the menu music |
+   | `expand01.mix` | the campaign `rules.ini` patch |
+   | `Maps01.mix`, `MAPS02.MIX` | Allied / Soviet campaign maps |
+   | `ra2.csf` | the patched string table (falls back to language.mix's copy) |
+
+   Android's file system is **case-sensitive**: keep the names exactly as
+   above (`Maps01.mix` but `MAPS02.MIX`, as the retail install ships them).
 
    **The files must be readable by the app** — this is the #1 cause of "it
    opens then instantly closes". `Android/data/<pkg>/` is scoped storage, so:
@@ -2899,16 +2918,16 @@ run time from the app's own external files dir.
    ```powershell
    # non-root push (correct label); create the dir first if needed
    adb shell mkdir -p /sdcard/Android/data/org.ra2.engine/files/ra2
-   adb push "D:\Red Alert 2\mapsmd03.mix" /sdcard/Android/data/org.ra2.engine/files/ra2/
-   adb push "D:\Red Alert 2\ra2.mix"      /sdcard/Android/data/org.ra2.engine/files/ra2/
-   adb push "D:\Red Alert 2\ra2md.mix"    /sdcard/Android/data/org.ra2.engine/files/ra2/
+   foreach ($f in "ra2.mix","ra2md.mix","language.mix","langmd.mix","multimd.mix",
+                  "mapsmd03.mix","theme.mix","expand01.mix","Maps01.mix","MAPS02.MIX","ra2.csf") {
+     adb push "D:\Red Alert 2\$f" /sdcard/Android/data/org.ra2.engine/files/ra2/
+   }
    ```
 3. **Launch** the app (`RA2 Engine`) from the launcher, or:
    ```powershell
    adb shell am start -n org.ra2.engine/.RA2Activity
    ```
-   It opens into the real temperate map; tap-select and tap-move work with
-   touch. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
+   It opens the main menu. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
 
    **Diagnosing failures:** the engine logs to Android logcat under the
    `SDL/APP` tag. On startup it prints `[assets] android asset dir = <path>`,

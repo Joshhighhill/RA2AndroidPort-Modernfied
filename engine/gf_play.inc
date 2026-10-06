@@ -322,7 +322,20 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
             c.check(cy >= 0, "campaign MCV deployed into a ConYard");
             c.shot(*g, "gf_campaign_deployed.png");
         }
-        step(*g, campaign_frames);
+        // Play on; deploy any MCV the mission hands over (reinforcement).
+        bool deployed_late = count_units(w, 0, true) == 0 && count_buildings(w, 0) > 0;
+        for (int f = 0; f < campaign_frames; f += 150) {
+            step(*g, 150);
+            if (g->gf_outcome() != 0) break;
+            if (!deployed_late && count_units(w, 0, true) > 0) {
+                std::cout << "gf_play campaign MCV arrived by f=" << f + 150 << "\n";
+                const int cy = deploy_player_mcv(c, *g, 900);
+                c.check(cy >= 0, "reinforcement MCV deployed into a ConYard");
+                deployed_late = true;
+            }
+        }
+        std::cout << "gf_play campaign end player units=" << count_units(w, 0, false)
+                  << " buildings=" << count_buildings(w, 0) << "\n";
         for (const std::string& l : g->gf_campaign_witness())
             if (l.find(" a108 ") != std::string::npos || l.find(" a101 ") != std::string::npos ||
                 l.find(" a9 ") != std::string::npos || l.find("[camp] f=") != std::string::npos)
