@@ -2361,6 +2361,9 @@ void World::step_ai_houses(double dt) {
                 break;
             }
         }
+        // 6c) [G-66] superweapon autofire on the house AI tick (FUN_004fd320 ->
+        //     FUN_00509710, IQ-gated; always on for skirmish AI).
+        ai_try_fire_superweapon(h, rec);
         if (!conyard) continue;  // no factory: nothing can start
 
         // 7) Decide.
@@ -2431,6 +2434,49 @@ void World::step_ai_houses(double dt) {
         // [fix wave 1].
         rec.state.pending[q] = rec.state.plan[node_i].id;
     }
+}
+
+void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
+    // [G-66; RE: FUN_00509710 (per charged SW, by type) -> for the nuke
+    // FUN_0050ca10: walk every object of the house's ENEMY, score it from the
+    // [General] AIIonCannon*Value arrays (ConYard / war factory / power /
+    // tech centre / base defense / harvester; other buildings 4, other units
+    // 2), keep the highest score, pick one of the ties at random, fire at its
+    // cell]. RE-FALLBACK: "the enemy" = every enemy house (the engine keeps no
+    // single house+0x5600 enemy); factory = any Factory= building; the class
+    // tests are the engine's building/unit flags. Seeded ai_rand, deterministic.
+    if (!sw_ready(house)) return;
+    const AiRules& ai = rec.cfg.ai;
+    const AiTeamConfig& tc = rec.cfg.team;
+    int best = -1;
+    std::vector<Cellxy> ties;
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
+        int v = ai.sw_value_building;
+        const std::uint8_t bits = (b.type >= 0 && b.type < (int)tc.building_class.size())
+                                      ? tc.building_class[b.type] : 0;
+        const bool cy = b.type >= 0 && b.type < (int)rec.cfg.roster.size() &&
+                        rec.cfg.roster[b.type].conyard;
+        if (cy) v = ai.sw_value_conyard;
+        else if (bits & kAiBldDefense) v = ai.sw_value_defense;
+        else if (bits & kAiBldFactory) v = ai.sw_value_factory;
+        else if (bits & kAiBldPower) v = ai.sw_value_power;
+        else if (b.type >= 0 && b.type < (int)rec.cfg.roster.size() &&
+                 (rec.cfg.roster[b.type].id == "GATECH" || rec.cfg.roster[b.type].id == "NATECH"))
+            v = ai.sw_value_tech;   // [RE-FALLBACK: tech centre by id]
+        const Cellxy c{b.cx + b.fw / 2, b.cy + b.fh / 2};
+        if (v > best) { best = v; ties.clear(); }
+        if (v == best) ties.push_back(c);
+    }
+    for (const Unit& u : units_) {
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || !is_enemy(house, u.house)) continue;
+        const int v = u.is_harvester ? ai.sw_value_harvester : ai.sw_value_unit;
+        if (v > best) { best = v; ties.clear(); }
+        if (v == best) ties.push_back(Cellxy{u.cell_x, u.cell_y});
+    }
+    if (ties.empty()) return;
+    const Cellxy t = ties[ai_rand(rec.state.rng) % (std::uint32_t)ties.size()];
+    fire_superweapon(house, t.x, t.y);
 }
 
 // --- AI-2 offensive-teams phase [RE: ai-team.md] ----------------------------

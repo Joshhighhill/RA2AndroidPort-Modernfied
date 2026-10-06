@@ -124,6 +124,13 @@ struct AiRules {
     int defense_limit = kAiDefenseLimit;
     double credit_reserve = kAiCreditReserve;
     double condition_red = 0.25;   // [AudioVisual] ConditionRed= (Rules+0x1708): AI sell threshold [G-65]
+    // [G-66] superweapon target values ([General] AIIonCannon*Value= CSVs,
+    // resolved at the house's DifficultyClass index by main.cpp). The SW AI
+    // (FUN_00509710 -> FUN_0050ca10) scores every object of the house's enemy
+    // and fires at a random one of the highest-valued.
+    int sw_value_conyard = 100, sw_value_factory = 100, sw_value_power = 100,
+        sw_value_tech = 100, sw_value_defense = 35, sw_value_harvester = 1,
+        sw_value_building = 4, sw_value_unit = 2;
 };
 
 // mods for difficulty d: values from groups[d], defense_target from

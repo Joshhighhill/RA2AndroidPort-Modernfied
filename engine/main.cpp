@@ -2245,6 +2245,20 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         "AI", "DefenseLimit", (double)ra2engine::kAiDefenseLimit);
     cfg.ai.credit_reserve =
         rules.section_double("AI", "CreditReserve", ra2engine::kAiCreditReserve);
+    {   // [G-66] AIIonCannon*Value= CSVs at house+0x184 = 2 - lobby (Rules+0x1198.. arrays)
+        const int c = ra2engine::difficulty_class_index(difficulty);
+        auto val = [&](const char* key, int def) {
+            const std::vector<std::string> v =
+                aiside::csv_tokens(rules.section_string("General", key, ""));
+            return c < (int)v.size() ? std::atoi(v[(std::size_t)c].c_str()) : def;
+        };
+        cfg.ai.sw_value_conyard = val("AIIonCannonConYardValue", 100);
+        cfg.ai.sw_value_factory = val("AIIonCannonWarFactoryValue", 100);
+        cfg.ai.sw_value_power = val("AIIonCannonPowerValue", 100);
+        cfg.ai.sw_value_tech = val("AIIonCannonTechCenterValue", 100);
+        cfg.ai.sw_value_defense = val("AIIonCannonBaseDefenseValue", 35);
+        cfg.ai.sw_value_harvester = val("AIIonCannonHarvesterValue", 1);
+    }
     {   // [G-65] "ConditionRed=25%" -> strtod 25 -> the 0.25 fraction
         const double cr = rules.section_double("AudioVisual", "ConditionRed", 0.25);
         cfg.ai.condition_red = cr > 1.0 ? cr / 100.0 : cr;
