@@ -76,4 +76,6 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/rectfont.cpp
     ${RA2_ROOT}/engine/maplist.cpp
     ${RA2_ROOT}/engine/repair_sell.cpp
+    ${RA2_ROOT}/engine/abilities.cpp
+    ${RA2_ROOT}/engine/world_abilities.cpp
 )

@@ -1,0 +1,644 @@
+// P4 Unit special abilities (batch 1) -- the World-side pass + orders
+// [RE: docs/re/abilities.md]. A World member TU split out of world.cpp so the
+// phase's churn stays out of the shared file. Every entry point is behind the
+// abilities_any_ firewall (opened ONLY by register_ability_profile, which no
+// pre-P4 gate calls).
+#include <algorithm>
+#include <cmath>
+
+#include "building.hpp"
+#include "combat.hpp"      // damage_vs
+#include "group_move.hpp"  // nearest_free_cells
+#include "world.hpp"
+
+namespace ra2engine {
+
+namespace {
+
+using Ev = World::AbilityEvent;
+
+bool on_map_alive(const Unit& u) { return u.alive && u.die_time < 0.0 && u.cargo_of < 0; }
+
+// The parasite's instant-kill branch keys off WhatAmI == Infantry (§B2).
+bool is_infantry_unit(const Unit& u) { return !u.is_vehicle && !u.is_aircraft && !u.is_naval; }
+
+void bind_profile(Unit& u, const std::map<std::string, AbilityProfile>& profiles) {
+    if (u.abil_bound) return;
+    u.abil_bound = true;
+    const auto it = profiles.find(u.image);
+    if (it != profiles.end()) u.abil = it->second;
+}
+
+// Building "coord" = the center of its foundation (cell space).
+double bld_cx(const Building& b) { return b.cx + (b.fw - 1) / 2.0; }
+double bld_cy(const Building& b) { return b.cy + (b.fh - 1) / 2.0; }
+
+double nearest_foundation_leptons(const Building& b, double x, double y) {
+    double best = -1.0;
+    for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+        const double d = std::hypot((c.x - x) * kAbilityLeptonsPerCell, (c.y - y) * kAbilityLeptonsPerCell);
+        if (best < 0.0 || d < best) best = d;
+    }
+    return best;
+}
+
+}  // namespace
+
+void World::register_ability_profile(const std::string& image, const AbilityProfile& p) {
+    ability_profiles_[image] = p;
+    abilities_any_ = true;
+    for (Unit& u : units_)
+        if (u.image == image) u.abil_bound = false;   // re-bind on the next pass
+}
+
+std::vector<World::AbilityEvent> World::take_ability_events() {
+    std::vector<AbilityEvent> out;
+    out.swap(ability_events_);
+    return out;
+}
+
+bool World::order_deploy(int idx) {
+    if (!abilities_any_ || idx < 0 || idx >= static_cast<int>(units_.size())) return false;
+    Unit& u = units_[idx];
+    if (!on_map_alive(u)) return false;
+    bind_profile(u, ability_profiles_);
+    if (!u.abil.deployer || !u.abil.deploy.valid) return false;
+    u.deployed = !u.deployed;
+    if (u.deployed) {
+        // [RE: abilities.md §A] deployed = immobile; the eruption fires on the
+        // next pass and then every deploy-weapon ROF.
+        occ_.release_all_of(idx, u.cell_x, u.cell_y);
+        u.path.clear();
+        u.path_idx = 0;
+        u.fx = u.cell_x;
+        u.fy = u.cell_y;
+        u.target = -1;
+        u.target_building = -1;
+        u.attack_order = false;
+        u.deploy_next_fire = static_cast<std::int64_t>(ability_frame_);
+        u.frozen = true;
+    } else {
+        u.frozen = (static_cast<std::int64_t>(ability_frame_) < u.warp_until) || u.warp_remaining > 0;
+    }
+    ability_events_.push_back({Ev::Kind::Deploy, idx, -1, u.deployed ? 1 : 0, 0, false});
+    return true;
+}
+
+void World::teleport_unit(int idx, int gx, int gy) {
+    Unit& u = units_[idx];
+    if (!on_map_alive(u)) return;
+    // Destination: the ordered cell if free, else the nearest free cell around
+    // it (the clone's one-unit-per-cell stand-in for Mark_All_Occupation_Bits).
+    Cellxy dest{gx, gy};
+    const int there = unit_at_cell(gx, gy);
+    if (!walkable(gx, gy) || (there >= 0 && there != idx)) {
+        const std::vector<Cellxy> g = nearest_free_cells({gx, gy}, 1, passable_, grid_w_, grid_h_, occ_);
+        if (g.empty()) return;
+        dest = g[0];
+    }
+    if (dest.x == u.cell_x && dest.y == u.cell_y) return;
+    // [RE: abilities.md §C1, 0x718761..0x7188B0] dist = ftol(|dest - here|)
+    // (2-D leptons, the combat.md §6 divergence), delay = max(dist/48, 16).
+    const double dx = (dest.x - u.cell_x) * kAbilityLeptonsPerCell;
+    const double dy = (dest.y - u.cell_y) * kAbilityLeptonsPerCell;
+    const int dist = ftol(std::sqrt(dx * dx + dy * dy));
+    const int delay = teleport_delay_frames(dist, ability_rules_);
+    // The parasite is ejected by the teleport (0x7188D9 -> ExitUnit).
+    const int old_x = u.cell_x, old_y = u.cell_y;
+    // Relocation is IMMEDIATE; the unit is then frozen (IsWarpingIn +0x271).
+    occ_.release_all_of(idx, -1, -1);
+    u.cell_x = dest.x;
+    u.cell_y = dest.y;
+    u.fx = dest.x;
+    u.fy = dest.y;
+    occ_.set(dest.x, dest.y, idx);
+    u.path.clear();
+    u.path_idx = 0;
+    u.wait_time = 0.0;
+    u.warp_until = static_cast<std::int64_t>(ability_frame_) + delay;
+    u.frozen = true;
+    if (u.parasite_on_me >= 0) {
+        Unit& d = units_[u.parasite_on_me];
+        const std::vector<Cellxy> g = nearest_free_cells({old_x, old_y}, 1, passable_, grid_w_, grid_h_, occ_);
+        u.parasite_on_me = -1;
+        if (!g.empty()) {
+            d.cargo_of = -1;
+            d.cell_x = g[0].x;
+            d.cell_y = g[0].y;
+            d.fx = g[0].x;
+            d.fy = g[0].y;
+            occ_.set(g[0].x, g[0].y, static_cast<int>(&d - units_.data()));
+        }
+    }
+    ability_events_.push_back({Ev::Kind::Teleport, idx, -1, dist, delay, false});
+}
+
+void World::ability_kill_unit(int idx) {
+    Unit& v = units_[idx];
+    if (!v.alive || v.die_time >= 0.0) return;
+    if (v.hp > 0) v.hp = 0;
+    // The combat.cpp death path, verbatim (die anim -> tombstone in step_combat).
+    v.die_time = 0.0;
+    occ_.release_all_of(idx, -1, -1);
+    v.target = -1;
+    v.path.clear();
+    v.path_idx = 0;
+}
+
+void World::ability_erase_unit(int idx) {
+    Unit& v = units_[idx];
+    // [RE: abilities.md §C2] UnInit -- removed, NOT killed: no die anim, no
+    // death weapon, its bomb is dropped; a riding drone is let go.
+    v.death_done = true;
+    v.bomb_frame = -1;
+    if (v.parasite_on_me >= 0) {
+        Unit& d = units_[v.parasite_on_me];
+        const std::vector<Cellxy> g =
+            nearest_free_cells({v.cell_x, v.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
+        v.parasite_on_me = -1;
+        const int di = static_cast<int>(&d - units_.data());
+        if (!g.empty()) {
+            d.cargo_of = -1;
+            d.cell_x = g[0].x;
+            d.cell_y = g[0].y;
+            d.fx = g[0].x;
+            d.fy = g[0].y;
+            occ_.set(g[0].x, g[0].y, di);
+            ability_events_.push_back({Ev::Kind::DroneExit, di, idx, g[0].x, g[0].y, false});
+        } else {
+            d.alive = false;
+            d.hp = 0;
+            d.cargo_of = -1;
+            ability_events_.push_back({Ev::Kind::DroneLost, di, idx, 0, 0, false});
+        }
+    }
+    v.alive = false;
+    v.die_time = -1.0;
+    v.hp = 0;
+    v.warp_remaining = 0;
+    v.frozen = false;
+    occ_.release_all_of(idx, -1, -1);
+    v.path.clear();
+    v.path_idx = 0;
+    v.selected = false;
+}
+
+void World::ability_damage_unit(int victim, int dmg) {
+    Unit& v = units_[victim];
+    if (!v.alive || v.die_time >= 0.0) return;
+    v.hp -= dmg;
+    if (v.hp <= 0) ability_kill_unit(victim);
+}
+
+void World::ability_damage_building(int b_idx, int dmg) {
+    Building& b = buildings_[b_idx];
+    if (!b.alive || b.state == Building::State::Dead) return;
+    b.hp -= dmg;
+    if (b.hp <= 0) kill_building(b);
+}
+
+// DamageArea (FUN_00489190) as the clone adjudicated it (combat.md §7 /
+// superweapon.md): radius = CellSpread*256 leptons, linear 100% -> PercentAtMax,
+// trunc, then the warhead Verses. ALL houses, units AND buildings (building
+// distance = nearest foundation cell); the source unit is excluded
+// [RE: abilities.md §Deviations 3].
+void World::ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage) {
+    const double radius = w.cell_spread * kAbilityLeptonsPerCell;
+    for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
+        if (j == src_unit) continue;
+        const Unit& v = units_[j];
+        if (!on_map_alive(v) || v.is_aircraft) continue;
+        const double d = std::hypot((v.fx - cx) * kAbilityLeptonsPerCell, (v.fy - cy) * kAbilityLeptonsPerCell);
+        const double s = area_scale(d, radius, w.percent_at_max);
+        if (s < 0.0) continue;
+        const int dmg = damage_vs(ftol(damage * s), w.verses, v.armor_ix);
+        if (dmg > 0) ability_damage_unit(j, dmg);
+    }
+    for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
+        const Building& bb = buildings_[b];
+        if (!bb.alive || bb.state == Building::State::Dead) continue;
+        const double d = nearest_foundation_leptons(bb, cx, cy);
+        const double s = area_scale(d, radius, w.percent_at_max);
+        if (s < 0.0) continue;
+        const int dmg = damage_vs(ftol(damage * s), w.verses, bb.armor_ix);
+        if (dmg > 0) ability_damage_building(b, dmg);
+    }
+}
+
+void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w) {
+    u.w_damage = w.damage;
+    u.w_rof = w.rof;
+    u.w_range = w.range;
+    u.w_verses = w.verses;
+    u.w_cell_spread = w.cell_spread;
+    u.w_percent_at_max = w.percent_at_max;
+    u.abil.fire_kind = w.kind;
+}
+
+// One intercepted combat shot (combat.cpp try_fire / the building branch).
+void World::ability_fire_event(int i) {
+    Unit& u = units_[i];
+    const int vt = u.ability_fired_unit, vb = u.ability_fired_building;
+    u.ability_fired_unit = -1;
+    u.ability_fired_building = -1;
+    if (!on_map_alive(u)) return;
+    const std::int64_t F = static_cast<std::int64_t>(ability_frame_);
+    const AbilityKind kind = u.abil.fire_kind;
+
+    if (vb >= 0 && vb < static_cast<int>(buildings_.size())) {
+        Building& b = buildings_[vb];
+        if (!b.alive || b.state == Building::State::Dead) return;
+        if (kind == AbilityKind::None && u.abil.c4) {
+            // [RE: abilities.md §D1, 0x51A2E3..0x51A3F0] refused while selling
+            // (mission 0x13) or for a CanC4=no type; never re-armed.
+            const bool immune = std::find(no_c4_types_.begin(), no_c4_types_.end(), b.type) !=
+                                no_c4_types_.end();
+            if (!b.selling && !immune && !b.c4_applied) {
+                b.c4_applied = true;
+                b.c4_frame = F + c4_delay_frames(ability_rules_.c4_delay_minutes);
+                b.c4_by = i;
+                ability_events_.push_back({Ev::Kind::C4Plant, i, vb, static_cast<int>(b.c4_frame), 0, true});
+            }
+            u.target_building = -1;       // the infantry's mission resets (it scatters)
+            u.attack_order = false;
+            return;
+        }
+        switch (kind) {
+        case AbilityKind::Temporal:
+            // [§C2] Warpable buildings; Strength*10 (type Strength == max_hp).
+            if (b.warp_remaining == 0) b.warp_remaining = warp_remaining_init(b.max_hp);
+            u.temporal_target_building = vb;
+            u.temporal_target = -1;
+            ability_events_.push_back({Ev::Kind::TemporalAttach, i, vb, b.warp_remaining, 0, true});
+            break;
+        case AbilityKind::IvanBomb:
+            // [§E 0x438DF0] one bomb per target; FireOnce ends the mission.
+            if (b.bomb_frame < 0 && is_infantry_unit(u)) {
+                b.bomb_frame = F + ability_rules_.ivan_timed_delay;
+                b.bomb_owner = i;
+                b.bomb_house = u.house;
+                ability_events_.push_back({Ev::Kind::BombPlant, i, vb, static_cast<int>(b.bomb_frame), 0, true});
+            }
+            u.target_building = -1;
+            u.attack_order = false;
+            break;
+        case AbilityKind::Suicide:
+            // [§F 0x6FD27C] no bullet: the firer dies; the death pass blasts.
+            ability_events_.push_back({Ev::Kind::Suicide, i, vb, 0, 0, true});
+            ability_kill_unit(i);
+            break;
+        default:
+            // Parasite vs a building: not infectable (BuildingType Parasiteable
+            // cleared, 0x45E4E0) -- the drone gives up.
+            u.target_building = -1;
+            u.attack_order = false;
+            break;
+        }
+        return;
+    }
+
+    if (vt < 0 || vt >= static_cast<int>(units_.size())) return;
+    Unit& v = units_[vt];
+    if (!on_map_alive(v)) return;
+    switch (kind) {
+    case AbilityKind::Parasite: {
+        bind_profile(v, ability_profiles_);
+        // [RE: abilities.md §B1, CanInfect 0x62A380]
+        if (v.parasite_on_me >= 0 || !v.abil.parasiteable || v.is_aircraft) {
+            u.target = -1;
+            u.attack_order = false;
+            return;
+        }
+        occ_.release_all_of(i, -1, -1);       // LimboLaunch: the drone became the bullet
+        u.path.clear();
+        u.path_idx = 0;
+        u.selected = false;
+        u.target = -1;
+        u.target_building = -1;
+        u.attack_order = false;
+        u.cargo_of = vt;                      // off-map, riding the victim
+        u.parasite_next_tick = F;             // DamageDeliveryTimer = {Frame, 0}: expired
+        u.suppress_until = -1;
+        v.parasite_on_me = i;
+        v.last_hp = v.hp;
+        ability_events_.push_back({Ev::Kind::Infect, i, vt, 0, 0, false});
+        break;
+    }
+    case AbilityKind::Temporal:
+        bind_profile(v, ability_profiles_);
+        if (!v.abil.warpable) return;
+        // [§C2 0x71A1A0] the first legionnaire sets the budget; helpers join.
+        if (v.warp_remaining == 0) v.warp_remaining = warp_remaining_init(v.max_hp);
+        u.temporal_target = vt;
+        u.temporal_target_building = -1;
+        v.frozen = true;
+        v.path.clear();
+        v.path_idx = 0;
+        v.target = -1;
+        v.target_building = -1;
+        ability_events_.push_back({Ev::Kind::TemporalAttach, i, vt, v.warp_remaining, 0, false});
+        break;
+    case AbilityKind::IvanBomb:
+        if (v.bomb_frame < 0 && is_infantry_unit(u)) {
+            v.bomb_frame = F + ability_rules_.ivan_timed_delay;
+            v.bomb_owner = i;
+            v.bomb_house = u.house;
+            ability_events_.push_back({Ev::Kind::BombPlant, i, vt, static_cast<int>(v.bomb_frame), 0, false});
+        }
+        u.target = -1;                        // FireOnce=yes
+        u.attack_order = false;
+        break;
+    case AbilityKind::Suicide:
+        ability_events_.push_back({Ev::Kind::Suicide, i, vt, 0, 0, false});
+        ability_kill_unit(i);
+        break;
+    default:
+        break;
+    }
+}
+
+// Deaths this frame: death weapons (§F), bomb chain (§E), drone exit (§B3),
+// legionnaire release (§C2). Repeated while a blast causes new deaths.
+void World::ability_death_pass() {
+    const std::int64_t F = static_cast<std::int64_t>(ability_frame_);
+    for (int round = 0; round < 16; ++round) {
+        bool any = false;
+        for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+            Unit& u = units_[i];
+            if (!u.alive || u.die_time < 0.0 || u.death_done) continue;
+            u.death_done = true;
+            any = true;
+            // §F: Explodes -> DeathWeapon; else a Suicide current weapon
+            // fires itself (0x701A23). IvanBomb death shots do nothing (§E).
+            WeaponSpec dw;
+            if (u.abil.explodes) {
+                dw = u.abil.death;
+            } else if (u.abil.fire_kind == AbilityKind::Suicide) {
+                if (u.abil.gunner && u.ifv_current >= 0 &&
+                    u.ifv_current < static_cast<int>(u.abil.ifv_weapons.size()))
+                    dw = u.abil.ifv_weapons[u.ifv_current];
+                else
+                    dw = u.abil.death;
+            }
+            if (dw.valid && dw.kind != AbilityKind::IvanBomb) {
+                ability_events_.push_back({Ev::Kind::DeathWeapon, i, -1, dw.damage, 0, false});
+                ability_area_damage(i, u.fx, u.fy, dw, dw.damage);
+                if (dw.rad_level > 0)
+                    rad_.detonate(u.cell_x, u.cell_y, ftol(dw.cell_spread), dw.rad_level,
+                                  ability_frame_, ability_rules_);
+            }
+            // §E: the bombed object's death detonates its bomb at once.
+            if (u.bomb_frame >= 0) {
+                u.bomb_frame = -1;
+                ability_events_.push_back({Ev::Kind::BombBlast, u.bomb_owner, i, 0, 0, false});
+                ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage);
+            }
+            // §B3: the riding drone pops out, unless suppressed.
+            if (u.parasite_on_me >= 0) {
+                const int di = u.parasite_on_me;
+                Unit& d = units_[di];
+                u.parasite_on_me = -1;
+                std::vector<Cellxy> g;
+                if (!(F < d.suppress_until))
+                    g = nearest_free_cells({u.cell_x, u.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
+                if (!g.empty()) {
+                    d.cargo_of = -1;
+                    d.cell_x = g[0].x;
+                    d.cell_y = g[0].y;
+                    d.fx = g[0].x;
+                    d.fy = g[0].y;
+                    d.guard_x = g[0].x;
+                    d.guard_y = g[0].y;
+                    occ_.set(g[0].x, g[0].y, di);
+                    ability_events_.push_back({Ev::Kind::DroneExit, di, i, g[0].x, g[0].y, false});
+                } else {
+                    d.alive = false;          // destroyed with the host
+                    d.hp = 0;
+                    d.cargo_of = -1;
+                    d.death_done = true;
+                    ability_events_.push_back({Ev::Kind::DroneLost, di, i, 0, 0, false});
+                }
+            }
+            u.warp_remaining = 0;
+            u.temporal_target = -1;
+            u.temporal_target_building = -1;
+        }
+        for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
+            Building& bb = buildings_[b];
+            if (bb.state != Building::State::Dead || bb.ability_death_done) continue;
+            bb.ability_death_done = true;
+            bb.c4_applied = false;
+            bb.warp_remaining = 0;
+            if (bb.bomb_frame >= 0) {
+                any = true;
+                bb.bomb_frame = -1;
+                ability_events_.push_back({Ev::Kind::BombBlast, bb.bomb_owner, b, 0, 0, true});
+                ability_area_damage(-1, bld_cx(bb), bld_cy(bb), ability_rules_.ivan_warhead,
+                                    ability_rules_.ivan_damage);
+            }
+        }
+        if (!any) break;
+    }
+}
+
+void World::step_abilities(double dt) {
+    (void)dt;
+    if (!abilities_any_) {
+        ++ability_frame_;                     // the frame counter advances above the firewall
+        return;
+    }
+    const std::int64_t F = static_cast<std::int64_t>(ability_frame_);
+    const int n = static_cast<int>(units_.size());
+    if (rad_.empty() && grid_w_ > 0 && grid_h_ > 0) rad_.init(grid_w_, grid_h_);
+
+    // (1) bind profiles by image (spawn paths untouched).
+    for (Unit& u : units_) bind_profile(u, ability_profiles_);
+
+    // (2) IFV gunner sync [§G]: weapon = Weapon[IFVMode of the passenger], 0 when empty.
+    for (int i = 0; i < n; ++i) {
+        Unit& u = units_[i];
+        if (!u.abil.gunner || !u.alive || u.die_time >= 0.0 || u.abil.ifv_weapons.empty()) continue;
+        int mode = 0;
+        if (!u.cargo.empty()) {
+            const int p = u.cargo.front();
+            if (p >= 0 && p < n) mode = units_[p].abil.ifv_mode;
+        }
+        int idx = ifv_weapon_index(mode, static_cast<int>(u.abil.ifv_weapons.size()));
+        if (!u.abil.ifv_weapons[idx].valid) idx = 0;
+        if (idx != u.ifv_current) {
+            u.ifv_current = idx;
+            ability_apply_weapon_fields(u, u.abil.ifv_weapons[idx]);
+            ability_events_.push_back({Ev::Kind::IfvSwap, i, -1, idx, mode, false});
+        }
+    }
+
+    // (3) the shots combat.cpp handed over this frame.
+    for (int i = 0; i < n; ++i)
+        if (units_[i].ability_fired_unit >= 0 || units_[i].ability_fired_building >= 0)
+            ability_fire_event(i);
+
+    // (4) deployed eruptions [§A]: DamageArea + RadSite at the own cell.
+    for (int i = 0; i < n; ++i) {
+        Unit& u = units_[i];
+        if (!u.deployed || !on_map_alive(u) || !u.abil.deploy.valid) continue;
+        if (F < u.deploy_next_fire) continue;
+        const WeaponSpec& w = u.abil.deploy;
+        u.deploy_next_fire = F + std::max(1, w.rof);
+        ability_events_.push_back({Ev::Kind::Eruption, i, -1, u.cell_x, u.cell_y, false});
+        ability_area_damage(i, u.fx, u.fy, w, w.damage);
+        if (w.rad_level > 0)
+            rad_.detonate(u.cell_x, u.cell_y, ftol(w.cell_spread), w.rad_level, ability_frame_,
+                          ability_rules_);
+    }
+
+    // (5) parasites [§B2/§B3].
+    for (int i = 0; i < n; ++i) {
+        Unit& d = units_[i];
+        if (!d.alive || d.cargo_of < 0 || d.abil.fire_kind != AbilityKind::Parasite) continue;
+        const int h = d.cargo_of;
+        if (h < 0 || h >= n || units_[h].parasite_on_me != i) continue;
+        Unit& host = units_[h];
+        if (!host.alive || host.die_time >= 0.0) continue;       // the death pass ejects
+        // Suppression: the host's external HP loss since the last pass.
+        if (host.last_hp >= 0) {
+            const int ext = host.last_hp - host.hp;
+            const int sf = suppression_frames(ext, d.abil.suppression_threshold);
+            if (sf > 0) d.suppress_until = F + sf;
+        }
+        if (F >= d.parasite_next_tick) {
+            d.parasite_next_tick = F + std::max(1, d.w_rof);    // {Frame, weapon.ROF}
+            int dmg;
+            if (is_infantry_unit(host)) {
+                dmg = host.hp;                                  // ignoreDefenses: instant kill
+            } else {
+                dmg = damage_vs(d.w_damage, d.w_verses, host.armor_ix);
+            }
+            ability_events_.push_back({Ev::Kind::ParasiteTick, i, h, dmg, host.hp - dmg, false});
+            ability_damage_unit(h, dmg);
+        }
+        host.last_hp = host.hp;
+    }
+
+    // (6) temporal warp [§C2]: every frame, minus the attached legionnaires' Damage.
+    for (int i = 0; i < n; ++i) {
+        Unit& c = units_[i];
+        if (c.temporal_target < 0 && c.temporal_target_building < 0) continue;
+        // Letting go: dead/dying, ordered elsewhere, or moving.
+        const bool keep = on_map_alive(c) && !c.moving() &&
+                          ((c.temporal_target >= 0 && c.target == c.temporal_target) ||
+                           (c.temporal_target_building >= 0 &&
+                            c.target_building == c.temporal_target_building));
+        if (!keep) {
+            c.temporal_target = -1;
+            c.temporal_target_building = -1;
+        }
+    }
+    for (int v = 0; v < n; ++v) {
+        Unit& vu = units_[v];
+        if (vu.warp_remaining <= 0) continue;
+        int step = 0;
+        for (int i = 0; i < n; ++i)
+            if (units_[i].temporal_target == v) step += units_[i].w_damage;
+        if (step <= 0 || !vu.alive || vu.die_time >= 0.0) {
+            vu.warp_remaining = 0;                              // let go: a fresh shot restarts
+            continue;
+        }
+        vu.warp_remaining -= step;
+        if (vu.warp_remaining <= 0) {
+            ability_events_.push_back({Ev::Kind::Erase, -1, v, step, 0, false});
+            ability_erase_unit(v);
+            for (Unit& c : units_)
+                if (c.temporal_target == v) {
+                    c.temporal_target = -1;
+                    c.target = -1;
+                    c.attack_order = false;
+                }
+        }
+    }
+    for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
+        Building& bb = buildings_[b];
+        if (bb.warp_remaining <= 0) continue;
+        int step = 0;
+        for (int i = 0; i < n; ++i)
+            if (units_[i].temporal_target_building == b) step += units_[i].w_damage;
+        if (step <= 0 || !bb.alive || bb.state == Building::State::Dead) {
+            bb.warp_remaining = 0;
+            continue;
+        }
+        bb.warp_remaining -= step;
+        if (bb.warp_remaining <= 0) {
+            ability_events_.push_back({Ev::Kind::Erase, -1, b, step, 0, true});
+            bb.ability_death_done = true;   // erased: no bomb chain
+            bb.bomb_frame = -1;
+            bb.c4_applied = false;
+            kill_building(bb);
+            bb.sold = true;                 // removed without the destruction explosion
+            for (Unit& c : units_)
+                if (c.temporal_target_building == b) {
+                    c.temporal_target_building = -1;
+                    c.target_building = -1;
+                    c.attack_order = false;
+                }
+        }
+    }
+
+    // (7) bombs (plant+451, strict) and C4 (plant+27) [§E/§D2].
+    for (int i = 0; i < n; ++i) {
+        Unit& u = units_[i];
+        if (u.bomb_frame < 0 || !on_map_alive(u)) continue;
+        if (!bomb_due(u.bomb_frame, ability_frame_)) continue;
+        u.bomb_frame = -1;
+        ability_events_.push_back({Ev::Kind::BombBlast, u.bomb_owner, i, 0, 0, false});
+        ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage);
+    }
+    for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
+        Building& bb = buildings_[b];
+        if (!bb.alive || bb.state == Building::State::Dead) continue;
+        if (bb.bomb_frame >= 0 && bomb_due(bb.bomb_frame, ability_frame_)) {
+            bb.bomb_frame = -1;
+            ability_events_.push_back({Ev::Kind::BombBlast, bb.bomb_owner, b, 0, 0, true});
+            ability_area_damage(-1, bld_cx(bb), bld_cy(bb), ability_rules_.ivan_warhead,
+                                ability_rules_.ivan_damage);
+        }
+        if (bb.c4_applied && bb.state != Building::State::Dead && F >= bb.c4_frame) {
+            // [§D2 0x440186..0x4402D8] dmg = Health, C4Warhead, ignoreDefenses=1.
+            bb.c4_applied = false;
+            ability_events_.push_back({Ev::Kind::C4Blast, bb.c4_by, b, bb.hp, 0, true});
+            ability_damage_building(b, bb.hp);
+        }
+    }
+
+    // (8) radiation [§A3/§A4]: RadSite AI, then the 16-frame application.
+    rad_.step(ability_frame_, ability_rules_);
+    if (rad_apply_due(ability_frame_, ability_rules_)) {
+        for (int i = 0; i < n; ++i) {
+            Unit& u = units_[i];
+            if (!on_map_alive(u) || u.is_aircraft || u.abil.immune_radiation) continue;
+            const int raw = rad_damage(rad_.level_at(u.cell_x, u.cell_y), ability_rules_);
+            if (raw <= 0) continue;
+            const int dmg = damage_vs(raw, ability_rules_.rad_verses, u.armor_ix);
+            ability_events_.push_back({Ev::Kind::RadDamage, i, -1, dmg, raw, false});
+            if (dmg > 0) ability_damage_unit(i, dmg);
+        }
+    }
+
+    // (9) deaths: death weapons, bomb chain, drone exit, temporal release.
+    ability_death_pass();
+
+    // (10) the frozen flag for the NEXT frame: deployed, warping in, or being erased.
+    const std::int64_t next = F + 1;
+    for (int i = 0; i < n; ++i) {
+        Unit& u = units_[i];
+        if (!u.abil_bound) continue;
+        const bool was = u.frozen;
+        u.frozen = u.alive && (u.deployed || next < u.warp_until || u.warp_remaining > 0);
+        if (was && !u.frozen && u.warp_until >= 0 && next >= u.warp_until && u.alive &&
+            u.warp_remaining <= 0 && !u.deployed) {
+            ability_events_.push_back({Ev::Kind::Unfreeze, i, -1, static_cast<int>(next), 0, false});
+            u.warp_until = -1;
+        }
+    }
+    ++ability_frame_;
+}
+
+}  // namespace ra2engine

@@ -87,6 +87,15 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
     // seconds via kLogicFps; CONFIRMED no jitter/RNG in the reset.
     u.rof_cool = u.w_rof / kLogicFps;
     u.fire_flash = kFireFlashSecs;
+    // P4 [RE: abilities.md §B1/§C2/§E/§F]: a weapon whose warhead/weapon flags
+    // make it an ABILITY (Parasite / Temporal / IvanBomb / Suicide) deals no
+    // plain damage -- the shot is handed to World::step_abilities, which
+    // resolves it this same frame. fire_kind is None unless a P4 profile is
+    // bound (no pre-P4 gate binds one) -> the existing path below runs.
+    if (u.abil.fire_kind != AbilityKind::None) {
+        u.ability_fired_unit = victim_idx;
+        return;
+    }
     if (u.w_cell_spread >= 1.0) {
         // CB-2 [RE-GATE APPLIED: aircraft.md §4]: the BlimpHE 2-cell splash.
         // Reached ONLY by CellSpread>=1 warheads (the Kirov); every existing
@@ -105,7 +114,7 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         // if it fires. Inert for byte-identity: u.disguised defaults false and
         // no gate ever calls set_disguise, so `!u.disguised` is always true ->
         // the guard is unchanged in every gate.
-        if (v.target == -1 && !v.moving() && !u.disguised) {
+        if (v.target == -1 && !v.moving() && !u.disguised && !v.abil.no_retaliate) {
             // Idle victim retaliates (docs/re/combat.md §7: retaliation target
             // choice confirmed). Also records ITS OWN guard anchor at its
             // current position -- retaliation is a form of auto-acquire
@@ -215,6 +224,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // (b2) CB-1: a CARRIED unit is off-map -- it cannot fire, cool down,
         // acquire, or pursue [spec §4].
         if (u.cargo_of >= 0) continue;
+        // (b3) P4 [RE: abilities.md §C1/§C2/§A]: a FROZEN unit (warping in,
+        // being erased, deployed) neither fires, acquires nor pursues.
+        // Inert: frozen is false unless a P4 profile is bound.
+        if (u.frozen) continue;
 
         // (c) ROF cooldown + fire-flash decay -- every living, non-dying
         // unit, every call, regardless of target state. docs/re/combat.md
@@ -259,7 +272,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         ny = cell.y;
                     }
                 }
-                const double range_leptons = u.w_range * kLeptonsPerCell;
+                // P4 [RE: abilities.md §D1]: a C4=yes infantry walks to its
+                // Sapper (Secondary) range against a building, not its
+                // primary's. abil.c4 is false unless a P4 profile is bound.
+                const double range_leptons =
+                    (u.abil.c4 ? u.abil.c4_range : u.w_range) * kLeptonsPerCell;
                 if (best_d <= range_leptons) {
                     if (u.rof_cool <= 0.0) {
                         // Aim gate, mirroring the unit path exactly
@@ -276,6 +293,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             continue;  // hold fire this frame; rof_cool untouched
                         u.rof_cool = u.w_rof / kLogicFps;
                         u.fire_flash = kFireFlashSecs;
+                        // P4 [RE: abilities.md §C2/§D/§E/§F]: an ability weapon
+                        // (or a C4 infantry) hands the building shot to
+                        // World::step_abilities instead of plain damage. Inert
+                        // pre-P4 (fire_kind None, c4 false).
+                        if (u.abil.fire_kind != AbilityKind::None || u.abil.c4) {
+                            u.ability_fired_building = b_idx;
+                            continue;
+                        }
                         const int dmg = damage_vs(u.w_damage, u.w_verses, b->armor_ix);
                         b->hp -= dmg;
                         if (b->hp <= 0) {
@@ -349,7 +374,9 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             // sets u.target and skips this block, so air-to-ground attack is
             // unaffected]. Cannot change the 9 ground-only gates: has_flight_goal
             // is always false there.
-            if (u.moving() || u.has_flight_goal) { /* no auto-acquire under a move order */ }
+            // P4 [RE: abilities.md §F]: CanPassiveAquire=no (the terrorist)
+            // never auto-acquires. Inert: false unless a P4 profile is bound.
+            if (u.moving() || u.has_flight_goal || u.abil.no_passive_acquire) { /* no auto-acquire */ }
             else {
                 int best = -1;
                 double best_d = 0.0;

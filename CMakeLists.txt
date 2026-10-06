@@ -218,6 +218,11 @@ target_sources(ra2assets_tests PRIVATE tests/test_visibility.cpp engine/visibili
 # production.cpp. The World mutation entry points live in engine/world.cpp
 # (already on test_world's line), so world.cpp is NOT added here.
 target_sources(ra2assets_tests PRIVATE tests/test_repair_sell.cpp engine/repair_sell.cpp)
+# P4 Unit special abilities [RE: abilities.md]: the pure ability arithmetic +
+# the radiation field (engine/abilities.cpp, World-free) and the World-side
+# ability pass + orders (engine/world_abilities.cpp, a World member TU split out
+# of world.cpp), exercised by test_abilities.cpp.
+target_sources(ra2assets_tests PRIVATE tests/test_abilities.cpp engine/abilities.cpp engine/world_abilities.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's
