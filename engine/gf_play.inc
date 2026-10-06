@@ -285,6 +285,11 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
         ra2engine::World& w = g->gf_world();
         std::cout << "gf_play campaign " << map << " player units=" << count_units(w, 0, false)
                   << " mcv=" << count_units(w, 0, true) << " buildings=" << count_buildings(w, 0) << "\n";
+        for (int tab = 0; tab < 4; ++tab) {
+            std::cout << "gf_play campaign tab" << tab << ":";
+            for (const std::string& id : g->gf_buildable_ids(tab)) std::cout << " " << id;
+            std::cout << "\n";
+        }
         c.shot(*g, "gf_campaign_start.png");
         if (count_units(w, 0, true) > 0) {
             const int cy = deploy_player_mcv(c, *g, 900);

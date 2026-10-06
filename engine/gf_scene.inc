@@ -14,6 +14,34 @@ private:
     std::string gf_end_text_;
     GfConfirm gf_abort_;                     // G-14 Abort Mission confirm (0x121)
 
+    // G-15 [RE: techtree.md; campaign.md §4]: a type is offered only when its
+    // TechLevel <= the house's TechLevel -- the lobby slider in a skirmish,
+    // [<Player house>] TechLevel= of the mission map in a campaign (3 in
+    // ALL01/SOV01). TechLevel <= 0 stays never-buildable (filtered upstream).
+    int gf_tech_cap() const {
+        if (cfg_.campaign_map.empty()) return cfg_.tech_level;
+        if (gf_campaign_tech_ < 0) {
+            int tl = 10;
+            try {
+                const Ini m = camp::load_map_ini(dir_, cfg_.campaign_map);
+                const std::string house = m.get("Basic", "Player", "");
+                if (!house.empty()) tl = m.get_int(house, "TechLevel", 10);
+            } catch (const std::exception&) {}
+            gf_campaign_tech_ = tl;
+        }
+        return gf_campaign_tech_;
+    }
+    mutable int gf_campaign_tech_ = -1;
+    std::vector<int> gf_tech_filter(std::vector<int> v, bool units) const {
+        const int cap = gf_tech_cap();
+        std::vector<int> out;
+        for (int i : v) {
+            const int tl = units ? ur_.defs[(std::size_t)i].tech_level : ba_.roster[(std::size_t)i].tech_level;
+            if (tl <= cap) out.push_back(i);
+        }
+        return out;
+    }
+
     void gf_ask_abort() {
         std::vector<std::string> b{gf_csf("GUI:Abort", "Abort")};
         if (campaign_) b.push_back(gf_csf("GUI:Restart", "Restart"));
@@ -232,3 +260,9 @@ public:
     void gf_open_menu() { menu_.open_ = true; }
     bool gf_menu_open() const { return menu_.open_; }
     bool gf_abort_open() const { return gf_abort_.open(); }
+    std::vector<std::string> gf_buildable_ids(int tab) const {
+        std::vector<std::string> out;
+        for (int i : tab_buildable(tab))
+            out.push_back(tab >= 2 ? ur_.defs[(std::size_t)i].id : ba_.roster[(std::size_t)i].id);
+        return out;
+    }

@@ -4436,6 +4436,8 @@ public:
         if (cfg.campaign_map.empty()) {
             gf_load_assets(g_gf_spawned);
             gf_center_on_player();
+            buildable_ = tab_buildable(active_tab_);   // gF G-15: tech-capped strip
+            lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
         }
         g_gf_spawned.clear();
 
@@ -5127,13 +5129,13 @@ private:
     // Active sidebar tab (0=Structures,1=Defenses,2=Infantry,3=Vehicles).
     std::vector<int> tab_buildable(int tab) const {
         const char* pfx = soviet_campaign(cfg_) ? "NA" : "GA";   // P10 player side
-        if (tab == 0) return building_buildable_tab(ba_, /*defenses=*/false, pfx);
-        if (tab == 1) return building_buildable_tab(ba_, /*defenses=*/true, pfx);
+        if (tab == 0) return gf_tech_filter(building_buildable_tab(ba_, /*defenses=*/false, pfx), false);
+        if (tab == 1) return gf_tech_filter(building_buildable_tab(ba_, /*defenses=*/true, pfx), false);
         std::vector<int> v;   // tabs 2/3: unit-roster indices
         const bool want_veh = (tab == 3);
         for (int i = 0; i < static_cast<int>(ur_.defs.size()); ++i)
             if (ur_.defs[i].is_vehicle == want_veh) v.push_back(i);
-        return v;
+        return gf_tech_filter(std::move(v), true);   // gF G-15: TechLevel cap
     }
 
     // --- loaded assets (constructed in declaration order in the init list) ---
