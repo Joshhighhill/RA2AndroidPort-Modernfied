@@ -131,6 +131,19 @@ struct Assets {
     const ra2assets::TheaterChain* chain = nullptr;
 };
 
+// G-86: the theater chain the ART loaders (buildings, ore, unit palette) use.
+// Null -> the TEMPERATE row (every gate). Set ONLY by GameScene before its art
+// loaders run, so the real game draws snow/urban structures, ore and units with
+// their own theater art + palettes [RE: building-render.md §1/§6 Init_Theater
+// UNIT%s.PAL; maps.md §9]. The YR-only theaters (DESERT/NEWURBAN) keep their
+// art under ra2md.mix, which these loaders do not open: they stay on the
+// temperate art [RE-FALLBACK: G-86 YR theaters].
+const ra2assets::TheaterChain* g_art_chain = nullptr;
+inline const ra2assets::TheaterChain& art_chain() {
+    if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
+    return *ra2assets::theater_chain("TEMPERATE");
+}
+
 // Which map load_assets should read [RE: maps.md §7 rule 2]. The DEFAULT
 // reproduces today's hardcoded selection EXACTLY -- mapsmd03.mix entry
 // 0x133a0cb2, which the hunt identified as the campaign mission sov07tmd.map --
@@ -285,8 +298,9 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
     };
     auto try_load = [&](const std::string& name, ra2assets::ShpFile& out) -> bool {
         for (const char* ext : {".tem", ".shp"})
-            for (const auto& c : ra2assets::theater_candidates(name, 'T', "isotemp.mix",
-                                                               "temperat.mix", ext)) {
+            for (const auto& c : ra2assets::theater_candidates(name, art_chain().letter,
+                                                               art_chain().iso_mix,
+                                                               art_chain().art_mix, ext)) {
                 MixFile* m = get_mix(c.mix);
                 if (!m) continue;
                 if (const MixEntry* e = m->find(c.file)) {
@@ -314,7 +328,7 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
     // (wrong colors, but still renders rather than crashing).
     try {
         MixFile cache = ra2.open_nested("cache.mix");
-        if (const MixEntry* pe = cache.find(std::string("temperat.pal"))) {
+        if (const MixEntry* pe = cache.find(std::string(art_chain().theater_pal))) {
             auto raw = cache.read(*pe);
             oa.pal = Palette::load(raw.data(), raw.size());
             oa.has_pal = true;
@@ -1075,8 +1089,8 @@ UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra
     ua.shps.emplace(cons.combat.image, load_unit_shp(conquer, cons.combat.image));
 
     MixFile cache = ra2.open_nested("cache.mix");
-    const MixEntry* pe = cache.find(std::string("unittem.pal"));
-    if (!pe) throw std::runtime_error("unittem.pal not found in ra2.mix/cache.mix");
+    const MixEntry* pe = cache.find(std::string(art_chain().unit_pal));   // G-86
+    if (!pe) throw std::runtime_error("unit palette not found in ra2.mix/cache.mix");
     auto pal_raw = cache.read(*pe);
     ua.pal = Palette::load(pal_raw.data(), pal_raw.size());
 
@@ -1908,7 +1922,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         auto raw = cache.read(*pe);
         return Palette::load(raw.data(), raw.size());
     };
-    ba.unit_pal = load_pal("unittem.pal");
+    ba.unit_pal = load_pal(art_chain().unit_pal);   // G-86 theater unit palette
     ba.cameo_pal = load_pal("cameo.pal");
     // Sidebar chrome palette: sidebar.pal if present (the §11 pixel-decode
     // used it), else cameo.pal (guarded probe).
@@ -1935,8 +1949,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // Resolve an image name to a decoded SHP over the theater candidate walk
     // (first hit wins); throws if no candidate hits.
     auto resolve_shp = [&](const std::string& image) -> ShpFile {
-        for (const auto& c : ra2assets::theater_candidates(image, 'T', "isotemp.mix",
-                                                           "temperat.mix", ".shp")) {
+        for (const auto& c : ra2assets::theater_candidates(image, art_chain().letter,
+                                                           art_chain().iso_mix,
+                                                           art_chain().art_mix, ".shp")) {
             MixFile* m = get_mix(c.mix);
             if (!m) continue;
             if (const MixEntry* e = m->find(c.file)) return ShpFile::load(m->read(*e));
@@ -2631,8 +2646,9 @@ P5Art load_p5_art(const std::string& dir, const ra2assets::MixFile& ra2) {
         }
     } catch (const std::exception&) {}
     try {
-        for (const auto& c : ra2assets::theater_candidates("crate", 'T', "isotemp.mix",
-                                                           "temperat.mix", ".tem")) {
+        for (const auto& c : ra2assets::theater_candidates("crate", art_chain().letter,
+                                                           art_chain().iso_mix, art_chain().art_mix,
+                                                           std::string(".") + art_chain().ext)) {
             MixFile m = ra2.open_nested(c.mix);
             if (const MixEntry* e = m.find(c.file)) {
                 art.crate = ShpFile::load(m.read(*e));
@@ -4383,7 +4399,8 @@ public:
                                             camp::lower(cfg.campaign_map)}   // P10
                          : cfg.map_file.empty() ? MapSelection{}
                                                 : MapSelection{"multimd.mix", 0u, cfg.map_file})),
-          ua_(load_unit_assets(dir_, ra2_)),
+          // G-86: the art loaders below follow this map's theater.
+          ua_((g_art_chain = a_.chain, load_unit_assets(dir_, ra2_))),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
           language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
           // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
