@@ -214,4 +214,35 @@ constexpr int kMapGuardFramesPerArg = 90;
 MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const MapTeamView& view,
                              long frame);
 
+// ---------------------------------------------------------------------------
+// P7/P10 save: the CampaignRuntime state that lives OUTSIDE the World and the
+// MapTriggerSystem (those have their own WRLD / TRIG sections). Flat, so the
+// save visitor (save_fields.hpp) and the arity tripwire cover it.
+struct CampaignHostSave {
+    // per World unit / building tracking (parallel to the World arrays)
+    std::vector<int> u_tag, u_cx, u_cy, u_hp, u_team;
+    std::vector<std::string> u_type;
+    std::vector<std::uint8_t> u_flags;   // dead|discovered<<1|selected<<2|hunt<<3|initial<<4
+    std::vector<int> b_tag, b_hp;
+    std::vector<std::string> b_type;
+    std::vector<std::uint8_t> b_flags;
+    // map teams
+    std::vector<int> t_type, t_script, t_house, t_pc, t_goal_x, t_goal_y;
+    std::vector<std::vector<int>> t_members;
+    std::vector<std::int64_t> t_wait_until, t_issued_frame, t_created;
+    std::vector<std::uint8_t> t_flags;   // issued|done<<1|recruiting<<2
+    // house counters (events 15/16/19-22)
+    std::vector<int> destroyed_units, destroyed_buildings, last_built;   // last_built: 4 per house
+    // objectives shown on screen + mission end + clocks
+    std::vector<std::int64_t> obj_frames;
+    std::vector<std::string> obj_texts;
+    int end_outcome = 0;
+    std::int64_t end_flagged_at = -1;
+    std::int64_t frame = 0;
+    double accum = 0.0;
+    std::uint64_t logged = 0;
+    int teams_created = 0;
+    int raises = 0;
+};
+
 }  // namespace ra2engine

@@ -47,6 +47,14 @@ struct SkirmishConfig {
     bool                      crates        = false;
     bool                      superweapons  = true;
     bool                      short_game    = true;
+
+    // P10 Campaign [RE: campaign.md §3]: a NON-EMPTY campaign_map turns the
+    // GameScene into that campaign mission (map from Maps01/MAPS02, houses +
+    // objects + triggers from the map); the skirmish fields above are then
+    // unused. Empty (the default) = every existing skirmish path, unchanged.
+    std::string               campaign_map;            // e.g. "ALL01t.MAP"
+    std::string               campaign_side;           // mapsel side: "GDI" / "Nod"
+    int                       campaign_difficulty = 1; // 0 Easy, 1 Normal, 2 Hard
 };
 
 // "Quick start" config reproducing the current run_interactive 1v1 [D1]:

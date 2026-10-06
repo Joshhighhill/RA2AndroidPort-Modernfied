@@ -14,7 +14,7 @@ struct InputEvent {
     char text[32] = {0};                    // Text: NUL-terminated UTF-8
 };
 enum : int { kKeyBackspace = 1, kKeyEnter = 2, kKeyUp = 3, kKeyDown = 4, kKeyDelete = 5,
-             kKeyF10 = 6 };
+             kKeyF10 = 6, kKeyF1 = 7 /* P10 briefing */ };
 class Platform {
 public:
     static Platform create(const char* title, int w, int h);

@@ -3218,12 +3218,20 @@ void prod_tick(ra2engine::ProductionQueues& q, ra2engine::World& world, const Bu
 // tab 1 (Defenses) = BuildCat==Combat — tab 1 drives its OWN concurrent
 // Defense queue (wired in Task 7), NOT a filtered view of the Structure queue.
 // Ordered by tech_level then roster order.
+std::vector<int> building_buildable_tab(const BuildingAssets& ba, bool defenses,
+                                        const char* side_prefix);
 std::vector<int> building_buildable_tab(const BuildingAssets& ba, bool defenses) {
+    return building_buildable_tab(ba, defenses, "GA");
+}
+std::vector<int> building_buildable_tab(const BuildingAssets& ba, bool defenses,
+                                        const char* side_prefix) {
     std::vector<int> v;
     for (int i = 0; i < static_cast<int>(ba.roster.size()); ++i) {
         const ra2engine::BuildingTypeDef& d = ba.roster[i];
         if (!ba.art[i].ok || d.cameo.empty() || d.tech_level <= 0) continue;
-        if (d.id.size() < 2 || d.id[0] != 'G' || d.id[1] != 'A') continue;  // Allied player side
+        // Player side prefix: "GA" (Allied, every existing caller) or "NA"
+        // (P10 Soviet campaign).
+        if (d.id.size() < 2 || d.id[0] != side_prefix[0] || d.id[1] != side_prefix[1]) continue;
         const bool def = i < static_cast<int>(ba.defense.size()) && ba.defense[i] != 0;
         if (def != defenses) continue;
         v.push_back(i);
@@ -4342,8 +4350,11 @@ public:
           // when one is set; an EMPTY map_file keeps the engine's historical
           // default selection, so nothing that does not pick a map changes.
           a_(load_assets(dir_, ra2_,
-                         cfg.map_file.empty() ? MapSelection{}
-                                              : MapSelection{"multimd.mix", 0u, cfg.map_file})),
+                         !cfg.campaign_map.empty()
+                             ? MapSelection{camp::mix_for_map(cfg.campaign_map), 0u,
+                                            camp::lower(cfg.campaign_map)}   // P10
+                         : cfg.map_file.empty() ? MapSelection{}
+                                                : MapSelection{"multimd.mix", 0u, cfg.map_file})),
           ua_(load_unit_assets(dir_, ra2_)),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
           language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
@@ -4358,10 +4369,15 @@ public:
           miners_(load_miner_assets(dir_, ra2_, ua_.pal, rules_)),
           transport_(load_transport_assets(dir_, ra2_, ua_.pal)),
           ore_art_(load_ore_art(ra2_)),
-          ur_(load_unit_roster(dir_, ra2_, ua_, rules_, art_)),
+          // P10: a Soviet campaign player builds from the Soviet roster.
+          ur_(soviet_campaign(cfg) ? load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)
+                                   : load_unit_roster(dir_, ra2_, ua_, rules_, art_)),
           ur_ai_(load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)),
           // Hardcoded 2964-3132 scenario REPLACED by launch_skirmish [D4].
-          world_(launch_skirmish(cfg, a_, ua_, ba_, rules_)),
+          // P10: a campaign mission starts from the bare map world; its
+          // CampaignRuntime (ctor body) places the mission's own objects.
+          world_(cfg.campaign_map.empty() ? launch_skirmish(cfg, a_, ua_, ba_, rules_)
+                                          : build_campaign_world(a_, ua_)),
           buildable_(building_buildable_tab(ba_, /*defenses=*/false)),   // active_tab_ starts at 0
           lay_(ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_)),
           sidebar_up_(ba_.ok && ba_.sidebar_ok),
@@ -4476,6 +4492,10 @@ public:
         scroll_mult_ = rules_.general_double("ScrollMultiplier", 0.07);
         // P5 Veterancy + Crates [RE: veterancy.md]: chevron/crate art + the two
         // systems (interactive only -- see enable_p5_features).
+        // P10 Campaign [RE: campaign.md]: the mission's houses, objects,
+        // triggers and teams (before P5, whose veterancy cost table must see
+        // the mission's extra building types).
+        if (!cfg.campaign_map.empty()) setup_campaign(cfg);
         p5_art_ = load_p5_art(dir_, ra2_);
         g_p5_art = &p5_art_;
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
@@ -4667,8 +4687,15 @@ public:
             world_.deposit_credits(0, player_credits_);
             player_credits_ = 0.0;
         }
+        if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         world_.step(dt);
         if (repair_bridge) player_credits_ += world_.take_income(0);
+        // P10: the mission ended (BorrowedTime ran out) -> the result screen.
+        if (campaign_ && campaign_->finished() && !campaign_done_ && !next_scene_) {
+            campaign_done_ = true;
+            next_scene_ = make_campaign_result_scene(no_audio_, cfg_, campaign_->outcome(),
+                                                     campaign_->frame_count());
+        }
         // P5: drain the promotion / crate events (the EVA/sound hook is a
         // carry-forward -- veterancy.md §5); draining keeps the queues bounded.
         (void)world_.take_vet_events();
@@ -4844,6 +4871,7 @@ public:
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;
         }
+        if (campaign_) draw_campaign_overlay(ren);   // P10 objectives / mission end
         // P7 overlays + the transient "game saved / load failed" banner.
         menu_.render(ren);
         sld_.render(ren, SDL_GetTicks());
@@ -4903,9 +4931,10 @@ public:
     bool save_game(const std::string& path, const std::string& desc) const {
         ra2engine::save::SaveFile f;
         f.header.description = desc;
-        f.header.kind = ra2engine::save::ScenarioKind::Skirmish;
+        f.header.kind = campaign_ ? ra2engine::save::ScenarioKind::Campaign
+                                  : ra2engine::save::ScenarioKind::Skirmish;
         f.header.map_file = cfg_.map_file;
-        f.header.map_id = cfg_.map_id;
+        f.header.map_id = campaign_ ? cfg_.campaign_map : cfg_.map_id;   // P10 mission identity
         f.header.map_w = a_.map.width();
         f.header.map_h = a_.map.height();
         f.header.map_cells = static_cast<int>(a_.map.cells().size());
@@ -4916,6 +4945,12 @@ public:
         f.sections[ra2engine::save::kTagConfig] = ra2engine::save::to_bytes(cfg);
         f.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(world_);
         f.sections[ra2engine::save::kTagScene] = ra2engine::save::to_bytes(sc);
+        if (campaign_) {   // P10: the trigger runtime + the campaign host state
+            f.sections[ra2engine::save::kTagTriggers] =
+                ra2engine::save::save_triggers(campaign_->trigger_system());
+            ra2engine::CampaignHostSave hs = campaign_->capture();
+            f.sections[ra2engine::save::kTagHost] = ra2engine::save::to_bytes(hs);
+        }
         return ra2engine::save::write_file(path, ra2engine::save::encode_save(f));
     }
 
@@ -4930,14 +4965,24 @@ private:
         ra2engine::save::SceneSave sc;
         const bool map_ok = f.header.map_w == a_.map.width() && f.header.map_h == a_.map.height() &&
                             f.header.map_cells == static_cast<int>(a_.map.cells().size());
-        const bool ok = map_ok && w && s && ra2engine::save::from_bytes(*s, sc) &&
-                        ra2engine::save::load_world(world_, *w);
+        bool ok = map_ok && w && s && ra2engine::save::from_bytes(*s, sc) &&
+                  ra2engine::save::load_world(world_, *w);
+        if (ok && campaign_) {   // P10: TRIG + HOST must both restore
+            const std::vector<uint8_t>* tr = f.section(ra2engine::save::kTagTriggers);
+            const std::vector<uint8_t>* hs = f.section(ra2engine::save::kTagHost);
+            ra2engine::CampaignHostSave h;
+            ok = tr && hs && ra2engine::save::load_triggers(campaign_->trigger_system(), *tr) &&
+                 ra2engine::save::from_bytes(*hs, h) && campaign_->restore(h);
+        }
         if (ok) {
             apply_save(sc);
             show_banner("GAME LOADED");
         } else {
             // Never run a half-loaded World: start the same scenario fresh.
-            world_ = launch_skirmish(cfg_, a_, ua_, ba_, rules_);
+            campaign_.reset();
+            world_ = cfg_.campaign_map.empty() ? launch_skirmish(cfg_, a_, ua_, ba_, rules_)
+                                               : build_campaign_world(a_, ua_);
+            if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
             wire_abilities(world_, rules_, rules_ini_);
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
@@ -4992,15 +5037,24 @@ private:
                 case InGameMenu::Save:
                     menu_.open_ = false;
                     // "%sSav" default = the scenario's display name (saveload.md §3).
-                    sld_.open(SaveLoadDialog::Save, "Skirmish");
+                    sld_.open(SaveLoadDialog::Save, campaign_ ? mission_name_ : "Skirmish");
                     break;
                 case InGameMenu::Delete:
                     menu_.open_ = false;
                     sld_.open(SaveLoadDialog::Delete, "");
                     break;
-                case InGameMenu::Abort: abort_ = true; break;
+                case InGameMenu::Abort:
+                    // P10: Abort returns to the main menu when the shell is up
+                    // (run_menu); a bare --interactive run still exits.
+                    if (Scene* m = make_main_menu_scene(no_audio_)) next_scene_ = m;
+                    else abort_ = true;
+                    break;
                 default: break;
             }
+            return true;
+        }
+        if (campaign_ && ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyF1) {
+            show_briefing_ = !show_briefing_;   // P10: the mission briefing (Brief:<map>)
             return true;
         }
         const bool open_key = ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyF10;
@@ -5022,8 +5076,9 @@ private:
 
     // Active sidebar tab (0=Structures,1=Defenses,2=Infantry,3=Vehicles).
     std::vector<int> tab_buildable(int tab) const {
-        if (tab == 0) return building_buildable_tab(ba_, /*defenses=*/false);
-        if (tab == 1) return building_buildable_tab(ba_, /*defenses=*/true);
+        const char* pfx = soviet_campaign(cfg_) ? "NA" : "GA";   // P10 player side
+        if (tab == 0) return building_buildable_tab(ba_, /*defenses=*/false, pfx);
+        if (tab == 1) return building_buildable_tab(ba_, /*defenses=*/true, pfx);
         std::vector<int> v;   // tabs 2/3: unit-roster indices
         const bool want_veh = (tab == 3);
         for (int i = 0; i < static_cast<int>(ur_.defs.size()); ++i)
@@ -5097,7 +5152,112 @@ private:
     std::string          banner_;
     Uint32               banner_until_ = 0;
     P5Art                p5_art_;   // P5: PIPS/crate art published via g_p5_art
+
+    // --- P10 Campaign [RE: campaign.md] ---
+    std::unique_ptr<CampaignRuntime> campaign_;   // null in skirmish
+    bool                 campaign_done_ = false;  // result scene already queued
+    std::string          mission_name_ = "Mission";
+    std::string          briefing_;
+    bool                 show_briefing_ = false;  // F1 toggles the mission briefing
+    static bool soviet_campaign(const ra2engine::SkirmishConfig& c) {
+        return !c.campaign_map.empty() && camp::up(c.campaign_side) == "NOD";
+    }
+    void setup_campaign(const ra2engine::SkirmishConfig& cfg) {
+        camp::Launch l;
+        l.map = cfg.campaign_map;
+        l.side = cfg.campaign_side;
+        l.difficulty = cfg.campaign_difficulty;
+        campaign_ = std::make_unique<CampaignRuntime>(l, dir_, ra2_, language_, world_, a_, ua_, ba_,
+                                                      rules_, art_, rules_ini_);
+        for (const VehicleAssets* v : campaign_->vehicle_assets()) vlist_.push_back(v);
+        for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
+        player_credits_ = campaign_->player_credits();
+        queues_.set_credits(player_credits_);
+        credits_shown_ = player_credits_;
+        if (soviet_campaign(cfg)) {
+            inf_ft_ = factory_types_for(ba_, "NAHAND");
+            veh_ft_ = factory_types_for(ba_, "NAWEAP");
+            std::vector<int> unit_ft = inf_ft_;
+            unit_ft.insert(unit_ft.end(), veh_ft_.begin(), veh_ft_.end());
+            input_.set_unit_factory_types(unit_ft);
+            input_.set_infantry_factory_types(inf_ft_);
+            input_.set_vehicle_factory_types(veh_ft_);
+        }
+        buildable_ = tab_buildable(active_tab_);
+        lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
+        // The mission opens on the player's first unit.
+        for (const ra2engine::Unit& u : world_.units())
+            if (u.house == 0) {
+                cam_.x = static_cast<int>(playfield_w_ / 2.0 - (u.fx - u.fy) * 30.0);
+                cam_.y = static_cast<int>(kWinH / 2.0 - (u.fx + u.fy) * 15.0);
+                break;
+            }
+        const ra2engine::CampaignTables tables = camp::load_tables(ra2_);
+        const ra2engine::MissionInfo mi = tables.mission(cfg.campaign_map);
+        if (!mi.ui_name.empty()) mission_name_ = camp::csf_text(dir_, mi.ui_name);
+        briefing_ = camp::csf_text(dir_, mi.briefing.empty() ? campaign_->basic().briefing : mi.briefing);
+    }
+    // Word-wrapped text block (the 5x7 glyph font, `cols` characters per line).
+    static int draw_wrapped(SDL_Renderer* ren, const std::string& text, int x, int y, int cols,
+                            int scale, int max_y, Uint8 r, Uint8 g, Uint8 b) {
+        const std::string t = camp::up(text);
+        std::size_t p = 0;
+        while (p < t.size() && y < max_y) {
+            std::size_t n = std::min<std::size_t>((std::size_t)cols, t.size() - p);
+            const std::size_t nl = t.find('\n', p);
+            if (nl != std::string::npos && nl < p + n) {
+                n = nl - p;
+            } else if (p + n < t.size()) {
+                const std::size_t sp = t.rfind(' ', p + n);
+                if (sp != std::string::npos && sp > p) n = sp - p;
+            }
+            draw_text(ren, t.substr(p, n), x, y, scale, r, g, b);
+            y += 10 * scale;
+            p += n + 1;
+        }
+        return y;
+    }
+    void draw_campaign_overlay(SDL_Renderer* ren) {
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        // Objectives (TextTrigger lines) for 20 s each, newest last.
+        const long f = campaign_->frame_count();
+        int y = 40;
+        for (const CampaignRuntime::Objective& o : campaign_->objectives()) {
+            if (f - o.frame > 300) continue;
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 150);
+            SDL_Rect bg{8, y - 4, playfield_w_ - 16, 44};
+            SDL_RenderFillRect(ren, &bg);
+            y = draw_wrapped(ren, o.text, 14, y, (playfield_w_ - 40) / 12, 2, y + 40, 120, 255, 120) + 8;
+        }
+        // Mission timer (actions 23-27) when running.
+        const ra2engine::MapTriggerSystem& ts = campaign_->triggers();
+        if (ts.mission_timer_start() != -1) {
+            const long left =
+                std::max(0L, ts.mission_timer_left() - (ts.frame() - ts.mission_timer_start()));
+            char b[32];
+            std::snprintf(b, sizeof b, "TIMER %02ld:%02ld", left / 15 / 60, (left / 15) % 60);
+            draw_text(ren, b, playfield_w_ / 2 - 60, 10, 2, 255, 230, 120);
+        }
+        if (campaign_->outcome() != 0) {
+            const char* m = campaign_->outcome() == 1 ? "MISSION ACCOMPLISHED" : "MISSION FAILED";
+            const int w = static_cast<int>(std::strlen(m)) * 24;
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
+            SDL_Rect bg{(playfield_w_ - w) / 2 - 20, kWinH / 2 - 30, w + 40, 60};
+            SDL_RenderFillRect(ren, &bg);
+            draw_text(ren, m, (playfield_w_ - w) / 2, kWinH / 2 - 14, 4, 255, 220, 90);
+        }
+        if (show_briefing_) {
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 210);
+            SDL_Rect bg{60, 80, playfield_w_ - 120, 440};
+            SDL_RenderFillRect(ren, &bg);
+            draw_text(ren, camp::up(mission_name_), 80, 96, 3, 255, 220, 90);
+            draw_wrapped(ren, briefing_, 80, 140, (playfield_w_ - 180) / 12, 2, 500, 230, 230, 230);
+        } else {
+            draw_text(ren, "F1 BRIEFING", 10, kWinH - 20, 2, 200, 200, 200);
+        }
+    }
 };
+
 
 // Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
 // the old inline scenario (default_skirmish_config reproduces the 1v1). SAME
@@ -5483,7 +5643,8 @@ enum ShellPage {
 // What a menu button does when clicked. Navigation buttons carry a target
 // ShellPage in ShellButton::target; ACT_SKIRMISH is the ONLY live game path
 // (-> SkirmishSetupScene -> GameScene); ACT_QUIT exits.
-enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */ };
+enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */,
+                   ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */ };
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -5989,10 +6150,10 @@ private:
                     btn(1, "Network",   false, ACT_GOTO, PAGE_MAIN),
                     btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
-            case PAGE_CAMPAIGN: // dialog 0x94 (greyed placeholder this task)
+            case PAGE_CAMPAIGN: // dialog 0x94 -- P10: battle.ini ALL1 / SOV1 [RE: campaign.md §3]
                 return {
-                    btn(0, "Allied Campaign", false, ACT_GOTO, PAGE_SINGLE),
-                    btn(1, "Soviet Campaign", false, ACT_GOTO, PAGE_SINGLE),
+                    btn(0, "Allied Campaign", true, ACT_CAMPAIGN_ALLIED, PAGE_SINGLE),
+                    btn(1, "Soviet Campaign", true, ACT_CAMPAIGN_SOVIET, PAGE_SINGLE),
                     btn(5, "Back",            true,  ACT_GOTO, PAGE_SINGLE),
                 };
             default:            // PAGE_MAIN, dialog 0xE2
@@ -6509,6 +6670,18 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
     action(back_rect(),  "BACK");
 }
 
+// P10 campaign shell scenes (loading screen / result) [RE: campaign.md].
+#include "campaign_scenes.inc"
+
+// --campaign <MAP>: open a mission's loading screen directly (no main menu;
+// result/abort then exit). Side from the map name (SOV* = Nod).
+int run_campaign_direct(const std::string& map, bool no_audio) {
+    ra2engine::Platform plat = ra2engine::Platform::create("RA2 Engine", 1280, 720);
+    ra2engine::TextureCache tc(plat.renderer());
+    const std::string side = camp::up(map).rfind("SOV", 0) == 0 ? "Nod" : "GDI";
+    return run_scene_driver(plat, tc, new CampaignLoadScene(no_audio, campaign_config(map, side, 1)));
+}
+
 // out-of-line handles (both scene types now complete; GameScene defined above) ---
 
 void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
@@ -6555,6 +6728,9 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             case ACT_SKIRMISH: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
             // P7 [RE: saveload.md §3]: STT:SingleButtonLoadSavedGame -> the Load dialog.
             case ACT_LOADGAME: sld_.open(SaveLoadDialog::Load, ""); return;
+            // P10: battle.ini ALL1 / SOV1 -> the first mission's loading screen.
+            case ACT_CAMPAIGN_ALLIED: next_ = make_campaign_start_scene(no_audio_, "ALL1", "GDI"); return;
+            case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
             // Page transition (incl. Back): construct the target page's ShellScene.
             case ACT_GOTO:
                 // [P8 / options.md §2] Leaving 0xD5: FUN_00542280 commits the
@@ -6656,7 +6832,11 @@ int run_menu(bool no_audio) {
     g_user_settings = &user;
     if (store.audio && store.audio->sys.mixer)
         apply_audio_settings(*store.audio->sys.mixer, user);
+    g_menu_rules = &rules;        // P10: a finished/aborted mission returns here
+    g_menu_art = &store.art;
     const int rc = run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
+    g_menu_rules = nullptr;
+    g_menu_art = nullptr;
     g_user_settings = nullptr;
     return rc;
 }
@@ -15575,6 +15755,7 @@ int main(int argc, char** argv) {
         return run_menu(/*no_audio=*/false);
 #else
         std::string screenshot;
+        std::string campaign_map;   // P10 --campaign <MAP>
         bool demo_move = false;
         int demo_x = 0, demo_y = 0;
         bool demo_retarget = false;
@@ -15687,6 +15868,8 @@ int main(int argc, char** argv) {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
                 no_audio = true;
+            } else if (arg == "--campaign" && i + 1 < argc) {
+                campaign_map = argv[++i];   // P10: jump straight to a mission's loading screen
             }
         }
         // --demo-tank dispatched BEFORE --demo-combat (brief Step 6 ordering).
@@ -15706,6 +15889,7 @@ int main(int argc, char** argv) {
             return run_demo_retarget(retarget_x1, retarget_y1, retarget_x2, retarget_y2);
         if (demo_move) return run_demo_move(demo_x, demo_y);
         if (!screenshot.empty()) return run_screenshot(screenshot);
+        if (!campaign_map.empty()) return run_campaign_direct(campaign_map, no_audio);
         return run_menu(no_audio);
 #endif
     } catch (const std::exception& ex) {

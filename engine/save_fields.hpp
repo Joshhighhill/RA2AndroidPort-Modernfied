@@ -13,6 +13,7 @@
 
 #include "map_trigger.hpp"
 #include "savegame.hpp"
+#include "campaign.hpp"   // P10 CampaignHostSave
 #include "skirmish.hpp"
 #include "world.hpp"
 
@@ -217,6 +218,8 @@ struct SaveAccess {
         save::io(ar, s.raise_depth_kind_);
         save::io(ar, s.force_depth_);
         save::io(ar, s.cur_trigger_);
+        save::io(ar, s.campaign_mode_);   // P10
+        save::io(ar, s.semi_detached_);   // P10
     }
     static std::size_t trig_arity() { return save::aggregate_arity<Trig>(); }
     static std::size_t tag_arity() { return save::aggregate_arity<Tag>(); }
@@ -845,6 +848,23 @@ template <class Ar> void fields(Ar& ar, SkirmishConfig& v) {
     io(ar, v.crates);
     io(ar, v.superweapons);
     io(ar, v.short_game);
+    io(ar, v.campaign_map);          // P10: campaign mission identity ("" = skirmish)
+    io(ar, v.campaign_side);
+    io(ar, v.campaign_difficulty);
+}
+
+// --- P10 campaign runtime state (the 'HOST' section of a campaign save) ---
+template <class Ar> void fields(Ar& ar, CampaignHostSave& v) {
+    io(ar, v.u_tag); io(ar, v.u_cx); io(ar, v.u_cy); io(ar, v.u_hp); io(ar, v.u_team);
+    io(ar, v.u_type); io(ar, v.u_flags);
+    io(ar, v.b_tag); io(ar, v.b_hp); io(ar, v.b_type); io(ar, v.b_flags);
+    io(ar, v.t_type); io(ar, v.t_script); io(ar, v.t_house); io(ar, v.t_pc);
+    io(ar, v.t_goal_x); io(ar, v.t_goal_y); io(ar, v.t_members);
+    io(ar, v.t_wait_until); io(ar, v.t_issued_frame); io(ar, v.t_created); io(ar, v.t_flags);
+    io(ar, v.destroyed_units); io(ar, v.destroyed_buildings); io(ar, v.last_built);
+    io(ar, v.obj_frames); io(ar, v.obj_texts);
+    io(ar, v.end_outcome); io(ar, v.end_flagged_at); io(ar, v.frame); io(ar, v.accum);
+    io(ar, v.logged); io(ar, v.teams_created); io(ar, v.raises);
 }
 
 // --- GameScene / UI state (the 'SCNE' section) ---------------------------

@@ -358,6 +358,91 @@ public:
     int house_index(const std::string& name) const { return engine_house_of_name(name); }
     int raises() const { return raises_; }
 
+    // --- P7 save/load (HOST section; the triggers go in TRIG) -----------------
+    ra2engine::MapTriggerSystem& trigger_system() { return *sys_; }
+    ra2engine::CampaignHostSave capture() const {
+        ra2engine::CampaignHostSave h;
+        for (const Track& t : utrack_) {
+            h.u_tag.push_back(t.tag); h.u_cx.push_back(t.cx); h.u_cy.push_back(t.cy);
+            h.u_hp.push_back(t.hp); h.u_team.push_back(t.team); h.u_type.push_back(t.type);
+            h.u_flags.push_back(flags_of(t));
+        }
+        for (const Track& t : btrack_) {
+            h.b_tag.push_back(t.tag); h.b_hp.push_back(t.hp); h.b_type.push_back(t.type);
+            h.b_flags.push_back(flags_of(t));
+        }
+        for (const Team& t : teams_) {
+            h.t_type.push_back(t.type); h.t_script.push_back(t.script); h.t_house.push_back(t.house);
+            h.t_pc.push_back(t.st.pc); h.t_goal_x.push_back(t.goal_x); h.t_goal_y.push_back(t.goal_y);
+            h.t_members.push_back(t.members);
+            h.t_wait_until.push_back(t.st.wait_until);
+            h.t_issued_frame.push_back(t.issued_frame);
+            h.t_created.push_back(t.created);
+            h.t_flags.push_back((std::uint8_t)((t.st.issued ? 1 : 0) | (t.st.done ? 2 : 0) |
+                                               (t.recruiting ? 4 : 0)));
+        }
+        h.destroyed_units = destroyed_units_;
+        h.destroyed_buildings = destroyed_buildings_;
+        for (const auto& lb : last_built_) h.last_built.insert(h.last_built.end(), lb.begin(), lb.end());
+        for (const Objective& o : objectives_) { h.obj_frames.push_back(o.frame); h.obj_texts.push_back(o.text); }
+        h.end_outcome = end_.outcome();
+        h.end_flagged_at = end_.flagged_at();
+        h.frame = frame_;
+        h.accum = accum_;
+        h.logged = logged_;
+        h.teams_created = teams_created_;
+        h.raises = raises_;
+        return h;
+    }
+    bool restore(const ra2engine::CampaignHostSave& h) {
+        if (h.u_tag.size() != w_.units().size() || h.b_tag.size() != w_.buildings().size())
+            return false;
+        utrack_.clear();
+        for (std::size_t i = 0; i < h.u_tag.size(); ++i) {
+            Track t;
+            t.tag = h.u_tag[i]; t.cx = h.u_cx[i]; t.cy = h.u_cy[i]; t.hp = h.u_hp[i];
+            t.team = h.u_team[i]; t.type = h.u_type[i];
+            set_flags(t, h.u_flags[i]);
+            utrack_.push_back(t);
+        }
+        btrack_.clear();
+        for (std::size_t i = 0; i < h.b_tag.size(); ++i) {
+            Track t;
+            t.tag = h.b_tag[i]; t.hp = h.b_hp[i]; t.type = h.b_type[i];
+            set_flags(t, h.b_flags[i]);
+            btrack_.push_back(t);
+        }
+        teams_.clear();
+        for (std::size_t i = 0; i < h.t_type.size(); ++i) {
+            Team t;
+            t.type = h.t_type[i]; t.script = h.t_script[i]; t.house = h.t_house[i];
+            t.st.pc = h.t_pc[i]; t.goal_x = h.t_goal_x[i]; t.goal_y = h.t_goal_y[i];
+            t.members = h.t_members[i];
+            t.st.wait_until = (long)h.t_wait_until[i];
+            t.issued_frame = (long)h.t_issued_frame[i];
+            t.created = (long)h.t_created[i];
+            t.st.issued = (h.t_flags[i] & 1) != 0;
+            t.st.done = (h.t_flags[i] & 2) != 0;
+            t.recruiting = (h.t_flags[i] & 4) != 0;
+            teams_.push_back(t);
+        }
+        destroyed_units_ = h.destroyed_units;
+        destroyed_buildings_ = h.destroyed_buildings;
+        for (std::size_t i = 0; i < last_built_.size() && 4 * i + 3 < h.last_built.size(); ++i)
+            for (int k = 0; k < 4; ++k) last_built_[i][(std::size_t)k] = h.last_built[4 * i + (std::size_t)k];
+        objectives_.clear();
+        for (std::size_t i = 0; i < h.obj_frames.size() && i < h.obj_texts.size(); ++i)
+            objectives_.push_back({(long)h.obj_frames[i], h.obj_texts[i]});
+        end_ = ra2engine::MissionEnd(end_.borrowed_frames());
+        if (h.end_outcome != 0) end_.flag(h.end_outcome, (long)h.end_flagged_at);
+        frame_ = (long)h.frame;
+        accum_ = h.accum;
+        logged_ = (std::size_t)h.logged;
+        teams_created_ = h.teams_created;
+        raises_ = h.raises;
+        return true;
+    }
+
     std::uint64_t hash() const {
         std::uint64_t h = sys_->state_hash();
         auto mix = [&](std::uint64_t v) {
@@ -402,6 +487,14 @@ private:
         bool recruiting = false;
         long created = 0;
     };
+
+    static std::uint8_t flags_of(const Track& t) {
+        return (std::uint8_t)((t.dead ? 1 : 0) | (t.discovered ? 2 : 0) | (t.selected ? 4 : 0) |
+                              (t.hunt ? 8 : 0) | (t.initial ? 16 : 0));
+    }
+    static void set_flags(Track& t, std::uint8_t f) {
+        t.dead = f & 1; t.discovered = f & 2; t.selected = f & 4; t.hunt = f & 8; t.initial = f & 16;
+    }
 
     // --- houses [RE §3.3, map-triggers §6] ------------------------------------
     void setup_houses() {
@@ -1207,3 +1300,9 @@ ra2engine::World build_campaign_world(Assets& a, UnitAssets& ua) {
     world.set_water_terrain(resolve_land_types(a.map, a.theater, gw, gh));
     return world;
 }
+
+// Scene factories the campaign GameScene transitions through; defined in
+// campaign_scenes.inc (after the shell scenes exist).
+Scene* make_campaign_result_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg, int outcome,
+                                  long frames);
+Scene* make_main_menu_scene(bool no_audio);   // nullptr when no shell is running
