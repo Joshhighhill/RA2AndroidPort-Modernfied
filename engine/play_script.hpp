@@ -24,6 +24,7 @@ struct Cmd {
     std::string expr;
     int n = 0;          // until N / wait N / hold KEY N
     std::string raw;    // the source line (trimmed, without the comment)
+    std::vector<Cmd> sub;   // `if EXPR then CMD`: the guarded command (size 1)
 };
 
 struct Script {

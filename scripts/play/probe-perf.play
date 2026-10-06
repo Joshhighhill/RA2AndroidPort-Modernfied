@@ -1,0 +1,8 @@
+# Harness self-check: frames/second with sparse rendering.
+set render_every 300
+click button "Single Player"
+click button Skirmish
+click start
+until 30 scene == game
+wait 1500
+end

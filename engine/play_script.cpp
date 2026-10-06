@@ -72,7 +72,7 @@ const std::set<std::string>& known_ops() {
     static const std::set<std::string> k = {
         "set",  "wait", "click", "drag",   "move",    "key",   "hold", "type", "view",
         "place", "shot", "assert", "until", "require", "let",  "cheat", "log", "end",
-        "expect", "dump"};
+        "expect", "dump", "cycle", "if"};
     return k;
 }
 
@@ -150,6 +150,35 @@ bool parse_script(const std::string& text, Script& out, std::string& err) {
                 return false;
             }
             c.expr = rejoin(2);
+        } else if (c.op == "if") {
+            // if EXPR then CMD ARGS...   (CMD may not block: no until/cycle/if)
+            std::size_t th = 0;
+            while (th < c.args.size() && c.args[th] != "then") ++th;
+            if (th == 0 || th + 1 >= c.args.size()) {
+                err = "line " + std::to_string(ln) + ": if EXPR then CMD";
+                return false;
+            }
+            c.expr = rejoin(1);
+            const std::size_t cut = c.expr.find(" then ");
+            std::string rest = c.expr.substr(cut + 6);
+            c.expr = c.expr.substr(0, cut);
+            for (const std::string& t : c.tags) rest += " @" + t;
+            Script one;
+            std::string e2;
+            if (!parse_script(rest, one, e2) || one.cmds.size() != 1) {
+                err = "line " + std::to_string(ln) + ": if ... then: " + e2;
+                return false;
+            }
+            const std::string& so = one.cmds[0].op;
+            if (so == "until" || so == "cycle" || so == "if" || so == "end") {
+                err = "line " + std::to_string(ln) + ": 'if' cannot guard '" + so + "'";
+                return false;
+            }
+            one.cmds[0].line = ln;
+            c.sub.push_back(one.cmds[0]);
+        } else if (c.op == "cycle") {
+            if (!need(2)) return false;
+            c.expr = rejoin(2);
         } else if (c.op == "assert" || c.op == "require") {
             if (!need(1)) return false;
             c.expr = rejoin(1);
@@ -169,6 +198,7 @@ bool parse_script(const std::string& text, Script& out, std::string& err) {
                    c.op == "drag" || c.op == "place" || c.op == "expect") {
             if (!need(1)) return false;
         }
+        c.raw = rejoin(0);   // the command without its @tags
         out.cmds.push_back(std::move(c));
     }
     return true;
@@ -187,9 +217,16 @@ bool resolve_operand(const std::string& tok, const ProbeData& p,
         return true;
     }
     if (tok[0] == '$') {
-        auto it = vars.find(tok.substr(1));
+        // $name, or $name+N / $name-N (numeric offset, no spaces).
+        std::size_t op = tok.find_first_of("+-", 1);
+        auto it = vars.find(tok.substr(1, op == std::string::npos ? std::string::npos : op - 1));
         if (it == vars.end()) return false;
         out = it->second;
+        if (op != std::string::npos) {
+            double k = 0.0;
+            if (!out.is_num || !to_num(tok.substr(op + 1), k)) return false;
+            out.num += tok[op] == '+' ? k : -k;
+        }
         return true;
     }
     if (auto it = p.n.find(tok); it != p.n.end()) { out.is_num = true; out.num = it->second; return true; }

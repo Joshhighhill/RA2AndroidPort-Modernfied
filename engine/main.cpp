@@ -3981,7 +3981,7 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         while (plat.poll(ev)) {
             if (play) play->on_event(ev);
             if (ev.kind == ra2engine::InputEvent::Quit) {
-                if (play) play->on_quit();
+                if (play && play->on_quit()) continue;   // --play: recorded + swallowed
                 return 0;
             }
             scene->handle(ev);
@@ -3998,7 +3998,10 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         } else {
             play->post_frame(plat, probe);
         }
-        if (Scene* nx = scene->next()) scene.reset(nx);   // transition (variable dt continues)
+        if (Scene* nx = scene->next()) {   // transition (variable dt continues)
+            scene.reset(nx);
+            if (play) play->on_transition();
+        }
         if (!play) SDL_Delay(16);
     }
     return 0;
@@ -4972,6 +4975,11 @@ public:
             p.add("units(" + hs + ")", 1);
             p.add("units(" + hs + "," + id + ")", 1);
             if (u.moving()) p.add("moving(" + hs + ")", 1);
+            if (!p.n.count("weapon_damage(" + id + ")")) {   // first live unit of the type
+                p.set("weapon_damage(" + id + ")", u.w_damage);
+                p.set("weapon_range(" + id + ")", u.w_range);
+                p.set("weapon_rof(" + id + ")", u.w_rof);
+            }
             if (u.selected) { ++selected; p.add("selected_type(" + id + ")", 1); }
             if (u.is_harvester) {
                 static const char* kHs[] = {"None", "SeekOre", "MoveToOre", "Harvesting",
@@ -4983,6 +4991,28 @@ public:
             }
         }
         p.set("selected", selected);
+        {   // the lowest-index selected unit's cell (for "did it move" checks)
+            const ra2engine::Unit* s0 = nullptr;
+            for (const ra2engine::Unit& u : world_.units())
+                if (u.selected && u.alive && u.die_time < 0.0) { s0 = &u; break; }
+            p.set("sel_cx", s0 ? std::floor(s0->fx + 0.5) : -1);
+            p.set("sel_cy", s0 ? std::floor(s0->fy + 0.5) : -1);
+            p.set("sel_moving", s0 && s0->moving() ? 1 : 0);
+        }
+        for (int h = 0; h < houses; ++h) {   // losses since the game began
+            int lost = 0, blost = 0;
+            long hp_lost = 0;
+            for (const ra2engine::Unit& u : world_.units())
+                if (u.house == h && (!u.alive || u.die_time >= 0.0)) ++lost;
+            for (const ra2engine::Building& b : world_.buildings()) {
+                if (b.house != h) continue;
+                if (!b.alive || b.state == ra2engine::Building::State::Dead) ++blost;
+                else hp_lost += b.max_hp - b.hp;
+            }
+            p.set("units_lost(" + std::to_string(h) + ")", lost);
+            p.set("buildings_lost(" + std::to_string(h) + ")", blost);
+            p.set("hp_lost(" + std::to_string(h) + ")", static_cast<double>(hp_lost));
+        }
         for (const ra2engine::Building& b : world_.buildings()) {
             if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
             const std::string hs = std::to_string(b.house);
@@ -4993,6 +5023,19 @@ public:
             if (b.state == ra2engine::Building::State::Idle) p.add("built(" + hs + "," + id + ")", 1);
         }
         p.set("selected_building", input_.selected_building());
+        {   // own objects inside the playfield view (camera opens on the player?)
+            int on = 0;
+            auto vis = [&](double fx, double fy) {
+                const int sx = static_cast<int>(std::lround((fx - fy) * 30.0)) + 30 + cam_.x;
+                const int sy = static_cast<int>(std::lround((fx + fy) * 15.0)) + 15 + cam_.y;
+                return sx >= 0 && sx < playfield_w_ && sy >= 0 && sy < kWinH;
+            };
+            for (const ra2engine::Unit& u : world_.units())
+                if (u.house == 0 && u.alive && u.die_time < 0.0 && vis(u.fx, u.fy)) ++on;
+            for (const ra2engine::Building& b : world_.buildings())
+                if (b.house == 0 && b.alive && vis(b.cx + b.fw / 2.0, b.cy + b.fh / 2.0)) ++on;
+            p.set("own_on_screen", on);
+        }
         // Session verdict as the player sees it. A skirmish has no end path on
         // this tree (GameScene never reads the World's victory state, G-02), so
         // `outcome` stays RUNNING there; `world_outcome` is the World's view.
@@ -5168,7 +5211,35 @@ public:
                 player_credits_ += std::atof(a[1].c_str());
                 return "";
             }
-            return "unknown cheat (have: kill_house H, damage_building H:TYPE[:n] DMG, credits N)";
+            // spawn TYPE H (cell X Y | building H:T[:n] +DX +DY)
+            if (c == "spawn" && a.size() >= 5) {
+                const ra2engine::UnitTypeDef* def = nullptr;
+                for (const UnitRoster* r : {&ur_, &ur_ai_})
+                    for (const ra2engine::UnitTypeDef& d : r->defs)
+                        if (!def && d.id == a[1]) def = &d;
+                if (!def) return "no roster def " + a[1] + " (player/AI rosters only)";
+                const int h = std::atoi(a[2].c_str());
+                int x = 0, y = 0;
+                if (a[3] == "cell") {
+                    x = std::atoi(a[4].c_str());
+                    y = a.size() > 5 ? std::atoi(a[5].c_str()) : 0;
+                } else if (a[3] == "building" && a.size() >= 7) {
+                    const int bi = play_find_building(a[4]);
+                    if (bi < 0) return "no building " + a[4];
+                    const ra2engine::Building& b = world_.buildings()[bi];
+                    x = b.cx + std::atoi(a[5].c_str());
+                    y = b.cy + std::atoi(a[6].c_str());
+                } else {
+                    return "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY";
+                }
+                world_.add_combat_unit(x, y, h, def->combat);
+                world_.set_anim(def->combat.image, ua_.anims.count(def->combat.image)
+                                                       ? ua_.anims.at(def->combat.image)
+                                                       : ra2engine::default_anim());
+                return "";
+            }
+            return "unknown cheat (have: kill_house H, damage_building H:TYPE[:n] DMG, credits N, "
+                   "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY)";
         };
     }
 

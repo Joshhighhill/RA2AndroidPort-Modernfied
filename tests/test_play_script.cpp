@@ -74,6 +74,8 @@ TEST_CASE("play_script: expression evaluation, families, missing keys") {
     p.set("credits", 10500);
     CHECK(eval_expr("credits > $c0", p, vars, d) == Eval::True);
     CHECK(eval_expr("credits > $nope", p, vars, d) == Eval::Missing);
+    CHECK(eval_expr("credits == $c0+500", p, vars, d) == Eval::True);
+    CHECK(eval_expr("credits > $c0-1", p, vars, d) == Eval::True);
 }
 
 TEST_CASE("play_script: probe hash is order-independent and value-sensitive") {

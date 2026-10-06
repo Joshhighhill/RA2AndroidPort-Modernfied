@@ -26,9 +26,13 @@ public:
     virtual bool pre_frame(ra2engine::Platform& plat, const ProbeFn& probe) = 0;
     // Every polled event passes here first (virtual timestamps for determinism).
     virtual void on_event(ra2engine::InputEvent& ev) = 0;
-    // The driver is about to return because of InputEvent::Quit (the real
-    // program would exit here). Recorded; the driver still returns.
-    virtual void on_quit() = 0;
+    // InputEvent::Quit reached the driver (the real program exits here).
+    // Recorded as a failure unless expected. Returns true to SWALLOW it and
+    // keep running (script `set on_quit continue`, so later steps can still
+    // be checked); false = return from the driver like the real program.
+    virtual bool on_quit() = 0;
+    // The driver swapped scenes (Scene::next() returned non-null).
+    virtual void on_transition() = 0;
     virtual double dt() const = 0;           // fixed logic step (default 1/15 s)
     virtual bool want_render() const = 0;    // render this frame?
     // After update + render: screenshots, per-15-frame probe/hash line.

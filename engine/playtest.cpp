@@ -19,6 +19,7 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -134,10 +135,26 @@ public:
         ev.t_ms = static_cast<uint32_t>(f_ * 1000 / 15 + (seq_++));
     }
 
-    void on_quit() override {
+    bool on_quit() override {
+        ++quits_;
+        if (expect_quit_) { quit_seen_ = true; quit_frame_ = f_; return false; }
+        if (quit_continue_) {
+            // Recorded against the input command that produced it; the run goes on.
+            Failure x{last_input_line_, f_, last_input_raw_,
+                      "process would quit at f=" + std::to_string(f_) +
+                          " (InputEvent::Quit reached run_scene_driver; swallowed by set on_quit continue)",
+                      last_input_tags_, false};
+            fails_.push_back(x);
+            emit("PLAY FAIL L" + std::to_string(x.line) + " f=" + std::to_string(f_) + " " + x.what + "  [" +
+                     x.detail + "] " + join_tags(x.tags),
+                 true);
+            return true;
+        }
         quit_seen_ = true;
         quit_frame_ = f_;
+        return false;
     }
+    void on_transition() override { ++transitions_; }
 
     double dt() const override { return dt_; }
     bool want_render() const override {
@@ -161,7 +178,7 @@ public:
                                   "selected", "tab"})
                 if (auto it = p.n.find(k); it != p.n.end()) o << " " << k << "=" << it->second;
             if (auto it = p.s.find("outcome"); it != p.s.end()) o << " outcome=" << it->second;
-            emit(o.str(), /*console=*/verbose_states_);
+            emit(o.str(), /*console=*/verbose_states_ && (f_ % 150) == 0);
         }
     }
 
@@ -169,14 +186,15 @@ public:
     int finish(const std::string& exit_reason) {
         if (quit_seen_ && !expect_quit_) {
             std::vector<std::string> tags = last_input_tags_;
-            fail_hard(last_input_line_, "process-quit",
+            fail_hard(last_input_line_, last_input_raw_.empty() ? "process-quit" : last_input_raw_,
                       "process would quit at f=" + std::to_string(quit_frame_) +
                           " (InputEvent::Quit reached run_scene_driver)",
                       tags);
         } else if (!finished_ && !quit_seen_ && !hard_stop_) {
-            fail_hard(-1, "session-ended", "the scene driver returned at f=" + std::to_string(f_) +
-                                               " (" + exit_reason + ") before the script finished",
-                      {});
+            fail_hard(last_input_line_, last_input_raw_.empty() ? "session-ended" : last_input_raw_,
+                      "the scene driver returned at f=" + std::to_string(f_) + " (" + exit_reason +
+                          ") before the script finished",
+                      last_input_tags_);
         }
         const std::size_t unreached = finished_ ? 0 : (s_.cmds.size() > pc_ ? s_.cmds.size() - pc_ : 0);
         char hb[32];
@@ -218,6 +236,7 @@ private:
             else if (k == "max_frames") max_frames_ = std::atol(v.c_str());
             else if (k == "park" && c.args.size() > 2) { park_x_ = std::atoi(v.c_str()); park_y_ = std::atoi(c.args[2].c_str()); }
             else if (k == "states") verbose_states_ = v != "off";
+            else if (k == "on_quit") quit_continue_ = (v == "continue");
             else { fail(c, "unknown setting"); }
             ++pc_;
             return kNext;
@@ -292,6 +311,7 @@ private:
         // ---- input gestures (each consumes the frame) ----
         last_input_line_ = c.line;
         last_input_tags_ = c.tags;
+        last_input_raw_ = c.raw;
         if (op == "key" || op == "hold") {
             ++pc_;
             const SDL_Scancode sc = scancode_for(c.args[0]);
@@ -316,6 +336,38 @@ private:
             int x = 0, y = 0;
             if (!point_of(c, p, 0, x, y)) return kConsume;
             move_to(x, y);
+            return kConsume;
+        }
+        if (op == "if") {
+            std::string d;
+            if (eval_expr(c.expr, p, vars_, d) != Eval::True) {
+                emit("PLAY skip L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " (" + d + ")", trace_console_);
+                ++pc_;
+                return kNext;
+            }
+            return exec(c.sub[0], p, probe);   // advances pc_ past this line
+        }
+        if (op == "cycle") {
+            // cycle TARGET EXPR...: click TARGET (one per frame, max 8) until EXPR holds.
+            Cmd t = c;
+            t.args = {c.args[0]};
+            std::string d;
+            if (eval_expr(c.expr, p, vars_, d) == Eval::True) {
+                cycle_n_ = 0;
+                ++pc_;
+                return kNext;
+            }
+            if (++cycle_n_ > 8) {
+                fail(c, d + " (after 8 clicks)");
+                cycle_n_ = 0;
+                ++pc_;
+                return kNext;
+            }
+            int x = 0, y = 0;
+            if (!point_of(t, p, 0, x, y)) { cycle_n_ = 0; ++pc_; return kConsume; }
+            move_to(x, y);
+            button(x, y, false, true);
+            button(x, y, false, false);
             return kConsume;
         }
         if (op == "click") {
@@ -385,6 +437,12 @@ private:
             auto& fn = (k == "unit") ? p.find_unit : p.find_building;
             if (!fn) { fail(c, "missing-probe:find_" + k); return false; }
             if (!fn(c.args[i + 1], cx, cy)) { fail(c, "no " + k + " " + c.args[i + 1]); return false; }
+            // Optional signed cell offset: "unit 0:E1 +4 -2".
+            if (c.args.size() >= i + 4 && (c.args[i + 2][0] == '+' || c.args[i + 2][0] == '-') &&
+                (c.args[i + 3][0] == '+' || c.args[i + 3][0] == '-')) {
+                cx = std::floor(cx + 0.5) + std::atof(c.args[i + 2].c_str());
+                cy = std::floor(cy + 0.5) + std::atof(c.args[i + 3].c_str());
+            }
             return true;
         }
         fail(c, "expected cell|unit|building");
@@ -535,9 +593,11 @@ private:
         p.set("sf", static_cast<double>(sf_));
         p.set_s("scene", p.scene);
         p.set("quit_seen", quit_seen_ ? 1 : 0);
+        p.set("quits", quits_);
+        p.set("transitions", transitions_);
     }
     void trace(const Cmd& c) {
-        if (c.op == "until" && until_active_) return;
+        if ((c.op == "until" && until_active_) || (c.op == "cycle" && cycle_n_ > 0)) return;
         emit("PLAY step L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " " + c.raw, trace_console_);
     }
     void say(const char* what, const Cmd& c, const std::string& d) {
@@ -574,6 +634,7 @@ private:
     int seq_ = 0;
     std::size_t pc_ = 0;
     int wait_left_ = 0;
+    int cycle_n_ = 0;
     bool until_active_ = false;
     int until_left_ = 0;
     std::map<int, int> held_;   // scancode -> frames left
@@ -590,6 +651,10 @@ private:
     bool finished_ = false, hard_stop_ = false;
     bool quit_seen_ = false, expect_quit_ = false;
     long quit_frame_ = 0;
+    int quits_ = 0;
+    int transitions_ = 0;
+    bool quit_continue_ = false;
+    std::string last_input_raw_;
     int last_input_line_ = -1;
     std::vector<std::string> last_input_tags_;
     bool trace_console_ = true;
