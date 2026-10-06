@@ -48,7 +48,7 @@ at b049b40 are listed right after this table.
 Every other row keeps its 7778b66 verdict. Still failing at b049b40: NEW-1
 (camera), G-23 MCV start/deploy, G-22 AMCV/SMCV in the roster, G-02 skirmish
 end, G-60/G-64 AI attack + Allied AI, G-03 Yuri in the lobby, G-26 Tesla Coil,
-NEW-3 Soviet War Miner never unloads, G-15 campaign TechLevel, G-01 Esc
+NEW-3 Soviet War Miner never unloads, G-15 campaign TechLevel, (G-01 Esc mid-placement: expectation corrected to the binary, see row below)
 mid-placement, G-14 Abort/Exit confirmation.
 
 Determinism: every script was run twice on the same tree with identical
@@ -140,7 +140,8 @@ script passes (ROADMAP-playable §G rule 6).
 | shell-smoke L29-L32 | Esc in the lobby = Back | FAIL (quit) | PASS | G-01 | B |
 | shell-smoke L45-L52 | Esc closes / opens the in-game options menu | FAIL | PASS | G-01 | B |
 | shell-smoke L57-L81 | F10 menu, Save (banner "GAME SAVED"), Load row 0, resumed game has the same units/buildings | PASS | PASS | — | — |
-| shell-smoke L89-L91, controls L110-L113 | Esc mid-placement cancels the placement (FUN_004AAC40 chain: placement -> repair -> sell -> SW -> dialog 0xB5) and does not open the menu | FAIL (quit) | FAIL (menu opens, placement stays armed) | G-01 | B |
+| shell-smoke L88-L99, controls L117-L126 | **Expectation corrected (agent B, binary evidence below):** mid-placement Esc opens the options menu and leaves the placement pending; Esc again closes the menu; a RIGHT click cancels the placement | FAIL (quit) | PASS (script corrected; code unchanged) | G-01 | B |
+|  | Evidence [RE: gamemd hunt fixB, scripts `D:\ra2-re\scripts\fixB_1..8.py`]: Keyboard_Process `FUN_0055DB10` (MainLoop.CPP; callers 0x55CFF0/0x55DD90/0x647DE0/0x648180) looks the key up in the hotkey table and runs the command's Execute with **no pending-placement check**; Esc is `[Hotkey] Options=27` -> exec `FUN_00537000` -> `FUN_00646AE0` (queue the options event), and an unbound Esc falls back to the same `FUN_00646AE0`. The one-mode cancel chain `FUN_004AAC40` is the DisplayClass right-mouse-up virtual, called only from the tactical WndProc `FUN_00692AB0` on WM_RBUTTONUP without a right-drag (and from vtable slots). The old expectation came from repair-sell.md §C1 calling it "the ESC / right-click handler", corrected there. |  |  |  |  |
 | shell-smoke L98-L101 | Abort Mission asks for confirmation (`confirm_open`, reserved probe key) | FAIL (straight to main menu) | FAIL | G-14 | F |
 | shell-smoke L106-L109 | Exit Game asks for confirmation | FAIL (process would quit, hard stop) | FAIL | G-14 | F |
 | controls (all other steps: shell Esc, select / left-move / right-deselect, building select, Ctrl+1/1 groups, S stop, Q/W/E/R tabs, K/L modes, right-click cancel, queue hold / resume / abandon) | B's selftest behaviour | n/a | PASS | G-01, G-04, G-05, G-07, G-10 | B |

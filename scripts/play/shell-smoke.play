@@ -80,13 +80,21 @@ assert units(0) == $u0
 assert buildings(0) == $b0
 shot loaded
 
-# --- mid-placement Esc cancels the placement, the game goes on --------------------------
+# --- mid-placement: Esc opens the options menu (Options=27, FUN_0055DB10 has no
+# placement check); RIGHT-click cancels the placement (FUN_004AAC40) -----------
 click tab:0
 click cameo:GAPOWR
 until 900 queue_ready(structure) == 1
 click cameo:GAPOWR
 assert placing == 1
 key esc                                       @G-01:B
+wait 2
+assert menu_open == 1                         @G-01:B
+key esc                                       @G-01:B
+wait 2
+assert menu_open == 0                         @G-01:B
+assert placing == 1                           @G-01:B
+click xy 500 360 right                        @G-01:B
 wait 2
 assert placing == 0                           @G-01:B
 assert scene == game
