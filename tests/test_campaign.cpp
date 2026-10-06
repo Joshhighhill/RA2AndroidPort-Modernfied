@@ -288,3 +288,90 @@ TEST_CASE("campaign: real all01t objects + teams parse") {
     CHECK(d.scripts.size() == 38);
     CHECK(campaign_house_order(map, "Player House")[0] == "Player House");
 }
+
+// ---------------------------------------------------------------------------
+// MapTriggerSystem campaign mode [RE: campaign.md §2/§4; map-triggers.md §3.4]
+#include "../engine/map_trigger.hpp"
+namespace {
+struct CampHost : TriggerHost {
+    std::vector<TriggerEffect> effects;
+    bool house_exists(int ht) const override { return ht == 3 || ht == 4; }
+    std::vector<int> house_instances() const override { return {3, 4}; }
+    int player_house_type() const override { return 3; }
+    int house_buildings(int) const override { return 1; }
+    int house_vehicles(int) const override { return 1; }
+    int house_infantry(int) const override { return 1; }
+    int house_building_type_count(int, int) const override { return 0; }
+    int techno_count(const std::string&) const override { return 0; }
+    bool apply(const TriggerEffect& e) override { effects.push_back(e); return true; }
+};
+const char* kCampMap =
+    "[Countries]\n0=Player\n1=Bad\n"
+    "[Triggers]\n"
+    "T1=Player,<none>,ChangeHouse,0,1,1,1,0\n"
+    "T2=Player,<none>,Semi death,0,1,1,1,0\n"
+    "[Events]\nT1=1,48,0,0\nT2=1,48,0,0\n"
+    "[Actions]\nT1=2,14,0,4,0,0,0,0,A,63,0,7,0,0,0,0,A\nT2=1,56,0,3,0,0,0,0,A\n"
+    "[Tags]\nG1=0,g1,T1\nG2=1,g2,T2\n";
+MapTriggerData camp_data() {
+    return parse_map_triggers(Ini::parse(kCampMap), {"Americans", "Alliance", "Russians"},
+                              {"GAPOWR"});
+}
+}  // namespace
+
+TEST_CASE("campaign: object actions reach the host only in campaign mode") {
+    const MapTriggerData d = camp_data();
+    for (bool camp : {false, true}) {
+        MapTriggerSystem sys(d, 1, 1);
+        sys.set_campaign_mode(camp);
+        CampHost h;
+        sys.start(h);
+        const int g1 = d.find_tag("G1");
+        REQUIRE(sys.attach_tag(g1));
+        RaiseContext ctx;
+        ctx.has_object = true;
+        ctx.object_house_type = 3;
+        const MapTriggerSystem::ObjectRaise r = sys.raise_object(g1, kEvDestroyedByAnything, ctx, h);
+        CHECK(r.fired);
+        CHECK(r.tag_gone);            // volatile: the tag is marked for deletion
+        if (!camp) {
+            CHECK(h.effects.empty());
+        } else {
+            REQUIRE(h.effects.size() == 2);
+            CHECK(h.effects[0].action == 14);
+            CHECK(h.effects[0].house_type == 4);          // Value 4 = map country "Bad"
+            CHECK(h.effects[0].trigger_type == d.find_trigger("T1"));
+            CHECK(h.effects[1].action == 63);
+            CHECK(h.effects[1].waypoint == 7);            // Apply100Damage: Value = waypoint
+        }
+        sys.tick(h);
+        CHECK_FALSE(sys.tag_alive(g1));                    // volatile tag destroyed
+        CHECK(sys.raise_object(g1, kEvDestroyedByAnything, ctx, h).tag_gone);
+        CHECK(sys.tag_has_trigger(g1, d.find_trigger("T1")));
+        CHECK_FALSE(sys.tag_has_trigger(g1, d.find_trigger("T2")));
+    }
+}
+
+TEST_CASE("campaign: SemiPersistant tag fires on the last attached object (RE §3.4)") {
+    const MapTriggerData d = camp_data();
+    MapTriggerSystem sys(d, 1, 1);
+    sys.set_campaign_mode(true);
+    CampHost h;
+    sys.start(h);
+    const int g2 = d.find_tag("G2");
+    sys.attach_tag(g2);
+    sys.attach_tag(g2);
+    sys.attach_tag(g2);
+    RaiseContext ctx;
+    ctx.has_object = true;
+    MapTriggerSystem::ObjectRaise r = sys.raise_object(g2, kEvDestroyedByAnything, ctx, h);
+    CHECK_FALSE(r.fired);
+    CHECK(r.detached);
+    r = sys.raise_object(g2, kEvDestroyedByAnything, ctx, h);
+    CHECK_FALSE(r.fired);
+    CHECK(r.detached);
+    CHECK_FALSE(sys.local(3));
+    r = sys.raise_object(g2, kEvDestroyedByAnything, ctx, h);
+    CHECK(r.fired);
+    CHECK(sys.local(3));
+}

@@ -148,6 +148,7 @@ struct TriggerEffect {
     int value = 0;               // action Value
     std::string text;            // TechnoID / label
     std::string trigger_id;      // the firing trigger
+    int trigger_type = -1;       // P10: the firing trigger's MapTriggerData index
 };
 
 class TriggerHost {
@@ -212,6 +213,31 @@ public:
     // Object/cell raises [RE §3.2/§3.4]. raise_cell uses [CellTags].
     bool raise_tag(int tag_type, int kind, const RaiseContext& ctx, TriggerHost& host);
     bool raise_cell(int x, int y, int kind, const RaiseContext& ctx, TriggerHost& host);
+
+    // --- P10 campaign mode [RE: campaign.md §4, map-triggers.md §3.4/§5] ------
+    // OFF by default: with it off every action/raise behaves (and logs) exactly
+    // as P9, so --demo-triggers is unaffected. ON routes the object actions
+    // 14 ChangeHouse, 32 DestroyAttachedObject, 36 AllChangeHouse, 37 MakeAlly,
+    // 38 MakeEnemy and 63 Apply100Damage to the host (TriggerEffect carries the
+    // firing trigger), and makes a SemiPersistant tag detach a non-last object.
+    void set_campaign_mode(bool on) { campaign_mode_ = on; }
+    bool campaign_mode() const { return campaign_mode_; }
+    // An object carrying `tag_type` was placed (TagClass::GetInstance +
+    // attach: InstanceCount++). Returns false when the tag type is invalid.
+    bool attach_tag(int tag_type);
+    // The object left the game (InstanceCount--).
+    void detach_tag(int tag_type);
+    // True while the tag type's instance exists and is not destroyed.
+    bool tag_alive(int tag_type) const;
+    // Raise `kind` on an object's tag WITHOUT creating a new instance (a
+    // destroyed tag is gone for good). detached = the object lost its tag
+    // (SemiPersistant with other objects still attached, RE §3.4).
+    struct ObjectRaise { bool fired = false; bool detached = false; bool tag_gone = false; };
+    ObjectRaise raise_object(int tag_type, int kind, const RaiseContext& ctx, TriggerHost& host);
+    // True if trigger `trigger_type` is in tag type `tag_type`'s chain.
+    bool tag_has_trigger(int tag_type, int trigger_type) const;
+    // The data this system runs (for hosts that need the tables).
+    const MapTriggerData& data() const { return d_; }
 
     // Variables [RE §1.5/§3.6].
     bool local(int i) const;
@@ -293,6 +319,8 @@ private:
     int raise_depth_kind_ = 0;              // kind of the innermost active raise
     int force_depth_ = 0;                   // ForceTrigger recursion guard
     std::string cur_trigger_;               // for log lines
+    bool campaign_mode_ = false;            // P10 firewall (see set_campaign_mode)
+    bool semi_detached_ = false;            // set by raise() for raise_object
 };
 
 }  // namespace ra2engine

@@ -803,10 +803,11 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         e.house_type = house;
         e.trigger_house_type = th;
         if (a.team >= 0 && a.team < (int)d_.team_ids.size()) e.team = d_.team_ids[(std::size_t)a.team];
-        e.waypoint = a.kind == 17 ? a.value : a.waypoint;
+        e.waypoint = (a.kind == 17 || (campaign_mode_ && a.kind == 63)) ? a.value : a.waypoint;
         e.value = a.value;
         e.text = a.text;
         e.trigger_id = cur_trigger_;
+        e.trigger_type = t.type;
         const bool ok = host.apply(e);
         const std::string note = host.take_note();
         logf("  a%d %s team=%s wp=%d v=%d %s -> %s%s%s", a.kind, action_label(a.kind),
@@ -923,7 +924,16 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         if (th < 0) { logf("  a125 CreateBuilding -> no-house"); return; }
         effect(th);
         return;
+    case 14: case 36: case 37: case 38:
+        if (!campaign_mode_) goto unhandled;
+        effect(find_house(t, a.value, host));
+        return;
+    case 32: case 63:
+        if (!campaign_mode_) goto unhandled;
+        effect(th);
+        return;
     default:
+    unhandled:
         if (presentation_action(a.kind)) {
             logf("  a%d %s v=%d wp=%d %s (recorded)", a.kind, action_label(a.kind), a.value,
                  a.waypoint, a.text.empty() ? "-" : a.text.c_str());
@@ -960,6 +970,13 @@ bool MapTriggerSystem::raise(int tag_idx, int kind, const RaiseContext& ctx, Tri
             fire = true;
         } else if (persist == kPersistSemi) {
             fire = tags_[(std::size_t)tag_idx].instance_count == 1;
+            if (!fire && campaign_mode_) {
+                // RE §3.4: not the last object -> this object just detaches.
+                Tag& tg = tags_[(std::size_t)tag_idx];
+                if (tg.instance_count > 0) --tg.instance_count;
+                semi_detached_ = true;
+                break;
+            }
         } else if (persist == kPersistPersistent) {
             fire = true;
         }
@@ -995,6 +1012,51 @@ bool MapTriggerSystem::raise_cell(int x, int y, int kind, const RaiseContext& ct
                                 ? tag_of_type_[(std::size_t)c.tag] : -1;
             return raise(idx, kind, ctx, host);
         }
+    return false;
+}
+
+bool MapTriggerSystem::attach_tag(int tag_type) {
+    if (tag_type < 0 || tag_type >= (int)d_.tags.size()) return false;
+    const int idx = get_instance(tag_type);
+    if (idx < 0) return false;
+    ++tags_[(std::size_t)idx].instance_count;
+    return true;
+}
+
+void MapTriggerSystem::detach_tag(int tag_type) {
+    if (tag_type < 0 || tag_type >= (int)tag_of_type_.size()) return;
+    const int idx = tag_of_type_[(std::size_t)tag_type];
+    if (idx < 0) return;
+    if (tags_[(std::size_t)idx].instance_count > 0) --tags_[(std::size_t)idx].instance_count;
+}
+
+bool MapTriggerSystem::tag_alive(int tag_type) const {
+    if (tag_type < 0 || tag_type >= (int)tag_of_type_.size()) return false;
+    const int idx = tag_of_type_[(std::size_t)tag_type];
+    return idx >= 0 && !tags_[(std::size_t)idx].destroyed && !tags_[(std::size_t)idx].pending_delete;
+}
+
+MapTriggerSystem::ObjectRaise MapTriggerSystem::raise_object(int tag_type, int kind,
+                                                             const RaiseContext& ctx,
+                                                             TriggerHost& host) {
+    ObjectRaise r;
+    if (!tag_alive(tag_type)) { r.tag_gone = true; return r; }
+    semi_detached_ = false;
+    r.fired = raise(tag_of_type_[(std::size_t)tag_type], kind, ctx, host);
+    r.detached = semi_detached_;
+    semi_detached_ = false;
+    if (!tag_alive(tag_type)) r.tag_gone = true;
+    return r;
+}
+
+bool MapTriggerSystem::tag_has_trigger(int tag_type, int trigger_type) const {
+    if (tag_type < 0 || tag_type >= (int)d_.tags.size()) return false;
+    std::set<int> seen;
+    for (int tt = d_.tags[(std::size_t)tag_type].first_trigger; tt >= 0 && !seen.count(tt);
+         tt = d_.triggers[(std::size_t)tt].linked) {
+        if (tt == trigger_type) return true;
+        seen.insert(tt);
+    }
     return false;
 }
 
