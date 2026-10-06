@@ -40,6 +40,17 @@ public:
         ok_ = true;
     }
     bool ok() const { return ok_; }
+    // Radar pixel -> map cell, the exact inverse of draw()'s projection (B's
+    // radar click uses this so a click lands on the cell drawn under it).
+    bool cell_at(int px, int py, int& cx, int& cy) const {
+        if (!ok_ || !laid_ || !lr_.contains(px, py) || ls_ <= 0) return false;
+        const double u = (px - lx_) / ls_ + u0_, v = (py - ly_) / (0.5 * ls_) + v0_;
+        cx = static_cast<int>(std::floor((u + v) / 2.0));
+        cy = static_cast<int>(std::floor((v - u) / 2.0));
+        cx = std::clamp(cx, 0, std::max(0, gw_ - 1));
+        cy = std::clamp(cy, 0, std::max(0, gh_ - 1));
+        return true;
+    }
     // Radar power-up: radar.shp frames 1..count-2 play once each time the radar
     // comes online (one per game frame [RE-FALLBACK: boot rate not read]);
     // returns the frame to show, or 0 once open. Called only while online.
@@ -66,6 +77,7 @@ public:
         const int ox = r.x + static_cast<int>((r.w - uw_ * s) / 2);
         const int oy = r.y + static_cast<int>((r.h - vh_ * 0.5 * s) / 2);
         const int TW = std::max(1, static_cast<int>(uw_ * s)), TH = std::max(1, static_cast<int>(vh_ * 0.5 * s));
+        lx_ = ox; ly_ = oy; ls_ = s; lr_ = r; laid_ = true;
         // Rebuild the picture every 8 frames (shroud/ore/buildings change slowly).
         if (!tex_ || ++age_ >= 8) {
             age_ = 0;
@@ -160,6 +172,10 @@ private:
     int age_ = 0, tw_ = 0, th_ = 0;
     ra2engine::Camera cam_;
     int vw_ = 1, vh_px_ = 1;
+    int lx_ = 0, ly_ = 0;
+    double ls_ = 0;
+    ra2engine::SbRect lr_{0, 0, 0, 0};
+    bool laid_ = false;
 };
 
 PresRadar* g_radar = nullptr;   // live game only; draw_radar_minimap delegates to it

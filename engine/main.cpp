@@ -4914,7 +4914,10 @@ public:
         }
         // P5: drain the promotion / crate events (the EVA/sound hook is a
         // carry-forward -- veterancy.md §5); draining keeps the queues bounded.
-        const std::vector<ra2engine::World::VetEvent> vet_events = world_.take_vet_events();
+        {   // G-80: promotions feed the presentation pass once per frame.
+            const std::vector<ra2engine::World::VetEvent> ve = world_.take_vet_events();
+            pres_vet_.insert(pres_vet_.end(), ve.begin(), ve.end());
+        }
         (void)world_.take_crate_events();
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
@@ -5002,7 +5005,8 @@ public:
         // observation pass over this frame's state (pres_game.inc). Logs even
         // when there is no audio device; pumps the sink when there is one.
         pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
-                     vet_events, world_.take_projectile_events());
+                     pres_vet_, world_.take_projectile_events());
+        pres_vet_.clear();
     }
     // G-87: the map's own dressing in the real game (trees, overlays, smudges,
     // neutral structures). Never in a gate (GameScene-only).
@@ -5103,7 +5107,7 @@ public:
         if (!drew)
             drew = pres_.draw_cursor(ren, tc, mouse_, world_, input_, mx_, my_,
                                      sidebar_up_ && lay_.contains(mx_, my_), playfield_w_, kWinW,
-                                     kWinH, world_.repair_frame());
+                                     kWinH, world_.repair_frame(), static_cast<int>(cursor_action()));
         if (drew != os_cursor_hidden_) {
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;
@@ -5372,6 +5376,7 @@ private:
     // --- audio ---
     AudioSystem          audio_;
     Presentation         pres_;    // G-80..G-91 presentation driver
+    std::vector<ra2engine::World::VetEvent> pres_vet_;   // promotions since the last frame
     PresMap              map_dressing_;               // G-87
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};

@@ -174,7 +174,15 @@ private:
             {99, 1, 0, 12345, 12345},    // 0x1A NoEnter
             {110, 9, 4, 12345, 12345},   // 0x1B Deploy
             {119, 1, 0, 12345, 12345},   // 0x1C NoDeploy
+            {120, 9, 4, 12345, 12345},   // 0x1D
+            {129, 10, 4, 12345, 12345},  // 0x1E Sell
+            {139, 10, 4, 12345, 12345},  // 0x1F SellUnit
+            {149, 1, 0, 12345, 12345},   // 0x20 NoSell
+            {150, 20, 4, 12345, 12345},  // 0x21 Repair
+            {170, 20, 4, 12345, 12345},  // 0x22 EngineerRepair
+            {190, 1, 0, 12345, 12345},   // 0x23 NoRepair
         };
+        static const CursorDesc kRallyD{269, 10, 0, 12345, 12345};   // 0x30 RallyPoint [table [48]]
         static const CursorDesc kNukeD{319, 10, 4, 12345, 12345};     // 0x35
         static const CursorDesc kIronD{394, 10, 4, 12345, 12345};     // 0x39 [table [57]]
         static const CursorDesc kChronoD{404, 9, 4, 12345, 12345};    // 0x3A
@@ -184,6 +192,7 @@ private:
         if (id == kIronCurtain) return kIronD;
         if (id == kChronosphere) return kChronoD;
         if (id == kLightningStorm) return kStormD;
+        if (id == 0x30) return kRallyD;
         return kTable[0];
     }
 
@@ -251,14 +260,57 @@ private:
         return pass[static_cast<std::size_t>(cy) * gw + cx] ? kMove : kNoMove;
     }
 
+    // B's Input::Action (the authoritative "what would a click do") ->
+    // MouseCursorType [RE: presentation.md §3, DisplayClass::ConvertAction
+    // FUN_004aada0]: Attack shows AttackOutOfRange when the selection cannot
+    // reach; over a shrouded cell Attack and Move both show Move.
+    int cursor_for_action(ra2engine::Input::Action a, const ra2engine::World& w, int mx, int my) const {
+        using A = ra2engine::Input::Action;
+        int cx = 0, cy = 0;
+        ra2engine::screen_to_cell(mx - cam_.x, my - cam_.y, 60, 30, cx, cy);
+        const bool shrouded = !w.explored_at(0, cx, cy);
+        switch (a) {
+            case A::Select: case A::ToggleSelect: case A::SelectBuilding: case A::SetPrimary: return kSelect;
+            case A::Move: return kMove;
+            case A::NoMove: return kNoMove;
+            case A::Attack: {
+                if (shrouded) return kMove;
+                for (const ra2engine::Unit& s : w.units())
+                    if (s.selected && s.house == 0 && s.alive && s.die_time < 0.0)
+                        return std::hypot(s.fx - cx, s.fy - cy) <= s.w_range + 0.5 ? kAttack : kAttackOutOfRange;
+                return kAttack;
+            }
+            case A::Harvest: return kAttackOutOfRange;   // Action 6 Harvest -> 0x15
+            case A::Enter: case A::Dock: case A::Capture: case A::Infiltrate: return kEnter;
+            case A::EngineerRepair: return 0x22;
+            case A::Deploy: return kDeploy;
+            case A::Rally: return 0x30;
+            case A::Sell: return 0x1E;
+            case A::NoSell: return 0x20;
+            case A::Repair: return 0x21;
+            case A::NoRepair: return 0x23;
+            case A::SuperWeapon: {
+                const ra2engine::Superweapon* sw = w.sw_state(0);
+                if (sw && sw->type == ra2engine::SuperweaponType::IronCurtain) return kIronCurtain;
+                return kNuke;
+            }
+            default: return kDefault;
+        }
+    }
 public:
     // Draws the action cursor (repair/sell modes keep draw_mode_cursor).
     // Returns true when it drew, so the caller hides the OS pointer.
     bool draw_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ModeCursor& mc,
                      const ra2engine::World& w, const ra2engine::Input& in, int mx, int my,
-                     bool over_sidebar, int view_w, int win_w, int win_h, std::uint64_t game_frame) {
+                     bool over_sidebar, int view_w, int win_w, int win_h, std::uint64_t game_frame,
+                     int action = -1) {
         if (!mc.ok) return false;
-        const int id = probe_cursor(w, in, mx, my, over_sidebar, view_w, win_w, win_h);
+        int id = probe_cursor(w, in, mx, my, over_sidebar, view_w, win_w, win_h);
+        // Edge-scroll arrows and the sidebar keep the probe's answer; the
+        // playfield follows B's action_at when supplied.
+        const bool scroll = id >= kScrollN && id < kNoScrollN;
+        if (action >= 0 && !scroll && !over_sidebar && mx < view_w)
+            id = cursor_for_action(static_cast<ra2engine::Input::Action>(action), w, mx, my);
         if (id != last_cursor_) {
             pres_log(frame_, "cursor " + std::to_string(id));
             last_cursor_ = id;
