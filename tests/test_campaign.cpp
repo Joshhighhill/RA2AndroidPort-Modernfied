@@ -1,0 +1,290 @@
+#include "doctest.h"
+#include "../engine/campaign.hpp"
+#include "asset_fixture.hpp"
+#include "ra2assets/ini.hpp"
+#include <string>
+#include <vector>
+
+using namespace ra2engine;
+using ra2assets::Ini;
+
+namespace {
+const char* kBattle =
+    "[Battles]\n1=TUT1\n2=ALL1\n3=SOV1\n"
+    "[TUT1]\nCD=0\nScenario=trn01t.MAP\nDescription=DESC:TUT1\n"
+    "[ALL1]\nCD=0\nScenario=ALL01t.MAP\nFinalMovie=\nDescription=DESC:ALL1\n"
+    "[SOV1]\nCD=1\nScenario=SOV01t.MAP\nDescription=DESC:SOV1\nDebugOnly=no\n";
+const char* kMission =
+    "[ALL01T.MAP]\nBriefing=Brief:ALL01\nUIName=Name:ALL01\nLSLoadMessage=LoadMsg:ALL01\n"
+    "LSLoadBriefing=LoadBrief:ALL01\nLS800BriefLocX=20\nLS800BriefLocY=30\n"
+    "LS640BkgdName=LS640A01.SHP\nLS800BkgdName=LS800A01.SHP\n";
+const char* kMapSel =
+    "[GDI]\nAnims=Anims\n1=Trn01\n2=Trn02\n3=ALL01\n4=ALL02\n"
+    "[ALL00]\nScenario=\n1=ALL01 \n"
+    "[ALL01]\nScenario=ALL01t.MAP\nDescription=768\n2=ALL02\n"
+    "[ALL02]\nScenario=ALL02s.MAP\n3=ALL03\n"
+    "[ALL03]\nScenario=\n"
+    "[Trn02]\nScenario=trn02t.MAP\n2=ALL01\n";
+}  // namespace
+
+TEST_CASE("campaign: battle.ini [Battles] list (FUN_0046cd30/0046cbf0)") {
+    const CampaignTables t = CampaignTables::parse(Ini::parse(kBattle), Ini::parse(""), Ini::parse(""));
+    REQUIRE(t.battles().size() == 3);
+    CHECK(t.battles()[1].id == "ALL1");
+    CHECK(t.battles()[1].scenario == "ALL01t.MAP");
+    CHECK(t.battles()[2].cd == 1);
+    REQUIRE(t.battle("sov1"));
+    CHECK(t.battle("sov1")->description == "DESC:SOV1");
+    CHECK(t.battle("nope") == nullptr);
+}
+
+TEST_CASE("campaign: mission.ini per-map section (FUN_00686560)") {
+    const CampaignTables t = CampaignTables::parse(Ini::parse(""), Ini::parse(kMission), Ini::parse(""));
+    const MissionInfo m = t.mission("all01t.map");
+    CHECK(m.found);
+    CHECK(m.briefing == "Brief:ALL01");
+    CHECK(m.ls_load_briefing == "LoadBrief:ALL01");
+    CHECK(m.ls800_bkgd == "LS800A01.SHP");
+    CHECK(m.ls800_brief_y == 30);
+    CHECK_FALSE(t.mission("sov01t.map").found);
+}
+
+TEST_CASE("campaign: next scenario follows the mapsel stage chain by scenario name [RE §3.5]") {
+    const CampaignTables t = CampaignTables::parse(Ini::parse(""), Ini::parse(""), Ini::parse(kMapSel));
+    CHECK(t.next_scenario("GDI", "ALL01T.MAP") == "ALL02s.MAP");
+    CHECK(t.next_scenario("gdi", "all01t.map") == "ALL02s.MAP");   // case-insensitive
+    CHECK(t.next_scenario("GDI", "trn02t.MAP") == "ALL01t.MAP");
+    CHECK(t.next_scenario("GDI", "ALL02s.MAP") == "");    // next stage has no Scenario
+    CHECK(t.next_scenario("Nod", "ALL01t.MAP") == "");    // not on that side's list
+    CHECK(t.side_stages("GDI").size() == 4);
+}
+
+TEST_CASE("campaign: [Basic] fields (FUN_00689890)") {
+    const Ini m = Ini::parse(
+        "[Basic]\nBriefing=Brief:ALL01\nNextScenario=GDI2A.map\nEndOfGame=no\nSkipScore=yes\n"
+        "Player=Player House\nIntro=A01_f00e\nBrief=<none>\nTheme=No theme\nCarryOverMoney=0.5\n");
+    const ScenarioBasic b = parse_scenario_basic(m);
+    CHECK(b.player == "Player House");
+    CHECK(b.intro == "A01_f00e");
+    CHECK(b.brief.empty());
+    CHECK(b.theme.empty());
+    CHECK(b.skip_score);
+    CHECK_FALSE(b.end_of_game);
+    CHECK(b.carry_over_money == doctest::Approx(0.5));
+    CHECK(parse_scenario_basic(Ini::parse("")).player == "Americans");   // the default
+}
+
+TEST_CASE("campaign: object field orders per section [RE §4]") {
+    const Ini m = Ini::parse(
+        "[Basic]\nNewINIFormat=4\n"
+        "[Structures]\n1018591=Other1 House,GACNST,256,71,31,0,0965BDDC,1,0,1,0,0,None,None,None,0,0\n"
+        "[Units]\n7=Civie1 House,MTNK,128,55,18,96,Guard,0B2295AC,100,-1,0,-1,1,1\n"
+        "[Infantry]\n0=Player House,TANY,256,62,108,2,Area Guard,64,08B9B35C,0,-1,0,1,1\n"
+        "1=BadGuy1 House,E2,256,85,59,2,Guard,0,None,0,-1,0,1,1\n"
+        "[Aircraft]\n0=BadGuy1 House,ZEP,256,10,11,32,Guard,None,0,-1,1,1\n"
+        "[Bogus]\n");
+    const std::vector<MapObjectRec> o = parse_map_objects(m);
+    REQUIRE(o.size() == 5);
+    CHECK(o[0].kind == 0);
+    CHECK(o[0].type == "GACNST");
+    CHECK(o[0].x == 71);
+    CHECK(o[0].y == 31);
+    CHECK(o[0].tag == "0965BDDC");
+    CHECK(o[1].kind == 1);
+    CHECK(o[1].facing == 96);
+    CHECK(o[1].mission == "Guard");
+    CHECK(o[1].tag == "0B2295AC");
+    CHECK(o[1].veterancy == 100);
+    CHECK(o[1].health == 128);
+    CHECK(o[2].kind == 2);
+    CHECK(o[2].subcell == 2);
+    CHECK(o[2].mission == "Area Guard");
+    CHECK(o[2].facing == 64);
+    CHECK(o[2].tag == "08B9B35C");
+    CHECK(o[3].tag.empty());   // None
+    CHECK(o[4].kind == 3);
+    CHECK(o[4].type == "ZEP");
+    CHECK(o[4].facing == 32);
+}
+
+TEST_CASE("campaign: legacy packed cell (NewINIFormat < 4)") {
+    const Ini m = Ini::parse("[Basic]\nNewINIFormat=3\n[Units]\n0=A,MTNK,256,1290,0,Guard,None,0,-1,0,-1,1,1\n");
+    const std::vector<MapObjectRec> o = parse_map_objects(m);
+    REQUIRE(o.size() == 1);
+    CHECK(o[0].x == 1290 % 128);
+    CHECK(o[0].y == 1290 / 128);
+}
+
+TEST_CASE("campaign: strength rule (ftol, >Strength-3 snaps full, floor 1) [RE §4]") {
+    CHECK(campaign_strength(600, 256, false) == 600);
+    CHECK(campaign_strength(600, 255, false) == 600);   // 597.66 -> 598 > 597 -> full
+    CHECK(campaign_strength(600, 128, false) == 300);
+    CHECK(campaign_strength(150, 42, false) == 25);      // 24.6 -> 25
+    CHECK(campaign_strength(150, 0, false) == 1);
+    CHECK(campaign_strength(1000, 400, true) == 1000);   // clamped to 256
+}
+
+TEST_CASE("campaign: house order puts the player first") {
+    const Ini m = Ini::parse(
+        "[Houses]\n0=BadGuy House\n1=Player House\n2=Civ House\n"
+        "[Player House]\nCountry=Player\n[BadGuy House]\nCountry=BadGuy\n");
+    const std::vector<std::string> h = campaign_house_order(m, "Player House");
+    REQUIRE(h.size() == 3);
+    CHECK(h[0] == "Player House");
+    CHECK(h[1] == "BadGuy House");
+    CHECK(h[2] == "Civ House");
+    CHECK(campaign_house_order(m, "Player")[0] == "Player House");   // by Country=
+}
+
+TEST_CASE("campaign: BorrowedTime mission end (FUN_004fc800 / FUN_004f8350) [RE §5]") {
+    CHECK(borrowed_time_frames(0.1) == 90);   // SavourDelay=.1 on this install
+    MissionEnd e(90);
+    CHECK_FALSE(e.ended(1000));
+    e.flag(1, 500);
+    e.flag(2, 510);   // the first decision sticks
+    CHECK(e.outcome() == 1);
+    CHECK_FALSE(e.ended(589));
+    CHECK(e.ended(590));
+}
+
+TEST_CASE("campaign: map team parse (TeamTypes/TaskForces/ScriptTypes)") {
+    const Ini m = Ini::parse(
+        "[TeamTypes]\n0=T1\n[T1]\nName=Dread\nHouse=BadGuy2\nScript=S1\nTaskForce=TF1\nWaypoint=B\nMax=1\nTag=0B1\n"
+        "[TaskForces]\n0=TF1\n[TF1]\nName=x\n0=2,DRED\n1=1,E2\nGroup=-1\n"
+        "[ScriptTypes]\n0=S1\n[S1]\nName=s\n0=3,5\n1=6,1\n");
+    const MapTeamData d = parse_map_teams(m);
+    REQUIRE(d.teams.size() == 1);
+    CHECK(d.teams[0].house == "BadGuy2");
+    CHECK(d.teams[0].waypoint == 1);
+    CHECK(d.teams[0].tag == "0B1");
+    REQUIRE(d.taskforce("tf1"));
+    CHECK(d.taskforce("tf1")->size() == 2);
+    CHECK((*d.taskforce("tf1"))[0].count == 2);
+    REQUIRE(d.find_script("S1") == 0);
+    CHECK(d.scripts[0].actions.size() == 2);
+    CHECK(d.scripts[0].actions[0].action == 3);
+    CHECK(d.scripts[0].actions[0].arg == 5);
+}
+
+TEST_CASE("campaign: map team script interpreter (RE §7 numbering)") {
+    MapScript s;
+    s.actions = {{3, 5}, {5, 1}, {12, 4}, {6, 1}};
+    MapTeamState st;
+    MapTeamView v;
+    v.live_members = 2;
+    // Move: issued, then waits for arrival.
+    MapTeamCommand c = step_map_team(st, s, v, 0);
+    CHECK(c.kind == MapTeamCommand::Kind::MoveWaypoint);
+    CHECK(c.arg == 5);
+    CHECK(c.fresh);
+    c = step_map_team(st, s, v, 1);
+    CHECK(c.kind == MapTeamCommand::Kind::MoveWaypoint);
+    CHECK_FALSE(c.fresh);
+    v.arrived = true;
+    // Arrived -> Guard 1 (90 frames).
+    c = step_map_team(st, s, v, 2);
+    CHECK(c.kind == MapTeamCommand::Kind::Guard);
+    v.arrived = false;
+    c = step_map_team(st, s, v, 91);
+    CHECK(c.kind == MapTeamCommand::Kind::Guard);
+    // Timer out -> SetGlobal 4 in the same tick.
+    c = step_map_team(st, s, v, 92);
+    CHECK(c.kind == MapTeamCommand::Kind::SetGlobal);
+    CHECK(c.arg == 4);
+    // Jump 1 (1-based) -> line 0; consumes the tick.
+    c = step_map_team(st, s, v, 93);
+    CHECK(c.kind == MapTeamCommand::Kind::None);
+    CHECK(st.pc == 0);
+    c = step_map_team(st, s, v, 94);
+    CHECK(c.kind == MapTeamCommand::Kind::MoveWaypoint);
+    // No live members -> done.
+    v.live_members = 0;
+    CHECK(step_map_team(st, s, v, 95).kind == MapTeamCommand::Kind::Done);
+}
+
+TEST_CASE("campaign: interpreter win/lose/unknown actions") {
+    MapScript s;
+    s.actions = {{8, 0}, {7, 0}, {23, 0}};
+    MapTeamState st;
+    MapTeamView v;
+    v.live_members = 1;
+    CHECK(step_map_team(st, s, v, 0).kind == MapTeamCommand::Kind::Skip);   // unload: inert
+    CHECK(step_map_team(st, s, v, 1).kind == MapTeamCommand::Kind::Win);
+    CHECK(step_map_team(st, s, v, 2).kind == MapTeamCommand::Kind::Lose);
+    CHECK(step_map_team(st, s, v, 3).kind == MapTeamCommand::Kind::Done);
+}
+
+TEST_CASE("campaign: mission names") {
+    CHECK(mission_from_name("Sleep") == kMissionSleep);
+    CHECK(mission_from_name("area guard") == kMissionAreaGuard);
+    CHECK(mission_from_name("Hunt") == kMissionHunt);
+    CHECK(mission_from_name("???") == kMissionGuard);
+}
+
+// ---------------------------------------------------------------------------
+// Real install: the RA2 control files + both campaign chains.
+namespace {
+std::string read_local(const char* name) {
+    const ra2assets::MixFile local = ra2fixture::ra2_mix().open_nested("local.mix");
+    const ra2assets::MixEntry* e = local.find(std::string(name));
+    if (!e) return std::string();
+    const std::vector<uint8_t> raw = local.read(*e);
+    return std::string(raw.begin(), raw.end());
+}
+}  // namespace
+
+TEST_CASE("campaign: real RA2 battle/mission/mapsel chains (Allied 1..12, Soviet 1..12)") {
+    if (!ra2fixture::ra2_available()) {
+        MESSAGE("RA2 install not found; skipping");
+        return;
+    }
+    const CampaignTables t = CampaignTables::parse(Ini::parse(read_local("battle.ini")),
+                                                   Ini::parse(read_local("mission.ini")),
+                                                   Ini::parse(read_local("mapsel.ini")));
+    REQUIRE(t.battle("ALL1"));
+    REQUIRE(t.battle("SOV1"));
+    CHECK(t.battle("ALL1")->scenario == "ALL01t.MAP");
+    std::vector<std::string> allied{t.battle("ALL1")->scenario};
+    while (allied.size() < 20) {
+        const std::string n = t.next_scenario("GDI", allied.back());
+        if (n.empty()) break;
+        allied.push_back(n);
+    }
+    REQUIRE(allied.size() == 12);
+    CHECK(allied[1] == "ALL02s.MAP");
+    CHECK(allied[11] == "ALL12s.MAP");
+    std::vector<std::string> soviet{t.battle("SOV1")->scenario};
+    while (soviet.size() < 20) {
+        const std::string n = t.next_scenario("Nod", soviet.back());
+        if (n.empty()) break;
+        soviet.push_back(n);
+    }
+    REQUIRE(soviet.size() == 12);
+    CHECK(soviet[11] == "sov12s.MAP");
+    const MissionInfo m = t.mission("ALL01T.MAP");
+    CHECK(m.ls800_bkgd == "LS800A01.SHP");
+    CHECK(m.ls_load_briefing == "LoadBrief:ALL01");
+}
+
+TEST_CASE("campaign: real all01t objects + teams parse") {
+    if (ra2fixture::mix_bytes_by_name("Maps01.mix").empty()) {
+        MESSAGE("Maps01.mix not found; skipping");
+        return;
+    }
+    const ra2assets::MixFile& mm = ra2fixture::mix_by_name("Maps01.mix");
+    const ra2assets::MixEntry* e = mm.find(std::string("all01t.map"));
+    REQUIRE(e);
+    const std::vector<uint8_t> raw = mm.read(*e);
+    const Ini map = Ini::parse(std::string(raw.begin(), raw.end()));
+    const std::vector<MapObjectRec> o = parse_map_objects(map);
+    int s = 0, u = 0, i = 0;
+    for (const MapObjectRec& r : o) (r.kind == 0 ? s : r.kind == 1 ? u : i)++;
+    CHECK(s == 190);
+    CHECK(u == 19);
+    CHECK(i == 40);
+    CHECK(parse_scenario_basic(map).player == "Player House");
+    const MapTeamData d = parse_map_teams(map);
+    CHECK(d.teams.size() == 49);
+    CHECK(d.scripts.size() == 38);
+    CHECK(campaign_house_order(map, "Player House")[0] == "Player House");
+}

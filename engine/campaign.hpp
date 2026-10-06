@@ -1,0 +1,217 @@
+#pragma once
+// P10 Campaign missions [RE: docs/re/campaign.md].
+//
+// Pure C++17 (no SDL, no World): the campaign control files (battle.ini /
+// mission.ini / mapsel.ini), the scenario [Basic] block, the map object
+// records ([Structures]/[Units]/[Infantry]/[Aircraft]), the BorrowedTime
+// mission-end state machine and the interpreter for a map's OWN team scripts
+// ([ScriptTypes], RE §7 numbering). Everything world-facing is done by the
+// caller (CampaignRuntime in main.cpp) -- this file is unit-testable alone.
+//
+// FIREWALL: only the campaign GameScene and the --demo-campaign gate use it.
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "ra2assets/ini.hpp"
+
+namespace ra2engine {
+
+// ---------------------------------------------------------------------------
+// Control files [RE §1/§3].
+struct BattleEntry {
+    std::string id;            // [Battles] value (section name), e.g. "ALL1"
+    std::string scenario;      // Scenario= (first map), e.g. "ALL01t.MAP"
+    std::string description;   // Description= CSF label
+    std::string final_movie;   // FinalMovie=
+    int cd = -1;               // CD=
+    bool debug_only = false;   // DebugOnly=yes
+};
+
+struct MissionInfo {
+    bool found = false;
+    std::string briefing;          // Briefing= CSF label
+    std::string ui_name;           // UIName= CSF label
+    std::string ls_load_message;   // LSLoadMessage= CSF label
+    std::string ls_load_briefing;  // LSLoadBriefing= CSF label
+    std::string ls640_bkgd, ls800_bkgd;   // LS640/800BkgdName= SHP
+    int ls800_brief_x = 20, ls800_brief_y = 20;   // LS800BriefLocX/Y
+};
+
+struct MapSelStage {
+    std::string name;                 // section name, e.g. "ALL01"
+    std::string scenario;             // Scenario=
+    std::vector<std::string> next;    // numbered keys in file order (next stages)
+};
+
+class CampaignTables {
+public:
+    // Any of the three may be an empty Ini (the lookups then fail soft).
+    static CampaignTables parse(const ra2assets::Ini& battle, const ra2assets::Ini& mission,
+                                const ra2assets::Ini& mapsel);
+
+    const std::vector<BattleEntry>& battles() const { return battles_; }
+    const BattleEntry* battle(const std::string& id) const;   // case-insensitive
+    MissionInfo mission(const std::string& map_name) const;   // [<MAPNAME>] section
+    // Stage list of a side section ([GDI] / [Nod]), file order.
+    std::vector<std::string> side_stages(const std::string& side) const;
+    const MapSelStage* stage(const std::string& name) const;   // case-insensitive
+    // RE §3.5: the stage of `side` whose Scenario= matches `current_map`
+    // (case-insensitive), then its first next stage that has a non-empty
+    // Scenario=. "" when there is none (campaign over / not a campaign map).
+    std::string next_scenario(const std::string& side, const std::string& current_map) const;
+
+private:
+    std::vector<BattleEntry> battles_;
+    ra2assets::Ini mission_ = ra2assets::Ini::parse("");
+    ra2assets::Ini mapsel_ = ra2assets::Ini::parse("");
+    std::vector<MapSelStage> stages_;
+};
+
+// ---------------------------------------------------------------------------
+// Scenario [Basic] [RE §2 FUN_00689890].
+struct ScenarioBasic {
+    std::string player;              // Player= (default "Americans")
+    std::string briefing;            // Briefing= CSF label
+    std::string intro, brief, win, lose, action, post_score, pre_map_select;   // movies ("" = <none>)
+    std::string theme;               // Theme= ("" = No theme)
+    std::string next_scenario;       // NextScenario= (TS leftover; recorded only, RE §3.5)
+    bool end_of_game = false;
+    bool skip_score = false;
+    bool one_time_only = false;
+    bool skip_map_select = false;
+    double carry_over_money = 0.0;
+};
+ScenarioBasic parse_scenario_basic(const ra2assets::Ini& map);
+
+// ---------------------------------------------------------------------------
+// Pre-placed objects [RE §4]. kind: 0 structure, 1 vehicle unit, 2 infantry,
+// 3 aircraft.
+struct MapObjectRec {
+    int kind = 0;
+    std::string key;         // INI key (file order is kept)
+    std::string owner;       // [Houses] name
+    std::string type;        // TechnoType id
+    int health = 256;        // 256ths
+    int x = 0, y = 0;
+    int facing = 0;
+    int subcell = 0;         // infantry only
+    std::string mission;     // units/infantry/aircraft
+    std::string tag;         // "" when None
+    int veterancy = 0;
+    int group = -1;
+};
+// Field order per section [RE §4]; malformed lines (too few fields) are
+// skipped. Output order: [Structures], [Units], [Infantry], [Aircraft],
+// each in file order.
+std::vector<MapObjectRec> parse_map_objects(const ra2assets::Ini& map);
+
+// RE §4: ftol(strength * health / 256); > strength-3 snaps to strength; floor 1.
+// Buildings clamp health to 256 first.
+int campaign_strength(int type_strength, int health256, bool building);
+
+// [Houses] order with the player house first (engine house 0); every other
+// house keeps its [Houses] order. `player` matched case-insensitively against
+// the house names, then against each house's Country=.
+std::vector<std::string> campaign_house_order(const ra2assets::Ini& map, const std::string& player);
+
+// ---------------------------------------------------------------------------
+// Mission end [RE §5]: the first Win/Lose flags the outcome; the mission ends
+// once the BorrowedTime (SavourDelay * 900 frames) has run out.
+class MissionEnd {
+public:
+    explicit MissionEnd(int borrowed_frames = 90) : borrowed_(borrowed_frames) {}
+    // outcome 1 = won, 2 = lost. Ignored once flagged (the +0x1F7/+0x1F8 guards).
+    void flag(int outcome, long frame);
+    // True from the frame the BorrowedTime has fully elapsed.
+    bool ended(long frame) const {
+        return outcome_ != 0 && frame - flagged_at_ >= borrowed_;
+    }
+    int outcome() const { return outcome_; }
+    long flagged_at() const { return flagged_at_; }
+    int borrowed_frames() const { return borrowed_; }
+
+private:
+    int borrowed_;
+    int outcome_ = 0;
+    long flagged_at_ = -1;
+};
+// round(SavourDelay minutes * 900) [RE §5].
+int borrowed_time_frames(double savour_delay_minutes);
+
+// ---------------------------------------------------------------------------
+// Map team scripts [RE §7].
+struct MapScriptAction { int action = 0; int arg = 0; };
+struct MapScript { std::string id, name; std::vector<MapScriptAction> actions; };
+struct MapTaskMember { int count = 0; std::string type; };
+struct MapTeamType {
+    std::string id, name;
+    std::string house;        // House= (a country name, e.g. "BadGuy2")
+    std::string script;       // Script= id
+    std::string taskforce;    // TaskForce= id
+    std::string tag;          // Tag= id ("" none)
+    int waypoint = -1;        // Waypoint= letter code
+    int max = 0;
+    bool full = false;
+    int veteran_level = 0;
+};
+struct MapTeamData {
+    std::vector<MapScript> scripts;
+    std::vector<MapTeamType> teams;
+    std::vector<std::pair<std::string, std::vector<MapTaskMember>>> taskforces;
+    int find_team(const std::string& id) const;
+    int find_script(const std::string& id) const;
+    const std::vector<MapTaskMember>* taskforce(const std::string& id) const;
+};
+MapTeamData parse_map_teams(const ra2assets::Ini& map);
+
+// Script action numbers (CONFIRMED anchors / ModEnc names, RE §7).
+enum : int {
+    kSaAttack = 0, kSaAttackWaypoint = 1, kSaMoveWaypoint = 3, kSaMoveCell = 4,
+    kSaGuard = 5, kSaJump = 6, kSaWin = 7, kSaUnload = 8, kSaDeploy = 9,
+    kSaDoMission = 11, kSaSetGlobal = 12, kSaLoad = 14, kSaPatrol = 16,
+    kSaPanic = 19, kSaChangeHouse = 20, kSaScatter = 21, kSaLose = 23,
+    kSaDeleteMembers = 37, kSaClearGlobal = 38, kSaSetLocal = 39, kSaClearLocal = 40,
+    kSaAttackEnemyBuilding = 46, kSaMoveEnemyBuilding = 47, kSaSuccess = 49,
+    kSaGatherEnemy = 53, kSaGatherBase = 54,
+};
+// Mission numbers used by action 11 / INI missions (YRpp Mission enum).
+enum : int { kMissionSleep = 0, kMissionAttack = 1, kMissionGuard = 5, kMissionAreaGuard = 11,
+             kMissionHunt = 15 };
+int mission_from_name(const std::string& name);   // "Guard" -> 5, "Hunt" -> 15 ...
+
+// What the caller tells the interpreter each tick.
+struct MapTeamView {
+    int live_members = 0;
+    bool arrived = false;          // every live member within CloseEnough of the move goal
+    bool waypoint_ok = true;       // the current action's waypoint exists
+    bool target_exists = true;     // an attack target for the current action exists
+    bool members_idle = false;     // all live members idle (attack finished)
+};
+// The single command for this tick.
+struct MapTeamCommand {
+    enum class Kind {
+        None, MoveWaypoint, MoveCell, Attack, AttackWaypoint, Guard, Win, Lose, SetGlobal,
+        ClearGlobal, SetLocal, ClearLocal, ChangeHouse, Scatter, DeleteMembers, Mission,
+        AttackBuilding, Skip, Done
+    };
+    Kind kind = Kind::None;
+    int arg = 0;
+    int action = -1;
+    bool fresh = false;   // first tick of this action (issue orders); later ticks re-target idle members
+};
+struct MapTeamState {
+    int pc = 0;
+    bool issued = false;     // the current action's order went out
+    long wait_until = -1;    // guard timer end frame
+    bool done = false;
+};
+// RE §7: Guard area arg = 1/10 min -> arg*90 frames [same RE-FALLBACK unit as ai-team.md].
+constexpr int kMapGuardFramesPerArg = 90;
+// Advance one tick. A move action completes when view.arrived; an attack when
+// the members went idle or no target exists; guard when its timer ran out;
+// instant actions (vars, win, lose, change house, scatter, jump) complete in
+// the tick they are issued; unknown actions are Skip (pc++).
+MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const MapTeamView& view,
+                             long frame);
+
+}  // namespace ra2engine
