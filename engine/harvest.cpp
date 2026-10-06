@@ -119,6 +119,27 @@ void teleport_unit(Unit& u, int self, int tx, int ty,
     occ.set(fx, fy, self);
 }
 
+// NEW-3 (gap owner A): the cell a DRIVING miner heads for. The dock cell
+// itself when it is passable; else the art QueueingCell (artmd [NAREFN]/
+// [GAREFN] QueueingCell=4,1: "a harvester will aim for this cell if it wasn't
+// allowed to reserve the docking cell") = foundation origin + (fw, 1); else
+// the first passable cell of the ring hugging the foundation (scan order)
+// [RE-FALLBACK: the pad/queue geometry beyond QueueingCell was not hunted].
+// Without this a refinery whose south-centre cell is blocked (a building
+// placed there, a cliff) froze every War Miner in ReturnToRef forever.
+Cellxy dock_approach_cell(const Building& b, const std::vector<std::uint8_t>& passable, int gw,
+                          int gh) {
+    const int dx = dock_cell_x(b), dy = dock_cell_y(b);
+    if (is_passable(passable, gw, gh, dx, dy)) return {dx, dy};
+    if (is_passable(passable, gw, gh, b.cx + b.fw, b.cy + 1)) return {b.cx + b.fw, b.cy + 1};
+    for (int y = b.cy - 1; y <= b.cy + b.fh; ++y)
+        for (int x = b.cx - 1; x <= b.cx + b.fw; ++x) {
+            const bool edge = y == b.cy - 1 || y == b.cy + b.fh || x == b.cx - 1 || x == b.cx + b.fw;
+            if (edge && is_passable(passable, gw, gh, x, y)) return {x, y};
+        }
+    return {dx, dy};
+}
+
 }  // namespace
 
 int nearest_refinery(const std::vector<Building>& buildings,
@@ -305,6 +326,11 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 }
                 int dcx = dock_cell_x(buildings[(size_t)ref]);
                 int dcy = dock_cell_y(buildings[(size_t)ref]);
+                if (!u.chrono_miner) {   // NEW-3: drive to a reachable dock approach
+                    const Cellxy ac = dock_approach_cell(buildings[(size_t)ref], passable, gw, gh);
+                    dcx = ac.x;
+                    dcy = ac.y;
+                }
                 if (u.chrono_miner) {
                     // [RE-GATE APPLIED §3 PROBABLE: teleport locomotor warps
                     // on going full; [RE-FALLBACK] exact timing ->

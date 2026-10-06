@@ -107,7 +107,20 @@ click cameo GAPOWR
 until 900 queue_ready(structure) == 1
 click cameo GAPOWR
 assert placing == 1
+# [RE: gamemd fixB hunt] Esc is the [Hotkey] Options=27 command: Keyboard_Process
+# FUN_0055DB10 looks the key up in the hotkey table and runs the command
+# (Options exec FUN_00537000 -> FUN_00646AE0), with no pending-placement check;
+# an unbound Esc falls back to the same FUN_00646AE0. The one-mode cancel chain
+# FUN_004AAC40 (placement -> repair -> sell -> SW -> deselect) is the RIGHT
+# mouse-up handler (tactical WndProc FUN_00692AB0, WM_RBUTTONUP, no drag).
 key esc                                       @G-01:B
+wait 2
+assert menu == 1                              @G-01:B
+assert placing == 1                           @G-01:B
+key esc                                       @G-01:B
+wait 2
+assert menu == 0                              @G-01:B
+click xy 500 360 right                        @G-01:B
 wait 2
 assert placing == 0                           @G-01:B
 assert menu == 0                              @G-01:B

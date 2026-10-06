@@ -27,7 +27,7 @@ assert units(0,E2) >= 1                       @G-03:A
 assert units(0,E1) == 0                       @G-03:A
 assert cameo(NAPOWR) == 1                     @G-03:A
 assert cameo(GAPOWR) == 0                     @G-03:A
-assert cameo(TESLA) == 1                      @G-26:A
+assert cameo(TESLA) == 0                      @G-26:A # [TESLA] Prerequisite=POWER,RADAR,NACNST
 assert sw(0) == 0                             @G-25:A
 
 # --- 2. deploy the SMCV ------------------------------------------------------------
@@ -79,6 +79,14 @@ click tab:3
 assert cameo(HTNK) == 1                       @G-03:A
 assert cameo(HTK) == 1                        @G-22:A
 assert cameo(HARV) == 1                       @G-22:A
+# rulesmd [SMCV] Prerequisite=NAWEAP,NADEPT: the MCV needs a Service Depot.
+click tab:0
+click cameo:NADEPT                              @G-22:A
+until 1800 queue_ready(structure) == 1        @G-22:A
+click cameo:NADEPT                              @G-22:A
+place auto                                    @G-22:A
+until 300 built(0,NADEPT) == 1                  @G-22:A
+click tab:3
 assert cameo(SMCV) == 1                       @G-22:A
 click cameo:HTNK                              @G-03:A
 until 1500 units(0,HTNK) >= 1                 @G-03:A
@@ -96,6 +104,20 @@ until 6000 units_lost(0) > $ul0 or hp_lost(0) > $hl0 @G-60:D
 shot ai
 
 # --- 7. defences: the Tesla Coil is offered; a Sentry Gun kills attackers --------
+# [TESLA] Prerequisite=POWER,RADAR,NACNST: a Radar Tower first.
+click tab:0
+click cameo:NARADR                            @G-26:A
+until 1800 queue_ready(structure) == 1        @G-26:A
+click cameo:NARADR                            @G-26:A
+place auto                                    @G-26:A
+until 300 built(0,NARADR) == 1                @G-26:A
+# the radar + depot drains push a single NAPOWR into low power (Powered=yes
+# defences go offline, as in the original): add a second power plant.
+click cameo:NAPOWR
+until 900 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+until 120 buildings(0,NAPOWR) >= 2
 click tab:1
 assert cameo(TESLA) == 1                      @G-26:A
 click cameo:NALASR
