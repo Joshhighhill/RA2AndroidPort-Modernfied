@@ -173,6 +173,7 @@ enum class QueueCat { Structure, Defense, Infantry, Vehicle };
 
 class ProductionQueues {
 public:
+    friend struct SaveAccess;  // P7 Save/Load (engine/save_fields.hpp)
     ProductionQueues() = default;
 
     // The existing single-queue economy IS the Structure queue (demo-base

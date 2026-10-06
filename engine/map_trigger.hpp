@@ -199,6 +199,7 @@ struct RaiseContext {
 // Runtime [RE §2/§3].
 class MapTriggerSystem {
 public:
+    friend struct SaveAccess;  // P7 Save/Load (engine/save_fields.hpp)
     MapTriggerSystem(const MapTriggerData& data, int difficulty, std::uint32_t rng_seed);
 
     // Scenario start [RE §3.2]: locals initialised, globals cleared, tag

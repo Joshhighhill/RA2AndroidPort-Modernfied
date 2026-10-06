@@ -11,6 +11,7 @@ namespace ra2engine {
 // off-grid.
 class Occupancy {
 public:
+    friend struct SaveAccess;  // P7 Save/Load (engine/save_fields.hpp)
     static constexpr int kEmpty = -1;
 
     Occupancy() = default;
