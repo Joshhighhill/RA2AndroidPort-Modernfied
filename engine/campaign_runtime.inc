@@ -107,6 +107,13 @@ std::string csf_text(const std::string& dir, const std::string& label) {
     return out;
 }
 
+// battle.ini / mission.ini / mapsel.ini from ra2.mix/local.mix (RE §1).
+ra2engine::CampaignTables load_tables(const MixFile& ra2) {
+    return ra2engine::CampaignTables::parse(load_ra2_local_ini(ra2, "battle.ini"),
+                                            load_ra2_local_ini(ra2, "mission.ini"),
+                                            load_ra2_local_ini(ra2, "mapsel.ini"));
+}
+
 // Map a [<Side>] mapsel section to the World side.
 ra2engine::World::Side side_of(const std::string& s) {
     const std::string u = up(s);
@@ -348,6 +355,7 @@ public:
     ra2engine::World::Side player_side() const { return player_side_; }
     const ra2engine::MapTriggerSystem& triggers() const { return *sys_; }
     int teams_created() const { return teams_created_; }
+    int house_index(const std::string& name) const { return engine_house_of_name(name); }
     int raises() const { return raises_; }
 
     std::uint64_t hash() const {
@@ -855,12 +863,12 @@ private:
                 bool isb = false;
                 int t = -1;
                 if (c.kind == K::AttackWaypoint) {
-                    int x = 0, y = 0;
-                    if (waypoint_cell(c.arg, x, y)) {
-                        t = w_.building_at_cell(x, y);
-                        isb = t >= 0;
-                        if (t < 0) t = w_.unit_at_cell(x, y);
-                    }
+                    // [DEVIATION §9.7] Attack-waypoint bombardments (Allied 1's
+                    // dreadnought/V3 shelling of the Statue) rely on Patriot
+                    // missile interception, which the engine does not model;
+                    // executed literally they destroy the objective in seconds.
+                    // The team holds position instead (logged in the witness).
+                    continue;
                 } else {
                     t = nearest_enemy(tm.house, u.cell_x, u.cell_y,
                                       c.kind == K::Attack ? c.arg : 2, isb);

@@ -2454,6 +2454,10 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
 // firing -- a muzzle flash at the PrimaryFireFLH point (docs/re/voxel-render.md
 // §6: rotate (F, L) by the quantized turret yaw, leptons->cells /256, project
 // with the same 60x30 diamond shear draw_unit uses; H raises the flash).
+// Voxel sprite sets exist for houses 0/1 only (VehicleAssets::hull[2]); a
+// campaign/multi-house world draws every other house with set 1. Houses 0/1
+// map to themselves, so every existing render is unchanged. [P10]
+inline int vxl_house(int h) { return h == 0 ? 0 : 1; }
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
     if (u.die_time >= 0.0) {
@@ -2484,20 +2488,20 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
     if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
-                                      va.hull[u.house].sprites[bi].w, cam, W, H);
+                                      va.hull[vxl_house(u.house)].sprites[bi].w, cam, W, H);
 
     ra2engine::draw_voxel_sprite(
-        ren, tc, "vxl:" + img + ":h:" + std::to_string(u.house) + ":" + std::to_string(bi),
-        va.hull[u.house].sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        ren, tc, "vxl:" + img + ":h:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(bi),
+        va.hull[vxl_house(u.house)].sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     if (va.has_turret) {
         const int ti = ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings);
         ra2engine::draw_voxel_sprite(
-            ren, tc, "vxl:" + img + ":t:" + std::to_string(u.house) + ":" + std::to_string(ti),
-            va.turret[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+            ren, tc, "vxl:" + img + ":t:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(ti),
+            va.turret[vxl_house(u.house)].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
         if (va.has_barrel)
             ra2engine::draw_voxel_sprite(
-                ren, tc, "vxl:" + img + ":b:" + std::to_string(u.house) + ":" + std::to_string(ti),
-                va.barrel[u.house].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+                ren, tc, "vxl:" + img + ":b:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(ti),
+                va.barrel[vxl_house(u.house)].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
@@ -2780,7 +2784,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         const VehicleAssets* va = va_for_image(vlist, u.image);
         if (!va) return 0;
         const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
-        return va->hull[u.house].sprites[bi].w;
+        return va->hull[vxl_house(u.house)].sprites[bi].w;
     };
     // Paths + selection markers first (under the sprites); skip dead/dying
     // units entirely (no path, no selection marker for a corpse-in-progress).
@@ -12903,6 +12907,9 @@ int run_demo_triggers() {
 }
 
 
+// P10 --demo-campaign [RE: campaign.md].
+#include "campaign_gate.inc"
+
 // --demo-roster: the broadened-roster content gate (18th permanent byte-identity
 // gate). Mirrors run_demo_skirmish: runs simulate_roster rendered (hidden window
 // + start/end screenshots) then headless from a FRESH World, and byte-compares
@@ -15668,6 +15675,8 @@ int main(int argc, char** argv) {
                 return run_demo_projectile();
             } else if (arg == "--demo-triggers") {
                 return run_demo_triggers();
+            } else if (arg == "--demo-campaign") {
+                return run_demo_campaign();   // P10 Campaign gate
             } else if (arg == "--demo-saveload") {
                 return run_demo_saveload();   // P7 Save/Load gate
             } else if (arg == "--demo-veterancy") {
