@@ -111,7 +111,10 @@ struct AiSoakProbe {
                 if (ts) for (const ra2engine::TeamInstance& t : ts->teams)
                     if (t.state == ra2engine::TeamState::Executing) ++executing;
                 const auto hp = base_hp(human);
-                std::cout << "min " << f / 900 << ": ai_buildings=" << nb
+                int miners = 0;
+                for (const ra2engine::Unit& u : w.units())
+                    if (u.alive && u.house == ai && u.is_harvester) ++miners;
+                std::cout << "min " << f / 900 << ": ai_buildings=" << nb << " ai_miners=" << miners
                           << " ai_credits=" << (long long)w.ai_credits(ai) << " ai_units_alive=" << alive
                           << " ai_units_built=" << ai_units_built
                           << " teams_created=" << (ts ? ts->teams_created : 0)

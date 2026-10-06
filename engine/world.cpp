@@ -2891,6 +2891,12 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     const BuildingTypeDef& fdef = rec.cfg.roster[buildings_[fi].type];
     const int uidx = launch_unit(fi, fdef, tc.unit_roster[uslot].combat);
     if (uidx < 0) return false;  // exit blocked -> HOLD ready (retry next frame)
+    if (tc.unit_roster[uslot].harvester) {   // [G-68] a bought miner goes to work
+        const UnitTypeDef& d = tc.unit_roster[uslot];
+        make_harvester(uidx, d.chrono_miner, d.storage > 0 ? d.storage : 20);
+        rec.queues.placed(cat);
+        return true;
+    }
     // Claim into the FIRST (oldest) Recruiting team owing this type —
     // deterministic; an unclaimed unit stays idle and recruitable
     // [RE: ai-team.md §2].
@@ -3041,9 +3047,34 @@ void World::step_ai_teams(double dt) {
             if (t.state != TeamState::Recruiting) continue;
             recruit_idle(t, tc.aimd, ai_idle_units(h, rec));
         }
-        const int want = next_produce_type(st.teams, tc.aimd, rec.credits,
-                                           rec.cfg.mods.cost_mul, tc.unit_roster,
-                                           tc.rules);
+        int want = next_produce_type(st.teams, tc.aimd, rec.credits,
+                                     rec.cfg.mods.cost_mul, tc.unit_roster,
+                                     tc.rules);
+        // [G-68] IQ Harvester: miners below refineries x HarvestersPerRefinery
+        // -> the miner comes first [RE: rulesmd [IQ] Harvester=2 "automatically
+        // replace lost harvesters"; HarvestersPerRefinery "formerly
+        // hardcoded"]. RE-FALLBACK: checked every frame the vehicle queue is
+        // idle; affordability as any unit (cost + CreditReserve).
+        if (tc.harvesters_per_refinery > 0) {
+            int refineries = 0, miners = 0;
+            for (const Building& b : buildings_)
+                if (b.alive && b.house == h && b.state == Building::State::Idle &&
+                    std::find(refinery_types_.begin(), refinery_types_.end(), b.type) !=
+                        refinery_types_.end())
+                    ++refineries;
+            for (const Unit& u : units_)
+                if (u.alive && u.die_time < 0.0 && u.house == h && u.is_harvester) ++miners;
+            if (miners < refineries * tc.harvesters_per_refinery)
+                for (int t = 0; t < (int)tc.unit_roster.size(); ++t)
+                    if (tc.unit_roster[t].harvester &&
+                        rec.credits >= tc.unit_roster[t].cost * rec.cfg.mods.cost_mul +
+                                           tc.rules.credit_reserve &&
+                        prerequisites_met(tc.unit_roster[t].prerequisite, buildings_,
+                                          rec.cfg.roster, h, rec.cfg.groups)) {
+                        want = t;
+                        break;
+                    }
+        }
         if (want >= 0) {
             const bool veh = tc.unit_roster[want].is_vehicle;
             const QueueCat cat = veh ? QueueCat::Vehicle : QueueCat::Infantry;
@@ -3062,7 +3093,10 @@ void World::step_ai_teams(double dt) {
             // idles house production well beyond the "don't over-queue" intent
             // [FIX: over-damp — count only unclaimed on-hand units].
             bool onhand_of_type = false;
-            for (int i = 0; i < (int)units_.size() && !onhand_of_type; ++i) {
+            // [G-68] miners never join a team, so "on hand" is meaningless for
+            // them -- the IQ Harvester count above is their only gate.
+            for (int i = 0; i < (int)units_.size() && !onhand_of_type &&
+                            !tc.unit_roster[want].harvester; ++i) {
                 const Unit& u = units_[i];
                 if (!u.alive || u.die_time >= 0.0 || u.house != h ||
                     ai_unit_type_of(rec, u) != want)

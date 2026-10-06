@@ -521,6 +521,10 @@ struct AiTeamConfig {
     // [G-61] per building-roster index: kAiBld* class bits for the quarry
     // types 6/7/9/11 (factories / base defenses / power / tech).
     std::vector<std::uint8_t> building_class;
+    // [G-68] IQ Harvester (=2 <= skirmish IQ 5): keep refineries x
+    // HarvestersPerRefinery (2,2,1 by house+0x184) miners alive. 0 = off
+    // (the AI gates' synthetic configs).
+    int harvesters_per_refinery = 0;
     AiTeamRules rules;                    // recovered team knobs
 
     // --- AI-3 AITriggerTypes [RE: ai-trigger.md] -----------------------------

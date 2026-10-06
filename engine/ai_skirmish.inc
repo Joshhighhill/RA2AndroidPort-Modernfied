@@ -32,9 +32,19 @@ UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixF
         {"SNIPE", false, "GAPILE"},{"TANY", false, "GAPILE"}, {"CLEG", false, "GAPILE"},
         {"GHOST", false, "GAPILE"},{"MTNK", true, "GAWEAP"},  {"FV", true, "GAWEAP"},
         {"SREF", true, "GAWEAP"},  {"MGTK", true, "GAWEAP"},  {"TNKD", true, "GAWEAP"},
+        // [G-68] the miners (IQ Harvester replacement)
+        {"HARV", true, "NAWEAP"},  {"CMIN", true, "GAWEAP"},
     };
-    return load_unit_roster_table(dir, ra2, ua, rules, art, kAiUnits,
-                                  sizeof(kAiUnits) / sizeof(kAiUnits[0]), /*full_parse=*/true);
+    UnitRoster ur = load_unit_roster_table(dir, ra2, ua, rules, art, kAiUnits,
+                                           sizeof(kAiUnits) / sizeof(kAiUnits[0]), /*full_parse=*/true);
+    for (ra2engine::UnitTypeDef& d : ur.defs) {   // same resolution as rp_load_roster
+        d.harvester = rules.harvester(d.id);
+        if (d.harvester) {
+            d.storage = rules.storage(d.id);
+            d.chrono_miner = d.id == "CMIN";
+        }
+    }
+    return ur;
 }
 
 // aimd.ini lives in ra2md.mix/localmd.mix next to the other INIs. A missing
@@ -98,6 +108,12 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
     acfg.team.trigger_side = s.side == ra2engine::World::Side::Soviet ? 2 : 1;  // [ai-trigger.md §5]
     acfg.team.house_name = country;
     fill_ai_building_maps(acfg.team, ba, rules, rules_ini);
+    {   // [G-68] HarvestersPerRefinery=2,2,1 ;h,m,e at house+0x184 = 2 - lobby
+        const std::vector<std::string> v =
+            aiside::csv_tokens(rules.section_string("General", "HarvestersPerRefinery", ""));
+        const int c = ra2engine::difficulty_class_index(s.diff);
+        acfg.team.harvesters_per_refinery = c < (int)v.size() ? std::atoi(v[(std::size_t)c].c_str()) : 1;
+    }
     std::cerr << "[ai] slot side=" << (s.side == ra2engine::World::Side::Soviet ? "Soviet" : "Allied")
               << " country=" << country << " diff=" << (int)s.diff
               << " roster=" << acfg.team.unit_roster.size()
