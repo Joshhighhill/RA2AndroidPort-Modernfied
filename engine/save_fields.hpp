@@ -173,6 +173,14 @@ struct SaveAccess {
         save::io(ar, w.ability_events_);
         save::io(ar, w.fire_events_);   // Gap fix C
         save::io(ar, w.combat_rng_);
+        // gF MCV deploy
+        save::io(ar, w.deploy_any_);
+        save::io(ar, w.deploy_events_);
+        save::io(ar, w.buildup_totals_);
+        save::io(ar, w.undeploy_types_);
+        save::io(ar, w.undeploy_units_);
+        save::io(ar, w.mcv_redeploys_);
+        save::io(ar, w.skirmish_session_);
         // G16 world depth (agent G)
         save::io(ar, w.depth_rules_);
         save::io(ar, w.garrison_any_);
@@ -480,6 +488,12 @@ template <class Ar> void fields(Ar& ar, RadSite& v) {
     io(ar, v.timer_left);
     io(ar, v.alive);
 }
+template <class Ar> void fields(Ar& ar, World::DeployEvent& v) {   // gF
+    io(ar, v.kind);
+    io(ar, v.unit);
+    io(ar, v.building);
+    io(ar, v.house);
+}
 template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
     io(ar, v.kind); io(ar, v.a); io(ar, v.b); io(ar, v.x); io(ar, v.y); io(ar, v.building);
 }
@@ -537,6 +551,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.deploy_fire_slot);
     io(ar, v.crusher);
     io(ar, v.crushable);
+    io(ar, v.deploys_into);   // gF
     io(ar, v.primary_wall);   // G16
     io(ar, v.occupier);
     io(ar, v.occupy_weapon);
@@ -580,6 +595,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.unsellable);
     io(ar, v.click_repairable);
     io(ar, v.crewed);
+    io(ar, v.deploy_facing);   // gF
     io(ar, v.ore_purifier);   // gap owner A (G-27)
     io(ar, v.soylent);
     // Gap fix C: defense weapons
@@ -716,6 +732,11 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.deploy_fire_slot);
     io(ar, v.crusher);
     io(ar, v.crushable);
+    // gF MCV deploy
+    io(ar, v.deploys_into);
+    io(ar, v.deploy_mission);
+    io(ar, v.deploy_goal_x); io(ar, v.deploy_goal_y);
+    io(ar, v.deployed_away);
     // G16 world depth
     io(ar, v.p_wall);
     io(ar, v.occupier);

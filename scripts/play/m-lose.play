@@ -1,0 +1,20 @@
+# m-lose -- NEW-2 (gap F): in a campaign mission, losing every player object
+# must end the mission LOST through the map's own triggers (ALL01: "Enable
+# Failure 3b" = event 11 DestroyedAll on the player house -> enables
+# "Mission Failed" -> action 2 Lose), then the result screen.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button "New Campaign"
+click button "Allied Campaign"
+until 30 scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+wait 30
+cheat kill_house 0
+until 900 outcome == LOST                     @NEW-2:F
+until 300 scene == result                     @NEW-2:F
+assert outcome == LOST                        @NEW-2:F
+shot lost
+end

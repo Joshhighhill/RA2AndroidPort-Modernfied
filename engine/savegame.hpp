@@ -36,7 +36,7 @@ namespace save {
 // Bump on ANY change to what is serialized (a field added to a visitor, a
 // section's layout). A save with a different version is listed but refused
 // on load -- the original's FileEntryClass::IsWrongVersion.
-constexpr std::uint32_t kFormatVersion = 6;   // 2: P10 campaign fields; 3: gap-A naval/air queues + roster flags; 4: gap-C weapon/defense fields; 5: gap-D AI (building maps, handicaps, repair/SW knobs, catalog tech/SW, miners); 6: G16 garrison/bridge state
+constexpr std::uint32_t kFormatVersion = 7;   // 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state
 
 // --- archives ---------------------------------------------------------------
 class Writer {

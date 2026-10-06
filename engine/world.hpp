@@ -330,6 +330,11 @@ struct Unit {
     // World::enable_original_combat; see combat.cpp.
     bool crusher = false;            // Crusher=yes (vehicles)
     bool crushable = false;          // Crushable=yes (infantry)
+    // --- gF MCV deploy [RE: docs/re/mcv-deploy.md] --- inert defaults.
+    int deploys_into = -1;           // DeploysInto= building roster index (-1 none)
+    int deploy_mission = 0;          // 0 none, 1 turning to DeployFacing, 2 driving to a spot
+    int deploy_goal_x = 0, deploy_goal_y = 0;   // mission 2 destination
+    bool deployed_away = false;      // consumed by a deploy (not a death)
     // --- G16 world depth (agent G, world_depth.cpp) [RE: docs/re/world-depth.md] ---
     // A garrisoned infantry is off the map like a passenger: cargo_of holds
     // kGarrisonCargo (so every "cargo_of >= 0 -> off-map" test skips it) and
@@ -1427,6 +1432,46 @@ public:
     void campaign_damage_unit(int idx, int dmg) { ability_damage_unit(idx, dmg); }
     void campaign_damage_building(int b_idx, int dmg) { ability_damage_building(b_idx, dmg); }
 
+    // --- gF MCV deploy / undeploy [RE: docs/re/mcv-deploy.md] ---------------
+    // A unit whose type has DeploysInto= (AMCV/SMCV) unfolds into that building.
+    // UnitClass deploy mission FUN_007383e0 / try-to-deploy FUN_00737d50:
+    // foundation origin = MCV cell + AdjacentCell[NW] (-1,-1) when the
+    // foundation is wider or taller than 2 (else the MCV cell itself); legality
+    // = every foundation cell clear (BuildingType vtbl+0xA8 -> FUN_007154F0,
+    // NO adjacency); the unit turns to the type's DeployFacing (default 0x80)
+    // and only then becomes the building (mission Construction = buildup anim,
+    // health ratio carried, min 1). If the spot is illegal at order time the
+    // unit searches the recovered 36-offset ring for a legal spot and drives
+    // there; a deploy that fails on the spot raises EVA_CannotDeployHere for a
+    // human house. Firewalled by deploy_any_ (no gate issues the order).
+    struct DeployEvent {
+        enum class Kind { Deployed, CannotDeploy, Undeployed };
+        Kind kind = Kind::Deployed;
+        int unit = -1;       // the MCV (consumed for Deployed, new for Undeployed)
+        int building = -1;   // the new building (Deployed) / the packed one (Undeployed)
+        int house = -1;
+    };
+    // Order unit `idx` to deploy (any house: player 'D', AI, campaign script 9).
+    // false = not a deployer / dead / no legal spot anywhere in the ring.
+    bool order_deploy_mcv(int idx);
+    bool is_mcv(int idx) const;
+    // Would the unit's DeploysInto building be legal with the MCV at (x, y)?
+    // (the MCV itself does not block its own spot). Out: foundation origin.
+    bool can_deploy_at(int idx, int x, int y, int* ox = nullptr, int* oy = nullptr) const;
+    // Buildup seconds per roster type (art Buildup timing) so a deployed
+    // building plays its unfold animation; unset -> instant.
+    void set_buildup_totals(std::vector<double> t) { buildup_totals_ = std::move(t); }
+    // UndeploysInto [RE: repair-sell.md §B6]: the unit a ConstructionYard packs
+    // back into when sold by a human in a skirmish session with MCVRedeploys.
+    void set_undeploy_unit(int btype, const UnitCombat& c);
+    void set_mcv_redeploys(bool on) { mcv_redeploys_ = on; }
+    void set_skirmish_session(bool on) { skirmish_session_ = on; }
+    std::vector<DeployEvent> take_deploy_events();
+    void step_deploy(double dt);
+    // gF G-75: trigger action 101 ReshroudMapAtWaypoint (TAction FUN_006E0FE0
+    // -> MapClass reshroud of radius RevealTriggerRadius around the waypoint
+    // for the player; a no-op while the house has the whole map revealed).
+    void reshroud_area(int house, int cx, int cy, int radius);
     // --- G16 world depth: garrisons (G-48) + bridges (G-49) [agent G,
     // world_depth.cpp; RE: docs/re/world-depth.md]. Everything is inert until
     // a caller opens it (set_depth_rules / set_bridges / an order), so every
@@ -1760,6 +1805,16 @@ private:
     ProjRng combat_rng_{0x2545F491u};
     void launch_defense_projectile(int b_idx, int target_unit, int slot);
     Unit defense_shooter(int b_idx, int slot) const;
+    // gF MCV deploy state (inert until order_deploy_mcv / set_undeploy_unit).
+    bool deploy_any_ = false;
+    std::vector<double> buildup_totals_;
+    std::vector<DeployEvent> deploy_events_;
+    std::vector<int> undeploy_types_;          // roster building index per entry
+    std::vector<UnitCombat> undeploy_units_;   // parallel: the unit to spawn
+    bool mcv_redeploys_ = false;
+    bool skirmish_session_ = false;
+    bool try_undeploy(int b_idx);              // called by complete_sell
+    void finish_deploy(int idx);
 
     // --- G16 world depth (world_depth.cpp) ---
     DepthRules depth_rules_;

@@ -652,6 +652,24 @@ private:
                 }
         return false;
     }
+    bool free_water_near(int x, int y, int& ox, int& oy, int maxr) const {
+        const std::vector<std::uint8_t>& wg = w_.grid_for(ra2engine::MovementDomain::Water);
+        if (wg.empty()) return false;
+        for (int r = 0; r <= maxr; ++r)
+            for (int dy = -r; dy <= r; ++dy)
+                for (int dx = -r; dx <= r; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                    const int cx = x + dx, cy = y + dy;
+                    if (cx < 0 || cy < 0 || cx >= w_.grid_w() || cy >= w_.grid_h()) continue;
+                    if (!wg[(std::size_t)cy * w_.grid_w() + cx]) continue;
+                    if (w_.unit_at_cell(cx, cy) >= 0 || w_.building_at_cell(cx, cy) >= 0) continue;
+                    if (!w_.occupancy().is_free(cx, cy)) continue;
+                    ox = cx;
+                    oy = cy;
+                    return true;
+                }
+        return false;
+    }
     bool waypoint_cell(int wp, int& x, int& y) const {
         for (const ra2assets::MapWaypoint& m : w_.map().waypoints())
             if (m.index == wp) { x = m.x; y = m.y; return true; }
@@ -692,7 +710,15 @@ private:
         const camp::UnitType* ut = types_.unit(type);
         if (!ut) return -1;
         int cx = 0, cy = 0;
-        if (!free_cell_near(x, y, cx, cy)) return -1;
+        // gF G-73: a ship is placed on the nearest free WATER cell (naval.md
+        // §1 water grid); a ground unit whose waypoint lies at sea goes to the
+        // nearest free shore cell within 12 [RE-FALLBACK §9.3: the original
+        // delivers by transport / edge entry; no TeamClass delivery yet].
+        if (ut->combat.is_naval) {
+            if (!free_water_near(x, y, cx, cy, 12)) return -1;
+        } else if (!free_cell_near(x, y, cx, cy) && !free_cell_near(x, y, cx, cy, 12)) {
+            return -1;
+        }
         w_.add_combat_unit(cx, cy, eh, ut->combat);
         const int idx = (int)w_.units().size() - 1;
         ra2engine::Unit& u = w_.units()[(std::size_t)idx];
@@ -758,18 +784,64 @@ private:
         ++raises_;
         if (r.detached || r.tag_gone) t.tag = -1;
     }
+    // gF G-74 [RE: docs/re/mcv-deploy.md §7]: event 44 AttackedByHouse is
+    // raised by ReceiveDamage right after 6 with the ATTACKER's house
+    // (FUN_005F4BA0 @0x5F5015, BuildingClass FUN_004690A0 @0x4692A8). World
+    // keeps no per-hit source, so the attacker is the first live enemy unit
+    // whose current target is the victim [RE-FALLBACK: inferred source].
+    int gf_attacker_house(int unit_victim, int building_victim, int victim_house) const {
+        const std::vector<ra2engine::Unit>& us = w_.units();
+        for (const ra2engine::Unit& a : us) {
+            if (!live(a) || a.house == victim_house) continue;
+            if ((unit_victim >= 0 && a.target == unit_victim) ||
+                (building_victim >= 0 && a.target_building == building_victim))
+                return a.house;
+        }
+        return -1;
+    }
+    void raise_attacked(Track& t, int house, int src_house) {
+        raise_obj(t, ra2engine::kEvAttackedByAnybody, house);
+        if (t.tag < 0 || src_house < 0) return;
+        ra2engine::RaiseContext c = ctx_for(house);
+        c.source_house_type = house_type(src_house);
+        const ra2engine::MapTriggerSystem::ObjectRaise r =
+            sys_->raise_object(t.tag, ra2engine::kEvAttackedByHouse, c, host_);
+        ++raises_;
+        if (r.detached || r.tag_gone) t.tag = -1;
+    }
+    // gF G-74: 25/26 CrossesHorizontal/VerticalLine -- FootClass per-cell
+    // (FUN_004D84F0 @0x4D8990..0x4D8A8A): entering a cell whose row (column)
+    // is flagged scans that whole row (column) and raises 25 (26) on every
+    // cell tag in it.
+    void gf_raise_lines(int x, int y, const ra2engine::RaiseContext& c) {
+        for (const ra2engine::MapCellTag& ct : data_.cell_tags) {
+            if (ct.y == y && sys_->raise_cell(ct.x, ct.y, ra2engine::kEvCrossesHorizontalLine, c, host_)) ++raises_;
+            if (ct.x == x && sys_->raise_cell(ct.x, ct.y, ra2engine::kEvCrossesVerticalLine, c, host_)) ++raises_;
+        }
+    }
     void poll_objects() {
         sync_tracks();
         for (std::size_t i = 0; i < utrack_.size(); ++i) {
             Track& t = utrack_[i];
             if (t.dead) continue;
             const ra2engine::Unit& u = w_.units()[i];
+            if (!live(u) && u.deployed_away) {
+                // gF: an MCV that unfolded into its ConYard left the map by
+                // Limbo+delete, not by destruction -- no Destroyed event, not
+                // counted as a loss [RE: docs/re/mcv-deploy.md §2 step 6].
+                t.dead = true;
+                if (t.tag >= 0) { sys_->detach_tag(t.tag); t.tag = -1; }
+                continue;
+            }
             if (!live(u)) {
                 t.dead = true;
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
-                raise_obj(t, ra2engine::kEvDestroyedByAnything, u.house);
+                // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
+                // 7 DestroyedByAnybody (killer present), 48, then 29.
                 raise_obj(t, ra2engine::kEvDestroyedByAnybody, u.house);
+                raise_obj(t, ra2engine::kEvDestroyedByAnything, u.house);
+                raise_obj(t, ra2engine::kEvDestroyedFakesAll, u.house);
                 if (t.tag >= 0) { sys_->detach_tag(t.tag); t.tag = -1; }
                 continue;
             }
@@ -779,8 +851,9 @@ private:
                 const ra2engine::RaiseContext c = ctx_for(u.house);
                 if (sys_->raise_cell(t.cx, t.cy, ra2engine::kEvEnteredBy, c, host_)) ++raises_;
                 sys_->raise_cell(t.cx, t.cy, ra2engine::kEvEnteredOrOverflownBy, c, host_);
+                gf_raise_lines(t.cx, t.cy, c);
             }
-            if (u.hp < t.hp) raise_obj(t, ra2engine::kEvAttackedByAnybody, u.house);
+            if (u.hp < t.hp) raise_attacked(t, u.house, gf_attacker_house((int)i, -1, u.house));
             t.hp = u.hp;
             if (!t.discovered && u.house != 0 && w_.explored_at(0, u.cell_x, u.cell_y)) {
                 t.discovered = true;
@@ -797,12 +870,15 @@ private:
                 t.dead = true;
                 if (b.house >= 0 && b.house < (int)destroyed_buildings_.size())
                     ++destroyed_buildings_[(std::size_t)b.house];
-                raise_obj(t, ra2engine::kEvDestroyedByAnything, b.house);
+                // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
+                // 7 DestroyedByAnybody (killer present), 48, then 29.
                 raise_obj(t, ra2engine::kEvDestroyedByAnybody, b.house);
+                raise_obj(t, ra2engine::kEvDestroyedByAnything, b.house);
+                raise_obj(t, ra2engine::kEvDestroyedFakesAll, b.house);
                 if (t.tag >= 0) { sys_->detach_tag(t.tag); t.tag = -1; }
                 continue;
             }
-            if (b.hp < t.hp) raise_obj(t, ra2engine::kEvAttackedByAnybody, b.house);
+            if (b.hp < t.hp) raise_attacked(t, b.house, gf_attacker_house(-1, (int)i, b.house));
             t.hp = b.hp;
             if (!t.discovered && b.house != 0 && w_.explored_at(0, b.cx, b.cy)) {
                 t.discovered = true;
@@ -1298,6 +1374,29 @@ private:
                     w_.campaign_damage_building((int)i, w_.buildings()[i].hp);
                     ++n;
                 }
+            return n > 0;
+        }
+        case 108: {   // CreateCrate: Value = [Powerups] index; 20 = untyped (random)
+            int x = 0, y = 0;
+            if (!waypoint_cell(e.waypoint, x, y)) return false;
+            return w_.place_crate(x, y, e.value == 20 ? -1 : e.value);
+        }
+        case 101: {   // ReshroudMapAtWaypoint, radius [General] RevealTriggerRadius
+            int x = 0, y = 0;
+            if (!waypoint_cell(e.waypoint, x, y)) return false;
+            w_.reshroud_area(0, x, y, reveal_radius_);
+            return true;
+        }
+        case 9: {   // FireSale [RE-FALLBACK: the original flips the house's AI state
+                    // to 4 (+0x250) and its AI sells; the clone sells every building
+                    // of the house at once through the real Sell mission]
+            const int eh = engine_house(e.house_type);
+            if (eh < 0) return false;
+            int n = 0;
+            for (int i = 0; i < (int)w_.buildings().size(); ++i)
+                if (live(w_.buildings()[(std::size_t)i]) && w_.buildings()[(std::size_t)i].house == eh &&
+                    w_.begin_sell(i, eh))
+                    ++n;
             return n > 0;
         }
         case 63: {   // Apply100Damage [DEVIATION §9.6: the waypoint cell, no splash]

@@ -17,7 +17,13 @@ get_filename_component(RA2_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 # lives elsewhere. Built here as a subproject so we get libSDL2.so + its
 # Android JNI glue (which dlopen()s libmain.so and calls SDL_main).
 if(NOT DEFINED SDL2_SRC_DIR)
-    set(SDL2_SRC_DIR "${RA2_ROOT}/build/_deps/sdl2-src")
+    if(DEFINED ENV{RA2_SDL2_SRC_DIR})
+        # A git worktree / CI checkout without its own desktop build/ dir can
+        # point at any SDL 2.30.9 source tree (e.g. the main checkout's).
+        set(SDL2_SRC_DIR "$ENV{RA2_SDL2_SRC_DIR}")
+    else()
+        set(SDL2_SRC_DIR "${RA2_ROOT}/build/_deps/sdl2-src")
+    endif()
 endif()
 get_filename_component(SDL2_SRC_DIR "${SDL2_SRC_DIR}" ABSOLUTE)
 if(NOT EXISTS "${SDL2_SRC_DIR}/CMakeLists.txt")

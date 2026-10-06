@@ -77,7 +77,7 @@ A `"double quoted"` run is one argument.
 **Targets.** `point NAME [+dx +dy]` (G16 named map points relative to the
 player's first building: `garrison` (nearest empty neutral garrison),
 `garrisoned` (own occupied one), `hut` (bridge repair hut), `bridge` (nearest
-intact low-bridge centre cell), `bridge_near` / `bridge_far` (its two banks)),
+intact low-bridge centre cell), `bridge_near` / `bridge_far` (its two banks), `bridge_span` (a middle section 4 cells in from the near bank)),
 `cell X Y` (map cell centre; the view is centred first when it is
 off-screen), `xy X Y` (window pixels), `unit H:TYPE[:n] [+dx +dy]` (the n-th
 live unit of house H and rules id TYPE, `*` = any; optional signed cell offset),
@@ -138,7 +138,8 @@ Always: `scene`, `f` (driver frame), `sf` (frames in this scene), `quits`
 | `map`, `cam_x`, `cam_y`, `playfield_w` | view |
 | campaign only: `campaign_frame`, `objectives`, `triggers_fired`, `campaign_outcome`, `briefing_open` | mission runtime |
 | `garrisonable`, `owned_garrisons(h)`, `garrisoned(h)`, `occupants(h)`, `in_garrison(h)`, `garrison_shots` | G16 garrisons |
-| `bridge_cells`, `bridge_destroyed`, `bridge_version`, `on_bridge(h)`, `pt_<name>_x/y`, `sel_dist_<name>` | G16 low bridges; named points below |
+| `bridge_cells`, `bridge_destroyed`, `bridge_version`, `depth_armed`, `on_bridge(h)`, `pt_<name>_x/y`, `sel_dist_<name>` | G16 low bridges; named points below |
+| `sel_occupier`, `sel_occupy_target`, `sel_attack_cell`, `sel_target`, `sel_rof_cool`, `sel_turret`, `sel_body`, `sel_damage`, `sel_wall` | first selected unit (debug) |
 
 **Cheats** (`game` only; dev hooks for reaching a state quickly — acceptance
 should prefer real input): `kill_house H`, `damage_building H:TYPE[:n] DMG`,

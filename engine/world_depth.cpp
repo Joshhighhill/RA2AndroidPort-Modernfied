@@ -75,8 +75,13 @@ void World::order_occupy(int ui, int bi) {
         const int d = std::max(std::abs(u.cell_x - c.x), std::abs(u.cell_y - c.y));
         if (best < 0 || d < best) { best = d; nx = c.x; ny = c.y; }
     }
-    const std::vector<Cellxy> free = nearest_free_cells({nx, ny}, 1, passable_, grid_w_, grid_h_, occ_);
-    if (!free.empty()) order_unit_move(ui, free[0].x, free[0].y);
+    // The nearest free cells around that foundation cell; the first one the
+    // unit can actually path to (a cell in a walled-off pocket is skipped).
+    const std::vector<Cellxy> free = nearest_free_cells({nx, ny}, 8, passable_, grid_w_, grid_h_, occ_);
+    for (const Cellxy& g : free) {
+        order_unit_move(ui, g.x, g.y);
+        if (units_[ui].moving()) break;
+    }
 }
 
 int World::order_occupy_selected(int bi) {

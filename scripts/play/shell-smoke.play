@@ -37,6 +37,11 @@ require scene == lobby
 click start
 until 90 scene == game
 require scene == game
+# The skirmish starts from an MCV now (G-23, gap F): unfold it so the
+# placement steps below have a ConYard to build from.
+click unit 0:AMCV                             @G-23:F
+key d                                         @G-23:F
+until 450 built(0,GACNST) == 1                @G-23:F
 
 # --- in-game options menu: F10 opens, Esc resumes --------------------------------------
 key f10

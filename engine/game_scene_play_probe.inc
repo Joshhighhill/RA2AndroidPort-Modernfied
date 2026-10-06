@@ -65,6 +65,12 @@
             p.set("sel_occupier", s0 && s0->occupier ? 1 : 0);          // G16
             p.set("sel_occupy_target", s0 ? s0->occupy_target : -1);
             p.set("sel_attack_cell", s0 ? s0->attack_cell_x : -1);
+            p.set("sel_target", s0 ? s0->target : -1);
+            p.set("sel_rof_cool", s0 ? s0->rof_cool : -1);
+            p.set("sel_turret", s0 ? s0->turret_facing : -1);
+            p.set("sel_body", s0 ? s0->body_facing : -1);
+            p.set("sel_damage", s0 ? s0->w_damage : -1);
+            p.set("sel_wall", s0 ? (s0->w_active == 1 ? s0->w2.wall : s0->p_wall) : -1);
         }
         for (int h = 0; h < houses; ++h) {   // losses since the game began
             int lost = 0, blost = 0;
@@ -108,6 +114,7 @@
         // `outcome` stays RUNNING there; `world_outcome` is the World's view.
         std::string outcome = "RUNNING";
         if (campaign_ && campaign_->outcome() != 0) outcome = campaign_->outcome() == 1 ? "WON" : "LOST";
+        else if (!campaign_ && gf_outcome_ != 0) outcome = gf_outcome_ > 0 ? "WON" : "LOST";   // gF G-02
         p.set_s("outcome", outcome);
         std::string wo = "RUNNING";
         if (world_.victory_enabled()) {
@@ -176,6 +183,7 @@
         p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
         p.set("dialog_open", 0);
         menu_.play_probe(p);
+        gf_abort_.play_probe(p);   // gF G-14: Abort Mission confirm
         sld_.play_probe(p);
         p.set_s("banner", (!banner_.empty() && SDL_GetTicks() < banner_until_) ? banner_ : "");
         if (campaign_) {
@@ -279,6 +287,7 @@
                     }
                 }
             p.set("bridge_version", world_.bridge_version());
+            p.set("depth_armed", world_.depth_rules().armed ? 1 : 0);
         }
         p.find_point = [this](const std::string& name, double& cx, double& cy) {
             return play_find_point(name, cx, cy);

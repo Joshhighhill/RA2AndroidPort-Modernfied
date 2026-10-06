@@ -17,6 +17,10 @@ require scene == lobby
 click start
 until 90 scene == game
 require scene == game
+# The skirmish starts with an MCV (G-23): deploy it into the ConYard first.
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
 
 # Crush: a Rhino ordered onto an enemy GI drives over it.
 cheat spawn HTNK 0 building 0:GACNST +4 +4
@@ -81,6 +85,10 @@ require map == "xmp31s2.map"
 click start
 until 90 scene == game
 require scene == game
+# The skirmish starts with an MCV (G-23): deploy it into the ConYard first.
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
 assert bridge_cells > 0                       @G-49:G
 let d0 = bridge_destroyed
 require bridge_destroyed > 0
@@ -110,8 +118,8 @@ until 900 sel_dist_bridge_far <= 1            @G-49:G
 click point bridge_near                       @G-49:G
 until 900 sel_dist_bridge_near <= 1
 let d1 = bridge_destroyed
-click point bridge +0 +2 ctrl                 @G-49:G
-until 6000 bridge_destroyed > $d1             @G-49:G
+click point bridge_span ctrl                  @G-49:G
+until 6000 bridge_destroyed > $d1            @G-49:G
 view point bridge
 shot destroyed
 

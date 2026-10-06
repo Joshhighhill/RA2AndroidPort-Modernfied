@@ -56,6 +56,34 @@ Determinism: every script was run twice on the same tree with identical
 every 15 frames). No `play_hash` is pinned yet — a hash is pinned only once its
 script passes (ROADMAP-playable §G rule 6).
 
+### gF-mcv-endgame over master 354bdd0 (A, A2, B, C, D, E + F)
+
+Every playable-core script, run one at a time on the gF branch tip after
+merging 354bdd0. **All eight PASS.**
+
+| Script | Result | play_hash |
+|---|---|---|
+| `sk-a` | PASS | `3b6e89700a245a8e` |
+| `sk-s` | PASS | `16646d40ae6a7c0e` |
+| `sk-end` | PASS | `58405a4c35ce5b92` |
+| `sk-a-lose` | PASS (the AI kills the passive player's start force/MCV; LOST -> result) | `b6ad9d31bacd502a` |
+| `m-all01` | PASS | `a329b0e3e0fe4399` |
+| `m-sov01` | PASS | `660ff6e0587afc40` |
+| `m-lose` (new, NEW-2) | PASS | `3935514c32dbd9be` |
+| `shell-smoke` | PASS | `da65d96ad04737f4` |
+
+F rows closed: NEW-1 (camera on the player's MCV), NEW-2 (ALL01 ends LOST via
+its own trigger chain), G-02 (skirmish WON/LOST -> BorrowedTime -> result ->
+menu), G-14 (Exit / Abort confirms: `confirm_open`, `confirm:yes|no`), G-15
+(TechLevel cap in campaign and skirmish), G-23 (MCV start + deploy).
+
+Script edits made for the MCV start (the skirmish no longer ships a base):
+`shell-smoke` unfolds the AMCV before its placement steps; `sk-s` checks the
+structure cameos after the SMCV unfolds (no ConYard = no structure strip);
+`sk-a` L47 waits for the stopped GI to finish the cell it was entering (Stop
+semantics in unit_orders.cpp) instead of asserting after exactly 2 frames;
+`sk-end` waits for `scene == result` after the LOST flag (BorrowedTime).
+
 ## Failures by script
 
 ### sk-a — Allied vs 1 Soviet AI
@@ -148,9 +176,10 @@ script passes (ROADMAP-playable §G rule 6).
 
 ### world-depth — G16 (gG2-depth: G-48 garrisons, G-49 bridges)
 
-Expanded script (Part A default map, Part B May Day). On gG2-depth (master
-88f4abf + G16): **PASS**, 0 failures, `play_hash=3af75244aa4d547e` (two runs
-equal). On master without G16 every @G-48/@G-49 step fails (no garrison
+Expanded script (Part A default map, Part B May Day; both parts now deploy
+the starting MCV first, as F's skirmish start requires). On gG2-depth (master
+98d5521 + G16, save v7): **PASS**, 0 failures, `play_hash=0b994340ca1d27be`
+(two runs equal); `sk-a` and `controls` also PASS on that tree. On master without G16 every @G-48/@G-49 step fails (no garrison
 order, no bridge state, bridge cells are water, no ground force-fire).
 
 | Step | Expected | Actual @gG2-depth | G-ID | Owner |
@@ -161,7 +190,7 @@ order, no bridge state, bridge cells are water, no ground force-fire).
 | L57-L63 | select the garrison, `D`: occupants walk out, the building returns to the neutral house | PASS | G-48 | G |
 | L86-L95 | May Day ships 48 destroyed low-bridge cells; an engineer enters the bridge hut, the span is repaired (48 -> 12), the engineer is consumed | PASS | G-49 | G |
 | L101-L106 | a Grizzly drives from the near bank over the bridge (`on_bridge(0) >= 1`) to the far bank | PASS | G-49 | G |
-| L110-L114 | back on the near bank, Ctrl+click force-fire on a section: it collapses (12 -> 15 destroyed cells) | PASS | G-49 | G |
+| L118-L122 | back on the near bank, Ctrl+click force-fire on a middle section (`point bridge_span`): it collapses (+3 destroyed cells) | PASS | G-49 | G |
 | L118-L124 | a second engineer at the hut repairs it again (15 -> 12) | PASS | G-49 | G |
 
 ## New findings (not in GAP-ANALYSIS.md)

@@ -132,6 +132,8 @@ struct UnitCombat {
     int deploy_fire_slot = 1;         // DeployFireWeapon=
     bool crusher = false;             // Crusher=
     bool crushable = false;           // Crushable=
+    // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= building id (AMCV->GACNST).
+    std::string deploys_into;
     // --- G16 (agent G) [RE: docs/re/world-depth.md] ---
     bool primary_wall = false;        // primary warhead Wall= (bridge damage, G-49)
     bool occupier = false;            // Occupier= (may garrison CanBeOccupied buildings, G-48)

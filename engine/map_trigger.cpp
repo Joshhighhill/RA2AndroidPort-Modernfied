@@ -110,7 +110,7 @@ const char* action_label(int k) {
     case 107: return "ReinforcementByChrono"; case 112: return "CenterCamera";
     case 113: return "MakeHouseCheer"; case 114: return "SetTabTo";
     case 115: return "FlashCameo"; case 116: return "PlayMovieAndPause";
-    case 125: return "CreateBuilding"; case 131: return "FlashBuildingsOfType";
+    case 125: return "CreateBuilding"; case 108: return "CreateCrate"; case 101: return "ReshroudMapAtWaypoint"; case 9: return "FireSale"; case 131: return "FlashBuildingsOfType";
     default: return "?";
     }
 }
@@ -931,6 +931,18 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
     case 32: case 63:
         if (!campaign_mode_) goto unhandled;
         effect(th);
+        return;
+    // gF G-75 [RE: docs/re/mcv-deploy.md §8, Execute jump table 0x6DF35C]:
+    // 108 CreateCrate = PlaceCrate(waypoint cell, Value) (case @0x6DEC0B ->
+    // FUN_0056B9F0); 101 ReshroudMapAtWaypoint (@0x6DDE27 -> FUN_006E0FE0);
+    // 9 FireSale on house Value (@0x6DE046: house state +0x250 = 4).
+    case 108: case 101:
+        if (!campaign_mode_) goto unhandled;
+        effect(a.kind == 101 ? player : th);
+        return;
+    case 9:
+        if (!campaign_mode_) goto unhandled;
+        effect(find_house(t, a.value, host));
         return;
     default:
     unhandled:

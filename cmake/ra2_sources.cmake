@@ -90,6 +90,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/roster2.cpp
     ${RA2_ROOT}/engine/abilities.cpp
     ${RA2_ROOT}/engine/world_abilities.cpp
+    ${RA2_ROOT}/engine/world_mcv.cpp
     ${RA2_ROOT}/engine/savegame.cpp
     ${RA2_ROOT}/engine/bridges.cpp
     ${RA2_ROOT}/engine/world_depth.cpp

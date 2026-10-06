@@ -43,7 +43,9 @@ click unit 0:E1 +5 +1                         @G-05:B
 wait 3
 assert selected >= 1 and sel_moving == 1     @G-05:B
 key s                                         @G-04:B
-wait 2
+# Stop finishes entering the cell already reserved (unit_orders.cpp); with
+# the MCV start the GI may be mid-cell, so allow the hop to complete.
+until 30 sel_moving == 0                      @G-04:B
 assert selected >= 1 and sel_moving == 0     @G-04:B
 
 # --- 4. base: power plant ---------------------------------------------------------
