@@ -270,3 +270,97 @@ struct GfSkirmishStats {
 };
 Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg, int outcome,
                                      long frames, const GfSkirmishStats& stats);
+
+// gF G-14: the shell's yes/no message boxes [RE: mainmenu_true.md §3 -- Exit
+// Game goes through FUN_005B46B0 with dialogs 0x120 (two buttons) / 0x121
+// (three buttons); RT_DIALOG templates dumped from gamemd.exe: GUI:Blank text
+// at (40,40,220,50) DLU, OK/[extra]/Cancel stacked at the bottom right]. Texts
+// are the CSF labels: GUI:ExitAreYouSure + OK/Cancel for Exit Game;
+// GUI:AskAbortMission with Abort / Restart (campaign, STT:ConfirmExitButton-
+// Restart) / Resume (STT:ConfirmExitButtonResume) for Abort Mission.
+// [ANCHORED: the label->button pairing is from the STT tooltips + templates.]
+class GfConfirm {
+public:
+    bool open() const { return open_; }
+    void ask(const std::string& text, std::vector<std::string> buttons) {
+        open_ = true;
+        text_ = text;
+        buttons_ = std::move(buttons);
+    }
+    void close() { open_ = false; }
+    // -1 = nothing / still open, else the index of the clicked button. A Quit
+    // (Esc) answers the LAST button (Cancel / Resume).
+    int handle(const ra2engine::InputEvent& ev) {
+        if (!open_) return -1;
+        if (ev.kind == ra2engine::InputEvent::Quit) { open_ = false; return (int)buttons_.size() - 1; }
+        if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left)
+            return -1;
+        for (int i = 0; i < (int)buttons_.size(); ++i)
+            if (btn(i).contains(ev.x, ev.y)) { open_ = false; return i; }
+        return -1;
+    }
+    void render(SDL_Renderer* ren) const {
+        if (!open_) return;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 150);
+        SDL_Rect full{0, 0, 1280, 720};
+        SDL_RenderFillRect(ren, &full);
+        const SDL_Rect p = panel();
+        SDL_SetRenderDrawColor(ren, 18, 20, 26, 255);
+        SDL_RenderFillRect(ren, &p);
+        SDL_SetRenderDrawColor(ren, 200, 60, 50, 255);
+        SDL_RenderDrawRect(ren, &p);
+        // Word-wrap the message into the text box (40..260 DLU wide).
+        std::string line, word;
+        int y = p.y + 50;
+        const int maxc = (p.w - 80) / 12;
+        auto flush = [&]() {
+            if (line.empty()) return;
+            draw_text(ren, line, p.x + 40, y, 2, 235, 220, 150);
+            y += 24;
+            line.clear();
+        };
+        for (std::size_t i = 0; i <= text_.size(); ++i) {
+            const char ch = i < text_.size() ? text_[i] : ' ';
+            if (ch == ' ' || ch == '\n') {
+                if ((int)(line.size() + word.size() + 1) > maxc) flush();
+                if (!word.empty()) line += (line.empty() ? "" : " ") + word;
+                word.clear();
+                if (ch == '\n') flush();
+            } else {
+                word += ch;
+            }
+        }
+        flush();
+        for (int i = 0; i < (int)buttons_.size(); ++i) {
+            const ra2engine::SbRect r = btn(i);
+            SDL_Rect s{r.x, r.y, r.w, r.h};
+            SDL_SetRenderDrawColor(ren, 70, 26, 24, 255);
+            SDL_RenderFillRect(ren, &s);
+            SDL_SetRenderDrawColor(ren, 210, 70, 60, 255);
+            SDL_RenderDrawRect(ren, &s);
+            const int lw = (int)buttons_[(std::size_t)i].size() * 12;
+            draw_text(ren, buttons_[(std::size_t)i], r.x + (r.w - lw) / 2, r.y + 8, 2, 235, 235, 240);
+        }
+    }
+    ra2engine::SbRect btn(int i) const {
+        // Template DLU (207, 175 - 20*(n-1-i), 83, 15) on a 300x200 DLU box,
+        // scaled x2 (600x400 px) and centred on the 1280x720 window.
+        const SDL_Rect p = panel();
+        const int n = (int)buttons_.size();
+        return {p.x + 207 * 2, p.y + (175 - 20 * (n - 1 - i)) * 2, 83 * 2, 15 * 2};
+    }
+private:
+    static SDL_Rect panel() { return {(1280 - 600) / 2, (720 - 400) / 2, 600, 400}; }
+    bool open_ = false;
+    std::string text_;
+    std::vector<std::string> buttons_;
+};
+
+inline std::string gf_csf(const std::string& label, const char* fallback) {
+    std::string t = camp::csf_text(env_install_dir(), label);
+    return t == label ? std::string(fallback) : t;
+}
+
+// Restart = the same mission/config from its loading screen (defined in gf_result.inc).
+Scene* gf_make_restart_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg);

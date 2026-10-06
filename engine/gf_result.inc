@@ -73,3 +73,8 @@ Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishCon
                                      long frames, const GfSkirmishStats& stats) {
     return new GfSkirmishResultScene(no_audio, cfg, outcome, frames, stats);
 }
+
+Scene* gf_make_restart_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg) {
+    if (!cfg.campaign_map.empty()) return new CampaignLoadScene(no_audio, cfg);
+    return new GameScene(no_audio, cfg);
+}

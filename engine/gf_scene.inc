@@ -12,6 +12,28 @@ private:
     long   gf_frames_ = 0;                   // 15 Hz game frames elapsed
     std::vector<char> gf_defeated_seen_;     // per house: EVA_PlayerDefeated already said
     std::string gf_end_text_;
+    GfConfirm gf_abort_;                     // G-14 Abort Mission confirm (0x121)
+
+    void gf_ask_abort() {
+        std::vector<std::string> b{gf_csf("GUI:Abort", "Abort")};
+        if (campaign_) b.push_back(gf_csf("GUI:Restart", "Restart"));
+        b.push_back(gf_csf("GUI:ResumeMission", "Resume Mission"));
+        gf_abort_.ask(gf_csf("GUI:AskAbortMission", "What would you like to do?"), b);
+    }
+    void gf_abort_answer(int c) {
+        if (c < 0) return;
+        const int resume = campaign_ ? 2 : 1;
+        if (c == 0) {   // Abort -> the shell (P10), or exit a bare --interactive run
+            menu_.open_ = false;
+            if (Scene* m = make_main_menu_scene(no_audio_)) next_scene_ = m;
+            else abort_ = true;
+        } else if (campaign_ && c == 1) {   // Restart the campaign mission
+            menu_.open_ = false;
+            next_scene_ = gf_make_restart_scene(no_audio_, cfg_);
+        } else if (c == resume) {
+            menu_.open_ = false;   // Resume Mission
+        }
+    }
 
     void gf_eva(const char* key) {
         if (no_audio_ || !audio_.mixer) return;
@@ -207,3 +229,6 @@ public:
         ev.kind = ra2engine::InputEvent::PointerUp;
         handle(ev);
     }
+    void gf_open_menu() { menu_.open_ = true; }
+    bool gf_menu_open() const { return menu_.open_; }
+    bool gf_abort_open() const { return gf_abort_.open(); }

@@ -238,6 +238,45 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
                 if (menu) c.shot(*menu, "gf_back_to_menu.png");
             }
         }
+    } else if (scenario == "confirm") {
+        // G-14: Exit Game asks (0x120) and Cancel keeps the shell; Abort Mission
+        // asks (0x121) and Resume continues, Abort returns to the shell.
+        auto click = [](Scene& sc, const ra2engine::SbRect& r) {
+            ra2engine::InputEvent ev;
+            ev.kind = ra2engine::InputEvent::PointerDown;
+            ev.button = ra2engine::InputEvent::Left;
+            ev.x = r.x + r.w / 2;
+            ev.y = r.y + r.h / 2;
+            sc.handle(ev);
+            ev.kind = ra2engine::InputEvent::PointerUp;
+            sc.handle(ev);
+        };
+        GfConfirm two;
+        two.ask("", {"a", "b"});
+        const ra2engine::SbRect exit_btn = ShellXform::make(1280, 720).hit(ra2engine::SbRect{484, 199 + 42 * 5, 156, 42});
+        std::unique_ptr<Scene> menu(make_main_menu_scene(true));
+        click(*menu, exit_btn);
+        c.check(!menu->wants_quit(), "Exit Game does not quit at once");
+        c.shot(*menu, "gf_exit_confirm.png");
+        click(*menu, two.btn(1));
+        c.check(!menu->wants_quit(), "Cancel keeps the shell");
+        click(*menu, exit_btn);
+        click(*menu, two.btn(0));
+        c.check(menu->wants_quit(), "OK quits");
+        std::unique_ptr<GameScene> g(start_from_lobby(c, rules, store.art));
+        if (!g) return 1;
+        const ra2engine::SbRect abort_btn{640 - 130, 360 - 120 + 3 * 58, 260, 42};
+        g->gf_open_menu();
+        click(*g, abort_btn);
+        c.check(g->gf_abort_open() && !g->gf_peek_next(), "Abort Mission asks first");
+        c.shot(*g, "gf_abort_confirm.png");
+        click(*g, two.btn(1));   // skirmish: Abort / Resume Mission
+        c.check(!g->gf_abort_open() && !g->gf_menu_open() && !g->gf_peek_next(), "Resume Mission returns to the game");
+        g->gf_open_menu();
+        click(*g, abort_btn);
+        click(*g, two.btn(0));
+        c.check(g->gf_peek_next() != nullptr && dynamic_cast<ShellScene*>(g->gf_peek_next()) != nullptr,
+                "Abort returns to the main menu");
     } else if (scenario.rfind("campaign:", 0) == 0) {
         std::string map = scenario.substr(9), side = "GDI";
         const std::size_t colon = map.find(':');

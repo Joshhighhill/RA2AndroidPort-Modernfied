@@ -4922,6 +4922,7 @@ public:
         gf_render(ren);   // gF: victory / defeat text during BorrowedTime
         // P7 overlays + the transient "game saved / load failed" banner.
         menu_.render(ren);
+        gf_abort_.render(ren);   // gF G-14
         sld_.render(ren, SDL_GetTicks());
         if (!banner_.empty() && SDL_GetTicks() < banner_until_) {
             const int w = static_cast<int>(banner_.size()) * 18;
@@ -5061,6 +5062,7 @@ private:
         return x >= lay_.bar.x + 11 && x < lay_.bar.x + 11 + w && y >= 20 && y < 20 + h;
     }
     bool ui_handle(const ra2engine::InputEvent& ev) {
+        if (gf_abort_.open()) { gf_abort_answer(gf_abort_.handle(ev)); return true; }   // gF G-14
         if (sld_.is_open()) {
             switch (sld_.handle(ev)) {
                 case SaveLoadDialog::DoSave:
@@ -5093,10 +5095,9 @@ private:
                     sld_.open(SaveLoadDialog::Delete, "");
                     break;
                 case InGameMenu::Abort:
-                    // P10: Abort returns to the main menu when the shell is up
-                    // (run_menu); a bare --interactive run still exits.
-                    if (Scene* m = make_main_menu_scene(no_audio_)) next_scene_ = m;
-                    else abort_ = true;
+                    // gF G-14: Abort asks first (dialog 0x121 / GUI:AskAbortMission);
+                    // gf_abort_answer then returns to the main menu (P10) or exits.
+                    gf_ask_abort();
                     break;
                 default: break;
             }
@@ -6247,6 +6248,7 @@ private:
     int          mx_ = -1, my_ = -1;   // last pointer position (for hover state)
     bool         down_ = false;        // left button currently held (pressed state)
     SaveLoadDialog sld_;               // P7: "Load Saved Game" (Load mode)
+    GfConfirm gf_confirm_;             // gF G-14: Exit Game confirm (dialog 0x120)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
     // [Task exact / §7.3] WARNING-monitor animation clock. update(dt) advances
@@ -6367,6 +6369,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
                       b.enabled ? 235 : 110, b.enabled ? 235 : 112, b.enabled ? 240 : 124);
         }
         sld_.render(ren, SDL_GetTicks());   // P7
+        gf_confirm_.render(ren);            // gF G-14
         return;
     }
 
@@ -6396,6 +6399,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
         draw_options_page(ren, tc, art_, xform(), opt_, audio_live(), res);
     }
     sld_.render(ren, SDL_GetTicks());   // P7: the Load dialog over the shell
+    gf_confirm_.render(ren);            // gF G-14: Exit confirm
 }
 
 // [P8 / options.md §2/§4] Trackbar click/drag + checkbox toggles on page 0xD5.
@@ -6746,6 +6750,11 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         if (ev.kind == ra2engine::InputEvent::PointerDown) down_ = true;
         if (ev.kind == ra2engine::InputEvent::PointerUp)   down_ = false;
     }
+    // gF G-14: the Exit confirm (when open) owns every event; OK quits.
+    if (gf_confirm_.open()) {
+        if (gf_confirm_.handle(ev) == 0) quit_ = true;
+        return;
+    }
     // P7: the Load dialog (when open) owns every event.
     if (sld_.is_open()) {
         if (sld_.handle(ev) == SaveLoadDialog::DoLoad) {
@@ -6774,7 +6783,10 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         if (!b.enabled) continue;
         if (!to_device(b.rect).contains(ev.x, ev.y)) continue;
         switch (b.action) {
-            case ACT_QUIT:     quit_ = true; return;
+            case ACT_QUIT:     // gF G-14: GUI:ExitAreYouSure, OK / Cancel (dialog 0x120)
+                gf_confirm_.ask(gf_csf("GUI:ExitAreYouSure", "Are you sure you want to exit Red Alert 2?"),
+                                {gf_csf("GUI:OK", "OK"), gf_csf("GUI:Cancel", "Cancel")});
+                return;
             // The ONLY live game path: Skirmish -> setup -> GameScene (unchanged).
             case ACT_SKIRMISH: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
             // P7 [RE: saveload.md §3]: STT:SingleButtonLoadSavedGame -> the Load dialog.
