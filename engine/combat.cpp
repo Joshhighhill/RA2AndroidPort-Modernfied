@@ -527,6 +527,41 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     u.guard_x = u.cell_x;
                     u.guard_y = u.cell_y;
                     u.attack_order = false;
+                } else if (u.target_building == -1 && u.abil.fire_kind == AbilityKind::None &&
+                           !u.abil.c4) {
+                    // Gap fix C (G-46): no unit in range -> an idle unit engages
+                    // an enemy BASE DEFENSE (an armed structure) in range.
+                    // [RE-FALLBACK: RE-W4 open -- Greatest_Threat's structure
+                    // flags were not unwound; armed structures carry threat,
+                    // plain buildings (zero threat) are left to explicit
+                    // orders.] Nearest foundation cell, lowest index on ties.
+                    const std::vector<BuildingTypeDef>& bt = world.btypes();
+                    int bbest = -1;
+                    double bbest_d = 0.0;
+                    for (int bj = 0; bj < static_cast<int>(buildings.size()); ++bj) {
+                        const Building& b = buildings[bj];
+                        if (!b.alive || b.state == Building::State::Dead) continue;
+                        if (b.type < 0 || b.type >= static_cast<int>(bt.size()) || !bt[b.type].armed)
+                            continue;
+                        if (!world.is_enemy(u.house, b.house)) continue;
+                        if (!world.visible_at(u.house, b.cx, b.cy)) continue;
+                        const int ws = unit_weapon_for_building(u, b.armor_ix);
+                        if (ws < 0) continue;
+                        const double rng = slot_range(u, ws) * kLeptonsPerCell;
+                        for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+                            const double d = dist_leptons(u.fx, u.fy, cell.x, cell.y);
+                            if (d <= rng && (bbest == -1 || d < bbest_d)) {
+                                bbest = bj;
+                                bbest_d = d;
+                            }
+                        }
+                    }
+                    if (bbest != -1) {
+                        u.target_building = bbest;
+                        u.guard_x = u.cell_x;
+                        u.guard_y = u.cell_y;
+                        u.attack_order = false;
+                    }
                 }
             }
         }

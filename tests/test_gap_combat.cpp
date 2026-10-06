@@ -265,3 +265,31 @@ TEST_CASE("gapC crush + stop/scatter on the real map (G-47)") {
     for (int f = 0; f < 30; ++f) w.step(1.0 / 15.0);
     CHECK((w.units()[0].cell_x != sx || w.units()[0].cell_y != sy));
 }
+
+TEST_CASE("gapC G-46: an idle unit engages an enemy base defense in range, not a plain building") {
+    ra2assets::MapFile map;
+    World w(map);
+    BuildingTypeDef pill;
+    pill.id = "GAPILL";
+    pill.strength = 400;
+    pill.weapon[0] = slot(false, true);
+    pill.weapon[0].damage = 0;     // harmless here: only the unit's reaction is tested
+    pill.weapon[0].rof = 10;
+    pill.weapon[0].range = 1.0;
+    pill.armed = true;
+    BuildingTypeDef pow;
+    pow.id = "GAPOWR";
+    pow.strength = 750;
+    w.set_building_types({pill, pow});
+    w.add_building(1, 2, 6, 1, 1, 1, 750, 0, 0.0, true);   // plain, in range
+    w.add_building(0, 2, 2, 1, 1, 1, 400, 0, 0.0, true);   // defense, in range
+    UnitCombat tank;
+    tank.strength = 400;
+    tank.damage = 65;
+    tank.rof = 60;
+    tank.range = 5.0;
+    w.add_combat_unit(5, 4, 0, tank);
+    for (int f = 0; f < 30; ++f) w.step(1.0 / 15.0);
+    CHECK(w.buildings()[1].hp < 400);
+    CHECK(w.buildings()[0].hp == 750);
+}
