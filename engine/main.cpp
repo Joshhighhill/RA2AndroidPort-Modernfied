@@ -2464,6 +2464,25 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (overlay)
         pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 0);
+    // G-85: the shadow half (frame + Frames/2) first, darkened 50 % [RE:
+    // presentation.md §7, FUN_00705290 + the Darken blitter dst = dst >> 1].
+    if (overlay && shp.count() >= 2 && frame < shp.count() / 2) {
+        const int sf = frame + shp.count() / 2;
+        const ra2assets::ShpFile::Frame s = shp.frame_info(sf);
+        if (s.w > 0 && s.h > 0) {
+            char skey[96];
+            std::snprintf(skey, sizeof skey, "bldsh:%s:%c:%d", def.id.c_str(), buildup ? 'b' : 'm', sf);
+            SDL_Texture* st = static_cast<SDL_Texture*>(tc.peek(skey));
+            if (!st) {
+                const std::vector<uint8_t> si = shp.decode_indexed(sf);
+                std::vector<uint8_t> rgba(si.size() * 4, 0);
+                for (std::size_t k = 0; k < si.size(); ++k) if (si[k]) rgba[k * 4 + 3] = 128;
+                st = static_cast<SDL_Texture*>(tc.get_rgba(skey, rgba.data(), s.w, s.h));
+            }
+            SDL_Rect sd{fcx - shp.width() / 2 + s.x, fcy - shp.height() / 2 + s.y, s.w, s.h};
+            SDL_RenderCopy(ren, st, nullptr, &sd);
+        }
+    }
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     SDL_Rect dst{fcx - shp.width() / 2 + f.x, fcy - shp.height() / 2 + f.y, f.w, f.h};
     if (!(dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H)) {
