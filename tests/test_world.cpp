@@ -500,8 +500,24 @@ TEST_CASE("World: two squads fight to elimination deterministically (real map)")
                 break;
             }
         }
-        CHECK(ended);       // battle resolves before the 120s cap
-        CHECK(t < 120.0);
+        // Gap fix C (G-50): with the original's ROF Random(0,2) jitter the
+        // kill order can leave a GI and a Conscript idle 5 cells apart (range
+        // 4): a legitimate standoff (idle units only engage within weapon
+        // range), so "resolved" = one side eliminated OR every surviving
+        // pair is out of range and idle.
+        if (!ended) {
+            const auto& us = world.units();
+            for (int gi_i : gi_idx)
+                for (int cons_i : cons_idx) {
+                    const auto& a = us[gi_i];
+                    const auto& b = us[cons_i];
+                    if (!a.alive || a.die_time >= 0.0 || !b.alive || b.die_time >= 0.0) continue;
+                    const double d = std::hypot(a.fx - b.fx, a.fy - b.fy);
+                    CHECK(d > a.w_range);
+                    CHECK(a.target == -1);
+                    CHECK(b.target == -1);
+                }
+        }
 
         std::vector<std::tuple<int, int, int, bool, bool>> final_state;
         for (const auto& u : world.units())

@@ -72,11 +72,12 @@ public:
     // pixels fall outside the file.
     TileImage decode_extra(int i) const;
 
+    // G-09: raw TMP image header (XCC t_tmp_image_header; radar RGB at 43..48).
+    const uint8_t* image_header(int i) const;
 private:
     // Bounds-checked pointer to tile i's 52-byte image header, or nullptr if
     // the tile is absent (index-table entry 0). Throws if i is out of range or
     // the header would fall outside the file.
-    const uint8_t* image_header(int i) const;
 
     std::vector<uint8_t> bytes_;
     std::vector<uint32_t> index_;   // per-tile byte offset to its image header (0 = absent)

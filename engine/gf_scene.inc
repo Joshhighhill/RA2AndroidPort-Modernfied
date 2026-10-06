@@ -63,13 +63,10 @@ private:
         }
     }
 
+    // EVA lines go through E's presentation queue (evamd.ini, per side).
     void gf_eva(const char* key) {
-        if (no_audio_ || !audio_.mixer) return;
-        const bool soviet = world_.house_side(0) == ra2engine::World::Side::Soviet;
-        auto it = audio_.eva_by_name.find(std::string(key) + (soviet ? "|Russian" : "|Allied"));
-        if (it == audio_.eva_by_name.end())
-            it = audio_.eva_by_name.find(std::string(key) + "|Allied");
-        if (it != audio_.eva_by_name.end()) audio_.mixer->play_eva(it->second);
+        if (no_audio_) return;
+        pres_.sound().eva(key);
     }
 
     bool gf_has_vehicle_art(const std::string& image) const {
@@ -162,7 +159,8 @@ private:
                 gf_outcome_ = outcome;
                 gf_borrowed_ = ra2engine::borrowed_time_frames(
                     rules_.general_double("SavourDelay", 0.1));
-                gf_eva(outcome > 0 ? "EVA_YouAreVictorious" : "EVA_YouHaveLost");
+                // EVA_YouAreVictorious / EVA_YouHaveLost: spoken by E's
+                // presentation pass (pres_game.inc), not repeated here.
                 gf_end_text_ = camp::up(camp::csf_text(dir_, outcome > 0 ? "TXT_VICTORIOUS" : "TXT_LOST"));
             }
             return;

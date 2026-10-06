@@ -171,6 +171,8 @@ struct SaveAccess {
         save::io(ar, w.rad_);
         save::io(ar, w.no_c4_types_);
         save::io(ar, w.ability_events_);
+        save::io(ar, w.fire_events_);   // Gap fix C
+        save::io(ar, w.combat_rng_);
         // gF MCV deploy
         save::io(ar, w.deploy_any_);
         save::io(ar, w.deploy_events_);
@@ -314,6 +316,28 @@ template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.launch_frame);
     io(ar, v.launch_speed);
     io(ar, v.max_z);
+    io(ar, v.weapon_slot);   // Gap fix C
+    io(ar, v.attacker_building);
+}
+// Gap fix C: one shot event (World::FireEvent).
+template <class Ar> void fields(Ar& ar, World::FireEvent& v) {
+    io(ar, v.unit); io(ar, v.building); io(ar, v.target_unit); io(ar, v.target_building);
+    io(ar, v.slot); io(ar, v.weapon);
+}
+// Gap fix C: one resolved weapon slot.
+template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
+    io(ar, v.valid);
+    io(ar, v.id);
+    io(ar, v.damage);
+    io(ar, v.rof);
+    io(ar, v.range);
+    io(ar, v.verses);
+    io(ar, v.cell_spread);
+    io(ar, v.percent_at_max);
+    io(ar, v.proj);
+    io(ar, v.aa);
+    io(ar, v.ag);
+    io(ar, v.omni_fire);
 }
 template <class Ar> void fields(Ar& ar, ProjectileEvent& v) {
     io(ar, v.kind);
@@ -498,6 +522,17 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.rules_speed);
     io(ar, v.has_elite);
     io(ar, v.elite);
+    // Gap fix C
+    io(ar, v.secondary);
+    io(ar, v.elite_secondary);
+    io(ar, v.primary_aa);
+    io(ar, v.primary_ag);
+    io(ar, v.elite_proj);
+    io(ar, v.has_elite_proj);
+    io(ar, v.deploy_fire);
+    io(ar, v.deploy_fire_slot);
+    io(ar, v.crusher);
+    io(ar, v.crushable);
     io(ar, v.deploys_into);   // gF
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
@@ -541,6 +576,13 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.deploy_facing);   // gF
     io(ar, v.ore_purifier);   // gap owner A (G-27)
     io(ar, v.soylent);
+    // Gap fix C: defense weapons
+    io(ar, v.weapon);
+    io(ar, v.armed);
+    io(ar, v.powered);
+    io(ar, v.rot);
+    io(ar, v.turret);
+    io(ar, v.guard_range);
 }
 
 // --- the live objects ---
@@ -651,6 +693,19 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.deploy_next_fire);
     io(ar, v.ifv_current);
     io(ar, v.death_done);
+    // Gap fix C: weapon slots / deploy-fire / crush
+    io(ar, v.w2);
+    io(ar, v.w2_elite);
+    io(ar, v.p_aa); io(ar, v.p_ag);
+    io(ar, v.p_proj);
+    io(ar, v.p_proj_elite);
+    io(ar, v.p_proj_elite_set);
+    io(ar, v.w_active);
+    io(ar, v.w_aa); io(ar, v.w_ag);
+    io(ar, v.deploy_fire);
+    io(ar, v.deploy_fire_slot);
+    io(ar, v.crusher);
+    io(ar, v.crushable);
     // gF MCV deploy
     io(ar, v.deploys_into);
     io(ar, v.deploy_mission);
@@ -694,6 +749,13 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.bomb_house);
     io(ar, v.warp_remaining);
     io(ar, v.ability_death_done);
+    // Gap fix C: defense combat state
+    io(ar, v.def_target);
+    io(ar, v.def_rof_cool);
+    io(ar, v.def_turret_facing);
+    io(ar, v.def_slot);
+    io(ar, v.def_fire_flash);
+    io(ar, v.def_offline);
 }
 
 // --- production ---

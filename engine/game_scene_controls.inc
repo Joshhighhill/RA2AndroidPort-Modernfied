@@ -193,10 +193,11 @@
     }
 
     // --- G-13: fixed logic tick ------------------------------------------------
-    // [RE-FALLBACK: 15 Hz = the rules' time base (ROF / build / mission frames
-    // are 15 fps units, docs/re/*) until agent C pins the per-GameSpeed logic
-    // rate (RE-T1); change kLogicDt only.] At most kMaxLogicSteps ticks run in
-    // one frame [RE-FALLBACK: catch-up cap].
+    // 1/15 s = one logic frame of the rules' time base (ROF / build / mission
+    // frames are 15-per-engine-second units). RE-T1 pinned (docs/re/
+    // gamespeed.md): the per-GameSpeed rate is applied as the accumulator
+    // multiplier fps/15 (gamespeed.hpp), NOT by changing kLogicDt. At most
+    // kMaxLogicSteps ticks run in one frame [RE-FALLBACK: catch-up cap].
     static constexpr double kLogicDt = 1.0 / 15.0;
     static constexpr int kMaxLogicSteps = 4;
     double logic_acc_ = 0.0;
@@ -370,6 +371,8 @@
         return world_.shroud_enabled() && house_owns_operational_radar(world_, ba_, 0);
     }
     bool radar_cell_at(int px, int py, int& cx, int& cy) const {
+        // G-09 (E): the live isometric radar owns the pixel<->cell mapping.
+        if (g_radar && g_radar->ok()) return g_radar->cell_at(px, py, cx, cy);
         const ra2engine::SbRect& r = lay_.radar;
         if (!r.contains(px, py) || world_.grid_w() <= 0 || world_.grid_h() <= 0) return false;
         const double sx = static_cast<double>(r.w) / world_.grid_w();

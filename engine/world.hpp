@@ -307,6 +307,29 @@ struct Unit {
     std::int64_t deploy_next_fire = 0;  // next eruption frame
     int ifv_current = 0;             // gunner: current weapon index (§G)
     bool death_done = false;         // death weapon / bomb / parasite handled (§F)
+
+    // --- Gap fix C: weapon slots [RE: docs/re/weapons.md] -------------------
+    // w_* above always hold the ACTIVE weapon. Slot 0 (primary) is the legacy
+    // w_*/vet.base data; slot 1 (secondary) lives here and is swapped in by
+    // activate_weapon_slot when choose_weapon picks it for a target. Inert for
+    // every unit without a secondary (w2.valid false -> slot 0 forever).
+    WeaponSlot w2;                   // Secondary= (slot 1)
+    WeaponSlot w2_elite;             // EliteSecondary= (valid only if defined)
+    bool p_aa = false, p_ag = true;  // primary projectile AA= / AG=
+    ProjectileSpec p_proj;           // primary projectile (base)
+    ProjectileSpec p_proj_elite;     // ElitePrimary/EliteWeapon1 projectile
+    bool p_proj_elite_set = false;
+    int w_active = 0;                // 0 = primary in w_*, 1 = secondary
+    bool w_aa = false, w_ag = true;  // ACTIVE weapon's AA/AG
+    // Deployed infantry fire weapon (GI Para, GGI MissileLauncher):
+    // DeployFireWeapon slot resolved; deploy_fire=true makes the deployed unit
+    // immobile and fire this slot through the normal step_combat path (G-45).
+    bool deploy_fire = false;        // Deployer=yes DeployFire=yes, no RadLevel
+    int deploy_fire_slot = 1;        // DeployFireWeapon= (def 1)
+    // Original behaviour switches (G-50 / G-42 / G-47): set per World by
+    // World::enable_original_combat; see combat.cpp.
+    bool crusher = false;            // Crusher=yes (vehicles)
+    bool crushable = false;          // Crushable=yes (infantry)
     // --- gF MCV deploy [RE: docs/re/mcv-deploy.md] --- inert defaults.
     int deploys_into = -1;           // DeploysInto= building roster index (-1 none)
     int deploy_mission = 0;          // 0 none, 1 turning to DeployFacing, 2 driving to a spot
@@ -605,6 +628,12 @@ public:
     int grid_w() const { return grid_w_; }
     int grid_h() const { return grid_h_; }
     const std::vector<std::uint8_t>& passable() const { return passable_; }
+    // G-87 (presentation/map dressing): a map [Terrain] object, wall overlay or
+    // civilian building blocks its cell for ground movement. Live game only.
+    void block_cell(int x, int y) {
+        if (x >= 0 && y >= 0 && x < grid_w_ && y < grid_h_ && !passable_.empty())
+            passable_[static_cast<std::size_t>(y) * grid_w_ + x] = 0;
+    }
     // CB-3 Naval [RE: naval.md §1]: the passability grid for a movement domain.
     // Land (the DEFAULT -- every existing unit) returns the SAME passable_
     // object every existing A* site already reads (byte-identical); Water
@@ -621,6 +650,12 @@ public:
     // ever computed elsewhere (spec §8). World stays asset-free: it takes the
     // resolved array, not a map.
     void set_water_terrain(const std::vector<ra2assets::LandType>& land_types);
+    // Gap fix C (G-43) [RE: naval.md §2]: set_water_terrain PLUS close the Land
+    // grid (passable_) on Water / Rock (cliffs, water cliffs) / Wall cells --
+    // Foot/Track/Wheel are 0% there. Called by launch_skirmish and the
+    // campaign world builder (the real game); gates that never call it keep
+    // the all-walkable grid.
+    void set_land_terrain(const std::vector<ra2assets::LandType>& land_types);
     // P6 [RE: roster2.md §B]: a WaterBound building (GAYARD/NAYARD) sits ON the
     // water grid -- add_building only blocks the Land grid, so the caller also
     // clears its foundation from water_passable_ (ships never path through the
@@ -1294,6 +1329,32 @@ public:
     const std::vector<Crate>& crates() const { return crates_; }
     std::vector<CrateEvent> take_crate_events();
 
+    // --- Gap fix C: base defenses + combat events [RE: docs/re/defenses.md] ---
+    // One shot fired this step (a unit or a base defense) for the renderer /
+    // audio owner (muzzle flash, report sound, tracer). Drained per frame.
+    struct FireEvent {
+        int unit = -1;             // firing unit, or -1
+        int building = -1;         // firing base defense, or -1
+        int target_unit = -1;
+        int target_building = -1;
+        int slot = 0;              // weapon slot fired (0 primary / 1 secondary)
+        std::string weapon;        // weapon id when known (defenses), else ""
+    };
+    std::vector<FireEvent> take_fire_events();
+    // Stop / Guard / Scatter (unit_orders.cpp). B binds S / G / X to the
+    // *_selected forms (house-0 selection); the per-unit forms serve AI/tests.
+    void order_stop(int idx);
+    void order_guard(int idx);
+    void order_scatter(int idx);
+    void order_stop_selected();
+    void order_guard_selected();
+    void order_scatter_selected();
+    // Powered=yes defenses work only while the house's power output covers its
+    // drain (BuildingClass power check FUN_004555c0, ratio < 1.0 -> offline).
+    bool defense_power_ok(int house) const;
+    // The per-frame defense pass (public for tests; called from step()).
+    void step_building_combat(double dt);
+
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
     // anchor MoveRequests) -> path each request via order_unit_move (skipping
@@ -1650,6 +1711,14 @@ private:
     void ability_damage_building(int b_idx, int dmg);
     void ability_apply_weapon_fields(Unit& u, const WeaponSpec& w);
     void ability_bind_unit(Unit& u);
+
+    // --- Gap fix C (building_combat.cpp) ---
+    std::vector<FireEvent> fire_events_;
+    // G-50: the sync-RNG stand-in for the ROF Random(0,2) draw (xorshift32
+    // with FUN_0065C220's range mapping, like ProjRng; fixed seed).
+    ProjRng combat_rng_{0x2545F491u};
+    void launch_defense_projectile(int b_idx, int target_unit, int slot);
+    Unit defense_shooter(int b_idx, int slot) const;
     // gF MCV deploy state (inert until order_deploy_mcv / set_undeploy_unit).
     bool deploy_any_ = false;
     std::vector<double> buildup_totals_;

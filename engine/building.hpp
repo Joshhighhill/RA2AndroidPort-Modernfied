@@ -3,6 +3,7 @@
 // foundation cell math, placement validity, damage/frame selection, and
 // per-frame stepping (buildup progression, death anim timing). No SDL/OS.
 // Calibration: docs/re/building-render.md (§ refs inline).
+#include "weapon.hpp"  // Gap fix C: defense weapon slots
 #include <string>
 #include <vector>
 #include "occupancy.hpp"
@@ -70,6 +71,15 @@ struct BuildingTypeDef {
     int  soylent          = 0;      // Soylent=         [§B1] absolute refund override
                                     // [RE-GATE APPLIED §D0: GAREFN/NAREFN set Soylent=300,
                                     // so this override is load-bearing, not dead code.]
+    // --- Gap fix C: base defenses [RE: docs/re/defenses.md] ---
+    // Resolved by fill_building_weapons (engine/weapon_resolve.cpp). All inert
+    // by default (armed=false -> World::step_building_combat skips the type).
+    WeaponSlot weapon[2];           // Primary / Secondary (TechnoType slot rule)
+    bool armed = false;             // weapon[0] valid with damage or range
+    bool powered = false;           // Powered= (goes offline at low power)
+    int rot = 0;                    // ROT= (turret slew rate)
+    bool turret = false;            // Turret= (must face before firing)
+    double guard_range = 0.0;       // GuardRange= (cells; 0 = weapon range)
 };
 
 // A placed building instance.
@@ -139,6 +149,14 @@ struct Building {
     int bomb_house = -1;
     int warp_remaining = 0;          // [§C2] being erased by a legionnaire
     bool ability_death_done = false; // bomb chain handled on death
+    // --- Gap fix C: base-defense combat state (World::step_building_combat).
+    // Inert for unarmed types; NOT read by world_hash.
+    int def_target = -1;             // unit index being engaged, -1 none
+    double def_rof_cool = 0.0;       // seconds until the weapon may fire again
+    double def_turret_facing = 32768.0;  // u16 turret facing (Turret=yes types)
+    int def_slot = 0;                // weapon slot of the last shot
+    double def_fire_flash = 0.0;     // seconds of muzzle flash left (renderer)
+    bool def_offline = false;        // Powered=yes and the house is low on power
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

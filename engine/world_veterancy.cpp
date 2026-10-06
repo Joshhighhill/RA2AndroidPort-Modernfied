@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "world.hpp"
+#include "weapon_unit.hpp"  // Gap fix C: active weapon slot
 
 namespace ra2engine {
 
@@ -52,6 +53,14 @@ void World::refresh_vet_stats(int idx) {
     u.w_verses = w.verses;
     u.w_cell_spread = w.cell_spread;
     u.w_percent_at_max = w.percent_at_max;
+    // Gap fix C (G-41) [V10]: the elite slot carries its own projectile
+    // (EliteWeapon1=SuperComet / ElitePrimary) -- swapped with the stats.
+    if (u.p_proj_elite_set) u.w_proj = is_elite(vv) ? u.p_proj_elite : u.p_proj;
+    // A unit currently firing its secondary re-derives THAT slot.
+    if (u.w_active == 1) {
+        u.w_active = 0;
+        activate_weapon_slot(u, 1, &vet_rules_);
+    }
     // [V8] speed in the integer Speed= domain, mapped back through the unit's
     // own existing conversion (vehicles: speed_cps; infantry: World move_cps).
     // Aircraft FASTER is out of scope (spec §Scope).

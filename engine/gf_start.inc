@@ -84,7 +84,7 @@ inline ra2engine::UnitCombat gf_vehicle_combat(const Rules& rules, const std::st
     c.is_vehicle = true;
     c.rot = rules.rot(id);
     c.turret = rules.has_turret(id);
-    c.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+    c.speed_cps = speed_to_cps(ru.speed);   // G-42 (C)
     return c;
 }
 
@@ -92,7 +92,7 @@ inline ra2engine::UnitCombat gf_infantry_combat(const Rules& rules, const std::s
     const ResolvedUnit ru = resolve_combat_unit(rules, id);
     ra2engine::UnitCombat c = ru.combat;
     c.is_vehicle = false;
-    c.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+    c.speed_cps = speed_to_cps(ru.speed);   // G-42 (C)
     return c;
 }
 

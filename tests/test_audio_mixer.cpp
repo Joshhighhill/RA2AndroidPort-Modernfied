@@ -156,6 +156,37 @@ TEST_CASE("mixer: EVA queues one-at-a-time in FIFO order") {
     CHECK(out[0] == 0);
 }
 
+TEST_CASE("mixer: stop_eva flushes the playing line and its queue (G-80 INTERRUPT)") {
+    SoundBank bank;
+    int e1 = bank.add({11, 11, 11});
+    int e2 = bank.add({22, 22});
+    Mixer m(bank, 1);
+    m.play_eva(e1);
+    m.play_eva(e2);
+    m.stop_eva();
+    CHECK_FALSE(m.eva_active());
+    CHECK(m.eva_queued() == 0);
+    int16_t out[1] = {};
+    m.render(out, 1);
+    CHECK(out[0] == 0);
+}
+
+TEST_CASE("mixer: playing/stop by key (G-82 music track change)") {
+    SoundBank bank;
+    MixerSound s;
+    s.variants.push_back(bank.add(std::vector<int16_t>(100, 5)));
+    s.global = true;
+    s.min_volume = 100;
+    Mixer m(bank, 1);
+    m.register_sound("music:A", s);
+    CHECK_FALSE(m.playing("music:A"));
+    REQUIRE(m.play("music:A"));
+    CHECK(m.playing("music:A"));
+    m.stop("music:A");
+    CHECK_FALSE(m.playing("music:A"));
+    CHECK(m.active_voices() == 0);
+}
+
 TEST_CASE("mixer: unknown key or empty variants -> false, no crash") {
     SoundBank bank;
     Mixer m(bank, 1);

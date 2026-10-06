@@ -382,66 +382,19 @@ void Input::handle_original(const InputEvent& ev) {
 // --- G-04 hotkey commands ----------------------------------------------------
 
 void Input::stop_selected() {
-    auto& us = world_.units();
-    for (int i = 0; i < static_cast<int>(us.size()); ++i) {
-        Unit& u = us[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0)
-            continue;
-        u.target = -1;
-        u.target_building = -1;
-        u.attack_order = false;
-        u.enter_target = -1;
-        u.unload_pending = false;
-        if (u.is_aircraft) continue;   // [RE-FALLBACK: aircraft Stop = hover; not modelled]
-        if (u.moving()) {
-            // Halt: a unit standing on its cell stops right there; one already
-            // between cells finishes the step it is on (the cell being entered).
-            const bool on_cell = std::abs(u.fx - u.cell_x) < 1e-6 && std::abs(u.fy - u.cell_y) < 1e-6;
-            const Cellxy next = on_cell ? Cellxy{u.cell_x, u.cell_y} : u.path[u.path_idx];
-            world_.order_unit_move(i, next.x, next.y);
-        }
-    }
+    // Gap fix C: the World owns Stop/Guard/Scatter (engine/unit_orders.cpp).
+    world_.order_stop_selected();
 }
 
 void Input::guard_selected() {
-    stop_selected();
-    for (Unit& u : world_.units()) {
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0)
-            continue;
-        // Area_Guard anchored on the unit itself [RE: FUN_0072FE30 passes the
-        // object's own coord, vtbl+0x1C4]. [RE-FALLBACK: the Area_Guard
-        // return radius is World's existing guard-anchor behaviour.]
-        const bool mv = u.moving();
-        u.guard_x = mv ? u.path.back().x : u.cell_x;
-        u.guard_y = mv ? u.path.back().y : u.cell_y;
-    }
+    // Area_Guard anchored on the unit itself [RE: FUN_0072FE30]; World side.
+    world_.order_guard_selected();
 }
 
 void Input::scatter_selected() {
-    // [RE-FALLBACK: TechnoClass::Scatter's cell choice is randomised in the
-    // original; here each unit takes the first walkable, unoccupied 8-ring
-    // neighbour, starting from a per-unit rotation so a group fans out.]
-    static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
-    static const int kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
-    auto& us = world_.units();
-    for (int i = 0; i < static_cast<int>(us.size()); ++i) {
-        Unit& u = us[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 ||
-            u.is_aircraft)
-            continue;
-        const int bx = u.moving() ? u.path[u.path_idx].x : u.cell_x;
-        const int by = u.moving() ? u.path[u.path_idx].y : u.cell_y;
-        for (int k = 0; k < 8; ++k) {
-            const int d = (i + k) % 8;
-            const int nx = bx + kDx[d], ny = by + kDy[d];
-            if (!cell_walkable(nx, ny) || !world_.occupancy().is_free(nx, ny)) continue;
-            u.target = -1;
-            u.target_building = -1;
-            u.attack_order = false;
-            world_.order_unit_move(i, nx, ny);
-            break;
-        }
-    }
+    // World side (unit_orders.cpp): a free 8-ring neighbour drawn from the
+    // sync RNG [the original randomises TechnoClass::Scatter's cell].
+    world_.order_scatter_selected();
 }
 
 bool Input::type_select() {

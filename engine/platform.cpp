@@ -70,6 +70,19 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
     return p;
 }
 
+// G-89: RA2.INI [Video] ScreenWidth/ScreenHeight -> the window size; the engine
+// keeps rendering at its logical size, scaled by SDL.
+void Platform::set_window_size(int w, int h) {
+    if (!p_ || w <= 0 || h <= 0) return;
+    SDL_SetWindowResizable(p_->window, SDL_TRUE);
+    SDL_SetWindowSize(p_->window, w, h);
+    SDL_SetWindowPosition(p_->window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+}
+void Platform::set_fullscreen(bool on) {
+    if (!p_) return;
+    SDL_SetWindowFullscreen(p_->window, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+}
+
 Platform::Platform(Platform&& other) noexcept : p_(other.p_) {
     other.p_ = nullptr;
 }
@@ -169,6 +182,13 @@ bool Platform::poll(InputEvent& ev) {
             ev.kind = InputEvent::Quit;
             break;
         case SDL_KEYDOWN:
+            // G-89: Alt+Enter toggles desktop fullscreen (the logical 1280x720
+            // layout is letterboxed by SDL_RenderSetLogicalSize either way).
+            if (e.key.keysym.sym == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT) && !e.key.repeat) {
+                set_fullscreen(!(SDL_GetWindowFlags(p_->window) & SDL_WINDOW_FULLSCREEN_DESKTOP));
+                ev.kind = InputEvent::None;
+                break;
+            }
             key_event_from_sdl(e.key.keysym.sym, e.key.keysym.mod, ev);
             ev.t_ms = e.key.timestamp;
             // A held command key must not re-fire (D would toggle deployers
@@ -239,8 +259,8 @@ bool Platform::poll(InputEvent& ev) {
 }
 
 void Platform::begin_frame() {
-    // Dark blue clear color.
-    SDL_SetRenderDrawColor(p_->renderer, 10, 20, 60, 255);
+    // G-88: black, like the original (unmapped / shrouded area is black).
+    SDL_SetRenderDrawColor(p_->renderer, 0, 0, 0, 255);
     SDL_RenderClear(p_->renderer);
 }
 
