@@ -228,6 +228,10 @@ target_sources(ra2assets_tests PRIVATE tests/test_skirmish.cpp engine/skirmish.c
 # labels (Task 5, [RE: skirmish.md §UI]). Its coverage cases live in
 # test_skirmish.cpp above; draw_text (the SDL consumer) lives in engine/main.cpp.
 target_sources(ra2assets_tests PRIVATE engine/rectfont.cpp)
+# P8 Options + persistence: the PURE settings layer (RA2.INI IniDoc round-trip,
+# OptionsClass defaults/clamps/save list, slider/trackbar math, the recovered
+# edge-scroll table) [RE: docs/re/options.md]. SDL-free; main.cpp owns the UI.
+target_sources(ra2assets_tests PRIVATE tests/test_settings.cpp engine/settings.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
