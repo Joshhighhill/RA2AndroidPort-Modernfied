@@ -31,6 +31,9 @@ Platform Platform::create(const char* title, int w, int h) {
     }
 
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // G0 --play runs on SDL's "dummy" video driver, which has no accelerated
+    // renderer: fall back to the software renderer (also a CI safety net).
+    if (!renderer) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     if (!renderer) {
         std::string err = SDL_GetError();
         SDL_DestroyWindow(window);
