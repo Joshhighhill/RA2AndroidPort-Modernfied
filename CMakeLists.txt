@@ -93,7 +93,12 @@ target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp
 # Finding 3: Input previously had zero test coverage); it calls
 # terrain_screen_bounds, which is defined in engine/world.cpp (already a
 # source above) rather than engine/iso_renderer.cpp so this stays SDL-free.
-target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp engine/input_original.cpp
+    tests/test_input_original.cpp)
+# G-04: KeyboardMD.ini hotkey table.
+target_sources(ra2assets_tests PRIVATE tests/test_hotkeys.cpp engine/hotkeys.cpp)
+# G-70/G-71: touch gesture layer.
+target_sources(ra2assets_tests PRIVATE tests/test_touch_gestures.cpp engine/touch_gestures.cpp)
 # occupancy.cpp is a pure C++17 cell-ownership grid (no SDL) used by the
 # multi-unit movement/collision logic; compiled into both this test binary and
 # ra2engine from one source of truth (same pattern as pathfind.cpp/world.cpp).
@@ -261,6 +266,8 @@ target_sources(ra2assets_tests PRIVATE engine/rectfont.cpp)
 # OptionsClass defaults/clamps/save list, slider/trackbar math, the recovered
 # edge-scroll table) [RE: docs/re/options.md]. SDL-free; main.cpp owns the UI.
 target_sources(ra2assets_tests PRIVATE tests/test_settings.cpp engine/settings.cpp)
+# G0 --play harness: the pure script parser / assertion evaluator / play_hash.
+target_sources(ra2assets_tests PRIVATE tests/test_play_script.cpp engine/play_script.cpp)
 # P7 Save/Load [RE: docs/re/saveload.md]: the archive core, field visitors,
 # file container + slots. SDL-free.
 target_sources(ra2assets_tests PRIVATE tests/test_saveload.cpp engine/savegame.cpp)

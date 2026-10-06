@@ -200,6 +200,7 @@ TEST_CASE("Input: left-click a unit selects only it; empty click clears") {
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
 
@@ -221,6 +222,7 @@ TEST_CASE("Input: Shift+left-click toggles units in and out of the selection") {
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped"); return; }
 
@@ -243,6 +245,7 @@ TEST_CASE("Input: right-click issues a group move to the selected units") {
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 2);
     if (!fx.ok) { MESSAGE("skipped"); return; }
     for (auto& u : world.units()) u.selected = true;
@@ -270,6 +273,7 @@ TEST_CASE("Input: left-drag exposes a selection box and box-selects covered unit
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped"); return; }
 
@@ -303,6 +307,7 @@ TEST_CASE("Input: double-click selects all on-screen units of the same type") {
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped"); return; }
 
@@ -333,6 +338,7 @@ TEST_CASE("Input: pan moves the camera (clamped) and never fires a select") {
     cam.x = 1280 / 2 - (mnx + mxx) / 2;
     cam.y = 720 / 2 - (mny + mxy) / 2;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     const int x0 = cam.x, y0 = cam.y;
     input.pan(-40, -25);
     CHECK(cam.x == x0 - 40);
@@ -345,6 +351,7 @@ TEST_CASE("Input: Shift+left-drag ADDS boxed units to the selection") {
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped"); return; }
 
@@ -389,12 +396,14 @@ TEST_CASE("Input: pan clamps the camera to the map's screen bounds") {
 
     Camera cam_pos;
     Input in_pos(world, cam_pos, view_w, view_h);
+    in_pos.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     in_pos.pan(1000000000, 1000000000);
     CHECK(cam_pos.x == view_w + margin_x - mnx);
     CHECK(cam_pos.y == view_h + margin_y - mny);
 
     Camera cam_neg;
     Input in_neg(world, cam_neg, view_w, view_h);
+    in_neg.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     in_neg.pan(-1000000000, -1000000000);
     CHECK(cam_neg.x == -margin_x - mxx);
     CHECK(cam_neg.y == -margin_y - mxy);
@@ -408,6 +417,7 @@ TEST_CASE("Input: right-click a hostile issues an attack order to the selection"
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -434,6 +444,7 @@ TEST_CASE("Input: right-click ground still group-moves the selection") {
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -479,6 +490,7 @@ TEST_CASE("Input: left-click a hostile selects nothing") {
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -496,6 +508,7 @@ TEST_CASE("Input: box over both squads selects only house-0") {
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -527,6 +540,7 @@ TEST_CASE("Input: dead units are unpickable") {
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -561,6 +575,7 @@ TEST_CASE("Input: dying units (die anim playing) are equally unpickable") {
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -594,6 +609,7 @@ TEST_CASE("Input: right-click on RAISED ground targets the clicked tile (level-a
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 1);
     if (!fx.ok) { MESSAGE("skipped: could not place 1 unit"); return; }
 
@@ -621,6 +637,7 @@ TEST_CASE("Input: right-click a hostile with nothing selected is a ground move, 
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -654,6 +671,7 @@ TEST_CASE("Input: take_actions reports selected + actor on a click-select, then 
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
 
@@ -691,6 +709,7 @@ TEST_CASE("Input: a mouse-move-only frame after the consume reads back all-false
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
 
@@ -720,6 +739,7 @@ TEST_CASE("Input: take_actions reports selected + lowest boxed index on a box-se
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 3);
     if (!fx.ok) { MESSAGE("skipped: could not place 3 units"); return; }
 
@@ -755,6 +775,7 @@ TEST_CASE("Input: take_actions reports move_ordered + lowest actor on a right-cl
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -795,6 +816,7 @@ TEST_CASE("input: placement mode confirms at hovered origin and suppresses order
     World world(map);
     Camera cam;  // origin
     Input input(world, cam, 800, 600);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 1);
     if (!fx.ok) { MESSAGE("skipped: could not place 1 unit"); return; }
 
@@ -834,6 +856,7 @@ TEST_CASE("Input: take_actions reports attack_ordered + lowest actor on a right-
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -862,6 +885,7 @@ TEST_CASE("Input: right-click a hostile building attacks; own building is a move
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
@@ -951,6 +975,7 @@ TEST_CASE("Input: mixed selection right-click on ore -> harvester harvests, othe
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
 
     // One GI (non-harvester) + one harvester side by side near the start.
     const MapCell* c = ra2engine::pick_start_cell(world.map());
@@ -1008,6 +1033,7 @@ TEST_CASE("Input: harvester right-click own building returns only on a refinery"
     world.set_move_speed(4.0);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     input.set_refinery_types({5});  // roster type 5 = the refinery in this fixture
 
     const MapCell* c = ra2engine::pick_start_cell(world.map());
@@ -1066,6 +1092,7 @@ TEST_CASE("Input: left-click own unit factory selects it; re-click primes; elsew
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     input.set_unit_factory_types({3});   // roster type 3 = a unit factory in this fixture
     input.set_vehicle_factory_types({3});
 
@@ -1118,6 +1145,7 @@ TEST_CASE("Input: right-click with a factory selected sets its rally point") {
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     input.set_unit_factory_types({3});
 
     const MapCell* c = ra2engine::pick_start_cell(world.map());
@@ -1149,6 +1177,7 @@ TEST_CASE("Input: an enemy factory is never selected or rallied (own-house gatin
     World world(map);
     Camera cam;
     Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     input.set_unit_factory_types({3});
 
     const MapCell* c = ra2engine::pick_start_cell(world.map());
@@ -1197,6 +1226,7 @@ TEST_CASE("Input: right-click on an own transport issues the enter order; carrie
     world.add_combat_unit(gx, gy, 0, gi_combat());   // unit 1: the GI
     Camera cam;                                      // identity camera
     Input in(world, cam, 4000, 4000);
+    in.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     world.units()[1].selected = true;
     int px = 0, py = 0;
     ground_px_for_unit(world.units()[0], px, py);
@@ -1221,6 +1251,7 @@ TEST_CASE("input: repair/sell modes are mutually exclusive and TOGGLE [RE: repai
     World world(map);
     Camera cam;
     Input in(world, cam, 1280, 720);
+    in.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 1);
     REQUIRE(fx.ok);
     in.set_owned_buildings(1);
@@ -1267,6 +1298,7 @@ TEST_CASE("input: cancel_one_mode follows the recovered priority chain [RE: repa
     World world(map);
     Camera cam;
     Input in(world, cam, 1280, 720);
+    in.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     in.set_owned_buildings(1);
     in.begin_placement(0, 2, 2);
     in.set_repair_mode(1);                        // refused (placement wins)
@@ -1289,6 +1321,7 @@ TEST_CASE("input: a mode click reports OWN buildings only, and stays armed [RE: 
     World world(map);
     Camera cam;
     Input in(world, cam, 1280, 720);
+    in.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 1);
     REQUIRE(fx.ok);
     const int ux = fx.cells[0].first, uy = fx.cells[0].second;
