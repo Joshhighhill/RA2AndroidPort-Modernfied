@@ -1334,7 +1334,9 @@ non-combatant; `starting_cash = rules.mp_money()`) reproducing exactly the world
 the old `run_interactive` built. The asset-dependent `launch_skirmish(cfg,
 Assets&, UnitAssets&, BuildingAssets&, Rules&)` stays in `main.cpp` (it needs the
 main-local asset statics): it `build_world`s, calls `configure_skirmish_houses`,
-then per-slot spawns a base (`spawn_base`) + `unit_count` starting units + an MCV,
+then per-slot spawns a base (`spawn_base`) + `unit_count` starting units (gates
+only — real play now starts from an MCV, see "Real play: MCV, skirmish start,
+game over"),
 re-calls `enable_ai_house` with the full roster-backed `make_ai_config` per AI
 slot (last-call-wins overwrite of the minimal config), and grants each combatant
 its superweapon — the Allied Construction Yard being the only base type spawned
@@ -1892,9 +1894,9 @@ bridges the player's wallet into the World pool while a repair runs.
 The **20th determinism gate**, `--demo-repair`, pins
 `repair_hash=30e49667c9c6e52d`.
 
-**Carry-forwards (documented, not implemented):** `UndeploysInto`/MCV redeploy
-(no deploy machinery; the plain-refund branch the clone takes is a reachable
-configuration of the original, §D7); AI auto-repair/auto-sell (eight unanchored
+**Carry-forwards (documented, not implemented):** (`UndeploysInto`/MCV
+redeploy is now implemented by gap F: a human skirmish ConYard sold with
+`MCVRedeploys=yes` packs into its MCV; campaign/AI keep the plain refund, §B6); AI auto-repair/auto-sell (eight unanchored
 offsets plus a `Random(0,50)` draw that would perturb the AI gates, §D3); the
 Service Depot docked-unit sell (`GAAIRC` sets `UnitReload=yes` but nothing can
 dock, §D2); the mind-control sell veto (§D6); the captured-building ×2 survivor
@@ -2294,13 +2296,15 @@ chrono script actions are skipped; Allied 1's dreadnought shelling of the
 Statue is held (Patriot interception not modelled); symmetric alliance teams;
 enemy base build-out (ProductionBegins/AI triggers for map houses) not run;
 aircraft objects not placed; object facing/sub-cell/veterancy/Sleep not
-applied; MCV deploy absent (Soviet 1 is won with the reinforcements); unit stats
+applied; MCV deploy now exists (gap F, see "Real play: MCV, skirmish start,
+game over"); unit stats
 from `rulesmd.ini` (RA2 `rules.ini` only for index spaces); map-embedded rules
 overrides ignored; civilian building art uses the temperate candidate walk.
 
 **Carry-forwards:** team transport delivery + paradrops, missile interception,
-MCV deploy, map rules overrides, enemy base AI from map `[<House>]` IQ/nodes,
-per-house TechLevel on the sidebar, crates from triggers (108), bridges.
+map rules overrides, enemy base AI from map `[<House>]` IQ/nodes, bridges.
+(MCV deploy, the player's TechLevel cap, trigger crates (108), reshroud (101),
+fire sale (9) and events 29/44/25/26 landed in gap F.)
 
 ## Building
 
@@ -2997,3 +3001,53 @@ and verified in the REAL scene tree by `ra2engine --controls-selftest <outdir>`
 - **Touch (G-70/G-71)**: tap = left click, drag = band box, long-press or
   two-finger tap = right click, two-finger drag = pan; SDL's synthetic mouse
   events are disabled, and touches never edge-scroll.
+
+## Real play: MCV, skirmish start, game over (gap F: G-02/14/15/17/23/72-75)
+
+Everything below runs in the **real** game (`run_menu` -> lobby Start /
+New Campaign -> `GameScene`); the byte-identity gates keep their own setup.
+Recovery notes: `docs/re/mcv-deploy.md` (gamemd.exe listings).
+
+- **MCV deploy (G-23).** `AMCV`/`SMCV` (`DeploysInto=`) deploy by clicking the
+  selected MCV (ACTION_SELF), the D key, or `World::order_deploy_mcv` (the
+  order D's AI and campaign scripts call). Recovered rule: the ConYard's origin
+  is the MCV cell + AdjacentCell[NW] (-1,-1) for a foundation wider/taller than
+  2; every foundation cell must be clear (no adjacency test); the MCV turns to
+  the building's `DeployFacing` (default 0x80) and then unfolds with the
+  buildup animation, health ratio carried. An illegal spot makes the MCV drive
+  to the first legal cell of the recovered 36-offset ring; a failed unfold says
+  `EVA_CannotDeployHere`. A human's skirmish ConYard sold with
+  `MCVRedeploys=yes` packs back into its MCV (`UndeploysInto`).
+- **Skirmish start (RE-E2).** No pre-built base: each combatant gets its
+  country's `BaseUnit` MCV on its start plus the recovered `UnitCount` force
+  (`FUN_006880F0`: budget = (UnitCount-1) x average Cost of all
+  `AllowedToStartInMultiplayer` types; vehicles while under 2/3 of it, then
+  infantry; Owner/TechLevel filtered; scattered at distance >= 4). Starts:
+  first house random, each next the farthest free start. AI houses unfold at
+  once. ShortGame defeat needs no building **and** no MCV. The camera opens on
+  the player's MCV. [RE-FALLBACK: a map-seeded LCG instead of the session RNG.]
+- **Game over (G-02).** Victory / defeat flag `EVA_YouAreVictorious` /
+  `EVA_YouHaveLost` with `TXT_VICTORIOUS` / `TXT_LOST`, a defeated opponent
+  `EVA_PlayerDefeated` + `TXT_PLAYER_DEFEATED`; after BorrowedTime the result
+  page (time, kills/losses) offers REMATCH or MAIN MENU. [RE-FALLBACK: the MP
+  score screen layout is not recovered.]
+- **Confirms (G-14).** Exit Game asks `GUI:ExitAreYouSure` (OK/Cancel, dialog
+  0x120); Abort Mission asks `GUI:AskAbortMission` (Abort / Restart in a
+  campaign / Resume Mission, dialog 0x121).
+- **Lobby (G-17).** The player cell cycles the nine playable countries (CSF
+  names); the side follows the country's `Side=`; Yuri is gone; AI players
+  are clamped to the map's MaxPlayers-1. The colour index stays in
+  `HouseRec.color_ix` for the remap.
+- **TechLevel (G-15).** The sidebar offers only types with `TechLevel <=` the
+  lobby slider (skirmish) or the mission's `[<Player>] TechLevel=` (ALL01/SOV01
+  = 3).
+- **Campaign (G-73/74/75).** Events 29 (after 48 on every death), 44
+  AttackedByHouse (attacker inferred from target assignments [RE-FALLBACK]),
+  25/26 crossing lines (row/column cell tags on cell entry) are raised;
+  actions 108 CreateCrate, 101 reshroud, 9 FireSale [RE-FALLBACK: sells at
+  once] run; ships arrive on water, ground reinforcements at sea land on the
+  nearest shore [RE-FALLBACK: no transport delivery].
+
+**Verify:** `ra2engine --gf-play skirmish|soviet|win|lose|confirm|campaign:<MAP>[:GDI|Nod[:frames]] [outdir]`
+drives the real scene tree at a fixed 1/15 s tick and prints `gf_play PASS/FAIL`
+lines plus PNGs; `ra2assets_tests -tc="mcv:*"` covers the World deploy rules.
