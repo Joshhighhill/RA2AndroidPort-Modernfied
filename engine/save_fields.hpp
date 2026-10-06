@@ -304,6 +304,22 @@ template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.launch_frame);
     io(ar, v.launch_speed);
     io(ar, v.max_z);
+    io(ar, v.weapon_slot);   // Gap fix C
+}
+// Gap fix C: one resolved weapon slot.
+template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
+    io(ar, v.valid);
+    io(ar, v.id);
+    io(ar, v.damage);
+    io(ar, v.rof);
+    io(ar, v.range);
+    io(ar, v.verses);
+    io(ar, v.cell_spread);
+    io(ar, v.percent_at_max);
+    io(ar, v.proj);
+    io(ar, v.aa);
+    io(ar, v.ag);
+    io(ar, v.omni_fire);
 }
 template <class Ar> void fields(Ar& ar, ProjectileEvent& v) {
     io(ar, v.kind);
@@ -482,6 +498,17 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.rules_speed);
     io(ar, v.has_elite);
     io(ar, v.elite);
+    // Gap fix C
+    io(ar, v.secondary);
+    io(ar, v.elite_secondary);
+    io(ar, v.primary_aa);
+    io(ar, v.primary_ag);
+    io(ar, v.elite_proj);
+    io(ar, v.has_elite_proj);
+    io(ar, v.deploy_fire);
+    io(ar, v.deploy_fire_slot);
+    io(ar, v.crusher);
+    io(ar, v.crushable);
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -628,6 +655,19 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.deploy_next_fire);
     io(ar, v.ifv_current);
     io(ar, v.death_done);
+    // Gap fix C: weapon slots / deploy-fire / crush
+    io(ar, v.w2);
+    io(ar, v.w2_elite);
+    io(ar, v.p_aa); io(ar, v.p_ag);
+    io(ar, v.p_proj);
+    io(ar, v.p_proj_elite);
+    io(ar, v.p_proj_elite_set);
+    io(ar, v.w_active);
+    io(ar, v.w_aa); io(ar, v.w_ag);
+    io(ar, v.deploy_fire);
+    io(ar, v.deploy_fire_slot);
+    io(ar, v.crusher);
+    io(ar, v.crushable);
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);

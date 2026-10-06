@@ -91,6 +91,7 @@ struct Projectile {
     int launch_frame = 0;
     int launch_speed = 0;       // diagnostics / witnesses
     int max_z = 0;              // apex (diagnostics / witnesses)
+    int weapon_slot = 0;        // Gap fix C: firer's weapon slot at launch (0/1)
 };
 
 // One observable projectile event (World::take_projectile_events). Feeds the

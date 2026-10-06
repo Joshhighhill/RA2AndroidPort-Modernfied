@@ -114,6 +114,9 @@ target_sources(ra2assets_tests PRIVATE tests/test_vehicle.cpp)
 # Compiled into both this test binary and ra2engine from one source of truth
 # (same pattern as pathfind.cpp/world.cpp/occupancy.cpp/group_move.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_combat.cpp engine/combat.cpp)
+# Gap fix C: weapon slots / per-target pick / slot resolution.
+target_sources(ra2assets_tests PRIVATE engine/weapon.cpp engine/weapon_unit.cpp
+                                       engine/weapon_resolve.cpp tests/test_gap_combat.cpp)
 # building.cpp is pure C++17 (no SDL): BuildingTypeDef/Building struct defs,
 # foundation_cells row-major enumeration, placement_check validity (in-grid,
 # passable, unoccupied, no overlap, adjacency), building_frame/buildup_frame

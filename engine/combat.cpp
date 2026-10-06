@@ -6,6 +6,7 @@
 
 #include "building.hpp"  // Building, foundation_cells, kill_building (Task 4)
 #include "pathfind.hpp"  // Cellxy
+#include "weapon_unit.hpp"  // Gap fix C: per-target weapon slot
 
 namespace ra2engine {
 
@@ -56,24 +57,33 @@ double dist_leptons(double x1, double y1, double x2, double y2) {
 // A unit is a legal combat target iff it exists, is alive, isn't mid-death-
 // anim, and isn't friendly. docs/re/combat.md §1/§2 (GetFireError/
 // ReceiveDamage): a dying/dead unit is never a valid target.
-bool valid_target(const std::vector<Unit>& units, const World& world, int self_house, int idx) {
+bool valid_target(const std::vector<Unit>& units, const World& world, const Unit& self, int idx) {
     if (idx < 0 || idx >= static_cast<int>(units.size())) return false;
     const Unit& v = units[idx];
-    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && !v.is_aircraft &&
-           world.is_enemy(self_house, v.house);
-    // Multi-house/Alliances [RE: multihouse.md §3/§4]: hostility now routes
-    // through World::is_enemy (was the inlined `v.house != self_house`). With
-    // houses_configured_ FALSE, is_enemy(a,b) == (a != b) -> BYTE-IDENTICAL to
-    // the old clause in every gate. Auto-acquire + stale-drop both consult this,
-    // so both are alliance-aware (skip allies/neutral) once houses are set;
-    // explicit orders stay permissive because World::order_attack itself already
-    // refuses a friendly target at issue time (tgt.house guard), so a committed
-    // explicit target is always a real enemy that passes is_enemy here.
-    // carried: untargetable (CB-1). !v.is_aircraft: an airborne/ground aircraft
-    // is not a valid target -- air-to-air + ground AA are out [RE-GATE APPLIED:
-    // aircraft.md §4]. The aircraft's OWN targets are ground units (is_aircraft
-    // false), so its targeting is unaffected. Provably true (negation false) in
-    // every existing demo (is_aircraft=false).
+    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && world.is_enemy(self.house, v.house) &&
+           unit_weapon_for_unit(self, v) >= 0;
+    // Multi-house/Alliances [RE: multihouse.md §3/§4]: hostility routes through
+    // World::is_enemy. carried: untargetable (CB-1).
+    // Gap fix C (G-44/G-50) [RE: docs/re/weapons.md §2, combat.md §2]: the old
+    // hard `!v.is_aircraft` exclusion is replaced by GetFireError's weapon
+    // gate -- an AIRBORNE aircraft is a target only for a weapon whose
+    // projectile is AA=yes (Flak Track, Patriot, IFV, GGI, Apocalypse tusks),
+    // a landed one for an AG weapon, and a 0 % Verses warhead cannot target
+    // that armor at all. unit_weapon_for_unit picks primary, else secondary.
+}
+
+// Range (cells) of unit u's weapon slot `slot` without activating it: the
+// active slot's live w_range (it may carry vet/IFV adjustments), else the
+// type data of the other slot.
+double slot_range(const Unit& u, int slot) {
+    if (slot == u.w_active) return u.w_range;
+    if (slot == 1) return secondary_view(u).range;
+    if (u.vet.recv && is_elite(u.vet.veterancy) && u.vet.has_elite) return u.vet.elite.range;
+    return u.vet.base.range;
+}
+
+const VeterancyRules* vet_rules_of(const World& world) {
+    return world.veterancy_enabled() ? &world.veterancy_rules() : nullptr;
 }
 
 // Fires `u`'s weapon at `v` (caller has already range/cooldown-checked).
@@ -217,7 +227,10 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         Unit& w = units[j];
         if (!w.alive || w.die_time >= 0.0) continue;                  // dead/dying: skip
         if (w.cargo_of >= 0) continue;                               // carried: off-map
-        if (w.is_aircraft) continue;                                 // no air-to-air
+        // Gap fix C (G-44): the blast stays in its own layer -- an AA burst at
+        // an airborne target hits airborne units, a ground blast ground units
+        // (the original's 3-D distance; the clone has no shared Z scale).
+        if (unit_airborne(w) != unit_airborne(center)) continue;
         if (w.house == attacker.house) continue;                     // enemies only
         const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
         if (d > radius_lept) continue;                               // outside the splash
@@ -326,6 +339,15 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 u.attack_order = false;
             } else {
                 const int b_idx = u.target_building;
+                // Gap fix C: the slot that can hit this structure's armor (a
+                // pure-AA weapon or a 0 % Verses warhead cannot) [weapons.md §2].
+                const int ws = unit_weapon_for_building(u, b->armor_ix);
+                if (ws < 0 && !u.abil.c4 && u.abil.fire_kind == AbilityKind::None) {
+                    u.target_building = -1;
+                    u.attack_order = false;
+                    continue;
+                }
+                if (ws >= 0) activate_weapon_slot(u, ws, vet_rules_of(world));
                 // Range to the NEAREST foundation cell (a 4x4 building is in
                 // range of its EDGE, not its center).
                 const auto cells = foundation_cells(b->cx, b->cy, b->fw, b->fh);
@@ -409,7 +431,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // fresh acquisition below starts clean rather than inheriting a
         // stale "pursue indefinitely" flag for a target it hasn't picked
         // yet.
-        if (u.target != -1 && !valid_target(units, world, u.house, u.target)) {
+        if (u.target != -1 && !valid_target(units, world, u, u.target)) {
             u.target = -1;
             u.attack_order = false;
         }
@@ -462,12 +484,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     // combat 78 / tank 144 byte-identical. This lives ONLY in the
                     // AUTO-acquire scan, NOT valid_target (an explicit
                     // order_attack on a known unit is never blocked, §6).
-                    if (j == i || !valid_target(units, world, u.house, j) || units[j].disguised
+                    if (j == i || !valid_target(units, world, u, j) || units[j].disguised
                         || !(units[j].seen_by_mask & (1u << u.house)))
                         continue;
                     const Unit& v = units[j];
                     const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
-                    if (d <= u.w_range * kLeptonsPerCell && (best == -1 || d < best_d)) {
+                    // Gap fix C: in range of the weapon that WOULD engage v.
+                    const double rng = slot_range(u, unit_weapon_for_unit(u, v));
+                    if (d <= rng * kLeptonsPerCell && (best == -1 || d < best_d)) {
                         best = j;
                         best_d = d;
                     }
@@ -485,6 +509,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
 
         // (f) Engage.
         Unit& v = units[u.target];
+        // Gap fix C (G-41/G-44): bring the weapon that engages THIS target
+        // into w_* (primary unless only the secondary can hit it). A no-op for
+        // every unit without a secondary.
+        activate_weapon_slot(u, unit_weapon_for_unit(u, v), vet_rules_of(world));
         const double range_leptons = u.w_range * kLeptonsPerCell;
         const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
 

@@ -66,6 +66,7 @@
 #include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
 #include "ra2assets/csf.hpp" // P10 briefing/objective text
 #include "voxel_raster.hpp"
+#include "weapon_resolve.hpp"  // Gap fix C: TechnoType weapon slots
 #include "world.hpp"
 
 #include "ra2assets/art.hpp"
@@ -692,7 +693,11 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.strength = rules.strength(unit_id);
     r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
-    const std::string primary = rules.primary(unit_id);
+    // Gap fix C (G-41) [RE: docs/re/weapons.md §1]: the TechnoType slot rule
+    // (Primary/Secondary, or Weapon1..N for TurretCount>=1 types -- SREF's
+    // Primary is commented out and Weapon1=Comet) via engine/weapon_resolve.
+    const ra2engine::TypeWeapons tw = ra2engine::resolve_type_weapons(rules, unit_id);
+    const std::string primary = tw.slot[0].id;
     r.combat.damage = rules.weapon_damage(primary);
     r.combat.rof = rules.weapon_rof(primary);
     r.combat.range = rules.weapon_range(primary);
@@ -794,7 +799,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.elite_abilities =
         ra2engine::parse_abilities(rules.section_string(unit_id, "EliteAbilities", ""));
     r.combat.rules_speed = r.speed;
-    const std::string elite = rules.section_string(unit_id, "ElitePrimary", "");
+    const std::string elite = tw.elite[0].id;   // ElitePrimary / EliteWeapon1 (G-41)
     if (!elite.empty()) {
         r.combat.has_elite = true;
         r.combat.elite.damage = rules.weapon_damage(elite);
@@ -804,7 +809,10 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.verses = rules.verses(ewh);
         r.combat.elite.cell_spread = rules.section_double(ewh, "CellSpread", 0.0);
         r.combat.elite.percent_at_max = rules.section_double(ewh, "PercentAtMax", 1.0);
+        r.combat.elite_proj = tw.elite[0].proj;
+        r.combat.has_elite_proj = true;
     }
+    ra2engine::fill_unit_combat_extras(rules, unit_id, tw, r.combat);
 
     std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
               << " strength=" << r.combat.strength << " armor=" << r.combat.armor
@@ -1194,7 +1202,13 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         art.fire_flh(image, va.flh);  // leaves {0,0,0} if absent/malformed
         // P2: the muzzle offset is also the projectile launch point (projectile.md
         // §4 step 1 -- FLH resolved before the bullet exists).
-        for (int k = 0; k < 3; ++k) va.combat.proj.flh[k] = va.flh[k];
+        for (int k = 0; k < 3; ++k) {
+            va.combat.proj.flh[k] = va.flh[k];
+            // Gap fix C: the other slots launch from the same muzzle.
+            va.combat.elite_proj.flh[k] = va.flh[k];
+            va.combat.secondary.proj.flh[k] = va.flh[k];
+            va.combat.elite_secondary.proj.flh[k] = va.flh[k];
+        }
 
         for (int house = 0; house <= 1; ++house) {
             const ra2assets::Palette hp = ra2engine::pal_for_house(unit_pal, house);

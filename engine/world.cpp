@@ -1,4 +1,5 @@
 #include "world.hpp"
+#include "weapon_unit.hpp"  // Gap fix C
 
 #include <algorithm>
 #include <cmath>
@@ -591,6 +592,19 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // (default is_naval=false / movement_domain=Land = a ground unit).
     u.is_naval = c.is_naval;
     u.movement_domain = c.movement_domain;
+    // Gap fix C [RE: docs/re/weapons.md]: the secondary slot + AA/AG flags.
+    // Inert defaults for any hand-built UnitCombat (no secondary, ground-only).
+    u.w2 = c.secondary;
+    u.w2_elite = c.elite_secondary;
+    u.p_aa = u.w_aa = c.primary_aa;
+    u.p_ag = u.w_ag = c.primary_ag;
+    u.p_proj = c.proj;
+    u.p_proj_elite = c.elite_proj;
+    u.p_proj_elite_set = c.has_elite_proj;
+    u.deploy_fire = c.deploy_fire;
+    u.deploy_fire_slot = c.deploy_fire_slot;
+    u.crusher = c.crusher;
+    u.crushable = c.crushable;
     // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
     // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
     // past this point unless vet_any_). Only a vet-enabled World arms the
@@ -3710,6 +3724,7 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     p.launch_frame = proj_frame_;
     p.launch_speed = lr.speed;
     p.max_z = src.z;
+    p.weapon_slot = u.w_active;   // Gap fix C: detonate with the slot that fired
     projectiles_.push_back(p);
 }
 
@@ -3852,6 +3867,14 @@ void World::detonate_projectile(Projectile& p, int victim) {
     for (std::size_t k = 0; k < units_.size(); ++k) hp_before[k] = units_[k].hp;
     int building_dmg = 0;
 
+    // Gap fix C: the firer may have switched weapon slot while the shell flew;
+    // detonate with the slot it was fired from, then restore.
+    int restore_slot = -1;
+    if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size()) &&
+        units_[p.attacker].w_active != p.weapon_slot) {
+        restore_slot = units_[p.attacker].w_active;
+        activate_weapon_slot(units_[p.attacker], p.weapon_slot, vet_any_ ? &vet_rules_ : nullptr);
+    }
     if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) {
         const Unit& att = units_[p.attacker];
         if (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size())) {
@@ -3872,6 +3895,13 @@ void World::detonate_projectile(Projectile& p, int victim) {
             Unit center;
             center.fx = ix / 256.0;
             center.fy = iy / 256.0;
+            // Gap fix C (G-44): a burst aimed at an airborne target detonates in
+            // the air layer (apply_spread_damage layers by unit_airborne).
+            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
+                unit_airborne(units_[p.target_unit])) {
+                center.is_aircraft = true;
+                center.altitude = 1.0;
+            }
             apply_spread_damage(units_, occ_, att, center);
         } else {
             // Single-target warhead: the collided unit, else the original target
@@ -3892,6 +3922,8 @@ void World::detonate_projectile(Projectile& p, int victim) {
             }
         }
     }
+    if (restore_slot >= 0)
+        activate_weapon_slot(units_[p.attacker], restore_slot, vet_any_ ? &vet_rules_ : nullptr);
     int total = building_dmg;
     for (std::size_t k = 0; k < units_.size(); ++k) total += hp_before[k] - units_[k].hp;
     ev.damage = total;

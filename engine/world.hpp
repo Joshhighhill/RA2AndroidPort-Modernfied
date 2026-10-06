@@ -307,6 +307,29 @@ struct Unit {
     std::int64_t deploy_next_fire = 0;  // next eruption frame
     int ifv_current = 0;             // gunner: current weapon index (§G)
     bool death_done = false;         // death weapon / bomb / parasite handled (§F)
+
+    // --- Gap fix C: weapon slots [RE: docs/re/weapons.md] -------------------
+    // w_* above always hold the ACTIVE weapon. Slot 0 (primary) is the legacy
+    // w_*/vet.base data; slot 1 (secondary) lives here and is swapped in by
+    // activate_weapon_slot when choose_weapon picks it for a target. Inert for
+    // every unit without a secondary (w2.valid false -> slot 0 forever).
+    WeaponSlot w2;                   // Secondary= (slot 1)
+    WeaponSlot w2_elite;             // EliteSecondary= (valid only if defined)
+    bool p_aa = false, p_ag = true;  // primary projectile AA= / AG=
+    ProjectileSpec p_proj;           // primary projectile (base)
+    ProjectileSpec p_proj_elite;     // ElitePrimary/EliteWeapon1 projectile
+    bool p_proj_elite_set = false;
+    int w_active = 0;                // 0 = primary in w_*, 1 = secondary
+    bool w_aa = false, w_ag = true;  // ACTIVE weapon's AA/AG
+    // Deployed infantry fire weapon (GI Para, GGI MissileLauncher):
+    // DeployFireWeapon slot resolved; deploy_fire=true makes the deployed unit
+    // immobile and fire this slot through the normal step_combat path (G-45).
+    bool deploy_fire = false;        // Deployer=yes DeployFire=yes, no RadLevel
+    int deploy_fire_slot = 1;        // DeployFireWeapon= (def 1)
+    // Original behaviour switches (G-50 / G-42 / G-47): set per World by
+    // World::enable_original_combat; see combat.cpp.
+    bool crusher = false;            // Crusher=yes (vehicles)
+    bool crushable = false;          // Crushable=yes (infantry)
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per

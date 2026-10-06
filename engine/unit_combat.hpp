@@ -4,6 +4,7 @@
 
 #include "projectile.hpp"  // ProjectileSpec (P2; pure, no World)
 #include "veterancy.hpp"  // P5: AbilityMask / WeaponStats (pure, World-free)
+#include "weapon.hpp"     // Gap fix C: WeaponSlot (pure)
 
 namespace ra2engine {
 
@@ -117,6 +118,20 @@ struct UnitCombat {
     int rules_speed = 0;              // integer Speed= (V8 domain)
     bool has_elite = false;           // ElitePrimary= defined (V10)
     WeaponStats elite;                // ElitePrimary's resolved stats
+
+    // --- Gap fix C [RE: docs/re/weapons.md] --- resolved by main.cpp's
+    // resolve_combat_unit from the TechnoType slot rule (Primary/Secondary or
+    // Weapon1..N). All defaults inert: no secondary, primary ground-only.
+    WeaponSlot secondary;             // slot 1 (Secondary=)
+    WeaponSlot elite_secondary;       // elite slot 1 (EliteSecondary=)
+    bool primary_aa = false;          // primary projectile AA=
+    bool primary_ag = true;           // primary projectile AG=
+    ProjectileSpec elite_proj;        // elite slot 0 projectile
+    bool has_elite_proj = false;
+    bool deploy_fire = false;         // Deployer+DeployFire infantry (GI/GGI), G-45
+    int deploy_fire_slot = 1;         // DeployFireWeapon=
+    bool crusher = false;             // Crusher=
+    bool crushable = false;           // Crushable=
 };
 
 }  // namespace ra2engine
