@@ -22,6 +22,8 @@ public:
     // tech buildings that join the world). Returns cells to block.
     void load(const ra2assets::MixFile& ra2, const Ini& map_ini, const Ini& rules_ini, const Ini& art_ini,
               const ra2assets::MapFile& map) {
+        objects_.clear(); smudges_.clear(); overlays_.clear(); wall_ids_.clear(); block_.clear();
+        missing_ = placed_ = civ_ = 0;
         ra2_ = &ra2;
         rules_ = &rules_ini;
         art_ = &art_ini;

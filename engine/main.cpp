@@ -5221,6 +5221,9 @@ private:
                  ra2engine::save::from_bytes(*hs, h) && campaign_->restore(h);
         }
         if (ok) {
+            // G-87: the saved World carries the neutral structures; re-block the
+            // dressing's cells (passability is rebuilt from the map on load).
+            for (const auto& [bx, by] : map_dressing_.blocked()) world_.block_cell(bx, by);
             apply_save(sc);
             show_banner("GAME LOADED");
         } else {
@@ -5232,6 +5235,7 @@ private:
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
             wire_abilities(world_, rules_, rules_ini_);
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
+            init_map_dressing();   // G-87: the fresh world gets its map dressing again
             show_banner("LOAD FAILED");
         }
         std::cerr << "[saveload] load " << (ok ? "ok" : "FAILED") << " frame=" << f.header.frame
