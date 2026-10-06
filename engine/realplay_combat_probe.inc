@@ -22,6 +22,12 @@ struct CombatProbe {
     }
     static ra2engine::World& world(GameScene& g) { return g.world_; }
     static const BuildingAssets& ba(GameScene& g) { return g.ba_; }
+    static std::vector<const ra2engine::UnitTypeDef*> roster(GameScene& g) {
+        std::vector<const ra2engine::UnitTypeDef*> v;
+        for (const UnitRoster* r : {&g.ur_, &g.ur_ai_})
+            for (const ra2engine::UnitTypeDef& d : r->defs) v.push_back(&d);
+        return v;
+    }
     // The scene's real resolved combat profile for `id` (sidebar rosters
     // first, then the same resolve_combat_unit the rosters use).
     static ra2engine::UnitCombat combat_of(GameScene& g, const std::string& id) {
@@ -259,6 +265,32 @@ int run_probe_combat() {
                 p.check(!wet, "G-43 a Grizzly ordered onto water gets no path across it");
             }
         }
+    }
+
+    // ---- every buildable unit's weapon resolves (the 03 per-unit matrix) ----
+    {
+        GameScene g(true, P::menu_config(rules));
+        int n = 0, armed = 0, bad = 0;
+        for (const ra2engine::UnitTypeDef* d : P::roster(g)) {
+            ++n;
+            const std::string w0 = ra2engine::type_weapon_id(rules, d->id, 0, false);
+            const ra2engine::UnitCombat& c = d->combat;
+            const bool has = c.damage != 0 || c.range > 0.0;
+            if (has) ++armed;
+            // A weapon id that names a real [section] must resolve ("none" = no weapon).
+            const bool ok = !ra2engine::resolve_weapon_slot(rules, w0).valid || has;
+            if (!ok) ++bad;
+            std::cout << "[probe] unit " << d->id << " w0=" << (w0.empty() ? "-" : w0)
+                      << " dmg=" << c.damage << " rof=" << c.rof << " range=" << c.range
+                      << " w1=" << (c.secondary.valid ? c.secondary.id : "-")
+                      << (c.secondary.aa ? "(AA)" : "") << (c.primary_aa ? " primaryAA" : "")
+                      << " speed_cps=" << c.speed_cps << (c.deploy_fire ? " deployfire" : "")
+                      << (c.crusher ? " crusher" : "") << (c.crushable ? " crushable" : "")
+                      << (ok ? "" : "  <-- UNRESOLVED") << '\n';
+        }
+        p.check(bad == 0, "roster: every unit with a weapon key resolves it (" +
+                              std::to_string(armed) + "/" + std::to_string(n) + " armed, " +
+                              std::to_string(bad) + " unresolved)");
     }
 
     std::cout << "[probe] combat: " << (p.fails ? "FAIL" : "ALL PASS") << " fails=" << p.fails
