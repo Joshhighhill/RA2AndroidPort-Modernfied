@@ -260,7 +260,7 @@ void add_controls_selftest_steps(STest& t) {
                      if (!s.cheat({"building", "GAAIRC", x, y})) t.fail("cheat building");
                      return true;
                  }});
-    S.push_back(st_expect("radar", 1, 5));
+    S.push_back(st_expect("radar", 1, 90));   // online after the power-up animation
     S.push_back(st_click_own_rel(14, 14, true));               // deselect
     S.push_back({"remember cam", [](STest& t, Scene& s, int) {
                      t.mem["cam_x"] = STest::pv(s, "cam_x");
@@ -282,8 +282,11 @@ void add_controls_selftest_steps(STest& t) {
                      t.mem["cam_x"] = STest::pv(s, "cam_x");
                      return true;
                  }});
-    S.push_back({"click the radar with a selection", [](STest& t, Scene&, int) {
-                     t.click_xy(1280 - 168 + 84, 48 + 55);
+    S.push_back({"click the radar on a land cell near the GI, with a selection", [](STest& t, Scene& s, int) {
+                     const auto p = STest::probe_of(s);
+                     const std::string w = "radar:" + std::to_string(p.at("own.cx") - 4) + "," +
+                                           std::to_string(p.at("own.cy") + 2);
+                     if (!t.click(s, w)) t.fail("cannot locate " + w);
                      return true;
                  }});
     S.push_back(st_expect_ge("sel.moving", 1, 5));
