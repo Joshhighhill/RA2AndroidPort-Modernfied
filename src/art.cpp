@@ -93,6 +93,31 @@ bool Art::fire_flh(const std::string& image, int flh[3]) const {
     return true;
 }
 
+bool Art::docking_offset(const std::string& image, int index, int xyz[3]) const {
+    std::string v = ini_->get(image, "DockingOffset" + std::to_string(index), "");
+    const size_t semi = v.find(';');
+    if (semi != std::string::npos) v = v.substr(0, semi);
+    int parsed[3];
+    int count = 0;
+    size_t pos = 0;
+    while (true) {
+        const size_t comma = v.find(',', pos);
+        std::string field = v.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        const size_t b = field.find_first_not_of(" 	");
+        const size_t e = field.find_last_not_of(" 	");
+        field = (b == std::string::npos) ? std::string() : field.substr(b, e - b + 1);
+        if (count >= 3 || !parse_int_strict(field, parsed[count])) return false;
+        ++count;
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    if (count != 3) return false;
+    xyz[0] = parsed[0];
+    xyz[1] = parsed[1];
+    xyz[2] = parsed[2];
+    return true;
+}
+
 bool Art::foundation(const std::string& image, int& fw, int& fh) const {
     std::string v = ini_->get(image, "Foundation", "");
     if (v.empty()) return false;

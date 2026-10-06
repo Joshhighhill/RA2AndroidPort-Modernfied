@@ -618,6 +618,10 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
             u.vet.veterancy = c.veteran_rank >= 2 ? 2.0f : 1.0f;
         init_unit_vet(u);
     }
+    // P4 [RE: abilities.md]: bind the ability profile at spawn so the unit's
+    // very first shot is already intercepted. A strict no-op unless
+    // abilities_any_ (no pre-P4 gate registers a profile).
+    if (abilities_any_) ability_bind_unit(u);
     return u;
 }
 
@@ -627,6 +631,14 @@ void World::set_water_terrain(const std::vector<ra2assets::LandType>& land_types
     // [RE-GATE APPLIED: naval.md §1] intersect with the Land grid (passable_) so
     // a ship never paths on a non-materialized water cell.
     water_passable_ = build_water_passability(land_types, passable_, grid_w_, grid_h_);
+}
+
+void World::block_water_footprint(int cx, int cy, int fw, int fh) {
+    if (water_passable_.empty()) return;
+    for (const Cellxy& c : foundation_cells(cx, cy, fw, fh)) {
+        if (c.x < 0 || c.y < 0 || c.x >= grid_w_ || c.y >= grid_h_) continue;
+        water_passable_[static_cast<std::size_t>(c.y) * grid_w_ + c.x] = 0;
+    }
 }
 
 // --- Economy phase [RE: economy.md] ---
@@ -720,6 +732,15 @@ int World::unit_at_cell(int x, int y) const {
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
+    // P4 [RE: abilities.md §C1/§C2/§A]: a FROZEN unit (warping in, being
+    // erased, deployed) takes no move; a Teleporter's move is a TELEPORT.
+    // Both fields are inert (false) unless a P4 profile is bound, which no
+    // pre-P4 gate does -> the existing body below runs unchanged.
+    if (u.frozen) return;
+    if (u.abil.teleporter && !u.is_aircraft) {
+        teleport_unit(idx, gx, gy);
+        return;
+    }
     // CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §1/§6]: an aircraft order sets
     // a FLIGHT GOAL and takes off/cruises -- it never computes an A* path, never
     // tests passable_, and reserves no occ_ cell while airborne (straight-line
@@ -1523,7 +1544,9 @@ bool World::begin_sell(int b_idx, int by_house, bool c4_applied) {
     // C4. NO last-ConYard rule and NO captured rule -- both were searched for
     // in the binary and neither exists. DO NOT ADD EITHER. (The mind-control
     // veto is deliberately omitted -- §D6.)
-    if (!can_be_sold(b, bt[b.type], c4_applied)) return false;
+    // P4 [RE: abilities.md §D3]: the C4 hook is now live -- a building with C4
+    // planted (Building::c4_applied, inert false pre-P4) refuses the sale.
+    if (!can_be_sold(b, bt[b.type], c4_applied || b.c4_applied)) return false;
     repair_sell_any_ = true;
     // [RE: §B2, 0x00449B81] Mission_Selling's FIRST act is Repair(0).
     set_repair(b_idx, by_house, 0);
@@ -3337,6 +3360,13 @@ void World::step(double dt) {
     // Multi-house [RE: multihouse.md §5]: evaluate last-team-standing victory
     // AFTER combat has resolved this frame's deaths. Firewalled behind
     // victory_enabled_ (false in every existing gate -> a strict no-op).
+    //
+    // P4 Unit special abilities [RE: abilities.md]: the ability pass runs
+    // AFTER combat (so this frame's intercepted fire events and deaths are
+    // resolved the same frame) and BEFORE victory (so an ability kill counts).
+    // A pure INSERTION; `if (!abilities_any_) return;` (after the frame tick)
+    // is the only cost every pre-P4 demo pays -- none registers a profile.
+    step_abilities(dt);
     step_victory();
 }
 

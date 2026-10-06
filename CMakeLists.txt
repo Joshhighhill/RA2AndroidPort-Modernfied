@@ -234,6 +234,16 @@ target_sources(ra2assets_tests PRIVATE tests/test_map_trigger.cpp engine/map_tri
 # into both, so they are compiled into the test binary here once.
 target_sources(ra2assets_tests PRIVATE tests/test_veterancy.cpp engine/veterancy.cpp
                                        tests/test_crate.cpp engine/crate.cpp)
+# P6 Roster breadth + remaining producers [RE: roster2.md]: the PURE wall
+# (mask/frame/line-fill/3x time), water-bound naval yard (placement/exit/
+# category split) and airfield (pad coords, 270-frame rearm, sortie) mechanics.
+# World-free; factory.cpp/production.cpp are already on earlier test lines.
+target_sources(ra2assets_tests PRIVATE tests/test_roster2.cpp engine/roster2.cpp)
+# P4 Unit special abilities [RE: abilities.md]: the pure ability arithmetic +
+# the radiation field (engine/abilities.cpp, World-free) and the World-side
+# ability pass + orders (engine/world_abilities.cpp, a World member TU split out
+# of world.cpp), exercised by test_abilities.cpp.
+target_sources(ra2assets_tests PRIVATE tests/test_abilities.cpp tests/test_abilities_world.cpp engine/abilities.cpp engine/world_abilities.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's

@@ -123,6 +123,17 @@ struct Building {
     double armor_mult     = 1.0;    // ArmorMultiplier (Armor crate)
     int    killed_by      = -1;     // unit index of the killer
     bool   vet_credited   = false;  // kill credit resolved
+    // --- P4 Unit special abilities [RE: abilities.md §C2/§D/§E] ---
+    // ALL inert by default and NOT read by world_hash; set only by the P4
+    // ability pass (World::step_abilities), which no pre-P4 gate arms.
+    bool c4_applied = false;         // [§D1 +0x6DF] C4 planted (also refuses Sell, §D3)
+    long long c4_frame = -1;         // [§D1 +0x528] detonation frame
+    int c4_by = -1;                  // [§D1 +0x540] the planting infantry (unit index)
+    long long bomb_frame = -1;       // [§E] Ivan bomb DetonationFrame
+    int bomb_owner = -1;             // the planting unit
+    int bomb_house = -1;
+    int warp_remaining = 0;          // [§C2] being erased by a legionnaire
+    bool ability_death_done = false; // bomb chain handled on death
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the
