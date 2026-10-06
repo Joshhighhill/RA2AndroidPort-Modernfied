@@ -7377,10 +7377,13 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
     const std::vector<int> cs = combatant_slots();
     for (int row = 0; row < static_cast<int>(cs.size()); ++row) {
         ra2engine::SkirmishSlot& s = cfg_.slots[cs[row]];
-        if (slot_cell(row, 1).contains(ev.x, ev.y)) {         // side: Allied->Soviet->Yuri->...
-            s.side = (s.side == ra2engine::World::Side::Allied) ? ra2engine::World::Side::Soviet
-                   : (s.side == ra2engine::World::Side::Soviet) ? ra2engine::World::Side::Yuri
-                                                                : ra2engine::World::Side::Allied;
+        if (slot_cell(row, 1).contains(ev.x, ev.y)) {         // side: Allied <-> Soviet
+            // G-03 (gap owner A): RA2 skirmish offers Allied and Soviet only
+            // (the Yuri side has no roster/base here); the country follows
+            // the side's stock default so Owner= filters stay consistent.
+            const bool to_soviet = s.side != ra2engine::World::Side::Soviet;
+            s.side = to_soviet ? ra2engine::World::Side::Soviet : ra2engine::World::Side::Allied;
+            s.country = to_soviet ? "Russians" : "Americans";
             return;
         }
         if (slot_cell(row, 2).contains(ev.x, ev.y)) {         // color 0..7

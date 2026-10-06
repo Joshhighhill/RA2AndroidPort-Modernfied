@@ -22,7 +22,7 @@ assert units(0,E2) >= 1                       @G-03:A
 assert units(0,E1) == 0                       @G-03:A
 assert cameo(NAPOWR) == 1                     @G-03:A
 assert cameo(GAPOWR) == 0                     @G-03:A
-assert cameo(TESLA) == 1                      @G-26:A
+assert cameo(TESLA) == 0                      @G-26:A # needs POWER,RADAR
 assert sw(0) == 0                             @G-25:A
 
 click unit 0:SMCV                             @G-23:F
