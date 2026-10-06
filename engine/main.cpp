@@ -49,6 +49,7 @@
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
+#include <set>                // G-07 held queues (game_scene_controls.inc)
 #include "play_script.hpp"   // G0 harness: unit selector parsing (game_scene_play.inc)
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
@@ -4605,52 +4606,18 @@ public:
                     lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
                     return;  // consumed: switched tab
                 }
-                // Cameo start/cancel/place dispatched by the active tab.
+                // G-07: cameo LEFT click -> cameo_click (StripClass action FUN_006AA390,
+                // game_scene_controls.inc): start / queue another / resume / place.
                 const int ci = lay_.cameo_at(ev.x, ev.y);
-                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size())) {   // G-12: scrolled strip
-                    if (active_tab_ >= 2) {
-                        const ra2engine::QueueCat cat = (active_tab_ == 3)
-                            ? ra2engine::QueueCat::Vehicle
-                            : ra2engine::QueueCat::Infantry;
-                        const int uslot = lay_.cameos[ci].type;   // unit-roster index
-                        const std::vector<int>& ft =
-                            (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
-                        if (queues_.producing(cat) == uslot) {
-                            queues_.set_credits(player_credits_);
-                            queues_.cancel(cat);
-                            queues_.reconcile_refund();
-                            player_credits_ = queues_.structure().credits;
-                        } else if (ra2engine::can_start_unit(
-                                       queues_.state(cat), uslot, ur_.defs, world_.buildings(),
-                                       ba_.roster, 0, ba_.groups,
-                                       !world_.factory_category_lost(ft, 0))) {
-                            queues_.set_credits(player_credits_);
-                            queues_.start_unit(cat, uslot, ur_.defs, build_speed_);
-                        }
-                    } else {
-                        const ra2engine::QueueCat bcat = (active_tab_ == 1)
-                            ? ra2engine::QueueCat::Defense
-                            : ra2engine::QueueCat::Structure;
-                        ra2engine::ProductionState& bq = queues_.state(bcat);
-                        const int type = lay_.cameos[ci].type;
-                        if (bq.slot.type == type && bq.slot.ready) {
-                            place_cat_ = bcat;
-                            input_.begin_placement(type, ba_.roster[type].fw, ba_.roster[type].fh);
-                        } else if (bq.slot.type == type) {
-                            queues_.set_credits(player_credits_);
-                            queues_.cancel(bcat);
-                            queues_.reconcile_refund();
-                            player_credits_ = queues_.structure().credits;
-                        } else if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(),
-                                                        0, ba_.groups,
-                                                        conyard_alive(world_, ba_, 0))) {
-                            queues_.set_credits(player_credits_);
-                            ra2engine::start(bq, type, ba_.roster, build_speed_);
-                        }
-                    }
-                }
+                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size()))
+                    cameo_click(lay_.cameos[ci].type, /*right=*/false, ev.shift);
+            } else {
+                // G-07: cameo RIGHT click: hold, then abandon (Shift: abandon all).
+                const int ci = lay_.cameo_at(ev.x, ev.y);
+                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size()))
+                    cameo_click(lay_.cameos[ci].type, /*right=*/true, ev.shift);
             }
-            return;  // consumed by the sidebar (right-click = no-op)
+            return;  // consumed by the sidebar
         }
         // G-01 [RE: gamemd FUN_00692ab0 WM_RBUTTONUP -> FUN_004AAC40]: the
         // one-mode cancel chain is the RIGHT-click-up handler (Input owns it);
@@ -4755,7 +4722,9 @@ public:
         (void)world_.take_crate_events();
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
+        hold_begin();   // G-07: held queues do not advance (game_scene_controls.inc)
         prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_);
+        hold_end();
         player_credits_ = queues_.structure().credits;
         player_credits_ += world_.take_income(0);   // harvest income drain
 
@@ -4781,6 +4750,7 @@ public:
                 queues_.placed(cat);
             }
         }
+        refill_unit_queues();   // G-07: the next queued unit starts
         // FreeUnit grand-opening spawns (a just-built refinery drops its miner).
         if (ba_.ok) spawn_free_units_on_open(world_, ba_, rules_, miners_, bstates_);
         // Chrono Miner teleport sounds.
@@ -4917,6 +4887,7 @@ public:
         }
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
         draw_selected_building(ren);   // G-10
+        draw_queue_badges(ren);        // G-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
         const bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&

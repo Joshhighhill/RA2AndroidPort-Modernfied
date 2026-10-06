@@ -200,3 +200,163 @@
     static constexpr double kLogicDt = 1.0 / 15.0;
     static constexpr int kMaxLogicSteps = 4;
     double logic_acc_ = 0.0;
+
+    // --- G-07: build-queue click semantics ---------------------------------------
+    // [RE: gamemd fixB hunt, StripClass cameo action FUN_006AA390; event ids
+    // PRODUCE=0xE, SUSPEND=0xF, ABANDON=0x10, ABANDON_ALL=0x2E, PLACE=0xB]
+    //  LEFT  (flag 0x01): this type is the current product and it is ON HOLD ->
+    //        PRODUCE (resume); it is DONE -> building: start placement; else a
+    //        BUILDING while the building factory is busy -> refused; otherwise
+    //        PRODUCE = start, or for units queue one more (FactoryClass queue,
+    //        capped by [General] MaximumQueuedObjects).
+    //  RIGHT (flag 0x10): the current product running -> SUSPEND (hold); held
+    //        or done -> ABANDON one (Shift: ABANDON_ALL); a type that is only
+    //        queued -> ABANDON one queued copy.
+    // The queue model (ProductionQueues, agent A's) holds ONE slot per category;
+    // the copies waiting behind it live here (backlog_) and start as the slot
+    // frees, so the factory semantics stay in production.cpp untouched.
+    // [RE-FALLBACK: backlog / hold are not written to save games yet.]
+    std::map<int, std::vector<int>> backlog_;   // QueueCat -> waiting unit types (FIFO)
+    std::set<int> held_;                        // QueueCat values on hold
+    int max_queued() const {
+        return static_cast<int>(rules_.general_double("MaximumQueuedObjects", 29.0));
+    }
+    ra2engine::QueueCat unit_cat_of_tab() const {
+        return active_tab_ == 3 ? ra2engine::QueueCat::Vehicle : ra2engine::QueueCat::Infantry;
+    }
+    void refund_cancel(ra2engine::QueueCat c) {
+        queues_.set_credits(player_credits_);
+        queues_.cancel(c);
+        queues_.reconcile_refund();
+        player_credits_ = queues_.structure().credits;
+        held_.erase(static_cast<int>(c));
+    }
+    int queued_count(int type, ra2engine::QueueCat c) const {
+        int n = queues_.producing(c) == type ? 1 : 0;
+        const auto it = backlog_.find(static_cast<int>(c));
+        if (it != backlog_.end())
+            for (int t : it->second) n += (t == type);
+        return n;
+    }
+    void cameo_click(int type, bool right, bool shift) {
+        if (active_tab_ >= 2) {   // ---- units ----
+            const ra2engine::QueueCat cat = unit_cat_of_tab();
+            const int ci = static_cast<int>(cat);
+            const bool current = queues_.producing(cat) == type;
+            const bool held = held_.count(ci) != 0;
+            std::vector<int>& bl = backlog_[ci];
+            if (right) {
+                if (shift) {   // ABANDON_ALL of this type
+                    bl.erase(std::remove(bl.begin(), bl.end(), type), bl.end());
+                    if (current) refund_cancel(cat);
+                    return;
+                }
+                if (current && !held && !queues_.ready(cat)) { held_.insert(ci); return; }   // SUSPEND
+                const auto last = std::find(bl.rbegin(), bl.rend(), type);
+                if (last != bl.rend()) { bl.erase(std::next(last).base()); return; }   // ABANDON a queued copy
+                if (current) refund_cancel(cat);                                         // ABANDON current
+                return;
+            }
+            if (current && held) { held_.erase(ci); return; }   // PRODUCE = resume
+            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
+            if (queues_.producing(cat) == -1) {
+                if (ra2engine::can_start_unit(queues_.state(cat), type, ur_.defs, world_.buildings(),
+                                              ba_.roster, 0, ba_.groups,
+                                              !world_.factory_category_lost(ft, 0))) {
+                    queues_.set_credits(player_credits_);
+                    queues_.start_unit(cat, type, ur_.defs, build_speed_);
+                }
+                return;
+            }
+            // Busy: queue one more of this type (same buildability test as a start,
+            // evaluated against an idle slot), capped by MaximumQueuedObjects.
+            ra2engine::ProductionState probe_ps;
+            if (static_cast<int>(bl.size()) + 1 < max_queued() &&
+                ra2engine::can_start_unit(probe_ps, type, ur_.defs, world_.buildings(), ba_.roster, 0,
+                                          ba_.groups, !world_.factory_category_lost(ft, 0)))
+                bl.push_back(type);
+            return;
+        }
+        // ---- buildings (one at a time) ----
+        const ra2engine::QueueCat bcat =
+            (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
+        const int bi = static_cast<int>(bcat);
+        ra2engine::ProductionState& bq = queues_.state(bcat);
+        const bool current = bq.slot.type == type;
+        const bool held = held_.count(bi) != 0;
+        if (right) {
+            if (!current) return;
+            if (!held && !bq.slot.ready) { held_.insert(bi); return; }   // SUSPEND
+            refund_cancel(bcat);                                         // ABANDON
+            return;
+        }
+        if (current && bq.slot.ready) {
+            place_cat_ = bcat;
+            input_.begin_placement(type, ba_.roster[type].fw, ba_.roster[type].fh);
+            return;
+        }
+        if (current && held) { held_.erase(bi); return; }   // resume
+        if (current) return;                                // running: no effect
+        if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(), 0, ba_.groups,
+                                 conyard_alive(world_, ba_, 0))) {
+            queues_.set_credits(player_credits_);
+            ra2engine::start(bq, type, ba_.roster, build_speed_);
+        }
+    }
+    // A held queue skips its production tick: tick() early-outs on a READY
+    // slot, so mark held slots ready for the duration of prod_tick only.
+    std::vector<int> hold_marked_;
+    void hold_begin() {
+        hold_marked_.clear();
+        for (int c : held_) {
+            ra2engine::ProductionState& ps = queues_.state(static_cast<ra2engine::QueueCat>(c));
+            if (ps.slot.type >= 0 && !ps.slot.ready) {
+                ps.slot.ready = true;
+                hold_marked_.push_back(c);
+            }
+        }
+    }
+    void hold_end() {
+        for (int c : hold_marked_) {
+            ra2engine::ProductionState& ps = queues_.state(static_cast<ra2engine::QueueCat>(c));
+            if (ps.slot.type >= 0) ps.slot.ready = false;
+        }
+        hold_marked_.clear();
+        // A slot that emptied (ConYard death cancel) drops its hold.
+        for (auto it = held_.begin(); it != held_.end();)
+            it = (queues_.state(static_cast<ra2engine::QueueCat>(*it)).slot.type < 0) ? held_.erase(it) : std::next(it);
+    }
+    void refill_unit_queues() {
+        for (auto& [c, bl] : backlog_) {
+            const ra2engine::QueueCat cat = static_cast<ra2engine::QueueCat>(c);
+            if (bl.empty() || queues_.producing(cat) != -1) continue;
+            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
+            const int type = bl.front();
+            bl.erase(bl.begin());
+            if (ra2engine::can_start_unit(queues_.state(cat), type, ur_.defs, world_.buildings(),
+                                          ba_.roster, 0, ba_.groups,
+                                          !world_.factory_category_lost(ft, 0))) {
+                queues_.set_credits(player_credits_);
+                queues_.start_unit(cat, type, ur_.defs, build_speed_);
+            }
+        }
+    }
+    // Count badge (x+60, y+1, right-aligned) and "on hold" marker (x+30, y+1)
+    // over the visible cameos [RE: construction.md §11a strip draw 0x6A8BD0].
+    // [RE-FALLBACK: drawn with the rect font; the original uses the game font.]
+    void draw_queue_badges(SDL_Renderer* ren) const {
+        if (!(ba_.ok && ba_.sidebar_ok)) return;
+        for (const ra2engine::CameoCell& cell : lay_.cameos) {
+            ra2engine::QueueCat cat;
+            if (active_tab_ >= 2) cat = unit_cat_of_tab();
+            else cat = active_tab_ == 1 ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
+            const int n = queued_count(cell.type, cat);
+            if (n > 1) {
+                const std::string s = std::to_string(n);
+                draw_text(ren, s, cell.rect.x + 60 - static_cast<int>(s.size()) * 6 - 1, cell.rect.y + 2, 1,
+                          255, 255, 255);
+            }
+            if (queues_.producing(cat) == cell.type && held_.count(static_cast<int>(cat)))
+                draw_text(ren, "HOLD", cell.rect.x + 30 - 12, cell.rect.y + 2, 1, 255, 230, 120);
+        }
+    }

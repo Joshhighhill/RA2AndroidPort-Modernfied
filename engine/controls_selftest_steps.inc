@@ -68,6 +68,27 @@ static STest::Step st_click_own_rel(int dx, int dy, bool right = false) {
             }};
 }
 
+// Click candidate cells around the first own building until the pending
+// placement is accepted (bld.0 grows) -- one candidate per frame.
+static STest::Step st_place_near_base() {
+    STest::Step st{"place the ready building next to the base", [](STest& t, Scene& s, int) {
+        const auto p = STest::probe_of(s);
+        if (!t.mem.count("pl_k")) { t.mem["pl_k"] = 0; t.mem["pl_b"] = p.count("bld.0") ? p.at("bld.0") : 0; }
+        const long long nb = p.count("bld.0") ? p.at("bld.0") : 0;
+        if (nb > t.mem["pl_b"]) { t.mem.erase("pl_k"); return true; }
+        static const int kOff[][2] = {{6, 1}, {1, 6}, {-3, 1}, {1, -3}, {6, 4}, {4, 6}, {-3, 4},
+                                      {7, -1}, {-1, 7}, {-4, -1}, {7, 7}, {-4, 6}, {6, -3}};
+        const long long k = t.mem["pl_k"]++;
+        if (k >= 13) return false;
+        const std::string w = "cell:" + std::to_string(p.at("bld0.cx") + kOff[k][0]) + "," +
+                              std::to_string(p.at("bld0.cy") + kOff[k][1]);
+        t.click(s, w);
+        return false;
+    }};
+    st.timeout = 40;
+    return st;
+}
+
 void add_controls_selftest_steps(STest& t) {
     auto& S = t.steps;
     // --- G-01: Esc in the shell / lobby is Back, never program exit ---
@@ -160,5 +181,77 @@ void add_controls_selftest_steps(STest& t) {
     S.push_back(st_shot("game_center_base.png"));
     S.push_back({"H centred the camera near the start", [](STest& t, Scene& s, int) {
                      return std::llabs(STest::pv(s, "cam_x") - t.mem["cam_x"]) < 400;
-                 }});    // (minimap / queue / touch steps follow)
+                 }});    // --- G-07: build-queue click semantics (StripClass FUN_006AA390) ---
+    S.push_back(st_key("Q", SDLK_q));
+    S.push_back(st_cheat({"center_own"}));
+    S.push_back(st_click("cameo:GAPOWR"));                      // LEFT = start
+    S.push_back(st_expect_ge("q.structure", 0));
+    S.push_back(st_wait(20));
+    S.push_back(st_click("cameo:GAPOWR"));                      // LEFT on running = no effect
+    S.push_back(st_expect_ge("q.structure", 0));
+    S.push_back(st_click("cameo:GAPOWR", true));                // RIGHT = hold
+    S.push_back(st_expect("held", 1));
+    S.push_back({"remember stage", [](STest& t, Scene& s, int) {
+                     t.mem["stage"] = STest::pv(s, "q.structure.stage");
+                     return true;
+                 }});
+    S.push_back(st_wait(30));
+    S.push_back({"held queue did not advance", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "q.structure.stage") == t.mem["stage"];
+                 }});
+    S.push_back(st_shot("queue_hold.png"));
+    S.push_back(st_click("cameo:GAPOWR"));                      // LEFT on held = resume
+    S.push_back(st_expect("held", 0));
+    S.push_back(st_wait(30));
+    S.push_back({"resumed queue advanced", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "q.structure.stage") > t.mem["stage"];
+                 }});
+    S.push_back({"remember credits", [](STest& t, Scene& s, int) {
+                     t.mem["credits"] = STest::pv(s, "credits");
+                     return true;
+                 }});
+    S.push_back(st_click("cameo:GAPOWR", true));                // hold
+    S.push_back(st_click("cameo:GAPOWR", true));                // abandon (refund)
+    S.push_back(st_expect("q.structure", -1));
+    S.push_back({"abandon refunded the spend", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "credits") > t.mem["credits"];
+                 }});
+    // Build power + barracks for real, then queue infantry.
+    S.push_back(st_click("cameo:GAPOWR"));
+    S.push_back(st_expect("q.structure.ready", 1, 900));
+    S.push_back(st_click("cameo:GAPOWR"));                      // LEFT on READY = place
+    S.push_back(st_expect("placing", 1));
+    S.push_back(st_place_near_base());
+    S.push_back({"start GAPILE once its prerequisite power plant has built up", [](STest& t, Scene& s, int f) {
+                     if (STest::pv(s, "q.structure") >= 0) return true;
+                     if (f % 10 == 0) t.click(s, "cameo:GAPILE");
+                     return false;
+                 }, 400});
+    S.push_back(st_expect("q.structure.ready", 1, 900));
+    S.push_back(st_click("cameo:GAPILE"));
+    S.push_back(st_place_near_base());
+    S.push_back(st_expect_ge("bld.0.GAPILE", 1));
+    S.push_back(st_wait(120));                                   // barracks build-up
+    S.push_back(st_key("E", SDLK_e));
+    S.push_back({"remember GI count", [](STest& t, Scene& s, int) {
+                     t.mem["gi"] = STest::pv(s, "units.0.GI");
+                     return true;
+                 }});
+    S.push_back(st_click("cameo:E1"));                           // start
+    S.push_back(st_click("cameo:E1"));                           // +1
+    S.push_back(st_click("cameo:E1"));                           // +1
+    S.push_back(st_click("cameo:E1"));                           // +1
+    S.push_back(st_expect("backlog.2", 3));
+    S.push_back(st_shot("queue_count.png"));
+    S.push_back(st_click("cameo:E1", true));                     // hold current
+    S.push_back(st_expect("held", 4));
+    S.push_back(st_click("cameo:E1", true));                     // abandon one queued copy
+    S.push_back(st_expect("backlog.2", 2));
+    S.push_back(st_click("cameo:E1"));                           // resume
+    S.push_back(st_expect("held", 0));
+    S.push_back({"three GIs come out of the queue", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "units.0.GI") >= t.mem["gi"] + 3;
+                 }, 2400});
+    S.push_back(st_expect("backlog.2", 0));
+    S.push_back(st_shot("queue_done.png"));    // (minimap / touch steps follow)
 }

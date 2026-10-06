@@ -163,6 +163,14 @@
         out["q.structure.ready"] = queues_.state(ra2engine::QueueCat::Structure).slot.ready ? 1 : 0;
         out["q.infantry"] = queues_.producing(ra2engine::QueueCat::Infantry);
         out["q.vehicle"] = queues_.producing(ra2engine::QueueCat::Vehicle);
+        out["q.structure.stage"] = queues_.state(ra2engine::QueueCat::Structure).slot.stage;
+        out["q.infantry.stage"] = queues_.state(ra2engine::QueueCat::Infantry).slot.stage;
+        int held_mask = 0;
+        for (int c : held_) held_mask |= 1 << c;
+        out["held"] = held_mask;
+        for (const auto& [c, bl] : backlog_) out["backlog." + std::to_string(c)] = static_cast<long long>(bl.size());
+        for (const ra2engine::Building& b : world_.buildings())   // first own building
+            if (b.alive && b.house == 0) { out["bld0.cx"] = b.cx; out["bld0.cy"] = b.cy; break; }
         if (campaign_) out["campaign.outcome"] = campaign_->outcome();
     }
 
