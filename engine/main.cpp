@@ -55,6 +55,9 @@
 #include "rectfont.hpp"    // glyph_rows (5x7 rect-font for menu labels) [Task 5]
 #include "repair_sell.hpp" // RepairSellRules (Repair & Sell phase)
 #include "settings.hpp"    // P8 Options: RA2.INI settings, slider math, edge-scroll table
+#include "save_fields.hpp"  // P7 Save/Load: archive + visitors + SceneSave
+#include <filesystem>        // P7: temp save dir for --demo-saveload
+#include <ctime>             // P7: save timestamps
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
@@ -4002,6 +4005,324 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     world.enable_crates(cc);
 }
 
+// ============================================================================
+// P7 Save / Load UI [RE: docs/re/saveload.md §2/§3]. The original's flow with
+// our widgets: ONE dialog for Load / Save / Delete (LoadOptionsClass modes
+// 1/2/3) -- newest-first list, Save adds a "<New Saved Game>" row and an 80-char
+// description edit (empty refused), overwrite and delete ask yes/no, a
+// wrong-version save is listed but refused. Drawn with the rect font over a
+// dark panel; interactive only (no gate constructs it).
+// ============================================================================
+
+// <SDL pref dir>/Saved Games/ (created on demand). The install dir is never
+// written (read-only on Android). Empty when SDL has no writable path.
+std::string save_games_dir() {
+    char* p = SDL_GetPrefPath("ra2engine", "RA2");
+    if (!p) return {};
+    std::string s = std::string(p) + "Saved Games";
+    SDL_free(p);
+    std::error_code ec;
+    std::filesystem::create_directories(s, ec);
+    return s;
+}
+
+class SaveLoadDialog {
+public:
+    enum Mode { Load = 1, Save = 2, Delete = 3 };
+    enum Result { None, Back, DoLoad, DoSave };
+
+    void open(Mode m, const std::string& default_desc) {
+        mode_ = m;
+        dir_ = save_games_dir();
+        slots_ = ra2engine::save::list_saves(dir_);
+        top_ = 0;
+        sel_ = (m == Save) ? 0 : (slots_.empty() ? -1 : 0);
+        desc_ = ra2engine::save::clean_description(default_desc);
+        message_.clear();
+        confirm_ = false;
+        open_ = true;
+        last_click_ms_ = 0;
+        last_click_row_ = -1;
+        if (m == Save) SDL_StartTextInput();
+    }
+    void close() {
+        open_ = false;
+        SDL_StopTextInput();
+    }
+    bool is_open() const { return open_; }
+    Mode mode() const { return mode_; }
+    // The chosen save file path (DoLoad) or the target path (DoSave).
+    const std::string& path() const { return path_; }
+    const std::string& description() const { return desc_; }
+    void set_message(const std::string& m) { message_ = m; }
+
+    Result handle(const ra2engine::InputEvent& ev) {
+        if (!open_) return None;
+        if (ev.kind == ra2engine::InputEvent::Quit) { close(); return Back; }
+        if (confirm_) {   // modal yes/no
+            if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left) {
+                if (yes_rect().contains(ev.x, ev.y)) { confirm_ = false; return commit(true); }
+                if (no_rect().contains(ev.x, ev.y)) { confirm_ = false; message_.clear(); }
+            }
+            return None;
+        }
+        if (ev.kind == ra2engine::InputEvent::Text && mode_ == Save) {
+            desc_ = ra2engine::save::clean_description(desc_ + ev.text);
+            return None;
+        }
+        if (ev.kind == ra2engine::InputEvent::Key) {
+            if (ev.key == ra2engine::kKeyBackspace && mode_ == Save && !desc_.empty()) {
+                desc_.pop_back();
+                while (!desc_.empty() && (static_cast<unsigned char>(desc_.back()) & 0xC0) == 0x80)
+                    desc_.pop_back();   // whole UTF-8 sequence
+            } else if (ev.key == ra2engine::kKeyUp) {
+                move_sel(-1);
+            } else if (ev.key == ra2engine::kKeyDown) {
+                move_sel(+1);
+            } else if (ev.key == ra2engine::kKeyEnter) {
+                return commit(false);
+            }
+            return None;
+        }
+        if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left)
+            return None;
+        if (back_rect().contains(ev.x, ev.y)) { close(); return Back; }
+        if (action_rect().contains(ev.x, ev.y)) return commit(false);
+        for (int v = 0; v < kRows; ++v) {
+            if (!row_rect(v).contains(ev.x, ev.y)) continue;
+            const int row = top_ + v;
+            if (row >= rows()) return None;
+            const bool dbl = (row == last_click_row_ && ev.t_ms - last_click_ms_ < 400);
+            sel_ = row;
+            last_click_row_ = row;
+            last_click_ms_ = ev.t_ms;
+            if (mode_ == Save && row > 0) desc_ = slots_[static_cast<size_t>(row - 1)].header.description;
+            message_.clear();
+            return dbl ? commit(false) : None;   // LBN_DBLCLK == the action button
+        }
+        return None;
+    }
+
+    void render(SDL_Renderer* ren, Uint32 now_ms) const {
+        if (!open_) return;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 150);
+        SDL_Rect full{0, 0, kW, kH};
+        SDL_RenderFillRect(ren, &full);
+        const ra2engine::SbRect p = panel();
+        fill(ren, p, 18, 20, 26);
+        frame(ren, p, 200, 60, 50);
+        const char* title = mode_ == Load ? "LOAD SAVED GAME" : mode_ == Save ? "SAVE GAME" : "DELETE SAVED GAME";
+        draw_text(ren, title, p.x + 20, p.y + 16, 3, 230, 200, 80);
+        for (int v = 0; v < kRows; ++v) {
+            const int row = top_ + v;
+            const ra2engine::SbRect r = row_rect(v);
+            if (row >= rows()) break;
+            if (row == sel_) fill(ren, r, 90, 30, 26);
+            std::string label, when;
+            bool bad = false;
+            if (mode_ == Save && row == 0) {
+                label = "<NEW SAVED GAME>";
+            } else {
+                const ra2engine::save::SlotEntry& s = slots_[static_cast<size_t>(row - (mode_ == Save ? 1 : 0))];
+                label = s.header.description.empty() ? s.file_name : s.header.description;
+                bad = s.wrong_version;
+                if (bad) when = "WRONG VERSION";
+                else if (s.header.unix_time > 0) when = format_time(s.header.unix_time);
+            }
+            if (label.size() > 40) label.resize(40);
+            draw_text(ren, label, r.x + 8, r.y + 5, 2, bad ? 120 : 235, bad ? 120 : 235, bad ? 120 : 240);
+            draw_text(ren, when, r.x + r.w - 8 - static_cast<int>(when.size()) * 12, r.y + 5, 2,
+                      150, 150, 160);
+        }
+        if (rows() == 0) draw_text(ren, "NO SAVED GAMES", p.x + 24, row_rect(0).y + 5, 2, 150, 150, 160);
+        if (mode_ == Save) {
+            const ra2engine::SbRect e = edit_rect();
+            fill(ren, e, 8, 8, 10);
+            frame(ren, e, 120, 120, 130);
+            std::string shown = desc_;
+            if (shown.size() > 46) shown = shown.substr(shown.size() - 46);
+            if ((now_ms / 400) % 2 == 0) shown += "_";
+            draw_text(ren, "DESCRIPTION", e.x, e.y - 18, 2, 200, 200, 210);
+            draw_text(ren, shown, e.x + 6, e.y + 6, 2, 235, 235, 240);
+        }
+        button(ren, action_rect(), mode_ == Load ? "LOAD" : mode_ == Save ? "SAVE" : "DELETE",
+               action_enabled());
+        button(ren, back_rect(), "BACK", true);
+        if (!message_.empty())
+            draw_text(ren, message_, p.x + 20, p.y + p.h - 92, 2, 240, 120, 90);
+        if (confirm_) {
+            const ra2engine::SbRect b{p.x + 120, p.y + 150, p.w - 240, 140};
+            fill(ren, b, 30, 10, 10);
+            frame(ren, b, 220, 70, 60);
+            draw_text(ren, confirm_text_, b.x + 16, b.y + 20, 2, 240, 230, 200);
+            button(ren, yes_rect(), "YES", true);
+            button(ren, no_rect(), "NO", true);
+        }
+    }
+
+private:
+    static constexpr int kW = 1280, kH = 720, kRows = 12;
+    static ra2engine::SbRect panel() { return {kW / 2 - 330, kH / 2 - 270, 660, 540}; }
+    static ra2engine::SbRect row_rect(int v) {
+        const ra2engine::SbRect p = panel();
+        return {p.x + 16, p.y + 60 + v * 26, p.w - 32, 24};
+    }
+    static ra2engine::SbRect edit_rect() {
+        const ra2engine::SbRect p = panel();
+        return {p.x + 16, p.y + 60 + kRows * 26 + 30, p.w - 32, 26};
+    }
+    static ra2engine::SbRect action_rect() {
+        const ra2engine::SbRect p = panel();
+        return {p.x + p.w - 340, p.y + p.h - 56, 150, 40};
+    }
+    static ra2engine::SbRect back_rect() {
+        const ra2engine::SbRect p = panel();
+        return {p.x + p.w - 176, p.y + p.h - 56, 150, 40};
+    }
+    static ra2engine::SbRect yes_rect() {
+        const ra2engine::SbRect p = panel();
+        return {p.x + 160, p.y + 236, 120, 40};
+    }
+    static ra2engine::SbRect no_rect() {
+        const ra2engine::SbRect p = panel();
+        return {p.x + p.w - 280, p.y + 236, 120, 40};
+    }
+    static void fill(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 cr, Uint8 cg, Uint8 cb) {
+        SDL_SetRenderDrawColor(ren, cr, cg, cb, 255);
+        SDL_Rect s{r.x, r.y, r.w, r.h};
+        SDL_RenderFillRect(ren, &s);
+    }
+    static void frame(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 cr, Uint8 cg, Uint8 cb) {
+        SDL_SetRenderDrawColor(ren, cr, cg, cb, 255);
+        SDL_Rect s{r.x, r.y, r.w, r.h};
+        SDL_RenderDrawRect(ren, &s);
+    }
+    static void button(SDL_Renderer* ren, const ra2engine::SbRect& r, const char* s, bool en) {
+        fill(ren, r, en ? 70 : 30, en ? 26 : 28, en ? 24 : 32);
+        frame(ren, r, en ? 210 : 90, en ? 70 : 90, en ? 60 : 100);
+        const int lw = static_cast<int>(std::string(s).size()) * 12;
+        draw_text(ren, s, r.x + (r.w - lw) / 2, r.y + (r.h - 14) / 2, 2, en ? 235 : 110,
+                  en ? 235 : 112, en ? 240 : 124);
+    }
+    static std::string format_time(std::int64_t t) {
+        const std::time_t tt = static_cast<std::time_t>(t);
+        const std::tm* tm = std::localtime(&tt);
+        if (!tm) return {};
+        char b[32];
+        std::strftime(b, sizeof b, "%Y-%m-%d %H:%M", tm);
+        return b;
+    }
+    int rows() const { return static_cast<int>(slots_.size()) + (mode_ == Save ? 1 : 0); }
+    void move_sel(int d) {
+        if (rows() == 0) return;
+        sel_ = std::max(0, std::min(rows() - 1, (sel_ < 0 ? 0 : sel_) + d));
+        if (sel_ < top_) top_ = sel_;
+        if (sel_ >= top_ + kRows) top_ = sel_ - kRows + 1;
+    }
+    const ra2engine::save::SlotEntry* selected_slot() const {
+        const int i = sel_ - (mode_ == Save ? 1 : 0);
+        return (i >= 0 && i < static_cast<int>(slots_.size())) ? &slots_[static_cast<size_t>(i)] : nullptr;
+    }
+    bool action_enabled() const {
+        if (mode_ == Save) return sel_ >= 0;
+        return selected_slot() != nullptr;
+    }
+    // The action button / double-click / Enter. `confirmed` = the yes/no box
+    // already answered yes.
+    Result commit(bool confirmed) {
+        if (!action_enabled()) return None;
+        const ra2engine::save::SlotEntry* s = selected_slot();
+        if (mode_ == Load) {
+            if (s->wrong_version) { message_ = "THIS SAVED GAME IS FROM ANOTHER VERSION"; return None; }
+            path_ = s->path;
+            close();
+            return DoLoad;
+        }
+        if (mode_ == Delete) {
+            if (!confirmed) { ask("DELETE THIS SAVED GAME?"); return None; }
+            ra2engine::save::delete_save(s->path);
+            slots_ = ra2engine::save::list_saves(dir_);
+            sel_ = slots_.empty() ? -1 : std::min(sel_, static_cast<int>(slots_.size()) - 1);
+            top_ = 0;
+            return None;   // the dialog stays open (saveload.md §2)
+        }
+        // Save: empty description refused (TXT_... error, focus back to the edit).
+        if (ra2engine::save::clean_description(desc_).empty()) {
+            message_ = "PLEASE ENTER A DESCRIPTION";
+            return None;
+        }
+        if (dir_.empty()) { message_ = "NO WRITABLE SAVE FOLDER"; return None; }
+        if (s && !confirmed) { ask("OVERWRITE THIS SAVED GAME?"); return None; }
+        path_ = s ? s->path
+                  : dir_ + "/" + ra2engine::save::new_save_name(dir_, static_cast<std::uint32_t>(SDL_GetTicks()) ^ 0x9E37u);
+        close();
+        return DoSave;
+    }
+    void ask(const char* text) {
+        confirm_ = true;
+        confirm_text_ = text;
+    }
+
+    bool open_ = false;
+    Mode mode_ = Load;
+    std::string dir_;
+    std::vector<ra2engine::save::SlotEntry> slots_;
+    int sel_ = -1, top_ = 0;
+    std::string desc_, message_, path_, confirm_text_;
+    bool confirm_ = false;
+    Uint32 last_click_ms_ = 0;
+    int last_click_row_ = -1;
+};
+
+// The in-game single-player options menu (dialog 0xB5, saveload.md §3): Load /
+// Save / Delete / Abort / Resume. Controls (0x521) belongs to P8 and is omitted.
+class InGameMenu {
+public:
+    enum Choice { None, Resume, Load, Save, Delete, Abort };
+    bool open_ = false;
+    Choice handle(const ra2engine::InputEvent& ev) {
+        if (!open_) return None;
+        if (ev.kind == ra2engine::InputEvent::Quit) { open_ = false; return Resume; }
+        if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left)
+            return None;
+        for (int i = 0; i < 5; ++i)
+            if (btn(i).contains(ev.x, ev.y)) {
+                static const Choice kC[5] = {Load, Save, Delete, Abort, Resume};
+                if (kC[i] == Resume) open_ = false;
+                return kC[i];
+            }
+        return None;
+    }
+    void render(SDL_Renderer* ren) const {
+        if (!open_) return;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 140);
+        SDL_Rect full{0, 0, 1280, 720};
+        SDL_RenderFillRect(ren, &full);
+        const SDL_Rect p{640 - 170, 360 - 190, 340, 380};
+        SDL_SetRenderDrawColor(ren, 18, 20, 26, 255);
+        SDL_RenderFillRect(ren, &p);
+        SDL_SetRenderDrawColor(ren, 200, 60, 50, 255);
+        SDL_RenderDrawRect(ren, &p);
+        draw_text(ren, "OPTIONS", p.x + (p.w - 7 * 18) / 2, p.y + 18, 3, 230, 200, 80);
+        static const char* kL[5] = {"LOAD GAME", "SAVE GAME", "DELETE GAME", "ABORT MISSION", "RESUME MISSION"};
+        for (int i = 0; i < 5; ++i) {
+            const ra2engine::SbRect r = btn(i);
+            SDL_Rect s{r.x, r.y, r.w, r.h};
+            SDL_SetRenderDrawColor(ren, 70, 26, 24, 255);
+            SDL_RenderFillRect(ren, &s);
+            SDL_SetRenderDrawColor(ren, 210, 70, 60, 255);
+            SDL_RenderDrawRect(ren, &s);
+            const int lw = static_cast<int>(std::string(kL[i]).size()) * 12;
+            draw_text(ren, kL[i], r.x + (r.w - lw) / 2, r.y + 13, 2, 235, 235, 240);
+        }
+    }
+
+private:
+    static ra2engine::SbRect btn(int i) { return {640 - 130, 360 - 120 + i * 58, 260, 42}; }
+};
+
 class GameScene : public Scene {
 public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
@@ -4042,6 +4363,7 @@ public:
         // real projectiles (tank arcs, Kirov bombs, flak scatter). This is one of
         // the only two enable_projectiles call sites (the other is
         // --demo-projectile) -- every byte-identity gate keeps the instant path.
+        cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
 
         // --- vehicle render list (voxel hulls for launched MTNK/FV/etc.) ---
@@ -4149,14 +4471,30 @@ public:
         g_p5_art = &p5_art_;
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
     }
+    // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
+    // the save's skirmish config, then overwrite the World and the scene
+    // record. A save that fails to load leaves a FRESH game of the same config
+    // (never a half-loaded World) and says so.
+    GameScene(bool no_audio, const ra2engine::save::SaveFile& f)
+        : GameScene(no_audio, config_of(f)) {
+        apply_loaded(f);
+    }
     ~GameScene() override {
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
+    }
+
+    static ra2engine::SkirmishConfig config_of(const ra2engine::save::SaveFile& f) {
+        ra2engine::SkirmishConfig cfg;
+        const std::vector<uint8_t>* c = f.section(ra2engine::save::kTagConfig);
+        if (!c || !ra2engine::save::from_bytes(*c, cfg)) cfg = ra2engine::SkirmishConfig{};
+        return cfg;
     }
 
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
     // then Input. Escape-cancels-placement is retained here for fidelity (the
     // driver intercepts Quit before handle, so it is dormant on that path).
     void handle(const ra2engine::InputEvent& ev) override {
+        if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
@@ -4245,6 +4583,12 @@ public:
     // One step of the former loop body: camera pan, edge-detects, world.step,
     // production, exit handoff, free units, audio events, placement/SW confirm.
     void update(double dt) override {
+        // P7: the options menu / save-load dialog pause the game (the original
+        // runs them as a modal loop; the scenario does not advance meanwhile).
+        if (menu_.open_ || sld_.is_open()) {
+            now_ = SDL_GetTicks();
+            return;
+        }
         // Scroll direction from the arrow keys + the window-edge band (unchanged).
         const Uint8* ks = SDL_GetKeyboardState(nullptr);
         int dir_x = 0, dir_y = 0;
@@ -4491,9 +4835,175 @@ public:
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;
         }
+        // P7 overlays + the transient "game saved / load failed" banner.
+        menu_.render(ren);
+        sld_.render(ren, SDL_GetTicks());
+        if (!banner_.empty() && SDL_GetTicks() < banner_until_) {
+            const int w = static_cast<int>(banner_.size()) * 18;
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
+            SDL_Rect b{(playfield_w_ - w) / 2 - 16, 80, w + 32, 44};
+            SDL_RenderFillRect(ren, &b);
+            draw_text(ren, banner_, (playfield_w_ - w) / 2, 91, 3, 240, 220, 120);
+        }
     }
 
-    bool wants_quit() const override { return input_.wants_quit(); }
+    bool wants_quit() const override { return input_.wants_quit() || abort_; }
+    Scene* next() override { Scene* n = next_scene_; next_scene_ = nullptr; return n; }
+
+    // --- P7 Save / Load -------------------------------------------------------
+    // Everything GameScene keeps outside the World that matters to the resumed
+    // game (save_fields.hpp SceneSave). Transient input is not saved.
+    ra2engine::save::SceneSave capture_save() const {
+        ra2engine::save::SceneSave s;
+        s.cam_x = cam_.x;
+        s.cam_y = cam_.y;
+        s.active_tab = active_tab_;
+        s.queues = queues_;
+        s.player_credits = player_credits_;
+        s.credits_shown = credits_shown_;
+        s.place_cat = place_cat_;
+        s.bstates = bstates_;
+        return s;
+    }
+    void apply_save(const ra2engine::save::SceneSave& s) {
+        cam_.x = s.cam_x;
+        cam_.y = s.cam_y;
+        active_tab_ = (s.active_tab >= 0 && s.active_tab <= 3) ? s.active_tab : 0;
+        buildable_ = tab_buildable(active_tab_);
+        lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
+        queues_ = s.queues;
+        player_credits_ = s.player_credits;
+        credits_shown_ = s.credits_shown;
+        place_cat_ = s.place_cat;
+        bstates_ = s.bstates;
+        prev_audio_state_.clear();
+        input_.cancel_placement();
+        input_.set_repair_mode(0);
+        input_.set_sell_mode(0);
+    }
+    // The complete resumable state (World + scene record) -- the gate's scene
+    // segment compares these bytes between a running and a loaded GameScene.
+    std::vector<uint8_t> state_bytes() const {
+        std::vector<uint8_t> b = ra2engine::save::save_world(world_);
+        ra2engine::save::SceneSave sc = capture_save();
+        const std::vector<uint8_t> s = ra2engine::save::to_bytes(sc);
+        b.insert(b.end(), s.begin(), s.end());
+        return b;
+    }
+    bool save_game(const std::string& path, const std::string& desc) const {
+        ra2engine::save::SaveFile f;
+        f.header.description = desc;
+        f.header.kind = ra2engine::save::ScenarioKind::Skirmish;
+        f.header.map_file = cfg_.map_file;
+        f.header.map_id = cfg_.map_id;
+        f.header.map_w = a_.map.width();
+        f.header.map_h = a_.map.height();
+        f.header.map_cells = static_cast<int>(a_.map.cells().size());
+        f.header.frame = static_cast<std::int64_t>(world_.repair_frame());
+        f.header.unix_time = static_cast<std::int64_t>(std::time(nullptr));
+        ra2engine::SkirmishConfig cfg = cfg_;
+        ra2engine::save::SceneSave sc = capture_save();
+        f.sections[ra2engine::save::kTagConfig] = ra2engine::save::to_bytes(cfg);
+        f.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(world_);
+        f.sections[ra2engine::save::kTagScene] = ra2engine::save::to_bytes(sc);
+        return ra2engine::save::write_file(path, ra2engine::save::encode_save(f));
+    }
+
+private:
+    void show_banner(const std::string& s) {
+        banner_ = s;
+        banner_until_ = SDL_GetTicks() + 2500;
+    }
+    void apply_loaded(const ra2engine::save::SaveFile& f) {
+        const std::vector<uint8_t>* w = f.section(ra2engine::save::kTagWorld);
+        const std::vector<uint8_t>* s = f.section(ra2engine::save::kTagScene);
+        ra2engine::save::SceneSave sc;
+        const bool map_ok = f.header.map_w == a_.map.width() && f.header.map_h == a_.map.height() &&
+                            f.header.map_cells == static_cast<int>(a_.map.cells().size());
+        const bool ok = map_ok && w && s && ra2engine::save::from_bytes(*s, sc) &&
+                        ra2engine::save::load_world(world_, *w);
+        if (ok) {
+            apply_save(sc);
+            show_banner("GAME LOADED");
+        } else {
+            // Never run a half-loaded World: start the same scenario fresh.
+            world_ = launch_skirmish(cfg_, a_, ua_, ba_, rules_);
+            world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
+            wire_abilities(world_, rules_, rules_ini_);
+            enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
+            show_banner("LOAD FAILED");
+        }
+        std::cerr << "[saveload] load " << (ok ? "ok" : "FAILED") << " frame=" << f.header.frame
+                  << " desc=" << f.header.description << "\n";
+    }
+    void load_game(const std::string& path) {
+        std::vector<uint8_t> bytes;
+        ra2engine::save::SaveFile f;
+        if (!ra2engine::save::read_file_bytes(path, bytes) || !ra2engine::save::decode_save(bytes, f) ||
+            f.header.version != ra2engine::save::kFormatVersion ||
+            !f.section(ra2engine::save::kTagWorld) || !f.section(ra2engine::save::kTagConfig)) {
+            sld_.open(SaveLoadDialog::Load, "");
+            sld_.set_message("COULD NOT LOAD THAT SAVED GAME");
+            return;
+        }
+        next_scene_ = new GameScene(no_audio_, f);   // the driver swaps scenes
+    }
+    // Options button over the sidebar cap (draw_sidebar blits sb_optbtn at
+    // (bar.x+11, 20)) -- now live: it opens the in-game menu (dialog 0xB5).
+    bool options_button_at(int x, int y) const {
+        if (!sidebar_up_ || !ba_.has_optbtns) return false;
+        const int w = ba_.sb_optbtn.width() > 0 ? ba_.sb_optbtn.width() : 70;
+        const int h = ba_.sb_optbtn.height() > 0 ? ba_.sb_optbtn.height() : 16;
+        return x >= lay_.bar.x + 11 && x < lay_.bar.x + 11 + w && y >= 20 && y < 20 + h;
+    }
+    bool ui_handle(const ra2engine::InputEvent& ev) {
+        if (sld_.is_open()) {
+            switch (sld_.handle(ev)) {
+                case SaveLoadDialog::DoSave:
+                    if (save_game(sld_.path(), sld_.description())) {
+                        show_banner("GAME SAVED");   // TXT_GAME_WAS_SAVED, back to the game
+                    } else {
+                        sld_.open(SaveLoadDialog::Save, sld_.description());
+                        sld_.set_message("ERROR SAVING GAME");   // TXT_ERROR_SAVING_GAME
+                    }
+                    break;
+                case SaveLoadDialog::DoLoad: load_game(sld_.path()); break;
+                case SaveLoadDialog::Back: menu_.open_ = true; break;
+                default: break;
+            }
+            return true;
+        }
+        if (menu_.open_) {
+            switch (menu_.handle(ev)) {
+                case InGameMenu::Load:
+                    menu_.open_ = false;
+                    sld_.open(SaveLoadDialog::Load, "");
+                    break;
+                case InGameMenu::Save:
+                    menu_.open_ = false;
+                    // "%sSav" default = the scenario's display name (saveload.md §3).
+                    sld_.open(SaveLoadDialog::Save, "Skirmish");
+                    break;
+                case InGameMenu::Delete:
+                    menu_.open_ = false;
+                    sld_.open(SaveLoadDialog::Delete, "");
+                    break;
+                case InGameMenu::Abort: abort_ = true; break;
+                default: break;
+            }
+            return true;
+        }
+        const bool open_key = ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyF10;
+        const bool open_btn = ev.kind == ra2engine::InputEvent::PointerDown &&
+                              ev.button == ra2engine::InputEvent::Left && options_button_at(ev.x, ev.y);
+        if (open_key || open_btn) {
+            menu_.open_ = true;
+            return true;
+        }
+        return false;
+    }
+public:
 
 private:
     // The window is always created at 1280x720 (see run_interactive); the sidebar
@@ -4568,6 +5078,15 @@ private:
     double               scroll_mult_ = 0.07;      // [General] ScrollMultiplier
     double               scroll_tick_accum_ = 0.0;
     int                  scroll_accel_ = 0;
+
+    // --- P7 Save / Load ---
+    ra2engine::SkirmishConfig cfg_;          // rebuilds assets on load ('CONF')
+    InGameMenu           menu_;              // dialog 0xB5
+    SaveLoadDialog       sld_;               // Load / Save / Delete
+    Scene*               next_scene_ = nullptr;   // a loaded game replaces this scene
+    bool                 abort_ = false;     // Abort Mission
+    std::string          banner_;
+    Uint32               banner_until_ = 0;
     P5Art                p5_art_;   // P5: PIPS/crate art published via g_p5_art
 };
 
@@ -4955,7 +5474,7 @@ enum ShellPage {
 // What a menu button does when clicked. Navigation buttons carry a target
 // ShellPage in ShellButton::target; ACT_SKIRMISH is the ONLY live game path
 // (-> SkirmishSetupScene -> GameScene); ACT_QUIT exits.
-enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT };
+enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */ };
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -5441,7 +5960,7 @@ private:
             case PAGE_SINGLE:   // dialog 0x100
                 return {
                     btn(0, "New Campaign",    true,  ACT_GOTO,     PAGE_CAMPAIGN),
-                    btn(1, "Load Saved Game", false, ACT_GOTO,     PAGE_MAIN),
+                    btn(1, "Load Saved Game", true,  ACT_LOADGAME, PAGE_SINGLE),   // P7
                     btn(2, "Skirmish",        true,  ACT_SKIRMISH, PAGE_MAIN),
                     btn(5, "Back",            true,  ACT_GOTO,     PAGE_MAIN),
                 };
@@ -5508,6 +6027,7 @@ private:
     }
     int          mx_ = -1, my_ = -1;   // last pointer position (for hover state)
     bool         down_ = false;        // left button currently held (pressed state)
+    SaveLoadDialog sld_;               // P7: "Load Saved Game" (Load mode)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
     // [Task exact / §7.3] WARNING-monitor animation clock. update(dt) advances
@@ -5627,6 +6147,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
             draw_text(ren, b.label.c_str(), r.x + (r.w - lw) / 2, r.y + (r.h - 7 * s) / 2, s,
                       b.enabled ? 235 : 110, b.enabled ? 235 : 112, b.enabled ? 240 : 124);
         }
+        sld_.render(ren, SDL_GetTicks());   // P7
         return;
     }
 
@@ -5655,6 +6176,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
                                 std::to_string(plat.height()) + " x 16";
         draw_options_page(ren, tc, art_, xform(), opt_, audio_live(), res);
     }
+    sld_.render(ren, SDL_GetTicks());   // P7: the Load dialog over the shell
 }
 
 // [P8 / options.md §2/§4] Trackbar click/drag + checkbox toggles on page 0xD5.
@@ -5991,6 +6513,23 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         if (ev.kind == ra2engine::InputEvent::PointerDown) down_ = true;
         if (ev.kind == ra2engine::InputEvent::PointerUp)   down_ = false;
     }
+    // P7: the Load dialog (when open) owns every event.
+    if (sld_.is_open()) {
+        if (sld_.handle(ev) == SaveLoadDialog::DoLoad) {
+            std::vector<uint8_t> bytes;
+            ra2engine::save::SaveFile f;
+            if (ra2engine::save::read_file_bytes(sld_.path(), bytes) &&
+                ra2engine::save::decode_save(bytes, f) &&
+                f.header.version == ra2engine::save::kFormatVersion &&
+                f.section(ra2engine::save::kTagWorld) && f.section(ra2engine::save::kTagConfig)) {
+                next_ = new GameScene(no_audio_, f);
+            } else {
+                sld_.open(SaveLoadDialog::Load, "");
+                sld_.set_message("COULD NOT LOAD THAT SAVED GAME");
+            }
+        }
+        return;
+    }
     // [P8] Options page controls get the pointer first (sliders/checkboxes).
     if (page_ == PAGE_OPTIONS && options_handle(ev)) return;
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
@@ -6005,6 +6544,8 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             case ACT_QUIT:     quit_ = true; return;
             // The ONLY live game path: Skirmish -> setup -> GameScene (unchanged).
             case ACT_SKIRMISH: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
+            // P7 [RE: saveload.md §3]: STT:SingleButtonLoadSavedGame -> the Load dialog.
+            case ACT_LOADGAME: sld_.open(SaveLoadDialog::Load, ""); return;
             // Page transition (incl. Back): construct the target page's ShellScene.
             case ACT_GOTO:
                 // [P8 / options.md §2] Leaving 0xD5: FUN_00542280 commits the
@@ -14574,6 +15115,442 @@ int run_demo_veterancy() {
 
 }  // namespace
 
+// ============================================================================
+// P7 Save / Load gate: --demo-saveload [RE: docs/re/saveload.md; spec
+// 2026-10-06-saveload-design.md §5]. Two scenarios; each runs to frame N,
+// saves to a real SAVE%04X.SAV file, continues to frame M (full-state hash A);
+// then a FRESH scenario loads that file and runs N..M (hash B). A == B is
+// required. The hash is FNV-1a over the serialized World (+ scene / triggers)
+// bytes -- i.e. the COMPLETE state -- mixed with world_hash. Headless only;
+// purely additive (no existing gate calls any of this).
+// ============================================================================
+namespace {
+
+constexpr double kSlDt = 1.0 / 15.0;
+
+std::string sl_save_dir() {
+    std::error_code ec;
+    const std::filesystem::path d = std::filesystem::temp_directory_path(ec) / "ra2_demo_saveload";
+    std::filesystem::create_directories(d, ec);
+    return d.string();
+}
+
+struct SlTally {
+    int launches = 0;      // projectile launches (shells actually flew)
+    int produced = 0;      // player units launched from the factory
+    int vet_events = 0;    // promotions
+    int crate_events = 0;  // crate pickups
+    int ability_events = 0;  // P4 drone/chrono/bomb/deploy/radiation events
+};
+
+// Everything the skirmish scenario needs besides the World + scene record.
+struct SlSkirmishEnv {
+    Assets& a;
+    UnitAssets& ua;
+    BuildingAssets& ba;
+    const Rules& rules;
+    const UnitRoster& ur;
+    const UnitRoster& ur_ai;
+    const MinerAssets& miners;
+    const Ini& rules_ini;
+    ra2engine::SkirmishConfig cfg;
+    std::vector<int> inf_ft, veh_ft;
+    double low_mod = 1.0, mf = 0.8, build_speed = 0.7;
+    int e1 = -1;           // player roster index of E1
+};
+
+// The interactive game's World (launch_skirmish) plus every firewall the real
+// game opens -- economy, projectiles, veterancy, crates (FIXED seed here) --
+// and dueling tank pairs so shells are in flight across the save point.
+ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
+    ra2engine::World w = launch_skirmish(e.cfg, e.a, e.ua, e.ba, e.rules);
+    wire_economy(w, e.ba, e.rules);
+    w.enable_projectiles(ra2engine::resolve_projectile_rules(e.rules));
+    {
+        std::vector<int> bcost;
+        for (const ra2engine::BuildingTypeDef& t : e.ba.roster) bcost.push_back(t.cost);
+        w.enable_veterancy(resolve_veterancy_rules(e.rules), std::move(bcost));
+        ra2engine::World::CrateConfig cc;
+        cc.rules = resolve_crate_rules(e.rules);
+        cc.seed = 0x5A7E1D5Au;   // fixed (the interactive game seeds from the clock)
+        cc.players = 1;
+        for (const std::vector<ra2engine::UnitTypeDef>* defs : {&e.ur.defs, &e.ur_ai.defs})
+            for (const ra2engine::UnitTypeDef& d : *defs)
+                if (d.is_vehicle && d.combat.crate_goodie) cc.unit_pool.push_back(d.combat);
+        w.enable_crates(cc);
+    }
+    // The player's launch_skirmish base is a lone ConYard; give it the power
+    // plant + barracks the allied_full arm places (same offsets), instant, so
+    // the player's Infantry queue can run like a real game's.
+    for (const ra2engine::Building& b0 : std::vector<ra2engine::Building>(w.buildings())) {
+        if (b0.house != 0) continue;
+        const struct { const char* id; int dx, dy; } kAdd[] = {{"GAPOWR", 6, 0}, {"GAPILE", 6, 4}};
+        for (const auto& k : kAdd) {
+            const int ti = roster_index(e.ba, k.id);
+            if (ti < 0 || ti >= (int)e.ba.art.size() || !e.ba.art[ti].ok) continue;
+            const ra2engine::BuildingTypeDef& d = e.ba.roster[ti];
+            const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                b0.cx + k.dx, b0.cy + k.dy, d.fw, d.fh, 0, d.adjacent, w.passable(), w.grid_w(),
+                w.grid_h(), w.occupancy(), w.buildings(), /*bypass_adjacency=*/true);
+            if (chk.ok)
+                w.add_building(ti, b0.cx + k.dx, b0.cy + k.dy, d.fw, d.fh, 0, d.strength,
+                               d.armor_ix, 0.0, /*instant=*/true, d.sight, d.grants_map_reveal);
+        }
+        break;
+    }
+    const ra2assets::MapCell* sc = ra2engine::pick_start_cell(e.a.map);
+    const int bx = sc ? sc->x : w.grid_w() / 2, by = sc ? sc->y : w.grid_h() / 2;
+    const ra2engine::UnitCombat htnk = resolve_combat_unit(e.rules, "HTNK").combat;
+    const ra2engine::UnitCombat mtnk = resolve_combat_unit(e.rules, "MTNK").combat;
+    auto free_at = [&](int x, int y) {
+        return w.walkable(x, y) && w.unit_at_cell(x, y) < 0 && w.building_at_cell(x, y) < 0;
+    };
+    int placed = 0;
+    for (int r = 8; r <= 20 && placed < 4; ++r)
+        for (int dx = -r; dx <= r && placed < 4; ++dx) {
+            const int x = bx + dx, y = by + r;
+            if (!free_at(x, y) || !free_at(x, y + 5)) continue;
+            w.add_combat_unit(x, y, 0, mtnk);
+            w.add_combat_unit(x, y + 5, 1, htnk);
+            placed += 2;
+            dx += 2;
+        }
+    // P4 abilities: the interactive game's wiring + a terror drone, a deployed
+    // desolator, an Ivan and a chrono legionnaire beside the tank duel, so
+    // drone attachments, radiation sites, bomb timers and erase state are live
+    // across the save point.
+    wire_abilities(w, e.rules, e.rules_ini);
+    int ab = 0;
+    const struct { const char* id; int house; } kAb[] = {
+        {"DRON", 1}, {"DESO", 1}, {"IVAN", 1}, {"CLEG", 0}, {"DRON", 0}};
+    for (int r = 8; r <= 24 && ab < 5; ++r)
+        for (int dx = -r; dx <= r && ab < 5; ++dx) {
+            const int x = bx + dx, y = by + r + 2;
+            if (!free_at(x, y)) continue;
+            const ra2engine::UnitCombat c = resolve_combat_unit(e.rules, kAb[ab].id).combat;
+            w.add_combat_unit(x, y, kAb[ab].house, c);
+            if (std::string(kAb[ab].id) == "DESO") w.order_deploy((int)w.units().size() - 1);
+            ++ab;
+            dx += 1;
+        }
+    return w;
+}
+
+// One GameScene::update iteration at the fixed gate dt (world step, the
+// player's production pool + exit handoff, FreeUnit spawns, event drains).
+void sl_skirmish_frame(SlSkirmishEnv& e, ra2engine::World& w, ra2engine::save::SceneSave& sc,
+                       SlTally& t) {
+    w.step(kSlDt);
+    sc.queues.set_credits(sc.player_credits);
+    prod_tick(sc.queues, w, e.ba, kSlDt, e.low_mod, e.mf, e.inf_ft, e.veh_ft);
+    sc.player_credits = sc.queues.structure().credits;
+    sc.player_credits += w.take_income(0);
+    for (ra2engine::QueueCat cat : {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
+        if (!sc.queues.ready(cat)) continue;
+        const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? e.inf_ft : e.veh_ft;
+        const int fi = ra2engine::primary_factory(w.buildings(), ft, 0);
+        if (fi < 0) continue;
+        const int uslot = sc.queues.producing(cat);
+        if (uslot < 0 || uslot >= static_cast<int>(e.ur.defs.size())) {
+            sc.queues.placed(cat);
+            continue;
+        }
+        const ra2engine::BuildingTypeDef& fdef = e.ba.roster[w.buildings()[fi].type];
+        if (w.launch_unit(fi, fdef, e.ur.defs[uslot].combat) >= 0) {
+            sc.queues.placed(cat);
+            ++t.produced;
+        }
+    }
+    // Keep the player's barracks busy (the player clicking E1 again).
+    if (e.e1 >= 0 && sc.queues.producing(ra2engine::QueueCat::Infantry) < 0 &&
+        ra2engine::can_start_unit(sc.queues.state(ra2engine::QueueCat::Infantry), e.e1, e.ur.defs,
+                                  w.buildings(), e.ba.roster, 0, e.ba.groups,
+                                  !w.factory_category_lost(e.inf_ft, 0))) {
+        sc.queues.set_credits(sc.player_credits);
+        sc.queues.start_unit(ra2engine::QueueCat::Infantry, e.e1, e.ur.defs, e.build_speed);
+    }
+    if (e.ba.ok) spawn_free_units_on_open(w, e.ba, e.rules, e.miners, sc.bstates);
+    for (const ra2engine::ProjectileEvent& pe : w.take_projectile_events())
+        if (pe.kind == ra2engine::ProjectileEvent::Launch) ++t.launches;
+    (void)w.take_harvest_events();
+    (void)w.take_cargo_events();
+    t.vet_events += static_cast<int>(w.take_vet_events().size());
+    t.crate_events += static_cast<int>(w.take_crate_events().size());
+    t.ability_events += static_cast<int>(w.take_ability_events().size());
+}
+
+uint64_t sl_skirmish_hash(const ra2engine::World& w, ra2engine::save::SceneSave& sc) {
+    uint64_t h = ra2engine::save::fnv1a(ra2engine::save::save_world(w));
+    h = ra2engine::save::fnv1a(ra2engine::save::to_bytes(sc), h);
+    return fnv_mix(h, world_hash(w));
+}
+
+ra2engine::save::SaveHeader sl_header(const ra2assets::MapFile& map, const std::string& desc,
+                                      const std::string& map_file, long frame) {
+    ra2engine::save::SaveHeader h;
+    h.description = desc;
+    h.kind = ra2engine::save::ScenarioKind::Demo;
+    h.map_file = map_file;
+    h.map_w = map.width();
+    h.map_h = map.height();
+    h.map_cells = static_cast<int>(map.cells().size());
+    h.frame = frame;
+    return h;
+}
+
+struct SlResult { uint64_t a = 0, b = 0; bool ok = false; std::string line; };
+
+SlResult sl_run_skirmish(SlSkirmishEnv& e, int N, int M) {
+    SlResult r;
+    SlTally t;
+    // --- run A: N frames, save, continue to M.
+    ra2engine::World wa = sl_build_skirmish(e);
+    ra2engine::save::SceneSave sa;
+    sa.player_credits = e.cfg.starting_cash;
+    sa.queues.set_credits(sa.player_credits);
+    sa.credits_shown = sa.player_credits;
+    for (int f = 0; f < N; ++f) sl_skirmish_frame(e, wa, sa, t);
+    // Save with a shell IN FLIGHT: advance (deterministically) to the first
+    // frame >= N that has one, bounded; the loaded run starts from that frame.
+    for (int k = 0; k < 120 && wa.projectiles().empty(); ++k, ++N) sl_skirmish_frame(e, wa, sa, t);
+    const std::size_t shells_at_save = wa.projectiles().size();
+    ra2engine::save::SaveFile sf;
+    sf.header = sl_header(e.a.map, "Skirmish", e.cfg.map_file, N);
+    sf.sections[ra2engine::save::kTagConfig] = ra2engine::save::to_bytes(e.cfg);
+    sf.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(wa);
+    sf.sections[ra2engine::save::kTagScene] = ra2engine::save::to_bytes(sa);
+    const std::string dir = sl_save_dir();
+    const std::string name = ra2engine::save::new_save_name(dir, 0x0007u);
+    const std::string path = dir + "/" + name;
+    const bool wrote = ra2engine::save::write_file(path, ra2engine::save::encode_save(sf));
+    for (int f = N; f < M; ++f) sl_skirmish_frame(e, wa, sa, t);
+    r.a = sl_skirmish_hash(wa, sa);
+
+    // --- run B: a fresh scenario, load the FILE, run N..M.
+    ra2engine::World wb = sl_build_skirmish(e);
+    ra2engine::save::SceneSave sb;
+    SlTally tb;
+    std::vector<uint8_t> bytes;
+    ra2engine::save::SaveFile lf;
+    bool loaded = wrote && ra2engine::save::read_file_bytes(path, bytes) &&
+                  ra2engine::save::decode_save(bytes, lf) &&
+                  lf.header.version == ra2engine::save::kFormatVersion &&
+                  lf.header.frame == N && lf.section(ra2engine::save::kTagWorld) &&
+                  lf.section(ra2engine::save::kTagScene) && lf.section(ra2engine::save::kTagConfig);
+    if (loaded) {
+        ra2engine::SkirmishConfig cfg2;
+        loaded = ra2engine::save::from_bytes(*lf.section(ra2engine::save::kTagConfig), cfg2) &&
+                 ra2engine::save::load_world(wb, *lf.section(ra2engine::save::kTagWorld)) &&
+                 ra2engine::save::from_bytes(*lf.section(ra2engine::save::kTagScene), sb) &&
+                 cfg2.slots.size() == e.cfg.slots.size();
+    }
+    for (int f = N; f < M && loaded; ++f) sl_skirmish_frame(e, wb, sb, tb);
+    r.b = sl_skirmish_hash(wb, sb);
+    ra2engine::save::delete_save(path);
+
+    const bool active = t.launches > 0 && t.produced > 0 && shells_at_save > 0 &&
+                        t.ability_events > 0;
+    r.ok = loaded && r.a == r.b && active;
+    char buf[420];
+    std::snprintf(buf, sizeof buf,
+                  "[saveload] skirmish N=%d M=%d file=%s bytes=%d loaded=%s shells_at_save=%d "
+                  "launches=%d produced=%d vet=%d crates=%d abil=%d rad_sites=%d "
+                  "A=%016llx B=%016llx match=%s",
+                  N, M, name.c_str(), (int)bytes.size(), loaded ? "yes" : "NO",
+                  (int)shells_at_save, t.launches, t.produced, t.vet_events, t.crate_events,
+                  t.ability_events, (int)wa.rad_field().sites().size(),
+                  (unsigned long long)r.a, (unsigned long long)r.b, r.a == r.b ? "yes" : "NO");
+    r.line = buf;
+    if (!active) r.line += "\n[saveload] WEDGE: skirmish scenario was vacuous (no shells in flight/production)";
+    return r;
+}
+
+// The P9 trigger scenario (sov07tmd's own triggers on a World host).
+struct SlTriggerRig {
+    ra2engine::World world;
+    WorldTriggerHost host;
+    ra2engine::MapTriggerSystem sys;
+    SlTriggerRig(Assets& a, UnitAssets& ua, const TriggerDemoTables& t,
+                 const ra2engine::MapTriggerData& data, bool start)
+        : world(build_world(a, ua, 0)), host(world, t), sys(data, /*Normal*/ 1, 0x5EEDu) {
+        world.enable_shroud(true);
+        configure_map_houses(world, t);
+        int nb = 0, nu = 0, skipped = 0;
+        place_map_objects(world, host, t, nb, nu, skipped);
+        if (start) sys.start(host);
+    }
+    void frame() {
+        sys.tick(host);
+        world.step(kSlDt);
+    }
+    uint64_t hash() const {
+        uint64_t h = ra2engine::save::fnv1a(ra2engine::save::save_world(world));
+        h = ra2engine::save::fnv1a(ra2engine::save::save_triggers(sys), h);
+        h = fnv_mix(h, sys.state_hash());
+        return fnv_mix(h, world_hash(world));
+    }
+};
+
+SlResult sl_run_triggers(Assets& a, UnitAssets& ua, const TriggerDemoTables& t,
+                         const ra2engine::MapTriggerData& data, int N, int M) {
+    SlResult r;
+    SlTriggerRig ra(a, ua, t, data, /*start=*/true);
+    for (int f = 0; f < N; ++f) ra.frame();
+    const int fired_at_save = ra.sys.fired_count();
+    ra2engine::save::SaveFile sf;
+    sf.header = sl_header(a.map, "sov07tmd", "", N);
+    sf.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(ra.world);
+    sf.sections[ra2engine::save::kTagTriggers] = ra2engine::save::save_triggers(ra.sys);
+    sf.sections[ra2engine::save::kTagHost] = ra2engine::save::to_bytes(ra.host.unit_type_of);
+    const std::string dir = sl_save_dir();
+    const std::string name = ra2engine::save::new_save_name(dir, 0x0009u);
+    const std::string path = dir + "/" + name;
+    const bool wrote = ra2engine::save::write_file(path, ra2engine::save::encode_save(sf));
+    for (int f = N; f < M; ++f) ra.frame();
+    r.a = ra.hash();
+    const int fired_total = ra.sys.fired_count();
+
+    SlTriggerRig rb(a, ua, t, data, /*start=*/false);
+    std::vector<uint8_t> bytes;
+    ra2engine::save::SaveFile lf;
+    bool loaded = wrote && ra2engine::save::read_file_bytes(path, bytes) &&
+                  ra2engine::save::decode_save(bytes, lf) && lf.header.frame == N &&
+                  lf.section(ra2engine::save::kTagWorld) && lf.section(ra2engine::save::kTagTriggers) &&
+                  lf.section(ra2engine::save::kTagHost);
+    if (loaded)
+        loaded = ra2engine::save::load_world(rb.world, *lf.section(ra2engine::save::kTagWorld)) &&
+                 ra2engine::save::load_triggers(rb.sys, *lf.section(ra2engine::save::kTagTriggers)) &&
+                 ra2engine::save::from_bytes(*lf.section(ra2engine::save::kTagHost), rb.host.unit_type_of);
+    for (int f = N; f < M && loaded; ++f) rb.frame();
+    r.b = rb.hash();
+    ra2engine::save::delete_save(path);
+
+    const bool active = fired_total > fired_at_save && fired_at_save > 0;
+    r.ok = loaded && r.a == r.b && active && ra.sys.log() == rb.sys.log();
+    char buf[320];
+    std::snprintf(buf, sizeof buf,
+                  "[saveload] triggers N=%d M=%d file=%s bytes=%d loaded=%s fired_at_save=%d "
+                  "fired_total=%d log_lines=%d A=%016llx B=%016llx match=%s",
+                  N, M, name.c_str(), (int)bytes.size(), loaded ? "yes" : "NO", fired_at_save,
+                  fired_total, (int)ra.sys.log().size(), (unsigned long long)r.a,
+                  (unsigned long long)r.b, r.a == r.b ? "yes" : "NO");
+    r.line = buf;
+    if (!active) r.line += "\n[saveload] WEDGE: no trigger fired after the save point";
+    return r;
+}
+
+}  // namespace
+
+int run_demo_saveload() {
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);   // DEFAULT selection: sov07tmd.map
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok) {
+        std::cerr << "[demo-saveload] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
+    UnitRoster ur_ai = load_soviet_unit_roster(dir, ra2, ua, rules, art);
+    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+
+    // --- scenario 1: skirmish (the interactive game's World + scene record).
+    SlSkirmishEnv env{a,      ua,         ba, rules, ur, ur_ai, miners, rules_ini,
+                      ra2engine::default_skirmish_config(rules)};
+    env.cfg.crates = true;
+    env.inf_ft = factory_types_for(ba, "GAPILE");
+    env.veh_ft = factory_types_for(ba, "GAWEAP");
+    env.low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
+    env.mf = rules.general_double("MultipleFactory", 0.8);
+    env.build_speed = rules.general_double("BuildSpeed", 0.7);
+    for (int i = 0; i < (int)ur.defs.size(); ++i)
+        if (upper_ascii(ur.defs[i].id) == "E1") env.e1 = i;
+    const SlResult s1 = sl_run_skirmish(env, 90, 900);
+
+    // --- scenario 2: the P9 map triggers on sov07tmd.
+    ra2assets::Ini map_ini = ra2assets::Ini::parse("");
+    {
+        const MapSelection sel;
+        MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+        const MixEntry* me = maps.find(sel.id);
+        if (!me) {
+            std::cerr << "[demo-saveload] FAILED: gate map entry not found\n";
+            return 1;
+        }
+        auto raw = maps.read(*me);
+        map_ini = ra2assets::Ini::parse(std::string(raw.begin(), raw.end()));
+    }
+    const ra2engine::MapTriggerData data = ra2engine::parse_map_triggers(
+        map_ini, ra2engine::ini_list_values(rules_ini, "Countries"),
+        ra2engine::ini_list_values(rules_ini, "BuildingTypes"));
+    TriggerDemoTables t;
+    t.data = &data;
+    t.map_ini = &map_ini;
+    t.rules_ini = &rules_ini;
+    t.ba = &ba;
+    for (const ra2engine::UnitTypeDef& d : ur.defs) t.unit_types.push_back(&d);
+    for (const ra2engine::UnitTypeDef& d : ur_ai.defs) t.unit_types.push_back(&d);
+    t.reveal_radius = rules_ini.get_int("General", "RevealTriggerRadius", 9);
+    for (const auto& kv : map_ini.section("Houses")) {
+        t.house_names.push_back(kv.second);
+        t.house_type_of.push_back(data.find_house_type(map_ini.get(kv.second, "Country", "")));
+    }
+    // N/M straddle the map's 1800-frame (120 s) taunt trigger.
+    const SlResult s2 = sl_run_triggers(a, ua, t, data, 900, 1900);
+
+    // --- scenario 3: the REAL interactive GameScene save -> load path (what the
+    // in-game Save / Load dialogs call). Not folded into saveload_hash: the
+    // interactive game seeds crates from the wall clock.
+    bool scene_ok = false;
+    std::string scene_line;
+    {
+        ra2engine::SkirmishConfig cfg = ra2engine::default_skirmish_config(rules);
+        GameScene g1(/*no_audio=*/true, cfg);
+        for (int f = 0; f < 120; ++f) g1.update(kSlDt);
+        const std::string path = sl_save_dir() + "/" + ra2engine::save::new_save_name(sl_save_dir(), 0x000Bu);
+        const bool wrote = g1.save_game(path, "Scene segment");
+        std::vector<uint8_t> bytes;
+        ra2engine::save::SaveFile f;
+        const bool read = wrote && ra2engine::save::read_file_bytes(path, bytes) &&
+                          ra2engine::save::decode_save(bytes, f);
+        ra2engine::save::delete_save(path);
+        bool same0 = false, same1 = false;
+        if (read) {
+            GameScene g2(/*no_audio=*/true, f);
+            same0 = g1.state_bytes() == g2.state_bytes();
+            for (int k = 0; k < 120; ++k) {
+                g1.update(kSlDt);
+                g2.update(kSlDt);
+            }
+            same1 = g1.state_bytes() == g2.state_bytes();
+        }
+        scene_ok = read && same0 && same1;
+        char b[200];
+        std::snprintf(b, sizeof b,
+                      "[saveload] scene GameScene save->load file_bytes=%d desc=\"%s\" "
+                      "identical_at_load=%s identical_after_120=%s",
+                      (int)bytes.size(), f.header.description.c_str(), same0 ? "yes" : "NO",
+                      same1 ? "yes" : "NO");
+        scene_line = b;
+    }
+
+    std::cout << s1.line << "\n" << s2.line << "\n" << scene_line << "\n";
+    const uint64_t h = fnv_mix(s1.a, s2.a);
+    const bool ok = s1.ok && s2.ok && scene_ok;
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "[demo-saveload] identical=%s saveload_hash=%016llx",
+                  ok ? "yes" : "NO", (unsigned long long)h);
+    std::cout << hb << "\n";
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
     try {
 #ifdef __ANDROID__
@@ -14686,6 +15663,8 @@ int main(int argc, char** argv) {
                 return run_demo_projectile();
             } else if (arg == "--demo-triggers") {
                 return run_demo_triggers();
+            } else if (arg == "--demo-saveload") {
+                return run_demo_saveload();   // P7 Save/Load gate
             } else if (arg == "--demo-veterancy") {
                 return run_demo_veterancy();   // P5 Veterancy + Crates gate
             } else if (arg == "--demo-abilities") {

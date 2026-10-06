@@ -41,6 +41,7 @@ struct OreRng {
 
 class OreField {
 public:
+    friend struct SaveAccess;  // P7 Save/Load (engine/save_fields.hpp)
     OreField() = default;
     OreField(int w, int h);                       // empty field (tests)
     // Build from the map: for every terrain cell, classify overlay_at via

@@ -556,6 +556,9 @@ struct AiHouseConfig {
 // MapFile alive at least as long as the World. Pure engine-layer logic; no SDL.
 class World {
 public:
+    // P7 Save/Load: the serializer (engine/save_fields.hpp) visits private state.
+    friend struct SaveAccess;
+
     explicit World(const ra2assets::MapFile& map);
 
     const ra2assets::MapFile& map() const { return *map_; }

@@ -13,6 +13,7 @@ namespace ra2engine {
 // 250-word R250 table (taps idx1, idx2=idx1+103) seeded by 4-round psdes.
 class GameRandom {
 public:
+    friend struct SaveAccess;  // P7 Save/Load (engine/save_fields.hpp)
     explicit GameRandom(std::uint32_t seed = 0);
     std::uint32_t next();                 // FUN_0065C1C0
     int ranged(int lo, int hi);           // FUN_0065C220 (inclusive, either order)
