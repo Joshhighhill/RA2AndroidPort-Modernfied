@@ -9633,6 +9633,13 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     // only past the repair_sell_any_ firewall), but omitting it would leave the
     // wrench silently running on struct defaults on any install whose rules differ.
     world.set_repair_sell_rules(ba.repair_sell);
+    // ...and the type roster itself. Without this types_ is EMPTY here, so
+    // set_repair/can_be_sold refuse every building and the two sidebar buttons
+    // are dead in the real game -- invisibly, since every gate builds its world
+    // through wire_economy instead [RE: repair-sell.md §A4]. Roster-only: it
+    // must NOT arm ore growth/harvest stepping (that is what would move
+    // skirmish_hash / maps_hash).
+    world.set_building_types(ba.roster);
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
     const int gw = world.grid_w(), gh = world.grid_h();
     (void)gh;

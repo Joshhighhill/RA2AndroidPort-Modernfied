@@ -4568,3 +4568,21 @@ TEST_CASE("world: the repair tick reads the INJECTED rules, not RepairSellRules 
     CHECK(world.buildings()[b].hp == 160);
     CHECK(world.house_credits(0) == doctest::Approx(10000.0 - 90.0));
 }
+
+TEST_CASE("world: set_building_types arms repair lookups WITHOUT the economy [RE: repair-sell.md §A4]") {
+    // The interactive launcher never calls set_economy (types_ stays empty --
+    // the economy firewall), so repair/sell must price against the lookup-only
+    // roster instead. Before set_building_types: every wrench click refused.
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 0.0, true);
+    world.buildings()[b].hp = 500;
+    world.grant_credits_for_test(0, 10000.0);
+    CHECK_FALSE(world.set_repair(b, 0, 1));          // no roster -> refused
+    world.set_building_types(repair_roster());
+    CHECK(world.btypes().size() == 3);
+    REQUIRE(world.set_repair(b, 0, 1));
+    world.step(1.0 / 15.0);                          // frame 0 is on-phase
+    CHECK(world.buildings()[b].hp == 508);
+    CHECK(world.house_credits(0) == doctest::Approx(10000.0 - 3.0));
+}

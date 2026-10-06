@@ -1441,7 +1441,10 @@ bool World::set_repair(int b_idx, int by_house, int control) {
     // OWN house only: unlike the engineer path (repair_building), the wrench is
     // not an allied action.
     if (b.house != by_house) return false;
-    if (b.type < 0 || b.type >= static_cast<int>(types_.size())) return false;
+    // btypes(): the interactive launcher populates lookup_types_, not types_
+    // (types_.empty() is the economy firewall) -- see world.hpp.
+    const std::vector<BuildingTypeDef>& bt = btypes();
+    if (b.type < 0 || b.type >= static_cast<int>(bt.size())) return false;
     const bool cur = b.being_repaired;
     bool next = cur;
     if (control < 0) next = !cur;              // -1 toggle
@@ -1451,7 +1454,7 @@ bool World::set_repair(int b_idx, int by_house, int control) {
     if (next) {
         // [RE: §A4, FUN_00452620] Only turning ON is gated -- turning OFF must
         // always work (off-ramps 2 and 5 call Repair(0) unconditionally).
-        if (!can_be_click_repaired(b, types_[b.type])) return false;
+        if (!can_be_click_repaired(b, bt[b.type])) return false;
         if (b.selling) return false;           // [§B2] a selling building cannot repair
         b.being_repaired = true;
         repair_sell_any_ = true;               // open the firewall
@@ -1487,11 +1490,11 @@ void World::step_repair_sell(double dt) {
         if (!b.alive || b.state == Building::State::Dead) continue;
         if (!b.being_repaired) continue;
         if (b.selling) { b.being_repaired = false; continue; }   // [§B2 entry: Repair(0)]
-        if (b.type < 0 || b.type >= static_cast<int>(types_.size())) {
+        if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) {
             b.being_repaired = false;
             continue;
         }
-        const BuildingTypeDef& t = types_[b.type];
+        const BuildingTypeDef& t = btypes()[b.type];
         // [RE: §A2, FUN_00711470] BOTH divisions integer. Depends only on the
         // type, so this is a pure function of (Cost, Strength, rules).
         const int cost =

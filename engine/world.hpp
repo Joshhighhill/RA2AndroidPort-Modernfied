@@ -587,6 +587,28 @@ public:
                      OreValues values, double growth_interval_secs,
                      double growth_pct, double spread_pct);
 
+    // Give the World a building-type roster for TYPE LOOKUPS ONLY, without
+    // arming ore growth / harvest stepping.
+    //
+    // Why this is a SEPARATE vector and not just `types_`: `types_.empty()` IS
+    // the economy firewall (see its declaration below) -- step() skips
+    // ore_.step and step_harvest precisely when it is empty. The interactive
+    // launcher (launch_skirmish) never calls set_economy, so types_ is empty
+    // there, and every repair/sell type lookup silently refused: the wrench did
+    // nothing in the real game while all 19 gates stayed green, because gates
+    // build their worlds through wire_economy instead [RE: repair-sell.md §A4;
+    // Task 4 report §6]. Writing types_ here would fix the lookup but
+    // simultaneously switch the economy passes ON in the interactive/skirmish
+    // world, moving skirmish_hash and maps_hash. So the roster lands in its own
+    // field and `btypes()` prefers whichever is populated.
+    void set_building_types(std::vector<BuildingTypeDef> types) { lookup_types_ = std::move(types); }
+
+    // The type roster for non-economy consumers (repair/sell). set_economy's
+    // roster wins when present so gate worlds behave exactly as before.
+    const std::vector<BuildingTypeDef>& btypes() const {
+        return types_.empty() ? lookup_types_ : types_;
+    }
+
     // Harvest income accumulated (both houses' unload drains summed since
     // the last call to take_income for THAT house) since the last call,
     // then zeroed for `house`. House index must be 0 or 1; anything else
@@ -1238,6 +1260,9 @@ private:
     // step() skips ore_.step and step_harvest entirely in that case.
     std::vector<BuildingTypeDef> types_;
     std::vector<int> refinery_types_;
+    // Type roster for lookups that must NOT arm the economy passes above
+    // (set_building_types / btypes()). Read only through btypes().
+    std::vector<BuildingTypeDef> lookup_types_;
     // OreValues's two fields, copied by set_economy (see the forward-
     // declaration comment above for why OreValues itself isn't stored).
     int ore_value_ore_ = 25;
