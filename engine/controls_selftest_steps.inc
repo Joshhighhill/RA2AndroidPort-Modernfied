@@ -126,7 +126,7 @@ void add_controls_selftest_steps(STest& t) {
     S.push_back(st_click("unit:0:GI:0"));
     S.push_back(st_expect_ge("sel", 1));
     S.push_back(st_click_own_rel(5, 0));          // LEFT click on ground = move
-    S.push_back(st_expect_ge("moving.0", 1, 5));
+    S.push_back(st_expect_ge("sel.moving", 1, 5));
     S.push_back(st_shot("game_left_move.png"));
     S.push_back(st_click_own_rel(5, 3, true));    // right click = deselect
     S.push_back(st_expect("sel", 0));
@@ -253,5 +253,41 @@ void add_controls_selftest_steps(STest& t) {
                      return STest::pv(s, "units.0.GI") >= t.mem["gi"] + 3;
                  }, 2400});
     S.push_back(st_expect("backlog.2", 0));
-    S.push_back(st_shot("queue_done.png"));    // (minimap / touch steps follow)
+    S.push_back(st_shot("queue_done.png"));    // --- G-09: radar click: re-centre, and with a selection a move order ---
+    S.push_back({"add a powered Air Force Command (radar) next to the base", [](STest& t, Scene& s, int) {
+                     const auto p = STest::probe_of(s);
+                     const std::string x = std::to_string(p.at("bld0.cx") - 6), y = std::to_string(p.at("bld0.cy") - 6);
+                     if (!s.cheat({"building", "GAAIRC", x, y})) t.fail("cheat building");
+                     return true;
+                 }});
+    S.push_back(st_expect("radar", 1, 5));
+    S.push_back(st_click_own_rel(14, 14, true));               // deselect
+    S.push_back({"remember cam", [](STest& t, Scene& s, int) {
+                     t.mem["cam_x"] = STest::pv(s, "cam_x");
+                     t.mem["cam_y"] = STest::pv(s, "cam_y");
+                     return true;
+                 }});
+    S.push_back({"click the radar near its top-left", [](STest& t, Scene&, int) {
+                     t.click_xy(1280 - 168 + 120, 48 + 80);
+                     return true;
+                 }});
+    S.push_back({"radar click re-centred the view", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "cam_x") != t.mem["cam_x"] || STest::pv(s, "cam_y") != t.mem["cam_y"];
+                 }});
+    S.push_back(st_shot("radar_center.png"));
+    S.push_back(st_key("H", SDLK_h));
+    S.push_back(st_click("unit:0:GI:0"));
+    S.push_back(st_expect_ge("sel", 1));
+    S.push_back({"remember cam", [](STest& t, Scene& s, int) {
+                     t.mem["cam_x"] = STest::pv(s, "cam_x");
+                     return true;
+                 }});
+    S.push_back({"click the radar with a selection", [](STest& t, Scene&, int) {
+                     t.click_xy(1280 - 168 + 84, 48 + 55);
+                     return true;
+                 }});
+    S.push_back(st_expect_ge("sel.moving", 1, 5));
+    S.push_back({"a radar order does not move the camera", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "cam_x") == t.mem["cam_x"];
+                 }});    // (touch steps follow)
 }

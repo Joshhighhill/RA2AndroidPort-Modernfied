@@ -360,3 +360,34 @@
                 draw_text(ren, "HOLD", cell.rect.x + 30 - 12, cell.rect.y + 2, 1, 255, 230, 120);
         }
     }
+
+    // --- G-09: radar click [RE: RadarClass action; TS lineage RadarClass::Action:
+    // a click on the ACTIVE radar with a selection is a move order to that cell,
+    // otherwise it re-centres the tactical view; an inactive radar (no powered
+    // radar building / shroud off) ignores clicks.] [RE-FALLBACK: the
+    // cell <-> radar-pixel mapping is the clone's draw_radar_minimap stretch
+    // (grid scaled to the radar rect); if agent E moves the minimap to the
+    // original 140x108 iso viewport, radar_cell_at must follow it.]
+    bool radar_active() const {
+        return world_.shroud_enabled() && house_owns_operational_radar(world_, ba_, 0);
+    }
+    bool radar_cell_at(int px, int py, int& cx, int& cy) const {
+        const ra2engine::SbRect& r = lay_.radar;
+        if (!r.contains(px, py) || world_.grid_w() <= 0 || world_.grid_h() <= 0) return false;
+        const double sx = static_cast<double>(r.w) / world_.grid_w();
+        const double sy = static_cast<double>(r.h) / world_.grid_h();
+        cx = std::min(world_.grid_w() - 1, static_cast<int>((px - r.x) / sx));
+        cy = std::min(world_.grid_h() - 1, static_cast<int>((py - r.y) / sy));
+        return true;
+    }
+    bool radar_click(const ra2engine::InputEvent& ev) {
+        if (!lay_.radar.contains(ev.x, ev.y)) return false;
+        int cx = 0, cy = 0;
+        if (!radar_active() || !radar_cell_at(ev.x, ev.y, cx, cy)) return true;   // consumed, inert
+        bool any = false;
+        for (const ra2engine::Unit& u : world_.units())
+            if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0) { any = true; break; }
+        if (any) world_.order_move_selected(cx, cy);
+        else input_.center_on_cell(cx, cy);
+        return true;
+    }

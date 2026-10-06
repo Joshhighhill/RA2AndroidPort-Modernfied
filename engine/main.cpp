@@ -4598,6 +4598,7 @@ public:
                     return;
                 }
                 if (strip_button_click(ev.x, ev.y)) return;   // G-12 r-up / r-dn
+                if (radar_click(ev)) return;                  // G-09 radar centre / order
                 // Tab-click switching: recompute the buildable list + layout.
                 const int tab = lay_.tab_at(ev.x, ev.y);
                 if (tab >= 0 && tab != active_tab_) {

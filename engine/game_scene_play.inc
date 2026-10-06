@@ -127,12 +127,14 @@
         out["dialog"] = sld_.is_open() ? 1 : 0;
         out["selb"] = input_.selected_building();
         out["cursor"] = static_cast<int>(cursor_action());
+        out["radar"] = radar_active() ? 1 : 0;
         out["cam_x"] = cam_.x;
         out["cam_y"] = cam_.y;
         int sel = 0;
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.alive || u.die_time >= 0.0) continue;
             if (u.selected) ++sel;
+            if (u.selected && u.moving()) ++out["sel.moving"];
             ++out["units." + std::to_string(u.house)];
             ++out["units." + std::to_string(u.house) + "." + u.image];
             if (u.moving()) ++out["moving." + std::to_string(u.house)];
@@ -179,6 +181,17 @@
             for (const ra2engine::Unit& u : world_.units())
                 if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
                     input_.center_on_cell(u.fx, u.fy);
+                    return true;
+                }
+            return false;
+        }
+        if (args.size() == 4 && args[0] == "building") {   // building ID x y: instant own building
+            for (int t = 0; t < static_cast<int>(ba_.roster.size()); ++t)
+                if (ba_.roster[t].id == args[1]) {
+                    const ra2engine::BuildingTypeDef& d = ba_.roster[t];
+                    world_.add_building(t, std::atoi(args[2].c_str()), std::atoi(args[3].c_str()), d.fw, d.fh, 0,
+                                        d.strength, d.armor_ix, ba_.art[t].buildup_total, /*instant=*/true,
+                                        d.sight, d.grants_map_reveal);
                     return true;
                 }
             return false;
