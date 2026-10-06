@@ -57,6 +57,7 @@
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
 #include "maplist.hpp"
+#include "map_trigger.hpp" // MapTriggerSystem (P9 Map triggers; --demo-triggers only)
 #include "voxel_raster.hpp"
 #include "world.hpp"
 
@@ -11296,6 +11297,547 @@ int run_demo_maps() {
     return 0;
 }
 
+// --- --demo-triggers (P9 Map triggers) ---------------------------------------
+// [RE: docs/re/map-triggers.md; spec 2026-10-06-map-triggers-design.md §6].
+// EVERYTHING below is gate-local: the trigger system is constructed ONLY by
+// run_demo_triggers, so every other mode and all 19 prior gates are untouched.
+
+namespace {
+
+std::string upper_ascii(std::string s) {
+    for (char& c : s) c = (char)std::toupper((unsigned char)c);
+    return s;
+}
+
+// The tables the World adapter needs, built once per gate run.
+struct TriggerDemoTables {
+    const ra2engine::MapTriggerData* data = nullptr;
+    const ra2assets::Ini* map_ini = nullptr;
+    const ra2assets::Ini* rules_ini = nullptr;
+    const BuildingAssets* ba = nullptr;
+    std::vector<const ra2engine::UnitTypeDef*> unit_types;   // spawnable roster types
+    std::vector<int> house_type_of;                          // engine house -> HouseType
+    std::vector<std::string> house_names;                    // engine house -> "[X House]"
+    int reveal_radius = 9;                                   // [General] RevealTriggerRadius
+};
+
+const ra2engine::UnitTypeDef* find_unit_type(const TriggerDemoTables& t, const std::string& id) {
+    const std::string u = upper_ascii(id);
+    for (const ra2engine::UnitTypeDef* d : t.unit_types)
+        if (upper_ascii(d->id) == u) return d;
+    return nullptr;
+}
+int find_roster_building(const BuildingAssets& ba, const std::string& id) {
+    const std::string u = upper_ascii(id);
+    for (std::size_t i = 0; i < ba.roster.size(); ++i)
+        if (upper_ascii(ba.roster[i].id) == u && i < ba.art.size() && ba.art[i].ok) return (int)i;
+    return -1;
+}
+
+// TriggerHost over World [spec §6]. Counts come from the live World by owner;
+// type identity for units comes from the unit-type record the gate keeps for
+// every unit IT placed (the demo has no production, so that is every unit).
+class WorldTriggerHost : public ra2engine::TriggerHost {
+public:
+    WorldTriggerHost(ra2engine::World& w, const TriggerDemoTables& t) : w_(w), t_(t) {}
+
+    std::vector<std::string> unit_type_of;   // parallel to world.units() (gate-placed)
+
+    int engine_house(int ht) const {
+        for (std::size_t i = 0; i < t_.house_type_of.size(); ++i)
+            if (t_.house_type_of[i] == ht) return (int)i;
+        return -1;
+    }
+    bool house_exists(int ht) const override { return ht >= 0 && engine_house(ht) >= 0; }
+    std::vector<int> house_instances() const override { return t_.house_type_of; }
+    int player_house_type() const override {
+        return t_.house_type_of.empty() ? -1 : t_.house_type_of[0];
+    }
+    static bool live(const ra2engine::Building& b) {
+        return b.alive && b.state != ra2engine::Building::State::Dead;
+    }
+    static bool live(const ra2engine::Unit& u) { return u.alive && u.die_time < 0.0; }
+    int house_buildings(int ht) const override {
+        const int eh = engine_house(ht);
+        int n = 0;
+        for (const ra2engine::Building& b : w_.buildings()) if (live(b) && b.house == eh) ++n;
+        return n;
+    }
+    int house_vehicles(int ht) const override {
+        const int eh = engine_house(ht);
+        int n = 0;
+        for (const ra2engine::Unit& u : w_.units())
+            if (live(u) && u.house == eh && (u.is_vehicle || u.is_naval) && !u.is_aircraft) ++n;
+        return n;
+    }
+    int house_infantry(int ht) const override {
+        const int eh = engine_house(ht);
+        int n = 0;
+        for (const ra2engine::Unit& u : w_.units())
+            if (live(u) && u.house == eh && !u.is_vehicle && !u.is_naval && !u.is_aircraft) ++n;
+        return n;
+    }
+    int house_building_type_count(int ht, int bt) const override {
+        if (bt < 0 || bt >= (int)t_.data->building_types.size()) return 0;
+        const std::string id = upper_ascii(t_.data->building_types[(std::size_t)bt]);
+        const int eh = engine_house(ht);
+        int n = 0;
+        for (const ra2engine::Building& b : w_.buildings())
+            if (live(b) && b.house == eh && b.type >= 0 &&
+                upper_ascii(t_.ba->roster[(std::size_t)b.type].id) == id)
+                ++n;
+        return n;
+    }
+    long house_credits(int ht) const override {
+        return (long)std::llround(w_.house_credits(engine_house(ht)));
+    }
+    double house_power_ratio(int ht) const override {
+        const int eh = engine_house(ht);
+        long out = 0, drain = 0;
+        for (const ra2engine::Building& b : w_.buildings()) {
+            if (!live(b) || b.house != eh || b.type < 0) continue;
+            const int p = t_.ba->roster[(std::size_t)b.type].power;
+            if (p > 0) out += p; else drain -= p;
+        }
+        return drain == 0 ? 1.0 : (double)out / (double)drain;
+    }
+    bool house_has_factory(int ht) const override {
+        const int eh = engine_house(ht);
+        for (const ra2engine::Building& b : w_.buildings())
+            if (live(b) && b.house == eh && b.type >= 0 &&
+                !t_.rules_ini->get(t_.ba->roster[(std::size_t)b.type].id, "Factory", "").empty())
+                return true;
+        return false;
+    }
+    int techno_count(const std::string& id) const override {
+        int n = 0;
+        if (id.empty()) {
+            for (const ra2engine::Building& b : w_.buildings()) if (live(b)) ++n;
+            for (const ra2engine::Unit& u : w_.units()) if (live(u)) ++n;
+            return n;
+        }
+        if (!t_.rules_ini->has(id)) return -1;   // unknown TechnoType
+        const std::string u = upper_ascii(id);
+        for (const ra2engine::Building& b : w_.buildings())
+            if (live(b) && b.type >= 0 && upper_ascii(t_.ba->roster[(std::size_t)b.type].id) == u) ++n;
+        for (std::size_t i = 0; i < w_.units().size() && i < unit_type_of.size(); ++i)
+            if (live(w_.units()[i]) && unit_type_of[i] == u) ++n;
+        return n;
+    }
+
+    // Free walkable cell nearest (x,y) by a square-ring scan (deterministic).
+    bool free_cell_near(int x, int y, int& ox, int& oy) const {
+        for (int r = 0; r <= 6; ++r)
+            for (int dy = -r; dy <= r; ++dy)
+                for (int dx = -r; dx <= r; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                    const int cx = x + dx, cy = y + dy;
+                    if (w_.walkable(cx, cy) && w_.unit_at_cell(cx, cy) < 0) {
+                        ox = cx; oy = cy;
+                        return true;
+                    }
+                }
+        return false;
+    }
+    bool waypoint_cell(int wp, int& x, int& y) const {
+        for (const ra2assets::MapWaypoint& m : w_.map().waypoints())
+            if (m.index == wp) { x = m.x; y = m.y; return true; }
+        return false;
+    }
+    // Place one unit of `id` for engine house `eh` near (x,y); records its type.
+    bool place_unit(const std::string& id, int eh, int x, int y) {
+        const ra2engine::UnitTypeDef* d = find_unit_type(t_, id);
+        if (!d) return false;
+        int cx = 0, cy = 0;
+        if (!free_cell_near(x, y, cx, cy)) return false;
+        w_.add_combat_unit(cx, cy, eh, d->combat);
+        unit_type_of.resize(w_.units().size());
+        unit_type_of.back() = upper_ascii(id);
+        return true;
+    }
+
+    // Reinforcement [RE §7 item 4, RE-FALLBACK]: the TaskForce's roster-known
+    // members are placed at the team waypoint for the team's house.
+    bool reinforce(const ra2engine::TriggerEffect& e) {
+        const ra2assets::Ini& m = *t_.map_ini;
+        const int ht = t_.data->find_house_type(m.get(e.team, "House", ""));
+        const int eh = engine_house(ht);
+        int wp = e.waypoint;
+        if (e.action == 7) wp = ra2engine::map_waypoint_letters(m.get(e.team, "Waypoint", ""));
+        int x = 0, y = 0;
+        if (eh < 0 || !waypoint_cell(wp, x, y)) {
+            note_ = "[no house/waypoint]";
+            return false;
+        }
+        const std::string tf = m.get(e.team, "TaskForce", "");
+        int placed = 0, skipped = 0;
+        for (const auto& kv : m.section(tf)) {
+            if (kv.first == "NAME" || kv.first == "GROUP") continue;
+            const std::size_t comma = kv.second.find(',');
+            if (comma == std::string::npos) continue;
+            const int count = std::atoi(kv.second.substr(0, comma).c_str());
+            const std::string id = kv.second.substr(comma + 1);
+            for (int k = 0; k < count; ++k) {
+                if (place_unit(id, eh, x, y)) ++placed; else ++skipped;
+            }
+        }
+        char b[160];
+        std::snprintf(b, sizeof b, "[house=%d wp=%d(%d,%d) placed=%d skipped=%d]", eh, wp, x, y,
+                      placed, skipped);
+        note_ = b;
+        return placed > 0;
+    }
+
+    std::string take_note() override {
+        std::string n;
+        n.swap(note_);
+        return n;
+    }
+
+    bool apply(const ra2engine::TriggerEffect& e) override {
+        switch (e.action) {
+        case 7: case 80: case 107:
+            return reinforce(e);
+        case 17: {
+            int x = 0, y = 0;
+            if (!waypoint_cell(e.waypoint, x, y)) return false;
+            w_.reveal_source(0, x, y, t_.reveal_radius);
+            return true;
+        }
+        case 16:
+            w_.reveal_all_house(0);
+            return true;
+        case 125: {
+            const int bt = find_roster_building(*t_.ba, e.text);
+            const int eh = engine_house(e.house_type);
+            int x = 0, y = 0;
+            if (bt < 0 || eh < 0 || !waypoint_cell(e.waypoint, x, y)) return false;
+            const ra2engine::BuildingTypeDef& d = t_.ba->roster[(std::size_t)bt];
+            const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                x, y, d.fw, d.fh, eh, d.adjacent, w_.passable(), w_.grid_w(), w_.grid_h(),
+                w_.occupancy(), w_.buildings(), /*bypass=*/true);
+            if (!chk.ok) return false;
+            w_.add_building(bt, x, y, d.fw, d.fh, eh, d.strength, d.armor_ix, 0.0,
+                            /*instant=*/true, d.sight, d.grants_map_reveal);
+            return true;
+        }
+        default:
+            // CreateTeam/DestroyTeam (no TeamClass for map teams yet), AllToHunt:
+            // recorded, not executed [RE §7 item 4].
+            return false;
+        }
+    }
+
+private:
+    ra2engine::World& w_;
+    const TriggerDemoTables& t_;
+    std::string note_;
+};
+
+// Place the map's pre-placed [Structures]/[Units]/[Infantry] whose types the
+// engine has loaded (gate scaffold so house events see real objects; P10 owns
+// the full object loader). Field head OWNER,TYPE,HP,X,Y [RE: maps.md §4.7].
+void place_map_objects(ra2engine::World& world, WorldTriggerHost& host,
+                       const TriggerDemoTables& t, int& nb, int& nu, int& skipped) {
+    const ra2assets::Ini& m = *t.map_ini;
+    auto house_of = [&](const std::string& name) -> int {
+        for (std::size_t i = 0; i < t.house_names.size(); ++i)
+            if (upper_ascii(t.house_names[i]) == upper_ascii(name)) return (int)i;
+        return -1;
+    };
+    auto fields = [](const std::string& v) {
+        std::vector<std::string> f;
+        std::string cur;
+        for (char c : v) { if (c == ',') { f.push_back(cur); cur.clear(); } else cur += c; }
+        f.push_back(cur);
+        return f;
+    };
+    for (const auto& kv : m.section("Structures")) {
+        const std::vector<std::string> f = fields(kv.second);
+        if (f.size() < 5) continue;
+        const int eh = house_of(f[0]);
+        const int bt = find_roster_building(*t.ba, f[1]);
+        if (eh < 0 || bt < 0) { ++skipped; continue; }
+        const ra2engine::BuildingTypeDef& d = t.ba->roster[(std::size_t)bt];
+        const int x = std::atoi(f[3].c_str()), y = std::atoi(f[4].c_str());
+        const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+            x, y, d.fw, d.fh, eh, d.adjacent, world.passable(), world.grid_w(), world.grid_h(),
+            world.occupancy(), world.buildings(), /*bypass=*/true);
+        if (!chk.ok) { ++skipped; continue; }
+        const int idx = world.add_building(bt, x, y, d.fw, d.fh, eh, d.strength, d.armor_ix, 0.0,
+                                           /*instant=*/true, d.sight, d.grants_map_reveal);
+        const int hp256 = std::atoi(f[2].c_str());
+        if (idx >= 0 && hp256 > 0 && hp256 < 256)
+            world.buildings()[(std::size_t)idx].hp = std::max(1, d.strength * hp256 / 256);
+        ++nb;
+    }
+    for (const char* sec : {"Units", "Infantry"}) {
+        for (const auto& kv : m.section(sec)) {
+            const std::vector<std::string> f = fields(kv.second);
+            if (f.size() < 5) continue;
+            const int eh = house_of(f[0]);
+            const int x = std::atoi(f[3].c_str()), y = std::atoi(f[4].c_str());
+            if (eh < 0 || !find_unit_type(t, f[1]) || !world.walkable(x, y) ||
+                world.unit_at_cell(x, y) >= 0) {
+                ++skipped;
+                continue;
+            }
+            if (host.place_unit(f[1], eh, x, y)) ++nu; else ++skipped;
+        }
+    }
+}
+
+// Configure the map's houses on the World ([Houses] order = engine house id).
+// Side from the country's Side= (GDI -> Allied, Nod -> Soviet, else neutral
+// non-combatant); team 0 = the player's Allies= list, team 1 = everyone else.
+void configure_map_houses(ra2engine::World& world, const TriggerDemoTables& t) {
+    const ra2assets::Ini& m = *t.map_ini;
+    const std::string player_allies =
+        "," + upper_ascii(m.get(t.house_names.empty() ? "" : t.house_names[0], "Allies", "")) + ",";
+    for (std::size_t i = 0; i < t.house_names.size(); ++i) {
+        const std::string country = m.get(t.house_names[i], "Country", "");
+        const std::string side = upper_ascii(m.get(country, "Side", ""));
+        ra2engine::World::HouseRec rec;
+        rec.side = side == "GDI" ? ra2engine::World::Side::Allied
+                 : side == "NOD" ? ra2engine::World::Side::Soviet
+                                 : ra2engine::World::Side::Neutral;
+        rec.combatant = rec.side != ra2engine::World::Side::Neutral;
+        rec.color_ix = (int)(i % 8);
+        rec.country = country;
+        rec.alliance_team =
+            (i == 0 || player_allies.find("," + upper_ascii(t.house_names[i]) + ",") !=
+                           std::string::npos) ? 0 : 1;
+        world.set_house((int)i, rec);
+    }
+}
+
+}  // namespace
+
+struct DemoTriggersResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+constexpr long kTriggerFrames = 2700;   // DEMO budget: 3 game-minutes at 15 Hz --
+                                        // covers the map's frame-0 setup burst,
+                                        // its 1/3/15-second chains and the
+                                        // 1800-frame (120 s) taunt trigger.
+
+// Action-kind classes for the witness tally [spec §2].
+const char* trigger_action_class(int k) {
+    switch (k) {
+    case 0: case 1: case 2: case 3: case 12: case 13: case 22: case 23: case 24:
+    case 25: case 26: case 27: case 28: case 29: case 53: case 54: case 56: case 57:
+    case 67: case 68: case 74: case 75:
+        return "engine";
+    case 4: case 5: case 6: case 7: case 16: case 17: case 80: case 107: case 125:
+        return "host";
+    case 10: case 11: case 19: case 20: case 21: case 41: case 46: case 47: case 48:
+    case 55: case 99: case 100: case 103: case 104: case 112: case 113: case 114:
+    case 115: case 116: case 131:
+        return "recorded";
+    default:
+        return "unimplemented";
+    }
+}
+
+DemoTriggersResult simulate_triggers(Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                     const ra2assets::Ini& map_ini, const ra2assets::Ini& rules_ini,
+                                     const UnitRoster& ur_player, const UnitRoster& ur_soviet,
+                                     const std::vector<const VehicleAssets*>& vlist, bool render,
+                                     SDL_Renderer* ren, ra2engine::TextureCache* tc,
+                                     const ra2engine::Camera* cam, int W, int H,
+                                     const std::string& start_png, const std::string& end_png) {
+    DemoTriggersResult r;
+    const ra2engine::MapTriggerData data = ra2engine::parse_map_triggers(
+        map_ini, ra2engine::ini_list_values(rules_ini, "Countries"),
+        ra2engine::ini_list_values(rules_ini, "BuildingTypes"));
+
+    TriggerDemoTables t;
+    t.data = &data;
+    t.map_ini = &map_ini;
+    t.rules_ini = &rules_ini;
+    t.ba = &ba;
+    for (const ra2engine::UnitTypeDef& d : ur_player.defs) t.unit_types.push_back(&d);
+    for (const ra2engine::UnitTypeDef& d : ur_soviet.defs) t.unit_types.push_back(&d);
+    t.reveal_radius = rules_ini.get_int("General", "RevealTriggerRadius", 9);
+    for (const auto& kv : map_ini.section("Houses")) {
+        t.house_names.push_back(kv.second);
+        t.house_type_of.push_back(data.find_house_type(map_ini.get(kv.second, "Country", "")));
+    }
+    {
+        int defined = 0;
+        for (const ra2engine::MapTriggerType& tt : data.triggers) defined += tt.defined ? 1 : 0;
+        char b[240];
+        std::snprintf(b, sizeof b,
+                      "[trig] parsed triggers=%d tags=%d teams=%d celltags=%d houses=%d "
+                      "house_types=%d building_types=%d",
+                      defined, (int)data.tags.size(), (int)data.team_ids.size(),
+                      (int)data.cell_tags.size(), (int)t.house_names.size(),
+                      (int)data.house_types.size(), (int)data.building_types.size());
+        r.witness.emplace_back(b);
+    }
+
+    ra2engine::World world = build_world(a, ua, 0);
+    world.enable_shroud(true);
+    configure_map_houses(world, t);
+    WorldTriggerHost host(world, t);
+    int nb = 0, nu = 0, skipped = 0;
+    place_map_objects(world, host, t, nb, nu, skipped);
+    {
+        char b[160];
+        std::snprintf(b, sizeof b, "[trig] placed structures=%d units=%d skipped=%d", nb, nu,
+                      skipped);
+        r.witness.emplace_back(b);
+    }
+
+    ra2engine::MapTriggerSystem sys(data, /*Normal*/ 1, /*rng_seed=*/0x5EEDu);
+    sys.start(host);
+    std::size_t logged = 0;
+    auto drain_log = [&]() {
+        for (; logged < sys.log().size(); ++logged) r.witness.push_back(sys.log()[logged]);
+    };
+    drain_log();
+
+    auto render_frame = [&]() {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist, &ba);
+    };
+    const double dt = 1.0 / 15.0;
+    for (long f = 0; f < kTriggerFrames; ++f) {
+        // LogicClass::AI runs the trigger loops at the top of the frame [RE §3.2].
+        sys.tick(host);
+        drain_log();
+        world.step(dt);
+        if (f == 0) { render_frame(); if (render) capture_png(ren, start_png, W, H); }
+    }
+
+    // Tallies + end state.
+    std::map<std::string, int> cls;
+    for (const std::string& l : sys.log()) {
+        if (l.size() > 3 && l[0] == ' ' && l[1] == ' ' && l[2] == 'a')
+            ++cls[trigger_action_class(std::atoi(l.c_str() + 3))];
+    }
+    int explored = 0;
+    for (int y = 0; y < world.grid_h(); ++y)
+        for (int x = 0; x < world.grid_w(); ++x)
+            if (world.explored_at(0, x, y)) ++explored;
+    {
+        char b[320];
+        std::snprintf(b, sizeof b,
+                      "[trig] end frame=%ld fired=%d logic=%d house=%d variable=%d outcome=%d "
+                      "actions engine=%d host=%d recorded=%d unimplemented=%d explored0=%d "
+                      "units=%d buildings=%d",
+                      sys.frame(), sys.fired_count(), sys.logic_fired(), sys.house_fired(),
+                      sys.variable_fired(), sys.outcome(), cls["engine"], cls["host"],
+                      cls["recorded"], cls["unimplemented"], explored, (int)world.units().size(),
+                      (int)world.buildings().size());
+        r.witness.emplace_back(b);
+    }
+    uint64_t h = world_hash(world);
+    h = fnv_mix(h, sys.state_hash());
+    h = fnv_mix(h, (uint64_t)explored);
+    r.hash = h;
+    {
+        char b[80];
+        std::snprintf(b, sizeof b, "[trig] trigger_hash=%016llx", (unsigned long long)h);
+        r.witness.emplace_back(b);
+    }
+    // Wedge guards: the gate can never pass vacuously [spec §6].
+    if (sys.logic_fired() < 1)    { r.ok = false; r.witness.emplace_back("[trig] WEDGE: no logic-loop fire"); }
+    if (sys.variable_fired() < 1) { r.ok = false; r.witness.emplace_back("[trig] WEDGE: no variable-driven fire"); }
+    if (sys.house_fired() < 1)    { r.ok = false; r.witness.emplace_back("[trig] WEDGE: no house-loop fire"); }
+    if (nb < 1)                   { r.ok = false; r.witness.emplace_back("[trig] WEDGE: no map structure placed"); }
+    render_frame();
+    if (render) capture_png(ren, end_png, W, H);
+    return r;
+}
+
+// --demo-triggers: the P9 Map-triggers gate (20th permanent byte-identity gate).
+// The DEFAULT gate map (sov07tmd.map, YR Soviet mission 7 -- the map every
+// gate already loads) with its OWN [Triggers]/[Events]/[Actions]/[Tags] run by
+// MapTriggerSystem for kTriggerFrames. Rendered (hidden window + screenshots)
+// then headless from a FRESH World; byte-compares the witness (= the full
+// trigger log) + trigger_hash. NO hardcoded hash literal -- the controller
+// pins the observed value in the README gate table.
+int run_demo_triggers() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_triggers_start.png";
+    const std::string end_png = scratch + "demo_triggers_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);   // DEFAULT selection: sov07tmd.map
+    // The same map entry, re-read as INI for its trigger sections (gate-local;
+    // load_assets/MapFile are untouched).
+    ra2assets::Ini map_ini = ra2assets::Ini::parse("");
+    {
+        const MapSelection sel;
+        MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+        const MixEntry* me = maps.find(sel.id);
+        if (!me) {
+            std::cerr << "[demo-triggers] FAILED: gate map entry not found\n";
+            return 1;
+        }
+        auto raw = maps.read(*me);
+        map_ini = ra2assets::Ini::parse(std::string(raw.begin(), raw.end()));
+    }
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok) {
+        std::cerr << "[demo-triggers] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    UnitRoster ur_player = load_unit_roster(dir, ra2, ua, rules, art);
+    UnitRoster ur_soviet = load_soviet_unit_roster(dir, ra2, ua, rules, art);
+    std::vector<const VehicleAssets*> vlist;
+    for (const VehicleAssets& v : ur_player.vehicles) vlist.push_back(&v);
+    for (const VehicleAssets& v : ur_soviet.vehicles) vlist.push_back(&v);
+
+    DemoTriggersResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-triggers)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            ra2engine::Camera cam = centered_camera(a.map, W, H);
+            r1 = simulate_triggers(a, ua, ba, map_ini, rules_ini, ur_player, ur_soviet, vlist,
+                                   /*render=*/true, ren, &tc, &cam, W, H, start_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+    const DemoTriggersResult r2 =
+        simulate_triggers(a, ua, ba, map_ini, rules_ini, ur_player, ur_soviet, vlist,
+                          /*render=*/false, nullptr, nullptr, nullptr, W, H, "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    std::cerr << "[demo-triggers] run1 lines=" << r1.witness.size()
+              << " run2 lines=" << r2.witness.size() << " ok(r1/r2)=" << (r1.ok ? "Y" : "n")
+              << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& s : r2.witness) std::cout << s << "\n";
+    char th[64];
+    std::snprintf(th, sizeof th, "%016llx", (unsigned long long)r2.hash);
+    std::cout << "[demo-triggers] deterministic=" << (identical ? "yes" : "no")
+              << " lines=" << r2.witness.size() << " trigger_hash=" << th << "\n";
+    if (!identical || !r1.ok || !r2.ok) return 1;
+    return 0;
+}
+
+
 // --demo-roster: the broadened-roster content gate (18th permanent byte-identity
 // gate). Mirrors run_demo_skirmish: runs simulate_roster rendered (hidden window
 // + start/end screenshots) then headless from a FRESH World, and byte-compares
@@ -12331,6 +12873,8 @@ int main(int argc, char** argv) {
 
             } else if (arg == "--demo-projectile") {
                 return run_demo_projectile();
+            } else if (arg == "--demo-triggers") {
+                return run_demo_triggers();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
