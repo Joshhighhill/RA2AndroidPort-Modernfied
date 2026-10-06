@@ -2438,6 +2438,10 @@ Headless/verification CLI modes (render one or more frames and exit):
   exit non-zero unless every new type resolves AND spawns AND the Allied full
   base placed >1 building AND a spot stat matches rules (APOC strength 800,
   ATESLA a building).
+- `ra2engine.exe --demo-abilities` is the P4 Unit special abilities gate: eight
+  fresh-World stages (drone x2, desolator, legionnaire, C4, Ivan, terrorist, IFV),
+  run rendered + headless and byte-compared, wedge-guarded on every recovered
+  number in `docs/re/abilities.md`.
 - `ra2engine.exe --demo-repair` is the Building Repair & Sell integration gate.
   On a real Allied base it drives the wrench and measures, frame by frame, the
   14-frame global cadence, the +8 HP heal and the exact integer `stepCost`
@@ -2493,6 +2497,48 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-projectile` | `projectile_hash=1ff09b8a3d3eecdd` | `deterministic=yes`; P2 Projectile flight: firewall (instant path when not enabled, `events=0`), Rhino arc (`speed=90` == `ftol(sqrt(d*6*1.2))`, 13 frames, apex 175, damage only at detonation), miss (target walked off -> `victim=-1 damage=0`), Kirov bomb (`speed=1` from `z=610`, 37 frames, both splash targets hit), Flak Track scatter (5/5 shots scattered by the dedicated RNG) (`docs/re/projectile.md` §12) |
 | `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=1f02e4c09dba0964` | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
+| `--demo-abilities` | `abilities_hash=e510c5b98c089804` | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
+
+## Unit Special Abilities (batch 1)
+
+Phase P4 gives the specialists their identity, calibrated from the binary
+(`docs/re/abilities.md`): **Terror Drone** -- the shot is an infection; the
+drone rides the victim off-map, ticking every `ROF=60` frames (first tick
+immediate), `50 x Verses` to vehicles, an instant kill (damage = Health,
+defenses ignored) to infantry; it pops back out when the host dies, unless the
+host was suppressed (`2*damage - SuppressionThreshold` frames). **Desolator**
+-- `D` deploys; `RadEruptionWeapon` fires at its own cell every 60 frames and
+creates/`Add`s a RadSite (spread = `ftol(CellSpread)` = 10 cells, linear
+falloff, level 500 accumulating, cells decay `amt/LevelSteps` every 90 frames);
+foot units take `ftol(ftol(min(lvl,500))*0.2) x [RadSite] Verses` on the
+absolute 16-frame phase. **Chrono Legionnaire** -- every move is a teleport
+(immediate relocation, then frozen `max(dist/48, 16)` frames); its beam erases
+(`Strength*10` budget minus the attached legionnaires' Damage per frame; a GI in
+157 frames; removed, not killed). **Tanya / Navy SEAL** -- ordered onto a
+building they walk to Sapper range and plant C4 (`ftol(C4Delay*900)` = 27
+frames, then a lethal ignore-defense blast); a C4'd building cannot be sold (the
+`can_be_sold` C4 hook is now live). **Crazy Ivan** -- plants one bomb per
+target, detonating on `plant+451` or when the target dies (`IvanDamage=450`,
+`IvanWH` 1.5 cells, all houses, buildings too); his own death does nothing.
+**Terrorist** -- a `Suicide` weapon: firing kills him and his `TerrorBomb`
+death weapon blasts (also on any death); no passive acquire, no retaliation.
+**IFV** -- `Gunner=yes`: the weapon is `Weapon[IFVMode of the passenger]`
+(GI -> `CRM60`, Desolator -> `CRRadBeamWeapon`, Ivan -> suicide `CRNuke`, CLEG ->
+erasing `CRNeutronRifle`), back to `HoverMissile` when empty.
+
+**Firewall:** profiles reach units only through
+`World::register_ability_profile` (bound by image), called by `GameScene` and
+`--demo-abilities` only (never `launch_skirmish`); `step_abilities` returns at
+once otherwise. Every edit to an existing pass is a guard on a default-inert
+field (`frozen`, `abil.fire_kind`, `abil.c4`, `abil.teleporter`,
+`abil.no_passive_acquire/no_retaliate`, `Building::c4_applied`). Ability shots
+are intercepted before the P2 projectile launch (abilities are instant).
+
+**Cut / carried forward:** drone removal by Service Depot / IFV repair (no unit
+repair system), the squid, C4 on ships, bombs on friendlies, mind control,
+radiation lighting, effect anims/sounds, the erase-target damage immunity and
+the engine-wide min-1 damage clamp (`abilities.md` section H). Distances are
+2-D. Suppression is measured per frame.
 
 ## Android (arm64-v8a) cross-compile
 
