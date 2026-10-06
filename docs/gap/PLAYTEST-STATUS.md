@@ -56,6 +56,30 @@ Determinism: every script was run twice on the same tree with identical
 every 15 frames). No `play_hash` is pinned yet — a hash is pinned only once its
 script passes (ROADMAP-playable §G rule 6).
 
+### Deltas on gF-mcv-endgame (agent F, over master fddbcb3)
+
+Run one script at a time on the branch head; F's rows only.
+
+| Script / step | Before (fddbcb3) | gF | G-ID |
+|---|---|---|---|
+| sk-a L27 `own_on_screen > 0` (camera opens on the player's MCV) | FAIL | PASS | NEW-1 |
+| sk-a L28-L29 start with an AMCV, no ConYard | FAIL | PASS | G-23 |
+| sk-a L33-L35 select AMCV, `D`, ConYard built | FAIL | PASS | G-23 |
+| sk-a L106 AMCV in the vehicle tab | FAIL | FAIL — **script expectation**: rules `[AMCV] Prerequisite=GAWEAP,GADEPT`; sk-a never builds a Service Depot, so the original would not offer the MCV either | G-22 |
+| sk-end L13-L16 LOST -> result -> main menu (the script now waits for `scene == result` after the LOST flag: the result follows BorrowedTime) | FAIL | **PASS** (sk-end overall PASS) | G-02 |
+| sk-a-lose L21/L23 session ends LOST | FAIL | FAIL — blocked by L19/L20 (the AI never attacks, G-60 owner D); sk-end proves the end-of-game path | G-02 |
+| m-all01 L36-L37 TechLevel 3: no Weather Device / Battle Lab | FAIL | PASS (m-all01 overall PASS) | G-15 |
+| m-all01 L44 / new `m-lose.play`: `cheat kill_house 0` in ALL01 ends LOST through the map's own chain (event 11 DestroyedAll -> enables "Mission Failed" -> action 2) and reaches the result screen | FAIL / n/a | PASS | NEW-2 |
+| m-sov01 L33-L44 SMCV deploys, Nuclear Silo hidden, NAPOWR built from the ConYard | FAIL | PASS (m-sov01 overall PASS) | G-23, G-15 |
+| shell-smoke L98-L101 Abort Mission asks (`confirm_open`, `confirm:yes`) | FAIL | PASS | G-14 |
+| shell-smoke L106-L109 Exit Game asks, no quit | FAIL | PASS | G-14 |
+| shell-smoke L96 Esc mid-placement | FAIL | FAIL (owner B, G-01) | G-01 |
+
+`play_hash` on gF: sk-end `386459805758f156`, m-all01 `be355a3fce817def`,
+m-sov01 `bd5cdc9b783ded02`, m-lose `50f275c85f9b0328`. shell-smoke now
+unfolds the starting AMCV before its placement steps (the skirmish no longer
+ships a pre-built base).
+
 ## Failures by script
 
 ### sk-a — Allied vs 1 Soviet AI
