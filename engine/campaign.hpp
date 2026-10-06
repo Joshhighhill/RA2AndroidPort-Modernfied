@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include "ra2assets/ini.hpp"
+#include "script_actions.hpp"  // the shared 0..64 ScriptType action table [G-61]
 
 namespace ra2engine {
 
@@ -164,19 +165,7 @@ struct MapTeamData {
 };
 MapTeamData parse_map_teams(const ra2assets::Ini& map);
 
-// Script action numbers (CONFIRMED anchors / ModEnc names, RE §7).
-enum : int {
-    kSaAttack = 0, kSaAttackWaypoint = 1, kSaMoveWaypoint = 3, kSaMoveCell = 4,
-    kSaGuard = 5, kSaJump = 6, kSaWin = 7, kSaUnload = 8, kSaDeploy = 9,
-    kSaDoMission = 11, kSaSetGlobal = 12, kSaLoad = 14, kSaPatrol = 16,
-    kSaPanic = 19, kSaChangeHouse = 20, kSaScatter = 21, kSaLose = 23,
-    kSaDeleteMembers = 37, kSaClearGlobal = 38, kSaSetLocal = 39, kSaClearLocal = 40,
-    kSaAttackEnemyBuilding = 46, kSaMoveEnemyBuilding = 47, kSaSuccess = 49,
-    kSaGatherEnemy = 53, kSaGatherBase = 54,
-};
-// Mission numbers used by action 11 / INI missions (YRpp Mission enum).
-enum : int { kMissionSleep = 0, kMissionAttack = 1, kMissionGuard = 5, kMissionAreaGuard = 11,
-             kMissionHunt = 15 };
+// Script action numbers + mission numbers: the ONE shared table [G-61/G-76].
 int mission_from_name(const std::string& name);   // "Guard" -> 5, "Hunt" -> 15 ...
 
 // What the caller tells the interpreter each tick.
@@ -205,8 +194,9 @@ struct MapTeamState {
     long wait_until = -1;    // guard timer end frame
     bool done = false;
 };
-// RE §7: Guard area arg = 1/10 min -> arg*90 frames [same RE-FALLBACK unit as ai-team.md].
-constexpr int kMapGuardFramesPerArg = 90;
+// Guard area: arg x 15 frames [RE: c14.log idx 5; script_actions.hpp] (was the
+// RA1-lineage 1/10-minute x90 assumption).
+constexpr int kMapGuardFramesPerArg = kScriptGuardFramesPerArg;
 // Advance one tick. A move action completes when view.arrived; an attack when
 // the members went idle or no target exists; guard when its timer ran out;
 // instant actions (vars, win, lose, change house, scatter, jump) complete in

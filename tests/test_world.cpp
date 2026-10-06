@@ -2380,6 +2380,8 @@ TEST_CASE("World: a trigger fires, creates its team via the trigger path, and th
     // AI base (house 1) + the PLAYER conyard (house 0) that makes the
     // enemy-owns condition TRUE, well outside auto-acquire reach.
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
     // One IDLE house-1 combat unit so recruit-idle fills TT2 instantly.
     ra2engine::UnitCombat uc;
@@ -2473,6 +2475,8 @@ TEST_CASE("World: a Difficult AI consults the HARD enable slot, not Easy [RE-GAT
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
     // One IDLE house-1 unit so the fired team fills instantly and runs to disband.
     ra2engine::UnitCombat uc;
@@ -2512,6 +2516,8 @@ TEST_CASE("World: a trigger whose team is WIPED before it completes takes the FA
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
     ra2engine::UnitCombat uc;
     uc.strength = 100; uc.image = "AITEST";
@@ -2927,6 +2933,8 @@ TEST_CASE("World: ai_fill_trigger_view excludes a carried unit from the own-unit
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);  // AI conyard
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     int tx = -1;
     REQUIRE(free_cell_east(world, c->x + 3, c->y, tx));
     world.add_combat_unit(tx, c->y, /*house=*/1, transport_stats(2, 2));  // unit 0: transport
@@ -4798,4 +4806,37 @@ TEST_CASE("world: sell survivors spawn on the freed foundation [RE: repair-sell.
         run_sell(world, b);
         CHECK(static_cast<int>(world.units().size()) == u0);
     }
+}
+
+TEST_CASE("World: G-66 a charged AI superweapon fires at the enemy's highest-value target") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    ra2engine::AiHouseConfig cfg;
+    cfg.roster.resize(2);
+    cfg.roster[0].id = "NACNST"; cfg.roster[0].conyard = true;
+    cfg.roster[0].cost = 3000; cfg.roster[0].tech_level = 1; cfg.roster[0].strength = 1000;
+    cfg.roster[1].id = "GAPOWR"; cfg.roster[1].cost = 800; cfg.roster[1].tech_level = 1;
+    cfg.roster[1].strength = 750; cfg.roster[1].power = 200;
+    cfg.buildup_totals = {0.0, 0.0};
+    cfg.team.building_class = {0, ra2engine::kAiBldPower};
+    cfg.start_credits = 0;
+    // AI house 1 ConYard; enemy house 0: a power plant (value 100) and a ConYard
+    // (value 100 too) -- ties broken by the seeded draw; a lone unit scores 2.
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    const int pw = world.add_building(1, c->x + 12, c->y, 1, 1, /*house=*/0, 750, 0, 0.0, true);
+    world.enable_ai_house(1, cfg);
+    std::array<int, 11> verses; verses.fill(100);
+    world.grant_superweapon(1, ra2engine::SuperweaponType::Nuke, 2.0, 600, 3.0, 0.02, verses);
+    const int hp0 = world.buildings()[pw].hp;
+    bool fired = false;
+    for (int i = 0; i < 400 && !fired; ++i) {
+        const bool ready = world.sw_ready(1);
+        world.step(1.0 / 15.0);
+        if (ready && !world.sw_ready(1)) fired = true;
+    }
+    CHECK(fired);
+    CHECK(world.buildings()[pw].hp < hp0);   // the nuke landed on the power plant
 }

@@ -1,0 +1,157 @@
+// ============================================================================
+// [G-60 / G-62 / G-64] The REAL-PLAY skirmish AI: every AI slot gets the full
+// three-layer brain (AI-1 base + AI-2 teams + AI-3 triggers) with a
+// side-correct building catalog, unit roster, factories, trigger side and
+// country. Included by main.cpp after make_ai_team_config.
+//
+// Regression origin: commit f77e68e (Scene framework) dropped the aimd.ini
+// load and `acfg.team = make_ai_team_config(...)` from the interactive path;
+// since then make_ai_team_config had only the two gate callers, so
+// step_ai_teams skipped every real AI house and the AI never trained a unit.
+// arm_skirmish_ai is called from GameScene (ctor + the load-failed restart)
+// and from the --ai-soak acceptance harness -- one code path.
+// ============================================================================
+
+// Every combat technotype the stock aimd.ini TaskForces name that this engine
+// can field on the ground (aircraft/naval/engineers/spies excluded: the AI
+// never recruits aircraft, there is no naval AI, capture is not scripted).
+// Prerequisites are FULL-parsed from rulesmd (APOC needs NATECH, V3 needs
+// NARADR, ...), so a house builds only what its base allows; each house's
+// share is filtered by Owner/RequiredHouses/ForbiddenHouses (ai_side_catalog).
+UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixFile& ra2,
+                                   const UnitAssets& ua, const Rules& rules, const Art& art) {
+    static const UnitRosterEnt kAiUnits[] = {
+        // Soviet
+        {"E2", false, "NAHAND"},   {"DOG", false, "NAHAND"},  {"FLAKT", false, "NAHAND"},
+        {"SHK", false, "NAHAND"},  {"TERROR", false, "NAHAND"}, {"DESO", false, "NAHAND"},
+        {"IVAN", false, "NAHAND"}, {"HTNK", true, "NAWEAP"},  {"HTK", true, "NAWEAP"},
+        {"APOC", true, "NAWEAP"},  {"V3", true, "NAWEAP"},    {"DRON", true, "NAWEAP"},
+        {"TTNK", true, "NAWEAP"},  {"DTRUCK", true, "NAWEAP"},
+        // Allied
+        {"E1", false, "GAPILE"},   {"GGI", false, "GAPILE"},  {"ADOG", false, "GAPILE"},
+        {"SNIPE", false, "GAPILE"},{"TANY", false, "GAPILE"}, {"CLEG", false, "GAPILE"},
+        {"GHOST", false, "GAPILE"},{"MTNK", true, "GAWEAP"},  {"FV", true, "GAWEAP"},
+        {"SREF", true, "GAWEAP"},  {"MGTK", true, "GAWEAP"},  {"TNKD", true, "GAWEAP"},
+        // [G-68] the miners (IQ Harvester replacement)
+        {"HARV", true, "NAWEAP"},  {"CMIN", true, "GAWEAP"},
+    };
+    UnitRoster ur = load_unit_roster_table(dir, ra2, ua, rules, art, kAiUnits,
+                                           sizeof(kAiUnits) / sizeof(kAiUnits[0]), /*full_parse=*/true);
+    for (ra2engine::UnitTypeDef& d : ur.defs) {   // same resolution as rp_load_roster
+        d.harvester = rules.harvester(d.id);
+        if (d.harvester) {
+            d.storage = rules.storage(d.id);
+            d.chrono_miner = d.id == "CMIN";
+        }
+    }
+    return ur;
+}
+
+// aimd.ini lives in ra2md.mix/localmd.mix next to the other INIs. A missing
+// file degrades to zero teams (logged), never a crash.
+ra2assets::Ini load_aimd_or_empty(const std::string& dir) {
+    try {
+        return load_ini_from_ra2md(dir, "aimd.ini");
+    } catch (const std::exception& ex) {
+        std::cerr << "[ai-team] aimd.ini unavailable (" << ex.what() << ")\n";
+        return ra2assets::Ini::parse("");
+    }
+}
+
+// [G-61] rulesmd [BuildingTypes] index -> building roster index (actions
+// 46/47/58), and the quarry class bits (6 factories / 7 base defenses /
+// 9 power / 11 tech).
+void fill_ai_building_maps(ra2engine::AiTeamConfig& tc, const BuildingAssets& ba,
+                           const Rules& rules, const ra2assets::Ini& rules_ini) {
+    tc.building_type_roster.clear();
+    if (rules_ini.has("BuildingTypes"))
+        for (const auto& kv : rules_ini.section("BuildingTypes")) {
+            const std::vector<std::string> t = aiside::csv_tokens(kv.second);
+            tc.building_type_roster.push_back(t.empty() ? -1 : roster_index(ba, t[0]));
+        }
+    tc.building_class.assign(ba.roster.size(), 0);
+    for (std::size_t i = 0; i < ba.roster.size(); ++i) {
+        const std::string& id = ba.roster[i].id;
+        std::uint8_t bits = 0;
+        if (!rules.section_string(id, "Factory", "").empty()) bits |= ra2engine::kAiBldFactory;
+        if (rules.section_flag(id, "IsBaseDefense", false)) bits |= ra2engine::kAiBldDefense;
+        if (ba.roster[i].power > 0) bits |= ra2engine::kAiBldPower;
+        // [RE-FALLBACK] "tech building" = an engineer-capturable neutral
+        // structure (NeedsEngineer=yes: oil derricks, labs, ...).
+        if (rules.section_flag(id, "NeedsEngineer", false)) bits |= ra2engine::kAiBldTech;
+        tc.building_class[i] = bits;
+    }
+}
+
+// The full real-play AI config for one slot.
+ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, double start_cash,
+                                             const BuildingAssets& ba, const Rules& rules,
+                                             const ra2assets::Ini& rules_ini,
+                                             const UnitRoster& ur_ai, const ra2assets::Ini& aimd,
+                                             int anchor_x, int anchor_y,
+                                             const ra2assets::MapFile* map) {
+    const std::string country = aiside::house_country(s.side, s.country, &rules);
+    ra2engine::AiHouseConfig acfg =
+        make_ai_config(ba, rules, s.diff, start_cash, s.side, country);
+    // This house's share of the AI roster (country/side ownership).
+    UnitRoster mine;
+    for (const ra2engine::UnitTypeDef& d : ur_ai.defs)
+        if (aiside::owned_by(rules, d.id, s.side, country)) mine.defs.push_back(d);
+    acfg.team = make_ai_team_config(ba, mine, rules, aimd, s.diff, anchor_x, anchor_y,
+                                    /*enable_triggers=*/true, map);
+    // Side-correct factories / trigger side / country [G-64].
+    auto id_of = [&](int t) -> const char* {
+        return (t >= 0 && t < (int)ba.roster.size()) ? ba.roster[t].id.c_str() : "";
+    };
+    acfg.team.inf_factory_types = factory_types_for(ba, id_of(acfg.catalog.barracks));
+    acfg.team.veh_factory_types = factory_types_for(ba, id_of(acfg.catalog.war_factory));
+    acfg.team.trigger_side = s.side == ra2engine::World::Side::Soviet ? 2 : 1;  // [ai-trigger.md §5]
+    acfg.team.house_name = country;
+    fill_ai_building_maps(acfg.team, ba, rules, rules_ini);
+    {   // [G-68] HarvestersPerRefinery=2,2,1 ;h,m,e at house+0x184 = 2 - lobby
+        const std::vector<std::string> v =
+            aiside::csv_tokens(rules.section_string("General", "HarvestersPerRefinery", ""));
+        const int c = ra2engine::difficulty_class_index(s.diff);
+        acfg.team.harvesters_per_refinery = c < (int)v.size() ? std::atoi(v[(std::size_t)c].c_str()) : 1;
+    }
+    std::cerr << "[ai] slot side=" << (s.side == ra2engine::World::Side::Soviet ? "Soviet" : "Allied")
+              << " country=" << country << " diff=" << (int)s.diff
+              << " roster=" << acfg.team.unit_roster.size()
+              << " teams=" << acfg.team.aimd.teams.size()
+              << " triggers=" << acfg.team.aimd.triggers.size()
+              << " conyard=" << id_of(acfg.catalog.conyard)
+              << " barracks=" << id_of(acfg.catalog.barracks) << "\n";
+    return acfg;
+}
+
+// Arm every AI slot of a freshly launched skirmish World with the full brain.
+// Overwrites the AI-1-only config launch_skirmish installed (same start cash,
+// same tick 0), so it must run before the first World::step.
+void arm_skirmish_ai(ra2engine::World& world, const ra2engine::SkirmishConfig& cfg,
+                     const BuildingAssets& ba, const Rules& rules,
+                     const ra2assets::Ini& rules_ini, const UnitRoster& ur_ai,
+                     const ra2assets::Ini& aimd, const ra2assets::MapFile* map,
+                     const UnitAssets& ua) {
+    if (!ba.ok) return;
+    // Waypoint-ring anchor: the first non-AI combatant's base (the human),
+    // else the grid centre.
+    int ax = world.grid_w() / 2, ay = world.grid_h() / 2;
+    for (const ra2engine::Building& b : world.buildings()) {
+        const int h = b.house;
+        if (b.alive && h >= 0 && h < (int)cfg.slots.size() && cfg.slots[h].combatant &&
+            !cfg.slots[h].is_ai) { ax = b.cx; ay = b.cy; break; }
+    }
+    for (int i = 0; i < (int)cfg.slots.size(); ++i) {
+        const ra2engine::SkirmishSlot& s = cfg.slots[i];
+        if (!s.is_ai || !s.combatant) continue;
+        ra2engine::AiHouseConfig acfg = make_ai_slot_config(
+            s, cfg.starting_cash, ba, rules, rules_ini, ur_ai, aimd, ax, ay, map);
+        // Register the AI infantry anims so launched infantry animate.
+        for (const ra2engine::UnitTypeDef& d : acfg.team.unit_roster)
+            if (!d.is_vehicle)
+                world.set_anim(d.combat.image, ua.anims.count(d.combat.image)
+                                                   ? ua.anims.at(d.combat.image)
+                                                   : ra2engine::default_anim());
+        world.enable_ai_house(i, std::move(acfg));
+    }
+}

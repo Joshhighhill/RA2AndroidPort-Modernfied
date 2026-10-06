@@ -57,7 +57,7 @@ place auto
 until 120 built(0,GAPOWR) == 1
 assert power_out > 0
 # Esc with nothing armed must not end the session; it opens the options menu,
-# and Esc again resumes (FUN_004AAC40 chain -> dialog 0xB5).
+# and Esc again resumes ([Hotkey] Options=27 -> FUN_00646AE0 -> dialog 0xB5).
 key esc                                       @G-01:B
 wait 2
 assert quits == 0                             @G-01:B
@@ -103,6 +103,14 @@ place auto
 until 300 built(0,GAWEAP) == 1
 click tab:3
 assert cameo(CMIN) == 1                       @G-22:A
+# rulesmd [AMCV] Prerequisite=GAWEAP,GADEPT: the MCV needs a Service Depot.
+click tab:0
+click cameo:GADEPT                              @G-22:A
+until 1800 queue_ready(structure) == 1        @G-22:A
+click cameo:GADEPT                              @G-22:A
+place auto                                    @G-22:A
+until 300 built(0,GADEPT) == 1                  @G-22:A
+click tab:3
 assert cameo(AMCV) == 1                       @G-22:A
 click cameo:MTNK
 until 1500 units(0,MTNK) >= 1

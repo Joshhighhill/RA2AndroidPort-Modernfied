@@ -407,6 +407,14 @@ inline void gf_next_country(const Rules& rules, ra2engine::SkirmishSlot& s) {
     s.country = k[i];
     s.side = gf_side_of_country(rules, s.country);
 }
+// Next country of the SAME side (G-17 right click), wrapping within the side.
+inline void gf_next_country_same_side(const Rules& rules, ra2engine::SkirmishSlot& s) {
+    const auto side = s.side;
+    for (int k = 0; k < (int)gf_lobby_countries().size(); ++k) {
+        gf_next_country(rules, s);
+        if (s.side == side) return;
+    }
+}
 // Display label: the country's CSF UIName ("Name:Americans").
 inline std::string gf_country_label(const ra2engine::SkirmishSlot& s) {
     const std::string c = s.country.empty() ? gf_default_country(s.side) : s.country;

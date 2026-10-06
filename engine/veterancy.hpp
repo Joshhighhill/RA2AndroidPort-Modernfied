@@ -77,13 +77,15 @@ int kill_value(int victim_cost, float victim_vet, bool allied);
 bool has_ability(float v, AbilityMask vet, AbilityMask elite, Ability a);
 
 // V5: d = ftol(fp_mult * damage); FIREPOWER -> ftol(d * VeteranCombat).
-int fire_damage(int damage, double fp_mult, bool firepower, double vet_combat);
+int fire_damage(int damage, double fp_mult, bool firepower, double vet_combat,
+                double house_fp = 1.0);   // house_fp: AssignHandicap FirePower [G-63]
 // V6: d = ftol(d / armor_mult); STRONGER -> ftol(d / VeteranArmor); max(d, 1).
 // (Applied BEFORE the warhead Verses. Callers only use it for d >= 0.)
 int receive_damage(int d, double armor_mult, bool stronger, double vet_armor);
 // V7: r = ftol(rof); ROF ability -> ftol(r * VeteranROF). (The original's
 // +Random(0,2) jitter is NOT reproduced -- spec §Scope.)
-int rof_frames(int rof, bool rof_ability, double vet_rof);
+int rof_frames(int rof, bool rof_ability, double vet_rof,
+               double house_rof = 1.0);   // house_rof: AssignHandicap ROF [G-63]
 // V8: s = ftol(speed * speed_mult); FASTER -> ftol(s * VeteranSpeed).
 int speed_value(int speed, double speed_mult, bool faster, double vet_speed);
 // V9: sight x VeteranSight only when VeteranSight != 0.0.

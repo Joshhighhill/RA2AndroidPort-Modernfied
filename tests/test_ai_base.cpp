@@ -28,14 +28,20 @@ TEST_CASE("ai_base: difficulty_mods resolves the three recovered groups") {
         g[i].build_delay = kDifficultyBuildDelayMin[i];
         g[i].build_slowdown = kDifficultyBuildSlowdown[i];
     }
+    // G-63: lobby d uses the DifficultyClass 2-d (lobby Brutal -> [Easy]).
     for (int i = 0; i < 3; ++i) {
+        const int c = 2 - i;
         const DifficultyMods m = difficulty_mods(static_cast<AiDifficulty>(i), g);
-        CHECK(m.cost_mul == doctest::Approx(kDifficultyCost[i]));
-        CHECK(m.build_time_mul == doctest::Approx(kDifficultyBuildTime[i]));
-        CHECK(m.build_delay_min == doctest::Approx(kDifficultyBuildDelayMin[i]));
-        CHECK(m.build_slowdown == kDifficultyBuildSlowdown[i]);
+        CHECK(m.cost_mul == doctest::Approx(kDifficultyCost[c]));
+        CHECK(m.build_time_mul == doctest::Approx(kDifficultyBuildTime[c]));
+        CHECK(m.build_delay_min == doctest::Approx(kDifficultyBuildDelayMin[c]));
+        CHECK(m.build_slowdown == kDifficultyBuildSlowdown[c]);
         CHECK(m.defense_target == kAiDefenseTarget[i]);
     }
+    // Brutal gets the [Easy] bonuses: faster builds, no BuildSlowdown.
+    CHECK(difficulty_mods(AiDifficulty::Difficult, g).build_time_mul == doctest::Approx(0.8));
+    CHECK_FALSE(difficulty_mods(AiDifficulty::Difficult, g).build_slowdown);
+    CHECK(difficulty_mods(AiDifficulty::Easy, g).build_delay_min == doctest::Approx(0.1));
     // The REAL recovered per-difficulty values [RE: ai-base.md §4 — Easy/
     // Normal/Difficult: Cost 1.0/1.0/1.0, BuildTime 0.8/1.0/1.0,
     // BuildDelay(min) 0.03/0.03/0.1, BuildSlowdown no/yes/yes]:

@@ -15,13 +15,21 @@ std::uint32_t ai_rand(std::uint32_t& s) {
 }
 
 DifficultyMods difficulty_mods(AiDifficulty d, const DifficultyGroupRaw (&groups)[3]) {
+    // `d` is the LOBBY choice; the DifficultyClass is groups[2 - d] (the
+    // hardest AI runs on [Easy]) [G-63; RE: FUN_004f6dd0, ai-base.md §4].
     const int i = static_cast<int>(d);
+    const int c = difficulty_class_index(d);
     DifficultyMods m;
-    m.cost_mul = groups[i].cost;             // [RE: ai-base.md §4]
-    m.build_time_mul = groups[i].build_time; // [RE: ai-base.md §4]
-    m.build_delay_min = groups[i].build_delay;   // minutes [RE: ai-base.md §4]
-    m.build_slowdown = groups[i].build_slowdown; // [RE: ai-base.md §4]
-    m.defense_target = kAiDefenseTarget[i];  // [RE: ai-base.md §2; RE-FALLBACK index binding]
+    m.cost_mul = groups[c].cost;
+    m.build_time_mul = groups[c].build_time;
+    m.build_delay_min = groups[c].build_delay;   // minutes
+    m.build_slowdown = groups[c].build_slowdown;
+    m.firepower_mul = groups[c].firepower;
+    m.rof_mul = groups[c].rof;
+    m.repair_delay_min = groups[c].repair_delay;
+    // kAiDefenseTarget is already stored lobby-ordered ({6,22,25} = the file's
+    // "25,22,6 ;h,m,e" reversed), so it keeps the lobby index.
+    m.defense_target = kAiDefenseTarget[i];
     return m;
 }
 
@@ -179,6 +187,10 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
             add_cand(cat.defenses[i % (int)cat.defenses.size()]);
     if (cat.wall >= 0 && !cat.defenses.empty())
         for (int i = 0; i < defs; ++i) add_cand(cat.wall);
+    // [G-66] tech centre + superweapon structures at the tail [RE-FALLBACK:
+    // tail position; the topo loop still orders them behind their prereqs].
+    add_cand(cat.tech);
+    for (int t : cat.superweapons) add_cand(t);
     // 5) Kahn-style topological loop [RE-GATE APPLIED: ai-base.md §2a —
     // FUN_005052d0's main loop]: emit the FIRST candidate whose prereqs are
     // already met BY THE PLAN-SO-FAR (prereqs_in_plan == the original's
