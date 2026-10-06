@@ -185,3 +185,364 @@ TEST_CASE("map_trigger: real sov07tmd.map parses [install-gated]") {
     CHECK(d.cell_tags.size() == map.section("CellTags").size());
     CHECK(d.local_names[5] == "Soviets Freed");
 }
+
+// ===========================================================================
+// Task 2 -- runtime core [RE: map-triggers.md §3/§5]
+// ===========================================================================
+namespace {
+
+// House types in these tests: 0 Americans, 1 Alliance, 2 Russians (rules),
+// 3 Player (map [Countries]). Instances: Player (3) and Russians (2).
+struct FakeHost : TriggerHost {
+    std::vector<int> houses = {3, 2};
+    int player = 3;
+    std::map<int, int> buildings, vehicles, infantry;
+    std::map<std::pair<int, int>, int> btype;
+    std::map<std::string, int> technos;    // id -> count; absent id -> -1
+    std::map<int, long> credits;
+    std::map<int, double> power;
+    std::vector<TriggerEffect> effects;
+    bool house_exists(int ht) const override {
+        for (int hh : houses) if (hh == ht) return true;
+        return false;
+    }
+    std::vector<int> house_instances() const override { return houses; }
+    int player_house_type() const override { return player; }
+    static int get(const std::map<int, int>& m, int k) {
+        auto it = m.find(k);
+        return it == m.end() ? 0 : it->second;
+    }
+    int house_buildings(int ht) const override { return get(buildings, ht); }
+    int house_vehicles(int ht) const override { return get(vehicles, ht); }
+    int house_infantry(int ht) const override { return get(infantry, ht); }
+    int house_building_type_count(int ht, int bt) const override {
+        auto it = btype.find({ht, bt});
+        return it == btype.end() ? 0 : it->second;
+    }
+    long house_credits(int ht) const override {
+        auto it = credits.find(ht);
+        return it == credits.end() ? 0 : it->second;
+    }
+    double house_power_ratio(int ht) const override {
+        auto it = power.find(ht);
+        return it == power.end() ? 1.0 : it->second;
+    }
+    int techno_count(const std::string& id) const override {
+        if (id.empty()) {
+            int n = 0;
+            for (const auto& kv : technos) n += kv.second;
+            return n;
+        }
+        auto it = technos.find(id);
+        return it == technos.end() ? -1 : it->second;
+    }
+    bool apply(const TriggerEffect& e) override {
+        effects.push_back(e);
+        return true;
+    }
+};
+
+const char* kHead = "[Countries]\n0=Player\n";
+
+// One-trigger map: tag TAG00001 (persistence p) -> trigger TRG00001 owned by
+// Player with the given events/actions INI values.
+std::string one(int persistence, const std::string& events, const std::string& actions,
+                const std::string& flags = "0,1,1,1,0") {
+    return std::string(kHead) +
+           "[Triggers]\nTRG00001=Player,<none>,One," + flags + "\n"
+           "[Events]\nTRG00001=" + events + "\n"
+           "[Actions]\nTRG00001=" + actions + "\n"
+           "[Tags]\nTAG00001=" + std::to_string(persistence) + ",T,TRG00001\n";
+}
+
+// Run `n` ticks; return the frame of the first fire of trigger `id` (-1 none).
+long first_fire(MapTriggerSystem& s, FakeHost& h, int n, const std::string& id) {
+    for (int i = 0; i < n; ++i) {
+        const std::size_t before = s.log().size();
+        s.tick(h);
+        for (std::size_t k = before; k < s.log().size(); ++k)
+            if (s.log()[k].find("fire " + id) != std::string::npos) return s.frame() - 1;
+    }
+    return -1;
+}
+
+int count_fires(const MapTriggerSystem& s, const std::string& id) {
+    int n = 0;
+    for (const std::string& l : s.log())
+        if (l.find("fire " + id) != std::string::npos) ++n;
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("map_trigger: ElapsedTime fires at exactly Value*15 frames") {
+    MapTriggerData d = parse(one(0, "1,13,0,2", "1,56,0,0,0,0,0,0,A"));
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    CHECK(first_fire(s, h, 100, "TRG00001") == 30);
+    CHECK(s.local(0));
+    // volatile: never again, trigger destroyed
+    for (int i = 0; i < 60; ++i) s.tick(h);
+    CHECK(count_fires(s, "TRG00001") == 1);
+    CHECK(s.trigger_destroyed(0));
+}
+
+TEST_CASE("map_trigger: ElapsedScenarioTime is Value <= frame/15") {
+    MapTriggerData d = parse(one(0, "1,47,0,2", "1,56,0,0,0,0,0,0,A"));
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    CHECK(first_fire(s, h, 100, "TRG00001") == 30);
+}
+
+TEST_CASE("map_trigger: AND of events; volatile fire kills the sibling chain trigger") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGAAAAA=Player,TRGBBBBB,A,0,1,1,1,0\n"
+        "TRGBBBBB=Player,<none>,B,0,1,1,1,0\n"
+        "TRGCCCCC=Player,<none>,C,0,1,1,1,0\n"
+        "[Events]\nTRGAAAAA=1,13,0,1\nTRGBBBBB=1,13,0,3\n"
+        "TRGCCCCC=2,13,0,1,36,0,4\n"              // ElapsedTime 1 AND local 4
+        "[Actions]\nTRGAAAAA=1,56,0,1,0,0,0,0,A\nTRGBBBBB=1,56,0,2,0,0,0,0,A\n"
+        "TRGCCCCC=1,56,0,3,0,0,0,0,A\n"
+        "[Tags]\nTAGAAAAA=0,chain,TRGAAAAA\nTAGCCCCC=0,and,TRGCCCCC\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    for (int i = 0; i < 100; ++i) s.tick(h);
+    CHECK(s.local(1));            // A fired at 15
+    CHECK_FALSE(s.local(2));      // B (same tag) died with the tag
+    CHECK_FALSE(s.local(3));      // C needs local 4 too
+    s.set_local(4, true);         // ...and the change re-arms C's timer
+    const long f = first_fire(s, h, 100, "TRGCCCCC");
+    CHECK(f == 100 + 15);
+    CHECK(s.local(3));
+}
+
+TEST_CASE("map_trigger: persistent tag re-arms its timer every fire") {
+    MapTriggerData d = parse(one(2, "1,13,0,1", "1,19,7,Snd,0,0,0,0,A"));
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    for (int i = 0; i <= 60; ++i) s.tick(h);   // frames 0..60
+    CHECK(count_fires(s, "TRG00001") == 4);     // 15, 30, 45, 60
+    CHECK_FALSE(s.trigger_destroyed(0));
+}
+
+TEST_CASE("map_trigger: logic-list order decides same-frame variable visibility") {
+    // SETTER (ElapsedTime 0 -> LocalSet 1) and WATCHER (LocalSet 1 -> LocalSet 2).
+    auto build = [](bool watcher_first) {
+        std::string tags = watcher_first
+            ? "[Tags]\nTAGWATCH=0,w,TRGWATCH\nTAGSETTR=0,s,TRGSETTR\n"
+            : "[Tags]\nTAGSETTR=0,s,TRGSETTR\nTAGWATCH=0,w,TRGWATCH\n";
+        return std::string(kHead) +
+            "[Triggers]\nTRGSETTR=Player,<none>,S,0,1,1,1,0\nTRGWATCH=Player,<none>,W,0,1,1,1,0\n"
+            "[Events]\nTRGSETTR=1,13,0,0\nTRGWATCH=1,36,0,1\n"
+            "[Actions]\nTRGSETTR=1,56,0,1,0,0,0,0,A\nTRGWATCH=1,56,0,2,0,0,0,0,A\n" + tags;
+    };
+    {
+        MapTriggerData d = parse(build(false));
+        MapTriggerSystem s(d, 1, 1);
+        FakeHost h;
+        s.start(h);
+        CHECK(first_fire(s, h, 5, "TRGWATCH") == 0);   // later in the list: same frame
+    }
+    {
+        MapTriggerData d = parse(build(true));
+        MapTriggerSystem s(d, 1, 1);
+        FakeHost h;
+        s.start(h);
+        CHECK(first_fire(s, h, 5, "TRGWATCH") == 1);   // earlier in the list: next frame
+    }
+}
+
+TEST_CASE("map_trigger: Enable resets timers and honours difficulty") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGOFF01=Player,<none>,off,1,1,1,1,0\n"      // disabled, all difficulties
+        "TRGOFF02=Player,<none>,offN,1,1,0,1,0\n"     // disabled, NOT Normal
+        "TRGON001=Player,<none>,enabler,0,1,1,1,0\n"
+        "[Events]\nTRGOFF01=1,13,0,1\nTRGOFF02=1,13,0,1\nTRGON001=1,13,0,2\n"
+        "[Actions]\nTRGOFF01=1,56,0,1,0,0,0,0,A\nTRGOFF02=1,56,0,2,0,0,0,0,A\n"
+        "TRGON001=2,53,2,TRGOFF01,0,0,0,0,A,53,2,TRGOFF02,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGOFF01\nTAG00002=0,b,TRGOFF02\nTAG00003=0,c,TRGON001\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, /*Normal*/ 1, 1);
+    FakeHost h;
+    s.start(h);
+    CHECK_FALSE(s.trigger_enabled(d.find_trigger("TRGOFF01")));
+    // enabled at frame 30 -> timer restarts -> fires at 45 (not 15)
+    CHECK(first_fire(s, h, 100, "TRGOFF01") == 45);
+    CHECK_FALSE(s.local(2));     // Normal flag clear -> enable refused
+}
+
+TEST_CASE("map_trigger: Disable, DestroyTrigger and ForceTrigger") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGTARG1=Player,<none>,t1,0,1,1,1,0\n"
+        "TRGTARG2=Player,<none>,t2,0,1,1,1,0\n"
+        "TRGTARG3=Player,<none>,t3,0,1,1,1,0\n"
+        "TRGCTRL1=Player,<none>,ctl,0,1,1,1,0\n"
+        "[Events]\nTRGTARG1=1,13,0,2\nTRGTARG2=1,13,0,2\nTRGTARG3=1,36,0,9\nTRGCTRL1=1,13,0,1\n"
+        "[Actions]\nTRGTARG1=1,56,0,1,0,0,0,0,A\nTRGTARG2=1,56,0,2,0,0,0,0,A\n"
+        "TRGTARG3=1,56,0,3,0,0,0,0,A\n"
+        "TRGCTRL1=3,54,2,TRGTARG1,0,0,0,0,A,12,2,TRGTARG2,0,0,0,0,A,22,2,TRGTARG3,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGTARG1\nTAG00002=0,b,TRGTARG2\nTAG00003=0,c,TRGTARG3\n"
+        "TAG00004=0,d,TRGCTRL1\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    for (int i = 0; i < 100; ++i) s.tick(h);
+    CHECK_FALSE(s.local(1));   // disabled before its 30-frame timer
+    CHECK_FALSE(s.local(2));   // destroyed
+    CHECK(s.local(3));         // forced: actions ran although local 9 is clear
+    CHECK_FALSE(s.trigger_destroyed(d.find_trigger("TRGTARG3")));   // force != fire
+}
+
+TEST_CASE("map_trigger: mission timer actions + MissionTimerExpired is a one-frame event") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\nTRGSET01=Player,<none>,set,0,1,1,1,0\nTRGEXP01=Player,<none>,exp,0,1,1,1,0\n"
+        "[Events]\nTRGSET01=1,13,0,0\nTRGEXP01=1,14,0,0\n"
+        "[Actions]\nTRGSET01=1,27,0,2,0,0,0,0,A\nTRGEXP01=1,56,0,1,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGSET01\nTAG00002=0,b,TRGEXP01\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    s.tick(h);   // frame 0: TimerSet 2 -> {0, 30}
+    CHECK(s.mission_timer_start() == 0);
+    CHECK(s.mission_timer_left() == 30);
+    CHECK(first_fire(s, h, 100, "TRGEXP01") == 30);
+    CHECK(s.mission_timer_start() == -1);   // stopped after the logic loop
+}
+
+TEST_CASE("map_trigger: mission timer Stop/Start/Extend/Shorten arithmetic") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\nTRGA0001=Player,<none>,a,0,1,1,1,0\nTRGB0001=Player,<none>,b,0,1,1,1,0\n"
+        "TRGC0001=Player,<none>,c,0,1,1,1,0\n"
+        "[Events]\nTRGA0001=1,13,0,0\nTRGB0001=1,13,0,1\nTRGC0001=1,13,0,2\n"
+        // f0: Set 10 (150); f15: Stop (left 135) ; f30: Extend 2 (135+30=165 from 30) + Shorten 1 (150)
+        "[Actions]\nTRGA0001=1,27,0,10,0,0,0,0,A\nTRGB0001=1,24,0,0,0,0,0,0,A\n"
+        "TRGC0001=3,25,0,2,0,0,0,0,A,26,0,1,0,0,0,0,A,23,0,0,0,0,0,0,A\n"
+        "[Tags]\nTAG0000A=0,a,TRGA0001\nTAG0000B=0,b,TRGB0001\nTAG0000C=0,c,TRGC0001\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    for (int i = 0; i <= 15; ++i) s.tick(h);
+    CHECK(s.mission_timer_start() == -1);
+    CHECK(s.mission_timer_left() == 135);
+    for (int i = 16; i <= 30; ++i) s.tick(h);
+    CHECK(s.mission_timer_start() == 30);
+    CHECK(s.mission_timer_left() == 150);
+}
+
+TEST_CASE("map_trigger: house loop - every 8th frame, last tag first, AnyEvent") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGHOUS1=Player,<none>,h1,0,1,1,1,0\nTRGHOUS2=Player,<none>,h2,0,1,1,1,0\n"
+        "TRGNOHSE=Alliance,<none>,nohouse,0,1,1,1,0\n"
+        "TRGBLDG1=Player,<none>,bldg,0,1,1,1,0\n"
+        "[Events]\nTRGHOUS1=1,8,0,0\nTRGHOUS2=1,8,0,0\nTRGNOHSE=1,32,0,0\nTRGBLDG1=1,32,0,1\n"
+        "[Actions]\nTRGHOUS1=1,0,0,0,0,0,0,0,A\nTRGHOUS2=1,0,0,0,0,0,0,0,A\n"
+        "TRGNOHSE=1,56,0,1,0,0,0,0,A\nTRGBLDG1=1,56,0,2,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGHOUS1\nTAG00002=0,b,TRGHOUS2\nTAG00003=0,c,TRGNOHSE\n"
+        "TAG00004=0,d,TRGBLDG1\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    s.tick(h);   // frame 0
+    int i1 = -1, i2 = -1;
+    for (int i = 0; i < (int)s.log().size(); ++i) {
+        if (s.log()[i].find("fire TRGHOUS1") != std::string::npos) i1 = i;
+        if (s.log()[i].find("fire TRGHOUS2") != std::string::npos) i2 = i;
+    }
+    // AnyEvent (8) is ALSO a logic event: both fire in the frame-0 logic loop,
+    // in list order, before the house loop ever runs.
+    REQUIRE(i1 >= 0);
+    REQUIRE(i2 >= 0);
+    CHECK(i1 < i2);
+    CHECK_FALSE(s.local(1));    // Alliance has no house instance: never listed
+    // BuildingExists: Player gains building type 1 at frame 3 -> fires at frame 8
+    for (int i = 1; i < 3; ++i) s.tick(h);
+    h.btype[{3, 1}] = 1;
+    CHECK(first_fire(s, h, 20, "TRGBLDG1") == 8);
+    CHECK(s.house_fired() == 1);
+}
+
+TEST_CASE("map_trigger: house-loop order is last tag first") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\nTRGHB001=Player,<none>,b1,0,1,1,1,0\nTRGHB002=Player,<none>,b2,0,1,1,1,0\n"
+        "[Events]\nTRGHB001=1,32,0,0\nTRGHB002=1,32,0,0\n"
+        "[Actions]\nTRGHB001=1,0,0,0,0,0,0,0,A\nTRGHB002=1,0,0,0,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGHB001\nTAG00002=0,b,TRGHB002\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    h.btype[{3, 0}] = 1;
+    s.start(h);
+    s.tick(h);
+    int i1 = -1, i2 = -1;
+    for (int i = 0; i < (int)s.log().size(); ++i) {
+        if (s.log()[i].find("fire TRGHB001") != std::string::npos) i1 = i;
+        if (s.log()[i].find("fire TRGHB002") != std::string::npos) i2 = i;
+    }
+    REQUIRE(i1 >= 0);
+    REQUIRE(i2 >= 0);
+    CHECK(i2 < i1);
+}
+
+TEST_CASE("map_trigger: Win/Lose are player-relative; first decision sticks") {
+    {
+        MapTriggerData d = parse(one(0, "1,13,0,0", "1,1,0,3,0,0,0,0,A"));
+        MapTriggerSystem s(d, 1, 1);
+        FakeHost h;
+        s.start(h);
+        s.tick(h);
+        CHECK(s.outcome() == 1);   // Win(Player) -> player wins
+    }
+    {
+        MapTriggerData d = parse(one(0, "1,13,0,0", "2,2,0,3,0,0,0,0,A,1,0,3,0,0,0,0,A"));
+        MapTriggerSystem s(d, 1, 1);
+        FakeHost h;
+        s.start(h);
+        s.tick(h);
+        CHECK(s.outcome() == 2);   // Lose(Player) first -> lost, Win ignored
+    }
+    {
+        MapTriggerData d = parse(one(0, "1,13,0,0", "1,1,0,2,0,0,0,0,A"));
+        MapTriggerSystem s(d, 1, 1);
+        FakeHost h;
+        s.start(h);
+        s.tick(h);
+        CHECK(s.outcome() == 2);   // Win(Russians) -> player loses
+    }
+}
+
+TEST_CASE("map_trigger: RandomDelay draws (Value/2 + [0,Value]) * 15") {
+    for (std::uint32_t seed = 1; seed < 40; ++seed) {
+        MapTriggerData d = parse(one(0, "1,51,0,10", "1,56,0,0,0,0,0,0,A"));
+        MapTriggerSystem s(d, 1, seed);
+        FakeHost h;
+        s.start(h);
+        const long f = first_fire(s, h, 300, "TRG00001");
+        CHECK(f >= 75);
+        CHECK(f <= 225);
+        CHECK(f % 15 == 0);
+    }
+}
+
+TEST_CASE("map_trigger: a disabled trigger never fires; state_hash is deterministic") {
+    MapTriggerData d = parse(one(0, "1,13,0,0", "1,56,0,0,0,0,0,0,A", "1,1,1,1,0"));
+    MapTriggerSystem a(d, 1, 7), b(d, 1, 7);
+    FakeHost h1, h2;
+    a.start(h1);
+    b.start(h2);
+    for (int i = 0; i < 50; ++i) { a.tick(h1); b.tick(h2); }
+    CHECK_FALSE(a.local(0));
+    CHECK(a.state_hash() == b.state_hash());
+}
