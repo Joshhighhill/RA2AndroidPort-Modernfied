@@ -5099,11 +5099,12 @@ public:
         // Queues.
         static const std::pair<ra2engine::QueueCat, const char*> kCats[] = {
             {ra2engine::QueueCat::Structure, "structure"}, {ra2engine::QueueCat::Defense, "defense"},
-            {ra2engine::QueueCat::Infantry, "infantry"}, {ra2engine::QueueCat::Vehicle, "vehicle"}};
+            {ra2engine::QueueCat::Infantry, "infantry"}, {ra2engine::QueueCat::Vehicle, "vehicle"},
+            {ra2engine::QueueCat::Naval, "naval"}, {ra2engine::QueueCat::Aircraft, "aircraft"}};
         for (const auto& [cat, nm] : kCats) {
             const ra2engine::QueueSlot& sl = queues_.state(cat).slot;
             const int t = (cat == ra2engine::QueueCat::Structure) ? 0 : (cat == ra2engine::QueueCat::Defense) ? 1
-                        : (cat == ra2engine::QueueCat::Infantry) ? 2 : 3;
+                        : (cat == ra2engine::QueueCat::Infantry) ? 2 : 3;   // 2/3 = unit roster
             p.set_s(std::string("queue(") + nm + ")", sl.type >= 0 ? play_entry_id(t, sl.type) : "");
             p.set(std::string("queue_stage(") + nm + ")", sl.stage);
             p.set(std::string("queue_ready(") + nm + ")", sl.ready ? 1 : 0);
@@ -5187,10 +5188,7 @@ public:
                 for (int oy = ay - r; oy <= ay + r; ++oy)
                     for (int ox = ax - r; ox <= ax + r; ++ox) {
                         if (std::max(std::abs(ox - ax), std::abs(oy - ay)) != r) continue;
-                        const ra2engine::PlacementCheck chk = ra2engine::placement_check(
-                            ox, oy, d.fw, d.fh, 0, d.adjacent, world_.passable(), world_.grid_w(),
-                            world_.grid_h(), world_.occupancy(), world_.buildings(), false);
-                        if (!chk.ok) continue;
+                        if (!placement_ok(type, ox, oy)) continue;   // the confirm's own test
                         cx = ox + d.fw / 2;
                         cy = oy + d.fh / 2;
                         return true;
@@ -5458,8 +5456,8 @@ private:
     // Would a left click on this cameo START it right now (same tests as handle()).
     bool play_can_start(int tab, int e) const {
         if (tab >= 2) {
-            const ra2engine::QueueCat cat = (tab == 3) ? ra2engine::QueueCat::Vehicle : ra2engine::QueueCat::Infantry;
-            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
+            const ra2engine::QueueCat cat = rp_cat_of_unit(e);   // same queue handle() uses
+            const std::vector<int>& ft = rp_ft_of(cat);
             return ra2engine::can_start_unit(queues_.state(cat), e, ur_.defs, world_.buildings(), ba_.roster, 0,
                                              ba_.groups, !world_.factory_category_lost(ft, 0));
         }

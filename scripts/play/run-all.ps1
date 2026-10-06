@@ -2,10 +2,11 @@
 # summary. Usage (from the repo root):
 #   pwsh scripts/play/run-all.ps1 [-Exe build/ra2engine.exe] [-Out build/play-out] [script ...]
 # With no scripts: the core set (sk-a sk-s sk-end sk-a-lose m-all01 m-sov01 shell-smoke).
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Exe = "build/ra2engine.exe",
     [string]$Out = "build/play-out",
-    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Scripts
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]]$Scripts
 )
 if (-not $Scripts -or $Scripts.Count -eq 0) {
     $Scripts = @("sk-a", "sk-s", "sk-end", "sk-a-lose", "m-all01", "m-sov01", "shell-smoke")
