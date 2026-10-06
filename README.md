@@ -1826,6 +1826,88 @@ modes; LUNAR; loose `.mpr`/`.yrm` files; and a scrollable/filterable browser
 with previews in place of the stepper.
 
 
+## Map Triggers / Scripting (P9)
+
+The campaign substrate. A map's own scripting — `[Triggers]`, `[Events]`,
+`[Actions]`, `[Tags]`, `[CellTags]`, `[VariableNames]` (with `[TeamTypes]` for
+team references) — is parsed and run with `gamemd.exe`'s semantics, recovered
+in `docs/re/map-triggers.md` from the ReadINI functions, `TagClass::RaiseEvent`,
+`TriggerClass::RegisterEvent`, `TEventClass::HasOccurred` (the 62-kind predicate
+switch), `TActionClass::Execute` (the 146-way action switch) and the two raise
+loops. This is a different system from the AI-3 `[AITriggerTypes]` engine.
+
+**What the original does (and we now do):**
+- **Two raise loops.** Every frame `LogicClass::AI` walks the *logic* tag list
+  in order and per tag tries kinds `27/28/36/37` (only when a variable changed),
+  `13`, `51`, then `14` (only when the mission timer just expired), stopping at
+  the first raise that fires. Every **8th** frame each house walks its own tag
+  list **last-to-first** raising kind `8` (AnyEvent). Tags join the lists at
+  scenario start from their triggers' attach flags.
+- **AND of events, latched only for repeating tags.** A trigger fires when all
+  its events hold in one evaluation; only Persistent tags latch one-shot object
+  events. Events are stored **reversed** (ReadINI prepends), which decides which
+  timer event wins when a trigger has two.
+- **Persistence.** Volatile fires once and **kills its whole tag** (sibling
+  triggers in the chain die with it); SemiPersistant fires when the last attached
+  object's events fire; Persistent fires every time and re-arms its timers.
+- **Timers.** ElapsedTime = `Value·15` frames, RandomDelay =
+  `(Value/2 + rand[0,Value])·15`, ElapsedScenarioTime = `Value ≤ frame/15`.
+  Timers re-arm on construction, on EnableTrigger (even if already enabled), on
+  a Persistent fire, and **whenever a referenced global/local changes** — so a
+  `LocalCleared + ElapsedTime` trigger restarts its countdown on every change.
+- **Index spaces.** House values index the rules `[Countries]` list with the
+  map's new countries appended (on `sov07tmd`, `_Lose` waits on `DestroyedAll 15`
+  = `Player`); BuildingType values index rules `[BuildingTypes]`
+  find-or-allocated (rulesmd lists `NAPSYA` twice, so the map's `300` is
+  `YACNST`; `24`/`54` are `NAIRON`/`NAMISL`, matching the trigger names).
+
+**Coverage, ranked by the 44 stock campaign maps** (4,341 triggers, 4,857
+events, 13,871 actions; usage counts in parentheses):
+
+| status | events | share | actions | share |
+|---|---|---:|---|---:|
+| **engine** — evaluated/executed in `MapTriggerSystem` | 13 (2022), 36 (551), 47 (342), 37 (298), 8 (103), 51 (59), 14 (8), 27/28 (4/4) | 69.8% | 53 (2706), 54 (1836), 56 (354), 57 (171), 12 (84), 3 (81), 74 (76), 2 (55), 1 (43), 27 (19), 23 (18), 28 (13), 0 (12), 24 (6), 22 (3), 75 (3), 68 (2), 25 (2) | 39.5% |
+| **host** — resolved by the engine, answered/executed by the `TriggerHost` | 32 (121), 57 (116), 11 (105), 61 (67), 19 (37), 10 (29), 9 (16), 17 (15), 20 (13), 21 (12), 30 (12), 16 (11), 15 (9), 58 (7), 60 (7), 52 (3), 22 (1) | 12.0% | 4 (1208), 7 (941), 17 (615), 80 (425), 5 (403), 107 (84), 6 (66), 125 (40), 16 (11) | 27.3% |
+| **API** — object/cell kinds, implemented behind `raise_tag`/`raise_cell`, not yet raised by the world | 1 (295), 48 (293), 4 (114), 6 (35), 44 (32), 33 (28), 29 (17), 31 (14), 7 (14), 59 (11), 26 (9), 25 (4), 41 (4), 40 (3), 39 (1), 43 (1), 2 (1) | 18.0% | — | — |
+| **recorded** — presentation only (speech, sound, text, movie, camera, radar, input lock, flashes), logged with parameters | — | — | 99 (1289), 21 (570), 11 (451), 55 (372), 19 (310), 112 (84), 100 (79), 48 (76), 41 (68), 113 (58), 46 (51), 116 (49), 47 (46), 104 (45), 114 (37), 115 (34), 131 (30), 103 (19), 10 (6), 20 (4) | 26.5% |
+| **unimplemented** — logged / evaluates false | 55 (4), 56 (4), 5 (1) | 0.2% | 14 (186), 108 (130), 63 (100), 38 (93), 36 (64), 32 (51), 101 (38), 9 (29), 81 (25), 37 (21), 60 (18), 88 (18), 135 (16), 121 (12), 40 (11), 111 (10), and 26 kinds with ≤ 9 uses each | 6.6% |
+
+The gate host answers house events from the live `World` (owned buildings /
+vehicles / infantry by house, per-BuildingType counts, credits, power ratio,
+`Factory=` buildings, techno counts) and executes reinforcements (7/80/107),
+reveal (16/17) and CreateBuilding (125); it does not track destroyed-object
+counters (15/16) or last-built types (19–22), and records CreateTeam /
+DestroyTeam / AllToHunt without executing them.
+
+**The 20th determinism gate**, `--demo-triggers`, runs the default gate map
+(`sov07tmd.map`, YR Soviet 7 — the map every gate already loads) **with its own
+126 triggers** for 2,700 frames: the map's 10 houses configured from `[Houses]`,
+its roster-known `[Structures]`/`[Units]`/`[Infantry]` placed, then the trigger
+system ticked at the top of every frame. It fires 18 triggers (14 from the logic
+loop, 4 from the house loop, 2 driven by a variable change — the crypt
+LocalSet at frame 0 firing two `Lights Out` triggers through raise kind 27 at
+frame 1), places TaskForce reinforcements at their team waypoints, and records
+the speech/lock-input lines. Rendered and headless runs are byte-compared;
+`trigger_hash=20347f4dfa462eb4`, `lines=76`. Wedge guards: no logic fire, no
+variable fire, no house fire, no structure placed.
+
+**Firewall.** `engine/map_trigger.{hpp,cpp}` is World-free; the only code that
+constructs a `MapTriggerSystem` is `run_demo_triggers`. `World`, `MapFile`,
+`load_assets` and every other gate path are untouched, so the 19 prior gates are
+unaffected by construction.
+
+**Deviations we take** (`map-triggers.md` §7): RandomDelay draws the original's
+inclusive range from our own seeded generator; presentation actions are recorded
+not rendered; object/cell events are not raised by world objects yet; map
+TeamTypes have no TeamClass, so reinforcements are placed directly at the
+waypoint (no transport delivery, no script) and CreateTeam is recorded; the
+game-over flag that stops raises after an outcome is not modelled.
+
+**Carry-forwards (P10):** the campaign object loader (tags on placed objects,
+`InstanceCount`, cell-entry raises), TeamClass execution for map teams,
+destroyed/last-built house counters, MakeAlly/MakeEnemy, ChangeHouse,
+CreateCrate, Apply100Damage, outcome → mission end.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -2125,6 +2207,7 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-multihouse` | `multihouse_hash=39412ae996cce8ae` | `deterministic=yes`; N-player HouseRec table + alliances (is_enemy/are_allied, FFA default a!=b), AllyReveal shared sight, last-team-standing victory (ShortGame=last-building), per-house side/color (8 MP colors); wedge guards armed (`docs/re/multihouse.md`) |
 | `--demo-skirmish` | `skirmish_hash=e9ad3f1fd88495f9` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, 3 combatant slots in two alliance-teams (0+2 allied vs 1, no neutral); wedge guards armed (`docs/re/skirmish.md`) |
 | `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
+| `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
