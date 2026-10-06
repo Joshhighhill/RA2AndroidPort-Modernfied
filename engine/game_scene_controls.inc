@@ -221,9 +221,6 @@
     int max_queued() const {
         return static_cast<int>(rules_.general_double("MaximumQueuedObjects", 29.0));
     }
-    ra2engine::QueueCat unit_cat_of_tab() const {
-        return active_tab_ == 3 ? ra2engine::QueueCat::Vehicle : ra2engine::QueueCat::Infantry;
-    }
     void refund_cancel(ra2engine::QueueCat c) {
         queues_.set_credits(player_credits_);
         queues_.cancel(c);
@@ -240,7 +237,7 @@
     }
     void cameo_click(int type, bool right, bool shift) {
         if (active_tab_ >= 2) {   // ---- units ----
-            const ra2engine::QueueCat cat = unit_cat_of_tab();
+            const ra2engine::QueueCat cat = rp_cat_of_unit(type);   // agent A: own factory queue
             const int ci = static_cast<int>(cat);
             const bool current = queues_.producing(cat) == type;
             const bool held = held_.count(ci) != 0;
@@ -258,7 +255,7 @@
                 return;
             }
             if (current && held) { held_.erase(ci); return; }   // PRODUCE = resume
-            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
+            const std::vector<int>& ft = rp_ft_of(cat);
             if (queues_.producing(cat) == -1) {
                 if (ra2engine::can_start_unit(queues_.state(cat), type, ur_.defs, world_.buildings(),
                                               ba_.roster, 0, ba_.groups,
@@ -301,6 +298,7 @@
                                  conyard_alive(world_, ba_, 0))) {
             queues_.set_credits(player_credits_);
             ra2engine::start(bq, type, ba_.roster, build_speed_);
+            rp_after_building_start(bq, type);   // agent A: wall build-time rule
         }
     }
     // A held queue skips its production tick: tick() early-outs on a READY
@@ -330,7 +328,7 @@
         for (auto& [c, bl] : backlog_) {
             const ra2engine::QueueCat cat = static_cast<ra2engine::QueueCat>(c);
             if (bl.empty() || queues_.producing(cat) != -1) continue;
-            const std::vector<int>& ft = (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
+            const std::vector<int>& ft = rp_ft_of(cat);
             const int type = bl.front();
             bl.erase(bl.begin());
             if (ra2engine::can_start_unit(queues_.state(cat), type, ur_.defs, world_.buildings(),
@@ -348,7 +346,7 @@
         if (!(ba_.ok && ba_.sidebar_ok)) return;
         for (const ra2engine::CameoCell& cell : lay_.cameos) {
             ra2engine::QueueCat cat;
-            if (active_tab_ >= 2) cat = unit_cat_of_tab();
+            if (active_tab_ >= 2) cat = rp_cat_of_unit(cell.type);
             else cat = active_tab_ == 1 ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
             const int n = queued_count(cell.type, cat);
             if (n > 1) {
