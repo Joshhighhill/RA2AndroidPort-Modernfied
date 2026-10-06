@@ -143,6 +143,9 @@ struct Assets {
 // art under ra2md.mix, which these loaders do not open: they stay on the
 // temperate art [RE-FALLBACK: G-86 YR theaters].
 const ra2assets::TheaterChain* g_art_chain = nullptr;
+// G-91: the sidebar chrome mix -- sidec01 (Allied, every gate) or sidec02
+// (Soviet), chosen by GameScene from the player's side before the art loads.
+const char* g_sidebar_mix = "sidec01.mix";
 inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
@@ -2122,7 +2125,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // Sidebar chrome (player side = Allied sidec01) [RE-GATE: construction.md
     // §11]: four SEPARATE 28x27 tab SHPs + the 55-frame gclock2.shp clock.
     try {
-        MixFile sb = ra2.open_nested("sidec01.mix");
+        MixFile sb = ra2.open_nested(g_sidebar_mix);   // G-91: sidec02 for a Soviet player
         auto load_sb = [&](const char* fn) -> ShpFile {
             const MixEntry* e = sb.find(std::string(fn));
             if (!e) throw std::runtime_error(std::string("sidebar SHP missing: ") + fn);
@@ -4595,7 +4598,11 @@ public:
                          : cfg.map_file.empty() ? MapSelection{}
                                                 : MapSelection{"multimd.mix", 0u, cfg.map_file})),
           // G-86: the art loaders below follow this map's theater.
-          ua_((g_art_chain = a_.chain, load_unit_assets(dir_, ra2_))),
+          ua_((g_art_chain = a_.chain,
+               g_sidebar_mix = (soviet_campaign(cfg) || (cfg.campaign_map.empty() && !cfg.slots.empty() &&
+                                                         cfg.slots[0].side == ra2engine::World::Side::Soviet))
+                                   ? "sidec02.mix" : "sidec01.mix",
+               load_unit_assets(dir_, ra2_))),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
           language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
           // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
