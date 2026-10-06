@@ -26,6 +26,7 @@ DifficultyMods difficulty_mods(AiDifficulty d, const DifficultyGroupRaw (&groups
     m.build_slowdown = groups[c].build_slowdown;
     m.firepower_mul = groups[c].firepower;
     m.rof_mul = groups[c].rof;
+    m.repair_delay_min = groups[c].repair_delay;
     // kAiDefenseTarget is already stored lobby-ordered ({6,22,25} = the file's
     // "25,22,6 ;h,m,e" reversed), so it keeps the lobby index.
     m.defense_target = kAiDefenseTarget[i];

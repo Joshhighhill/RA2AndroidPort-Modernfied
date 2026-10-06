@@ -1672,11 +1672,14 @@ void World::step_repair_sell(double dt) {
         // [RE: §A3, CONFIRMED] The affordability check is BEFORE the spend:
         // too poor -> the flag is CLEARED, no partial step, no free repair, no
         // EVA line. The player must click the wrench again after refilling.
-        if (house_credits_[b.house] < static_cast<double>(cost)) {
+        // [G-65] an AI house spends from its own AI-1 purse (house_credits_
+        // is drained into it every frame by take_income).
+        double& pool = ai_enabled(b.house) ? ai_houses_[b.house].credits : house_credits_[b.house];
+        if (pool < static_cast<double>(cost)) {
             b.being_repaired = false;
             continue;
         }
-        house_credits_[b.house] -= static_cast<double>(cost);
+        pool -= static_cast<double>(cost);
         // [RE: §A2] +RepairStep HP flat (8), clamped to Strength. The original
         // advances Health AND EstimatedHealth; the clone has one hp field.
         b.hp += repair_rules_.repair_step;
@@ -2257,6 +2260,26 @@ void World::step_ai_houses(double dt) {
         // 1) Income (the economy phase accumulates per-house unload income).
         rec.credits += take_income(h);
 
+        // 1b) [G-65] AI repair [RE: FUN_00450620, BuildingClass AI -- gated by
+        //     Rules.IQ RepairSell (=1) <= house IQ (skirmish AI = MaxIQLevels
+        //     5): with money >= [AI] CreditReserve and no repair started in the
+        //     current window (house+0x245, re-armed by the +0x280 timer from the
+        //     DifficultyClass RepairDelay), start repairing a damaged building.
+        //     RE-FALLBACK: the window is exactly RepairDelay minutes (the
+        //     rand(lo,hi) bounds were not decoded); "damaged" = hp < Strength;
+        //     the lowest-index damaged Idle building is picked.]
+        rec.state.repair_clock += dt;
+        if (rec.state.repair_clock >= cfg.mods.repair_delay_min * 60.0 &&
+            rec.credits >= cfg.ai.credit_reserve) {
+            for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+                const Building& b = buildings_[bi];
+                if (!b.alive || b.house != h || b.state != Building::State::Idle ||
+                    b.being_repaired || b.selling || b.hp >= b.max_hp)
+                    continue;
+                if (set_repair(bi, h, 1)) { rec.state.repair_clock = 0.0; break; }
+            }
+        }
+
         // 2) Node-death detection [RE: ai-base.md §5].
         for (PlannedNode& n : rec.state.plan) {
             if (n.building < 0) continue;
@@ -2320,6 +2343,24 @@ void World::step_ai_houses(double dt) {
         rec.state.build_gate = std::max(
             (double)(0x69 + 1 + (int)(ai_rand(rec.state.rng) % 7)) / 15.0,
             cfg.mods.build_delay_min * 60.0);
+        // 6b) [G-65] AI sell [RE: FUN_00450620 -- money < [AI] CreditReserve,
+        //     health ratio < ConditionRed (Rules+0x1708) and rand(0,50) <
+        //     house+0x1d4 (the house TechLevel, ai-trigger.md; 10 in skirmish)
+        //     -> Sell. Evaluated on the house AI tick; the conyard is never
+        //     sold (the ConYard-loss path would end the house).]
+        if (rec.credits < cfg.ai.credit_reserve) {
+            for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+                const Building& b = buildings_[bi];
+                if (!b.alive || b.house != h || b.state != Building::State::Idle || b.selling ||
+                    b.max_hp <= 0 || (double)b.hp / (double)b.max_hp >= cfg.ai.condition_red)
+                    continue;
+                if (b.type >= 0 && b.type < (int)cfg.roster.size() && cfg.roster[b.type].conyard)
+                    continue;
+                if ((int)(ai_rand(rec.state.rng) % 51u) >= cfg.team.trigger_tech_level) continue;
+                begin_sell(bi, h);
+                break;
+            }
+        }
         if (!conyard) continue;  // no factory: nothing can start
 
         // 7) Decide.

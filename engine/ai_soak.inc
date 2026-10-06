@@ -19,6 +19,7 @@ int run_ai_soak(int argc, char** argv) {
     ra2engine::AiDifficulty diff = ra2engine::AiDifficulty::Normal;
     bool ai_allied = false;
     std::string map_file, png;
+    int damage_ai_at = -1;   // G-65 probe: halve every AI building's HP at this minute
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? std::string(argv[++i]) : ""; };
@@ -31,6 +32,7 @@ int run_ai_soak(int argc, char** argv) {
         } else if (a == "--ai-side") ai_allied = next() == "allied";
         else if (a == "--map") map_file = next();
         else if (a == "--png") png = next();
+        else if (a == "--damage-ai-at") damage_ai_at = std::atoi(next().c_str());
     }
 
     const std::string dir = env_install_dir();
@@ -100,8 +102,23 @@ int run_ai_soak(int argc, char** argv) {
     std::cout << "[ai-soak] map=" << (cfg.map_file.empty() ? "<default>" : cfg.map_file)
               << " ai_side=" << (ai_allied ? "Allied" : "Soviet") << " diff=" << (int)diff
               << " minutes=" << minutes << "\n";
+    long long damaged_hp_after = -1, repairs_seen = 0, sells_seen = 0;
     for (long long f = 1; f <= frames; ++f) {
+        if (damage_ai_at >= 0 && f == (long long)damage_ai_at * 900) {
+            for (ra2engine::Building& b : world.buildings())
+                if (b.alive && b.house == ai && b.state == ra2engine::Building::State::Idle)
+                    b.hp = std::max(1, b.hp / 2);
+            long long t = 0;
+            for (const ra2engine::Building& b : world.buildings())
+                if (b.alive && b.house == ai) t += b.hp;
+            (void)damaged_hp_after; damaged_hp_after = t;
+            std::cout << "[ai-soak] probe: AI buildings halved at min " << damage_ai_at
+                      << " ai_base_hp=" << t << "\n";
+        }
         world.step(dt);
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.house == ai && b.alive) { repairs_seen += b.being_repaired ? 1 : 0;
+                                            sells_seen += b.selling ? 1 : 0; }
         spawn_free_units_on_open(world, ba, rules, miners, bstates);
         // count AI units created this frame
         for (std::size_t u = prev_units; u < world.units().size(); ++u)
@@ -140,6 +157,13 @@ int run_ai_soak(int argc, char** argv) {
         }
     }
     const auto hp1 = human_base_hp();
+    {
+        long long t = 0, mx = 0;
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.alive && b.house == ai) { t += b.hp; mx += b.max_hp; }
+        std::cout << "[ai-soak] ai_base_hp_end=" << t << "/" << mx
+                  << " repair_frames=" << repairs_seen << " sell_frames=" << sells_seen << "\n";
+    }
     std::cout << "[ai-soak] RESULT ai_units_built=" << ai_units_built
               << " max_ai_units_alive=" << max_ai_units
               << " human_base_hp " << hp0.first << " -> " << hp1.first

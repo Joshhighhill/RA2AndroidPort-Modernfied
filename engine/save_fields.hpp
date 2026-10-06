@@ -685,7 +685,7 @@ template <class Ar> void fields(Ar& ar, ProductionState& v) { io(ar, v.credits);
 template <class Ar> void fields(Ar& ar, DifficultyMods& v) {
     io(ar, v.cost_mul); io(ar, v.build_time_mul); io(ar, v.build_delay_min);
     io(ar, v.build_slowdown); io(ar, v.defense_target);
-    io(ar, v.firepower_mul); io(ar, v.rof_mul);
+    io(ar, v.firepower_mul); io(ar, v.rof_mul); io(ar, v.repair_delay_min);
 }
 template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.power_surplus);
@@ -699,6 +699,7 @@ template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.defense_ratio);
     io(ar, v.defense_limit);
     io(ar, v.credit_reserve);
+    io(ar, v.condition_red);
 }
 template <class Ar> void fields(Ar& ar, PlannedNode& v) {
     io(ar, v.id); io(ar, v.type); io(ar, v.cx); io(ar, v.cy); io(ar, v.building); io(ar, v.dead);
@@ -709,6 +710,7 @@ template <class Ar> void fields(Ar& ar, AiBaseState& v) {
     io(ar, v.build_gate);
     io(ar, v.plan);
     io(ar, v.rng);
+    io(ar, v.repair_clock);
     io(ar, v.pending);
     io(ar, v.next_node_id);
 }

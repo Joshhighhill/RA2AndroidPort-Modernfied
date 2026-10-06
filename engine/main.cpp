@@ -2245,6 +2245,10 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         "AI", "DefenseLimit", (double)ra2engine::kAiDefenseLimit);
     cfg.ai.credit_reserve =
         rules.section_double("AI", "CreditReserve", ra2engine::kAiCreditReserve);
+    {   // [G-65] "ConditionRed=25%" -> strtod 25 -> the 0.25 fraction
+        const double cr = rules.section_double("AudioVisual", "ConditionRed", 0.25);
+        cfg.ai.condition_red = cr > 1.0 ? cr / 100.0 : cr;
+    }
     // Difficulty groups [RE-GATE APPLIED: ai-base.md §4 — the RECOVERED
     // section names Easy/Normal/Difficult (NOT Medium/Hard); BuildDelay is
     // MINUTES; BuildSlowdown is yes/no so it comes from the pinned constant].
@@ -2261,6 +2265,8 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         // FirePower, +0x20 ROF; loader default 1.0).
         g[i].firepower = rules.section_double(kGroups[i], "FirePower", 1.0);
         g[i].rof = rules.section_double(kGroups[i], "ROF", 1.0);
+        g[i].repair_delay = rules.section_double(kGroups[i], "RepairDelay",
+                                                 ra2engine::kDifficultyRepairDelayMin[i]);
     }
     cfg.mods = ra2engine::difficulty_mods(difficulty, g);
     // [G-64] the side's own <Side>BaseDefenseCounts (Allied 25,20,6 vs

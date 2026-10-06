@@ -86,6 +86,7 @@ struct DifficultyGroupRaw {
     double build_time = 1.0;      // BuildTime= (build time multiplier)
     double build_delay = 0.03;    // BuildDelay= (MINUTES between AI build passes)
     bool build_slowdown = false;  // BuildSlowdown= (recorded; later sub-phases)
+    double repair_delay = 0.02;   // RepairDelay= minutes (struct +0x38; house+0x1c0)
     double firepower = 1.0;       // FirePower= (struct +0x00; house+0x188)
     double rof = 1.0;             // ROF= (struct +0x20; house+0x1a8)
 };
@@ -104,6 +105,7 @@ struct DifficultyMods {
     // located in this build -> not applied [RE-FALLBACK, docs/re/ai-base.md §4].
     double firepower_mul = 1.0;
     double rof_mul = 1.0;
+    double repair_delay_min = 0.02;  // DifficultyClass RepairDelay (minutes) [G-65]
 };
 
 // The [AI]-section knobs, defaulting to the recovered constants (main.cpp
@@ -121,6 +123,7 @@ struct AiRules {
     double defense_ratio = kAiDefenseRatio;
     int defense_limit = kAiDefenseLimit;
     double credit_reserve = kAiCreditReserve;
+    double condition_red = 0.25;   // [AudioVisual] ConditionRed= (Rules+0x1708): AI sell threshold [G-65]
 };
 
 // mods for difficulty d: values from groups[d], defense_target from
@@ -168,6 +171,9 @@ struct AiBaseState {
                                // secs = min x 60]
     std::vector<PlannedNode> plan;
     std::uint32_t rng = 0x2545F491u;  // deterministic fixed seed
+    // [G-65] the house repair window (house+0x245 "a repair was started" +
+    // the +0x280 timer, FUN_00450620): secs since the last AI repair start.
+    double repair_clock = 0.0;
     int pending[2] = {-1, -1};        // STABLE node id in production per queue
                                       // (0=Structure, 1=Defense); -1 = idle
     int next_node_id = 0;             // monotonic id source; every PlannedNode
