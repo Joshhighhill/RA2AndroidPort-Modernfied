@@ -2249,6 +2249,37 @@ const VehicleAssets* va_for_image(const std::vector<const VehicleAssets*>* vlist
 // SHP, and their selection diamond / HP bar size to the hull sprite width.
 // Passed nullptr by the SHP-only modes (including --demo-combat, whose
 // byte-identity gate requires tanks NEVER spawn there).
+// Projectile phase (P2) [RE: projectile.md §3/§6]: draws every projectile in
+// flight as a small shell (ballistic) or bomb (vertical) plus a ground shadow,
+// with the SAME projection as the FLH muzzle flash in draw_vehicle_unit:
+// ((x-y)*30, (x+y)*15) px per cell on the ground plane, the cell's terrain level
+// at 15 px, and height at 0.866*60/sqrt2 = 36.74 px per 256 leptons
+// (voxel-render.md §6). The projectile Image= SHPs (120MM/ZBOMB) are a recorded
+// cosmetic carry-forward.
+void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
+                      const ra2assets::MapFile& map, const ra2engine::Camera& cam, int W, int H) {
+    for (const ra2engine::Projectile& p : world.projectiles()) {
+        const double x = p.x / 256.0, y = p.y / 256.0;
+        const ra2assets::MapCell* mc =
+            map.at(ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y));
+        const int level = mc ? mc->level : 0;
+        const int gx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
+        const int gy = static_cast<int>(std::lround((x + y) * 15.0 - level * 15)) + cam.y + 15;
+        const int sy = gy - static_cast<int>(std::lround((p.z / 256.0) * 36.74));
+        if (gx < -8 || gx > W + 8 || sy > H + 8 || gy < -8) continue;
+        SDL_Rect shadow{gx - 2, gy - 1, 4, 2};
+        SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+        SDL_RenderFillRect(ren, &shadow);
+        const bool bomb = (p.kind == ra2engine::ProjKind::Vertical);
+        SDL_Rect shell{gx - (bomb ? 3 : 2), sy - (bomb ? 3 : 2), bomb ? 6 : 4, bomb ? 6 : 4};
+        if (bomb)
+            SDL_SetRenderDrawColor(ren, 70, 70, 80, 255);
+        else
+            SDL_SetRenderDrawColor(ren, 255, 200, 90, 255);
+        SDL_RenderFillRect(ren, &shell);
+    }
+}
+
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
@@ -2336,6 +2367,10 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             draw_one_unit(d.idx);
         }
     }
+    // Projectile phase (P2): shells/bombs in flight, over the objects. EMPTY
+    // unless enable_projectiles was called (the game + --demo-projectile), so
+    // no existing demo screenshot changes.
+    draw_projectiles(ren, world, a.map, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
     // NON-CARRIED units that are selected or currently damaged. A selected
     // transport also shows its loaded pip row -- filled with the SIZE-SUM
@@ -3324,6 +3359,12 @@ public:
           playfield_w_(kWinW - (sidebar_up_ ? lay_.bar.w : 0)),
           cam_(centered_camera(a_.map, playfield_w_, kWinH)),
           input_(world_, cam_, playfield_w_, kWinH) {
+        // Projectile phase (P2) [RE: projectile.md]: the interactive game flies
+        // real projectiles (tank arcs, Kirov bombs, flak scatter). This is one of
+        // the only two enable_projectiles call sites (the other is
+        // --demo-projectile) -- every byte-identity gate keeps the instant path.
+        world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
+
         // --- vehicle render list (voxel hulls for launched MTNK/FV/etc.) ---
         vlist_ = {&va_, &miners_.harv, &miners_.cmin};
         for (const VehicleAssets& v : ur_.vehicles) vlist_.push_back(&v);
