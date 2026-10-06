@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "projectile.hpp"  // ProjectileSpec (P2; pure, no World)
+#include "veterancy.hpp"  // P5: AbilityMask / WeaponStats (pure, World-free)
 
 namespace ra2engine {
 
@@ -100,6 +101,22 @@ struct UnitCombat {
     // reveals only its own cell / nothing, and is meaningless while the
     // visibility grids are empty). NOT read by world_hash.
     int sight = 0;
+
+    // --- P5 Veterancy + Crates [RE: veterancy.md V3/V4/V10/V11/V14/C8] ---
+    // Resolved once by main.cpp's resolve_combat_unit like every stat above.
+    // ALL defaults inert: World reads them only past the enable_veterancy
+    // firewall (a hand-built UnitCombat in an existing gate never sets them,
+    // and add_combat_unit merely copies them into Unit::vet).
+    int cost = 0;                     // Cost= (experience value / owner cost)
+    bool trainable = true;            // Trainable= (default YES, V14)
+    bool dont_score = false;          // DontScore=
+    bool self_healing = false;        // SelfHealing= (V11)
+    bool crate_goodie = false;        // CrateGoodie= (default NO, C8)
+    AbilityMask vet_abilities = 0;    // VeteranAbilities=
+    AbilityMask elite_abilities = 0;  // EliteAbilities=
+    int rules_speed = 0;              // integer Speed= (V8 domain)
+    bool has_elite = false;           // ElitePrimary= defined (V10)
+    WeaponStats elite;                // ElitePrimary's resolved stats
 };
 
 }  // namespace ra2engine

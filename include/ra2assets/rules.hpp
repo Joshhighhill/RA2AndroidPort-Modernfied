@@ -88,13 +88,6 @@ public:
     // projectiles -- only the Vertical/homing cap after weapon_speed_leptons.
     int weapon_speed(const std::string& weapon) const;
 
-    // Projectile phase (P2): the RAW [section] key= string (fallback if absent),
-    // inline ';' comment NOT stripped (this Ini keeps it -- e.g. [BlimpBombP]
-    // "Vertical=yes ;can't turn..."). Callers that need the game's INI bool
-    // semantics strip + first-char-parse themselves (projectile.cpp ini_bool).
-    std::string section_string(const std::string& section, const std::string& key,
-                               const std::string& fallback) const;
-
     // [warhead] Verses= parsed into percent integers; empty vector if absent.
     // Tolerates spaces and missing '%' signs in the comma-separated list.
     std::vector<int> verses(const std::string& warhead) const;
@@ -165,6 +158,14 @@ public:
     // absent-key defaults DIFFER: Unsellable -> false, Crewed -> false,
     // ClickRepairable -> TRUE [RE: repair-sell.md §A4/§B3/§B5].
     bool section_flag(const std::string& id, const std::string& key, bool fallback) const;
+
+    // Generic per-section STRING key: the value with any inline ';' comment
+    // removed and whitespace trimmed (the Ini keeps inline comments), or
+    // `fallback` if absent/empty. P5 Veterancy +
+    // Crates [RE: veterancy.md §0] reads VeteranAbilities/EliteAbilities lists,
+    // ElitePrimary and the [Powerups] "weight,anim,naval,arg" tuples with it.
+    std::string section_string(const std::string& section, const std::string& key,
+                               const std::string& fallback) const;
 
     // [MultiplayerDialogSettings] Money=, fallback 10000 if absent.
     int mp_money() const;
