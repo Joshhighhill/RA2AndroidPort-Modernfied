@@ -546,3 +546,191 @@ TEST_CASE("map_trigger: a disabled trigger never fires; state_hash is determinis
     CHECK_FALSE(a.local(0));
     CHECK(a.state_hash() == b.state_hash());
 }
+
+// ===========================================================================
+// Task 3 -- host-backed events/actions, object raises [RE: map-triggers.md §4/§5]
+// ===========================================================================
+
+TEST_CASE("map_trigger: DestroyedAll / BuildingsAll / UnitsAll + absent-house rule") {
+    // house-loop triggers owned by Player; Value = the house checked.
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGALL02=Player,<none>,all2,0,1,1,1,0\n"     // DestroyedAll Russians (exists)
+        "TRGALL01=Player,<none>,all1,0,1,1,1,0\n"     // DestroyedAll Alliance (absent)
+        "TRGBLD02=Player,<none>,bld2,0,1,1,1,0\n"     // DestroyedBuildingsAll Russians
+        "TRGUNT02=Player,<none>,unt2,0,1,1,1,0\n"     // DestroyedUnitsAll Russians
+        "[Events]\nTRGALL02=1,11,0,2\nTRGALL01=1,11,0,1\nTRGBLD02=1,10,0,2\nTRGUNT02=1,9,0,2\n"
+        "[Actions]\nTRGALL02=1,56,0,1,0,0,0,0,A\nTRGALL01=1,56,0,2,0,0,0,0,A\n"
+        "TRGBLD02=1,56,0,3,0,0,0,0,A\nTRGUNT02=1,56,0,4,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGALL02\nTAG00002=0,b,TRGALL01\nTAG00003=0,c,TRGBLD02\n"
+        "TAG00004=0,d,TRGUNT02\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    h.buildings[2] = 2;
+    h.infantry[2] = 1;
+    s.start(h);
+    s.tick(h);
+    CHECK_FALSE(s.local(1));   // Russians still own things
+    CHECK(s.local(2));         // Alliance has no house: the value-house rule -> TRUE
+    CHECK_FALSE(s.local(3));   // buildings remain
+    CHECK_FALSE(s.local(4));   // infantry remains
+    h.buildings[2] = 0;
+    for (int i = 1; i <= 8; ++i) s.tick(h);
+    CHECK(s.local(3));
+    CHECK_FALSE(s.local(1));
+    h.infantry[2] = 0;
+    for (int i = 9; i <= 16; ++i) s.tick(h);
+    CHECK(s.local(1));
+    CHECK(s.local(4));
+}
+
+TEST_CASE("map_trigger: BuildingDoesNotExist, credits, power events") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGNEX01=Player,<none>,nex,0,1,1,1,0\nTRGCRD01=Player,<none>,crd,0,1,1,1,0\n"
+        "TRGCRB01=Player,<none>,crb,0,1,1,1,0\nTRGLOW01=Player,<none>,low,0,1,1,1,0\n"
+        "TRGFUL01=Player,<none>,ful,0,1,1,1,0\n"
+        "[Events]\nTRGNEX01=1,57,0,2\nTRGCRD01=1,12,0,500\nTRGCRB01=1,52,0,100\n"
+        "TRGLOW01=1,30,0,3\nTRGFUL01=1,58,0,3\n"
+        "[Actions]\nTRGNEX01=1,56,0,1,0,0,0,0,A\nTRGCRD01=1,56,0,2,0,0,0,0,A\n"
+        "TRGCRB01=1,56,0,3,0,0,0,0,A\nTRGLOW01=1,56,0,4,0,0,0,0,A\nTRGFUL01=1,56,0,5,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGNEX01\nTAG00002=0,b,TRGCRD01\nTAG00003=0,c,TRGCRB01\n"
+        "TAG00004=0,d,TRGLOW01\nTAG00005=0,e,TRGFUL01\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    h.btype[{3, 2}] = 1;
+    h.credits[3] = 200;
+    h.power[3] = 0.5;
+    s.start(h);
+    s.tick(h);
+    CHECK_FALSE(s.local(1));   // building type 2 exists
+    CHECK_FALSE(s.local(2));   // 200 < 500
+    CHECK_FALSE(s.local(3));   // 200 > 100
+    CHECK(s.local(4));         // ratio 0.5 < 1.0
+    CHECK_FALSE(s.local(5));
+    h.btype[{3, 2}] = 0;
+    h.credits[3] = 600;
+    h.power[3] = 1.0;
+    for (int i = 1; i <= 8; ++i) s.tick(h);
+    CHECK(s.local(1));
+    CHECK(s.local(2));
+    CHECK(s.local(5));
+}
+
+TEST_CASE("map_trigger: TechTypeExists/DoesntExist; unknown type -> false") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGTEX01=Player,<none>,tex,0,1,1,1,0\nTRGTNX01=Player,<none>,tnx,0,1,1,1,0\n"
+        "TRGUNK01=Player,<none>,unk,0,1,1,1,0\n"
+        "[Events]\nTRGTEX01=1,60,2,2,HTNK\nTRGTNX01=1,61,2,0,APOC\nTRGUNK01=1,61,2,0,NOSUCH\n"
+        "[Actions]\nTRGTEX01=1,56,0,1,0,0,0,0,A\nTRGTNX01=1,56,0,2,0,0,0,0,A\n"
+        "TRGUNK01=1,56,0,3,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=2,a,TRGTEX01\nTAG00002=0,b,TRGTNX01\nTAG00003=0,c,TRGUNK01\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    h.technos["HTNK"] = 1;
+    h.technos["APOC"] = 1;
+    s.start(h);
+    s.tick(h);
+    CHECK_FALSE(s.local(1));   // 1 < 2
+    CHECK_FALSE(s.local(2));   // an APOC exists
+    CHECK_FALSE(s.local(3));   // unknown type
+    h.technos["HTNK"] = 2;
+    h.technos["APOC"] = 0;
+    s.tick(h);
+    CHECK(s.local(1));
+    CHECK(s.local(2));
+}
+
+TEST_CASE("map_trigger: object kinds fire only when raised with their kind") {
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGDIE01=Player,<none>,die,0,1,1,1,0\nTRGENT01=Player,<none>,enter,0,1,1,1,0\n"
+        "TRGATK01=Player,<none>,atk,0,1,1,1,0\n"
+        "[Events]\nTRGDIE01=1,48,0,0\nTRGENT01=1,1,0,2\nTRGATK01=1,44,0,2\n"
+        "[Actions]\nTRGDIE01=1,56,0,1,0,0,0,0,A\nTRGENT01=1,56,0,2,0,0,0,0,A\n"
+        "TRGATK01=1,56,0,3,0,0,0,0,A\n"
+        "[Tags]\nTAGDIE01=0,a,TRGDIE01\nTAGENT01=0,b,TRGENT01\nTAGATK01=0,c,TRGATK01\n"
+        "[CellTags]\n30105=TAGENT01\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    for (int i = 0; i < 20; ++i) s.tick(h);
+    CHECK_FALSE(s.local(1));   // never raised by the loops
+    RaiseContext obj;
+    obj.has_object = true;
+    obj.object_house_type = 3;
+    CHECK_FALSE(s.raise_tag(d.find_tag("TAGDIE01"), kEvAttackedByAnybody, obj, h));
+    CHECK(s.raise_tag(d.find_tag("TAGDIE01"), kEvDestroyedByAnything, obj, h));
+    CHECK(s.local(1));
+    // EnteredBy Value 2 (Russians): a Player object does not count
+    CHECK_FALSE(s.raise_cell(105, 30, kEvEnteredBy, obj, h));
+    obj.object_house_type = 2;
+    CHECK(s.raise_cell(105, 30, kEvEnteredBy, obj, h));
+    CHECK(s.local(2));
+    // AttackedByHouse needs the attacker's house == Value
+    RaiseContext atk = obj;
+    atk.source_house_type = 3;
+    CHECK_FALSE(s.raise_tag(d.find_tag("TAGATK01"), kEvAttackedByHouse, atk, h));
+    atk.source_house_type = 2;
+    CHECK(s.raise_tag(d.find_tag("TAGATK01"), kEvAttackedByHouse, atk, h));
+}
+
+TEST_CASE("map_trigger: host effects carry the resolved team/waypoint/house") {
+    const std::string text = std::string(kHead) +
+        "[TeamTypes]\n0=TEAMAAAA\n[TEAMAAAA]\nName=x\n"
+        "[Triggers]\nTRG00001=Player,<none>,fx,0,1,1,1,0\n"
+        "[Events]\nTRG00001=1,13,0,0\n"
+        "[Actions]\nTRG00001=8,"
+        "4,1,TEAMAAAA,0,0,0,0,A,"
+        "7,1,0,0,0,0,0,A,"
+        "80,1,TEAMAAAA,0,0,0,0,C,"
+        "80,1,TEAMAAAA,0,0,0,0,1,"     // waypoint -1 -> refused
+        "17,0,12,0,0,0,0,A,"           // reveal around waypoint 12 (P1)
+        "125,10,NAMISL,0,0,0,0,B,"
+        "21,6,EVA_Speech,0,0,0,0,A,"   // presentation
+        "88,0,3,0,0,0,0,A\n"           // unimplemented
+        "[Tags]\nTAG00001=0,T,TRG00001\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    s.tick(h);
+    REQUIRE(h.effects.size() == 5);
+    CHECK(h.effects[0].action == 4);
+    CHECK(h.effects[0].team == "TEAMAAAA");
+    CHECK(h.effects[1].action == 7);
+    CHECK(h.effects[1].team == "TEAMAAAA");   // "0" -> team array index 0
+    CHECK(h.effects[2].action == 80);
+    CHECK(h.effects[2].waypoint == 2);
+    CHECK(h.effects[3].action == 17);
+    CHECK(h.effects[3].waypoint == 12);
+    CHECK(h.effects[3].house_type == 3);      // the player
+    CHECK(h.effects[4].action == 125);
+    CHECK(h.effects[4].text == "NAMISL");
+    CHECK(h.effects[4].house_type == 3);      // the trigger's house
+    CHECK(h.effects[4].waypoint == 1);
+    bool recorded = false, unimpl = false;
+    for (const std::string& l : s.log()) {
+        if (l.find("a21 PlaySpeech") != std::string::npos && l.find("(recorded)") != std::string::npos)
+            recorded = true;
+        if (l.find("a88 unimplemented") != std::string::npos) unimpl = true;
+    }
+    CHECK(recorded);
+    CHECK(unimpl);
+}
+
+TEST_CASE("map_trigger: house flags from ProductionBegins / AITriggers") {
+    MapTriggerData d = parse(one(0, "1,13,0,0",
+                                 "3,3,0,2,0,0,0,0,A,74,0,2,0,0,0,0,A,3,0,1,0,0,0,0,A"));
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    s.start(h);
+    s.tick(h);
+    CHECK(s.house_flags(2) == (1u | 4u));
+    CHECK(s.house_flags(1) == 0u);   // Alliance has no house instance
+}
