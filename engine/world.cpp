@@ -482,12 +482,22 @@ void World::step_victory() {
     for (const Building& b : buildings_)
         if (b.alive && b.state != Building::State::Dead &&
             b.house >= 0 && b.house < n) ++blds[b.house];
-    for (const Unit& u : units_)
-        if (u.alive && u.die_time < 0.0 && u.house >= 0 && u.house < n) ++unts[u.house];
+    // gF [RE: docs/re/mcv-deploy.md §5, HouseClass::AI FUN_004F8350]: under
+    // ShortGame a house is defeated only when it owns no building AND no unit
+    // of a [General] BaseUnit type (an MCV that can still found a base) --
+    // otherwise every skirmish would end at frame 0 (MCV-only start).
+    std::vector<int> mcvs(n, 0);
+    const std::vector<BuildingTypeDef>& bts = btypes();
+    for (const Unit& u : units_) {
+        if (!(u.alive && u.die_time < 0.0 && u.house >= 0 && u.house < n)) continue;
+        ++unts[u.house];
+        if (u.deploys_into >= 0 && u.deploys_into < (int)bts.size() && bts[u.deploys_into].conyard)
+            ++mcvs[u.house];
+    }
     // Mark defeated combatant houses (sticky). Neutral never defeated.
     for (int h = 0; h < n; ++h) {
         if (!house_combatant(h) || house_defeated_[h]) continue;
-        const bool defeated = short_game_ ? (blds[h] == 0)
+        const bool defeated = short_game_ ? (blds[h] == 0 && mcvs[h] == 0)
                                           : (blds[h] == 0 && unts[h] == 0);
         if (defeated) house_defeated_[h] = 1;
     }

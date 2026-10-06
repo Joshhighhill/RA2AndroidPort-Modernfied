@@ -704,6 +704,14 @@ private:
             Track& t = utrack_[i];
             if (t.dead) continue;
             const ra2engine::Unit& u = w_.units()[i];
+            if (!live(u) && u.deployed_away) {
+                // gF: an MCV that unfolded into its ConYard left the map by
+                // Limbo+delete, not by destruction -- no Destroyed event, not
+                // counted as a loss [RE: docs/re/mcv-deploy.md §2 step 6].
+                t.dead = true;
+                if (t.tag >= 0) { sys_->detach_tag(t.tag); t.tag = -1; }
+                continue;
+            }
             if (!live(u)) {
                 t.dead = true;
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())

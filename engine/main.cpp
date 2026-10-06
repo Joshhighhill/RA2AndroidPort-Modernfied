@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <deque>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -493,6 +494,9 @@ struct AudioSystem {
     ra2engine::AudioOutput out;
     std::map<std::string, UnitVoices> voices;  // by image ("GI","CONS")
     int eva_unitlost = -1;                     // bank clip id, -1 if unavailable
+    // gF: evamd.ini entry + side ("EVA_YouAreVictorious|Allied") -> clip id,
+    // preloaded before the Mixer exists (the bank must be complete by then).
+    std::map<std::string, int> eva_by_name;
     // Chrono Miner teleport sounds [RE: economy.md §3]: soundmd section names
     // from rulesmd [CMIN] ChronoOut/InSound ("" -> silent no-op on play).
     std::string chrono_out, chrono_in;
@@ -644,6 +648,29 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
     } catch (const std::exception& ex) {
         std::cerr << "[audio] EVA unavailable: " << ex.what() << "\n";
         audio.eva_unitlost = -1;
+    }
+
+    // gF [RE: docs/re/mcv-deploy.md §2/§5]: the deploy-failure and game-over
+    // EVA lines (evamd.ini [EVA_*] Allied=/Russian= -> <clip>.wav in audio.mix,
+    // the ceva064 path above). Missing clips are simply absent.
+    try {
+        Ini eva_ini = load_ini_from_ra2md(dir, "evamd.ini");
+        for (const char* key : {"EVA_CannotDeployHere", "EVA_YouAreVictorious", "EVA_YouHaveLost",
+                                "EVA_PlayerDefeated", "EVA_MissionAccomplished", "EVA_MissionFailed"})
+            for (const char* side : {"Allied", "Russian"}) {
+                std::string clip = eva_ini.get(key, side, "");
+                while (!clip.empty() && std::isspace((unsigned char)clip.back())) clip.pop_back();
+                for (char& ch : clip) ch = (char)std::tolower((unsigned char)ch);
+                if (clip.empty()) continue;
+                const ra2assets::MixEntry* ce = audio_mix.find(clip + ".wav");
+                if (!ce) continue;
+                std::vector<uint8_t> wb = audio_mix.read(*ce);
+                ra2assets::WavInfo wi;
+                std::vector<int16_t> pcm = ra2assets::load_wav_ima(wb.data(), wb.size(), wi);
+                audio.eva_by_name[std::string(key) + "|" + side] = audio.bank.add(std::move(pcm));
+            }
+    } catch (const std::exception& ex) {
+        std::cerr << "[audio] gF EVA lines unavailable: " << ex.what() << "\n";
     }
 
     // The bank is now complete -- safe to build the Mixer over it and
@@ -3886,7 +3913,8 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
 // SkirmishConfig. Purely additive: the 16 gates never touch this path.
 ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  Assets& a, UnitAssets& ua, BuildingAssets& ba,
-                                 const Rules& rules);
+                                 const Rules& rules, const Ini* gf_rules_ini = nullptr,
+                                 std::vector<std::string>* gf_spawned = nullptr);
 
 // ============================================================================
 // [P8 Options + persistence, RE: docs/re/options.md] The user's RA2.INI.
@@ -3992,6 +4020,8 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
 
 // P10 Campaign runtime (CampaignRuntime, camp::*) [RE: campaign.md].
 #include "campaign_runtime.inc"
+// gF: real skirmish start (MCV + recovered start force) and MCV wiring.
+#include "gf_start.inc"
 
 // [RE: skirmish.md §2, D4] The playable game as a Scene. Its ctor builds the World
 // via launch_skirmish(config) (replacing run_interactive's hardcoded 2964-3132
@@ -4381,7 +4411,8 @@ public:
           // Hardcoded 2964-3132 scenario REPLACED by launch_skirmish [D4].
           // P10: a campaign mission starts from the bare map world; its
           // CampaignRuntime (ctor body) places the mission's own objects.
-          world_(cfg.campaign_map.empty() ? launch_skirmish(cfg, a_, ua_, ba_, rules_)
+          world_(cfg.campaign_map.empty() ? launch_skirmish(cfg, a_, ua_, ba_, rules_, &rules_ini_,
+                                                            &g_gf_spawned)
                                           : build_campaign_world(a_, ua_)),
           buildable_(building_buildable_tab(ba_, /*defenses=*/false)),   // active_tab_ starts at 0
           lay_(ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_)),
@@ -4401,6 +4432,12 @@ public:
         for (const VehicleAssets& v : ur_.vehicles) vlist_.push_back(&v);
         for (const VehicleAssets& v : ur_ai_.vehicles) vlist_.push_back(&v);
         if (transport_.ok) vlist_.push_back(&transport_.va);
+        // gF: MCV + real-start force render assets.
+        if (cfg.campaign_map.empty()) {
+            gf_load_assets(g_gf_spawned);
+            gf_center_on_player();
+        }
+        g_gf_spawned.clear();
 
         // Register each infantry def's SHP + anim into the shared UnitAssets store
         // so launched infantry (player + AI-2 Soviet rosters) render. Guarded: a
@@ -4500,7 +4537,11 @@ public:
         // P10 Campaign [RE: campaign.md]: the mission's houses, objects,
         // triggers and teams (before P5, whose veterancy cost table must see
         // the mission's extra building types).
-        if (!cfg.campaign_map.empty()) setup_campaign(cfg);
+        if (!cfg.campaign_map.empty()) {
+            setup_campaign(cfg);
+            gf_arm_mcv(world_, ba_, rules_, /*skirmish_session=*/false);   // gF: MCVs deploy
+            gf_load_assets({});
+        }
         p5_art_ = load_p5_art(dir_, ra2_);
         g_p5_art = &p5_art_;
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
@@ -4694,6 +4735,7 @@ public:
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         world_.step(dt);
+        gf_update(dt);   // gF: deploy EVA + skirmish game over
         if (repair_bridge) player_credits_ += world_.take_income(0);
         // P10: the mission ended (BorrowedTime ran out) -> the result screen.
         if (campaign_ && campaign_->finished() && !campaign_done_ && !next_scene_) {
@@ -4877,6 +4919,7 @@ public:
             os_cursor_hidden_ = drew;
         }
         if (campaign_) draw_campaign_overlay(ren);   // P10 objectives / mission end
+        gf_render(ren);   // gF: victory / defeat text during BorrowedTime
         // P7 overlays + the transient "game saved / load failed" banner.
         menu_.render(ren);
         sld_.render(ren, SDL_GetTicks());
@@ -4890,6 +4933,7 @@ public:
         }
     }
 
+#include "gf_scene.inc"
     bool wants_quit() const override { return input_.wants_quit() || abort_; }
     Scene* next() override { Scene* n = next_scene_; next_scene_ = nullptr; return n; }
 
@@ -4985,7 +5029,7 @@ private:
         } else {
             // Never run a half-loaded World: start the same scenario fresh.
             campaign_.reset();
-            world_ = cfg_.campaign_map.empty() ? launch_skirmish(cfg_, a_, ua_, ba_, rules_)
+            world_ = cfg_.campaign_map.empty() ? launch_skirmish(cfg_, a_, ua_, ba_, rules_, &rules_ini_)
                                                : build_campaign_world(a_, ua_);
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
@@ -6677,6 +6721,8 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
 
 // P10 campaign shell scenes (loading screen / result) [RE: campaign.md].
 #include "campaign_scenes.inc"
+// gF: skirmish result screen.
+#include "gf_result.inc"
 
 // --campaign <MAP>: open a mission's loading screen directly (no main menu;
 // result/abort then exit). Side from the map name (SOV* = Nod).
@@ -6845,6 +6891,9 @@ int run_menu(bool no_audio) {
     g_user_settings = nullptr;
     return rc;
 }
+
+// gF: real-play verification driver (--gf-play).
+#include "gf_play.inc"
 
 // [Task 5/Task 3] Render one frame of each shell page (+ the skirmish setup
 // screen) to PNGs and exit -- the eyeball-verification hook. `out_path` gets the
@@ -11561,7 +11610,8 @@ struct DemoMultihouseResult { std::vector<std::string> witness; uint64_t hash = 
 // calls it (the 16 gates build worlds directly); world_hash untouched.
 ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  Assets& a, UnitAssets& ua, BuildingAssets& ba,
-                                 const Rules& rules) {
+                                 const Rules& rules, const Ini* gf_rules_ini,
+                                 std::vector<std::string>* gf_spawned) {
     ra2engine::World world = build_world(a, ua, 0);          // count=0 -> launcher spawns everything
     ra2engine::configure_skirmish_houses(world, cfg);       // house table + toggles + credit seed + minimal AI
     // Repair & Sell [RE: repair-sell.md §A1]: the interactive game's World never
@@ -11589,6 +11639,47 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     const std::vector<ra2assets::MapWaypoint> starts =
         cfg.use_map_starts ? a.map.start_waypoints() : std::vector<ra2assets::MapWaypoint>{};
     int combatant_ix = 0;
+    // gF [RE: docs/re/mcv-deploy.md §6, FUN_006880F0]: REAL PLAY (the GameScene
+    // passes the rules Ini) starts every combatant with an MCV + the recovered
+    // UnitCount force at a start chosen by the recovered spread rule -- no
+    // pre-built base. The gates pass nothing and keep the historical setup.
+    if (gf_rules_ini) {
+        GfRng rng(gf_seed_of(cfg.map_file.empty() ? cfg.map_id : cfg.map_file));
+        std::vector<ra2assets::MapWaypoint> real_starts = a.map.start_waypoints();
+        int ncomb = 0;
+        for (const ra2engine::SkirmishSlot& s : cfg.slots) ncomb += s.combatant ? 1 : 0;
+        const std::vector<int> picks = gf_pick_starts(real_starts, ncomb, rng);
+        gf_arm_mcv(world, ba, rules, /*skirmish_session=*/true);
+        for (int i = 0; i < (int)cfg.slots.size(); ++i) {
+            const ra2engine::SkirmishSlot& s = cfg.slots[i];
+            if (!s.combatant) continue;
+            int bx, by;
+            if (combatant_ix < (int)picks.size()) {
+                const ra2assets::MapWaypoint& w = real_starts[(size_t)picks[(size_t)combatant_ix]];
+                bx = w.x; by = w.y;
+            } else {   // no [Waypoints] 0-7: the historical fan-out
+                bx = sc ? sc->x + (i * 14) % std::max(1, gw - 14) : 6 + i * 6;
+                by = sc ? sc->y : 6 + i * 4;
+            }
+            ++combatant_ix;
+            const std::string country = s.country.empty() ? gf_default_country(s.side) : s.country;
+            const int mcv = gf_spawn_start_force(world, *gf_rules_ini, rules, i, country, bx, by,
+                                                 cfg.unit_count, cfg.tech_level, rng, gf_spawned);
+            if (s.is_ai && ba.ok) {
+                world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash));
+                // An AI house unfolds its MCV at once (the AI's "deploy the
+                // BaseUnit when there is no ConYard" step; D owns the full AI
+                // MCV logic -- this is the World-level order it calls).
+                if (mcv >= 0) world.order_deploy_mcv(mcv);
+            }
+            if (cfg.superweapons) {
+                const SuperweaponParams swp = resolve_superweapon(rules);
+                world.grant_superweapon(i, ra2engine::SuperweaponType::Nuke, swp.recharge_secs,
+                                        swp.damage, swp.cell_spread, swp.percent_at_max, swp.verses);
+            }
+        }
+        return world;
+    }
     // Per-combatant spawn: a base at a fanned-out cell + unit_count combat units
     // (+ MCV placeholder) ring-scanned like the existing transport/engineer spawns.
     for (int i = 0; i < (int)cfg.slots.size(); ++i) {
@@ -15784,6 +15875,10 @@ int main(int argc, char** argv) {
             std::string arg = argv[i];
             if (arg == "--menu-shot" && i + 1 < argc) {
                 return run_menu_shot(argv[++i]);
+            } else if (arg == "--gf-play" && i + 1 < argc) {   // gF real-play driver
+                const std::string sc = argv[++i];
+                const std::string od = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : "gf_play_out";
+                return run_gf_play(sc, od);
             } else if (arg == "--screenshot" && i + 1 < argc) {
                 screenshot = argv[++i];
             } else if (arg == "--demo-move" && i + 2 < argc) {
