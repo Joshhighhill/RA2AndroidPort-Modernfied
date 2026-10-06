@@ -6498,6 +6498,7 @@ private:
         if (maps_.empty()) return;
         const int n = static_cast<int>(maps_.size());
         map_ix_ = std::max(0, std::min(n - 1, map_ix_ + d));
+        set_ai_players(ai_players());   // gF G-17: re-clamp to the new map's starts
     }
 
     // --- derived state over cfg_.slots ---
@@ -6525,7 +6526,13 @@ private:
     // Rebuild the slot table around a new AI count (>=1). Keeps the human (slot 0)
     // and the trailing Neutral civilian; preserves existing AI slot settings.
     void set_ai_players(int n) {
-        n = std::max(1, std::min(7, n));
+        // gF G-17: never more combatants than the map has start waypoints
+        // (the map's MaxPlayers; [Basic] MaxPlayer / [Waypoints] 0-7).
+        int cap = 7;
+        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size()) &&
+            maps_[map_ix_].max_players > 1)
+            cap = std::min(7, maps_[map_ix_].max_players - 1);
+        n = std::max(1, std::min(cap, n));
         ra2engine::SkirmishSlot human = cfg_.slots.front();
         ra2engine::SkirmishSlot neutral;
         bool has_neutral = false;
@@ -6697,7 +6704,7 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
         // side
         const ra2engine::SbRect sr = slot_cell(row, 1);
         box(sr, true);
-        draw_text(ren, menu_side_name(s.side), sr.x + 8, sr.y + 11, 2, 235, 235, 245);
+        draw_text(ren, gf_country_label(s), sr.x + 8, sr.y + 11, 2, 235, 235, 245);
         // color
         const ra2engine::SbRect cr = slot_cell(row, 2);
         box(cr, true);
@@ -6857,10 +6864,8 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
     const std::vector<int> cs = combatant_slots();
     for (int row = 0; row < static_cast<int>(cs.size()); ++row) {
         ra2engine::SkirmishSlot& s = cfg_.slots[cs[row]];
-        if (slot_cell(row, 1).contains(ev.x, ev.y)) {         // side: Allied->Soviet->Yuri->...
-            s.side = (s.side == ra2engine::World::Side::Allied) ? ra2engine::World::Side::Soviet
-                   : (s.side == ra2engine::World::Side::Soviet) ? ra2engine::World::Side::Yuri
-                                                                : ra2engine::World::Side::Allied;
+        if (slot_cell(row, 1).contains(ev.x, ev.y)) {         // gF G-17: country cycle
+            gf_next_country(rules_, s);
             return;
         }
         if (slot_cell(row, 2).contains(ev.x, ev.y)) {         // color 0..7

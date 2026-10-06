@@ -364,3 +364,40 @@ inline std::string gf_csf(const std::string& label, const char* fallback) {
 
 // Restart = the same mission/config from its loading screen (defined in gf_result.inc).
 Scene* gf_make_restart_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg);
+
+// gF G-17 [RE: multihouse.md §1, CONFIRMED [Countries] + per-country Side=]:
+// the lobby picks a COUNTRY; the side follows from its rules Side= (GDI ->
+// Allied, Nod -> Soviet). The playable list is the [Countries] order minus
+// YuriCountry (Yuri's side is a non-goal) and the passive/civilian houses.
+inline const std::vector<std::string>& gf_lobby_countries() {
+    static const std::vector<std::string> k = {"Americans", "Alliance", "French", "Germans",
+                                               "British", "Africans", "Arabs", "Confederation",
+                                               "Russians"};
+    return k;
+}
+inline ra2engine::World::Side gf_side_of_country(const Rules& rules, const std::string& c) {
+    std::string side = rules.section_string(c, "Side", "");
+    for (char& ch : side) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    if (side == "NOD") return ra2engine::World::Side::Soviet;
+    if (side == "GDI") return ra2engine::World::Side::Allied;
+    const auto& k = gf_lobby_countries();   // rules without Side=: the documented split
+    const auto it = std::find(k.begin(), k.end(), c);
+    return (it != k.end() && it - k.begin() >= 5) ? ra2engine::World::Side::Soviet
+                                                 : ra2engine::World::Side::Allied;
+}
+inline void gf_next_country(const Rules& rules, ra2engine::SkirmishSlot& s) {
+    const auto& k = gf_lobby_countries();
+    const std::string cur = s.country.empty() ? gf_default_country(s.side) : s.country;
+    auto it = std::find(k.begin(), k.end(), cur);
+    const std::size_t i = (it == k.end()) ? 0 : (std::size_t)((it - k.begin() + 1) % (long)k.size());
+    s.country = k[i];
+    s.side = gf_side_of_country(rules, s.country);
+}
+// Display label: the country's CSF UIName ("Name:Americans").
+inline std::string gf_country_label(const ra2engine::SkirmishSlot& s) {
+    const std::string c = s.country.empty() ? gf_default_country(s.side) : s.country;
+    std::string t = camp::csf_text(env_install_dir(), "Name:" + c);
+    if (t == "Name:" + c) t = c;
+    for (char& ch : t) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    return t.size() > 11 ? t.substr(0, 11) : t;
+}

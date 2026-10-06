@@ -142,10 +142,17 @@ void kill_house(ra2engine::World& w, int house) {
     }
 }
 
-GameScene* start_from_lobby(Ctx& c, const Rules& rules, const MenuArt& art) {
+GameScene* start_from_lobby(Ctx& c, const Rules& rules, const MenuArt& art, int country_clicks = 0) {
     SkirmishSetupScene lobby(rules, /*no_audio=*/true, art);
-    c.shot(lobby, "gf_lobby.png");
     ra2engine::InputEvent ev;
+    for (int k = 0; k < country_clicks; ++k) {   // P0's country cell (slot_cell(0, 1))
+        ev.kind = ra2engine::InputEvent::PointerDown;
+        ev.button = ra2engine::InputEvent::Left;
+        ev.x = 640 + 115 + 75;
+        ev.y = 190 + 19;
+        lobby.handle(ev);
+    }
+    c.shot(lobby, "gf_lobby.png");
     ev.kind = ra2engine::InputEvent::PointerDown;
     ev.button = ra2engine::InputEvent::Left;
     ev.x = 60 + 110;   // start_rect() centre
@@ -177,8 +184,9 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
     c.out = out_dir;
     std::filesystem::create_directories(out_dir);
 
-    if (scenario == "skirmish" || scenario == "win" || scenario == "lose") {
-        std::unique_ptr<GameScene> g(start_from_lobby(c, rules, store.art));
+    if (scenario == "skirmish" || scenario == "soviet" || scenario == "win" || scenario == "lose") {
+        // "soviet": P0 cycles Americans -> ... -> Russians (8 clicks) in the lobby.
+        std::unique_ptr<GameScene> g(start_from_lobby(c, rules, store.art, scenario == "soviet" ? 8 : 0));
         if (!g) return 1;
         ra2engine::World& w = g->gf_world();
         const int pu = count_units(w, 0, false), pm = count_units(w, 0, true);
@@ -194,7 +202,9 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
         c.shot(*g, "gf_start.png");
         step(*g, 30);
         c.check(!w.house_defeated(0), "MCV-only house is not defeated (ShortGame BaseUnit rule)");
-        if (scenario == "skirmish") {
+        if (scenario == "soviet")
+            c.check(w.house_side(0) == ra2engine::World::Side::Soviet, "lobby country Russians -> Soviet house");
+        if (scenario == "skirmish" || scenario == "soviet") {
             const int cy = deploy_player_mcv(c, *g, 900);
             c.check(cy >= 0, "player MCV deployed into an Idle ConYard");
             if (cy >= 0) g->gf_center_cell(w.buildings()[(std::size_t)cy].cx + 1, w.buildings()[(std::size_t)cy].cy + 1);
@@ -203,7 +213,12 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
             for (int h = 1; h < w.house_count() && ai_cy < 0; ++h)
                 if (w.ai_enabled(h)) ai_cy = conyard_idle(w, h);
             c.check(ai_cy >= 0, "AI house deployed its MCV");
-            if (cy >= 0) {
+            if (cy >= 0 && scenario == "soviet") {
+                // The Soviet sidebar strip/roster is owner A's G-03 (prefix "GA"
+                // today); only the deploy half is F's to verify here.
+                std::cout << "gf_play NOTE Soviet build-from-sidebar depends on G-03 (owner A)
+";
+            } else if (cy >= 0) {
                 const bool soviet = w.house_side(0) == ra2engine::World::Side::Soviet;
                 const bool built = build_from_sidebar(c, *g, soviet ? "NAPOWR" : "GAPOWR", cy);
                 c.check(built, "ConYard builds a power plant from the sidebar");
