@@ -1,6 +1,7 @@
 #include "platform.hpp"
 
 #include <SDL.h>
+#include <cstdio>
 #include <stdexcept>
 #include <string>
 
@@ -101,8 +102,22 @@ bool Platform::poll(InputEvent& ev) {
             if (e.key.keysym.sym == SDLK_ESCAPE) {
                 ev.kind = InputEvent::Quit;
             } else {
-                ev.kind = InputEvent::None;
+                // P7: the few keys the save/load UI needs; everything else stays None.
+                switch (e.key.keysym.sym) {
+                    case SDLK_BACKSPACE: ev.key = kKeyBackspace; break;
+                    case SDLK_RETURN: case SDLK_KP_ENTER: ev.key = kKeyEnter; break;
+                    case SDLK_UP: ev.key = kKeyUp; break;
+                    case SDLK_DOWN: ev.key = kKeyDown; break;
+                    case SDLK_DELETE: ev.key = kKeyDelete; break;
+                    case SDLK_F10: ev.key = kKeyF10; break;
+                    default: ev.key = 0; break;
+                }
+                ev.kind = ev.key ? InputEvent::Key : InputEvent::None;
             }
+            break;
+        case SDL_TEXTINPUT:
+            ev.kind = InputEvent::Text;
+            std::snprintf(ev.text, sizeof ev.text, "%s", e.text.text);
             break;
         case SDL_MOUSEBUTTONDOWN:
             ev.kind = InputEvent::PointerDown;
