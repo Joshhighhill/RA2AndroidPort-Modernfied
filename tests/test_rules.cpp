@@ -453,3 +453,18 @@ TEST_CASE("rules: the real rulesmd repair/sell scalars [RE: repair-sell.md §Gro
     CHECK(rules.section_flag("NABNKR", "ClickRepairable", true));  // explicit yes
     CHECK(rules.section_flag("GATOW", "ClickRepairable", true));   // no section -> yes
 }
+
+TEST_CASE("rules: section_flag follows the game's first-char Get_Bool (RC-5)") {
+    const ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[X]\nA=Yes;\nB=true\nC=1\nD=No ;c\nE=false\nF=maybe\nG=Y\n");
+    const ra2assets::Rules r = ra2assets::Rules::load(ini);
+    CHECK(r.section_flag("X", "A", false));
+    CHECK(r.section_flag("X", "B", false));
+    CHECK(r.section_flag("X", "C", false));
+    CHECK_FALSE(r.section_flag("X", "D", true));
+    CHECK_FALSE(r.section_flag("X", "E", true));
+    CHECK(r.section_flag("X", "F", true));          // unparseable -> default
+    CHECK_FALSE(r.section_flag("X", "F", false));
+    CHECK(r.section_flag("X", "G", false));
+    CHECK(r.section_flag("X", "Missing", true));
+}

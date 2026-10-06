@@ -67,6 +67,10 @@ struct ProjectileLaunch {
 // the pre-P2 try_fire else-branch extracted verbatim, shared by the instant
 // path and World's projectile detonation.
 void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx, int victim_idx);
+// Gap fix C: the same tail with an explicit shooter -- a unit (attacker_idx) or
+// a base defense (attacker_building, `shooter` = its transient weapon carrier).
+void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& shooter,
+                      int attacker_idx, int attacker_building, int victim_idx);
 
 // P2: the attack-building damage tail (damage_vs vs armor, kill_building, clear
 // attackers) -- extracted from step_combat's building branch.
@@ -131,6 +135,10 @@ struct MoveRequest {
 // dealing damage (ROF/fire_flash reset unchanged).
 std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& units,
                                      std::vector<Building>& buildings, Occupancy& occ, double dt,
-                                     std::vector<ProjectileLaunch>* launches = nullptr);
+                                     std::vector<ProjectileLaunch>* launches = nullptr,
+                                     ProjRng* rof_rng = nullptr);
+// Gap fix C (G-50): RearmTimer in seconds = (ROF + Random(0,2)) / 15
+// [veterancy.md V7]; rng null -> no jitter.
+double rearm_secs(int rof_frames, ProjRng* rng);
 
 }  // namespace ra2engine

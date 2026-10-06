@@ -70,6 +70,8 @@
 #include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
 #include "ra2assets/csf.hpp" // P10 briefing/objective text
 #include "voxel_raster.hpp"
+#include "weapon_resolve.hpp"  // Gap fix C: TechnoType weapon slots
+#include "gamespeed.hpp"       // Gap fix C: RE-T1 logic rate per GameSpeed
 #include "world.hpp"
 
 #include "ra2assets/art.hpp"
@@ -670,13 +672,22 @@ struct ResolvedUnit {
     int speed = 0;
 };
 
-// Movement pace tuning: iso cells/sec = rules Speed * this. rulesmd Speed for
-// E1 is 4, so 4 * 0.75 = 3 cells/sec -- fast enough to visibly stride between
-// tiles, slow enough to read as walking (not teleporting) and to cross a
-// ~25-cell demo path in well under the 15s cap. Falls back to World's own
-// default if Speed is missing (0). Defined HERE (ahead of resolve_combat_unit)
-// because CB-2's JumpjetSpeed fallback converts base Speed with the SAME scale.
-constexpr double kCellsPerSecPerSpeed = 0.75;
+// Gap fix C (G-42) [RE: docs/re/gamespeed.md §2-§4]: the original is frame-
+// locked -- Speed= is stored as min(255, clamp(Speed,0,100)*256/100) leptons
+// per logic frame (voxel-render.md §5) and the house's GroundspeedBias =
+// [Difficulty] Groundspeed (1.0) x [General] GameSpeedBias (1.6) multiplies
+// it (HouseClass::AssignHandicap FUN_004f6dd0). The engine's convention is 15
+// logic frames per engine second (kLogicFps, = GameSpeed 4), so
+//   cells/sec = trunc(Speed*256/100) * GameSpeedBias * 15 / 256.
+// Replaces the old feel-tuned 0.75 cells/s per Speed point (~3.2x too fast
+// relative to ROF). g_game_speed_bias is this install's value until
+// resolve_combat_unit reads the live [General] key.
+double g_game_speed_bias = 1.6;
+inline double speed_to_cps(double speed) {
+    const double clamped = std::min(100.0, std::max(0.0, speed));
+    const int lept = std::min(255, static_cast<int>(clamped * 256.0 / 100.0));
+    return lept * g_game_speed_bias * 15.0 / 256.0;
+}
 
 // Case-insensitive lowercasing (CB-2 Locomotor CLSID compare). File-local.
 inline std::string to_lower(std::string s) {
@@ -693,10 +704,18 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     ResolvedUnit r;
     r.combat.image = rules.image(unit_id);
     r.speed = rules.speed(unit_id);
+    // Gap fix C (G-42): every unit carries its own recovered speed (infantry
+    // included -- they used to share World::move_cps).
+    g_game_speed_bias = rules.general_double("GameSpeedBias", g_game_speed_bias);
+    r.combat.speed_cps = speed_to_cps(r.speed);
     r.combat.strength = rules.strength(unit_id);
     r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
-    const std::string primary = rules.primary(unit_id);
+    // Gap fix C (G-41) [RE: docs/re/weapons.md §1]: the TechnoType slot rule
+    // (Primary/Secondary, or Weapon1..N for TurretCount>=1 types -- SREF's
+    // Primary is commented out and Weapon1=Comet) via engine/weapon_resolve.
+    const ra2engine::TypeWeapons tw = ra2engine::resolve_type_weapons(rules, unit_id);
+    const std::string primary = tw.slot[0].id;
     r.combat.damage = rules.weapon_damage(primary);
     r.combat.rof = rules.weapon_rof(primary);
     r.combat.range = rules.weapon_range(primary);
@@ -736,7 +755,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // Link_To_Object arms from TechnoType+0x71C; JumpJetTurnRate (+0xD70) is
     // VESTIGIAL and NOT read. D2: flight_speed = JumpjetSpeed (fallback base
     // Speed) via the engine's EXISTING vehicle-speed conversion
-    // (kCellsPerSecPerSpeed -- the SAME scale ground vehicles use; the vanilla
+    // (speed_to_cps -- the SAME recovered scale ground units use, G-42; the vanilla
     // 12 leptons/frame is the documented divergence, voxel-render.md §5).
     // climb/crash are per-frame Jumpjet floats x15 -> leptons/sec (the
     // rot_u16_per_sec precedent). All default INERT for a ground unit.
@@ -756,7 +775,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.cruise_altitude = rules.section_double(unit_id, "JumpjetHeight", 500.0);
         // D2: same vehicle-speed conversion ground vehicles use (Speed 6 ->
         // 4.5 cps); ZEP JumpjetSpeed=5 -> 3.75 cells/sec in engine scale.
-        r.combat.flight_speed = jjspeed * kCellsPerSecPerSpeed;   // cells/sec
+        r.combat.flight_speed = speed_to_cps(jjspeed);   // cells/sec
         r.combat.climb_rate   = jjclimb * 15.0;                   // leptons/sec
         r.combat.descend_rate = jjcrash * 15.0;
         // D1: FacingClass rate = (ROT<<1)*256 u16/frame; x15 -> u16/sec.
@@ -798,7 +817,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.elite_abilities =
         ra2engine::parse_abilities(rules.section_string(unit_id, "EliteAbilities", ""));
     r.combat.rules_speed = r.speed;
-    const std::string elite = rules.section_string(unit_id, "ElitePrimary", "");
+    const std::string elite = tw.elite[0].id;   // ElitePrimary / EliteWeapon1 (G-41)
     if (!elite.empty()) {
         r.combat.has_elite = true;
         r.combat.elite.damage = rules.weapon_damage(elite);
@@ -808,7 +827,10 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.verses = rules.verses(ewh);
         r.combat.elite.cell_spread = rules.section_double(ewh, "CellSpread", 0.0);
         r.combat.elite.percent_at_max = rules.section_double(ewh, "PercentAtMax", 1.0);
+        r.combat.elite_proj = tw.elite[0].proj;
+        r.combat.has_elite_proj = true;
     }
+    ra2engine::fill_unit_combat_extras(rules, unit_id, tw, r.combat);
 
     std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
               << " strength=" << r.combat.strength << " armor=" << r.combat.armor
@@ -893,20 +915,15 @@ SuperweaponParams resolve_superweapon(const ra2assets::Rules& rules) {
 // section's Ready/Walk/FireUp/Die1 entries -- docs/re/infantry-anim.md).
 // --- P4 Unit special abilities [RE: docs/re/abilities.md] -----------------------
 // Rules -> AbilityProfile / AbilityRules, read from the REAL rulesmd keys. Kept
-// in main.cpp (World is asset-free); no src/rules.cpp change -- string keys
-// come straight off the Ini with the inline ';' comment stripped.
+// in main.cpp (World is asset-free). RC-5: Ini::parse now cuts the inline ';'
+// comment and trims exactly like the game's INIClass::Load (docs/re/
+// ini-reader.md), so this is a plain lookup (the old local strip is gone).
 std::string ability_ini_str(const Ini& ini, const std::string& sec, const std::string& key) {
-    std::string v = ini.get(sec, key, "");
-    const std::size_t semi = v.find(';');
-    if (semi != std::string::npos) v.erase(semi);
-    while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
-    std::size_t b = 0;
-    while (b < v.size() && std::isspace(static_cast<unsigned char>(v[b]))) ++b;
-    return v.substr(b);
+    return ini.get(sec, key, "");
 }
 
-// Boolean INI key off the comment-stripped value ("Teleporter=yes;" carries a
-// trailing ';' on this install): y/t/1 -> true, n/f/0 -> false, absent -> def.
+// Boolean INI key, the game's Get_Bool ("Teleporter=yes;" reads "yes" now
+// that Ini cuts the comment): y/t/1 -> true, n/f/0 -> false, absent -> def.
 bool ability_flag(const Ini& ini, const std::string& sec, const std::string& key, bool def) {
     const std::string v = ability_ini_str(ini, sec, key);
     if (v.empty()) return def;
@@ -1009,10 +1026,7 @@ void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini)
     world.set_ability_rules(resolve_ability_rules(rules, ini));
     std::vector<std::string> ids = {"DRON", "DESO", "CLEG", "TANY", "GHOST", "IVAN", "TERROR", "FV"};
     for (const auto& kv : ini.section("InfantryTypes")) {
-        std::string id = kv.second;
-        if (const std::size_t semi = id.find(';'); semi != std::string::npos) id.erase(semi);
-        while (!id.empty() && std::isspace(static_cast<unsigned char>(id.back()))) id.pop_back();
-        while (!id.empty() && std::isspace(static_cast<unsigned char>(id.front()))) id.erase(0, 1);
+        const std::string& id = kv.second;   // RC-5: comment already cut by Ini
         if (!id.empty() && rules.section_double(id, "IFVMode", 0.0) != 0.0 &&
             std::find(ids.begin(), ids.end(), id) == ids.end())
             ids.push_back(id);
@@ -1142,7 +1156,7 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         va.combat.is_vehicle = true;
         va.combat.rot = rules.rot(unit_id);
         va.combat.turret = rules.has_turret(unit_id);
-        va.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;  // Speed 6 -> 4.5 cps
+        va.combat.speed_cps = speed_to_cps(ru.speed);  // Speed 6 -> 1.41 cps (G-42)
 
         const std::string image = va.combat.image;  // "HTNK"
         std::string base = image;
@@ -1206,7 +1220,13 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         art.fire_flh(image, va.flh);  // leaves {0,0,0} if absent/malformed
         // P2: the muzzle offset is also the projectile launch point (projectile.md
         // §4 step 1 -- FLH resolved before the bullet exists).
-        for (int k = 0; k < 3; ++k) va.combat.proj.flh[k] = va.flh[k];
+        for (int k = 0; k < 3; ++k) {
+            va.combat.proj.flh[k] = va.flh[k];
+            // Gap fix C: the other slots launch from the same muzzle.
+            va.combat.elite_proj.flh[k] = va.flh[k];
+            va.combat.secondary.proj.flh[k] = va.flh[k];
+            va.combat.elite_secondary.proj.flh[k] = va.flh[k];
+        }
 
         for (int house = 0; house <= 1; ++house) {
             const ra2assets::Palette hp = ra2engine::pal_for_house(unit_pal, house);
@@ -1511,7 +1531,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 const ResolvedUnit ru = resolve_combat_unit(rules, e.id);  // infantry combat + SHP image
                 d.combat = ru.combat;
                 d.combat.is_vehicle = false;
-                d.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+                d.combat.speed_cps = speed_to_cps(ru.speed);
             }
             ur.defs.push_back(std::move(d));
             ur.cameos.push_back(std::move(cshp));
@@ -1774,7 +1794,7 @@ void spawn_free_units_on_open(ra2engine::World& world, const BuildingAssets& ba,
 // and retaliate once combat starts (see engine/combat.cpp step_combat).
 ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
     ra2engine::World world(a.map);
-    if (ua.gi_speed > 0) world.set_move_speed(ua.gi_speed * kCellsPerSecPerSpeed);
+    if (ua.gi_speed > 0) world.set_move_speed(speed_to_cps(ua.gi_speed));
 
     // Register each image's real artmd.ini-resolved anim sequence BEFORE any
     // units are spawned (set_anim/anim_for_image, world.hpp) -- units spawned
@@ -2052,6 +2072,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         for (size_t k = 0; k < d.prerequisite.size(); ++k)
             std::cerr << (k ? "," : "") << d.prerequisite[k];
         std::cerr << "]\n";
+        ra2engine::fill_building_weapons(rules, id, d);   // Gap fix C (G-40): defenses
         ba.roster.push_back(std::move(d));
         ba.art.push_back(std::move(slot));
         // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is
@@ -4767,7 +4788,13 @@ public:
         // stall never spirals). Input, scrolling, rendering and the per-frame
         // tail below stay per-frame. The tick length is kLogicDt (see the
         // RE-FALLBACK note at its definition).
-        logic_acc_ += dt;
+        // RE-T1 (gap fix C) [RE: docs/re/gamespeed.md]: the user's GameSpeed
+        // sets how many 1/15-s logic ticks run per wall second (fps/15: speed
+        // 1 = 4x, 3 = 1.33x, 4 = 1x). No user settings (headless probes,
+        // gates) -> 1x, i.e. exactly the old behaviour.
+        logic_acc_ += dt * (g_user_settings
+                                ? ra2engine::game_speed_multiplier(g_user_settings->game_speed)
+                                : 1.0);
         int logic_steps = 0;
         while (logic_acc_ + 1e-9 >= kLogicDt) {
             if (logic_steps == kMaxLogicSteps) { logic_acc_ = 0.0; break; }
@@ -5166,6 +5193,7 @@ public:
 
 private:
 #include "realplay_scene.inc"   // gap owner A: placement/production/roster members
+    friend struct CombatProbe;   // gap owner C: --probe-combat drives the real scene
     // The window is always created at 1280x720 (see run_interactive); the sidebar
     // layout/camera/input all key off these, so the driver's plat matches.
     static constexpr int kWinW = 1280;
@@ -11829,6 +11857,11 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     // income at 0 in every real game. Moves skirmish_hash/maps_hash (re-pinned
     // in README, gap G-20).
     real_play_arm_economy(world, ba, rules, a);
+    // Gap fix C (G-43): the real map's water/cliff cells -- ground units no
+    // longer drive across lakes and cliff faces. MUST follow the economy arm
+    // (whose set_water_terrain intersects the still-open Land grid):
+    // set_land_terrain rebuilds the water grid first, then closes the Land grid.
+    world.set_land_terrain(resolve_land_types(a.map, a.theater, world.grid_w(), world.grid_h()));
     const ra2assets::MapCell* sc = ra2engine::pick_start_cell(a.map);
     const int gw = world.grid_w(), gh = world.grid_h();
     (void)gh;
@@ -13683,7 +13716,7 @@ DemoRoster2Result simulate_roster2(Assets& a, UnitAssets& ua, BuildingAssets& ba
             s.pad = pad;
             s.max_ammo = (int)rules.section_double(id, "Ammo", -1.0);
             s.ammo = s.max_ammo;
-            s.speed_lpf = ru.speed * kCellsPerSecPerSpeed / 15.0 * 256.0;
+            s.speed_lpf = speed_to_cps(ru.speed) / 15.0 * 256.0;
             s.range_leptons = static_cast<int>(ru.combat.range * 256.0);
             s.flight_level = (int)rules.general_double("FlightLevel", 1500.0);
             s.has_target = true;
@@ -14702,7 +14735,7 @@ DemoAbilitiesResult simulate_abilities(Assets& a, UnitAssets& ua, BuildingAssets
             ru.combat.rot = rules.rot(id);
             ru.combat.turret = rules.has_turret(id);
         }
-        ru.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+        ru.combat.speed_cps = speed_to_cps(ru.speed);
         w.add_combat_unit(x, y, house, ru.combat);
         const int idx = (int)w.units().size() - 1;
         if (disarm) w.units()[idx].w_damage = 0;
@@ -16013,6 +16046,7 @@ int run_demo_saveload() {
 // G0 --play front end (agent G): scripted playthroughs (scripts/play/).
 #include "play_driver.inc"
 #include "realplay_probe.inc"   // gap owner A: --probe-realplay (real GameScene harness)
+#include "realplay_combat_probe.inc"   // gap owner C: --probe-combat (real GameScene harness)
 
 int main(int argc, char** argv) {
     try {
@@ -16139,7 +16173,9 @@ int main(int argc, char** argv) {
                 return run_demo_campaign();   // P10 Campaign gate
             } else if (arg == "--campaign-survey") {
                 return run_campaign_survey();   // P10 dev aid (not a gate)
-            } else if (arg == "--probe-realplay") {
+            } else if (arg == "--probe-combat") {
+        return run_probe_combat();   // gap owner C: real-play combat/movement probe
+    } else if (arg == "--probe-realplay") {
                 return run_probe_realplay();   // gap owner A: real-play economy/production probe
             } else if (arg == "--demo-saveload") {
                 return run_demo_saveload();   // P7 Save/Load gate

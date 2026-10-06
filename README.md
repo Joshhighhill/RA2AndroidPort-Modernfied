@@ -45,16 +45,15 @@ place at the type's `ROT` degrees/frame with shortest-arc, exact-landing
 `FacingClass` semantics (`step_turrets`), and each vehicle drives at its own
 `Speed`-derived rate. Documented divergences from vanilla (see
 `docs/re/voxel-render.md` §5, §7): no slope tilt (facings are cached flat,
-so a vehicle on a ramp still renders level); no crush and no debris;
+so a vehicle on a ramp still renders level); no debris (crush: see Gap fix C);
 projectiles are instant-hit with single-target damage — vanilla shells fly
 102 leptons/frame (not modeled; travel time is skipped) but `[AP]
 CellSpread=.3` only ever reaches 76 leptons, in practice just the direct
 target anyway, so the single-target damage half of this is exact even
 though the flight-time half is a real simplification; the engine keeps its
-already-established absolute speed scale of `0.75·Speed` cells/sec rather
-than vanilla's `0.15·Speed` (the tank:GI speed ratio is vanilla-faithful
-either way — a whole-engine time-base recalibration to the vanilla absolute
-scale is a recorded future candidate, not done piecemeal here); the
+**[superseded by gap fix C, G-42]** recovered absolute speed scale
+`trunc(Speed·2.56)·GameSpeedBias(1.6)·15/256` cells/sec (docs/re/gamespeed.md;
+it was a feel-tuned `0.75·Speed`); the
 turret's ROF+5-frame idle-return hold is omitted (it re-centers
 immediately); and `MoveSound` (engine/track sound effects) is deferred.
 
@@ -96,8 +95,8 @@ the READY cameo state shows a flashing green tint (no in-game font this phase;
 the divergent credits digit strip covers 0–9 only);
 `GAWEAP` (Soviet War Factory) is unbuildable by the player this phase — its
 `PROC` prerequisite is correctly enforced and unmet, exercised instead via
-the pre-built Soviet base; units never auto-acquire buildings as combat
-targets (explicit attack orders only). Plus, from the construction-phase
+the pre-built Soviet base; units auto-acquire enemy ARMED structures (base
+defenses) but plain buildings only on explicit attack orders (gap fix C, G-46). Plus, from the construction-phase
 RE-gate: power output does **not** scale with building health (vanilla
 scales output by hp ratio — `construction.md` §8 optional-fidelity item,
 omitted here); `Bib=yes` bib art/row is omitted (`GAWEAP` renders fine
@@ -693,10 +692,9 @@ hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
   `(altitude/256)·36.74` px (voxel-render.md §6's up/z term); the hunt did
   NOT unwind the loco pixel-offset formula, so this stays the one flagged
   [RE-FALLBACK] to revisit [`aircraft.md` §3].
-- **No ground AA / air-to-air** — ground units never auto-acquire or target
-  the aircraft (`valid_target`'s `!v.is_aircraft` clause); the aircraft
-  attacks only ground targets. Ground-AA-vs-air is a documented
-  carry-forward [`aircraft.md` §4; spec §Out].
+- **Ground AA** — [superseded by gap fix C, G-44] an airborne aircraft is a
+  target for AA=yes weapons (HTK/APOC/FLAKT/GGI secondaries, NASAM/NAFLAK
+  defenses); the per-target weapon choice picks the slot (docs/re/weapons.md).
 - **No airfield/Ammo rearm cycle** — the exemplar (`[ZEP]`, no `Ammo=`,
   `BalloonHover=yes`) is continuously armed and never lands; the
   `FlyLocomotionClass`/`Ammo`/airfield-dock mechanism for `[AircraftTypes]`
@@ -718,8 +716,7 @@ hunt doc's own "Deviations we take", adjudicated at the Task 1 RE-GATE):
   unit's `ROT` (× 2, the `Link_To_Object` FacingClass rate) — **not**
   `JumpJetTurnRate`, which the hunt confirmed is vestigial for turn in this
   build (`aircraft.md` §1); `flight_speed` is `JumpjetSpeed` (fallback base
-  `Speed`) converted via the engine's existing `kCellsPerSecPerSpeed`
-  vehicle-speed scale, and `climb_rate`/`descend_rate` are the recovered
+  `Speed`) converted via the recovered `speed_to_cps` scale (gap fix C, G-42), and `climb_rate`/`descend_rate` are the recovered
   per-frame `JumpjetClimb`/`JumpjetCrash` values — all converted to
   per-second rates (×15) for the dt-based `step_flight`, the
   `rot_u16_per_sec` precedent [`aircraft.md` §1/§2/§5].
@@ -2025,7 +2022,7 @@ only when enabled, and with `nullptr` every shot takes the pre-phase code
 immediately when disabled. Projectile state, events and RNG are not read by
 `world_hash`, and the projectile draw list is empty in every existing demo.
 
-**Gate:** `--demo-projectile` (`projectile_hash=1ff09b8a3d3eecdd`) runs five
+**Gate:** `--demo-projectile` (`projectile_hash=44cdd50b67f276e9` since gap fix C; originally `1ff09b8a3d3eecdd`) runs five
 scenarios, rendered then headless, and self-compares: *firewall* (no
 `enable_projectiles` → the Rhino's hit lands the frame it fires), *arc* (launch
 speed 90 == the §0.2 formula of the FLH muzzle→target distance, 13 flight
@@ -2608,8 +2605,8 @@ the P6 Roster Breadth gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
-| `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
-| `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
+| `--demo-combat` | `deterministic=yes logs=87` | `shots=82 deaths=5` — re-pinned by gap fix C (was logs=78 shots=73): recovered movement scale x GameSpeedBias (G-42) + original ROF `Random(0,2)` rearm jitter (G-50) |
+| `--demo-tank` | `deterministic=yes logs=129` | `shots=118 deaths=11 hit90_rhino=yes hit22_infantry=yes` — re-pinned by gap fix C (was logs=144 shots=135 deaths=9): G-42 speed scale, G-50 jitter + min-1 damage |
 | `--demo-base` | `hash=5273b5e71ca009e1` | `roster=39` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
@@ -2627,12 +2624,12 @@ the P6 Roster Breadth gate.
 | `--demo-skirmish` | `skirmish_hash=fde3f587e747f765` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, 3 combatant slots in two alliance-teams (0+2 allied vs 1, no neutral); wedge guards armed (`docs/re/skirmish.md`) |
 | `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
 | `--demo-repair` | `repair_hash=30e49667c9c6e52d` | `deterministic=yes lines=8`; repair = a GLOBAL 14-frame phase (`trunc(RepairRate*900)`, NOT 15) × +8 HP × `stepCost=max(1,trunc((Cost/(Strength/RepairStep))*RepairPercent))` with BOTH divisions integer (GACNST 3/step, GAPOWR 1/step); `steps=6 first=0 gap=14 heal8=yes charge=yes`; auto-stop at full; silent stop when broke (`hp=718->718`, no partial step, no free repair); refusals `enemy/under_construction/unsellable_caoild/already_selling=refused`, `full_health_conyard_sellable=yes` (NO last-ConYard rule); ConYard sell = a 30-frame MISSION, `paid_early=no paid=1500 survivors=3`, footprint freed; GAREFN `Soylent` sale `paid=300 survivors=1`; 25 wedge guards armed (`docs/re/repair-sell.md`) |
-| `--demo-projectile` | `projectile_hash=1ff09b8a3d3eecdd` | `deterministic=yes`; P2 Projectile flight: firewall (instant path when not enabled, `events=0`), Rhino arc (`speed=90` == `ftol(sqrt(d*6*1.2))`, 13 frames, apex 175, damage only at detonation), miss (target walked off -> `victim=-1 damage=0`), Kirov bomb (`speed=1` from `z=610`, 37 frames, both splash targets hit), Flak Track scatter (5/5 shots scattered by the dedicated RNG) (`docs/re/projectile.md` §12) |
+| `--demo-projectile` | `projectile_hash=44cdd50b67f276e9` (gap fix C re-pin, was `1ff09b8a3d3eecdd`: G-42 speed + G-50 rearm jitter shift frames; every witness value unchanged) | `deterministic=yes`; P2 Projectile flight: firewall (instant path when not enabled, `events=0`), Rhino arc (`speed=90` == `ftol(sqrt(d*6*1.2))`, 13 frames, apex 175, damage only at detonation), miss (target walked off -> `victim=-1 damage=0`), Kirov bomb (`speed=1` from `z=610`, 37 frames, both splash targets hit), Flak Track scatter (5/5 shots scattered by the dedicated RNG) (`docs/re/projectile.md` §12) |
 | `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
-| `--demo-veterancy` | `veterancy_hash=1f02e4c09dba0964` | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
+| `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
 | `--demo-saveload` | `saveload_hash=270b4fce163438f7` | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
-| `--demo-abilities` | `abilities_hash=e510c5b98c089804` | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
+| `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
 | `--demo-campaign` | `campaign_hash=f10f9d4e6bd883cd` | `deterministic=yes lines=870`; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
 **Gap owner A re-pins (real-play economy/production, docs/gap G-20..G-30).**
@@ -2930,6 +2927,49 @@ RA2_INSTALL_DIR="D:\Red Alert 2" python scripts/preflight.py
 ```
 
 The script checks that `gamemd.exe` exists and matches the expected SHA1 hash for YR 1.001.
+
+## Gap fix C — combat, units, movement in REAL play (G-40..G-52, RC-5)
+
+Audit: `docs/gap/03-combat-units.md`, IDs in `docs/gap/GAP-ANALYSIS.md`. New RE:
+`docs/re/gamespeed.md` (RE-T1), `docs/re/ini-reader.md` (RC-5),
+`docs/re/weapons.md` (RE-W1/W3), `docs/re/defenses.md` (RE-W2, W5 partial).
+Real-play proof: `ra2engine --probe-combat` builds the menu's GameScene
+(launch_skirmish + every interactive wiring) headless and checks each fix with
+the scene's own rosters (ALL PASS), plus `tests/test_gap_combat.cpp`.
+
+- **RC-5 Ini**: entry lines are cut at the first `;` and empty keys/values are
+  dropped, exactly as `INIClass::Load` (FUN_00525790); Rules bools follow
+  `Get_Bool` (first char 1/T/Y, 0/F/N). Local strippers removed.
+- **G-41 weapon slots**: TechnoType slot rule (TurretCount<1 → Primary/Secondary,
+  else Weapon1..N) — the Prism Tank fires Comet (elite SuperComet with its own
+  projectile); FV keeps Weapon1 only.
+- **G-44 anti-air**: per-target weapon choice (primary if it can engage, else
+  secondary; AA/AG from the projectile; 0 % Verses cannot fire). Airborne
+  aircraft are targets for AA weapons; flak splash stays in its layer.
+- **G-40 / G-29 base defenses**: `World::step_building_combat` — acquire the
+  nearest engageable enemy, Turret=yes slews at ROT, fire on ROF through the
+  shared projectile/damage layer; Powered=yes defenses are offline while the
+  house is low on power (FUN_004555c0). Victims retaliate. `World::take_fire_events`.
+- **G-46**: idle units engage enemy base defenses in range.
+- **G-42 speed**: `trunc(Speed·2.56)` leptons/frame × GameSpeedBias 1.6 at 15
+  frames per engine second (GI 0.94, Rhino 1.41 c/s); every unit carries its own
+  speed. RE-T1: GameScene runs `fps(GameSpeed)/15` engine seconds per wall
+  second (GameSpeed 1 = 60 fps = 4x; `engine/gamespeed.hpp`).
+- **G-43 passability**: Water/Rock(cliffs)/Wall cells are closed to ground
+  units in skirmish and campaign (`World::set_land_terrain`); shore stays open
+  [RE-FALLBACK: tile-set granularity].
+- **G-45 GI/GGI deploy**: deployed = immobile firing post firing the
+  DeployFireWeapon slot (Para / MissileLauncher) via normal combat; the
+  Desolator keeps its eruption.
+- **G-47 crush**: Crusher vehicles squash enemy Crushable infantry they drive
+  into. Stop / Guard / Scatter are World orders (`unit_orders.cpp`, B's S/G/X).
+- **G-50 decided with evidence**: ROF `Random(0,2)` rearm jitter (veterancy.md
+  V7, FUN_006FC460) and the min-1 damage clamp (ReceiveDamage 0x700DA0) are the
+  original's and are applied everywhere (fixed-seed `World::combat_rng_`).
+  Gates re-pinned: combat, tank, projectile, abilities, veterancy (table).
+- **Open**: garrisons (G-48), bridges (G-49), amphibious (G-51), InfDeath /
+  prone (G-52), splash vs buildings/own units, Crush=1.8/AutoCrush steering,
+  SelectWeapon body (RE-W1 fallback rule), homing steering (RE-W8).
 
 ## Real-play controls (agent B, G-01/04/05/06/07/08/09/10/12/13/70/71)
 
