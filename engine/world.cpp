@@ -2115,8 +2115,12 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
                 v.center_x = b.cx; v.center_y = b.cy;
                 any_center = true;
             }
-        } else {
-            tx += b.cx; ty += b.cy; ++tn;  // threat = other houses' centroid
+        } else if (is_enemy(house, b.house)) {
+            // [G-67] threat / rival = ENEMY houses only: allies and the
+            // neutral house never pull the defense-facing centroid or the team
+            // gather ring (is_enemy is a != b in an unconfigured gate World,
+            // so the 2-house AI gates are unaffected).
+            tx += b.cx; ty += b.cy; ++tn;  // threat = enemy houses' centroid
             // rival_base_size = largest OTHER house's building count — the
             // BaseSizeAdd cap basis (AI base <= rival + 3) [RE: ai-base.md §2].
             if ((int)rival_counts.size() <= b.house) rival_counts.resize(b.house + 1, 0);
@@ -3103,13 +3107,13 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
         const int t = ai_unit_type_of(rec, u);
         if (t < 0) continue;
         if (u.house == house) ++v.own_units[t];
-        else ++v.enemy_units[t];
+        else if (is_enemy(house, u.house)) ++v.enemy_units[t];   // [G-67] not allies/neutral
     }
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead) continue;
         if (b.type < 0 || b.type >= (int)rec.cfg.roster.size()) continue;
         if (b.house == house) ++v.own_buildings[b.type];
-        else ++v.enemy_buildings[b.type];
+        else if (is_enemy(house, b.house)) ++v.enemy_buildings[b.type];   // [G-67]
     }
     v.credits = rec.credits;  // OWNER house credits — ct=4 HouseCredits reads
                               // the CALLING house's money scalar [RE-GATE
