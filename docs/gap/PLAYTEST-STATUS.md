@@ -74,7 +74,7 @@ script passes (ROADMAP-playable §G rule 6).
 | L79 | credits rise within 2700 f (harvest income) | FAIL | PASS | G-20 | A |
 | L90-L95 | Engineer offered and trainable | FAIL (not in roster) | PASS | G-22 | A |
 | L105 | Chrono Miner in the vehicle tab | FAIL | PASS | G-22 | A |
-| L106 | AMCV in the vehicle tab (rebuildable MCV) | FAIL | FAIL | G-22 / G-23 | A / F |
+| L106 | AMCV in the vehicle tab (rebuildable MCV) | FAIL | FAIL -> **PASS @gA2** (script now builds GADEPT first: `[AMCV] Prerequisite=GAWEAP,GADEPT`) | G-22 / G-23 | A / F |
 | L109-L110 | train a 2nd Chrono Miner | FAIL | PASS | G-22 | A |
 | L116 | AI trains a unit within 3000 f | FAIL | PASS | G-60 | D |
 | L117 | AI damages the player within 6000 f more | FAIL | FAIL | G-60 | D |
@@ -86,18 +86,18 @@ script passes (ROADMAP-playable §G rule 6).
 
 | Step | Expected | Actual @63edea6 | Actual @7778b66 | G-ID | Owner |
 |---|---|---|---|---|---|
-| L14 | Yuri not in the lobby side cycle | FAIL | FAIL | G-03 | A |
+| L14 | Yuri not in the lobby side cycle | FAIL | FAIL -> **PASS @gA2** (side toggles Allied/Soviet) | G-03 | A |
 | L23 | `credits == 10000` | FAIL 20000 | PASS | G-21 | A |
 | L24 | view opens on the player's start | FAIL | FAIL | NEW-1 | F |
 | L25, L34-L36 | SMCV start + deploy | FAIL | FAIL | G-23 | F |
 | L26-L29 | Soviet infantry/sidebar (`cameo(NAPOWR)`, no `GAPOWR`) | FAIL (Allied sidebar) | PASS | G-03 | A |
-| L30, L100 | Tesla Coil offered in the defence tab | FAIL | FAIL (tab = NAFLAK, NALASR, NAWALL) | G-26 | A |
+| L30, L100 | Tesla Coil offered in the defence tab | FAIL | FAIL -> **PASS @gA2**: `[TESLA] Prerequisite=POWER,RADAR,NACNST` -- the script now builds NARADR first and expects no Tesla Coil at the start (the original does not offer it without a radar) | G-26 | A |
 | L31 | no SW at start | FAIL | PASS | G-25 | A |
 | L41-L56 | NAPOWR -> NAHAND -> Conscript | FAIL (no cameos) | PASS | G-03 | A |
 | L60-L67 | NAREFN -> War Miner harvesting | FAIL | PASS | G-03 / G-20 | A |
-| L68 | credits rise within 2700 f | FAIL | **FAIL — the War Miner fills to 40 bales and stays in `ReturnToRef` forever, not moving (`probe-soviet-econ.play`)** | G-20 | A |
+| L68 | credits rise within 2700 f | FAIL | FAIL — the War Miner fills to 40 bales and stays in `ReturnToRef` forever, not moving (`probe-soviet-econ.play`) -> **PASS @gA2** (NEW-3 fixed: blocked dock cell -> QueueingCell approach) | G-20 | A |
 | L73-L84 | NAWEAP -> Rhino; Flak Track + War Miner offered | FAIL | PASS | G-03 / G-22 | A |
-| L82 | SMCV offered | FAIL | FAIL | G-22 / G-23 | A / F |
+| L82 | SMCV offered | FAIL | FAIL -> **PASS @gA2** (after NADEPT: `[SMCV] Prerequisite=NAWEAP,NADEPT`) | G-22 / G-23 | A / F |
 | L88-L90 | the Allied AI builds GA\* (GAPOWR), no NA\* | FAIL | FAIL (no GAPOWR in 3000 f) | G-64 | D |
 | L94 | the (Allied) AI trains a unit | FAIL | FAIL (the Soviet AI does, see sk-a L116) | G-60 / G-64 | D |
 | L95 | AI damages the player | FAIL | FAIL | G-60 | D |
@@ -158,5 +158,5 @@ script passes (ROADMAP-playable §G rule 6).
 |---|---|---|---|
 | NEW-1 | A skirmish opens with the camera on the map centre, not on the player's start: no own object is on screen at frame 1 (`sk-a` L27, `sk-s` L24, `probe-game` start.png shows only shroud and ore). | `own_on_screen == 0` | F (skirmish start) |
 | NEW-2 | ALL01 with no player input: every house-0 unit is dead by f≈2459 but the mission stays RUNNING (no LOST, no result screen). Needs RE of the map's `Lose 13` chain / house-defeat path before fixing. | `m-all01` L44 | F (campaign) |
-| NEW-3 | Soviet War Miner never unloads: full at 40 bales, `ReturnToRef` forever, not moving; the Allied Chrono Miner path works. | `sk-s` L68, `probe-soviet-econ.play` dumps | A (G-20) |
+| NEW-3 | **FIXED @gA2** -- Soviet War Miner never unloads: full at 40 bales, `ReturnToRef` forever, not moving; the Allied Chrono Miner path works. | `sk-s` L68, `probe-soviet-econ.play` dumps | A (G-20) |
 | NEW-4 | The Allied AI slot neither builds GA\* power nor trains in 3000 frames, while the Soviet AI does train (sk-a L116 PASS). | `sk-s` L88-L94 | D (G-64) |
