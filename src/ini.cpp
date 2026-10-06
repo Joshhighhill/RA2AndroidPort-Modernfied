@@ -60,11 +60,20 @@ Ini Ini::parse(const std::string& text) {
                     current = &ini.sections_[it->second].second;
                 }
             } else if (current != nullptr) {
-                size_t eq = trimmed.find('=');
+                // [RE: docs/re/ini-reader.md, INIClass::Load FUN_00525790] the
+                // game cuts every entry line at its FIRST ';' (strchr + NUL)
+                // before splitting on '=', so "Teleporter=yes;" and
+                // "Primary=X ;comment" read "yes" / "X". It then drops a line
+                // whose key or value trims to empty (strlen == 0 -> skipped),
+                // so an empty "Key=" never shadows an earlier value.
+                std::string body = trimmed;
+                const size_t semi = body.find(';');
+                if (semi != std::string::npos) body.erase(semi);
+                size_t eq = body.find('=');
                 if (eq != std::string::npos) {
-                    std::string key = to_upper(trim(trimmed.substr(0, eq)));
-                    std::string value = trim(trimmed.substr(eq + 1));
-                    current->push_back({key, value});
+                    std::string key = to_upper(trim(body.substr(0, eq)));
+                    std::string value = trim(body.substr(eq + 1));
+                    if (!key.empty() && !value.empty()) current->push_back({key, value});
                 }
                 // Lines with no '=' and no active section are silently
                 // ignored (lenient parsing -- matches how RA2's own INI

@@ -889,20 +889,15 @@ SuperweaponParams resolve_superweapon(const ra2assets::Rules& rules) {
 // section's Ready/Walk/FireUp/Die1 entries -- docs/re/infantry-anim.md).
 // --- P4 Unit special abilities [RE: docs/re/abilities.md] -----------------------
 // Rules -> AbilityProfile / AbilityRules, read from the REAL rulesmd keys. Kept
-// in main.cpp (World is asset-free); no src/rules.cpp change -- string keys
-// come straight off the Ini with the inline ';' comment stripped.
+// in main.cpp (World is asset-free). RC-5: Ini::parse now cuts the inline ';'
+// comment and trims exactly like the game's INIClass::Load (docs/re/
+// ini-reader.md), so this is a plain lookup (the old local strip is gone).
 std::string ability_ini_str(const Ini& ini, const std::string& sec, const std::string& key) {
-    std::string v = ini.get(sec, key, "");
-    const std::size_t semi = v.find(';');
-    if (semi != std::string::npos) v.erase(semi);
-    while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
-    std::size_t b = 0;
-    while (b < v.size() && std::isspace(static_cast<unsigned char>(v[b]))) ++b;
-    return v.substr(b);
+    return ini.get(sec, key, "");
 }
 
-// Boolean INI key off the comment-stripped value ("Teleporter=yes;" carries a
-// trailing ';' on this install): y/t/1 -> true, n/f/0 -> false, absent -> def.
+// Boolean INI key, the game's Get_Bool ("Teleporter=yes;" reads "yes" now
+// that Ini cuts the comment): y/t/1 -> true, n/f/0 -> false, absent -> def.
 bool ability_flag(const Ini& ini, const std::string& sec, const std::string& key, bool def) {
     const std::string v = ability_ini_str(ini, sec, key);
     if (v.empty()) return def;
@@ -1005,10 +1000,7 @@ void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini)
     world.set_ability_rules(resolve_ability_rules(rules, ini));
     std::vector<std::string> ids = {"DRON", "DESO", "CLEG", "TANY", "GHOST", "IVAN", "TERROR", "FV"};
     for (const auto& kv : ini.section("InfantryTypes")) {
-        std::string id = kv.second;
-        if (const std::size_t semi = id.find(';'); semi != std::string::npos) id.erase(semi);
-        while (!id.empty() && std::isspace(static_cast<unsigned char>(id.back()))) id.pop_back();
-        while (!id.empty() && std::isspace(static_cast<unsigned char>(id.front()))) id.erase(0, 1);
+        const std::string& id = kv.second;   // RC-5: comment already cut by Ini
         if (!id.empty() && rules.section_double(id, "IFVMode", 0.0) != 0.0 &&
             std::find(ids.begin(), ids.end(), id) == ids.end())
             ids.push_back(id);

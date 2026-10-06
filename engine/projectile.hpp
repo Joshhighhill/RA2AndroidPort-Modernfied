@@ -162,8 +162,9 @@ void integrate_vertical(Projectile& p);
 // --- rules resolution (Task 3) ---------------------------------------------
 // The game's INI bool (WW INIClass::Get_Bool): strip an inline ';' comment,
 // trim, then the FIRST character decides -- y/Y/t/T/1 true, n/N/f/F/0 false,
-// anything else (incl. empty) -> fallback. Needed because this Ini keeps
-// inline comments ([BlimpBombP] "Vertical=yes ;can't turn...").
+// anything else (incl. empty) -> fallback. (RC-5: Ini::parse now cuts the
+// inline comment itself, so the strip here is a harmless no-op kept for
+// callers that pass raw strings.)
 bool ini_bool_value(const std::string& raw, bool fallback);
 
 // One weapon's projectile parameters from Rules: [weapon] Projectile= ->
