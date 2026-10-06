@@ -1,0 +1,117 @@
+# SK-S -- playable core, human SOVIET vs 1 Allied AI (Normal), stock MP map,
+# $10000, crates off. Same shape as sk-a.play; EXPECTED TO FAIL on master
+# 63edea6 (see docs/gap/PLAYTEST-STATUS.md). Original control model (G-05).
+set render_every 300
+set on_quit continue
+
+# --- lobby: Soviet human, Allied AI, no Yuri in the side cycle ---------------------
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click slot0:side
+assert side(0) == SOVIET
+click slot1:side
+assert side(1) != YURI                        @G-03:A
+cycle slot1:side side(1) == ALLIED
+require side(0) == SOVIET and side(1) == ALLIED
+click start
+until 90 scene == game
+require scene == game
+shot start
+
+# --- 1. start state: the side picked is the side played ---------------------------
+assert credits == 10000                       @G-21:A
+assert own_on_screen > 0                      @NEW-1:F
+assert units(0,SMCV) == 1                     @G-23:F
+assert units(0,E2) >= 1                       @G-03:A
+assert units(0,E1) == 0                       @G-03:A
+assert cameo(NAPOWR) == 1                     @G-03:A
+assert cameo(GAPOWR) == 0                     @G-03:A
+assert cameo(TESLA) == 1                      @G-26:A
+assert sw(0) == 0                             @G-25:A
+
+# --- 2. deploy the SMCV ------------------------------------------------------------
+click unit 0:SMCV                             @G-23:F
+key d                                         @G-23:F
+until 450 built(0,NACNST) == 1                @G-23:F
+view building 0:NACNST
+shot base
+
+# --- 3. Tesla Reactor -> Barracks -> Conscript --------------------------------------
+click tab:0
+click cameo:NAPOWR                            @G-03:A
+until 900 queue_ready(structure) == 1         @G-03:A
+click cameo:NAPOWR                            @G-03:A
+place auto                                    @G-03:A
+until 120 built(0,NAPOWR) == 1                @G-03:A
+click cameo:NAHAND                            @G-03:A
+until 900 queue_ready(structure) == 1         @G-03:A
+click cameo:NAHAND                            @G-03:A
+place auto                                    @G-03:A
+until 120 built(0,NAHAND) == 1                @G-03:A
+click tab:2
+assert cameo(E2) == 1                         @G-03:A
+let e20 = units(0,E2)
+click cameo:E2                                @G-03:A
+until 600 units(0,E2) > $e20                  @G-03:A
+
+# --- 4. Refinery -> War Miner -> income ----------------------------------------------
+click tab:0
+click cameo:NAREFN                            @G-03:A
+until 1800 queue_ready(structure) == 1        @G-03:A
+click cameo:NAREFN                            @G-03:A
+place auto                                    @G-03:A
+until 300 built(0,NAREFN) == 1                @G-03:A
+until 120 units(0,HARV) >= 1                  @G-03:A
+let c1 = credits
+until 1800 harv(0,Harvesting) >= 1            @G-20:A
+until 2700 credits > $c1                      @G-20:A
+shot economy
+
+# --- 5. War Factory -> Rhino, Flak Track, War Miner ---------------------------------
+click tab:0
+click cameo:NAWEAP                            @G-03:A
+until 1800 queue_ready(structure) == 1        @G-03:A
+click cameo:NAWEAP                            @G-03:A
+place auto                                    @G-03:A
+until 300 built(0,NAWEAP) == 1                @G-03:A
+click tab:3
+assert cameo(HTNK) == 1                       @G-03:A
+assert cameo(HTK) == 1                        @G-22:A
+assert cameo(HARV) == 1                       @G-22:A
+assert cameo(SMCV) == 1                       @G-22:A
+click cameo:HTNK                              @G-03:A
+until 1500 units(0,HTNK) >= 1                 @G-03:A
+
+# --- 6. the Allied AI builds an ALLIED base and attacks ------------------------------
+assert buildings(1,GACNST) >= 1
+until 3000 buildings(1,GAPOWR) >= 1           @G-64:D
+assert buildings(1,NAPOWR) == 0               @G-64:D
+assert buildings(1,NAHAND) == 0               @G-64:D
+let u1 = units(1)
+let ul0 = units_lost(0)
+let hl0 = hp_lost(0)
+until 3000 units(1) > $u1                     @G-60:D
+until 6000 units_lost(0) > $ul0 or hp_lost(0) > $hl0 @G-60:D
+shot ai
+
+# --- 7. defences: the Tesla Coil is offered; a Sentry Gun kills attackers --------
+click tab:1
+assert cameo(TESLA) == 1                      @G-26:A
+click cameo:NALASR
+until 900 queue_ready(defense) == 1
+click cameo:NALASR
+place auto
+until 300 built(0,NALASR) == 1
+let ul1 = units_lost(1)
+cheat spawn E1 1 building 0:NALASR +3 +0
+cheat spawn E1 1 building 0:NALASR +3 +1
+until 450 units_lost(1) >= $ul1+2             @G-40:C
+shot defence
+
+# --- 8. win path ----------------------------------------------------------------
+cheat kill_house 1
+until 60 world_outcome == WON
+until 900 outcome == WON                      @G-02:F
+shot won
+end expect WON                                @G-02:F

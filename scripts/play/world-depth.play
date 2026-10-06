@@ -1,0 +1,22 @@
+# world-depth -- G16 acceptance seeds (ROADMAP-playable "G16 World depth").
+# Crush: a Rhino ordered over an enemy GI's cell kills it by driving over it.
+# Garrison / bridges have no probe keys yet (reserved: occupants(H,ID),
+# bridge_cells); add their steps when the phase lands.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+require scene == game
+cheat spawn HTNK 0 building 0:GACNST +4 +4
+cheat spawn E1 1 building 0:GACNST +9 +4
+wait 2
+let l1 = units_lost(1)
+click unit 0:HTNK
+assert selected >= 1
+click unit 1:E1
+wait 2
+until 300 units_lost(1) > $l1                 @G-47:C
+shot crush
+end

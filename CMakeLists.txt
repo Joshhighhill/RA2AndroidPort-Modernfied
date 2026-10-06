@@ -62,6 +62,8 @@ target_sources(ra2assets_tests PRIVATE tests/test_pkt.cpp)
 # catalog. Reached only by the skirmish setup UI and --demo-maps, never by a
 # gate path (maps.md §7 rule 5).
 target_sources(ra2assets_tests PRIVATE tests/test_maplist.cpp engine/maplist.cpp)
+# G0 --play (agent G): the script language (ra2play) half of engine/play_script.cpp.
+target_sources(ra2assets_tests PRIVATE tests/test_play_lang.cpp)
 target_include_directories(ra2assets_tests PRIVATE engine)
 target_sources(ra2assets_tests PRIVATE tests/test_theater.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_land_type.cpp)

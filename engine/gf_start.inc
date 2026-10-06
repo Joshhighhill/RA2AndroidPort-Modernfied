@@ -343,6 +343,20 @@ public:
             draw_text(ren, buttons_[(std::size_t)i], r.x + (r.w - lw) / 2, r.y + 8, 2, 235, 235, 240);
         }
     }
+    // G0 --play: confirm_open + confirm:yes (first button) / confirm:no (last)
+    // + confirm:<label> for every button.
+    void play_probe(ra2play::Probe& p) const {
+        p.set("confirm_open", open_ ? 1 : 0);
+        if (!open_) return;
+        p.set_s("confirm_text", text_);
+        for (int i = 0; i < (int)buttons_.size(); ++i) {
+            const ra2engine::SbRect r = btn(i);
+            const ra2play::Rect pr{r.x, r.y, r.w, r.h};
+            p.targets["confirm:" + buttons_[(std::size_t)i]] = pr;
+            if (i == 0) p.targets["confirm:yes"] = pr;
+            if (i + 1 == (int)buttons_.size()) p.targets["confirm:no"] = pr;
+        }
+    }
     ra2engine::SbRect btn(int i) const {
         // Template DLU (207, 175 - 20*(n-1-i), 83, 15) on a 300x200 DLU box,
         // scaled x2 (600x400 px) and centred on the 1280x720 window.

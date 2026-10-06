@@ -1,0 +1,115 @@
+# shell-smoke -- menus, options, lobby round trip, Esc behaviour, in-game
+# options menu, save -> load -> resume, mid-placement Esc, Abort and Exit.
+# Covers the shell half of "Playable core" item 1 (G-01, G-02, G-14).
+# EXPECTED TO FAIL on master 63edea6 (docs/gap/PLAYTEST-STATUS.md).
+set on_quit continue
+set render_every 300
+
+# --- main menu + Options page round trip ---------------------------------------
+require scene == "shell:Main Menu"
+shot main
+click button Options
+assert scene == "shell:Options"
+shot options
+click button "Main Menu"
+assert scene == "shell:Main Menu"
+# Esc on the main menu must not kill the process.
+key esc                                       @G-01:B
+wait 2
+assert quits == 0                             @G-01:B
+
+# --- lobby round trip; Esc in the lobby = Back ----------------------------------------
+if scene == "shell:Main Menu" then click button "Single Player"
+click button Skirmish
+require scene == lobby
+click back
+assert scene == "shell:Main Menu"
+click button "Single Player"
+click button Skirmish
+key esc                                       @G-01:B
+wait 2
+assert quits == 0                             @G-01:B
+assert scene != lobby                         @G-01:B
+if scene == lobby then click back
+if scene == "shell:Main Menu" then click button "Single Player"
+if scene == "shell:Single Player" then click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+# The skirmish starts from an MCV now (G-23, gap F): unfold it so the
+# placement steps below have a ConYard to build from.
+click unit 0:AMCV                             @G-23:F
+key d                                         @G-23:F
+until 450 built(0,GACNST) == 1                @G-23:F
+
+# --- in-game options menu: F10 opens, Esc resumes --------------------------------------
+key f10
+wait 2
+assert menu_open == 1
+key esc                                       @G-01:B
+wait 2
+assert menu_open == 0                         @G-01:B
+if menu_open == 1 then click "menu:RESUME MISSION"
+# Esc in game opens the menu.
+key esc                                       @G-01:B
+wait 2
+assert menu_open == 1                         @G-01:B
+if menu_open == 1 then click "menu:RESUME MISSION"
+wait 2
+assert menu_open == 0
+
+# --- save -> load -> resume ----------------------------------------------------------------
+let u0 = units(0)
+let b0 = buildings(0)
+key f10
+wait 2
+click "menu:SAVE GAME"
+wait 2
+assert dialog_open == 1 and dialog_mode == 2
+click dialog:action
+wait 2
+assert dialog_open == 0
+assert banner == "GAME SAVED"
+let t0 = transitions
+key f10
+wait 2
+click "menu:LOAD GAME"
+wait 2
+assert dialog_open == 1 and dialog_rows >= 1
+click dialog:row0
+click dialog:action
+until 300 transitions > $t0
+until 60 scene == game
+assert units(0) == $u0
+assert buildings(0) == $b0
+shot loaded
+
+# --- mid-placement Esc cancels the placement, the game goes on --------------------------
+click tab:0
+click cameo:GAPOWR
+until 900 queue_ready(structure) == 1
+click cameo:GAPOWR
+assert placing == 1
+key esc                                       @G-01:B
+wait 2
+assert placing == 0                           @G-01:B
+assert scene == game
+
+# --- Abort asks for confirmation, then returns to the main menu --------------------------
+if placing == 1 then click cell 0 0 right
+key f10
+wait 2
+click "menu:ABORT MISSION"
+wait 2
+assert scene == game                          @G-14:F
+assert confirm_open == 1                      @G-14:F
+if confirm_open == 1 then click confirm:yes
+until 60 scene == "shell:Main Menu"
+
+# --- Exit Game asks for confirmation ----------------------------------------------------
+click button "Exit Game"                      @G-14:F
+wait 2
+assert quit_requested == 0                    @G-14:F
+assert confirm_open == 1                      @G-14:F
+end

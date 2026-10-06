@@ -52,6 +52,15 @@ public:
         return nullptr;
     }
     bool wants_quit() const override { return quit_; }
+    // G0 --play: the skirmish result page is the session's verdict.
+    void play_probe(ra2play::Probe& p) override {
+        p.scene = "result";
+        p.set_s("outcome", outcome_ > 0 ? "WON" : "LOST");
+        p.set("result_frames", static_cast<double>(frames_));
+        const CampButton a = again_btn(), m = menu_btn();
+        p.targets["rematch"] = ra2play::Rect{a.r.x, a.r.y, a.r.w, a.r.h};
+        p.targets["menu"] = ra2play::Rect{m.r.x, m.r.y, m.r.w, m.r.h};
+    }
     // Test seam: the choice a click would make (1 rematch, 2 menu).
     void choose(int c) { choice_ = c; }
 
