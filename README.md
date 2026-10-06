@@ -2131,6 +2131,90 @@ game-over flag that stops raises after an outcome is not modelled.
 `InstanceCount`, cell-entry raises), TeamClass execution for map teams,
 destroyed/last-built house counters, MakeAlly/MakeEnemy, ChangeHouse,
 CreateCrate, Apply100Damage, outcome → mission end.
+## Veterancy + Crates (P5)
+
+Calibration authority: `docs/re/veterancy.md` (Ghidra hunt of YR 1.001
+`gamemd.exe` + this install's `rulesmd.ini`); spec
+`docs/superpowers/specs/2026-10-06-veterancy-crates-design.md`, plan
+`docs/superpowers/plans/2026-10-06-veterancy-crates.md`.
+
+**Veterancy** replaces the capture phase's minimal spawn-baked rank-1:
+
+- Experience is the original's `float` (`Techno+0x150`): each kill adds
+  `victimCost / (killerCost * VeteranRatio)` (computed in double, cap compared on
+  the unrounded sum, stored as float); veteran victims count x2, elite x3,
+  allied 0; `DontScore` victims and `Trainable=no` killers give nothing;
+  destroyed buildings credit their roster Cost. Veteran = `[1,2)`, elite `>= 2`
+  (`VeteranCap=2`).
+- Per-type `VeteranAbilities`/`EliteAbilities` (elite inherits the veteran list)
+  gate the exact integer chains: FIREPOWER `ftol(d*1.1)`, STRONGER
+  `ftol(d/1.5)` then `max(d,1)` BEFORE the Verses, ROF `ftol(r*0.6)`, FASTER
+  `ftol(s*1.2)`, SIGHT (dead: `VeteranSight=0.0`). Elite swaps to `ElitePrimary`.
+- Elite `SELF_HEAL` (and `SelfHealing=yes` types such as HARV/APOC) gain +1 HP on
+  the global `ftol(RepairRate*900)=14`-frame phase.
+- Chevrons: YR `PIPS.SHP` frame 14 (veteran) / 15 (elite).
+- The x87 runs at 53-bit precision (CRT `_controlfp(_PC_53)`), so plain IEEE
+  double arithmetic reproduces every boundary (e.g. `5*0.6 == 3.0`).
+
+**Crates** (lobby CRATES toggle): exact `ScenarioClass::Random` port (R250 +
+psdes seeding) for all crate draws; `clamp(players, CrateMinimum, CrateMaximum)`
+initial crates; lifetime `ftol((A-B)*rand+B)` with `A=Regen*1800`,
+`B=Regen*450`, relocation on expiry; pickup = cumulative-weight `[Powerups]`
+pick, the multiplayer conversion rules (e.g. a second Armor crate on an armored
+unit becomes Money), replacement placed BEFORE the effect; effects Money
+`Random(2000,2900)`, Unit (CrateGoodie pool), HealBase, Reveal, Armor x1.5 /
+Firepower x2.0 (every Techno of any house within `CrateRadius`=768 leptons),
+Speed x1.2 (foot units), Veteran (+1 level).
+
+**Firewall:** everything runs only after `World::enable_veterancy` /
+`enable_crates`, called solely by `GameScene` (the interactive game) and
+`--demo-veterancy`. `launch_skirmish` (shared with `--demo-skirmish`) is
+untouched; a legacy World keeps the spawn-baked rank-1 path verbatim.
+
+**Cut / carried forward:** ROF `Random(0,2)` rearm jitter (found in the binary,
+contradicting combat.md section 5 -- would move every combat gate); promotion
+EVA/sound and the elite flash render; SCATTER/CLOAK/SENSORS/... abilities; the
+zero-weight powerups; the forced-MCV crate; spawner/occupant kill re-routing;
+aircraft FASTER; `NearbyLocation`/`MapRect` are ring-search/grid-bound
+fallbacks; the Unit crate draws once from the injected pool.
+
+## Roster Breadth + Remaining Producers (P6)
+
+Calibration authority: `docs/re/roster2.md` (Ghidra hunt of YR 1.001
+`gamemd.exe` + this install's `rulesmd.ini`/`artmd.ini`); spec
+`docs/superpowers/specs/2026-10-06-roster2-design.md`, plan
+`docs/superpowers/plans/2026-10-06-roster2.md`.
+
+- **Roster** (APPEND-ONLY): `kRoster` grows 24 -> 39 with GAYARD, NAYARD, GAWALL,
+  GADEPT, NADEPT, NATECH, NAIRON, NAMISL, GACSPH, GAGAP, GAOREP, GTGCAN, AMRADR,
+  GAWEAT, NAINDP (GAWEAT/NAINDP art absent here -> placeholder, never placed).
+  Indices >= 24 honour rules `Image=` (AMRADR draws as GAAIRC); 0..23 resolve
+  exactly as before. A new `kRoster2Units` table adds 24 bodies (naval DEST AEGIS
+  CARRIER LCRF SUB HYD DRED SAPC; TNKD TTNK DTRUCK SHAD BFRT ROBO; BEAG; IVAN SNIPE
+  TANY FLAKT SENGINEER BORIS CCOMAND PTROOP CIVAN). YR-only voxels fall back to
+  `ra2md.mix/localmd.mix`. Abilities (spawners, Ivan bomb, demo truck, ...) are not
+  in scope; SQD/DLPH/SCHP are dropped (no complete voxel art), GASPYSAT/GAROBO deferred.
+- **Walls**: placed walls connect through a 4-bit N/E/S/W mask (`CellClass::Wall_Update`,
+  bit0=N (0,-1), bit1=E, bit2=S, bit3=W); frame = `stage*16 + mask`. Placing a wall
+  runs the original wall-line fill: per facing, walk up to `GuardRange` (5) cells;
+  reaching an own same-type wall over placeable cells fills the gap for FREE. Wall
+  build time = `ftol(build_frames * WallBuildSpeedCoefficient(3.0))` (100 -> 189).
+- **Naval Yard**: `WaterBound=yes` -> SpeedType Float placement (every foundation
+  cell Water); `Factory=UnitType` buildings split by `Naval` into the naval / land
+  categories (a ship never comes from GAWEAP); the produced ship exits onto the first
+  free water ring cell; the yard footprint is cut out of the water grid.
+- **Airforce Command**: pad k = building centre + art `DockingOffsetk` (GAAIRC: 4
+  pads); Harrier/Black Eagle (`Ammo=1`) take off, fly straight to the target, fire
+  (`Ammo--`), return to their pad, land, and rearm +1 ammo per
+  `ftol(ReloadRate*900)` = 270 frames.
+
+**Deviations / carry-forward:** walls stay 1x1 Buildings (the AI-base gate builds
+NAWALL that way) with an HP-derived stage; the wall 3x time is a pure helper, not yet
+in the live Defense queue; the naval exit uses the existing ring walk, not
+`NearByLocation`'s spiral; `NumberImpassableRows` not modelled; Fly-locomotor
+climb = 100 leptons/frame [RE-FALLBACK]; the airfield sortie is a self-contained
+state machine (not yet driven from the sidebar/World flight); naval/aircraft
+sidebar queues are not wired into the interactive game.
 
 ## Building
 
@@ -2392,6 +2476,10 @@ Headless/verification CLI modes (render one or more frames and exit):
   exit non-zero unless every new type resolves AND spawns AND the Allied full
   base placed >1 building AND a spot stat matches rules (APOC strength 800,
   ATESLA a building).
+- `ra2engine.exe --demo-abilities` is the P4 Unit special abilities gate: eight
+  fresh-World stages (drone x2, desolator, legionnaire, C4, Ivan, terrorist, IFV),
+  run rendered + headless and byte-compared, wedge-guarded on every recovered
+  number in `docs/re/abilities.md`.
 - `ra2engine.exe --demo-repair` is the Building Repair & Sell integration gate.
   On a real Allied base it drives the wrench and measures, frame by frame, the
   14-frame global cadence, the +8 HP heal and the exact integer `stepCost`
@@ -2403,6 +2491,13 @@ Headless/verification CLI modes (render one or more frames and exit):
   foundation) and the refinery (`Soylent=300`, 1 survivor). Runs twice
   (rendered + headless) and byte-compares; 25 wedge guards
   (`docs/re/repair-sell.md`).
+
+- `ra2engine.exe --demo-roster2` — the P6 Roster Breadth gate: witnesses the 15
+  appended buildings and the `kRoster2Units` bodies, closes a wall line (0/3/2
+  free fills, connection masks + frames), places GAYARD on water (land refused),
+  builds a DEST on the naval category and launches it to a water exit, and flies
+  ORCA + BEAG from GAAIRC pads through strike/RTB/land/rearm (270 frames). Runs
+  twice (rendered + headless) and byte-compares; wedge guards armed.
 
 `ra2engine.exe` also accepts `--no-audio` (skips audio init entirely — same
 silent fallback as a failed device open, just without touching the mix chain
@@ -2416,18 +2511,20 @@ their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
 above for `--demo-base`'s `roster=10`, and note `--demo-base`'s roster grows
-again with each subsequent roster addition — `roster=24` as of the Broaden
-Roster phase (the `NANRCT`/`ATESLA`/`NASAM`/`GAAIRC` buildings; `roster=20` was
+again with each subsequent roster addition — `roster=39` as of P6 Roster
+Breadth (the 15 P6 buildings; `roster=24` was the Broaden Roster phase — the
+`NANRCT`/`ATESLA`/`NASAM`/`GAAIRC` buildings; `roster=20` was
 the Engineer/Spy Capture phase — the `CAOILD` oil derrick; `roster=19` was the
 CB-5 Battle Lab `GATECH`) — with the gated hash unaffected each time. The first
 SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
-`--demo-roster` is the new Broaden Unit/Building Roster gate.
+`--demo-roster` is the Broaden Unit/Building Roster gate and `--demo-roster2`
+the P6 Roster Breadth gate.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
 | `--demo-combat` | `deterministic=yes logs=78` | `shots=73 deaths=5` |
 | `--demo-tank` | `deterministic=yes logs=144` | `shots=135 deaths=9 hit90_rhino=yes hit22_infantry=yes` |
-| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=24` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
+| `--demo-base` | `hash=5273b5e71ca009e1` | `roster=39` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
 | `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
@@ -2437,7 +2534,7 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-aircraft` | `aircraft_hash=a69642564cf64773` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
 | `--demo-naval` | `naval_hash=6aee2c82bc024e86` | `deterministic=yes`; variant=HYD (Sea Scorpion, `Speed=8`, `ROT=6`, `FlakTrackGun` Damage=25/ROF=25/Range=5, Warhead `FlakTWH` CellSpread=1.0 on this install; DRED/DEST fallback documented if art regresses); sails across the `mapsmd03` water region (468 Water cells, 252-cell main body, bbox [71,11]–[95,40], runtime-classified from the theater `[General]` tile-sets) via A* on the water grid (every path cell Water, folded into the hash), refuses a land-cell order (empty/stay-put — the water/land inverse), approaches over water and fires FlakTrackGun to a kill, holds station on resume; voxel ship at altitude 0 (existing draw path); wedge guards armed (`docs/re/naval.md`) |
 | `--demo-superweapon` | `superweapon_hash=189496664f5eca68` | `deterministic=yes`; grants the Soviet Nuclear Missile (`[NukeSpecial]` `Type=MultiMissile`, `RechargeTime` -> recharge_secs, `[NukePayload]` Damage=600, `[NUKE]` CellSpread=10/PercentAtMax=.02/Verses); charges to READY, fires at the target cell, detonates via the REUSED `apply_spread_damage` (enemies-only, instant), spares the firing house, leaves out-of-radius units untouched, re-charges from 0; NukeIcon cameo + gclock2 recharge clock (art-guarded, placeholder if absent); wedge guards armed (`docs/re/superweapon.md`) |
-| `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=24 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
+| `--demo-techtree` | `techtree_hash=e73adae61ff6f71f` | `deterministic=yes`; fresh Allied base (no radar), `roster=39 sref_slot=4`; BASELINE `SREF unbuildable (GATECH unmet) can_start=0 ; MTNK can_start=1` → places Battle Lab `GATECH` DIRECTLY (bypasses its radar-gated prereq) → UNLOCK `SREF buildable (GATECH met) can_start=1`; reuses the existing `can_start_unit`/`can_start` predicate verbatim; wedge guards armed (`docs/re/techtree.md`) |
 | `--demo-capture` | `capture_hash=58b87b5bc63f7046` | `deterministic=yes`; engineer capture (`ChangeOwner` flip + SW move + AI base-node resync + startup-from-neutral) of an enemy building AND a neutral `CAOILD` (Startup 1000, Amount 20 / Delay 100f); spy infiltrate (cash-steal 0.5×, power-blackout 1000f, SW recharge reset, factory→produced `veteran_rank=1` ×1.1 firepower/×1.5 armor, radar/lab inert); disguise + dog `DetectDisguise` reveal (spy stays disguised on attack — PermaDisguise); nine wedge guards armed (`docs/re/capture.md`) |
 | `--demo-shroud` | `shroud_hash=d302852aa9517661` | `deterministic=yes`; per-house visibility (near-circular Sight reveal, dx2+dy2<=sight2, cap 10), fog no-regrow (explored sticky), fogged-enemy untargetable (seen_by_mask), spy->enemy-radar reshroud (RadarLab), SpySat reveal-all; wedge guards armed (`docs/re/shroud.md`) |
 | `--demo-multihouse` | `multihouse_hash=39412ae996cce8ae` | `deterministic=yes`; N-player HouseRec table + alliances (is_enemy/are_allied, FFA default a!=b), AllyReveal shared sight, last-team-standing victory (ShortGame=last-building), per-house side/color (8 MP colors); wedge guards armed (`docs/re/multihouse.md`) |
@@ -2446,6 +2543,50 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-repair` | `repair_hash=30e49667c9c6e52d` | `deterministic=yes lines=8`; repair = a GLOBAL 14-frame phase (`trunc(RepairRate*900)`, NOT 15) × +8 HP × `stepCost=max(1,trunc((Cost/(Strength/RepairStep))*RepairPercent))` with BOTH divisions integer (GACNST 3/step, GAPOWR 1/step); `steps=6 first=0 gap=14 heal8=yes charge=yes`; auto-stop at full; silent stop when broke (`hp=718->718`, no partial step, no free repair); refusals `enemy/under_construction/unsellable_caoild/already_selling=refused`, `full_health_conyard_sellable=yes` (NO last-ConYard rule); ConYard sell = a 30-frame MISSION, `paid_early=no paid=1500 survivors=3`, footprint freed; GAREFN `Soylent` sale `paid=300 survivors=1`; 25 wedge guards armed (`docs/re/repair-sell.md`) |
 | `--demo-projectile` | `projectile_hash=1ff09b8a3d3eecdd` | `deterministic=yes`; P2 Projectile flight: firewall (instant path when not enabled, `events=0`), Rhino arc (`speed=90` == `ftol(sqrt(d*6*1.2))`, 13 frames, apex 175, damage only at detonation), miss (target walked off -> `victim=-1 damage=0`), Kirov bomb (`speed=1` from `z=610`, 37 frames, both splash targets hit), Flak Track scatter (5/5 shots scattered by the dedicated RNG) (`docs/re/projectile.md` §12) |
 | `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
+| `--demo-veterancy` | `veterancy_hash=1f02e4c09dba0964` | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
+| `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
+| `--demo-abilities` | `abilities_hash=e510c5b98c089804` | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
+
+## Unit Special Abilities (batch 1)
+
+Phase P4 gives the specialists their identity, calibrated from the binary
+(`docs/re/abilities.md`): **Terror Drone** -- the shot is an infection; the
+drone rides the victim off-map, ticking every `ROF=60` frames (first tick
+immediate), `50 x Verses` to vehicles, an instant kill (damage = Health,
+defenses ignored) to infantry; it pops back out when the host dies, unless the
+host was suppressed (`2*damage - SuppressionThreshold` frames). **Desolator**
+-- `D` deploys; `RadEruptionWeapon` fires at its own cell every 60 frames and
+creates/`Add`s a RadSite (spread = `ftol(CellSpread)` = 10 cells, linear
+falloff, level 500 accumulating, cells decay `amt/LevelSteps` every 90 frames);
+foot units take `ftol(ftol(min(lvl,500))*0.2) x [RadSite] Verses` on the
+absolute 16-frame phase. **Chrono Legionnaire** -- every move is a teleport
+(immediate relocation, then frozen `max(dist/48, 16)` frames); its beam erases
+(`Strength*10` budget minus the attached legionnaires' Damage per frame; a GI in
+157 frames; removed, not killed). **Tanya / Navy SEAL** -- ordered onto a
+building they walk to Sapper range and plant C4 (`ftol(C4Delay*900)` = 27
+frames, then a lethal ignore-defense blast); a C4'd building cannot be sold (the
+`can_be_sold` C4 hook is now live). **Crazy Ivan** -- plants one bomb per
+target, detonating on `plant+451` or when the target dies (`IvanDamage=450`,
+`IvanWH` 1.5 cells, all houses, buildings too); his own death does nothing.
+**Terrorist** -- a `Suicide` weapon: firing kills him and his `TerrorBomb`
+death weapon blasts (also on any death); no passive acquire, no retaliation.
+**IFV** -- `Gunner=yes`: the weapon is `Weapon[IFVMode of the passenger]`
+(GI -> `CRM60`, Desolator -> `CRRadBeamWeapon`, Ivan -> suicide `CRNuke`, CLEG ->
+erasing `CRNeutronRifle`), back to `HoverMissile` when empty.
+
+**Firewall:** profiles reach units only through
+`World::register_ability_profile` (bound by image), called by `GameScene` and
+`--demo-abilities` only (never `launch_skirmish`); `step_abilities` returns at
+once otherwise. Every edit to an existing pass is a guard on a default-inert
+field (`frozen`, `abil.fire_kind`, `abil.c4`, `abil.teleporter`,
+`abil.no_passive_acquire/no_retaliate`, `Building::c4_applied`). Ability shots
+are intercepted before the P2 projectile launch (abilities are instant).
+
+**Cut / carried forward:** drone removal by Service Depot / IFV repair (no unit
+repair system), the squid, C4 on ships, bombs on friendlies, mind control,
+radiation lighting, effect anims/sounds, the erase-target damage immunity and
+the engine-wide min-1 damage clamp (`abilities.md` section H). Distances are
+2-D. Suppression is measured per frame.
 
 ## Android (arm64-v8a) cross-compile
 

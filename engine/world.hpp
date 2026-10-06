@@ -15,6 +15,8 @@
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "repair_sell.hpp"  // Repair & Sell: RepairSellRules + the pure tick arithmetic
+#include "crate.hpp"  // P5 Crates: GameRandom/CrateRules/Powerup (pure)
+#include "abilities.hpp"    // P4 abilities: AbilityProfile/AbilityRules/RadField
 #include "superweapon.hpp"  // CB-4 Superweapons: Superweapon/SuperweaponType lifecycle
 #include "visibility.hpp"  // Shroud/Fog: cell_in_sight/reveal_disc (pure reveal math)
 #include "ra2assets/map.hpp"
@@ -267,6 +269,44 @@ struct Unit {
     std::string disguised_as_type;   // SHP image id shown while disguised (e.g. "E1")
     int disguised_as_house = 0;      // palette house shown while disguised
     bool detect_disguise = false;    // DetectDisguise=yes (dogs) -> reveals spies
+
+    // --- P5 Veterancy + Crates [RE: veterancy.md] ---------------------------
+    // Experience, rank memory, crate multipliers, the combat receive-hook flag
+    // and the type data copied from UnitCombat. ALL defaults inert (see
+    // veterancy.hpp UnitVet): read only past World's vet_any_ firewall, except
+    // vet.killed_by, a stamp combat.cpp writes at death and nothing else reads.
+    // NOT read by world_hash or any existing *_hash.
+    UnitVet vet;
+    // --- P4 Unit special abilities [RE: abilities.md] -----------------------
+    // ALL defaults INERT (spec §Global constraints): a profile reaches a unit
+    // ONLY through World::register_ability_profile (bound by image in
+    // step_abilities), which no pre-P4 gate calls -- so every field below
+    // holds its default in every existing demo and world_hash (cell/hp/alive)
+    // is untouched. Indices are unit/building indices (stable: tombstoned,
+    // never erased).
+    AbilityProfile abil;             // the bound per-type profile (inert = none)
+    bool abil_bound = false;         // step_abilities looked this unit's image up
+    // Frozen = cannot move, fire, acquire or be pathed: teleport warp-in
+    // (§C1 +0x271), being erased (§C2 +0x270), deployed (§A). Read as a guard
+    // by step_units / step_combat / the MoveRequest dispatch.
+    bool frozen = false;
+    std::int64_t warp_until = -1;    // teleport: frozen until this frame (§C1)
+    int ability_fired_unit = -1;     // combat fire intercepted this frame (victim)
+    int ability_fired_building = -1; // ... or building victim
+    int parasite_on_me = -1;         // drone riding this unit (§B1 +0x694)
+    std::int64_t parasite_next_tick = 0;  // drone: DamageDeliveryTimer expiry (§B2)
+    std::int64_t suppress_until = -1;     // drone: SuppressionTimer expiry (§B3)
+    int last_hp = -1;                // host: HP at the end of the previous pass (§B3)
+    int temporal_target = -1;        // CLEG: unit being erased (§C2)
+    int temporal_target_building = -1;  // CLEG: building being erased
+    int warp_remaining = 0;          // victim: WarpRemaining (§C2); 0 = not warped
+    std::int64_t bomb_frame = -1;    // Ivan bomb DetonationFrame on this unit (§E)
+    int bomb_owner = -1;             // the planting unit
+    int bomb_house = -1;             // its house
+    bool deployed = false;           // desolator deployed (§A)
+    std::int64_t deploy_next_fire = 0;  // next eruption frame
+    int ifv_current = 0;             // gunner: current weapon index (§G)
+    bool death_done = false;         // death weapon / bomb / parasite handled (§F)
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
@@ -573,6 +613,12 @@ public:
     // ever computed elsewhere (spec §8). World stays asset-free: it takes the
     // resolved array, not a map.
     void set_water_terrain(const std::vector<ra2assets::LandType>& land_types);
+    // P6 [RE: roster2.md §B]: a WaterBound building (GAYARD/NAYARD) sits ON the
+    // water grid -- add_building only blocks the Land grid, so the caller also
+    // clears its foundation from water_passable_ (ships never path through the
+    // yard; NumberImpassableRows not modelled). No-op when the water grid is
+    // empty. Called ONLY by --demo-roster2.
+    void block_water_footprint(int cx, int cy, int fw, int fh);
     bool walkable(int x, int y) const;
     const Occupancy& occupancy() const { return occ_; }
 
@@ -1109,12 +1155,106 @@ public:
     // building; also the "reveal map / no-shroud" start option. No-op if empty.
     void reveal_all_house(int h);
 
+    // --- P4 Unit special abilities [RE: abilities.md] ----------------------
+    // Bind `p` to every unit whose Unit::image == image (looked up lazily by
+    // step_abilities, so spawn paths stay untouched). OPENS abilities_any_ --
+    // the single firewall of the whole phase. No pre-P4 gate calls it.
+    void register_ability_profile(const std::string& image, const AbilityProfile& p);
+    // The recovered globals; the struct's defaults ARE this install's values.
+    void set_ability_rules(const AbilityRules& r) { ability_rules_ = r; }
+    const AbilityRules& ability_rules() const { return ability_rules_; }
+    bool abilities_enabled() const { return abilities_any_; }
+    // One step() = one logic frame; advances every step, above the firewall.
+    std::uint64_t ability_frame() const { return ability_frame_; }
+    const RadField& rad_field() const { return rad_; }
+    // Building roster types with CanC4=no (rulesmd [type] CanC4=no).
+    void set_no_c4_types(const std::vector<int>& types) { no_c4_types_ = types; }
+    // Toggle a Deployer's deployed state (the desolator 'D'). Returns true iff
+    // the unit is a live deployer (state flipped).
+    bool order_deploy(int idx);
+    // The per-frame ability pass (appended to World::step). Public so tests
+    // can drive it; `if (!abilities_any_) return;` after the frame tick.
+    void step_abilities(double dt);
+    // Witness events for the gate / audio (drained like take_cargo_events).
+    struct AbilityEvent {
+        enum class Kind {
+            Infect, ParasiteTick, DroneExit, DroneLost, Teleport, Unfreeze, TemporalAttach,
+            Erase, BombPlant, BombBlast, C4Plant, C4Blast, Suicide, DeathWeapon, Eruption,
+            RadDamage, IfvSwap, Deploy
+        };
+        Kind kind = Kind::Infect;
+        int a = -1;          // the acting unit (or victim for damage events)
+        int b = -1;          // the other party (unit, or building for *_bld)
+        int x = 0, y = 0;    // event-specific payload (damage, cell, frames)
+        bool building = false;  // b is a building index
+    };
+    std::vector<AbilityEvent> take_ability_events();
+
     // Test seam: directly seed a house's credits without running the full
     // harvest/unload pipeline (the cash-steal victim in the infiltrate tests).
     // Index 2 (neutral) inert. Interactive/demo code never calls it.
     void grant_credits_for_test(int house, double amount) {
         if (house >= 0 && house < house_count()) house_credits_[house] = amount;
     }
+
+    // --- P5 Veterancy + Crates [RE: docs/re/veterancy.md] --------------------
+    // BYTE-IDENTITY FIREWALL: nothing below runs unless enable_veterancy (and,
+    // for crates, enable_crates) was called. No existing gate calls either --
+    // only GameScene (the interactive game) and --demo-veterancy do -- so
+    // step_crates/step_veterancy cost every existing gate one counter
+    // increment and two branches, and none of this state is read by
+    // world_hash or any existing *_hash.
+    //
+    // Open the veterancy system: the rank/kill/self-heal pass, the combat
+    // receive-damage hook on every unit + building, and the vet-aware spawn.
+    // `building_costs[type]` = Cost of building roster type (kill value of a
+    // destroyed building, V3); a type outside it is worth 0.
+    void enable_veterancy(const VeterancyRules& r, std::vector<int> building_costs = {});
+    bool veterancy_enabled() const { return vet_any_; }
+    const VeterancyRules& veterancy_rules() const { return vet_rules_; }
+    // Rank-change events (V12), drained by the caller (EVA/sound hook, witness).
+    struct VetEvent { int unit = -1; int old_rank = 0; int new_rank = 0; };
+    std::vector<VetEvent> take_vet_events();
+    // Recompute unit `idx`'s effective weapon/ROF/speed/sight from its base or
+    // elite weapon, rank abilities and crate multipliers (V5/V7/V8/V9/V10).
+    // No-op unless veterancy is enabled. Public: the crate effects + tests.
+    void refresh_vet_stats(int idx);
+    // Frames stepped so far (the global Frame for the self-heal phase, V11).
+    std::uint64_t vet_frame() const { return vet_frame_; }
+
+    // Crates (C1-C8). Requires veterancy (the multipliers live on its path);
+    // returns false (and opens nothing) when veterancy is off.
+    struct CrateConfig {
+        CrateRules rules;
+        std::uint32_t seed = 0;               // ScenarioClass::Random seed
+        int players = 1;                      // session human count (C2)
+        std::vector<UnitCombat> unit_pool;    // CrateGoodie=yes vehicles (Unit crate)
+        bool place_initial = true;            // drop the C2 initial crates now
+    };
+    // One Crates[256] slot. x < 0 = empty. powerup -1 = random (the overlay
+    // OverlayData >= 0x13 case); >= 0 = a typed crate (PlaceCrate(cell,type)).
+    struct Crate {
+        int x = -1, y = -1;
+        int powerup = -1;
+        std::uint64_t start = 0;              // vet_frame() at placement
+        int lifetime = 0;                     // frames (C4)
+    };
+    struct CrateEvent {
+        int picked = -1;      // powerup drawn/typed
+        int applied = -1;     // after the conversion rules (§3.3)
+        int house = -1, unit = -1, x = -1, y = -1;
+        int amount = 0;       // Money credits / spawned unit index
+        int affected = 0;     // area effects: objects changed
+    };
+    bool enable_crates(const CrateConfig& cfg);
+    bool crates_enabled() const { return crates_any_; }
+    // PlaceCrate(cell, type) (FUN_0056B9F0): nearest valid cell to (x,y), first
+    // free slot, lifetime drawn. powerup -1 = random. Returns success.
+    bool place_crate(int x, int y, int powerup = -1);
+    // PlaceRandomCrate (FUN_0056B870): up to 1000 random tries.
+    bool place_random_crate();
+    const std::vector<Crate>& crates() const { return crates_; }
+    std::vector<CrateEvent> take_crate_events();
 
     // Advance all units by dt seconds: step_units (collision-aware movement)
     // -> step_combat (targeting/firing/deaths, returns pursuit/return-to-
@@ -1140,6 +1280,29 @@ public:
     void order_unit_move(int idx, int gx, int gy);
 
 private:
+    // --- P5 Veterancy + Crates [RE: veterancy.md] (all inert until enabled) ---
+    bool vet_any_ = false;                    // the veterancy firewall
+    VeterancyRules vet_rules_;
+    std::vector<int> vet_building_costs_;     // roster type -> Cost (V3)
+    std::uint64_t vet_frame_ = 0;             // global Frame (advances every step)
+    std::vector<VetEvent> vet_events_;
+    void init_unit_vet(Unit& u);              // arm recv + rank memory + refresh
+    void credit_kill(int killer, int victim_house, int victim_cost, float victim_vet,
+                     bool dont_score);
+    void step_veterancy();                    // firewalled pass after step_combat
+    bool crates_any_ = false;                 // the crate firewall
+    CrateRules crate_rules_;
+    GameRandom crate_rng_;
+    std::vector<UnitCombat> crate_pool_;
+    std::vector<Crate> crates_;               // Crates[256]
+    std::vector<CrateEvent> crate_events_;
+    bool cell_is_water(int x, int y) const;
+    bool crate_nearby_cell(int x, int y, bool water, int& ox, int& oy) const;
+    bool crate_cell_valid(int x, int y) const;
+    bool crate_slot_place(int slot, int x, int y, int powerup);
+    void collect_crate(int slot, int unit_idx);
+    void step_crates();                       // firewalled pass after step_units
+
     // --- AI-1 base-planning phase [RE: ai-base.md] ---
     struct HouseAiRec {
         bool is_ai = false;
@@ -1369,6 +1532,30 @@ private:
     // Finish a sell mission: free the footprint, spawn survivors, pay the FLAT
     // refund, then kill + mark sold. See world.cpp for the recovered ordering.
     void complete_sell(int b_idx);
+
+    // --- P4 Unit special abilities [RE: abilities.md] (world_abilities.cpp) ---
+    bool abilities_any_ = false;                      // THE firewall
+    std::uint64_t ability_frame_ = 0;                 // logic frame counter
+    AbilityRules ability_rules_;
+    std::map<std::string, AbilityProfile> ability_profiles_;  // by image
+    RadField rad_;
+    std::vector<int> no_c4_types_;
+    std::vector<AbilityEvent> ability_events_;
+    // Teleport `idx` to the nearest free cell at/around (gx,gy) [§C1].
+    void teleport_unit(int idx, int gx, int gy);
+    // Start a unit's death the combat.cpp way (die_time=0, release occupancy).
+    void ability_kill_unit(int idx);
+    // Remove a unit from the game without dying (erase, §C2).
+    void ability_erase_unit(int idx);
+    // DamageArea [§E/§F]: all houses, units + buildings, linear falloff.
+    void ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage);
+    void ability_fire_event(int idx);
+    void ability_death_pass();
+    // Weapon application to a unit/building with verses (no splash).
+    void ability_damage_unit(int victim, int dmg);
+    void ability_damage_building(int b_idx, int dmg);
+    void ability_apply_weapon_fields(Unit& u, const WeaponSpec& w);
+    void ability_bind_unit(Unit& u);
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by

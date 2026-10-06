@@ -94,6 +94,16 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
     // seconds via kLogicFps; CONFIRMED no jitter/RNG in the reset.
     u.rof_cool = u.w_rof / kLogicFps;
     u.fire_flash = kFireFlashSecs;
+    // P4 [RE: abilities.md §B1/§C2/§E/§F]: a weapon whose warhead/weapon flags
+    // make it an ABILITY (Parasite / Temporal / IvanBomb / Suicide) deals no
+    // plain damage -- the shot is handed to World::step_abilities, which
+    // resolves it this same frame (abilities are instant: checked BEFORE the
+    // P2 projectile launch). fire_kind is None unless a P4 profile is bound
+    // (no pre-P4 gate binds one) -> the existing path below runs.
+    if (u.abil.fire_kind != AbilityKind::None) {
+        u.ability_fired_unit = victim_idx;
+        return;
+    }
     if (launches && u.w_proj.flies()) {
         launches->push_back({attacker_idx, victim_idx, -1});
         return;
@@ -117,7 +127,12 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
 void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx, int victim_idx) {
     Unit& u = units[attacker_idx];
     Unit& v = units[victim_idx];
-    const int dmg = damage_vs(u.w_damage, u.w_verses, v.armor_ix);
+    // P5 [RE: veterancy.md V6]: a vet-enabled World arms v.vet.recv; the
+    // receive chain (ArmorMultiplier, STRONGER, max 1) runs BEFORE the Verses.
+    // v.vet.recv is false in every legacy World -> raw == u.w_damage as before.
+    int raw = u.w_damage;
+    if (v.vet.recv) raw = vet_receive(raw, v.vet);
+    const int dmg = damage_vs(raw, u.w_verses, v.armor_ix);
     v.hp -= dmg;
     // Return fire only if IDLE (spec: "return fire when hit" applies to
     // idle/guarding units; a unit under a move order keeps walking rather
@@ -128,7 +143,7 @@ void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx
     // if it fires. Inert for byte-identity: u.disguised defaults false and
     // no gate ever calls set_disguise, so `!u.disguised` is always true ->
     // the guard is unchanged in every gate.
-    if (v.target == -1 && !v.moving() && !u.disguised) {
+    if (v.target == -1 && !v.moving() && !u.disguised && !v.abil.no_retaliate) {
         // Idle victim retaliates (docs/re/combat.md §7: retaliation target
         // choice confirmed). Also records ITS OWN guard anchor at its
         // current position -- retaliation is a form of auto-acquire
@@ -142,6 +157,7 @@ void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx
     }
     if (v.hp <= 0) {
         v.die_time = 0.0;
+        v.vet.killed_by = attacker_idx;   // P5 [V3]: inert stamp (credit pass only)
         occ.release_all_of(victim_idx, -1, -1);
         v.target = -1;
         v.path.clear();
@@ -158,9 +174,14 @@ void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& build
                           int attacker_idx, int b_idx) {
     Unit& u = units[attacker_idx];
     Building* b = &buildings[b_idx];
-    const int dmg = damage_vs(u.w_damage, u.w_verses, b->armor_ix);
+    // P5 [RE: veterancy.md V6]: a vet-enabled World arms b->vet_recv
+    // (ArmorMultiplier, max 1, then Verses); false in every legacy World.
+    int raw = u.w_damage;
+    if (b->vet_recv) raw = receive_damage(raw, b->armor_mult, false, 1.0);
+    const int dmg = damage_vs(raw, u.w_verses, b->armor_ix);
     b->hp -= dmg;
     if (b->hp <= 0) {
+        b->killed_by = attacker_idx;   // P5 [V3]: inert stamp
         kill_building(*b);
         if (u.target_building == b_idx) {
             u.target_building = -1;
@@ -202,11 +223,19 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         if (d > radius_lept) continue;                               // outside the splash
         const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
         const double scale = 1.0 - (1.0 - pmax) * frac;             // 1.0 -> pmax linear
-        const int base = static_cast<int>(attacker.w_damage * scale);  // trunc (combat.md §3)
+        // P5 [RE: veterancy.md V6]: the receive chain runs on the full hit
+        // before the falloff/Verses; only when the victim's hook is armed
+        // (never in a legacy World -> the base expression is unchanged).
+        const int full = w.vet.recv ? vet_receive(attacker.w_damage, w.vet) : attacker.w_damage;
+        const int base = static_cast<int>(full * scale);  // trunc (combat.md §3)
         const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
         w.hp -= dmg;
         if (w.hp <= 0) {
             w.die_time = 0.0;
+            // P5 [V3]: inert killer stamp; the attacker is a real unit only when
+            // it lives in `units` (the nuke's virtual detonator does not).
+            if (&attacker >= units.data() && &attacker < units.data() + units.size())
+                w.vet.killed_by = static_cast<int>(&attacker - units.data());
             occ.release_all_of(j, -1, -1);
             w.target = -1;
             w.path.clear();
@@ -263,6 +292,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // (b2) CB-1: a CARRIED unit is off-map -- it cannot fire, cool down,
         // acquire, or pursue [spec §4].
         if (u.cargo_of >= 0) continue;
+        // (b3) P4 [RE: abilities.md §C1/§C2/§A]: a FROZEN unit (warping in,
+        // being erased, deployed) neither fires, acquires nor pursues.
+        // Inert: frozen is false unless a P4 profile is bound.
+        if (u.frozen) continue;
 
         // (c) ROF cooldown + fire-flash decay -- every living, non-dying
         // unit, every call, regardless of target state. docs/re/combat.md
@@ -307,7 +340,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         ny = cell.y;
                     }
                 }
-                const double range_leptons = u.w_range * kLeptonsPerCell;
+                // P4 [RE: abilities.md §D1]: a C4=yes infantry walks to its
+                // Sapper (Secondary) range against a building, not its
+                // primary's. abil.c4 is false unless a P4 profile is bound.
+                const double range_leptons =
+                    (u.abil.c4 ? u.abil.c4_range : u.w_range) * kLeptonsPerCell;
                 if (best_d <= range_leptons) {
                     if (u.rof_cool <= 0.0) {
                         // Aim gate, mirroring the unit path exactly
@@ -324,6 +361,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             continue;  // hold fire this frame; rof_cool untouched
                         u.rof_cool = u.w_rof / kLogicFps;
                         u.fire_flash = kFireFlashSecs;
+                        // P4 [RE: abilities.md §C2/§D/§E/§F]: an ability weapon
+                        // (or a C4 infantry) hands the building shot to
+                        // World::step_abilities instead of plain damage. Inert
+                        // pre-P4 (fire_kind None, c4 false).
+                        if (u.abil.fire_kind != AbilityKind::None || u.abil.c4) {
+                            u.ability_fired_building = b_idx;
+                            continue;
+                        }
                         // P2 firewall: a flying projectile defers the hit to
                         // World::step_projectiles; otherwise the pre-P2 tail.
                         if (launches && u.w_proj.flies())
@@ -388,7 +433,9 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             // sets u.target and skips this block, so air-to-ground attack is
             // unaffected]. Cannot change the 9 ground-only gates: has_flight_goal
             // is always false there.
-            if (u.moving() || u.has_flight_goal) { /* no auto-acquire under a move order */ }
+            // P4 [RE: abilities.md §F]: CanPassiveAquire=no (the terrorist)
+            // never auto-acquires. Inert: false unless a P4 profile is bound.
+            if (u.moving() || u.has_flight_goal || u.abil.no_passive_acquire) { /* no auto-acquire */ }
             else {
                 int best = -1;
                 double best_d = 0.0;

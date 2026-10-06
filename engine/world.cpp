@@ -547,7 +547,11 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // w_damage/hp/max_hp EXACTLY as resolved above -> byte-identical.
     u.veteran_rank = c.veteran_rank;
     u.sight = c.sight;  // [RE: shroud.md §2] reveal radius; inert until Task 3
-    if (c.veteran_rank > 0) {
+    // P5 [RE: veterancy.md V15]: in a veterancy-enabled World a produced
+    // veteran is Veterancy=1.0f (applied below), NOT the legacy spawn-baked
+    // HP/damage. The legacy baking is kept verbatim for every World that never
+    // enabled veterancy (the capture gate) -> byte-identical there.
+    if (c.veteran_rank > 0 && !vet_any_) {
         u.w_damage = veteran_firepower(u.w_damage, c.veteran_rank);
         u.max_hp = veteran_hp(u.max_hp, c.veteran_rank);
         u.hp = u.max_hp;
@@ -587,6 +591,37 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // (default is_naval=false / movement_domain=Land = a ground unit).
     u.is_naval = c.is_naval;
     u.movement_domain = c.movement_domain;
+    // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
+    // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
+    // past this point unless vet_any_). Only a vet-enabled World arms the
+    // combat hook, applies a requested rank and refreshes the stats.
+    u.vet.cost = c.cost;
+    u.vet.trainable = c.trainable;
+    u.vet.dont_score = c.dont_score;
+    u.vet.self_healing = c.self_healing;
+    u.vet.vet_abilities = c.vet_abilities;
+    u.vet.elite_abilities = c.elite_abilities;
+    u.vet.rules_speed = c.rules_speed;
+    u.vet.base.damage = c.damage;
+    u.vet.base.rof = c.rof;
+    u.vet.base.range = c.range;
+    u.vet.base.verses = c.verses;
+    u.vet.base.cell_spread = c.cell_spread;
+    u.vet.base.percent_at_max = c.percent_at_max;
+    u.vet.has_elite = c.has_elite;
+    u.vet.elite = c.elite;
+    u.vet.base_speed_cps = c.speed_cps;
+    u.vet.base_sight = c.sight;
+    if (vet_any_) {
+        // [V15] SetVeteran only if Trainable (FUN_00734490 L107-111).
+        if (c.veteran_rank > 0 && c.trainable)
+            u.vet.veterancy = c.veteran_rank >= 2 ? 2.0f : 1.0f;
+        init_unit_vet(u);
+    }
+    // P4 [RE: abilities.md]: bind the ability profile at spawn so the unit's
+    // very first shot is already intercepted. A strict no-op unless
+    // abilities_any_ (no pre-P4 gate registers a profile).
+    if (abilities_any_) ability_bind_unit(u);
     return u;
 }
 
@@ -596,6 +631,14 @@ void World::set_water_terrain(const std::vector<ra2assets::LandType>& land_types
     // [RE-GATE APPLIED: naval.md §1] intersect with the Land grid (passable_) so
     // a ship never paths on a non-materialized water cell.
     water_passable_ = build_water_passability(land_types, passable_, grid_w_, grid_h_);
+}
+
+void World::block_water_footprint(int cx, int cy, int fw, int fh) {
+    if (water_passable_.empty()) return;
+    for (const Cellxy& c : foundation_cells(cx, cy, fw, fh)) {
+        if (c.x < 0 || c.y < 0 || c.x >= grid_w_ || c.y >= grid_h_) continue;
+        water_passable_[static_cast<std::size_t>(c.y) * grid_w_ + c.x] = 0;
+    }
 }
 
 // --- Economy phase [RE: economy.md] ---
@@ -689,6 +732,15 @@ int World::unit_at_cell(int x, int y) const {
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
+    // P4 [RE: abilities.md §C1/§C2/§A]: a FROZEN unit (warping in, being
+    // erased, deployed) takes no move; a Teleporter's move is a TELEPORT.
+    // Both fields are inert (false) unless a P4 profile is bound, which no
+    // pre-P4 gate does -> the existing body below runs unchanged.
+    if (u.frozen) return;
+    if (u.abil.teleporter && !u.is_aircraft) {
+        teleport_unit(idx, gx, gy);
+        return;
+    }
     // CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §1/§6]: an aircraft order sets
     // a FLIGHT GOAL and takes off/cruises -- it never computes an A* path, never
     // tests passable_, and reserves no occ_ cell while airborne (straight-line
@@ -829,6 +881,7 @@ int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int
     b.grants_map_reveal = grants_map_reveal;  // [RE: shroud.md §7A] SpySat/GPS reveal-all flag
     b.buildup_total = buildup_total;
     b.state = instant ? Building::State::Idle : Building::State::Buildup;
+    b.vet_recv = vet_any_;   // P5 [RE: veterancy.md V6]: false in every legacy World
     buildings_.push_back(b);
     const int idx = static_cast<int>(buildings_.size()) - 1;
     for (const Cellxy& cell : foundation_cells(cx, cy, fw, fh)) {
@@ -1491,7 +1544,9 @@ bool World::begin_sell(int b_idx, int by_house, bool c4_applied) {
     // C4. NO last-ConYard rule and NO captured rule -- both were searched for
     // in the binary and neither exists. DO NOT ADD EITHER. (The mind-control
     // veto is deliberately omitted -- §D6.)
-    if (!can_be_sold(b, bt[b.type], c4_applied)) return false;
+    // P4 [RE: abilities.md §D3]: the C4 hook is now live -- a building with C4
+    // planted (Building::c4_applied, inert false pre-P4) refuses the sale.
+    if (!can_be_sold(b, bt[b.type], c4_applied || b.c4_applied)) return false;
     repair_sell_any_ = true;
     // [RE: §B2, 0x00449B81] Mission_Selling's FIRST act is Repair(0).
     set_repair(b_idx, by_house, 0);
@@ -3003,6 +3058,12 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 void World::step(double dt) {
     step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
+    // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
+    // crate cell, then lifetime expiry -> relocation. A pure INSERTION;
+    // `if (!crates_any_) return;` inside is the only cost every existing gate
+    // pays (no existing demo calls enable_crates).
+    step_crates();
+
     // Shroud/Fog [RE: shroud.md §3]: recompute per-house visibility after
     // movement and before combat reads it (via seen_by_mask). Firewalled behind
     // shroud_any_ (false in every existing demo -> a strict no-op).
@@ -3087,6 +3148,12 @@ void World::step(double dt) {
                                                       projectiles_enabled_ ? &launches : nullptr);
     for (const ProjectileLaunch& l : launches)
         launch_projectile(l.attacker, l.target_unit, l.target_building);
+    // P5 Veterancy [RE: veterancy.md V2/V3/V11/V12]: kill credit for every unit/
+    // building that died this step, rank-change detection + stat refresh, and
+    // the 14-frame self-heal. A pure INSERTION right after step_combat; the
+    // frame counter advances unconditionally (nothing hashes it) and
+    // `if (!vet_any_) return;` is the only other cost every existing gate pays.
+    step_veterancy();
     // Guard-return requests route directly. Approach requests are batched
     // per goal cell (one batch per target) and resolved to DISTINCT free
     // firing-position cells via assign_formation, so a group of attackers
@@ -3293,6 +3360,13 @@ void World::step(double dt) {
     // Multi-house [RE: multihouse.md §5]: evaluate last-team-standing victory
     // AFTER combat has resolved this frame's deaths. Firewalled behind
     // victory_enabled_ (false in every existing gate -> a strict no-op).
+    //
+    // P4 Unit special abilities [RE: abilities.md]: the ability pass runs
+    // AFTER combat (so this frame's intercepted fire events and deaths are
+    // resolved the same frame) and BEFORE victory (so an ability kill counts).
+    // A pure INSERTION; `if (!abilities_any_) return;` (after the frame tick)
+    // is the only cost every pre-P4 demo pays -- none registers a profile.
+    step_abilities(dt);
     step_victory();
 }
 
