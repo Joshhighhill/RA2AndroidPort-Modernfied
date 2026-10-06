@@ -105,3 +105,36 @@ TEST_CASE("gapC weapon: a Flak Track engages an airborne Kirov with its AA secon
     CHECK(fu.w_range == 5.0);
     CHECK(fu.w_damage == 25);
 }
+
+TEST_CASE("gapC deploy: a GI deploys into a firing post with Para, not a frozen eruption (G-45)") {
+    ra2assets::MapFile map;
+    World w(map);
+    UnitCombat gi;
+    gi.strength = 125;
+    gi.damage = 15;
+    gi.rof = 20;
+    gi.range = 4.0;
+    gi.secondary = slot(false, true);
+    gi.secondary.damage = 25;
+    gi.secondary.rof = 15;
+    gi.secondary.range = 5.0;
+    gi.deploy_fire = true;
+    gi.deploy_fire_slot = 1;
+    w.add_combat_unit(2, 2, 0, gi);
+    UnitCombat e2;
+    e2.strength = 125;
+    w.add_combat_unit(5, 2, 1, e2);
+    CHECK(unit_weapon_for_unit(w.units()[0], w.units()[1]) == 0);
+    REQUIRE(w.order_deploy(0));
+    CHECK(w.units()[0].deployed);
+    CHECK_FALSE(w.units()[0].frozen);
+    CHECK(unit_weapon_for_unit(w.units()[0], w.units()[1]) == 1);
+    // It keeps fighting from the post: step until the Para shot lands.
+    for (int f = 0; f < 30; ++f) w.step(1.0 / 15.0);
+    CHECK(w.units()[1].hp < 125);
+    CHECK(w.units()[0].w_active == 1);
+    CHECK(w.units()[0].cell_x == 2);
+    // A move order packs it up.
+    w.order_unit_move(0, 2, 4);
+    CHECK_FALSE(w.units()[0].deployed);
+}

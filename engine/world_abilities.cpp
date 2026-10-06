@@ -61,8 +61,31 @@ std::vector<World::AbilityEvent> World::take_ability_events() {
 }
 
 bool World::order_deploy(int idx) {
-    if (!abilities_any_ || idx < 0 || idx >= static_cast<int>(units_.size())) return false;
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return false;
     Unit& u = units_[idx];
+    // Gap fix C (G-45) [RE: docs/re/weapons.md §3]: a DeployFire infantry (GI
+    // Para, GGI MissileLauncher -- deploy weapon without RadLevel) deploys into
+    // an immobile gun position that keeps acquiring and firing its
+    // DeployFireWeapon slot through the normal step_combat path. NOT frozen:
+    // only movement is refused (order_unit_move). Independent of the P4
+    // abilities firewall.
+    if (u.deploy_fire && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
+        u.deployed = !u.deployed;
+        if (u.deployed) {
+            if (u.moving()) {
+                occ_.release_all_of(idx, u.cell_x, u.cell_y);
+                occ_.set(u.cell_x, u.cell_y, idx);
+            }
+            u.path.clear();
+            u.path_idx = 0;
+            u.fx = u.cell_x;
+            u.fy = u.cell_y;
+            u.attack_order = false;   // a deployed GI holds its post
+        }
+        ability_events_.push_back({Ev::Kind::Deploy, idx, -1, u.deployed ? 1 : 0, 0, false});
+        return true;
+    }
+    if (!abilities_any_) return false;
     if (!on_map_alive(u)) return false;
     bind_profile(u, ability_profiles_);
     if (!u.abil.deployer || !u.abil.deploy.valid) return false;
@@ -486,6 +509,7 @@ void World::step_abilities(double dt) {
     for (int i = 0; i < n; ++i) {
         Unit& u = units_[i];
         if (!u.deployed || !on_map_alive(u) || !u.abil.deploy.valid) continue;
+        if (u.deploy_fire) continue;   // Gap fix C: GI/GGI fire via step_combat
         if (F < u.deploy_next_fire) continue;
         const WeaponSpec& w = u.abil.deploy;
         u.deploy_next_fire = F + std::max(1, w.rof);

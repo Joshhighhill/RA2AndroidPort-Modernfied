@@ -398,7 +398,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         else
                             deliver_building_hit(units, buildings, i, b_idx);
                     }
-                } else if (u.attack_order) {
+                } else if (u.attack_order && !(u.deploy_fire && u.deployed)) {
                     // Dedup mirrors the unit-pursuit branch below (f): only
                     // re-request when there's no live path, or the current
                     // path's goal has stopped being a firing position for the
@@ -529,7 +529,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     continue;  // hold fire this frame; rof_cool untouched
                 try_fire(units, u, v, i, u.target, occ, launches);
             }
-        } else if (u.attack_order) {
+        } else if (u.attack_order && !(u.deploy_fire && u.deployed)) {
+            // (Gap fix C, G-45: a deployed GI holds its post -- no approach.)
             // Approach: ask the caller for a firing position near the target.
             // The original engine approaches until in weapon range and never
             // paths to the victim's own (occupied) cell (docs/re/

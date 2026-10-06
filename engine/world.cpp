@@ -751,6 +751,9 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // Both fields are inert (false) unless a P4 profile is bound, which no
     // pre-P4 gate does -> the existing body below runs unchanged.
     if (u.frozen) return;
+    // Gap fix C (G-45): a deployed DeployFire infantry packs up and walks
+    // (the original undeploys on a move order).
+    if (u.deploy_fire && u.deployed) u.deployed = false;
     if (u.abil.teleporter && !u.is_aircraft) {
         teleport_unit(idx, gx, gy);
         return;
