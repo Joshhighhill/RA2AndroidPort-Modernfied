@@ -169,7 +169,13 @@ bool can_start_unit(const ProductionState& ps, int unit_type,
 // review): RA2 queues up to MaximumQueuedObjects=29 items per factory
 // (production.md §1.5); this phase keeps a SINGLE slot per queue (one item
 // building + ready).
-enum class QueueCat { Structure, Defense, Infantry, Vehicle };
+// Gap owner A (G-24) [RE: roster2.md TL;DR 7]: Naval=yes UnitType factories
+// (GAYARD/NAYARD) and AircraftType factories (GAAIRC/AMRADR) are their OWN
+// FactoryClass queues, concurrent with the War Factory's. Appended AFTER the
+// original four so every existing index (and the AI's 4-queue tick) is
+// unchanged; the sidebar shows all three unit kinds on tab 3.
+enum class QueueCat { Structure, Defense, Infantry, Vehicle, Naval, Aircraft };
+constexpr int kQueueCats = 6;
 
 class ProductionQueues {
 public:
@@ -201,6 +207,10 @@ public:
     // [RE-GATE APPLIED: production.md §1.5 — shared FactoryClass timing]
     void tick(double dt, double power_mult, const double factory_speedup[4],
               const std::vector<BuildingTypeDef>& btypes);
+    // All six queues (gap owner A): factory_speedup has kQueueCats entries.
+    // The 4-entry overload above ticks Naval/Aircraft at speedup 1.0.
+    void tick_all(double dt, double power_mult, const double factory_speedup[kQueueCats],
+                  const std::vector<BuildingTypeDef>& btypes);
 
     // Reconcile the pool after cancel(): all four queues already share the same
     // balance (cancel() broadcasts each refund into the pool as it happens — see
@@ -208,7 +218,7 @@ public:
     // credits() after. Kept for API symmetry with the start/tick flow.
     void reconcile_refund() {
         double m = q_[0].credits;
-        for (int i = 1; i < 4; ++i) m = std::max(m, q_[i].credits);
+        for (int i = 1; i < kQueueCats; ++i) m = std::max(m, q_[i].credits);
         for (auto& q : q_) q.credits = m;
     }
 
@@ -238,7 +248,7 @@ public:
     void placed(QueueCat c) { ra2engine::placed(q_[(int)c]); }
 
 private:
-    ProductionState q_[4];   // [0]=Structure, [1]=Defense, [2]=Infantry, [3]=Vehicle
+    ProductionState q_[kQueueCats];   // Structure, Defense, Infantry, Vehicle, Naval, Aircraft
 };
 
 }  // namespace ra2engine

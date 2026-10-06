@@ -137,3 +137,21 @@ TEST_CASE("building: Repair & Sell fields are inert by default [RE: repair-sell.
     CHECK(b.being_repaired);
     CHECK_FALSE(b.sold);
 }
+
+TEST_CASE("placement_check: BaseNormal=no neighbours do not extend the base (gap G-28) [RE: construction.md §9]") {
+    auto pass = open_grid(30, 30);
+    Occupancy occ(30, 30);
+    Building wall = mk(10, 10, 1, 1);
+    wall.type = 1;                                  // type 1 = a BaseNormal=no wall
+    Building yard = mk(2, 2, 4, 4);
+    yard.type = 0;                                  // type 0 = BaseNormal=yes ConYard
+    const std::vector<char> base_normal = {1, 0};
+    std::vector<Building> only_wall = {wall};
+    // Next to the wall only: legacy (nullptr) accepts, BaseNormal-aware refuses.
+    CHECK(placement_check(12, 10, 2, 2, 0, 2, pass, 30, 30, occ, only_wall, false).ok);
+    CHECK_FALSE(placement_check(12, 10, 2, 2, 0, 2, pass, 30, 30, occ, only_wall, false,
+                                &base_normal).ok);
+    // A BaseNormal=yes neighbour still extends the base.
+    std::vector<Building> both = {yard, wall};
+    CHECK(placement_check(8, 2, 2, 2, 0, 2, pass, 30, 30, occ, both, false, &base_normal).ok);
+}

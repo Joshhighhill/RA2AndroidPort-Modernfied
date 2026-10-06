@@ -23,7 +23,8 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
                                const std::vector<std::uint8_t>& passable, int grid_w, int grid_h,
                                const Occupancy& occ,
                                const std::vector<Building>& buildings,
-                               bool bypass_adjacency) {
+                               bool bypass_adjacency,
+                               const std::vector<char>* base_normal_by_type) {
     PlacementCheck r;
     auto cells = foundation_cells(cx, cy, fw, fh);
     r.cell_ok.assign(cells.size(), false);
@@ -49,6 +50,10 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
     if (!bypass_adjacency) {
         for (const Building& b : buildings) {
             if (!b.alive || b.state == Building::State::Dead || b.house != house) continue;
+            if (base_normal_by_type && b.type >= 0 &&
+                b.type < static_cast<int>(base_normal_by_type->size()) &&
+                !(*base_normal_by_type)[b.type])
+                continue;   // G-28: BaseNormal=no neighbours do not extend the base
             if (rect_gap(cx, cy, fw, fh, b.cx, b.cy, b.fw, b.fh) <= adjacent) {
                 r.adjacency = true;
                 break;
