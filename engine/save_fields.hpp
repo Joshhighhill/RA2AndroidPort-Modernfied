@@ -803,6 +803,8 @@ template <class Ar> void fields(Ar& ar, TeamInstance& v) {
     io(ar, v.gather_x); io(ar, v.gather_y);
     io(ar, v.move_issued);
     io(ar, v.stall_reissues);
+    io(ar, v.best_focus_d2);
+    io(ar, v.no_progress_secs);
     io(ar, v.completed_success);
 }
 template <class Ar> void fields(Ar& ar, AiTeamState& v) {

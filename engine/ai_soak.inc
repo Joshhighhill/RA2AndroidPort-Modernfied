@@ -128,6 +128,34 @@ struct AiSoakProbe {
             }
         }
         const auto hp1 = base_hp(human);
+        if (const ra2engine::AiTeamState* ts = w.ai_team_state(ai)) {   // where are the teams?
+            int hx = -1, hy = -1;
+            for (const ra2engine::Building& b : w.buildings())
+                if (hx < 0 && b.house == human && b.alive) { hx = b.cx; hy = b.cy; }
+            for (const ra2engine::TeamInstance& t : ts->teams) {
+                long sx = 0, sy = 0, n = 0;
+                for (int m : t.members)
+                    if (m >= 0 && m < (int)w.units().size() && w.units()[m].alive) {
+                        sx += w.units()[m].cell_x; sy += w.units()[m].cell_y; ++n;
+                    }
+                std::cout << "[ai-soak] team tt=" << t.teamtype << " state=" << (int)t.state
+                          << " pc=" << t.script_pc << " members=" << n;
+                if (const ra2engine::AiHouseConfig* hc = w.ai_config(ai)) {
+                    const ra2engine::AimdData& d = hc->team.aimd;
+                    if (t.teamtype >= 0 && t.teamtype < (int)d.teams.size()) {
+                        const ra2engine::ScriptType& sc = d.scripts[d.teams[t.teamtype].script];
+                        std::cout << " '" << d.teams[t.teamtype].name << "'";
+                        if (t.script_pc >= 0 && t.script_pc < (int)sc.actions.size())
+                            std::cout << " line=" << sc.actions[t.script_pc].action << ","
+                                      << sc.actions[t.script_pc].argument;
+                    }
+                }
+                { int mv = 0; for (int m : t.members) if (m >= 0 && m < (int)w.units().size() && w.units()[m].alive && w.units()[m].moving()) ++mv;
+                  std::cout << " gather=(" << t.gather_x << "," << t.gather_y << ") issued=" << t.move_issued << " moving=" << mv << " stall=" << t.stall_reissues; }
+                if (n) std::cout << " at=(" << sx / n << "," << sy / n << ") human_base=(" << hx << "," << hy << ")";
+                std::cout << "\n";
+            }
+        }
         const auto ai_hp = base_hp(ai);
         std::cout << "[ai-soak] ai_base_hp_end=" << ai_hp.first << "/" << ai_hp.second
                   << " repair_frames=" << repair_frames << " sell_frames=" << sell_frames << "\n";

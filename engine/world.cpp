@@ -3042,6 +3042,10 @@ void World::step_ai_teams(double dt) {
                 unit_ok[ut] = tc.unit_roster[ut].tech_level > 0 &&
                               prerequisites_met(tc.unit_roster[ut].prerequisite, buildings_,
                                                 rec.cfg.roster, h, rec.cfg.groups);
+            // A type the house cannot build but already has standing idle
+            // counts too (recruit-idle-first, ai-team.md §2) [RE-FALLBACK].
+            for (const IdleUnitView& iv : ai_idle_units(h, rec))
+                if (iv.unit_type >= 0 && iv.unit_type < (int)unit_ok.size()) unit_ok[iv.unit_type] = 1;
             std::vector<char> team_ok(tc.aimd.teams.size(), 1);
             for (int ti = 0; ti < (int)tc.aimd.teams.size(); ++ti) {
                 const int tfi = tc.aimd.teams[ti].taskforce;
@@ -3229,11 +3233,14 @@ void World::step_ai_teams(double dt) {
             if (t.state == TeamState::Gathering || t.state == TeamState::Executing) {
                 if (!t.move_issued) {
                     t.stall_reissues = 0;  // no active move -> counter clear
+                    t.best_focus_d2 = -1;
+                    t.no_progress_secs = 0.0;
                 } else {
                     const double reach = (t.state == TeamState::Gathering)
                                              ? kAiStrayCells
                                              : kAiCloseEnoughCells;
                     bool any_alive = false, any_moving = false, all_within = true;
+                    long long sum_d2 = 0;
                     for (int m : t.members) {
                         if (m < 0 || m >= (int)units_.size()) continue;
                         const Unit& u = units_[m];
@@ -3244,8 +3251,21 @@ void World::step_ai_teams(double dt) {
                         const long long ddy = u.cell_y - t.gather_y;
                         if ((double)(ddx * ddx + ddy * ddy) > reach * reach)
                             all_within = false;
+                        sum_d2 += ddx * ddx + ddy * ddy;
                     }
-                    if (any_alive && !any_moving && !all_within) {
+                    // [G-60] progress backstop [RE-FALLBACK: 10 s without the
+                    // team getting any closer counts as stalled even while
+                    // members still report moving (blocked in a crowd)].
+                    if (t.best_focus_d2 < 0 || sum_d2 < t.best_focus_d2) {
+                        t.best_focus_d2 = sum_d2;
+                        t.no_progress_secs = 0.0;
+                    } else {
+                        t.no_progress_secs += dt;
+                    }
+                    const bool stuck = t.no_progress_secs >= 10.0;
+                    if (any_alive && (!any_moving || stuck) && !all_within) {
+                        t.best_focus_d2 = -1;
+                        t.no_progress_secs = 0.0;
                         if (t.state == TeamState::Gathering) {
                             const Cellxy g =
                                 gather_cell(view.enemy_x, view.enemy_y, st.rng);

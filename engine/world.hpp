@@ -871,6 +871,10 @@ public:
     // Test/demo accessors (read-only views of the per-house AI record;
     // nullptr / 0 / -1 when `house` is not AI-flagged).
     const AiBaseState* ai_state(int house) const;
+    // Read-only view of an AI house's resolved config (diagnostics/harness).
+    const AiHouseConfig* ai_config(int house) const {
+        return ai_enabled(house) ? &ai_houses_[house].cfg : nullptr;
+    }
     double ai_credits(int house) const;
     // Roster type building in the AI house's Structure (cat 0) or Defense
     // (cat 1) queue; -1 = idle.

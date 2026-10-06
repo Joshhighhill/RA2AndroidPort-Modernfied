@@ -2380,6 +2380,8 @@ TEST_CASE("World: a trigger fires, creates its team via the trigger path, and th
     // AI base (house 1) + the PLAYER conyard (house 0) that makes the
     // enemy-owns condition TRUE, well outside auto-acquire reach.
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
     // One IDLE house-1 combat unit so recruit-idle fills TT2 instantly.
     ra2engine::UnitCombat uc;
@@ -2473,6 +2475,8 @@ TEST_CASE("World: a Difficult AI consults the HARD enable slot, not Easy [RE-GAT
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
     // One IDLE house-1 unit so the fired team fills instantly and runs to disband.
     ra2engine::UnitCombat uc;
@@ -2512,6 +2516,8 @@ TEST_CASE("World: a trigger whose team is WIPED before it completes takes the FA
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     world.add_building(0, c->x + 20, c->y + 2, 1, 1, /*house=*/0, 1000, 0, 0.0, true);
     ra2engine::UnitCombat uc;
     uc.strength = 100; uc.image = "AITEST";
@@ -2927,6 +2933,8 @@ TEST_CASE("World: ai_fill_trigger_view excludes a carried unit from the own-unit
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);  // AI conyard
+    // [G-60] the TaskForce must be buildable (FUN_0041ff00): stand a NAHAND.
+    world.add_building(1, c->x - 3, c->y, 1, 1, /*house=*/1, 500, 0, 0.0, true);
     int tx = -1;
     REQUIRE(free_cell_east(world, c->x + 3, c->y, tx));
     world.add_combat_unit(tx, c->y, /*house=*/1, transport_stats(2, 2));  // unit 0: transport

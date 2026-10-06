@@ -150,6 +150,12 @@ struct TeamInstance {
                                      // stalled re-issues of the CURRENT Executing
                                      // move before the pc is force-advanced (the
                                      // wedge-freedom guarantee) [RE: ai-team.md §2].
+    // [G-60] move-progress backstop: the smallest summed member distance^2 to
+    // the realized focus seen on this move, and the seconds since it last
+    // improved (a team whose members keep "moving" while blocked in a crowd
+    // never satisfied the old !any_moving stall test).
+    long long best_focus_d2 = -1;
+    double no_progress_secs = 0.0;
     bool completed_success = false;  // AI-3 [RE: ai-trigger.md §6]: set TRUE only
                                      // when the team runs its script's Disband
                                      // (kOpDisband) success action; stays FALSE
