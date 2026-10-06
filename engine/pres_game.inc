@@ -111,6 +111,16 @@ public:
             snd_.eva("EVA_UnitPromoted");
         }
         superweapon_eva(w);
+        if (act.sw_fire_confirmed) superweapon_fx(w, act.sw_cx, act.sw_cy);
+        // [RE: presentation.md §1.3 FUN_004fc800 / FUN_004fc9f0] end of game,
+        // local player only, once.
+        if (!end_spoken_) {
+            if (w.house_defeated(0)) { snd_.eva("EVA_YouHaveLost"); end_spoken_ = true; }
+            else if (w.winning_team() >= 0 && w.winning_team() == w.house_team(0)) {
+                snd_.eva("EVA_YouAreVictorious");
+                end_spoken_ = true;
+            }
+        }
         // G-09: radar power-up animation + RadarOn/RadarOff ([AudioVisual]).
         {
             const bool online = w.shroud_enabled() && house_owns_operational_radar(w, ba, 0);
@@ -341,6 +351,28 @@ public:
 
 private:
     int last_cursor_ = -1;
+    // G-83 superweapon visuals [rulesmd [General] NukeTakeOff=NUKETO at the
+    // silo; NukeWarhead=Nuke -> [NUKE] AnimList=NUKEANIM at the target, with its
+    // Report=]. The clone detonates instantly (fire_superweapon), so the
+    // missile's flight is not shown [RE-FALLBACK: G-25 owns the delayed impact].
+    void superweapon_fx(const ra2engine::World& w, int cx, int cy) {
+        const ra2engine::Superweapon* sw = w.sw_state(0);
+        if (!sw || sw->type != ra2engine::SuperweaponType::Nuke) return;
+        auto gen = [&](const char* k) { return pres_clean(rules_ini_->get("General", k)); };
+        for (const ra2engine::Building& b : w.buildings())
+            if (b.alive && b.house == 0 && b.grants_superweapon) {
+                fx_.spawn(gen("NukeTakeOff"), b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0, 0, 20.0);
+                break;
+            }
+        std::string wh = gen("NukeWarhead");
+        if (wh.empty()) wh = "NUKE";
+        std::string list = pres_clean(rules_ini_->get(pres_upper(wh), "AnimList"));
+        const std::size_t comma = list.find(',');
+        if (comma != std::string::npos) list = pres_clean(list.substr(0, comma));
+        if (const FxAnimType* t = fx_.spawn(list, cx, cy, 0, 0.0))
+            snd_.play(t->report, dist_of(cx, cy), "nuke detonation");
+        pres_log(frame_, "fx superweapon " + list);
+    }
     // ---- G-83 effects -------------------------------------------------------
     static int level_at(const ra2engine::World&, double, double) { return 0; }
     // Warhead AnimList impact + the anim's Report=.
@@ -642,6 +674,7 @@ private:
     bool low_power_ = false;
     bool sw_ready_ = false;
     bool radar_online_ = false;
+    bool end_spoken_ = false;
     std::string radar_on_, radar_off_;
     int buildable_ = -1;
     std::string base_attack_siren_, building_die_, building_damage_, sell_sound_, vet_sound_,
