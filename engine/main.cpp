@@ -3748,7 +3748,13 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     shade_rect(ren, lay.bar, 255, 24, 24, 28);
     // Credits strip at the very top; tally centered at x+84 [§11a].
     blit_shp(ren, tc, "sb:credits", ba.sb_credits, 0, ba.sb_pal, lay.credits.x, lay.credits.y);
-    draw_number_centered(ren, credits_shown, lay.credits.x + 84, lay.credits.y + 2, 2);
+    if (g_game_font && g_game_font_pal) {   // G-88: the game font in the live game
+        const std::string cs = std::to_string(credits_shown);
+        draw_fnt_text(ren, tc, *g_game_font, *g_game_font_pal, cs,
+                      lay.credits.x + 84 - fnt_text_width(*g_game_font, cs) / 2, lay.credits.y + 1, "hudf:", 1);
+    } else {
+        draw_number_centered(ren, credits_shown, lay.credits.x + 84, lay.credits.y + 2, 2);
+    }
     // Bevel cap.
     blit_shp(ren, tc, "sb:top", ba.sb_top, 0, ba.sb_pal, lay.top_cap.x, lay.top_cap.y);
     // Options / diplomacy buttons over the cap (frame 0, inert).
@@ -5117,12 +5123,17 @@ public:
         menu_.render(ren);
         sld_.render(ren, SDL_GetTicks());
         if (!banner_.empty() && SDL_GetTicks() < banner_until_) {
-            const int w = static_cast<int>(banner_.size()) * 18;
+            const int w = g_game_font ? fnt_text_width(*g_game_font, banner_) * 2
+                                      : static_cast<int>(banner_.size()) * 18;
             SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
             SDL_Rect b{(playfield_w_ - w) / 2 - 16, 80, w + 32, 44};
             SDL_RenderFillRect(ren, &b);
-            draw_text(ren, banner_, (playfield_w_ - w) / 2, 91, 3, 240, 220, 120);
+            if (g_game_font && g_game_font_pal)   // G-88
+                draw_fnt_text(ren, tc, *g_game_font, *g_game_font_pal, banner_, (playfield_w_ - w) / 2, 88,
+                              "hudf:", 2);
+            else
+                draw_text(ren, banner_, (playfield_w_ - w) / 2, 91, 3, 240, 220, 120);
         }
     }
 

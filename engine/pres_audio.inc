@@ -10,6 +10,11 @@
 //   clips: langmd.mix/audiomd.mix (YR) before language.mix/audio.mix (RA2),
 //   the expansion-overrides-base mix order the game itself uses.
 
+// G-88: the game's own font (cache.mix 12metfnt.fnt) for in-game HUD text;
+// set by Presentation::init, null in gates (callers keep their bitmap font).
+const ra2assets::Font* g_game_font = nullptr;
+const ra2assets::Palette* g_game_font_pal = nullptr;
+
 // ---- presentation event log (harness evidence; never read by a gate) -------
 bool g_pres_log_on = false;
 std::vector<std::string> g_pres_log;

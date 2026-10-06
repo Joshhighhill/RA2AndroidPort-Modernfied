@@ -54,6 +54,19 @@ public:
                                      vet_sound_, elite_sound_})
             snd_.ensure_sound(k);
         snd_.music_start();
+        // G-88: 12metfnt.fnt for the HUD text (credits, banners).
+        try {
+            MixFile cache = ra2.open_nested("cache.mix");
+            if (const MixEntry* fe = cache.find(std::string("12metfnt.fnt"))) {
+                font_ = std::make_unique<ra2assets::Font>(ra2assets::load_fnt(cache.read(*fe)));
+                // [RE-FALLBACK: HUD text colour not read] pale yellow ramp.
+                font_pal_ = make_font_palette_tinted(255, 240, 170);
+                g_game_font = font_.get();
+                g_game_font_pal = &font_pal_;
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[pres] 12metfnt.fnt unavailable: " << ex.what() << "\n";
+        }
         // G-84: SHROUD.SHP (conquer.mix) for the shroud/fog post-pass.
         try {
             MixFile conquer = ra2.open_nested("conquer.mix");
@@ -72,6 +85,7 @@ public:
     ~Presentation() {
         if (g_shroud_shp == shroud_.get()) g_shroud_shp = nullptr;
         if (g_fog_shp == fog_.get()) g_fog_shp = nullptr;
+        if (g_game_font == font_.get()) { g_game_font = nullptr; g_game_font_pal = nullptr; }
         if (g_fx == &fx_) g_fx = nullptr;
     }
 
@@ -662,6 +676,8 @@ private:
     PresAudio snd_;
     PresFx fx_;
     std::unique_ptr<ShpFile> shroud_, fog_;
+    std::unique_ptr<ra2assets::Font> font_;
+    ra2assets::Palette font_pal_;
     AudioSystem* audio_ = nullptr;
     const Ini* rules_ini_ = nullptr;
     long frame_ = 0;
