@@ -232,6 +232,12 @@ int run_probe_realplay() {
             if (d.id == "ENGINEER") eng_image = d.combat.image;
         p.check(e >= 0 && P::world(g).units()[e].image == eng_image,
                 "G-22 a sidebar-built Engineer left the Barracks");
+        P::add_instant(g, "GATECH");
+        P::run(g, 2);
+        p.check(P::has(P::tab_ids(g, 2), "TANY"), "G-22 Tanya offered once a Battle Lab stands");
+        const int tanya = P::train(g, 2, "TANY", 15 * 200);
+        p.check(tanya >= 0 && !P::has(P::tab_ids(g, 2), "TANY"),
+                "row 17 BuildLimit=1: Tanya leaves the strip while one is alive");
     }
 
     // ---- row 19: Soviet human (stale lobby country "Americans") ----

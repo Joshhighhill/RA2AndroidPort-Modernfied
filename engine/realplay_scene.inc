@@ -79,7 +79,8 @@ private:
     std::vector<int>     bld_ft_;            // BuildingType factories (the ConYards)
     std::vector<RpSwGrant> rp_sw_table_;     // per roster building: SW granted (G-25)
     SuperweaponParams    rp_nuke_;
-    std::vector<char>    rp_base_normal_;    // per roster building: rules BaseNormal (default yes)
+    std::vector<char>    rp_base_normal_;
+    std::vector<int>     rp_build_limit_;    // per unit def: rules BuildLimit= (0 = none)    // per roster building: rules BaseNormal (default yes)
 
     // The roster the ctor init list loads for the human: the full side/country/
     // tech-level roster in skirmish (G-22), the historical tables in a campaign.
@@ -128,6 +129,9 @@ private:
             const std::string v = rules_.section_string(ba_.roster[i].id, "BaseNormal", "");
             if (!v.empty()) rp_base_normal_[i] = rp_flag(rules_, ba_.roster[i].id, "BaseNormal");
         }
+        rp_build_limit_.assign(ur_.defs.size(), 0);
+        for (std::size_t i = 0; i < ur_.defs.size(); ++i)
+            rp_build_limit_[i] = static_cast<int>(rules_.section_double(ur_.defs[i].id, "BuildLimit", 0.0));
         rp_bld_allowed_.assign(ba_.roster.size(), 0);
         for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
             const ra2engine::BuildingTypeDef& d = ba_.roster[i];
@@ -190,6 +194,14 @@ private:
             if (!queued &&
                 !ra2engine::prerequisites_met(d.prerequisite, bs, ba_.roster, 0, ba_.groups))
                 continue;
+            // BuildLimit= (Tanya, Boris: 1): no new one while the limit is on
+            // the field [RE-FALLBACK: counted by the unit's art image].
+            if (!queued && i < static_cast<int>(rp_build_limit_.size()) && rp_build_limit_[i] > 0) {
+                int alive = 0;
+                for (const ra2engine::Unit& u : world_.units())
+                    alive += u.alive && u.house == 0 && u.image == d.combat.image;
+                if (alive >= rp_build_limit_[i]) continue;
+            }
             v.push_back(i);
         }
         return v;
