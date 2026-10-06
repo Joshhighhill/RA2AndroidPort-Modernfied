@@ -880,6 +880,29 @@ public:
     // full HP. The caller consumes the engineer on true.
     bool repair_building(int b_idx, int by_house);
 
+    // --- Projectile phase (P2) [RE: projectile.md] -------------------------
+    // ALL inert by default. projectiles_enabled_ is opened ONLY by
+    // enable_projectiles; step_projectiles' first line is the early return, and
+    // World::step passes a launch sink to step_combat only when it is open. None
+    // of this state is read by world_hash.
+    bool projectiles_enabled_ = false;          // the firewall
+    ProjectileRules proj_rules_;                // Gravity / BallisticScatter
+    ProjRng proj_rng_;                          // dedicated scatter RNG (spec D3)
+    std::vector<Projectile> projectiles_;       // in flight, launch order
+    std::vector<ProjectileEvent> proj_events_;  // pending take_projectile_events
+    double proj_accum_ = 0.0;                   // dt accumulator -> 15 Hz frames
+    int proj_frame_ = 0;                        // logic-frame counter
+    // Firewalled World::step pass (pure insertion before step_combat): advance
+    // every projectile one logic frame per accumulated 1/15 s.
+    void step_projectiles(double dt);
+    void step_projectiles_frame();
+    // Turn one step_combat launch into a Projectile (muzzle via FLH, target
+    // coords, compute_launch incl. scatter draws). Refused shots log an event.
+    void launch_projectile(int attacker, int target_unit, int target_building);
+    // Detonate `p` at its position: Explode snap, then the EXISTING damage layer
+    // (apply_spread_damage / deliver_unit_hit / deliver_building_hit).
+    void detonate_projectile(Projectile& p, int victim);
+
     // --- Repair & Sell phase [RE: repair-sell.md] -------------------------
     // The four [General] scalars + the three survivor divisors. The struct's
     // defaults ARE this install's real values, so a World that never calls
@@ -990,6 +1013,19 @@ public:
     // no-op). enable(false) is not needed by any gate (left as a hard reset).
     void enable_shroud(bool on);
     bool shroud_enabled() const { return shroud_any_; }
+
+    // --- Projectile phase (P2) [RE: projectile.md] ---------------------------
+    // Open the projectile firewall: from now on a shot whose Unit::w_proj
+    // flies() launches a real projectile (ballistic arc / falling bomb) whose
+    // damage lands at detonation, instead of the instant hit. Called ONLY by the
+    // interactive game (GameScene) and --demo-projectile; no byte-identity gate
+    // calls it, so every existing gate keeps the instant path bit-for-bit.
+    void enable_projectiles(const ProjectileRules& rules);
+    bool projectiles_enabled() const { return projectiles_enabled_; }
+    const std::vector<Projectile>& projectiles() const { return projectiles_; }
+    int projectile_frame() const { return proj_frame_; }
+    // Drain the projectile event log (launch/refused/detonate/removed).
+    std::vector<ProjectileEvent> take_projectile_events();
     // Is cell (x,y) currently VISIBLE / ever EXPLORED to house h? EMPTY grid
     // (shroud off, or h out of range) -> true (all-visible / all-explored),
     // so every consult is inert with shroud off. Out-of-bounds cell -> false.

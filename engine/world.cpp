@@ -2960,7 +2960,21 @@ void World::step(double dt) {
     // order [spec §Global Constraints].
     step_repair_sell(dt);
 
-    const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt);
+    // Projectile phase (P2) [RE: projectile.md §6/§7]: advance every projectile
+    // in flight one logic frame per accumulated 1/15 s, detonating through the
+    // EXISTING damage layer. A pure INSERTION before step_combat (a shell
+    // launched this frame first moves next frame -- §6.3 "detonates on the next
+    // Update"); `if (!projectiles_enabled_) return;` inside is the only cost
+    // every existing demo pays (none calls enable_projectiles).
+    step_projectiles(dt);
+
+    // P2 firewall: the launch sink is passed ONLY when projectiles are enabled;
+    // nullptr keeps step_combat's instant-hit path byte-identical.
+    std::vector<ProjectileLaunch> launches;
+    const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt,
+                                                      projectiles_enabled_ ? &launches : nullptr);
+    for (const ProjectileLaunch& l : launches)
+        launch_projectile(l.attacker, l.target_unit, l.target_building);
     // Guard-return requests route directly. Approach requests are batched
     // per goal cell (one batch per target) and resolved to DISTINCT free
     // firing-position cells via assign_formation, so a group of attackers
@@ -3385,6 +3399,317 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         const int phase = static_cast<int>(u.anim_time * kWalkFps) % seq.walk.count;
         u.frame = seq_frame(seq.walk, u.facing, phase);
     }
+}
+
+// ============================================================================
+// Projectile phase (P2) [RE: projectile.md + §12] -- the World half of
+// BulletClass: launch (muzzle/target coords), per-frame termination tests
+// (§7 table, spec C2) and detonation through the EXISTING damage layer
+// (spec C4). Firewalled behind projectiles_enabled_.
+// ============================================================================
+namespace {
+constexpr double kProjFrameSecs = 1.0 / 15.0;  // one logic frame (§3: lept/frame)
+// Engine guard (not RE'd): a projectile still airborne after 2 minutes of
+// logic frames is removed silently -- reachable only by a degenerate level
+// shot in a gridless (unit-test) World that has no map edge.
+constexpr int kProjMaxLifetime = 1800;
+constexpr double kProjPi = 3.14159265358979323846;
+
+int unit_lx(const Unit& u) { return ftol(u.fx * 256.0); }
+int unit_ly(const Unit& u) { return ftol(u.fy * 256.0); }
+int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : 0; }
+int dist3(int ax, int ay, int az, int bx, int by, int bz) {
+    const double dx = ax - bx, dy = ay - by, dz = az - bz;
+    return ftol(std::sqrt(dx * dx + dy * dy + dz * dz));
+}
+}  // namespace
+
+void World::enable_projectiles(const ProjectileRules& rules) {
+    projectiles_enabled_ = true;
+    proj_rules_ = rules;
+}
+
+std::vector<ProjectileEvent> World::take_projectile_events() {
+    std::vector<ProjectileEvent> out;
+    out.swap(proj_events_);
+    return out;
+}
+
+void World::step_projectiles(double dt) {
+    if (!projectiles_enabled_) return;  // the firewall
+    proj_accum_ += dt;
+    // Whole logic frames only (spec D2): the integrator has no dt (§6.1).
+    while (proj_accum_ >= kProjFrameSecs - 1e-9) {
+        proj_accum_ -= kProjFrameSecs;
+        ++proj_frame_;
+        step_projectiles_frame();
+    }
+}
+
+void World::launch_projectile(int attacker, int target_unit, int target_building) {
+    if (attacker < 0 || attacker >= static_cast<int>(units_.size())) return;
+    const Unit& u = units_[attacker];
+    const ProjectileSpec& spec = u.w_proj;
+
+    // Target coords (MoveTo: Target->GetTargetCoords(), §12.4). A building is
+    // aimed at its NEAREST foundation cell -- the same cell step_combat ranged.
+    Vec3i tgt;
+    if (target_unit >= 0 && target_unit < static_cast<int>(units_.size())) {
+        const Unit& v = units_[target_unit];
+        tgt = Vec3i{unit_lx(v), unit_ly(v), unit_lz(v)};
+    } else if (target_building >= 0 && target_building < static_cast<int>(buildings_.size())) {
+        const Building& b = buildings_[target_building];
+        double best = -1.0;
+        int nx = b.cx, ny = b.cy;
+        for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+            const double dx = (c.x - u.fx) * 256.0, dy = (c.y - u.fy) * 256.0;
+            const double d = std::hypot(dx, dy);
+            if (best < 0.0 || d < best) { best = d; nx = c.x; ny = c.y; }
+        }
+        tgt = Vec3i{nx * 256, ny * 256, 0};
+    } else {
+        return;
+    }
+
+    // Muzzle = firer + PrimaryFireFLH (§4 step 1; voxel-render.md §6). F runs
+    // along the turret yaw (a vehicle only fires once vehicle_aimed, so it points
+    // at the target); facing u16 -> cell-space direction (sin a, -cos a), the
+    // facing_u16_from_delta convention. Non-vehicles aim F at the target.
+    const double ux = u.fx * 256.0, uy = u.fy * 256.0;
+    double fwx = 0.0, fwy = 1.0;
+    if (u.is_vehicle) {
+        const double a = u.turret_facing * (2.0 * kProjPi / 65536.0);
+        fwx = std::sin(a);
+        fwy = -std::cos(a);
+    } else {
+        const double dx = tgt.x - ux, dy = tgt.y - uy, len = std::hypot(dx, dy);
+        if (len > 0.0) { fwx = dx / len; fwy = dy / len; }
+    }
+    Vec3i src;
+    src.x = ftol(ux + spec.flh[0] * fwx - spec.flh[1] * fwy);
+    src.y = ftol(uy + spec.flh[0] * fwy + spec.flh[1] * fwx);
+    src.z = unit_lz(u) + spec.flh[2];
+
+    const LaunchResult lr = compute_launch(spec, proj_rules_, src, tgt, proj_rng_);
+    ProjectileEvent ev;
+    ev.frame = proj_frame_;
+    ev.attacker = attacker;
+    ev.x = src.x; ev.y = src.y; ev.z = src.z;
+    ev.speed = lr.speed;
+    ev.scatter_dx = lr.scatter_dx;
+    ev.scatter_dy = lr.scatter_dy;
+    if (!lr.ok) {
+        // §4 step 7: the arcing solver had no root -> the bullet is destroyed and
+        // the shot does not happen (ROF was already reset, as in Fire).
+        ev.kind = ProjectileEvent::Refused;
+        proj_events_.push_back(ev);
+        return;
+    }
+    ev.kind = ProjectileEvent::Launch;
+    proj_events_.push_back(ev);
+
+    Projectile p;
+    p.kind = spec.kind;
+    p.attacker = attacker;
+    p.target_unit = target_unit;
+    p.target_building = target_building;
+    p.x = src.x; p.y = src.y; p.z = src.z;
+    p.vx = lr.vx; p.vy = lr.vy; p.vz = lr.vz;
+    p.tx = tgt.x; p.ty = tgt.y; p.tz = tgt.z;
+    p.speed_cap = spec.speed_cap;
+    p.acceleration = spec.acceleration;
+    p.detonation_altitude = spec.detonation_altitude;
+    p.inaccurate = spec.inaccurate;
+    p.floater = spec.floater;
+    p.launch_frame = proj_frame_;
+    p.launch_speed = lr.speed;
+    p.max_z = src.z;
+    projectiles_.push_back(p);
+}
+
+void World::step_projectiles_frame() {
+    std::vector<Projectile> live;
+    live.reserve(projectiles_.size());
+    // Launch order (ascending attacker index within a frame): deterministic.
+    // Detonations apply damage immediately, so a later projectile this frame
+    // sees the updated HP -- the original's sequential Logic-layer update.
+    const std::vector<Projectile> flying = projectiles_;
+    for (Projectile p : flying) {
+        if (p.kind == ProjKind::Vertical)
+            integrate_vertical(p);
+        else
+            integrate_ballistic(p, proj_rules_.gravity);
+
+        const int cx = lepton_to_cell(p.x), cy = lepton_to_cell(p.y);
+        const int owner_house =
+            (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) ? units_[p.attacker].house
+                                                                               : -1;
+        // ObjectAtCoord: the FIRST object in the bullet's cell (ascending unit
+        // index stands in for the cell's occupier list). Carried units and
+        // aircraft are not ground occupants (no AA in this phase).
+        auto first_unit_in_cell = [&]() {
+            for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
+                const Unit& w = units_[j];
+                if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0 || w.is_aircraft) continue;
+                if (lepton_to_cell(unit_lx(w)) == cx && lepton_to_cell(unit_ly(w)) == cy) return j;
+            }
+            return -1;
+        };
+        // "not the owner, not an ally" (§7 collision row).
+        auto hostile = [&](int j) {
+            return j != p.attacker && is_enemy(owner_house, units_[j].house);
+        };
+
+        bool det = false;
+        int victim = -1;
+        if (p.kind == ProjKind::Ballistic) {
+            // §7 ground impact (floor = 0, the flat combat plane, §11.6; §12.5).
+            if (p.z < 0) {
+                det = true;
+                p.z = 0;
+            } else if (p.z < kGroundObjectBand) {
+                // §12.2: within 150 above the floor over a non-owner, non-allied
+                // object in the cell -> detonate.
+                const int j = first_unit_in_cell();
+                if (j >= 0) {
+                    if (hostile(j)) { det = true; victim = j; }
+                } else {
+                    for (const Building& b : buildings_) {
+                        if (!b.alive || b.state == Building::State::Dead) continue;
+                        if (cx < b.cx || cy < b.cy || cx >= b.cx + b.fw || cy >= b.cy + b.fh) continue;
+                        if (is_enemy(owner_house, b.house)) det = true;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // §6.2: Vertical ends above DetonationAltitude or below the ground.
+            if (p.detonation_altitude > 0 && p.z > p.detonation_altitude) {
+                det = true;
+            } else if (p.z < 0) {
+                det = true;
+                p.z = 0;
+            }
+        }
+        // §7 arrival: in the TRUE target's cell (§12.4) and below 2*LevelHeight.
+        if (!det && p.kind == ProjKind::Ballistic && cx == lepton_to_cell(p.tx) &&
+            cy == lepton_to_cell(p.ty) && p.z < kArrivalHeight)
+            det = true;
+        // §5.4/§7 collision: the cell's first object, hostile, within 127 (3-D)
+        // -> detonate, snapping onto it unless Inaccurate.
+        if (!det) {
+            const int j = first_unit_in_cell();
+            if (j >= 0 && hostile(j)) {
+                const Unit& w = units_[j];
+                if (dist3(p.x, p.y, p.z, unit_lx(w), unit_ly(w), unit_lz(w)) <= kCollisionRadius) {
+                    det = true;
+                    victim = j;
+                    if (!p.inaccurate) { p.x = unit_lx(w); p.y = unit_ly(w); p.z = unit_lz(w); }
+                }
+            }
+        }
+        const int age = proj_frame_ - p.launch_frame;
+        // §7 off map: removed silently, no detonation. A gridless World (the
+        // unit-test harness) has no map edge.
+        const bool off_map = grid_w_ > 0 && grid_h_ > 0 &&
+                             (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_);
+        if (!det && (off_map || age >= kProjMaxLifetime)) {
+            ProjectileEvent ev;
+            ev.kind = ProjectileEvent::Removed;
+            ev.frame = proj_frame_;
+            ev.attacker = p.attacker;
+            ev.x = p.x; ev.y = p.y; ev.z = p.z;
+            ev.flight_frames = age;
+            ev.apex = p.max_z;
+            proj_events_.push_back(ev);
+            continue;
+        }
+        // §7 out of speed: |V| < 8 (sampled pre-gravity), or |V| < 10 and height <= 9.
+        if (!det && p.kind == ProjKind::Ballistic) {
+            const double mag = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
+            if (p.slow || (mag < kRestSpeed && p.z <= 9)) det = true;
+        }
+        // §12.2 IsBlocked: height <= -4*LevelHeight.
+        if (!det && p.z <= kBlockedHeight) det = true;
+
+        if (det) {
+            detonate_projectile(p, victim);
+            continue;
+        }
+        live.push_back(p);
+    }
+    projectiles_.swap(live);
+}
+
+void World::detonate_projectile(Projectile& p, int victim) {
+    int ix = p.x, iy = p.y, iz = p.z;
+    // Explode (§5.4): within 32 leptons of a live target, snap onto it --
+    // suppressed by Inaccurate.
+    if (!p.inaccurate && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
+        const Unit& t = units_[p.target_unit];
+        if (t.alive && t.die_time < 0.0 &&
+            dist3(ix, iy, iz, unit_lx(t), unit_ly(t), unit_lz(t)) <= kSnapRadius) {
+            ix = unit_lx(t); iy = unit_ly(t); iz = unit_lz(t);
+        }
+    }
+    const int icx = lepton_to_cell(ix), icy = lepton_to_cell(iy);
+
+    ProjectileEvent ev;
+    ev.kind = ProjectileEvent::Detonate;
+    ev.frame = proj_frame_;
+    ev.attacker = p.attacker;
+    ev.x = ix; ev.y = iy; ev.z = iz;
+    ev.flight_frames = proj_frame_ - p.launch_frame;
+    ev.apex = p.max_z;
+
+    std::vector<int> hp_before(units_.size());
+    for (std::size_t k = 0; k < units_.size(); ++k) hp_before[k] = units_[k].hp;
+    int building_dmg = 0;
+
+    if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) {
+        const Unit& att = units_[p.attacker];
+        if (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size())) {
+            // Building target: the pre-P2 attack-building hit, iff the impact cell
+            // is inside its (still standing) foundation.
+            Building& b = buildings_[p.target_building];
+            if (b.alive && b.state != Building::State::Dead && icx >= b.cx && icy >= b.cy &&
+                icx < b.cx + b.fw && icy < b.cy + b.fh) {
+                const int before = b.hp;
+                deliver_building_hit(units_, buildings_, p.attacker, p.target_building);
+                building_dmg = before - b.hp;
+                ev.building = p.target_building;
+            }
+        } else if (att.w_cell_spread >= 1.0) {
+            // CellSpread >= 1 (BlimpHE, FlakTWH): the EXISTING area applicator,
+            // centred on the impact point instead of the victim (§7 Detonate ->
+            // FUN_00489190).
+            Unit center;
+            center.fx = ix / 256.0;
+            center.fy = iy / 256.0;
+            apply_spread_damage(units_, occ_, att, center);
+        } else {
+            // Single-target warhead: the collided unit, else the original target
+            // if it is still in the impact cell (§8: a dead/moved target is a
+            // miss -- the shell detonates on the cell).
+            int v = victim;
+            if (v < 0 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
+                const Unit& t = units_[p.target_unit];
+                if (lepton_to_cell(unit_lx(t)) == icx && lepton_to_cell(unit_ly(t)) == icy)
+                    v = p.target_unit;
+            }
+            if (v >= 0) {
+                const Unit& w = units_[v];
+                if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(att.house, w.house)) {
+                    deliver_unit_hit(units_, occ_, p.attacker, v);
+                    ev.victim = v;
+                }
+            }
+        }
+    }
+    int total = building_dmg;
+    for (std::size_t k = 0; k < units_.size(); ++k) total += hp_before[k] - units_[k].hp;
+    ev.damage = total;
+    proj_events_.push_back(ev);
 }
 
 }  // namespace ra2engine

@@ -81,12 +81,23 @@ bool valid_target(const std::vector<Unit>& units, const World& world, int self_h
 // retaliation, and starts death if the hit is lethal. `attacker_idx`/
 // `victim_idx` are u/v's own indices in `units` (needed for the retaliation
 // target and occ.release_all_of).
+// Projectile phase (P2) [RE: projectile.md §10]: when `launches` is non-null
+// (World's projectiles_enabled_ firewall is OPEN) and the weapon's projectile
+// flies, the shot emits a ProjectileLaunch instead of hitting -- World's
+// step_projectiles delivers the damage at detonation through the SAME
+// deliver_unit_hit / apply_spread_damage. With `launches == nullptr` (every
+// byte-identity gate) this is the pre-P2 body verbatim: the extracted
+// deliver_unit_hit is the old else-branch statement-for-statement.
 void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
-              int victim_idx, Occupancy& occ) {
+              int victim_idx, Occupancy& occ, std::vector<ProjectileLaunch>* launches) {
     // docs/re/combat.md §5: RearmTimer := GetROF() (frames), converted to
     // seconds via kLogicFps; CONFIRMED no jitter/RNG in the reset.
     u.rof_cool = u.w_rof / kLogicFps;
     u.fire_flash = kFireFlashSecs;
+    if (launches && u.w_proj.flies()) {
+        launches->push_back({attacker_idx, victim_idx, -1});
+        return;
+    }
     if (u.w_cell_spread >= 1.0) {
         // CB-2 [RE-GATE APPLIED: aircraft.md §4]: the BlimpHE 2-cell splash.
         // Reached ONLY by CellSpread>=1 warheads (the Kirov); every existing
@@ -94,40 +105,76 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         apply_spread_damage(units, occ, u, v);
     } else {
         // EXISTING single-target delivery -- UNCHANGED (byte-identical path).
-        const int dmg = damage_vs(u.w_damage, u.w_verses, v.armor_ix);
-        v.hp -= dmg;
-        // Return fire only if IDLE (spec: "return fire when hit" applies to
-        // idle/guarding units; a unit under a move order keeps walking rather
-        // than stopping to retaliate). Engineer/Spy Capture [RE: capture.md
-        // §Design 6]: a still-DISGUISED attacker is treated as friendly, so the
-        // victim does NOT retaliate-acquire it (the return-fire analog of the
-        // auto-acquire skip below) -- keeping a disguised unit un-targeted even
-        // if it fires. Inert for byte-identity: u.disguised defaults false and
-        // no gate ever calls set_disguise, so `!u.disguised` is always true ->
-        // the guard is unchanged in every gate.
-        if (v.target == -1 && !v.moving() && !u.disguised) {
-            // Idle victim retaliates (docs/re/combat.md §7: retaliation target
-            // choice confirmed). Also records ITS OWN guard anchor at its
-            // current position -- retaliation is a form of auto-acquire
-            // (attack_order stays false), so it needs the same "post to return
-            // to" bookkeeping the acquisition path below sets; without this the
-            // anchor would default to (0,0) and misfire the stray-leash check
-            // the next time this victim is processed.
-            v.target = attacker_idx;
-            v.guard_x = v.cell_x;
-            v.guard_y = v.cell_y;
-        }
-        if (v.hp <= 0) {
-            v.die_time = 0.0;
-            occ.release_all_of(victim_idx, -1, -1);
-            v.target = -1;
-            v.path.clear();
-            v.path_idx = 0;
-        }
+        deliver_unit_hit(units, occ, attacker_idx, victim_idx);
     }
 }
 
 }  // namespace
+
+// P2: the single-target damage tail extracted VERBATIM from try_fire's old
+// else-branch (same statements, same order) so the instant path and the
+// projectile detonation path share one implementation.
+void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx, int victim_idx) {
+    Unit& u = units[attacker_idx];
+    Unit& v = units[victim_idx];
+    const int dmg = damage_vs(u.w_damage, u.w_verses, v.armor_ix);
+    v.hp -= dmg;
+    // Return fire only if IDLE (spec: "return fire when hit" applies to
+    // idle/guarding units; a unit under a move order keeps walking rather
+    // than stopping to retaliate). Engineer/Spy Capture [RE: capture.md
+    // §Design 6]: a still-DISGUISED attacker is treated as friendly, so the
+    // victim does NOT retaliate-acquire it (the return-fire analog of the
+    // auto-acquire skip below) -- keeping a disguised unit un-targeted even
+    // if it fires. Inert for byte-identity: u.disguised defaults false and
+    // no gate ever calls set_disguise, so `!u.disguised` is always true ->
+    // the guard is unchanged in every gate.
+    if (v.target == -1 && !v.moving() && !u.disguised) {
+        // Idle victim retaliates (docs/re/combat.md §7: retaliation target
+        // choice confirmed). Also records ITS OWN guard anchor at its
+        // current position -- retaliation is a form of auto-acquire
+        // (attack_order stays false), so it needs the same "post to return
+        // to" bookkeeping the acquisition path below sets; without this the
+        // anchor would default to (0,0) and misfire the stray-leash check
+        // the next time this victim is processed.
+        v.target = attacker_idx;
+        v.guard_x = v.cell_x;
+        v.guard_y = v.cell_y;
+    }
+    if (v.hp <= 0) {
+        v.die_time = 0.0;
+        occ.release_all_of(victim_idx, -1, -1);
+        v.target = -1;
+        v.path.clear();
+        v.path_idx = 0;
+    }
+}
+
+// P2: the attack-building damage tail extracted from step_combat's building
+// branch (same statements, same order). The attacker's own target_building is
+// cleared only if it still names this building -- always true on the instant
+// path (it IS the branch condition), so that path is byte-identical; at a
+// projectile detonation the attacker may have re-targeted meanwhile.
+void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int attacker_idx, int b_idx) {
+    Unit& u = units[attacker_idx];
+    Building* b = &buildings[b_idx];
+    const int dmg = damage_vs(u.w_damage, u.w_verses, b->armor_ix);
+    b->hp -= dmg;
+    if (b->hp <= 0) {
+        kill_building(*b);
+        if (u.target_building == b_idx) {
+            u.target_building = -1;
+            u.attack_order = false;
+        }
+        // Clear every OTHER unit's target_building pointing at the now-dead
+        // building immediately (their own next-call validity check would also
+        // catch it via state == Dead, but the spec calls for this to happen
+        // within the same call).
+        for (Unit& other : units)
+            if (&other != &u && other.target_building == b_idx)
+                other.target_building = -1;
+    }
+}
 
 // CB-2 air-to-ground splash [RE-GATE APPLIED: aircraft.md §4 -> combat.md §7,
 // FUN_00489190]. Damages every ENEMY, non-carried, non-aircraft unit within
@@ -188,7 +235,8 @@ int damage_vs(int damage, const std::vector<int>& verses, int ai) {
 }
 
 std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& units,
-                                     std::vector<Building>& buildings, Occupancy& occ, double dt) {
+                                     std::vector<Building>& buildings, Occupancy& occ, double dt,
+                                     std::vector<ProjectileLaunch>* launches) {
     std::vector<MoveRequest> requests;
     const int n = static_cast<int>(units.size());
 
@@ -276,21 +324,12 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             continue;  // hold fire this frame; rof_cool untouched
                         u.rof_cool = u.w_rof / kLogicFps;
                         u.fire_flash = kFireFlashSecs;
-                        const int dmg = damage_vs(u.w_damage, u.w_verses, b->armor_ix);
-                        b->hp -= dmg;
-                        if (b->hp <= 0) {
-                            kill_building(*b);
-                            u.target_building = -1;
-                            u.attack_order = false;
-                            // Clear every OTHER unit's target_building
-                            // pointing at the now-dead building immediately
-                            // (their own next-call validity check would also
-                            // catch it via state == Dead, but the spec calls
-                            // for this to happen within the same call).
-                            for (Unit& other : units)
-                                if (&other != &u && other.target_building == b_idx)
-                                    other.target_building = -1;
-                        }
+                        // P2 firewall: a flying projectile defers the hit to
+                        // World::step_projectiles; otherwise the pre-P2 tail.
+                        if (launches && u.w_proj.flies())
+                            launches->push_back({i, -1, b_idx});
+                        else
+                            deliver_building_hit(units, buildings, i, b_idx);
                     }
                 } else if (u.attack_order) {
                     // Dedup mirrors the unit-pursuit branch below (f): only
@@ -413,7 +452,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 if (u.is_vehicle && !u.omni_fire &&
                     !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
                     continue;  // hold fire this frame; rof_cool untouched
-                try_fire(units, u, v, i, u.target, occ);
+                try_fire(units, u, v, i, u.target, occ, launches);
             }
         } else if (u.attack_order) {
             // Approach: ask the caller for a firing position near the target.

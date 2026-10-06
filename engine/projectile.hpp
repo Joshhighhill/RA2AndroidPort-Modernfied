@@ -93,6 +93,24 @@ struct Projectile {
     int max_z = 0;              // apex (diagnostics / witnesses)
 };
 
+// One observable projectile event (World::take_projectile_events). Feeds the
+// --demo-projectile witnesses/hash and is available to audio/render; NOT read
+// by world_hash.
+struct ProjectileEvent {
+    enum Kind : std::uint8_t { Launch = 0, Refused = 1, Detonate = 2, Removed = 3 };
+    Kind kind = Launch;
+    int frame = 0;            // World projectile frame counter (15 Hz)
+    int attacker = -1;
+    int x = 0, y = 0, z = 0;  // launch point (Launch/Refused) or impact (Detonate/Removed)
+    int speed = 0;            // launch speed (Launch/Refused)
+    int scatter_dx = 0, scatter_dy = 0;  // Launch: §5 aim offset
+    int victim = -1;          // Detonate: single-target unit victim, or -1
+    int building = -1;        // Detonate: building hit, or -1
+    int damage = 0;           // Detonate: total HP removed (units + building)
+    int flight_frames = 0;    // Detonate/Removed: frames since launch
+    int apex = 0;             // Detonate/Removed: highest z reached
+};
+
 // --- conversions -------------------------------------------------------------
 int ftol(double v);                       // truncate toward zero (FUN_007C4D00)
 int lepton_to_cell(int l);                // floor((l + 128) / 256)  (spec D4)

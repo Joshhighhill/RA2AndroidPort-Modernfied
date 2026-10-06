@@ -345,3 +345,246 @@ TEST_CASE("projectile: real rulesmd pins (Cannon/BlimpBombP/FlakTProj/InvisibleL
     CHECK(resolve_projectile_spec(rules, rules.primary("E1")).kind == ProjKind::Instant);
     CHECK(resolve_projectile_spec(rules, rules.primary("E2")).kind == ProjKind::Instant);
 }
+
+// ---- Task 4: World integration (the firewalled flight pass) -------------------
+#include <vector>
+
+#include "ra2assets/map.hpp"
+#include "world.hpp"
+
+namespace {
+
+// A Rhino-like attacker WITHOUT the vehicle aim gate (is_vehicle=false so the
+// shot is not held for turret slew in a ROT-less test unit): 120mm 90 dmg,
+// ROF 65, Range 5.75, flat verses, Cannon (arcing ballistic) projectile.
+ra2engine::UnitCombat cannon_stats() {
+    ra2engine::UnitCombat c;
+    c.strength = 400;
+    c.armor = "heavy";
+    c.image = "HTNK";
+    c.damage = 90;
+    c.rof = 65;
+    c.range = 5.75;
+    c.verses = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+    c.proj.kind = ProjKind::Ballistic;
+    c.proj.arcing = true;
+    c.proj.weapon_range = 1472;
+    c.proj.speed_cap = 102;
+    c.proj.flh[2] = 100;  // H: muzzle 100 leptons up
+    return c;
+}
+
+ra2engine::UnitCombat soft_target_stats() {
+    ra2engine::UnitCombat c;
+    c.strength = 1000;
+    c.armor = "none";
+    c.image = "CONS";
+    c.damage = 0;
+    c.rof = 1000;
+    c.range = 0.0;
+    c.verses = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+    return c;
+}
+
+struct Rig {
+    ra2assets::MapFile map;
+    ra2engine::World world{map};
+};
+
+int count_kind(const std::vector<ProjectileEvent>& evs, ProjectileEvent::Kind k) {
+    int n = 0;
+    for (const ProjectileEvent& e : evs) n += (e.kind == k) ? 1 : 0;
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("projectile world: firewall CLOSED -> the instant hit lands the same step it fires, no events") {
+    Rig r;
+    r.world.add_combat_unit(0, 0, 0, cannon_stats());
+    r.world.add_combat_unit(5, 0, 1, soft_target_stats());
+    r.world.step(1.0 / 15.0);  // auto-acquire + fire (rof_cool starts 0)
+    CHECK(r.world.units()[1].hp == 1000 - 90);
+    CHECK(r.world.take_projectile_events().empty());
+    CHECK(r.world.projectiles().empty());
+}
+
+TEST_CASE("projectile world: firewall OPEN -> damage arrives at detonation, ~15 frames later") {
+    Rig r;
+    r.world.enable_projectiles(ProjectileRules{});
+    r.world.add_combat_unit(0, 0, 0, cannon_stats());
+    r.world.add_combat_unit(5, 0, 1, soft_target_stats());
+    std::vector<ProjectileEvent> all;
+    int hit_step = -1;
+    for (int step = 1; step <= 40 && hit_step < 0; ++step) {
+        r.world.step(1.0 / 15.0);
+        for (const ProjectileEvent& e : r.world.take_projectile_events()) all.push_back(e);
+        if (r.world.units()[1].hp < 1000) hit_step = step;
+    }
+    REQUIRE(count_kind(all, ProjectileEvent::Launch) >= 1);
+    REQUIRE(count_kind(all, ProjectileEvent::Detonate) >= 1);
+    const ProjectileEvent& launch = all.front();
+    CHECK(launch.kind == ProjectileEvent::Launch);
+    CHECK(launch.speed == arcing_launch_speed(5 * 256, 6.0));  // 96, §0.2
+    CHECK(launch.z == 100);                                     // FLH H
+    CHECK(hit_step >= 1 + 2);   // never the same frame (>= 2 frames, §4 step 3)
+    CHECK(hit_step <= 1 + 18);
+    CHECK(r.world.units()[1].hp == 1000 - 90);
+    for (const ProjectileEvent& e : all)
+        if (e.kind == ProjectileEvent::Detonate) {
+            CHECK(e.victim == 1);
+            CHECK(e.damage == 90);
+            CHECK(e.apex > 100);   // it arced
+            CHECK(e.flight_frames >= 2);
+        }
+}
+
+TEST_CASE("projectile world: target moved away mid-flight -> a miss, no damage") {
+    Rig r;
+    r.world.enable_projectiles(ProjectileRules{});
+    r.world.add_combat_unit(0, 0, 0, cannon_stats());
+    r.world.add_combat_unit(5, 0, 1, soft_target_stats());
+    r.world.step(1.0 / 15.0);  // fire
+    auto evs = r.world.take_projectile_events();
+    REQUIRE(count_kind(evs, ProjectileEvent::Launch) == 1);
+    // Teleport the target 4 cells sideways (out of the shell's cell and path).
+    ra2engine::Unit& t = r.world.units()[1];
+    t.cell_y = 4;
+    t.fy = 4.0;
+    int detonations = 0;
+    for (int step = 0; step < 30 && detonations == 0; ++step) {
+        r.world.step(1.0 / 15.0);
+        for (const ProjectileEvent& e : r.world.take_projectile_events())
+            if (e.kind == ProjectileEvent::Detonate) {
+                ++detonations;
+                CHECK(e.victim == -1);
+                CHECK(e.damage == 0);
+                CHECK(lepton_to_cell(e.x) == 5);  // landed on the OLD cell (§8)
+            }
+    }
+    CHECK(detonations == 1);
+    CHECK(r.world.units()[1].hp == 1000);
+}
+
+TEST_CASE("projectile world: target dies mid-flight -> the shell still detonates on its cell") {
+    Rig r;
+    r.world.enable_projectiles(ProjectileRules{});
+    r.world.add_combat_unit(0, 0, 0, cannon_stats());
+    r.world.add_combat_unit(5, 0, 1, soft_target_stats());
+    r.world.step(1.0 / 15.0);
+    REQUIRE(r.world.projectiles().size() == 1u);
+    r.world.units()[1].die_time = 0.0;  // killed by something else
+    bool detonated = false;
+    for (int step = 0; step < 30 && !detonated; ++step) {
+        r.world.step(1.0 / 15.0);
+        for (const ProjectileEvent& e : r.world.take_projectile_events())
+            if (e.kind == ProjectileEvent::Detonate) {
+                detonated = true;
+                CHECK(e.victim == -1);
+                CHECK(e.damage == 0);
+            }
+    }
+    CHECK(detonated);
+    CHECK(r.world.projectiles().empty());
+}
+
+TEST_CASE("projectile world: Vertical bomb from altitude falls ~35 frames and splashes") {
+    Rig r;
+    r.world.enable_projectiles(ProjectileRules{});
+    ra2engine::UnitCombat k;
+    k.strength = 2000;
+    k.armor = "heavy";
+    k.image = "ZEP";
+    k.damage = 250;
+    k.rof = 50;
+    k.range = 1.5;
+    k.cell_spread = 2.0;      // BlimpHE
+    k.percent_at_max = 0.5;
+    k.verses = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+    k.is_aircraft = true;
+    k.proj.kind = ProjKind::Vertical;
+    k.proj.speed_cap = 51;
+    k.proj.acceleration = 1;
+    k.proj.detonation_altitude = 20000;
+    k.proj.flh[0] = -50;
+    k.proj.flh[2] = -140;
+    ra2engine::Unit& z = r.world.add_combat_unit(0, 0, 0, k);
+    z.altitude = 750.0;   // JumpjetHeight
+    r.world.add_combat_unit(1, 0, 1, soft_target_stats());
+    r.world.add_combat_unit(2, 0, 1, soft_target_stats());
+    std::vector<ProjectileEvent> all;
+    for (int step = 0; step < 60; ++step) {
+        r.world.step(1.0 / 15.0);
+        for (const ProjectileEvent& e : r.world.take_projectile_events()) all.push_back(e);
+        if (count_kind(all, ProjectileEvent::Detonate) >= 1) break;
+    }
+    REQUIRE(count_kind(all, ProjectileEvent::Launch) >= 1);
+    REQUIRE(count_kind(all, ProjectileEvent::Detonate) >= 1);
+    CHECK(all.front().speed == 1);    // §12.3
+    CHECK(all.front().z == 610);      // 750 - 140
+    for (const ProjectileEvent& e : all)
+        if (e.kind == ProjectileEvent::Detonate) {
+            CHECK(e.flight_frames >= 25);
+            CHECK(e.flight_frames <= 40);
+            CHECK(e.damage > 0);
+        }
+    CHECK(r.world.units()[1].hp < 1000);  // both in the 2-cell splash
+    CHECK(r.world.units()[2].hp < 1000);
+}
+
+TEST_CASE("projectile world: building target takes the hit only at detonation") {
+    Rig r;
+    r.world.enable_projectiles(ProjectileRules{});
+    r.world.add_combat_unit(0, 0, 0, cannon_stats());
+    const int b = r.world.add_building(0, 5, 0, 2, 2, 1, 1000, 0, 0.0, /*instant=*/true);
+    r.world.units()[0].selected = true;
+    r.world.order_attack_building(b);
+    int launch_step = -1, hit_step = -1;
+    for (int step = 1; step <= 60 && hit_step < 0; ++step) {
+        r.world.step(1.0 / 15.0);
+        for (const ProjectileEvent& e : r.world.take_projectile_events()) {
+            if (e.kind == ProjectileEvent::Launch && launch_step < 0) launch_step = step;
+            if (e.kind == ProjectileEvent::Detonate && e.building == b) hit_step = step;
+        }
+    }
+    REQUIRE(launch_step > 0);
+    REQUIRE(hit_step > 0);
+    CHECK(hit_step - launch_step >= 2);
+    CHECK(r.world.buildings()[b].hp == 1000 - 90);
+}
+
+TEST_CASE("projectile world: scattered (Inaccurate+FlakScatter) launches are deterministic") {
+    auto run = [] {
+        Rig r;
+        r.world.enable_projectiles(ProjectileRules{});
+        ra2engine::UnitCombat f = cannon_stats();
+        f.damage = 25;
+        f.rof = 25;
+        f.range = 5.0;
+        f.cell_spread = 1.0;  // FlakTWH
+        f.proj.inaccurate = true;
+        f.proj.flak_scatter = true;
+        f.proj.weapon_range = 1280;
+        r.world.add_combat_unit(0, 0, 0, f);
+        r.world.add_combat_unit(4, 0, 1, soft_target_stats());
+        std::vector<ProjectileEvent> all;
+        for (int step = 0; step < 120; ++step) {
+            r.world.step(1.0 / 15.0);
+            for (const ProjectileEvent& e : r.world.take_projectile_events()) all.push_back(e);
+        }
+        return all;
+    };
+    const auto a = run();
+    const auto b = run();
+    REQUIRE(a.size() == b.size());
+    int scattered = 0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i].kind == b[i].kind);
+        CHECK(a[i].x == b[i].x);
+        CHECK(a[i].y == b[i].y);
+        CHECK(a[i].scatter_dx == b[i].scatter_dx);
+        CHECK(a[i].damage == b[i].damage);
+        if (a[i].kind == ProjectileEvent::Launch && (a[i].scatter_dx || a[i].scatter_dy)) ++scattered;
+    }
+    CHECK(scattered >= 3);
+}
