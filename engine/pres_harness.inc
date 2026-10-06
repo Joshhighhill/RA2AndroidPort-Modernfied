@@ -20,6 +20,7 @@ struct PresHarness {
         std::vector<double> secs = {2.0};
         int ai = -1, color = -1, mouse_x = -1, mouse_y = -1;
         bool select_all = false;
+        std::string peek;   // terrain | overlay | civ: centre + reveal on the first such map object
         bool audio = false;
         for (int i = i0 + 1; i < argc; ++i) {
             const std::string a = argv[i];
@@ -31,6 +32,7 @@ struct PresHarness {
             else if (a == "--color") color = std::atoi(next().c_str());
             else if (a == "--audio") audio = true;
             else if (a == "--select") select_all = true;
+            else if (a == "--peek") peek = next();
             else if (a == "--mouse") {
                 const std::string v = next();
                 mouse_x = std::atoi(v.c_str());
@@ -90,6 +92,16 @@ struct PresHarness {
             // scroll); hold the scripted camera.
             if (scripted) { gs.cam_.x = cam_x_; gs.cam_.y = cam_y_; }
             if (mouse_x >= 0) { gs.mx_ = mouse_x; gs.my_ = mouse_y; }
+            if (!peek.empty() && g_map_dressing) {
+                const auto& list = peek == "overlay" ? g_map_dressing->overlays() : g_map_dressing->objects();
+                for (const auto& o : list)
+                    if (peek == "overlay" || o.key.rfind(peek == "civ" ? "civ:" : "terr:", 0) == 0) {
+                        gs.world_.reveal_source(0, o.x, o.y, 9);
+                        gs.cam_.x = static_cast<int>(gs.playfield_w_ / 2.0 - (o.x - o.y) * 30.0);
+                        gs.cam_.y = static_cast<int>(GameScene::kWinH / 2.0 - (o.x + o.y) * 15.0);
+                        break;
+                    }
+            }
             if (select_all)
                 for (auto& u : gs.world_.units()) u.selected = (u.house == 0 && u.alive);
             if (t + 1e-9 >= secs[next_shot]) {

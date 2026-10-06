@@ -83,7 +83,7 @@ inline SDL_Texture* diamond_tex(ra2engine::TextureCache& tc, bool fog) {
     std::vector<uint8_t> rgba(60 * 30 * 4, 0);
     for (int y = 0; y < 30; ++y) {
         const int half = (y < 15 ? y + 1 : 30 - y) * 2;
-        for (int x = 30 - half; x < 30 + half; ++x) rgba[(y * 60 + x) * 4 + 3] = fog ? 123 : 251;
+        for (int x = 30 - half; x < 30 + half; ++x) rgba[(y * 60 + x) * 4 + 3] = fog ? 123 : 255;
     }
     return static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), 60, 30));
 }
@@ -110,7 +110,12 @@ void draw_shroud_pass(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2a
             if (fr == 0) continue;
             SDL_Texture* tex = nullptr;
             SDL_Rect dst{sx, sy, 60, 30};
-            if (shp && shp->count() > fr) {
+            if (!fog && fr == 15) {
+                // Fully covered: a solid diamond grown by 1 px so the outermost map
+                // cells' light tile seams never peek past the SHP diamond edge.
+                tex = pres_shroud::diamond_tex(tc, false);
+                dst = SDL_Rect{sx - 1, sy - 1, 62, 32};
+            } else if (shp && shp->count() > fr) {
                 SDL_Rect r;
                 tex = pres_shroud::frame_tex(tc, *shp, fog ? "fogshp" : "shroudshp", fr, r);
                 dst = SDL_Rect{sx + r.x, sy + r.y, r.w, r.h};

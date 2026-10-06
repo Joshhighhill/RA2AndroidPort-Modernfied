@@ -2383,6 +2383,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_audio.inc"    // G-80..G-82 (helpers also used by the FX layer)
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
+#include "pres_map.inc"      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 
 // Draws one building in render_world's merged back-to-front pass. Anchors the
 // SHP canvas CENTER at the foundation's screen bbox center [RE-GATE APPLIED:
@@ -2895,6 +2896,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, nullptr);
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
+    // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
+    if (g_map_dressing) g_map_dressing->draw_ground(ren, tc, world, g_map_pals, cam, W, H);
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -2965,6 +2968,13 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         for (int i = 0; i < static_cast<int>(bs.size()); ++i)
             if (bs[i].alive && pres_building_seen(world, bs[i])) A.push_back({bkey(i), 0, i});
         std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+        // G-87: map [Terrain] objects / civilian buildings sort with the buildings.
+        if (g_map_dressing) {
+            const auto& objs = g_map_dressing->objects();
+            for (int i = 0; i < static_cast<int>(objs.size()); ++i)
+                A.push_back({(objs[i].x + (objs[i].fw - 1) / 2.0) + (objs[i].y + (objs[i].fh - 1) / 2.0), 2, i});
+            std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+        }
         for (int i : uorder) B.push_back({us[i].fx + us[i].fy, 1, i});
         merged.resize(A.size() + B.size());
         std::merge(A.begin(), A.end(), B.begin(), B.end(), merged.begin(),
@@ -2973,7 +2983,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         for (int i : uorder) merged.push_back({0.0, 1, i});
     }
     for (const DrawItem& d : merged) {
-        if (d.kind == 0) {
+        if (d.kind == 2) {
+            g_map_dressing->draw(ren, tc, world, g_map_dressing->objects()[d.idx], g_map_pals, cam, W, H);
+        } else if (d.kind == 0) {
             const ra2engine::Building& b = world.buildings()[d.idx];
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
             draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
@@ -4668,6 +4680,7 @@ public:
     }
     ~GameScene() override {
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
+        if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
     }
 
     static ra2engine::SkirmishConfig config_of(const ra2engine::save::SaveFile& f) {
@@ -4941,7 +4954,52 @@ public:
         pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
                      vet_events, world_.take_projectile_events());
     }
+    // G-87: the map's own dressing in the real game (trees, overlays, smudges,
+    // neutral structures). Never in a gate (GameScene-only).
+    void init_map_dressing() {
+        try {
+            const MapSelection sel =
+                !cfg_.campaign_map.empty()
+                    ? MapSelection{camp::mix_for_map(cfg_.campaign_map), 0u, camp::lower(cfg_.campaign_map)}
+                    : cfg_.map_file.empty() ? MapSelection{} : MapSelection{"multimd.mix", 0u, cfg_.map_file};
+            MixFile maps = MixFile::open(ra2assets::read_file(dir_ + sel.mix));
+            const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
+            if (!me) return;
+            const auto raw = maps.read(*me);
+            const Ini map_ini = Ini::parse(std::string(raw.begin(), raw.end()));
+            map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
+            if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
+                int neutral = -1;
+                for (int h = 0; h < world_.house_count(); ++h)
+                    if (!world_.house_combatant(h)) { neutral = h; break; }
+                map_dressing_.place_structures(map_ini, [&](const std::string& id, int x, int y, int hp256) {
+                    if (neutral < 0) return false;
+                    const int bt = roster_index(ba_, id);
+                    if (bt < 0) return false;
+                    const ra2engine::BuildingTypeDef& d = ba_.roster[static_cast<std::size_t>(bt)];
+                    const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                        x, y, d.fw, d.fh, neutral, d.adjacent, world_.passable(), world_.grid_w(),
+                        world_.grid_h(), world_.occupancy(), world_.buildings(), /*bypass=*/true);
+                    if (!chk.ok) return false;
+                    const int idx = world_.add_building(bt, x, y, d.fw, d.fh, neutral, d.strength, d.armor_ix,
+                                                        0.0, /*instant=*/true, d.sight, d.grants_map_reveal);
+                    if (idx >= 0 && hp256 > 0 && hp256 < 256)
+                        world_.buildings()[static_cast<std::size_t>(idx)].hp = std::max(1, d.strength * hp256 / 256);
+                    return idx >= 0;
+                });
+            }
+            for (const auto& [x, y] : map_dressing_.blocked()) world_.block_cell(x, y);
+            map_pals_[0] = &a_.pal;
+            map_pals_[1] = ore_art_.has_pal ? &ore_art_.pal : &a_.pal;
+            map_pals_[2] = &ba_.unit_pal;
+            for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
+            g_map_dressing = &map_dressing_;
+        } catch (const std::exception& ex) {
+            std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
+        }
+    }
     void init_presentation() {
+        init_map_dressing();
         // G-90: every resolved infantry anim table, in skirmish as in campaign
         // (skirmish-start / AI-built infantry otherwise fall back to
         // default_anim and pick frames from the wrong SHP layout).
@@ -5252,6 +5310,8 @@ private:
     // --- audio ---
     AudioSystem          audio_;
     Presentation         pres_;    // G-80..G-91 presentation driver
+    PresMap              map_dressing_;               // G-87
+    const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     std::vector<std::pair<double, double>> prev_audio_state_;
     bool                 prev_unload_key_ = false;
     bool                 prev_sw_key_ = false;
