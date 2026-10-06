@@ -2271,11 +2271,15 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
         SDL_RenderFillRect(ren, &shadow);
         const bool bomb = (p.kind == ra2engine::ProjKind::Vertical);
-        SDL_Rect shell{gx - (bomb ? 3 : 2), sy - (bomb ? 3 : 2), bomb ? 6 : 4, bomb ? 6 : 4};
+        const int r = bomb ? 3 : 2;
+        SDL_Rect outline{gx - r - 1, sy - r - 1, 2 * r + 2, 2 * r + 2};  // dark rim: readable on grass
+        SDL_SetRenderDrawColor(ren, 30, 20, 10, 255);
+        SDL_RenderFillRect(ren, &outline);
+        SDL_Rect shell{gx - r, sy - r, 2 * r, 2 * r};
         if (bomb)
-            SDL_SetRenderDrawColor(ren, 70, 70, 80, 255);
+            SDL_SetRenderDrawColor(ren, 110, 110, 125, 255);
         else
-            SDL_SetRenderDrawColor(ren, 255, 200, 90, 255);
+            SDL_SetRenderDrawColor(ren, 255, 240, 170, 255);
         SDL_RenderFillRect(ren, &shell);
     }
 }
@@ -10740,6 +10744,331 @@ int run_demo_roster() {
     return bad ? 1 : 0;
 }
 
+// --- --demo-projectile (P2 Projectile flight) --------------------------------
+
+// FNV fold of one projectile event (every field the witnesses read). A NEW
+// accumulator: world_hash and every prior *_hash are UNTOUCHED.
+uint64_t projectile_fold(uint64_t h, const ra2engine::ProjectileEvent& e) {
+    const int64_t f[] = {static_cast<int64_t>(e.kind), e.frame, e.attacker, e.x, e.y, e.z,
+                         e.speed, e.scatter_dx, e.scatter_dy, e.victim, e.building, e.damage,
+                         e.flight_frames, e.apex};
+    for (int64_t v : f) h = fnv_mix(h, static_cast<uint64_t>(v));
+    return h;
+}
+
+struct DemoProjectileResult {
+    std::vector<std::string> witness;
+    uint64_t hash = 0;
+    bool ok = true;
+};
+
+// The five --demo-projectile scenarios (spec §Gate), each in a FRESH World on the
+// default map at dt = 1/15 (one step = one logic frame). Unit 0 is always the
+// house-0 shooter; every scenario folds its events + world_hash into r.hash.
+DemoProjectileResult simulate_projectile(Assets& a, UnitAssets& ua, const VehicleAssets& rhino,
+                                         const VehicleAssets& kirov, const VehicleAssets& flak,
+                                         const ra2engine::ProjectileRules& prules,
+                                         const std::vector<const VehicleAssets*>& vlist,
+                                         bool render, SDL_Renderer* ren,
+                                         ra2engine::TextureCache* tc, const ra2engine::Camera* cam,
+                                         int W, int H, const std::string& start_png,
+                                         const std::string& mid_png, const std::string& end_png) {
+    DemoProjectileResult r;
+    uint64_t h = 0xcbf29ce484222325ull;
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    if (!pc) { r.ok = false; return r; }
+    const double dt = 1.0 / 15.0;
+    auto fail = [&](const std::string& why) {
+        r.ok = false;
+        r.witness.push_back("[proj] WITNESS FAILED: " + why);
+    };
+    auto draw = [&](ra2engine::World& world) {
+        if (!render) return;
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, world, *cam, W, H, nullptr, &vlist);
+    };
+    // Steps one frame, folds + returns this frame's events.
+    auto step = [&](ra2engine::World& world) {
+        world.step(dt);
+        draw(world);
+        std::vector<ra2engine::ProjectileEvent> evs = world.take_projectile_events();
+        for (const ra2engine::ProjectileEvent& e : evs) h = projectile_fold(h, e);
+        return evs;
+    };
+    auto order_attack_by = [](ra2engine::World& world, int shooter, int target) {
+        world.clear_selection();
+        world.units()[shooter].selected = true;
+        world.order_attack(target);
+    };
+
+    // 1) FIREWALL: projectiles NOT enabled -> the Rhino's hit lands the same
+    //    frame it fires (the pre-P2 instant path every byte-identity gate uses).
+    {
+        ra2engine::World world = build_world(a, ua, 0);
+        spawn_squad(world, pc->x, pc->y, 1, 0, rhino.combat);
+        spawn_squad(world, pc->x + 4, pc->y, 1, 1, ua.cons);
+        order_attack_by(world, 0, 1);
+        int fire_frame = -1, hit_frame = -1, events = 0;
+        const int hp0 = world.units()[1].hp;
+        for (int f = 1; f <= 600 && hit_frame < 0; ++f) {
+            events += static_cast<int>(step(world).size());
+            if (fire_frame < 0 && world.units()[0].fire_flash > 0.39) fire_frame = f;
+            if (world.units()[1].hp < hp0) hit_frame = f;
+        }
+        h = fnv_mix(h, world_hash(world));
+        char b[160];
+        std::snprintf(b, sizeof b, "[proj] firewall: enabled=%s fire_frame=%d hit_frame=%d same=%s events=%d",
+                      world.projectiles_enabled() ? "yes" : "no", fire_frame, hit_frame,
+                      (fire_frame > 0 && fire_frame == hit_frame) ? "yes" : "no", events);
+        r.witness.emplace_back(b);
+        if (!(fire_frame > 0 && fire_frame == hit_frame && events == 0)) fail("firewall");
+    }
+
+    // 2) ARC: Rhino vs Rhino at 5 cells. Launch speed must be the §0.2 formula
+    //    of the muzzle->target distance, the shell must arc (apex > muzzle), and
+    //    the 90 damage must land ONLY at detonation, >= 2 frames after launch.
+    {
+        ra2engine::World world = build_world(a, ua, 0);
+        world.enable_projectiles(prules);
+        spawn_squad(world, pc->x, pc->y, 1, 0, rhino.combat);
+        spawn_squad(world, pc->x + 5, pc->y, 1, 1, rhino.combat);
+        order_attack_by(world, 0, 1);
+        if (render) { draw(world); capture_png(ren, start_png, W, H); }
+        const ra2engine::Unit& tgt = world.units()[1];
+        const int hp0 = tgt.hp;
+        ra2engine::ProjectileEvent launch, det;
+        bool have_launch = false, have_det = false, early_damage = false, mid_shot = false;
+        for (int f = 1; f <= 900 && !have_det; ++f) {
+            const std::vector<ra2engine::ProjectileEvent> evs = step(world);
+            for (const ra2engine::ProjectileEvent& e : evs) {
+                if (e.attacker != 0) continue;
+                if (!have_launch && e.kind == ra2engine::ProjectileEvent::Launch) { launch = e; have_launch = true; }
+                else if (have_launch && !have_det && e.kind == ra2engine::ProjectileEvent::Detonate) { det = e; have_det = true; }
+            }
+            if (have_launch && !have_det && world.units()[1].hp != hp0) early_damage = true;
+            if (render && have_launch && !have_det && !mid_shot) {
+                for (const ra2engine::Projectile& p : world.projectiles())
+                    if (p.attacker == 0 && world.projectile_frame() - p.launch_frame >= 6) {
+                        capture_png(ren, mid_png, W, H);
+                        mid_shot = true;
+                        break;
+                    }
+            }
+        }
+        h = fnv_mix(h, world_hash(world));
+        const int tx = static_cast<int>(world.units()[1].fx * 256.0);
+        const int ty = static_cast<int>(world.units()[1].fy * 256.0);
+        const int d2 = static_cast<int>(std::sqrt(double(tx - launch.x) * (tx - launch.x) +
+                                                  double(ty - launch.y) * (ty - launch.y)));
+        const int expect = ra2engine::arcing_launch_speed(d2, prules.gravity);
+        char b[220];
+        std::snprintf(b, sizeof b,
+                      "[proj] arc: launch_frame=%d speed=%d expect=%d muzzle_z=%d flight_frames=%d apex=%d "
+                      "victim=%d damage=%d early_damage=%s",
+                      launch.frame, launch.speed, expect, launch.z, det.flight_frames, det.apex,
+                      det.victim, det.damage, early_damage ? "yes" : "no");
+        r.witness.emplace_back(b);
+        if (!(have_launch && have_det && launch.speed == expect && det.flight_frames >= 2 &&
+              det.apex > launch.z && det.victim == 1 && det.damage == 90 && !early_damage))
+            fail("arc");
+    }
+
+    // 3) MISS: the Conscript target walks 3 cells away right after the launch;
+    //    the shell keeps flying to the old cell and detonates there harmlessly.
+    {
+        ra2engine::World world = build_world(a, ua, 0);
+        world.enable_projectiles(prules);
+        spawn_squad(world, pc->x, pc->y, 1, 0, rhino.combat);
+        spawn_squad(world, pc->x + 4, pc->y, 1, 1, ua.cons);
+        order_attack_by(world, 0, 1);
+        const int hp0 = world.units()[1].hp;
+        int ox = 0, oy = 0;
+        ra2engine::ProjectileEvent det;
+        bool launched = false, have_det = false;
+        for (int f = 1; f <= 900 && !have_det; ++f) {
+            const std::vector<ra2engine::ProjectileEvent> evs = step(world);
+            for (const ra2engine::ProjectileEvent& e : evs) {
+                if (e.attacker != 0) continue;
+                if (!launched && e.kind == ra2engine::ProjectileEvent::Launch) {
+                    launched = true;
+                    ox = world.units()[1].cell_x;
+                    oy = world.units()[1].cell_y;
+                    world.order_unit_move(1, ox, oy + 3);   // dodge
+                } else if (launched && e.kind == ra2engine::ProjectileEvent::Detonate) {
+                    det = e;
+                    have_det = true;
+                }
+            }
+        }
+        h = fnv_mix(h, world_hash(world));
+        char b[200];
+        std::snprintf(b, sizeof b,
+                      "[proj] miss: old_cell=(%d,%d) impact_cell=(%d,%d) victim=%d damage=%d target_hp=%d/%d",
+                      ox, oy, ra2engine::lepton_to_cell(det.x), ra2engine::lepton_to_cell(det.y),
+                      det.victim, det.damage, world.units()[1].hp, hp0);
+        r.witness.emplace_back(b);
+        if (!(have_det && det.victim == -1 && det.damage == 0 && world.units()[1].hp == hp0))
+            fail("miss");
+    }
+
+    // 4) KIROV: the bomb leaves at speed 1 from altitude - 140 (FLH), falls
+    //    accelerating (+1/frame, cap 51) and the BlimpHE 2-cell splash hits both
+    //    adjacent Conscripts.
+    {
+        ra2engine::World world = build_world(a, ua, 0);
+        world.enable_projectiles(prules);
+        spawn_squad(world, pc->x, pc->y, 1, 0, kirov.combat);
+        spawn_squad(world, pc->x + 6, pc->y, 1, 1, ua.cons);
+        spawn_squad(world, pc->x + 7, pc->y, 1, 1, ua.cons);
+        const int hpA = world.units()[1].hp, hpB = world.units()[2].hp;
+        // Take off in place and reach cruise FIRST (the --demo-aircraft order of
+        // operations) so the bomb is released from JumpjetHeight, then attack.
+        world.order_unit_move(0, world.units()[0].cell_x, world.units()[0].cell_y);
+        for (int f = 0; f < 600 && world.units()[0].flight_state !=
+                                       ra2engine::FlightState::Cruising; ++f)
+            step(world);
+        order_attack_by(world, 0, 1);
+        ra2engine::ProjectileEvent launch, det;
+        bool have_launch = false, have_det = false;
+        double alt_at_launch = 0.0;
+        for (int f = 1; f <= 3000 && !have_det; ++f) {
+            const std::vector<ra2engine::ProjectileEvent> evs = step(world);
+            for (const ra2engine::ProjectileEvent& e : evs) {
+                if (e.attacker != 0) continue;
+                if (!have_launch && e.kind == ra2engine::ProjectileEvent::Launch) {
+                    launch = e;
+                    have_launch = true;
+                    alt_at_launch = world.units()[0].altitude;
+                } else if (have_launch && !have_det && e.kind == ra2engine::ProjectileEvent::Detonate) {
+                    det = e;
+                    have_det = true;
+                }
+            }
+        }
+        h = fnv_mix(h, world_hash(world));
+        const bool a_hit = world.units()[1].hp < hpA, b_hit = world.units()[2].hp < hpB;
+        char b[220];
+        std::snprintf(b, sizeof b,
+                      "[proj] kirov: speed=%d launch_z=%d altitude=%.0f flight_frames=%d damage=%d "
+                      "hit_A=%s hit_B=%s",
+                      launch.speed, launch.z, alt_at_launch, det.flight_frames, det.damage,
+                      a_hit ? "yes" : "no", b_hit ? "yes" : "no");
+        r.witness.emplace_back(b);
+        if (!(have_launch && have_det && launch.speed == 1 &&
+              launch.z == static_cast<int>(alt_at_launch) + kirov.combat.proj.flh[2] &&
+              det.flight_frames >= 20 && a_hit && b_hit))
+            fail("kirov");
+    }
+
+    // 5) FLAK: a Flak Track ([FlakTProj] Inaccurate + FlakScatter, §5.2) fires
+    //    for 300 frames at a Conscript; the scatter draws come from the dedicated
+    //    projectile RNG and must be present and run-to-run identical.
+    {
+        ra2engine::World world = build_world(a, ua, 0);
+        world.enable_projectiles(prules);
+        spawn_squad(world, pc->x, pc->y, 1, 0, flak.combat);
+        spawn_squad(world, pc->x + 4, pc->y + 1, 1, 1, ua.cons);
+        order_attack_by(world, 0, 1);
+        int shots = 0, scattered = 0, dets = 0;
+        long sum_off = 0;
+        for (int f = 1; f <= 300; ++f) {
+            for (const ra2engine::ProjectileEvent& e : step(world)) {
+                if (e.attacker != 0) continue;
+                if (e.kind == ra2engine::ProjectileEvent::Launch) {
+                    ++shots;
+                    if (e.scatter_dx || e.scatter_dy) ++scattered;
+                    sum_off += std::abs(e.scatter_dx) + std::abs(e.scatter_dy);
+                } else if (e.kind == ra2engine::ProjectileEvent::Detonate) {
+                    ++dets;
+                }
+            }
+        }
+        h = fnv_mix(h, world_hash(world));
+        if (render) capture_png(ren, end_png, W, H);
+        char b[160];
+        std::snprintf(b, sizeof b, "[proj] flak: shots=%d scattered=%d detonations=%d sum_abs_offset=%ld",
+                      shots, scattered, dets, sum_off);
+        r.witness.emplace_back(b);
+        if (!(shots >= 2 && scattered >= 1 && dets >= 1)) fail("flak");
+    }
+
+    r.hash = h;
+    return r;
+}
+
+// --demo-projectile: the P2 gate. Runs simulate_projectile rendered (hidden
+// window + start/mid/end PNGs -- the mid PNG catches a Rhino shell at the top of
+// its arc) then headless from FRESH Worlds, and self-compares witnesses + hash.
+// NO hash literal in code -- the README pins the observed projectile_hash.
+int run_demo_projectile() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "d44bece6-5e7c-465a-9fd5-820d808b4426\\scratchpad\\";
+    const std::string start_png = scratch + "demo_projectile_start.png";
+    const std::string mid_png = scratch + "demo_projectile_mid.png";
+    const std::string end_png = scratch + "demo_projectile_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    VehicleAssets rhino = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
+    VehicleAssets kirov = load_vehicle_assets(dir, ra2, ua.pal, "ZEP");
+    VehicleAssets flak = load_vehicle_assets(dir, ra2, ua.pal, "HTK");
+    if (!rhino.ok || !kirov.ok || !flak.ok || !kirov.combat.is_aircraft) {
+        std::cerr << "[demo-projectile] FAILED: vehicle assets unavailable (HTNK/ZEP/HTK)\n";
+        return 1;
+    }
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    const ra2engine::ProjectileRules prules = ra2engine::resolve_projectile_rules(rules);
+    std::vector<const VehicleAssets*> vlist{&rhino, &kirov, &flak};
+
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(a.map);
+    ra2engine::Camera cam;
+    if (pc) {
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(pc->x + 3, pc->y, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+    }
+
+    DemoProjectileResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-projectile)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_projectile(a, ua, rhino, kirov, flak, prules, vlist, /*render=*/true, ren,
+                                     &tc, &cam, W, H, start_png, mid_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+    const DemoProjectileResult r2 =
+        simulate_projectile(a, ua, rhino, kirov, flak, prules, vlist, /*render=*/false, nullptr,
+                            nullptr, nullptr, W, H, "", "", "");
+
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    std::cerr << "[demo-projectile] gravity=" << prules.gravity
+              << " ballistic_scatter=" << prules.ballistic_scatter << " run1 lines="
+              << r1.witness.size() << " run2 lines=" << r2.witness.size() << "\n";
+    for (const std::string& s : r2.witness) std::cout << s << "\n";
+    std::cout << "start_png=" << start_png << "\nmid_png=" << mid_png << "\nend_png=" << end_png
+              << "\n";
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "[demo-projectile] deterministic=%s projectile_hash=%016llx",
+                  identical ? "yes" : "no", static_cast<unsigned long long>(r2.hash));
+    std::cout << hb << "\n";
+    return (identical && r1.ok && r2.ok) ? 0 : 1;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -10902,6 +11231,8 @@ int main(int argc, char** argv) {
                 return run_demo_roster();
             } else if (arg == "--demo-maps") {
                 return run_demo_maps();
+            } else if (arg == "--demo-projectile") {
+                return run_demo_projectile();
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
