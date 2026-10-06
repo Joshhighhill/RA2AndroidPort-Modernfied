@@ -727,6 +727,7 @@ template <class Ar> void fields(Ar& ar, AiBaseState& v) {
 template <class Ar> void fields(Ar& ar, AiCatalog& v) {
     io(ar, v.conyard); io(ar, v.power); io(ar, v.refinery); io(ar, v.barracks);
     io(ar, v.war_factory); io(ar, v.radar); io(ar, v.defenses); io(ar, v.wall);
+    io(ar, v.tech); io(ar, v.superweapons);
 }
 // --- AI-2 ---
 template <class Ar> void fields(Ar& ar, TeamInstance& v) {

@@ -229,6 +229,11 @@ struct AiCatalog {
     int radar = -1;        // BuildRadar -> NARADR (the prereq-sorted remainder in AI-1)
     std::vector<int> defenses;  // SovietBaseDefenses = NALASR,NABNKR,TESLA,NAFLAK [RE: ai-base.md §2]
     int wall = -1;         // ConcreteWalls first Soviet-ownable -> NAWALL [RE: ai-base.md §2]
+    // [G-66] [AI] BuildTech= ("should build on each of these") -> NATECH/GATECH,
+    // and the side's AIBuildThis=yes SuperWeapon= structures (NAMISL/NAIRON,
+    // GAWEAT/GACSPH), planned at the tail behind their tech prerequisite.
+    int tech = -1;
+    std::vector<int> superweapons;
 };
 
 // next_build's answer. type >= 0: start this roster type now, filling

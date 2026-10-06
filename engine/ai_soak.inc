@@ -11,7 +11,7 @@
 //
 //   ra2engine --ai-soak [--minutes N] [--diff easy|normal|brutal]
 //                       [--ai-side soviet|allied] [--map <file.map>]
-//                       [--damage-ai-at MIN] [--png <path>]
+//                       [--damage-ai-at MIN] [--ai-vs-ai] [--png <path>]
 // ============================================================================
 
 namespace {
@@ -22,7 +22,7 @@ struct AiSoakProbe {
     static int run(int argc, char** argv) {
         int minutes = 15, damage_ai_at = -1;
         ra2engine::AiDifficulty diff = ra2engine::AiDifficulty::Normal;
-        bool ai_allied = false;
+        bool ai_allied = false, ai_vs_ai = false;
         std::string map_file = "xmp31s2.map", png;   // the --probe-realplay menu map
         for (int i = 2; i < argc; ++i) {
             const std::string a = argv[i];
@@ -37,6 +37,7 @@ struct AiSoakProbe {
             else if (a == "--map") map_file = next();
             else if (a == "--damage-ai-at") damage_ai_at = std::atoi(next().c_str());
             else if (a == "--png") png = next();
+            else if (a == "--ai-vs-ai") ai_vs_ai = true;   // house 0 is an AI too
         }
         const std::string dir = env_install_dir();
         Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -48,6 +49,7 @@ struct AiSoakProbe {
             cfg.slots[0].side = ra2engine::World::Side::Soviet;  cfg.slots[0].country = "Russians";
             cfg.slots[1].side = ra2engine::World::Side::Allied;  cfg.slots[1].country = "Americans";
         }
+        if (ai_vs_ai) cfg.slots[0].is_ai = true;
         GameScene g(/*no_audio=*/true, cfg);
         ra2engine::World& w = world(g);
         const BuildingAssets& b_a = ba(g);

@@ -2226,6 +2226,17 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         if (t >= 0) cfg.catalog.defenses.push_back(t);
     }
     cfg.catalog.wall = pick("ConcreteWalls");
+    // [G-66] BuildTech + the side's AIBuildThis=yes SuperWeapon= structures
+    // (the tech centres also carry SuperWeapon=ForceShieldSpecial and are
+    // planned as `tech`, not again here).
+    cfg.catalog.tech = pick("BuildTech");
+    for (const ra2engine::BuildingTypeDef& d : ba.roster) {
+        if (rules.section_string(d.id, "SuperWeapon", "").empty()) continue;
+        if (!rules.section_flag(d.id, "AIBuildThis", false)) continue;
+        if (!aiside::owned_by(rules, d.id, side, country)) continue;
+        const int t = ok_index(d.id.c_str());
+        if (t >= 0 && t != cfg.catalog.tech) cfg.catalog.superweapons.push_back(t);
+    }
     // [AI] knobs from the real rulesmd [RE: ai-base.md §2] (constants are the
     // committed pins; the file read keeps us honest if a mod changes them).
     cfg.ai.power_surplus =

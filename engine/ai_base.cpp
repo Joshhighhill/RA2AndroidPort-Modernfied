@@ -187,6 +187,10 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
             add_cand(cat.defenses[i % (int)cat.defenses.size()]);
     if (cat.wall >= 0 && !cat.defenses.empty())
         for (int i = 0; i < defs; ++i) add_cand(cat.wall);
+    // [G-66] tech centre + superweapon structures at the tail [RE-FALLBACK:
+    // tail position; the topo loop still orders them behind their prereqs].
+    add_cand(cat.tech);
+    for (int t : cat.superweapons) add_cand(t);
     // 5) Kahn-style topological loop [RE-GATE APPLIED: ai-base.md §2a —
     // FUN_005052d0's main loop]: emit the FIRST candidate whose prereqs are
     // already met BY THE PLAN-SO-FAR (prereqs_in_plan == the original's
