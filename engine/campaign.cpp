@@ -1,0 +1,452 @@
+// P10 Campaign missions [RE: docs/re/campaign.md]. See campaign.hpp.
+#include "campaign.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
+
+#include "map_trigger.hpp"   // map_waypoint_letters
+
+namespace ra2engine {
+
+namespace {
+
+std::string upper(std::string s) {
+    for (char& c : s) c = (char)std::toupper((unsigned char)c);
+    return s;
+}
+bool ieq(const std::string& a, const std::string& b) { return upper(a) == upper(b); }
+
+// Values may carry a trailing "; comment" (rules [Countries] lines do).
+std::string strip(std::string v) {
+    const std::size_t sc = v.find(';');
+    if (sc != std::string::npos) v.erase(sc);
+    while (!v.empty() && std::isspace((unsigned char)v.back())) v.pop_back();
+    std::size_t i = 0;
+    while (i < v.size() && std::isspace((unsigned char)v[i])) ++i;
+    return v.substr(i);
+}
+
+bool yes(const std::string& v) {
+    const std::string u = upper(strip(v));
+    return !u.empty() && (u[0] == 'Y' || u[0] == 'T' || u[0] == '1');
+}
+
+std::vector<std::string> split_csv(const std::string& v) {
+    std::vector<std::string> f;
+    std::string cur;
+    for (char c : v) {
+        if (c == ',') { f.push_back(strip(cur)); cur.clear(); }
+        else cur += c;
+    }
+    f.push_back(strip(cur));
+    return f;
+}
+
+bool is_number(const std::string& s) {
+    if (s.empty()) return false;
+    for (char c : s) if (!std::isdigit((unsigned char)c)) return false;
+    return true;
+}
+
+std::string movie(const std::string& v) {
+    const std::string s = strip(v);
+    return (s.empty() || ieq(s, "<none>")) ? std::string() : s;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+CampaignTables CampaignTables::parse(const ra2assets::Ini& battle, const ra2assets::Ini& mission,
+                                     const ra2assets::Ini& mapsel) {
+    CampaignTables t;
+    for (const auto& kv : battle.section("Battles")) {
+        const std::string id = strip(kv.second);
+        if (id.empty() || !battle.has(id)) continue;
+        BattleEntry b;
+        b.id = id;
+        b.scenario = strip(battle.get(id, "Scenario", ""));
+        b.description = strip(battle.get(id, "Description", ""));
+        b.final_movie = strip(battle.get(id, "FinalMovie", ""));
+        b.cd = battle.get_int(id, "CD", -1);
+        b.debug_only = yes(battle.get(id, "DebugOnly", "no"));
+        t.battles_.push_back(b);
+    }
+    t.mission_ = mission;
+    t.mapsel_ = mapsel;
+    // Every section with a Scenario= key is a stage (FUN_005cf300).
+    for (const std::string& sec : mapsel.section_names()) {
+        bool has_scen = false;
+        MapSelStage st;
+        st.name = sec;
+        for (const auto& kv : mapsel.section(sec)) {
+            if (kv.first == "SCENARIO") { has_scen = true; st.scenario = strip(kv.second); }
+            else if (is_number(kv.first)) {
+                const std::string n = strip(kv.second);
+                if (!n.empty()) st.next.push_back(n);
+            }
+        }
+        if (has_scen) t.stages_.push_back(st);
+    }
+    return t;
+}
+
+const BattleEntry* CampaignTables::battle(const std::string& id) const {
+    for (const BattleEntry& b : battles_) if (ieq(b.id, id)) return &b;
+    return nullptr;
+}
+
+MissionInfo CampaignTables::mission(const std::string& map_name) const {
+    MissionInfo m;
+    const std::string sec = upper(map_name);
+    if (!mission_.has(sec)) return m;
+    m.found = true;
+    m.briefing = strip(mission_.get(sec, "Briefing", ""));
+    m.ui_name = strip(mission_.get(sec, "UIName", ""));
+    m.ls_load_message = strip(mission_.get(sec, "LSLoadMessage", ""));
+    m.ls_load_briefing = strip(mission_.get(sec, "LSLoadBriefing", ""));
+    m.ls640_bkgd = strip(mission_.get(sec, "LS640BkgdName", ""));
+    m.ls800_bkgd = strip(mission_.get(sec, "LS800BkgdName", ""));
+    m.ls800_brief_x = mission_.get_int(sec, "LS800BriefLocX", 20);
+    m.ls800_brief_y = mission_.get_int(sec, "LS800BriefLocY", 20);
+    return m;
+}
+
+std::vector<std::string> CampaignTables::side_stages(const std::string& side) const {
+    std::vector<std::string> out;
+    for (const auto& kv : mapsel_.section(side))
+        if (is_number(kv.first)) {
+            const std::string n = strip(kv.second);
+            if (!n.empty()) out.push_back(n);
+        }
+    return out;
+}
+
+const MapSelStage* CampaignTables::stage(const std::string& name) const {
+    for (const MapSelStage& s : stages_) if (ieq(s.name, name)) return &s;
+    return nullptr;
+}
+
+std::string CampaignTables::next_scenario(const std::string& side,
+                                          const std::string& current_map) const {
+    // FUN_005ce910 loads the side's stage list; FUN_005cf180 finds the current
+    // stage by scenario-name compare; the stage's numbered keys are the choices.
+    for (const std::string& sn : side_stages(side)) {
+        const MapSelStage* st = stage(sn);
+        if (!st || !ieq(st->scenario, current_map)) continue;
+        for (const std::string& nx : st->next) {
+            const MapSelStage* ns = stage(nx);
+            if (ns && !ns->scenario.empty()) return ns->scenario;
+        }
+        return std::string();
+    }
+    return std::string();
+}
+
+// ---------------------------------------------------------------------------
+ScenarioBasic parse_scenario_basic(const ra2assets::Ini& map) {
+    ScenarioBasic b;
+    b.player = strip(map.get("Basic", "Player", "Americans"));
+    b.briefing = strip(map.get("Basic", "Briefing", ""));
+    b.intro = movie(map.get("Basic", "Intro", ""));
+    b.brief = movie(map.get("Basic", "Brief", ""));
+    b.win = movie(map.get("Basic", "Win", ""));
+    b.lose = movie(map.get("Basic", "Lose", ""));
+    b.action = movie(map.get("Basic", "Action", ""));
+    b.post_score = movie(map.get("Basic", "PostScore", ""));
+    b.pre_map_select = movie(map.get("Basic", "PreMapSelect", ""));
+    const std::string th = strip(map.get("Basic", "Theme", ""));
+    b.theme = ieq(th, "No theme") ? std::string() : th;
+    b.next_scenario = strip(map.get("Basic", "NextScenario", ""));
+    b.end_of_game = yes(map.get("Basic", "EndOfGame", "no"));
+    b.skip_score = yes(map.get("Basic", "SkipScore", "no"));
+    b.one_time_only = yes(map.get("Basic", "OneTimeOnly", "no"));
+    b.skip_map_select = yes(map.get("Basic", "SkipMapSelect", "no"));
+    b.carry_over_money = std::atof(strip(map.get("Basic", "CarryOverMoney", "0")).c_str());
+    return b;
+}
+
+// ---------------------------------------------------------------------------
+std::vector<MapObjectRec> parse_map_objects(const ra2assets::Ini& map) {
+    std::vector<MapObjectRec> out;
+    const bool new_fmt = map.get_int("Basic", "NewINIFormat", 4) >= 4;
+    auto tag_of = [](const std::string& s) { return ieq(s, "None") ? std::string() : s; };
+    auto head = [&](MapObjectRec& r, const std::vector<std::string>& f, std::size_t& i) -> bool {
+        // OWNER,TYPE,HEALTH,X,Y (NewINIFormat >= 4) or OWNER,TYPE,HEALTH,CELL.
+        if (f.size() < (new_fmt ? 5u : 4u)) return false;
+        r.owner = f[0];
+        r.type = f[1];
+        r.health = std::atoi(f[2].c_str());
+        if (new_fmt) {
+            r.x = std::atoi(f[3].c_str());
+            r.y = std::atoi(f[4].c_str());
+            i = 5;
+        } else {
+            const int v = std::atoi(f[3].c_str());
+            r.x = v % 128;
+            r.y = v / 128;
+            i = 4;
+        }
+        return true;
+    };
+    auto at = [](const std::vector<std::string>& f, std::size_t i) -> std::string {
+        return i < f.size() ? f[i] : std::string();
+    };
+    for (const auto& kv : map.section("Structures")) {
+        const std::vector<std::string> f = split_csv(kv.second);
+        MapObjectRec r;
+        r.kind = 0;
+        r.key = kv.first;
+        std::size_t i = 0;
+        if (!head(r, f, i)) continue;
+        r.facing = std::atoi(at(f, i).c_str());   // Facing
+        r.tag = tag_of(at(f, i + 1));             // Tag
+        out.push_back(r);
+    }
+    for (const auto& kv : map.section("Units")) {
+        const std::vector<std::string> f = split_csv(kv.second);
+        MapObjectRec r;
+        r.kind = 1;
+        r.key = kv.first;
+        std::size_t i = 0;
+        if (!head(r, f, i)) continue;
+        r.facing = std::atoi(at(f, i).c_str());    // Facing
+        r.mission = at(f, i + 1);                  // Mission
+        r.tag = tag_of(at(f, i + 2));              // Tag
+        r.veterancy = std::atoi(at(f, i + 3).c_str());
+        r.group = f.size() > i + 4 ? std::atoi(at(f, i + 4).c_str()) : -1;
+        out.push_back(r);
+    }
+    for (const auto& kv : map.section("Infantry")) {
+        const std::vector<std::string> f = split_csv(kv.second);
+        MapObjectRec r;
+        r.kind = 2;
+        r.key = kv.first;
+        std::size_t i = 0;
+        if (!head(r, f, i)) continue;
+        r.subcell = std::atoi(at(f, i).c_str());    // SubCell
+        r.mission = at(f, i + 1);                   // Mission
+        r.facing = std::atoi(at(f, i + 2).c_str()); // Facing
+        r.tag = tag_of(at(f, i + 3));               // Tag
+        r.veterancy = std::atoi(at(f, i + 4).c_str());
+        r.group = f.size() > i + 5 ? std::atoi(at(f, i + 5).c_str()) : -1;
+        out.push_back(r);
+    }
+    for (const auto& kv : map.section("Aircraft")) {
+        const std::vector<std::string> f = split_csv(kv.second);
+        MapObjectRec r;
+        r.kind = 3;
+        r.key = kv.first;
+        std::size_t i = 0;
+        if (!head(r, f, i)) continue;
+        r.facing = std::atoi(at(f, i).c_str());
+        r.mission = at(f, i + 1);
+        r.tag = tag_of(at(f, i + 2));
+        r.veterancy = std::atoi(at(f, i + 3).c_str());
+        r.group = f.size() > i + 4 ? std::atoi(at(f, i + 4).c_str()) : -1;
+        out.push_back(r);
+    }
+    return out;
+}
+
+int campaign_strength(int type_strength, int health256, bool building) {
+    if (building && health256 > 255) health256 = 256;
+    int s = (int)std::lround((double)type_strength * (double)health256 / 256.0);
+    if (s > type_strength - 3) s = type_strength;
+    if (s < 1) s = 1;
+    return s;
+}
+
+std::vector<std::string> campaign_house_order(const ra2assets::Ini& map, const std::string& player) {
+    std::vector<std::string> houses;
+    for (const auto& kv : map.section("Houses")) {
+        const std::string h = strip(kv.second);
+        if (!h.empty()) houses.push_back(h);
+    }
+    int pi = -1;
+    for (std::size_t i = 0; i < houses.size() && pi < 0; ++i)
+        if (ieq(houses[i], player)) pi = (int)i;
+    for (std::size_t i = 0; i < houses.size() && pi < 0; ++i)
+        if (ieq(strip(map.get(houses[i], "Country", "")), player)) pi = (int)i;
+    if (pi > 0) {
+        const std::string p = houses[(std::size_t)pi];
+        houses.erase(houses.begin() + pi);
+        houses.insert(houses.begin(), p);
+    }
+    return houses;
+}
+
+// ---------------------------------------------------------------------------
+void MissionEnd::flag(int outcome, long frame) {
+    if (outcome_ != 0 || (outcome != 1 && outcome != 2)) return;
+    outcome_ = outcome;
+    flagged_at_ = frame;
+}
+
+int borrowed_time_frames(double savour_delay_minutes) {
+    return (int)std::lround(savour_delay_minutes * 900.0);
+}
+
+// ---------------------------------------------------------------------------
+int MapTeamData::find_team(const std::string& id) const {
+    for (std::size_t i = 0; i < teams.size(); ++i) if (ieq(teams[i].id, id)) return (int)i;
+    return -1;
+}
+int MapTeamData::find_script(const std::string& id) const {
+    for (std::size_t i = 0; i < scripts.size(); ++i) if (ieq(scripts[i].id, id)) return (int)i;
+    return -1;
+}
+const std::vector<MapTaskMember>* MapTeamData::taskforce(const std::string& id) const {
+    for (const auto& tf : taskforces) if (ieq(tf.first, id)) return &tf.second;
+    return nullptr;
+}
+
+MapTeamData parse_map_teams(const ra2assets::Ini& map) {
+    MapTeamData d;
+    for (const auto& kv : map.section("ScriptTypes")) {
+        const std::string id = strip(kv.second);
+        if (!map.has(id)) continue;
+        MapScript s;
+        s.id = id;
+        s.name = map.get(id, "Name", "");
+        // Numbered lines 0..49 in numeric order (ScriptTypeClass::ReadINI).
+        for (int n = 0; n < 50; ++n) {
+            const std::string v = map.get(id, std::to_string(n), "");
+            if (v.empty()) break;
+            const std::vector<std::string> f = split_csv(v);
+            MapScriptAction a;
+            a.action = std::atoi(f[0].c_str());
+            a.arg = f.size() > 1 ? std::atoi(f[1].c_str()) : 0;
+            s.actions.push_back(a);
+        }
+        d.scripts.push_back(s);
+    }
+    for (const auto& kv : map.section("TaskForces")) {
+        const std::string id = strip(kv.second);
+        if (!map.has(id)) continue;
+        std::vector<MapTaskMember> ms;
+        for (int n = 0; n < 6; ++n) {
+            const std::string v = map.get(id, std::to_string(n), "");
+            if (v.empty()) continue;
+            const std::vector<std::string> f = split_csv(v);
+            if (f.size() < 2) continue;
+            MapTaskMember m;
+            m.count = std::atoi(f[0].c_str());
+            m.type = f[1];
+            ms.push_back(m);
+        }
+        d.taskforces.emplace_back(id, ms);
+    }
+    for (const auto& kv : map.section("TeamTypes")) {
+        const std::string id = strip(kv.second);
+        if (!map.has(id)) continue;
+        MapTeamType t;
+        t.id = id;
+        t.name = map.get(id, "Name", "");
+        t.house = strip(map.get(id, "House", ""));
+        t.script = strip(map.get(id, "Script", ""));
+        t.taskforce = strip(map.get(id, "TaskForce", ""));
+        const std::string tg = strip(map.get(id, "Tag", ""));
+        t.tag = ieq(tg, "None") ? std::string() : tg;
+        const std::string wp = strip(map.get(id, "Waypoint", ""));
+        t.waypoint = wp.empty() ? -1 : map_waypoint_letters(wp);
+        t.max = map.get_int(id, "Max", 0);
+        t.full = yes(map.get(id, "Full", "no"));
+        t.veteran_level = map.get_int(id, "VeteranLevel", 0);
+        d.teams.push_back(t);
+    }
+    return d;
+}
+
+int mission_from_name(const std::string& name) {
+    static const char* kNames[] = {
+        "Sleep", "Attack", "Move", "QMove", "Retreat", "Guard", "Sticky", "Enter",
+        "Capture", "Eaten", "Harvest", "Area Guard", "Return", "Stop", "Ambush", "Hunt",
+        "Unload", "Sabotage", "Construction", "Selling", "Repair", "Rescue", "Missile",
+        "Harmless", "Open", "Patrol"};
+    for (int i = 0; i < (int)(sizeof kNames / sizeof kNames[0]); ++i)
+        if (ieq(name, kNames[i])) return i;
+    return kMissionGuard;
+}
+
+MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const MapTeamView& view,
+                             long frame) {
+    MapTeamCommand c;
+    if (st.done) { c.kind = MapTeamCommand::Kind::Done; return c; }
+    // Guard against a jump cycle that only contains instant actions.
+    for (int guard = 0; guard < 64; ++guard) {
+        if (st.pc < 0 || st.pc >= (int)script.actions.size() || view.live_members <= 0) {
+            st.done = true;
+            c.kind = MapTeamCommand::Kind::Done;
+            return c;
+        }
+        const MapScriptAction& a = script.actions[(std::size_t)st.pc];
+        c.action = a.action;
+        c.arg = a.arg;
+        c.fresh = !st.issued;
+        auto advance = [&]() { ++st.pc; st.issued = false; st.wait_until = -1; };
+        switch (a.action) {
+        case kSaMoveWaypoint:
+        case kSaPatrol:
+        case kSaMoveCell:
+        case kSaGatherEnemy:
+        case kSaGatherBase:
+        case kSaMoveEnemyBuilding:
+            if (!view.waypoint_ok && st.issued) { advance(); continue; }
+            if (st.issued && view.arrived) { advance(); continue; }
+            c.kind = a.action == kSaMoveCell ? MapTeamCommand::Kind::MoveCell
+                                             : MapTeamCommand::Kind::MoveWaypoint;
+            st.issued = true;
+            return c;
+        case kSaAttack:
+        case kSaAttackWaypoint:
+        case kSaAttackEnemyBuilding:
+            if (st.issued && (!view.target_exists || view.members_idle)) { advance(); continue; }
+            c.kind = a.action == kSaAttack ? MapTeamCommand::Kind::Attack
+                   : a.action == kSaAttackWaypoint ? MapTeamCommand::Kind::AttackWaypoint
+                                                   : MapTeamCommand::Kind::AttackBuilding;
+            st.issued = true;
+            return c;
+        case kSaGuard:
+            if (!st.issued) {
+                st.issued = true;
+                st.wait_until = frame + (long)a.arg * kMapGuardFramesPerArg;
+                c.kind = MapTeamCommand::Kind::Guard;
+                return c;
+            }
+            if (frame >= st.wait_until) { advance(); continue; }
+            c.kind = MapTeamCommand::Kind::Guard;
+            return c;
+        case kSaJump:
+            // RE §7: the cursor is set to arg-2 and then advanced -> line arg-1.
+            st.pc = a.arg - 1;
+            st.issued = false;
+            st.wait_until = -1;
+            // A jump consumes the tick (no spin).
+            c.kind = MapTeamCommand::Kind::None;
+            return c;
+        case kSaDoMission:
+            c.kind = MapTeamCommand::Kind::Mission;
+            advance();
+            return c;
+        case kSaWin: c.kind = MapTeamCommand::Kind::Win; advance(); return c;
+        case kSaLose: c.kind = MapTeamCommand::Kind::Lose; advance(); return c;
+        case kSaSetGlobal: c.kind = MapTeamCommand::Kind::SetGlobal; advance(); return c;
+        case kSaClearGlobal: c.kind = MapTeamCommand::Kind::ClearGlobal; advance(); return c;
+        case kSaSetLocal: c.kind = MapTeamCommand::Kind::SetLocal; advance(); return c;
+        case kSaClearLocal: c.kind = MapTeamCommand::Kind::ClearLocal; advance(); return c;
+        case kSaChangeHouse: c.kind = MapTeamCommand::Kind::ChangeHouse; advance(); return c;
+        case kSaScatter: c.kind = MapTeamCommand::Kind::Scatter; advance(); return c;
+        case kSaDeleteMembers: c.kind = MapTeamCommand::Kind::DeleteMembers; advance(); return c;
+        default:
+            c.kind = MapTeamCommand::Kind::Skip;
+            advance();
+            return c;
+        }
+    }
+    c.kind = MapTeamCommand::Kind::None;
+    return c;
+}
+
+}  // namespace ra2engine

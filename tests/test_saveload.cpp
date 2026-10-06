@@ -118,6 +118,7 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(Superweapon);
     CHECK_ARITY(RepairSellRules);
     CHECK_ARITY(World::HouseRec);
+    CHECK_ARITY(CampaignHostSave);   // P10
     CHECK_ARITY(QueueSlot);
     CHECK_ARITY(ProductionState);
     CHECK_ARITY(DifficultyMods);
@@ -179,7 +180,7 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
     CHECK(sizeof(World) == 3600);
-    CHECK(sizeof(MapTriggerSystem) == 360);
+    CHECK(sizeof(MapTriggerSystem) == 368);   // P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 88);
     CHECK(sizeof(Occupancy) == 32);
     CHECK(sizeof(ProductionQueues) == 224);

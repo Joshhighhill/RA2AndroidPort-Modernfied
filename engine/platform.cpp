@@ -110,6 +110,7 @@ bool Platform::poll(InputEvent& ev) {
                     case SDLK_DOWN: ev.key = kKeyDown; break;
                     case SDLK_DELETE: ev.key = kKeyDelete; break;
                     case SDLK_F10: ev.key = kKeyF10; break;
+                    case SDLK_F1: ev.key = kKeyF1; break;
                     default: ev.key = 0; break;
                 }
                 ev.kind = ev.key ? InputEvent::Key : InputEvent::None;

@@ -229,6 +229,9 @@ target_sources(ra2assets_tests PRIVATE tests/test_projectile.cpp engine/projecti
 # (TagClass/TriggerClass/TEvent/TAction semantics over an abstract TriggerHost).
 # World-free; compiled into both this test binary and ra2engine.
 target_sources(ra2assets_tests PRIVATE tests/test_map_trigger.cpp engine/map_trigger.cpp)
+# P10 Campaign missions [RE: campaign.md]: control files, [Basic], object
+# records, BorrowedTime mission end, map-team script interpreter. World-free.
+target_sources(ra2assets_tests PRIVATE tests/test_campaign.cpp engine/campaign.cpp)
 # P5 Veterancy + Crates [RE: veterancy.md]: the pure veterancy formulas and the
 # crate RNG/powerup math. engine/world.cpp (already on test_world's line) calls
 # into both, so they are compiled into the test binary here once.
