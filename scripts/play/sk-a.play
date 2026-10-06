@@ -103,6 +103,14 @@ place auto
 until 300 built(0,GAWEAP) == 1
 click tab:3
 assert cameo(CMIN) == 1                       @G-22:A
+# rulesmd [AMCV] Prerequisite=GAWEAP,GADEPT: the MCV needs a Service Depot.
+click tab:0
+click cameo:GADEPT                              @G-22:A
+until 1800 queue_ready(structure) == 1        @G-22:A
+click cameo:GADEPT                              @G-22:A
+place auto                                    @G-22:A
+until 300 built(0,GADEPT) == 1                  @G-22:A
+click tab:3
 assert cameo(AMCV) == 1                       @G-22:A
 click cameo:MTNK
 until 1500 units(0,MTNK) >= 1
