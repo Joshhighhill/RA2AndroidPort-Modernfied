@@ -1336,7 +1336,9 @@ non-combatant; `starting_cash = rules.mp_money()`) reproducing exactly the world
 the old `run_interactive` built. The asset-dependent `launch_skirmish(cfg,
 Assets&, UnitAssets&, BuildingAssets&, Rules&)` stays in `main.cpp` (it needs the
 main-local asset statics): it `build_world`s, calls `configure_skirmish_houses`,
-then per-slot spawns a base (`spawn_base`) + `unit_count` starting units + an MCV,
+then per-slot spawns a base (`spawn_base`) + `unit_count` starting units (gates
+only — real play now starts from an MCV, see "Real play: MCV, skirmish start,
+game over"),
 re-calls `enable_ai_house` with the full roster-backed `make_ai_config` per AI
 slot (last-call-wins overwrite of the minimal config), and grants each combatant
 its superweapon — the Allied Construction Yard being the only base type spawned
@@ -1894,9 +1896,9 @@ bridges the player's wallet into the World pool while a repair runs.
 The **20th determinism gate**, `--demo-repair`, pins
 `repair_hash=30e49667c9c6e52d`.
 
-**Carry-forwards (documented, not implemented):** `UndeploysInto`/MCV redeploy
-(no deploy machinery; the plain-refund branch the clone takes is a reachable
-configuration of the original, §D7); AI auto-repair/auto-sell (eight unanchored
+**Carry-forwards (documented, not implemented):** (`UndeploysInto`/MCV
+redeploy is now implemented by gap F: a human skirmish ConYard sold with
+`MCVRedeploys=yes` packs into its MCV; campaign/AI keep the plain refund, §B6); AI auto-repair/auto-sell (eight unanchored
 offsets plus a `Random(0,50)` draw that would perturb the AI gates, §D3); the
 Service Depot docked-unit sell (`GAAIRC` sets `UnitReload=yes` but nothing can
 dock, §D2); the mind-control sell veto (§D6); the captured-building ×2 survivor
@@ -2296,13 +2298,15 @@ chrono script actions are skipped; Allied 1's dreadnought shelling of the
 Statue is held (Patriot interception not modelled); symmetric alliance teams;
 enemy base build-out (ProductionBegins/AI triggers for map houses) not run;
 aircraft objects not placed; object facing/sub-cell/veterancy/Sleep not
-applied; MCV deploy absent (Soviet 1 is won with the reinforcements); unit stats
+applied; MCV deploy now exists (gap F, see "Real play: MCV, skirmish start,
+game over"); unit stats
 from `rulesmd.ini` (RA2 `rules.ini` only for index spaces); map-embedded rules
 overrides ignored; civilian building art uses the temperate candidate walk.
 
 **Carry-forwards:** team transport delivery + paradrops, missile interception,
-MCV deploy, map rules overrides, enemy base AI from map `[<House>]` IQ/nodes,
-per-house TechLevel on the sidebar, crates from triggers (108), bridges.
+map rules overrides, enemy base AI from map `[<House>]` IQ/nodes, bridges.
+(MCV deploy, the player's TechLevel cap, trigger crates (108), reshroud (101),
+fire sale (9) and events 29/44/25/26 landed in gap F.)
 
 ## Building
 
@@ -2630,12 +2634,12 @@ the P6 Roster Breadth gate.
 | `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
 | `--demo-repair` | `repair_hash=30e49667c9c6e52d` | `deterministic=yes lines=8`; repair = a GLOBAL 14-frame phase (`trunc(RepairRate*900)`, NOT 15) × +8 HP × `stepCost=max(1,trunc((Cost/(Strength/RepairStep))*RepairPercent))` with BOTH divisions integer (GACNST 3/step, GAPOWR 1/step); `steps=6 first=0 gap=14 heal8=yes charge=yes`; auto-stop at full; silent stop when broke (`hp=718->718`, no partial step, no free repair); refusals `enemy/under_construction/unsellable_caoild/already_selling=refused`, `full_health_conyard_sellable=yes` (NO last-ConYard rule); ConYard sell = a 30-frame MISSION, `paid_early=no paid=1500 survivors=3`, footprint freed; GAREFN `Soylent` sale `paid=300 survivors=1`; 25 wedge guards armed (`docs/re/repair-sell.md`) |
 | `--demo-projectile` | `projectile_hash=44cdd50b67f276e9` (gap fix C re-pin, was `1ff09b8a3d3eecdd`: G-42 speed + G-50 rearm jitter shift frames; every witness value unchanged) | `deterministic=yes`; P2 Projectile flight: firewall (instant path when not enabled, `events=0`), Rhino arc (`speed=90` == `ftol(sqrt(d*6*1.2))`, 13 frames, apex 175, damage only at detonation), miss (target walked off -> `victim=-1 damage=0`), Kirov bomb (`speed=1` from `z=610`, 37 frames, both splash targets hit), Flak Track scatter (5/5 shots scattered by the dedicated RNG) (`docs/re/projectile.md` §12) |
-| `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
+| `--demo-triggers` | `trigger_hash=b8cd267e98f5e002` | `deterministic=yes lines=76`; **re-pinned by gap F (G-95)**: bisected on the first-parent merges -- P5 84b8217 prints the old `20347f4dfa462eb4` with `placed structures=66`, P6 7e754d5 prints `02f4226456db131d` with 70, gap A 5948a41 (and master fddbcb3, and gF) print `b8cd267e98f5e002` with 82; the witness diffs ONLY in that placed-structure count and the end-of-run building total (the bigger rosters let `place_map_objects` resolve more of `sov07tmd`'s `[Structures]`), every trigger fire/action line is identical; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
-| `--demo-saveload` | `saveload_hash=2511ec3d0deec668` (gap D re-pin) | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-saveload` | `saveload_hash=4876e19f292871e3` (combined gap D + gap F re-pin) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
-| `--demo-campaign` | `campaign_hash=17830b0f7c233223` (gap D re-pin) | `deterministic=yes lines=737`; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
+| `--demo-campaign` | `campaign_hash=b1d3c453c416e4fb` (combined gap D + gap F re-pin) | `deterministic=yes lines=737`; **combined re-pin**: gap D (`17830b0f7c233223`, lines 737: campaign enemy houses build out from ProductionBegins/AI triggers) plus gap F: actions 108 executed (logged `CreateCrate ... -> skipped` in the gate, whose World has no crate system), ALL01 reinforcement ships on water instead of the nearest land cell (fewer EnteredBy raises), death raises in the recovered order 7, 48, 29; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
 **Gap owner A re-pins (real-play economy/production, docs/gap G-20..G-30).**
 --demo-skirmish e9ad3f1fd88495f9 -> fde3f587e747f765 and --demo-maps
@@ -2811,9 +2815,10 @@ Expected output: `machine=0xb7 AArch64`.
 `android/` is a self-contained SDL2 Android project that packages the whole
 engine (all of `engine/*.cpp` + the `ra2assets` library from `src/`) into an
 installable **arm64-v8a** APK. `SDLActivity` loads `libSDL2.so` + `libmain.so`
-and calls `SDL_main` (our `engine/main.cpp`), which on Android launches
-straight into the interactive scene — tap to select the unit, tap to move
-(A\* + walk animation), drag to pan. No menus.
+and calls `SDL_main` (our `engine/main.cpp`), which on Android opens the same
+main menu as the desktop build (`run_menu`: Single Player -> New Campaign /
+Skirmish / Load). Touch input is described in the controls section (gap
+owner B); this section only covers building and packaging.
 
 The native `.so` list and the source lists come from the same
 `cmake/ra2_sources.cmake` the desktop build uses, so the two cannot drift.
@@ -2844,8 +2849,11 @@ ndk.dir=D:/android-ndk-r27c
 ### Build the APK
 
 ```powershell
-$env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
+$env:JAVA_HOME = "C:\Program Files\Java\jdk-21.0.12"   # the installed JDK 21 dir (was jdk-21)
 $env:ANDROID_HOME = "D:\android-sdk"
+# A git worktree has no desktop build/_deps; point the jni build at any
+# SDL 2.30.9 source tree instead:
+# $env:RA2_SDL2_SRC_DIR = "D:\ra2-android\build\_deps\sdl2-src"
 Set-Location D:\ra2-android\android
 .\gradlew.bat assembleDebug
 ```
@@ -2882,10 +2890,25 @@ run time from the app's own external files dir.
    ```
 2. **Place your own game files** where the app reads them. The engine reads the
    mix chain from `SDL_AndroidGetExternalStoragePath()/ra2/`, i.e.
-   `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2/`. Push at least
-   `mapsmd03.mix`, `ra2.mix`, and `ra2md.mix` (the loader opens the
-   theater/config/palette/unit mixes nested inside `ra2.mix`/`ra2md.mix`, so
-   push the full set you own).
+   `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2/`. The menu,
+   skirmish and campaign open these files from that folder (gap G-72 — the old
+   three-file list made Skirmish/Campaign die with `fatal: cannot open file`):
+
+   | File | Needed by |
+   |---|---|
+   | `ra2.mix` | everything (rules/art/theaters/units/shell art, nested mixes) |
+   | `ra2md.mix` | rulesmd/artmd/soundmd/evamd, YR voxels |
+   | `language.mix` | audio.mix (voices, EVA), cameo.mix, CSF |
+   | `langmd.mix` | YR map names (skirmish map list) |
+   | `multimd.mix` | the skirmish maps |
+   | `mapsmd03.mix` | the engine's historical default map (no map picked) |
+   | `theme.mix` | the menu music |
+   | `expand01.mix` | the campaign `rules.ini` patch |
+   | `Maps01.mix`, `MAPS02.MIX` | Allied / Soviet campaign maps |
+   | `ra2.csf` | the patched string table (falls back to language.mix's copy) |
+
+   Android's file system is **case-sensitive**: keep the names exactly as
+   above (`Maps01.mix` but `MAPS02.MIX`, as the retail install ships them).
 
    **The files must be readable by the app** — this is the #1 cause of "it
    opens then instantly closes". `Android/data/<pkg>/` is scoped storage, so:
@@ -2901,16 +2924,16 @@ run time from the app's own external files dir.
    ```powershell
    # non-root push (correct label); create the dir first if needed
    adb shell mkdir -p /sdcard/Android/data/org.ra2.engine/files/ra2
-   adb push "D:\Red Alert 2\mapsmd03.mix" /sdcard/Android/data/org.ra2.engine/files/ra2/
-   adb push "D:\Red Alert 2\ra2.mix"      /sdcard/Android/data/org.ra2.engine/files/ra2/
-   adb push "D:\Red Alert 2\ra2md.mix"    /sdcard/Android/data/org.ra2.engine/files/ra2/
+   foreach ($f in "ra2.mix","ra2md.mix","language.mix","langmd.mix","multimd.mix",
+                  "mapsmd03.mix","theme.mix","expand01.mix","Maps01.mix","MAPS02.MIX","ra2.csf") {
+     adb push "D:\Red Alert 2\$f" /sdcard/Android/data/org.ra2.engine/files/ra2/
+   }
    ```
 3. **Launch** the app (`RA2 Engine`) from the launcher, or:
    ```powershell
    adb shell am start -n org.ra2.engine/.RA2Activity
    ```
-   It opens into the real temperate map; tap-select and tap-move work with
-   touch. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
+   It opens the main menu. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
 
    **Diagnosing failures:** the engine logs to Android logcat under the
    `SDL/APP` tag. On startup it prints `[assets] android asset dir = <path>`,
@@ -3123,6 +3146,56 @@ controls self-test as a script) and `probe-*` self-checks. Run them ONE at a
 time (`pwsh scripts/play/run-all.ps1`); ~15 s start-up, then ~400 frames/s with
 `set render_every 300`. Expected results per tree and the G-ID / owner of every
 failing step: `docs/gap/PLAYTEST-STATUS.md`.
+## Real play: MCV, skirmish start, game over (gap F: G-02/14/15/17/23/72-75)
+
+Everything below runs in the **real** game (`run_menu` -> lobby Start /
+New Campaign -> `GameScene`); the byte-identity gates keep their own setup.
+Recovery notes: `docs/re/mcv-deploy.md` (gamemd.exe listings).
+
+- **MCV deploy (G-23).** `AMCV`/`SMCV` (`DeploysInto=`) deploy by clicking the
+  selected MCV (ACTION_SELF), the D key, or `World::order_deploy_mcv` (the
+  order D's AI and campaign scripts call). Recovered rule: the ConYard's origin
+  is the MCV cell + AdjacentCell[NW] (-1,-1) for a foundation wider/taller than
+  2; every foundation cell must be clear (no adjacency test); the MCV turns to
+  the building's `DeployFacing` (default 0x80) and then unfolds with the
+  buildup animation, health ratio carried. An illegal spot makes the MCV drive
+  to the first legal cell of the recovered 36-offset ring; a failed unfold says
+  `EVA_CannotDeployHere`. A human's skirmish ConYard sold with
+  `MCVRedeploys=yes` packs back into its MCV (`UndeploysInto`).
+- **Skirmish start (RE-E2).** No pre-built base: each combatant gets its
+  country's `BaseUnit` MCV on its start plus the recovered `UnitCount` force
+  (`FUN_006880F0`: budget = (UnitCount-1) x average Cost of all
+  `AllowedToStartInMultiplayer` types; vehicles while under 2/3 of it, then
+  infantry; Owner/TechLevel filtered; scattered at distance >= 4). Starts:
+  first house random, each next the farthest free start. AI houses unfold at
+  once. ShortGame defeat needs no building **and** no MCV. The camera opens on
+  the player's MCV. [RE-FALLBACK: a map-seeded LCG instead of the session RNG.]
+- **Game over (G-02).** Victory / defeat flag `EVA_YouAreVictorious` /
+  `EVA_YouHaveLost` with `TXT_VICTORIOUS` / `TXT_LOST`, a defeated opponent
+  `EVA_PlayerDefeated` + `TXT_PLAYER_DEFEATED`; after BorrowedTime the result
+  page (time, kills/losses) offers REMATCH or MAIN MENU. [RE-FALLBACK: the MP
+  score screen layout is not recovered.]
+- **Confirms (G-14).** Exit Game asks `GUI:ExitAreYouSure` (OK/Cancel, dialog
+  0x120); Abort Mission asks `GUI:AskAbortMission` (Abort / Restart in a
+  campaign / Resume Mission, dialog 0x121).
+- **Lobby (G-17).** The player cell cycles the nine playable countries (CSF
+  names); the side follows the country's `Side=`; Yuri is gone; AI players
+  are clamped to the map's MaxPlayers-1. The colour index stays in
+  `HouseRec.color_ix` for the remap.
+- **TechLevel (G-15).** The sidebar offers only types with `TechLevel <=` the
+  lobby slider (skirmish) or the mission's `[<Player>] TechLevel=` (ALL01/SOV01
+  = 3).
+- **Campaign (G-73/74/75).** Events 29 (after 48 on every death), 44
+  AttackedByHouse (attacker inferred from target assignments [RE-FALLBACK]),
+  25/26 crossing lines (row/column cell tags on cell entry) are raised;
+  actions 108 CreateCrate, 101 reshroud, 9 FireSale [RE-FALLBACK: sells at
+  once] run; ships arrive on water, ground reinforcements at sea land on the
+  nearest shore [RE-FALLBACK: no transport delivery].
+
+**Verify:** `ra2engine --gf-play skirmish|soviet|win|lose|confirm|campaign:<MAP>[:GDI|Nod[:frames]] [outdir]`
+drives the real scene tree at a fixed 1/15 s tick and prints `gf_play PASS/FAIL`
+lines plus PNGs; `ra2assets_tests -tc="mcv:*"` covers the World deploy rules.
+
 
 ## Real-play AI (gap fix D, G-60..G-69)
 
@@ -3137,7 +3210,7 @@ slot now runs all three layers in real play (`engine/ai_skirmish.inc`,
 |---|---|---|
 | G-60 / G-62 | AI-2 teams + AI-3 triggers armed for every AI slot (both sides' ground roster, real rulesmd prerequisites, Owner-filtered per house); a team whose TaskForce the house can neither build nor recruit idle is not created (`FUN_0041ff00`, ai-trigger.md §5); team moves give up after 10 s without progress [RE-FALLBACK] | `--ai-soak`, `sk-a` L117, `sk-s` L94-L95, `sk-a-lose` L19-L20 |
 | G-61 | ONE ScriptType table for AI-2 and the campaign: the 65-entry executor at `0x6E94E4` (`engine/script_actions.hpp`); guard = arg x15 frames, jump 1-based, 49 = success flag + continue, 53/54 gather/regroup, 46/47/58 building targets, YRpp QuarryType | `docs/re/ai-team.md` §3 (rewritten), c13/c14 logs |
-| G-63 | lobby AI difficulty -> `house+0x184 = 2 - lobby` (`FUN_004f6dd0` AssignHandicap; Brutal runs on `[Easy]`); FirePower/ROF handicaps applied (Armor/Groundspeed: no reader found, not applied) | `D:a2-reixDout` |
+| G-63 | lobby AI difficulty -> `house+0x184 = 2 - lobby` (`FUN_004f6dd0` AssignHandicap; Brutal runs on `[Easy]`); FirePower/ROF handicaps applied (Armor/Groundspeed: no reader found, not applied) | `D:a2-reixDout` |
 | G-64 | side-correct catalogs from the `[AI]` Build* lists filtered by AIBasePlanningSide/Owner/RequiredHouses/ForbiddenHouses; country checked against `[Sides]` (NEW-4) | `sk-s` L88-L90 |
 | G-65 | AI repair (`FUN_00450620`: money >= CreditReserve, one start per RepairDelay window) and sell (money < CreditReserve, health < ConditionRed) | `--ai-soak --damage-ai-at 4` |
 | G-66 | AI plans BuildTech + its AIBuildThis superweapon structures; a charged SW fires at the enemy's highest-AIIonCannon*Value target (`FUN_00509710` / `FUN_0050ca10`) | World test, `--ai-soak` (NAMISL by min 40) |

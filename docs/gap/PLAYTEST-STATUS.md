@@ -56,6 +56,34 @@ Determinism: every script was run twice on the same tree with identical
 every 15 frames). No `play_hash` is pinned yet — a hash is pinned only once its
 script passes (ROADMAP-playable §G rule 6).
 
+### gF-mcv-endgame over master 354bdd0 (A, A2, B, C, D, E + F)
+
+Every playable-core script, run one at a time on the gF branch tip after
+merging 354bdd0. **All eight PASS.**
+
+| Script | Result | play_hash |
+|---|---|---|
+| `sk-a` | PASS | `3b6e89700a245a8e` |
+| `sk-s` | PASS | `16646d40ae6a7c0e` |
+| `sk-end` | PASS | `58405a4c35ce5b92` |
+| `sk-a-lose` | PASS (the AI kills the passive player's start force/MCV; LOST -> result) | `b6ad9d31bacd502a` |
+| `m-all01` | PASS | `a329b0e3e0fe4399` |
+| `m-sov01` | PASS | `660ff6e0587afc40` |
+| `m-lose` (new, NEW-2) | PASS | `3935514c32dbd9be` |
+| `shell-smoke` | PASS | `da65d96ad04737f4` |
+
+F rows closed: NEW-1 (camera on the player's MCV), NEW-2 (ALL01 ends LOST via
+its own trigger chain), G-02 (skirmish WON/LOST -> BorrowedTime -> result ->
+menu), G-14 (Exit / Abort confirms: `confirm_open`, `confirm:yes|no`), G-15
+(TechLevel cap in campaign and skirmish), G-23 (MCV start + deploy).
+
+Script edits made for the MCV start (the skirmish no longer ships a base):
+`shell-smoke` unfolds the AMCV before its placement steps; `sk-s` checks the
+structure cameos after the SMCV unfolds (no ConYard = no structure strip);
+`sk-a` L47 waits for the stopped GI to finish the cell it was entering (Stop
+semantics in unit_orders.cpp) instead of asserting after exactly 2 frames;
+`sk-end` waits for `scene == result` after the LOST flag (BorrowedTime).
+
 ## Failures by script
 
 ### sk-a — Allied vs 1 Soviet AI

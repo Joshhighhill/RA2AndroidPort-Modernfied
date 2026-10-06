@@ -63,6 +63,10 @@ struct BuildingTypeDef {
                                     // building sets it" was WRONG. Verified in rulesmd.]
     bool click_repairable = true;   // ClickRepairable= [§A4] DEFAULT YES
     bool crewed           = false;  // Crewed=          [§B3] gates survivor spawn
+    // gF [RE: docs/re/mcv-deploy.md]: BuildingType DeployFacing= (+0xEDC,
+    // ctor default 0x80, read as /32*32 by FUN_0045FE40) -- the facing an
+    // MCV turns to before it unfolds into this type.
+    int  deploy_facing    = 0x80;
     bool ore_purifier     = false;  // OrePurifier=     gap owner A (G-27) [RE: economy.md §2]
     int  soylent          = 0;      // Soylent=         [§B1] absolute refund override
                                     // [RE-GATE APPLIED §D0: GAREFN/NAREFN set Soylent=300,

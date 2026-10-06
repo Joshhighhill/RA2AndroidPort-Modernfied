@@ -105,6 +105,7 @@
         // `outcome` stays RUNNING there; `world_outcome` is the World's view.
         std::string outcome = "RUNNING";
         if (campaign_ && campaign_->outcome() != 0) outcome = campaign_->outcome() == 1 ? "WON" : "LOST";
+        else if (!campaign_ && gf_outcome_ != 0) outcome = gf_outcome_ > 0 ? "WON" : "LOST";   // gF G-02
         p.set_s("outcome", outcome);
         std::string wo = "RUNNING";
         if (world_.victory_enabled()) {
@@ -173,6 +174,7 @@
         p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
         p.set("dialog_open", 0);
         menu_.play_probe(p);
+        gf_abort_.play_probe(p);   // gF G-14: Abort Mission confirm
         sld_.play_probe(p);
         p.set_s("banner", (!banner_.empty() && SDL_GetTicks() < banner_until_) ? banner_ : "");
         if (campaign_) {

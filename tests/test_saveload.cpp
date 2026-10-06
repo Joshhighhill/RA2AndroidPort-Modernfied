@@ -112,6 +112,7 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(Projectile);
     CHECK_ARITY(ProjectileEvent);
     CHECK_ARITY(CargoEvent);
+    CHECK_ARITY(World::DeployEvent);   // gF
     CHECK_ARITY(Cellxy);
     CHECK_ARITY(SeqEntry);
     CHECK_ARITY(UnitAnimSeq);
@@ -179,7 +180,7 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 3640);   // gap fix C: + fire_events_ + combat_rng_
+    CHECK(sizeof(World) == 3744);   // gap C fire_events_/combat_rng_ + gF MCV deploy state; unchanged by gap D (save v6)
     CHECK(sizeof(MapTriggerSystem) == 368);   // P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 88);
     CHECK(sizeof(Occupancy) == 32);
