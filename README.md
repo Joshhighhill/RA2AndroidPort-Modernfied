@@ -1350,8 +1350,8 @@ with three subclasses — `MainMenuScene`, `SkirmishSetupScene`, and `GameScene`
 (a verbatim lift of the old `run_interactive` body with the scenario replaced by
 `launch_skirmish`). The menu → setup → game flow: the main menu shows Skirmish
 and Quit live with the other entries (Campaign, Multiplayer, Load, Options,
-Movies, Credits) drawn as greyed stubs; Skirmish opens the setup screen (per-slot
-side/color/AI-difficulty, cash/unit-count/tech sliders, alliance teams); Start
+Movies, Credits) drawn as greyed stubs; Skirmish opens the setup screen (now the
+faithful dialog-0x102 page, see "Skirmish setup page (dialog 0x102)"); Start
 builds a `SkirmishConfig` and hands it to `GameScene`, which calls
 `launch_skirmish`. The framework is wired only at the two NON-gate `main()`
 seams — the gate-dispatch ladder (all seventeen `--demo-*` arms) runs and returns
@@ -1718,6 +1718,55 @@ Network / Internet / Load / Options / Sneak Peeks as greyed stubs (LIVE =
 Skirmish + Quit, `mainmenu.md` §7 item 3); the Allied/Soviet loadscreens
 (`aloadlg.pcx` / `rloadlg.pcx`) between menu and game; the intro movie; animated
 menu elements; the Yuri faction; and all prior-phase carry-forwards.
+
+## Skirmish setup page (dialog 0x102)
+
+The placeholder lobby (blue boxes over the in-game options panel, one global
+AI count/difficulty, Team and Tech Level rows) is replaced by a reproduction of
+RA2's Skirmish page, calibrated to `docs/gap/07-skirmish-page.md` (layout spec
+of dialog `0x102`/`0x6B`, CSF keys, `game.exe` 1.006 behaviour). Files:
+
+- `engine/skirmish_lobby.{hpp,cpp}` (pure, unit-tested in
+  `tests/test_skirmish_lobby.cpp`): `LobbyState` = name + 8 fixed rows
+  `{ai, country, colour}` + Game Speed/Credits/Unit Count + the five checkboxes;
+  RA2.INI `[Skirmish]` (`GameMode ScenIndex GameSpeed Credits UnitCount
+  ShortGame SuperWeaponsAllowed BuildOffAlly MCVRepacks CratesAppear
+  Slot01..07=type,country,color`, types None 1 / Brutal 4 / Medium 5 / Easy 6)
+  and `[MultiPlayer] Handle/Color/ColorEx/Side/SideEx` with the original's
+  spellings (`ScenFile=` is an extra clone key for the map round trip);
+  exclusive colours; rows past the map's max closed; validation
+  (`TXT_SCENARIO_TOO_SMALL`, `TXT_NEED_AT_LEAST_TWO_PLAYERS`); Random
+  resolution as `FUN_00672BB0` (country uniform over the playable countries,
+  colour uniform over the free ones); `lobby_to_config` builds the
+  `SkirmishConfig` (FFA, rules TechLevel, hidden Neutral house, lobby colour ->
+  house colour table, per-row level -> `AiDifficulty` with class = 2 - choice).
+- `engine/shell_widgets.inc`: the shared shell control skins (`ShellPainter`:
+  trackbar/checkbox/combobox/edit; `ShellList`: dropped list/listbox). The
+  Options page draws through it too (pixel-identical `--menu-shot`).
+- `engine/skirmish_page.inc`: the scene. `draw_shell` with SDTP frame 1 and no
+  WARNING monitor/Bink; Start Game / Customize Battle / Back in sidebar rows
+  1/2/5; the `[PreviewPack]` thumbnail with its baked start markers in the
+  monitor well, "Battle" + map name under it; STT tooltips on the status line;
+  flags from `local.mix`; Customize Battle (Game Type + Game Map lists, Use
+  Map, Random Map greyed, Cancel). Start validates, saves RA2.INI (also
+  `[Options] GameSpeed`, as `0x6829F0` writes OptionsClass+0) and launches;
+  Back/Esc save and return to Single Player.
+
+Consumed in game: Game Speed drives the logic tick rate for a lobby game
+(`cfg.game_speed`); MCV Repacks sets `World::set_mcv_redeploys` (sold ConYard
+undeploys); Superweapons off also removes `SuperWeapon=` structures from the
+human sidebar and the AI plan (the `[AI] BuildTech` tech centres stay);
+Build Off Ally is shown greyed and persisted untouched (RA2-classic).
+`MPBattleMD.ini` only sets `[MultiplayerDialogSettings] AlliesAllowed=yes`, so
+the Battle mode override has nothing to apply. Gates never enter the lobby;
+`--demo-skirmish` / `--demo-maps` hashes are unchanged.
+
+`--play` targets on the page: `button:<label>` (+ `start` / `back`),
+`edit:name`, `combo:ai<N>` / `combo:country<N>` / `combo:color<N>`, while a list
+is open `pick:<label>` / `item:<i>` / `list:up` / `list:down`, `check:<short|
+mcv|crates|superweapons>`, `slider:<speed|credits|units>=<value>`, and on
+Customize Battle `map:<file>`. `scripts/play/sk-lobby.play` drives every
+control and asserts each choice through the game probe.
 
 ## Map Browser / Multi-Map Skirmish
 

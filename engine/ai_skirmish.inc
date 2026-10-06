@@ -154,6 +154,8 @@ void arm_skirmish_ai(ra2engine::World& world, const ra2engine::SkirmishConfig& c
         if (!s.is_ai || !s.combatant) continue;
         ra2engine::AiHouseConfig acfg = make_ai_slot_config(
             s, cfg.starting_cash, ba, rules, rules_ini, ur_ai, aimd, ax, ay, map);
+        // [SK-27] Lobby Superweapons off: the AI plans no SuperWeapon= building.
+        if (!cfg.superweapons) acfg.catalog.superweapons.clear();
         // Register the AI infantry anims so launched infantry animate.
         for (const ra2engine::UnitTypeDef& d : acfg.team.unit_roster)
             if (!d.is_vehicle)

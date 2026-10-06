@@ -47,6 +47,13 @@ struct SkirmishConfig {
     bool                      crates        = false;
     bool                      superweapons  = true;
     bool                      short_game    = true;
+    // Skirmish page (dialog 0x102) options the game consumes. -1 = not set
+    // by a lobby (gates, quick start, loaded saves): GameScene then uses
+    // [Options] GameSpeed and the rules MCVRedeploys, exactly as before.
+    // NOT hashed and NOT saved (a loaded game reads [Options] GameSpeed,
+    // which the page also writes, 0x6829F0: OptionsClass+0 = GameSpeed).
+    int                       game_speed    = -1;      // 0 fastest .. 6 slowest
+    int                       mcv_redeploys = -1;      // MCV Repacks: 1 / 0
 
     // P10 Campaign [RE: campaign.md §3]: a NON-EMPTY campaign_map turns the
     // GameScene into that campaign mission (map from Maps01/MAPS02, houses +

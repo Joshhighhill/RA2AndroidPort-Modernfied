@@ -8,9 +8,19 @@ set on_quit continue
 click button "Single Player"
 click button Skirmish
 require scene == lobby
-click opt:DIFFICULTY:+
-click opt:DIFFICULTY:+
-assert opt(DIFFICULTY) == HARD
+# Skirmish page: row 1 = Brutal Enemy (the hardest per-row level), Russia.
+click combo:ai1
+click "pick:Brutal Enemy"
+click combo:country1
+click list:down
+click list:down
+click list:down
+click pick:Russia
+click combo:color1
+click pick:RED
+click check:crates
+click slider:speed=3
+assert ai(1) == Brutal
 click start
 until 90 scene == game
 require scene == game

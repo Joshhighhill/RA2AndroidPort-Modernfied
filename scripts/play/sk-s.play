@@ -8,11 +8,26 @@ set on_quit continue
 click button "Single Player"
 click button Skirmish
 require scene == lobby
-click slot0:side
+# Skirmish page (dialog 0x102): human Russia; row 1 = Medium Enemy, America,
+# Red; Crates off; Game Speed slider at 3. The country list has no Yuri.
+click combo:country0
+click list:down
+click list:down
+click list:down
+click pick:Russia
+click combo:ai1
+click "pick:Medium Enemy"
+click combo:country1
+click pick:America
+click combo:color1
+click pick:RED
+click check:crates
+click slider:speed=3
 assert side(0) == SOVIET
-click slot1:side
-assert side(1) != YURI                        @G-03:A
-cycle slot1:side side(1) == ALLIED
+click combo:country1
+assert combo_count == 10                      @G-03:A
+key esc
+assert combo_row == -1
 require side(0) == SOVIET and side(1) == ALLIED
 click start
 until 90 scene == game

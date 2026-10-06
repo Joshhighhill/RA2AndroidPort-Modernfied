@@ -1465,6 +1465,7 @@ public:
     // back into when sold by a human in a skirmish session with MCVRedeploys.
     void set_undeploy_unit(int btype, const UnitCombat& c);
     void set_mcv_redeploys(bool on) { mcv_redeploys_ = on; }
+    bool mcv_redeploys() const { return mcv_redeploys_; }
     void set_skirmish_session(bool on) { skirmish_session_ = on; }
     std::vector<DeployEvent> take_deploy_events();
     void step_deploy(double dt);

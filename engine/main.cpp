@@ -69,6 +69,7 @@
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
+#include "skirmish_lobby.hpp"
 #include "maplist.hpp"
 #include "map_trigger.hpp" // MapTriggerSystem (P9 Map triggers; --demo-triggers only)
 #include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
@@ -86,6 +87,7 @@
 #include "ra2assets/ini.hpp"
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: ra2assets::LandType (resolve_land_types)
 #include "ra2assets/map.hpp"
+#include "ra2assets/mappack.hpp"
 #include "ra2assets/fnt.hpp"       // Westwood shell font (menu labels) [Task 5]
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
@@ -5066,7 +5068,12 @@ public:
         // sets how many 1/15-s logic ticks run per wall second (fps/15: speed
         // 1 = 4x, 3 = 1.33x, 4 = 1x). No user settings (headless probes,
         // gates) -> 1x, i.e. exactly the old behaviour.
-        logic_acc_ += dt * (g_user_settings
+        // [SK-20] A skirmish started from the lobby runs at the page's Game
+        // Speed slider (0x6829F0 stores it as the session speed); other paths
+        // keep [Options] GameSpeed.
+        logic_acc_ += dt * (cfg_.game_speed >= 0
+                                ? ra2engine::game_speed_multiplier(cfg_.game_speed)
+                                : g_user_settings
                                 ? ra2engine::game_speed_multiplier(g_user_settings->game_speed)
                                 : 1.0);
         int logic_steps = 0;
@@ -5952,6 +5959,10 @@ struct MenuArt {
     ra2assets::PcxImage* trofr = nullptr;     // 10x24 readout right cap
     ra2assets::PcxImage* chk_off = nullptr;   // cue_i.pcx 18x18 (unchecked)
     ra2assets::PcxImage* chk_on = nullptr;    // cce_i.pcx 18x18 (checked)
+    // [SK-10] Skirmish-page flag pictures (local.mix, 47x23, magenta key,
+    // FUN_004D1120): 0..8 = usai japi frai geri gbri djbi arbi lati rusi
+    // (the lobby country order), 9 = rani (Random), 10 = obsi (observer).
+    const ra2assets::PcxImage* flags[11] = {};
     // Control text ramps (options.md §4: text yellow 0x00FFFF, disabled dark
     // red 0x00009F) for the 12metfnt glyph shade values.
     const ra2assets::Palette* font_pal_text = nullptr;
@@ -5983,6 +5994,7 @@ struct MenuArtStore {
     std::unique_ptr<ra2assets::PcxImage> logo, title;
     // [P8] Options-page control skins.
     std::unique_ptr<ra2assets::PcxImage> trakgrip, trofl, trofm, trofr, chk_off, chk_on;
+    std::unique_ptr<ra2assets::PcxImage> flags[11];   // [SK-10]
     std::unique_ptr<ra2assets::Font> font;
     ra2assets::Palette font_pal{};
     ra2assets::Palette font_pal_text{}, font_pal_disabled{};   // [P8] yellow / dark red ramps
@@ -6019,7 +6031,38 @@ std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
             mono = std::move(pcm);
         }
         const int id = ma->sys.bank.add(std::move(mono));
+        // [SK-32] Shell GUI sounds (rules [AudioVisual] GUIMainButtonSound /
+        // GUICheckboxSound = MenuClick; combobox open/close = MenuACBOpen /
+        // MenuACBClose), soundmd.ini events over the RA2 audio.mix BAG. Must be
+        // in the bank before the Mixer is built over it. Best-effort.
+        std::map<std::string, ra2engine::MixerSound> gui;
+        try {
+            Ini snd_ini = load_ini_from_ra2md(dir, "soundmd.ini");
+            ra2assets::Sounds sounds = ra2assets::Sounds::load(snd_ini);
+            MixFile language = MixFile::open(read_file(dir + "language.mix"));
+            MixFile audio_mix = language.open_nested("audio.mix");
+            const MixEntry* ie = audio_mix.find("audio.idx");
+            const MixEntry* be = audio_mix.find("audio.bag");
+            if (ie && be) {
+                auto ib = audio_mix.read(*ie);
+                ra2assets::AudioIdx idx = ra2assets::AudioIdx::load(ib.data(), ib.size());
+                const std::vector<uint8_t> bag = audio_mix.read(*be);
+                const std::pair<const char*, const char*> keys[] = {
+                    {"menu:click", "MenuClick"}, {"menu:acbopen", "MenuACBOpen"},
+                    {"menu:acbclose", "MenuACBClose"}};
+                for (const auto& [k, ev] : keys) {
+                    ra2engine::MixerSound s = resolve_sound_event(ma->sys, sounds, idx, bag, ev);
+                    s.global = true;
+                    s.range = 1000.0;
+                    s.bus = ra2engine::AudioBus::Sound;
+                    gui[k] = s;
+                }
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[menu-music] GUI sounds unavailable: " << ex.what() << "\n";
+        }
         ma->sys.mixer = std::make_unique<ra2engine::Mixer>(ma->sys.bank, kAudioRngSeed);
+        for (auto& [k, ms2] : gui) ma->sys.mixer->register_sound(k, ms2);
         ra2engine::MixerSound ms;
         ms.variants.push_back(id);
         ms.volume = 100;
@@ -6097,6 +6140,11 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               store.trofr    = try_pcx(local, "trofr.pcx");
               store.chk_off  = try_pcx(local, "cue_i.pcx");
               store.chk_on   = try_pcx(local, "cce_i.pcx");
+              // [SK-10] Skirmish-page flags (FUN_004D1120 order).
+              static const char* kFlags[11] = {"usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx",
+                                               "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
+                                               "rusi.pcx", "rani.pcx", "obsi.pcx"};
+              for (int fi = 0; fi < 11; ++fi) store.flags[fi] = try_pcx(local, kFlags[fi]);
               // [Task 1] Button palette (mnbttn.shp is drawn under mainbttn.pal).
               if (const MixEntry* be = local.find(std::string("mainbttn.pal"))) {
                   std::vector<uint8_t> bb = local.read(*be);
@@ -6188,6 +6236,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.trofr    = store.trofr.get();
     store.art.chk_off  = store.chk_off.get();
     store.art.chk_on   = store.chk_on.get();
+    for (int fi = 0; fi < 11; ++fi) store.art.flags[fi] = store.flags[fi].get();
     store.art.audio    = store.audio.get();
     // [Task 1] Wire true-design chrome + palettes (non-owning views into store).
     store.art.bg_s          = store.bg_s.get();
@@ -6305,7 +6354,7 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
                 const ShellXform& xf, const std::vector<ShellButton>& buttons,
                 int hover_ix, int pressed_ix, const std::string& header,
                 const std::string& version, int monitor_frame,
-                SDL_Texture* bink_tex = nullptr) {
+                SDL_Texture* bink_tex = nullptr, int sdtp_frame = 0) {
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
     const double canvas_scale = xf.s;
     // The ONE logical->device transform (shared verbatim with the hit-test).
@@ -6342,11 +6391,16 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
     blit_layer("shell:lwscrn", art.lwscrn, 0, shell_pal, 0, 448, 472, 32);
     // 3. Sidebar top: metal panel + WARNING mini-monitor bezel (SDTP frame 0 has
     //    the warning screen baked in; the animation draws INTO the hole on top).
-    blit_layer("shell:sdtp", art.sdtp, 0, shell_pal, 472, 0, 168, 199);
+    //    [SK-01] Pages without the 0x71C mini-monitor (Skirmish 0x102, Customize
+    //    Battle 0x6B) use SDTP frame 1: the large empty monitor that frames
+    //    the map preview 0x468; they pass monitor_frame < 0 (no WARNING loop).
+    blit_layer(sdtp_frame == 1 ? "shell:sdtp1" : "shell:sdtp", art.sdtp,
+               (art.sdtp && sdtp_frame < art.sdtp->count()) ? sdtp_frame : 0,
+               shell_pal, 472, 0, 168, 199);
     // 3b. §7.3: animated WARNING monitor (SDWRNANM, shell2.pal) into ctrl-0x71C
     //     hole at logical (508,47,92,53), current frame from the scene clock.
     //     Null-guarded: absent SHP/pal simply leaves SDTP's baked screen showing.
-    if (art.sdwrnanm && shell2_pal && art.sdwrnanm->count() > 0) {
+    if (monitor_frame >= 0 && art.sdwrnanm && shell2_pal && art.sdwrnanm->count() > 0) {
         int mf = ((monitor_frame % art.sdwrnanm->count()) + art.sdwrnanm->count())
                  % art.sdwrnanm->count();
         SDL_Texture* mt = shp_frame_tex(tc, "shell:sdwrn" + std::to_string(mf),
@@ -6466,6 +6520,9 @@ void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const Me
     }
 }
 
+// Shared control skins (Options + Skirmish pages).
+#include "shell_widgets.inc"
+
 // ============================================================================
 // [P8 / docs/re/options.md] The main-menu Options page = dialog 0xD5.
 // ============================================================================
@@ -6537,123 +6594,40 @@ struct OptionsPageState {
 void draw_options_page(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& art,
                        const ShellXform& xf, const OptionsPageState& st, bool audio_enabled,
                        const std::string& resolution) {
-    auto dev = [&](int lx, int ly, int lw, int lh) { return xf.dev(lx, ly, lw, lh); };
-    auto frame = [&](const SDL_Rect& r, bool enabled) {
-        if (enabled) SDL_SetRenderDrawColor(ren, 255, 0, 0, 255);
-        else         SDL_SetRenderDrawColor(ren, 159, 0, 0, 255);
-        SDL_RenderDrawRect(ren, &r);
-    };
-    auto pcx = [&](const char* key, const ra2assets::PcxImage* img, const SDL_Rect& d) {
-        if (!img || img->w <= 0 || img->h <= 0) return false;
-        SDL_Texture* t = static_cast<SDL_Texture*>(tc.peek(key));
-        if (!t) {
-            std::vector<uint8_t> rgba = img->rgba();
-            t = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img->w, img->h));
-        }
-        if (!t) return false;
-        SDL_RenderCopy(ren, t, nullptr, &d);
-        return true;
-    };
-    const bool fnt = art.font && art.fnt_ok;
-    // align: 0 = left, 1 = centre, 2 = right; vertically centred in the rect.
-    auto text = [&](const std::string& s, int lx, int ly, int lw, int lh, int align,
-                    const ra2assets::Palette* pal, const char* keypfx, double logical_px) {
-        if (!fnt || !pal || s.empty()) return;
-        const ra2assets::Font& f = *art.font;
-        // 12metfnt cell = 16 px; snap to an integer glyph scale (fractional
-        // nearest-neighbour scaling visibly mangles the 1-px bevel strokes).
-        const double sc = std::max(1.0, std::round(xf.s * logical_px / 16.0));
-        const SDL_Rect box = dev(lx, ly, lw, lh);
-        const double tw = fnt_text_width(f, s) * sc;
-        const double th = f.height() * sc;
-        double tx = box.x;
-        if (align == 1) tx = box.x + (box.w - tw) / 2.0;
-        else if (align == 2) tx = box.x + box.w - tw;
-        draw_fnt_text_f(ren, tc, f, *pal, s, tx, box.y + (box.h - th) / 2.0, keypfx, sc);
-    };
-    const ra2assets::Palette* yel = art.font_pal_text;
-    const ra2assets::Palette* dim = art.font_pal_disabled;
-    auto lbl = [&](const char* s, int x, int y, int w, int h, int align, bool en = true) {
-        text(s, x, y, w, h, align, en ? yel : dim, en ? "opy:" : "opd:", 12.0);
-    };
-    auto header = [&](const char* s, int x, int y, int w, int h) {
-        text(s, x, y, w, h, 0, art.font_pal, "oph:", 14.0);
-    };
+    const ShellPainter p{ren, tc, art, xf};
 
     // Section headers 0x6EE..0x6F1 + static labels (options.md §1).
-    header("Display Options", 15, 16, 210, 16);
-    header("Game Options", 15, 121, 447, 16);
-    header("UI Options", 15, 227, 447, 16);
-    header("Audio Options", 15, 349, 447, 16);
-    lbl("Visual Details", 37, 48, 90, 16, 0);
-    lbl("Higher", 127, 48, 90, 16, 2);
-    lbl("Set Game Resolution", 255, 48, 180, 16, 0);
-    lbl("Difficulty", 37, 154, 90, 16, 0);
-    lbl("Harder", 127, 154, 90, 16, 2);
-    lbl("Scroll Rate", 255, 260, 90, 16, 0);
-    lbl("Faster", 345, 260, 90, 16, 2);
-    lbl("Music Volume", 37, 381, 127, 16, 1, audio_enabled);
-    lbl("Sound Volume", 183, 381, 127, 16, 1, audio_enabled);
-    lbl("Voice Volume", 330, 381, 127, 16, 1, audio_enabled);
+    p.header("Display Options", 15, 16, 210, 16);
+    p.header("Game Options", 15, 121, 447, 16);
+    p.header("UI Options", 15, 227, 447, 16);
+    p.header("Audio Options", 15, 349, 447, 16);
+    p.label("Visual Details", 37, 48, 90, 16, 0);
+    p.label("Higher", 127, 48, 90, 16, 2);
+    p.label("Set Game Resolution", 255, 48, 180, 16, 0);
+    p.label("Difficulty", 37, 154, 90, 16, 0);
+    p.label("Harder", 127, 154, 90, 16, 2);
+    p.label("Scroll Rate", 255, 260, 90, 16, 0);
+    p.label("Faster", 345, 260, 90, 16, 2);
+    p.label("Music Volume", 37, 381, 127, 16, 1, audio_enabled);
+    p.label("Sound Volume", 183, 381, 127, 16, 1, audio_enabled);
+    p.label("Voice Volume", 330, 381, 127, 16, 1, audio_enabled);
 
     // Resolution combobox 0x6ED (closed face; inert in this fixed-window port).
-    {
-        const SDL_Rect r = dev(255, 73, 180, 21);
-        frame(r, true);
-        lbl(resolution.c_str(), 259, 73, 172, 21, 0);
-    }
+    p.frame(p.dev(255, 73, 180, 21), true);
+    p.label(resolution, 259, 73, 172, 21, 0);
 
     // Trackbars (skin proc 0x5FB270).
     for (int i = 0; i < OptionsPageState::S_COUNT; ++i) {
         const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
         const bool en = !OptionsPageState::is_volume(i) || audio_enabled;
-        const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
-        if (d.readout) {   // readout well: trofm stretched, trofl/trofr caps
-            const int rx = d.r.x + d.r.w - ro + 1;
-            pcx("opt:trofm", art.trofm, dev(rx, d.r.y - 1, ro, 24));
-            pcx("opt:trofl", art.trofl, dev(rx, d.r.y - 1, 8, 24));
-            pcx("opt:trofr", art.trofr, dev(rx + ro - 10, d.r.y - 1, 10, 24));
-        }
-        const int tx = ra2engine::trackbar_thumb_x(st.pos[i], d.range, d.r.w, ro);
-        if (!pcx("opt:trakgrip", art.trakgrip,
-                 dev(d.r.x + tx, d.r.y, ra2engine::kTrackbarThumbW, d.r.h))) {
-            SDL_SetRenderDrawColor(ren, en ? 200 : 110, 0, 0, 255);
-            const SDL_Rect t = dev(d.r.x + tx, d.r.y, ra2engine::kTrackbarThumbW, d.r.h);
-            SDL_RenderFillRect(ren, &t);
-        }
-        frame(dev(d.r.x, d.r.y, d.r.w - ro, d.r.h), en);              // groove
-        if (d.readout) {
-            frame(dev(d.r.x + d.r.w - ro + 2, d.r.y, ro - 2, d.r.h), en);
-            const std::string v = std::to_string(st.pos[i]);
-            text(v, d.r.x + d.r.w - 49, d.r.y, 49, d.r.h, 1, en ? yel : dim,
-                 en ? "opy:" : "opd:", 12.0);
-        }
-        if (!en) {   // EnableWindow(FALSE): veil the disabled volume sliders
-            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 110);
-            const SDL_Rect v = dev(d.r.x, d.r.y, d.r.w, d.r.h);
-            SDL_RenderFillRect(ren, &v);
-        }
+        p.trackbar(d.r, st.pos[i], d.range, d.readout, std::to_string(st.pos[i]), en);
     }
 
     // Checkboxes (skin proc 0x5F3CF0).
     static const char* kChk[OptionsPageState::C_COUNT] = {"Tooltips", "Target Lines",
                                                           "See Hidden Objects"};
-    for (int i = 0; i < OptionsPageState::C_COUNT; ++i) {
-        const ra2engine::SbRect r = OptionsPageState::check_rect(i);
-        const SDL_Rect icon = dev(r.x, r.y - 1, 18, 18);
-        const bool drawn = st.chk[i] ? pcx("opt:chk_on", art.chk_on, icon)
-                                     : pcx("opt:chk_off", art.chk_off, icon);
-        if (!drawn) {
-            frame(icon, true);
-            if (st.chk[i]) {
-                SDL_SetRenderDrawColor(ren, 255, 160, 0, 255);
-                const SDL_Rect dot = dev(r.x + 5, r.y + 4, 8, 8);
-                SDL_RenderFillRect(ren, &dot);
-            }
-        }
-        lbl(kChk[i], r.x + 26, r.y, r.w - 26, r.h, 0);
-    }
+    for (int i = 0; i < OptionsPageState::C_COUNT; ++i)
+        p.checkbox(OptionsPageState::check_rect(i), st.chk[i], kChk[i], true);
 }
 
 // ============================================================================
@@ -6662,23 +6636,6 @@ void draw_options_page(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Men
 // non-gate main() seams (Android + desktop fallthrough). The 17 gates never
 // construct or enter these -- they return from their dispatch arms first.
 // ============================================================================
-
-// Human-readable enum names for the setup rows.
-static const char* menu_side_name(ra2engine::World::Side s) {
-    switch (s) {
-        case ra2engine::World::Side::Allied:  return "ALLIED";
-        case ra2engine::World::Side::Soviet:  return "SOVIET";
-        case ra2engine::World::Side::Yuri:    return "YURI";
-        default:                              return "NEUTRAL";
-    }
-}
-static const char* menu_diff_name(ra2engine::AiDifficulty d) {
-    switch (d) {
-        case ra2engine::AiDifficulty::Easy:      return "EASY";
-        case ra2engine::AiDifficulty::Normal:    return "NORMAL";
-        default:                                 return "HARD";
-    }
-}
 
 // Fwd decl: ShellScene::handle constructs a SkirmishSetupScene.
 class SkirmishSetupScene;
@@ -7031,346 +6988,9 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
     return false;
 }
 
-// [RE: skirmish.md §1/§3, D6] Exposes the recovered lobby subset (T1 item 1):
-// AI player count + difficulty, per-slot side/color/alliance-team, cash slider
-// (5000-10000), unit count (0-10), tech level (1-10), toggles (crates/
-// superweapons/short-game). HIDES the 5 DESUPPORTED keys (Bases/ShadowGrow/
-// CaptureTheFlag/HarvesterTruce/MultiEngineer). Map = the single mapsmd03.
-// GameSpeed OMITTED (T1 item 2: presentation-only, no sim/hash effect).
-// Start -> GameScene(launch_skirmish(cfg_)); Back -> MainMenuScene.
-class SkirmishSetupScene : public Scene {
-public:
-    SkirmishSetupScene(const Rules& rules, bool no_audio, const MenuArt& art)
-        : rules_(rules), no_audio_(no_audio), art_(art),
-          cfg_(ra2engine::default_skirmish_config(rules)) {
-        // [RE: maps.md §2] Load the real multiplayer map list (manifest ->
-        // existence filter -> GameMode=standard -> CSF names). Guarded: on a
-        // partial install the list stays empty and the scene falls back to the
-        // engine's historical default map, exactly as before this existed.
-        try {
-            maps_ = ra2engine::load_yr_map_catalog(env_install_dir(), "standard").entries;
-            if (!maps_.empty()) map_ix_ = 0;
-        } catch (const std::exception&) { maps_.clear(); map_ix_ = -1; }
-    }
-    void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs MainMenuScene + GameScene
-    void   update(double dt) override;                         // keeps the menu music looping
-    const char* name() const override { return "lobby"; }    // scripted-input hooks
-    bool locate(const std::string& what, int& x, int& y) const override {
-        const ra2engine::SbRect r = (what == "button:Start") ? start_rect()
-                                  : (what == "button:Back")  ? back_rect() : ra2engine::SbRect{};
-        if (r.w == 0) return false;
-        x = r.x + r.w / 2;
-        y = r.y + r.h / 2;
-        return true;
-    }
-    void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
-    Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
-    // G0 --play: lobby state + click targets. Option rows split into a "-" and
-    // a "+" half ("opt:CASH:-"); slot cells cycle forward ("slot1:side").
-    void   play_probe(ra2play::Probe& p) override {
-        p.scene = "lobby";
-        auto put = [&](const std::string& k, const ra2engine::SbRect& r) {
-            p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
-        };
-        put("start", start_rect());
-        put("back", back_rect());
-        const ra2engine::SbRect mr = map_rect();
-        put("map:-", {mr.x + 50, mr.y, mr.w / 2 - 60, mr.h});
-        put("map:+", {mr.x + mr.w / 2 + 10, mr.y, mr.w / 2 - 60, mr.h});
-        put("map:-10", {mr.x, mr.y, 40, mr.h});
-        put("map:+10", {mr.x + mr.w - 40, mr.y, 40, mr.h});
-        for (int i = 0; i < G_COUNT; ++i) {
-            const ra2engine::SbRect r = global_rect(i);
-            std::string k = glabel(i);
-            for (char& c : k) if (c == ' ') c = '_';
-            put("opt:" + k + ":-", {r.x, r.y, r.w / 2 - 4, r.h});
-            put("opt:" + k + ":+", {r.x + r.w / 2 + 4, r.y, r.w / 2 - 4, r.h});
-            p.set_s("opt(" + k + ")", gvalue(i));
-        }
-        const std::vector<int> cs = combatant_slots();
-        for (int row = 0; row < static_cast<int>(cs.size()); ++row) {
-            const ra2engine::SkirmishSlot& sl = cfg_.slots[cs[row]];
-            const std::string k = "slot" + std::to_string(cs[row]);
-            put(k + ":side", slot_cell(row, 1));
-            put(k + ":color", slot_cell(row, 2));
-            put(k + ":team", slot_cell(row, 3));
-            p.set_s("side(" + std::to_string(cs[row]) + ")", menu_side_name(sl.side));
-            p.set("color(" + std::to_string(cs[row]) + ")", sl.color_ix);
-            p.set("team(" + std::to_string(cs[row]) + ")", sl.alliance_team);
-        }
-        p.set("ai_players", ai_players());
-        p.set("cash", cfg_.starting_cash);
-        p.set("crates", cfg_.crates ? 1 : 0);
-        p.set("map_ix", map_ix_);
-        p.set("map_count", static_cast<double>(maps_.size()));
-        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size())) {
-            p.set_s("map", maps_[static_cast<size_t>(map_ix_)].file_name);
-            p.set_s("map_name", maps_[static_cast<size_t>(map_ix_)].display_name);
-        }
-    }
-
-private:
-    static constexpr int kWinW = 1280, kWinH = 720;
-    // Global option rows (indices into the labels/values switch below).
-    enum GOpt { G_AIPLAYERS, G_DIFFICULTY, G_CASH, G_UNITS, G_TECH,
-                G_CRATES, G_SUPERW, G_SHORT, G_COUNT };
-
-    // --- deterministic geometry (shared by render + handle) ---
-    ra2engine::SbRect global_rect(int i) const { return {60, 150 + i * 46, 520, 38}; }
-    ra2engine::SbRect slot_rect(int row) const { return {640, 190 + row * 46, 600, 38}; }
-    ra2engine::SbRect slot_cell(int row, int cell) const {
-        const ra2engine::SbRect r = slot_rect(row);
-        switch (cell) {
-            case 0: return {r.x,       r.y, 110, r.h};  // name (display only)
-            case 1: return {r.x + 115, r.y, 150, r.h};  // side
-            case 2: return {r.x + 275, r.y, 120, r.h};  // color
-            default: return {r.x + 405, r.y, 130, r.h}; // team
-        }
-    }
-    ra2engine::SbRect start_rect() const { return {60,  630, 220, 56}; }
-    ra2engine::SbRect back_rect()  const { return {320, 630, 220, 56}; }
-    // The map selector row [RE: maps.md §2]. Occupies the space the fixed
-    // "MAP: MAPSMD03" caption used to sit in; all other geometry is unchanged.
-    ra2engine::SbRect map_rect()   const { return {640, 96, 600, 40}; }
-
-    // Cycle the selected map by `d`, clamped to the catalog.
-    void adjust_map(int d) {
-        if (maps_.empty()) return;
-        const int n = static_cast<int>(maps_.size());
-        map_ix_ = std::max(0, std::min(n - 1, map_ix_ + d));
-        set_ai_players(ai_players());   // gF G-17: re-clamp to the new map's starts
-    }
-
-    // --- derived state over cfg_.slots ---
-    int ai_players() const {
-        int n = 0;
-        for (const auto& s : cfg_.slots) if (s.combatant && s.is_ai) ++n;
-        return n;
-    }
-    ra2engine::AiDifficulty cur_diff() const {
-        for (const auto& s : cfg_.slots) if (s.combatant && s.is_ai) return s.diff;
-        return ra2engine::AiDifficulty::Normal;
-    }
-    std::vector<int> combatant_slots() const {
-        std::vector<int> v;
-        for (int i = 0; i < static_cast<int>(cfg_.slots.size()); ++i)
-            if (cfg_.slots[i].combatant) v.push_back(i);
-        return v;
-    }
-    void set_difficulty(int dir) {
-        int d = static_cast<int>(cur_diff()) + dir;
-        d = std::max(0, std::min(2, d));
-        for (auto& s : cfg_.slots)
-            if (s.combatant && s.is_ai) s.diff = static_cast<ra2engine::AiDifficulty>(d);
-    }
-    // Rebuild the slot table around a new AI count (>=1). Keeps the human (slot 0)
-    // and the trailing Neutral civilian; preserves existing AI slot settings.
-    void set_ai_players(int n) {
-        // gF G-17: never more combatants than the map has start waypoints
-        // (the map's MaxPlayers; [Basic] MaxPlayer / [Waypoints] 0-7).
-        int cap = 7;
-        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size()) &&
-            maps_[map_ix_].max_players > 1)
-            cap = std::min(7, maps_[map_ix_].max_players - 1);
-        n = std::max(1, std::min(cap, n));
-        ra2engine::SkirmishSlot human = cfg_.slots.front();
-        ra2engine::SkirmishSlot neutral;
-        bool has_neutral = false;
-        std::vector<ra2engine::SkirmishSlot> old_ai;
-        for (const auto& s : cfg_.slots) {
-            if (!s.combatant && !has_neutral) { neutral = s; has_neutral = true; }
-            else if (s.combatant && s.is_ai)  { old_ai.push_back(s); }
-        }
-        const ra2engine::AiDifficulty diff =
-            old_ai.empty() ? ra2engine::AiDifficulty::Normal : old_ai.front().diff;
-        std::vector<ra2engine::SkirmishSlot> ns;
-        ns.push_back(human);
-        for (int i = 0; i < n; ++i) {
-            if (i < static_cast<int>(old_ai.size())) {
-                ns.push_back(old_ai[i]);
-            } else {
-                ra2engine::SkirmishSlot s;
-                s.side          = ra2engine::World::Side::Soviet;
-                s.color_ix      = (i + 1) % 8;
-                s.country       = "Russians";
-                s.alliance_team = i + 1;
-                s.combatant     = true;
-                s.is_ai         = true;
-                s.diff          = diff;
-                ns.push_back(s);
-            }
-        }
-        if (has_neutral) ns.push_back(neutral);
-        cfg_.slots = ns;
-    }
-    void adjust_global(int gopt, int dir) {
-        switch (gopt) {
-            case G_AIPLAYERS:  set_ai_players(ai_players() + dir); break;
-            case G_DIFFICULTY: set_difficulty(dir); break;
-            case G_CASH:
-                cfg_.starting_cash = std::max(5000.0, std::min(10000.0,
-                                        cfg_.starting_cash + dir * 100.0));
-                break;
-            case G_UNITS: cfg_.unit_count = std::max(0, std::min(10, cfg_.unit_count + dir)); break;
-            case G_TECH:  cfg_.tech_level = std::max(1, std::min(10, cfg_.tech_level + dir)); break;
-            case G_CRATES: cfg_.crates       = !cfg_.crates; break;
-            case G_SUPERW: cfg_.superweapons = !cfg_.superweapons; break;
-            case G_SHORT:  cfg_.short_game   = !cfg_.short_game; break;
-            default: break;
-        }
-    }
-    static const char* glabel(int i) {
-        static const char* L[G_COUNT] = {"AI PLAYERS", "DIFFICULTY", "STARTING CASH",
-                                         "UNIT COUNT", "TECH LEVEL", "CRATES",
-                                         "SUPERWEAPONS", "SHORT GAME"};
-        return (i >= 0 && i < G_COUNT) ? L[i] : "";
-    }
-    std::string gvalue(int i) const {
-        switch (i) {
-            case G_AIPLAYERS:  return std::to_string(ai_players());
-            case G_DIFFICULTY: return menu_diff_name(cur_diff());
-            case G_CASH:       return "$" + std::to_string(
-                                   static_cast<int>(std::llround(cfg_.starting_cash)));
-            case G_UNITS:      return std::to_string(cfg_.unit_count);
-            case G_TECH:       return std::to_string(cfg_.tech_level);
-            case G_CRATES:     return cfg_.crates       ? "ON" : "OFF";
-            case G_SUPERW:     return cfg_.superweapons ? "ON" : "OFF";
-            case G_SHORT:      return cfg_.short_game   ? "ON" : "OFF";
-            default:           return "";
-        }
-    }
-
-    const Rules&           rules_;
-    bool                   no_audio_ = false;
-    const MenuArt&         art_;
-    ra2engine::SkirmishConfig cfg_;       // seeded from shipped defaults
-    // The real multiplayer map list + the current pick [RE: maps.md §2/§3].
-    // Empty on a partial install -> the historical default map is used.
-    std::vector<ra2engine::MapEntry> maps_;
-    int map_ix_ = -1;
-    Scene*                 next_ = nullptr;
-};
-
-// Same looping-music pump as MainMenuScene: the theme carries across the
-// MainMenu -> SkirmishSetup transition (both are menu scenes), and stops when
-// GameScene takes over. [RE: mainmenu.md §4]
-void SkirmishSetupScene::update(double dt) {
-    (void)dt;
-    if (!art_.audio || !art_.audio->sys.enabled || !art_.audio->sys.mixer) return;
-    if (art_.audio->sys.mixer->active_voices() == 0)
-        art_.audio->sys.mixer->play("menu:grinder");
-    art_.audio->sys.out.pump(*art_.audio->sys.mixer);
-}
-
-void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) {
-    SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-    // Dialog chrome: the bkgdlg.shp framed panel behind the controls, scaled to
-    // cover the working area. Art-guarded: no panel art -> plain dark fill (the
-    // Phase-3 look). All control geometry (global_rect/slot_cell/start/back) is
-    // UNCHANGED -- a visual reskin only.
-    SDL_SetRenderDrawColor(ren, 10, 14, 20, 255);
-    SDL_RenderClear(ren);
-    const ra2assets::Palette* dpal = art_.dlg_pal ? art_.dlg_pal : art_.pal;
-    if (art_.dlg && dpal) {
-        if (SDL_Texture* pnl = shp_frame_tex(tc, "menu:dlg", *art_.dlg, 0, *dpal)) {
-            SDL_Rect dst{20, 20, kWinW - 40, kWinH - 40};
-            SDL_RenderCopy(ren, pnl, nullptr, &dst);
-        }
-    }
-    const bool use_fnt = (art_.font && art_.font_pal && art_.fnt_ok);
-    auto label = [&](const std::string& s, int x, int y, int rectscale, uint8_t r,
-                     uint8_t g, uint8_t bl) {
-        if (use_fnt) draw_fnt_text(ren, tc, *art_.font, *art_.font_pal, s, x, y, "fnts:", 1);
-        else         draw_text(ren, s, x, y, rectscale, r, g, bl);
-    };
-    // Small helper to draw a bordered box + label + value.
-    auto box = [&](const ra2engine::SbRect& r, bool active) {
-        SDL_Rect fr{r.x, r.y, r.w, r.h};
-        SDL_SetRenderDrawColor(ren, active ? 30 : 22, active ? 44 : 30, active ? 70 : 40, 220);
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-        SDL_RenderFillRect(ren, &fr);
-        SDL_SetRenderDrawColor(ren, active ? 110 : 64, active ? 140 : 76, active ? 190 : 96, 255);
-        SDL_RenderDrawRect(ren, &fr);
-    };
-    // Title + the map selector [RE: maps.md §2]. Replaces the fixed
-    // "MAP: MAPSMD03" caption with a live pick from the real 91-map
-    // GameMode=standard catalog; click the row's halves to step (its outer
-    // 44 px step by 10), the same left/right convention the option rows use.
-    label("SKIRMISH SETUP", 60, 56, 4, 220, 220, 235);
-    {
-        const ra2engine::SbRect mr = map_rect();
-        box(mr, true);
-        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size())) {
-            const ra2engine::MapEntry& m = maps_[static_cast<size_t>(map_ix_)];
-            // The rect-font is A-Z + 0-9 only, so punctuation would silently
-            // vanish: spell the count and draw the step arrows as triangles.
-            char cnt[48];
-            std::snprintf(cnt, sizeof cnt, "%d OF %d   %d P", map_ix_ + 1,
-                          static_cast<int>(maps_.size()), m.max_players);
-            std::string nm = m.display_name;
-            if (nm.size() > 26) nm.resize(26);
-            draw_text(ren, nm, mr.x + 34, mr.y + 12, 2, 250, 240, 160);
-            const int cw = static_cast<int>(std::string(cnt).size()) * 6 * 2;
-            draw_text(ren, cnt, mr.x + mr.w - cw - 34, mr.y + 12, 2, 170, 190, 210);
-            SDL_SetRenderDrawColor(ren, 210, 220, 240, 255);
-            for (int t = 0; t < 9; ++t) {                    // left arrow
-                SDL_RenderDrawLine(ren, mr.x + 10 + t, mr.y + 20 - t, mr.x + 10 + t, mr.y + 20 + t);
-                SDL_RenderDrawLine(ren, mr.x + mr.w - 10 - t, mr.y + 20 - t,   // right arrow
-                                   mr.x + mr.w - 10 - t, mr.y + 20 + t);
-            }
-        } else {
-            draw_text(ren, "MAP: DEFAULT (no map list)", mr.x + 8, mr.y + 12, 2, 180, 180, 180);
-        }
-    }
-    // Global option rows: label (left), value (right of row).
-    for (int i = 0; i < G_COUNT; ++i) {
-        const ra2engine::SbRect r = global_rect(i);
-        box(r, true);
-        draw_text(ren, glabel(i), r.x + 8, r.y + 11, 2, 200, 205, 220);
-        const std::string v = gvalue(i);
-        const int vw = static_cast<int>(v.size()) * 6 * 2;
-        draw_text(ren, v, r.x + r.w - vw - 10, r.y + 11, 2, 250, 240, 160);
-    }
-    // Slot rows header + per-slot side/color/team cells.
-    draw_text(ren, "PLAYERS", 640, 160, 2, 200, 205, 220);
-    const std::vector<int> cs = combatant_slots();
-    for (int row = 0; row < static_cast<int>(cs.size()); ++row) {
-        const int idx = cs[row];
-        const ra2engine::SkirmishSlot& s = cfg_.slots[idx];
-        // name cell (display only)
-        const ra2engine::SbRect nr = slot_cell(row, 0);
-        const std::string nm = "P" + std::to_string(idx) + (idx == 0 ? " YOU" : " CPU");
-        draw_text(ren, nm, nr.x + 4, nr.y + 11, 2, 200, 205, 220);
-        // side
-        const ra2engine::SbRect sr = slot_cell(row, 1);
-        box(sr, true);
-        draw_text(ren, gf_country_label(s), sr.x + 8, sr.y + 11, 2, 235, 235, 245);
-        // color
-        const ra2engine::SbRect cr = slot_cell(row, 2);
-        box(cr, true);
-        draw_text(ren, "COL " + std::to_string(s.color_ix), cr.x + 8, cr.y + 11, 2, 235, 235, 245);
-        // team
-        const ra2engine::SbRect tr = slot_cell(row, 3);
-        box(tr, true);
-        const std::string tv = (s.alliance_team < 0) ? "FFA"
-                                                      : "TEAM " + std::to_string(s.alliance_team);
-        draw_text(ren, tv, tr.x + 8, tr.y + 11, 2, 235, 235, 245);
-    }
-    // Start / Back.
-    auto action = [&](const ra2engine::SbRect& r, const char* label) {
-        SDL_Rect fr{r.x, r.y, r.w, r.h};
-        SDL_SetRenderDrawColor(ren, 34, 52, 84, 255);
-        SDL_RenderFillRect(ren, &fr);
-        SDL_SetRenderDrawColor(ren, 120, 160, 210, 255);
-        SDL_RenderDrawRect(ren, &fr);
-        const int scale = 3;
-        const int tw = static_cast<int>(std::string(label).size()) * 6 * scale;
-        draw_text(ren, label, r.x + (r.w - tw) / 2, r.y + (r.h - 7 * scale) / 2, scale,
-                  235, 240, 250);
-    };
-    action(start_rect(), "START");
-    action(back_rect(),  "BACK");
-}
+// [SK-01..SK-42] The Skirmish setup page (dialog 0x102) + Customize Battle
+// (dialog 0x6B). docs/gap/07-skirmish-page.md.
+#include "skirmish_page.inc"
 
 // P10 campaign shell scenes (loading screen / result) [RE: campaign.md].
 #include "campaign_scenes.inc"
@@ -7475,88 +7095,6 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
                 next_ = new ShellScene(rules_, no_audio_, art_, b.target);
                 return;
             default:           return;
-        }
-    }
-}
-
-void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
-    // G-01: Esc = Back (the lobby dialog's Cancel), not program exit.
-    if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
-        next_ = new MainMenuScene(rules_, no_audio_, art_);
-        return;
-    }
-    // gF G-17: a RIGHT click on a slot's side cell cycles the country within
-    // that side (Americans/Alliance/French/Germans/British or Africans/Arabs/
-    // Confederation/Russians; the side always follows the country's Side=).
-    // The left click keeps A's Allied<->Soviet toggle (stock country).
-    if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Right) {
-        const std::vector<int> cs = combatant_slots();
-        for (int row = 0; row < static_cast<int>(cs.size()); ++row)
-            if (slot_cell(row, 1).contains(ev.x, ev.y)) {
-                gf_next_country_same_side(rules_, cfg_.slots[cs[row]]);
-                return;
-            }
-        return;
-    }
-    if (ev.kind != ra2engine::InputEvent::PointerDown ||
-        ev.button != ra2engine::InputEvent::Left)
-        return;
-    // Start / Back first.
-    if (start_rect().contains(ev.x, ev.y)) {
-        // [RE: maps.md §2/§4.3] Hand the chosen multiplayer map to the launcher
-        // and place houses on its real [Waypoints] starts. With no catalog the
-        // fields stay empty/false, i.e. exactly the pre-browser behavior.
-        if (map_ix_ >= 0 && map_ix_ < static_cast<int>(maps_.size())) {
-            cfg_.map_file       = maps_[static_cast<size_t>(map_ix_)].file_name;
-            cfg_.use_map_starts = true;
-        }
-        next_ = new GameScene(no_audio_, cfg_);   // GameScene ctor runs launch_skirmish(cfg_)
-        return;
-    }
-    // Map selector: outer 44 px step by 10, inner halves by 1.
-    {
-        const ra2engine::SbRect mr = map_rect();
-        if (mr.contains(ev.x, ev.y)) {
-            if (ev.x < mr.x + 44)                 adjust_map(-10);
-            else if (ev.x > mr.x + mr.w - 44)     adjust_map(+10);
-            else if (ev.x < mr.x + mr.w / 2)      adjust_map(-1);
-            else                                  adjust_map(+1);
-            return;
-        }
-    }
-    if (back_rect().contains(ev.x, ev.y)) {
-        next_ = new MainMenuScene(rules_, no_audio_, art_);
-        return;
-    }
-    // Global option rows: left half = decrement/cycle-back, right half = increment.
-    for (int i = 0; i < G_COUNT; ++i) {
-        const ra2engine::SbRect r = global_rect(i);
-        if (r.contains(ev.x, ev.y)) {
-            const int dir = (ev.x < r.x + r.w / 2) ? -1 : +1;
-            adjust_global(i, dir);
-            return;
-        }
-    }
-    // Per-slot cells: click cycles side / color / team forward.
-    const std::vector<int> cs = combatant_slots();
-    for (int row = 0; row < static_cast<int>(cs.size()); ++row) {
-        ra2engine::SkirmishSlot& s = cfg_.slots[cs[row]];
-        if (slot_cell(row, 1).contains(ev.x, ev.y)) {         // side: Allied <-> Soviet
-            // G-03 (gap owner A): RA2 skirmish offers Allied and Soviet only
-            // (the Yuri side has no roster/base here); the country follows
-            // the side's stock default so Owner= filters stay consistent.
-            const bool to_soviet = s.side != ra2engine::World::Side::Soviet;
-            s.side = to_soviet ? ra2engine::World::Side::Soviet : ra2engine::World::Side::Allied;
-            s.country = to_soviet ? "Russians" : "Americans";
-            return;
-        }
-        if (slot_cell(row, 2).contains(ev.x, ev.y)) {         // color 0..7
-            s.color_ix = (s.color_ix + 1) % 8;
-            return;
-        }
-        if (slot_cell(row, 3).contains(ev.x, ev.y)) {         // team -1(FFA)..7
-            s.alliance_team = (s.alliance_team >= 7) ? -1 : s.alliance_team + 1;
-            return;
         }
     }
 }
@@ -12364,6 +11902,8 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
         for (const ra2engine::SkirmishSlot& s : cfg.slots) ncomb += s.combatant ? 1 : 0;
         const std::vector<int> picks = gf_pick_starts(real_starts, ncomb, rng);
         gf_arm_mcv(world, ba, rules, /*skirmish_session=*/true);
+        // [SK-25] The lobby's MCV Repacks checkbox overrides the rules default.
+        if (cfg.mcv_redeploys >= 0) world.set_mcv_redeploys(cfg.mcv_redeploys != 0);
         for (int i = 0; i < (int)cfg.slots.size(); ++i) {
             const ra2engine::SkirmishSlot& s = cfg.slots[i];
             if (!s.combatant) continue;

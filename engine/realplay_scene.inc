@@ -137,6 +137,12 @@ private:
             const ra2engine::BuildingTypeDef& d = ba_.roster[i];
             rp_bld_allowed_[i] = d.tech_level > 0 && d.tech_level <= cfg_.tech_level &&
                                  rp_country_allows(rules_, d.id, rp_country_);
+            // [SK-27] Lobby Superweapons off: "Super Weapons can be built" is
+            // false, so no SuperWeapon= structure is offered. [RE-FALLBACK: the
+            // [AI] BuildTech tech centres stay buildable -- their YR
+            // SuperWeapon= is the side special, not a lobby superweapon.]
+            if (!cfg_.superweapons && rp_bld_allowed_[i] && rp_is_lobby_sw_building(rules_, d.id))
+                rp_bld_allowed_[i] = 0;
         }
         buildable_ = tab_buildable(active_tab_);
         lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);

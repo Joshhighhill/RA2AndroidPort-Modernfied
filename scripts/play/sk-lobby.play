@@ -1,0 +1,145 @@
+# sk-lobby -- the Skirmish setup page (dialog 0x102) end to end: every choice
+# made on the page reaches the game (docs/gap/07-skirmish-page.md SK rows).
+# Map via Customize Battle (0x6B), human Iraq + Red, row 1 None, Brutal
+# America/Blue AI in row 2, Easy AI in row 3, 5 units, Short Game off, MCV
+# Repacks off, Superweapons off, $7500, speed slider pos 3; name typed in the
+# edit; Back saves to RA2.INI and re-entering restores it; the "two players"
+# validation message; then Start and assert through the game probe.
+set render_every 300
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+assert page == "Skirmish Game"
+assert ai(1) == Easy                                  @SK-38
+assert ai(2) == None
+shot first_run
+
+# --- Customize Battle: pick a 4-player map --------------------------------------
+click button "Customize Battle"                       @SK-18
+require page == "Customize Battle"
+click map:xarena.map
+click button "Use Map"
+require page == "Skirmish Game"
+assert map == xarena.map                              @SK-18
+assert max_players == 4                               @SK-07
+assert visible_rows == 4                              @SK-15
+
+# --- human row: name, Iraq, Red ---------------------------------------------------
+click edit:name                                       @SK-06
+assert editing == 1
+key backspace
+key backspace
+key backspace
+key backspace
+key backspace
+key backspace
+type "Tanya"
+key enter
+assert name == Tanya                                  @SK-06
+click combo:country0                                  @SK-09
+assert combo_open == country
+assert combo_count == 10                              @SK-09
+click list:down
+click pick:Iraq
+assert country(0) == Arabs                            @SK-09
+assert side(0) == SOVIET
+click combo:color0                                    @SK-11
+assert combo_count == 9
+click pick:RED
+assert color(0) == 1                                  @SK-11
+
+# --- AI rows ----------------------------------------------------------------------
+click combo:ai1                                       @SK-07
+click pick:None
+assert ai(1) == None                                  @SK-15
+assert row_active(1) == 0                             @SK-15
+click combo:ai2
+click "pick:Brutal Enemy"                             @SK-08
+assert ai(2) == Brutal                                @SK-08
+click combo:country2
+click pick:America
+click combo:color2
+assert combo_count == 8                               @SK-11
+click pick:BLU
+assert color(2) == 2
+click combo:ai3
+click "pick:Easy Enemy"
+assert ai_players == 2
+
+# --- options ----------------------------------------------------------------------
+click slider:units=5                                  @SK-22
+assert unit_count == 5                                @SK-22
+click slider:credits=7500                             @SK-21
+assert cash == 7500                                   @SK-21
+click slider:speed=3                                  @SK-20
+assert game_speed == 3                                @SK-20
+click check:short                                     @SK-24
+assert check(short) == 0                              @SK-24
+click check:mcv                                       @SK-25
+assert check(mcv) == 0                                @SK-25
+click check:superweapons                              @SK-27
+assert check(superweapons) == 0                       @SK-27
+assert check(buildoffally) == 1                       @SK-28
+shot configured
+
+# --- Back saves, re-entering restores ([Skirmish] / [MultiPlayer]) ------------------
+click back                                            @SK-35
+require scene == "shell:Single Player"                @SK-35
+click button Skirmish
+require scene == lobby
+assert name == Tanya                                  @SK-37
+assert map == xarena.map                              @SK-37
+assert country(0) == Arabs                            @SK-37
+assert color(0) == 1                                  @SK-37
+assert ai(1) == None                                  @SK-37
+assert ai(2) == Brutal                                @SK-37
+assert country(2) == Americans                        @SK-37
+assert unit_count == 5                                @SK-37
+assert check(short) == 0                              @SK-37
+assert game_speed == 3                                @SK-37
+
+# --- validation: fewer than two players ---------------------------------------------
+click combo:ai2
+click pick:None
+click combo:ai3
+click pick:None
+click start                                           @SK-36
+assert confirm_open == 1                              @SK-36
+assert scene == lobby                                 @SK-36
+click confirm:yes
+assert confirm_open == 0
+click combo:ai2
+click "pick:Brutal Enemy"
+click combo:country2
+click pick:America
+click combo:color2
+click pick:BLU
+click combo:ai3
+click "pick:Easy Enemy"
+
+# --- Start: the game receives every choice -------------------------------------------
+click start
+until 90 scene == game
+require scene == game
+shot start
+assert country(0) == Arabs                            @SK-09
+assert side(0) == SOVIET                              @SK-09
+assert house_color(0) == 1                            @SK-11
+assert ai(0) == Human
+assert ai(1) == Brutal                                @SK-08
+assert country(1) == Americans                        @SK-09
+assert side(1) == ALLIED
+assert house_color(1) == 5                            @SK-11
+assert ai(2) == Easy                                  @SK-08
+assert combatant(3) == 0
+assert team(0) != team(1)                             @SK-13
+assert team(1) != team(2)                             @SK-13
+assert unit_count_cfg == 5                            @SK-22
+assert units(0,SMCV) == 1
+assert short_game == 0                                @SK-24
+assert game_speed == 3                                @SK-20
+assert mcv_redeploys == 0                             @SK-25
+assert sw_allowed == 0                                @SK-27
+assert start_cash == 7500                             @SK-21
+assert credits == 7500                                @SK-21
+end

@@ -267,6 +267,9 @@ target_sources(ra2assets_tests PRIVATE tests/test_abilities.cpp tests/test_abili
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's
 # line above, so only the new module + its test are added here.
 target_sources(ra2assets_tests PRIVATE tests/test_skirmish.cpp engine/skirmish.cpp)
+# Skirmish page (dialog 0x102): the pure lobby model + RA2.INI persistence +
+# LobbyState -> SkirmishConfig converter (docs/gap/07-skirmish-page.md).
+target_sources(ra2assets_tests PRIVATE tests/test_skirmish_lobby.cpp engine/skirmish_lobby.cpp)
 # rectfont.cpp is pure C++17 (no SDL): the 5x7 rect-font glyph table + glyph_rows
 # extending the kDigits technique to A-Z/0-9/space/basic punctuation for menu
 # labels (Task 5, [RE: skirmish.md §UI]). Its coverage cases live in
