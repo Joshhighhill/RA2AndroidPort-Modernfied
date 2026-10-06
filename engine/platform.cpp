@@ -172,8 +172,8 @@ bool Platform::poll(InputEvent& ev) {
 }
 
 void Platform::begin_frame() {
-    // Dark blue clear color.
-    SDL_SetRenderDrawColor(p_->renderer, 10, 20, 60, 255);
+    // G-88: black, like the original (unmapped / shrouded area is black).
+    SDL_SetRenderDrawColor(p_->renderer, 0, 0, 0, 255);
     SDL_RenderClear(p_->renderer);
 }
 

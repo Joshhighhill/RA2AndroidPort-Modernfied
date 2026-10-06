@@ -7,7 +7,8 @@
 class Presentation {
 public:
     // side_ix: 0 Allied, 1 Soviet (Russian clips), 2 Yuri.
-    void init(const std::string& dir, AudioSystem& audio, bool audio_on, const Rules& rules,
+    void init(const std::string& dir, const ra2assets::MixFile& ra2, AudioSystem& audio, bool audio_on,
+              const Rules& rules,
               const Ini& rules_ini, const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs,
               int side_ix) {
         audio_ = &audio;
@@ -20,6 +21,12 @@ public:
             for (const ra2engine::UnitTypeDef& d : *list) add_voices(rules, d.id, d.combat.image);
         for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) add_voices(rules, id, rules.image(id));
         auto av = [&](const char* k) { return pres_clean(rules_ini.get("AudioVisual", k)); };
+        // G-88: health-bar colours from [AudioVisual] ConditionYellow/Red ("50%").
+        auto pct = [&](const char* k, double d) {
+            const std::string v = av(k);
+            return v.empty() ? d : std::atof(v.c_str()) / 100.0;
+        };
+        ra2engine::set_health_conditions(pct("ConditionYellow", 0.5), pct("ConditionRed", 0.25));
         base_attack_siren_ = av("BaseUnderAttackSound");
         building_die_ = av("BuildingDieSound");
         building_damage_ = av("BuildingDamageSound");
@@ -30,6 +37,19 @@ public:
                                      vet_sound_, elite_sound_})
             snd_.ensure_sound(k);
         snd_.music_start();
+        // G-84: SHROUD.SHP (conquer.mix) for the shroud/fog post-pass.
+        try {
+            MixFile conquer = ra2.open_nested("conquer.mix");
+            if (const MixEntry* e = conquer.find(std::string("shroud.shp"))) {
+                shroud_ = std::make_unique<ShpFile>(ShpFile::load(conquer.read(*e)));
+                g_shroud_shp = shroud_.get();
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[pres] shroud.shp unavailable: " << ex.what() << "\n";
+        }
+    }
+    ~Presentation() {
+        if (g_shroud_shp == shroud_.get()) g_shroud_shp = nullptr;
     }
 
     PresAudio& sound() { return snd_; }
@@ -229,6 +249,7 @@ private:
     static constexpr double kBaseAttackGap = 30.0;
 
     PresAudio snd_;
+    std::unique_ptr<ShpFile> shroud_;
     AudioSystem* audio_ = nullptr;
     const Ini* rules_ini_ = nullptr;
     long frame_ = 0;

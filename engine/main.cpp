@@ -2545,11 +2545,13 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
 // Cells whose variant art is absent simply don't draw.
 void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
               const ra2engine::OreField& ore, const ra2assets::MapFile& map,
-              const ra2assets::Palette& pal, const ra2engine::Camera& cam, int W, int H) {
+              const ra2assets::Palette& pal, const ra2engine::Camera& cam, int W, int H,
+              const ra2engine::World* vis = nullptr) {
     if (!oa.any) return;
     const ra2assets::Palette& ore_pal = oa.has_pal ? oa.pal : pal;
     for (const ra2assets::MapCell& c : map.cells()) {
         if (!ore.has_ore(c.x, c.y)) continue;
+        if (vis && !vis->explored_at(0, c.x, c.y)) continue;   // G-84: never under shroud
         const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
         int slot = ore.variant_at(c.x, c.y);
         if (slot < 0 || slot >= 20) slot = 0;
@@ -2693,6 +2695,7 @@ void draw_p5_crates(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2eng
     if (!g_p5_art || !g_p5_art->has_crate || !world.crates_enabled()) return;
     for (const ra2engine::World::Crate& c : world.crates()) {
         if (c.x < 0) continue;
+        if (!world.explored_at(0, c.x, c.y)) continue;   // G-84: crates respect shroud
         const ra2assets::MapCell* mc = map.at(c.x, c.y);
         const int level = mc ? static_cast<int>(mc->level) : 0;
         const ra2engine::ScreenPt p = ra2engine::cell_to_screen(c.x, c.y, level, 60, 30, 15);
@@ -2746,6 +2749,9 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const double x = p.x / 256.0, y = p.y / 256.0;
         const ra2assets::MapCell* mc =
             map.at(ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y));
+        // G-84: a shell over a cell house 0 cannot currently see is not drawn.
+        if (!world.visible_at(0, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
+            continue;
         const int level = mc ? mc->level : 0;
         const int gx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
         const int gy = static_cast<int>(std::lround((x + y) * 15.0 - level * 15)) + cam.y + 15;
@@ -2768,14 +2774,21 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
     }
 }
 
+#include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
+
+bool pres_target_lines();   // G-88: RA2.INI UnitActionLines (defined after g_user_settings)
+
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
-    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world);
+    // G-84: terrain is drawn in full; shroud/fog are a post-pass over every
+    // object (draw_shroud_pass below) instead of per-tile black rectangles that
+    // overdrew the already-drawn neighbours.
+    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, nullptr);
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
-    if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H);
+    if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -2792,7 +2805,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // units entirely (no path, no selection marker for a corpse-in-progress).
     for (const ra2engine::Unit& u : us) {
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;  // CB-1:
-        ra2engine::draw_path(ren, u, cam, W, H);       // carried units draw nothing
+        // G-88: in the real game only the player's SELECTED units show their
+        // route, and only with RA2.INI "Target Lines" on (UnitActionLines);
+        // the non-interactive render paths keep the old every-unit debug lines.
+        if (!input || (u.selected && u.house == 0 && pres_target_lines()))
+            ra2engine::draw_path(ren, u, cam, W, H);   // carried units draw nothing
         if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
     }
     // Sprites back-to-front so nearer units overlap farther ones. Vehicles
@@ -2840,7 +2857,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         };
         std::vector<DrawItem> A, B;
         for (int i = 0; i < static_cast<int>(bs.size()); ++i)
-            if (bs[i].alive) A.push_back({bkey(i), 0, i});
+            if (bs[i].alive && pres_building_seen(world, bs[i])) A.push_back({bkey(i), 0, i});
         std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         for (int i : uorder) B.push_back({us[i].fx + us[i].fy, 1, i});
         merged.resize(A.size() + B.size());
@@ -2863,6 +2880,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // unless enable_projectiles was called (the game + --demo-projectile), so
     // no existing demo screenshot changes.
     draw_projectiles(ren, world, a.map, cam, W, H);
+    // G-84: fog + shroud over every object, under the HUD bars.
+    draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
     // NON-CARRIED units that are selected or currently damaged. A selected
     // transport also shows its loaded pip row -- filled with the SIZE-SUM
@@ -3893,6 +3912,7 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
 // constructs GameScene or reads the settings file, and --menu-shot renders with
 // built-in defaults -- so the byte-identity gates cannot see a user's settings.
 ra2engine::Settings* g_user_settings = nullptr;
+bool pres_target_lines() { return g_user_settings ? g_user_settings->unit_action_lines : true; }
 
 // <SDL pref dir>/RA2.INI: %APPDATA%\ra2engine\RA2\ on Windows, the app's
 // internal (always writable) files dir on Android. Never the install dir. Empty
@@ -4817,8 +4837,12 @@ public:
                      vet_events);
     }
     void init_presentation() {
+        // G-90: every resolved infantry anim table, in skirmish as in campaign
+        // (skirmish-start / AI-built infantry otherwise fall back to
+        // default_anim and pick frames from the wrong SHP layout).
+        for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
         const ra2engine::World::Side s = world_.house_side(0);
-        pres_.init(dir_, audio_, audio_.enabled, rules_, rules_ini_, {&ur_.defs, &ur_ai_.defs},
+        pres_.init(dir_, ra2_, audio_, audio_.enabled, rules_, rules_ini_, {&ur_.defs, &ur_ai_.defs},
                    s == ra2engine::World::Side::Soviet ? 1 : s == ra2engine::World::Side::Yuri ? 2 : 0);
     }
 

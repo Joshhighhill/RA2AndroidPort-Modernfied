@@ -204,6 +204,8 @@ void draw_path(void* sdl_renderer, const Unit& unit, const Camera& cam, int view
 // space. Coordinates are the raw drag endpoints (any order). HUD overlay: call
 // LAST, after terrain + units.
 void draw_selection_box(void* sdl_renderer, int x0, int y0, int x1, int y1);
+// G-88: health-bar thresholds as fractions (rulesmd [AudioVisual] ConditionYellow/Red).
+void set_health_conditions(double yellow, double red);
 
 // Draw a 24x3 px HP bar centered above the unit's ground point (tile center
 // projected from its interpolated fx/fy, same anchor draw_selection uses),

@@ -293,7 +293,11 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     if (!tex) {
         std::vector<uint8_t> idx = shp.decode_indexed(unit.frame);
         const ra2assets::Palette house_pal = pal_for_house(pal, draw_house);
-        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, house_pal));
+        // G-90: RA2 infantry SHPs bake their ground shadow into the image frame
+        // as palette index 12 (gi/cons/dog: 60-80 px under the feet; the
+        // second-half shadow frames are empty) -> translucent black.
+        // [RE-FALLBACK: RE-P7 open -- index + blend from the binary's blitter.]
+        tex = static_cast<SDL_Texture*>(tc.get_shadowed(key, idx.data(), f.w, f.h, house_pal, 12, 128));
     }
     SDL_RenderCopy(renderer, tex, nullptr, &dst);
     return true;
@@ -447,6 +451,14 @@ static constexpr int kHpBarH = 3;
 static constexpr int kHpBarUp = 46;
 static constexpr int kHpBarGap = 6;
 
+// G-88: health-bar colour thresholds (set_health_conditions; defaults = the
+// stock rulesmd values).
+static double g_condition_yellow = 0.5, g_condition_red = 0.25;
+void set_health_conditions(double yellow, double red) {
+    g_condition_yellow = yellow;
+    g_condition_red = red;
+}
+
 void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int view_w, int view_h,
                  int width_px) {
     if (unit.max_hp <= 0) return;
@@ -474,10 +486,11 @@ void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int vi
     if (unit.hp > 0 && fill_w < 1) fill_w = 1;
     if (fill_w > 0) {
         SDL_Rect fg{bg.x, bg.y, fill_w, kHpBarH};
-        // Integer thresholds (brief-specified): green above 2/3, yellow above
-        // 1/3, red at or below 1/3 -- avoids floating-point division.
-        if (unit.hp * 3 > unit.max_hp * 2) SDL_SetRenderDrawColor(renderer, 40, 220, 40, 255);
-        else if (unit.hp * 3 > unit.max_hp) SDL_SetRenderDrawColor(renderer, 230, 210, 40, 255);
+        // G-88 [rulesmd [AudioVisual] ConditionYellow=50% / ConditionRed=25%]:
+        // green above Yellow, yellow above Red, red at or below Red.
+        const double frac = static_cast<double>(unit.hp) / unit.max_hp;
+        if (frac > g_condition_yellow) SDL_SetRenderDrawColor(renderer, 40, 220, 40, 255);
+        else if (frac > g_condition_red) SDL_SetRenderDrawColor(renderer, 230, 210, 40, 255);
         else SDL_SetRenderDrawColor(renderer, 220, 40, 40, 255);
         SDL_RenderFillRect(renderer, &fg);
     }
