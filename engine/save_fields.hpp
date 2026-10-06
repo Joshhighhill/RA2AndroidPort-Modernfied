@@ -142,6 +142,7 @@ struct SaveAccess {
         save::io(ar, w.growth_interval_);
         save::io(ar, w.growth_pct_);
         save::io(ar, w.spread_pct_);
+        save::io(ar, w.purifier_bonus_);   // gap owner A (G-27)
         save::io(ar, w.house_credits_);
         save::io(ar, w.harvest_events_);
         // Repair & Sell
@@ -522,6 +523,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.unsellable);
     io(ar, v.click_repairable);
     io(ar, v.crewed);
+    io(ar, v.ore_purifier);   // gap owner A (G-27)
     io(ar, v.soylent);
 }
 

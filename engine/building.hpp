@@ -62,6 +62,7 @@ struct BuildingTypeDef {
                                     // building sets it" was WRONG. Verified in rulesmd.]
     bool click_repairable = true;   // ClickRepairable= [§A4] DEFAULT YES
     bool crewed           = false;  // Crewed=          [§B3] gates survivor spawn
+    bool ore_purifier     = false;  // OrePurifier=     gap owner A (G-27) [RE: economy.md §2]
     int  soylent          = 0;      // Soylent=         [§B1] absolute refund override
                                     // [RE-GATE APPLIED §D0: GAREFN/NAREFN set Soylent=300,
                                     // so this override is load-bearing, not dead code.]

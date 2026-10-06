@@ -170,7 +170,8 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   const std::vector<int>& refinery_types, OreField& ore,
                   const std::vector<std::uint8_t>& passable, int gw, int gh, Occupancy& occ,
                   double dt, const OreValues& values, double house_credits[2],
-                  std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events) {
+                  std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events,
+                  int n_houses, const int* purifiers, double purifier_bonus) {
     for (int idx = 0; idx < (int)units.size(); ++idx) {
         Unit& u = units[idx];
         if (!u.is_harvester || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 ||
@@ -420,14 +421,20 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 while (u.harv_timer >= kUnloadSecsPerBale &&
                        (u.bales_ore > 0.0 || u.bales_gems > 0.0)) {
                     u.harv_timer -= kUnloadSecsPerBale;
-                    int house = (u.house == 0 || u.house == 1) ? u.house : 0;
+                    int house = (u.house >= 0 && u.house < n_houses) ? u.house : 0;
+                    double v;
                     if (u.bales_ore > 0.0) {
                         u.bales_ore -= 1.0;
-                        house_credits[house] += (double)values.ore;
+                        v = (double)values.ore;
                     } else {
                         u.bales_gems -= 1.0;
-                        house_credits[house] += (double)values.gems;
+                        v = (double)values.gems;
                     }
+                    house_credits[house] += v;
+                    // [RE: economy.md §2 CONFIRMED] Ore Purifier bonus: a
+                    // separate add of count x PurifierBonus x value.
+                    if (purifiers && purifiers[house] > 0)
+                        house_credits[house] += purifiers[house] * purifier_bonus * v;
                 }
                 if (u.bales_ore <= 0.0 && u.bales_gems <= 0.0) {
                     events.push_back({HarvestEvent::Kind::UnloadEnd, idx});

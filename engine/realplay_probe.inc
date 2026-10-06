@@ -362,6 +362,28 @@ int run_probe_realplay() {
                 "G-30 two walls 4 cells apart close the gap for free (+" + std::to_string(after - before) + ")");
     }
 
+    // ---- G-27: Ore Purifier pays PurifierBonus on top of every unload ----
+    {
+        double earned[2] = {0, 0};
+        for (int with = 0; with < 2; ++with) {
+            ra2engine::SkirmishConfig cfg = P::menu_config(rules);
+            GameScene g(/*no_audio=*/true, cfg);
+            P::add_instant(g, "GAPOWR");
+            P::add_instant(g, "GAPOWR");
+            if (with) P::add_instant(g, "GAOREP");
+            const int t = roster_index(P::ba(g), "GAREFN");
+            int rx = 0, ry = 0;
+            if (P::find_spot(g, t, rx, ry)) g.place_building(t, rx, ry);
+            const double c0 = P::credits(g);
+            P::run(g, 15 * 150);
+            earned[with] = P::credits(g) - c0;
+        }
+        std::cout << "[probe] income 150s without/with purifier = " << earned[0] << " / "
+                  << earned[1] << "\n";
+        p.check(earned[0] > 0 && earned[1] >= earned[0] * 1.2,
+                "G-27 an Ore Purifier raises harvest income (+25% per bale)");
+    }
+
     // ---- G-25 / G-29: SW from its building, power-gated, lost with it ----
     {
         ra2engine::SkirmishConfig cfg = P::menu_config(rules);

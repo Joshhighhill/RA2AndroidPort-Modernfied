@@ -1724,6 +1724,8 @@ void wire_economy(ra2engine::World& world, const BuildingAssets& ba, const Rules
     // Strength). Byte-safe: repair_rules_ is not hashed and is read only inside
     // step_repair_sell, past the repair_sell_any_ firewall no demo ever opens.
     world.set_repair_sell_rules(ba.repair_sell);
+    // Gap owner A (G-27) [RE: economy.md §2]: rulesmd [General] PurifierBonus=.25.
+    world.set_purifier_bonus(rules.general_double("PurifierBonus", 0.0));
 }
 
 // FreeUnit grand-opening spawn [RE: economy.md §6]: for every building that
@@ -2001,6 +2003,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.click_repairable = rules.section_flag(id, "ClickRepairable", true);
         d.crewed           = rules.section_flag(id, "Crewed", false);
         d.soylent          = (int)rules.section_double(id, "Soylent", 0.0);
+        d.ore_purifier     = rules.section_flag(id, "OrePurifier", false);   // G-27
 
         BuildingArt slot;
         try {

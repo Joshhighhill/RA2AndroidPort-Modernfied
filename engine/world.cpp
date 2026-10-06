@@ -3255,9 +3255,21 @@ void World::step(double dt) {
         ore_.step(dt, growth_interval_, growth_pct_, spread_pct_, passable_, ore_rng_);
         std::vector<HarvestMove> h_moves;
         std::vector<HarvestEvent> h_events;
+        // Gap owner A (G-27): own operational Ore Purifiers per house.
+        std::vector<int> purifiers(house_credits_.size(), 0);
+        bool any_purifier = false;
+        for (const Building& b : buildings_)
+            if (b.alive && b.state == Building::State::Idle && b.type >= 0 &&
+                b.type < static_cast<int>(types_.size()) && types_[b.type].ore_purifier &&
+                b.house >= 0 && b.house < static_cast<int>(purifiers.size())) {
+                ++purifiers[b.house];
+                any_purifier = true;
+            }
         step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
                     grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
-                    house_credits_.data(), h_moves, h_events);
+                    house_credits_.data(), h_moves, h_events,
+                    static_cast<int>(house_credits_.size()),
+                    any_purifier ? purifiers.data() : nullptr, purifier_bonus_);
         // Path each requested move the same way step_combat's MoveRequests
         // are executed above (order_unit_move mirrors that pattern).
         for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);

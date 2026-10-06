@@ -655,6 +655,8 @@ public:
     // world, moving skirmish_hash and maps_hash. So the roster lands in its own
     // field and `btypes()` prefers whichever is populated.
     void set_building_types(std::vector<BuildingTypeDef> types) { lookup_types_ = std::move(types); }
+    // Gap owner A (G-27) [RE: economy.md §2]: rulesmd [General] PurifierBonus.
+    void set_purifier_bonus(double b) { purifier_bonus_ = b; }
 
     // The type roster for non-economy consumers (repair/sell). set_economy's
     // roster wins when present so gate worlds behave exactly as before.
@@ -1557,6 +1559,7 @@ private:
     double growth_interval_ = 0.0;
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
+    double purifier_bonus_ = 0.0;   // rules [General] PurifierBonus (gap owner A, G-27)
     // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
     // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
     // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/
