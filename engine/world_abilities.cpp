@@ -660,9 +660,12 @@ void World::step_abilities(double dt) {
         Unit& u = units_[i];
         if (!u.abil_bound) continue;
         const bool was = u.frozen;
-        u.frozen = u.alive && (u.deployed || next < u.warp_until || u.warp_remaining > 0);
+        // Gap fix C (G-45): a DeployFire GI's "deployed" is a firing post, not
+        // the Desolator freeze.
+        u.frozen = u.alive && ((u.deployed && !u.deploy_fire) || next < u.warp_until ||
+                               u.warp_remaining > 0);
         if (was && !u.frozen && u.warp_until >= 0 && next >= u.warp_until && u.alive &&
-            u.warp_remaining <= 0 && !u.deployed) {
+            u.warp_remaining <= 0 && (!u.deployed || u.deploy_fire)) {
             ability_events_.push_back({Ev::Kind::Unfreeze, i, -1, static_cast<int>(next), 0, false});
             u.warp_until = -1;
         }

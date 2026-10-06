@@ -5101,6 +5101,7 @@ public:
 
 private:
 #include "realplay_scene.inc"   // gap owner A: placement/production/roster members
+    friend struct CombatProbe;   // gap owner C: --probe-combat drives the real scene
     // The window is always created at 1280x720 (see run_interactive); the sidebar
     // layout/camera/input all key off these, so the driver's plat matches.
     static constexpr int kWinW = 1280;
@@ -15794,6 +15795,7 @@ int run_demo_saveload() {
 }
 
 #include "realplay_probe.inc"   // gap owner A: --probe-realplay (real GameScene harness)
+#include "realplay_combat_probe.inc"   // gap owner C: --probe-combat (real GameScene harness)
 
 int main(int argc, char** argv) {
     try {
@@ -15912,7 +15914,9 @@ int main(int argc, char** argv) {
                 return run_demo_campaign();   // P10 Campaign gate
             } else if (arg == "--campaign-survey") {
                 return run_campaign_survey();   // P10 dev aid (not a gate)
-            } else if (arg == "--probe-realplay") {
+            } else if (arg == "--probe-combat") {
+        return run_probe_combat();   // gap owner C: real-play combat/movement probe
+    } else if (arg == "--probe-realplay") {
                 return run_probe_realplay();   // gap owner A: real-play economy/production probe
             } else if (arg == "--demo-saveload") {
                 return run_demo_saveload();   // P7 Save/Load gate
