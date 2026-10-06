@@ -141,6 +141,14 @@ void arm_skirmish_ai(ra2engine::World& world, const ra2engine::SkirmishConfig& c
         if (b.alive && h >= 0 && h < (int)cfg.slots.size() && cfg.slots[h].combatant &&
             !cfg.slots[h].is_ai) { ax = b.cx; ay = b.cy; break; }
     }
+    // gF G-23: a real skirmish starts from an MCV (no building yet) -- anchor
+    // on the human's MCV/start force instead of the grid centre.
+    if (ax == world.grid_w() / 2 && ay == world.grid_h() / 2)
+        for (const ra2engine::Unit& u : world.units()) {
+            const int h = u.house;
+            if (u.alive && h >= 0 && h < (int)cfg.slots.size() && cfg.slots[h].combatant &&
+                !cfg.slots[h].is_ai) { ax = u.cell_x; ay = u.cell_y; break; }
+        }
     for (int i = 0; i < (int)cfg.slots.size(); ++i) {
         const ra2engine::SkirmishSlot& s = cfg.slots[i];
         if (!s.is_ai || !s.combatant) continue;

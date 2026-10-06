@@ -54,6 +54,10 @@ struct AiSoakProbe {
         ra2engine::World& w = world(g);
         const BuildingAssets& b_a = ba(g);
         const int ai = 1, human = 0;
+        // gF G-23: the skirmish starts from an MCV; the passive human still
+        // unfolds it (its one action) so the AI has a base to attack.
+        for (int i = 0; i < (int)w.units().size(); ++i)
+            if (w.units()[(std::size_t)i].house == human && w.is_mcv(i)) { w.order_deploy_mcv(i); break; }
         auto base_hp = [&](int h) {
             long long hp = 0, mx = 0;
             for (const ra2engine::Building& b : w.buildings())
