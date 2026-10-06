@@ -51,6 +51,10 @@ public:
     void present();
     void* renderer() const;   // SDL_Renderer*
     int width() const; int height() const;
+    // G-89: physical window size (RA2.INI [Video]) and desktop fullscreen;
+    // rendering stays at the logical size given to create().
+    void set_window_size(int w, int h);
+    void set_fullscreen(bool on);
 private:
     Platform() = default;
     struct Impl; Impl* p_ = nullptr;

@@ -17,8 +17,10 @@ and all 8 facings are resolved from your real `artmd.ini` sequence data
 (`ra2assets::Art`, see `docs/re/infantry-anim.md`), and group attack orders
 fan attackers out to individual firing positions instead of queuing them
 single-file. The fight is audible, too: weapon-fire sound effects, unit voice
-acknowledgements (select/move/attack barks), death screams, and the EVA
-"Unit lost" announcement, all driven by your real `soundmd.ini`/`evamd.ini`
+acknowledgements (select/move/attack barks) for every unit, death screams,
+impact/explosion sounds, in-game music and the full EVA (construction
+complete, unit ready, low power, base under attack, insufficient funds, ...
+-- see "Presentation in real play"), all driven by your real `soundmd.ini`/`evamd.ini`
 event definitions and the `audio.bag`/`audio.idx` sample archive decoded by
 the in-house IMA-ADPCM decoder (no XCC/third-party tooling) plus a from-scratch
 WAV reader for the EVA clips. Playback semantics — linear distance
@@ -1143,7 +1145,8 @@ Render adds a per-cell overlay — **black** over SHROUDED, a translucent
 local player's (house 0) grids, and **hides enemy mobile objects** sitting in
 house 0's shroud/fog (a unit you can't see isn't drawn). The radar minimap is
 greenfield: it paints only what house 0 has explored, replacing the CB-era
-static radar frame. All render/minimap work is cosmetic and folds into no gate
+static radar frame. (Real play now draws shroud/fog with SHROUD.SHP/FOG.SHP
+and an isometric radar -- see "Presentation in real play".) All render/minimap work is cosmetic and folds into no gate
 hash.
 
 The spy/radar reveal path resolves the Capture phase's INERT reveal item: the
@@ -2044,8 +2047,8 @@ runs). The mid-flight PNG shows both Rhinos' shells at the top of their arcs.
   quantisation is < 0.2 lepton at these ranges).
 - The non-arcing pitch's sign toward a lower target and the unidentified
   `TechnoType+0x6A4` gate on the speed-1 launch are PROBABLE (§12.3).
-- Projectile art (`120MM`/`ZBOMB` SHPs) is a cosmetic carry-forward — shells
-  draw as rimmed dots with a ground shadow.
+- Projectile art (`120MM`/`ZBOMB` SHPs): drawn in real play by the G-83 FX
+  layer (see "Presentation in real play"); the gates still draw rimmed dots.
 
 ## Map Triggers / Scripting (P9)
 
@@ -2971,6 +2974,69 @@ the scene's own rosters (ALL PASS), plus `tests/test_gap_combat.cpp`.
   prone (G-52), splash vs buildings/own units, Crush=1.8/AutoCrush steering,
   SelectWeapon body (RE-W1 fallback rule), homing steering (RE-W8).
 
+
+## Presentation in real play (agent E, G-08/09/16/80..91)
+
+Everything below runs in the game the menu launches (`GameScene`); the gates
+keep their old renders, and no simulation value or gate hash moves (the FX,
+EVA and music layers only observe World/queue state; `--demo-skirmish`
+re-verified `skirmish_hash=fde3f587e747f765`). Code lives in additive files
+`engine/pres_*.inc`; the RE behind it is `docs/re/presentation.md`.
+
+- **EVA (G-80)**: `evamd.ini` parsed, side-correct clips (Allied/Russian/Yuri,
+  `langmd.mix/audiomd.mix` then `language.mix/audio.mix`), the recovered queue
+  (one line at a time, 500 ms gap, INTERRUPT flush, QUEUE FIFO + de-dupe,
+  transient pending slot by priority). Triggers: Building/Training on start,
+  ConstructionComplete, UnitReady (RadarEvent 6, 2 cells), Canceled,
+  InsufficientFunds (< 100 credits with production running, every SpeakDelay),
+  LowPower (once per episode, needs a yard), OurBaseIsUnderAttack + siren
+  (RadarEvent 3: 8 cells / 400 frames), UnitLost (RadarEvent 7),
+  NewConstructionOptions, StructureSold, BuildingCaptured, Repairing,
+  UnitPromoted, SW ready/launched, YouAreVictorious/YouHaveLost.
+- **Voices and sounds (G-81)**: select/move/attack/die + weapon `Report=` for
+  every unit of every roster (incl. A's rules-driven roster), anim `Report=` for
+  impacts/explosions, BuildingDieSound / BuildingDamageSound / SellSound /
+  promotion sounds / RadarOn / RadarOff.
+- **Music (G-82)**: `thememd.ini` `Normal=yes` tracks in `[Themes]` order
+  (BrainFreeze first), `Repeat=` honoured, streamed from `thememd.mix` on the
+  Score bus.
+- **Effects (G-83)**: weapon `Anim=` muzzle flashes (8-facing infantry lists,
+  FLH for vehicles), warhead `AnimList` impacts (`[min(dmg, n*25-1)/25]`),
+  building `Explosion=` anims, projectile `Image=` art in flight, nuke take-off
+  and NUKEANIM; `[Anim]` Rate (900/Rate frames), Start/End/Loop, Next, Report.
+- **Shroud/fog (G-84)**: SHROUD.SHP + FOG.SHP post-pass with the binary's
+  256-entry neighbour LUT (0x7F3194); enemy buildings, ore, crates and shells
+  respect visibility.
+- **Buildings (G-85)**: ActiveAnim/Two/Three/Four (+Damaged), BibShape,
+  DamageFireTypes fires, 50 % shadow half.
+- **House colours (G-16 render)**: SHP units, buildings and voxels in each
+  house's lobby colour (voxel sets rasterized lazily per colour).
+- **Theater art (G-86)**: buildings, ore, crates and the unit palette follow the
+  map's theater (snow/urban); YR-only DESERT/NEWURBAN stay temperate.
+- **Map dressing (G-87)**: `[Terrain]` trees/rocks, walls/fences/bridges
+  overlays, `[Smudge]`, neutral `[Structures]` (tech buildings join the World,
+  civilian buildings are dressing); they block ground movement.
+- **Cursors (G-08 art)**: MOUSE.SHP from the 0x82C038 descriptor table, driven
+  by B's `Input::action_at` through DisplayClass::ConvertAction; edge-scroll
+  arrows; 16 ms animation ticks.
+- **Radar (G-09 art)**: isometric minimap inside radar.shp's open frame
+  (tile radar colours, ore, dressing, shroud/fog, house blips, viewport box),
+  power-up animation; B's radar click uses its exact inverse.
+- **HUD/platform (G-88/89/90/91)**: 12metfnt credits/banners, black clear,
+  selected-own path lines only (Target Lines), rules health colours, infantry
+  shadows + anim tables in skirmish, Soviet `sidec02` sidebar, RA2.INI
+  `[Video]` window size + Alt+Enter fullscreen.
+
+**Acceptance harness**: `ra2engine --scene-shot <stem> [--map M] [--secs a,b]
+[--script none|fight|tanks|build] [--side soviet] [--color N] [--select]
+[--mouse x,y] [--peek terrain|overlay|civ] [--give ID] [--audio]` drives the
+real GameScene at 15 Hz, writes `<stem>_<sec>.png` and prints the `[pres]`
+event log (EVA requests/plays, sounds, music, impacts, cursor ids).
+
+**Open (RE-FALLBACK in code)**: infantry shadow = palette index 12 at 50 %
+(binary uses the second-half frame; GI's is empty), damage-fire spawn
+placement, BlendedFog compose, radar colour source, YR-only theater art,
+nuke flight (damage is instant, G-25), music shuffle setting.
 ## Real-play controls (agent B, G-01/04/05/06/07/08/09/10/12/13/70/71)
 
 Recovered from `gamemd.exe` (hunt "fixB", scripts `D:\ra2-re\scripts\fixB_*.py`)

@@ -27,6 +27,8 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>         // G-80 EVA queue
+#include <set>           // G-81 registered sound keys
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -134,6 +136,22 @@ struct Assets {
     // fields are the exact literals used before this existed.
     const ra2assets::TheaterChain* chain = nullptr;
 };
+
+// G-86: the theater chain the ART loaders (buildings, ore, unit palette) use.
+// Null -> the TEMPERATE row (every gate). Set ONLY by GameScene before its art
+// loaders run, so the real game draws snow/urban structures, ore and units with
+// their own theater art + palettes [RE: building-render.md §1/§6 Init_Theater
+// UNIT%s.PAL; maps.md §9]. The YR-only theaters (DESERT/NEWURBAN) keep their
+// art under ra2md.mix, which these loaders do not open: they stay on the
+// temperate art [RE-FALLBACK: G-86 YR theaters].
+const ra2assets::TheaterChain* g_art_chain = nullptr;
+// G-91: the sidebar chrome mix -- sidec01 (Allied, every gate) or sidec02
+// (Soviet), chosen by GameScene from the player's side before the art loads.
+const char* g_sidebar_mix = "sidec01.mix";
+inline const ra2assets::TheaterChain& art_chain() {
+    if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
+    return *ra2assets::theater_chain("TEMPERATE");
+}
 
 // Which map load_assets should read [RE: maps.md §7 rule 2]. The DEFAULT
 // reproduces today's hardcoded selection EXACTLY -- mapsmd03.mix entry
@@ -289,8 +307,9 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
     };
     auto try_load = [&](const std::string& name, ra2assets::ShpFile& out) -> bool {
         for (const char* ext : {".tem", ".shp"})
-            for (const auto& c : ra2assets::theater_candidates(name, 'T', "isotemp.mix",
-                                                               "temperat.mix", ext)) {
+            for (const auto& c : ra2assets::theater_candidates(name, art_chain().letter,
+                                                               art_chain().iso_mix,
+                                                               art_chain().art_mix, ext)) {
                 MixFile* m = get_mix(c.mix);
                 if (!m) continue;
                 if (const MixEntry* e = m->find(c.file)) {
@@ -318,7 +337,7 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
     // (wrong colors, but still renders rather than crashing).
     try {
         MixFile cache = ra2.open_nested("cache.mix");
-        if (const MixEntry* pe = cache.find(std::string("temperat.pal"))) {
+        if (const MixEntry* pe = cache.find(std::string(art_chain().theater_pal))) {
             auto raw = cache.read(*pe);
             oa.pal = Palette::load(raw.data(), raw.size());
             oa.has_pal = true;
@@ -367,6 +386,16 @@ struct VehicleAssets {
     std::unique_ptr<ra2assets::ShpFile> explosion;  // death anim SHP; null if unavailable
     ra2assets::Palette explosion_pal;              // anim.pal (or unit pal fallback)
     bool ok = false;
+    // G-16 (render): the voxel sources, kept so a house in any of the 8 MP
+    // colours gets its own lazily rasterized facing sets (vxl_set below).
+    struct VoxelSrc {
+        ra2assets::VxlModel hull, tur, barl;
+        ra2assets::HvaModel hull_h, tur_h, barl_h;
+        ra2assets::Vpl vpl;
+        ra2assets::Palette pal;
+    };
+    std::shared_ptr<const VoxelSrc> vsrc;
+    mutable std::map<int, std::shared_ptr<std::array<ra2engine::FacingSet, 3>>> color_sets;
 };
 
 // All SHP + palette assets for one building type, resolved through the
@@ -1091,8 +1120,8 @@ UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra
     ua.shps.emplace(cons.combat.image, load_unit_shp(conquer, cons.combat.image));
 
     MixFile cache = ra2.open_nested("cache.mix");
-    const MixEntry* pe = cache.find(std::string("unittem.pal"));
-    if (!pe) throw std::runtime_error("unittem.pal not found in ra2.mix/cache.mix");
+    const MixEntry* pe = cache.find(std::string(art_chain().unit_pal));   // G-86
+    if (!pe) throw std::runtime_error("unit palette not found in ra2.mix/cache.mix");
     auto pal_raw = cache.read(*pe);
     ua.pal = Palette::load(pal_raw.data(), pal_raw.size());
 
@@ -1228,6 +1257,14 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
             va.combat.elite_secondary.proj.flh[k] = va.flh[k];
         }
 
+        {   // G-16: keep the sources for per-colour sets.
+            auto src = std::make_shared<VehicleAssets::VoxelSrc>();
+            src->hull = hull_m; src->tur = tur_m; src->barl = barl_m;
+            src->hull_h = hull_h; src->tur_h = tur_h; src->barl_h = barl_h;
+            src->vpl = vpl;
+            src->pal = unit_pal;
+            va.vsrc = src;
+        }
         for (int house = 0; house <= 1; ++house) {
             const ra2assets::Palette hp = ra2engine::pal_for_house(unit_pal, house);
             va.hull[house] =
@@ -1932,7 +1969,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         auto raw = cache.read(*pe);
         return Palette::load(raw.data(), raw.size());
     };
-    ba.unit_pal = load_pal("unittem.pal");
+    ba.unit_pal = load_pal(art_chain().unit_pal);   // G-86 theater unit palette
     ba.cameo_pal = load_pal("cameo.pal");
     // Sidebar chrome palette: sidebar.pal if present (the §11 pixel-decode
     // used it), else cameo.pal (guarded probe).
@@ -1959,8 +1996,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // Resolve an image name to a decoded SHP over the theater candidate walk
     // (first hit wins); throws if no candidate hits.
     auto resolve_shp = [&](const std::string& image) -> ShpFile {
-        for (const auto& c : ra2assets::theater_candidates(image, 'T', "isotemp.mix",
-                                                           "temperat.mix", ".shp")) {
+        for (const auto& c : ra2assets::theater_candidates(image, art_chain().letter,
+                                                           art_chain().iso_mix,
+                                                           art_chain().art_mix, ".shp")) {
             MixFile* m = get_mix(c.mix);
             if (!m) continue;
             if (const MixEntry* e = m->find(c.file)) return ShpFile::load(m->read(*e));
@@ -2108,7 +2146,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // Sidebar chrome (player side = Allied sidec01) [RE-GATE: construction.md
     // §11]: four SEPARATE 28x27 tab SHPs + the 55-frame gclock2.shp clock.
     try {
-        MixFile sb = ra2.open_nested("sidec01.mix");
+        MixFile sb = ra2.open_nested(g_sidebar_mix);   // G-91: sidec02 for a Soviet player
         auto load_sb = [&](const char* fn) -> ShpFile {
             const MixEntry* e = sb.find(std::string(fn));
             if (!e) throw std::runtime_error(std::string("sidebar SHP missing: ") + fn);
@@ -2369,6 +2407,13 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
     }
 }
 
+// G-80..G-90 presentation layer (additive .inc files).
+#include "pres_audio.inc"    // G-80..G-82 (helpers also used by the FX layer)
+#include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
+#include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
+#include "pres_map.inc"      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
+#include "pres_radar.inc"    // G-09 render half: isometric radar minimap
+
 // Draws one building in render_world's merged back-to-front pass. Anchors the
 // SHP canvas CENTER at the foundation's screen bbox center [RE-GATE APPLIED:
 // building-render.md §2 center-center registration, replacing the pre-hunt
@@ -2403,7 +2448,8 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (b.state == ra2engine::Building::State::Dead) {
         // A SOLD building is Limbo()'d and deleted in the original -- it does
         // not explode [RE: repair-sell.md §B2 state 2].
-        if (ba.explosion && ba.explosion->count() > 0 && !b.sold) {
+        // G-83: in the live game the FX layer plays the type's Explosion= anims.
+        if (ba.explosion && ba.explosion->count() > 0 && !b.sold && !g_fx) {
             int frame = static_cast<int>(b.die_time * 15.0);
             frame = std::clamp(frame, 0, ba.explosion->count() - 1);
             const ra2assets::ShpFile::Frame f = ba.explosion->frame_info(frame);
@@ -2448,20 +2494,50 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
                                       ra2engine::wall_stage(b.hp, b.max_hp, condition_yellow));
     }
     if (frame < 0 || frame >= shp.count()) return;
+    // G-85: ActiveAnim/Bib/damage-fire overlays (live game only; g_fx null in gates).
+    const bool overlay = g_fx && !buildup && b.state == ra2engine::Building::State::Idle;
+    const bool bdamaged = b.max_hp > 0 && b.hp <= condition_yellow * b.max_hp;
+    const ra2assets::Palette opal = overlay ? ra2engine::house_draw_palette(ba.unit_pal, b.house) : ba.unit_pal;
+    const std::string& oimg = def.image.empty() ? def.id : def.image;
+    if (overlay)
+        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
+                              ra2engine::house_draw_key(b.house), W, H, 0);
+    // G-85: the shadow half (frame + Frames/2) first, darkened 50 % [RE:
+    // presentation.md §7, FUN_00705290 + the Darken blitter dst = dst >> 1].
+    if (overlay && shp.count() >= 2 && frame < shp.count() / 2) {
+        const int sf = frame + shp.count() / 2;
+        const ra2assets::ShpFile::Frame s = shp.frame_info(sf);
+        if (s.w > 0 && s.h > 0) {
+            char skey[96];
+            std::snprintf(skey, sizeof skey, "bldsh:%s:%c:%d", def.id.c_str(), buildup ? 'b' : 'm', sf);
+            SDL_Texture* st = static_cast<SDL_Texture*>(tc.peek(skey));
+            if (!st) {
+                const std::vector<uint8_t> si = shp.decode_indexed(sf);
+                std::vector<uint8_t> rgba(si.size() * 4, 0);
+                for (std::size_t k = 0; k < si.size(); ++k) if (si[k]) rgba[k * 4 + 3] = 128;
+                st = static_cast<SDL_Texture*>(tc.get_rgba(skey, rgba.data(), s.w, s.h));
+            }
+            SDL_Rect sd{fcx - shp.width() / 2 + s.x, fcy - shp.height() / 2 + s.y, s.w, s.h};
+            SDL_RenderCopy(ren, st, nullptr, &sd);
+        }
+    }
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     SDL_Rect dst{fcx - shp.width() / 2 + f.x, fcy - shp.height() / 2 + f.y, f.w, f.h};
     if (!(dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H)) {
         char key[96];
-        std::snprintf(key, sizeof key, "bld:%s:%c:h%d:%d", def.id.c_str(), buildup ? 'b' : 'm',
-                      b.house, frame);
+        std::snprintf(key, sizeof key, "bld:%s:%c:c%d:%d", def.id.c_str(), buildup ? 'b' : 'm',
+                      ra2engine::house_draw_key(b.house), frame);
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
         if (!tex) {
             std::vector<uint8_t> idx = shp.decode_indexed(frame);
-            const ra2assets::Palette hp = ra2engine::pal_for_house(ba.unit_pal, b.house);
+            const ra2assets::Palette hp = ra2engine::house_draw_palette(ba.unit_pal, b.house);   // G-16
             tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, hp));
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
     }
+    if (overlay)
+        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
+                              ra2engine::house_draw_key(b.house), W, H, 1);
 
     // Foundation-width HP bar when damaged (render-only; buildings aren't
     // selectable so there's no selection marker).
@@ -2491,6 +2567,28 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
 // campaign/multi-house world draws every other house with set 1. Houses 0/1
 // map to themselves, so every existing render is unchanged. [P10]
 inline int vxl_house(int h) { return h == 0 ? 0 : 1; }
+// G-16 (render): the facing set for part (0 hull, 1 turret, 2 barrel) in house
+// h's colour. Unconfigured worlds (every gate) keep the pre-built blue/red sets;
+// a configured skirmish rasterizes each MP colour once, on first draw.
+const ra2engine::FacingSet& vxl_set(const VehicleAssets& va, int part, int house) {
+    const int key = ra2engine::house_draw_key(house);
+    if (key < 10 || !va.vsrc) {
+        const int hi = vxl_house(house);
+        return part == 0 ? va.hull[hi] : part == 1 ? va.turret[hi] : va.barrel[hi];
+    }
+    auto& slot = va.color_sets[key];
+    if (!slot) {
+        slot = std::make_shared<std::array<ra2engine::FacingSet, 3>>();
+        const VehicleAssets::VoxelSrc& s = *va.vsrc;
+        const ra2assets::Palette hp = ra2engine::pal_for_color(s.pal, key - 10);
+        (*slot)[0] = ra2engine::build_facing_set(s.hull, s.hull_h, ra2engine::kVehicleFacings, s.vpl, hp);
+        if (va.has_turret)
+            (*slot)[1] = ra2engine::build_facing_set(s.tur, s.tur_h, ra2engine::kVehicleFacings, s.vpl, hp);
+        if (va.has_barrel)
+            (*slot)[2] = ra2engine::build_facing_set(s.barl, s.barl_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    }
+    return (*slot)[part];
+}
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
     if (u.die_time >= 0.0) {
@@ -2521,24 +2619,24 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
     if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
-                                      va.hull[vxl_house(u.house)].sprites[bi].w, cam, W, H);
+                                      vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
 
     ra2engine::draw_voxel_sprite(
-        ren, tc, "vxl:" + img + ":h:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(bi),
-        va.hull[vxl_house(u.house)].sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi),
+        vxl_set(va, 0, u.house).sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     if (va.has_turret) {
         const int ti = ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings);
         ra2engine::draw_voxel_sprite(
-            ren, tc, "vxl:" + img + ":t:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(ti),
-            va.turret[vxl_house(u.house)].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+            ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
+            vxl_set(va, 1, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
         if (va.has_barrel)
             ra2engine::draw_voxel_sprite(
-                ren, tc, "vxl:" + img + ":b:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(ti),
-                va.barrel[vxl_house(u.house)].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+                ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
+                vxl_set(va, 2, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
-    if (u.fire_flash > 0.0) {
+    if (u.fire_flash > 0.0 && !g_fx) {   // G-83: the FX layer draws the weapon's Anim= instead
         const double yaw = ra2engine::index_to_yaw(
             ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings),
             ra2engine::kVehicleFacings);
@@ -2576,11 +2674,13 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
 // Cells whose variant art is absent simply don't draw.
 void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
               const ra2engine::OreField& ore, const ra2assets::MapFile& map,
-              const ra2assets::Palette& pal, const ra2engine::Camera& cam, int W, int H) {
+              const ra2assets::Palette& pal, const ra2engine::Camera& cam, int W, int H,
+              const ra2engine::World* vis = nullptr) {
     if (!oa.any) return;
     const ra2assets::Palette& ore_pal = oa.has_pal ? oa.pal : pal;
     for (const ra2assets::MapCell& c : map.cells()) {
         if (!ore.has_ore(c.x, c.y)) continue;
+        if (vis && !vis->explored_at(0, c.x, c.y)) continue;   // G-84: never under shroud
         const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
         int slot = ore.variant_at(c.x, c.y);
         if (slot < 0 || slot >= 20) slot = 0;
@@ -2660,8 +2760,9 @@ P5Art load_p5_art(const std::string& dir, const ra2assets::MixFile& ra2) {
         }
     } catch (const std::exception&) {}
     try {
-        for (const auto& c : ra2assets::theater_candidates("crate", 'T', "isotemp.mix",
-                                                           "temperat.mix", ".tem")) {
+        for (const auto& c : ra2assets::theater_candidates("crate", art_chain().letter,
+                                                           art_chain().iso_mix, art_chain().art_mix,
+                                                           std::string(".") + art_chain().ext)) {
             MixFile m = ra2.open_nested(c.mix);
             if (const MixEntry* e = m.find(c.file)) {
                 art.crate = ShpFile::load(m.read(*e));
@@ -2724,6 +2825,7 @@ void draw_p5_crates(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2eng
     if (!g_p5_art || !g_p5_art->has_crate || !world.crates_enabled()) return;
     for (const ra2engine::World::Crate& c : world.crates()) {
         if (c.x < 0) continue;
+        if (!world.explored_at(0, c.x, c.y)) continue;   // G-84: crates respect shroud
         const ra2assets::MapCell* mc = map.at(c.x, c.y);
         const int level = mc ? static_cast<int>(mc->level) : 0;
         const ra2engine::ScreenPt p = ra2engine::cell_to_screen(c.x, c.y, level, 60, 30, 15);
@@ -2771,17 +2873,26 @@ const VehicleAssets* va_for_image(const std::vector<const VehicleAssets*>* vlist
 // at 15 px, and height at 0.866*60/sqrt2 = 36.74 px per 256 leptons
 // (voxel-render.md §6). The projectile Image= SHPs (120MM/ZBOMB) are a recorded
 // cosmetic carry-forward.
+bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
+                          const ra2engine::World& world, const ra2engine::Projectile& p, int gx,
+                          int sy, int W, int H);   // G-83 (pres_fx.inc)
 void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
-                      const ra2assets::MapFile& map, const ra2engine::Camera& cam, int W, int H) {
+                      const ra2assets::MapFile& map, const ra2engine::Camera& cam, int W, int H,
+                      ra2engine::TextureCache* tc = nullptr) {
     for (const ra2engine::Projectile& p : world.projectiles()) {
         const double x = p.x / 256.0, y = p.y / 256.0;
         const ra2assets::MapCell* mc =
             map.at(ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y));
+        // G-84: a shell over a cell house 0 cannot currently see is not drawn.
+        if (!world.visible_at(0, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
+            continue;
         const int level = mc ? mc->level : 0;
         const int gx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
         const int gy = static_cast<int>(std::lround((x + y) * 15.0 - level * 15)) + cam.y + 15;
         const int sy = gy - static_cast<int>(std::lround((p.z / 256.0) * 36.74));
         if (gx < -8 || gx > W + 8 || sy > H + 8 || gy < -8) continue;
+        // G-83: the projectile's Image= art when the live game's FX layer has it.
+        if (tc && pres_draw_projectile(ren, *tc, world, p, gx, sy, W, H)) continue;
         SDL_Rect shadow{gx - 2, gy - 1, 4, 2};
         SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
         SDL_RenderFillRect(ren, &shadow);
@@ -2799,14 +2910,23 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
     }
 }
 
+
+bool pres_target_lines();   // G-88: RA2.INI UnitActionLines (defined after g_user_settings)
+
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
-    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world);
+    ra2engine::set_color_world(&world);   // G-16: house colours for every sprite draw
+    // G-84: terrain is drawn in full; shroud/fog are a post-pass over every
+    // object (draw_shroud_pass below) instead of per-tile black rectangles that
+    // overdrew the already-drawn neighbours.
+    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, nullptr);
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
-    if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H);
+    if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
+    // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
+    if (g_map_dressing) g_map_dressing->draw_ground(ren, tc, world, g_map_pals, cam, W, H);
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -2817,13 +2937,17 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         const VehicleAssets* va = va_for_image(vlist, u.image);
         if (!va) return 0;
         const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
-        return va->hull[vxl_house(u.house)].sprites[bi].w;
+        return vxl_set(*va, 0, u.house).sprites[bi].w;
     };
     // Paths + selection markers first (under the sprites); skip dead/dying
     // units entirely (no path, no selection marker for a corpse-in-progress).
     for (const ra2engine::Unit& u : us) {
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;  // CB-1:
-        ra2engine::draw_path(ren, u, cam, W, H);       // carried units draw nothing
+        // G-88: in the real game only the player's SELECTED units show their
+        // route, and only with RA2.INI "Target Lines" on (UnitActionLines);
+        // the non-interactive render paths keep the old every-unit debug lines.
+        if (!input || (u.selected && u.house == 0 && pres_target_lines()))
+            ra2engine::draw_path(ren, u, cam, W, H);   // carried units draw nothing
         if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
     }
     // Sprites back-to-front so nearer units overlap farther ones. Vehicles
@@ -2871,8 +2995,15 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         };
         std::vector<DrawItem> A, B;
         for (int i = 0; i < static_cast<int>(bs.size()); ++i)
-            if (bs[i].alive) A.push_back({bkey(i), 0, i});
+            if (bs[i].alive && pres_building_seen(world, bs[i])) A.push_back({bkey(i), 0, i});
         std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+        // G-87: map [Terrain] objects / civilian buildings sort with the buildings.
+        if (g_map_dressing) {
+            const auto& objs = g_map_dressing->objects();
+            for (int i = 0; i < static_cast<int>(objs.size()); ++i)
+                A.push_back({(objs[i].x + (objs[i].fw - 1) / 2.0) + (objs[i].y + (objs[i].fh - 1) / 2.0), 2, i});
+            std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+        }
         for (int i : uorder) B.push_back({us[i].fx + us[i].fy, 1, i});
         merged.resize(A.size() + B.size());
         std::merge(A.begin(), A.end(), B.begin(), B.end(), merged.begin(),
@@ -2881,7 +3012,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         for (int i : uorder) merged.push_back({0.0, 1, i});
     }
     for (const DrawItem& d : merged) {
-        if (d.kind == 0) {
+        if (d.kind == 2) {
+            g_map_dressing->draw(ren, tc, world, g_map_dressing->objects()[d.idx], g_map_pals, cam, W, H);
+        } else if (d.kind == 0) {
             const ra2engine::Building& b = world.buildings()[d.idx];
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
             draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
@@ -2893,7 +3026,10 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // Projectile phase (P2): shells/bombs in flight, over the objects. EMPTY
     // unless enable_projectiles was called (the game + --demo-projectile), so
     // no existing demo screenshot changes.
-    draw_projectiles(ren, world, a.map, cam, W, H);
+    draw_projectiles(ren, world, a.map, cam, W, H, &tc);
+    if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
+    // G-84: fog + shroud over every object, under the HUD bars.
+    draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
     // NON-CARRIED units that are selected or currently damaged. A selected
     // transport also shows its loaded pip row -- filled with the SIZE-SUM
@@ -3586,6 +3722,11 @@ bool house_owns_operational_radar(const ra2engine::World& world, const BuildingA
 // otherwise. Falls back to the static "sb:radar" blit when no radar is owned.
 void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
                         const ra2engine::World& world, const BuildingAssets& ba) {
+    // G-09: the live game's full radar picture (pres_radar.inc).
+    if (g_radar && g_radar->ok()) {
+        g_radar->draw(ren, radar_rect, world, ba);
+        return;
+    }
     const int gw = world.grid_w(), gh = world.grid_h();
     if (gw <= 0 || gh <= 0) return;
     // Map grid -> the 168x110 radar box (integer scale, letterboxed).
@@ -3631,7 +3772,13 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     shade_rect(ren, lay.bar, 255, 24, 24, 28);
     // Credits strip at the very top; tally centered at x+84 [§11a].
     blit_shp(ren, tc, "sb:credits", ba.sb_credits, 0, ba.sb_pal, lay.credits.x, lay.credits.y);
-    draw_number_centered(ren, credits_shown, lay.credits.x + 84, lay.credits.y + 2, 2);
+    if (g_game_font && g_game_font_pal) {   // G-88: the game font in the live game
+        const std::string cs = std::to_string(credits_shown);
+        draw_fnt_text(ren, tc, *g_game_font, *g_game_font_pal, cs,
+                      lay.credits.x + 84 - fnt_text_width(*g_game_font, cs) / 2, lay.credits.y + 1, "hudf:", 1);
+    } else {
+        draw_number_centered(ren, credits_shown, lay.credits.x + 84, lay.credits.y + 2, 2);
+    }
     // Bevel cap.
     blit_shp(ren, tc, "sb:top", ba.sb_top, 0, ba.sb_pal, lay.top_cap.x, lay.top_cap.y);
     // Options / diplomacy buttons over the cap (frame 0, inert).
@@ -3645,7 +3792,22 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     // gate is behind world.shroud_enabled() (false in every existing gate), so
     // the static-logo branch runs exactly as today.
     if (world.shroud_enabled() && house_owns_operational_radar(world, ba, 0)) {
-        draw_radar_minimap(ren, lay.radar, world, ba);
+        // G-09: radar.shp frames 1..N-1 are the power-up animation, the last
+        // frame is the open frame drawn over the live map.
+        const int boot = (g_radar && ba.has_radar) ? g_radar->boot_frame(ba.sb_radar.count()) : -1;
+        if (boot > 0) {
+            blit_shp(ren, tc, "sb:radar:" + std::to_string(boot), ba.sb_radar, boot, ba.sb_pal, lay.radar.x, lay.radar.y);
+        } else {
+            // The open frame is opaque; the map draws into its dark screen area
+            // (columns 1..153 x rows 0..109, measured on sidec01 radar.shp frame 32).
+            ra2engine::SbRect screen = lay.radar;
+            if (g_radar && ba.has_radar && ba.sb_radar.count() > 1) {
+                blit_shp(ren, tc, "sb:radar:open", ba.sb_radar, ba.sb_radar.count() - 1, ba.sb_pal,
+                         lay.radar.x, lay.radar.y);
+                screen = ra2engine::SbRect{lay.radar.x + 1, lay.radar.y, 153, lay.radar.h};
+            }
+            draw_radar_minimap(ren, screen, world, ba);
+        }
     } else if (ba.has_radar) {
         blit_shp(ren, tc, "sb:radar", ba.sb_radar, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
     }
@@ -3940,6 +4102,7 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
 // constructs GameScene or reads the settings file, and --menu-shot renders with
 // built-in defaults -- so the byte-identity gates cannot see a user's settings.
 ra2engine::Settings* g_user_settings = nullptr;
+bool pres_target_lines() { return g_user_settings ? g_user_settings->unit_action_lines : true; }
 
 // <SDL pref dir>/RA2.INI: %APPDATA%\ra2engine\RA2\ on Windows, the app's
 // internal (always writable) files dir on Android. Never the install dir. Empty
@@ -4481,8 +4644,12 @@ private:
 };
 
 #include "realplay_economy.inc"   // gap owner A: real-play economy/production/base
+// G-80..G-91 presentation layer (EVA / voices / music / effects / shroud /
+// cursors). Additive files; GameScene owns one Presentation.
+#include "pres_game.inc"
 
 class GameScene : public Scene {
+    friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
         : no_audio_(no_audio),
@@ -4497,7 +4664,12 @@ public:
                                             camp::lower(cfg.campaign_map)}   // P10
                          : cfg.map_file.empty() ? MapSelection{}
                                                 : MapSelection{"multimd.mix", 0u, cfg.map_file})),
-          ua_(load_unit_assets(dir_, ra2_)),
+          // G-86: the art loaders below follow this map's theater.
+          ua_((g_art_chain = a_.chain,
+               g_sidebar_mix = (soviet_campaign(cfg) || (cfg.campaign_map.empty() && !cfg.slots.empty() &&
+                                                         cfg.slots[0].side == ra2engine::World::Side::Soviet))
+                                   ? "sidec02.mix" : "sidec01.mix",
+               load_unit_assets(dir_, ra2_))),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
           language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
           // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
@@ -4646,6 +4818,7 @@ public:
         g_p5_art = &p5_art_;
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
         rp_setup();   // gap owner A: side-correct factories + sidebar (skirmish)
+        init_presentation();   // G-80..G-91 (pres_game.inc)
     }
     // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
     // the save's skirmish config, then overwrite the World and the scene
@@ -4657,6 +4830,8 @@ public:
     }
     ~GameScene() override {
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
+        if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
+        if (g_radar == &radar_) g_radar = nullptr;
     }
 
     static ra2engine::SkirmishConfig config_of(const ra2engine::save::SaveFile& f) {
@@ -4825,7 +5000,10 @@ public:
         }
         // P5: drain the promotion / crate events (the EVA/sound hook is a
         // carry-forward -- veterancy.md §5); draining keeps the queues bounded.
-        (void)world_.take_vet_events();
+        {   // G-80: promotions feed the presentation pass once per frame.
+            const std::vector<ra2engine::World::VetEvent> ve = world_.take_vet_events();
+            pres_vet_.insert(pres_vet_.end(), ve.begin(), ve.end());
+        }
         (void)world_.take_crate_events();
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
@@ -4909,45 +5087,78 @@ public:
         // CB-4 Superweapons: a committed SW target cell -> fire.
         if (act.sw_fire_confirmed) world_.fire_superweapon(0, act.sw_cx, act.sw_cy);
 
-        // Audio event collection + acks (gated on audio_.enabled).
-        if (audio_.enabled) {
-            const double view_center_px_x = kWinW / 2.0 - cam_.x;
-            const double view_center_px_y = kWinH / 2.0 - cam_.y;
-            const auto& units = world_.units();
-            prev_audio_state_.resize(units.size(), {0.0, -1.0});
-            for (std::size_t i = 0; i < units.size(); ++i) {
-                const auto& u = units[i];
-                const double sx = (u.fx - u.fy) * 30.0 - view_center_px_x;
-                const double sy = (u.fx + u.fy) * 15.0 - view_center_px_y;
-                const double dist = std::max(std::abs(sx), 2.0 * std::abs(sy)) / 60.0;
-                const auto& v = audio_.voices[u.image];
-                if (u.fire_flash > prev_audio_state_[i].first)
-                    audio_.mixer->play(v.report, dist);
-                if (u.die_time >= 0.0 && prev_audio_state_[i].second < 0.0) {
-                    audio_.mixer->play(v.die, dist);
-                    if (u.house == 0 && audio_.eva_unitlost >= 0)
-                        audio_.mixer->play_eva(audio_.eva_unitlost);
-                }
-                prev_audio_state_[i] = {u.fire_flash, u.die_time};
+        // G-80/G-81/G-82: voices, reports, deaths, EVA, music, effects -- one
+        // observation pass over this frame's state (pres_game.inc). Logs even
+        // when there is no audio device; pumps the sink when there is one.
+        pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
+                     pres_vet_, world_.take_projectile_events());
+        pres_vet_.clear();
+        // Drain gap fix C's fire events every frame (unbounded otherwise);
+        // base-defense shots get their sound + muzzle flash here.
+        pres_.defense_fire(world_, world_.take_fire_events());
+    }
+    // G-87: the map's own dressing in the real game (trees, overlays, smudges,
+    // neutral structures). Never in a gate (GameScene-only).
+    void init_map_dressing() {
+        try {
+            const MapSelection sel =
+                !cfg_.campaign_map.empty()
+                    ? MapSelection{camp::mix_for_map(cfg_.campaign_map), 0u, camp::lower(cfg_.campaign_map)}
+                    : cfg_.map_file.empty() ? MapSelection{} : MapSelection{"multimd.mix", 0u, cfg_.map_file};
+            MixFile maps = MixFile::open(ra2assets::read_file(dir_ + sel.mix));
+            const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
+            if (!me) return;
+            const auto raw = maps.read(*me);
+            const Ini map_ini = Ini::parse(std::string(raw.begin(), raw.end()));
+            map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
+            if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
+                int neutral = -1;
+                for (int h = 0; h < world_.house_count(); ++h)
+                    if (!world_.house_combatant(h)) { neutral = h; break; }
+                map_dressing_.place_structures(map_ini, [&](const std::string& id, int x, int y, int hp256) {
+                    if (neutral < 0) return false;
+                    const int bt = roster_index(ba_, id);
+                    if (bt < 0) return false;
+                    const ra2engine::BuildingTypeDef& d = ba_.roster[static_cast<std::size_t>(bt)];
+                    const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                        x, y, d.fw, d.fh, neutral, d.adjacent, world_.passable(), world_.grid_w(),
+                        world_.grid_h(), world_.occupancy(), world_.buildings(), /*bypass=*/true);
+                    if (!chk.ok) return false;
+                    const int idx = world_.add_building(bt, x, y, d.fw, d.fh, neutral, d.strength, d.armor_ix,
+                                                        0.0, /*instant=*/true, d.sight, d.grants_map_reveal);
+                    if (idx >= 0 && hp256 > 0 && hp256 < 256)
+                        world_.buildings()[static_cast<std::size_t>(idx)].hp = std::max(1, d.strength * hp256 / 256);
+                    return idx >= 0;
+                });
             }
-            if (act.actor >= 0) {
-                const auto& au = world_.units()[act.actor];
-                const double asx = (au.fx - au.fy) * 30.0 - view_center_px_x;
-                const double asy = (au.fx + au.fy) * 15.0 - view_center_px_y;
-                const double adist = std::max(std::abs(asx), 2.0 * std::abs(asy)) / 60.0;
-                const auto& av = audio_.voices[au.image];
-                if (act.selected) audio_.mixer->play(av.select, adist);
-                else if (act.attack_ordered) audio_.mixer->play(av.attack, adist);
-                else if (act.move_ordered) audio_.mixer->play(av.move, adist);
-            }
-            audio_.out.pump(*audio_.mixer);
+            for (const auto& [x, y] : map_dressing_.blocked()) world_.block_cell(x, y);
+            map_pals_[0] = &a_.pal;
+            map_pals_[1] = ore_art_.has_pal ? &ore_art_.pal : &a_.pal;
+            map_pals_[2] = &ba_.unit_pal;
+            for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
+            g_map_dressing = &map_dressing_;
+        } catch (const std::exception& ex) {
+            std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
         }
+    }
+    void init_presentation() {
+        init_map_dressing();
+        radar_.init(a_, world_, ore_art_.any ? &ore_art_ : nullptr);
+        g_radar = &radar_;
+        // G-90: every resolved infantry anim table, in skirmish as in campaign
+        // (skirmish-start / AI-built infantry otherwise fall back to
+        // default_anim and pick frames from the wrong SHP layout).
+        for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
+        const ra2engine::World::Side s = world_.house_side(0);
+        pres_.init(dir_, ra2_, audio_, audio_.enabled, rules_, rules_ini_, art_ini_, {&ur_.defs, &ur_ai_.defs},
+                   s == ra2engine::World::Side::Soviet ? 1 : s == ra2engine::World::Side::Yuri ? 2 : 0);
     }
 
     // render_world + placement cursor + sidebar chrome + production chrome.
     // begin_frame/present are the driver's responsibility.
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+        radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
         if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
@@ -4978,9 +5189,14 @@ public:
         draw_queue_badges(ren);        // G-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
-        const bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
-                          draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
-                                           world_.repair_frame());
+        bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
+                    draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
+                                     world_.repair_frame());
+        // G-08 (draw half): every other pointer is the MOUSE.SHP action cursor.
+        if (!drew)
+            drew = pres_.draw_cursor(ren, tc, mouse_, world_, input_, mx_, my_,
+                                     sidebar_up_ && lay_.contains(mx_, my_), playfield_w_, kWinW,
+                                     kWinH, world_.repair_frame(), static_cast<int>(cursor_action()));
         if (drew != os_cursor_hidden_) {
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;
@@ -4990,12 +5206,17 @@ public:
         menu_.render(ren);
         sld_.render(ren, SDL_GetTicks());
         if (!banner_.empty() && SDL_GetTicks() < banner_until_) {
-            const int w = static_cast<int>(banner_.size()) * 18;
+            const int w = g_game_font ? fnt_text_width(*g_game_font, banner_) * 2
+                                      : static_cast<int>(banner_.size()) * 18;
             SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
             SDL_Rect b{(playfield_w_ - w) / 2 - 16, 80, w + 32, 44};
             SDL_RenderFillRect(ren, &b);
-            draw_text(ren, banner_, (playfield_w_ - w) / 2, 91, 3, 240, 220, 120);
+            if (g_game_font && g_game_font_pal)   // G-88
+                draw_fnt_text(ren, tc, *g_game_font, *g_game_font_pal, banner_, (playfield_w_ - w) / 2, 88,
+                              "hudf:", 2);
+            else
+                draw_text(ren, banner_, (playfield_w_ - w) / 2, 91, 3, 240, 220, 120);
         }
     }
 
@@ -5096,6 +5317,9 @@ private:
                  ra2engine::save::from_bytes(*hs, h) && campaign_->restore(h);
         }
         if (ok) {
+            // G-87: the saved World carries the neutral structures; re-block the
+            // dressing's cells (passability is rebuilt from the map on load).
+            for (const auto& [bx, by] : map_dressing_.blocked()) world_.block_cell(bx, by);
             apply_save(sc);
             show_banner("GAME LOADED");
         } else {
@@ -5107,6 +5331,7 @@ private:
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
             wire_abilities(world_, rules_, rules_ini_);
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
+            init_map_dressing();   // G-87: the fresh world gets its map dressing again
             show_banner("LOAD FAILED");
         }
         std::cerr << "[saveload] load " << (ok ? "ok" : "FAILED") << " frame=" << f.header.frame
@@ -5303,6 +5528,11 @@ private:
     double               mf_ = 0.8;
     // --- audio ---
     AudioSystem          audio_;
+    Presentation         pres_;    // G-80..G-91 presentation driver
+    std::vector<ra2engine::World::VetEvent> pres_vet_;   // promotions since the last frame
+    PresMap              map_dressing_;               // G-87
+    PresRadar            radar_;                      // G-09 (render half)
+    const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     std::vector<std::pair<double, double>> prev_audio_state_;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
@@ -5435,6 +5665,8 @@ private:
     }
 };
 
+
+#include "pres_harness.inc"   // G-8x --scene-shot acceptance harness
 
 // Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
 // the old inline scenario (default_skirmish_config reproduces the 1v1). SAME
@@ -7111,6 +7343,8 @@ int run_menu(bool no_audio) {
     // the menu music bus right away. This is the ONLY reader of the file.
     ra2engine::Settings user = load_user_settings();
     g_user_settings = &user;
+    // G-89: honour RA2.INI [Video] ScreenWidth/ScreenHeight for the window.
+    if (user.screen_width > 0 && user.screen_height > 0) plat.set_window_size(user.screen_width, user.screen_height);
     if (store.audio && store.audio->sys.mixer)
         apply_audio_settings(*store.audio->sys.mixer, user);
     g_menu_rules = &rules;        // P10: a finished/aborted mission returns here
@@ -16088,6 +16322,9 @@ int main(int argc, char** argv) {
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
+            if (arg == "--scene-shot" && i + 1 < argc) {
+                return run_scene_shot(argc, argv, i + 1);   // G-8x presentation harness
+            }
             if (arg == "--menu-shot" && i + 1 < argc) {
                 return run_menu_shot(argv[++i]);
             } else if (arg == "--controls-selftest" && i + 1 < argc) {

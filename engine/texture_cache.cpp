@@ -60,6 +60,24 @@ void* TextureCache::get(const std::string& key, const uint8_t* indices, int w,
     return tex;
 }
 
+// G-84/G-90: like get(), but palette index `shadow_index` becomes a translucent
+// black shadow pixel (RA2 unit SHPs bake their ground shadow into index 1;
+// OpenRA's RA2 palettes declare ShadowIndex: 1). [RE-FALLBACK: shadow blend
+// ratio not traced -- 50 %.]
+void* TextureCache::get_shadowed(const std::string& key, const uint8_t* indices, int w, int h,
+                                 const ra2assets::Palette& pal, int shadow_index, int alpha) {
+    auto it = cache_.find(key);
+    if (it != cache_.end()) return it->second;
+    std::vector<ra2assets::Rgba> rgba(static_cast<size_t>(w) * h);
+    for (int i = 0; i < w * h; ++i) {
+        const uint8_t idx = indices[i];
+        if (idx == 0) rgba[i] = ra2assets::Rgba{0, 0, 0, 0};
+        else if (idx == shadow_index) rgba[i] = ra2assets::Rgba{0, 0, 0, static_cast<uint8_t>(alpha)};
+        else { ra2assets::Rgba c = pal[idx]; c.a = 255; rgba[i] = c; }
+    }
+    return get_rgba(key, reinterpret_cast<const uint8_t*>(rgba.data()), w, h);
+}
+
 void* TextureCache::get_rgba(const std::string& key, const uint8_t* rgba, int w, int h) {
     auto it = cache_.find(key);
     if (it != cache_.end()) {

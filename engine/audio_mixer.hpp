@@ -119,6 +119,13 @@ public:
     // scaling, one active at a time (FIFO behind it). A new call starts
     // playing immediately iff no EVA line is currently active.
     void play_eva(int clip_id);
+    // [G-80] EVA Type=INTERRUPT flush (audio-playback.md §8): stop the playing
+    // speech and drop everything queued behind it.
+    void stop_eva();
+    // [G-82] Stop every voice playing `key` (music track change).
+    void stop(const std::string& key);
+    // [G-82] True while any voice of `key` is still playing.
+    bool playing(const std::string& key) const;
 
     // Renders `frames` samples into `out` (must hold >= frames int16_t):
     // sums every active voice's contribution plus the active EVA line,

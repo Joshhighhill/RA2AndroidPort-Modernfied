@@ -623,6 +623,12 @@ public:
     int grid_w() const { return grid_w_; }
     int grid_h() const { return grid_h_; }
     const std::vector<std::uint8_t>& passable() const { return passable_; }
+    // G-87 (presentation/map dressing): a map [Terrain] object, wall overlay or
+    // civilian building blocks its cell for ground movement. Live game only.
+    void block_cell(int x, int y) {
+        if (x >= 0 && y >= 0 && x < grid_w_ && y < grid_h_ && !passable_.empty())
+            passable_[static_cast<std::size_t>(y) * grid_w_ + x] = 0;
+    }
     // CB-3 Naval [RE: naval.md §1]: the passability grid for a movement domain.
     // Land (the DEFAULT -- every existing unit) returns the SAME passable_
     // object every existing A* site already reads (byte-identical); Water
