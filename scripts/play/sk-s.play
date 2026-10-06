@@ -111,6 +111,13 @@ until 1800 queue_ready(structure) == 1        @G-26:A
 click cameo:NARADR                            @G-26:A
 place auto                                    @G-26:A
 until 300 built(0,NARADR) == 1                @G-26:A
+# the radar + depot drains push a single NAPOWR into low power (Powered=yes
+# defences go offline, as in the original): add a second power plant.
+click cameo:NAPOWR
+until 900 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+until 120 buildings(0,NAPOWR) >= 2
 click tab:1
 assert cameo(TESLA) == 1                      @G-26:A
 click cameo:NALASR
