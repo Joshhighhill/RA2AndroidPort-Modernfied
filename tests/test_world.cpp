@@ -2560,12 +2560,12 @@ TEST_CASE("World: a trigger whose team is WIPED before it completes takes the FA
 // when the script runs to kOpDisband (the original's team+0x84 success flag),
 // and stays FALSE when the team reaches Disbanding via a member wipe. This
 // pins the exact bit the AI-3 disband attribution keys success-vs-failure on.
-TEST_CASE("step_team: completed_success TRUE at kOpDisband, FALSE on member wipe [RE: ai-trigger.md 4]") {
+TEST_CASE("step_team: completed_success TRUE after 49 (success, script continues), FALSE on member wipe [RE: ai-trigger.md 4]") {
     ra2engine::AimdData aimd;
     ra2engine::TaskForce tf; tf.id = "TF1"; tf.members = {{1, 0}};  // 1 x type0
     aimd.taskforces.push_back(tf);
     ra2engine::ScriptType sc; sc.id = "SC1";
-    sc.actions = {ra2engine::ScriptAction{ra2engine::kOpDisband, 0}};  // bare disband
+    sc.actions = {ra2engine::ScriptAction{ra2engine::kOpSuccess, 0}};  // bare 49 (success)
     aimd.scripts.push_back(sc);
     ra2engine::TeamType tt; tt.id = "TT1"; tt.taskforce = 0; tt.script = 0;
     tt.priority = 5; tt.max = 1; tt.full = false;
@@ -2587,9 +2587,15 @@ TEST_CASE("step_team: completed_success TRUE at kOpDisband, FALSE on member wipe
         ra2engine::step_team(t, v, aimd, rng, 1.0);            // Gathering: within -> Executing
         REQUIRE(t.state == ra2engine::TeamState::Executing);
         CHECK_FALSE(t.completed_success);                       // not yet
-        ra2engine::step_team(t, v, aimd, rng, 1.0);            // Executing: kOpDisband
-        CHECK(t.state == ra2engine::TeamState::Disbanding);
+        // G-61 [c14.log idx 49]: 49 sets team+0x80/+0x84 (success) and the
+        // script CONTINUES -- the team disbands only when it runs off the end.
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // Executing: 49 (success)
         CHECK(t.completed_success);                             // success flag set
+        CHECK(t.state == ra2engine::TeamState::Executing);      // not a disband
+        CHECK(t.script_pc == 1);
+        ra2engine::step_team(t, v, aimd, rng, 1.0);            // ran off the end
+        CHECK(t.state == ra2engine::TeamState::Disbanding);
+        CHECK(t.completed_success);                             // kept for AI-3 attribution
     }
 
     // --- wipe path: all members die before the script completes ---
