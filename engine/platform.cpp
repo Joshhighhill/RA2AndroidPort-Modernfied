@@ -14,7 +14,7 @@ struct Platform::Impl {
     int h = 0;
 };
 
-Platform Platform::create(const char* title, int w, int h) {
+Platform Platform::create(const char* title, int w, int h, bool hidden) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         throw std::runtime_error(SDL_GetError());
     }
@@ -23,14 +23,18 @@ Platform Platform::create(const char* title, int w, int h) {
         title,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         w, h,
-        SDL_WINDOW_SHOWN);
+        hidden ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
     if (!window) {
         std::string err = SDL_GetError();
         SDL_Quit();
         throw std::runtime_error(err);
     }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // G0 --play: a hidden window renders through the software renderer so the
+    // captured pixels do not depend on the GPU driver.
+    SDL_Renderer* renderer = SDL_CreateRenderer(
+        window, -1, hidden ? SDL_RENDERER_SOFTWARE : SDL_RENDERER_ACCELERATED);
+    if (!renderer && !hidden) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     if (!renderer) {
         std::string err = SDL_GetError();
         SDL_DestroyWindow(window);
@@ -87,7 +91,64 @@ Platform::~Platform() {
     }
 }
 
+// SDL keycode -> Windows virtual-key code (KeyboardMD.ini [Hotkey] code space).
+static int vk_from_sdl(int k) {
+    if (k >= SDLK_a && k <= SDLK_z) return 'A' + (k - SDLK_a);
+    if (k >= SDLK_0 && k <= SDLK_9) return '0' + (k - SDLK_0);
+    if (k >= SDLK_F1 && k <= SDLK_F12) return 112 + (k - SDLK_F1);
+    if (k >= SDLK_KP_1 && k <= SDLK_KP_9) return 97 + (k - SDLK_KP_1);   // VK_NUMPAD1..9
+    switch (k) {
+        case SDLK_ESCAPE: return 27;
+        case SDLK_SPACE: return 32;
+        case SDLK_RETURN: case SDLK_KP_ENTER: return 13;
+        case SDLK_BACKSPACE: return 8;
+        case SDLK_TAB: return 9;
+        case SDLK_PAGEUP: return 33;
+        case SDLK_PAGEDOWN: return 34;
+        case SDLK_END: return 35;
+        case SDLK_HOME: return 36;
+        case SDLK_LEFT: return 37;
+        case SDLK_UP: return 38;
+        case SDLK_RIGHT: return 39;
+        case SDLK_DOWN: return 40;
+        case SDLK_INSERT: return 45;
+        case SDLK_DELETE: return 46;
+        case SDLK_KP_0: return 96;
+        case SDLK_KP_MULTIPLY: return 106;
+        case SDLK_KP_PLUS: return 107;
+        case SDLK_KP_MINUS: return 109;
+        case SDLK_KP_PERIOD: return 110;   // VK_DECIMAL ([Hotkey] Delete=110)
+        case SDLK_KP_DIVIDE: return 111;
+        default: return 0;
+    }
+}
+
+void key_event_from_sdl(int k, int mod, InputEvent& ev) {
+    ev.shift = (mod & KMOD_SHIFT) != 0;
+    ev.ctrl = (mod & KMOD_CTRL) != 0;
+    ev.alt = (mod & KMOD_ALT) != 0;
+    ev.vk = vk_from_sdl(k);
+    ev.key = 0;
+    if (k == SDLK_ESCAPE) {
+        ev.kind = InputEvent::Quit;
+        return;
+    }
+    // P7: the named keys the save/load UI + P10 briefing consume.
+    switch (k) {
+        case SDLK_BACKSPACE: ev.key = kKeyBackspace; break;
+        case SDLK_RETURN: case SDLK_KP_ENTER: ev.key = kKeyEnter; break;
+        case SDLK_UP: ev.key = kKeyUp; break;
+        case SDLK_DOWN: ev.key = kKeyDown; break;
+        case SDLK_DELETE: ev.key = kKeyDelete; break;
+        case SDLK_F10: ev.key = kKeyF10; break;
+        case SDLK_F1: ev.key = kKeyF1; break;
+        default: break;
+    }
+    ev.kind = (ev.key || ev.vk) ? InputEvent::Key : InputEvent::None;
+}
+
 bool Platform::poll(InputEvent& ev) {
+    ev = InputEvent{};
     SDL_Event e;
     if (!SDL_PollEvent(&e)) {
         ev.kind = InputEvent::None;
@@ -99,22 +160,8 @@ bool Platform::poll(InputEvent& ev) {
             ev.kind = InputEvent::Quit;
             break;
         case SDL_KEYDOWN:
-            if (e.key.keysym.sym == SDLK_ESCAPE) {
-                ev.kind = InputEvent::Quit;
-            } else {
-                // P7: the few keys the save/load UI needs; everything else stays None.
-                switch (e.key.keysym.sym) {
-                    case SDLK_BACKSPACE: ev.key = kKeyBackspace; break;
-                    case SDLK_RETURN: case SDLK_KP_ENTER: ev.key = kKeyEnter; break;
-                    case SDLK_UP: ev.key = kKeyUp; break;
-                    case SDLK_DOWN: ev.key = kKeyDown; break;
-                    case SDLK_DELETE: ev.key = kKeyDelete; break;
-                    case SDLK_F10: ev.key = kKeyF10; break;
-                    case SDLK_F1: ev.key = kKeyF1; break;
-                    default: ev.key = 0; break;
-                }
-                ev.kind = ev.key ? InputEvent::Key : InputEvent::None;
-            }
+            key_event_from_sdl(e.key.keysym.sym, e.key.keysym.mod, ev);
+            ev.t_ms = e.key.timestamp;
             break;
         case SDL_TEXTINPUT:
             ev.kind = InputEvent::Text;

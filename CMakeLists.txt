@@ -261,6 +261,8 @@ target_sources(ra2assets_tests PRIVATE engine/rectfont.cpp)
 # OptionsClass defaults/clamps/save list, slider/trackbar math, the recovered
 # edge-scroll table) [RE: docs/re/options.md]. SDL-free; main.cpp owns the UI.
 target_sources(ra2assets_tests PRIVATE tests/test_settings.cpp engine/settings.cpp)
+# G0 --play harness: the pure script parser / assertion evaluator / play_hash.
+target_sources(ra2assets_tests PRIVATE tests/test_play_script.cpp engine/play_script.cpp)
 # P7 Save/Load [RE: docs/re/saveload.md]: the archive core, field visitors,
 # file container + slots. SDL-free.
 target_sources(ra2assets_tests PRIVATE tests/test_saveload.cpp engine/savegame.cpp)

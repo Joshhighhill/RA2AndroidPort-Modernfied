@@ -48,6 +48,7 @@
 #include "flight.hpp"       // altitude_to_screen_dy (CB-2 raised-sprite draw)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
+#include "play_script.hpp"   // G0 harness: unit selector parsing (game_scene_play.inc)
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
 #include "platform.hpp"
@@ -3958,30 +3959,67 @@ struct Scene {
     virtual Scene* next()                                   { return nullptr; }  // non-null => transition (takes ownership)
     virtual bool   wants_quit() const                       { return false; }
     virtual ~Scene()                                        = default;
+    // G0 --play harness hooks (engine/play_driver.inc). name() tags the probe;
+    // locate() resolves a semantic target ("button:<label>", "cell:x,y",
+    // "unit:H:IMAGE:n", "cameo:ID") to a window pixel; probe() reports the
+    // scene's observable state as integers; cheat() applies a test-only edit.
+    virtual const char* name() const                        { return "scene"; }
+    virtual bool   locate(const std::string& what, int& x, int& y) const {
+        (void)what; (void)x; (void)y; return false;
+    }
+    virtual void   probe(std::map<std::string, long long>& out) const { (void)out; }
+    virtual bool   cheat(const std::vector<std::string>& args) { (void)args; return false; }
+};
+
+// G0: per-frame observer of run_scene_driver (the --play harness). begin()
+// runs before the frame's events are polled (the harness queues scripted
+// events there) and returns false to stop the run; end() runs after the frame
+// is presented (captures, probes, assertions); quit() reports that the
+// PROCESS WOULD EXIT (a Quit event or a scene's wants_quit) at frame f.
+struct DriverHooks {
+    virtual bool begin(int f, Scene& s) = 0;
+    virtual void end(int f, Scene& s, ra2engine::Platform& plat) = 0;
+    virtual void quit(int f, Scene* s, const char* why) = 0;
+    virtual ~DriverHooks() = default;
 };
 
 // The scene-loop driver: owns the active Scene*, pumps input -> handle, ticks
 // update(dt) with the real wall-clock dt, calls render, and on a non-null next()
 // swaps scenes (deleting the old). Returns 0 on clean quit.
-int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Scene* initial) {
+// G0: `src` replaces the Platform as the event source (the --play harness's
+// scripted events); `fixed_dt > 0` steps update(fixed_dt) once per iteration
+// with no wall clock and no frame delay (deterministic); `hooks` observes
+// every frame. The defaults are exactly the interactive behaviour.
+int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Scene* initial,
+                     ra2engine::EventSource* src = nullptr, double fixed_dt = 0.0,
+                     DriverHooks* hooks = nullptr) {
     std::unique_ptr<Scene> scene(initial);
+    ra2engine::EventSource& events = src ? *src : static_cast<ra2engine::EventSource&>(plat);
     Uint32 prev = SDL_GetTicks();
+    int frame = 0;
     while (scene && !scene->wants_quit()) {
+        if (hooks && !hooks->begin(frame, *scene)) return 0;
         ra2engine::InputEvent ev;
-        while (plat.poll(ev)) {
-            if (ev.kind == ra2engine::InputEvent::Quit) return 0;
+        while (events.poll(ev)) {
+            if (ev.kind == ra2engine::InputEvent::Quit) {
+                if (hooks) hooks->quit(frame, scene.get(), "Quit event");
+                return 0;
+            }
             scene->handle(ev);
         }
         const Uint32 now = SDL_GetTicks();
-        const double dt = (now - prev) / 1000.0;
+        const double dt = fixed_dt > 0.0 ? fixed_dt : (now - prev) / 1000.0;
         prev = now;
         scene->update(dt);
         plat.begin_frame();
         scene->render(plat, tc);
         plat.present();
+        if (hooks) hooks->end(frame, *scene, plat);
         if (Scene* nx = scene->next()) scene.reset(nx);   // transition (variable dt continues)
-        SDL_Delay(16);
+        if (fixed_dt <= 0.0) SDL_Delay(16);
+        ++frame;
     }
+    if (hooks) hooks->quit(frame, scene.get(), "scene wants_quit");
     return 0;
 }
 
@@ -4523,6 +4561,7 @@ public:
     // then Input. Escape-cancels-placement is retained here for fidelity (the
     // driver intercepts Quit before handle, so it is dormant on that path).
     void handle(const ra2engine::InputEvent& ev) override {
+        track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
@@ -4625,12 +4664,16 @@ public:
         if (ks[SDL_SCANCODE_RIGHT]) dir_x -= 1;
         if (ks[SDL_SCANCODE_UP]) dir_y += 1;
         if (ks[SDL_SCANCODE_DOWN]) dir_y -= 1;
-        SDL_GetMouseState(&mx_, &my_);
+        // G0/G-71: the pointer position comes from the event stream
+        // (track_pointer), and only a real MOUSE edge-scrolls -- a lifted
+        // finger leaves no pointer at the edge, so touch never scrolls forever.
         const int kEdge = 24;   // window-edge scroll band (true screen edge, incl. sidebar)
-        if (mx_ <= kEdge) dir_x += 1;
-        else if (mx_ >= kWinW - kEdge) dir_x -= 1;
-        if (my_ <= kEdge) dir_y += 1;
-        else if (my_ >= kWinH - kEdge) dir_y -= 1;
+        if (mouse_present_) {
+            if (mx_ <= kEdge) dir_x += 1;
+            else if (mx_ >= kWinW - kEdge) dir_x -= 1;
+            if (my_ <= kEdge) dir_y += 1;
+            else if (my_ >= kWinH - kEdge) dir_y -= 1;
+        }
         dir_x = (dir_x > 0) - (dir_x < 0);
         dir_y = (dir_y > 0) - (dir_y < 0);
         // [P8 / options.md §5, FUN_00669ec0] The original scrolls
@@ -4888,6 +4931,9 @@ public:
     bool wants_quit() const override { return input_.wants_quit() || abort_; }
     Scene* next() override { Scene* n = next_scene_; next_scene_ = nullptr; return n; }
 
+    // G0 --play harness surface (name/locate/probe/cheat) + pointer tracking.
+#include "game_scene_play.inc"
+
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
     // game (save_fields.hpp SceneSave). Transient input is not saved.
@@ -5131,7 +5177,8 @@ private:
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
     std::vector<int>     bstates_;
-    int                  mx_ = 0, my_ = 0;
+    int                  mx_ = kWinW / 2, my_ = kWinH / 2;   // last pointer (events)
+    bool                 mouse_present_ = false;   // a real mouse moved over the window
     Uint32               now_ = 0;
     // --- Repair & Sell [RE: repair-sell.md §C1/§D8] ---
     ModeCursor           mouse_;
