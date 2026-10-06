@@ -104,7 +104,7 @@ static int vk_from_sdl(int k) {
     if (k >= SDLK_F1 && k <= SDLK_F12) return 112 + (k - SDLK_F1);
     if (k >= SDLK_KP_1 && k <= SDLK_KP_9) return 97 + (k - SDLK_KP_1);   // VK_NUMPAD1..9
     switch (k) {
-        case SDLK_ESCAPE: return 27;
+        case SDLK_ESCAPE: case SDLK_AC_BACK: return 27;   // Android BACK = Esc (06#38)
         case SDLK_SPACE: return 32;
         case SDLK_RETURN: case SDLK_KP_ENTER: return 13;
         case SDLK_BACKSPACE: return 8;
@@ -140,7 +140,7 @@ void key_event_from_sdl(int k, int mod, InputEvent& ev) {
     // the in-game options dialog; dialogs treat it as Back). Only the window
     // close button (SDL_QUIT) quits the program.
     switch (k) {
-        case SDLK_ESCAPE: ev.key = kKeyEscape; break;
+        case SDLK_ESCAPE: case SDLK_AC_BACK: ev.key = kKeyEscape; break;
         case SDLK_BACKSPACE: ev.key = kKeyBackspace; break;
         case SDLK_RETURN: case SDLK_KP_ENTER: ev.key = kKeyEnter; break;
         case SDLK_UP: ev.key = kKeyUp; break;

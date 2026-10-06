@@ -331,3 +331,22 @@ TEST_CASE("Input original: G-04 TypeSelect extends the selection by image") {
     CHECK(world.units()[f.g1].selected);       // same image (GI)
     CHECK_FALSE(world.units()[f.c].selected);  // different image + hostile
 }
+
+TEST_CASE("Input original: ACTION_SELF -- clicking the selected deployable unit deploys it") {
+    MapFile map;
+    if (!real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input in(world, cam, 1280, 720);
+    Fx f = spawn3(world);
+    if (!f.ok) { MESSAGE("skipped"); return; }
+    world.units()[f.g0].selected = true;
+    int ux, uy;
+    unit_px(world.units()[f.g0], ux, uy);
+    CHECK(in.action_at(ux, uy) == Input::Action::Select);   // a plain GI: re-select
+    in.set_deploy_check([](const ra2engine::Unit& u) { return u.image == "GI"; });
+    CHECK(in.action_at(ux, uy) == Input::Action::Deploy);
+    lclick(in, ux, uy, 1000);
+    CHECK(in.take_actions().deploy_clicked);
+    CHECK(world.units()[f.g0].selected);
+}

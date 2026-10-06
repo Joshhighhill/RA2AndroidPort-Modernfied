@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -54,6 +55,9 @@ struct InputActions {
 
     // G-10: a left click selected an own building (any type).
     bool building_selected = false;
+    // ACTION_SELF: a left click on the (already) selected own deployable unit
+    // -- main.cpp runs the DeployObject command (unload / deploy).
+    bool deploy_clicked = false;
 };
 
 // Translates pointer InputEvents (Task 0 Platform) into actions on a World +
@@ -119,6 +123,7 @@ public:
         Move, NoMove,  // ground move / unreachable (impassable or off-map) cell
         Attack,        // enemy unit/building, or Ctrl force-fire
         Enter,         // own transport with eligible passengers selected
+        Deploy,        // the selected own unit itself (ACTION_SELF): unload / deploy
         Harvest,       // harvester(s) selected, ore cell
         Dock,          // harvester(s) selected, own refinery
         Capture,       // lone engineer, enemy/neutral building
@@ -174,6 +179,10 @@ public:
     // deselect everything (units and the selected building).
     void right_click_cancel();
     void deselect_all();
+    // ACTION_SELF predicate: can this selected own unit deploy / unload? The
+    // default covers transports with cargo and bound Deployers; GameScene may
+    // widen it (e.g. agent F's MCV -> ConYard).
+    void set_deploy_check(std::function<bool(const Unit&)> f) { deploy_check_ = std::move(f); }
 
     // --- Buildings phase: placement mode (Task 7a) -------------------------
     // While active, a left Down+Up (no drag) confirms placement at the hovered
@@ -413,6 +422,7 @@ private:
     std::vector<int> unit_group_;              // per unit index: group 1..10, 0 = none
     int last_group_ = 0;                       // TeamSelect double-press detection
     uint32_t last_group_t_ = 0;
+    std::function<bool(const Unit&)> deploy_check_;
 
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).

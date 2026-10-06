@@ -4803,6 +4803,7 @@ public:
         }
         // Repair / Sell clicks [RE: repair-sell.md §A4/§B2]. The mode STAYS
         // armed (it is not one-shot), so the player can work through a base.
+        if (act.deploy_clicked) deploy_selected();   // ACTION_SELF (click the selected unit)
         if (act.repair_clicked) world_.toggle_repair(act.repair_building, 0);
         if (act.sell_clicked) world_.begin_sell(act.sell_building, 0);
         // Placement confirm.

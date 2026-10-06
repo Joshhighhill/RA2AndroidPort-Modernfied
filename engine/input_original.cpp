@@ -73,6 +73,7 @@ const char* Input::action_name(Action a) {
         case Action::NoMove: return "nomove";
         case Action::Attack: return "attack";
         case Action::Enter: return "enter";
+        case Action::Deploy: return "deploy";
         case Action::Harvest: return "harvest";
         case Action::Dock: return "dock";
         case Action::Capture: return "capture";
@@ -134,6 +135,12 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         const Unit& u = us[idx];
         if (u.house == 0) {
             if (shift) return Action::ToggleSelect;
+            // ACTION_SELF: clicking the selected unit itself deploys / unloads it.
+            if (u.selected) {
+                const bool can = (!u.cargo.empty()) || u.abil.deployer || u.deployed ||
+                                 (deploy_check_ && deploy_check_(u));
+                if (can) return Action::Deploy;
+            }
             if (u.passengers_max > 0) {
                 for (std::size_t si = 0; si < us.size(); ++si) {
                     const Unit& su = us[si];
@@ -232,6 +239,9 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                 return;
             }
             issue_order(px, py);
+            return;
+        case Action::Deploy:
+            actions_.deploy_clicked = true;
             return;
         case Action::Move:
         case Action::NoMove:
