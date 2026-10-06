@@ -83,8 +83,9 @@ struct PresHarness {
             // scroll); hold the scripted camera.
             if (scripted) { gs.cam_.x = cam_x_; gs.cam_.y = cam_y_; }
             if (t + 1e-9 >= secs[next_shot]) {
-                // Look at the most interesting spot: the player's base unless
-                // the script points the camera elsewhere.
+                // Look at the most interesting spot: for "fight" the centroid
+                // of the engaged units, else the scripted camera.
+                if (script == "fight" || script == "tanks") follow_action(gs);
                 for (int k = 0; k < 2; ++k) {
                     plat.begin_frame();
                     gs.render(plat, tc);
@@ -108,7 +109,8 @@ struct PresHarness {
     // then a barracks and place each at the first legal cell near the yard.
     static void apply_script(GameScene& g, const std::string& script) {
         ra2engine::World& w = g.world_;
-        if (script == "fight") {
+        if (script == "fight" || script == "tanks") {
+            if (script == "tanks") spawn_tanks(g);
             const auto& us = w.units();
             const auto& bs = w.buildings();
             for (int i = 0; i < static_cast<int>(us.size()); ++i) {
@@ -138,6 +140,40 @@ struct PresHarness {
         } else {
             centre_on_player(g, 0.0);
         }
+    }
+    // Three of the first vehicle type of each side's roster beside every
+    // house's first building (exercises voxel house colours + tank weapons).
+    static void spawn_tanks(GameScene& g) {
+        ra2engine::World& w = g.world_;
+        const int nb = static_cast<int>(w.buildings().size());
+        std::vector<int> done;
+        for (int b = 0; b < nb; ++b) {
+            const ra2engine::Building bb = w.buildings()[b];
+            if (!bb.alive || std::find(done.begin(), done.end(), bb.house) != done.end()) continue;
+            done.push_back(bb.house);
+            const UnitRoster& r = (w.house_side(bb.house) == ra2engine::World::Side::Soviet) ? g.ur_ai_ : g.ur_;
+            const ra2engine::UnitTypeDef* d = nullptr;
+            for (const auto& u : r.defs) if (u.is_vehicle && u.combat.damage > 0) { d = &u; break; }
+            if (!d) continue;
+            for (int k = 0; k < 3; ++k) w.add_combat_unit(bb.cx - 2 - k, bb.cy + bb.fh + 1, bb.house, d->combat);
+        }
+    }
+    static void follow_action(GameScene& g) {
+        double sx = 0, sy = 0;
+        int n = 0;
+        for (int pass = 0; pass < 2 && !n; ++pass)
+            for (const auto& u : g.world_.units())
+                if (u.alive && u.cargo_of < 0 &&
+                    (pass == 0 ? (u.is_vehicle && (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))
+                               : (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))) {
+                    sx += u.fx; sy += u.fy; ++n;
+                }
+        std::cerr << "[scene-shot] action centroid n=" << n << " (" << (n ? sx / n : 0) << ","
+                  << (n ? sy / n : 0) << ")\n";
+        if (!n) return;
+        sx /= n; sy /= n;
+        g.cam_.x = cam_x_ = static_cast<int>(g.playfield_w_ / 2.0 - (sx - sy) * 30.0);
+        g.cam_.y = cam_y_ = static_cast<int>(GameScene::kWinH / 2.0 - (sx + sy) * 15.0);
     }
     static void centre_on_player(GameScene& g, double toward_enemy) {
         const auto& bs = g.world_.buildings();

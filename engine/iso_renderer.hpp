@@ -183,6 +183,15 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house);
 //   6 DarkSky=131,200,230  7 DarkGreen=81,200,210
 ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_ix);
 
+// G-16 (render): the World whose 8 MP house colours the sprite draws use.
+// render_world publishes its world here each frame; null -> pal_for_house.
+// house_draw_palette = world->house_palette (pal_for_house when the world's
+// houses are unconfigured, i.e. every gate); house_draw_key = the colour id
+// for texture-cache keys.
+void set_color_world(const World* w);
+ra2assets::Palette house_draw_palette(const ra2assets::Palette& base, int house);
+int house_draw_key(int house);
+
 // Draw a green isometric-diamond selection marker on the unit's tile
 // (at its interpolated fx/fy position). No-op if fully off-screen. Call
 // AFTER draw_terrain (so it's not painted over) and typically BEFORE

@@ -94,6 +94,16 @@ const ra2assets::TmpFile* Theater::tmp_for_tile(uint32_t global_index) {
 // dragging SDL into the test build; see world.cpp for the implementation
 // and rationale.
 
+static const World* g_color_world = nullptr;
+void set_color_world(const World* w) { g_color_world = w; }
+ra2assets::Palette house_draw_palette(const ra2assets::Palette& base, int house) {
+    return g_color_world ? g_color_world->house_palette(base, house) : pal_for_house(base, house);
+}
+int house_draw_key(int house) {
+    if (!g_color_world || !g_color_world->houses_configured()) return house == 1 ? 1 : 0;
+    return 10 + g_color_world->house_color(house);
+}
+
 int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
                  const ra2assets::Palette& pal, const Camera& cam, int view_w,
@@ -288,11 +298,12 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     const std::string& draw_image = unit.disguised ? unit.disguised_as_type : unit.image;
     const int draw_house = unit.disguised ? unit.disguised_as_house : unit.house;
     char key[80];
-    std::snprintf(key, sizeof key, "unit:%s:%d:h%d", draw_image.c_str(), unit.frame, draw_house);
+    std::snprintf(key, sizeof key, "unit:%s:%d:c%d", draw_image.c_str(), unit.frame,
+                  house_draw_key(draw_house));
     SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
     if (!tex) {
         std::vector<uint8_t> idx = shp.decode_indexed(unit.frame);
-        const ra2assets::Palette house_pal = pal_for_house(pal, draw_house);
+        const ra2assets::Palette house_pal = house_draw_palette(pal, draw_house);   // G-16
         // G-90: RA2 infantry SHPs bake their ground shadow into the image frame
         // as palette index 12 (gi/cons/dog: 60-80 px under the feet; the
         // second-half shadow frames are empty) -> translucent black.

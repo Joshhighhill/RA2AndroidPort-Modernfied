@@ -377,6 +377,16 @@ struct VehicleAssets {
     std::unique_ptr<ra2assets::ShpFile> explosion;  // death anim SHP; null if unavailable
     ra2assets::Palette explosion_pal;              // anim.pal (or unit pal fallback)
     bool ok = false;
+    // G-16 (render): the voxel sources, kept so a house in any of the 8 MP
+    // colours gets its own lazily rasterized facing sets (vxl_set below).
+    struct VoxelSrc {
+        ra2assets::VxlModel hull, tur, barl;
+        ra2assets::HvaModel hull_h, tur_h, barl_h;
+        ra2assets::Vpl vpl;
+        ra2assets::Palette pal;
+    };
+    std::shared_ptr<const VoxelSrc> vsrc;
+    mutable std::map<int, std::shared_ptr<std::array<ra2engine::FacingSet, 3>>> color_sets;
 };
 
 // All SHP + palette assets for one building type, resolved through the
@@ -1220,6 +1230,14 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         // §4 step 1 -- FLH resolved before the bullet exists).
         for (int k = 0; k < 3; ++k) va.combat.proj.flh[k] = va.flh[k];
 
+        {   // G-16: keep the sources for per-colour sets.
+            auto src = std::make_shared<VehicleAssets::VoxelSrc>();
+            src->hull = hull_m; src->tur = tur_m; src->barl = barl_m;
+            src->hull_h = hull_h; src->tur_h = tur_h; src->barl_h = barl_h;
+            src->vpl = vpl;
+            src->pal = unit_pal;
+            va.vsrc = src;
+        }
         for (int house = 0; house <= 1; ++house) {
             const ra2assets::Palette hp = ra2engine::pal_for_house(unit_pal, house);
             va.hull[house] =
@@ -2436,12 +2454,12 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     SDL_Rect dst{fcx - shp.width() / 2 + f.x, fcy - shp.height() / 2 + f.y, f.w, f.h};
     if (!(dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H)) {
         char key[96];
-        std::snprintf(key, sizeof key, "bld:%s:%c:h%d:%d", def.id.c_str(), buildup ? 'b' : 'm',
-                      b.house, frame);
+        std::snprintf(key, sizeof key, "bld:%s:%c:c%d:%d", def.id.c_str(), buildup ? 'b' : 'm',
+                      ra2engine::house_draw_key(b.house), frame);
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
         if (!tex) {
             std::vector<uint8_t> idx = shp.decode_indexed(frame);
-            const ra2assets::Palette hp = ra2engine::pal_for_house(ba.unit_pal, b.house);
+            const ra2assets::Palette hp = ra2engine::house_draw_palette(ba.unit_pal, b.house);   // G-16
             tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, hp));
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
@@ -2475,6 +2493,28 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
 // campaign/multi-house world draws every other house with set 1. Houses 0/1
 // map to themselves, so every existing render is unchanged. [P10]
 inline int vxl_house(int h) { return h == 0 ? 0 : 1; }
+// G-16 (render): the facing set for part (0 hull, 1 turret, 2 barrel) in house
+// h's colour. Unconfigured worlds (every gate) keep the pre-built blue/red sets;
+// a configured skirmish rasterizes each MP colour once, on first draw.
+const ra2engine::FacingSet& vxl_set(const VehicleAssets& va, int part, int house) {
+    const int key = ra2engine::house_draw_key(house);
+    if (key < 10 || !va.vsrc) {
+        const int hi = vxl_house(house);
+        return part == 0 ? va.hull[hi] : part == 1 ? va.turret[hi] : va.barrel[hi];
+    }
+    auto& slot = va.color_sets[key];
+    if (!slot) {
+        slot = std::make_shared<std::array<ra2engine::FacingSet, 3>>();
+        const VehicleAssets::VoxelSrc& s = *va.vsrc;
+        const ra2assets::Palette hp = ra2engine::pal_for_color(s.pal, key - 10);
+        (*slot)[0] = ra2engine::build_facing_set(s.hull, s.hull_h, ra2engine::kVehicleFacings, s.vpl, hp);
+        if (va.has_turret)
+            (*slot)[1] = ra2engine::build_facing_set(s.tur, s.tur_h, ra2engine::kVehicleFacings, s.vpl, hp);
+        if (va.has_barrel)
+            (*slot)[2] = ra2engine::build_facing_set(s.barl, s.barl_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    }
+    return (*slot)[part];
+}
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
     if (u.die_time >= 0.0) {
@@ -2505,20 +2545,20 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
     if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
-                                      va.hull[vxl_house(u.house)].sprites[bi].w, cam, W, H);
+                                      vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
 
     ra2engine::draw_voxel_sprite(
-        ren, tc, "vxl:" + img + ":h:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(bi),
-        va.hull[vxl_house(u.house)].sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi),
+        vxl_set(va, 0, u.house).sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     if (va.has_turret) {
         const int ti = ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings);
         ra2engine::draw_voxel_sprite(
-            ren, tc, "vxl:" + img + ":t:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(ti),
-            va.turret[vxl_house(u.house)].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+            ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
+            vxl_set(va, 1, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
         if (va.has_barrel)
             ra2engine::draw_voxel_sprite(
-                ren, tc, "vxl:" + img + ":b:" + std::to_string(vxl_house(u.house)) + ":" + std::to_string(ti),
-                va.barrel[vxl_house(u.house)].sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+                ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
+                vxl_set(va, 2, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
@@ -2799,6 +2839,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   int W, int H, const ra2engine::Input* input = nullptr,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
+    ra2engine::set_color_world(&world);   // G-16: house colours for every sprite draw
     // G-84: terrain is drawn in full; shroud/fog are a post-pass over every
     // object (draw_shroud_pass below) instead of per-tile black rectangles that
     // overdrew the already-drawn neighbours.
@@ -2815,7 +2856,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         const VehicleAssets* va = va_for_image(vlist, u.image);
         if (!va) return 0;
         const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
-        return va->hull[vxl_house(u.house)].sprites[bi].w;
+        return vxl_set(*va, 0, u.house).sprites[bi].w;
     };
     // Paths + selection markers first (under the sprites); skip dead/dying
     // units entirely (no path, no selection marker for a corpse-in-progress).
