@@ -77,6 +77,8 @@ private:
     std::vector<int>     nav_ft_;            // Naval=yes UnitType factories (GAYARD/NAYARD)
     std::vector<int>     air_ft_;            // AircraftType factories (GAAIRC/AMRADR)
     std::vector<int>     bld_ft_;            // BuildingType factories (the ConYards)
+    std::vector<RpSwGrant> rp_sw_table_;     // per roster building: SW granted (G-25)
+    SuperweaponParams    rp_nuke_;
     std::vector<char>    rp_base_normal_;    // per roster building: rules BaseNormal (default yes)
 
     // The roster the ctor init list loads for the human: the full side/country/
@@ -117,6 +119,10 @@ private:
         input_.set_unit_factory_types(unit_ft);
         input_.set_infantry_factory_types(inf_ft_);
         input_.set_vehicle_factory_types(any_veh);
+        if (cfg_.superweapons) {
+            rp_sw_table_ = rp_superweapon_table(ba_, rules_);
+            rp_nuke_ = resolve_superweapon(rules_);
+        }
         rp_base_normal_.assign(ba_.roster.size(), 1);
         for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
             const std::string v = rules_.section_string(ba_.roster[i].id, "BaseNormal", "");
@@ -191,6 +197,10 @@ private:
 
     // Once per frame: the strip follows the buildable set (a finished Barracks
     // makes its units appear, a lost Tech Center removes its items).
+    void rp_after_world_step() {
+        if (rp_on_ && !rp_sw_table_.empty()) rp_sync_superweapons(world_, rp_sw_table_, rp_nuke_);
+    }
+
     void rp_refresh_sidebar() {
         if (!rp_on_) return;
         std::vector<int> now = rp_tab_buildable(active_tab_);

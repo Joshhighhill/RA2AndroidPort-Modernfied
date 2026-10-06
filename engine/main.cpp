@@ -3537,6 +3537,9 @@ static bool is_radar_id(const std::string& id) {
 
 bool house_owns_operational_radar(const ra2engine::World& world, const BuildingAssets& ba,
                                   int house) {
+    // G-29 (gap owner A) [RE: construction.md §8; RE-E4 consumer set PROBABLE]:
+    // the radar goes offline while the house is on low power.
+    if (world.house_low_power(house)) return false;
     for (const ra2engine::Building& b : world.buildings()) {
         if (b.house != house || !b.alive) continue;
         if (b.state == ra2engine::Building::State::Dead) continue;
@@ -4713,6 +4716,7 @@ public:
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         world_.step(dt);
+        rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         if (repair_bridge) player_credits_ += world_.take_income(0);
         // P10: the mission ended (BorrowedTime ran out) -> the result screen.
         if (campaign_ && campaign_->finished() && !campaign_done_ && !next_scene_) {
@@ -11632,12 +11636,9 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
             // does not hand it over a second time (was 2x the slider).
             (void)world.take_income(i);
         }
-        // Superweapon grant per slot.
-        if (cfg.superweapons) {
-            const SuperweaponParams swp = resolve_superweapon(rules);
-            world.grant_superweapon(i, ra2engine::SuperweaponType::Nuke, swp.recharge_secs,
-                                    swp.damage, swp.cell_spread, swp.percent_at_max, swp.verses);
-        }
+        // G-25 (gap owner A): NO superweapon at frame 0. A house holds a SW
+        // only while it owns the SuperWeapon= building -- GameScene's
+        // rp_sync_superweapons grants/revokes it [RE: superweapon.md §1].
     }
     return world;
 }

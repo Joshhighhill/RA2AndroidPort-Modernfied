@@ -860,6 +860,23 @@ public:
     bool sw_ready(int house) const;
     double sw_charge_fraction(int house) const;
     const Superweapon* sw_state(int house) const;
+    // Gap owner A (G-25/G-29) [RE: superweapon.md §1 -- a house holds a SW
+    // while it owns the SuperWeapon= building; IsPowered=true pauses the
+    // charge under low power; construction.md §8 -- low power = output <
+    // drain]. revoke drops the grant (building lost); set_superweapon_powered
+    // records the SW type's IsPowered flag.
+    void revoke_superweapon(int house) {
+        if (house >= 0 && house < static_cast<int>(sw_houses_.size()))
+            sw_houses_[house] = HouseSuperweapon{};
+    }
+    void set_superweapon_powered(int house, bool is_powered) {
+        if (house >= 0 && house < static_cast<int>(sw_houses_.size()))
+            sw_houses_[house].is_powered = is_powered;
+    }
+    // Low power for `house`: Idle buildings' output (after a spy blackout) <
+    // their drain, over btypes(). The query every low-power consumer shares
+    // (SW charge here; radar, Powered=yes defences).
+    bool house_low_power(int house) const;
 
     // --- Multi-house / Alliances phase [RE: multihouse.md §1/§2, D1] ---------
     // On-screen sides (the [Sides] legacy GDI=Allied / Nod=Soviet / ThirdSide=Yuri
@@ -1383,6 +1400,7 @@ private:
         double eff_cell_spread = 0.0;       // [NUKE] CellSpread=10
         double eff_percent_at_max = 1.0;    // [NUKE] PercentAtMax=.02
         std::array<int, 11> eff_verses{};   // [NUKE] Verses (armor percents)
+        bool is_powered = false;            // SW type IsPowered= (gap owner A, G-29)
     };
     std::vector<HouseSuperweapon> sw_houses_;  // index = house id (grown on demand)
     bool sw_any_ = false;                      // the step() firewall bool

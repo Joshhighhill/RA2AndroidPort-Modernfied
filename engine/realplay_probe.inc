@@ -362,6 +362,40 @@ int run_probe_realplay() {
                 "G-30 two walls 4 cells apart close the gap for free (+" + std::to_string(after - before) + ")");
     }
 
+    // ---- G-25 / G-29: SW from its building, power-gated, lost with it ----
+    {
+        ra2engine::SkirmishConfig cfg = P::menu_config(rules);
+        cfg.slots[0].side = ra2engine::World::Side::Soviet;
+        cfg.slots[1].side = ra2engine::World::Side::Allied;
+        cfg.slots[1].country = "Americans";
+        GameScene g(/*no_audio=*/true, cfg);
+        ra2engine::World& w = P::world(g);
+        P::run(g, 2);
+        p.check(!w.sw_state(0) && !w.sw_state(1), "G-25 nobody holds a superweapon at game start");
+        // Starve the base: drain-only buildings until low power, then the silo.
+        const int radar = P::add_instant(g, "NARADR");
+        p.check(radar >= 0, "G-29 probe set-up: own Radar Tower placed");
+        const int silo = P::add_instant(g, "NAMISL");
+        for (int k = 0; k < 8 && !w.house_low_power(0); ++k) P::add_instant(g, "NARADR");
+        P::run(g, 2);
+        const ra2engine::Superweapon* sw = w.sw_state(0);
+        p.check(silo >= 0 && sw && sw->type == ra2engine::SuperweaponType::Nuke,
+                "G-25 an operational Nuclear Silo grants the Nuke");
+        p.check(w.house_low_power(0), "G-29 base driven to low power (output < drain)");
+        const double f0 = w.sw_charge_fraction(0);
+        P::run(g, 15 * 20);
+        p.check(w.sw_charge_fraction(0) == f0, "G-29 IsPowered Nuke does not charge on low power");
+        p.check(!house_owns_operational_radar(w, P::ba(g), 0), "G-29 radar offline on low power");
+        for (int k = 0; k < 8 && w.house_low_power(0); ++k) P::add_instant(g, "NAPOWR");
+        P::run(g, 15 * 20);
+        p.check(!w.house_low_power(0) && w.sw_charge_fraction(0) > f0,
+                "G-29 charge resumes once power is restored");
+        p.check(house_owns_operational_radar(w, P::ba(g), 0), "G-29 radar back online with power");
+        w.begin_sell(silo, 0);
+        P::run(g, 15 * 10);
+        p.check(!w.sw_state(0), "G-25 selling the silo revokes the Nuke");
+    }
+
     std::cout << "[probe-realplay] " << (p.fails ? "FAILED" : "ok") << " fails=" << p.fails << "\n";
     return p.fails ? 1 : 0;
 }

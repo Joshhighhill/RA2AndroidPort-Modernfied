@@ -1336,6 +1336,9 @@ bool World::fire_superweapon(int house, int cx, int cy) {
     if (house < 0 || house >= (int)sw_houses_.size()) return false;
     HouseSuperweapon& rec = sw_houses_[house];
     if (!rec.has_sw || !rec.sw.is_ready()) return false;   // refused unless READY (§4)
+    // Gap owner A: only the Nuke's detonation is implemented; any other type
+    // keeps its charge rather than "firing" a no-op.
+    if (rec.sw.type != SuperweaponType::Nuke) return false;
 
     // Transient virtual detonator [spec §5.1]: a value-initialized STACK Unit
     // (Unit struct UNCHANGED -- no persistent field). Its house + fx/fy (target
@@ -1407,8 +1410,20 @@ bool World::fire_superweapon(int house, int cx, int cy) {
 
 void World::step_superweapon(double dt) {
     if (!sw_any_) return;                        // firewall (spec §8) -- no-op everywhere else
-    for (HouseSuperweapon& rec : sw_houses_)     // house-id order; pure arithmetic, no RNG (§3.5)
-        if (rec.has_sw) rec.sw.tick(dt);
+    for (int h = 0; h < static_cast<int>(sw_houses_.size()); ++h) {   // house-id order, no RNG
+        HouseSuperweapon& rec = sw_houses_[h];
+        if (!rec.has_sw) continue;
+        // [RE: superweapon.md §1] IsPowered=true suspends the charge while the
+        // owner is on low power (gap owner A, G-29).
+        if (rec.is_powered && house_low_power(h)) continue;
+        rec.sw.tick(dt);
+    }
+}
+
+bool World::house_low_power(int house) const {
+    const PowerTotals p = apply_blackout(power_totals(buildings_, btypes(), house),
+                                         house_blacked_out(house));
+    return p.output < p.drain;   // [RE: construction.md §8] low power = output < drain
 }
 
 bool World::sw_ready(int house) const {

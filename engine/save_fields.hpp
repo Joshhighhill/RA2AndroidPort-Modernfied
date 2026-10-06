@@ -65,6 +65,7 @@ struct SaveAccess {
         save::io(ar, s.eff_cell_spread);
         save::io(ar, s.eff_percent_at_max);
         save::io(ar, s.eff_verses);
+        save::io(ar, s.is_powered);   // gap owner A (G-29)
     }
     template <class Ar> static void tech_income(Ar& ar, World::TechIncome& t) {
         save::io(ar, t.building);
