@@ -11949,6 +11949,9 @@ DemoSkirmishResult simulate_skirmish(Assets& a, UnitAssets& ua, BuildingAssets& 
             s = fnv_mix(s, nb);
             s = fnv_mix(s, nu);
             s = fnv_mix(s, (uint64_t)(int64_t)std::llround(world.house_credits(hh)));
+            // G-21: an AI house's money lives in its AI wallet (no doubled pool
+            // seed to drain any more), so the liveness signature reads it too.
+            s = fnv_mix(s, (uint64_t)(int64_t)std::llround(world.ai_credits(hh)));
         }
         return s;
     };
@@ -12424,6 +12427,8 @@ DemoMapsResult simulate_maps(Assets& a, UnitAssets& ua, BuildingAssets& ba, cons
             s = fnv_mix(s, nb);
             s = fnv_mix(s, nu);
             s = fnv_mix(s, (uint64_t)(int64_t)std::llround(world.house_credits(hh)));
+            // G-21: the AI wallet holds an AI house's money (see --demo-skirmish).
+            s = fnv_mix(s, (uint64_t)(int64_t)std::llround(world.ai_credits(hh)));
         }
         return s;
     };
