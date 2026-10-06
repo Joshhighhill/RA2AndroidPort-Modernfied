@@ -2246,6 +2246,10 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         g[i].build_delay = rules.section_double(kGroups[i], "BuildDelay",
                                                 ra2engine::kDifficultyBuildDelayMin[i]);
         g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];  // yes/no key [RE: ai-base.md §4]
+        // [G-63] the two combat handicaps gamemd consumes (DifficultyClass +0x00
+        // FirePower, +0x20 ROF; loader default 1.0).
+        g[i].firepower = rules.section_double(kGroups[i], "FirePower", 1.0);
+        g[i].rof = rules.section_double(kGroups[i], "ROF", 1.0);
     }
     cfg.mods = ra2engine::difficulty_mods(difficulty, g);
     cfg.build_speed = rules.general_double("BuildSpeed", 0.7);
@@ -3131,7 +3135,9 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
     // read only its head, so the per-difficulty value comes from the PINNED
     // constant array (the Task 3 install-gated test keeps constant and file
     // head consistent) [RE-FALLBACK: index binding]:
-    tc.rules.team_delay_frames = ra2engine::kAiTeamDelayFrames[(int)difficulty];
+    // [G-63] TeamDelays= is indexed by house+0x184 = 2 - lobby (hardest first).
+    tc.rules.team_delay_frames =
+        ra2engine::kAiTeamDelayFrames[ra2engine::difficulty_class_index(difficulty)];
     tc.rules.autocreate_time_min = rules.section_double(
         "AI", "AutocreateTime", ra2engine::kAiAutocreateTimeMin);   // spawn cadence [§4]
     tc.rules.total_team_cap = (int)rules.section_double(
@@ -3145,7 +3151,8 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
         "AI", "InfantryReserve", (double)ra2engine::kAiInfantryReserve);
     // BuildSlowdown is a difficulty BYTE (Easy off / Normal+Difficult on) — the
     // over-queue damp, NOT a time multiplier [RE-GATE APPLIED: ai-team.md §6].
-    tc.rules.build_slowdown = ra2engine::kDifficultyBuildSlowdown[(int)difficulty];
+    tc.rules.build_slowdown =   // [G-63] DifficultyClass 2 - lobby
+        ra2engine::kDifficultyBuildSlowdown[ra2engine::difficulty_class_index(difficulty)];
     std::cerr << "[ai-team] aimd parsed: tf=" << tc.aimd.taskforces.size()
               << " sc=" << tc.aimd.scripts.size()
               << " teams=" << tc.aimd.teams.size() << "\n";

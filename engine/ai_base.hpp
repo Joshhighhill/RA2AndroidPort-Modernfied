@@ -64,7 +64,19 @@ constexpr bool kDifficultyBuildSlowdown[3] = {false, true, true};   // BuildSlow
 // (human "Easy" => weaker AI group); no starting-credit multiplier exists in
 // the difficulty sections. The lobby->index arithmetic is [RE-FALLBACK:
 // index 0=Easy,1=Normal,2=Difficult as loaded; default Normal].
+// AiDifficulty is the LOBBY choice (Easy / Normal / Brutal=Difficult).
 enum class AiDifficulty { Easy = 0, Normal = 1, Difficult = 2 };
+
+// [G-63; RE: FUN_004f6dd0 = HouseClass::AssignHandicap(diff) -- stores diff at
+// house+0x184 and copies the DifficultyClass at Rules+0x1538 + diff*0x50
+// (FUN_00668630 loads [Easy] -> +0x1538, [Normal] -> +0x1588, [Difficult] ->
+// +0x15d8). The MP house setup FUN_00687950 passes the slot's AI difficulty
+// straight through (humans get 1); FUN_0050a3e0 passes 2 - x; the AITrigger
+// consult maps house+0x184 == 0 -> Enabled_Hard (ai-trigger.md §5). So index
+// 0 is the HARDEST AI and it runs on the [Easy] (bonus) DifficultyClass:
+// house+0x184 = 2 - lobby. The per-difficulty CSV arrays (TeamDelays,
+// *BaseDefenseCounts "h,m,e", ...) are indexed by the same house+0x184.]
+inline int difficulty_class_index(AiDifficulty lobby) { return 2 - static_cast<int>(lobby); }
 
 // Raw values of ONE rules difficulty group, filled by main.cpp from rulesmd
 // via Rules::section_double [RE: ai-base.md §4]. Tests hand-build them from
@@ -74,6 +86,8 @@ struct DifficultyGroupRaw {
     double build_time = 1.0;      // BuildTime= (build time multiplier)
     double build_delay = 0.03;    // BuildDelay= (MINUTES between AI build passes)
     bool build_slowdown = false;  // BuildSlowdown= (recorded; later sub-phases)
+    double firepower = 1.0;       // FirePower= (struct +0x00; house+0x188)
+    double rof = 1.0;             // ROF= (struct +0x20; house+0x1a8)
 };
 
 // Resolved per-house difficulty handicaps [RE: ai-base.md §4].
@@ -83,6 +97,13 @@ struct DifficultyMods {
     double build_delay_min = 0.03;  // MINUTES between AI build passes (difficulty BuildDelay)
     bool build_slowdown = false;  // recorded; not consumed in AI-1
     int defense_target = 0;       // planned base-defense count (per difficulty)
+    // [G-63] combat handicaps copied by AssignHandicap. CONSUMED in gamemd:
+    // ROF multiplies the rearm delay (FMUL [house+0x1a8] in FUN_006fc460) and
+    // FirePower the weapon damage (FLD [house+0x188] in FUN_006fd040/6fd210).
+    // Armor (+0x1a0) / Groundspeed (+0x190) are stored but no reader was
+    // located in this build -> not applied [RE-FALLBACK, docs/re/ai-base.md §4].
+    double firepower_mul = 1.0;
+    double rof_mul = 1.0;
 };
 
 // The [AI]-section knobs, defaulting to the recovered constants (main.cpp

@@ -63,9 +63,10 @@ bool has_ability(float v, AbilityMask vet, AbilityMask elite, Ability a) {
     return false;
 }
 
-int fire_damage(int damage, double fp_mult, bool firepower, double vet_combat) {
-    // [V5] FLD houseFP(1.0); FMUL FirepowerMultiplier; FIMUL Damage; ftol.
-    double t = 1.0 * fp_mult;
+int fire_damage(int damage, double fp_mult, bool firepower, double vet_combat,
+                double house_fp) {
+    // [V5] FLD houseFP (house+0x188); FMUL FirepowerMultiplier; FIMUL Damage; ftol.
+    double t = house_fp * fp_mult;
     t = t * static_cast<double>(damage);
     int d = ftol(t);
     if (firepower) {
@@ -88,9 +89,9 @@ int receive_damage(int d, double armor_mult, bool stronger, double vet_armor) {
     return out;
 }
 
-int rof_frames(int rof, bool rof_ability, double vet_rof) {
-    // [V7] ftol(ROF * houseROF(1.0) [+ Random(0,2): NOT reproduced]).
-    const double base = static_cast<double>(rof) * 1.0;
+int rof_frames(int rof, bool rof_ability, double vet_rof, double house_rof) {
+    // [V7] ftol(ROF * houseROF (house+0x1a8) [+ Random(0,2): NOT reproduced]).
+    const double base = static_cast<double>(rof) * house_rof;
     int r = ftol(base);
     if (rof_ability) {
         const double t = static_cast<double>(r) * vet_rof;

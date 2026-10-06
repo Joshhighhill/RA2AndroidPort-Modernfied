@@ -685,6 +685,7 @@ template <class Ar> void fields(Ar& ar, ProductionState& v) { io(ar, v.credits);
 template <class Ar> void fields(Ar& ar, DifficultyMods& v) {
     io(ar, v.cost_mul); io(ar, v.build_time_mul); io(ar, v.build_delay_min);
     io(ar, v.build_slowdown); io(ar, v.defense_target);
+    io(ar, v.firepower_mul); io(ar, v.rof_mul);
 }
 template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.power_surplus);

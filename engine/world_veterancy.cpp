@@ -46,8 +46,16 @@ void World::refresh_vet_stats(int idx) {
     auto has = [&](Ability a) { return has_ability(vv, v.vet_abilities, v.elite_abilities, a); };
     // [V10] the elite slot only when the type defines ElitePrimary.
     const WeaponStats& w = (is_elite(vv) && v.has_elite) ? v.elite : v.base;
-    u.w_damage = fire_damage(w.damage, v.firepower_mult, has(Ability::Firepower), vet_rules_.combat);
-    u.w_rof = rof_frames(w.rof, has(Ability::Rof), vet_rules_.rof);
+    // [G-63] An AI house's AssignHandicap FirePower/ROF (1.0 for humans and
+    // for every non-AI house; DifficultyMods defaults are 1.0).
+    double house_fp = 1.0, house_rof = 1.0;
+    if (ai_enabled(u.house)) {
+        house_fp = ai_houses_[u.house].cfg.mods.firepower_mul;
+        house_rof = ai_houses_[u.house].cfg.mods.rof_mul;
+    }
+    u.w_damage = fire_damage(w.damage, v.firepower_mult, has(Ability::Firepower), vet_rules_.combat,
+                             house_fp);
+    u.w_rof = rof_frames(w.rof, has(Ability::Rof), vet_rules_.rof, house_rof);
     u.w_range = w.range;
     u.w_verses = w.verses;
     u.w_cell_spread = w.cell_spread;
