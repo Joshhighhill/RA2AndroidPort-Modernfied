@@ -56,29 +56,33 @@ Determinism: every script was run twice on the same tree with identical
 every 15 frames). No `play_hash` is pinned yet — a hash is pinned only once its
 script passes (ROADMAP-playable §G rule 6).
 
-### Deltas on gF-mcv-endgame (agent F, over master fddbcb3)
+### gF-mcv-endgame over master 354bdd0 (A, A2, B, C, D, E + F)
 
-Run one script at a time on the branch head; F's rows only.
+Every playable-core script, run one at a time on the gF branch tip after
+merging 354bdd0. **All eight PASS.**
 
-| Script / step | Before (fddbcb3) | gF | G-ID |
-|---|---|---|---|
-| sk-a L27 `own_on_screen > 0` (camera opens on the player's MCV) | FAIL | PASS | NEW-1 |
-| sk-a L28-L29 start with an AMCV, no ConYard | FAIL | PASS | G-23 |
-| sk-a L33-L35 select AMCV, `D`, ConYard built | FAIL | PASS | G-23 |
-| sk-a L106 AMCV in the vehicle tab | FAIL | FAIL — **script expectation**: rules `[AMCV] Prerequisite=GAWEAP,GADEPT`; sk-a never builds a Service Depot, so the original would not offer the MCV either | G-22 |
-| sk-end L13-L16 LOST -> result -> main menu (the script now waits for `scene == result` after the LOST flag: the result follows BorrowedTime) | FAIL | **PASS** (sk-end overall PASS) | G-02 |
-| sk-a-lose L21/L23 session ends LOST | FAIL | FAIL — blocked by L19/L20 (the AI never attacks, G-60 owner D); sk-end proves the end-of-game path | G-02 |
-| m-all01 L36-L37 TechLevel 3: no Weather Device / Battle Lab | FAIL | PASS (m-all01 overall PASS) | G-15 |
-| m-all01 L44 / new `m-lose.play`: `cheat kill_house 0` in ALL01 ends LOST through the map's own chain (event 11 DestroyedAll -> enables "Mission Failed" -> action 2) and reaches the result screen | FAIL / n/a | PASS | NEW-2 |
-| m-sov01 L33-L44 SMCV deploys, Nuclear Silo hidden, NAPOWR built from the ConYard | FAIL | PASS (m-sov01 overall PASS) | G-23, G-15 |
-| shell-smoke L98-L101 Abort Mission asks (`confirm_open`, `confirm:yes`) | FAIL | PASS | G-14 |
-| shell-smoke L106-L109 Exit Game asks, no quit | FAIL | PASS | G-14 |
-| shell-smoke L96 Esc mid-placement | FAIL | FAIL (owner B, G-01) | G-01 |
+| Script | Result | play_hash |
+|---|---|---|
+| `sk-a` | PASS | `3b6e89700a245a8e` |
+| `sk-s` | PASS | `16646d40ae6a7c0e` |
+| `sk-end` | PASS | `58405a4c35ce5b92` |
+| `sk-a-lose` | PASS (the AI kills the passive player's start force/MCV; LOST -> result) | `b6ad9d31bacd502a` |
+| `m-all01` | PASS | `a329b0e3e0fe4399` |
+| `m-sov01` | PASS | `660ff6e0587afc40` |
+| `m-lose` (new, NEW-2) | PASS | `3935514c32dbd9be` |
+| `shell-smoke` | PASS | `da65d96ad04737f4` |
 
-`play_hash` on gF: sk-end `386459805758f156`, m-all01 `be355a3fce817def`,
-m-sov01 `bd5cdc9b783ded02`, m-lose `50f275c85f9b0328`. shell-smoke now
-unfolds the starting AMCV before its placement steps (the skirmish no longer
-ships a pre-built base).
+F rows closed: NEW-1 (camera on the player's MCV), NEW-2 (ALL01 ends LOST via
+its own trigger chain), G-02 (skirmish WON/LOST -> BorrowedTime -> result ->
+menu), G-14 (Exit / Abort confirms: `confirm_open`, `confirm:yes|no`), G-15
+(TechLevel cap in campaign and skirmish), G-23 (MCV start + deploy).
+
+Script edits made for the MCV start (the skirmish no longer ships a base):
+`shell-smoke` unfolds the AMCV before its placement steps; `sk-s` checks the
+structure cameos after the SMCV unfolds (no ConYard = no structure strip);
+`sk-a` L47 waits for the stopped GI to finish the cell it was entering (Stop
+semantics in unit_orders.cpp) instead of asserting after exactly 2 frames;
+`sk-end` waits for `scene == result` after the LOST flag (BorrowedTime).
 
 ## Failures by script
 

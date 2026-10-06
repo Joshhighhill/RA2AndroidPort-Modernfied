@@ -25,15 +25,16 @@ assert own_on_screen > 0                      @NEW-1:F
 assert units(0,SMCV) == 1                     @G-23:F
 assert units(0,E2) >= 1                       @G-03:A
 assert units(0,E1) == 0                       @G-03:A
-assert cameo(NAPOWR) == 1                     @G-03:A
-assert cameo(GAPOWR) == 0                     @G-03:A
-assert cameo(TESLA) == 0                      @G-26:A # [TESLA] Prerequisite=POWER,RADAR,NACNST
 assert sw(0) == 0                             @G-25:A
 
 # --- 2. deploy the SMCV ------------------------------------------------------------
 click unit 0:SMCV                             @G-23:F
 key d                                         @G-23:F
 until 450 built(0,NACNST) == 1                @G-23:F
+# Structure cameos need a Construction Yard (none before the SMCV unfolds).
+assert cameo(NAPOWR) == 1                     @G-03:A
+assert cameo(GAPOWR) == 0                     @G-03:A
+assert cameo(TESLA) == 0                      @G-26:A # [TESLA] Prerequisite=POWER,RADAR,NACNST
 view building 0:NACNST
 shot base
 
