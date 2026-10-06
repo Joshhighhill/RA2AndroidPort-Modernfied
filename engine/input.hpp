@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -51,6 +52,12 @@ struct InputActions {
     int repair_building = -1;
     bool sell_clicked = false;
     int sell_building = -1;
+
+    // G-10: a left click selected an own building (any type).
+    bool building_selected = false;
+    // ACTION_SELF: a left click on the (already) selected own deployable unit
+    // -- main.cpp runs the DeployObject command (unload / deploy).
+    bool deploy_clicked = false;
 };
 
 // Translates pointer InputEvents (Task 0 Platform) into actions on a World +
@@ -86,6 +93,96 @@ public:
 
     // Feed one polled event (RA2-classic model, see input.cpp).
     void handle(const InputEvent& ev);
+
+    // --- G-05 mouse scheme [RE: gamemd fixB hunt] -------------------------
+    // Original (the DEFAULT, what gamemd.exe does): the tactical WndProc
+    // FUN_00692AB0 routes WM_LBUTTONUP to DisplayClass Left_Up FUN_004AB8C0,
+    // which with a selection runs Mouse_Left_Release FUN_004AE660 -- every
+    // selected object gets What_Action(target) + Active_Click_With, i.e. a
+    // LEFT click issues the order (move/attack/enter/capture/...); a left
+    // click on an own object whose action is ACTION_SELECT re-selects (Shift
+    // = toggle); with nothing selected a ground click does nothing. A
+    // WM_RBUTTONDOWN starts a right-drag scroll; WM_RBUTTONUP without a drag
+    // runs FUN_004AAC40 = cancel ONE armed mode, else FUN_0048DBA0 (deselect
+    // everything). Legacy = the clone's pre-G-05 model (left selects, right
+    // orders), kept only for the old unit tests.
+    enum class Scheme { Original, Legacy };
+    void set_scheme(Scheme s) { scheme_ = s; }
+    Scheme scheme() const { return scheme_; }
+
+    // What a left click at window pixel (px, py) would do RIGHT NOW (the
+    // What_Action probe), using the modifier keys of the latest event. This
+    // is the cursor STATE for the renderer (agent E draws the art): one value
+    // per frame for the pointer position. Mode actions (placement, SW
+    // targeting, repair/sell) take precedence exactly as in handle().
+    enum class Action {
+        None,          // arrow cursor, a click does nothing
+        Select,        // own unit: (re)select it
+        ToggleSelect,  // Shift + own unit
+        SelectBuilding,// own building: select it (HP bar, rally/primary if a factory)
+        Move, NoMove,  // ground move / unreachable (impassable or off-map) cell
+        Attack,        // enemy unit/building, or Ctrl force-fire
+        Enter,         // own transport with eligible passengers selected
+        Deploy,        // the selected own unit itself (ACTION_SELF): unload / deploy
+        Harvest,       // harvester(s) selected, ore cell
+        Dock,          // harvester(s) selected, own refinery
+        Capture,       // lone engineer, enemy/neutral building
+        EngineerRepair,// lone engineer, own damaged building
+        Infiltrate,    // lone spy, enemy/neutral building
+        Rally,         // own factory selected, ground click
+        SetPrimary,    // re-click the selected own factory
+        Place,         // building placement (foundation legality is main.cpp's)
+        SuperWeapon,   // SW targeting armed
+        Repair, NoRepair, Sell, NoSell,   // repair / sell modes
+    };
+    Action action_at(int px, int py) const;
+    static const char* action_name(Action a);
+
+    // --- G-04 hotkey commands [RE: gamemd CommandClass Execute fns] --------
+    // Each mirrors the original command's effect on the current selection.
+    // Stop (StopObject FUN_0072FF70: per selected own object queue EVENT_IDLE)
+    // -> drop the target/enter/unload and halt at the next cell.
+    void stop_selected();
+    // Guard (GuardObject FUN_0072FE30: MegaMission(Area_Guard 0xB, self))
+    // -> stop, then anchor the guard point at the unit's current cell.
+    void guard_selected();
+    // Scatter (ScatterObject FUN_007300B0: per selected own object queue
+    // EVENT_SCATTER) -> each unit steps to a free adjacent cell.
+    void scatter_selected();
+    // TypeSelect (FUN_00731A20): select every own unit sharing an image with
+    // the selection, on screen first; when all on-screen ones are already
+    // selected, across the whole map. Returns true if anything is selected.
+    bool type_select();
+    // Control groups [RE: TeamCreate FUN_00730130, TeamSelect FUN_00730290,
+    // TeamAddSelect FUN_00730590, TeamCenter FUN_00730470]. n = 1..10 (10 is
+    // the '0' key). Each object belongs to at most ONE group: create clears
+    // group n from every unit then assigns it to the selected ones. The three
+    // select variants first clear every cursor mode. TeamSelect pressed again
+    // within 800 ms on the same group centres the view (TeamCenter).
+    void group_create(int n);
+    void group_select(int n, uint32_t t_ms);
+    void group_add_select(int n);
+    void group_center(int n);
+    int group_of(int unit_idx) const {
+        return (unit_idx >= 0 && unit_idx < static_cast<int>(unit_group_.size()))
+                   ? unit_group_[unit_idx] : 0;
+    }
+    // Centre the view on the selection (FUN_004AE1A0: mean position; with
+    // >2 objects the one farthest from the mean is excluded).
+    void center_on_selection();
+    // Centre the camera on (fractional) map cell (cx, cy).
+    void center_on_cell(double cx, double cy);
+    // Clear every cursor mode (repair / sell / SW targeting; a pending
+    // placement survives) -- the group-hotkey prologue.
+    void clear_cursor_modes();
+    // Right-click-up semantics (FUN_004AAC40): cancel one armed mode, else
+    // deselect everything (units and the selected building).
+    void right_click_cancel();
+    void deselect_all();
+    // ACTION_SELF predicate: can this selected own unit deploy / unload? The
+    // default covers transports with cargo and bound Deployers; GameScene may
+    // widen it (e.g. agent F's MCV -> ConYard).
+    void set_deploy_check(std::function<bool(const Unit&)> f) { deploy_check_ = std::move(f); }
 
     // --- Buildings phase: placement mode (Task 7a) -------------------------
     // While active, a left Down+Up (no drag) confirms placement at the hovered
@@ -217,6 +314,17 @@ public:
     }
 
 private:
+    // G-05: the order half of a click (the legacy right-click body): rally,
+    // attack (is_enemy), harvest/dock, enter, spy, engineer, move.
+    void issue_order(int px, int py);
+    void handle_original(const InputEvent& ev);   // Scheme::Original dispatch
+    void left_click_original(int px, int py, bool shift, uint32_t t_ms);
+    // Shared classifier behind action_at (selection/order decision).
+    Action classify(int px, int py, bool shift, bool ctrl, bool alt) const;
+    bool any_own_selected() const;
+    bool selected_building_valid() const;
+    bool cell_walkable(int cx, int cy) const;
+    void sync_groups();
     void clamp_camera();
     // Lowest index i with units()[i].selected == true, or -1 if none.
     int lowest_selected() const;
@@ -305,6 +413,16 @@ private:
     std::vector<World::InfiltratePurpose> infiltrate_purposes_;
     double spy_steal_pct_ = 0.5;       // SpyMoneyStealPercent
     int spy_blackout_frames_ = 1000;   // SpyPowerBlackout
+
+    // G-05/G-04 state.
+    Scheme scheme_ = Scheme::Original;
+    bool mod_shift_ = false, mod_ctrl_ = false, mod_alt_ = false;  // latest event's modifiers
+    bool r_down_ = false, r_drag_ = false;     // right-button gesture (drag = scroll)
+    int r_last_x_ = 0, r_last_y_ = 0, r_down_x_ = 0, r_down_y_ = 0;
+    std::vector<int> unit_group_;              // per unit index: group 1..10, 0 = none
+    int last_group_ = 0;                       // TeamSelect double-press detection
+    uint32_t last_group_t_ = 0;
+    std::function<bool(const Unit&)> deploy_check_;
 
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).

@@ -218,7 +218,7 @@ private:
         std::vector<int> now = rp_tab_buildable(active_tab_);
         if (now != buildable_) {
             buildable_ = std::move(now);
-            lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
+            lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_, lay_.top_row);   // keep the G-12 strip scroll
         }
     }
 

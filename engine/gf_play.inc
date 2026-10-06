@@ -71,8 +71,17 @@ int deploy_player_mcv(Ctx& c, GameScene& g, int max_frames) {
         if (w.units()[(std::size_t)i].house == 0 && w.is_mcv(i)) mcv = i;
     c.check(mcv >= 0, "player has an MCV");
     if (mcv < 0) return -1;
-    const bool ordered = w.order_deploy(mcv);   // the D-key / deploy-gesture entry point
-    c.check(ordered, "deploy order accepted");
+    // The original gesture: left-click the MCV to select it, left-click it
+    // again (ACTION_SELF) to deploy -- real events through GameScene::handle.
+    const int mx = w.units()[(std::size_t)mcv].cell_x, my = w.units()[(std::size_t)mcv].cell_y;
+    g.gf_click_cell(mx, my, ra2engine::InputEvent::Left);
+    g.update(1.0 / 15.0);
+    c.check(w.units()[(std::size_t)mcv].selected, "click selects the MCV");
+    for (int k = 0; k < 10; ++k) g.update(1.0 / 15.0);   // beyond the double-click window
+    g.gf_click_cell(mx, my, ra2engine::InputEvent::Left);
+    g.update(1.0 / 15.0);
+    const bool ordered = w.units()[(std::size_t)mcv].deploy_mission != 0 || !w.units()[(std::size_t)mcv].alive;
+    c.check(ordered, "clicking the selected MCV orders the deploy");
     for (int f = 0; f < max_frames; ++f) {
         g.update(1.0 / 15.0);
         if (f % 60 == 0) {

@@ -52,6 +52,9 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/world_veterancy.cpp
     ${RA2_ROOT}/engine/pathfind.cpp
     ${RA2_ROOT}/engine/input.cpp
+    ${RA2_ROOT}/engine/input_original.cpp
+    ${RA2_ROOT}/engine/hotkeys.cpp
+    ${RA2_ROOT}/engine/touch_gestures.cpp
     ${RA2_ROOT}/engine/occupancy.cpp
     ${RA2_ROOT}/engine/group_move.cpp
     ${RA2_ROOT}/engine/combat.cpp
@@ -89,4 +92,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/world_abilities.cpp
     ${RA2_ROOT}/engine/world_mcv.cpp
     ${RA2_ROOT}/engine/savegame.cpp
+    ${RA2_ROOT}/engine/play_script.cpp
 )
