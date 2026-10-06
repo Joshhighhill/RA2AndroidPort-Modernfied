@@ -1,4 +1,5 @@
 #include "platform.hpp"
+#include "touch_gestures.hpp"
 
 #include <SDL.h>
 #include <cstdio>
@@ -12,9 +13,14 @@ struct Platform::Impl {
     SDL_Renderer* renderer = nullptr;
     int w = 0;
     int h = 0;
+    TouchGestures touch;   // G-70 gesture layer (fed by SDL_FINGER*)
 };
 
-Platform Platform::create(const char* title, int w, int h) {
+Platform Platform::create(const char* title, int w, int h, bool hidden) {
+    // G-71: SDL must not synthesise mouse events from touches (every tap would
+    // arrive twice = a double-click); fingers go through TouchGestures. The
+    // SDL_TOUCH_MOUSEID filter in poll() backs this up.
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         throw std::runtime_error(SDL_GetError());
     }
@@ -23,14 +29,18 @@ Platform Platform::create(const char* title, int w, int h) {
         title,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         w, h,
-        SDL_WINDOW_SHOWN);
+        hidden ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
     if (!window) {
         std::string err = SDL_GetError();
         SDL_Quit();
         throw std::runtime_error(err);
     }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // G0 --play: a hidden window renders through the software renderer so the
+    // captured pixels do not depend on the GPU driver.
+    SDL_Renderer* renderer = SDL_CreateRenderer(
+        window, -1, hidden ? SDL_RENDERER_SOFTWARE : SDL_RENDERER_ACCELERATED);
+    if (!renderer && !hidden) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     if (!renderer) {
         std::string err = SDL_GetError();
         SDL_DestroyWindow(window);
@@ -87,9 +97,69 @@ Platform::~Platform() {
     }
 }
 
+// SDL keycode -> Windows virtual-key code (KeyboardMD.ini [Hotkey] code space).
+static int vk_from_sdl(int k) {
+    if (k >= SDLK_a && k <= SDLK_z) return 'A' + (k - SDLK_a);
+    if (k >= SDLK_0 && k <= SDLK_9) return '0' + (k - SDLK_0);
+    if (k >= SDLK_F1 && k <= SDLK_F12) return 112 + (k - SDLK_F1);
+    if (k >= SDLK_KP_1 && k <= SDLK_KP_9) return 97 + (k - SDLK_KP_1);   // VK_NUMPAD1..9
+    switch (k) {
+        case SDLK_ESCAPE: case SDLK_AC_BACK: return 27;   // Android BACK = Esc (06#38)
+        case SDLK_SPACE: return 32;
+        case SDLK_RETURN: case SDLK_KP_ENTER: return 13;
+        case SDLK_BACKSPACE: return 8;
+        case SDLK_TAB: return 9;
+        case SDLK_PAGEUP: return 33;
+        case SDLK_PAGEDOWN: return 34;
+        case SDLK_END: return 35;
+        case SDLK_HOME: return 36;
+        case SDLK_LEFT: return 37;
+        case SDLK_UP: return 38;
+        case SDLK_RIGHT: return 39;
+        case SDLK_DOWN: return 40;
+        case SDLK_INSERT: return 45;
+        case SDLK_DELETE: return 46;
+        case SDLK_KP_0: return 96;
+        case SDLK_KP_MULTIPLY: return 106;
+        case SDLK_KP_PLUS: return 107;
+        case SDLK_KP_MINUS: return 109;
+        case SDLK_KP_PERIOD: return 110;   // VK_DECIMAL ([Hotkey] Delete=110)
+        case SDLK_KP_DIVIDE: return 111;
+        default: return 0;
+    }
+}
+
+void key_event_from_sdl(int k, int mod, InputEvent& ev) {
+    ev.shift = (mod & KMOD_SHIFT) != 0;
+    ev.ctrl = (mod & KMOD_CTRL) != 0;
+    ev.alt = (mod & KMOD_ALT) != 0;
+    ev.vk = vk_from_sdl(k);
+    ev.key = 0;
+    // P7: the named keys the save/load UI + P10 briefing consume.
+    // G-01: Escape is an ordinary key (KeyboardMD.ini [Hotkey] Options=27 --
+    // the in-game options dialog; dialogs treat it as Back). Only the window
+    // close button (SDL_QUIT) quits the program.
+    switch (k) {
+        case SDLK_ESCAPE: case SDLK_AC_BACK: ev.key = kKeyEscape; break;
+        case SDLK_BACKSPACE: ev.key = kKeyBackspace; break;
+        case SDLK_RETURN: case SDLK_KP_ENTER: ev.key = kKeyEnter; break;
+        case SDLK_UP: ev.key = kKeyUp; break;
+        case SDLK_DOWN: ev.key = kKeyDown; break;
+        case SDLK_DELETE: ev.key = kKeyDelete; break;
+        case SDLK_F10: ev.key = kKeyF10; break;
+        case SDLK_F1: ev.key = kKeyF1; break;
+        default: break;
+    }
+    ev.kind = (ev.key || ev.vk) ? InputEvent::Key : InputEvent::None;
+}
+
 bool Platform::poll(InputEvent& ev) {
+    ev = InputEvent{};
+    if (p_->touch.pop(ev)) return true;   // G-70: queued gesture events first
     SDL_Event e;
     if (!SDL_PollEvent(&e)) {
+        p_->touch.tick(SDL_GetTicks());   // long-press fires with no new event
+        if (p_->touch.pop(ev)) return true;
         ev.kind = InputEvent::None;
         return false;
     }
@@ -99,70 +169,67 @@ bool Platform::poll(InputEvent& ev) {
             ev.kind = InputEvent::Quit;
             break;
         case SDL_KEYDOWN:
-            if (e.key.keysym.sym == SDLK_ESCAPE) {
-                ev.kind = InputEvent::Quit;
-            } else {
-                // P7: the few keys the save/load UI needs; everything else stays None.
-                switch (e.key.keysym.sym) {
-                    case SDLK_BACKSPACE: ev.key = kKeyBackspace; break;
-                    case SDLK_RETURN: case SDLK_KP_ENTER: ev.key = kKeyEnter; break;
-                    case SDLK_UP: ev.key = kKeyUp; break;
-                    case SDLK_DOWN: ev.key = kKeyDown; break;
-                    case SDLK_DELETE: ev.key = kKeyDelete; break;
-                    case SDLK_F10: ev.key = kKeyF10; break;
-                    case SDLK_F1: ev.key = kKeyF1; break;
-                    default: ev.key = 0; break;
-                }
-                ev.kind = ev.key ? InputEvent::Key : InputEvent::None;
-            }
+            key_event_from_sdl(e.key.keysym.sym, e.key.keysym.mod, ev);
+            ev.t_ms = e.key.timestamp;
+            // A held command key must not re-fire (D would toggle deployers
+            // every repeat); only the editing keys (kKey*) auto-repeat.
+            if (e.key.repeat && ev.key == 0) ev.kind = InputEvent::None;
             break;
         case SDL_TEXTINPUT:
             ev.kind = InputEvent::Text;
             std::snprintf(ev.text, sizeof ev.text, "%s", e.text.text);
             break;
         case SDL_MOUSEBUTTONDOWN:
+            if (e.button.which == SDL_TOUCH_MOUSEID) break;   // G-71: no synthetic duplicate
             ev.kind = InputEvent::PointerDown;
             ev.x = e.button.x;
             ev.y = e.button.y;
             ev.button = (e.button.button == SDL_BUTTON_RIGHT) ? InputEvent::Right
                                                               : InputEvent::Left;
             ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEBUTTONUP:
+            if (e.button.which == SDL_TOUCH_MOUSEID) break;
             ev.kind = InputEvent::PointerUp;
             ev.x = e.button.x;
             ev.y = e.button.y;
             ev.button = (e.button.button == SDL_BUTTON_RIGHT) ? InputEvent::Right
                                                               : InputEvent::Left;
             ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEMOTION:
+            if (e.motion.which == SDL_TOUCH_MOUSEID) break;
             ev.kind = InputEvent::PointerMove;
             ev.x = e.motion.x;
             ev.y = e.motion.y;
             ev.t_ms = e.motion.timestamp;
+            ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             break;
+        // G-70: fingers go through the gesture layer (tap = left click, drag =
+        // band box, long-press / two-finger tap = right click, two-finger drag =
+        // pan); the produced events are drained at the top of poll().
         case SDL_FINGERDOWN:
-            ev.kind = InputEvent::PointerDown;
-            ev.x = static_cast<int>(e.tfinger.x * p_->w);
-            ev.y = static_cast<int>(e.tfinger.y * p_->h);
-            ev.button = InputEvent::Left;  // touch maps to the left/primary button
-            ev.t_ms = e.tfinger.timestamp;
+            p_->touch.finger_down(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                  static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            ev.kind = InputEvent::None;
             break;
         case SDL_FINGERUP:
-            ev.kind = InputEvent::PointerUp;
-            ev.x = static_cast<int>(e.tfinger.x * p_->w);
-            ev.y = static_cast<int>(e.tfinger.y * p_->h);
-            ev.button = InputEvent::Left;
-            ev.t_ms = e.tfinger.timestamp;
+            p_->touch.finger_up(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            ev.kind = InputEvent::None;
             break;
         case SDL_FINGERMOTION:
-            ev.kind = InputEvent::PointerMove;
-            ev.x = static_cast<int>(e.tfinger.x * p_->w);
-            ev.y = static_cast<int>(e.tfinger.y * p_->h);
-            ev.t_ms = e.tfinger.timestamp;
+            p_->touch.finger_move(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                  static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            ev.kind = InputEvent::None;
             break;
         default:
             ev.kind = InputEvent::None;
