@@ -17,8 +17,9 @@ C combat/movement, D AI, E render/audio, F MCV/start/win-lose/campaign.
 
 ## Summary
 
-The **current expectation is b049b40** (master with A, B, C and E merged; D and
-F pending). The per-script tables below show 63edea6 and 7778b66; the deltas
+**Current expectation: all twelve scripts PASS on master 30dfe00 + final-fix**
+(see "Final verification" below). Historical: the expectation was b049b40
+(master with A, B, C and E merged; D and F pending). The per-script tables below show 63edea6 and 7778b66; the deltas
 at b049b40 are listed right after this table.
 
 | Script | 63edea6 | 7778b66 (A+B) | b049b40 (A+B+C+E) | play_hash @b049b40 |
@@ -83,6 +84,42 @@ structure cameos after the SMCV unfolds (no ConYard = no structure strip);
 `sk-a` L47 waits for the stopped GI to finish the cell it was entering (Stop
 semantics in unit_orders.cpp) instead of asserting after exactly 2 frames;
 `sk-end` waits for `scene == result` after the LOST flag (BorrowedTime).
+
+### Final verification: master 30dfe00 + branch final-fix (current expectation)
+
+Every script run one at a time on final-fix (master 30dfe00, the rebuilt
+Skirmish page 0x102 merged, `--play` settings isolated via `RA2_PREF_DIR`).
+**All twelve PASS.**
+
+| Script | Result | play_hash |
+|---|---|---|
+| `sk-a` | PASS | `656b22a85318f512` |
+| `sk-s` | PASS | `fe1cf263ad56f1c5` |
+| `sk-end` | PASS | `1709fc69a3add31b` |
+| `sk-a-lose` | PASS | `168493b5406e7591` |
+| `sk-lobby` (new, Skirmish page end to end) | PASS | `4daf570e159f13e0` |
+| `m-all01` | PASS | `85c095753cd8d71e` |
+| `m-sov01` | PASS | `93563d7d332437e7` |
+| `m-lose` | PASS | `7fdb2d4108e1e6a0` |
+| `shell-smoke` | PASS | `648511870a18d992` |
+| `controls` | PASS | `53397d2c6b362375` |
+| `world-depth` | PASS (script fixed on final-fix, below) | `c8815382309441ed` |
+| `probe-soviet-econ` | PASS (script fixed on final-fix, below) | `5e33a902e876a58a` |
+
+Script fixes on final-fix (assumptions broken by later merges, no engine
+regression):
+
+* `probe-soviet-econ` failed 1 step on master 25bd5b0: L23
+  `assert cameo(NAPOWR) == 1` at frame 6, BEFORE the SMCV deploys. The probe
+  was written when the skirmish shipped a pre-built ConYard; since gF (98d5521,
+  G-23) the player starts with an SMCV and no ConYard, so no structure strip
+  exists yet. Same fix `sk-s` got in d575300: the three cameo asserts now run
+  after `built(0,NACNST) == 1`. Lobby steps migrated to the 0x102 page (copied
+  from `sk-s`). Income still verified: credits 8200 -> 9200 at f=3000 (War
+  Miner unload, NEW-3 stays fixed).
+* `world-depth` Part B used the old lobby's `cycle map:+`; the rebuilt page
+  picks the map on Customize Battle (0x6B): `click button "Customize Battle"`,
+  3x `list:down`, `click map:xmp31s2.map`, `Use Map`.
 
 ## Failures by script
 

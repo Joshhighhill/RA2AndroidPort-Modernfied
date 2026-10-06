@@ -80,7 +80,15 @@ require scene == "shell:Main Menu"
 click button "Single Player"
 click button Skirmish
 require scene == lobby
-cycle map:+ map == "xmp31s2.map"
+# Skirmish page 0x102: the map is picked on Customize Battle (0x6B); on this
+# install xmp31s2 is in view after 3 scroll-strip clicks (91 maps, 16 rows).
+click button "Customize Battle"
+require page == "Customize Battle"
+click list:down
+click list:down
+click list:down
+click map:xmp31s2.map
+click button "Use Map"
 require map == "xmp31s2.map"
 click start
 until 90 scene == game
