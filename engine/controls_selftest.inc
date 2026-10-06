@@ -117,6 +117,36 @@ public:
         q_.push_back(e);
     }
     void push(const ra2engine::InputEvent& e) { q_.push_back(e); }
+    // Touch: drive the REAL gesture layer (the one Platform feeds from
+    // SDL_FINGER*) and queue what it emits.
+    ra2engine::TouchGestures gest_;
+    void drain_gestures() {
+        ra2engine::InputEvent e;
+        while (gest_.pop(e)) q_.push_back(e);
+    }
+    uint32_t tnow() const { return static_cast<uint32_t>(frame_ * 67 + 100000); }
+    void touch_tap(int x, int y) {
+        gest_.finger_down(1, x, y, tnow());
+        gest_.finger_up(1, x, y, tnow() + 60);
+        drain_gestures();
+    }
+    void touch_long(int x, int y) {
+        gest_.finger_down(1, x, y, tnow());
+        gest_.tick(tnow() + 600);
+        gest_.finger_up(1, x, y, tnow() + 700);
+        drain_gestures();
+    }
+    void touch_pan(int x, int y, int dx, int dy) {
+        gest_.finger_down(1, x, y, tnow());
+        gest_.finger_down(2, x + 80, y, tnow() + 10);
+        for (int i = 1; i <= 4; ++i) {
+            gest_.finger_move(1, x + dx * i / 4, y + dy * i / 4, tnow() + 20 * i);
+            gest_.finger_move(2, x + 80 + dx * i / 4, y + dy * i / 4, tnow() + 20 * i + 5);
+        }
+        gest_.finger_up(1, x + dx, y + dy, tnow() + 200);
+        gest_.finger_up(2, x + 80 + dx, y + dy, tnow() + 210);
+        drain_gestures();
+    }
     static long long pv(const Scene& s, const std::string& k) {
         std::map<std::string, long long> p;
         s.probe(p);

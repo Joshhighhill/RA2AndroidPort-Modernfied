@@ -49,6 +49,7 @@
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
+#include "touch_gestures.hpp" // G-70 (controls self-test drives the real gesture layer)
 #include <set>                // G-07 held queues (game_scene_controls.inc)
 #include "play_script.hpp"   // G0 harness: unit selector parsing (game_scene_play.inc)
 #include "iso_project.hpp"

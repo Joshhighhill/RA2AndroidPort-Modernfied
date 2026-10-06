@@ -289,5 +289,50 @@ void add_controls_selftest_steps(STest& t) {
     S.push_back(st_expect_ge("sel.moving", 1, 5));
     S.push_back({"a radar order does not move the camera", [](STest& t, Scene& s, int) {
                      return STest::pv(s, "cam_x") == t.mem["cam_x"];
-                 }});    // (touch steps follow)
+                 }});    // --- G-70/G-71: touch through the real gesture layer ---
+    S.push_back(st_key("H", SDLK_h));
+    S.push_back(st_click_own_rel(14, 14, true));               // deselect (mouse)
+    S.push_back({"tap a GI", [](STest& t, Scene& s, int) {
+                     int x = 0, y = 0;
+                     if (!s.locate("unit:0:GI:0", x, y)) t.fail("no GI");
+                     t.touch_tap(x, y);
+                     return true;
+                 }});
+    S.push_back(st_expect("sel", 1));                          // ONE tap = select (not a double)
+    S.push_back({"tap the ground = move order", [](STest& t, Scene& s, int) {
+                     const auto p = STest::probe_of(s);
+                     int x = 0, y = 0;
+                     s.locate("cell:" + std::to_string(p.at("own.cx") - 4) + "," + std::to_string(p.at("own.cy") + 2), x, y);
+                     t.touch_tap(x, y);
+                     return true;
+                 }});
+    S.push_back(st_expect_ge("sel.moving", 1, 5));
+    S.push_back({"remember cam", [](STest& t, Scene& s, int) {
+                     t.mem["cam_x"] = STest::pv(s, "cam_x");
+                     t.mem["cam_y"] = STest::pv(s, "cam_y");
+                     return true;
+                 }});
+    S.push_back({"two-finger pan", [](STest& t, Scene&, int) {
+                     t.touch_pan(400, 300, 120, 60);
+                     return true;
+                 }});
+    S.push_back({"the map followed the fingers", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "cam_x") - t.mem["cam_x"] == 120 &&
+                            STest::pv(s, "cam_y") - t.mem["cam_y"] == 60;
+                 }});
+    S.push_back({"long-press = right click (deselect)", [](STest& t, Scene&, int) {
+                     t.touch_long(500, 400);
+                     return true;
+                 }});
+    S.push_back(st_expect("sel", 0));
+    S.push_back({"a tap at the screen edge", [](STest& t, Scene& s, int) {
+                     t.mem["cam_x"] = STest::pv(s, "cam_x");
+                     t.touch_tap(3, 360);
+                     return true;
+                 }});
+    S.push_back(st_wait(20));
+    S.push_back({"no sticky edge scroll after a touch", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "cam_x") == t.mem["cam_x"];
+                 }});
+    S.push_back(st_shot("touch_done.png"));
 }

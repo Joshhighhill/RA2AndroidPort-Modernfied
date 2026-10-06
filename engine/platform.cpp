@@ -1,4 +1,5 @@
 #include "platform.hpp"
+#include "touch_gestures.hpp"
 
 #include <SDL.h>
 #include <cstdio>
@@ -12,9 +13,14 @@ struct Platform::Impl {
     SDL_Renderer* renderer = nullptr;
     int w = 0;
     int h = 0;
+    TouchGestures touch;   // G-70 gesture layer (fed by SDL_FINGER*)
 };
 
 Platform Platform::create(const char* title, int w, int h, bool hidden) {
+    // G-71: SDL must not synthesise mouse events from touches (every tap would
+    // arrive twice = a double-click); fingers go through TouchGestures. The
+    // SDL_TOUCH_MOUSEID filter in poll() backs this up.
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         throw std::runtime_error(SDL_GetError());
     }
@@ -149,8 +155,11 @@ void key_event_from_sdl(int k, int mod, InputEvent& ev) {
 
 bool Platform::poll(InputEvent& ev) {
     ev = InputEvent{};
+    if (p_->touch.pop(ev)) return true;   // G-70: queued gesture events first
     SDL_Event e;
     if (!SDL_PollEvent(&e)) {
+        p_->touch.tick(SDL_GetTicks());   // long-press fires with no new event
+        if (p_->touch.pop(ev)) return true;
         ev.kind = InputEvent::None;
         return false;
     }
@@ -171,6 +180,7 @@ bool Platform::poll(InputEvent& ev) {
             std::snprintf(ev.text, sizeof ev.text, "%s", e.text.text);
             break;
         case SDL_MOUSEBUTTONDOWN:
+            if (e.button.which == SDL_TOUCH_MOUSEID) break;   // G-71: no synthetic duplicate
             ev.kind = InputEvent::PointerDown;
             ev.x = e.button.x;
             ev.y = e.button.y;
@@ -182,6 +192,7 @@ bool Platform::poll(InputEvent& ev) {
             ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEBUTTONUP:
+            if (e.button.which == SDL_TOUCH_MOUSEID) break;
             ev.kind = InputEvent::PointerUp;
             ev.x = e.button.x;
             ev.y = e.button.y;
@@ -193,6 +204,7 @@ bool Platform::poll(InputEvent& ev) {
             ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEMOTION:
+            if (e.motion.which == SDL_TOUCH_MOUSEID) break;
             ev.kind = InputEvent::PointerMove;
             ev.x = e.motion.x;
             ev.y = e.motion.y;
@@ -201,25 +213,23 @@ bool Platform::poll(InputEvent& ev) {
             ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
             ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             break;
+        // G-70: fingers go through the gesture layer (tap = left click, drag =
+        // band box, long-press / two-finger tap = right click, two-finger drag =
+        // pan); the produced events are drained at the top of poll().
         case SDL_FINGERDOWN:
-            ev.kind = InputEvent::PointerDown;
-            ev.x = static_cast<int>(e.tfinger.x * p_->w);
-            ev.y = static_cast<int>(e.tfinger.y * p_->h);
-            ev.button = InputEvent::Left;  // touch maps to the left/primary button
-            ev.t_ms = e.tfinger.timestamp;
+            p_->touch.finger_down(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                  static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            ev.kind = InputEvent::None;
             break;
         case SDL_FINGERUP:
-            ev.kind = InputEvent::PointerUp;
-            ev.x = static_cast<int>(e.tfinger.x * p_->w);
-            ev.y = static_cast<int>(e.tfinger.y * p_->h);
-            ev.button = InputEvent::Left;
-            ev.t_ms = e.tfinger.timestamp;
+            p_->touch.finger_up(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            ev.kind = InputEvent::None;
             break;
         case SDL_FINGERMOTION:
-            ev.kind = InputEvent::PointerMove;
-            ev.x = static_cast<int>(e.tfinger.x * p_->w);
-            ev.y = static_cast<int>(e.tfinger.y * p_->h);
-            ev.t_ms = e.tfinger.timestamp;
+            p_->touch.finger_move(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                  static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            ev.kind = InputEvent::None;
             break;
         default:
             ev.kind = InputEvent::None;
