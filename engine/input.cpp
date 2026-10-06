@@ -353,11 +353,283 @@ void Input::commit_double(int px, int py) {
     if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
 }
 
+
+// G-05: the order half of a click -- formerly the Legacy right-click body,
+// now shared by Legacy right-down and Original left-up. G-06: the attack
+// gates use World::is_enemy(0, house) (allies/neutrals are not attack targets).
+void Input::issue_order(int px, int py) {
+    InputEvent ev;   // the body below reads ev.x / ev.y
+    ev.x = px;
+    ev.y = py;
+    // Rally-point set [RE: production.md §1.4]: with an own unit
+    // factory selected, a right-click sets its rally cell and
+    // consumes the event (no attack/move). Resolved BEFORE the
+    // harvester/attack path so a selected factory always takes
+    // precedence. A factory that died since selection must NOT keep
+    // swallowing right-clicks: if the selection is stale (out of
+    // range or dead/tombstoned), clear it and fall through so the
+    // click resumes normal attack/move behavior.
+    if (selected_building_ >= 0) {
+        const auto& blds = world_.buildings();
+        if (selected_building_ >= static_cast<int>(blds.size()) ||
+            !blds[selected_building_].alive) {
+            selected_building_ = -1;   // stale selection: don't consume
+        } else if (is_unit_factory_type(blds[selected_building_].type)) {   // G-10: rally = factories only
+            int rcx = 0, rcy = 0;
+            resolve_ground_cell(ev.x, ev.y, rcx, rcy);
+            world_.set_rally(selected_building_, rcx, rcy);
+            return;
+        }
+    }
+    // Right-click: attack a hostile under the cursor if the pick
+    // lands on one (house != 0) -- a right-click on a FRIENDLY
+    // unit is NOT an attack order and falls through to the
+    // ground-move branch below (RA2 behavior: there is no
+    // "attack own unit" order, so it's treated like clicking the
+    // ground under that unit).
+    const int idx = unit_under(ev.x, ev.y);
+    // Attack requires BOTH a hostile under the cursor AND a live
+    // selection (spec gate); otherwise fall through to a ground move
+    // so an unselected right-click behaves identically everywhere.
+    bool any_selected = false;
+    for (const Unit& su : world_.units())
+        if (su.selected && su.alive && su.die_time < 0.0) { any_selected = true; break; }
+    if (idx >= 0 && world_.is_enemy(0, world_.units()[idx].house) && any_selected) {
+        // Capture actor BEFORE the order mutates any state.
+        const int actor = lowest_selected();
+        world_.order_attack(idx);
+        actions_.attack_ordered = true;
+        actions_.actor = actor;
+    } else {
+        // Group-move to the clicked ground cell (issued on down).
+        // The half-tile offset before screen_to_cell maps the
+        // click to the cell whose visible diamond was clicked --
+        // LEVEL-AWARE, two-pass: raised terrain projects its
+        // diamond kLevelPx*level higher on screen than the
+        // level-0 projection (cell_to_screen subtracts
+        // level*kLevelPx from py), so a single level-blind
+        // inversion resolves 1-2 cells short of the tile actually
+        // drawn under the cursor. Pass 1 inverts at level 0 to get
+        // a first-guess cell; looking up THAT cell's real level
+        // and re-inverting with the raise added back to py
+        // converges on the true cell on smooth terrain (one
+        // refinement step, not a fixed-point loop -- see
+        // task-6-report.md).
+        int cx = 0, cy = 0;
+        resolve_ground_cell(ev.x, ev.y, cx, cy);
+        // Harvester orders [RE: economy.md §1], resolved BEFORE the
+        // attack-building branch: with a house-0 harvester in the
+        // selection, a right-click on an ore cell issues a harvest
+        // order and one on an own alive REFINERY (is_refinery_type
+        // -- the roster list set_refinery_types installed; any
+        // other own building stays a plain ground move) sends the
+        // miner(s) home. order_harvest/order_return only touch
+        // selected house-0 harvesters, so non-harvester
+        // right-clicks fall straight through to attack/move below.
+        bool harv_selected = false;
+        for (const Unit& su : world_.units())
+            if (su.selected && su.is_harvester && su.house == 0 && su.alive &&
+                su.die_time < 0.0) {
+                harv_selected = true;
+                break;
+            }
+        const int here_b = world_.building_at_cell(cx, cy);
+        if (harv_selected && world_.ore().has_ore(cx, cy)) {
+            world_.order_harvest(cx, cy);
+            // MIXED selection (fix round): co-selected NON-harvester
+            // units are not harvest-capable -- they get the normal
+            // group move to the same cell (each unit interprets the
+            // click per its own logic). The harvesters are dropped
+            // from the selection for the move call so
+            // order_move_selected can't clobber the harvest mission
+            // just issued (it would set manual_hold + repath), then
+            // restored -- the player's selection is untouched.
+            std::vector<std::size_t> harv_idx;
+            bool any_other = false;
+            for (std::size_t i = 0; i < world_.units().size(); ++i) {
+                const Unit& su = world_.units()[i];
+                // CB-1: also skip CARRIED units (cargo_of >= 0, aboard a
+                // transport / off-map) -- a widening of the corpse/
+                // validity skip, the fourth carry-guard site.
+                if (!su.selected || !su.alive || su.die_time >= 0.0 ||
+                    su.cargo_of >= 0)
+                    continue;
+                if (su.is_harvester && su.house == 0)
+                    harv_idx.push_back(i);
+                else
+                    any_other = true;
+            }
+            if (any_other) {
+                const int actor = lowest_selected();
+                for (std::size_t i : harv_idx) world_.units()[i].selected = false;
+                world_.order_move_selected(cx, cy);
+                for (std::size_t i : harv_idx) world_.units()[i].selected = true;
+                if (actor >= 0) {
+                    actions_.move_ordered = true;
+                    actions_.actor = actor;
+                }
+            }
+            return;  // handled: no attack for this right-click
+        }
+        if (harv_selected && here_b >= 0 && world_.buildings()[here_b].house == 0 &&
+            world_.buildings()[here_b].alive &&
+            is_refinery_type(world_.buildings()[here_b].type)) {
+            world_.order_return();
+            return;  // handled
+        }
+        // CB-1 enter-transport gesture [RE: transport-cargo.md
+        // §2/§3; spec §3]: a right-click on an OWN, alive,
+        // non-dying TRANSPORT (passengers_max > 0 -- the Unit
+        // carries the roster knowledge, the same way the
+        // refinery-return gesture reads roster types) with a
+        // selection containing at least one eligible
+        // NON-transport unit issues the enter order instead of a
+        // group move. Resolved AFTER the harvester branches (ore/
+        // refinery win for miners) and BEFORE attack-building/
+        // move. The original's "enter" cursor is cosmetic; ours
+        // stays default (noted divergence, no new UI systems).
+        if (idx >= 0 && world_.units()[idx].house == 0 &&
+            world_.units()[idx].passengers_max > 0) {
+            bool eligible = false;
+            for (std::size_t si = 0; si < world_.units().size(); ++si) {
+                const Unit& su = world_.units()[si];
+                if (!su.selected || su.house != 0 || !su.alive ||
+                    su.die_time >= 0.0 || static_cast<int>(si) == idx)
+                    continue;
+                if (su.passengers_max > 0) continue;  // transports
+                eligible = true;                      // do not ride
+                break;
+            }
+            if (eligible) {
+                const int actor = lowest_selected();
+                world_.order_enter_transport(idx);
+                actions_.move_ordered = true;   // move-ack voice
+                actions_.actor = actor;
+                return;  // handled: no attack/move for this click
+            }
+        }
+        // Spy infiltration gesture [RE: capture.md §B CONFIRMED]: a
+        // SINGLE selected SPY right-clicking an ENEMY/NEUTRAL building
+        // ORDERS it to move adjacent and then infiltrate it --
+        // refinery cash-steal, power blackout, SW reset, factory
+        // veteran-flag, or (radar/lab) inert -- and the spy is
+        // CONSUMED on the successful infiltration ON ARRIVAL, NOT on
+        // the click. Like the engineer sibling, the act
+        // (infiltrate_building + consume_unit) is deferred to
+        // step_capture when the spy reaches adjacency -- a spy no
+        // longer infiltrates a building across the map on a single
+        // click. The one wrinkle: the InfiltratePurpose is resolved
+        // from the building's roster type HERE (set_infiltrate_params;
+        // World is asset-free) and stored PRE-RESOLVED on the unit, so
+        // step_capture acts without the roster. Resolved BEFORE the
+        // engineer/attack/move branches so a spy never issues a plain
+        // attack. An OWN building is not a spy target so the gesture
+        // falls through to normal handling. Interactive-only: no demo
+        // selects a spy, so every gate is byte-identical.
+        const int spy = sel_spy_idx(world_);
+        if (spy >= 0) {
+            const int b_hit = world_.building_at_cell(cx, cy);
+            if (b_hit >= 0) {
+                const Building& tb = world_.buildings()[b_hit];
+                const int spy_house = world_.units()[spy].house;
+                if (tb.house != spy_house) {   // enemy/neutral only
+                    const World::InfiltratePurpose purpose =
+                        infiltrate_purpose_of(tb.type);
+                    world_.order_spy_infiltrate(spy, b_hit, purpose,
+                                                spy_steal_pct_,
+                                                spy_blackout_frames_);
+                    actions_.move_ordered = true;   // move-ack voice
+                    actions_.actor = spy;
+                    return;                          // handled: no attack/move
+                }
+                // own building -> not a spy target; fall through below.
+            }
+        }
+        // Engineer/Spy Capture gesture [RE-GATE APPLIED: capture.md
+        // §A3/§A5]: a SINGLE selected ENGINEER right-clicking a
+        // building ORDERS it to move adjacent and then capture it
+        // (enemy OR neutral) or repair it (own, damaged); the engineer
+        // is consumed on arrival, NOT on the click. Like the enter-
+        // transport sibling, the act (capture_building/repair_building
+        // + consume_unit) is deferred to step_capture when the engineer
+        // reaches adjacency -- an engineer no longer captures a
+        // building across the map on a single click. Resolved BEFORE
+        // the attack-building branch so an engineer never issues a
+        // plain attack, and BEFORE the move fall-through. Captures at
+        // ANY building health, always consumed on the successful act
+        // (no damage threshold -- EngineerCaptureLevel absent in
+        // YR-1.001 -> 1.0). building_at_cell returns only alive,
+        // non-Dead foundations; order_engineer_capture and the
+        // capture/repair calls it defers to re-guard internally. An
+        // OWN, UNDAMAGED building is not a capture/repair target, so
+        // the gesture falls through to the normal handling (a move) --
+        // the recovered graceful fall-through. ProduceCashStartup is 0
+        // here (a normal building grants none; the CAOILD=1000 roster
+        // value is wired in Task 4 via a main.cpp-side startup
+        // injection, mirroring set_refinery_types).
+        const int eng = sel_engineer_idx(world_);
+        if (eng >= 0) {
+            const int b_hit = world_.building_at_cell(cx, cy);
+            if (b_hit >= 0) {
+                const Building& tb = world_.buildings()[b_hit];
+                const int eng_house = world_.units()[eng].house;
+                const bool is_target =
+                    (tb.house != eng_house) ||   // enemy/neutral -> capture
+                    (tb.hp < tb.max_hp);         // own damaged -> repair
+                if (is_target) {
+                    world_.order_engineer_capture(eng, b_hit);
+                    actions_.move_ordered = true;   // move-ack voice
+                    actions_.actor = eng;
+                    return;                          // handled: no attack/move
+                }
+                // own & undamaged -> not a target; fall through below.
+            }
+        }
+        // Interactive attack-building (Task 4 machinery wired to the
+        // player here): if the resolved ground cell lands on a
+        // HOSTILE building's foundation it's an attack order, not a
+        // move -- mirrors the hostile-unit gate above (house != 0 +
+        // a live selection). building_at_cell returns only alive,
+        // non-Dead foundations and order_attack_building re-guards
+        // house-0/dead/out-of-range internally (world.cpp:464), so
+        // the lone house != 0 test here is just the input-level
+        // friendly-vs-hostile decision: a click on an own/friendly
+        // building is NOT an attack and falls through to the move
+        // below, exactly like a friendly-unit right-click.
+        const int b_idx = world_.building_at_cell(cx, cy);
+        if (b_idx >= 0 && world_.is_enemy(0, world_.buildings()[b_idx].house) && any_selected) {
+            // Capture actor BEFORE the order mutates any state.
+            const int actor = lowest_selected();
+            world_.order_attack_building(b_idx);
+            actions_.attack_ordered = true;
+            actions_.actor = actor;
+        } else {
+            // Group-move to the clicked ground cell (issued on
+            // down). Capture actor BEFORE the order mutates state;
+            // the move flag is set only when the selection is
+            // non-empty (an empty-selection right-click is a no-op
+            // move).
+            const int actor = lowest_selected();
+            world_.order_move_selected(cx, cy);
+            if (actor >= 0) {
+                actions_.move_ordered = true;
+                actions_.actor = actor;
+            }
+        }
+    }
+}
+
 void Input::handle(const InputEvent& ev) {
     // NOTE: actions_ is deliberately NOT touched here -- it ACCUMULATES
     // across handle() calls (the commit/order sites below OR their flags in)
     // and is cleared only by take_actions(), the game loop's once-per-frame
     // consume point. See InputActions in input.hpp for the rationale.
+
+    // G-05: the original's dispatch (input_original.cpp). Legacy falls through.
+    if (scheme_ == Scheme::Original) {
+        handle_original(ev);
+        return;
+    }
 
     // CB-4 Superweapons [spec §4]: while SW-targeting is armed, a left Down+Up
     // (no drag) commits the target cell -- resolved via the SAME level-aware
@@ -506,262 +778,7 @@ void Input::handle(const InputEvent& ev) {
 
         case InputEvent::PointerDown:
             if (ev.button == InputEvent::Right) {
-                // Rally-point set [RE: production.md §1.4]: with an own unit
-                // factory selected, a right-click sets its rally cell and
-                // consumes the event (no attack/move). Resolved BEFORE the
-                // harvester/attack path so a selected factory always takes
-                // precedence. A factory that died since selection must NOT keep
-                // swallowing right-clicks: if the selection is stale (out of
-                // range or dead/tombstoned), clear it and fall through so the
-                // click resumes normal attack/move behavior.
-                if (selected_building_ >= 0) {
-                    const auto& blds = world_.buildings();
-                    if (selected_building_ >= static_cast<int>(blds.size()) ||
-                        !blds[selected_building_].alive) {
-                        selected_building_ = -1;   // stale selection: don't consume
-                    } else {
-                        int rcx = 0, rcy = 0;
-                        resolve_ground_cell(ev.x, ev.y, rcx, rcy);
-                        world_.set_rally(selected_building_, rcx, rcy);
-                        break;
-                    }
-                }
-                // Right-click: attack a hostile under the cursor if the pick
-                // lands on one (house != 0) -- a right-click on a FRIENDLY
-                // unit is NOT an attack order and falls through to the
-                // ground-move branch below (RA2 behavior: there is no
-                // "attack own unit" order, so it's treated like clicking the
-                // ground under that unit).
-                const int idx = unit_under(ev.x, ev.y);
-                // Attack requires BOTH a hostile under the cursor AND a live
-                // selection (spec gate); otherwise fall through to a ground move
-                // so an unselected right-click behaves identically everywhere.
-                bool any_selected = false;
-                for (const Unit& su : world_.units())
-                    if (su.selected && su.alive && su.die_time < 0.0) { any_selected = true; break; }
-                if (idx >= 0 && world_.units()[idx].house != 0 && any_selected) {
-                    // Capture actor BEFORE the order mutates any state.
-                    const int actor = lowest_selected();
-                    world_.order_attack(idx);
-                    actions_.attack_ordered = true;
-                    actions_.actor = actor;
-                } else {
-                    // Group-move to the clicked ground cell (issued on down).
-                    // The half-tile offset before screen_to_cell maps the
-                    // click to the cell whose visible diamond was clicked --
-                    // LEVEL-AWARE, two-pass: raised terrain projects its
-                    // diamond kLevelPx*level higher on screen than the
-                    // level-0 projection (cell_to_screen subtracts
-                    // level*kLevelPx from py), so a single level-blind
-                    // inversion resolves 1-2 cells short of the tile actually
-                    // drawn under the cursor. Pass 1 inverts at level 0 to get
-                    // a first-guess cell; looking up THAT cell's real level
-                    // and re-inverting with the raise added back to py
-                    // converges on the true cell on smooth terrain (one
-                    // refinement step, not a fixed-point loop -- see
-                    // task-6-report.md).
-                    int cx = 0, cy = 0;
-                    resolve_ground_cell(ev.x, ev.y, cx, cy);
-                    // Harvester orders [RE: economy.md §1], resolved BEFORE the
-                    // attack-building branch: with a house-0 harvester in the
-                    // selection, a right-click on an ore cell issues a harvest
-                    // order and one on an own alive REFINERY (is_refinery_type
-                    // -- the roster list set_refinery_types installed; any
-                    // other own building stays a plain ground move) sends the
-                    // miner(s) home. order_harvest/order_return only touch
-                    // selected house-0 harvesters, so non-harvester
-                    // right-clicks fall straight through to attack/move below.
-                    bool harv_selected = false;
-                    for (const Unit& su : world_.units())
-                        if (su.selected && su.is_harvester && su.house == 0 && su.alive &&
-                            su.die_time < 0.0) {
-                            harv_selected = true;
-                            break;
-                        }
-                    const int here_b = world_.building_at_cell(cx, cy);
-                    if (harv_selected && world_.ore().has_ore(cx, cy)) {
-                        world_.order_harvest(cx, cy);
-                        // MIXED selection (fix round): co-selected NON-harvester
-                        // units are not harvest-capable -- they get the normal
-                        // group move to the same cell (each unit interprets the
-                        // click per its own logic). The harvesters are dropped
-                        // from the selection for the move call so
-                        // order_move_selected can't clobber the harvest mission
-                        // just issued (it would set manual_hold + repath), then
-                        // restored -- the player's selection is untouched.
-                        std::vector<std::size_t> harv_idx;
-                        bool any_other = false;
-                        for (std::size_t i = 0; i < world_.units().size(); ++i) {
-                            const Unit& su = world_.units()[i];
-                            // CB-1: also skip CARRIED units (cargo_of >= 0, aboard a
-                            // transport / off-map) -- a widening of the corpse/
-                            // validity skip, the fourth carry-guard site.
-                            if (!su.selected || !su.alive || su.die_time >= 0.0 ||
-                                su.cargo_of >= 0)
-                                continue;
-                            if (su.is_harvester && su.house == 0)
-                                harv_idx.push_back(i);
-                            else
-                                any_other = true;
-                        }
-                        if (any_other) {
-                            const int actor = lowest_selected();
-                            for (std::size_t i : harv_idx) world_.units()[i].selected = false;
-                            world_.order_move_selected(cx, cy);
-                            for (std::size_t i : harv_idx) world_.units()[i].selected = true;
-                            if (actor >= 0) {
-                                actions_.move_ordered = true;
-                                actions_.actor = actor;
-                            }
-                        }
-                        break;  // handled: no attack for this right-click
-                    }
-                    if (harv_selected && here_b >= 0 && world_.buildings()[here_b].house == 0 &&
-                        world_.buildings()[here_b].alive &&
-                        is_refinery_type(world_.buildings()[here_b].type)) {
-                        world_.order_return();
-                        break;  // handled
-                    }
-                    // CB-1 enter-transport gesture [RE: transport-cargo.md
-                    // §2/§3; spec §3]: a right-click on an OWN, alive,
-                    // non-dying TRANSPORT (passengers_max > 0 -- the Unit
-                    // carries the roster knowledge, the same way the
-                    // refinery-return gesture reads roster types) with a
-                    // selection containing at least one eligible
-                    // NON-transport unit issues the enter order instead of a
-                    // group move. Resolved AFTER the harvester branches (ore/
-                    // refinery win for miners) and BEFORE attack-building/
-                    // move. The original's "enter" cursor is cosmetic; ours
-                    // stays default (noted divergence, no new UI systems).
-                    if (idx >= 0 && world_.units()[idx].house == 0 &&
-                        world_.units()[idx].passengers_max > 0) {
-                        bool eligible = false;
-                        for (std::size_t si = 0; si < world_.units().size(); ++si) {
-                            const Unit& su = world_.units()[si];
-                            if (!su.selected || su.house != 0 || !su.alive ||
-                                su.die_time >= 0.0 || static_cast<int>(si) == idx)
-                                continue;
-                            if (su.passengers_max > 0) continue;  // transports
-                            eligible = true;                      // do not ride
-                            break;
-                        }
-                        if (eligible) {
-                            const int actor = lowest_selected();
-                            world_.order_enter_transport(idx);
-                            actions_.move_ordered = true;   // move-ack voice
-                            actions_.actor = actor;
-                            break;  // handled: no attack/move for this click
-                        }
-                    }
-                    // Spy infiltration gesture [RE: capture.md §B CONFIRMED]: a
-                    // SINGLE selected SPY right-clicking an ENEMY/NEUTRAL building
-                    // ORDERS it to move adjacent and then infiltrate it --
-                    // refinery cash-steal, power blackout, SW reset, factory
-                    // veteran-flag, or (radar/lab) inert -- and the spy is
-                    // CONSUMED on the successful infiltration ON ARRIVAL, NOT on
-                    // the click. Like the engineer sibling, the act
-                    // (infiltrate_building + consume_unit) is deferred to
-                    // step_capture when the spy reaches adjacency -- a spy no
-                    // longer infiltrates a building across the map on a single
-                    // click. The one wrinkle: the InfiltratePurpose is resolved
-                    // from the building's roster type HERE (set_infiltrate_params;
-                    // World is asset-free) and stored PRE-RESOLVED on the unit, so
-                    // step_capture acts without the roster. Resolved BEFORE the
-                    // engineer/attack/move branches so a spy never issues a plain
-                    // attack. An OWN building is not a spy target so the gesture
-                    // falls through to normal handling. Interactive-only: no demo
-                    // selects a spy, so every gate is byte-identical.
-                    const int spy = sel_spy_idx(world_);
-                    if (spy >= 0) {
-                        const int b_hit = world_.building_at_cell(cx, cy);
-                        if (b_hit >= 0) {
-                            const Building& tb = world_.buildings()[b_hit];
-                            const int spy_house = world_.units()[spy].house;
-                            if (tb.house != spy_house) {   // enemy/neutral only
-                                const World::InfiltratePurpose purpose =
-                                    infiltrate_purpose_of(tb.type);
-                                world_.order_spy_infiltrate(spy, b_hit, purpose,
-                                                            spy_steal_pct_,
-                                                            spy_blackout_frames_);
-                                actions_.move_ordered = true;   // move-ack voice
-                                actions_.actor = spy;
-                                break;                          // handled: no attack/move
-                            }
-                            // own building -> not a spy target; fall through below.
-                        }
-                    }
-                    // Engineer/Spy Capture gesture [RE-GATE APPLIED: capture.md
-                    // §A3/§A5]: a SINGLE selected ENGINEER right-clicking a
-                    // building ORDERS it to move adjacent and then capture it
-                    // (enemy OR neutral) or repair it (own, damaged); the engineer
-                    // is consumed on arrival, NOT on the click. Like the enter-
-                    // transport sibling, the act (capture_building/repair_building
-                    // + consume_unit) is deferred to step_capture when the engineer
-                    // reaches adjacency -- an engineer no longer captures a
-                    // building across the map on a single click. Resolved BEFORE
-                    // the attack-building branch so an engineer never issues a
-                    // plain attack, and BEFORE the move fall-through. Captures at
-                    // ANY building health, always consumed on the successful act
-                    // (no damage threshold -- EngineerCaptureLevel absent in
-                    // YR-1.001 -> 1.0). building_at_cell returns only alive,
-                    // non-Dead foundations; order_engineer_capture and the
-                    // capture/repair calls it defers to re-guard internally. An
-                    // OWN, UNDAMAGED building is not a capture/repair target, so
-                    // the gesture falls through to the normal handling (a move) --
-                    // the recovered graceful fall-through. ProduceCashStartup is 0
-                    // here (a normal building grants none; the CAOILD=1000 roster
-                    // value is wired in Task 4 via a main.cpp-side startup
-                    // injection, mirroring set_refinery_types).
-                    const int eng = sel_engineer_idx(world_);
-                    if (eng >= 0) {
-                        const int b_hit = world_.building_at_cell(cx, cy);
-                        if (b_hit >= 0) {
-                            const Building& tb = world_.buildings()[b_hit];
-                            const int eng_house = world_.units()[eng].house;
-                            const bool is_target =
-                                (tb.house != eng_house) ||   // enemy/neutral -> capture
-                                (tb.hp < tb.max_hp);         // own damaged -> repair
-                            if (is_target) {
-                                world_.order_engineer_capture(eng, b_hit);
-                                actions_.move_ordered = true;   // move-ack voice
-                                actions_.actor = eng;
-                                break;                          // handled: no attack/move
-                            }
-                            // own & undamaged -> not a target; fall through below.
-                        }
-                    }
-                    // Interactive attack-building (Task 4 machinery wired to the
-                    // player here): if the resolved ground cell lands on a
-                    // HOSTILE building's foundation it's an attack order, not a
-                    // move -- mirrors the hostile-unit gate above (house != 0 +
-                    // a live selection). building_at_cell returns only alive,
-                    // non-Dead foundations and order_attack_building re-guards
-                    // house-0/dead/out-of-range internally (world.cpp:464), so
-                    // the lone house != 0 test here is just the input-level
-                    // friendly-vs-hostile decision: a click on an own/friendly
-                    // building is NOT an attack and falls through to the move
-                    // below, exactly like a friendly-unit right-click.
-                    const int b_idx = world_.building_at_cell(cx, cy);
-                    if (b_idx >= 0 && world_.buildings()[b_idx].house != 0 && any_selected) {
-                        // Capture actor BEFORE the order mutates any state.
-                        const int actor = lowest_selected();
-                        world_.order_attack_building(b_idx);
-                        actions_.attack_ordered = true;
-                        actions_.actor = actor;
-                    } else {
-                        // Group-move to the clicked ground cell (issued on
-                        // down). Capture actor BEFORE the order mutates state;
-                        // the move flag is set only when the selection is
-                        // non-empty (an empty-selection right-click is a no-op
-                        // move).
-                        const int actor = lowest_selected();
-                        world_.order_move_selected(cx, cy);
-                        if (actor >= 0) {
-                            actions_.move_ordered = true;
-                            actions_.actor = actor;
-                        }
-                    }
-                }
+                issue_order(ev.x, ev.y);   // G-05: the shared order body (see issue_order)
             } else {
                 l_down_ = true;
                 dragging_ = false;

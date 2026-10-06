@@ -1,4 +1,4 @@
-# Harness self-check on the CURRENT master control model (left=select, right=order).
+# Harness self-check: select, move (original model: left-click orders), build + place.
 click button "Single Player"
 click button Skirmish
 click start
@@ -8,7 +8,7 @@ shot base
 click unit 0:E1
 assert selected >= 1
 let x0 = sel_cx
-click unit 0:E1 +6 +0 right
+click unit 0:E1 +6 +0
 wait 2
 assert sel_moving == 1
 until 300 sel_cx != $x0

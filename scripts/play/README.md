@@ -5,22 +5,28 @@ game (`run_menu` -> `ShellScene` -> lobby / campaign screens -> `GameScene`)
 with scripted input and checks what happened. Nothing is built by hand: the
 script clicks the same buttons, cameos and map cells a player would.
 
-How it works (engine/playtest.cpp, engine/play_script.cpp):
+How it works (engine/play_driver.inc + the `ra2play` half of
+engine/play_script.cpp), on top of agent B's harness groundwork in main.cpp:
 
-* **Hidden + deterministic.** SDL's `dummy` video driver (software renderer, no
-  OS window or cursor), audio off, `RA2.INI` and saved games isolated under
-  `<out>/pref/` (`RA2_PREF_DIR`), and a fixed logic step of 1/15 s per driver
-  frame instead of wall-clock `dt`. Event timestamps are virtual
-  (`frame*1000/15` ms), so double-click windows are deterministic too. Two runs
-  of a script print the same `play_hash`. `RA2_PLAY_VISIBLE=1` uses the real
-  video driver for debugging (the pointer warp then moves your cursor).
-* **Real input path.** Gestures are queued as SDL events and translated by the
-  real `Platform::poll`; the pointer position goes through
-  `SDL_WarpMouseInWindow` and held keys through SDL's keyboard-state array, so
-  `SDL_GetMouseState`/`SDL_GetKeyboardState` polling in `GameScene::update` sees
-  them. A key-map change in `platform.cpp` is exercised as-is.
-* **Probe.** Every scene implements `Scene::play_probe(ra2play::Probe&)`: a flat
-  key -> value map plus named click targets. Scripts assert on it.
+* **Hidden + deterministic.** `Platform::create(..., hidden=true)` (software
+  renderer, invisible window), audio off, `RA2.INI` and saved games isolated
+  under `<out>/pref/` (`RA2_PREF_DIR`), and `run_scene_driver(..., src,
+  fixed_dt = 1/15, hooks)` -- one fixed logic step per driver frame, no wall
+  clock. Event timestamps are virtual (`frame*67+1000` ms), so double-click
+  windows are deterministic too. Two runs of a script print the same
+  `play_hash`. `RA2_PLAY_VISIBLE=1` shows the window for debugging.
+* **Real input path.** The run is a `DriverHooks` + `EventSource`: scripted
+  `InputEvent`s replace the Platform's and go through the scenes' real
+  `handle()`; keys are built by `key_event_from_sdl` (the exact production
+  mapping); held keys (`hold`) also set SDL's keyboard-state array for the
+  arrow-key scroll `GameScene::update` polls.
+* **Probe.** Each frame the harness merges two scene surfaces: G's
+  `Scene::play_probe(ra2play::Probe&)` (typed keys, named click targets, hooks)
+  and B's integer `Scene::probe()` (keys such as `units.0.GI`, `sel`, `menu`,
+  `cursor`, `q.structure`); a G key wins on a name clash. Unknown target names
+  fall back to B's `Scene::locate()` (`cell:x,y`, `building:H:ID`,
+  `cameotab:ID`, `button:repair|sell|options|radar`), unknown cheats to B's
+  `Scene::cheat()`.
 * **Output.** Console + `<out>/play.log`: every step, `PLAY PASS/FAIL` lines,
   `PLAY scene f=N a -> b` transitions, `play_state f=N ...` every 15 frames
   (console every 150), shots `<out>/<name>.png`; at the end
@@ -36,16 +42,18 @@ then ~400 frames/s with sparse rendering, ~20 frames/s rendering every frame).
 
 ## Script format
 
-One command per line. `#` starts a comment (outside `"quotes"`). Trailing
+One command per line (agent B's simpler forms are accepted too: `click X Y`,
+`click button Single Player` without quotes, `click cameo GAPOWR` -- which
+switches the sidebar tab first when needed). `#` starts a comment (outside `"quotes"`). Trailing
 `@<G-ID>[:<owner>]` tokens tag the line with the gap issue it checks (e.g.
 `@G-20:A`); tags are copied into failures so `PLAYTEST-STATUS.md` can map them.
 A `"double quoted"` run is one argument.
 
 | Command | Meaning | Frames |
 |---|---|---|
-| `set dt <s>` / `set render_every <n>` / `set max_frames <n>` / `set park <x> <y>` / `set states on\|off` / `set on_quit stop\|continue` | Run options. `render_every` renders (and presents) every n-th frame; shots always render. `on_quit continue` records `InputEvent::Quit` reaching the driver as a failure and keeps going (default `stop`: the run ends there, like the real program). | 0 |
+| `set render_every <n>` / `set max_frames <n>` / `set park <x> <y>` / `set states on\|off` / `set on_quit stop\|continue` | Run options. `render_every` renders (and presents) every n-th frame; shots always render. `on_quit continue` records `InputEvent::Quit` reaching the driver as a failure and keeps going (default `stop`: the run ends there, like the real program). | 0 |
 | `wait <n>` | Let n frames pass. | n |
-| `click <target> [right] [shift] [ctrl] [alt] [nopark]` | Move + press + release at the target. The pointer then parks at (560,360) next frame so it does not sit in an edge-scroll band. | 1 |
+| `click <target> [right] [shift] [ctrl] [alt] [nopark]` | Move + press + release at the target (original scheme: left = select AND order, right = cancel/deselect). The pointer then parks at (560,360) next frame so it does not sit in an edge-scroll band. A `cameo:ID` on another tab clicks that tab first. | 1 |
 | `drag cell\|xy x1 y1 x2 y2 [right]` | Press, move, release (box select). | 1 |
 | `move <target>` | Pointer motion only. | 1 |
 | `key <name> [shift] [ctrl] [alt]` | Key down this frame, up next frame. Names: SDL key names plus `esc enter space tab backspace delete up down left right f1..f12 home end pageup pagedown`. | 1 |

@@ -38,7 +38,6 @@
 
 #include "audio_mixer.hpp"
 #include "audio_sdl.hpp"
-#include "playtest.hpp"   // G0 --play harness
 #include "building.hpp"
 #include "cargo.hpp"        // cargo_total_size (pip fill) [CB-1 Transports/Cargo]
 #include "capture.hpp"      // kNeutralHouse (Engineer/Spy Capture phase)
@@ -49,6 +48,10 @@
 #include "flight.hpp"       // altitude_to_screen_dy (CB-2 raised-sprite draw)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
+#include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
+#include "touch_gestures.hpp" // G-70 (controls self-test drives the real gesture layer)
+#include <set>                // G-07 held queues (game_scene_controls.inc)
+#include "play_script.hpp"   // G0 harness: unit selector parsing (game_scene_play.inc)
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
 #include "platform.hpp"
@@ -3984,50 +3987,83 @@ struct Scene {
     }
     virtual Scene* next()                                   { return nullptr; }  // non-null => transition (takes ownership)
     virtual bool   wants_quit() const                       { return false; }
-    // G0 --play harness: report state + named click targets (playtest.hpp).
+    // G0 --play harness: report state + named click targets (play_driver.inc).
     // Default: an unprobed scene ("unknown"). Never called outside --play.
     virtual void   play_probe(ra2play::Probe& p)            { (void)p; }
     virtual ~Scene()                                        = default;
+    // G0 --play harness hooks (engine/play_driver.inc). name() tags the probe;
+    // locate() resolves a semantic target ("button:<label>", "cell:x,y",
+    // "unit:H:IMAGE:n", "cameo:ID") to a window pixel; probe() reports the
+    // scene's observable state as integers; cheat() applies a test-only edit.
+    virtual const char* name() const                        { return "scene"; }
+    virtual bool   locate(const std::string& what, int& x, int& y) const {
+        (void)what; (void)x; (void)y; return false;
+    }
+    virtual void   probe(std::map<std::string, long long>& out) const { (void)out; }
+    virtual bool   cheat(const std::vector<std::string>& args) { (void)args; return false; }
+};
+
+// G0: per-frame observer of run_scene_driver (the --play harness). begin()
+// runs before the frame's events are polled (the harness queues scripted
+// events there) and returns false to stop the run; end() runs after the frame
+// is presented (captures, probes, assertions); quit() reports that the
+// PROCESS WOULD EXIT (a Quit event or a scene's wants_quit) at frame f.
+struct DriverHooks {
+    virtual bool begin(int f, Scene& s) = 0;
+    virtual void end(int f, Scene& s, ra2engine::Platform& plat) = 0;
+    virtual void quit(int f, Scene* s, const char* why) = 0;
+    // G0 --play additions (defaults = the behaviour above): render this frame?
+    // (end() still runs every frame); swallow a Quit event after recording it
+    // (`set on_quit continue`); a scene swap happened at frame f.
+    virtual bool want_render(int f) { (void)f; return true; }
+    virtual bool swallow_quit(int f) { (void)f; return false; }
+    virtual void transition(int f) { (void)f; }
+    virtual ~DriverHooks() = default;
 };
 
 // The scene-loop driver: owns the active Scene*, pumps input -> handle, ticks
 // update(dt) with the real wall-clock dt, calls render, and on a non-null next()
 // swaps scenes (deleting the old). Returns 0 on clean quit.
-int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Scene* initial) {
+// G0: `src` replaces the Platform as the event source (the --play harness's
+// scripted events); `fixed_dt > 0` steps update(fixed_dt) once per iteration
+// with no wall clock and no frame delay (deterministic); `hooks` observes
+// every frame. The defaults are exactly the interactive behaviour.
+int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Scene* initial,
+                     ra2engine::EventSource* src = nullptr, double fixed_dt = 0.0,
+                     DriverHooks* hooks = nullptr) {
     std::unique_ptr<Scene> scene(initial);
+    ra2engine::EventSource& events = src ? *src : static_cast<ra2engine::EventSource&>(plat);
     Uint32 prev = SDL_GetTicks();
-    // G0 --play: scripted input + fixed tick (g_play is null in normal play).
-    ra2play::PlayDriver* const play = ra2play::g_play;
-    const ra2play::ProbeFn probe = [&scene](ra2play::Probe& p) { if (scene) scene->play_probe(p); };
+    int frame = 0;
     while (scene && !scene->wants_quit()) {
-        if (play && !play->pre_frame(plat, probe)) return 0;
+        if (hooks && !hooks->begin(frame, *scene)) return 0;
         ra2engine::InputEvent ev;
-        while (plat.poll(ev)) {
-            if (play) play->on_event(ev);
+        while (events.poll(ev)) {
             if (ev.kind == ra2engine::InputEvent::Quit) {
-                if (play && play->on_quit()) continue;   // --play: recorded + swallowed
+                if (hooks && hooks->swallow_quit(frame)) continue;   // --play on_quit continue
+                if (hooks) hooks->quit(frame, scene.get(), "Quit event");
                 return 0;
             }
             scene->handle(ev);
         }
         const Uint32 now = SDL_GetTicks();
-        const double dt = play ? play->dt() : (now - prev) / 1000.0;
+        const double dt = fixed_dt > 0.0 ? fixed_dt : (now - prev) / 1000.0;
         prev = now;
         scene->update(dt);
-        if (!play || play->want_render()) {
+        if (!hooks || hooks->want_render(frame)) {   // --play may render sparsely
             plat.begin_frame();
             scene->render(plat, tc);
-            if (play) play->post_frame(plat, probe);
-            plat.present();
-        } else {
-            play->post_frame(plat, probe);
         }
+        if (hooks) hooks->end(frame, *scene, plat);   // captures read the back buffer
+        if (!hooks || hooks->want_render(frame)) plat.present();
         if (Scene* nx = scene->next()) {   // transition (variable dt continues)
             scene.reset(nx);
-            if (play) play->on_transition();
+            if (hooks) hooks->transition(frame);
         }
-        if (!play) SDL_Delay(16);
+        if (fixed_dt <= 0.0) SDL_Delay(16);
+        ++frame;
     }
+    if (hooks) hooks->quit(frame, scene.get(), "scene wants_quit");
     return 0;
 }
 
@@ -4122,7 +4158,11 @@ public:
 
     Result handle(const ra2engine::InputEvent& ev) {
         if (!open_) return None;
-        if (ev.kind == ra2engine::InputEvent::Quit) { close(); return Back; }
+        if (ev.kind == ra2engine::InputEvent::Quit ||
+            (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape)) {
+            close();   // G-01: Esc = the dialog's Back/Cancel
+            return Back;
+        }
         if (confirm_) {   // modal yes/no
             if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left) {
                 if (yes_rect().contains(ev.x, ev.y)) { confirm_ = false; return commit(true); }
@@ -4224,7 +4264,7 @@ public:
             button(ren, no_rect(), "NO", true);
         }
     }
-    // G0 --play: the dialog's click targets + state (playtest.hpp).
+    // G0 --play: the dialog's click targets + state (play_driver.inc).
     void play_probe(ra2play::Probe& p) const {
         if (!open_) return;
         auto put = [&](const std::string& k, const ra2engine::SbRect& r) {
@@ -4364,7 +4404,11 @@ public:
     bool open_ = false;
     Choice handle(const ra2engine::InputEvent& ev) {
         if (!open_) return None;
-        if (ev.kind == ra2engine::InputEvent::Quit) { open_ = false; return Resume; }
+        if (ev.kind == ra2engine::InputEvent::Quit ||
+            (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape)) {
+            open_ = false;   // G-01: Esc on the options dialog = Resume
+            return Resume;
+        }
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left)
             return None;
         for (int i = 0; i < 5; ++i)
@@ -4400,7 +4444,7 @@ public:
         }
     }
 
-    // G0 --play: the menu's click targets (playtest.hpp).
+    // G0 --play: the menu's click targets (play_driver.inc).
     void play_probe(ra2play::Probe& p) const {
         p.set("menu_open", open_ ? 1 : 0);
         if (!open_) return;
@@ -4602,10 +4646,12 @@ public:
     }
 
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
-    // then Input. Escape-cancels-placement is retained here for fidelity (the
-    // driver intercepts Quit before handle, so it is dormant on that path).
+    // then Input. G-01: Esc never reaches here as a quit -- ui_handle maps it to
+    // the options dialog (KeyboardMD.ini Options=27); right-click cancels modes.
     void handle(const ra2engine::InputEvent& ev) override {
+        track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
+        if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
@@ -4629,6 +4675,8 @@ public:
                     input_.set_sell_mode(-1);
                     return;
                 }
+                if (strip_button_click(ev.x, ev.y)) return;   // G-12 r-up / r-dn
+                if (radar_click(ev)) return;                  // G-09 radar centre / order
                 // Tab-click switching: recompute the buildable list + layout.
                 const int tab = lay_.tab_at(ev.x, ev.y);
                 if (tab >= 0 && tab != active_tab_) {
@@ -4637,56 +4685,23 @@ public:
                     lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
                     return;  // consumed: switched tab
                 }
-                // Cameo start/cancel/place dispatched by the active tab.
+                // G-07: cameo LEFT click -> cameo_click (StripClass action FUN_006AA390,
+                // game_scene_controls.inc): start / queue another / resume / place.
                 const int ci = lay_.cameo_at(ev.x, ev.y);
-                if (ci >= 0 && ci < static_cast<int>(buildable_.size())) {
-                    if (active_tab_ >= 2) {
-                        const int uslot = buildable_[ci];   // unit-roster index
-                        // Gap owner A (G-24): the unit's own factory queue.
-                        const ra2engine::QueueCat cat = rp_cat_of_unit(uslot);
-                        const std::vector<int>& ft = rp_ft_of(cat);
-                        if (queues_.producing(cat) == uslot) {
-                            queues_.set_credits(player_credits_);
-                            queues_.cancel(cat);
-                            queues_.reconcile_refund();
-                            player_credits_ = queues_.structure().credits;
-                        } else if (ra2engine::can_start_unit(
-                                       queues_.state(cat), uslot, ur_.defs, world_.buildings(),
-                                       ba_.roster, 0, ba_.groups,
-                                       !world_.factory_category_lost(ft, 0))) {
-                            queues_.set_credits(player_credits_);
-                            queues_.start_unit(cat, uslot, ur_.defs, build_speed_);
-                        }
-                    } else {
-                        const ra2engine::QueueCat bcat = (active_tab_ == 1)
-                            ? ra2engine::QueueCat::Defense
-                            : ra2engine::QueueCat::Structure;
-                        ra2engine::ProductionState& bq = queues_.state(bcat);
-                        const int type = buildable_[ci];
-                        if (bq.slot.type == type && bq.slot.ready) {
-                            place_cat_ = bcat;
-                            input_.begin_placement(type, ba_.roster[type].fw, ba_.roster[type].fh);
-                        } else if (bq.slot.type == type) {
-                            queues_.set_credits(player_credits_);
-                            queues_.cancel(bcat);
-                            queues_.reconcile_refund();
-                            player_credits_ = queues_.structure().credits;
-                        } else if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(),
-                                                        0, ba_.groups,
-                                                        conyard_alive(world_, ba_, 0))) {
-                            queues_.set_credits(player_credits_);
-                            ra2engine::start(bq, type, ba_.roster, build_speed_);
-                            rp_after_building_start(bq, type);   // gap owner A: wall 3x time
-                        }
-                    }
-                }
+                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size()))
+                    cameo_click(lay_.cameos[ci].type, /*right=*/false, ev.shift);
+            } else {
+                // G-07: cameo RIGHT click: hold, then abandon (Shift: abandon all).
+                const int ci = lay_.cameo_at(ev.x, ev.y);
+                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size()))
+                    cameo_click(lay_.cameos[ci].type, /*right=*/true, ev.shift);
             }
-            return;  // consumed by the sidebar (right-click = no-op)
+            return;  // consumed by the sidebar
         }
-        // Escape (mapped to Quit) cancels ONE armed thing instead of quitting,
-        // in the recovered priority order: placement -> Repair -> Sell -> SW
-        // [RE: repair-sell.md §C1, FUN_004AAC40].
-        if (ev.kind == ra2engine::InputEvent::Quit && input_.cancel_one_mode()) return;
+        // G-01 [RE: gamemd FUN_00692ab0 WM_RBUTTONUP -> FUN_004AAC40]: the
+        // one-mode cancel chain is the RIGHT-click-up handler (Input owns it);
+        // Esc is the Options hotkey (FUN_00646AE0 queues the options event and
+        // cancels nothing), handled in ui_handle.
         input_.handle(ev);
     }
 
@@ -4706,12 +4721,16 @@ public:
         if (ks[SDL_SCANCODE_RIGHT]) dir_x -= 1;
         if (ks[SDL_SCANCODE_UP]) dir_y += 1;
         if (ks[SDL_SCANCODE_DOWN]) dir_y -= 1;
-        SDL_GetMouseState(&mx_, &my_);
+        // G0/G-71: the pointer position comes from the event stream
+        // (track_pointer), and only a real MOUSE edge-scrolls -- a lifted
+        // finger leaves no pointer at the edge, so touch never scrolls forever.
         const int kEdge = 24;   // window-edge scroll band (true screen edge, incl. sidebar)
-        if (mx_ <= kEdge) dir_x += 1;
-        else if (mx_ >= kWinW - kEdge) dir_x -= 1;
-        if (my_ <= kEdge) dir_y += 1;
-        else if (my_ >= kWinH - kEdge) dir_y -= 1;
+        if (mouse_present_) {
+            if (mx_ <= kEdge) dir_x += 1;
+            else if (mx_ >= kWinW - kEdge) dir_x -= 1;
+            if (my_ <= kEdge) dir_y += 1;
+            else if (my_ >= kWinH - kEdge) dir_y -= 1;
+        }
         dir_x = (dir_x > 0) - (dir_x < 0);
         dir_y = (dir_y > 0) - (dir_y < 0);
         // [P8 / options.md §5, FUN_00669ec0] The original scrolls
@@ -4738,24 +4757,23 @@ public:
             scroll_tick_accum_ = 0.0;
         }
 
-        // CB-1 unload key (D, edge-detected) -> unload selected own transports.
-        const bool unload_key = ks[SDL_SCANCODE_D] != 0;
-        if (unload_key && !prev_unload_key_) {
-            world_.order_unload_selected();
-            // P4 [RE: abilities.md §A]: the same deploy key toggles the
-            // selected player Deployers (desolator radiation stance).
-            for (int i = 0; i < (int)world_.units().size(); ++i)
-                if (world_.units()[i].selected && world_.units()[i].house == 0)
-                    world_.order_deploy(i);
-        }
-        prev_unload_key_ = unload_key;
-
-        // CB-4 Superweapons: N arms SW-targeting when house 0's SW is READY.
-        const bool sw_key = ks[SDL_SCANCODE_N] != 0;
-        if (sw_key && !prev_sw_key_ && world_.sw_ready(0)) input_.arm_superweapon();
-        prev_sw_key_ = sw_key;
+        // G-04: D (DeployObject) and the rest of KeyboardMD.ini [Hotkey] are key
+        // EVENTS dispatched by hotkey() (game_scene_controls.inc). N is NextObject
+        // in the original, not the superweapon (armed from its cameo).
 
         now_ = SDL_GetTicks();   // frame clock for draw_sidebar's animation timing
+        // G-13: the simulation advances in FIXED logic ticks (accumulator over the
+        // wall-clock dt; at most kMaxLogicSteps per frame, the rest dropped so a
+        // stall never spirals). Input, scrolling, rendering and the per-frame
+        // tail below stay per-frame. The tick length is kLogicDt (see the
+        // RE-FALLBACK note at its definition).
+        logic_acc_ += dt;
+        int logic_steps = 0;
+        while (logic_acc_ + 1e-9 >= kLogicDt) {
+            if (logic_steps == kMaxLogicSteps) { logic_acc_ = 0.0; break; }
+            logic_acc_ -= kLogicDt;
+            ++logic_steps;
+            const double dt = kLogicDt;   // the logic body below steps exactly one tick
         // Repair wallet bridge [RE: repair-sell.md §A2/§A3]: the wrench charges
         // the World's house pool, but the player's money lives HERE
         // (player_credits_) and that pool is drained by take_income every
@@ -4784,8 +4802,10 @@ public:
         (void)world_.take_crate_events();
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
+        hold_begin();   // G-07: held queues do not advance (game_scene_controls.inc)
         prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_, nav_ft_, air_ft_,
                   rp_on_ ? &bld_ft_ : nullptr);
+        hold_end();
         player_credits_ = queues_.structure().credits;
         player_credits_ += world_.take_income(0);   // harvest income drain
 
@@ -4793,6 +4813,7 @@ public:
         // sidebar strip following the buildable set.
         rp_launch_ready_units();
         rp_refresh_sidebar();
+        refill_unit_queues();   // G-07: the next queued unit starts
         // FreeUnit grand-opening spawns (a just-built refinery drops its miner).
         if (ba_.ok) spawn_free_units_on_open(world_, ba_, rules_, miners_, bstates_);
         // Chrono Miner teleport sounds.
@@ -4817,6 +4838,7 @@ public:
                         audio_.mixer->play(audio_.leave_transport);
                 }
         }
+        }   // G-13 fixed logic tick
         // Rolling credits tally (display-only).
         {
             const double target = player_credits_;
@@ -4842,6 +4864,7 @@ public:
         }
         // Repair / Sell clicks [RE: repair-sell.md §A4/§B2]. The mode STAYS
         // armed (it is not one-shot), so the player can work through a base.
+        if (act.deploy_clicked) deploy_selected();   // ACTION_SELF (click the selected unit)
         if (act.repair_clicked) world_.toggle_repair(act.repair_building, 0);
         if (act.sell_clicked) world_.begin_sell(act.sell_building, 0);
         // Placement confirm.
@@ -4924,6 +4947,8 @@ public:
                          : bm == ra2engine::Input::BaseMode::Sell ? 2 : 0);
         }
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
+        draw_selected_building(ren);   // G-10
+        draw_queue_badges(ren);        // G-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
         const bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
@@ -4950,307 +4975,12 @@ public:
     bool wants_quit() const override { return input_.wants_quit() || abort_; }
     Scene* next() override { Scene* n = next_scene_; next_scene_ = nullptr; return n; }
 
-    // --- G0 --play state probe (playtest.hpp) --------------------------------
-    // Append-only and read-only (the cheats below are the one exception, and
-    // only a script can call them). Keys are documented in
-    // scripts/play/README.md; a field that a later phase renames or removes
-    // makes scripts report missing-probe:<key> instead of crashing.
-    void play_probe(ra2play::Probe& p) override {
-        p.scene = "game";
-        p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
-                           "harv_bales", "can_build", "cameo", "cameo_tab", "moving"};
-        p.set_s("mode", campaign_ ? "campaign" : "skirmish");
-        p.set("credits", player_credits_);
-        p.set("credits_shown", credits_shown_);
-        p.set("playfield_w", playfield_w_);
-        p.set("cam_x", cam_.x);
-        p.set("cam_y", cam_.y);
-        const int houses = world_.house_count();
-        p.set("houses", houses);
-        for (int h = 0; h < houses; ++h) {
-            const std::string hs = std::to_string(h);
-            p.set("house_credits(" + hs + ")", world_.house_credits(h));
-            p.set("defeated(" + hs + ")", world_.house_defeated(h) ? 1 : 0);
-            p.set("team(" + hs + ")", world_.house_team(h));
-            p.set("sw(" + hs + ")", world_.sw_state(h) ? 1 : 0);
-            p.set("sw_ready(" + hs + ")", world_.sw_ready(h) ? 1 : 0);
-            p.set("units(" + hs + ")", 0);
-            p.set("buildings(" + hs + ")", 0);
-        }
-        // Units (alive, not dying), keyed by rules id where the roster knows it.
-        int selected = 0;
-        for (const ra2engine::Unit& u : world_.units()) {
-            if (!u.alive || u.die_time >= 0.0) continue;
-            const std::string hs = std::to_string(u.house);
-            const std::string id = play_unit_id(u);
-            p.add("units(" + hs + ")", 1);
-            p.add("units(" + hs + "," + id + ")", 1);
-            if (u.moving()) p.add("moving(" + hs + ")", 1);
-            if (!p.n.count("weapon_damage(" + id + ")")) {   // first live unit of the type
-                p.set("weapon_damage(" + id + ")", u.w_damage);
-                p.set("weapon_range(" + id + ")", u.w_range);
-                p.set("weapon_rof(" + id + ")", u.w_rof);
-            }
-            if (u.selected) { ++selected; p.add("selected_type(" + id + ")", 1); }
-            if (u.is_harvester) {
-                static const char* kHs[] = {"None", "SeekOre", "MoveToOre", "Harvesting",
-                                            "ReturnToRef", "WaitDock", "Unloading"};
-                const int st = static_cast<int>(u.harv);
-                p.add("harvesters(" + hs + ")", 1);
-                p.add("harv(" + hs + "," + (st >= 0 && st < 7 ? kHs[st] : "?") + ")", 1);
-                p.add("harv_bales(" + hs + ")", u.bales_ore + u.bales_gems);
-            }
-        }
-        p.set("selected", selected);
-        {   // the lowest-index selected unit's cell (for "did it move" checks)
-            const ra2engine::Unit* s0 = nullptr;
-            for (const ra2engine::Unit& u : world_.units())
-                if (u.selected && u.alive && u.die_time < 0.0) { s0 = &u; break; }
-            p.set("sel_cx", s0 ? std::floor(s0->fx + 0.5) : -1);
-            p.set("sel_cy", s0 ? std::floor(s0->fy + 0.5) : -1);
-            p.set("sel_moving", s0 && s0->moving() ? 1 : 0);
-        }
-        for (int h = 0; h < houses; ++h) {   // losses since the game began
-            int lost = 0, blost = 0;
-            long hp_lost = 0;
-            for (const ra2engine::Unit& u : world_.units())
-                if (u.house == h && (!u.alive || u.die_time >= 0.0)) ++lost;
-            for (const ra2engine::Building& b : world_.buildings()) {
-                if (b.house != h) continue;
-                if (!b.alive || b.state == ra2engine::Building::State::Dead) ++blost;
-                else hp_lost += b.max_hp - b.hp;
-            }
-            p.set("units_lost(" + std::to_string(h) + ")", lost);
-            p.set("buildings_lost(" + std::to_string(h) + ")", blost);
-            p.set("hp_lost(" + std::to_string(h) + ")", static_cast<double>(hp_lost));
-        }
-        for (const ra2engine::Building& b : world_.buildings()) {
-            if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
-            const std::string hs = std::to_string(b.house);
-            const std::string id = (b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()))
-                                       ? ba_.roster[b.type].id : std::to_string(b.type);
-            p.add("buildings(" + hs + ")", 1);
-            p.add("buildings(" + hs + "," + id + ")", 1);
-            if (b.state == ra2engine::Building::State::Idle) p.add("built(" + hs + "," + id + ")", 1);
-        }
-        p.set("selected_building", input_.selected_building());
-        {   // own objects inside the playfield view (camera opens on the player?)
-            int on = 0;
-            auto vis = [&](double fx, double fy) {
-                const int sx = static_cast<int>(std::lround((fx - fy) * 30.0)) + 30 + cam_.x;
-                const int sy = static_cast<int>(std::lround((fx + fy) * 15.0)) + 15 + cam_.y;
-                return sx >= 0 && sx < playfield_w_ && sy >= 0 && sy < kWinH;
-            };
-            for (const ra2engine::Unit& u : world_.units())
-                if (u.house == 0 && u.alive && u.die_time < 0.0 && vis(u.fx, u.fy)) ++on;
-            for (const ra2engine::Building& b : world_.buildings())
-                if (b.house == 0 && b.alive && vis(b.cx + b.fw / 2.0, b.cy + b.fh / 2.0)) ++on;
-            p.set("own_on_screen", on);
-        }
-        // Session verdict as the player sees it. A skirmish has no end path on
-        // this tree (GameScene never reads the World's victory state, G-02), so
-        // `outcome` stays RUNNING there; `world_outcome` is the World's view.
-        std::string outcome = "RUNNING";
-        if (campaign_ && campaign_->outcome() != 0) outcome = campaign_->outcome() == 1 ? "WON" : "LOST";
-        p.set_s("outcome", outcome);
-        std::string wo = "RUNNING";
-        if (world_.victory_enabled()) {
-            if (world_.house_defeated(0)) wo = "LOST";
-            else if (world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(0)) wo = "WON";
-        }
-        p.set_s("world_outcome", wo);
-        p.set("victory_enabled", world_.victory_enabled() ? 1 : 0);
-        p.set("winning_team", world_.winning_team());
-        // Power (house 0).
-        const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, 0);
-        p.set("power_out", pt.output);
-        p.set("power_drain", pt.drain);
-        // Sidebar: active tab, its cameos (click targets), every tab's roster
-        // and whether a click would start each entry now.
-        p.set("tab", active_tab_);
-        p.set("sidebar", sidebar_up_ ? 1 : 0);
-        auto rect = [](const ra2engine::SbRect& r) { return ra2play::Rect{r.x, r.y, r.w, r.h}; };
-        for (int t = 0; t < 4; ++t) p.targets["tab:" + std::to_string(t)] = rect(lay_.tabs[t]);
-        if (ba_.has_repair_sell) {
-            p.targets["repair"] = rect(lay_.repair_btn);
-            p.targets["sell"] = rect(lay_.sell_btn);
-        }
-        if (world_.sw_state(0))
-            p.targets["sw"] = ra2play::Rect{lay_.bar.x + ra2engine::kCameoX, lay_.radar.y + 2,
-                                            ra2engine::kCameoW, ra2engine::kCameoH};
-        if (sidebar_up_ && ba_.has_optbtns) {
-            const int w = ba_.sb_optbtn.width() > 0 ? ba_.sb_optbtn.width() : 70;
-            const int h = ba_.sb_optbtn.height() > 0 ? ba_.sb_optbtn.height() : 16;
-            p.targets["options"] = ra2play::Rect{lay_.bar.x + 11, 20, w, h};
-        }
-        for (std::size_t i = 0; i < lay_.cameos.size() && i < buildable_.size(); ++i)
-            p.targets["cameo:" + play_entry_id(active_tab_, buildable_[i])] = rect(lay_.cameos[i].rect);
-        std::string ids;
-        for (int t = 0; t < 4; ++t) {
-            for (int e : tab_buildable(t)) {
-                const std::string id = play_entry_id(t, e);
-                p.set("cameo(" + id + ")", 1);
-                p.set("cameo_tab(" + id + ")", t);
-                p.set("can_build(" + id + ")", play_can_start(t, e) ? 1 : 0);
-                if (t == active_tab_) ids += (ids.empty() ? "" : ",") + id;
-            }
-        }
-        p.set_s("tab_ids", ids);
-        // Queues.
-        static const std::pair<ra2engine::QueueCat, const char*> kCats[] = {
-            {ra2engine::QueueCat::Structure, "structure"}, {ra2engine::QueueCat::Defense, "defense"},
-            {ra2engine::QueueCat::Infantry, "infantry"}, {ra2engine::QueueCat::Vehicle, "vehicle"},
-            {ra2engine::QueueCat::Naval, "naval"}, {ra2engine::QueueCat::Aircraft, "aircraft"}};
-        for (const auto& [cat, nm] : kCats) {
-            const ra2engine::QueueSlot& sl = queues_.state(cat).slot;
-            const int t = (cat == ra2engine::QueueCat::Structure) ? 0 : (cat == ra2engine::QueueCat::Defense) ? 1
-                        : (cat == ra2engine::QueueCat::Infantry) ? 2 : 3;   // 2/3 = unit roster
-            p.set_s(std::string("queue(") + nm + ")", sl.type >= 0 ? play_entry_id(t, sl.type) : "");
-            p.set(std::string("queue_stage(") + nm + ")", sl.stage);
-            p.set(std::string("queue_ready(") + nm + ")", sl.ready ? 1 : 0);
-        }
-        // Armed modes / overlays.
-        p.set("placing", input_.placement_active() ? 1 : 0);
-        p.set_s("placing_type", input_.placement_active() && input_.placement_type() >= 0 &&
-                                        input_.placement_type() < static_cast<int>(ba_.roster.size())
-                                    ? ba_.roster[input_.placement_type()].id : "");
-        const ra2engine::Input::BaseMode bm = input_.base_mode();
-        p.set_s("base_mode", bm == ra2engine::Input::BaseMode::Repair ? "repair"
-                             : bm == ra2engine::Input::BaseMode::Sell ? "sell" : "none");
-        p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
-        p.set("dialog_open", 0);
-        menu_.play_probe(p);
-        sld_.play_probe(p);
-        p.set_s("banner", (!banner_.empty() && SDL_GetTicks() < banner_until_) ? banner_ : "");
-        if (campaign_) {
-            p.set_s("map", cfg_.campaign_map);
-            p.set("campaign_frame", static_cast<double>(campaign_->frame_count()));
-            p.set("objectives", static_cast<double>(campaign_->objectives().size()));
-            p.set("triggers_fired", campaign_->triggers().fired_count());
-            p.set("campaign_outcome", campaign_->outcome());
-            p.set("briefing_open", show_briefing_ ? 1 : 0);
-        } else {
-            p.set_s("map", cfg_.map_file);
-        }
-        // ---- hooks ----
-        p.cell_to_screen = [this](double cx, double cy, int& sx, int& sy) {
-            const ra2assets::MapCell* mc =
-                world_.map().at(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy)));
-            const int level = mc ? mc->level : 0;
-            sx = static_cast<int>(std::lround((cx - cy) * 30.0)) + 30 + cam_.x;
-            sy = static_cast<int>(std::lround((cx + cy) * 15.0 - level * 15)) + 15 + cam_.y;
-            return sx >= 40 && sx < playfield_w_ - 40 && sy >= 40 && sy < kWinH - 40;
-        };
-        p.center_on = [this](double cx, double cy) {
-            const ra2assets::MapCell* mc =
-                world_.map().at(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy)));
-            const int level = mc ? mc->level : 0;
-            const int tx = static_cast<int>(std::lround(playfield_w_ / 2.0 - (cx - cy) * 30.0 - 30));
-            const int ty = static_cast<int>(std::lround(kWinH / 2.0 - (cx + cy) * 15.0 + level * 15 - 15));
-            input_.pan(tx - cam_.x, ty - cam_.y);
-        };
-        p.find_unit = [this](const std::string& spec, double& cx, double& cy) {
-            int h = 0, n = 0;
-            std::string type;
-            if (!play_parse_spec(spec, h, type, n)) return false;
-            for (const ra2engine::Unit& u : world_.units()) {
-                if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;
-                if (type != "*" && play_unit_id(u) != type && u.image != type) continue;
-                if (n-- > 0) continue;
-                cx = u.fx;
-                cy = u.fy;
-                return true;
-            }
-            return false;
-        };
-        p.find_building = [this](const std::string& spec, double& cx, double& cy) {
-            const int bi = play_find_building(spec);
-            if (bi < 0) return false;
-            const ra2engine::Building& b = world_.buildings()[bi];
-            cx = b.cx + b.fw / 2;
-            cy = b.cy + b.fh / 2;
-            return true;
-        };
-        p.auto_place = [this](int& cx, int& cy) {
-            if (!input_.placement_active()) return false;
-            const int type = input_.placement_type();
-            if (type < 0 || type >= static_cast<int>(ba_.roster.size())) return false;
-            const ra2engine::BuildingTypeDef& d = ba_.roster[type];
-            int ax = -1, ay = -1;   // anchor: the player's first live building
-            for (const ra2engine::Building& b : world_.buildings())
-                if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) {
-                    ax = b.cx + b.fw / 2;
-                    ay = b.cy + b.fh / 2;
-                    break;
-                }
-            if (ax < 0) return false;
-            for (int r = 1; r <= 24; ++r)
-                for (int oy = ay - r; oy <= ay + r; ++oy)
-                    for (int ox = ax - r; ox <= ax + r; ++ox) {
-                        if (std::max(std::abs(ox - ax), std::abs(oy - ay)) != r) continue;
-                        if (!placement_ok(type, ox, oy)) continue;   // the confirm's own test
-                        cx = ox + d.fw / 2;
-                        cy = oy + d.fh / 2;
-                        return true;
-                    }
-            return false;
-        };
-        p.cheat = [this](const std::vector<std::string>& a) -> std::string {
-            const std::string c = a.empty() ? "" : a[0];
-            if (c == "kill_house" && a.size() >= 2) {
-                const int h = std::atoi(a[1].c_str());
-                for (int i = 0; i < static_cast<int>(world_.units().size()); ++i) {
-                    const ra2engine::Unit& u = world_.units()[i];
-                    if (u.alive && u.die_time < 0.0 && u.house == h) world_.campaign_kill_unit(i);
-                }
-                for (int i = 0; i < static_cast<int>(world_.buildings().size()); ++i) {
-                    const ra2engine::Building& b = world_.buildings()[i];
-                    if (b.alive && b.house == h && b.state != ra2engine::Building::State::Dead)
-                        world_.campaign_damage_building(i, b.hp + 1);
-                }
-                return "";
-            }
-            if (c == "damage_building" && a.size() >= 3) {
-                const int bi = play_find_building(a[1]);
-                if (bi < 0) return "no building " + a[1];
-                world_.campaign_damage_building(bi, std::atoi(a[2].c_str()));
-                return "";
-            }
-            if (c == "credits" && a.size() >= 2) {
-                player_credits_ += std::atof(a[1].c_str());
-                return "";
-            }
-            // spawn TYPE H (cell X Y | building H:T[:n] +DX +DY)
-            if (c == "spawn" && a.size() >= 5) {
-                const ra2engine::UnitTypeDef* def = nullptr;
-                for (const UnitRoster* r : {&ur_, &ur_ai_})
-                    for (const ra2engine::UnitTypeDef& d : r->defs)
-                        if (!def && d.id == a[1]) def = &d;
-                if (!def) return "no roster def " + a[1] + " (player/AI rosters only)";
-                const int h = std::atoi(a[2].c_str());
-                int x = 0, y = 0;
-                if (a[3] == "cell") {
-                    x = std::atoi(a[4].c_str());
-                    y = a.size() > 5 ? std::atoi(a[5].c_str()) : 0;
-                } else if (a[3] == "building" && a.size() >= 7) {
-                    const int bi = play_find_building(a[4]);
-                    if (bi < 0) return "no building " + a[4];
-                    const ra2engine::Building& b = world_.buildings()[bi];
-                    x = b.cx + std::atoi(a[5].c_str());
-                    y = b.cy + std::atoi(a[6].c_str());
-                } else {
-                    return "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY";
-                }
-                world_.add_combat_unit(x, y, h, def->combat);
-                world_.set_anim(def->combat.image, ua_.anims.count(def->combat.image)
-                                                       ? ua_.anims.at(def->combat.image)
-                                                       : ra2engine::default_anim());
-                return "";
-            }
-            return "unknown cheat (have: kill_house H, damage_building H:TYPE[:n] DMG, credits N, "
-                   "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY)";
-        };
-    }
+    // G0 --play harness surface (name/locate/probe/cheat) + pointer tracking.
+#include "game_scene_play.inc"
+    // Agent B controls/UI members (cursor state, building selection, hotkeys).
+#include "game_scene_controls.inc"
+    // Agent G --play extended probe (scripts/play/README.md).
+#include "game_scene_play_probe.inc"
 
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
@@ -5421,7 +5151,9 @@ private:
             show_briefing_ = !show_briefing_;   // P10: the mission briefing (Brief:<map>)
             return true;
         }
-        const bool open_key = ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyF10;
+        // G-01: Esc = [Hotkey] Options=27 (exec FUN_00646AE0 -> options dialog).
+        const bool open_key = ev.kind == ra2engine::InputEvent::Key &&
+                              (ev.key == ra2engine::kKeyF10 || ev.key == ra2engine::kKeyEscape);
         const bool open_btn = ev.kind == ra2engine::InputEvent::PointerDown &&
                               ev.button == ra2engine::InputEvent::Left && options_button_at(ev.x, ev.y);
         if (open_key || open_btn) {
@@ -5544,12 +5276,11 @@ private:
     // --- audio ---
     AudioSystem          audio_;
     std::vector<std::pair<double, double>> prev_audio_state_;
-    bool                 prev_unload_key_ = false;
-    bool                 prev_sw_key_ = false;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
     std::vector<int>     bstates_;
-    int                  mx_ = 0, my_ = 0;
+    int                  mx_ = kWinW / 2, my_ = kWinH / 2;   // last pointer (events)
+    bool                 mouse_present_ = false;   // a real mouse moved over the window
     Uint32               now_ = 0;
     // --- Repair & Sell [RE: repair-sell.md §C1/§D8] ---
     ModeCursor           mouse_;
@@ -6508,6 +6239,21 @@ public:
     }
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs SkirmishSetupScene
     void   update(double dt) override;                         // pumps the looping menu music
+    const char* name() const override { return "shell"; }    // scripted-input hooks
+    bool locate(const std::string& what, int& x, int& y) const override {
+        for (const ShellButton& b : layout())
+            if (what == std::string("button:") + b.label && b.enabled) {
+                const ra2engine::SbRect d = to_device(b.rect);
+                x = d.x + d.w / 2;
+                y = d.y + d.h / 2;
+                return true;
+            }
+        return false;
+    }
+    void probe(std::map<std::string, long long>& out) const override {
+        out["scene.shell"] = 1;
+        out["page"] = page_;
+    }
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
     bool   wants_quit() const override { return quit_; }
@@ -6842,6 +6588,15 @@ public:
     }
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs MainMenuScene + GameScene
     void   update(double dt) override;                         // keeps the menu music looping
+    const char* name() const override { return "lobby"; }    // scripted-input hooks
+    bool locate(const std::string& what, int& x, int& y) const override {
+        const ra2engine::SbRect r = (what == "button:Start") ? start_rect()
+                                  : (what == "button:Back")  ? back_rect() : ra2engine::SbRect{};
+        if (r.w == 0) return false;
+        x = r.x + r.w / 2;
+        y = r.y + r.h / 2;
+        return true;
+    }
     void   render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
     // G0 --play: lobby state + click targets. Option rows split into a "-" and
@@ -7186,6 +6941,25 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         }
         return;
     }
+    // G-01: Esc is the dialog's Cancel -> press this page's bottom-row button
+    // (Back / Main Menu). On the main page that row is Exit Game, which Esc
+    // does not press [RE-FALLBACK: the main dialog's IDCANCEL handling is
+    // G-14's Exit-confirm, owned by the shell agent].
+    if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
+        if (page_ == PAGE_MAIN) return;
+        for (const ShellButton& b : layout())
+            if (b.enabled && b.rect.y == rowY(5) && b.action == ACT_GOTO) {
+                const ra2engine::SbRect d = to_device(b.rect);
+                ra2engine::InputEvent click;
+                click.kind = ra2engine::InputEvent::PointerDown;
+                click.button = ra2engine::InputEvent::Left;
+                click.x = d.x + d.w / 2;
+                click.y = d.y + d.h / 2;
+                handle(click);
+                return;
+            }
+        return;
+    }
     // [P8] Options page controls get the pointer first (sliders/checkboxes).
     if (page_ == PAGE_OPTIONS && options_handle(ev)) return;
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
@@ -7223,6 +6997,11 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
 }
 
 void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
+    // G-01: Esc = Back (the lobby dialog's Cancel), not program exit.
+    if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
+        next_ = new MainMenuScene(rules_, no_audio_, art_);
+        return;
+    }
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
         ev.button != ra2engine::InputEvent::Left)
         return;
@@ -16229,6 +16008,10 @@ int run_demo_saveload() {
     return ok ? 0 : 1;
 }
 
+// Agent B controls real-play self-test (dev-only, not a gate).
+#include "controls_selftest.inc"
+// G0 --play front end (agent G): scripted playthroughs (scripts/play/).
+#include "play_driver.inc"
 #include "realplay_probe.inc"   // gap owner A: --probe-realplay (real GameScene harness)
 
 int main(int argc, char** argv) {
@@ -16243,10 +16026,10 @@ int main(int argc, char** argv) {
         return run_menu(/*no_audio=*/false);
 #else
         // G0 verification harness: --play <script> [--out <dir>] drives the
-        // REAL run_menu scene tree with scripted input (engine/playtest.cpp).
+        // REAL shell scene tree with scripted input (engine/play_driver.inc).
         if (argc >= 3 && std::string(argv[1]) == "--play") {
             const std::string out = (argc >= 5 && std::string(argv[3]) == "--out") ? argv[4] : "";
-            return ra2play::run_play(argv[2], out, [] { return run_menu(/*no_audio=*/true); });
+            return run_play(argv[2], out);
         }
         std::string screenshot;
         std::string campaign_map;   // P10 --campaign <MAP>
@@ -16273,6 +16056,8 @@ int main(int argc, char** argv) {
             std::string arg = argv[i];
             if (arg == "--menu-shot" && i + 1 < argc) {
                 return run_menu_shot(argv[++i]);
+            } else if (arg == "--controls-selftest" && i + 1 < argc) {
+                return run_controls_selftest(argv[++i]);   // agent B dev check
             } else if (arg == "--screenshot" && i + 1 < argc) {
                 screenshot = argv[++i];
             } else if (arg == "--demo-move" && i + 2 < argc) {

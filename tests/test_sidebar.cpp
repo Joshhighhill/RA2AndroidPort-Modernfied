@@ -121,3 +121,23 @@ TEST_CASE("sidebar: repair/sell button rects [RE: construction.md §11a]") {
     CHECK(s.repair_btn.x == 800 - 168 + 20);
     CHECK(s.repair_btn.y == 166);
 }
+
+TEST_CASE("sidebar layout: G-12 strip scrolling by top_row") {
+    std::vector<int> types;
+    for (int i = 0; i < 25; ++i) types.push_back(100 + i);   // 13 rows > 9 visible
+    auto lay = SidebarLayout::compute(1280, 720, types);
+    CHECK(lay.top_row == 0);
+    CHECK(lay.cameos.size() == 18);
+    CHECK(lay.max_top_row(25) == 4);
+    auto s = SidebarLayout::compute(1280, 720, types, 2);
+    CHECK(s.top_row == 2);
+    REQUIRE(s.cameos.size() == 18);
+    CHECK(s.cameos[0].type == 104);
+    CHECK(s.cameos[0].rect.y == lay.cameos[0].rect.y);   // same socket, shifted content
+    auto c = SidebarLayout::compute(1280, 720, types, 99);  // clamped
+    CHECK(c.top_row == 4);
+    CHECK(c.cameos.size() == 17);
+    CHECK(c.cameos.back().type == 124);
+    auto few = SidebarLayout::compute(1280, 720, {1, 2, 3}, 3);
+    CHECK(few.top_row == 0);
+}
