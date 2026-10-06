@@ -246,9 +246,13 @@ int recruit_idle(TeamInstance& team, const AimdData& aimd,
 // AimdData::teams index or -1. ONE team per call — the caller enforces one per
 // autocreate-spawn tick. AITriggerTypes-driven creation is AI-3: this function
 // is the whole AI-2 creation surface.
+// [G-60] `team_buildable` (per TeamType, optional): a team whose TaskForce the
+// house cannot currently build is not eligible -- the same buildable test the
+// AITrigger ConditionMet applies (FUN_0041ff00, ai-trigger.md §5).
 int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
                            const std::vector<TeamInstance>& live, double credits,
-                           const AiTeamRules& rules, std::uint32_t& rng);
+                           const AiTeamRules& rules, std::uint32_t& rng,
+                           const std::vector<char>* team_buildable = nullptr);
 
 // Production intent [RE: ai-team.md §6]: the unit-roster type the house should
 // start producing NEXT — the shortfall type of the FIRST (oldest) Recruiting

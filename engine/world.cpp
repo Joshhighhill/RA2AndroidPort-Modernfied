@@ -2825,6 +2825,22 @@ void World::step_ai_teams(double dt) {
         const double check_period = (double)tc.rules.team_delay_frames / 15.0;
         if (st.check_clock >= check_period) {
             st.check_clock = 0.0;
+            // [G-60] per-TeamType buildable test (FUN_0041ff00): every
+            // TaskForce member type has TechLevel > 0 and its prerequisites
+            // standing for this house. Shared by autocreate and AI-3.
+            std::vector<char> unit_ok(tc.unit_roster.size(), 0);
+            for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut)
+                unit_ok[ut] = tc.unit_roster[ut].tech_level > 0 &&
+                              prerequisites_met(tc.unit_roster[ut].prerequisite, buildings_,
+                                                rec.cfg.roster, h, rec.cfg.groups);
+            std::vector<char> team_ok(tc.aimd.teams.size(), 1);
+            for (int ti = 0; ti < (int)tc.aimd.teams.size(); ++ti) {
+                const int tfi = tc.aimd.teams[ti].taskforce;
+                if (tfi < 0 || tfi >= (int)tc.aimd.taskforces.size()) { team_ok[ti] = 0; continue; }
+                for (const TaskForceMember& m : tc.aimd.taskforces[tfi].members)
+                    if (m.unit < 0 || m.unit >= (int)unit_ok.size() || !unit_ok[m.unit])
+                        team_ok[ti] = 0;
+            }
             st.spawn_clock += check_period;
             const double spawn_period = tc.rules.autocreate_time_min * 60.0;  // min->s
             if (st.spawn_clock >= spawn_period) {
@@ -2833,7 +2849,7 @@ void World::step_ai_teams(double dt) {
                 // (the house's AiTeamState::rng — deterministic, never wall-clock).
                 const int pick = select_autocreate_team(tc.aimd, tc.house_name,
                                                         st.teams, rec.credits,
-                                                        tc.rules, st.rng);
+                                                        tc.rules, st.rng, &team_ok);
                 if (pick >= 0) {
                     TeamInstance t;
                     t.teamtype = pick;
@@ -2856,6 +2872,7 @@ void World::step_ai_teams(double dt) {
                 (int)st.teams.size() < tc.rules.total_team_cap) {
                 TriggerView tv;
                 ai_fill_trigger_view(h, rec, tv);
+                tv.team_buildable = team_ok;
                 const TriggerDecision d =
                     select_trigger(tc.aimd, rec.trigger_state.weights, st.teams,
                                    tv, rec.trigger_state.rng);

@@ -330,7 +330,11 @@ bool house_matches(const std::string& team_house, const std::string& house_name)
 
 int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
                            const std::vector<TeamInstance>& live, double credits,
-                           const AiTeamRules& rules, std::uint32_t& rng) {
+                           const AiTeamRules& rules, std::uint32_t& rng,
+                           const std::vector<char>* team_buildable) {
+    auto buildable = [&](int i) {
+        return !team_buildable || i >= (int)team_buildable->size() || (*team_buildable)[i];
+    };
     // [RE-GATE APPLIED: ai-team.md §4] autocreate ONLY (AITriggerTypes creation
     // is AI-3); NOT is_base_defense (defensive teams out of offensive scope);
     // the TotalAITeamCap hard per-house cap; the Max live-instance cap with
@@ -351,7 +355,7 @@ int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
     for (int i = 0; i < (int)aimd.teams.size(); ++i) {
         const TeamType& tt = aimd.teams[i];
         if (!tt.autocreate || tt.is_base_defense ||
-            !house_matches(tt.house, house_name))
+            !house_matches(tt.house, house_name) || !buildable(i))
             continue;
         int count = 0;
         for (const TeamInstance& t : live)
@@ -368,7 +372,7 @@ int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
     for (int i = 0; i < (int)aimd.teams.size(); ++i) {
         const TeamType& tt = aimd.teams[i];
         if (!tt.autocreate || tt.is_base_defense ||
-            !house_matches(tt.house, house_name))
+            !house_matches(tt.house, house_name) || !buildable(i))
             continue;
         int count = 0;
         for (const TeamInstance& t : live)

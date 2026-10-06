@@ -2175,9 +2175,15 @@ int roster_index(const BuildingAssets& ba, const std::string& id) {
 // Resolve everything an AI house needs from the loaded assets + rules
 // [RE: ai-base.md §2/§4]. Art-guarded: a catalog entry whose SHP failed to
 // load is dropped (-1 / omitted) so the planner skips that need.
+#include "ai_side_catalog.inc"   // [G-64] side-correct [AI] list resolution
+
+// [G-64] side/country default to the Soviet "Russians" house every AI gate
+// uses (the resolver reproduces the former hardcoded NA* set for it).
 ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& rules,
                                         ra2engine::AiDifficulty difficulty,
-                                        double start_credits) {
+                                        double start_credits,
+                                        ra2engine::World::Side side = ra2engine::World::Side::Soviet,
+                                        const std::string& country = "Russians") {
     ra2engine::AiHouseConfig cfg;
     cfg.difficulty = difficulty;
     cfg.roster = ba.roster;  // the same defs the player machinery uses
@@ -2189,24 +2195,29 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         const int t = roster_index(ba, id);
         return (t >= 0 && ba.art[t].ok) ? t : -1;  // art-guard-drop
     };
-    // Soviet build set [RE-GATE APPLIED: ai-base.md §2 — the RECOVERED [AI]
-    // build lists: BuildConst=NACNST, BuildPower=NAPOWR, BuildRefinery=
-    // NAREFN, BuildBarracks=NAHAND, BuildWeapons=NAWEAP, BuildRadar=NARADR;
-    // SovietBaseDefenses = NALASR,NABNKR,TESLA,NAFLAK (per-Side list — the
-    // [AI] BuildDefense/BuildAA/BuildPDefense/BuildHelipad lists are DEAD);
-    // ConcreteWalls -> NAWALL (first Soviet-ownable of GAWALL,NAWALL,GAFWLL).
-    // Any SHP absent in this install is art-guard-dropped (the GATOW lesson).]
-    cfg.catalog.conyard = ok_index("NACNST");
-    cfg.catalog.power = ok_index("NAPOWR");
-    cfg.catalog.refinery = ok_index("NAREFN");
-    cfg.catalog.barracks = ok_index("NAHAND");
-    cfg.catalog.war_factory = ok_index("NAWEAP");
-    cfg.catalog.radar = ok_index("NARADR");
-    for (const char* d : {"NALASR", "NABNKR", "TESLA", "NAFLAK"}) {
-        const int t = ok_index(d);
+    // Side build set [RE-GATE APPLIED: ai-base.md §2 — the RECOVERED [AI]
+    // build lists BuildConst/BuildPower/BuildRefinery/BuildBarracks/
+    // BuildWeapons/BuildRadar, the per-Side <Side>BaseDefenses list (the [AI]
+    // BuildDefense/BuildAA/... lists are DEAD), ConcreteWalls]. [G-64] Each
+    // list entry is kept only if this house may own it (AIBasePlanningSide /
+    // Owner / RequiredHouses / ForbiddenHouses; ai_side_catalog.inc). Any SHP
+    // absent in this install is art-guard-dropped (the GATOW lesson).
+    auto pick = [&](const char* key) {
+        return aiside::pick_from_list(rules, "AI", key, side, country, ok_index);
+    };
+    cfg.catalog.conyard = pick("BuildConst");
+    cfg.catalog.power = pick("BuildPower");
+    cfg.catalog.refinery = pick("BuildRefinery");
+    cfg.catalog.barracks = pick("BuildBarracks");
+    cfg.catalog.war_factory = pick("BuildWeapons");
+    cfg.catalog.radar = pick("BuildRadar");
+    for (const std::string& d : aiside::csv_tokens(rules.section_string(
+             "AI", side == ra2engine::World::Side::Soviet ? "SovietBaseDefenses"
+                                                          : "AlliedBaseDefenses", ""))) {
+        const int t = ok_index(d.c_str());
         if (t >= 0) cfg.catalog.defenses.push_back(t);
     }
-    cfg.catalog.wall = ok_index("NAWALL");
+    cfg.catalog.wall = pick("ConcreteWalls");
     // [AI] knobs from the real rulesmd [RE: ai-base.md §2] (constants are the
     // committed pins; the file read keeps us honest if a mod changes them).
     cfg.ai.power_surplus =
@@ -2252,6 +2263,13 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         g[i].rof = rules.section_double(kGroups[i], "ROF", 1.0);
     }
     cfg.mods = ra2engine::difficulty_mods(difficulty, g);
+    // [G-64] the side's own <Side>BaseDefenseCounts (Allied 25,20,6 vs
+    // Soviet 25,22,6), indexed by house+0x184 = 2 - lobby [G-63].
+    {
+        const int dc = aiside::defense_count(rules, side,
+                                             ra2engine::difficulty_class_index(difficulty));
+        if (dc >= 0) cfg.mods.defense_target = dc;
+    }
     cfg.build_speed = rules.general_double("BuildSpeed", 0.7);
     cfg.low_power_penalty = rules.general_double("LowPowerPenaltyModifier", 1.0);
     cfg.start_credits = start_credits;  // lobby money, UNMODIFIED — no
@@ -3158,6 +3176,8 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
               << " teams=" << tc.aimd.teams.size() << "\n";
     return tc;
 }
+
+#include "ai_skirmish.inc"   // [G-60/G-62/G-64] real-play AI arming
 
 // MultipleFactory build-SPEED multiplier for one category [RE-GATE APPLIED:
 // production.md §1.2 — CONFIRMED MultipleFactory=0.8: each EXTRA same-class
@@ -4379,7 +4399,9 @@ public:
           // P10: a Soviet campaign player builds from the Soviet roster.
           ur_(soviet_campaign(cfg) ? load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)
                                    : load_unit_roster(dir_, ra2_, ua_, rules_, art_)),
-          ur_ai_(load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)),
+          // [G-60/G-64] both sides' AI combat roster (real prerequisites);
+          // each AI house takes its Owner-filtered share (arm_skirmish_ai).
+          ur_ai_(load_ai_skirmish_roster(dir_, ra2_, ua_, rules_, art_)),
           // Hardcoded 2964-3132 scenario REPLACED by launch_skirmish [D4].
           // P10: a campaign mission starts from the bare map world; its
           // CampaignRuntime (ctor body) places the mission's own objects.
@@ -4421,6 +4443,13 @@ public:
                     }
                 }
         } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+
+        // [G-60/G-62/G-64] The real-play AI: teams + triggers + side-correct
+        // catalogs for every AI slot (after the infantry SHP/anim registration
+        // above, which arm_skirmish_ai's set_anim reads).
+        if (cfg.campaign_map.empty())
+            arm_skirmish_ai(world_, cfg, ba_, rules_, rules_ini_, ur_ai_,
+                            load_aimd_or_empty(dir_), &a_.map, ua_);
 
         // Production math constants (read every frame in update()).
         build_speed_ = rules_.general_double("BuildSpeed", 0.7);
@@ -4989,6 +5018,9 @@ private:
             campaign_.reset();
             world_ = cfg_.campaign_map.empty() ? launch_skirmish(cfg_, a_, ua_, ba_, rules_)
                                                : build_campaign_world(a_, ua_);
+            if (cfg_.campaign_map.empty())   // [G-60] same real-play AI as the ctor
+                arm_skirmish_ai(world_, cfg_, ba_, rules_, rules_ini_, ur_ai_,
+                                load_aimd_or_empty(dir_), &a_.map, ua_);
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
             wire_abilities(world_, rules_, rules_ini_);
@@ -11622,7 +11654,8 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                 }
         // Full roster-backed AI config OVER-WRITES the minimal one from the core.
         if (s.is_ai && ba.ok)
-            world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash));
+            world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash, s.side,
+                                                    aiside::house_country(s.side, s.country)));
         // Superweapon grant per slot.
         if (cfg.superweapons) {
             const SuperweaponParams swp = resolve_superweapon(rules);
@@ -12062,6 +12095,8 @@ int run_demo_skirmish() {
     std::cout << hb << "\n";
     return bad ? 1 : 0;
 }
+
+#include "ai_soak.inc"   // --ai-soak: real-play AI acceptance harness [G-60]
 
 // --- --demo-roster helpers (Broaden-Roster phase, 18th gate) -----------------
 
@@ -15850,6 +15885,8 @@ int main(int argc, char** argv) {
                 return run_demo_multihouse();
             } else if (arg == "--demo-skirmish") {
                 return run_demo_skirmish();
+            } else if (arg == "--ai-soak") {
+                return run_ai_soak(argc, argv);
             } else if (arg == "--demo-roster") {
                 return run_demo_roster();
             } else if (arg == "--demo-roster2") {
