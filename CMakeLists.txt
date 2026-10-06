@@ -246,7 +246,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_roster2.cpp engine/roster2.cpp
 # the radiation field (engine/abilities.cpp, World-free) and the World-side
 # ability pass + orders (engine/world_abilities.cpp, a World member TU split out
 # of world.cpp), exercised by test_abilities.cpp.
-target_sources(ra2assets_tests PRIVATE tests/test_abilities.cpp tests/test_abilities_world.cpp engine/abilities.cpp engine/world_abilities.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_abilities.cpp tests/test_abilities_world.cpp engine/abilities.cpp engine/world_abilities.cpp engine/world_mcv.cpp tests/test_mcv_deploy.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's

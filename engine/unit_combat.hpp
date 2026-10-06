@@ -117,6 +117,8 @@ struct UnitCombat {
     int rules_speed = 0;              // integer Speed= (V8 domain)
     bool has_elite = false;           // ElitePrimary= defined (V10)
     WeaponStats elite;                // ElitePrimary's resolved stats
+    // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= building id (AMCV->GACNST).
+    std::string deploys_into;
 };
 
 }  // namespace ra2engine

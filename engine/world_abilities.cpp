@@ -61,6 +61,9 @@ std::vector<World::AbilityEvent> World::take_ability_events() {
 }
 
 bool World::order_deploy(int idx) {
+    // gF: a DeploysInto unit (MCV) deploys into its building -- every deploy
+    // gesture (D key, deploy cursor, touch button) reaches it through here.
+    if (is_mcv(idx)) return order_deploy_mcv(idx);
     if (!abilities_any_ || idx < 0 || idx >= static_cast<int>(units_.size())) return false;
     Unit& u = units_[idx];
     if (!on_map_alive(u)) return false;

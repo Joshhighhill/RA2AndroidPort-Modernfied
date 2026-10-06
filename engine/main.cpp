@@ -698,6 +698,8 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
+    // gF [RE: docs/re/mcv-deploy.md]: TechnoType DeploysInto= (+0x404, FUN_00711510).
+    r.combat.deploys_into = rules.section_string(unit_id, "DeploysInto", "");
 
     // CB-2 air-to-ground splash [RE-GATE APPLIED: aircraft.md §4 -> combat.md
     // §7]: the warhead's splash radius + edge scale (BlimpBomb -> BlimpHE
@@ -1996,6 +1998,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.click_repairable = rules.section_flag(id, "ClickRepairable", true);
         d.crewed           = rules.section_flag(id, "Crewed", false);
         d.soylent          = (int)rules.section_double(id, "Soylent", 0.0);
+        // gF [RE: docs/re/mcv-deploy.md]: DeployFacing= is a 0..7 direction read
+        // as (default>>5) and stored <<5 (FUN_0045FE40 @0x460C5C); default 0x80.
+        d.deploy_facing    = ((int)rules.section_double(id, "DeployFacing", 4.0) & 7) << 5;
 
         BuildingArt slot;
         try {

@@ -591,6 +591,13 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // (default is_naval=false / movement_domain=Land = a ground unit).
     u.is_naval = c.is_naval;
     u.movement_domain = c.movement_domain;
+    // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= -> roster index (inert -1
+    // for every unit type without the key, i.e. everything but AMCV/SMCV).
+    if (!c.deploys_into.empty()) {
+        const std::vector<BuildingTypeDef>& bt = btypes();
+        for (std::size_t k = 0; k < bt.size(); ++k)
+            if (bt[k].id == c.deploys_into) { u.deploys_into = static_cast<int>(k); break; }
+    }
     // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
     // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
     // past this point unless vet_any_). Only a vet-enabled World arms the
@@ -1575,6 +1582,18 @@ void World::complete_sell(int b_idx) {
         passable_[static_cast<std::size_t>(cell.y) * grid_w_ + cell.x] = 1;
     }
     b.blocking_released = true;
+
+    // gF [RE: repair-sell.md §B6]: a human skirmish ConYard with MCVRedeploys
+    // packs back into its MCV instead of paying out (no EVA_StructureSold, no
+    // survivors). Placement failure falls through to the plain refund.
+    if (try_undeploy(b_idx)) {
+        Building& ub = buildings_[b_idx];
+        kill_building(ub);
+        ub.sold = true;
+        ub.selling = false;
+        ub.being_repaired = false;
+        return;
+    }
 
     // (2) The refund [RE: §B1, CONFIRMED]. FLAT -- no health term anywhere.
     // RefundPercent applies ONLY to a human-controlled house; an AI house gets
@@ -3082,6 +3101,10 @@ void World::step(double dt) {
     // beside step_cargo; `if (!capture_any_) return;` inside is the only cost
     // every existing demo pays (no demo issues a capture order) [spec §8].
     step_capture(dt);
+
+    // gF MCV deploy [RE: docs/re/mcv-deploy.md]: the turn-then-unfold mission.
+    // `if (!deploy_any_) return;` inside -- no gate issues a deploy order.
+    step_deploy(dt);
 
     // CB-2 Aircraft [RE: aircraft.md §3.5/§6]: the airborne movement pass --
     // takeoff/cruise/descend runs AFTER step_cargo and BEFORE step_turrets/

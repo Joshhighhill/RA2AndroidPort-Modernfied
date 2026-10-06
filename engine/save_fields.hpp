@@ -169,6 +169,14 @@ struct SaveAccess {
         save::io(ar, w.rad_);
         save::io(ar, w.no_c4_types_);
         save::io(ar, w.ability_events_);
+        // gF MCV deploy
+        save::io(ar, w.deploy_any_);
+        save::io(ar, w.deploy_events_);
+        save::io(ar, w.buildup_totals_);
+        save::io(ar, w.undeploy_types_);
+        save::io(ar, w.undeploy_units_);
+        save::io(ar, w.mcv_redeploys_);
+        save::io(ar, w.skirmish_session_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -436,6 +444,12 @@ template <class Ar> void fields(Ar& ar, RadSite& v) {
     io(ar, v.timer_left);
     io(ar, v.alive);
 }
+template <class Ar> void fields(Ar& ar, World::DeployEvent& v) {   // gF
+    io(ar, v.kind);
+    io(ar, v.unit);
+    io(ar, v.building);
+    io(ar, v.house);
+}
 template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
     io(ar, v.kind); io(ar, v.a); io(ar, v.b); io(ar, v.x); io(ar, v.y); io(ar, v.building);
 }
@@ -482,6 +496,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.rules_speed);
     io(ar, v.has_elite);
     io(ar, v.elite);
+    io(ar, v.deploys_into);   // gF
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -517,6 +532,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.unsellable);
     io(ar, v.click_repairable);
     io(ar, v.crewed);
+    io(ar, v.deploy_facing);   // gF
     io(ar, v.soylent);
 }
 
@@ -628,6 +644,11 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.deploy_next_fire);
     io(ar, v.ifv_current);
     io(ar, v.death_done);
+    // gF MCV deploy
+    io(ar, v.deploys_into);
+    io(ar, v.deploy_mission);
+    io(ar, v.deploy_goal_x); io(ar, v.deploy_goal_y);
+    io(ar, v.deployed_away);
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
