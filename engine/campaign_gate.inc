@@ -142,6 +142,63 @@ DemoCampaignResult simulate_campaign(const std::string& map, const std::string& 
     return r;
 }
 
+// Save/load continuity [P7 checklist]: run Allied 1 to kCampSaveFrame, save the
+// World + TRIG + HOST, rebuild a FRESH runtime on a fresh World, load, then run
+// both to 2*kCampSaveFrame and compare the World and trigger-state hashes.
+constexpr long kCampSaveFrame = 300;
+std::vector<std::string> campaign_saveload_segment(bool& ok) {
+    std::vector<std::string> out;
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    MapSelection sel;
+    sel.mix = camp::mix_for_map("ALL01t.MAP");
+    sel.name = "all01t.map";
+    Assets a = load_assets(dir, ra2, sel);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language = ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    camp::Launch launch;
+    launch.map = "ALL01t.MAP";
+    launch.side = "GDI";
+    const double dt = 1.0 / 15.0;
+    ra2engine::World wa = build_campaign_world(a, ua);
+    CampaignRuntime ra(launch, dir, ra2, language, wa, a, ua, ba, rules, art, rules_ini);
+    for (long f = 0; f < kCampSaveFrame; ++f) { ra.frame(); wa.step(dt); }
+    const std::vector<uint8_t> wbytes = ra2engine::save::save_world(wa);
+    const std::vector<uint8_t> tbytes = ra2engine::save::save_triggers(ra.trigger_system());
+    ra2engine::CampaignHostSave hs = ra.capture();
+    const std::vector<uint8_t> hbytes = ra2engine::save::to_bytes(hs);
+
+    ra2engine::World wb = build_campaign_world(a, ua);
+    CampaignRuntime rb(launch, dir, ra2, language, wb, a, ua, ba, rules, art, rules_ini);
+    ra2engine::CampaignHostSave hl;
+    const bool loaded = ra2engine::save::load_world(wb, wbytes) &&
+                        ra2engine::save::load_triggers(rb.trigger_system(), tbytes) &&
+                        ra2engine::save::from_bytes(hbytes, hl) && rb.restore(hl);
+    for (long f = kCampSaveFrame; f < 2 * kCampSaveFrame; ++f) {
+        ra.frame(); wa.step(dt);
+        rb.frame(); wb.step(dt);
+    }
+    const bool same_world = world_hash(wa) == world_hash(wb);
+    const bool same_trig = ra.triggers().state_hash() == rb.triggers().state_hash();
+    char b[220];
+    std::snprintf(b, sizeof b,
+                  "[camp] saveload ALL01t save@%ld loaded=%d continue@%ld world_same=%d "
+                  "triggers_same=%d trig=%zuB host=%zuB",
+                  kCampSaveFrame, loaded ? 1 : 0, 2 * kCampSaveFrame, same_world ? 1 : 0,
+                  same_trig ? 1 : 0, tbytes.size(), hbytes.size());
+    out.emplace_back(b);
+    if (!loaded || !same_world || !same_trig) {
+        ok = false;
+        out.emplace_back("[camp] WEDGE: campaign save/load did not continue identically");
+    }
+    return out;
+}
+
 int run_demo_campaign() {
     const int W = 1280, H = 720;
     const std::string scratch =
@@ -194,9 +251,66 @@ int run_demo_campaign() {
         total = fnv_mix(total, r2.hash);
         lines += r2.witness.size();
     }
+    if (!only || std::atoi(only) == 4) {
+        bool sl_ok = true;
+        const std::vector<std::string> sl = campaign_saveload_segment(sl_ok);
+        for (const std::string& s : sl) {
+            std::cout << s << "\n";
+            for (char c : s) total = fnv_mix(total, (unsigned char)c);
+        }
+        lines += sl.size();
+        all_ok = all_ok && sl_ok;
+    }
     char th[64];
     std::snprintf(th, sizeof th, "%016llx", (unsigned long long)total);
     std::cout << "[demo-campaign] deterministic=" << (all_ok ? "yes" : "no") << " lines=" << lines
               << " campaign_hash=" << th << "\n";
     return all_ok ? 0 : 1;
+}
+
+// --campaign-survey (dev aid, not a gate): every RA2 Allied/Soviet mission
+// through the campaign path for kSurveyFrames headless frames; one line each.
+constexpr long kSurveyFrames = 450;
+int run_campaign_survey() {
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    const ra2engine::CampaignTables t = camp::load_tables(ra2);
+    int ok_n = 0, total = 0;
+    for (const char* side : {"GDI", "Nod"}) {
+        for (const std::string& st : t.side_stages(side)) {
+            const ra2engine::MapSelStage* s = t.stage(st);
+            if (!s || s->scenario.empty()) continue;
+            const std::string map = s->scenario;
+            if (camp::up(map).rfind("TRN", 0) == 0) continue;   // boot camp: not in P10 scope
+            ++total;
+            try {
+                MapSelection sel;
+                sel.mix = camp::mix_for_map(map);
+                sel.name = camp::lower(map);
+                Assets a = load_assets(dir, ra2, sel);
+                UnitAssets ua = load_unit_assets(dir, ra2);
+                ra2assets::MixFile language =
+                    ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+                Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+                Rules rules = Rules::load(rules_ini);
+                Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+                Art art = Art::load(art_ini);
+                BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+                ra2engine::World w = build_campaign_world(a, ua);
+                camp::Launch l;
+                l.map = map;
+                l.side = side;
+                CampaignRuntime rt(l, dir, ra2, language, w, a, ua, ba, rules, art, rules_ini);
+                for (long f = 0; f < kSurveyFrames && !rt.finished(); ++f) { rt.frame(); w.step(1.0 / 15.0); }
+                std::cout << rt.witness().front() << " | frame=" << rt.frame_count()
+                          << " fired=" << rt.triggers().fired_count() << " teams=" << rt.teams_created()
+                          << " outcome=" << rt.outcome() << " theater=" << a.map.theater() << "\n";
+                ++ok_n;
+            } catch (const std::exception& ex) {
+                std::cout << "[survey] " << map << " FAILED: " << ex.what() << "\n";
+            }
+        }
+    }
+    std::cout << "[survey] ran " << ok_n << "/" << total << "\n";
+    return ok_n == total ? 0 : 1;
 }

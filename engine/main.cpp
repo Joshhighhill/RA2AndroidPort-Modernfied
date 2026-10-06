@@ -15858,6 +15858,8 @@ int main(int argc, char** argv) {
                 return run_demo_triggers();
             } else if (arg == "--demo-campaign") {
                 return run_demo_campaign();   // P10 Campaign gate
+            } else if (arg == "--campaign-survey") {
+                return run_campaign_survey();   // P10 dev aid (not a gate)
             } else if (arg == "--demo-saveload") {
                 return run_demo_saveload();   // P7 Save/Load gate
             } else if (arg == "--demo-veterancy") {
