@@ -513,3 +513,8 @@ guarded. The `roster_hash=333cd43d8b5ece6a` pin is INSTALL-SPECIFIC accordingly:
 were GAPRIS to resolve in the loader, an ATESLA instance would place and the hash
 would change. (The §4 raw-probe "Y" reflects a bare MIX-membership check, not the
 loader's theater-suffix resolution — the two legitimately differ.)
+
+**Superseded (gap A, 5948a41):** the real cause was that roster indices 0..23
+looked art up by the id (`ATESLA`) rather than `Image=GAPRIS`. Since gap A every
+index honours `Image=` (as the original does), GAPRIS resolves, an ATESLA instance
+places, and the gate is re-pinned to `roster_hash=9c57c02eb36e9872`.
