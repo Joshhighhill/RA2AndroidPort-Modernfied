@@ -27,6 +27,7 @@ C combat/movement, D AI, E render/audio, F MCV/start/win-lose/campaign.
 | `m-sov01` | FAIL, 6 | FAIL, 6 | `d3e4d4b854b60010` |
 | `shell-smoke` | FAIL, 14 (+hard stop) | FAIL, 4 (+hard stop) | `57d260958ea5173e` |
 | `controls` | n/a | FAIL, 2 | `a6a838a2a270dbaf` |
+| `world-depth` | n/a | FAIL, 1 | `5a1576663741138f` |
 | `probe-shell`, `probe-game`, `probe-flow`, `probe-perf` | PASS | PASS | (self-checks) |
 
 Determinism: every script was run twice on the same tree with identical
@@ -122,6 +123,12 @@ script passes (ROADMAP-playable §G rule 6).
 | shell-smoke L98-L101 | Abort Mission asks for confirmation (`confirm_open`, reserved probe key) | FAIL (straight to main menu) | FAIL | G-14 | F |
 | shell-smoke L106-L109 | Exit Game asks for confirmation | FAIL (process would quit, hard stop) | FAIL | G-14 | F |
 | controls (all other steps: shell Esc, select / left-move / right-deselect, building select, Ctrl+1/1 groups, S stop, Q/W/E/R tabs, K/L modes, right-click cancel, queue hold / resume / abandon) | B's selftest behaviour | n/a | PASS | G-01, G-04, G-05, G-07, G-10 | B |
+
+### world-depth — G16 seeds
+
+| Step | Expected | Actual @63edea6 | Actual @7778b66 | G-ID | Owner |
+|---|---|---|---|---|---|
+| L20 | a selected Rhino left-clicked onto an enemy GI kills it within 300 f (crush on master after C's G-47; shot otherwise) | n/a | FAIL — the GI survives 300 f, neither crushed nor shot; not yet triaged (crush is on C's unmerged branch; the Rhino not firing may be G-06/G-41) | G-47 | C |
 
 ## New findings (not in GAP-ANALYSIS.md)
 
