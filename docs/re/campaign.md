@@ -228,6 +228,30 @@ briefing audio file in `mission.ini`.
    waypoint (`FUN_006dfa00`): applied as 100 damage to every object on the
    waypoint cell. [DEVIATION: no splash]
 
+7. **Attack-waypoint bombardments** (script action 1) — Allied 1's
+   dreadnoughts open on the Statue of Liberty (waypoint 0, `CANEWY04`, the
+   tagged "critical structure" whose death enables `Mission Failed`). In the
+   original the missiles are intercepted by the Patriot sites (`NASAM`) placed
+   in their path; the engine models no missile interception, and executing the
+   order literally fails the mission ~15 s in. The team holds position instead.
+   [DEVIATION]
+8. **Alliances** — RA2 `Allies=` lists are one-directional; the engine has
+   symmetric alliance teams. Team 0 = the player + houses *mutually* allied with
+   it; a civilian-side house the player lists as an ally is a neutral
+   non-combatant; every other house is the enemy team. MakeAlly/MakeEnemy move
+   the target house between the two. [DEVIATION]
+9. **House credits** — `[<House>] Credits=` × 100 (the C&C `HouseClass::Read_INI`
+   lineage; not traced in this build). [PROBABLE]
+10. **Loading-screen palette** — `ra2.mix/load.mix/ldscrna.pal` (Allied) /
+    `ldscrns.pal` (Soviet), the `LDSCRN%c.PAL` names in `game.exe` next to
+    `LDSCRN.PAL`; the selector was not traced. [PROBABLE]
+11. **Destroyed counters (events 15/16)** count the trigger house's own
+    *losses*. [RE-FALLBACK]
+12. **Aircraft** in `[Aircraft]` are parsed but not placed (none in either
+    first mission); unit facings/sub-cells/veterancy/Sleep missions from the
+    object lines are not applied (units spawn facing south on a free cell near
+    their INI cell). [CUT]
+
 ## §10 Confidence summary
 
 | claim | evidence | confidence |

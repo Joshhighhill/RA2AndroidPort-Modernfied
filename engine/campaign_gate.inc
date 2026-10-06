@@ -302,7 +302,10 @@ int run_campaign_survey() {
                 l.side = side;
                 CampaignRuntime rt(l, dir, ra2, language, w, a, ua, ba, rules, art, rules_ini);
                 for (long f = 0; f < kSurveyFrames && !rt.finished(); ++f) { rt.frame(); w.step(1.0 / 15.0); }
-                std::cout << rt.witness().front() << " | frame=" << rt.frame_count()
+                std::string head;
+                for (const std::string& wl : rt.witness())
+                    if (wl.rfind("[camp] ", 0) == 0) { head = wl; break; }
+                std::cout << head << " | frame=" << rt.frame_count()
                           << " fired=" << rt.triggers().fired_count() << " teams=" << rt.teams_created()
                           << " outcome=" << rt.outcome() << " theater=" << a.map.theater() << "\n";
                 ++ok_n;

@@ -2216,6 +2216,92 @@ climb = 100 leptons/frame [RE-FALLBACK]; the airfield sortie is a self-contained
 state machine (not yet driven from the sidebar/World flight); naval/aircraft
 sidebar queues are not wired into the interactive game.
 
+## Campaign Missions (P10)
+
+The RA2 **Allied** and **Soviet** campaigns, played through the real game
+path. Recovered in `docs/re/campaign.md` from `gamemd.exe` (the battle/mission/
+mapsel loaders, the `[Basic]` reader, the three object-section readers,
+`Flag_To_Win`/`Flag_To_Lose` + the BorrowedTime expiry in `HouseClass::AI`,
+`Do_Win`, the MapSel stage selectors and the team-script jump table); RA2's
+`game.exe` carries the same strings without the `MD` suffix, and the RA2 data
+files (`battle.ini`/`mission.ini`/`mapsel.ini` in `ra2.mix/local.mix`, the maps
+in `Maps01.mix`/`MAPS02.MIX`) are consumed with that logic.
+
+**Play it:** Main Menu > Single Player > New Campaign > Allied / Soviet, or
+`ra2engine --campaign ALL01t.MAP` (any mission). The loading screen shows the
+mission's `LS800` art, its name and `LSLoadBriefing` text and the difficulty;
+in the mission **F1** shows the briefing, objectives (`TextTrigger` lines)
+appear top-left, the mission timer top-centre; after the outcome the
+BorrowedTime (`SavourDelay` .1 min = 90 frames) runs out and the result screen
+offers Continue (next mission), Retry or Main Menu. Options > Abort Mission
+returns to the main menu. Campaign games save/load (P7) with the mission
+identity in the header and the trigger runtime + campaign state in `TRIG`/`HOST`.
+
+**What the original does (and we now do):**
+- **Progression is MapSel, not `NextScenario`.** `[Basic] NextScenario=` is a TS
+  leftover (`GDI2A.map` on every RA2 map). The next mission is the
+  `mapsel.ini` stage chain of the player's side (`[GDI]` / `[Nod]`), the
+  current stage found by matching its `Scenario=` to the current map; each RA2
+  stage has exactly one successor: `ALL01t → … → ALL12s`, `SOV01t → … → sov12s`;
+  `EndOfGame=yes` ends the campaign.
+- **RA2 index spaces.** The maps' trigger house/building values index the RA2
+  `rules.ini` `[Countries]`/`[BuildingTypes]` (YR's `rulesmd.ini` inserts
+  `YuriCountry` and shifts them): on `all01t` `Win 13` = `Player`.
+- **Objects** placed with the recovered field orders (`[Infantry]` sub-cell/
+  mission/facing/tag…, `[Units]` facing/mission/tag…, `[Structures]`
+  facing/tag/…), strength = `ftol(Strength×health/256)` snapping to full above
+  `Strength−3`; a failed placement deletes the object; tagged objects attach to
+  the tag's single `TagClass` (InstanceCount).
+- **Triggers in campaign mode**: object/cell events are raised from the world
+  (cell entry 1/59 via `[CellTags]`, destroyed 48/7, attacked 6, discovered 4,
+  selected 33); ChangeHouse (every object whose tag holds the firing trigger),
+  AllChangeHouse, MakeAlly/MakeEnemy (both directions), DestroyAttachedObject,
+  Apply100Damage, destroyed/last-built counters, CreateTeam / Reinforcement /
+  DestroyTeam / AllToHunt.
+- **Map teams** run the map's own `[ScriptTypes]` with the script-action
+  numbering confirmed on the executor's jump table (`3` move to waypoint, `0`
+  attack, `5` guard, `6` jump (1-based), `7`/`23` win/lose, `12/38/39/40`
+  variables, `20` change house, `37` delete members, `46/47` enemy building …).
+
+**Status:** Allied 1 (`all01t`, URBAN) and Soviet 1 (`sov01t`, URBAN) run
+start → win through their own triggers (the gate's victory runs reach `WON`
+and name `ALL02s`/`sov02t`); every other mission loads and runs through the
+same path (`--campaign-survey`: all 24 Allied/Soviet missions (URBAN ×9, SNOW ×8, TEMPERATE ×7) construct and run 450 frames with their own triggers and teams, none failing early; their start → win was not individually played through).
+
+**The campaign gate**, `--demo-campaign`: Allied 1 and Soviet 1 for 1,800
+frames each with a scripted player walking the missions' cell-tag trip-wires,
+then a scripted-kill **victory run** of each (BadGuy1's buildings / the four
+Pentagon sections destroyed at frame 150 — the missions' own triggers must
+carry it to `WON` after the BorrowedTime), each rendered + headless and
+byte-compared; then a **save/load continuity** segment (Allied 1 saved at
+frame 300 — World + `TRIG` + `HOST` — loaded into a fresh runtime, both run to
+600, World and trigger state identical). `campaign_hash=f10f9d4e6bd883cd`,
+`lines=870`.
+
+**Firewall.** `CampaignRuntime` (`engine/campaign_runtime.inc`) is constructed
+only by a campaign `GameScene` (non-empty `SkirmishConfig::campaign_map`) and
+`--demo-campaign`; `MapTriggerSystem` campaign mode defaults OFF (`--demo-triggers`
+is identical with and without this phase's trigger changes). World gained only
+additive per-unit order wrappers; the voxel sprite set index is clamped for
+houses ≥ 2 (houses 0/1 unchanged). Save format → v2 (`campaign_map/side/
+difficulty` in `CONF`, MapTriggerSystem's two new members, `CampaignHostSave`).
+
+**Deviations / cuts** (`campaign.md` §9): no campaign movies (the `MOVIES0x.MIX`
+are 4-byte stubs on this install); result screen instead of the unrecovered
+score tally; reinforcements appear at the team waypoint (no transport/paradrop
+delivery) and `CreateTeam` recruits idle units; transport/deploy/iron-curtain/
+chrono script actions are skipped; Allied 1's dreadnought shelling of the
+Statue is held (Patriot interception not modelled); symmetric alliance teams;
+enemy base build-out (ProductionBegins/AI triggers for map houses) not run;
+aircraft objects not placed; object facing/sub-cell/veterancy/Sleep not
+applied; MCV deploy absent (Soviet 1 is won with the reinforcements); unit stats
+from `rulesmd.ini` (RA2 `rules.ini` only for index spaces); map-embedded rules
+overrides ignored; civilian building art uses the temperate candidate walk.
+
+**Carry-forwards:** team transport delivery + paradrops, missile interception,
+MCV deploy, map rules overrides, enemy base AI from map `[<House>]` IQ/nodes,
+per-house TechLevel on the sidebar, crates from triggers (108), bridges.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -2547,6 +2633,7 @@ the P6 Roster Breadth gate.
 | `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
 | `--demo-saveload` | `saveload_hash=b71d77c2b4abb7b8` | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=e510c5b98c089804` | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
+| `--demo-campaign` | `campaign_hash=f10f9d4e6bd883cd` | `deterministic=yes lines=870`; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
 ## Save / Load (P7)
 
