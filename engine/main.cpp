@@ -689,6 +689,12 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.cell_spread = rules.section_double(warhead, "CellSpread", 0.0);
     r.combat.percent_at_max = rules.section_double(warhead, "PercentAtMax", 1.0);
 
+    // Projectile phase (P2) [RE: projectile.md §2/§6]: the primary weapon's
+    // projectile class + flight parameters. Resolved for EVERY unit (like every
+    // other stat) but consumed ONLY behind World::projectiles_enabled_ -- which
+    // no byte-identity gate opens. Not part of the [unit] log line below.
+    r.combat.proj = ra2engine::resolve_projectile_spec(rules, primary);
+
     // CB-1 cargo stats [RE-GATE APPLIED: transport-cargo.md §1 -- absent-key
     // defaults CONFIRMED: Passengers/SizeLimit -> 0, Size -> 1. In the
     // binary Size/SizeLimit are doubles (type +0x380/+0x388); int is exact
@@ -957,6 +963,9 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         ra2assets::Vpl vpl = ra2assets::Vpl::load(vpl_raw.data(), vpl_raw.size());
 
         art.fire_flh(image, va.flh);  // leaves {0,0,0} if absent/malformed
+        // P2: the muzzle offset is also the projectile launch point (projectile.md
+        // §4 step 1 -- FLH resolved before the bullet exists).
+        for (int k = 0; k < 3; ++k) va.combat.proj.flh[k] = va.flh[k];
 
         for (int house = 0; house <= 1; ++house) {
             const ra2assets::Palette hp = ra2engine::pal_for_house(unit_pal, house);

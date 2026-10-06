@@ -19,6 +19,9 @@
 // centre -- the dist_leptons convention), so the cell of a lepton point is
 // floor((l + 128) / 256) (spec D4).
 #include <cstdint>
+#include <string>
+
+namespace ra2assets { class Rules; }
 
 namespace ra2engine {
 
@@ -137,6 +140,28 @@ void integrate_ballistic(Projectile& p, double gravity);
 // One logic frame of the Vertical integrator (§6.2, CONFIRMED):
 // s = ftol(|V|); if s < cap: V = normalize(V) * (s + Acceleration); pos = ftol(pos + V).
 void integrate_vertical(Projectile& p);
+
+// --- rules resolution (Task 3) ---------------------------------------------
+// The game's INI bool (WW INIClass::Get_Bool): strip an inline ';' comment,
+// trim, then the FIRST character decides -- y/Y/t/T/1 true, n/N/f/F/0 false,
+// anything else (incl. empty) -> fallback. Needed because this Ini keeps
+// inline comments ([BlimpBombP] "Vertical=yes ;can't turn...").
+bool ini_bool_value(const std::string& raw, bool fallback);
+
+// One weapon's projectile parameters from Rules: [weapon] Projectile= ->
+// that [Projectile] section's Arcing/Inviso/Inaccurate/FlakScatter/Floater/
+// Vertical/ROT/Acceleration/DetonationAltitude, plus the weapon's Speed= (as the
+// leptons/frame cap) and Range= (as leptons, the §5.2 divisor). Classification:
+// Inviso -> Instant (projectile.md §6.3/§11.3: a 1-frame teleport, already
+// faithful); ROT>0 -> Instant (homing DEFERRED -- spec Scope); Vertical ->
+// Vertical; otherwise Ballistic. No weapon / no Projectile= -> Instant. FLH is
+// art data and is filled by the caller.
+ProjectileSpec resolve_projectile_spec(const ra2assets::Rules& rules, const std::string& weapon);
+
+// [AudioVisual] Gravity (§0.1) and [CombatDamage] BallisticScatter (cells ->
+// ftol(x*256) leptons, FUN_00474550). Absent keys fall back to this install's
+// values (6, 1.0).
+ProjectileRules resolve_projectile_rules(const ra2assets::Rules& rules);
 
 // Termination constants (§7 + §12.2).
 constexpr int kLevelHeight = 104;              // 0x89CDE0, CONFIRMED §12.2

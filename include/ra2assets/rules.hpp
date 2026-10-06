@@ -79,6 +79,22 @@ public:
     // [weapon] Report=, or "" if absent.
     std::string weapon_report(const std::string& weapon) const;
 
+    // Projectile phase (P2) [RE: projectile.md §2]: [weapon] Projectile= (the
+    // [Projectile] section name, e.g. 120mm -> "Cannon"), or "" if absent.
+    std::string weapon_projectile(const std::string& weapon) const;
+
+    // Projectile phase (P2) [RE: projectile.md §0.2/§6.2]: [weapon] Speed= as
+    // the raw ini integer (0 if absent). NOT a launch speed for ROT==0
+    // projectiles -- only the Vertical/homing cap after weapon_speed_leptons.
+    int weapon_speed(const std::string& weapon) const;
+
+    // Projectile phase (P2): the RAW [section] key= string (fallback if absent),
+    // inline ';' comment NOT stripped (this Ini keeps it -- e.g. [BlimpBombP]
+    // "Vertical=yes ;can't turn..."). Callers that need the game's INI bool
+    // semantics strip + first-char-parse themselves (projectile.cpp ini_bool).
+    std::string section_string(const std::string& section, const std::string& key,
+                               const std::string& fallback) const;
+
     // [warhead] Verses= parsed into percent integers; empty vector if absent.
     // Tolerates spaces and missing '%' signs in the comma-separated list.
     std::vector<int> verses(const std::string& warhead) const;

@@ -257,3 +257,91 @@ TEST_CASE("projectile: §5.1 scatter radius in [BS/2, BS]; §5.2 FlakScatter sca
     CHECK(far_max > near_max);
     CHECK(far_max <= 256.0 + 2.0);
 }
+
+// ---- Task 3: rules resolution ------------------------------------------------
+#include "asset_fixture.hpp"
+#include "ra2assets/ini.hpp"
+#include "ra2assets/rules.hpp"
+
+TEST_CASE("projectile: ini_bool_value follows the game's first-char bool with inline comments") {
+    CHECK(ini_bool_value("yes ;can't turn or do much of anything", false));
+    CHECK(ini_bool_value("true", false));
+    CHECK(ini_bool_value("Yes", false));
+    CHECK(ini_bool_value("1", false));
+    CHECK_FALSE(ini_bool_value("no", true));
+    CHECK_FALSE(ini_bool_value("false ; x", true));
+    CHECK(ini_bool_value("", true));        // absent -> fallback
+    CHECK(ini_bool_value("  ; only", true));
+}
+
+TEST_CASE("projectile: resolve_projectile_spec classifies a synthetic roster") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[120mm]\nDamage=90\nRange=5.75\nProjectile=Cannon\nSpeed=40\n"
+        "[Cannon]\nArcing=true\n"
+        "[BlimpBomb]\nRange=1.5\nProjectile=BlimpBombP\nSpeed=20\n"
+        "[BlimpBombP]\nArm=10\nAcceleration=1\nVertical=yes ;can't turn\nDetonationAltitude=20000 ; nuke\n"
+        "[M60]\nProjectile=InvisibleLow\nSpeed=100\n[InvisibleLow]\nInviso=yes\n"
+        "[SubTorpedo]\nProjectile=Torpedo\nSpeed=25\n[Torpedo]\nROT=12 ;4\n"
+        "[FlakTrackGun]\nRange=5\nProjectile=FlakTProj\nSpeed=50\n"
+        "[FlakTProj]\nArcing=true\nInaccurate=yes  ; no snap\nFlakScatter=yes ; scatter\n"
+        "[AudioVisual]\nGravity=6               ; gravity\n"
+        "[CombatDamage]\nBallisticScatter=1.0 ; cells\n");
+    const ra2assets::Rules rules = ra2assets::Rules::load(ini);
+
+    const ProjectileSpec c = resolve_projectile_spec(rules, "120mm");
+    CHECK(c.kind == ProjKind::Ballistic);
+    CHECK(c.arcing);
+    CHECK_FALSE(c.inaccurate);
+    CHECK(c.weapon_range == 1472);
+    CHECK(c.speed_cap == 102);
+
+    const ProjectileSpec k = resolve_projectile_spec(rules, "BlimpBomb");
+    CHECK(k.kind == ProjKind::Vertical);  // inline comment tolerated
+    CHECK(k.speed_cap == 51);
+    CHECK(k.acceleration == 1);
+    CHECK(k.detonation_altitude == 20000);
+
+    CHECK(resolve_projectile_spec(rules, "M60").kind == ProjKind::Instant);        // Inviso
+    CHECK(resolve_projectile_spec(rules, "SubTorpedo").kind == ProjKind::Instant); // homing deferred
+    CHECK(resolve_projectile_spec(rules, "SubTorpedo").rot == 12);
+    CHECK(resolve_projectile_spec(rules, "").kind == ProjKind::Instant);
+    CHECK(resolve_projectile_spec(rules, "NoSuchWeapon").kind == ProjKind::Instant);
+
+    const ProjectileSpec f = resolve_projectile_spec(rules, "FlakTrackGun");
+    CHECK(f.kind == ProjKind::Ballistic);
+    CHECK(f.inaccurate);
+    CHECK(f.flak_scatter);
+    CHECK(f.weapon_range == 1280);
+
+    const ProjectileRules pr = resolve_projectile_rules(rules);
+    CHECK(pr.gravity == doctest::Approx(6.0));
+    CHECK(pr.ballistic_scatter == 256);
+}
+
+TEST_CASE("projectile: real rulesmd pins (Cannon/BlimpBombP/FlakTProj/InvisibleLow, Gravity in [AudioVisual])") {
+    if (!ra2fixture::assets_available()) { MESSAGE("skipped: ra2md.mix not found"); return; }
+    if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("skipped: rulesmd.ini not found"); return; }
+    const ra2assets::Rules& rules = ra2fixture::rulesmd();
+    const ProjectileRules pr = resolve_projectile_rules(rules);
+    CHECK(pr.gravity == doctest::Approx(6.0));   // [AudioVisual] Gravity=6 (§0.1)
+    CHECK(pr.ballistic_scatter == 256);          // [CombatDamage] BallisticScatter=1.0
+
+    const ProjectileSpec rhino = resolve_projectile_spec(rules, rules.primary("HTNK"));
+    CHECK(rhino.kind == ProjKind::Ballistic);
+    CHECK(rhino.arcing);
+    CHECK(rhino.weapon_range == 1472);
+
+    const ProjectileSpec kirov = resolve_projectile_spec(rules, rules.primary("ZEP"));
+    CHECK(kirov.kind == ProjKind::Vertical);
+    CHECK(kirov.speed_cap == 51);
+    CHECK(kirov.acceleration == 1);
+    CHECK(kirov.detonation_altitude == 20000);
+
+    const ProjectileSpec flak = resolve_projectile_spec(rules, rules.primary("HTK"));
+    CHECK(flak.kind == ProjKind::Ballistic);
+    CHECK(flak.inaccurate);
+    CHECK(flak.flak_scatter);
+
+    CHECK(resolve_projectile_spec(rules, rules.primary("E1")).kind == ProjKind::Instant);
+    CHECK(resolve_projectile_spec(rules, rules.primary("E2")).kind == ProjKind::Instant);
+}

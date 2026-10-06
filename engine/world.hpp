@@ -113,6 +113,10 @@ struct Unit {
     std::vector<int> w_verses;     // warhead Verses percents (11 entries)
     double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
     double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
+    // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
+    // (default kind=Instant = the pre-P2 instant-hit path). Read ONLY when the
+    // World's projectiles_enabled_ firewall is open; NOT read by world_hash.
+    ProjectileSpec w_proj;
     int target = -1;               // unit index being attacked, -1 none
     int target_building = -1;      // building index being attacked, -1 none;
                                     // mutually exclusive with `target` --

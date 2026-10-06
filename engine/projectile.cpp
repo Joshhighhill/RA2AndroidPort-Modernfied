@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "ra2assets/rules.hpp"
+
 namespace ra2engine {
 
 namespace {
@@ -231,6 +233,64 @@ void integrate_vertical(Projectile& p) {
     p.y = ftol(static_cast<double>(p.y) + p.vy);
     p.z = ftol(static_cast<double>(p.z) + p.vz);
     p.max_z = std::max(p.max_z, p.z);
+}
+
+namespace {
+std::string strip_comment_trim(const std::string& raw) {
+    std::string v = raw.substr(0, raw.find(';'));
+    const auto b = v.find_first_not_of(" 	");
+    if (b == std::string::npos) return std::string();
+    const auto e = v.find_last_not_of(" 	");
+    return v.substr(b, e - b + 1);
+}
+}  // namespace
+
+bool ini_bool_value(const std::string& raw, bool fallback) {
+    const std::string v = strip_comment_trim(raw);
+    if (v.empty()) return fallback;
+    switch (v[0]) {
+        case 'y': case 'Y': case 't': case 'T': case '1': return true;
+        case 'n': case 'N': case 'f': case 'F': case '0': return false;
+        default: return fallback;
+    }
+}
+
+ProjectileSpec resolve_projectile_spec(const ra2assets::Rules& rules, const std::string& weapon) {
+    ProjectileSpec spec;  // Instant (inert) unless proven otherwise
+    if (weapon.empty()) return spec;
+    const std::string proj = strip_comment_trim(rules.weapon_projectile(weapon));
+    if (proj.empty()) return spec;
+    auto flag = [&](const char* key) {
+        return ini_bool_value(rules.section_string(proj, key, ""), false);
+    };
+    spec.arcing = flag("Arcing");
+    spec.inviso = flag("Inviso");
+    spec.inaccurate = flag("Inaccurate");
+    spec.flak_scatter = flag("FlakScatter");
+    spec.floater = flag("Floater");
+    const bool vertical = flag("Vertical");
+    spec.rot = static_cast<int>(rules.section_double(proj, "ROT", 0.0));
+    spec.acceleration = static_cast<int>(rules.section_double(proj, "Acceleration", 0.0));
+    spec.detonation_altitude =
+        static_cast<int>(rules.section_double(proj, "DetonationAltitude", 0.0));
+    spec.speed_cap = weapon_speed_leptons(rules.weapon_speed(weapon));
+    spec.weapon_range = ftol(rules.weapon_range(weapon) * 256.0);
+    if (spec.inviso || spec.rot > 0)
+        spec.kind = ProjKind::Instant;      // §11.3 Inviso / homing deferred
+    else if (vertical)
+        spec.kind = ProjKind::Vertical;     // §6.2
+    else
+        spec.kind = ProjKind::Ballistic;    // §6.1
+    return spec;
+}
+
+ProjectileRules resolve_projectile_rules(const ra2assets::Rules& rules) {
+    ProjectileRules r;
+    // §0.1: Gravity lives in [AudioVisual] (Rules+0x16B8), NOT [General].
+    r.gravity = rules.section_double("AudioVisual", "Gravity", 6.0);
+    // §2: [CombatDamage] BallisticScatter (cells) -> FUN_00474550 ftol(x*256.0).
+    r.ballistic_scatter = ftol(rules.section_double("CombatDamage", "BallisticScatter", 1.0) * 256.0);
+    return r;
 }
 
 }  // namespace ra2engine

@@ -557,6 +557,10 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_verses = c.verses;
     u.w_cell_spread = c.cell_spread;        // CB-2 [aircraft.md §4]: warhead splash
     u.w_percent_at_max = c.percent_at_max;  // radius + edge scale (0 = single-target)
+    // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
+    // spec. Copied unconditionally but READ ONLY behind projectiles_enabled_
+    // (the firewall) -- inert in every existing gate.
+    u.w_proj = c.proj;
     // Voxel Vehicles phase (docs/re/voxel-render.md §5): vehicle locomotion
     // state. ROT= is converted to a u16/sec turn rate; speed_cps == 0 keeps
     // the unit on the World-wide move_cps. Infantry leave all of these at
