@@ -169,6 +169,12 @@ TriggerDecision select_trigger(const AimdData& aimd,
         // recruit/produce machinery [RE-FALLBACK].
         if (team_capped(aimd, live, t.team1)) continue;
         if (t.team2 >= 0 && team_capped(aimd, live, t.team2)) continue;
+        // [G-60] Team1/Team2 must be buildable (FUN_0041ff00 x2 in
+        // ConditionMet, ai-trigger.md §5) -- caller-computed per TeamType.
+        auto unbuildable = [&](int tt) {
+            return tt >= 0 && tt < (int)view.team_buildable.size() && !view.team_buildable[tt];
+        };
+        if (unbuildable(t.team1) || unbuildable(t.team2)) continue;
         // The 5000 MANDATORY tier [RE-GATE APPLIED: ai-trigger.md §3 —
         // CONFIRMED]: if ANY eligible trigger's rounded weight == 5000, the
         // candidate set resets to ONLY 5000-weight triggers.

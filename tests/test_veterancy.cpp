@@ -160,3 +160,12 @@ TEST_CASE("veterancy: the real rulesmd [General]/[CrateRules]/[Powerups] values 
     CHECK(rules.section_flag("HARV", "SelfHealing", false));
     CHECK_FALSE(rules.section_flag("MTNK", "CrateGoodie", false));
 }
+
+TEST_CASE("veterancy: G-63 AssignHandicap FirePower/ROF scale the house's weapons") {
+    // [Easy] ROF=.8 (the class a Brutal AI runs on): 30-frame weapon -> 24.
+    CHECK(ra2engine::rof_frames(30, false, 0.75, 0.8) == 24);
+    CHECK(ra2engine::rof_frames(30, false, 0.75) == 30);         // humans: 1.0
+    CHECK(ra2engine::rof_frames(30, false, 0.75, 1.2) == 36);    // [Difficult]
+    CHECK(ra2engine::fire_damage(100, 1.0, false, 1.1, 1.0) == 100);
+    CHECK(ra2engine::fire_damage(100, 1.0, false, 1.1, 1.5) == 150);
+}

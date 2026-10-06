@@ -754,6 +754,7 @@ template <class Ar> void fields(Ar& ar, ProductionState& v) { io(ar, v.credits);
 template <class Ar> void fields(Ar& ar, DifficultyMods& v) {
     io(ar, v.cost_mul); io(ar, v.build_time_mul); io(ar, v.build_delay_min);
     io(ar, v.build_slowdown); io(ar, v.defense_target);
+    io(ar, v.firepower_mul); io(ar, v.rof_mul); io(ar, v.repair_delay_min);
 }
 template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.power_surplus);
@@ -767,6 +768,10 @@ template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.defense_ratio);
     io(ar, v.defense_limit);
     io(ar, v.credit_reserve);
+    io(ar, v.condition_red);
+    io(ar, v.sw_value_conyard); io(ar, v.sw_value_factory); io(ar, v.sw_value_power);
+    io(ar, v.sw_value_tech); io(ar, v.sw_value_defense); io(ar, v.sw_value_harvester);
+    io(ar, v.sw_value_building); io(ar, v.sw_value_unit);
 }
 template <class Ar> void fields(Ar& ar, PlannedNode& v) {
     io(ar, v.id); io(ar, v.type); io(ar, v.cx); io(ar, v.cy); io(ar, v.building); io(ar, v.dead);
@@ -777,12 +782,14 @@ template <class Ar> void fields(Ar& ar, AiBaseState& v) {
     io(ar, v.build_gate);
     io(ar, v.plan);
     io(ar, v.rng);
+    io(ar, v.repair_clock);
     io(ar, v.pending);
     io(ar, v.next_node_id);
 }
 template <class Ar> void fields(Ar& ar, AiCatalog& v) {
     io(ar, v.conyard); io(ar, v.power); io(ar, v.refinery); io(ar, v.barracks);
     io(ar, v.war_factory); io(ar, v.radar); io(ar, v.defenses); io(ar, v.wall);
+    io(ar, v.tech); io(ar, v.superweapons);
 }
 // --- AI-2 ---
 template <class Ar> void fields(Ar& ar, TeamInstance& v) {
@@ -796,6 +803,8 @@ template <class Ar> void fields(Ar& ar, TeamInstance& v) {
     io(ar, v.gather_x); io(ar, v.gather_y);
     io(ar, v.move_issued);
     io(ar, v.stall_reissues);
+    io(ar, v.best_focus_d2);
+    io(ar, v.no_progress_secs);
     io(ar, v.completed_success);
 }
 template <class Ar> void fields(Ar& ar, AiTeamState& v) {
@@ -881,6 +890,9 @@ template <class Ar> void fields(Ar& ar, AiTeamConfig& v) {
     io(ar, v.veh_factory_types);
     io(ar, v.waypoints);
     io(ar, v.house_name);
+    io(ar, v.building_type_roster);
+    io(ar, v.building_class);
+    io(ar, v.harvesters_per_refinery);
     io(ar, v.rules);
     io(ar, v.triggers_enabled);
     io(ar, v.trigger_side);
