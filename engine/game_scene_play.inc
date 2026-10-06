@@ -54,6 +54,20 @@
             }
             return false;
         }
+        if (kind == "building") {   // building:H:ID[:n] -> footprint centre
+            int h = 0, n = 0;
+            std::string id;
+            if (!ra2engine::play::parse_unit_selector(arg, h, id, n)) return false;
+            int k = 0;
+            for (const ra2engine::Building& b : world_.buildings()) {
+                if (!b.alive || b.state == ra2engine::Building::State::Dead || b.house != h) continue;
+                if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) || ba_.roster[b.type].id != id) continue;
+                if (k++ != n) continue;
+                cell_to_window(b.cx + b.fw / 2, b.cy + b.fh / 2, x, y);
+                return true;
+            }
+            return false;
+        }
         if (kind == "cameo" || kind == "cameotab") {
             // The cameo's tab: 0/1 buildings (by Defense), 2/3 units.
             int want_tab = -1, want_type = -1;
@@ -112,6 +126,7 @@
         out["menu"] = menu_.open_ ? 1 : 0;
         out["dialog"] = sld_.is_open() ? 1 : 0;
         out["selb"] = input_.selected_building();
+        out["cursor"] = static_cast<int>(cursor_action());
         out["cam_x"] = cam_.x;
         out["cam_y"] = cam_.y;
         int sel = 0;
@@ -152,6 +167,14 @@
     }
 
     bool cheat(const std::vector<std::string>& args) override {
+        if (args.size() == 1 && args[0] == "center_own") {   // camera on the first own unit
+            for (const ra2engine::Unit& u : world_.units())
+                if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
+                    input_.center_on_cell(u.fx, u.fy);
+                    return true;
+                }
+            return false;
+        }
         if (args.size() == 2 && args[0] == "credits") {
             player_credits_ = std::atof(args[1].c_str());
             return true;

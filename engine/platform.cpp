@@ -174,6 +174,8 @@ bool Platform::poll(InputEvent& ev) {
             ev.button = (e.button.button == SDL_BUTTON_RIGHT) ? InputEvent::Right
                                                               : InputEvent::Left;
             ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEBUTTONUP:
@@ -183,6 +185,8 @@ bool Platform::poll(InputEvent& ev) {
             ev.button = (e.button.button == SDL_BUTTON_RIGHT) ? InputEvent::Right
                                                               : InputEvent::Left;
             ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             ev.t_ms = e.button.timestamp;
             break;
         case SDL_MOUSEMOTION:
@@ -190,6 +194,9 @@ bool Platform::poll(InputEvent& ev) {
             ev.x = e.motion.x;
             ev.y = e.motion.y;
             ev.t_ms = e.motion.timestamp;
+            ev.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             break;
         case SDL_FINGERDOWN:
             ev.kind = InputEvent::PointerDown;

@@ -4913,6 +4913,7 @@ public:
                          : bm == ra2engine::Input::BaseMode::Sell ? 2 : 0);
         }
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
+        draw_selected_building(ren);   // G-10
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
         const bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
@@ -4941,6 +4942,8 @@ public:
 
     // G0 --play harness surface (name/locate/probe/cheat) + pointer tracking.
 #include "game_scene_play.inc"
+    // Agent B controls/UI members (cursor state, building selection, hotkeys).
+#include "game_scene_controls.inc"
 
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
