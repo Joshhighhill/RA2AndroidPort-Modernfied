@@ -8,30 +8,26 @@
 namespace ra2engine {
 
 OpClass classify_op(int action) {
-    // [RE-GATE APPLIED: ai-team.md §3 — the FULL recovered dispatch table. The
-    // classifier FUN_006e30d0 enumerates ~90 valid actions (up to 0x90) via a
-    // jump table; this switch is the single table location. The IMPLEMENTABLE
-    // core below is exactly the recovered set; EVERY other valid action
-    // (transport 0x2e/0x2f/0x50/0x6b, aircraft 0x1e/0x55-0x57, superweapon/
-    // support 0x3d/0x3e, droppod, cosmetics) and every unrecognised number is
-    // Inert: logged skip, pc++ — parsed + RE-documented, never executed
-    // (spec §2 scope bound).]
+    // [G-61; RE: c13.log:29-33 / c14.log -- the 65-entry executor table at
+    // 0x6E94E4, ModEnc numbering; script_actions.hpp]. The single table
+    // location for AI-2.
     switch (action) {
-        case kOpAttackQuarry:     return OpClass::AttackQuarry;
-        case kOpAttackMove:       return OpClass::AttackQuarry;  // 0x3f = quarry + regroup
-        case kOpAttackHouse:      return OpClass::AttackHouse;
-        case kOpAttackBuilding:   return OpClass::AttackBuilding;
-        case kOpAttackUnits:      return OpClass::AttackUnits;
-        case kOpMoveToWaypoint:   return OpClass::MoveWaypoint;
-        case kOpMoveToCell:       return OpClass::MoveCell;
-        case kOpGuardArea:        return OpClass::GuardArea;
-        case kOpTimedGuard:       return OpClass::TimedGuard;
-        case kOpTimedGuardAlt:    return OpClass::TimedGuard;    // 0x3a same unit as 5
-        case kOpRegroup:          return OpClass::Regroup;
-        case kOpScatter:          return OpClass::Scatter;
-        case kOpJumpToLine:       return OpClass::Jump;
-        case kOpDisband:          return OpClass::Disband;
-        default:                  return OpClass::Inert;
+        case kSaAttack:               return OpClass::AttackQuarry;
+        case kSaAttackEnemyBuilding:  return OpClass::AttackBuilding;
+        case kSaMoveWaypoint:         return OpClass::MoveWaypoint;
+        case kSaPatrol:               return OpClass::MoveWaypoint;   // [RE-FALLBACK: patrol = move]
+        case kSaAttackWaypoint:       return OpClass::MoveWaypoint;   // [RE-FALLBACK: walk there; auto-acquire fires]
+        case kSaMoveCell:             return OpClass::MoveCell;
+        case kSaMoveEnemyBuilding:    return OpClass::MoveEnemyBuilding;
+        case kSaMoveFriendlyBuilding: return OpClass::MoveFriendlyBuilding;
+        case kSaGatherEnemy:          return OpClass::GatherEnemy;
+        case kSaGatherBase:           return OpClass::RegroupBase;
+        case kSaGuard:                return OpClass::TimedGuard;
+        case kSaDoMission:            return OpClass::DoMission;
+        case kSaScatter:              return OpClass::Scatter;
+        case kSaJump:                 return OpClass::Jump;
+        case kSaSuccess:              return OpClass::Success;
+        default:                      return OpClass::Inert;
     }
 }
 
@@ -160,105 +156,77 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             }
             const ScriptAction a = sc.actions[team.script_pc];
             const OpClass oc = classify_op(a.action);
-
-            // The four attack classes share ONE emit-while-target-exists /
-            // advance-when-extinct body, differing only in the quarry class they
-            // resolve. The caller (World) computes view.quarry_exists for THIS
-            // action's effective quarry [RE-GATE APPLIED: ai-team.md §3/§5].
-            if (oc == OpClass::AttackQuarry || oc == OpClass::AttackHouse ||
-                oc == OpClass::AttackBuilding || oc == OpClass::AttackUnits) {
-                if (!view.quarry_exists) {
-                    ++team.script_pc;  // target class extinct -> advance
-                    team.move_issued = false;
-                    return c;
+            auto advance = [&]() {
+                ++team.script_pc;
+                team.script_timer = 0.0;
+                team.move_issued = false;
+            };
+            // A move line: issue once, then advance on arrival at the REALIZED
+            // focus the caller stored (team.gather_x/y) [CloseEnough, ai-team.md §2].
+            auto move_line = [&](int x, int y) {
+                if (!team.move_issued) {
+                    c.kind = TeamCommand::Kind::MoveTeam;
+                    c.x = x;
+                    c.y = y;
+                    team.move_issued = true;
+                } else if (all_within(view, team.gather_x, team.gather_y,
+                                      kAiCloseEnoughCells)) {
+                    advance();
                 }
-                c.kind = TeamCommand::Kind::AttackQuarry;
-                c.quarry = (oc == OpClass::AttackQuarry) ? a.argument
-                         : (oc == OpClass::AttackBuilding) ? kQuarryBuildings
-                         : kQuarryAnything;  // AttackHouse / AttackUnits (§5)
-                return c;                    // re-emitted until the class is gone
-            }
+            };
 
             switch (oc) {
+                case OpClass::AttackQuarry:
+                case OpClass::AttackBuilding: {
+                    // Emit while a matching target exists; advance when the class
+                    // (or the named building type) is extinct [RE: ai-team.md
+                    // §3/§5]. The caller computes view.quarry_exists for THIS line.
+                    if (!view.quarry_exists) { advance(); return c; }
+                    c.kind = TeamCommand::Kind::AttackQuarry;
+                    c.quarry = oc == OpClass::AttackQuarry ? a.argument : kQuarryBuildings;
+                    if (oc == OpClass::AttackBuilding) c.building_arg = a.argument;
+                    return c;
+                }
                 case OpClass::MoveWaypoint: {
                     const Cellxy w =
                         (a.argument >= 0 && a.argument < (int)view.waypoints.size())
                             ? view.waypoints[a.argument]
                             : Cellxy{view.enemy_x, view.enemy_y};  // [RE-FALLBACK:
                               // unmapped waypoint -> enemy base centre]
+                    move_line(w.x, w.y);
+                    return c;
+                }
+                case OpClass::MoveCell:
+                    move_line(script_cell_x(a.argument), script_cell_y(a.argument));
+                    return c;
+                case OpClass::MoveEnemyBuilding:
+                case OpClass::MoveFriendlyBuilding:
+                    if (!view.building_found) { advance(); return c; }  // none of that type
+                    move_line(view.building_x, view.building_y);
+                    return c;
+                case OpClass::GatherEnemy: {
+                    // Gather on the AISafeDistance ring around the enemy base
+                    // [RE: ai-team.md §2 gather rule; FUN_006eec60]. The ring cell
+                    // is drawn once, when the line's move is issued.
                     if (!team.move_issued) {
-                        c.kind = TeamCommand::Kind::MoveTeam;
-                        c.x = w.x;                 // IDEAL cell (caller snaps it)
-                        c.y = w.y;
-                        team.move_issued = true;
-                    } else if (all_within(view, team.gather_x, team.gather_y,
-                                          kAiCloseEnoughCells)) {
-                        // Arrival is measured against the REALIZED focus the
-                        // caller stored (the snapped cell members were actually
-                        // sent to), NOT the ideal `w` whose CloseEnough
-                        // neighborhood may be blocked/occupied — matching the
-                        // original's Focus (team+0x40) semantics and making the
-                        // predicate satisfiable [FIX: Executing-move wedge; §2].
-                        ++team.script_pc;          // arrived (CloseEnough) -> next
-                        team.move_issued = false;
+                        const Cellxy g = gather_cell(view.enemy_x, view.enemy_y, rng);
+                        move_line(g.x, g.y);
+                    } else {
+                        move_line(team.gather_x, team.gather_y);
                     }
                     return c;
                 }
-                case OpClass::MoveCell: {
-                    // [RE-FALLBACK: ai-team.md §3 — argument is a PACKED cell; the
-                    // pure module has no map width to unpack it, so it resolves to
-                    // the enemy base centre (march-at-enemy) until packed-cell
-                    // decoding lands (AI-3).]
-                    const Cellxy w{view.enemy_x, view.enemy_y};
-                    if (!team.move_issued) {
-                        c.kind = TeamCommand::Kind::MoveTeam;
-                        c.x = w.x;
-                        c.y = w.y;
-                        team.move_issued = true;
-                    } else if (all_within(view, team.gather_x, team.gather_y,
-                                          kAiCloseEnoughCells)) {
-                        ++team.script_pc;          // arrival vs REALIZED focus [FIX]
-                        team.move_issued = false;
-                    }
+                case OpClass::RegroupBase:
+                    // Regroup at the own base centre [FUN_006eef70; RE-FALLBACK:
+                    // the ConYard-first base centre, snapped by the caller].
+                    move_line(view.base_x, view.base_y);
                     return c;
-                }
-                case OpClass::Regroup: {
-                    const Cellxy m = centroid(view);
-                    if (!team.move_issued) {
-                        c.kind = TeamCommand::Kind::MoveTeam;
-                        c.x = m.x;
-                        c.y = m.y;
-                        team.move_issued = true;
-                    } else if (all_within(view, team.gather_x, team.gather_y,
-                                          kAiCloseEnoughCells)) {
-                        ++team.script_pc;          // arrival vs REALIZED focus [FIX]
-                        team.move_issued = false;
-                    }
-                    return c;
-                }
-                case OpClass::GuardArea: {
-                    // 0x0c guard area at current location: set the guard anchors
-                    // then advance (the EXISTING auto-acquire / return-to-anchor
-                    // machinery does the rest). One-shot so an untimed guard can
-                    // never wedge the script [RE-GATE APPLIED: ai-team.md §3].
-                    const Cellxy m = centroid(view);
-                    c.kind = TeamCommand::Kind::GuardArea;
-                    c.x = m.x;
-                    c.y = m.y;
-                    c.radius = kAiGatherRadius;
-                    ++team.script_pc;
-                    team.move_issued = false;
-                    return c;
-                }
                 case OpClass::TimedGuard: {
-                    // 0x05 / 0x3a guard for <arg> tenths-of-min; arg x 90 frames
-                    // at 15 Hz [RE-GATE APPLIED: ai-team.md §3].
+                    // Guard for arg x 15 frames [RE: c14.log idx 5].
                     team.script_timer += dt * 15.0;  // accumulate FRAMES
                     if (team.script_timer >=
                         (double)(a.argument * kAiGuardTicksToFrames)) {
-                        ++team.script_pc;
-                        team.script_timer = 0.0;
-                        team.move_issued = false;
+                        advance();
                         return c;
                     }
                     const Cellxy m = centroid(view);
@@ -268,14 +236,22 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                     c.radius = kAiGatherRadius;
                     return c;
                 }
-                case OpClass::Jump: {
-                    // 0x06 Jump consumes the tick — a jump cycle can never spin
-                    // within one tick; argument is the 0-based script line index
-                    // [RE-GATE APPLIED: ai-team.md §3 — CONFIRMED].
-                    team.script_pc =
-                        std::max(0, std::min(a.argument, (int)sc.actions.size()));
-                    team.script_timer = 0.0;
-                    team.move_issued = false;
+                case OpClass::DoMission: {
+                    // Assign mission <arg> and complete the line [FUN_006ecd40].
+                    // Hunt (15) -> attack anything; every other mission (Area
+                    // Guard 11, Guard 5, ...) -> guard where the team stands
+                    // [RE-FALLBACK: engine mission set].
+                    if (a.argument == kMissionHunt) {
+                        c.kind = TeamCommand::Kind::AttackQuarry;
+                        c.quarry = kQuarryAnything;
+                    } else {
+                        const Cellxy m = centroid(view);
+                        c.kind = TeamCommand::Kind::GuardArea;
+                        c.x = m.x;
+                        c.y = m.y;
+                        c.radius = kAiGatherRadius;
+                    }
+                    advance();
                     return c;
                 }
                 case OpClass::Scatter: {
@@ -283,30 +259,35 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                     c.kind = TeamCommand::Kind::MoveTeam;
                     c.x = m.x;
                     c.y = m.y;
-                    c.scatter = true;  // caller spreads members [RE: ai-team.md §3]
-                    ++team.script_pc;  // one-shot
+                    c.scatter = true;  // caller spreads members [c14 idx 21]
+                    advance();         // one-shot
+                    return c;
+                }
+                case OpClass::Jump: {
+                    // Jump consumes the tick (a jump cycle can never spin within
+                    // one tick); the argument is 1-BASED [RE: c14.log idx 6 --
+                    // cursor = arg-2, then advanced => line arg-1].
+                    team.script_pc = std::max(
+                        0, std::min(script_jump_line(a.argument), (int)sc.actions.size()));
+                    team.script_timer = 0.0;
                     team.move_issued = false;
                     return c;
                 }
-                case OpClass::Disband: {
-                    // 0x31 (49): set success flag then disband [RE: ai-team.md §3].
-                    // The team ran its script to the success/disband action, so
-                    // mark the outcome SUCCESS for AI-3's weight attribution
-                    // (Task 4 reads completed_success at disband -> adjust_weight
-                    // RegisterSuccess). A wipe-driven Disbanding leaves this FALSE
-                    // [RE: ai-trigger.md §6]. ADDITIVE — no lifecycle change.
+                case OpClass::Success: {
+                    // 49 sets team+0x80 (line complete) AND team+0x84 (success)
+                    // and the script CONTINUES [RE: c14.log idx 49] -- the stock
+                    // attack scripts run 49 mid-way ("0,6 / 49,0 / 0,2 / 0,1").
+                    // completed_success feeds AI-3's RegisterSuccess at disband.
                     team.completed_success = true;
-                    team.state = TeamState::Disbanding;
+                    advance();
                     return c;
                 }
                 case OpClass::Inert:
                 default: {
-                    // Valid-but-unimplementable / unrecognised opcode: logged
-                    // skip, pc++ [RE-GATE APPLIED: ai-team.md §3; spec §2].
+                    // Valid-but-unimplemented action: logged skip, pc++.
                     c.kind = TeamCommand::Kind::Inert;
                     c.opcode = a.action;
-                    ++team.script_pc;
-                    team.move_issued = false;
+                    advance();
                     return c;
                 }
             }
@@ -349,7 +330,11 @@ bool house_matches(const std::string& team_house, const std::string& house_name)
 
 int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
                            const std::vector<TeamInstance>& live, double credits,
-                           const AiTeamRules& rules, std::uint32_t& rng) {
+                           const AiTeamRules& rules, std::uint32_t& rng,
+                           const std::vector<char>* team_buildable) {
+    auto buildable = [&](int i) {
+        return !team_buildable || i >= (int)team_buildable->size() || (*team_buildable)[i];
+    };
     // [RE-GATE APPLIED: ai-team.md §4] autocreate ONLY (AITriggerTypes creation
     // is AI-3); NOT is_base_defense (defensive teams out of offensive scope);
     // the TotalAITeamCap hard per-house cap; the Max live-instance cap with
@@ -370,7 +355,7 @@ int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
     for (int i = 0; i < (int)aimd.teams.size(); ++i) {
         const TeamType& tt = aimd.teams[i];
         if (!tt.autocreate || tt.is_base_defense ||
-            !house_matches(tt.house, house_name))
+            !house_matches(tt.house, house_name) || !buildable(i))
             continue;
         int count = 0;
         for (const TeamInstance& t : live)
@@ -387,7 +372,7 @@ int select_autocreate_team(const AimdData& aimd, const std::string& house_name,
     for (int i = 0; i < (int)aimd.teams.size(); ++i) {
         const TeamType& tt = aimd.teams[i];
         if (!tt.autocreate || tt.is_base_defense ||
-            !house_matches(tt.house, house_name))
+            !house_matches(tt.house, house_name) || !buildable(i))
             continue;
         int count = 0;
         for (const TeamInstance& t : live)

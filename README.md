@@ -435,9 +435,11 @@ back-pointer) and feeds each one's `completed_success` outcome through
 `adjust_weight`'s additive **+20 success / −50 failure** rule plus a
 track-record term, clamped to `[min_weight, max_weight]` — so a shared
 Team1 moves every trigger that names it, and a Team2-only-created team
-feeds nothing back. The interactive enemy Soviet house now runs all three AI
-layers at once: the AI-1 base brain, AI-2 autocreate teams, and AI-3's
-adaptive trigger mix, all through `make_ai_team_config(..., enable_triggers)`.
+feeds nothing back. (Historical note: this paragraph used to claim the
+interactive enemy ran all three layers; that stopped being true at `f77e68e`,
+the Scene-framework refactor, which dropped the `aimd.ini` load and the team
+config from the real game. It is true again since gap fix G-60 — see "Real-play
+AI" below.)
 Calibration authority: `docs/re/ai-trigger.md` (field layout + comparator
 packing §1/§2, the full ConditionType dispatch §2, weighted selection +
 weight dynamics §3/§4, enable filters + cadence §5, composition/attribution
@@ -2613,9 +2615,9 @@ the P6 Roster Breadth gate.
 | `--demo-base` | `hash=5273b5e71ca009e1` | `roster=39` (content-only growth, hash unaffected), GAPOWR `frames=504 step_ticks=9`, credits `9200→8700`, `GAWEAP blocked (PROC unmet)` |
 | `--demo-econ` | `econ_hash=7fed96cb98b68017` | GAREFN `frames=1260 step_ticks=23 charge=600`; CMIN unload `+500` credits; enemy `income=1000`; `GAWEAP can_start=yes (PROC met)` |
 | `--demo-prod` | `prod_hash=f0f4e1207ecd713c` | `deterministic=yes`; MTNK frames/charge, exit cell, concurrent GI, 2nd-factory primary routing |
-| `--demo-ai-base` | `ai_base_hash=cd1f7c6a29933f0a` | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
-| `--demo-ai-team` | `ai_team_hash=312e92ed862a5e74` | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
-| `--demo-ai-trigger` | `ai_trigger_hash=8334a6ca1531cabc` | `deterministic=yes`; a Soviet AI house (Normal difficulty) with an intrinsically-eligible ct=4 HouseCredits exemplar (`0D2C41EC-G`, weight band `[10..70]`, runtime-scanned, not hardcoded) fires by the recovered cumulative-sum draw over `round(current weight)`, creates its Team1 through the AI-2 path, and the created teams' script-completion disband outcomes adjust every trigger sharing that Team1 by the clamped `+20`/`−50` track-record rule (witnessed weight movement `40→60`, `50→70`, `60→70` across the run) (`docs/re/ai-trigger.md`) |
+| `--demo-ai-base` | `ai_base_hash=6a094915a28b9314` (gap D re-pin, see "Real-play AI") | `deterministic=yes`; lone Soviet ConYard builds out power → barracks → refinery → war factory → radar → defenses (the recovered topological prereq-sort order, `docs/re/ai-base.md` §2/§2a) at fixed difficulty/seed/frames |
+| `--demo-ai-team` | `ai_team_hash=c28ba20195c2d4dc` (gap D re-pin) | `deterministic=yes`; a Soviet AI house with a pre-built base autocreates a team from the real aimd.ini, recruits/produces its TaskForce, gathers near the base, and marches the squad at the player under the ScriptType interpreter (`docs/re/ai-team.md`) |
+| `--demo-ai-trigger` | `ai_trigger_hash=17388180b9427561` (gap D re-pin) | `deterministic=yes`; a Soviet AI house (Normal difficulty) with an intrinsically-eligible ct=4 HouseCredits exemplar (`0D2C41EC-G`, weight band `[10..70]`, runtime-scanned, not hardcoded) fires by the recovered cumulative-sum draw over `round(current weight)`, creates its Team1 through the AI-2 path, and the created teams' script-completion disband outcomes adjust every trigger sharing that Team1 by the clamped `+20`/`−50` track-record rule (witnessed weight movement `40→60`, `50→70`, `60→70` across the run) (`docs/re/ai-trigger.md`) |
 | `--demo-transport` | `transport_hash=fe500f946e913645` | `deterministic=yes`; variant=HTK (Passengers=5 SizeLimit=2 on this install; FV fallback documented if art ever regresses); 5 boards to the exact-fill COUNT boundary + 1 refusal at full; carry with zero carried-unit draw/occupancy folded into the hash; 5 LIFO ejects one-per-frame onto facing±90° scatter cells (`eject_cell`); wedge guards armed (`docs/re/transport-cargo.md`) |
 | `--demo-aircraft` | `aircraft_hash=a69642564cf64773` | `deterministic=yes`; variant=ZEP (Kirov, `JumpjetHeight=750`, `ROT=10`, `JumpjetSpeed=5` on this install; ORCA/BEAG fallback documented if art regresses); takeoff to alt=750 with the ground cell released (climb/travel overlap), straight-line cruise at altitude with zero occupancy held (folded into the hash), one `BlimpHE CellSpread=2` bomb splash killing BOTH adjacent ground targets (2 kills), hold-at-cruise resume; raised voxel draw + ground shadow; wedge guards armed (`docs/re/aircraft.md`) |
 | `--demo-naval` | `naval_hash=6aee2c82bc024e86` | `deterministic=yes`; variant=HYD (Sea Scorpion, `Speed=8`, `ROT=6`, `FlakTrackGun` Damage=25/ROF=25/Range=5, Warhead `FlakTWH` CellSpread=1.0 on this install; DRED/DEST fallback documented if art regresses); sails across the `mapsmd03` water region (468 Water cells, 252-cell main body, bbox [71,11]–[95,40], runtime-classified from the theater `[General]` tile-sets) via A* on the water grid (every path cell Water, folded into the hash), refuses a land-cell order (empty/stay-put — the water/land inverse), approaches over water and fires FlakTrackGun to a kill, holds station on resume; voxel ship at altitude 0 (existing draw path); wedge guards armed (`docs/re/naval.md`) |
@@ -2631,9 +2633,9 @@ the P6 Roster Breadth gate.
 | `--demo-triggers` | `trigger_hash=20347f4dfa462eb4` | `deterministic=yes lines=76`; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=b23b7d9924a99c85` | `deterministic=yes lines=74`; 15 appended buildings (13 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=36/37, land f=71/72, `Reloaded` f=341/342 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
-| `--demo-saveload` | `saveload_hash=09caaddd6213883c` (G16 re-pin: save format 5 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + bridge grids; the gate's map has low bridges, file 1.38 MB -> 1.83 MB; master before G16 printed `81029e6eb282f849`, an earlier unpinned drift from the format-4 merges; `identical=yes` and two runs equal) | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-saveload` | `saveload_hash=2511ec3d0deec668` (gap D re-pin) | `identical=yes`; P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
-| `--demo-campaign` | `campaign_hash=f10f9d4e6bd883cd` | `deterministic=yes lines=870`; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
+| `--demo-campaign` | `campaign_hash=17830b0f7c233223` (gap D re-pin) | `deterministic=yes lines=737`; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
 **Gap owner A re-pins (real-play economy/production, docs/gap G-20..G-30).**
 --demo-skirmish e9ad3f1fd88495f9 -> fde3f587e747f765 and --demo-maps
@@ -3121,6 +3123,57 @@ controls self-test as a script) and `probe-*` self-checks. Run them ONE at a
 time (`pwsh scripts/play/run-all.ps1`); ~15 s start-up, then ~400 frames/s with
 `set render_every 300`. Expected results per tree and the G-ID / owner of every
 failing step: `docs/gap/PLAYTEST-STATUS.md`.
+
+## Real-play AI (gap fix D, G-60..G-69)
+
+The audit (`docs/gap/04-ai.md`) found the computer opponent firewalled into the
+`--demo-ai-*` gates: commit `f77e68e` (Scene framework) had dropped the
+`aimd.ini` load and the team config from the real game, so `step_ai_teams`
+skipped every real AI house and the player could not lose. Every skirmish AI
+slot now runs all three layers in real play (`engine/ai_skirmish.inc`,
+`arm_skirmish_ai`, called from `GameScene`'s ctor and its load-failed restart).
+
+| G-ID | What changed | Evidence |
+|---|---|---|
+| G-60 / G-62 | AI-2 teams + AI-3 triggers armed for every AI slot (both sides' ground roster, real rulesmd prerequisites, Owner-filtered per house); a team whose TaskForce the house can neither build nor recruit idle is not created (`FUN_0041ff00`, ai-trigger.md §5); team moves give up after 10 s without progress [RE-FALLBACK] | `--ai-soak`, `sk-a` L117, `sk-s` L94-L95, `sk-a-lose` L19-L20 |
+| G-61 | ONE ScriptType table for AI-2 and the campaign: the 65-entry executor at `0x6E94E4` (`engine/script_actions.hpp`); guard = arg x15 frames, jump 1-based, 49 = success flag + continue, 53/54 gather/regroup, 46/47/58 building targets, YRpp QuarryType | `docs/re/ai-team.md` §3 (rewritten), c13/c14 logs |
+| G-63 | lobby AI difficulty -> `house+0x184 = 2 - lobby` (`FUN_004f6dd0` AssignHandicap; Brutal runs on `[Easy]`); FirePower/ROF handicaps applied (Armor/Groundspeed: no reader found, not applied) | `D:a2-reixDout` |
+| G-64 | side-correct catalogs from the `[AI]` Build* lists filtered by AIBasePlanningSide/Owner/RequiredHouses/ForbiddenHouses; country checked against `[Sides]` (NEW-4) | `sk-s` L88-L90 |
+| G-65 | AI repair (`FUN_00450620`: money >= CreditReserve, one start per RepairDelay window) and sell (money < CreditReserve, health < ConditionRed) | `--ai-soak --damage-ai-at 4` |
+| G-66 | AI plans BuildTech + its AIBuildThis superweapon structures; a charged SW fires at the enemy's highest-AIIonCannon*Value target (`FUN_00509710` / `FUN_0050ca10`) | World test, `--ai-soak` (NAMISL by min 40) |
+| G-67 | threat centroid / rival size / AI-3 enemy counts use enemy houses only | — |
+| G-68 | miners rebought to refineries x HarvestersPerRefinery (`[IQ] Harvester=2`) | `--ai-soak` (8 miners on 4 refineries) |
+| G-69 | campaign computer houses build/rebuild their map base nodes once map action 3 "Production begins" fires (AI-2/AI-3 for map houses still open, RE-A5) | `RA2_SURVEY_MAP=sov03u.map --campaign-survey` |
+
+`ra2engine --ai-soak [--minutes N] [--diff easy|normal|brutal] [--ai-side
+soviet|allied] [--map file|default] [--damage-ai-at MIN] [--ai-vs-ai] [--png
+path]` drives the real `GameScene` with a passive human and prints, per game
+minute, the AI's structures, miners, credits, units, teams, triggers and the
+damage dealt to the human base. 15 min on `xmp31s2`, Soviet AI Normal: 21
+structures, 8 miners, 18 units trained, 10 teams, first hit on the human base
+at ~6 min, human defeated. Allied AI Brutal: GA* base only (AMRADR for the
+Americans), hits the human base by min 12.
+
+**Gate re-pins (gap D).** `--demo-ai-base` `cd1f7c6a29933f0a` -> `6a094915a28b9314`:
+the hash folds the AI plan, which gains the G-66 tail nodes NATECH/NAIRON/NAMISL
+(`plan=54` -> `57`; the build/placement witness is unchanged). `--demo-ai-team`
+`312e92ed862a5e74` -> `c28ba20195c2d4dc` and `--demo-ai-trigger`
+`8334a6ca1531cabc` -> `17388180b9427561`: the stock scripts now run under the
+real action table (G-61: 54/53 moves instead of "attack units"/"attack
+building", 49 continues instead of disbanding, guard x15 frames), teams must be
+buildable (G-60), and gap C's combat/movement changes on master. The earlier
+master drift of `--demo-ai-trigger` (`8334a6ca` -> `1002c3f8`) is explained:
+P6's kRoster growth 24 -> 39 (`0800106`) made NATECH resolvable, so two more
+stock AITriggerTypes ("Soviet Apoc Hard/Medium", condition object NATECH)
+survive parsing (8 -> 10) and enter the weighted draw -- faithful. Verified by
+building `4b3520c` (8334a6ca, parsed=8) and `0800106` (1002c3f8, parsed=10).
+`--demo-saveload` `270b4fce163438f7` -> `2511ec3d0deec668`: save format v5 (new
+AI config/state fields serialized) and the side-aware AI. `--demo-campaign`
+`f10f9d4e6bd883cd` (870 lines) -> `17830b0f7c233223` (737 lines): the campaign
+interpreter shares the G-61 table, so `Guard` lines last arg x15 frames instead
+of x90 (A/B: with x90 restored this tree gives `8a0f07758cb0393f`, 730 lines --
+the remainder is master-side, gap C/E). `--demo-skirmish` / `--demo-maps`
+unchanged.
 
 ## World depth: garrisons and bridges (G16, G-48 / G-49)
 

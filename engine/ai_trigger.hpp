@@ -93,6 +93,10 @@ struct TriggerView {
                                        // match an equal house side; trigger
                                        // side 0 = any) [RE: §5]
     int tech_level = 10;               // house tech level for the TechLevel gate
+    // [G-60] per TeamType: the house can currently build every TaskForce
+    // member (the original's FUN_0041ff00 buildable test inside
+    // ConditionMet, ai-trigger.md §5). EMPTY = no filter.
+    std::vector<char> team_buildable;
 };
 
 // select_trigger's answer: which trigger fired and which TeamType(s) to

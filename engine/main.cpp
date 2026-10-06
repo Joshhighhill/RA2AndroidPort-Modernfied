@@ -2247,9 +2247,15 @@ int roster_index(const BuildingAssets& ba, const std::string& id) {
 // Resolve everything an AI house needs from the loaded assets + rules
 // [RE: ai-base.md §2/§4]. Art-guarded: a catalog entry whose SHP failed to
 // load is dropped (-1 / omitted) so the planner skips that need.
+#include "ai_side_catalog.inc"   // [G-64] side-correct [AI] list resolution
+
+// [G-64] side/country default to the Soviet "Russians" house every AI gate
+// uses (the resolver reproduces the former hardcoded NA* set for it).
 ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& rules,
                                         ra2engine::AiDifficulty difficulty,
-                                        double start_credits) {
+                                        double start_credits,
+                                        ra2engine::World::Side side = ra2engine::World::Side::Soviet,
+                                        const std::string& country = "Russians") {
     ra2engine::AiHouseConfig cfg;
     cfg.difficulty = difficulty;
     cfg.roster = ba.roster;  // the same defs the player machinery uses
@@ -2261,24 +2267,41 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         const int t = roster_index(ba, id);
         return (t >= 0 && ba.art[t].ok) ? t : -1;  // art-guard-drop
     };
-    // Soviet build set [RE-GATE APPLIED: ai-base.md §2 — the RECOVERED [AI]
-    // build lists: BuildConst=NACNST, BuildPower=NAPOWR, BuildRefinery=
-    // NAREFN, BuildBarracks=NAHAND, BuildWeapons=NAWEAP, BuildRadar=NARADR;
-    // SovietBaseDefenses = NALASR,NABNKR,TESLA,NAFLAK (per-Side list — the
-    // [AI] BuildDefense/BuildAA/BuildPDefense/BuildHelipad lists are DEAD);
-    // ConcreteWalls -> NAWALL (first Soviet-ownable of GAWALL,NAWALL,GAFWLL).
-    // Any SHP absent in this install is art-guard-dropped (the GATOW lesson).]
-    cfg.catalog.conyard = ok_index("NACNST");
-    cfg.catalog.power = ok_index("NAPOWR");
-    cfg.catalog.refinery = ok_index("NAREFN");
-    cfg.catalog.barracks = ok_index("NAHAND");
-    cfg.catalog.war_factory = ok_index("NAWEAP");
-    cfg.catalog.radar = ok_index("NARADR");
-    for (const char* d : {"NALASR", "NABNKR", "TESLA", "NAFLAK"}) {
-        const int t = ok_index(d);
+    // Side build set [RE-GATE APPLIED: ai-base.md §2 — the RECOVERED [AI]
+    // build lists BuildConst/BuildPower/BuildRefinery/BuildBarracks/
+    // BuildWeapons/BuildRadar, the per-Side <Side>BaseDefenses list (the [AI]
+    // BuildDefense/BuildAA/... lists are DEAD), ConcreteWalls]. [G-64] Each
+    // list entry is kept only if this house may own it (AIBasePlanningSide /
+    // Owner / RequiredHouses / ForbiddenHouses; ai_side_catalog.inc). Any SHP
+    // absent in this install is art-guard-dropped (the GATOW lesson).
+    auto pick = [&](const char* key) {
+        return aiside::pick_from_list(rules, "AI", key, side, country, ok_index);
+    };
+    cfg.catalog.conyard = pick("BuildConst");
+    cfg.catalog.power = pick("BuildPower");
+    cfg.catalog.refinery = pick("BuildRefinery");
+    cfg.catalog.barracks = pick("BuildBarracks");
+    cfg.catalog.war_factory = pick("BuildWeapons");
+    cfg.catalog.radar = pick("BuildRadar");
+    for (const std::string& d : aiside::csv_tokens(rules.section_string(
+             "AI", side == ra2engine::World::Side::Soviet ? "SovietBaseDefenses"
+                                                          : "AlliedBaseDefenses", ""))) {
+        const int t = ok_index(d.c_str());
         if (t >= 0) cfg.catalog.defenses.push_back(t);
     }
-    cfg.catalog.wall = ok_index("NAWALL");
+    cfg.catalog.wall = pick("ConcreteWalls");
+    // [G-66] BuildTech + the side's AIBuildThis=yes SuperWeapon= structures
+    // (the tech centres also carry SuperWeapon=ForceShieldSpecial and are
+    // planned as `tech`, not again here).
+    cfg.catalog.tech = pick("BuildTech");
+    for (const ra2engine::BuildingTypeDef& d : ba.roster) {
+        if (rules.section_string(d.id, "SuperWeapon", "").empty()) continue;
+        if (!rules.section_flag(d.id, "AIBuildThis", false)) continue;
+        if (!aiside::owned_by(rules, d.id, side, country)) continue;
+        const int t = ok_index(d.id.c_str());
+        if (t >= 0 && t != cfg.catalog.tech && t != cfg.catalog.radar)   // NARADR: SpyPlane
+            cfg.catalog.superweapons.push_back(t);
+    }
     // [AI] knobs from the real rulesmd [RE: ai-base.md §2] (constants are the
     // committed pins; the file read keeps us honest if a mod changes them).
     cfg.ai.power_surplus =
@@ -2306,6 +2329,24 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         "AI", "DefenseLimit", (double)ra2engine::kAiDefenseLimit);
     cfg.ai.credit_reserve =
         rules.section_double("AI", "CreditReserve", ra2engine::kAiCreditReserve);
+    {   // [G-66] AIIonCannon*Value= CSVs at house+0x184 = 2 - lobby (Rules+0x1198.. arrays)
+        const int c = ra2engine::difficulty_class_index(difficulty);
+        auto val = [&](const char* key, int def) {
+            const std::vector<std::string> v =
+                aiside::csv_tokens(rules.section_string("General", key, ""));
+            return c < (int)v.size() ? std::atoi(v[(std::size_t)c].c_str()) : def;
+        };
+        cfg.ai.sw_value_conyard = val("AIIonCannonConYardValue", 100);
+        cfg.ai.sw_value_factory = val("AIIonCannonWarFactoryValue", 100);
+        cfg.ai.sw_value_power = val("AIIonCannonPowerValue", 100);
+        cfg.ai.sw_value_tech = val("AIIonCannonTechCenterValue", 100);
+        cfg.ai.sw_value_defense = val("AIIonCannonBaseDefenseValue", 35);
+        cfg.ai.sw_value_harvester = val("AIIonCannonHarvesterValue", 1);
+    }
+    {   // [G-65] "ConditionRed=25%" -> strtod 25 -> the 0.25 fraction
+        const double cr = rules.section_double("AudioVisual", "ConditionRed", 0.25);
+        cfg.ai.condition_red = cr > 1.0 ? cr / 100.0 : cr;
+    }
     // Difficulty groups [RE-GATE APPLIED: ai-base.md §4 — the RECOVERED
     // section names Easy/Normal/Difficult (NOT Medium/Hard); BuildDelay is
     // MINUTES; BuildSlowdown is yes/no so it comes from the pinned constant].
@@ -2318,8 +2359,21 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         g[i].build_delay = rules.section_double(kGroups[i], "BuildDelay",
                                                 ra2engine::kDifficultyBuildDelayMin[i]);
         g[i].build_slowdown = ra2engine::kDifficultyBuildSlowdown[i];  // yes/no key [RE: ai-base.md §4]
+        // [G-63] the two combat handicaps gamemd consumes (DifficultyClass +0x00
+        // FirePower, +0x20 ROF; loader default 1.0).
+        g[i].firepower = rules.section_double(kGroups[i], "FirePower", 1.0);
+        g[i].rof = rules.section_double(kGroups[i], "ROF", 1.0);
+        g[i].repair_delay = rules.section_double(kGroups[i], "RepairDelay",
+                                                 ra2engine::kDifficultyRepairDelayMin[i]);
     }
     cfg.mods = ra2engine::difficulty_mods(difficulty, g);
+    // [G-64] the side's own <Side>BaseDefenseCounts (Allied 25,20,6 vs
+    // Soviet 25,22,6), indexed by house+0x184 = 2 - lobby [G-63].
+    {
+        const int dc = aiside::defense_count(rules, side,
+                                             ra2engine::difficulty_class_index(difficulty));
+        if (dc >= 0) cfg.mods.defense_target = dc;
+    }
     cfg.build_speed = rules.general_double("BuildSpeed", 0.7);
     cfg.low_power_penalty = rules.general_double("LowPowerPenaltyModifier", 1.0);
     cfg.start_credits = start_credits;  // lobby money, UNMODIFIED — no
@@ -3302,7 +3356,9 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
     // read only its head, so the per-difficulty value comes from the PINNED
     // constant array (the Task 3 install-gated test keeps constant and file
     // head consistent) [RE-FALLBACK: index binding]:
-    tc.rules.team_delay_frames = ra2engine::kAiTeamDelayFrames[(int)difficulty];
+    // [G-63] TeamDelays= is indexed by house+0x184 = 2 - lobby (hardest first).
+    tc.rules.team_delay_frames =
+        ra2engine::kAiTeamDelayFrames[ra2engine::difficulty_class_index(difficulty)];
     tc.rules.autocreate_time_min = rules.section_double(
         "AI", "AutocreateTime", ra2engine::kAiAutocreateTimeMin);   // spawn cadence [§4]
     tc.rules.total_team_cap = (int)rules.section_double(
@@ -3316,12 +3372,15 @@ ra2engine::AiTeamConfig make_ai_team_config(const BuildingAssets& ba, const Unit
         "AI", "InfantryReserve", (double)ra2engine::kAiInfantryReserve);
     // BuildSlowdown is a difficulty BYTE (Easy off / Normal+Difficult on) — the
     // over-queue damp, NOT a time multiplier [RE-GATE APPLIED: ai-team.md §6].
-    tc.rules.build_slowdown = ra2engine::kDifficultyBuildSlowdown[(int)difficulty];
+    tc.rules.build_slowdown =   // [G-63] DifficultyClass 2 - lobby
+        ra2engine::kDifficultyBuildSlowdown[ra2engine::difficulty_class_index(difficulty)];
     std::cerr << "[ai-team] aimd parsed: tf=" << tc.aimd.taskforces.size()
               << " sc=" << tc.aimd.scripts.size()
               << " teams=" << tc.aimd.teams.size() << "\n";
     return tc;
 }
+
+#include "ai_skirmish.inc"   // [G-60/G-62/G-64] real-play AI arming
 
 // MultipleFactory build-SPEED multiplier for one category [RE-GATE APPLIED:
 // production.md §1.2 — CONFIRMED MultipleFactory=0.8: each EXTRA same-class
@@ -4688,7 +4747,9 @@ public:
           // P10: a Soviet campaign player builds from the Soviet roster.
           // G-22 (gap owner A): skirmish = the full side/country/tech roster.
           ur_(rp_load_roster(dir_, ra2_, ua_, rules_, art_, rules_ini_, cfg)),
-          ur_ai_(load_soviet_unit_roster(dir_, ra2_, ua_, rules_, art_)),
+          // [G-60/G-64] both sides' AI combat roster (real prerequisites);
+          // each AI house takes its Owner-filtered share (arm_skirmish_ai).
+          ur_ai_(load_ai_skirmish_roster(dir_, ra2_, ua_, rules_, art_)),
           // Hardcoded 2964-3132 scenario REPLACED by launch_skirmish [D4].
           // P10: a campaign mission starts from the bare map world; its
           // CampaignRuntime (ctor body) places the mission's own objects.
@@ -4731,6 +4792,13 @@ public:
                     }
                 }
         } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+
+        // [G-60/G-62/G-64] The real-play AI: teams + triggers + side-correct
+        // catalogs for every AI slot (after the infantry SHP/anim registration
+        // above, which arm_skirmish_ai's set_anim reads).
+        if (cfg.campaign_map.empty())
+            arm_skirmish_ai(world_, cfg, ba_, rules_, rules_ini_, ur_ai_,
+                            load_aimd_or_empty(dir_), &a_.map, ua_);
 
         // Production math constants (read every frame in update()).
         build_speed_ = rules_.general_double("BuildSpeed", 0.7);
@@ -5335,6 +5403,9 @@ private:
             campaign_.reset();
             world_ = cfg_.campaign_map.empty() ? launch_skirmish(cfg_, a_, ua_, ba_, rules_)
                                                : build_campaign_world(a_, ua_);
+            if (cfg_.campaign_map.empty())   // [G-60] same real-play AI as the ctor
+                arm_skirmish_ai(world_, cfg_, ba_, rules_, rules_ini_, ur_ai_,
+                                load_aimd_or_empty(dir_), &a_.map, ua_);
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
@@ -5426,6 +5497,7 @@ private:
 public:
 
 private:
+    friend struct AiSoakProbe;     // gap owner D: --ai-soak drives the real scene
 #include "realplay_scene.inc"   // gap owner A: placement/production/roster members
     friend struct CombatProbe;   // gap owner C: --probe-combat drives the real scene
     // The window is always created at 1280x720 (see run_interactive); the sidebar
@@ -12232,7 +12304,8 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                 }
         // Full roster-backed AI config OVER-WRITES the minimal one from the core.
         if (s.is_ai && ba.ok) {
-            world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash));
+            world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash, s.side,
+                                                    aiside::house_country(s.side, s.country, &rules)));
             // G-21 [RE: skirmish.md §1 Sliders]: the lobby Money seeds a house ONCE.
             // make_ai_config already holds it in the AI wallet; drop the
             // configure_skirmish_houses pool seed so step_ai_houses' take_income
@@ -16375,6 +16448,7 @@ int run_demo_saveload() {
 // G16 (agent G): --depth-survey (bridges / huts / garrisonable structures per MP map).
 #include "world_depth_survey.inc"
 #include "realplay_probe.inc"   // gap owner A: --probe-realplay (real GameScene harness)
+#include "ai_soak.inc"   // gap owner D: --ai-soak (real GameScene AI acceptance harness)
 #include "realplay_combat_probe.inc"   // gap owner C: --probe-combat (real GameScene harness)
 
 int main(int argc, char** argv) {
@@ -16493,6 +16567,8 @@ int main(int argc, char** argv) {
                 return run_demo_multihouse();
             } else if (arg == "--demo-skirmish") {
                 return run_demo_skirmish();
+            } else if (arg == "--ai-soak") {
+                return run_ai_soak(argc, argv);
             } else if (arg == "--demo-roster") {
                 return run_demo_roster();
             } else if (arg == "--demo-roster2") {

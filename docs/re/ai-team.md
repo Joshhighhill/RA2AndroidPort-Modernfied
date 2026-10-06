@@ -256,123 +256,77 @@ disband/liberate PROBABLE.**
 
 ---
 
-## §3 The FULL ScriptType action table
+## §3 The ScriptType action table (AMENDED by gap fix G-61, 2026-10)
 
-**Recovered mechanism:** the action number is **not** a small core switch — the
-classifier `FUN_006e30d0` enumerates **every valid action number the binary
-recognises** (all cases below; anything not listed returns `0` = the default/no
-special-argument bucket), and the *executor* is a **data-resident jump table** of
-per-action handler functions (the handlers `FUN_006e9640`, `FUN_006edd60`, …
-were found only as regroup callers — they have no code xrefs because the dispatch
-indexes a function-pointer array in `.data`). Valid action numbers run up to
-`0x90` (144). The classifier maps each action to an **argument-class code** (used
-by the describe formatter `FUN_006dc870` to interpret the argument as
-waypoint / techno-type / building / cell / number / house / string).
+> **Correction.** The previous version of this section took its numbering from
+> `FUN_006e30d0`. That function is the **map-trigger `[Actions]` argument
+> classifier** (it is called from `FUN_006dc870`, which the P9 hunt dumped as a
+> trigger-action helper, `p9out/actpre_006dc870.c:17`), **not** the team-script
+> executor, and its 0..0x90 case labels are TAction numbers. Every AI-2 opcode
+> number derived from it (8 = attack house, 9 = move to waypoint, 11 = move to
+> cell, 12 = guard, 14 = regroup, 53/54 = attack building/units, 57 = scatter,
+> 58 = timed guard, 63 = attack-move) was wrong, and the "stock-used" list did
+> not match the shipped `aimd.ini`. The old table is retired; the one below is
+> what `engine/script_actions.hpp` implements and the P10 campaign interpreter
+> shares.
 
-### Full enumeration of valid action numbers (CONFIRMED — `FUN_006e30d0`)
+**Executor (CONFIRMED, `D:\ra2-re\p10out\c13.log:29-33`).** TeamClass reads the
+current line's `(action, argument)` and does `CMP EAX,0x40 / JA <no-op> /
+JMP [EAX*4 + 0x6E94E4]` — a **65-entry jump table, actions 0..64**. `c14.log`
+dumps each handler; every anchor read agrees with the ModEnc / YRpp
+`TeamMissionType` numbering (campaign.md §7). A handler that finishes its line
+sets `team+0x80` ("step complete"); 49 additionally sets `team+0x84` (success).
 
-Every case label present in the classifier (hex), grouped by the argument-class
-code it returns. Actions **absent** from this switch are inert (fall to default).
+| # | name | handler evidence | AI-2 behaviour |
+|---:|---|---|---|
+| 0 | Attack quarry (arg = QuarryType) | `FUN_006ec5f0` | attack while a target of that class exists |
+| 1 | Attack waypoint | `FUN_006ebf00` | walk to the waypoint [RE-FALLBACK] |
+| 2 | Go berserk | handler **is** the shared epilogue (no-op, line never completes) | inert |
+| 3 | Move to waypoint | `FUN_006ebd30` | move, advance on CloseEnough arrival |
+| 4 | Move to cell | `x = arg % 128, y = arg / 128` → `FUN_005653d0` | move |
+| 5 | Guard area for arg × **15 frames** | `LEA ECX,[ECX+ECX*2]; LEA ECX,[ECX+ECX*4]` → timer +0x58 | timed guard |
+| 6 | Jump to line (arg **1-based**) | `ADD ECX,-2` → `FUN_00690fa0`, then the cursor advances | jump (consumes the tick) |
+| 7 / 23 | Player wins / loses | `FUN_004fc800` / `FUN_004fc9f0` | (campaign only) |
+| 8 / 9 / 14 / 43 | Unload / deploy / load / wait loaded | `FUN_006ee670` / `FUN_006eca30` / `FUN_006ec760` | inert (no AI transports) |
+| 10 | Follow friendlies | `FUN_006ed0b0` | inert |
+| 11 | Do mission (arg = YRpp Mission) | `FUN_006ecd40` | Hunt (15) → attack anything; other missions → guard in place |
+| 12 / 38 / 39 / 40 | Set/clear global, set/clear local | `PUSH 1/0` → `FUN_00689070` / `FUN_00689310` | (campaign only) |
+| 16 | Patrol to waypoint | `FUN_006ec240` | move [RE-FALLBACK] |
+| 20 / 37 | Change house / delete members | — | (campaign only) |
+| 21 | Scatter | every member `vfunc+0x174` | scatter, one-shot |
+| 46 | Attack enemy building (arg = type \| selector<<16) | `FUN_006ed870` | attack that building; advance when none |
+| 47 | Move to enemy building (same encoding) | `FUN_006ed950` | move; advance when none |
+| 49 | Success | `team+0x80 = 1; team+0x84 = 1` | **flag success and CONTINUE** (not a disband) |
+| 53 | Gather at enemy base | `FUN_006eec60` | move to the AISafeDistance ring (§2) |
+| 54 | Regroup at friendly base | `FUN_006eef70` | move to the own base centre |
+| 55 / 56 / 57 | Iron Curtain me / chrono prep | `FUN_006ef1d0` / `FUN_006ef3c0` / `FUN_006ef690` | inert (no AI SW team actions) |
+| 58 | Move to friendly building (same encoding as 46) | `FUN_006edb20` | move; advance when none |
+| 59 | (attack structure) | `FUN_006ebfd0` | inert |
+| 60..64 | for each member: if `vfunc(+0x33c..+0x34c)` → remove from team (`FUN_006e9dd0`), line complete | inline | inert (no member ever matches) |
 
-| arg-class code | action numbers (hex) |
-|---|---|
-| 0xd | 1, 2, 3, 6, 9, 0xd, 0xe, 0x24, 0x25, 0x26, 0x4a, 0x4b, 0x71, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7e, 0x82 |
-| 0xc | 4, 5, 7, 0x69 |
-| 9 | 8, 0x11, 0x12, 0x3b, 0x3f, 0x40, 0x41, 0x42, 0x59, 0x5a, 0x5e, 0x5f, 0x60, 0x65, 0x66, 0x6d, 0x70, 0x74, 0x80, 0x87, 0x89, 0x8c |
-| 2 | 0xa, 0x64, 0x75 |
-| 0x27 | 0xb, 0x67 |
-| 0xb | 0xc, 0x16, 0x35, 0x36 |
-| 3 | 0x13, 0x62 |
-| 1 | 0x14 |
-| 4 | 0x15 |
-| 10 (0xa) | 0x19, 0x1a, 0x1b, 0x27, 0x2c, 0x49, 0x4c, 0x4d, 0x4e, 0x4f, 0x54, 0x6e, 0x72, 0x7f, 0x8b, 0x8e, 0x8f, 0x90 |
-| 0x16 | 0x1c, 0x1d |
-| 0x10 | 0x1e, 0x55, 0x56, 0x57 |
-| 0x11 | 0x21, 0x22, 0x86 |
-| 0xf | 0x23 |
-| 0x15 | 0x28 |
-| 0x17 | 0x29 |
-| 0x18 | 0x2a |
-| 0x1b | 0x2b |
-| 0x1e | 0x30 |
-| 0x19 | 0x34 |
-| 0x1c | 0x37 |
-| 0x1d | 0x38, 0x39 |
-| 0x1f | 0x3a |
-| 0x1a | 0x46 |
-| 0x21 | 0x47, 0x48 |
-| 0x22 | 0x50, 0x6b |
-| 0x23 | 0x58 |
-| 0x26 | 0x63 |
-| 0x28 | 0x68 |
-| 0x2b | 0x6a, 0x73 |
-| 0x2c | 0x6c |
-| 0x2d | 0x7d |
-| 0x2e | 0x81, 0x84, 0x85 |
-| 0x2f | 0x83 |
-| default(0) | every action number not listed above (inert / unrecognised) |
+**Building-target argument (46/47/58).** Low word = the rulesmd
+`[BuildingTypes]` index (0-based list order — stock: `46,9` = NAPOWR, `47,7` =
+GAWEAP, `58,1` = GAREFN, `58,196623` = 0x3000F = NAREFN), high word = which
+instance (ModEnc: 0 least threat, 1 highest threat, 2 nearest, 3 farthest;
+threat is not modelled, 0 → nearest and 1 → farthest [RE-FALLBACK]).
 
-The argument-class codes tell the implementer **how to read the argument** (from
-`FUN_006dc870`): code `0`→waypoint (letter/number), `1`→ a lookup-by-id
-(`FUN_00720510`), `3`/`0x26`→ a name lookup (`FUN_007503b0`), `4`→ name lookup
-(`FUN_00751280`), `0xb`→ a waypoint field (team+0x50), `0x1a`→ team+0x4c,
-`0x27`→ a string (team+0x6d), `0x28`/`0xc`/`0x22`→ a techno/target id
-(team+0x30's +0x98), `0x2e`→ 8 raw numbers, `0x2f`/`0x2b`/`0x2d`→ a member ptr.
+**QuarryType (action 0's argument)** is YRpp's: 1 Anything, 2 Buildings,
+3 Harvesters, 4 Infantry, 5 Vehicles, 6 Factories, 7 Base defenses, 8 Threats,
+9 Power, 10 Occupiable, 11 Tech buildings — confirmed by the stock script
+names ("General Harvester Hunt" `0,3`, "General Factory Attack" `0,6`, "General
+Base Defense Attack" `0,7`, generic tails `0,2` then `0,1`). The previous
+0-based enum (0 = Anything) was off by one.
 
-### Semantics + implementable/inert split of the STOCK-USED actions
+**Stock `aimd.ini` census** (88 ScriptTypes, action: uses): 0:136, 49:54,
+58:49, 46:45, 54:34, 5:30, 47:24, 53:22, 11:16, 6:10, 8:6, 14:9, 43:9, 63:4,
+9:3, 55:3, 21:1, 57:1, 61:1, 62:1. Actions 1-4 do not occur in `aimd.ini`
+(they are map-script actions).
 
-The action numbers actually used across the stock `aimd.ini` are
-**0, 5, 6, 8, 9, 0xb, 0xc(12), 0xe(14), 0x15(21), 0x2b(43), 0x2e(46), 0x2f(47),
-0x31(49), 0x35(53), 0x36(54), 0x37(55), 0x39(57), 0x3a(58), 0x3d(61), 0x3e(62),
-0x3f(63)**. From the located handlers + standard RA2 ScriptType semantics
-(structurally confirmed by the handlers I read — attack/move-to-target/regroup):
-
-| action | semantics (RA2 ScriptType) | class |
-|---|---|---|
-| **0** | Attack **Quarry** type = argument (target-category, §5) | **implementable** (move-to-target + attack; quarry enum §5) |
-| **5** | Guard area for `argument` × (timed guard; **argument = 1/10-min ticks**, the timed-guard unit — see below) | **implementable** (guard/wait) |
-| **6** | **Jump to script line** = argument (loop/goto) | **implementable** (interpreter jump) |
-| 8 | Player-attack-house `argument` (all units attack house N) | implementable (retarget) |
-| 9 | Move to waypoint = argument | implementable (move) |
-| 0xb (11) | Move to cell/coord (argument = packed cell) | implementable (move) |
-| 0xc (12) | Guard area at current location | implementable (guard) |
-| 0xe (14) | Change script/regroup | implementable |
-| 0x15 (21) | Deploy (MCV/deployer) | implementable if deploy exists, else inert |
-| 0x2b (43) | Set team global / flag | implementable (interpreter state) |
-| 0x2e (46) | Load onto transports | **inert-required-subsystem-absent** (transport) |
-| 0x2f (47) | Unload transports | **inert-required-subsystem-absent** (transport) |
-| 0x31 (49) | **Set "AchievedGreatSuccess"/success flag then disband** (49,0 = end-of-script marker) | implementable (disband) |
-| 0x35 (53) | **Attack nearest enemy building** (guard-mode member class) | implementable (attack) |
-| 0x36 (54) | **Attack enemy structures / units near** | implementable (attack) |
-| 0x37 (55) | Move to enemy structure / assign target | implementable (move+attack) |
-| 0x39 (57) | Scatter | implementable (scatter) |
-| 0x3a (58) | **Guard for `argument` ticks at a location** (the timed-guard opcode; argument in the same 1/10-min unit as action 5) | implementable (timed guard) |
-| 0x3d (61) | Iron-Curtain self / support-power team action | **inert-required-subsystem-absent** (superweapon) |
-| 0x3e (62) | Chronoshift / teleport team action | **inert-required-subsystem-absent** (chronosphere) |
-| 0x3f (63) | Attack **Quarry** with regroup (attack-move to enemy) | implementable (attack-move) |
-
-The remaining ~70 valid actions (transport chains 0x2e/0x2f/0x50/0x6b, aircraft
-0x1e/0x55–0x57, superweapon/support-power 0x3d/0x3e/0x59–0x60, droppod, gather-at-
-enemy variants, talk-bubble/flash cosmetic) are **inert-required-subsystem-absent**
-until their subsystem lands; the implementable core for AI-2 is the
-move / attack-quarry / guard / timed-guard / wait / scatter / regroup / jump set.
-
-**Timed-guard argument unit (PROBABLE):** actions 5 and 0x3a take a duration
-argument; stock scripts use `5,10` repeatedly (guard 10 units). RA2's guard/wait
-argument is in **tenths of a minute** (so `10` ≈ 1 minute); the exact
-tick→frame conversion was not isolated to a literal → **[RE-FALLBACK: argument ×
-6 s = argument × 90 frames at 15 Hz, i.e. `10` → ~1 min].**
-
-**Jump-target encoding (CONFIRMED):** action 6 argument = the **0-based line
-index** within the same ScriptType to continue from (a plain script-line jump;
-the classifier puts 6 in the waypoint/number bucket and stock `…6,1` loops back
-to line 1).
-
-**Confidence: full valid-action-number enumeration CONFIRMED (`FUN_006e30d0`, 114
-cases); argument-class per action CONFIRMED; the implementable/inert split
-CONFIRMED for the stock-used actions (handlers read) and PROBABLE for the
-unused-but-valid ones (standard RA2 semantics, subsystem-gated); timed-guard unit
-[RE-FALLBACK]; jump-line encoding CONFIRMED.**
+**Confidence:** table bounds and anchors CONFIRMED (c13/c14); guard unit ×15,
+1-based jump, cell decode, 49 = flag-and-continue CONFIRMED from the handler
+bytes; building-argument encoding CONFIRMED against stock data; QuarryType
+enum PROBABLE (YRpp + stock names); 1/16 as plain moves, 11 mission mapping and
+the threat selectors [RE-FALLBACK].
 
 ---
 

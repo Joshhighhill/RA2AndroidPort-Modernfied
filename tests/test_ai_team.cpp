@@ -16,11 +16,11 @@ AimdData make_aimd(bool full = false) {
     d.taskforces.push_back(tf);
     ScriptType sc;
     sc.id = "SC1";
-    sc.actions = {{kOpMoveToWaypoint, 0},            // pc 0: move to waypoint 0 (op 9)
+    sc.actions = {{kOpMoveToWaypoint, 0},            // pc 0: move to waypoint 0 (op 3)
                   {kOpAttackQuarry, kQuarryAnything},  // pc 1: attack anything (op 0)
-                  {kOpTimedGuard, 2},                // pc 2: timed guard 2 -> 180 frames
-                  {46, 0},                           // pc 3: transport load 0x2e -> Inert
-                  {kOpDisband, 0}};                  // pc 4: disband (op 0x31)
+                  {kOpTimedGuard, 2},                // pc 2: timed guard 2 -> 30 frames
+                  {kSaLoad, 0},                      // pc 3: load onto transport (14) -> Inert
+                  {kOpSuccess, 0}};                  // pc 4: success flag (49), continues
     d.scripts.push_back(sc);
     TeamType tt;
     tt.id = "TT1";
@@ -259,13 +259,13 @@ TEST_CASE("ai_team: attack-quarry emits while a target exists, advances when ext
     CHECK(t.script_pc == 2);                     // advanced to guard
 }
 
-TEST_CASE("ai_team: timed-guard holds for arg x 90 frames then advances") {
+TEST_CASE("ai_team: timed-guard holds for arg x 15 frames then advances") {
     AimdData d = make_aimd();
     TeamInstance t = make_team();
     std::uint32_t rng = 1u;
     claim_full(t);
     t.state = TeamState::Executing;
-    t.script_pc = 2;                             // timed guard 2 -> 180 frames (12 s) [§3]
+    t.script_pc = 2;                             // timed guard 2 -> 30 frames [c14 idx 5]
     TeamView v = full_view(true);
     int guard_ticks = 0;
     while (t.script_pc == 2) {
@@ -275,9 +275,9 @@ TEST_CASE("ai_team: timed-guard holds for arg x 90 frames then advances") {
             CHECK(c.radius == kAiGatherRadius);
             ++guard_ticks;
         }
-        REQUIRE(guard_ticks < 200);              // 2 x 90 = 180 frames + slack
+        REQUIRE(guard_ticks < 50);               // 2 x 15 = 30 frames + slack
     }
-    CHECK(guard_ticks >= 179);                   // held ~180 frames at 15 Hz
+    CHECK(guard_ticks >= 29);                    // held ~30 frames at 15 Hz
     CHECK(t.script_pc == 3);
 }
 
@@ -287,17 +287,17 @@ TEST_CASE("ai_team: inert opcode is a logged skip that advances the pc") {
     std::uint32_t rng = 1u;
     claim_full(t);
     t.state = TeamState::Executing;
-    t.script_pc = 3;                             // action 0x2e=46 (transport load) -> Inert
+    t.script_pc = 3;                             // action 14 (load onto transport) -> Inert
     TeamView v = full_view(true);
     const TeamCommand c = step_team(t, v, d, rng, kDt);
     CHECK(c.kind == TeamCommand::Kind::Inert);
-    CHECK(c.opcode == 46);                       // [RE: ai-team.md §3; spec §2]
+    CHECK(c.opcode == kSaLoad);                  // [RE: ai-team.md §3; script_actions.hpp]
     CHECK(t.script_pc == 4);
 }
 
-TEST_CASE("ai_team: jump consumes the tick; disband opcode ends the team") {
+TEST_CASE("ai_team: jump consumes the tick; success flags and continues") {
     AimdData d = make_aimd();
-    d.scripts[0].actions[3] = {kOpJumpToLine, 1};  // pc 3: jump -> line 1
+    d.scripts[0].actions[3] = {kOpJumpToLine, 2};  // pc 3: jump to line 2 (1-based) -> pc 1
     TeamInstance t = make_team();
     std::uint32_t rng = 1u;
     claim_full(t);
@@ -307,8 +307,13 @@ TEST_CASE("ai_team: jump consumes the tick; disband opcode ends the team") {
     (void)step_team(t, v, d, rng, kDt);
     CHECK(t.script_pc == 1);                     // jumped, one action this tick
     CHECK(t.state == TeamState::Executing);
-    // The disband opcode (0x31=49) at pc 4 ends the team [RE: ai-team.md §3].
+    // 49 sets the success flag and the script CONTINUES [c14 idx 49]; the
+    // team then disbands only by running off the end.
     t.script_pc = 4;
+    (void)step_team(t, v, d, rng, kDt);
+    CHECK(t.completed_success);
+    CHECK(t.state == TeamState::Executing);
+    CHECK(t.script_pc == 5);
     (void)step_team(t, v, d, rng, kDt);
     CHECK(t.state == TeamState::Disbanding);
     // A script that runs off the end also disbands.
@@ -673,4 +678,112 @@ TEST_CASE("ai_team: real rulesmd [AI] team knobs match the recovered constants")
           doctest::Approx((double)ra2engine::kAiTeamDelayFrames[0]));
     CHECK(rules.section_double("General", "AISafeDistance", -1.0) ==
           doctest::Approx((double)ra2engine::kAiSafeDistance));
+}
+
+// ---------------------------------------------------------------------------
+// G-61: the real 0..64 executor numbering (script_actions.hpp, c14.log).
+TEST_CASE("ai_team: classify_op follows the 0x6E94E4 executor table") {
+    CHECK(classify_op(0) == OpClass::AttackQuarry);
+    CHECK(classify_op(3) == OpClass::MoveWaypoint);
+    CHECK(classify_op(4) == OpClass::MoveCell);
+    CHECK(classify_op(5) == OpClass::TimedGuard);
+    CHECK(classify_op(6) == OpClass::Jump);
+    CHECK(classify_op(11) == OpClass::DoMission);
+    CHECK(classify_op(16) == OpClass::MoveWaypoint);
+    CHECK(classify_op(21) == OpClass::Scatter);
+    CHECK(classify_op(46) == OpClass::AttackBuilding);
+    CHECK(classify_op(47) == OpClass::MoveEnemyBuilding);
+    CHECK(classify_op(49) == OpClass::Success);
+    CHECK(classify_op(53) == OpClass::GatherEnemy);
+    CHECK(classify_op(54) == OpClass::RegroupBase);
+    CHECK(classify_op(58) == OpClass::MoveFriendlyBuilding);
+    // Transport / superweapon / berserk / removal / out-of-table -> Inert.
+    for (int op : {2, 8, 9, 12, 14, 43, 55, 57, 60, 63, 64, 65, 0x90})
+        CHECK(classify_op(op) == OpClass::Inert);
+    // Quarry enum is YRpp QuarryType (1-based "Anything").
+    CHECK(kQuarryAnything == 1);
+    CHECK(kQuarryBuildings == 2);
+    CHECK(kQuarryHarvesters == 3);
+    CHECK(kQuarryFactories == 6);
+    CHECK(kQuarryDefenses == 7);
+}
+
+TEST_CASE("ai_team: stock attack script 54/53/0/49/0 runs regroup, gather, attack, success") {
+    AimdData d = make_aimd();
+    d.scripts[0].actions = {{kSaGatherBase, 0}, {kSaGatherEnemy, 0}, {kSaAttack, kQuarryFactories},
+                            {kSaSuccess, 0}, {kSaAttack, kQuarryAnything}};
+    TeamInstance t = make_team();
+    std::uint32_t rng = 7u;
+    claim_full(t);
+    t.state = TeamState::Executing;
+    TeamView v = full_view(true);
+    // 54: move to own base centre.
+    TeamCommand c = step_team(t, v, d, rng, kDt);
+    CHECK(c.kind == TeamCommand::Kind::MoveTeam);
+    CHECK(c.x == v.base_x);
+    CHECK(c.y == v.base_y);
+    t.gather_x = 12; t.gather_y = 10;               // caller's realized focus (members there)
+    c = step_team(t, v, d, rng, kDt);
+    CHECK(t.script_pc == 1);
+    // 53: move to a ring cell kAiSafeDistance from the enemy base.
+    c = step_team(t, v, d, rng, kDt);
+    CHECK(c.kind == TeamCommand::Kind::MoveTeam);
+    const double r = std::hypot(c.x - v.enemy_x, c.y - v.enemy_y);
+    CHECK(r == doctest::Approx((double)kAiSafeDistance).epsilon(0.1));
+    t.gather_x = 12; t.gather_y = 10;
+    (void)step_team(t, v, d, rng, kDt);
+    CHECK(t.script_pc == 2);
+    // 0,6: factories exist -> attack command with quarry 6.
+    v.quarry_exists = true;
+    c = step_team(t, v, d, rng, kDt);
+    CHECK(c.kind == TeamCommand::Kind::AttackQuarry);
+    CHECK(c.quarry == kQuarryFactories);
+    // Factories gone -> advance; 49 flags success and continues to 0,1.
+    v.quarry_exists = false;
+    (void)step_team(t, v, d, rng, kDt);
+    (void)step_team(t, v, d, rng, kDt);
+    CHECK(t.completed_success);
+    CHECK(t.state == TeamState::Executing);
+    CHECK(t.script_pc == 4);
+}
+
+TEST_CASE("ai_team: building-typed 46/47/58 and move-to-cell 4") {
+    AimdData d = make_aimd();
+    d.scripts[0].actions = {{kSaMoveFriendlyBuilding, 0x20001}, {kSaAttackEnemyBuilding, 9},
+                            {kSaMoveCell, 5 * 128 + 7}, {kSaDoMission, kMissionHunt}};
+    TeamInstance t = make_team();
+    std::uint32_t rng = 7u;
+    claim_full(t);
+    t.state = TeamState::Executing;
+    TeamView v = full_view(true);
+    // 58 with no such building -> advance at once.
+    v.building_found = false;
+    (void)step_team(t, v, d, rng, kDt);
+    CHECK(t.script_pc == 1);
+    // 46 with a target -> attack with the raw building argument.
+    t.script_pc = 0;
+    v.building_found = true; v.building_x = 3; v.building_y = 4;
+    TeamCommand c = step_team(t, v, d, rng, kDt);
+    CHECK(c.kind == TeamCommand::Kind::MoveTeam);
+    CHECK(c.x == 3);
+    CHECK(c.y == 4);
+    t.script_pc = 1;
+    t.move_issued = false;
+    v.quarry_exists = true;
+    c = step_team(t, v, d, rng, kDt);
+    CHECK(c.kind == TeamCommand::Kind::AttackQuarry);
+    CHECK(c.building_arg == 9);
+    // 4: x = arg % 128, y = arg / 128.
+    t.script_pc = 2;
+    c = step_team(t, v, d, rng, kDt);
+    CHECK(c.kind == TeamCommand::Kind::MoveTeam);
+    CHECK(c.x == 7);
+    CHECK(c.y == 5);
+    // 11,15 (hunt) -> attack anything, line complete.
+    t.script_pc = 3;
+    t.move_issued = false;
+    c = step_team(t, v, d, rng, kDt);
+    CHECK(c.kind == TeamCommand::Kind::AttackQuarry);
+    CHECK(c.quarry == kQuarryAnything);
+    CHECK(t.script_pc == 4);
 }
