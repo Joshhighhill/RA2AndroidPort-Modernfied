@@ -175,6 +175,10 @@
                 }
             return false;
         }
+        if (args.size() == 3 && args[0] == "pan") {   // move the camera by (dx, dy)
+            input_.pan(std::atoi(args[1].c_str()), std::atoi(args[2].c_str()));
+            return true;
+        }
         if (args.size() == 2 && args[0] == "credits") {
             player_credits_ = std::atof(args[1].c_str());
             return true;

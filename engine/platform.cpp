@@ -162,6 +162,9 @@ bool Platform::poll(InputEvent& ev) {
         case SDL_KEYDOWN:
             key_event_from_sdl(e.key.keysym.sym, e.key.keysym.mod, ev);
             ev.t_ms = e.key.timestamp;
+            // A held command key must not re-fire (D would toggle deployers
+            // every repeat); only the editing keys (kKey*) auto-repeat.
+            if (e.key.repeat && ev.key == 0) ev.kind = InputEvent::None;
             break;
         case SDL_TEXTINPUT:
             ev.kind = InputEvent::Text;

@@ -76,10 +76,18 @@ struct SidebarLayout {
     // view_w/view_h = window size; `types` = roster indices to show, already
     // filtered (cameo != "" AND tech_level > 0) and ordered by tech_level
     // then roster order. Row count N = floor((view_h - 234 - side3_h)/50),
-    // min 1 [RE: construction.md §11a]; cells beyond 2*N are not laid out
-    // (strip scrolling is out of scope with a 3-cameo roster).
+    // min 1 [RE: construction.md §11a]; only the 2*N cells from top_row are
+    // laid out (G-12 strip scrolling).
+    // G-12: top_row scrolls the strip (StripClass TopRowIndex): cells start at
+    // types[2*top_row]; the caller clamps it with max_top_row().
     static SidebarLayout compute(int view_w, int view_h,
-                                 const std::vector<int>& types);
+                                 const std::vector<int>& types, int top_row = 0);
+    // Largest useful top_row for count cameos (0 when they all fit).
+    int max_top_row(int count) const {
+        const int rows = (count + 1) / 2;
+        return rows > side2_rows ? rows - side2_rows : 0;
+    }
+    int top_row = 0;
 
     int cameo_at(int px, int py) const;   // index into cameos, or -1
     int tab_at(int px, int py) const;     // 0..3, or -1

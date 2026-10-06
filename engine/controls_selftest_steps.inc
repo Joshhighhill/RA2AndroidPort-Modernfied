@@ -114,5 +114,51 @@ void add_controls_selftest_steps(STest& t) {
     S.push_back(st_expect_ge("selb", 0));
     S.push_back(st_shot("game_building_selected.png"));
     S.push_back(st_click_own_rel(2, 2, true));
-    S.push_back(st_expect("selb", -1));    // (hotkey / group / minimap / queue / touch steps follow)
+    S.push_back(st_expect("selb", -1));    // --- G-04: KeyboardMD.ini hotkeys through the real event path ---
+    S.push_back({"remember cam", [](STest& t, Scene& s, int) {
+                     t.mem["cam_x"] = STest::pv(s, "cam_x");
+                     return true;
+                 }});
+    S.push_back(st_click_own_rel(12, 12, true));          // (deselect)
+    S.push_back(st_click("unit:0:GI:0"));
+    S.push_back(st_key("Ctrl+1 (TeamCreate_1)", SDLK_1, /*ctrl=*/true));
+    S.push_back(st_click_own_rel(12, 12, true));
+    S.push_back(st_expect("sel", 0));
+    S.push_back(st_key("1 (TeamSelect_1)", SDLK_1));
+    S.push_back(st_expect("sel", 1));
+    S.push_back(st_key("T (TypeSelect)", SDLK_t));
+    S.push_back({"T selected every on-screen GI", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "sel") == STest::pv(s, "units.0.GI") ||
+                            STest::pv(s, "sel") > 1;
+                 }});
+    S.push_back(st_click_own_rel(6, 0));                   // move...
+    S.push_back(st_expect_ge("moving.0", 1, 5));
+    S.push_back(st_key("S (StopObject)", SDLK_s));
+    S.push_back(st_expect("moving.0", 0, 30));
+    S.push_back(st_key("W (DefenseTab)", SDLK_w));
+    S.push_back(st_expect("tab", 1));
+    S.push_back(st_key("E (InfantryTab)", SDLK_e));
+    S.push_back(st_expect("tab", 2));
+    S.push_back(st_key("R (UnitTab)", SDLK_r));
+    S.push_back(st_expect("tab", 3));
+    S.push_back(st_key("Q (StructureTab)", SDLK_q));
+    S.push_back(st_expect("tab", 0));
+    S.push_back(st_key("K (ToggleRepair)", SDLK_k));
+    S.push_back(st_expect("mode", 1));
+    S.push_back(st_key("L (ToggleSell)", SDLK_l));
+    S.push_back(st_expect("mode", 2));
+    S.push_back(st_click_own_rel(12, 12, true));          // right-click cancels the mode
+    S.push_back(st_expect("mode", 0));
+    S.push_back(st_key("Ctrl+F1 (SetView1)", SDLK_F1, true));
+    S.push_back(st_cheat({"pan", "300", "200"}));
+    S.push_back(st_key("F1 (View1)", SDLK_F1));
+    S.push_back({"View1 restored the camera", [](STest& t, Scene& s, int) {
+                     return STest::pv(s, "cam_x") == t.mem["cam_x"];
+                 }});
+    S.push_back(st_cheat({"pan", "-900", "-400"}));
+    S.push_back(st_key("H (CenterBase)", SDLK_h));
+    S.push_back(st_shot("game_center_base.png"));
+    S.push_back({"H centred the camera near the start", [](STest& t, Scene& s, int) {
+                     return std::llabs(STest::pv(s, "cam_x") - t.mem["cam_x"]) < 400;
+                 }});    // (minimap / queue / touch steps follow)
 }

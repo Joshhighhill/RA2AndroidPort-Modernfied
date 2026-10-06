@@ -48,6 +48,7 @@
 #include "flight.hpp"       // altitude_to_screen_dy (CB-2 raised-sprite draw)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
+#include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
 #include "play_script.hpp"   // G0 harness: unit selector parsing (game_scene_play.inc)
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
@@ -4571,6 +4572,7 @@ public:
     void handle(const ra2engine::InputEvent& ev) override {
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
+        if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
@@ -4594,6 +4596,7 @@ public:
                     input_.set_sell_mode(-1);
                     return;
                 }
+                if (strip_button_click(ev.x, ev.y)) return;   // G-12 r-up / r-dn
                 // Tab-click switching: recompute the buildable list + layout.
                 const int tab = lay_.tab_at(ev.x, ev.y);
                 if (tab >= 0 && tab != active_tab_) {
@@ -4604,12 +4607,12 @@ public:
                 }
                 // Cameo start/cancel/place dispatched by the active tab.
                 const int ci = lay_.cameo_at(ev.x, ev.y);
-                if (ci >= 0 && ci < static_cast<int>(buildable_.size())) {
+                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size())) {   // G-12: scrolled strip
                     if (active_tab_ >= 2) {
                         const ra2engine::QueueCat cat = (active_tab_ == 3)
                             ? ra2engine::QueueCat::Vehicle
                             : ra2engine::QueueCat::Infantry;
-                        const int uslot = buildable_[ci];   // unit-roster index
+                        const int uslot = lay_.cameos[ci].type;   // unit-roster index
                         const std::vector<int>& ft =
                             (cat == ra2engine::QueueCat::Vehicle) ? veh_ft_ : inf_ft_;
                         if (queues_.producing(cat) == uslot) {
@@ -4629,7 +4632,7 @@ public:
                             ? ra2engine::QueueCat::Defense
                             : ra2engine::QueueCat::Structure;
                         ra2engine::ProductionState& bq = queues_.state(bcat);
-                        const int type = buildable_[ci];
+                        const int type = lay_.cameos[ci].type;
                         if (bq.slot.type == type && bq.slot.ready) {
                             place_cat_ = bcat;
                             input_.begin_placement(type, ba_.roster[type].fw, ba_.roster[type].fh);
@@ -4708,22 +4711,9 @@ public:
             scroll_tick_accum_ = 0.0;
         }
 
-        // CB-1 unload key (D, edge-detected) -> unload selected own transports.
-        const bool unload_key = ks[SDL_SCANCODE_D] != 0;
-        if (unload_key && !prev_unload_key_) {
-            world_.order_unload_selected();
-            // P4 [RE: abilities.md §A]: the same deploy key toggles the
-            // selected player Deployers (desolator radiation stance).
-            for (int i = 0; i < (int)world_.units().size(); ++i)
-                if (world_.units()[i].selected && world_.units()[i].house == 0)
-                    world_.order_deploy(i);
-        }
-        prev_unload_key_ = unload_key;
-
-        // CB-4 Superweapons: N arms SW-targeting when house 0's SW is READY.
-        const bool sw_key = ks[SDL_SCANCODE_N] != 0;
-        if (sw_key && !prev_sw_key_ && world_.sw_ready(0)) input_.arm_superweapon();
-        prev_sw_key_ = sw_key;
+        // G-04: D (DeployObject) and the rest of KeyboardMD.ini [Hotkey] are key
+        // EVENTS dispatched by hotkey() (game_scene_controls.inc). N is NextObject
+        // in the original, not the superweapon (armed from its cameo).
 
         now_ = SDL_GetTicks();   // frame clock for draw_sidebar's animation timing
         // Repair wallet bridge [RE: repair-sell.md §A2/§A3]: the wrench charges
@@ -5185,8 +5175,6 @@ private:
     // --- audio ---
     AudioSystem          audio_;
     std::vector<std::pair<double, double>> prev_audio_state_;
-    bool                 prev_unload_key_ = false;
-    bool                 prev_sw_key_ = false;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
     std::vector<int>     bstates_;

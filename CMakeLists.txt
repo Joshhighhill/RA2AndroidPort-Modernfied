@@ -95,6 +95,8 @@ target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp
 # source above) rather than engine/iso_renderer.cpp so this stays SDL-free.
 target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp engine/input_original.cpp
     tests/test_input_original.cpp)
+# G-04: KeyboardMD.ini hotkey table.
+target_sources(ra2assets_tests PRIVATE tests/test_hotkeys.cpp engine/hotkeys.cpp)
 # occupancy.cpp is a pure C++17 cell-ownership grid (no SDL) used by the
 # multi-unit movement/collision logic; compiled into both this test binary and
 # ra2engine from one source of truth (same pattern as pathfind.cpp/world.cpp).
