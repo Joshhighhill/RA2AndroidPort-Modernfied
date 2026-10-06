@@ -82,6 +82,7 @@ public:
                 const std::vector<ra2engine::World::VetEvent>& vet,
                 const std::vector<ra2engine::ProjectileEvent>& pev) {
         ++frame_;
+        g_pres_tick = frame_;
         fx_.step(dt);
         for (const ra2engine::ProjectileEvent& e : pev)
             if (e.kind == ra2engine::ProjectileEvent::Detonate) {
@@ -420,6 +421,7 @@ private:
                 ba.roster[b.type].conyard)
                 yard = true;
         if (low && !low_power_ && yard) snd_.eva("EVA_LowPower");
+        g_pres_low_power = low;
         low_power_ = low;
     }
 

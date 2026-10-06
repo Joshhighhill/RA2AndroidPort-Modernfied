@@ -2456,6 +2456,14 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
                                       ra2engine::wall_stage(b.hp, b.max_hp, condition_yellow));
     }
     if (frame < 0 || frame >= shp.count()) return;
+    // G-85: ActiveAnim/Bib/damage-fire overlays (live game only; g_fx null in gates).
+    const bool overlay = g_fx && !buildup && b.state == ra2engine::Building::State::Idle;
+    const bool bdamaged = b.max_hp > 0 && b.hp <= condition_yellow * b.max_hp;
+    const ra2assets::Palette opal = overlay ? ra2engine::house_draw_palette(ba.unit_pal, b.house) : ba.unit_pal;
+    const std::string& oimg = def.image.empty() ? def.id : def.image;
+    if (overlay)
+        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
+                              ra2engine::house_draw_key(b.house), W, H, 0);
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     SDL_Rect dst{fcx - shp.width() / 2 + f.x, fcy - shp.height() / 2 + f.y, f.w, f.h};
     if (!(dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H)) {
@@ -2470,6 +2478,9 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
     }
+    if (overlay)
+        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
+                              ra2engine::house_draw_key(b.house), W, H, 1);
 
     // Foundation-width HP bar when damaged (render-only; buildings aren't
     // selectable so there's no selection marker).

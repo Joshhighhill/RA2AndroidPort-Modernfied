@@ -63,6 +63,7 @@ public:
 
     void init(const std::string& dir, const ra2assets::MixFile& ra2, const Ini& rules_ini,
               const Ini& art_ini) {
+        ra2_ = &ra2;
         rules_ = &rules_ini;
         art_ = &art_ini;
         try { conquer_ = std::make_unique<MixFile>(ra2.open_nested("conquer.mix")); } catch (...) {}
@@ -116,6 +117,84 @@ public:
         return &it->second;
     }
 
+    // ---- G-85 building anims ------------------------------------------------
+    // [RE: presentation.md §6] ActiveAnim/ActiveAnimTwo/Three/Four (+ the
+    // *Damaged variant below ConditionYellow), drawn at the building's
+    // anchor + the slot's X/Y pixel offset, timed by the anim's own [Anim]
+    // Rate/Loop keys; BibShape under the building; DamageFireTypes at
+    // DamageFireOffset0..7 while damaged. Art resolves like the building's
+    // (NewTheater candidates over the theater mixes).
+    struct BldAnims {
+        struct Slot { const FxAnimType* t = nullptr; const FxAnimType* dmg = nullptr; int x = 0, y = 0; bool powered = true; };
+        std::vector<Slot> slots;
+        std::shared_ptr<ra2assets::ShpFile> bib;
+        std::vector<std::pair<int, int>> fire_offsets;
+    };
+    const BldAnims& building(const std::string& image) {
+        auto it = bld_.find(image);
+        if (it != bld_.end()) return it->second;
+        BldAnims a;
+        static const char* kSlots[] = {"ActiveAnim", "ActiveAnimTwo", "ActiveAnimThree", "ActiveAnimFour"};
+        for (const char* s : kSlots) {
+            const std::string n = aget(image, s);
+            if (n.empty()) continue;
+            BldAnims::Slot sl;
+            sl.t = theater_type(n);
+            sl.dmg = theater_type(aget(image, std::string(s) + "Damaged"));
+            sl.x = std::atoi(aget(image, std::string(s) + "X").c_str());
+            sl.y = std::atoi(aget(image, std::string(s) + "Y").c_str());
+            const std::string pw = pres_lower(aget(image, std::string(s) + "Powered"));
+            sl.powered = pw.empty() || pw[0] == 'y' || pw[0] == 't';
+            if (sl.t) a.slots.push_back(sl);
+        }
+        const std::string bib = aget(image, "BibShape");
+        if (!bib.empty()) a.bib = theater_shp(bib);
+        for (int i = 0; i < 8; ++i) {
+            const std::string v = aget(image, "DamageFireOffset" + std::to_string(i));
+            if (v.empty()) continue;
+            const std::size_t k = v.find(',');
+            if (k == std::string::npos) continue;
+            a.fire_offsets.push_back({std::atoi(v.c_str()), std::atoi(v.c_str() + k + 1)});
+        }
+        std::cerr << "[fx] building " << image << " anims=" << a.slots.size() << " bib=" << (a.bib ? 1 : 0)
+                  << " fires=" << a.fire_offsets.size() << "\n";
+        return bld_.emplace(image, std::move(a)).first->second;
+    }
+    std::vector<std::string> damage_fires() { return split(rget("General", "DamageFireTypes")); }
+    const FxAnimType* theater_type(const std::string& name) {
+        if (name.empty()) return nullptr;
+        if (const FxAnimType* t = type(name)) return t;
+        // NewTheater building anims live in the theater mixes.
+        const std::string key = pres_upper(name);
+        auto shp = theater_shp(aget(key, "Image").empty() ? key : aget(key, "Image"));
+        if (!shp) return nullptr;
+        auto t = std::make_unique<FxAnimType>();
+        fill_type(*t, key, shp);
+        const FxAnimType* raw = t.get();
+        types_[key] = std::move(t);
+        return raw;
+    }
+    std::shared_ptr<ra2assets::ShpFile> theater_shp(const std::string& image) {
+        if (!ra2_) return nullptr;
+        const ra2assets::TheaterChain& ch = art_chain();
+        for (const auto& c : ra2assets::theater_candidates(image, ch.letter, ch.iso_mix, ch.art_mix, ".shp")) {
+            MixFile* m = nested(c.mix);
+            if (!m) continue;
+            if (const MixEntry* e = m->find(c.file)) {
+                try { return std::make_shared<ra2assets::ShpFile>(ShpFile::load(m->read(*e))); } catch (...) {}
+            }
+        }
+        return nullptr;
+    }
+    // Looping frame for building anims (they loop until the building changes).
+    static int loop_frame(const FxAnimType& t, long tick) {
+        if (t.delay <= 0) return t.start;
+        long step = tick / t.delay;
+        const long first = t.loop_end - t.start;
+        if (step < first) return static_cast<int>(t.start + step);
+        const long span = std::max(1, t.loop_end - t.loop_start);
+        return static_cast<int>(t.loop_start + (step - first) % span);
+    }
     // Loads (once) the anim type `name`; nullptr when its SHP is missing.
     const FxAnimType* type(const std::string& name) {
         if (name.empty()) return nullptr;
@@ -127,29 +206,32 @@ public:
         if (image.empty()) image = key;
         if (auto shp = load_shp(image)) {
             t = std::make_unique<FxAnimType>();
-            t->name = key;
-            t->shp = shp;
-            const bool shadow = pres_lower(aget(key, "Shadow")).rfind("y", 0) == 0;
-            t->frames = shadow ? std::max(1, shp->count() / 2) : shp->count();
-            t->translucent = pres_lower(aget(key, "Translucent")).rfind("y", 0) == 0;
-            t->report = aget(key, "Report");
-            auto num = [&](const char* k, int d) {
-                const std::string v = aget(key, k);
-                return v.empty() ? d : std::atoi(v.c_str());
-            };
-            const int rate = num("Rate", 0);
-            t->delay = rate > 0 ? (rate > 900 ? 0 : 900 / rate) : 1;
-            t->start = std::clamp(num("Start", 0), 0, t->frames - 1);
-            t->end = std::clamp(num("End", t->frames), t->start + 1, t->frames);
-            t->loop_start = std::clamp(num("LoopStart", t->start), t->start, t->end - 1);
-            t->loop_end = std::clamp(num("LoopEnd", t->end), t->loop_start + 1, t->end);
-            const int lc = num("LoopCount", 1);
-            t->loops = lc < 0 ? 255 : std::max(1, lc);
-            t->next = aget(key, "Next");
+            fill_type(*t, key, shp);
         }
         const FxAnimType* raw = t.get();
         types_[key] = std::move(t);
         return raw;
+    }
+    void fill_type(FxAnimType& t, const std::string& key, std::shared_ptr<ra2assets::ShpFile> shp) {
+        t.name = key;
+        t.shp = shp;
+        const bool shadow = pres_lower(aget(key, "Shadow")).rfind("y", 0) == 0;
+        t.frames = shadow ? std::max(1, shp->count() / 2) : shp->count();
+        t.translucent = pres_lower(aget(key, "Translucent")).rfind("y", 0) == 0;
+        t.report = aget(key, "Report");
+        auto num = [&](const char* k, int d) {
+            const std::string v = aget(key, k);
+            return v.empty() ? d : std::atoi(v.c_str());
+        };
+        const int rate = num("Rate", 0);
+        t.delay = rate > 0 ? (rate > 900 ? 0 : 900 / rate) : 1;
+        t.start = std::clamp(num("Start", 0), 0, t.frames - 1);
+        t.end = std::clamp(num("End", t.frames), t.start + 1, t.frames);
+        t.loop_start = std::clamp(num("LoopStart", t.start), t.start, t.end - 1);
+        t.loop_end = std::clamp(num("LoopEnd", t.end), t.loop_start + 1, t.end);
+        const int lc = num("LoopCount", 1);
+        t.loops = lc < 0 ? 255 : std::max(1, lc);
+        t.next = aget(key, "Next");
     }
     std::shared_ptr<ra2assets::ShpFile> projectile_shp(const std::string& image) {
         auto it = proj_shps_.find(image);
@@ -193,7 +275,8 @@ public:
     }
     // Centered SHP frame blit with anim.pal (translucent -> 50 %).
     void blit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::ShpFile& shp,
-              const std::string& tag, int fr, int cx, int cy, bool translucent, int W, int H) {
+              const std::string& tag, int fr, int cx, int cy, bool translucent, int W, int H,
+              const ra2assets::Palette* pal_override = nullptr) {
         if (fr < 0 || fr >= shp.count()) return;
         const ra2assets::ShpFile::Frame f = shp.frame_info(fr);
         if (f.w <= 0 || f.h <= 0) return;
@@ -203,7 +286,8 @@ public:
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
         if (!tex) {
             const std::vector<uint8_t> idx = shp.decode_indexed(fr);
-            tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, pal()));
+            tex = static_cast<SDL_Texture*>(
+                tc.get(key, idx.data(), f.w, f.h, pal_override ? *pal_override : pal()));
         }
         SDL_SetTextureAlphaMod(tex, translucent ? 128 : 255);
         SDL_RenderCopy(ren, tex, nullptr, &dst);
@@ -242,6 +326,18 @@ private:
         return nullptr;
     }
 
+    MixFile* nested(const std::string& name) {
+        auto it = nested_.find(name);
+        if (it != nested_.end()) return it->second.get();
+        std::unique_ptr<MixFile> m;
+        try { m = std::make_unique<MixFile>(ra2_->open_nested(name)); } catch (...) {}
+        MixFile* raw = m.get();
+        nested_.emplace(name, std::move(m));
+        return raw;
+    }
+    const ra2assets::MixFile* ra2_ = nullptr;
+    std::map<std::string, std::unique_ptr<MixFile>> nested_;
+    std::map<std::string, BldAnims> bld_;
     const Ini* rules_ = nullptr;
     const Ini* art_ = nullptr;
     std::unique_ptr<MixFile> conquer_, conqmd_;
@@ -278,4 +374,46 @@ bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
     }
     g_fx->blit(ren, tc, *shp, "proj:" + w->proj_image, fr, gx, sy, false, W, H);
     return true;
+}
+
+long g_pres_tick = 0;          // presentation game-frame clock (Presentation::update)
+bool g_pres_low_power = false;  // house 0 drain > output (Presentation::power_eva)
+
+// G-85: building overlays, called by draw_building. pass 0 = BibShape (under
+// the main image), pass 1 = active anims + damage fires (over it). `pal` is
+// the building's house-remapped palette; `ckey` its colour key.
+void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& image,
+                           int fcx, int fcy, bool damaged, bool powered, const ra2assets::Palette& pal,
+                           int ckey, int W, int H, int pass) {
+    if (!g_fx) return;
+    const PresFx::BldAnims& a = g_fx->building(pres_upper(image));
+    const std::string ck = ":c" + std::to_string(ckey);
+    if (pass == 0) {
+        if (a.bib && a.bib->count() > 0)
+            g_fx->blit(ren, tc, *a.bib, "bib:" + image + ck, damaged && a.bib->count() > 1 ? 1 : 0, fcx,
+                       fcy, false, W, H, &pal);
+        return;
+    }
+    for (const PresFx::BldAnims::Slot& s : a.slots) {
+        const FxAnimType* t = (damaged && s.dmg) ? s.dmg : s.t;
+        if (!t) continue;
+        // ActiveAnimPowered (default yes): the anim holds still without power.
+        const int fr = (s.powered && !powered) ? t->start : PresFx::loop_frame(*t, g_pres_tick);
+        g_fx->blit(ren, tc, *t->shp, "banim:" + t->name + ck, fr, fcx + s.x, fcy + s.y, t->translucent,
+                   W, H, &pal);
+    }
+    if (damaged && !a.fire_offsets.empty()) {
+        // [RE-FALLBACK: RE-P6 open -- fire spawn code not read] one
+        // DamageFireTypes anim per DamageFireOffset while below ConditionYellow,
+        // offsets in pixels from the building's centre.
+        static std::vector<std::string> fires = g_fx->damage_fires();
+        if (fires.empty()) return;
+        for (std::size_t i = 0; i < a.fire_offsets.size(); ++i) {
+            const FxAnimType* t = g_fx->type(fires[i % fires.size()]);
+            if (!t) continue;
+            const int fr = PresFx::loop_frame(*t, g_pres_tick + static_cast<long>(i) * 7);
+            g_fx->blit(ren, tc, *t->shp, "fx:" + t->name, fr, fcx + a.fire_offsets[i].first,
+                       fcy + a.fire_offsets[i].second, t->translucent, W, H);
+        }
+    }
 }
