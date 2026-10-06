@@ -1622,6 +1622,9 @@ private:
 
     // --- Gap fix C (building_combat.cpp) ---
     std::vector<FireEvent> fire_events_;
+    // G-50: the sync-RNG stand-in for the ROF Random(0,2) draw (xorshift32
+    // with FUN_0065C220's range mapping, like ProjRng; fixed seed).
+    ProjRng combat_rng_{0x2545F491u};
     void launch_defense_projectile(int b_idx, int target_unit, int slot);
     Unit defense_shooter(int b_idx, int slot) const;
 };

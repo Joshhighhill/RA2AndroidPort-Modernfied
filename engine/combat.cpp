@@ -99,10 +99,9 @@ const VeterancyRules* vet_rules_of(const World& world) {
 // byte-identity gate) this is the pre-P2 body verbatim: the extracted
 // deliver_unit_hit is the old else-branch statement-for-statement.
 void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
-              int victim_idx, Occupancy& occ, std::vector<ProjectileLaunch>* launches) {
-    // docs/re/combat.md §5: RearmTimer := GetROF() (frames), converted to
-    // seconds via kLogicFps; CONFIRMED no jitter/RNG in the reset.
-    u.rof_cool = u.w_rof / kLogicFps;
+              int victim_idx, Occupancy& occ, std::vector<ProjectileLaunch>* launches,
+              ProjRng* rng) {
+    u.rof_cool = rearm_secs(u.w_rof, rng);
     u.fire_flash = kFireFlashSecs;
     // P4 [RE: abilities.md §B1/§C2/§E/§F]: a weapon whose warhead/weapon flags
     // make it an ABILITY (Parasite / Temporal / IvanBomb / Suicide) deals no
@@ -130,6 +129,15 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
 }
 
 }  // namespace
+
+// Gap fix C (G-50) [RE: veterancy.md V7, FUN_006FC460 0x6FC55E..0x6FC60C --
+// supersedes combat.md §5]: RearmTimer = ftol(ROF * houseROF + Random(0,2)),
+// drawn from the sync RNG at EVERY rearm. houseROF = 1.0 ([Normal] ROF=1.0).
+// `rng` null (direct pure-test callers) -> no jitter.
+double rearm_secs(int rof_frames, ProjRng* rng) {
+    const int jitter = rng ? rng->random(0, 2) : 0;
+    return (rof_frames + jitter) / kLogicFps;
+}
 
 // P2: the single-target damage tail extracted VERBATIM from try_fire's old
 // else-branch (same statements, same order) so the instant path and the
@@ -279,12 +287,19 @@ int damage_vs(int damage, const std::vector<int>& verses, int ai) {
     // truncates toward zero for non-negative operands (damage and percent
     // are both always >= 0 here), which is exactly the `_ftol`-observed
     // rounding convention -- no separate std::trunc call needed.
-    return damage * verses[idx] / 100;
+    const int d = damage * verses[idx] / 100;
+    // Gap fix C (G-50) [RE: abilities.md §H -- TechnoClass::ReceiveDamage
+    // 0x700DA0 clamps a non-negative defended hit to at least 1 after the
+    // armor multiply; rulesmd [CombatDamage] MinDamage=1]: 3 dmg x 25 % deals
+    // 1, not 0. A 0 % Verses is "cannot affect" (GetFireError refuses the
+    // shot; splash skips) and stays 0.
+    if (damage > 0 && verses[idx] > 0 && d < 1) return 1;
+    return d;
 }
 
 std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& units,
                                      std::vector<Building>& buildings, Occupancy& occ, double dt,
-                                     std::vector<ProjectileLaunch>* launches) {
+                                     std::vector<ProjectileLaunch>* launches, ProjRng* rof_rng) {
     std::vector<MoveRequest> requests;
     const int n = static_cast<int>(units.size());
 
@@ -387,7 +402,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                                   static_cast<double>(nx) - u.fx,
                                                   static_cast<double>(ny) - u.fy)))
                             continue;  // hold fire this frame; rof_cool untouched
-                        u.rof_cool = u.w_rof / kLogicFps;
+                        u.rof_cool = rearm_secs(u.w_rof, rof_rng);   // G-50 jitter
                         u.fire_flash = kFireFlashSecs;
                         // P4 [RE: abilities.md §C2/§D/§E/§F]: an ability weapon
                         // (or a C4 infantry) hands the building shot to
@@ -538,7 +553,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 if (u.is_vehicle && !u.omni_fire &&
                     !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
                     continue;  // hold fire this frame; rof_cool untouched
-                try_fire(units, u, v, i, u.target, occ, launches);
+                try_fire(units, u, v, i, u.target, occ, launches, rof_rng);
             }
         } else if (u.attack_order && !(u.deploy_fire && u.deployed)) {
             // (Gap fix C, G-45: a deployed GI holds its post -- no approach.)

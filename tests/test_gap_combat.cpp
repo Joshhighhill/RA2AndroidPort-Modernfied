@@ -3,6 +3,8 @@
 // launch_skirmish + the GameScene wiring) is `ra2engine --check-gap-combat`.
 #include "doctest.h"
 
+#include <cmath>
+
 #include "asset_fixture.hpp"
 #include "combat.hpp"
 #include "weapon.hpp"
@@ -200,4 +202,26 @@ TEST_CASE("gapC passability: water / cliff / wall cells close the Land grid, sho
     CHECK_FALSE(w.walkable(picks[2] % gw, picks[2] / gw));
     CHECK(w.walkable(picks[3] % gw, picks[3] / gw));
     CHECK(w.grid_for(MovementDomain::Water)[picks[0]] == 1);   // ships still sail it
+}
+
+TEST_CASE("gapC G-50: min-1 damage after Verses, 0 % stays 0; ROF rearm jitter is Random(0,2) frames") {
+    const std::vector<int> v = {100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100};
+    CHECK(damage_vs(3, v, 4) == 1);     // 3 x 25 % = 0.75 -> 1 (ReceiveDamage clamp)
+    CHECK(damage_vs(15, v, 4) == 3);
+    CHECK(damage_vs(0, v, 4) == 0);
+    const std::vector<int> z = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    CHECK(damage_vs(50, z, 3) == 0);
+    ProjRng rng;
+    int seen[3] = {0, 0, 0};
+    for (int i = 0; i < 300; ++i) {
+        const double s = rearm_secs(20, &rng);
+        const int extra = static_cast<int>(std::lround(s * 15.0)) - 20;
+        REQUIRE(extra >= 0);
+        REQUIRE(extra <= 2);
+        ++seen[extra];
+    }
+    CHECK(seen[0] > 0);
+    CHECK(seen[1] > 0);
+    CHECK(seen[2] > 0);
+    CHECK(rearm_secs(20, nullptr) == 20.0 / 15.0);
 }

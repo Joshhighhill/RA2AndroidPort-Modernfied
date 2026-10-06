@@ -13,7 +13,6 @@
 namespace ra2engine {
 
 namespace {
-constexpr double kLogicFps = 15.0;        // ROF frames -> seconds (combat.md §5)
 constexpr double kLept = 256.0;
 constexpr double kFireFlashSecs = 0.4;    // renderer cue, same as units
 
@@ -172,7 +171,7 @@ void World::step_building_combat(double dt) {
         }
         if (b.def_rof_cool > 0.0) continue;
         const WeaponSlot& w = t.weapon[slot];
-        b.def_rof_cool = w.rof / kLogicFps;
+        b.def_rof_cool = rearm_secs(w.rof, &combat_rng_);   // G-50 jitter
         b.def_fire_flash = kFireFlashSecs;
         b.def_slot = slot;
         fire_events_.push_back({-1, bi, b.def_target, -1, slot, w.id});

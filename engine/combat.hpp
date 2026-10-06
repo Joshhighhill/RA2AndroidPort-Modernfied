@@ -135,6 +135,10 @@ struct MoveRequest {
 // dealing damage (ROF/fire_flash reset unchanged).
 std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& units,
                                      std::vector<Building>& buildings, Occupancy& occ, double dt,
-                                     std::vector<ProjectileLaunch>* launches = nullptr);
+                                     std::vector<ProjectileLaunch>* launches = nullptr,
+                                     ProjRng* rof_rng = nullptr);
+// Gap fix C (G-50): RearmTimer in seconds = (ROF + Random(0,2)) / 15
+// [veterancy.md V7]; rng null -> no jitter.
+double rearm_secs(int rof_frames, ProjRng* rng);
 
 }  // namespace ra2engine

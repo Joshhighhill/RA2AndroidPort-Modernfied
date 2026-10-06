@@ -3183,7 +3183,8 @@ void World::step(double dt) {
     // nullptr keeps step_combat's instant-hit path byte-identical.
     std::vector<ProjectileLaunch> launches;
     const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt,
-                                                      projectiles_enabled_ ? &launches : nullptr);
+                                                      projectiles_enabled_ ? &launches : nullptr,
+                                                      &combat_rng_);   // G-50 ROF jitter
     for (const ProjectileLaunch& l : launches)
         launch_projectile(l.attacker, l.target_unit, l.target_building);
     // Gap fix C: a FireEvent for every unit that fired this step (try_fire /

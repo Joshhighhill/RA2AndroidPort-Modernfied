@@ -170,6 +170,7 @@ struct SaveAccess {
         save::io(ar, w.no_c4_types_);
         save::io(ar, w.ability_events_);
         save::io(ar, w.fire_events_);   // Gap fix C
+        save::io(ar, w.combat_rng_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
