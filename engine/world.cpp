@@ -1,4 +1,5 @@
 #include "world.hpp"
+#include "weapon_unit.hpp"  // Gap fix C
 
 #include <algorithm>
 #include <cmath>
@@ -592,6 +593,19 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // (default is_naval=false / movement_domain=Land = a ground unit).
     u.is_naval = c.is_naval;
     u.movement_domain = c.movement_domain;
+    // Gap fix C [RE: docs/re/weapons.md]: the secondary slot + AA/AG flags.
+    // Inert defaults for any hand-built UnitCombat (no secondary, ground-only).
+    u.w2 = c.secondary;
+    u.w2_elite = c.elite_secondary;
+    u.p_aa = u.w_aa = c.primary_aa;
+    u.p_ag = u.w_ag = c.primary_ag;
+    u.p_proj = c.proj;
+    u.p_proj_elite = c.elite_proj;
+    u.p_proj_elite_set = c.has_elite_proj;
+    u.deploy_fire = c.deploy_fire;
+    u.deploy_fire_slot = c.deploy_fire_slot;
+    u.crusher = c.crusher;
+    u.crushable = c.crushable;
     // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
     // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
     // past this point unless vet_any_). Only a vet-enabled World arms the
@@ -632,6 +646,27 @@ void World::set_water_terrain(const std::vector<ra2assets::LandType>& land_types
     // [RE-GATE APPLIED: naval.md §1] intersect with the Land grid (passable_) so
     // a ship never paths on a non-materialized water cell.
     water_passable_ = build_water_passability(land_types, passable_, grid_w_, grid_h_);
+}
+
+static bool land_type_blocks_ground(ra2assets::LandType t) {
+    // [RE: naval.md §2 Ground[LandType][SpeedType]; rulesmd [Water]/[Rock]/
+    // [Wall] Foot=Track=Wheel=0%] -- the three ground SpeedTypes agree on
+    // every row, so one Land grid serves Foot/Track/Wheel.
+    // [Beach] is also 0% for them, but the clone's LandType is a per-TILE-SET
+    // classification (land_type.hpp): the ShorePieces set mixes land and water
+    // sub-tiles, so blocking it would wall off coasts the original lets units
+    // walk. Shore stays passable [RE-FALLBACK: per-sub-tile land type].
+    return t == ra2assets::LandType::Water || t == ra2assets::LandType::Rock ||
+           t == ra2assets::LandType::Wall;
+}
+
+void World::set_land_terrain(const std::vector<ra2assets::LandType>& land_types) {
+    // Water grid first (it is the materialized-Land intersection), then close
+    // the Land grid on water / cliffs (CliffSet + WaterCliffs -> Rock) / walls.
+    set_water_terrain(land_types);
+    const std::size_t n = std::min(land_types.size(), passable_.size());
+    for (std::size_t i = 0; i < n; ++i)
+        if (land_type_blocks_ground(land_types[i])) passable_[i] = 0;
 }
 
 void World::block_water_footprint(int cx, int cy, int fw, int fh) {
@@ -738,6 +773,9 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // Both fields are inert (false) unless a P4 profile is bound, which no
     // pre-P4 gate does -> the existing body below runs unchanged.
     if (u.frozen) return;
+    // Gap fix C (G-45): a deployed DeployFire infantry packs up and walks
+    // (the original undeploys on a move order).
+    if (u.deploy_fire && u.deployed) u.deployed = false;
     if (u.abil.teleporter && !u.is_aircraft) {
         teleport_unit(idx, gx, gy);
         return;
@@ -3180,9 +3218,20 @@ void World::step(double dt) {
     // nullptr keeps step_combat's instant-hit path byte-identical.
     std::vector<ProjectileLaunch> launches;
     const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt,
-                                                      projectiles_enabled_ ? &launches : nullptr);
+                                                      projectiles_enabled_ ? &launches : nullptr,
+                                                      &combat_rng_);   // G-50 ROF jitter
     for (const ProjectileLaunch& l : launches)
         launch_projectile(l.attacker, l.target_unit, l.target_building);
+    // Gap fix C: a FireEvent for every unit that fired this step (try_fire /
+    // the building branch stamp fire_flash = 0.4 exactly at the shot).
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        const Unit& u = units_[i];
+        if (u.fire_flash == 0.4 && u.alive && u.die_time < 0.0)
+            fire_events_.push_back({i, -1, u.target, u.target_building, u.w_active, ""});
+    }
+    // Gap fix C (G-40) [RE: docs/re/defenses.md]: base defenses acquire, aim
+    // and fire. Only types resolved with a weapon (BuildingTypeDef::armed).
+    step_building_combat(dt);
     // P5 Veterancy [RE: veterancy.md V2/V3/V11/V12]: kill credit for every unit/
     // building that died this step, rank-change detection + stat refresh, and
     // the 14-frame self-heal. A pure INSERTION right after step_combat; the
@@ -3524,6 +3573,27 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 const int f = facing_from_delta(tgt.x - u.cell_x, tgt.y - u.cell_y);
                 if (f >= 0) u.facing = f;
             }
+            // Gap fix C (G-47) [RE: rulesmd Crusher=/Crushable=; crush branch of
+            // the Drive locomotor not unwound -- RE-W6 open]: a Crusher vehicle
+            // driving into a cell held by enemy Crushable infantry squashes it
+            // (the infantry dies, the cell frees) instead of waiting for it.
+            if (u.crusher && u.is_vehicle) {
+                const int o = occ.at(tgt.x, tgt.y);
+                if (o >= 0 && o != self && o < static_cast<int>(units.size())) {
+                    Unit& v = units[o];
+                    if (v.crushable && !v.is_vehicle && v.house != u.house && v.alive &&
+                        v.die_time < 0.0 && v.cargo_of < 0) {
+                        v.hp = 0;
+                        v.die_time = 0.0;
+                        v.vet.killed_by = self;
+                        v.target = -1;
+                        v.target_building = -1;
+                        v.path.clear();
+                        v.path_idx = 0;
+                        occ.release_all_of(o, -1, -1);
+                    }
+                }
+            }
             // Reserve the next cell before stepping into it.
             if (occ.at(tgt.x, tgt.y) != self) {
                 if (occ.can_enter(tgt.x, tgt.y, self)) {
@@ -3757,6 +3827,7 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     p.launch_frame = proj_frame_;
     p.launch_speed = lr.speed;
     p.max_z = src.z;
+    p.weapon_slot = u.w_active;   // Gap fix C: detonate with the slot that fired
     projectiles_.push_back(p);
 }
 
@@ -3774,9 +3845,13 @@ void World::step_projectiles_frame() {
             integrate_ballistic(p, proj_rules_.gravity);
 
         const int cx = lepton_to_cell(p.x), cy = lepton_to_cell(p.y);
-        const int owner_house =
+        int owner_house =
             (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) ? units_[p.attacker].house
                                                                                : -1;
+        // Gap fix C: a base defense's shell belongs to the building's house.
+        if (p.attacker < 0 && p.attacker_building >= 0 &&
+            p.attacker_building < static_cast<int>(buildings_.size()))
+            owner_house = buildings_[p.attacker_building].house;
         // ObjectAtCoord: the FIRST object in the bullet's cell (ascending unit
         // index stands in for the cell's occupier list). Carried units and
         // aircraft are not ground occupants (no AA in this phase).
@@ -3899,6 +3974,14 @@ void World::detonate_projectile(Projectile& p, int victim) {
     for (std::size_t k = 0; k < units_.size(); ++k) hp_before[k] = units_[k].hp;
     int building_dmg = 0;
 
+    // Gap fix C: the firer may have switched weapon slot while the shell flew;
+    // detonate with the slot it was fired from, then restore.
+    int restore_slot = -1;
+    if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size()) &&
+        units_[p.attacker].w_active != p.weapon_slot) {
+        restore_slot = units_[p.attacker].w_active;
+        activate_weapon_slot(units_[p.attacker], p.weapon_slot, vet_any_ ? &vet_rules_ : nullptr);
+    }
     if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) {
         const Unit& att = units_[p.attacker];
         if (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size())) {
@@ -3919,6 +4002,13 @@ void World::detonate_projectile(Projectile& p, int victim) {
             Unit center;
             center.fx = ix / 256.0;
             center.fy = iy / 256.0;
+            // Gap fix C (G-44): a burst aimed at an airborne target detonates in
+            // the air layer (apply_spread_damage layers by unit_airborne).
+            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
+                unit_airborne(units_[p.target_unit])) {
+                center.is_aircraft = true;
+                center.altitude = 1.0;
+            }
             apply_spread_damage(units_, occ_, att, center);
         } else {
             // Single-target warhead: the collided unit, else the original target
@@ -3939,6 +4029,41 @@ void World::detonate_projectile(Projectile& p, int victim) {
             }
         }
     }
+    // Gap fix C (G-40): a base defense's shell -- the same damage layer with a
+    // transient shooter carrying the building's weapon slot.
+    if (p.attacker < 0 && p.attacker_building >= 0 &&
+        p.attacker_building < static_cast<int>(buildings_.size()) &&
+        buildings_[p.attacker_building].type >= 0 &&
+        buildings_[p.attacker_building].type < static_cast<int>(btypes().size())) {
+        const Unit shooter = defense_shooter(p.attacker_building, p.weapon_slot);
+        if (shooter.w_cell_spread >= 1.0) {
+            Unit center;
+            center.fx = ix / 256.0;
+            center.fy = iy / 256.0;
+            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
+                unit_airborne(units_[p.target_unit])) {
+                center.is_aircraft = true;
+                center.altitude = 1.0;
+            }
+            apply_spread_damage(units_, occ_, shooter, center);
+        } else {
+            int v = victim;
+            if (v < 0 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
+                const Unit& t = units_[p.target_unit];
+                if (lepton_to_cell(unit_lx(t)) == icx && lepton_to_cell(unit_ly(t)) == icy)
+                    v = p.target_unit;
+            }
+            if (v >= 0) {
+                const Unit& w = units_[v];
+                if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(shooter.house, w.house)) {
+                    deliver_hit_from(units_, occ_, shooter, -1, p.attacker_building, v);
+                    ev.victim = v;
+                }
+            }
+        }
+    }
+    if (restore_slot >= 0)
+        activate_weapon_slot(units_[p.attacker], restore_slot, vet_any_ ? &vet_rules_ : nullptr);
     int total = building_dmg;
     for (std::size_t k = 0; k < units_.size(); ++k) total += hp_before[k] - units_[k].hp;
     ev.damage = total;

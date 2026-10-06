@@ -161,7 +161,7 @@ public:
                 const ResolvedUnit ru = resolve_combat_unit(rules_, id);
                 t.combat = ru.combat;
                 t.combat.is_vehicle = false;
-                t.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+                t.combat.speed_cps = speed_to_cps(ru.speed);
                 const std::string& img = t.combat.image;
                 if (!ua_.shps.count(img)) {
                     MixFile conquer = ra2_.open_nested("conquer.mix");
@@ -229,6 +229,7 @@ public:
                 }
             } catch (const std::exception&) {}
         }
+        ra2engine::fill_building_weapons(rules_, id, d);   // Gap fix C (G-40)
         ba.roster.push_back(d);
         ba.art.push_back(std::move(slot));
         ba.defense.push_back(rules_.is_buildcat_combat(id) ? 1 : 0);
@@ -1297,7 +1298,8 @@ private:
 ra2engine::World build_campaign_world(Assets& a, UnitAssets& ua) {
     ra2engine::World world = build_world(a, ua, 0);
     const int gw = world.grid_w(), gh = world.grid_h();
-    world.set_water_terrain(resolve_land_types(a.map, a.theater, gw, gh));
+    // Gap fix C (G-43): water grid + ground blocked on water/cliffs.
+    world.set_land_terrain(resolve_land_types(a.map, a.theater, gw, gh));
     return world;
 }
 

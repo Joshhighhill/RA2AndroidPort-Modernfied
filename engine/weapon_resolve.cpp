@@ -1,0 +1,115 @@
+#include "weapon_resolve.hpp"
+
+#include "ra2assets/rules.hpp"
+
+namespace ra2engine {
+
+WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string& weapon) {
+    WeaponSlot s;
+    if (weapon.empty()) return s;
+    // A weapon section always carries at least one of these keys.
+    if (rules.section_string(weapon, "Damage", "").empty() &&
+        rules.section_string(weapon, "ROF", "").empty() &&
+        rules.section_string(weapon, "Range", "").empty())
+        return s;
+    s.valid = true;
+    s.id = weapon;
+    s.damage = rules.weapon_damage(weapon);
+    s.rof = rules.weapon_rof(weapon);
+    s.range = rules.weapon_range(weapon);
+    const std::string wh = rules.weapon_warhead(weapon);
+    s.verses = rules.verses(wh);
+    s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
+    s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
+    s.proj = resolve_projectile_spec(rules, weapon);
+    // BulletType AA=/AG= [RE-FALLBACK defaults AA=no, AG=yes: the BulletType
+    // loader sits in an unanalysed gap (voxel-render.md §7); these are the
+    // ModEnc defaults and every stock AA projectile states AA=yes explicitly].
+    const std::string proj = rules.weapon_projectile(weapon);
+    s.aa = rules.section_flag(proj, "AA", false);
+    s.ag = rules.section_flag(proj, "AG", true);
+    s.omni_fire = rules.weapon_omnifire(weapon);
+    return s;
+}
+
+std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& type_id, int i,
+                           bool elite) {
+    const int turret_count = static_cast<int>(rules.section_double(type_id, "TurretCount", 0.0));
+    const int weapon_count = static_cast<int>(rules.section_double(type_id, "WeaponCount", 0.0));
+    if (turret_count < 1) {
+        if (rules.section_flag(type_id, "ClearAllWeapons", false)) return "";
+        static const char* kNormal[2] = {"Primary", "Secondary"};
+        static const char* kElite[2] = {"ElitePrimary", "EliteSecondary"};
+        return rules.section_string(type_id, elite ? kElite[i] : kNormal[i], "");
+    }
+    if (i >= weapon_count) return "";
+    return rules.section_string(type_id, (elite ? "EliteWeapon" : "Weapon") + std::to_string(i + 1),
+                                "");
+}
+
+TypeWeapons resolve_type_weapons(const ra2assets::Rules& rules, const std::string& type_id) {
+    TypeWeapons t;
+    for (int i = 0; i < 2; ++i) {
+        t.slot[i] = resolve_weapon_slot(rules, type_weapon_id(rules, type_id, i, false));
+        t.elite[i] = resolve_weapon_slot(rules, type_weapon_id(rules, type_id, i, true));
+    }
+    // A multi-turret type (TurretCount >= 1: SREF IsChargeTurret, FV Gunner)
+    // fires the weapon of its CURRENT turret (IFV mode / charge stage), not a
+    // per-target Primary/Secondary pick -- slot 1 there is "Weapon2" (the FV's
+    // RepairBullet), which must never be chosen as a secondary. The IFV swap is
+    // P4's step_abilities (ifv_weapons); only slot 0 is the default turret.
+    if (static_cast<int>(rules.section_double(type_id, "TurretCount", 0.0)) >= 1) {
+        t.slot[1] = WeaponSlot{};
+        t.elite[1] = WeaponSlot{};
+    }
+    t.deploy_fire_weapon =
+        static_cast<int>(rules.section_double(type_id, "DeployFireWeapon", 1.0));
+    return t;
+}
+
+void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& type_id,
+                             const TypeWeapons& tw, UnitCombat& c) {
+    c.primary_aa = tw.slot[0].aa;
+    c.primary_ag = tw.slot[0].ag;
+    c.secondary = tw.slot[1];
+    c.elite_secondary = tw.elite[1];
+    for (int k = 0; k < 3; ++k) {
+        c.secondary.proj.flh[k] = c.proj.flh[k];
+        c.elite_secondary.proj.flh[k] = c.proj.flh[k];
+    }
+    // DeployFire (G-45) [RE: docs/re/weapons.md §3 -- DeployFireWeapon (def 1)
+    // read into type+0x6A8 by FUN_00711510]: the deployed infantry fires that
+    // slot through the normal target path. A RadLevel deploy weapon (DESO
+    // RadEruptionWeapon) is the P4 eruption ability instead.
+    const bool deployer = rules.section_flag(type_id, "Deployer", false) &&
+                          rules.section_flag(type_id, "DeployFire", false);
+    if (deployer) {
+        const int slot = tw.deploy_fire_weapon == 0 ? 0 : 1;
+        const WeaponSlot& dw = tw.slot[slot];
+        const bool rad = dw.valid && rules.section_double(dw.id, "RadLevel", 0.0) > 0.0;
+        if (dw.valid && !rad) {
+            c.deploy_fire = true;
+            c.deploy_fire_slot = slot;
+        }
+    }
+    c.crusher = rules.section_flag(type_id, "Crusher", false);
+    // Crushable defaults YES for infantry (Conscripts carry no key and are
+    // crushed in the original), NO otherwise [RE-FALLBACK: InfantryTypeClass
+    // ctor default not read; rulesmd sets Crushable=yes/no explicitly on the
+    // exceptions, e.g. DESO Crushable=no].
+    c.crushable = rules.section_flag(type_id, "Crushable", rules.is_infantry(type_id));
+}
+
+void fill_building_weapons(const ra2assets::Rules& rules, const std::string& type_id,
+                           BuildingTypeDef& d) {
+    const TypeWeapons tw = resolve_type_weapons(rules, type_id);
+    d.weapon[0] = tw.slot[0];
+    d.weapon[1] = tw.slot[1];
+    d.armed = tw.slot[0].valid && tw.slot[0].range > 0.0 && tw.slot[0].damage != 0;
+    d.powered = rules.section_flag(type_id, "Powered", false);
+    d.rot = rules.rot(type_id);
+    d.turret = rules.has_turret(type_id);
+    d.guard_range = rules.section_double(type_id, "GuardRange", 0.0);
+}
+
+}  // namespace ra2engine

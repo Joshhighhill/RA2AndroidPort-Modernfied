@@ -12,13 +12,17 @@ namespace ra2assets {
 
 namespace {
 
-// Case-insensitive "yes"/"true" check, mirroring the game's own tolerant
-// boolean parsing (Turret=yes, Turret=Yes, Turret=TRUE all count).
-bool is_truthy(const std::string& v) {
-    std::string lower = v;
-    for (char& c : lower) c = (char)std::tolower((unsigned char)c);
-    return lower == "yes" || lower == "true";
+// The game's INI bool (INIClass::Get_Bool, FUN_0050f410 -- docs/re/
+// ini-reader.md): toupper(first char) in {1,T,Y} -> true, {0,F,N} -> false,
+// anything else -> the caller's default (false here; section_flag passes its own).
+int ini_bool(const std::string& v) {
+    if (v.empty()) return -1;
+    const char c = (char)std::toupper((unsigned char)v[0]);
+    if (c == '1' || c == 'T' || c == 'Y') return 1;
+    if (c == '0' || c == 'F' || c == 'N') return 0;
+    return -1;
 }
+bool is_truthy(const std::string& v) { return ini_bool(v) == 1; }
 
 // Comma-split `v`, trimming whitespace and uppercasing each token; empty
 // tokens (from "" or trailing commas) are skipped. Used by prerequisite()/
@@ -42,25 +46,13 @@ std::vector<std::string> split_trim_upper(const std::string& v) {
     return out;
 }
 
-// Strip an inline ';' comment and trailing whitespace from a raw Ini value.
-// The wrapped Ini preserves inline comments (it strips only full-line
-// comments), so real rulesmd values like "GTGCAN   ; Grand Cannon" or
-// "yes ;GS" arrive with the comment attached; this mirrors the real game's
-// INI reader, which treats ';' as a comment anywhere on the line.
-std::string strip_inline_comment(std::string val) {
-    std::size_t semi = val.find(';');
-    if (semi != std::string::npos) val.erase(semi);
-    std::size_t end = val.find_last_not_of(" \t");
-    return (end == std::string::npos) ? std::string() : val.substr(0, end + 1);
-}
-
 // True iff `id` (case-insensitive) is a VALUE in [section]'s key/value list.
 // The [InfantryTypes]/[VehicleTypes]/[BuildingTypes] list sections map numbered
 // keys ("0=E1") to ids, so membership is tested against the values, not keys.
 bool in_list_section(const ra2assets::Ini& ini, const std::string& section,
                      const std::string& id) {
     for (const auto& kv : ini.section(section)) {
-        std::string val = strip_inline_comment(kv.second);
+        const std::string& val = kv.second;  // Ini already cut the ';' comment
         if (val.size() != id.size()) continue;
         bool eq = true;
         for (std::size_t i = 0; i < id.size(); ++i)
@@ -226,7 +218,7 @@ std::vector<std::string> Rules::prerequisite_group(const std::string& group) con
 }
 
 std::string Rules::general_string(const std::string& key, const std::string& fallback) const {
-    const std::string v = strip_inline_comment(ini_->get("General", key, ""));
+    const std::string v = ini_->get("General", key, "");
     return v.empty() ? fallback : v;
 }
 
@@ -255,19 +247,13 @@ bool Rules::section_flag(const std::string& id, const std::string& key, bool fal
     // must NOT bake one in. Present values go through the same tolerant
     // is_truthy() as is_construction_yard/spy_sat/has_turret.
     const std::string v = ini_->get(id, key, "");
-    if (v.empty()) return fallback;
-    return is_truthy(v);
+    const int b = ini_bool(v);
+    return b < 0 ? fallback : b == 1;
 }
 
 std::string Rules::section_string(const std::string& section, const std::string& key,
                                   const std::string& fallback) const {
-    std::string v = ini_->get(section, key, "");
-    const std::size_t sc = v.find(';');
-    if (sc != std::string::npos) v = v.substr(0, sc);
-    while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
-    std::size_t a = 0;
-    while (a < v.size() && std::isspace(static_cast<unsigned char>(v[a]))) ++a;
-    v = v.substr(a);
+    const std::string v = ini_->get(section, key, "");   // comment cut + trimmed by Ini
     return v.empty() ? fallback : v;
 }
 
@@ -308,10 +294,9 @@ std::string Rules::free_unit(const std::string& id) const {
 }
 
 std::string Rules::locomotor(const std::string& id) const {
-    // The real [ZEP] Locomotor value carries an inline comment
-    // ("{92612C46-...} ;Jumpjet"); strip it (as every other Rules accessor
-    // and the game's own INI reader do) so the CLSID compares clean.
-    return strip_inline_comment(ini_->get(id, "Locomotor", ""));
+    // The real [ZEP] value "{92612C46-...} ;Jumpjet" arrives comment-free:
+    // Ini::parse cuts at ';' like the game's INIClass::Load.
+    return ini_->get(id, "Locomotor", "");
 }
 
 std::string Rules::speed_type(const std::string& id) const {
@@ -364,10 +349,8 @@ Rules::BuildCategory Rules::build_category(const std::string& id) const {
         // [RE-GATE APPLIED: production.md §1.1 -- Vehicles = [VehicleTypes]
         // member AND Naval==0; Naval==1 routes to the separate Ships slot].
         // Reuse is_truthy() rather than duplicate the yes/true literal list.
-        // Real naval vehicles store an inline comment ("Naval=yes ;GS" on
-        // DEST/DLPH/CARRIER/CDEST) which the wrapped Ini preserves, so strip
-        // it before the truthiness check (same class as in_list_section).
-        return is_truthy(strip_inline_comment(ini_->get(id, "Naval", "")))
+        // "Naval=yes ;GS" (DEST/DLPH/CARRIER/CDEST): Ini cuts the comment.
+        return is_truthy(ini_->get(id, "Naval", ""))
                    ? BuildCategory::None
                    : BuildCategory::Vehicle;
     }
