@@ -48,7 +48,10 @@ void World::register_ability_profile(const std::string& image, const AbilityProf
     ability_profiles_[image] = p;
     abilities_any_ = true;
     for (Unit& u : units_)
-        if (u.image == image) u.abil_bound = false;   // re-bind on the next pass
+        if (u.image == image) {
+            u.abil_bound = false;                     // re-bind now
+            bind_profile(u, ability_profiles_);
+        }
 }
 
 std::vector<World::AbilityEvent> World::take_ability_events() {
@@ -224,6 +227,8 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
         if (dmg > 0) ability_damage_building(b, dmg);
     }
 }
+
+void World::ability_bind_unit(Unit& u) { bind_profile(u, ability_profiles_); }
 
 void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w) {
     u.w_damage = w.damage;

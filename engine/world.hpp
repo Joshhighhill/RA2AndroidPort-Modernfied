@@ -1419,6 +1419,7 @@ private:
     void ability_damage_unit(int victim, int dmg);
     void ability_damage_building(int b_idx, int dmg);
     void ability_apply_weapon_fields(Unit& u, const WeaponSpec& w);
+    void ability_bind_unit(Unit& u);
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by

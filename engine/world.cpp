@@ -583,6 +583,10 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // (default is_naval=false / movement_domain=Land = a ground unit).
     u.is_naval = c.is_naval;
     u.movement_domain = c.movement_domain;
+    // P4 [RE: abilities.md]: bind the ability profile at spawn so the unit's
+    // very first shot is already intercepted. A strict no-op unless
+    // abilities_any_ (no pre-P4 gate registers a profile).
+    if (abilities_any_) ability_bind_unit(u);
     return u;
 }
 
