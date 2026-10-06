@@ -43,6 +43,8 @@ public:
             if (!sd.empty()) speak_delay_frames_ = static_cast<long>(std::atof(sd.c_str()) * 900.0);
         }
         base_attack_siren_ = av("BaseUnderAttackSound");
+        radar_on_ = av("RadarOn");
+        radar_off_ = av("RadarOff");
         building_die_ = av("BuildingDieSound");
         building_damage_ = av("BuildingDamageSound");
         sell_sound_ = av("SellSound");
@@ -109,6 +111,17 @@ public:
             snd_.eva("EVA_UnitPromoted");
         }
         superweapon_eva(w);
+        // G-09: radar power-up animation + RadarOn/RadarOff ([AudioVisual]).
+        {
+            const bool online = w.shroud_enabled() && house_owns_operational_radar(w, ba, 0);
+            if (online && !radar_online_) {
+                g_radar_online_since = frame_;
+                snd_.play(radar_on_, 0.0, "radar on");
+            } else if (!online && radar_online_) {
+                snd_.play(radar_off_, 0.0, "radar off");
+            }
+            radar_online_ = online;
+        }
         snd_.pump(clock_);
         snd_.music_update(clock_);
         if (audio_ && audio_->enabled && audio_->mixer) audio_->out.pump(*audio_->mixer);
@@ -576,6 +589,8 @@ private:
     std::vector<std::pair<double, double>> prev_;
     bool low_power_ = false;
     bool sw_ready_ = false;
+    bool radar_online_ = false;
+    std::string radar_on_, radar_off_;
     int buildable_ = -1;
     std::string base_attack_siren_, building_die_, building_damage_, sell_sound_, vet_sound_,
         elite_sound_;

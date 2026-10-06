@@ -2384,6 +2384,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
 #include "pres_map.inc"      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
+#include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
 // Draws one building in render_world's merged back-to-front pass. Anchors the
 // SHP canvas CENTER at the foundation's screen bbox center [RE-GATE APPLIED:
@@ -3693,6 +3694,11 @@ bool house_owns_operational_radar(const ra2engine::World& world, const BuildingA
 // otherwise. Falls back to the static "sb:radar" blit when no radar is owned.
 void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
                         const ra2engine::World& world, const BuildingAssets& ba) {
+    // G-09: the live game's full radar picture (pres_radar.inc).
+    if (g_radar && g_radar->ok()) {
+        g_radar->draw(ren, radar_rect, world, ba);
+        return;
+    }
     const int gw = world.grid_w(), gh = world.grid_h();
     if (gw <= 0 || gh <= 0) return;
     // Map grid -> the 168x110 radar box (integer scale, letterboxed).
@@ -3752,7 +3758,22 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     // gate is behind world.shroud_enabled() (false in every existing gate), so
     // the static-logo branch runs exactly as today.
     if (world.shroud_enabled() && house_owns_operational_radar(world, ba, 0)) {
-        draw_radar_minimap(ren, lay.radar, world, ba);
+        // G-09: radar.shp frames 1..N-1 are the power-up animation, the last
+        // frame is the open frame drawn over the live map.
+        const int boot = (g_radar && ba.has_radar) ? g_radar->boot_frame(ba.sb_radar.count()) : -1;
+        if (boot > 0) {
+            blit_shp(ren, tc, "sb:radar:" + std::to_string(boot), ba.sb_radar, boot, ba.sb_pal, lay.radar.x, lay.radar.y);
+        } else {
+            // The open frame is opaque; the map draws into its dark screen area
+            // (columns 1..153 x rows 0..109, measured on sidec01 radar.shp frame 32).
+            ra2engine::SbRect screen = lay.radar;
+            if (g_radar && ba.has_radar && ba.sb_radar.count() > 1) {
+                blit_shp(ren, tc, "sb:radar:open", ba.sb_radar, ba.sb_radar.count() - 1, ba.sb_pal,
+                         lay.radar.x, lay.radar.y);
+                screen = ra2engine::SbRect{lay.radar.x + 1, lay.radar.y, 153, lay.radar.h};
+            }
+            draw_radar_minimap(ren, screen, world, ba);
+        }
     } else if (ba.has_radar) {
         blit_shp(ren, tc, "sb:radar", ba.sb_radar, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
     }
@@ -4681,6 +4702,7 @@ public:
     ~GameScene() override {
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
         if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
+        if (g_radar == &radar_) g_radar = nullptr;
     }
 
     static ra2engine::SkirmishConfig config_of(const ra2engine::save::SaveFile& f) {
@@ -5000,6 +5022,8 @@ public:
     }
     void init_presentation() {
         init_map_dressing();
+        radar_.init(a_, world_, ore_art_.any ? &ore_art_ : nullptr);
+        g_radar = &radar_;
         // G-90: every resolved infantry anim table, in skirmish as in campaign
         // (skirmish-start / AI-built infantry otherwise fall back to
         // default_anim and pick frames from the wrong SHP layout).
@@ -5013,6 +5037,7 @@ public:
     // begin_frame/present are the driver's responsibility.
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+        radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
         if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
@@ -5311,6 +5336,7 @@ private:
     AudioSystem          audio_;
     Presentation         pres_;    // G-80..G-91 presentation driver
     PresMap              map_dressing_;               // G-87
+    PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     std::vector<std::pair<double, double>> prev_audio_state_;
     bool                 prev_unload_key_ = false;

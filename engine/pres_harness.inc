@@ -20,7 +20,8 @@ struct PresHarness {
         std::vector<double> secs = {2.0};
         int ai = -1, color = -1, mouse_x = -1, mouse_y = -1;
         bool select_all = false;
-        std::string peek;   // terrain | overlay | civ: centre + reveal on the first such map object
+        std::string peek;
+        std::vector<std::string> give;   // --give ID: instant house-0 building near the yard   // terrain | overlay | civ: centre + reveal on the first such map object
         bool audio = false;
         for (int i = i0 + 1; i < argc; ++i) {
             const std::string a = argv[i];
@@ -33,6 +34,7 @@ struct PresHarness {
             else if (a == "--audio") audio = true;
             else if (a == "--select") select_all = true;
             else if (a == "--peek") peek = next();
+            else if (a == "--give") give.push_back(next());
             else if (a == "--mouse") {
                 const std::string v = next();
                 mouse_x = std::atoi(v.c_str());
@@ -75,6 +77,7 @@ struct PresHarness {
         std::cerr << "[scene-shot] map=" << map << " houses=" << cfg.slots.size()
                   << " script=" << script << "\n";
 
+        for (const std::string& id : give) give_building(gs, id);
         const double dt = 1.0 / 15.0;
         double t = 0.0;
         std::sort(secs.begin(), secs.end());
@@ -215,6 +218,24 @@ struct PresHarness {
         cam_y_ = g.cam_.y;
         std::cerr << "[scene-shot] camera on cell (" << cx << "," << cy << ") cam=" << g.cam_.x
                   << "," << g.cam_.y << "\n";
+    }
+    static void give_building(GameScene& g, const std::string& id) {
+        const int type = roster_index(g.ba_, id);
+        if (type < 0) { std::cerr << "[scene-shot] --give: no roster type " << id << "\n"; return; }
+        const ra2engine::BuildingTypeDef& d = g.ba_.roster[type];
+        int yx = 0, yy = 0;
+        for (const auto& b : g.world_.buildings()) if (b.alive && b.house == 0) { yx = b.cx; yy = b.cy; break; }
+        for (int r = 2; r < 14; ++r)
+            for (int dy = -r; dy <= r; ++dy)
+                for (int dx = -r; dx <= r; ++dx) {
+                    const ra2engine::PlacementCheck chk = ra2engine::placement_check(
+                        yx + dx, yy + dy, d.fw, d.fh, 0, d.adjacent, g.world_.passable(), g.world_.grid_w(),
+                        g.world_.grid_h(), g.world_.occupancy(), g.world_.buildings(), true);
+                    if (!chk.ok) continue;
+                    g.world_.add_building(type, yx + dx, yy + dy, d.fw, d.fh, 0, d.strength, d.armor_ix, 0.0, true,
+                                          d.sight, d.grants_map_reveal);
+                    return;
+                }
     }
     static void build_step(GameScene& g) {
         static const char* kOrder[] = {"GAPOWR", "GAPILE", "GAREFN", "GAWEAP", "GAAIRC"};
