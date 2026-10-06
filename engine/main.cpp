@@ -4716,6 +4716,18 @@ public:
         // in the original, not the superweapon (armed from its cameo).
 
         now_ = SDL_GetTicks();   // frame clock for draw_sidebar's animation timing
+        // G-13: the simulation advances in FIXED logic ticks (accumulator over the
+        // wall-clock dt; at most kMaxLogicSteps per frame, the rest dropped so a
+        // stall never spirals). Input, scrolling, rendering and the per-frame
+        // tail below stay per-frame. The tick length is kLogicDt (see the
+        // RE-FALLBACK note at its definition).
+        logic_acc_ += dt;
+        int logic_steps = 0;
+        while (logic_acc_ + 1e-9 >= kLogicDt) {
+            if (logic_steps == kMaxLogicSteps) { logic_acc_ = 0.0; break; }
+            logic_acc_ -= kLogicDt;
+            ++logic_steps;
+            const double dt = kLogicDt;   // the logic body below steps exactly one tick
         // Repair wallet bridge [RE: repair-sell.md §A2/§A3]: the wrench charges
         // the World's house pool, but the player's money lives HERE
         // (player_credits_) and that pool is drained by take_income every
@@ -4793,6 +4805,7 @@ public:
                         audio_.mixer->play(audio_.leave_transport);
                 }
         }
+        }   // G-13 fixed logic tick
         // Rolling credits tally (display-only).
         {
             const double target = player_credits_;

@@ -191,3 +191,12 @@
         if (lay_.scroll_dn.contains(x, y)) { strip_scroll(+1); return true; }
         return false;
     }
+
+    // --- G-13: fixed logic tick ------------------------------------------------
+    // [RE-FALLBACK: 15 Hz = the rules' time base (ROF / build / mission frames
+    // are 15 fps units, docs/re/*) until agent C pins the per-GameSpeed logic
+    // rate (RE-T1); change kLogicDt only.] At most kMaxLogicSteps ticks run in
+    // one frame [RE-FALLBACK: catch-up cap].
+    static constexpr double kLogicDt = 1.0 / 15.0;
+    static constexpr int kMaxLogicSteps = 4;
+    double logic_acc_ = 0.0;

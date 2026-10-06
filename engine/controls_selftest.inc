@@ -59,7 +59,7 @@ public:
             }
             shot_.clear();
         }
-        (void)s;
+        hash_ = ra2engine::play::fnv1a(std::string(s.name()) + ' ' + ra2engine::play::probe_line(probe_of(s)) + '\n', hash_);
     }
     void quit(int f, Scene* s, const char* why) override {
         if (!done_) {
@@ -140,6 +140,9 @@ private:
     std::deque<ra2engine::InputEvent> q_;
     int cur_ = 0, step_start_ = -1, frame_ = 0, failures_ = 0;
     bool done_ = false;
+    uint64_t hash_ = 1469598103934665603ULL;
+public:
+    uint64_t probe_hash() const { return hash_; }
     std::string shot_;
 };
 
@@ -168,7 +171,7 @@ int run_controls_selftest(const std::string& outdir) {
     g_menu_art = nullptr;
     g_user_settings = nullptr;
     const bool pass = t.failures() == 0 && t.finished_all();
-    std::printf("selftest %s (%d failure(s), frame %d)\n", pass ? "PASS" : "FAIL", t.failures(),
-                t.frame());
+    std::printf("selftest %s (%d failure(s), frame %d) probe_hash=%016llx\n", pass ? "PASS" : "FAIL",
+                t.failures(), t.frame(), static_cast<unsigned long long>(t.probe_hash()));
     return pass ? 0 : 1;
 }
