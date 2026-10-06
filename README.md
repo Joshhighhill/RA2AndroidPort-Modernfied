@@ -1826,6 +1826,53 @@ modes; LUNAR; loose `.mpr`/`.yrm` files; and a scrollable/filterable browser
 with previews in place of the stepper.
 
 
+## Veterancy + Crates (P5)
+
+Calibration authority: `docs/re/veterancy.md` (Ghidra hunt of YR 1.001
+`gamemd.exe` + this install's `rulesmd.ini`); spec
+`docs/superpowers/specs/2026-10-06-veterancy-crates-design.md`, plan
+`docs/superpowers/plans/2026-10-06-veterancy-crates.md`.
+
+**Veterancy** replaces the capture phase's minimal spawn-baked rank-1:
+
+- Experience is the original's `float` (`Techno+0x150`): each kill adds
+  `victimCost / (killerCost * VeteranRatio)` (computed in double, cap compared on
+  the unrounded sum, stored as float); veteran victims count x2, elite x3,
+  allied 0; `DontScore` victims and `Trainable=no` killers give nothing;
+  destroyed buildings credit their roster Cost. Veteran = `[1,2)`, elite `>= 2`
+  (`VeteranCap=2`).
+- Per-type `VeteranAbilities`/`EliteAbilities` (elite inherits the veteran list)
+  gate the exact integer chains: FIREPOWER `ftol(d*1.1)`, STRONGER
+  `ftol(d/1.5)` then `max(d,1)` BEFORE the Verses, ROF `ftol(r*0.6)`, FASTER
+  `ftol(s*1.2)`, SIGHT (dead: `VeteranSight=0.0`). Elite swaps to `ElitePrimary`.
+- Elite `SELF_HEAL` (and `SelfHealing=yes` types such as HARV/APOC) gain +1 HP on
+  the global `ftol(RepairRate*900)=14`-frame phase.
+- Chevrons: YR `PIPS.SHP` frame 14 (veteran) / 15 (elite).
+- The x87 runs at 53-bit precision (CRT `_controlfp(_PC_53)`), so plain IEEE
+  double arithmetic reproduces every boundary (e.g. `5*0.6 == 3.0`).
+
+**Crates** (lobby CRATES toggle): exact `ScenarioClass::Random` port (R250 +
+psdes seeding) for all crate draws; `clamp(players, CrateMinimum, CrateMaximum)`
+initial crates; lifetime `ftol((A-B)*rand+B)` with `A=Regen*1800`,
+`B=Regen*450`, relocation on expiry; pickup = cumulative-weight `[Powerups]`
+pick, the multiplayer conversion rules (e.g. a second Armor crate on an armored
+unit becomes Money), replacement placed BEFORE the effect; effects Money
+`Random(2000,2900)`, Unit (CrateGoodie pool), HealBase, Reveal, Armor x1.5 /
+Firepower x2.0 (every Techno of any house within `CrateRadius`=768 leptons),
+Speed x1.2 (foot units), Veteran (+1 level).
+
+**Firewall:** everything runs only after `World::enable_veterancy` /
+`enable_crates`, called solely by `GameScene` (the interactive game) and
+`--demo-veterancy`. `launch_skirmish` (shared with `--demo-skirmish`) is
+untouched; a legacy World keeps the spawn-baked rank-1 path verbatim.
+
+**Cut / carried forward:** ROF `Random(0,2)` rearm jitter (found in the binary,
+contradicting combat.md section 5 -- would move every combat gate); promotion
+EVA/sound and the elite flash render; SCATTER/CLOAK/SENSORS/... abilities; the
+zero-weight powerups; the forced-MCV crate; spawner/occupant kill re-routing;
+aircraft FASTER; `NearbyLocation`/`MapRect` are ring-search/grid-bound
+fallbacks; the Unit crate draws once from the injected pool.
+
 ## Building
 
 Prerequisites: CMake 3.20+, MinGW-w64 gcc, Ninja, Python 3.13. The engine also
@@ -2125,6 +2172,7 @@ SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 | `--demo-multihouse` | `multihouse_hash=39412ae996cce8ae` | `deterministic=yes`; N-player HouseRec table + alliances (is_enemy/are_allied, FFA default a!=b), AllyReveal shared sight, last-team-standing victory (ShortGame=last-building), per-house side/color (8 MP colors); wedge guards armed (`docs/re/multihouse.md`) |
 | `--demo-skirmish` | `skirmish_hash=e9ad3f1fd88495f9` | `deterministic=yes`; config-driven launch (SkirmishConfig -> launch_skirmish -> World), house table + toggles + AI-enable + per-house credit seed, 3 combatant slots in two alliance-teams (0+2 allied vs 1, no neutral); wedge guards armed (`docs/re/skirmish.md`) |
 | `--demo-roster` | `roster_hash=333cd43d8b5ece6a` | `deterministic=yes`; 16 new types (7 Soviet + 5 Allied units in kRosterUnits + NANRCT/ATESLA/NASAM/GAAIRC in kRoster), resolved generically (Image= overrides honored) + spawned (Allied full base + explicit add_building + add_combat_unit); APPEND-ONLY, kUnits/kSoviet untouched; wedge guards armed (`docs/re/roster.md`). **NOTE — this hash is INSTALL-SPECIFIC:** `ATESLA` art (`GAPRIS`) is absent on this install, so no `ATESLA` instance is placed; were the art present an instance would spawn and the hash would change (the gate still asserts `ATESLA` resolves as a building regardless). |
+| `--demo-veterancy` | `veterancy_hash=1f02e4c09dba0964` | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 
 ## Android (arm64-v8a) cross-compile
 
