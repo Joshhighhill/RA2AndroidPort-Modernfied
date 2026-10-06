@@ -882,6 +882,138 @@ SuperweaponParams resolve_superweapon(const ra2assets::Rules& rules) {
 // Resolves one image's stand/walk/fire/die animation sequence from an
 // already-loaded Art (artmd.ini's [image] Sequence= -> that [SequenceName]
 // section's Ready/Walk/FireUp/Die1 entries -- docs/re/infantry-anim.md).
+// --- P4 Unit special abilities [RE: docs/re/abilities.md] -----------------------
+// Rules -> AbilityProfile / AbilityRules, read from the REAL rulesmd keys. Kept
+// in main.cpp (World is asset-free); no src/rules.cpp change -- string keys
+// come straight off the Ini with the inline ';' comment stripped.
+std::string ability_ini_str(const Ini& ini, const std::string& sec, const std::string& key) {
+    std::string v = ini.get(sec, key, "");
+    const std::size_t semi = v.find(';');
+    if (semi != std::string::npos) v.erase(semi);
+    while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
+    std::size_t b = 0;
+    while (b < v.size() && std::isspace(static_cast<unsigned char>(v[b]))) ++b;
+    return v.substr(b);
+}
+
+// Boolean INI key off the comment-stripped value ("Teleporter=yes;" carries a
+// trailing ';' on this install): y/t/1 -> true, n/f/0 -> false, absent -> def.
+bool ability_flag(const Ini& ini, const std::string& sec, const std::string& key, bool def) {
+    const std::string v = ability_ini_str(ini, sec, key);
+    if (v.empty()) return def;
+    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(v[0])));
+    if (c == 'y' || c == 't' || c == '1') return true;
+    if (c == 'n' || c == 'f' || c == '0') return false;
+    return def;
+}
+
+
+// One weapon id -> WeaponSpec. The ability KIND is data-driven from the flags
+// the hunt located: weapon Suicide (+0x144, checked FIRST -- the Fire early-out
+// precedes any bullet), warhead Parasite (+0x159), Temporal (+0x15A), IvanBomb
+// (+0x157). RadLevel (+0x158) defaults 0 [RE: abilities.md §A1/§B/§C/§E/§F].
+ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, const std::string& w) {
+    ra2engine::WeaponSpec s;
+    if (w.empty() || !ini.has(w)) return s;
+    s.valid = true;
+    s.damage = rules.weapon_damage(w);
+    s.rof = rules.weapon_rof(w);
+    s.range = rules.weapon_range(w);
+    const std::string wh = rules.weapon_warhead(w);
+    s.verses = rules.verses(wh);
+    s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
+    s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
+    s.rad_level = static_cast<int>(rules.section_double(w, "RadLevel", 0.0));
+    if (ability_flag(ini, w, "Suicide", false)) s.kind = ra2engine::AbilityKind::Suicide;
+    else if (ability_flag(ini, wh, "Parasite", false)) s.kind = ra2engine::AbilityKind::Parasite;
+    else if (ability_flag(ini, wh, "Temporal", false)) s.kind = ra2engine::AbilityKind::Temporal;
+    else if (ability_flag(ini, wh, "IvanBomb", false)) s.kind = ra2engine::AbilityKind::IvanBomb;
+    return s;
+}
+
+ra2engine::AbilityProfile resolve_ability_profile(const Rules& rules, const Ini& ini,
+                                                  const std::string& id) {
+    ra2engine::AbilityProfile p;
+    const ra2engine::WeaponSpec prim = resolve_weapon_spec(rules, ini, rules.primary(id));
+    const ra2engine::WeaponSpec sec =
+        resolve_weapon_spec(rules, ini, ability_ini_str(ini, id, "Secondary"));
+    p.fire_kind = prim.kind;
+    p.c4 = ability_flag(ini, id, "C4", false);                              // §D
+    p.c4_range = sec.valid ? sec.range : 1.5;
+    p.teleporter = ability_flag(ini, id, "Teleporter", false);              // §C1 +0xCD4
+    p.explodes = ability_flag(ini, id, "Explodes", false);                  // §F +0xD15
+    const std::string dw = ability_ini_str(ini, id, "DeathWeapon");          // §F +0xD18
+    p.death = dw.empty() ? prim : resolve_weapon_spec(rules, ini, dw);
+    p.deployer = ability_flag(ini, id, "Deployer", false) &&
+                 ability_flag(ini, id, "DeployFire", false);                // §A +0x6AC
+    if (p.deployer) p.deploy = sec;
+    p.immune_radiation = ability_flag(ini, id, "ImmuneToRadiation", false); // +0xD37
+    p.parasiteable = ability_flag(ini, id, "Parasiteable", true);           // +0xD38
+    p.warpable = ability_flag(ini, id, "Warpable", true);                   // +0xD3A
+    p.no_passive_acquire = !ability_flag(ini, id, "CanPassiveAquire", true);
+    p.no_retaliate = !ability_flag(ini, id, "CanRetaliate", true);
+    p.suppression_threshold =
+        static_cast<int>(rules.section_double(id, "SuppressionThreshold", 0.0));  // +0xD6C
+    p.ifv_mode = static_cast<int>(rules.section_double(id, "IFVMode", 0.0));       // +0x688
+    p.gunner = ability_flag(ini, id, "Gunner", false);                            // +0x805
+    if (p.gunner) {
+        const int n = static_cast<int>(rules.section_double(id, "WeaponCount", 0.0));
+        for (int k = 1; k <= n; ++k)
+            p.ifv_weapons.push_back(
+                resolve_weapon_spec(rules, ini, ability_ini_str(ini, id, "Weapon" + std::to_string(k))));
+        if (!p.ifv_weapons.empty() && !p.ifv_weapons[0].valid) p.ifv_weapons[0] = prim;
+    }
+    p.infantry = rules.is_infantry(id);
+    return p;
+}
+
+ra2engine::AbilityRules resolve_ability_rules(const Rules& rules, const Ini& ini) {
+    ra2engine::AbilityRules r;   // defaults = this install's values
+    r.rad_duration_multiple = (int)rules.section_double("Radiation", "RadDurationMultiple", 1.0);
+    r.rad_application_delay = (int)rules.section_double("Radiation", "RadApplicationDelay", 16.0);
+    r.rad_level_max = (int)rules.section_double("Radiation", "RadLevelMax", 500.0);
+    r.rad_level_delay = (int)rules.section_double("Radiation", "RadLevelDelay", 90.0);
+    r.rad_level_factor = rules.section_double("Radiation", "RadLevelFactor", 0.2);
+    const std::string rwh = ability_ini_str(ini, "Radiation", "RadSiteWarhead");
+    if (!rwh.empty()) r.rad_verses = rules.verses(rwh);
+    r.chrono_distance_factor = (int)rules.general_double("ChronoDistanceFactor", 48.0);
+    r.chrono_trigger = ability_flag(ini, "General", "ChronoTrigger", true);
+    r.chrono_minimum_delay = (int)rules.general_double("ChronoMinimumDelay", 16.0);
+    r.chrono_range_minimum = (int)rules.general_double("ChronoRangeMinimum", 0.0);
+    r.c4_delay_minutes = rules.section_double("CombatDamage", "C4Delay", 0.03);
+    r.ivan_damage = (int)rules.section_double("CombatDamage", "IvanDamage", 450.0);
+    r.ivan_timed_delay = (int)rules.section_double("CombatDamage", "IvanTimedDelay", 450.0);
+    const std::string iwh = ability_ini_str(ini, "CombatDamage", "IvanWarhead");
+    if (!iwh.empty()) {
+        r.ivan_warhead.verses = rules.verses(iwh);
+        r.ivan_warhead.cell_spread = rules.section_double(iwh, "CellSpread", 1.5);
+        r.ivan_warhead.percent_at_max = rules.section_double(iwh, "PercentAtMax", 0.25);
+    }
+    r.ivan_warhead.damage = r.ivan_damage;
+    return r;
+}
+
+// The P4 cast + every [InfantryTypes] entry carrying IFVMode (so an IFV knows
+// its passenger's mode). Registers by IMAGE; opens the abilities firewall.
+// Called by GameScene (interactive) and the --demo-abilities gate ONLY.
+void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini) {
+    world.set_ability_rules(resolve_ability_rules(rules, ini));
+    std::vector<std::string> ids = {"DRON", "DESO", "CLEG", "TANY", "GHOST", "IVAN", "TERROR", "FV"};
+    for (const auto& kv : ini.section("InfantryTypes")) {
+        std::string id = kv.second;
+        if (const std::size_t semi = id.find(';'); semi != std::string::npos) id.erase(semi);
+        while (!id.empty() && std::isspace(static_cast<unsigned char>(id.back()))) id.pop_back();
+        while (!id.empty() && std::isspace(static_cast<unsigned char>(id.front()))) id.erase(0, 1);
+        if (!id.empty() && rules.section_double(id, "IFVMode", 0.0) != 0.0 &&
+            std::find(ids.begin(), ids.end(), id) == ids.end())
+            ids.push_back(id);
+    }
+    for (const std::string& id : ids) {
+        if (!ini.has(id)) continue;
+        world.register_ability_profile(rules.image(id), resolve_ability_profile(rules, ini, id));
+    }
+}
+
 // Logs the fire/die entries (mirrors resolve_combat_unit's [unit] log line)
 // so a real-install run visibly confirms the real artmd.ini numbers got
 // pinned (ground truth: GI/CONS fireup=164,6,6 die1=134,15).
@@ -3658,7 +3790,7 @@ bool draw_mode_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Mode
         bool valid = (b.house == 0 && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()));
         if (valid)
             valid = repair ? (!b.selling && ra2engine::can_be_click_repaired(b, ba.roster[b.type]))
-                           : ra2engine::can_be_sold(b, ba.roster[b.type], /*c4_applied=*/false);
+                           : ra2engine::can_be_sold(b, ba.roster[b.type], /*c4_applied=*/b.c4_applied);
         state = valid ? 1 : 2;
     }
     const int tick = static_cast<int>((game_frame / 4) % 20);
@@ -3966,6 +4098,12 @@ public:
         // Audio (--no-audio skips init_audio entirely; rules_ reused for voices).
         if (!no_audio_) init_audio(audio_, dir_, rules_);
 
+        // P4 Unit special abilities [RE: abilities.md]: bind the cast's
+        // profiles (and every IFVMode passenger) to this INTERACTIVE world only.
+        // Deliberately NOT in launch_skirmish -- the skirmish/maps gates call
+        // that, and must keep the abilities firewall closed.
+        wire_abilities(world_, rules_, rules_ini_);
+
         // Survivor crews [RE: repair-sell.md §B3/§D1]: World is asset-free, so
         // each side's crew infantry is resolved HERE from [General]
         // AlliedCrew / SovietCrew (E1 / E2 on this install) and registered.
@@ -4148,7 +4286,14 @@ public:
 
         // CB-1 unload key (D, edge-detected) -> unload selected own transports.
         const bool unload_key = ks[SDL_SCANCODE_D] != 0;
-        if (unload_key && !prev_unload_key_) world_.order_unload_selected();
+        if (unload_key && !prev_unload_key_) {
+            world_.order_unload_selected();
+            // P4 [RE: abilities.md §A]: the same deploy key toggles the
+            // selected player Deployers (desolator radiation stance).
+            for (int i = 0; i < (int)world_.units().size(); ++i)
+                if (world_.units()[i].selected && world_.units()[i].house == 0)
+                    world_.order_deploy(i);
+        }
         prev_unload_key_ = unload_key;
 
         // CB-4 Superweapons: N arms SW-targeting when house 0's SW is READY.
@@ -13475,6 +13620,503 @@ int run_demo_projectile() {
     return (identical && r1.ok && r2.ok) ? 0 : 1;
 }
 
+// --- --demo-abilities helpers ------------------------------------------------
+// P4 Unit special abilities [RE: docs/re/abilities.md]. Each stage runs in its
+// OWN fresh World (no cross-stage blast/radiation interference); every stage
+// folds into one FNV hash together with its witness line. Victims are disarmed
+// (w_damage = 0) so the scripted numbers are exact -- the abilities are under
+// test, not the victims' return fire.
+
+namespace abil_gate {
+
+bool open_rect(const ra2engine::World& w, int W, int H, int& x0, int& y0) {
+    const ra2assets::MapCell* pc = ra2engine::pick_start_cell(w.map());
+    const int sx = pc ? pc->x : w.grid_w() / 2, sy = pc ? pc->y : w.grid_h() / 2;
+    // Spiral-ish scan by Chebyshev ring from the start cell (deterministic).
+    for (int r = 0; r < std::max(w.grid_w(), w.grid_h()); ++r)
+        for (int y = sy - r; y <= sy + r; ++y)
+            for (int x = sx - r; x <= sx + r; ++x) {
+                if (std::max(std::abs(x - sx), std::abs(y - sy)) != r) continue;
+                if (x < 2 || y < 2 || x + W >= w.grid_w() - 2 || y + H >= w.grid_h() - 2) continue;
+                bool ok = true;
+                for (int dy = 0; dy < H && ok; ++dy)
+                    for (int dx = 0; dx < W && ok; ++dx)
+                        if (!w.walkable(x + dx, y + dy) || w.unit_at_cell(x + dx, y + dy) >= 0)
+                            ok = false;
+                if (ok) { x0 = x; y0 = y; return true; }
+            }
+    return false;
+}
+
+uint64_t fold(uint64_t h, const ra2engine::World& w) {
+    for (const ra2engine::Unit& u : w.units()) {
+        h = fnv_mix(h, (uint64_t)(int64_t)u.cell_x);
+        h = fnv_mix(h, (uint64_t)(int64_t)u.cell_y);
+        h = fnv_mix(h, (uint64_t)(int64_t)u.hp);
+        h = fnv_mix(h, (uint64_t)(u.alive ? 1 : 0));
+        h = fnv_mix(h, (uint64_t)(u.frozen ? 1 : 0));
+        h = fnv_mix(h, (uint64_t)(int64_t)u.cargo_of);
+        h = fnv_mix(h, (uint64_t)(int64_t)u.ifv_current);
+        h = fnv_mix(h, (uint64_t)(int64_t)u.warp_remaining);
+    }
+    for (const ra2engine::Building& b : w.buildings()) {
+        h = fnv_mix(h, (uint64_t)(int64_t)b.hp);
+        h = fnv_mix(h, (uint64_t)(int)b.state);
+        h = fnv_mix(h, (uint64_t)(b.c4_applied ? 1 : 0));
+    }
+    h = fnv_mix(h, (uint64_t)(int64_t)std::llround(w.rad_field().total() * 1000.0));
+    h = fnv_mix(h, w.ability_frame());
+    return h;
+}
+
+}  // namespace abil_gate
+
+struct DemoAbilitiesResult { std::vector<std::string> witness; uint64_t hash = 0; bool ok = true; };
+
+DemoAbilitiesResult simulate_abilities(Assets& a, UnitAssets& ua, BuildingAssets& ba,
+                                       const Rules& rules, const Ini& rini,
+                                       const std::vector<const VehicleAssets*>& vlist, bool render,
+                                       SDL_Renderer* ren, ra2engine::TextureCache* tc, int W, int H,
+                                       const std::string& mid_png, const std::string& end_png) {
+    using ra2engine::World;
+    using Ev = World::AbilityEvent;
+    DemoAbilitiesResult r;
+    uint64_t h = 0xcbf29ce484222325ull;
+    const double kDt = 1.0 / 15.0;
+    auto line = [&](const std::string& s) {
+        r.witness.push_back(s);
+        for (char c : s) h = fnv_mix(h, (uint64_t)(unsigned char)c);
+    };
+    auto wedge = [&](bool bad, const char* msg) {
+        if (!bad) return;
+        r.ok = false;
+        r.witness.emplace_back(std::string("[ab] WEDGE: ") + msg);
+    };
+    auto fresh = [&]() {
+        World w = build_world(a, ua, 0);
+        wire_abilities(w, rules, rini);
+        return w;
+    };
+    auto spawn = [&](World& w, const char* id, int x, int y, int house, bool disarm) -> int {
+        ResolvedUnit ru = resolve_combat_unit(rules, id);
+        ru.combat.is_vehicle = rules.is_vehicle(id);
+        if (ru.combat.is_vehicle) {
+            ru.combat.rot = rules.rot(id);
+            ru.combat.turret = rules.has_turret(id);
+        }
+        ru.combat.speed_cps = ru.speed * kCellsPerSecPerSpeed;
+        w.add_combat_unit(x, y, house, ru.combat);
+        const int idx = (int)w.units().size() - 1;
+        if (disarm) w.units()[idx].w_damage = 0;
+        return idx;
+    };
+    auto cam_on = [&](const World& w, int cx, int cy) {
+        ra2engine::Camera cam;
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, 0, 60, 30, 15);
+        cam.x = W / 2 - p.x;
+        cam.y = H / 2 - p.y;
+        (void)w;
+        return cam;
+    };
+    auto shot = [&](World& w, int cx, int cy, const std::string& png) {
+        if (!render) return;
+        const ra2engine::Camera cam = cam_on(w, cx, cy);
+        SDL_SetRenderDrawColor(ren, 10, 20, 60, 255);
+        SDL_RenderClear(ren);
+        render_world(ren, *tc, a, ua, w, cam, W, H, nullptr, &vlist, &ba);
+        capture_png(ren, png, W, H);
+    };
+    char b[384];
+
+    // ---- Stage 1: Terror Drone vs Rhino (HTNK, heavy, 400) [§B1/§B2/§B3].
+    {
+        World w = fresh();
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int d = ok ? spawn(w, "DRON", x0, y0 + 2, 1, false) : -1;
+        const int t = ok ? spawn(w, "HTNK", x0 + 3, y0 + 2, 0, true) : -1;
+        std::vector<int64_t> ticks;
+        std::vector<int> dmgs;
+        int64_t infect = -1, exitf = -1;
+        if (ok) {
+            w.units()[d].target = t;
+            w.units()[d].attack_order = true;
+            for (int k = 0; k < 900 && exitf < 0; ++k) {
+                const int64_t f = (int64_t)w.ability_frame();
+                w.step(kDt);
+                for (const Ev& e : w.take_ability_events()) {
+                    if (e.kind == Ev::Kind::Infect) infect = f;
+                    if (e.kind == Ev::Kind::ParasiteTick) { ticks.push_back(f); dmgs.push_back(e.x); }
+                    if (e.kind == Ev::Kind::DroneExit || e.kind == Ev::Kind::DroneLost) exitf = f;
+                }
+            }
+        }
+        bool gaps60 = ticks.size() >= 2, all50 = !dmgs.empty();
+        for (size_t i = 1; i < ticks.size(); ++i) if (ticks[i] - ticks[i - 1] != 60) gaps60 = false;
+        for (int x : dmgs) if (x != 50) all50 = false;
+        const bool host_dead = ok && (!w.units()[t].alive || w.units()[t].die_time >= 0.0);
+        std::snprintf(b, sizeof b,
+                      "[ab] stage1 drone_vs_rhino: infect=%lld first_tick=%lld ticks=%d gap60=%s dmg50=%s "
+                      "host_dead=%s drone_exit=%lld drone_on_map=%s",
+                      (long long)infect, (long long)(ticks.empty() ? -1 : ticks[0]), (int)ticks.size(),
+                      gaps60 ? "yes" : "no", all50 ? "yes" : "no", host_dead ? "yes" : "no",
+                      (long long)exitf, (ok && w.units()[d].cargo_of < 0 && w.units()[d].alive) ? "yes" : "no");
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(!ok, "stage1: no open area");
+        wedge(infect < 0 || ticks.empty() || ticks[0] != infect, "drone first tick is not immediate (§B1 timer {Frame,0})");
+        wedge(!gaps60 || !all50 || ticks.size() != 8, "drone ticks are not 8 x 50 dmg every 60 frames vs a 400-HP heavy (§B2)");
+        wedge(!host_dead || exitf < 0, "the drone did not pop out when its host died (§B3)");
+    }
+
+    // ---- Stage 2: Terror Drone vs GI -- instant kill on the first tick [§B2].
+    {
+        World w = fresh();
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int d = ok ? spawn(w, "DRON", x0, y0 + 2, 1, false) : -1;
+        const int g = ok ? spawn(w, "E1", x0 + 3, y0 + 2, 0, true) : -1;
+        int ticks = 0, kill_dmg = -1;
+        int64_t infect = -1, exitf = -1;
+        if (ok) {
+            w.units()[d].target = g;
+            w.units()[d].attack_order = true;
+            for (int k = 0; k < 200; ++k) {
+                const int64_t f = (int64_t)w.ability_frame();
+                w.step(kDt);
+                for (const Ev& e : w.take_ability_events()) {
+                    if (e.kind == Ev::Kind::Infect) infect = f;
+                    if (e.kind == Ev::Kind::ParasiteTick) { ++ticks; kill_dmg = e.x; }
+                    if (e.kind == Ev::Kind::DroneExit) exitf = f;
+                }
+            }
+        }
+        std::snprintf(b, sizeof b, "[ab] stage2 drone_vs_gi: infect=%lld ticks=%d kill_dmg=%d exit=%lld",
+                      (long long)infect, ticks, kill_dmg, (long long)exitf);
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(ticks != 1 || kill_dmg != 125 || exitf != infect,
+              "infantry was not killed on the drone's first tick (dmg=Health, §B2) with the drone ejected that frame");
+    }
+
+    // ---- Stage 3: Desolator deploy -> RadSite, 16-frame application [§A].
+    {
+        World w = fresh();
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int ds = ok ? spawn(w, "DESO", x0, y0 + 2, 0, false) : -1;
+        const int g1 = ok ? spawn(w, "E2", x0 + 5, y0 + 2, 1, true) : -1;
+        const int g2 = ok ? spawn(w, "E2", x0 + 9, y0 + 2, 1, true) : -1;
+        const int tk = ok ? spawn(w, "HTNK", x0 + 7, y0 + 4, 1, true) : -1;
+        int eruptions = 0, rad_hits_g1 = 0, first_g1 = -1, first_tk = -1;
+        bool phase16 = true;
+        double center0 = -1.0, center_after_add = -1.0;
+        if (ok) {
+            w.order_deploy(ds);   // deploy at once: the armed RadBeam must not fire first
+            for (int k = 0; k < 240; ++k) {
+                const uint64_t f = w.ability_frame();
+                w.step(kDt);
+                for (const Ev& e : w.take_ability_events()) {
+                    if (e.kind == Ev::Kind::Eruption) {
+                        ++eruptions;
+                        if (eruptions == 1) center0 = w.rad_field().level_at(x0, y0 + 2);
+                    }
+                    if (e.kind == Ev::Kind::RadDamage) {
+                        if (f % 16 != 0) phase16 = false;
+                        if (e.a == g1) { ++rad_hits_g1; if (first_g1 < 0) first_g1 = e.x; }
+                        if (e.a == tk && first_tk < 0) first_tk = e.x;
+                    }
+                }
+                if (k == 70) center_after_add = w.rad_field().level_at(x0, y0 + 2);
+                if (k == 120) shot(w, x0 + 4, y0 + 2, mid_png);
+            }
+        }
+        // Expected first hit at 5 cells: level = 1408/2688*500 -> ftol 261 -> *0.2 = 52 x flak 100%.
+        const int expect_g1 = ra2engine::rad_damage(ra2engine::rad_cell_amount(1280, 2688, 500),
+                                                    ra2engine::AbilityRules{});
+        std::snprintf(b, sizeof b,
+                      "[ab] stage3 desolator: eruptions=%d center0=%.3f center_after_add=%.3f sites=%d "
+                      "g1_hits=%d g1_first=%d expect=%d tank_first=%d phase16=%s deso_hp=%d g2_alive=%s",
+                      eruptions, center0, center_after_add, ok ? w.rad_field().live_sites() : 0,
+                      rad_hits_g1, first_g1, expect_g1, first_tk, phase16 ? "yes" : "no",
+                      ok ? w.units()[ds].hp : -1,
+                      (ok && w.units()[g2].alive && w.units()[g2].die_time < 0.0) ? "yes" : "no");
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(eruptions != 4, "deployed desolator did not erupt every 60 frames (§A, ROF=60)");
+        wedge(std::fabs(center0 - 500.0) > 1e-6, "RadSite center is not RadLevel=500 (§A2)");
+        wedge(center_after_add <= 500.0, "a re-fired eruption did not Add to the site (§A1 0x65AF70)");
+        wedge(!phase16, "radiation damage off the absolute 16-frame phase (§A4)");
+        wedge(first_g1 != expect_g1, "radiation damage formula drifted (ftol(ftol(lvl)*0.2) x Verses, §A4)");
+        wedge(ok && w.units()[ds].hp != w.units()[ds].max_hp, "an ImmuneToRadiation desolator took damage");
+    }
+
+    // ---- Stage 4: Chrono Legionnaire teleport + erase [§C].
+    {
+        World w = fresh();
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int c = ok ? spawn(w, "CLEG", x0, y0 + 2, 0, false) : -1;
+        int frozen1 = 0;
+        bool moved_at_once = false;
+        int64_t attach = -1, erase = -1;
+        int g = -1;
+        if (ok) {
+            w.step(kDt);
+            w.order_unit_move(c, x0 + 10, y0 + 2);
+            moved_at_once = w.units()[c].cell_x == x0 + 10;
+            while (w.units()[c].frozen && frozen1 < 300) { w.step(kDt); ++frozen1; }
+            (void)w.take_ability_events();
+            g = spawn(w, "E1", x0 + 13, y0 + 2, 1, true);
+            w.units()[c].target = g;
+            w.units()[c].attack_order = true;
+            for (int k = 0; k < 400 && erase < 0; ++k) {
+                const int64_t f = (int64_t)w.ability_frame();
+                w.step(kDt);
+                for (const Ev& e : w.take_ability_events()) {
+                    if (e.kind == Ev::Kind::TemporalAttach && attach < 0) attach = f;
+                    if (e.kind == Ev::Kind::Erase) erase = f;
+                }
+            }
+        }
+        const bool no_death = ok && g >= 0 && !w.units()[g].alive && w.units()[g].die_time < 0.0;
+        std::snprintf(b, sizeof b,
+                      "[ab] stage4 legionnaire: teleport_immediate=%s frozen=%d attach=%lld erase=%lld "
+                      "frames=%lld erased_not_killed=%s",
+                      moved_at_once ? "yes" : "no", frozen1, (long long)attach, (long long)erase,
+                      (long long)(erase - attach + 1), no_death ? "yes" : "no");
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(!moved_at_once || frozen1 != 53, "10-cell teleport is not immediate + 53 frozen frames (2560/48, §C1)");
+        wedge(erase - attach + 1 != 157 || !no_death, "GI not erased in 157 frames (125*10/8) without dying (§C2)");
+    }
+
+    // ---- Stage 5: Tanya C4 on an enemy power plant + the sell refusal [§D].
+    {
+        World w = fresh();
+        wire_economy(w, ba, rules);   // btypes() for begin_sell
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int t = roster_index(ba, "NAPOWR");
+        int bi = -1, tn = -1;
+        int64_t plant = -1, blast = -1;
+        bool sell_refused = false, sell_ok_before = false;
+        if (ok && t >= 0) {
+            const ra2engine::BuildingTypeDef& d = ba.roster[t];
+            bi = w.add_building(t, x0 + 8, y0 + 1, d.fw, d.fh, 1, d.strength, d.armor_ix,
+                                ba.art[t].buildup_total, /*instant=*/true, d.sight, d.grants_map_reveal);
+            tn = spawn(w, "TANY", x0, y0 + 2, 0, false);
+            sell_ok_before = ra2engine::can_be_sold(w.buildings()[bi], ba.roster[t], false);
+            w.units()[tn].target_building = bi;
+            w.units()[tn].attack_order = true;
+            for (int k = 0; k < 600 && blast < 0; ++k) {
+                const int64_t f = (int64_t)w.ability_frame();
+                w.step(kDt);
+                for (const Ev& e : w.take_ability_events()) {
+                    if (e.kind == Ev::Kind::C4Plant) {
+                        plant = f;
+                        sell_refused = !w.begin_sell(bi, 1);   // the owner may not sell it now
+                    }
+                    if (e.kind == Ev::Kind::C4Blast) blast = f;
+                }
+            }
+        }
+        const bool dead = bi >= 0 && w.buildings()[bi].state == ra2engine::Building::State::Dead;
+        std::snprintf(b, sizeof b,
+                      "[ab] stage5 c4: plant=%lld blast=%lld delay=%lld sellable_before=%s sell_refused=%s dead=%s",
+                      (long long)plant, (long long)blast, (long long)(blast - plant),
+                      sell_ok_before ? "yes" : "no", sell_refused ? "yes" : "no", dead ? "yes" : "no");
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(t < 0, "NAPOWR not in the building roster");
+        wedge(plant < 0 || blast - plant != 27 || !dead, "C4 did not destroy the building 27 frames after the plant (ftol(.03*900), §D)");
+        wedge(!sell_ok_before || !sell_refused, "a C4'd building was sellable (§D3 hook)");
+    }
+
+    // ---- Stage 6: Crazy Ivan bomb [§E].
+    {
+        World w = fresh();
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int iv = ok ? spawn(w, "IVAN", x0, y0 + 2, 0, false) : -1;
+        const int t1 = ok ? spawn(w, "HTNK", x0 + 3, y0 + 2, 1, true) : -1;
+        const int t2 = ok ? spawn(w, "HTNK", x0 + 4, y0 + 2, 1, true) : -1;
+        int64_t plant = -1, blast = -1;
+        if (ok) {
+            w.units()[iv].target = t1;
+            w.units()[iv].attack_order = true;
+            for (int k = 0; k < 900 && blast < 0; ++k) {
+                const int64_t f = (int64_t)w.ability_frame();
+                w.step(kDt);
+                for (const Ev& e : w.take_ability_events()) {
+                    if (e.kind == Ev::Kind::BombPlant) plant = f;
+                    if (e.kind == Ev::Kind::BombBlast) blast = f;
+                }
+            }
+        }
+        const bool t1dead = ok && (!w.units()[t1].alive || w.units()[t1].die_time >= 0.0);
+        const int t2hp = ok ? w.units()[t2].hp : -1;
+        std::snprintf(b, sizeof b,
+                      "[ab] stage6 ivan: plant=%lld blast=%lld delay=%lld target_dead=%s neighbor_hp=%d fire_once=%s",
+                      (long long)plant, (long long)blast, (long long)(blast - plant),
+                      t1dead ? "yes" : "no", t2hp, (ok && w.units()[iv].target == -1) ? "yes" : "no");
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(plant < 0 || blast - plant != 451, "Ivan bomb did not detonate on plant+451 (DetonationFrame < Frame, §E)");
+        wedge(!t1dead || t2hp != 400 - 225, "IvanWH splash drifted (450 at the center, 225 one cell out, §E)");
+    }
+
+    // ---- Stage 7: Terrorist suicide -> TerrorBomb death weapon [§F].
+    {
+        World w = fresh();
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int tr = ok ? spawn(w, "TERROR", x0, y0 + 2, 0, false) : -1;
+        const int t1 = ok ? spawn(w, "HTNK", x0 + 3, y0 + 2, 1, true) : -1;
+        const int g1 = ok ? spawn(w, "E2", x0 + 3, y0 + 3, 1, true) : -1;
+        int suicides = 0, death_weapons = 0;
+        if (ok) {
+            w.units()[tr].target = t1;
+            w.units()[tr].attack_order = true;
+            for (int k = 0; k < 200; ++k) {
+                w.step(kDt);
+                for (const Ev& e : w.take_ability_events()) {
+                    if (e.kind == Ev::Kind::Suicide) ++suicides;
+                    if (e.kind == Ev::Kind::DeathWeapon) ++death_weapons;
+                }
+            }
+        }
+        std::snprintf(b, sizeof b, "[ab] stage7 terrorist: suicides=%d death_weapons=%d tank_hp=%d gi_hp=%d",
+                      suicides, death_weapons, ok ? w.units()[t1].hp : -1, ok ? w.units()[g1].hp : -1);
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(suicides != 1 || death_weapons != 1, "the terrorist did not die by his Suicide weapon and fire TerrorBomb once (§F)");
+        wedge(ok && w.units()[t1].hp >= 400, "TerrorBomb did not damage the tank (§F)");
+    }
+
+    // ---- Stage 8: IFV weapon by passenger [§G].
+    {
+        World w = fresh();
+        int x0 = 0, y0 = 0;
+        const bool ok = abil_gate::open_rect(w, 16, 6, x0, y0);
+        const int fv = ok ? spawn(w, "FV", x0, y0 + 2, 0, false) : -1;
+        const int gi = ok ? spawn(w, "E1", x0 + 2, y0 + 2, 0, false) : -1;
+        const int ds = ok ? spawn(w, "DESO", x0 + 2, y0 + 4, 0, false) : -1;
+        int mode_gi = -1, rof_gi = -1, mode_empty = -1, mode_deso = -1, dmg_deso = -1;
+        if (ok) {
+            auto board = [&](int p) {
+                w.clear_selection();
+                w.units()[p].selected = true;
+                w.order_enter_transport(fv);
+                for (int k = 0; k < 200 && w.units()[p].cargo_of < 0; ++k) w.step(kDt);
+                w.step(kDt);
+            };
+            auto unload = [&]() {
+                w.clear_selection();
+                w.units()[fv].selected = true;
+                w.order_unload_selected();
+                for (int k = 0; k < 100 && !w.units()[fv].cargo.empty(); ++k) w.step(kDt);
+                w.step(kDt);
+            };
+            board(gi);
+            mode_gi = w.units()[fv].ifv_current;
+            rof_gi = w.units()[fv].w_rof;
+            unload();
+            mode_empty = w.units()[fv].ifv_current;
+            board(ds);
+            mode_deso = w.units()[fv].ifv_current;
+            dmg_deso = w.units()[fv].w_damage;
+            (void)w.take_ability_events();
+        }
+        std::snprintf(b, sizeof b,
+                      "[ab] stage8 ifv: gi_mode=%d gi_rof=%d empty_mode=%d deso_mode=%d deso_dmg=%d",
+                      mode_gi, rof_gi, mode_empty, mode_deso, dmg_deso);
+        line(b);
+        h = abil_gate::fold(h, w);
+        wedge(mode_gi != 2 || rof_gi != 15, "GI in an IFV is not Weapon3=CRM60 (IFVMode 2, ROF 15, §G)");
+        wedge(mode_empty != 0, "an empty IFV did not return to Weapon1 (RemoveGunner, §G)");
+        wedge(mode_deso != 9 || dmg_deso != 175, "Desolator in an IFV is not Weapon10=CRRadBeamWeapon (175, §G)");
+        shot(w, x0 + 2, y0 + 2, end_png);
+    }
+
+    r.hash = h;
+    char hb[64];
+    std::snprintf(hb, sizeof hb, "[ab] abilities_hash=%016llx", (unsigned long long)r.hash);
+    r.witness.emplace_back(hb);
+    return r;
+}
+
+// --demo-abilities: the P4 Unit special abilities gate. Rendered (hidden
+// window + mid/end PNGs) then headless from fresh Worlds; witness + hash are
+// byte-compared. NO pinned hash literal (the README pins it).
+int run_demo_abilities() {
+    const int W = 1280, H = 720;
+    const std::string scratch =
+        "C:\\Users\\Omar\\AppData\\Local\\Temp\\claude\\d--Red-Alert-2\\"
+        "7fdac188-b617-4ae7-b05d-0ba2d5efcda9\\scratchpad\\";
+    const std::string mid_png = scratch + "demo_abilities_mid.png";
+    const std::string end_png = scratch + "demo_abilities_end.png";
+
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok) {
+        std::cerr << "[demo-abilities] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    // Infantry SHPs for the cast (render only; the sim never reads them).
+    try {
+        MixFile conquer = ra2.open_nested("conquer.mix");
+        for (const char* id : {"DESO", "CLEG", "TANY", "IVAN", "TERROR", "E1", "E2"}) {
+            const std::string img = rules.image(id);
+            if (ua.shps.count(img)) continue;
+            try {
+                ua.shps.emplace(img, load_unit_shp(conquer, img));
+            } catch (const std::exception&) {}
+        }
+    } catch (const std::exception&) {}
+    std::vector<const VehicleAssets*> vlist;
+
+    DemoAbilitiesResult r1;
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+        SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-abilities)", SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_HIDDEN);
+        if (!win) throw std::runtime_error(SDL_GetError());
+        SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+        if (!ren) throw std::runtime_error(SDL_GetError());
+        {
+            ra2engine::TextureCache tc(ren);
+            r1 = simulate_abilities(a, ua, ba, rules, rules_ini, vlist, /*render=*/true, ren, &tc, W,
+                                    H, mid_png, end_png);
+        }
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+    }
+    const DemoAbilitiesResult r2 = simulate_abilities(a, ua, ba, rules, rules_ini, vlist,
+                                                      /*render=*/false, nullptr, nullptr, W, H, "", "");
+    const bool identical = (r1.witness == r2.witness) && (r1.hash == r2.hash);
+    std::cerr << "[demo-abilities] run1 lines=" << r1.witness.size()
+              << " run2 lines=" << r2.witness.size() << " identical=" << (identical ? "yes" : "NO")
+              << " ok(r1/r2)=" << (r1.ok ? "Y" : "n") << "/" << (r2.ok ? "Y" : "n") << "\n";
+    for (const std::string& s : r1.witness) std::cout << s << "\n";
+    std::cout << "mid_png=" << mid_png << "\nend_png=" << end_png << "\n";
+    char mh[96];
+    std::snprintf(mh, sizeof mh, "deterministic=%s lines=%d abilities_hash=%016llx",
+                  identical ? "yes" : "no", (int)r1.witness.size(), (unsigned long long)r1.hash);
+    std::cout << mh << "\n";
+    return (!identical || !r1.ok || !r2.ok) ? 1 : 0;
+}
+
 // --demo-audio: headless-safe proof that the audio pipeline actually
 // produces sound (no window is created -- CI/dev-box safe either way).
 // Loads rulesmd.ini -> Rules -> init_audio exactly like run_interactive does,
@@ -14046,6 +14688,8 @@ int main(int argc, char** argv) {
                 return run_demo_triggers();
             } else if (arg == "--demo-veterancy") {
                 return run_demo_veterancy();   // P5 Veterancy + Crates gate
+            } else if (arg == "--demo-abilities") {
+                return run_demo_abilities();   // P4 Unit special abilities gate
             } else if (arg == "--demo-audio") {
                 demo_audio = true;
             } else if (arg == "--no-audio") {

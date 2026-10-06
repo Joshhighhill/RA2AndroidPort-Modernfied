@@ -16,6 +16,7 @@
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "repair_sell.hpp"  // Repair & Sell: RepairSellRules + the pure tick arithmetic
 #include "crate.hpp"  // P5 Crates: GameRandom/CrateRules/Powerup (pure)
+#include "abilities.hpp"    // P4 abilities: AbilityProfile/AbilityRules/RadField
 #include "superweapon.hpp"  // CB-4 Superweapons: Superweapon/SuperweaponType lifecycle
 #include "visibility.hpp"  // Shroud/Fog: cell_in_sight/reveal_disc (pure reveal math)
 #include "ra2assets/map.hpp"
@@ -276,6 +277,36 @@ struct Unit {
     // vet.killed_by, a stamp combat.cpp writes at death and nothing else reads.
     // NOT read by world_hash or any existing *_hash.
     UnitVet vet;
+    // --- P4 Unit special abilities [RE: abilities.md] -----------------------
+    // ALL defaults INERT (spec §Global constraints): a profile reaches a unit
+    // ONLY through World::register_ability_profile (bound by image in
+    // step_abilities), which no pre-P4 gate calls -- so every field below
+    // holds its default in every existing demo and world_hash (cell/hp/alive)
+    // is untouched. Indices are unit/building indices (stable: tombstoned,
+    // never erased).
+    AbilityProfile abil;             // the bound per-type profile (inert = none)
+    bool abil_bound = false;         // step_abilities looked this unit's image up
+    // Frozen = cannot move, fire, acquire or be pathed: teleport warp-in
+    // (§C1 +0x271), being erased (§C2 +0x270), deployed (§A). Read as a guard
+    // by step_units / step_combat / the MoveRequest dispatch.
+    bool frozen = false;
+    std::int64_t warp_until = -1;    // teleport: frozen until this frame (§C1)
+    int ability_fired_unit = -1;     // combat fire intercepted this frame (victim)
+    int ability_fired_building = -1; // ... or building victim
+    int parasite_on_me = -1;         // drone riding this unit (§B1 +0x694)
+    std::int64_t parasite_next_tick = 0;  // drone: DamageDeliveryTimer expiry (§B2)
+    std::int64_t suppress_until = -1;     // drone: SuppressionTimer expiry (§B3)
+    int last_hp = -1;                // host: HP at the end of the previous pass (§B3)
+    int temporal_target = -1;        // CLEG: unit being erased (§C2)
+    int temporal_target_building = -1;  // CLEG: building being erased
+    int warp_remaining = 0;          // victim: WarpRemaining (§C2); 0 = not warped
+    std::int64_t bomb_frame = -1;    // Ivan bomb DetonationFrame on this unit (§E)
+    int bomb_owner = -1;             // the planting unit
+    int bomb_house = -1;             // its house
+    bool deployed = false;           // desolator deployed (§A)
+    std::int64_t deploy_next_fire = 0;  // next eruption frame
+    int ifv_current = 0;             // gunner: current weapon index (§G)
+    bool death_done = false;         // death weapon / bomb / parasite handled (§F)
 };
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
@@ -1124,6 +1155,41 @@ public:
     // building; also the "reveal map / no-shroud" start option. No-op if empty.
     void reveal_all_house(int h);
 
+    // --- P4 Unit special abilities [RE: abilities.md] ----------------------
+    // Bind `p` to every unit whose Unit::image == image (looked up lazily by
+    // step_abilities, so spawn paths stay untouched). OPENS abilities_any_ --
+    // the single firewall of the whole phase. No pre-P4 gate calls it.
+    void register_ability_profile(const std::string& image, const AbilityProfile& p);
+    // The recovered globals; the struct's defaults ARE this install's values.
+    void set_ability_rules(const AbilityRules& r) { ability_rules_ = r; }
+    const AbilityRules& ability_rules() const { return ability_rules_; }
+    bool abilities_enabled() const { return abilities_any_; }
+    // One step() = one logic frame; advances every step, above the firewall.
+    std::uint64_t ability_frame() const { return ability_frame_; }
+    const RadField& rad_field() const { return rad_; }
+    // Building roster types with CanC4=no (rulesmd [type] CanC4=no).
+    void set_no_c4_types(const std::vector<int>& types) { no_c4_types_ = types; }
+    // Toggle a Deployer's deployed state (the desolator 'D'). Returns true iff
+    // the unit is a live deployer (state flipped).
+    bool order_deploy(int idx);
+    // The per-frame ability pass (appended to World::step). Public so tests
+    // can drive it; `if (!abilities_any_) return;` after the frame tick.
+    void step_abilities(double dt);
+    // Witness events for the gate / audio (drained like take_cargo_events).
+    struct AbilityEvent {
+        enum class Kind {
+            Infect, ParasiteTick, DroneExit, DroneLost, Teleport, Unfreeze, TemporalAttach,
+            Erase, BombPlant, BombBlast, C4Plant, C4Blast, Suicide, DeathWeapon, Eruption,
+            RadDamage, IfvSwap, Deploy
+        };
+        Kind kind = Kind::Infect;
+        int a = -1;          // the acting unit (or victim for damage events)
+        int b = -1;          // the other party (unit, or building for *_bld)
+        int x = 0, y = 0;    // event-specific payload (damage, cell, frames)
+        bool building = false;  // b is a building index
+    };
+    std::vector<AbilityEvent> take_ability_events();
+
     // Test seam: directly seed a house's credits without running the full
     // harvest/unload pipeline (the cash-steal victim in the infiltrate tests).
     // Index 2 (neutral) inert. Interactive/demo code never calls it.
@@ -1466,6 +1532,30 @@ private:
     // Finish a sell mission: free the footprint, spawn survivors, pay the FLAT
     // refund, then kill + mark sold. See world.cpp for the recovered ordering.
     void complete_sell(int b_idx);
+
+    // --- P4 Unit special abilities [RE: abilities.md] (world_abilities.cpp) ---
+    bool abilities_any_ = false;                      // THE firewall
+    std::uint64_t ability_frame_ = 0;                 // logic frame counter
+    AbilityRules ability_rules_;
+    std::map<std::string, AbilityProfile> ability_profiles_;  // by image
+    RadField rad_;
+    std::vector<int> no_c4_types_;
+    std::vector<AbilityEvent> ability_events_;
+    // Teleport `idx` to the nearest free cell at/around (gx,gy) [§C1].
+    void teleport_unit(int idx, int gx, int gy);
+    // Start a unit's death the combat.cpp way (die_time=0, release occupancy).
+    void ability_kill_unit(int idx);
+    // Remove a unit from the game without dying (erase, §C2).
+    void ability_erase_unit(int idx);
+    // DamageArea [§E/§F]: all houses, units + buildings, linear falloff.
+    void ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage);
+    void ability_fire_event(int idx);
+    void ability_death_pass();
+    // Weapon application to a unit/building with verses (no splash).
+    void ability_damage_unit(int victim, int dmg);
+    void ability_damage_building(int b_idx, int dmg);
+    void ability_apply_weapon_fields(Unit& u, const WeaponSpec& w);
+    void ability_bind_unit(Unit& u);
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by

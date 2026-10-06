@@ -84,4 +84,6 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/veterancy.cpp
     ${RA2_ROOT}/engine/crate.cpp
     ${RA2_ROOT}/engine/roster2.cpp
+    ${RA2_ROOT}/engine/abilities.cpp
+    ${RA2_ROOT}/engine/world_abilities.cpp
 )
