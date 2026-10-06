@@ -110,7 +110,7 @@ const char* action_label(int k) {
     case 107: return "ReinforcementByChrono"; case 112: return "CenterCamera";
     case 113: return "MakeHouseCheer"; case 114: return "SetTabTo";
     case 115: return "FlashCameo"; case 116: return "PlayMovieAndPause";
-    case 125: return "CreateBuilding"; case 131: return "FlashBuildingsOfType";
+    case 125: return "CreateBuilding"; case 108: return "CreateCrate"; case 101: return "ReshroudMapAtWaypoint"; case 9: return "FireSale"; case 131: return "FlashBuildingsOfType";
     default: return "?";
     }
 }

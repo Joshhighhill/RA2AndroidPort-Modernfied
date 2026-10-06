@@ -778,9 +778,11 @@ private:
                 t.dead = true;
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
-                raise_obj(t, ra2engine::kEvDestroyedByAnything, u.house);
-                raise_obj(t, ra2engine::kEvDestroyedFakesAll, u.house);   // gF G-74: 29 follows 48
+                // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
+                // 7 DestroyedByAnybody (killer present), 48, then 29.
                 raise_obj(t, ra2engine::kEvDestroyedByAnybody, u.house);
+                raise_obj(t, ra2engine::kEvDestroyedByAnything, u.house);
+                raise_obj(t, ra2engine::kEvDestroyedFakesAll, u.house);
                 if (t.tag >= 0) { sys_->detach_tag(t.tag); t.tag = -1; }
                 continue;
             }
@@ -809,9 +811,11 @@ private:
                 t.dead = true;
                 if (b.house >= 0 && b.house < (int)destroyed_buildings_.size())
                     ++destroyed_buildings_[(std::size_t)b.house];
-                raise_obj(t, ra2engine::kEvDestroyedByAnything, b.house);
-                raise_obj(t, ra2engine::kEvDestroyedFakesAll, b.house);   // gF G-74: 29 follows 48
+                // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
+                // 7 DestroyedByAnybody (killer present), 48, then 29.
                 raise_obj(t, ra2engine::kEvDestroyedByAnybody, b.house);
+                raise_obj(t, ra2engine::kEvDestroyedByAnything, b.house);
+                raise_obj(t, ra2engine::kEvDestroyedFakesAll, b.house);
                 if (t.tag >= 0) { sys_->detach_tag(t.tag); t.tag = -1; }
                 continue;
             }
