@@ -11178,10 +11178,13 @@ DemoRoster2Result simulate_roster2(Assets& a, UnitAssets& ua, BuildingAssets& ba
         if (yx < 0) {
             fail("no 4x4 water spot on this map");
         } else {
+            const bool water_ok = ra2engine::water_bound_ok(yx, yy, yd.fw, yd.fh, water, gw, gh);
             yard_bi = add_bldg(gayard, yx, yy, 0);
-            world.block_water_footprint(yx, yy, yd.fw, yd.fh);
-            wit("[roster2] GAYARD placed=(%d,%d) water_ok=%d land_refused=%d", yx, yy,
-                (int)ra2engine::water_bound_ok(yx, yy, yd.fw, yd.fh, water, gw, gh), (int)land_refused);
+            world.block_water_footprint(yx, yy, yd.fw, yd.fh);   // ships never path through
+            const bool blocked = !ra2engine::water_bound_ok(yx, yy, 1, 1, water, gw, gh);
+            wit("[roster2] GAYARD placed=(%d,%d) water_ok=%d land_refused=%d water_blocked=%d", yx, yy,
+                (int)water_ok, (int)land_refused, (int)blocked);
+            if (!water_ok || !blocked) fail("GAYARD water placement/blocking wrong");
             if (!land_refused) fail("WaterBound placement accepted a land foundation");
             // produce a DEST on the naval category
             const ra2engine::UnitTypeDef* dest = nullptr;
