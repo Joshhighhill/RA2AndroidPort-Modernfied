@@ -1885,8 +1885,8 @@ is armed, the button shows its pressed frame and the pointer is the real
 150–169/170–189/190 or the dollar 129–138/139–148/149, at one cursor frame per 4
 game frames. Those indices and the centre hotspot come from the binary's own
 cursor table at `0x0082C038`. Which animated member means "over a valid target"
-is PROBABLE (§D8). The interactive game loads the building roster lookup-only
-(`World::set_building_types`), so the economy firewall stays shut. It also
+is PROBABLE (§D8). The interactive game now arms the full economy through
+`launch_skirmish` (`wire_economy`, gap G-20); the old lookup-only firewall is gone. It also
 bridges the player's wallet into the World pool while a repair runs.
 
 The **20th determinism gate**, `--demo-repair`, pins
