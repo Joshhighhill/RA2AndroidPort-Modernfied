@@ -684,3 +684,21 @@ TEST_CASE("harvest: Ore Purifier bonus + house 2+ paid to its own pool (gap G-27
     CHECK(credits[0] == 0);               // no longer misrouted to house 0
     CHECK(credits[2] == doctest::Approx(25 + 2 * 0.25 * 25));   // 25 + 12.5
 }
+
+TEST_CASE("harvest: a War Miner whose dock cell is blocked drives to the QueueingCell and unloads (NEW-3)") {
+    Rig r;
+    // Rig refinery NAREFN at (8,8) 4x3 -> dock cell (10,11); block it.
+    r.pass[(size_t)11 * 20 + 10] = 0;
+    r.harv(2, 2);
+    r.units[0].harv = HarvState::ReturnToRef;
+    r.units[0].bales_ore = 40;
+    r.step(0.1);
+    REQUIRE(r.moves.size() == 1);
+    CHECK(r.moves[0].gx == 12);   // QueueingCell = origin + (fw, 1)
+    CHECK(r.moves[0].gy == 9);
+    // Arrive there -> docks.
+    r.units[0].cell_x = 12; r.units[0].cell_y = 9; r.units[0].fx = 12; r.units[0].fy = 9;
+    r.units[0].path.clear();
+    r.step(0.1);
+    CHECK(r.units[0].harv == HarvState::WaitDock);
+}
