@@ -93,4 +93,5 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/weapon_unit.cpp
     ${RA2_ROOT}/engine/weapon_resolve.cpp
     ${RA2_ROOT}/engine/building_combat.cpp
+    ${RA2_ROOT}/engine/unit_orders.cpp
 )

@@ -225,3 +225,43 @@ TEST_CASE("gapC G-50: min-1 damage after Verses, 0 % stays 0; ROF rearm jitter i
     CHECK(seen[2] > 0);
     CHECK(rearm_secs(20, nullptr) == 20.0 / 15.0);
 }
+
+TEST_CASE("gapC crush + stop/scatter on the real map (G-47)") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("no install"); return; }
+    World w(ra2fixture::mapsmd03_map());
+    const ra2assets::MapCell* c = pick_start_cell(ra2fixture::mapsmd03_map());
+    REQUIRE(c != nullptr);
+    // A free straight 1x6 corridor along +x from the start cell.
+    int x0 = c->x, y0 = c->y;
+    UnitCombat tank;
+    tank.strength = 300;
+    tank.is_vehicle = true;
+    tank.speed_cps = 2.0;
+    tank.rot = 127;
+    tank.crusher = true;
+    UnitCombat inf;
+    inf.strength = 125;
+    inf.crushable = true;
+    REQUIRE(w.walkable(x0, y0));
+    REQUIRE(w.walkable(x0 + 1, y0));
+    REQUIRE(w.walkable(x0 + 2, y0));
+    w.add_combat_unit(x0, y0, 0, tank);
+    w.add_combat_unit(x0 + 1, y0, 1, inf);
+    w.order_unit_move(0, x0 + 2, y0);
+    for (int f = 0; f < 60; ++f) w.step(1.0 / 15.0);
+    CHECK(w.units()[1].die_time >= 0.0);   // squashed
+    CHECK(w.units()[0].cell_x == x0 + 2);
+
+    // Stop: the tank halts at the cell it is entering.
+    w.order_unit_move(0, x0 + 2, y0 + 6);
+    w.step(1.0 / 15.0);
+    w.order_stop(0);
+    for (int f = 0; f < 30; ++f) w.step(1.0 / 15.0);
+    CHECK_FALSE(w.units()[0].moving());
+    CHECK(std::abs(w.units()[0].cell_y - y0) <= 1);
+    // Scatter: steps to an adjacent free cell.
+    const int sx = w.units()[0].cell_x, sy = w.units()[0].cell_y;
+    w.order_scatter(0);
+    for (int f = 0; f < 30; ++f) w.step(1.0 / 15.0);
+    CHECK((w.units()[0].cell_x != sx || w.units()[0].cell_y != sy));
+}

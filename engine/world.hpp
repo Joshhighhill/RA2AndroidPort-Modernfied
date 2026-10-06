@@ -1330,6 +1330,14 @@ public:
         std::string weapon;        // weapon id when known (defenses), else ""
     };
     std::vector<FireEvent> take_fire_events();
+    // Stop / Guard / Scatter (unit_orders.cpp). B binds S / G / X to the
+    // *_selected forms (house-0 selection); the per-unit forms serve AI/tests.
+    void order_stop(int idx);
+    void order_guard(int idx);
+    void order_scatter(int idx);
+    void order_stop_selected();
+    void order_guard_selected();
+    void order_scatter_selected();
     // Powered=yes defenses work only while the house's power output covers its
     // drain (BuildingClass power check FUN_004555c0, ratio < 1.0 -> offline).
     bool defense_power_ok(int house) const;

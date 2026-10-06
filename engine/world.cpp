@@ -3573,6 +3573,27 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 const int f = facing_from_delta(tgt.x - u.cell_x, tgt.y - u.cell_y);
                 if (f >= 0) u.facing = f;
             }
+            // Gap fix C (G-47) [RE: rulesmd Crusher=/Crushable=; crush branch of
+            // the Drive locomotor not unwound -- RE-W6 open]: a Crusher vehicle
+            // driving into a cell held by enemy Crushable infantry squashes it
+            // (the infantry dies, the cell frees) instead of waiting for it.
+            if (u.crusher && u.is_vehicle) {
+                const int o = occ.at(tgt.x, tgt.y);
+                if (o >= 0 && o != self && o < static_cast<int>(units.size())) {
+                    Unit& v = units[o];
+                    if (v.crushable && !v.is_vehicle && v.house != u.house && v.alive &&
+                        v.die_time < 0.0 && v.cargo_of < 0) {
+                        v.hp = 0;
+                        v.die_time = 0.0;
+                        v.vet.killed_by = self;
+                        v.target = -1;
+                        v.target_building = -1;
+                        v.path.clear();
+                        v.path_idx = 0;
+                        occ.release_all_of(o, -1, -1);
+                    }
+                }
+            }
             // Reserve the next cell before stepping into it.
             if (occ.at(tgt.x, tgt.y) != self) {
                 if (occ.can_enter(tgt.x, tgt.y, self)) {

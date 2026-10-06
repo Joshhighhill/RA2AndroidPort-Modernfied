@@ -117,6 +117,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_combat.cpp engine/combat.cpp)
 # Gap fix C: weapon slots / per-target pick / slot resolution.
 target_sources(ra2assets_tests PRIVATE engine/weapon.cpp engine/weapon_unit.cpp
                                        engine/weapon_resolve.cpp engine/building_combat.cpp
+                                       engine/unit_orders.cpp
                                        tests/test_gap_combat.cpp)
 # building.cpp is pure C++17 (no SDL): BuildingTypeDef/Building struct defs,
 # foundation_cells row-major enumeration, placement_check validity (in-grid,
