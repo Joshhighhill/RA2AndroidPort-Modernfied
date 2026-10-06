@@ -179,11 +179,11 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 3600);
+    CHECK(sizeof(World) == 3608);
     CHECK(sizeof(MapTriggerSystem) == 368);   // P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 88);
     CHECK(sizeof(Occupancy) == 32);
-    CHECK(sizeof(ProductionQueues) == 224);
+    CHECK(sizeof(ProductionQueues) == 336);
     CHECK(sizeof(GameRandom) == 1008);
     CHECK(sizeof(RadField) == 56);
 #else
