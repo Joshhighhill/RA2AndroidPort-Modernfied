@@ -505,6 +505,8 @@ std::vector<std::uint8_t> build_water_passability(
 // BYTE-IDENTITY FIREWALL: `enabled` defaults FALSE — every existing
 // enable_ai_house caller (including --demo-ai-base) gets a team-less config,
 // so step_ai_teams skips the house and all six gates stay bit-identical.
+// Building class bits for the attack quarry types [G-61].
+enum : std::uint8_t { kAiBldFactory = 1, kAiBldDefense = 2, kAiBldPower = 4, kAiBldTech = 8 };
 struct AiTeamConfig {
     bool enabled = false;                 // the per-house team firewall
     AimdData aimd;                        // parsed TaskForce/Script/TeamType tables
@@ -513,6 +515,12 @@ struct AiTeamConfig {
     std::vector<int> veh_factory_types;   // BUILDING roster indices (war factory)
     std::vector<Cellxy> waypoints;        // waypoint index -> cell (main.cpp table)
     std::string house_name;               // aimd House= token (e.g. "Russians")
+    // [G-61] rulesmd [BuildingTypes] index -> building-roster index (-1 = not
+    // in the roster): resolves the 46/47/58 argument's low word.
+    std::vector<int> building_type_roster;
+    // [G-61] per building-roster index: kAiBld* class bits for the quarry
+    // types 6/7/9/11 (factories / base defenses / power / tech).
+    std::vector<std::uint8_t> building_class;
     AiTeamRules rules;                    // recovered team knobs
 
     // --- AI-3 AITriggerTypes [RE: ai-trigger.md] -----------------------------
@@ -1341,11 +1349,16 @@ private:
     std::vector<IdleUnitView> ai_idle_units(int house, const HouseAiRec& rec) const;
     void ai_fill_team_view(int house, const HouseAiRec& rec, const TeamInstance& team,
                            TeamView& v) const;
-    bool ai_quarry_exists(int house, int quarry) const;
+    bool ai_quarry_exists(int house, const HouseAiRec& rec, int quarry) const;
+    // Actions 46/47/58: the building of rulesmd [BuildingTypes] index arg&0xffff
+    // picked by selector arg>>16, among enemy (or own) buildings; -1 none [G-61].
+    int ai_find_typed_building(int house, const HouseAiRec& rec, int arg, bool enemy,
+                               int nx, int ny) const;
     // Pickers score by distance^2 x value x seeded-RNG jitter (ai_rand over the
     // passed rng) and keep the nearest-reachable [RE-GATE APPLIED: ai-team.md §5].
     int ai_pick_quarry_unit(int house, int quarry, int nx, int ny, std::uint32_t& rng) const;
-    int ai_pick_quarry_building(int house, int quarry, int nx, int ny, std::uint32_t& rng) const;
+    int ai_pick_quarry_building(int house, const HouseAiRec& rec, int quarry, int nx, int ny,
+                                std::uint32_t& rng) const;
     // Shared mutation tail extracted from order_attack/order_attack_building so
     // both the player selection-loops and the AI per-unit entry points commit a
     // target identically [RE-GATE APPLIED: ai-team.md §5 — de-duplication].

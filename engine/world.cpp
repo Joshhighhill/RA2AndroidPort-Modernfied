@@ -2391,23 +2391,34 @@ void World::step_ai_houses(double dt) {
 // --- AI-2 offensive-teams phase [RE: ai-team.md] ----------------------------
 
 namespace {
-// Quarry-kind -> unit-class match [RE-GATE APPLIED: ai-team.md §5 — the standard
-// RA2 enumeration; class values from ai_team.hpp's kQuarry* constants].
+// Quarry-kind -> unit-class match [G-61; RE: script_actions.hpp -- YRpp
+// QuarryType: 1 Anything, 2 Buildings, 3 Harvesters, 4 Infantry, 5 Vehicles,
+// 6 Factories, 7 BaseDefenses, 8 Threats, 9 Power, 10 Occupiable, 11 Tech].
 bool quarry_unit_match(int quarry, const Unit& u) {
     switch (quarry) {
         case kQuarryHarvesters:  return u.is_harvester;
         case kQuarryInfantry:    return !u.is_vehicle && !u.is_harvester;
         case kQuarryVehicles:    return u.is_vehicle;
-        case kQuarryBaseThreats: return true;   // nearest hostile [RE-FALLBACK]
+        case kQuarryThreats:     return true;   // any armed hostile unit [RE-FALLBACK]
         case kQuarryAnything:    return true;
         default:                 return false;
     }
 }
-// Kinds that resolve to buildings. 5 (factories) and 6 (base defenses) resolve
-// as ANY building until the class split is mapped [RE-FALLBACK: ai-team.md §5].
-bool quarry_wants_buildings(int quarry) {
-    return quarry == kQuarryAnything || quarry == kQuarryBuildings ||
-           quarry == kQuarryFactories || quarry == kQuarryDefenses;
+// Building-class match through the house's resolved class bits
+// (AiTeamConfig::building_class, main.cpp: Factory= / defense list / Power>0 /
+// Capturable=). Occupiable (10): no garrison model -> never matches.
+bool quarry_building_match(int quarry, const Building& b, const AiTeamConfig& tc) {
+    const std::uint8_t bits =
+        (b.type >= 0 && b.type < (int)tc.building_class.size()) ? tc.building_class[b.type] : 0;
+    switch (quarry) {
+        case kQuarryAnything:
+        case kQuarryBuildings:   return true;
+        case kQuarryFactories:   return (bits & kAiBldFactory) != 0;
+        case kQuarryDefenses:    return (bits & kAiBldDefense) != 0;
+        case kQuarryPower:       return (bits & kAiBldPower) != 0;
+        case kQuarryTech:        return (bits & kAiBldTech) != 0;
+        default:                 return false;
+    }
 }
 }  // namespace
 
@@ -2455,15 +2466,15 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
     return out;
 }
 
-bool World::ai_quarry_exists(int house, int quarry) const {
+bool World::ai_quarry_exists(int house, const HouseAiRec& rec, int quarry) const {
     for (const Unit& u : units_)
         if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.is_aircraft &&
             is_enemy(house, u.house) && quarry_unit_match(quarry, u))  // CB-2: aircraft never a quarry
             return true;
-    if (quarry_wants_buildings(quarry))
-        for (const Building& b : buildings_)
-            if (b.alive && b.state != Building::State::Dead && is_enemy(house, b.house))
-                return true;
+    for (const Building& b : buildings_)
+        if (b.alive && b.state != Building::State::Dead && is_enemy(house, b.house) &&
+            quarry_building_match(quarry, b, rec.cfg.team))
+            return true;
     return false;
 }
 
@@ -2490,19 +2501,46 @@ int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
     return best;
 }
 
-int World::ai_pick_quarry_building(int house, int quarry, int nx, int ny,
-                                   std::uint32_t& rng) const {
-    if (!quarry_wants_buildings(quarry)) return -1;
+int World::ai_pick_quarry_building(int house, const HouseAiRec& rec, int quarry, int nx,
+                                   int ny, std::uint32_t& rng) const {
     int best = -1;
     long long bestd = 0;
     for (int i = 0; i < (int)buildings_.size(); ++i) {
         const Building& b = buildings_[i];
         if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
+        if (!quarry_building_match(quarry, b, rec.cfg.team)) continue;
         const long long dx = b.cx - nx, dy = b.cy - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);
         const long long score = (dx * dx + dy * dy) * value * jitter;
         if (best < 0 || score < bestd) { best = i; bestd = score; }
+    }
+    return best;
+}
+
+int World::ai_find_typed_building(int house, const HouseAiRec& rec, int arg, bool enemy,
+                                  int nx, int ny) const {
+    // Actions 46/47/58 [G-61; RE: script_actions.hpp]: arg low word = rulesmd
+    // [BuildingTypes] index (mapped to the roster by main.cpp), high word =
+    // which instance: 0 least threat / 1 highest threat / 2 nearest /
+    // 3 farthest [ModEnc]. Threat is not modelled: 0 resolves as nearest and
+    // 1 as farthest [RE-FALLBACK]. Ties -> lowest index (deterministic).
+    const AiTeamConfig& tc = rec.cfg.team;
+    const int bt = script_building_type(arg);
+    if (bt < 0 || bt >= (int)tc.building_type_roster.size()) return -1;
+    const int type = tc.building_type_roster[bt];
+    if (type < 0) return -1;
+    const int sel = script_building_selector(arg);
+    const bool far = sel == kBldSelFarthest || sel == kBldSelHighestThreat;
+    int best = -1;
+    long long bestd = 0;
+    for (int i = 0; i < (int)buildings_.size(); ++i) {
+        const Building& b = buildings_[i];
+        if (!b.alive || b.state == Building::State::Dead || b.type != type) continue;
+        if (enemy ? !is_enemy(house, b.house) : b.house != house) continue;
+        const long long dx = b.cx - nx, dy = b.cy - ny;
+        const long long d = dx * dx + dy * dy;
+        if (best < 0 || (far ? d > bestd : d < bestd)) { best = i; bestd = d; }
     }
     return best;
 }
@@ -2584,12 +2622,11 @@ void World::ai_fill_team_view(int house, const HouseAiRec& rec,
     v.base_y = bv.center_y;
     v.enemy_x = bv.threat_x;
     v.enemy_y = bv.threat_y;
-    // quarry_exists is computed for the CURRENT attack action's EFFECTIVE quarry
-    // class — the completion predicate the interpreter consults. It must match
-    // the quarry class step_team sets on the emitted command [RE: ai-team.md
-    // §3/§5]: AttackQuarry -> argument; AttackBuilding -> Buildings;
-    // AttackHouse/AttackUnits -> Anything. Recomputed PER TICK (contract B).
+    // quarry_exists / building_found are computed for the CURRENT line --
+    // the completion predicates the interpreter consults [G-61; RE:
+    // ai-team.md §3/§5]. Recomputed PER TICK (contract B).
     v.quarry_exists = false;
+    v.building_found = false;
     const AimdData& aimd = rec.cfg.team.aimd;
     if (team.state == TeamState::Executing && team.teamtype >= 0 &&
         team.teamtype < (int)aimd.teams.size()) {
@@ -2597,12 +2634,25 @@ void World::ai_fill_team_view(int house, const HouseAiRec& rec,
         if (team.script_pc >= 0 && team.script_pc < (int)sc.actions.size()) {
             const ScriptAction a = sc.actions[team.script_pc];
             const OpClass oc = classify_op(a.action);
-            int q = -1;
-            if (oc == OpClass::AttackQuarry)        q = a.argument;
-            else if (oc == OpClass::AttackBuilding) q = kQuarryBuildings;
-            else if (oc == OpClass::AttackHouse ||
-                     oc == OpClass::AttackUnits)    q = kQuarryAnything;
-            if (q >= 0) v.quarry_exists = ai_quarry_exists(house, q);
+            // The lead member (first live) anchors nearest/farthest picks.
+            int lx = v.base_x, ly = v.base_y;
+            for (const TeamMemberView& m : v.members)
+                if (m.alive) { lx = m.cx; ly = m.cy; break; }
+            if (oc == OpClass::AttackQuarry) {
+                v.quarry_exists = ai_quarry_exists(house, rec, a.argument);
+            } else if (oc == OpClass::AttackBuilding) {
+                v.quarry_exists = ai_find_typed_building(house, rec, a.argument,
+                                                         /*enemy=*/true, lx, ly) >= 0;
+            } else if (oc == OpClass::MoveEnemyBuilding ||
+                       oc == OpClass::MoveFriendlyBuilding) {
+                const int bi = ai_find_typed_building(
+                    house, rec, a.argument, oc == OpClass::MoveEnemyBuilding, lx, ly);
+                if (bi >= 0) {
+                    v.building_found = true;
+                    v.building_x = buildings_[bi].cx;
+                    v.building_y = buildings_[bi].cy;
+                }
+            }
         }
     }
 }
@@ -2662,10 +2712,16 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 if (!u.alive || u.die_time >= 0.0) continue;
                 if (u.attack_order && (u.target >= 0 || u.target_building >= 0))
                     continue;  // already pursuing — no target thrash
+                if (c.building_arg >= 0) {   // action 46: THAT building type
+                    const int tb = ai_find_typed_building(house, rec, c.building_arg,
+                                                          /*enemy=*/true, u.cell_x, u.cell_y);
+                    if (tb >= 0) ai_order_attack_building(m, tb);
+                    continue;
+                }
                 const int tu = ai_pick_quarry_unit(house, c.quarry, u.cell_x,
                                                    u.cell_y, rec.team_state.rng);
                 if (tu >= 0) { ai_order_attack(m, tu); continue; }
-                const int tb = ai_pick_quarry_building(house, c.quarry, u.cell_x,
+                const int tb = ai_pick_quarry_building(house, rec, c.quarry, u.cell_x,
                                                        u.cell_y, rec.team_state.rng);
                 if (tb >= 0) ai_order_attack_building(m, tb);
             }

@@ -181,25 +181,25 @@ TEST_CASE("campaign: map team script interpreter (RE §7 numbering)") {
     CHECK(c.kind == MapTeamCommand::Kind::MoveWaypoint);
     CHECK_FALSE(c.fresh);
     v.arrived = true;
-    // Arrived -> Guard 1 (90 frames).
+    // Arrived -> Guard 1 (15 frames, c14 idx 5).
     c = step_map_team(st, s, v, 2);
     CHECK(c.kind == MapTeamCommand::Kind::Guard);
     v.arrived = false;
-    c = step_map_team(st, s, v, 91);
+    c = step_map_team(st, s, v, 16);
     CHECK(c.kind == MapTeamCommand::Kind::Guard);
     // Timer out -> SetGlobal 4 in the same tick.
-    c = step_map_team(st, s, v, 92);
+    c = step_map_team(st, s, v, 17);
     CHECK(c.kind == MapTeamCommand::Kind::SetGlobal);
     CHECK(c.arg == 4);
     // Jump 1 (1-based) -> line 0; consumes the tick.
-    c = step_map_team(st, s, v, 93);
+    c = step_map_team(st, s, v, 18);
     CHECK(c.kind == MapTeamCommand::Kind::None);
     CHECK(st.pc == 0);
-    c = step_map_team(st, s, v, 94);
+    c = step_map_team(st, s, v, 19);
     CHECK(c.kind == MapTeamCommand::Kind::MoveWaypoint);
     // No live members -> done.
     v.live_members = 0;
-    CHECK(step_map_team(st, s, v, 95).kind == MapTeamCommand::Kind::Done);
+    CHECK(step_map_team(st, s, v, 20).kind == MapTeamCommand::Kind::Done);
 }
 
 TEST_CASE("campaign: interpreter win/lose/unknown actions") {

@@ -812,6 +812,8 @@ template <class Ar> void fields(Ar& ar, AiTeamConfig& v) {
     io(ar, v.veh_factory_types);
     io(ar, v.waypoints);
     io(ar, v.house_name);
+    io(ar, v.building_type_roster);
+    io(ar, v.building_class);
     io(ar, v.rules);
     io(ar, v.triggers_enabled);
     io(ar, v.trigger_side);

@@ -13,6 +13,7 @@
 #include "aimd_parse.hpp"  // AimdData / TeamType / TaskForce / ScriptType
 #include "pathfind.hpp"    // Cellxy
 #include "unit_type.hpp"   // UnitTypeDef (production intent)
+#include "script_actions.hpp"  // the shared 0..64 ScriptType table [G-61]
 
 namespace ra2engine {
 
@@ -47,54 +48,47 @@ constexpr int kAiGatherRadius = 3;
 // when all live members are within Rules.CloseEnough (+0x1718 = 2.25 cells).
 constexpr double kAiStrayCells = 2.0;
 constexpr double kAiCloseEnoughCells = 2.25;
-// Timed-guard argument unit: actions 5/0x3a take a duration in TENTHS OF A
-// MINUTE; converted to frames at 15 Hz (1/10 min = 6 s = 90 frames)
-// [RE-GATE APPLIED: ai-team.md §3 — RE-FALLBACK x90 frames].
-constexpr int kAiGuardTicksToFrames = 90;
+// Timed-guard argument unit [RE: c14.log idx 5 -- the handler stores arg x 15
+// into the team's frame timer; ai-team.md §3 amended (the old x90 "tenths of a
+// minute" reading was the RA1 lineage, not this binary)].
+constexpr int kAiGuardTicksToFrames = kScriptGuardFramesPerArg;
 
-// --- ScriptType opcode numbers [RE-GATE APPLIED: ai-team.md §3 — the classifier
-// FUN_006e30d0 enumerates ~90 valid actions (up to 0x90) via a jump table;
-// classify_op below is the single table location and marks the IMPLEMENTABLE
-// core, everything else -> Inert]. The recovered IMPLEMENTABLE set for AI-2: ---
-constexpr int kOpAttackQuarry = 0;      // 0x00 attack quarry kind <argument> (§5)
-constexpr int kOpTimedGuard = 5;        // 0x05 timed guard <arg> tenths-of-min
-constexpr int kOpJumpToLine = 6;        // 0x06 script_pc = <arg> (0-based line, CONFIRMED)
-constexpr int kOpAttackHouse = 8;       // 0x08 all members attack house <arg>
-constexpr int kOpMoveToWaypoint = 9;    // 0x09 move team to waypoint <arg>
-constexpr int kOpMoveToCell = 11;       // 0x0b move team to packed cell <arg>
-constexpr int kOpGuardArea = 12;        // 0x0c guard area at current location
-constexpr int kOpRegroup = 14;          // 0x0e regroup at the team centroid
-constexpr int kOpDisband = 49;          // 0x31 set success flag then disband
-constexpr int kOpAttackBuilding = 53;   // 0x35 attack nearest enemy building
-constexpr int kOpAttackUnits = 54;      // 0x36 attack enemy units near
-constexpr int kOpScatter = 57;          // 0x39 scatter members (one-shot)
-constexpr int kOpTimedGuardAlt = 58;    // 0x3a timed guard <arg> (same unit as 5)
-constexpr int kOpAttackMove = 63;       // 0x3f attack quarry <arg> with regroup
+// --- ScriptType opcode numbers [G-61; RE: script_actions.hpp -- the 65-entry
+// executor jump table at 0x6E94E4 (c13/c14 logs), ModEnc numbering, SHARED with
+// the P10 campaign interpreter]. The kOp* names are AI-2 aliases of the shared
+// kSa* table for the actions this interpreter implements. ---
+constexpr int kOpAttackQuarry = kSaAttack;                    // 0
+constexpr int kOpAttackWaypoint = kSaAttackWaypoint;          // 1
+constexpr int kOpMoveToWaypoint = kSaMoveWaypoint;            // 3
+constexpr int kOpMoveToCell = kSaMoveCell;                    // 4
+constexpr int kOpTimedGuard = kSaGuard;                       // 5
+constexpr int kOpJumpToLine = kSaJump;                        // 6 (1-based argument)
+constexpr int kOpDoMission = kSaDoMission;                    // 11
+constexpr int kOpPatrol = kSaPatrol;                          // 16
+constexpr int kOpScatter = kSaScatter;                        // 21
+constexpr int kOpAttackEnemyBuilding = kSaAttackEnemyBuilding;// 46
+constexpr int kOpMoveEnemyBuilding = kSaMoveEnemyBuilding;    // 47
+constexpr int kOpSuccess = kSaSuccess;                        // 49 (flag + continue)
+constexpr int kOpDisband = kSaSuccess;                        // legacy name of 49
+constexpr int kOpGatherEnemy = kSaGatherEnemy;                // 53
+constexpr int kOpRegroupBase = kSaGatherBase;                 // 54
+constexpr int kOpMoveFriendlyBuilding = kSaMoveFriendlyBuilding;  // 58
 
-// --- Quarry kinds (attack argument) [RE-GATE APPLIED: ai-team.md §5 — the
-// STANDARD RA2 enumeration adopted as the calibrated RE-FALLBACK; target chosen
-// by class-filter + distance^2 x value x seeded-RNG, nearest-reachable] ---
-constexpr int kQuarryAnything = 0;
-constexpr int kQuarryBuildings = 1;
-constexpr int kQuarryHarvesters = 2;
-constexpr int kQuarryInfantry = 3;
-constexpr int kQuarryVehicles = 4;
-constexpr int kQuarryFactories = 5;    // resolved as buildings pre-map [RE-FALLBACK]
-constexpr int kQuarryDefenses = 6;     // resolved as buildings pre-map [RE-FALLBACK]
-constexpr int kQuarryBaseThreats = 7;  // nearest hostile to own base [RE-FALLBACK]
+// Quarry kinds (action 0's argument) are the shared YRpp QuarryType values in
+// script_actions.hpp (kQuarryAnything = 1, kQuarryBuildings = 2, ...).
+constexpr int kQuarryBaseThreats = kQuarryThreats;
 
 // Opcode classes the interpreter dispatches on. classify_op maps EVERY action
-// number to one of these; the ~90 valid-but-unimplementable actions (transport
-// 0x2e/0x2f/0x50/0x6b, aircraft 0x1e/0x55-0x57, superweapon/support 0x3d/0x3e,
-// droppod, cosmetics) and every action outside the recovered implementable core
-// are Inert (logged skip, pc++) — parsed + RE-documented, never executed
-// [RE-GATE APPLIED: ai-team.md §3; spec §2 scope bound].
+// number 0..64 to one of these; transport (8/9/14/43), superweapon (55-57),
+// cosmetic and house-changing actions, berserk (2: the binary's handler IS the
+// epilogue), and 60-64 (conditional member removal; no member ever matches in
+// this engine) are Inert (logged skip, pc++).
 enum class OpClass {
-    AttackQuarry, AttackHouse, AttackBuilding, AttackUnits,
-    MoveWaypoint, MoveCell, GuardArea, TimedGuard,
-    Regroup, Scatter, Jump, Disband, Inert
+    AttackQuarry, AttackBuilding, MoveWaypoint, MoveCell, MoveEnemyBuilding,
+    MoveFriendlyBuilding, GatherEnemy, RegroupBase, TimedGuard, DoMission,
+    Scatter, Jump, Success, Inert
 };
-OpClass classify_op(int action);  // [RE-GATE APPLIED: ai-team.md §3 — FULL table]
+OpClass classify_op(int action);  // [G-61: the 0..64 executor table]
 
 // Lifecycle [RE: ai-team.md §2]: Recruiting -> Gathering -> Executing ->
 // Disbanding.
@@ -116,6 +110,11 @@ struct TeamView {
                                           // action's effective quarry class exists
                                           // (caller-computed; consulted on any of
                                           // AttackQuarry/House/Building/Units)
+    // Building-typed actions 46/47/58 [G-61]: the caller resolves the line's
+    // argument (BuildingTypes index | selector<<16) against the right house's
+    // buildings and reports the chosen building's cell here.
+    bool building_found = false;
+    int building_x = 0, building_y = 0;
 };
 
 // One command per team per tick; the caller fans it out per member
@@ -128,6 +127,8 @@ struct TeamCommand {
     int quarry = 0;        // AttackQuarry kind [RE: ai-team.md §5]
     int opcode = -1;       // Inert: the skipped action number (witness logging)
     bool scatter = false;  // MoveTeam: spread members instead of one goal
+    int building_arg = -1; // AttackQuarry from action 46: the raw argument
+                           // (type | selector<<16) -- attack THAT building
 };
 
 // One live team [RE: ai-team.md §2]. members/member_types are maintained by
