@@ -35,9 +35,9 @@ system. *Host* = the trigger system resolves it and asks the `TriggerHost`
 
 Events: Engine — 8, 13, 14, 27, 28, 36, 37, 47, 51. Host — 9, 10, 11, 12, 15,
 16, 17, 19, 20, 21, 22, 30, 32, 52, 57, 58, 60, 61. API — 1, 2, 4, 6, 7, 24, 25,
-26, 29, 31, 33, 44, 48, 59 (object kinds: kind match + the EnteredBy owner
-check + AttackedByHouse source check). Unimplemented — 3, 5, 18, 23, 34, 35,
-38–43, 45, 46, 49, 50, 53–56 (together 31 of 4,857 uses).
+26, 29, 31, 33, 38–44, 48, 49, 50, 59 (object kinds: kind match + the EnteredBy
+owner check + AttackedByHouse source check). Unimplemented — 3, 5, 18, 23, 34,
+35, 45, 46, 53–56 (together 9 of 4,857 uses).
 
 Actions: Engine — 0, 1, 2, 3, 6*, 12, 13, 22, 23, 24, 25, 26, 27, 28, 29, 53, 54,
 56, 57, 67, 68, 74, 75 (*house flags recorded in engine state). Host — 4, 5, 7,
