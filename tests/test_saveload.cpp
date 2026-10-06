@@ -138,6 +138,7 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(AiHouseConfig);
     CHECK_ARITY(SkirmishSlot);
     CHECK_ARITY(SkirmishConfig);
+    CHECK_ARITY(SceneSave);
     // SaveHeader::version is written OUTSIDE the header block (the magic+version
     // prefix every reader must parse first), so its visitor skips exactly it.
     CHECK(aggregate_arity<SaveHeader>() == visited_fields<SaveHeader>() + 1);

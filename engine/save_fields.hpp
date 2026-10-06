@@ -738,6 +738,31 @@ template <class Ar> void fields(Ar& ar, SkirmishConfig& v) {
     io(ar, v.short_game);
 }
 
+// --- GameScene / UI state (the 'SCNE' section) ---------------------------
+// Everything GameScene holds OUTSIDE the World that the simulation or the
+// resumed screen depends on. Transient input (drag box, armed repair/sell/
+// placement cursor, hover) is NOT saved -- load returns with no armed mode,
+// as the original's dialog does. Anyone adding a sim-relevant GameScene member
+// adds it here + to GameScene::capture_save/apply_save (main.cpp).
+struct SceneSave {
+    int cam_x = 0, cam_y = 0;          // Camera
+    int active_tab = 0;                // sidebar tab (0..3)
+    ProductionQueues queues;           // the player's four queues
+    double player_credits = 0.0;       // the wallet (outside the World)
+    double credits_shown = 0.0;        // the rolling credits display
+    QueueCat place_cat = QueueCat::Structure;  // queue a pending placement drains
+    std::vector<int> bstates;          // FreeUnit grand-opening tracker
+};
+template <class Ar> void fields(Ar& ar, SceneSave& v) {
+    io(ar, v.cam_x); io(ar, v.cam_y);
+    io(ar, v.active_tab);
+    io(ar, v.queues);
+    io(ar, v.player_credits);
+    io(ar, v.credits_shown);
+    io(ar, v.place_cat);
+    io(ar, v.bstates);
+}
+
 // --- header ---
 template <class Ar> void fields(Ar& ar, SaveHeader& v) {
     io(ar, v.description);

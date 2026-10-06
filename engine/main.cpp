@@ -54,6 +54,8 @@
 #include "rectfont.hpp"    // glyph_rows (5x7 rect-font for menu labels) [Task 5]
 #include "repair_sell.hpp" // RepairSellRules (Repair & Sell phase)
 #include "settings.hpp"    // P8 Options: RA2.INI settings, slider math, edge-scroll table
+#include "save_fields.hpp"  // P7 Save/Load: archive + visitors + SceneSave
+#include <filesystem>        // P7: temp save dir for --demo-saveload
 #include "sidebar.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
@@ -13396,6 +13398,359 @@ int run_demo_veterancy() {
 
 }  // namespace
 
+// ============================================================================
+// P7 Save / Load gate: --demo-saveload [RE: docs/re/saveload.md; spec
+// 2026-10-06-saveload-design.md §5]. Two scenarios; each runs to frame N,
+// saves to a real SAVE%04X.SAV file, continues to frame M (full-state hash A);
+// then a FRESH scenario loads that file and runs N..M (hash B). A == B is
+// required. The hash is FNV-1a over the serialized World (+ scene / triggers)
+// bytes -- i.e. the COMPLETE state -- mixed with world_hash. Headless only;
+// purely additive (no existing gate calls any of this).
+// ============================================================================
+namespace {
+
+constexpr double kSlDt = 1.0 / 15.0;
+
+std::string sl_save_dir() {
+    std::error_code ec;
+    const std::filesystem::path d = std::filesystem::temp_directory_path(ec) / "ra2_demo_saveload";
+    std::filesystem::create_directories(d, ec);
+    return d.string();
+}
+
+struct SlTally {
+    int launches = 0;      // projectile launches (shells actually flew)
+    int produced = 0;      // player units launched from the factory
+    int vet_events = 0;    // promotions
+    int crate_events = 0;  // crate pickups
+};
+
+// Everything the skirmish scenario needs besides the World + scene record.
+struct SlSkirmishEnv {
+    Assets& a;
+    UnitAssets& ua;
+    BuildingAssets& ba;
+    const Rules& rules;
+    const UnitRoster& ur;
+    const UnitRoster& ur_ai;
+    const MinerAssets& miners;
+    ra2engine::SkirmishConfig cfg;
+    std::vector<int> inf_ft, veh_ft;
+    double low_mod = 1.0, mf = 0.8, build_speed = 0.7;
+    int e1 = -1;           // player roster index of E1
+};
+
+// The interactive game's World (launch_skirmish) plus every firewall the real
+// game opens -- economy, projectiles, veterancy, crates (FIXED seed here) --
+// and dueling tank pairs so shells are in flight across the save point.
+ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
+    ra2engine::World w = launch_skirmish(e.cfg, e.a, e.ua, e.ba, e.rules);
+    wire_economy(w, e.ba, e.rules);
+    w.enable_projectiles(ra2engine::resolve_projectile_rules(e.rules));
+    {
+        std::vector<int> bcost;
+        for (const ra2engine::BuildingTypeDef& t : e.ba.roster) bcost.push_back(t.cost);
+        w.enable_veterancy(resolve_veterancy_rules(e.rules), std::move(bcost));
+        ra2engine::World::CrateConfig cc;
+        cc.rules = resolve_crate_rules(e.rules);
+        cc.seed = 0x5A7E1D5Au;   // fixed (the interactive game seeds from the clock)
+        cc.players = 1;
+        for (const std::vector<ra2engine::UnitTypeDef>* defs : {&e.ur.defs, &e.ur_ai.defs})
+            for (const ra2engine::UnitTypeDef& d : *defs)
+                if (d.is_vehicle && d.combat.crate_goodie) cc.unit_pool.push_back(d.combat);
+        w.enable_crates(cc);
+    }
+    const ra2assets::MapCell* sc = ra2engine::pick_start_cell(e.a.map);
+    const int bx = sc ? sc->x : w.grid_w() / 2, by = sc ? sc->y : w.grid_h() / 2;
+    const ra2engine::UnitCombat htnk = resolve_combat_unit(e.rules, "HTNK").combat;
+    const ra2engine::UnitCombat mtnk = resolve_combat_unit(e.rules, "MTNK").combat;
+    auto free_at = [&](int x, int y) {
+        return w.walkable(x, y) && w.unit_at_cell(x, y) < 0 && w.building_at_cell(x, y) < 0;
+    };
+    int placed = 0;
+    for (int r = 8; r <= 20 && placed < 4; ++r)
+        for (int dx = -r; dx <= r && placed < 4; ++dx) {
+            const int x = bx + dx, y = by + r;
+            if (!free_at(x, y) || !free_at(x, y + 5)) continue;
+            w.add_combat_unit(x, y, 0, mtnk);
+            w.add_combat_unit(x, y + 5, 1, htnk);
+            placed += 2;
+            dx += 2;
+        }
+    return w;
+}
+
+// One GameScene::update iteration at the fixed gate dt (world step, the
+// player's production pool + exit handoff, FreeUnit spawns, event drains).
+void sl_skirmish_frame(SlSkirmishEnv& e, ra2engine::World& w, ra2engine::save::SceneSave& sc,
+                       SlTally& t) {
+    w.step(kSlDt);
+    sc.queues.set_credits(sc.player_credits);
+    prod_tick(sc.queues, w, e.ba, kSlDt, e.low_mod, e.mf, e.inf_ft, e.veh_ft);
+    sc.player_credits = sc.queues.structure().credits;
+    sc.player_credits += w.take_income(0);
+    for (ra2engine::QueueCat cat : {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
+        if (!sc.queues.ready(cat)) continue;
+        const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? e.inf_ft : e.veh_ft;
+        const int fi = ra2engine::primary_factory(w.buildings(), ft, 0);
+        if (fi < 0) continue;
+        const int uslot = sc.queues.producing(cat);
+        if (uslot < 0 || uslot >= static_cast<int>(e.ur.defs.size())) {
+            sc.queues.placed(cat);
+            continue;
+        }
+        const ra2engine::BuildingTypeDef& fdef = e.ba.roster[w.buildings()[fi].type];
+        if (w.launch_unit(fi, fdef, e.ur.defs[uslot].combat) >= 0) {
+            sc.queues.placed(cat);
+            ++t.produced;
+        }
+    }
+    // Keep the player's barracks busy (the player clicking E1 again).
+    if (e.e1 >= 0 && sc.queues.producing(ra2engine::QueueCat::Infantry) < 0 &&
+        ra2engine::can_start_unit(sc.queues.state(ra2engine::QueueCat::Infantry), e.e1, e.ur.defs,
+                                  w.buildings(), e.ba.roster, 0, e.ba.groups,
+                                  !w.factory_category_lost(e.inf_ft, 0))) {
+        sc.queues.set_credits(sc.player_credits);
+        sc.queues.start_unit(ra2engine::QueueCat::Infantry, e.e1, e.ur.defs, e.build_speed);
+    }
+    if (e.ba.ok) spawn_free_units_on_open(w, e.ba, e.rules, e.miners, sc.bstates);
+    for (const ra2engine::ProjectileEvent& pe : w.take_projectile_events())
+        if (pe.kind == ra2engine::ProjectileEvent::Launch) ++t.launches;
+    (void)w.take_harvest_events();
+    (void)w.take_cargo_events();
+    t.vet_events += static_cast<int>(w.take_vet_events().size());
+    t.crate_events += static_cast<int>(w.take_crate_events().size());
+}
+
+uint64_t sl_skirmish_hash(const ra2engine::World& w, ra2engine::save::SceneSave& sc) {
+    uint64_t h = ra2engine::save::fnv1a(ra2engine::save::save_world(w));
+    h = ra2engine::save::fnv1a(ra2engine::save::to_bytes(sc), h);
+    return fnv_mix(h, world_hash(w));
+}
+
+ra2engine::save::SaveHeader sl_header(const ra2assets::MapFile& map, const std::string& desc,
+                                      const std::string& map_file, long frame) {
+    ra2engine::save::SaveHeader h;
+    h.description = desc;
+    h.kind = ra2engine::save::ScenarioKind::Demo;
+    h.map_file = map_file;
+    h.map_w = map.width();
+    h.map_h = map.height();
+    h.map_cells = static_cast<int>(map.cells().size());
+    h.frame = frame;
+    return h;
+}
+
+struct SlResult { uint64_t a = 0, b = 0; bool ok = false; std::string line; };
+
+SlResult sl_run_skirmish(SlSkirmishEnv& e, int N, int M) {
+    SlResult r;
+    SlTally t;
+    // --- run A: N frames, save, continue to M.
+    ra2engine::World wa = sl_build_skirmish(e);
+    ra2engine::save::SceneSave sa;
+    sa.player_credits = e.cfg.starting_cash;
+    sa.queues.set_credits(sa.player_credits);
+    sa.credits_shown = sa.player_credits;
+    for (int f = 0; f < N; ++f) sl_skirmish_frame(e, wa, sa, t);
+    const std::size_t shells_at_save = wa.projectiles().size();
+    ra2engine::save::SaveFile sf;
+    sf.header = sl_header(e.a.map, "Skirmish", e.cfg.map_file, N);
+    sf.sections[ra2engine::save::kTagConfig] = ra2engine::save::to_bytes(e.cfg);
+    sf.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(wa);
+    sf.sections[ra2engine::save::kTagScene] = ra2engine::save::to_bytes(sa);
+    const std::string dir = sl_save_dir();
+    const std::string name = ra2engine::save::new_save_name(dir, 0x0007u);
+    const std::string path = dir + "/" + name;
+    const bool wrote = ra2engine::save::write_file(path, ra2engine::save::encode_save(sf));
+    for (int f = N; f < M; ++f) sl_skirmish_frame(e, wa, sa, t);
+    r.a = sl_skirmish_hash(wa, sa);
+
+    // --- run B: a fresh scenario, load the FILE, run N..M.
+    ra2engine::World wb = sl_build_skirmish(e);
+    ra2engine::save::SceneSave sb;
+    SlTally tb;
+    std::vector<uint8_t> bytes;
+    ra2engine::save::SaveFile lf;
+    bool loaded = wrote && ra2engine::save::read_file_bytes(path, bytes) &&
+                  ra2engine::save::decode_save(bytes, lf) &&
+                  lf.header.version == ra2engine::save::kFormatVersion &&
+                  lf.header.frame == N && lf.section(ra2engine::save::kTagWorld) &&
+                  lf.section(ra2engine::save::kTagScene) && lf.section(ra2engine::save::kTagConfig);
+    if (loaded) {
+        ra2engine::SkirmishConfig cfg2;
+        loaded = ra2engine::save::from_bytes(*lf.section(ra2engine::save::kTagConfig), cfg2) &&
+                 ra2engine::save::load_world(wb, *lf.section(ra2engine::save::kTagWorld)) &&
+                 ra2engine::save::from_bytes(*lf.section(ra2engine::save::kTagScene), sb) &&
+                 cfg2.slots.size() == e.cfg.slots.size();
+    }
+    for (int f = N; f < M && loaded; ++f) sl_skirmish_frame(e, wb, sb, tb);
+    r.b = sl_skirmish_hash(wb, sb);
+    ra2engine::save::delete_save(path);
+
+    const bool active = t.launches > 0 && t.produced > 0 && shells_at_save > 0;
+    r.ok = loaded && r.a == r.b && active;
+    char buf[420];
+    std::snprintf(buf, sizeof buf,
+                  "[saveload] skirmish N=%d M=%d file=%s bytes=%d loaded=%s shells_at_save=%d "
+                  "launches=%d produced=%d vet=%d crates=%d A=%016llx B=%016llx match=%s",
+                  N, M, name.c_str(), (int)bytes.size(), loaded ? "yes" : "NO",
+                  (int)shells_at_save, t.launches, t.produced, t.vet_events, t.crate_events,
+                  (unsigned long long)r.a, (unsigned long long)r.b, r.a == r.b ? "yes" : "NO");
+    r.line = buf;
+    if (!active) r.line += "\n[saveload] WEDGE: skirmish scenario was vacuous (no shells in flight/production)";
+    return r;
+}
+
+// The P9 trigger scenario (sov07tmd's own triggers on a World host).
+struct SlTriggerRig {
+    ra2engine::World world;
+    WorldTriggerHost host;
+    ra2engine::MapTriggerSystem sys;
+    SlTriggerRig(Assets& a, UnitAssets& ua, const TriggerDemoTables& t,
+                 const ra2engine::MapTriggerData& data, bool start)
+        : world(build_world(a, ua, 0)), host(world, t), sys(data, /*Normal*/ 1, 0x5EEDu) {
+        world.enable_shroud(true);
+        configure_map_houses(world, t);
+        int nb = 0, nu = 0, skipped = 0;
+        place_map_objects(world, host, t, nb, nu, skipped);
+        if (start) sys.start(host);
+    }
+    void frame() {
+        sys.tick(host);
+        world.step(kSlDt);
+    }
+    uint64_t hash() const {
+        uint64_t h = ra2engine::save::fnv1a(ra2engine::save::save_world(world));
+        h = ra2engine::save::fnv1a(ra2engine::save::save_triggers(sys), h);
+        h = fnv_mix(h, sys.state_hash());
+        return fnv_mix(h, world_hash(world));
+    }
+};
+
+SlResult sl_run_triggers(Assets& a, UnitAssets& ua, const TriggerDemoTables& t,
+                         const ra2engine::MapTriggerData& data, int N, int M) {
+    SlResult r;
+    SlTriggerRig ra(a, ua, t, data, /*start=*/true);
+    for (int f = 0; f < N; ++f) ra.frame();
+    const int fired_at_save = ra.sys.fired_count();
+    ra2engine::save::SaveFile sf;
+    sf.header = sl_header(a.map, "sov07tmd", "", N);
+    sf.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(ra.world);
+    sf.sections[ra2engine::save::kTagTriggers] = ra2engine::save::save_triggers(ra.sys);
+    sf.sections[ra2engine::save::kTagHost] = ra2engine::save::to_bytes(ra.host.unit_type_of);
+    const std::string dir = sl_save_dir();
+    const std::string name = ra2engine::save::new_save_name(dir, 0x0009u);
+    const std::string path = dir + "/" + name;
+    const bool wrote = ra2engine::save::write_file(path, ra2engine::save::encode_save(sf));
+    for (int f = N; f < M; ++f) ra.frame();
+    r.a = ra.hash();
+    const int fired_total = ra.sys.fired_count();
+
+    SlTriggerRig rb(a, ua, t, data, /*start=*/false);
+    std::vector<uint8_t> bytes;
+    ra2engine::save::SaveFile lf;
+    bool loaded = wrote && ra2engine::save::read_file_bytes(path, bytes) &&
+                  ra2engine::save::decode_save(bytes, lf) && lf.header.frame == N &&
+                  lf.section(ra2engine::save::kTagWorld) && lf.section(ra2engine::save::kTagTriggers) &&
+                  lf.section(ra2engine::save::kTagHost);
+    if (loaded)
+        loaded = ra2engine::save::load_world(rb.world, *lf.section(ra2engine::save::kTagWorld)) &&
+                 ra2engine::save::load_triggers(rb.sys, *lf.section(ra2engine::save::kTagTriggers)) &&
+                 ra2engine::save::from_bytes(*lf.section(ra2engine::save::kTagHost), rb.host.unit_type_of);
+    for (int f = N; f < M && loaded; ++f) rb.frame();
+    r.b = rb.hash();
+    ra2engine::save::delete_save(path);
+
+    const bool active = fired_total > fired_at_save && fired_at_save > 0;
+    r.ok = loaded && r.a == r.b && active && ra.sys.log() == rb.sys.log();
+    char buf[320];
+    std::snprintf(buf, sizeof buf,
+                  "[saveload] triggers N=%d M=%d file=%s bytes=%d loaded=%s fired_at_save=%d "
+                  "fired_total=%d log_lines=%d A=%016llx B=%016llx match=%s",
+                  N, M, name.c_str(), (int)bytes.size(), loaded ? "yes" : "NO", fired_at_save,
+                  fired_total, (int)ra.sys.log().size(), (unsigned long long)r.a,
+                  (unsigned long long)r.b, r.a == r.b ? "yes" : "NO");
+    r.line = buf;
+    if (!active) r.line += "\n[saveload] WEDGE: no trigger fired after the save point";
+    return r;
+}
+
+}  // namespace
+
+int run_demo_saveload() {
+    const std::string dir = env_install_dir();
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    Assets a = load_assets(dir, ra2);   // DEFAULT selection: sov07tmd.map
+    UnitAssets ua = load_unit_assets(dir, ra2);
+    ra2assets::MixFile language =
+        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+    Rules rules = Rules::load(rules_ini);
+    Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
+    Art art = Art::load(art_ini);
+    BuildingAssets ba = load_building_assets(ra2, language, rules, art);
+    if (!ba.ok) {
+        std::cerr << "[demo-saveload] FAILED: building assets unavailable\n";
+        return 1;
+    }
+    UnitRoster ur = load_unit_roster(dir, ra2, ua, rules, art);
+    UnitRoster ur_ai = load_soviet_unit_roster(dir, ra2, ua, rules, art);
+    MinerAssets miners = load_miner_assets(dir, ra2, ua.pal, rules);
+
+    // --- scenario 1: skirmish (the interactive game's World + scene record).
+    SlSkirmishEnv env{a, ua, ba, rules, ur, ur_ai, miners, ra2engine::default_skirmish_config(rules)};
+    env.cfg.crates = true;
+    env.inf_ft = factory_types_for(ba, "GAPILE");
+    env.veh_ft = factory_types_for(ba, "GAWEAP");
+    env.low_mod = rules.general_double("LowPowerPenaltyModifier", 1.0);
+    env.mf = rules.general_double("MultipleFactory", 0.8);
+    env.build_speed = rules.general_double("BuildSpeed", 0.7);
+    for (int i = 0; i < (int)ur.defs.size(); ++i)
+        if (upper_ascii(ur.defs[i].id) == "E1") env.e1 = i;
+    const SlResult s1 = sl_run_skirmish(env, 450, 900);
+
+    // --- scenario 2: the P9 map triggers on sov07tmd.
+    ra2assets::Ini map_ini = ra2assets::Ini::parse("");
+    {
+        const MapSelection sel;
+        MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+        const MixEntry* me = maps.find(sel.id);
+        if (!me) {
+            std::cerr << "[demo-saveload] FAILED: gate map entry not found\n";
+            return 1;
+        }
+        auto raw = maps.read(*me);
+        map_ini = ra2assets::Ini::parse(std::string(raw.begin(), raw.end()));
+    }
+    const ra2engine::MapTriggerData data = ra2engine::parse_map_triggers(
+        map_ini, ra2engine::ini_list_values(rules_ini, "Countries"),
+        ra2engine::ini_list_values(rules_ini, "BuildingTypes"));
+    TriggerDemoTables t;
+    t.data = &data;
+    t.map_ini = &map_ini;
+    t.rules_ini = &rules_ini;
+    t.ba = &ba;
+    for (const ra2engine::UnitTypeDef& d : ur.defs) t.unit_types.push_back(&d);
+    for (const ra2engine::UnitTypeDef& d : ur_ai.defs) t.unit_types.push_back(&d);
+    t.reveal_radius = rules_ini.get_int("General", "RevealTriggerRadius", 9);
+    for (const auto& kv : map_ini.section("Houses")) {
+        t.house_names.push_back(kv.second);
+        t.house_type_of.push_back(data.find_house_type(map_ini.get(kv.second, "Country", "")));
+    }
+    // N/M straddle the map's 1800-frame (120 s) taunt trigger.
+    const SlResult s2 = sl_run_triggers(a, ua, t, data, 900, 1900);
+
+    std::cout << s1.line << "\n" << s2.line << "\n";
+    const uint64_t h = fnv_mix(s1.a, s2.a);
+    const bool ok = s1.ok && s2.ok;
+    char hb[96];
+    std::snprintf(hb, sizeof hb, "[demo-saveload] identical=%s saveload_hash=%016llx",
+                  ok ? "yes" : "NO", (unsigned long long)h);
+    std::cout << hb << "\n";
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
     try {
 #ifdef __ANDROID__
@@ -13506,6 +13861,8 @@ int main(int argc, char** argv) {
                 return run_demo_projectile();
             } else if (arg == "--demo-triggers") {
                 return run_demo_triggers();
+            } else if (arg == "--demo-saveload") {
+                return run_demo_saveload();   // P7 Save/Load gate
             } else if (arg == "--demo-veterancy") {
                 return run_demo_veterancy();   // P5 Veterancy + Crates gate
             } else if (arg == "--demo-audio") {
