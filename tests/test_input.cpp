@@ -1212,3 +1212,146 @@ TEST_CASE("Input: right-click on an own transport issues the enter order; carrie
     left_click(in, px, py, false, 500);
     CHECK_FALSE(world.units()[1].selected);
 }
+
+// ---- Repair & Sell phase, Task 6: the two cursor modes [RE: repair-sell.md §C1] ----
+
+TEST_CASE("input: repair/sell modes are mutually exclusive and TOGGLE [RE: repair-sell.md §C1]") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input in(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 1);
+    REQUIRE(fx.ok);
+    in.set_owned_buildings(1);
+
+    CHECK(in.base_mode() == Input::BaseMode::None);
+    in.set_repair_mode(-1);
+    CHECK(in.base_mode() == Input::BaseMode::Repair);
+    in.set_repair_mode(-1);                       // both buttons TOGGLE
+    CHECK(in.base_mode() == Input::BaseMode::None);
+    in.set_repair_mode(1);
+    in.set_sell_mode(1);                          // arming Sell clears Repair
+    CHECK(in.base_mode() == Input::BaseMode::Sell);
+    in.set_repair_mode(0);                        // turning an OFF mode off: no-op
+    CHECK(in.base_mode() == Input::BaseMode::Sell);
+    in.set_sell_mode(0);
+    CHECK(in.base_mode() == Input::BaseMode::None);
+    SUBCASE("arming clears sw_targeting") {
+        in.arm_superweapon();
+        in.set_repair_mode(1);
+        CHECK(in.base_mode() == Input::BaseMode::Repair);
+        CHECK_FALSE(in.sw_targeting());
+    }
+    SUBCASE("PLACEMENT WINS -- arming is refused while placing") {
+        in.begin_placement(0, 2, 2);
+        in.set_repair_mode(1);
+        CHECK(in.base_mode() == Input::BaseMode::None);
+        CHECK(in.placement_active());
+    }
+    SUBCASE("refused with no owned buildings [§D5]") {
+        in.set_owned_buildings(0);
+        in.set_sell_mode(1);
+        CHECK(in.base_mode() == Input::BaseMode::None);
+    }
+    SUBCASE("arming DESELECTS everything (Reset_Cursor)") {
+        world.units()[0].selected = true;
+        in.set_repair_mode(1);
+        CHECK_FALSE(world.units()[0].selected);
+    }
+}
+
+TEST_CASE("input: cancel_one_mode follows the recovered priority chain [RE: repair-sell.md §C1]") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input in(world, cam, 1280, 720);
+    in.set_owned_buildings(1);
+    in.begin_placement(0, 2, 2);
+    in.set_repair_mode(1);                        // refused (placement wins)
+    CHECK(in.base_mode() == Input::BaseMode::None);
+    CHECK(in.cancel_one_mode());                  // 1st press: the placement
+    CHECK_FALSE(in.placement_active());
+    in.set_repair_mode(1);
+    in.arm_superweapon();                         // (arm order: SW last)
+    CHECK(in.cancel_one_mode());                  // 2nd: Repair before SW
+    CHECK(in.base_mode() == Input::BaseMode::None);
+    CHECK(in.sw_targeting());
+    CHECK(in.cancel_one_mode());                  // 3rd: the superweapon
+    CHECK_FALSE(in.sw_targeting());
+    CHECK_FALSE(in.cancel_one_mode());            // nothing left
+}
+
+TEST_CASE("input: a mode click reports OWN buildings only, and stays armed [RE: repair-sell.md §C1]") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input in(world, cam, 1280, 720);
+    Fixture fx = spawn(world, 1);
+    REQUIRE(fx.ok);
+    const int ux = fx.cells[0].first, uy = fx.cells[0].second;
+
+    // Two disjoint level-0 foundations away from the unit (level 0 so the
+    // level-blind px_for_cell is the exact inverse of resolve_ground_cell).
+    std::vector<std::pair<int, int>> l0;
+    for (const auto& mc : world.map().cells())
+        if (mc.level == 0 && world.unit_at_cell(mc.x, mc.y) < 0 && std::abs(mc.x - ux) > 6)
+            l0.push_back({mc.x, mc.y});
+    if (l0.size() < 2) { MESSAGE("skipped: not enough level-0 cells"); return; }
+    const auto own_o = l0.front();
+    std::pair<int, int> enemy_o{-1, -1};
+    for (const auto& c : l0)
+        if (std::abs(c.first - own_o.first) > 3 || std::abs(c.second - own_o.second) > 3) {
+            enemy_o = c;
+            break;
+        }
+    if (enemy_o.first < 0) { MESSAGE("skipped: no disjoint foundation cell"); return; }
+    const int b_own = world.add_building(1, own_o.first, own_o.second, 2, 2, /*house*/ 0, 1000,
+                                         0, 0.0, true);
+    const int b_enemy = world.add_building(1, enemy_o.first, enemy_o.second, 2, 2, /*house*/ 1,
+                                           1000, 0, 0.0, true);
+    (void)b_enemy;
+    in.set_owned_buildings(1);
+    in.set_sell_mode(1);
+
+    int px, py;
+    px_for_cell(own_o.first, own_o.second, px, py);
+    left_click(in, px, py, false, 1000);
+    const ra2engine::InputActions a = in.take_actions();
+    CHECK(a.sell_clicked);
+    CHECK(a.sell_building == b_own);
+    CHECK_FALSE(a.repair_clicked);
+    CHECK(in.base_mode() == Input::BaseMode::Sell);          // NOT one-shot
+
+    SUBCASE("repair mode reports repair_clicked") {
+        in.set_repair_mode(1);
+        left_click(in, px, py, false, 2000);
+        const ra2engine::InputActions r = in.take_actions();
+        CHECK(r.repair_clicked);
+        CHECK(r.repair_building == b_own);
+        CHECK_FALSE(r.sell_clicked);
+    }
+    SUBCASE("an enemy building reports NOTHING") {
+        int ex, ey;
+        px_for_cell(enemy_o.first, enemy_o.second, ex, ey);
+        left_click(in, ex, ey, false, 2000);
+        const ra2engine::InputActions e = in.take_actions();
+        CHECK_FALSE(e.sell_clicked);
+        CHECK_FALSE(e.repair_clicked);
+    }
+    SUBCASE("a right-click cancels the mode") {
+        right_click(in, px, py, 2000);
+        CHECK(in.base_mode() == Input::BaseMode::None);
+        CHECK_FALSE(in.take_actions().move_ordered);
+    }
+    SUBCASE("no selection leaks through while armed") {
+        const ra2engine::Unit& u = world.units()[0];
+        int gx, gy;
+        ground_px_for_unit(u, gx, gy);
+        left_click(in, gx, gy, false, 2000);
+        CHECK_FALSE(world.units()[0].selected);
+        CHECK_FALSE(in.take_actions().selected);
+    }
+}

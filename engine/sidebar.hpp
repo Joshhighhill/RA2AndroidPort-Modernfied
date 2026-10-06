@@ -40,6 +40,16 @@ constexpr int kScrollX = 39;         // r-dn at 39, r-up at 39+46
 constexpr int kScrollW = 46, kScrollH = 25;
 constexpr int kPowerX = 5;           // powerp.shp 12x2 pips, 3 px pitch
 constexpr int kPowerPipW = 12, kPowerPipH = 2, kPowerPitch = 3;
+// Repair / Sell buttons [RE: construction.md §11a, Allied/sidec01]: repair.shp
+// (2 frames) at bar-relative (20, 166) 64x31, sell.shp (2 frames) at (84, 166)
+// 64x31. Frame 1 is the PRESSED state, drawn while the mode is armed. These are
+// exactly the coordinates draw_sidebar already blitted at, so the rects provably
+// sit under the drawn art. (Soviet/Yuri offsets 33/85 at y 165 are recorded in
+// §11a but not implemented -- the player sidebar is Allied.)
+constexpr int kRepairBtnX = 20;
+constexpr int kSellBtnX = 84;
+constexpr int kSideBtnY = 166;
+constexpr int kSideBtnW = 64, kSideBtnH = 31;
 
 enum class CameoState { Available, Disabled, Building, Ready };
 
@@ -55,6 +65,9 @@ struct SidebarLayout {
     SbRect tabs[4];          // Building, Defense, Infantry, Vehicle
     SbRect power;            // pip column: x=+5, y=kStripTop, w=12, h=pips*3
     SbRect scroll_dn, scroll_up;   // strip scroll buttons (inert this phase)
+    // Repair / Sell buttons [RE: construction.md §11a; behaviour
+    // repair-sell.md §C1 -- both TOGGLE mutually-exclusive cursor modes].
+    SbRect repair_btn, sell_btn;
     int strip_top = kStripTop;
     int side2_rows = 0;      // N: side2 tiles / visible cameo rows
     int power_pips = 0;      // capacity = (50*N + 3) / 3
@@ -70,6 +83,8 @@ struct SidebarLayout {
 
     int cameo_at(int px, int py) const;   // index into cameos, or -1
     int tab_at(int px, int py) const;     // 0..3, or -1
+    bool repair_btn_at(int px, int py) const { return repair_btn.contains(px, py); }
+    bool sell_btn_at(int px, int py) const { return sell_btn.contains(px, py); }
     bool contains(int px, int py) const { return bar.contains(px, py); }
 };
 

@@ -91,3 +91,33 @@ TEST_CASE("sidebar hit-testing") {
     CHECK(lay.contains(1280 - 1, 0));
     CHECK_FALSE(lay.contains(1280 - 168 - 1, 0));
 }
+
+TEST_CASE("sidebar: repair/sell button rects [RE: construction.md §11a]") {
+    auto lay = SidebarLayout::compute(1280, 720, {1, 2, 3});
+    const int x0 = 1280 - 168;
+    // The EXACT coordinates draw_sidebar blitted at before this phase
+    // (lay.bar.x + 20, 166) and (lay.bar.x + 84, 166), 64x31, on the side1 band.
+    CHECK(lay.repair_btn.x == x0 + 20);
+    CHECK(lay.repair_btn.y == 166);
+    CHECK(lay.repair_btn.w == 64);
+    CHECK(lay.repair_btn.h == 31);
+    CHECK(lay.sell_btn.x == x0 + 84);
+    CHECK(lay.sell_btn.y == 166);
+    CHECK(lay.sell_btn.w == 64);
+    CHECK(lay.sell_btn.h == 31);
+    // Both sit inside the side1 band and never overlap each other or the tabs.
+    CHECK(lay.repair_btn.y >= lay.side1.y);
+    CHECK(lay.repair_btn.y + lay.repair_btn.h <= lay.side1.y + lay.side1.h);
+    CHECK(lay.repair_btn.y + lay.repair_btn.h <= lay.tabs[0].y);
+    CHECK(lay.repair_btn.x + lay.repair_btn.w <= lay.sell_btn.x);
+    CHECK(lay.repair_btn_at(x0 + 21, 167));
+    CHECK_FALSE(lay.repair_btn_at(x0 + 21, 165));
+    CHECK(lay.sell_btn_at(x0 + 85, 167));
+    CHECK_FALSE(lay.sell_btn_at(x0 + 21, 167));       // repair rect, not sell
+    CHECK_FALSE(lay.sell_btn_at(0, 0));
+    CHECK(lay.tab_at(x0 + 21, 167) == -1);             // no tab under the buttons
+    // 800x600 (the binary's native size) puts them at the same absolute y.
+    auto s = SidebarLayout::compute(800, 600, {1});
+    CHECK(s.repair_btn.x == 800 - 168 + 20);
+    CHECK(s.repair_btn.y == 166);
+}

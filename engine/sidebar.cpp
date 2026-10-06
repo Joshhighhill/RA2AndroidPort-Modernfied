@@ -19,6 +19,10 @@ SidebarLayout SidebarLayout::compute(int view_w, int view_h,
     lay.top_cap = {x0, kTopCapY, kSidebarW, kRadarY - kTopCapY};
     lay.radar = {x0, kRadarY, kSidebarW, kRadarH};
     lay.side1 = {x0, kSide1Y, kSidebarW, kSide1H};
+    // Repair / Sell buttons sit ON the side1 band [RE: construction.md §11a --
+    // repair at bar-relative 20, sell at 84, both y 166, 64x31].
+    lay.repair_btn = {x0 + kRepairBtnX, kSideBtnY, kSideBtnW, kSideBtnH};
+    lay.sell_btn = {x0 + kSellBtnX, kSideBtnY, kSideBtnW, kSideBtnH};
 
     // Tab row: four separate 28x27 buttons at x = 26 + 29*i, y = 197
     // [RE: §11a — pitch 29, NOT bar.w/4].

@@ -171,6 +171,69 @@ void Input::cancel_placement() {
     place_fw_ = place_fh_ = 1;
 }
 
+namespace {
+// The shared body of SetRepairMode/SetSellMode [RE: repair-sell.md §C1] --
+// both setters are the same shape in the binary.
+Input::BaseMode next_mode(Input::BaseMode cur, Input::BaseMode want, int control) {
+    const bool on = (cur == want);
+    bool next_on = on;
+    if (control < 0) next_on = !on;
+    else if (control == 0) next_on = false;
+    else next_on = true;
+    if (next_on) return want;
+    return on ? Input::BaseMode::None : cur;   // turning `want` off leaves a sibling alone
+}
+}  // namespace
+
+void Input::set_repair_mode(int control) { set_mode_(BaseMode::Repair, control); }
+void Input::set_sell_mode(int control) { set_mode_(BaseMode::Sell, control); }
+
+void Input::set_mode_(BaseMode want, int control) {
+    const BaseMode next = next_mode(mode_, want, control);
+    if (next == mode_) return;                       // no-op if unchanged
+    // PLACEMENT WINS: every setter early-returns while PendingObject != 0.
+    if (placement_active()) return;
+    // Every setter clears the other modes.
+    sw_targeting_ = false;
+    if (next == BaseMode::None) {
+        mode_ = BaseMode::None;
+        return;
+    }
+    // Arming requires at least one owned building (§D5); otherwise the button
+    // is dead.
+    if (owned_buildings_ <= 0) {
+        mode_ = BaseMode::None;
+        return;
+    }
+    mode_ = next;
+    // Reset_Cursor (FUN_0048DBA0): arming a mode DESELECTS EVERYTHING.
+    world_.clear_selection();
+    selected_building_ = -1;
+    l_down_ = false;
+    dragging_ = false;
+}
+
+bool Input::cancel_one_mode() {
+    // [RE: repair-sell.md §C1] EXACTLY ONE thing per press, in priority order.
+    if (placement_active()) {
+        actions_.place_cancelled = true;
+        cancel_placement();
+        return true;
+    }
+    if (mode_ == BaseMode::Repair) { mode_ = BaseMode::None; return true; }
+    if (mode_ == BaseMode::Sell) { mode_ = BaseMode::None; return true; }
+    // (PowerToggleMode would sit here -- not modeled.)
+    if (sw_targeting_) { sw_targeting_ = false; return true; }
+    // (PlanningMode, PlaceBeaconMode would sit here -- not modeled.)
+    return false;
+}
+
+int Input::building_under(int px, int py) const {
+    int cx = 0, cy = 0;
+    resolve_ground_cell(px, py, cx, cy);
+    return world_.building_at_cell(cx, cy);   // already skips !alive / Dead
+}
+
 void Input::placement_cell(int& cx, int& cy) const {
     resolve_ground_cell(cur_x_, cur_y_, cx, cy);
     cx -= place_fw_ / 2;
@@ -373,6 +436,59 @@ void Input::handle(const InputEvent& ev) {
                     actions_.place_confirmed = true;
                     actions_.place_cx = cx - place_fw_ / 2;
                     actions_.place_cy = cy - place_fh_ / 2;
+                }
+                l_down_ = false;
+                dragging_ = false;
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
+    // Repair / Sell cursor mode [RE: repair-sell.md §C1]. While armed, a left
+    // Down+Up (no drag) on an OWN alive building reports the click (main.cpp
+    // routes it to World::toggle_repair / World::begin_sell); a right-click
+    // cancels ONE mode; PointerMove just tracks the cursor. The whole gesture
+    // model is swallowed so no selection/attack/move leaks through. Quit still
+    // propagates. NOT one-shot (unlike sw_targeting_): it stays armed after a
+    // click, so several buildings can be repaired/sold in a row. Placed AFTER
+    // the placement block because placement WINS (set_mode_ also refuses while
+    // placing, so the two can never both be active).
+    if (mode_ != BaseMode::None) {
+        switch (ev.kind) {
+            case InputEvent::Quit:
+                quit_ = true;
+                break;
+            case InputEvent::PointerMove:
+                cur_x_ = ev.x;
+                cur_y_ = ev.y;
+                break;
+            case InputEvent::PointerDown:
+                if (ev.button == InputEvent::Right) {
+                    cancel_one_mode();
+                } else {
+                    l_down_ = true;
+                    dragging_ = false;
+                    down_x_ = cur_x_ = ev.x;
+                    down_y_ = cur_y_ = ev.y;
+                }
+                break;
+            case InputEvent::PointerUp:
+                if (ev.button == InputEvent::Left && l_down_ && !dragging_) {
+                    const int bi = building_under(ev.x, ev.y);
+                    // OWN house only [RE: §C1 -- the SELL/REPAIR event verifies
+                    // ownership]. A click on nothing, or on an enemy building,
+                    // is swallowed with NO report.
+                    if (bi >= 0 && world_.buildings()[bi].house == 0) {
+                        if (mode_ == BaseMode::Repair) {
+                            actions_.repair_clicked = true;
+                            actions_.repair_building = bi;
+                        } else {
+                            actions_.sell_clicked = true;
+                            actions_.sell_building = bi;
+                        }
+                    }
                 }
                 l_down_ = false;
                 dragging_ = false;

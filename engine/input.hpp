@@ -42,6 +42,15 @@ struct InputActions {
     // arms SW-targeting, so no existing demo/frame reports it).
     bool sw_fire_confirmed = false;
     int sw_cx = 0, sw_cy = 0;
+
+    // Repair & Sell [RE: repair-sell.md §C1]: a left-click in Repair/Sell mode
+    // that landed on an OWN (house 0) alive building. main.cpp routes these to
+    // World::toggle_repair / World::begin_sell. Default inert -- no existing
+    // flow arms either mode, so no existing demo/frame reports them.
+    bool repair_clicked = false;
+    int repair_building = -1;
+    bool sell_clicked = false;
+    int sell_building = -1;
 };
 
 // Translates pointer InputEvents (Task 0 Platform) into actions on a World +
@@ -100,6 +109,48 @@ public:
     void cancel_superweapon() { sw_targeting_ = false; }
     bool sw_targeting() const { return sw_targeting_; }
     int placement_type() const { return place_type_; }
+
+    // --- Repair & Sell cursor modes [RE: repair-sell.md §C1] --------------
+    // The original's DisplayClass carries FIVE mutually-exclusive one-byte mode
+    // flags (RepairMode +0x11B0, SellMode +0x11B1, PowerToggleMode +0x11B2,
+    // PlanningMode +0x11B3, PlaceBeaconMode +0x11B4) and EVERY setter clears
+    // the other four. The last three have no feature behind them in this engine
+    // (no per-building power toggle, no waypoint planning, no beacons), so they
+    // are recorded but not modeled: the exclusion set here is
+    // {pending placement, sw_targeting, Repair, Sell}.
+    enum class BaseMode { None, Repair, Sell };
+
+    // SetRepairMode / SetSellMode (FUN_004AC7D0 / FUN_004AC570), transcribed:
+    //   1. control -1 toggle / 0 off / 1 on; no-op if the value is unchanged;
+    //   2. REFUSED outright while a placement is pending (placement WINS);
+    //   3. clears every other mode (here: the sibling mode + sw_targeting);
+    //   4. arming requires the player to own at least one building
+    //      (PlayerPtr->[0x2F0] > 0, §D5 CONFIRMED), and calls Reset_Cursor
+    //      (FUN_0048DBA0) -- which DESELECTS EVERYTHING.
+    // The mode is NOT one-shot: it stays armed until cancelled, so several
+    // buildings can be repaired/sold in a row.
+    void set_repair_mode(int control);
+    void set_sell_mode(int control);
+    BaseMode base_mode() const { return mode_; }
+
+    // The ESC / right-click chain (FUN_004AAC40): cancels EXACTLY ONE thing per
+    // press, in the recovered priority order
+    //   pending placement -> RepairMode -> SellMode -> PowerToggleMode
+    //   -> pending superweapon -> PlanningMode -> PlaceBeaconMode -> (nothing).
+    // The three unmodeled modes are simply absent from the chain. Returns true
+    // iff something was cancelled.
+    bool cancel_one_mode();
+
+    // HouseClass+0x2F0 = the player's owned-building count [RE: repair-sell.md
+    // §D5, CONFIRMED]: arming either mode is refused when it is zero. main.cpp
+    // refreshes it once per frame (alive, non-Dead house-0 buildings -- a
+    // building mid-sell still counts, §D5 residual).
+    void set_owned_buildings(int n) { owned_buildings_ = n; }
+    int owned_buildings() const { return owned_buildings_; }
+
+    // The alive, non-Dead building under window pixel (px, py) (level-aware
+    // ground pick), or -1. Used by main.cpp's mode cursor.
+    int building_under(int px, int py) const;
     // Hovered foundation ORIGIN cell for the CURRENT pointer position:
     // resolve_ground_cell(cur) minus half the foundation, so the cursor sits
     // near the foundation's center. Meaningful only while placement_active().
@@ -233,6 +284,12 @@ private:
     // CB-4 Superweapons: true while SW-targeting is armed (a click on the map
     // then reports sw_fire_confirmed). Default false -- inert in every demo.
     bool sw_targeting_ = false;
+
+    // Repair & Sell cursor modes [RE: repair-sell.md §C1]. Default None +
+    // 0 owned -> both modes are unreachable until main.cpp arms one.
+    BaseMode mode_ = BaseMode::None;
+    int owned_buildings_ = 0;
+    void set_mode_(BaseMode want, int control);
 
     // Economy phase: refinery roster types (set_refinery_types).
     std::vector<int> refinery_types_;

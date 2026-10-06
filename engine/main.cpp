@@ -2030,7 +2030,9 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
 
     // Dead: explosion anim centered on the foundation (render-only nicety).
     if (b.state == ra2engine::Building::State::Dead) {
-        if (ba.explosion && ba.explosion->count() > 0) {
+        // A SOLD building is Limbo()'d and deleted in the original -- it does
+        // not explode [RE: repair-sell.md §B2 state 2].
+        if (ba.explosion && ba.explosion->count() > 0 && !b.sold) {
             int frame = static_cast<int>(b.die_time * 15.0);
             frame = std::clamp(frame, 0, ba.explosion->count() - 1);
             const ra2assets::ShpFile::Frame f = ba.explosion->frame_info(frame);
@@ -2049,9 +2051,16 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         return;
     }
 
-    const bool buildup = (b.state == ra2engine::Building::State::Buildup && art.has_buildup);
+    // [RE: repair-sell.md §B2] A SELLING building plays the buildup range
+    // MIRRORED (Shape_Number's `start + count - stage - 1`) -- the buildup runs
+    // BACKWARDS over the same frame count at the same rate. `selling` is false
+    // on every gate path, so the two original branches are unchanged there.
+    const bool selling = (b.selling && art.has_buildup);
+    const bool buildup =
+        selling || (b.state == ra2engine::Building::State::Buildup && art.has_buildup);
     const ra2assets::ShpFile& shp = buildup ? art.buildup : art.shp;
-    const int frame = buildup ? ra2engine::buildup_frame(b, art.buildup.count())
+    const int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
+                    : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
                               : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
     if (frame < 0 || frame >= shp.count()) return;
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
@@ -2375,7 +2384,8 @@ std::vector<int> sidebar_buildable(const BuildingAssets& ba);
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
                   const ra2engine::World& world, int credits_shown, double t_now, int active_tab,
-                  const UnitRoster* ur = nullptr, bool unit_factory_alive = true);
+                  const UnitRoster* ur = nullptr, bool unit_factory_alive = true,
+                  int armed_mode = 0);   // 0 none, 1 repair, 2 sell [repair-sell.md §C1]
 
 int run_screenshot(const std::string& out_path) {
     const int W = 1280, H = 720;
@@ -2992,7 +3002,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
 void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::SidebarLayout& lay, const ra2engine::ProductionState& ps,
                   const ra2engine::World& world, int credits_shown, double t_now, int active_tab,
-                  const UnitRoster* ur, bool unit_factory_alive) {
+                  const UnitRoster* ur, bool unit_factory_alive, int armed_mode) {
     // Opaque backdrop behind any gaps (missing optional chrome), then the
     // recovered top-to-bottom stack.
     shade_rect(ren, lay.bar, 255, 24, 24, 28);
@@ -3018,9 +3028,17 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     }
     // side1 band (carries the repair/sell socket art), then the buttons.
     blit_shp(ren, tc, "sb:side1", ba.sb_side1, 0, ba.sb_pal, lay.side1.x, lay.side1.y);
+    // Repair / Sell buttons [RE: construction.md §11a rects; behaviour
+    // repair-sell.md §C1]. Frame 1 is the PRESSED art, drawn while that mode is
+    // armed (the mode-armed affordance §D8 keeps alongside the cursor). The
+    // texture key carries the frame (blit_shp caches by key alone); frame 0
+    // keeps its historical key, so the unarmed draw is unchanged.
     if (ba.has_repair_sell) {
-        blit_shp(ren, tc, "sb:rep", ba.sb_repair, 0, ba.sb_pal, lay.bar.x + 20, 166);
-        blit_shp(ren, tc, "sb:sell", ba.sb_sell, 0, ba.sb_pal, lay.bar.x + 84, 166);
+        const bool rep_on = (armed_mode == 1), sell_on = (armed_mode == 2);
+        blit_shp(ren, tc, rep_on ? "sb:rep1" : "sb:rep", ba.sb_repair, rep_on ? 1 : 0, ba.sb_pal,
+                 lay.repair_btn.x, lay.repair_btn.y);
+        blit_shp(ren, tc, sell_on ? "sb:sell1" : "sb:sell", ba.sb_sell, sell_on ? 1 : 0,
+                 ba.sb_pal, lay.sell_btn.x, lay.sell_btn.y);
     }
     // Four tab buttons (frame 0); the ACTIVE tab full-bright, the others shaded.
     for (int i = 0; i < 4; ++i) {
@@ -3177,6 +3195,61 @@ void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
                                 {sx, sy + 15},       {sx + 30, sy}};
         SDL_RenderDrawLines(ren, diamond, 5);
     }
+}
+
+// Repair / Sell mode cursor art [RE: repair-sell.md §D8]: MOUSE.SHP
+// (ra2.mix/conquer.mix, 450 frames, 55x43 canvas) drawn with
+// ra2.mix/cache.mix/mousepal.pal. Interactive-only; no gate constructs one.
+struct ModeCursor {
+    ra2assets::ShpFile shp;
+    ra2assets::Palette pal{};
+    bool ok = false;
+};
+
+// Draw the armed-mode software cursor at window pixel (mx, my). Frame groups
+// are the six §D8 entries [30]..[35] of the cursor descriptor table at
+// gamemd.exe 0x0082C038 (re-read from the binary for this task: {129,10,4},
+// {139,10,4}, {149,1,0}, {150,20,4}, {170,20,4}, {190,1,0}), each animated at
+// one cursor frame per 4 game frames. Pair assignment per §D8 (PROBABLE):
+// brackets = over a valid target, plain spin = armed over nothing, crossed-out
+// = over a building the action refuses. Hotspot: all six entries carry
+// HotX = HotY = 12345, YRpp's MouseHotSpotX::Center / MouseHotSpotY::Middle,
+// so the canvas CENTER sits on the pointer. Returns true iff it drew (so the
+// caller can hide the OS cursor).
+bool draw_mode_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ModeCursor& mc,
+                      const ra2engine::World& world, const BuildingAssets& ba,
+                      const ra2engine::Input& input, int mx, int my, std::uint64_t game_frame) {
+    const ra2engine::Input::BaseMode mode = input.base_mode();
+    if (!mc.ok || mode == ra2engine::Input::BaseMode::None) return false;
+    const bool repair = (mode == ra2engine::Input::BaseMode::Repair);
+    const int bi = input.building_under(mx, my);
+    // 0 = armed over nothing, 1 = valid target, 2 = refused target.
+    int state = 0;
+    if (bi >= 0) {
+        const ra2engine::Building& b = world.buildings()[bi];
+        bool valid = (b.house == 0 && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()));
+        if (valid)
+            valid = repair ? (!b.selling && ra2engine::can_be_click_repaired(b, ba.roster[b.type]))
+                           : ra2engine::can_be_sold(b, ba.roster[b.type], /*c4_applied=*/false);
+        state = valid ? 1 : 2;
+    }
+    const int tick = static_cast<int>((game_frame / 4) % 20);
+    int frame = 0;
+    if (repair) frame = state == 1 ? 150 + tick : state == 2 ? 190 : 170 + tick;
+    else        frame = state == 1 ? 129 + tick % 10 : state == 2 ? 149 : 139 + tick % 10;
+    if (frame >= mc.shp.count()) return false;
+    const ra2assets::ShpFile::Frame f = mc.shp.frame_info(frame);
+    if (f.w <= 0 || f.h <= 0) return false;
+    char key[32];
+    std::snprintf(key, sizeof key, "mouse:%d", frame);
+    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!tex) {
+        std::vector<uint8_t> idx = mc.shp.decode_indexed(frame);
+        tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, mc.pal));
+    }
+    SDL_Rect dst{mx - mc.shp.width() / 2 + f.x, my - mc.shp.height() / 2 + f.y, f.w, f.h};
+    SDL_RenderCopy(ren, tex, nullptr, &dst);
+    return true;
 }
 
 // Production chrome [RE: production.md §1.2/§1.4] — cosmetic, never mutates the
@@ -3368,6 +3441,39 @@ public:
 
         // Audio (--no-audio skips init_audio entirely; rules_ reused for voices).
         if (!no_audio_) init_audio(audio_, dir_, rules_);
+
+        // Survivor crews [RE: repair-sell.md §B3/§D1]: World is asset-free, so
+        // each side's crew infantry is resolved HERE from [General]
+        // AlliedCrew / SovietCrew (E1 / E2 on this install) and registered.
+        // The 25% special crew type is CUT [RE-GATE APPLIED: §D item 1].
+        // (launch_skirmish already injected ba_.repair_sell + the roster.)
+        {
+            const std::pair<ra2engine::World::Side, const char*> crews[] = {
+                {ra2engine::World::Side::Allied, "AlliedCrew"},
+                {ra2engine::World::Side::Soviet, "SovietCrew"}};
+            for (const auto& [side, key] : crews) {
+                const std::string id = rules_ini_.get(
+                    "General", key, side == ra2engine::World::Side::Soviet ? "E2" : "E1");
+                const ResolvedUnit ru = resolve_combat_unit(rules_, id);
+                world_.set_survivor_crew(static_cast<int>(side), ru.combat);
+                if (ua_.anims.count(ru.combat.image))
+                    world_.set_anim(ru.combat.image, ua_.anims.at(ru.combat.image));
+            }
+        }
+        // Repair / Sell cursor art [RE: repair-sell.md §D8]. Missing art just
+        // leaves the OS cursor (the pressed sidebar frame still shows the mode).
+        try {
+            MixFile conquer = ra2_.open_nested("conquer.mix");
+            mouse_.shp = load_unit_shp(conquer, "mouse");
+            MixFile cache = ra2_.open_nested("cache.mix");
+            if (const ra2assets::MixEntry* pe = cache.find(std::string("mousepal.pal"))) {
+                const auto raw = cache.read(*pe);
+                mouse_.pal = ra2assets::Palette::load(raw.data(), raw.size());
+                mouse_.ok = mouse_.shp.count() > 190;
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[repair-sell] mouse.shp unavailable (" << ex.what() << ")\n";
+        }
     }
 
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
@@ -3386,6 +3492,16 @@ public:
                         if (world_.sw_ready(0)) input_.arm_superweapon();
                         return;  // consumed by the SW slot
                     }
+                }
+                // Repair / Sell buttons [RE: repair-sell.md §C1]: BOTH TOGGLE
+                // (SidebarClass::Action ids 0x8065 / 0x8066 both pass -1).
+                if (ba_.has_repair_sell && lay_.repair_btn_at(ev.x, ev.y)) {
+                    input_.set_repair_mode(-1);
+                    return;
+                }
+                if (ba_.has_repair_sell && lay_.sell_btn_at(ev.x, ev.y)) {
+                    input_.set_sell_mode(-1);
+                    return;
                 }
                 // Tab-click switching: recompute the buildable list + layout.
                 const int tab = lay_.tab_at(ev.x, ev.y);
@@ -3442,11 +3558,10 @@ public:
             }
             return;  // consumed by the sidebar (right-click = no-op)
         }
-        // Escape (mapped to Quit) cancels placement instead of quitting.
-        if (ev.kind == ra2engine::InputEvent::Quit && input_.placement_active()) {
-            input_.cancel_placement();
-            return;
-        }
+        // Escape (mapped to Quit) cancels ONE armed thing instead of quitting,
+        // in the recovered priority order: placement -> Repair -> Sell -> SW
+        // [RE: repair-sell.md §C1, FUN_004AAC40].
+        if (ev.kind == ra2engine::InputEvent::Quit && input_.cancel_one_mode()) return;
         input_.handle(ev);
     }
 
@@ -3479,7 +3594,20 @@ public:
         prev_sw_key_ = sw_key;
 
         now_ = SDL_GetTicks();   // frame clock for draw_sidebar's animation timing
+        // Repair wallet bridge [RE: repair-sell.md §A2/§A3]: the wrench charges
+        // the World's house pool, but the player's money lives HERE
+        // (player_credits_) and that pool is drained by take_income every
+        // frame. While any own building is being repaired, deposit the wallet
+        // into the pool for the step and take it all back straight after, so
+        // the tick sees (and charges) the real balance and the out-of-credits
+        // stop (§A3) fires on the real balance. Inert otherwise.
+        const bool repair_bridge = world_.house_repairing(0);
+        if (repair_bridge) {
+            world_.deposit_credits(0, player_credits_);
+            player_credits_ = 0.0;
+        }
         world_.step(dt);
+        if (repair_bridge) player_credits_ += world_.take_income(0);
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
         prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_);
@@ -3542,6 +3670,23 @@ public:
         }
         // Consume input actions ONCE per frame.
         const ra2engine::InputActions act = input_.take_actions();
+        // [RE: repair-sell.md §C1/§D5] arming a mode requires >= 1 owned
+        // building (alive, non-Dead; a building mid-sell still counts), and
+        // losing the last one force-disarms the mode (FUN_004F8350).
+        {
+            int owned = 0;
+            for (const ra2engine::Building& b : world_.buildings())
+                if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) ++owned;
+            input_.set_owned_buildings(owned);
+            if (owned == 0) {
+                input_.set_repair_mode(0);
+                input_.set_sell_mode(0);
+            }
+        }
+        // Repair / Sell clicks [RE: repair-sell.md §A4/§B2]. The mode STAYS
+        // armed (it is not one-shot), so the player can work through a base.
+        if (act.repair_clicked) world_.toggle_repair(act.repair_building, 0);
+        if (act.sell_clicked) world_.begin_sell(act.sell_building, 0);
         // Placement confirm.
         if (act.place_confirmed && input_.placement_active()) {
             const int type = input_.placement_type();
@@ -3617,11 +3762,23 @@ public:
                 (active_tab_ == 3) ? !world_.factory_category_lost(veh_ft_, 0)
               : (active_tab_ == 2) ? !world_.factory_category_lost(inf_ft_, 0)
                                    : true;
+            const ra2engine::Input::BaseMode bm = input_.base_mode();
             draw_sidebar(ren, tc, ba_, lay_, queues_.state(vis_cat), world_,
                          static_cast<int>(std::llround(credits_shown_)), now_ / 1000.0,
-                         active_tab_, &ur_, unit_fac_alive);
+                         active_tab_, &ur_, unit_fac_alive,
+                         bm == ra2engine::Input::BaseMode::Repair ? 1
+                         : bm == ra2engine::Input::BaseMode::Sell ? 2 : 0);
         }
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
+        // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
+        // cursor is hidden only while it draws.
+        const bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
+                          draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
+                                           world_.repair_frame());
+        if (drew != os_cursor_hidden_) {
+            SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
+            os_cursor_hidden_ = drew;
+        }
     }
 
     bool wants_quit() const override { return input_.wants_quit(); }
@@ -3690,6 +3847,9 @@ private:
     std::vector<int>     bstates_;
     int                  mx_ = 0, my_ = 0;
     Uint32               now_ = 0;
+    // --- Repair & Sell [RE: repair-sell.md §C1/§D8] ---
+    ModeCursor           mouse_;
+    bool                 os_cursor_hidden_ = false;
 };
 
 // Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
