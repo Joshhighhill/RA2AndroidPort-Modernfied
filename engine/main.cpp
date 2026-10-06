@@ -27,6 +27,8 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>         // G-80 EVA queue
+#include <set>           // G-81 registered sound keys
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -4340,7 +4342,13 @@ private:
     static ra2engine::SbRect btn(int i) { return {640 - 130, 360 - 120 + i * 58, 260, 42}; }
 };
 
+// G-80..G-91 presentation layer (EVA / voices / music / effects / shroud /
+// cursors). Additive files; GameScene owns one Presentation.
+#include "pres_audio.inc"
+#include "pres_game.inc"
+
 class GameScene : public Scene {
+    friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
         : no_audio_(no_audio),
@@ -4499,6 +4507,7 @@ public:
         p5_art_ = load_p5_art(dir_, ra2_);
         g_p5_art = &p5_art_;
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
+        init_presentation();   // G-80..G-91 (pres_game.inc)
     }
     // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
     // the save's skirmish config, then overwrite the World and the scene
@@ -4698,7 +4707,7 @@ public:
         }
         // P5: drain the promotion / crate events (the EVA/sound hook is a
         // carry-forward -- veterancy.md §5); draining keeps the queues bounded.
-        (void)world_.take_vet_events();
+        const std::vector<ra2engine::World::VetEvent> vet_events = world_.take_vet_events();
         (void)world_.take_crate_events();
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
@@ -4801,39 +4810,16 @@ public:
         // CB-4 Superweapons: a committed SW target cell -> fire.
         if (act.sw_fire_confirmed) world_.fire_superweapon(0, act.sw_cx, act.sw_cy);
 
-        // Audio event collection + acks (gated on audio_.enabled).
-        if (audio_.enabled) {
-            const double view_center_px_x = kWinW / 2.0 - cam_.x;
-            const double view_center_px_y = kWinH / 2.0 - cam_.y;
-            const auto& units = world_.units();
-            prev_audio_state_.resize(units.size(), {0.0, -1.0});
-            for (std::size_t i = 0; i < units.size(); ++i) {
-                const auto& u = units[i];
-                const double sx = (u.fx - u.fy) * 30.0 - view_center_px_x;
-                const double sy = (u.fx + u.fy) * 15.0 - view_center_px_y;
-                const double dist = std::max(std::abs(sx), 2.0 * std::abs(sy)) / 60.0;
-                const auto& v = audio_.voices[u.image];
-                if (u.fire_flash > prev_audio_state_[i].first)
-                    audio_.mixer->play(v.report, dist);
-                if (u.die_time >= 0.0 && prev_audio_state_[i].second < 0.0) {
-                    audio_.mixer->play(v.die, dist);
-                    if (u.house == 0 && audio_.eva_unitlost >= 0)
-                        audio_.mixer->play_eva(audio_.eva_unitlost);
-                }
-                prev_audio_state_[i] = {u.fire_flash, u.die_time};
-            }
-            if (act.actor >= 0) {
-                const auto& au = world_.units()[act.actor];
-                const double asx = (au.fx - au.fy) * 30.0 - view_center_px_x;
-                const double asy = (au.fx + au.fy) * 15.0 - view_center_px_y;
-                const double adist = std::max(std::abs(asx), 2.0 * std::abs(asy)) / 60.0;
-                const auto& av = audio_.voices[au.image];
-                if (act.selected) audio_.mixer->play(av.select, adist);
-                else if (act.attack_ordered) audio_.mixer->play(av.attack, adist);
-                else if (act.move_ordered) audio_.mixer->play(av.move, adist);
-            }
-            audio_.out.pump(*audio_.mixer);
-        }
+        // G-80/G-81/G-82: voices, reports, deaths, EVA, music, effects -- one
+        // observation pass over this frame's state (pres_game.inc). Logs even
+        // when there is no audio device; pumps the sink when there is one.
+        pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
+                     vet_events);
+    }
+    void init_presentation() {
+        const ra2engine::World::Side s = world_.house_side(0);
+        pres_.init(dir_, audio_, audio_.enabled, rules_, rules_ini_, {&ur_.defs, &ur_ai_.defs},
+                   s == ra2engine::World::Side::Soviet ? 1 : s == ra2engine::World::Side::Yuri ? 2 : 0);
     }
 
     // render_world + placement cursor + sidebar chrome + production chrome.
@@ -5125,6 +5111,7 @@ private:
     double               mf_ = 0.8;
     // --- audio ---
     AudioSystem          audio_;
+    Presentation         pres_;    // G-80..G-91 presentation driver
     std::vector<std::pair<double, double>> prev_audio_state_;
     bool                 prev_unload_key_ = false;
     bool                 prev_sw_key_ = false;
@@ -5258,6 +5245,8 @@ private:
     }
 };
 
+
+#include "pres_harness.inc"   // G-8x --scene-shot acceptance harness
 
 // Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
 // the old inline scenario (default_skirmish_config reproduces the 1v1). SAME
@@ -15777,6 +15766,9 @@ int main(int argc, char** argv) {
         bool no_audio = false;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
+            if (arg == "--scene-shot" && i + 1 < argc) {
+                return run_scene_shot(argc, argv, i + 1);   // G-8x presentation harness
+            }
             if (arg == "--menu-shot" && i + 1 < argc) {
                 return run_menu_shot(argv[++i]);
             } else if (arg == "--screenshot" && i + 1 < argc) {
