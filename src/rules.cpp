@@ -217,6 +217,12 @@ std::vector<std::string> Rules::prerequisite_group(const std::string& group) con
     return split_trim_upper(ini_->get("General", "Prerequisite" + group, ""));
 }
 
+std::string Rules::section_string(const std::string& id, const std::string& key,
+                                  const std::string& fallback) const {
+    const std::string v = strip_inline_comment(ini_->get(id, key, ""));
+    return v.empty() ? fallback : v;
+}
+
 std::string Rules::general_string(const std::string& key, const std::string& fallback) const {
     const std::string v = strip_inline_comment(ini_->get("General", key, ""));
     return v.empty() ? fallback : v;

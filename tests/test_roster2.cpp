@@ -1,6 +1,9 @@
 #include "doctest.h"
 #include "production.hpp"
 #include "roster2.hpp"
+#include "ra2assets/art.hpp"
+#include "ra2assets/ini.hpp"
+#include "ra2assets/rules.hpp"
 #include <set>
 #include <utility>
 using namespace ra2engine;
@@ -209,4 +212,37 @@ TEST_CASE("roster2 airfield: an empty docked aircraft does not launch [RE: TL;DR
     CHECK(step_sortie(s, 270) == SortieEvent::Reloaded);
     CHECK(s.ammo == 1);
     CHECK(step_sortie(s, 270) == SortieEvent::TookOff);
+}
+
+TEST_CASE("roster2 art: DockingOffsetN parses artmd [GAAIRC] incl. inline comments [RE: TL;DR 9]") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[GAAIRC]\n"
+        "DockingOffset0=0,-128,0      ;-80,80,0 \n"
+        "DockingOffset1=0,128,0       ;-80,-208,0\n"
+        "DockingOffset2=256,-128,0\n"
+        "DockingOffset3= 256 , 128 , 0\n"
+        "DockingOffset4=1,2\n");
+    ra2assets::Art art = ra2assets::Art::load(ini);
+    int v[3] = {9, 9, 9};
+    REQUIRE(art.docking_offset("GAAIRC", 0, v));
+    CHECK(v[0] == 0); CHECK(v[1] == -128); CHECK(v[2] == 0);
+    REQUIRE(art.docking_offset("GAAIRC", 1, v));
+    CHECK(v[1] == 128);
+    REQUIRE(art.docking_offset("GAAIRC", 3, v));
+    CHECK(v[0] == 256); CHECK(v[1] == 128);
+    int w[3] = {7, 7, 7};
+    CHECK_FALSE(art.docking_offset("GAAIRC", 4, w));   // only 2 fields
+    CHECK_FALSE(art.docking_offset("GAAIRC", 5, w));   // absent
+    CHECK(w[0] == 7);
+}
+
+TEST_CASE("roster2 rules: section_string strips the inline comment [RE: roster2.md §B]") {
+    ra2assets::Ini ini = ra2assets::Ini::parse(
+        "[GAYARD]\nNaval=yes ;GS\nFactory=UnitType\nWaterBound=yes \n");
+    ra2assets::Rules rules = ra2assets::Rules::load(ini);
+    CHECK(rules.section_string("GAYARD", "Naval", "") == "yes");
+    CHECK(rules.section_string("GAYARD", "Factory", "") == "UnitType");
+    CHECK(rules.section_string("GAYARD", "WaterBound", "") == "yes");
+    CHECK(rules.section_string("GAYARD", "Wall", "no") == "no");
+    CHECK_FALSE(rules.section_flag("GAYARD", "Naval", false));   // why section_string exists
 }

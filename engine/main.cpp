@@ -41,6 +41,7 @@
 #include "combat.hpp"       // armor_index
 #include "facing_cache.hpp"
 #include "factory.hpp"      // primary_factory (unit exit handoff)
+#include "roster2.hpp"      // P6 walls / naval yard / airfield [RE: roster2.md]
 #include "flight.hpp"       // altitude_to_screen_dy (CB-2 raised-sprite draw)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
@@ -408,6 +409,14 @@ struct BuildingAssets {
     // install's real values, so a caller that never resolves them still
     // behaves like the original.
     ra2engine::RepairSellRules repair_sell;
+    // --- P6 Roster breadth [RE: roster2.md §B/§C/§D] --- index-aligned with
+    // `roster`; read ONLY by --demo-roster2 and the wall connection-frame render.
+    std::vector<char> wall;            // Wall=yes (GAWALL/NAWALL)
+    std::vector<char> naval;           // Naval=yes (GAYARD/NAYARD)
+    std::vector<char> water_bound;     // WaterBound=yes -> SpeedType Float placement
+    std::vector<std::string> factory_kind;   // Factory= (UnitType/InfantryType/...)
+    std::vector<int> wall_fill_range;  // GuardRange>>8 line-fill reach (walls: 5)
+    std::vector<std::vector<ra2engine::LeptonXY>> dock_offsets;  // art DockingOffsetN
 };
 
 // Loads `name` (e.g. "rulesmd.ini", "artmd.ini") from ra2md.mix ONCE per mode
@@ -927,13 +936,38 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         for (char& ch : base) ch = static_cast<char>(std::tolower((unsigned char)ch));  // "htnk"
 
         MixFile local = ra2.open_nested("local.mix");
+        // [RE: roster2.md §A] P6: YR-only voxels (BFRT/SCHP/ROBO) live in
+        // ra2md.mix/localmd.mix. Opened LAZILY and consulted ONLY when a part is
+        // absent from local.mix, so every unit that already loaded resolves
+        // byte-identically (no existing caller asks for a local.mix-absent hull).
+        std::unique_ptr<MixFile> md_top, md_local;
+        bool md_tried = false;
+        auto md_mix = [&]() -> MixFile* {
+            if (!md_tried) {
+                md_tried = true;
+                try {
+                    md_top = std::make_unique<MixFile>(
+                        MixFile::open(ra2assets::read_file(dir + "ra2md.mix")));
+                    md_local = std::make_unique<MixFile>(md_top->open_nested("localmd.mix"));
+                } catch (const std::exception&) { md_local.reset(); }
+            }
+            return md_local.get();
+        };
         auto load_part = [&](const std::string& part_base, ra2assets::VxlModel& m,
                              ra2assets::HvaModel& h) -> bool {
+            MixFile* src = &local;
             const MixEntry* ve = local.find(part_base + ".vxl");
             const MixEntry* he = local.find(part_base + ".hva");
-            if (!ve || !he) return false;
-            auto vr = local.read(*ve);
-            auto hr = local.read(*he);
+            if (!ve || !he) {
+                MixFile* md = md_mix();
+                if (!md) return false;
+                ve = md->find(part_base + ".vxl");
+                he = md->find(part_base + ".hva");
+                if (!ve || !he) return false;
+                src = md;
+            }
+            auto vr = src->read(*ve);
+            auto hr = src->read(*he);
             m = ra2assets::load_vxl(vr.data(), vr.size());
             h = ra2assets::load_hva(hr.data(), hr.size());
             return true;
@@ -1354,6 +1388,54 @@ UnitRoster load_soviet_unit_roster(const std::string& dir, const ra2assets::MixF
     return load_unit_roster_table(dir, ra2, ua, rules, art, kRosterUnits, 12, /*full_parse=*/true);
 }
 
+// [RE: roster2.md §A] P6 roster breadth II -- the remaining Allied/Soviet
+// producibles (no Yuri). A BRAND-NEW table: kUnits/kSoviet/kRosterUnits are
+// UNTOUCHED, so every legacy slot index and hash is unperturbed. full_parse
+// resolves each REAL rulesmd Prerequisite= (the token column is only the
+// defensive fallback). Bodies/stats ONLY: Ivan's bomb, the carrier/dreadnought
+// spawners, the demo truck etc. are other phases' abilities. BEAG is the
+// Black Eagle fixed-wing (Ammo=1, docks GAAIRC/AMRADR -- its dock/rearm cycle
+// is driven by roster2.hpp's Sortie in --demo-roster2). Vehicles whose voxel is
+// absent from local.mix AND localmd.mix are art-guard-dropped (SQD/DLPH are not
+// listed: no voxel on this install). Called ONLY by --demo-roster2.
+[[maybe_unused]] UnitRoster load_roster2_units(const std::string& dir, const ra2assets::MixFile& ra2,
+                                               const UnitAssets& ua, const Rules& rules, const Art& art) {
+    static const UnitRosterEnt kRoster2Units[] = {
+        // naval (built at GAYARD/NAYARD)
+        {"DEST",    true,  "GAYARD"},   // Destroyer
+        {"AEGIS",   true,  "GAYARD"},   // Aegis Cruiser (GAYARD,RADAR)
+        {"CARRIER", true,  "GAYARD"},   // Aircraft Carrier (GAYARD,TECH)
+        {"LCRF",    true,  "GAYARD"},   // Landing Craft (amphibious)
+        {"SUB",     true,  "NAYARD"},   // Typhoon Attack Sub
+        {"HYD",     true,  "NAYARD"},   // Sea Scorpion (NAYARD,NARADR)
+        {"DRED",    true,  "NAYARD"},   // Dreadnought (NAYARD,NATECH)
+        {"SAPC",    true,  "NAYARD"},   // Armored Transport, Image=TRS (amphibious)
+        // ground vehicles
+        {"TNKD",    true,  "GAWEAP"},   // Tank Destroyer (Germans)
+        {"TTNK",    true,  "NAWEAP"},   // Tesla Tank (Russians)
+        {"DTRUCK",  true,  "NAWEAP"},   // Demolition Truck, Image=TRUCKA (Africans)
+        {"SHAD",    true,  "GAWEAP"},   // Night Hawk transport
+        {"BFRT",    true,  "GAWEAP"},   // Battle Fortress (localmd)
+        {"SCHP",    true,  "NAWEAP"},   // Siege Chopper (localmd)
+        {"ROBO",    true,  "GAWEAP"},   // Robot Tank (localmd; GAROBO art absent)
+        // aircraft (built at GAAIRC/AMRADR)
+        {"BEAG",    true,  "RADAR"},    // Black Eagle (Alliance)
+        // infantry
+        {"IVAN",    false, "NAHAND"},   // Crazy Ivan (body only)
+        {"SNIPE",   false, "GAPILE"},   // Sniper (British)
+        {"TANY",    false, "GAPILE"},   // Tanya
+        {"FLAKT",   false, "NAHAND"},   // Flak Trooper
+        {"SENGINEER", false, "NAHAND"}, // Soviet Engineer, Image=ENGINEER
+        {"BORIS",   false, "NAHAND"},   // Boris
+        {"CCOMAND", false, "GAPILE"},   // Chrono Commando (stolen tech)
+        {"PTROOP",  false, "GAPILE"},   // Psi-Corp Trooper (stolen tech)
+        {"CIVAN",   false, "NAHAND"},   // Chrono Ivan (stolen tech)
+    };
+    return load_unit_roster_table(dir, ra2, ua, rules, art, kRoster2Units,
+                                  sizeof kRoster2Units / sizeof kRoster2Units[0],
+                                  /*full_parse=*/true);
+}
+
 // Spawns a harvester of `va`'s type at/next to (tx,ty): tries the target cell,
 // then rings outward, for the first walkable + unoccupied cell (add_harvester's
 // placement precondition). Returns the new unit index or -1 if none is free.
@@ -1548,7 +1630,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
     // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
     // placeholder (buildings are never dropped on art failure).
-    static const char* kRoster[24] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    static const char* kRoster[39] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
@@ -1562,7 +1644,21 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                        // index 0-19 is preserved -> world_hash + all 17
                                        // gate hashes UNCHANGED; only demo-base/techtree's
                                        // roster= WITNESS grows 20->24 (re-pinned in README).
-                                       "NANRCT", "ATESLA", "NASAM", "GAAIRC"};
+                                       "NANRCT", "ATESLA", "NASAM", "GAAIRC",
+                                       // [RE: roster2.md §A] P6 APPEND-ONLY at indices
+                                       // 24-38: the naval yards, the wall, the depots,
+                                       // the Soviet lab, the superweapon/tech buildings
+                                       // and the American airfield. Every prior index
+                                       // 0-23 resolves exactly as before (the Image=
+                                       // honouring below applies to >=24 ONLY), so
+                                       // world_hash + every legacy gate hash is
+                                       // unchanged; only the roster= WITNESS grows.
+                                       // GAWEAT/NAINDP art is absent on this install
+                                       // (kept, art.ok=false, never placed).
+                                       "GAYARD", "NAYARD", "GAWALL", "GADEPT", "NADEPT",
+                                       "NATECH", "NAIRON", "NAMISL", "GACSPH", "GAGAP",
+                                       "GAOREP", "GTGCAN", "AMRADR", "GAWEAT", "NAINDP"};
+    constexpr int kRoster2First = 24;   // first P6-appended index
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
     // rulesmd [General] ConditionYellow=50 (percent HP threshold for the
@@ -1634,15 +1730,20 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
 
-    ba.roster.reserve(24);
-    ba.art.reserve(24);
+    ba.roster.reserve(39);
+    ba.art.reserve(39);
     int ok_n = 0;
+    int roster_i = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
+        // [RE: roster2.md §A, RE-FALLBACK] P6 indices honour rules Image= for the
+        // art lookups (AMRADR draws as GAAIRC); 0..23 keep the id (ATESLA stays
+        // art-absent -> the 18th gate's roster_hash is untouched).
+        const std::string art_id = (roster_i++ >= kRoster2First) ? rules.image(id) : id;
         ra2engine::BuildingTypeDef d;
         d.id = id;
         d.fw = d.fh = 1;
-        art.foundation(id, d.fw, d.fh);
+        art.foundation(art_id, d.fw, d.fh);
         d.strength = rules.strength(id);
         d.sight = rules.sight(id);  // [RE: shroud.md §2] reveal radius
         d.grants_map_reveal = rules.spy_sat(id);  // [RE: shroud.md §7A] SpySat= whole-map reveal (inert: no rostered SpySat)
@@ -1659,9 +1760,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.tech_level = rules.tech_level(id);
         d.conyard = rules.is_construction_yard(id);
         d.prerequisite = rules.prerequisite(id);
-        d.image = id;
-        d.buildup = art.buildup(id);
-        d.cameo = art.cameo(id);
+        d.image = art_id;
+        d.buildup = art.buildup(art_id);
+        d.cameo = art.cameo(art_id);
         d.explosion = rules.explosion_first(id);
         // Engineer/Spy Capture [RE: capture.md §D1]: neutral tech-structure
         // periodic income. Absent from every non-tech section -> 0 default keeps
@@ -1686,7 +1787,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
 
         BuildingArt slot;
         try {
-            slot.shp = resolve_shp(id);
+            slot.shp = resolve_shp(art_id);
             slot.ok = true;
             ++ok_n;
             if (!d.buildup.empty()) {
@@ -1732,6 +1833,30 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is
         // BuildCat==Combat, NOT IsBaseDefense]
         ba.defense.push_back(rules.is_buildcat_combat(id) ? 1 : 0);
+        // [RE: roster2.md §B/§C/§D] P6 per-type producer/wall flags (inert for
+        // every legacy consumer: only --demo-roster2 and the wall-frame render
+        // read them).
+        auto p6_flag = [&](const char* key) -> char {
+            std::string v = rules.section_string(id, key, "");
+            for (char& ch : v) ch = (char)std::tolower((unsigned char)ch);
+            return (v == "yes" || v == "true") ? 1 : 0;
+        };
+        ba.wall.push_back(p6_flag("Wall"));
+        ba.naval.push_back(p6_flag("Naval"));
+        ba.water_bound.push_back(p6_flag("WaterBound"));
+        ba.factory_kind.push_back(rules.section_string(id, "Factory", ""));
+        ba.wall_fill_range.push_back(
+            ra2engine::wall_fill_range(rules.section_double(id, "GuardRange", 0.0)));
+        {
+            std::vector<ra2engine::LeptonXY> offs;
+            const int ndocks = (int)rules.section_double(id, "NumberOfDocks", 0.0);
+            for (int k = 0; k < ndocks; ++k) {
+                int v[3] = {0, 0, 0};
+                art.docking_offset(art_id, k, v);
+                offs.push_back(ra2engine::LeptonXY{v[0], v[1]});
+            }
+            ba.dock_offsets.push_back(std::move(offs));
+        }
     }
     ba.ok = ok_n > 0;
 
@@ -2008,7 +2133,8 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 // origin cell's terrain level (buildings flatten their footprint).
 void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Building& b,
                    const BuildingAssets& ba, int level, double condition_yellow,
-                   const ra2engine::Camera& cam, int W, int H) {
+                   const ra2engine::Camera& cam, int W, int H,
+                   const std::vector<ra2engine::Building>* all = nullptr) {
     if (b.type < 0 || b.type >= static_cast<int>(ba.art.size())) return;
     const BuildingArt& art = ba.art[b.type];
     if (!art.ok) return;
@@ -2059,9 +2185,23 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     const bool buildup =
         selling || (b.state == ra2engine::Building::State::Buildup && art.has_buildup);
     const ra2assets::ShpFile& shp = buildup ? art.buildup : art.shp;
-    const int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
-                    : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
-                              : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
+              : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
+                        : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    // [RE: roster2.md TL;DR 2/3, §D] a wall draws its connection frame:
+    // stage*16 + the N/E/S/W same-wall/same-house mask (Wall_Update). Render-only.
+    if (!buildup && all && b.type < static_cast<int>(ba.wall.size()) && ba.wall[b.type] &&
+        art.shp.count() >= 32) {
+        auto same_wall = [&](int x, int y) {
+            for (const ra2engine::Building& o : *all)
+                if (o.alive && o.state != ra2engine::Building::State::Dead && o.type == b.type &&
+                    o.house == b.house && o.cx == x && o.cy == y)
+                    return true;
+            return false;
+        };
+        frame = ra2engine::wall_frame(ra2engine::wall_mask(b.cx, b.cy, same_wall),
+                                      ra2engine::wall_stage(b.hp, b.max_hp, condition_yellow));
+    }
     if (frame < 0 || frame >= shp.count()) return;
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     SDL_Rect dst{fcx - shp.width() / 2 + f.x, fcy - shp.height() / 2 + f.y, f.w, f.h};
@@ -2331,7 +2471,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (d.kind == 0) {
             const ra2engine::Building& b = world.buildings()[d.idx];
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
-            draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H);
+            draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
+                          &world.buildings());
         } else {
             draw_one_unit(d.idx);
         }

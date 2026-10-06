@@ -56,6 +56,12 @@ public:
     // int-parseable comma-separated fields.
     bool fire_flh(const std::string& image, int flh[3]) const;
 
+    // [image] DockingOffset<index>=X,Y,Z (leptons, relative to the building's
+    // centre coord) [RE: roster2.md TL;DR 9]. An inline ';' comment and
+    // surrounding blanks are stripped (artmd [GAAIRC] carries "0,-128,0 ;...").
+    // Returns false and leaves xyz untouched if absent / not exactly 3 ints.
+    bool docking_offset(const std::string& image, int index, int xyz[3]) const;
+
     // [image] Foundation=WxH (case-insensitive 'x'), parsed into fw/fh.
     // Returns false and leaves fw/fh untouched if the image/key is absent or
     // the value isn't a parseable "<int>x<int>" pair.

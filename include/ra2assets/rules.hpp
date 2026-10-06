@@ -150,6 +150,13 @@ public:
     // ClickRepairable -> TRUE [RE: repair-sell.md §A4/§B3/§B5].
     bool section_flag(const std::string& id, const std::string& key, bool fallback) const;
 
+    // [section] key= as a STRING with the inline ';' comment and trailing
+    // whitespace stripped (general_string's rule, any section). Returns
+    // `fallback` if absent/empty. P6 [RE: roster2.md §B]: rulesmd writes e.g.
+    // "Naval=yes ;GS" / "Factory=UnitType", which the raw getters misread.
+    std::string section_string(const std::string& id, const std::string& key,
+                               const std::string& fallback) const;
+
     // [MultiplayerDialogSettings] Money=, fallback 10000 if absent.
     int mp_money() const;
 
