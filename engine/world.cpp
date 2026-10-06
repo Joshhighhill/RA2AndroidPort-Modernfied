@@ -1464,6 +1464,102 @@ bool World::set_repair(int b_idx, int by_house, int control) {
     return true;
 }
 
+void World::set_survivor_crew(int side_ix, const UnitCombat& c) {
+    if (side_ix < 0 || side_ix > 3) return;
+    if (static_cast<int>(survivor_crew_.size()) <= side_ix) {
+        survivor_crew_.resize(side_ix + 1);
+        survivor_crew_set_.resize(side_ix + 1, 0);
+    }
+    survivor_crew_[side_ix] = c;
+    survivor_crew_set_[side_ix] = 1;
+}
+
+bool World::begin_sell(int b_idx, int by_house, bool c4_applied) {
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return false;
+    Building& b = buildings_[b_idx];
+    // Ownership [RE: repair-sell.md §C1] -- the SELL event checks
+    // Owner->[0x30] == ev.HouseIndex: you cannot sell someone else's building
+    // even if the cursor lets you click it.
+    if (b.house != by_house) return false;
+    const std::vector<BuildingTypeDef>& bt = btypes();
+    if (b.type < 0 || b.type >= static_cast<int>(bt.size())) return false;
+    // [RE: §B5, CONFIRMED] Unsellable / under construction / already selling /
+    // C4. NO last-ConYard rule and NO captured rule -- both were searched for
+    // in the binary and neither exists. DO NOT ADD EITHER. (The mind-control
+    // veto is deliberately omitted -- §D6.)
+    if (!can_be_sold(b, bt[b.type], c4_applied)) return false;
+    repair_sell_any_ = true;
+    // [RE: §B2, 0x00449B81] Mission_Selling's FIRST act is Repair(0).
+    set_repair(b_idx, by_house, 0);
+    b.selling = true;
+    b.sell_time = 0.0;
+    // [RE: §B5 item 6] A type with no buildup art takes the INSTANT-removal
+    // branch at 0x00447115 instead of the mission (the wall/fence case).
+    // [RE: §D4] Nothing else here: queue-cancel + primary-fallback ride the
+    // existing building-death path (state != Idle) at completion.
+    if (b.buildup_total <= 0.0) complete_sell(b_idx);
+    return true;
+}
+
+void World::complete_sell(int b_idx) {
+    Building& b = buildings_[b_idx];
+    const BuildingTypeDef& t = btypes()[b.type];
+    const int house = b.house;
+
+    // (1) Free the footprint FIRST. World::step's own release loop only fires
+    // on a building that was ALREADY Dead when the loop ran, i.e. next frame --
+    // but the survivors must stand on this footprint THIS frame (§B3: they exit
+    // onto the building's own foundation cells), so the same release runs here
+    // and blocking_released is latched so the loop never repeats it.
+    for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+        if (cell.x < 0 || cell.y < 0 || cell.x >= grid_w_ || cell.y >= grid_h_) continue;
+        passable_[static_cast<std::size_t>(cell.y) * grid_w_ + cell.x] = 1;
+    }
+    b.blocking_released = true;
+
+    // (2) The refund [RE: §B1, CONFIRMED]. FLAT -- no health term anywhere.
+    // RefundPercent applies ONLY to a human-controlled house; an AI house gets
+    // the UNSCALED value. Soylent overrides (§D0.2). The two cost multipliers
+    // are the FactoryPlant/difficulty modifiers, 1.0 in this engine.
+    const bool human = !ai_enabled(house);
+    const int refund = sell_refund(t.cost, t.soylent, repair_rules_.refund_percent, human);
+
+    // (3) Survivors [RE: §B3, CONFIRMED]: clamp(refund / divisor, 1, 5), zero
+    // when the type is not Crewed. They exit onto the foundation cells in
+    // foundation_cells order; a survivor whose cell is blocked is DELETED, not
+    // displaced (the recovered behaviour, not a shortcut).
+    // [RE-FALLBACK: captured-flag plumbing -- capture_building records no
+    // captured flag on the building, so the x2 divisor is unit-tested in
+    // repair_sell but never triggered here.]
+    const int side_ix = static_cast<int>(house_side(house));
+    const int n = survivor_count(refund, survivor_divisor(repair_rules_, side_ix), t.crewed,
+                                 /*has_been_captured=*/false);
+    const int cx = b.cx, cy = b.cy, fw = b.fw, fh = b.fh;
+    if (n > 0 && side_ix >= 0 && side_ix < static_cast<int>(survivor_crew_.size()) &&
+        survivor_crew_set_[side_ix]) {
+        const UnitCombat crew = survivor_crew_[side_ix];
+        int placed = 0;
+        for (const Cellxy& cell : foundation_cells(cx, cy, fw, fh)) {
+            if (placed >= n) break;
+            // occ_.is_free (not unit_at_cell) so a mid-hop unit's reserved next
+            // cell is respected -- the launch_unit free_cell rule.
+            if (!walkable(cell.x, cell.y) || !occ_.is_free(cell.x, cell.y)) continue;
+            add_combat_unit(cell.x, cell.y, house, crew);
+            ++placed;
+        }
+    }
+
+    // (4) Pay, then remove. Re-fetch the building (robust to any future
+    // container change in add_combat_unit).
+    Building& bb = buildings_[b_idx];
+    if (house >= 0 && house < house_count())
+        house_credits_[house] += static_cast<double>(refund);
+    kill_building(bb);          // Dead + die_time 0; step_buildings tombstones it
+    bb.sold = true;             // suppresses the death explosion (sold, not destroyed)
+    bb.selling = false;
+    bb.being_repaired = false;
+}
+
 void World::step_repair_sell(double dt) {
     // The cadence counter advances UNCONDITIONALLY, above the firewall, so the
     // phase is ABSOLUTE [RE: repair-sell.md §A2 -- `Frame % interval`, not a
@@ -1474,8 +1570,21 @@ void World::step_repair_sell(double dt) {
     // pays. world_hash is untouched either way.
     if (!repair_sell_any_) return;
 
-    // --- Sell missions land in Task 5; the repair tick is below. ---
-    (void)dt;
+    // --- Sell missions [RE: repair-sell.md §B2]: the buildup runs BACKWARDS
+    // over the same frame count at the same rate, and ONLY on completion do the
+    // credits land and the survivors spawn. Ascending index, deterministic.
+    // Indexed (not range-for) because complete_sell spawns units and re-reads
+    // buildings_ inside it. Runs every frame (NOT behind the repair cadence).
+    for (int i = 0; i < static_cast<int>(buildings_.size()); ++i) {
+        Building& b = buildings_[i];
+        if (!b.alive || !b.selling) continue;
+        if (b.state == Building::State::Dead) { b.selling = false; continue; }
+        b.sell_time += dt;
+        // sell duration == buildup_total: image_frames * max(1,
+        // trunc(BuildupTime*900/image_frames)) / 15 -- the SAME value
+        // main.cpp already computed for construction (building-render.md §5).
+        if (b.sell_time >= b.buildup_total) complete_sell(i);
+    }
 
     // [RE: §A2] interval = trunc(RepairRate * 900) = 14 at .016 -- a GLOBAL
     // phase shared by every repairing building of every house.

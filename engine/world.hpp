@@ -931,6 +931,45 @@ public:
     // drive it directly; normally called from World::step.
     void step_repair_sell(double dt);
 
+    // BuildingClass::Sell_Back(-1) [RE: repair-sell.md §B2/§B5, vtbl+0x1A0].
+    // Starts mission 0x13 (Selling). Returns true iff the mission STARTED (or,
+    // for a type with no buildup art, completed instantly -- §B5 item 6).
+    // Refuses per can_be_sold PLUS ownership (b.house == by_house -- the SELL
+    // event is authoritative, §C1) PLUS btypes() coverage. Calls
+    // set_repair(b_idx, by_house, 0) FIRST -- selling always cancels repair
+    // (§B2 entry, 0x00449B81). Opens repair_sell_any_.
+    //
+    // c4_applied is passed through to can_be_sold; the clone has no C4 mechanic
+    // until roadmap P4, so every caller passes false today.
+    bool begin_sell(int b_idx, int by_house, bool c4_applied = false);
+    bool building_selling(int b_idx) const {
+        return b_idx >= 0 && b_idx < static_cast<int>(buildings_.size()) &&
+               buildings_[b_idx].selling;
+    }
+    // The crew UnitCombat spawned as a survivor for a given side [RE: §B3].
+    // World is ASSET-FREE, so the CALLER resolves the infantry (E1 Allied /
+    // E2 Soviet, [General] AlliedCrew/SovietCrew -- §D1) and registers it here.
+    // side_ix is World::Side's underlying value. UNREGISTERED (the default for
+    // every existing World) -> that side spawns ZERO survivors.
+    // [RE-GATE APPLIED: repair-sell.md §D item 1] the 25%-chance special crew
+    // type for building purpose-class 7 is CUT: Rules+0xF70 was never
+    // string-anchored, and it is an RNG draw that would break gate determinism.
+    void set_survivor_crew(int side_ix, const UnitCombat& c);
+    // Add `amount` to house's world-side credit pool (the pool repair charges
+    // and sell refunds land in). The interactive GameScene keeps the player's
+    // wallet outside the World and drains this pool via take_income every
+    // frame, so it deposits the wallet here before a step that may charge a
+    // repair. No-op for an out-of-range house. No gate calls it.
+    void deposit_credits(int house, double amount) {
+        if (house >= 0 && house < house_count()) house_credits_[house] += amount;
+    }
+    // True iff any alive building of `house` has its wrench on.
+    bool house_repairing(int house) const {
+        for (const Building& b : buildings_)
+            if (b.alive && b.house == house && b.being_repaired) return true;
+        return false;
+    }
+
     // Consume a unit (the capture/repair gesture spends its engineer, and any
     // future "removed from map" consumer): tombstone it directly (no die anim --
     // it walked INTO the building) and release its occupancy cell, reusing the
@@ -1285,6 +1324,11 @@ private:
     RepairSellRules repair_rules_;              // recovered defaults [§A1]
     bool            repair_sell_any_ = false;   // the firewall
     std::uint64_t   repair_frame_ = 0;          // the global cadence phase [§A2]
+    std::vector<UnitCombat>    survivor_crew_;      // by side_ix; empty = none registered
+    std::vector<std::uint8_t>  survivor_crew_set_;  // parallel "was registered" flags
+    // Finish a sell mission: free the footprint, spawn survivors, pay the FLAT
+    // refund, then kill + mark sold. See world.cpp for the recovered ordering.
+    void complete_sell(int b_idx);
 };
 
 // Indices of `units` sorted back-to-front for painter's-order drawing: by

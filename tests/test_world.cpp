@@ -4586,3 +4586,200 @@ TEST_CASE("world: set_building_types arms repair lookups WITHOUT the economy [RE
     CHECK(world.buildings()[b].hp == 508);
     CHECK(world.house_credits(0) == doctest::Approx(10000.0 - 3.0));
 }
+
+// --- Repair & Sell phase, Task 5: the sell mission [RE: repair-sell.md §B1/§B2/§B3/§B5] ---
+namespace {
+
+// The roster the sell cases price against, values from the §D9 measured table:
+//   0 GACNST  Cost 3000, Crewed=yes          -> refund 1500, survA 3 / survS 5
+//   1 NAREFN  Cost 2000, Soylent=300, Crewed -> refund 300 (NOT 1000), surv 1
+//   2 CAOILD  Unsellable=yes                 -> refused
+//   3 GAPILL  Cost 500, Crewed=no            -> refund 250, 0 survivors
+std::vector<ra2engine::BuildingTypeDef> sell_roster() {
+    std::vector<ra2engine::BuildingTypeDef> t(4);
+    t[0].id = "GACNST"; t[0].cost = 3000; t[0].strength = 1000; t[0].crewed = true;
+    t[1].id = "NAREFN"; t[1].cost = 2000; t[1].strength = 1000; t[1].crewed = true;
+    t[1].soylent = 300;
+    t[2].id = "CAOILD"; t[2].cost = 0; t[2].strength = 1000; t[2].unsellable = true;
+    t[3].id = "GAPILL"; t[3].cost = 500; t[3].strength = 400; t[3].crewed = false;
+    return t;
+}
+
+// Step until the mission on b ends (or a 200-frame cap); returns frames run.
+int run_sell(ra2engine::World& world, int b) {
+    int frames = 0;
+    while (world.building_selling(b) && frames < 200) {
+        world.step(1.0 / 15.0);
+        ++frames;
+    }
+    return frames;
+}
+
+}  // namespace
+
+TEST_CASE("world: begin_sell refuses per the recovered gates [RE: repair-sell.md §B5/§C1]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_building_types(sell_roster());
+    const int b   = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 3.6, true);
+    const int e   = world.add_building(0, 20, 5, 5, 4, /*house*/ 1, 1000, 0, 3.6, true);
+    const int u   = world.add_building(0, 35, 5, 5, 4, /*house*/ 0, 1000, 0, 3.6, /*instant*/ false);
+    const int oil = world.add_building(2, 50, 5, 2, 2, /*house*/ 0, 1000, 0, 3.6, true);
+    const int cy  = world.add_building(0, 65, 5, 5, 4, /*house*/ 0, 1000, 0, 3.6, true);
+
+    CHECK_FALSE(world.begin_sell(-1, 0));                    // bad index
+    CHECK_FALSE(world.begin_sell(999, 0));                   // bad index
+    CHECK_FALSE(world.begin_sell(e, 0));                     // NOT your building (house 1)
+    CHECK_FALSE(world.begin_sell(u, 0));                     // under construction
+    CHECK_FALSE(world.begin_sell(oil, 0));                   // Unsellable=yes [§D0.3 CAOILD]
+    CHECK_FALSE(world.begin_sell(b, 0, /*c4_applied=*/true));
+    CHECK_FALSE(world.building_selling(b));
+    CHECK(world.begin_sell(b, 0));                           // starts the mission
+    CHECK(world.building_selling(b));
+    CHECK_FALSE(world.begin_sell(b, 0));                     // already selling
+    // CONFIRMED BY ABSENCE (§B5): a full-health Construction Yard sells -- there
+    // is NO last-ConYard rule.
+    CHECK(world.begin_sell(cy, 0));
+}
+
+TEST_CASE("world: selling cancels repair first [RE: repair-sell.md §B2 entry]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_building_types(sell_roster());
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 3.6, true);
+    world.buildings()[b].hp = 500;
+    world.grant_credits_for_test(0, 10000.0);
+    REQUIRE(world.set_repair(b, 0, 1));
+    REQUIRE(world.begin_sell(b, 0));
+    CHECK_FALSE(world.building_repairing(b));
+    CHECK_FALSE(world.set_repair(b, 0, 1));                  // and cannot be re-armed
+}
+
+TEST_CASE("world: the sell mission pays ONLY on completion, FLAT [RE: repair-sell.md §B1/§B2]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_building_types(sell_roster());
+    const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 0, 1000, 0, 3.6, true);
+    world.buildings()[b].hp = 1;                             // nearly dead
+    world.grant_credits_for_test(0, 1000.0);
+    const double c0 = world.house_credits(0);
+    REQUIRE(world.begin_sell(b, 0));
+    int frames = 0;
+    while (world.building_selling(b) && frames < 200) {
+        world.step(1.0 / 15.0);
+        ++frames;
+        if (world.building_selling(b))
+            CHECK(world.house_credits(0) == doctest::Approx(c0));   // NOTHING until the end
+    }
+    CHECK(frames > 1);                                              // a MISSION, not instant
+    CHECK(frames >= 54);                                            // the buildup duration,
+    CHECK(frames <= 55);                                            //   3.6 s at 15 fps
+    // FLAT refund: 1 HP of 1000 refunds exactly what full health would.
+    CHECK(world.house_credits(0) == doctest::Approx(c0 + 1500.0));
+    CHECK(world.buildings()[b].state == ra2engine::Building::State::Dead);
+    CHECK(world.buildings()[b].sold);
+    CHECK_FALSE(world.buildings()[b].selling);
+    CHECK_FALSE(world.buildings()[b].being_repaired);
+}
+
+TEST_CASE("world: the Soylent override wins over RefundPercent [RE: repair-sell.md §D0.2]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_building_types(sell_roster());
+    const int r = world.add_building(1, 5, 5, 4, 3, /*house*/ 0, 1000, 0, 2.0, true);
+    const int p = world.add_building(3, 20, 5, 1, 1, /*house*/ 0, 400, 0, 2.0, true);
+    REQUIRE(world.begin_sell(r, 0));
+    REQUIRE(world.begin_sell(p, 0));
+    run_sell(world, r);
+    run_sell(world, p);
+    CHECK(world.house_credits(0) == doctest::Approx(300.0 + 250.0));  // NOT 1000 + 250
+}
+
+TEST_CASE("world: an AI owner gets the UNSCALED refund [RE: repair-sell.md §B1]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_building_types(sell_roster());
+    world.enable_ai_house(1, ra2engine::AiHouseConfig{});
+    REQUIRE(world.ai_enabled(1));
+    const int b1 = world.add_building(0, 5, 5, 5, 4, /*house*/ 1, 1000, 0, 3.6, true);
+    // step_ai_houses drains house_credits_[1] into the AI's own wallet every
+    // frame (rec.credits += take_income), so read both.
+    const double c0 = world.house_credits(1) + world.ai_credits(1);
+    REQUIRE(world.begin_sell(b1, 1));
+    run_sell(world, b1);
+    world.step(1.0 / 15.0);                                         // let the AI drain it
+    CHECK(world.house_credits(1) + world.ai_credits(1) ==
+          doctest::Approx(c0 + 3000.0));                            // NOT 1500
+}
+
+TEST_CASE("world: a type with no buildup art sells INSTANTLY [RE: repair-sell.md §B5 item 6]") {
+    ra2assets::MapFile map;
+    ra2engine::World world(map);
+    world.set_building_types(sell_roster());
+    const int w = world.add_building(3, 5, 5, 1, 1, /*house*/ 0, 400, 0, /*buildup*/ 0.0, true);
+    const double c0 = world.house_credits(0);
+    CHECK(world.begin_sell(w, 0));
+    CHECK_FALSE(world.building_selling(w));                  // completed inside begin_sell
+    CHECK(world.buildings()[w].state == ra2engine::Building::State::Dead);
+    CHECK(world.buildings()[w].sold);
+    CHECK(world.house_credits(0) == doctest::Approx(c0 + 250.0));
+}
+
+TEST_CASE("world: sell survivors spawn on the freed foundation [RE: repair-sell.md §B3]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    const ra2engine::UnitCombat crew = gi_stats();
+
+    SUBCASE("Allied GACNST -> clamp(1500/500,1,5) = 3, on the footprint") {
+        ra2engine::World world(map);
+        world.set_building_types(sell_roster());
+        world.set_survivor_crew(static_cast<int>(ra2engine::World::Side::Allied), crew);
+        const int b = world.add_building(0, c->x, c->y, 3, 3, /*house*/ 0, 1000, 0, 1.0, true);
+        CHECK_FALSE(world.walkable(c->x, c->y));
+        const int u0 = static_cast<int>(world.units().size());
+        REQUIRE(world.begin_sell(b, 0));
+        run_sell(world, b);
+        REQUIRE(static_cast<int>(world.units().size()) == u0 + 3);
+        for (int i = u0; i < u0 + 3; ++i) {
+            const ra2engine::Unit& s = world.units()[i];
+            CHECK(s.house == 0);
+            CHECK(s.cell_x >= c->x);
+            CHECK(s.cell_x < c->x + 3);
+            CHECK(s.cell_y >= c->y);
+            CHECK(s.cell_y < c->y + 3);
+        }
+        CHECK(world.buildings()[b].blocking_released);
+    }
+    SUBCASE("Soviet side -> clamp(1500/250,1,5) = 5") {
+        ra2engine::World world(map);
+        world.set_building_types(sell_roster());
+        world.set_survivor_crew(static_cast<int>(ra2engine::World::Side::Soviet), crew);
+        REQUIRE(world.house_side(1) == ra2engine::World::Side::Soviet);  // default derivation
+        const int b = world.add_building(0, c->x, c->y, 3, 3, /*house*/ 1, 1000, 0, 1.0, true);
+        const int u0 = static_cast<int>(world.units().size());
+        REQUIRE(world.begin_sell(b, 1));
+        run_sell(world, b);
+        CHECK(static_cast<int>(world.units().size()) == u0 + 5);
+    }
+    SUBCASE("no registered crew -> no survivors") {
+        ra2engine::World world(map);
+        world.set_building_types(sell_roster());
+        const int b = world.add_building(0, c->x, c->y, 3, 3, /*house*/ 0, 1000, 0, 1.0, true);
+        const int u0 = static_cast<int>(world.units().size());
+        REQUIRE(world.begin_sell(b, 0));
+        run_sell(world, b);
+        CHECK(static_cast<int>(world.units().size()) == u0);
+    }
+    SUBCASE("Crewed=no -> no survivors") {
+        ra2engine::World world(map);
+        world.set_building_types(sell_roster());
+        world.set_survivor_crew(static_cast<int>(ra2engine::World::Side::Allied), crew);
+        const int b = world.add_building(3, c->x, c->y, 1, 1, /*house*/ 0, 400, 0, 1.0, true);
+        const int u0 = static_cast<int>(world.units().size());
+        REQUIRE(world.begin_sell(b, 0));
+        run_sell(world, b);
+        CHECK(static_cast<int>(world.units().size()) == u0);
+    }
+}
