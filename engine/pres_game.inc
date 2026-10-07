@@ -903,7 +903,9 @@ private:
                     // vtbl+0xAC, ...)]: the ruin shares the building's draw point
                     // (origin-cell top vertex = cell (cx-0.5, cy-0.5)'s centre) and
                     // level; ruin SHPs share the building canvas.
-                    if (!da.empty()) fx_.spawn_hold(da, b.cx - 0.5, b.cy - 0.5, building_level(w, b), b.house);
+                    std::shared_ptr<ra2assets::Palette> own;   // W4: art Palette= (lib) for the ruin
+                    if (static_cast<std::size_t>(b.type) < ba.art.size()) own = ba.art[static_cast<std::size_t>(b.type)].own_pal;
+                    if (!da.empty()) fx_.spawn_hold(da, b.cx - 0.5, b.cy - 0.5, building_level(w, b), b.house, own);
                 }
             }
             if (b.selling && !p.selling && b.house == 0) {
