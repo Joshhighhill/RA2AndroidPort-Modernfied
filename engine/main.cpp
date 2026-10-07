@@ -3064,6 +3064,61 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
 
 bool pres_target_lines();   // G-88: RA2.INI UnitActionLines (defined after g_user_settings)
 
+// W2-GA-11 [RE: RE-Q14, UnitTypeClass art read FUN_00746450 + ctor defaults
+// FUN_00745f00; UnitClass SHP draw FUN_0073b520]: SHP (artmd Voxel=no)
+// vehicles -- Terror Drone, Dolphin, Squid -- pick their frame from the
+// facing group and Walk/Standing/Firing ranges instead of an infantry
+// sequence. Filled by GameScene for roster images with Voxel=no; render-only
+// (the sim keeps the unit's existing semantics).
+struct ShpVehicleArt {
+    int facings = 8, walk = 12, fire = 0, stand = 0;
+    int start_walk = 0, start_stand = 0, start_fire = 0;
+};
+std::map<std::string, ShpVehicleArt> g_shp_vehicles;
+ShpVehicleArt shp_vehicle_art(const Ini& art, const std::string& image) {
+    auto gi = [&](const char* k, int d) {
+        const std::string v = pres_clean(art.get(image, k));
+        return v.empty() ? d : std::atoi(v.c_str());
+    };
+    ShpVehicleArt s;
+    s.walk = gi("WalkFrames", 12);
+    s.fire = gi("FiringFrames", 0);
+    s.stand = gi("StandingFrames", s.fire > 0 ? 1 : 0);
+    const bool turret = pres_lower(pres_clean(art.get(image, "Turret"))).rfind("y", 0) == 0;
+    s.facings = gi("Facings", (s.fire == 0 && !turret) ? 1 : 8);
+    s.start_walk = std::max(0, gi("StartWalkFrame", 0));
+    const int ss = gi("StartStandFrame", -1);
+    s.start_stand = ss >= 0 ? ss : (s.stand ? s.walk * s.facings : s.start_walk);
+    const int sf = gi("StartFiringFrame", -1);
+    s.start_fire = sf >= 0 ? sf : (s.fire ? (s.walk + s.stand) * s.facings : s.start_stand);
+    return s;
+}
+int shp_vehicle_frame(const ShpVehicleArt& s, const ra2engine::Unit& u, int count) {
+    // facing group: (((raw>>12)+1)>>1)+1)&7 for Facings=8, else group 0.
+    // An infantry-path unit (the sim keeps DRON there) carries the SHP facing
+    // block index directly (u.facing, the infantry-anim.md §4 order).
+    int fg = 0;
+    if (s.facings == 8) {
+        if (!u.is_vehicle) {
+            fg = ((u.facing % 8) + 8) % 8;
+        } else {
+            const int raw = static_cast<int>(u.body_facing) & 0xFFFF;
+            fg = ((((raw >> 12) + 1) >> 1) + 1) & 7;
+        }
+    }
+    const long t = g_pres_tick;
+    int f;
+    if (u.fire_flash > 0 && s.fire > 0)
+        f = s.fire * fg + s.start_fire + static_cast<int>((t / 2) % s.fire);
+    else if (u.moving())
+        f = static_cast<int>(t % std::max(1, s.walk)) + s.walk * fg + s.start_walk;
+    else if (s.stand)
+        f = s.stand * fg + s.start_stand;
+    else
+        f = s.walk * fg + s.start_walk;
+    return std::clamp(f, 0, std::max(0, count / 2 - 1));   // second half = shadows
+}
+
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
@@ -3126,9 +3181,29 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             return;
         }
         auto it = ua.shps.find(draw_image);
+        if (it == ua.shps.end() && g_map_dressing) {
+            // Live game only: a unit type no roster registered (a cheat /
+            // trigger / captured-factory spawn) loads its SHP on first sight
+            // (conquer.mix, then conqmd.mix) instead of staying invisible.
+            static std::set<std::string> tried;
+            if (tried.insert(draw_image).second) {
+                try {
+                    static const MixFile conquer =
+                        MixFile::open_path(env_install_dir() + "ra2.mix").open_nested("conquer.mix");
+                    it = ua.shps.emplace(draw_image, load_unit_shp(conquer, draw_image)).first;
+                } catch (const std::exception&) {}
+            }
+        }
         if (it == ua.shps.end()) {
             std::cerr << "[render] no SHP loaded for image=" << draw_image << " (unit " << idx
                       << "); skipping\n";
+            return;
+        }
+        auto sv = g_shp_vehicles.find(draw_image);
+        if (sv != g_shp_vehicles.end() && u.die_time < 0.0) {   // W2-GA-11
+            ra2engine::Unit tmp = u;
+            tmp.frame = shp_vehicle_frame(sv->second, u, it->second.count());
+            ra2engine::draw_unit(ren, tc, tmp, it->second, ua.pal, cam, W, H);
             return;
         }
         ra2engine::draw_unit(ren, tc, u, it->second, ua.pal, cam, W, H);
@@ -4952,12 +5027,24 @@ public:
                     try {
                         ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
                         ua_.anims.emplace(d.combat.image, anim_from_art(art_, d.combat.image));
+                        // W2-GA-11: Voxel=no vehicle art (DRON) draws by facing/walk frames.
+                        if (pres_lower(pres_clean(art_ini_.get(d.combat.image, "Voxel"))).rfind("n", 0) == 0)
+                            g_shp_vehicles[d.combat.image] = shp_vehicle_art(art_ini_, d.combat.image);
                     } catch (const std::exception& ex) {
                         std::cerr << "[unit-roster] infantry SHP " << d.combat.image
                                   << " unavailable (" << ex.what() << ")\n";
                     }
                 }
         } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+        // W2-GA-11: every [VehicleTypes] entry whose art says Voxel=no (DRON,
+        // DLPH, SQD) draws with the SHP-vehicle frame rule, roster or not.
+        for (const auto& kv : rules_ini_.section("VehicleTypes")) {
+            const std::string id = pres_upper(pres_clean(kv.second));
+            if (id.empty()) continue;
+            const std::string img = pres_upper(rules_.image(id));
+            if (pres_lower(pres_clean(art_ini_.get(img, "Voxel"))).rfind("n", 0) == 0 && !g_shp_vehicles.count(img))
+                g_shp_vehicles[img] = shp_vehicle_art(art_ini_, img);
+        }
 
         // [G-60/G-62/G-64] The real-play AI: teams + triggers + side-correct
         // catalogs for every AI slot (after the infantry SHP/anim registration
