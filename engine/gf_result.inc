@@ -4,42 +4,64 @@
 // this page carries the outcome, the game time and the kill/loss tallies
 // [RE-FALLBACK: score screen layout], then MAIN MENU or REMATCH (same lobby
 // config). Included after campaign_scenes.inc (needs CampButton + GameScene).
+// W2-UI-20: drawn as the MP score page 0xBC6 [RE: wave2/04 W2-UI-20 --
+// header GUI:SkirmishScore (MPScore.cpp FUN_005AAAE0 picks GUI:SkirmishScore
+// vs GUI:MultiplayerScore), columns Player (16,173) Kills (118,173) Losses
+// (181,173) Built (256,173) Score (331,173), Continue in the button column].
+// [RE-FALLBACK: row pitch 20; the Score formula was not traced (shown as
+// "-"); the outcome line (TXT_VICTORIOUS / TXT_LOST) and the game time sit
+// above the table.]
 class GfSkirmishResultScene : public Scene {
 public:
     GfSkirmishResultScene(bool no_audio, ra2engine::SkirmishConfig cfg, int outcome, long frames,
                           GfSkirmishStats st)
-        : no_audio_(no_audio), cfg_(std::move(cfg)), outcome_(outcome), frames_(frames), st_(st) {
-        const std::string dir = env_install_dir();
-        head_ = camp::up(camp::csf_text(dir, outcome_ > 0 ? "TXT_VICTORIOUS" : "TXT_LOST"));
-        if (head_ == "TXT_VICTORIOUS") head_ = "YOU ARE VICTORIOUS";
-        if (head_ == "TXT_LOST") head_ = "YOU HAVE LOST";
+        : no_audio_(no_audio), cfg_(std::move(cfg)), outcome_(outcome), frames_(frames), st_(std::move(st)) {
+        head_ = gf_csf(outcome_ > 0 ? "TXT_VICTORIOUS" : "TXT_LOST", outcome_ > 0 ? "You Are Victorious!" : "Game Over");
     }
     void handle(const ra2engine::InputEvent& ev) override {
-        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown) {
+        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown ||
+            ev.kind == ra2engine::InputEvent::PointerUp) {
             mx_ = ev.x;
             my_ = ev.y;
         }
+        if (ev.button == ra2engine::InputEvent::Left && ev.kind == ra2engine::InputEvent::PointerUp) down_ = false;
+        if (ev.kind == ra2engine::InputEvent::Key && (ev.key == ra2engine::kKeyEnter || ev.key == ra2engine::kKeyEscape))
+            choice_ = 2;
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left) return;
-        if (again_btn().r.contains(ev.x, ev.y)) choice_ = 1;
-        if (menu_btn().r.contains(ev.x, ev.y)) choice_ = 2;
+        down_ = true;
+        if (ui_dev(shell_row(0)).contains(ev.x, ev.y)) choice_ = 2;
     }
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
-        (void)tc;
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-        SDL_SetRenderDrawColor(ren, 8, 10, 16, 255);
-        SDL_RenderClear(ren);
-        const int w = static_cast<int>(head_.size()) * 24;
-        draw_text(ren, head_, (1280 - w) / 2, 180, 4, 255, 220, 90);
-        char b[96];
-        std::snprintf(b, sizeof b, "TIME %02ld:%02ld", frames_ / 15 / 60, (frames_ / 15) % 60);
-        draw_text(ren, b, (1280 - (int)std::strlen(b) * 12) / 2, 250, 2, 200, 200, 200);
-        std::snprintf(b, sizeof b, "UNITS DESTROYED %d   UNITS LOST %d", st_.units_killed, st_.units_lost);
-        draw_text(ren, b, (1280 - (int)std::strlen(b) * 12) / 2, 290, 2, 200, 200, 200);
-        std::snprintf(b, sizeof b, "BUILDINGS DESTROYED %d   BUILDINGS LOST %d", st_.buildings_killed,
-                      st_.buildings_lost);
-        draw_text(ren, b, (1280 - (int)std::strlen(b) * 12) / 2, 320, 2, 200, 200, 200);
-        draw_camp_button(ren, again_btn(), again_btn().r.contains(mx_, my_));
-        draw_camp_button(ren, menu_btn(), menu_btn().r.contains(mx_, my_));
+        const MenuArt& art = shell_art();
+        const ShellXform xf = ui_xform();
+        const ShellPainter p{ren, tc, art, xf};
+        const std::vector<ShellButton> b{ShellButton{shell_row(0), gf_csf("GUI:Continue", "Continue"), true, ACT_NONE, PAGE_MAIN}};
+        const bool hov = ui_dev(shell_row(0)).contains(mx_, my_);
+        draw_shell(ren, tc, art, xf, b, hov ? 0 : -1, (hov && down_) ? 0 : -1,
+                   gf_csf("GUI:SkirmishScore", "Skirmish Score"), "", 0);
+        p.header(head_, 16, 60, 440, 30, 1);
+        char t[64];
+        std::snprintf(t, sizeof t, "%s %02ld:%02ld:%02ld", gf_csf("GUI:Time", "Time").c_str(), frames_ / 15 / 3600,
+                      (frames_ / 15 / 60) % 60, (frames_ / 15) % 60);
+        p.label(t, 16, 110, 440, 20, 1);
+        static const int cx[5] = {16, 118, 181, 256, 331};
+        static const char* ck[5] = {"GUI:Player", "GUI:Kills", "GUI:Losses", "GUI:Built", "GUI:Score"};
+        static const char* cf[5] = {"Player", "Kills", "Losses", "Built", "Score"};
+        for (int c = 0; c < 5; ++c) p.header(gf_csf(ck[c], cf[c]), cx[c], 173, 100, 20, 0);
+        int y = 199;
+        for (const GfSkirmishStats::Row& r : st_.rows) {
+            if (!r.listed) continue;
+            p.label(p.fit(r.name, 100), cx[0], y, 100, 20, 0);
+            p.label(std::to_string(r.kills), cx[1], y, 60, 20, 0);
+            p.label(std::to_string(r.losses), cx[2], y, 60, 20, 0);
+            p.label(std::to_string(r.built), cx[3], y, 60, 20, 0);
+            p.label("-", cx[4], y, 60, 20, 0);
+            y += 20;
+        }
+        std::string st;
+        if (hov) st = gf_csf("STT:MPScoreButtonContinue", "");
+        shell_status_line(p, st);
     }
     Scene* next() override {
         const int c = choice_;
@@ -57,16 +79,19 @@ public:
         p.scene = "result";
         p.set_s("outcome", outcome_ > 0 ? "WON" : "LOST");
         p.set("result_frames", static_cast<double>(frames_));
-        const CampButton a = again_btn(), m = menu_btn();
-        p.targets["rematch"] = ra2play::Rect{a.r.x, a.r.y, a.r.w, a.r.h};
-        p.targets["menu"] = ra2play::Rect{m.r.x, m.r.y, m.r.w, m.r.h};
+        p.set("score_rows", static_cast<int>(st_.rows.size()));
+        if (!st_.rows.empty()) {
+            p.set("score_kills0", st_.rows[0].kills);
+            p.set("score_losses0", st_.rows[0].losses);
+        }
+        const ra2engine::SbRect m = ui_dev(shell_row(0));
+        p.targets["menu"] = ra2play::Rect{m.x, m.y, m.w, m.h};
+        p.targets["continue"] = ra2play::Rect{m.x, m.y, m.w, m.h};
     }
     // Test seam: the choice a click would make (1 rematch, 2 menu).
     void choose(int c) { choice_ = c; }
 
 private:
-    static CampButton again_btn() { return {{460, 440, 360, 46}, "REMATCH", true}; }
-    static CampButton menu_btn() { return {{460, 500, 360, 46}, "MAIN MENU", true}; }
     bool no_audio_;
     ra2engine::SkirmishConfig cfg_;
     int outcome_;
@@ -74,7 +99,7 @@ private:
     GfSkirmishStats st_;
     std::string head_;
     int choice_ = 0;
-    bool quit_ = false;
+    bool quit_ = false, down_ = false;
     int mx_ = 0, my_ = 0;
 };
 

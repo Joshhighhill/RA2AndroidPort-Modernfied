@@ -18,6 +18,7 @@ set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/shp.cpp
     ${RA2_ROOT}/src/pcx.cpp
     ${RA2_ROOT}/src/fnt.cpp
+    ${RA2_ROOT}/src/ufnt.cpp
     ${RA2_ROOT}/src/lcw.cpp
     ${RA2_ROOT}/src/lzo1x.cpp
     ${RA2_ROOT}/src/mappack.cpp

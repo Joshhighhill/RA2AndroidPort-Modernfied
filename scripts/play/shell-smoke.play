@@ -71,7 +71,7 @@ assert dialog_open == 1 and dialog_mode == 2
 click dialog:action
 wait 2
 assert dialog_open == 0
-assert banner == "GAME SAVED"
+assert banner == "Mission Saved"
 let t0 = transitions
 key f10
 wait 2

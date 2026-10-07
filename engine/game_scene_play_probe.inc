@@ -15,6 +15,7 @@
         p.set_s("mode", campaign_ ? "campaign" : "skirmish");
         p.set("credits", player_credits_);
         p.set("credits_shown", credits_shown_);
+        p.set_s("tooltip", tooltip_now());   // W2-UI-07
         p.set("playfield_w", playfield_w_);
         p.set("cam_x", cam_.x);
         p.set("cam_y", cam_.y);
@@ -177,7 +178,7 @@
         if (sidebar_up_ && ba_.has_optbtns) {
             const int w = ba_.sb_optbtn.width() > 0 ? ba_.sb_optbtn.width() : 70;
             const int h = ba_.sb_optbtn.height() > 0 ? ba_.sb_optbtn.height() : 16;
-            p.targets["options"] = ra2play::Rect{lay_.bar.x + 11, 20, w, h};
+            p.targets["options"] = ra2play::Rect{lay_.opt_btn.x, lay_.opt_btn.y, w, h};
         }
         for (std::size_t i = 0; i < lay_.cameos.size() && i < buildable_.size(); ++i)
             p.targets["cameo:" + play_entry_id(active_tab_, buildable_[i])] = rect(lay_.cameos[i].rect);
@@ -215,10 +216,10 @@
                              : bm == ra2engine::Input::BaseMode::Sell ? "sell" : "none");
         p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
         p.set("dialog_open", 0);
-        menu_.play_probe(p);
         gf_abort_.play_probe(p);   // gF G-14: Abort Mission confirm
+        menu_.play_probe(p);       // W2-UI-15: page 0xB6 publishes confirm_* too (after)
         sld_.play_probe(p);
-        p.set_s("banner", (!banner_.empty() && SDL_GetTicks() < banner_until_) ? banner_ : "");
+        p.set_s("banner", newest_message());   // W2-UI-21 message list
         if (campaign_) {
             p.set_s("map", cfg_.campaign_map);
             p.set("campaign_frame", static_cast<double>(campaign_->frame_count()));
