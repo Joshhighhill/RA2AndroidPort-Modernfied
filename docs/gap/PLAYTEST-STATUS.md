@@ -333,3 +333,38 @@ scripts were run twice with identical `play_hash`.
 W2-AN rows closed by play evidence: W2-AN-01/02/07/08 (`air`), W2-AN-04/05/06/17/23
 (`sw`), W2-AN-09/10/11/12/13/15/25 (`naval`); W2-AN-22 by `--probe-realplay`
 (0 fails); W2-AN-16/21 by `--ai-soak --map xbayopigs.map --cash 50000`.
+
+### Wave-2 W2-CA (campaign) -- branch `w2fix-campaign` over master 0fc3444
+
+Every script run one at a time (Release build of the merged tree). All campaign
+and regression scripts PASS; `probe-bridge` and `probe-flow` fail identically on
+the master-equivalent w2fix-air build (pre-existing: lobby `map:+` target and
+`building 0:GACNST`), so they are not regressions. Hash moves on the four
+campaign-entry scripts are expected: the campaign GameScene now has the
+rules-driven roster/map rules overlay (W2-CA-03/04), map AI teams (07), mission
+audio (12), aircraft (16) and the other W2-CA mission logic.
+
+| Script | Result | play_hash |
+|---|---|---|
+| **new** `m-all02` (05 side fallback + 01 EnteredBy: chapel capture -> WON) | PASS | `5217e30168a1ec3f` |
+| **new** `m-all04` (08 sea landing: AMCV lands + deploys) | PASS | `e245c8b8db089648` |
+| **new** `m-all08` (09 team release: survives f=900, -> WON) | PASS | `b1d09e489d92deeb` |
+| **new** `m-sov03` (01/04/13: lab capture -> beacon -> defend -> WON) | PASS | `0f4ead58401a8206` |
+| **new** `m-sov05` (02 PlayerControl troopers -> tower -> WON) | PASS | `5337d0b1c362454b` |
+| **new** `m-sov06` (06 events 55/56 -> WON) | PASS | `b67641e8d840439a` |
+| **new** `m-sov09` (15 mind control of the President -> WON) | PASS | `48d961d52f7c6fac` |
+| `m-all01` | PASS | `c662c9a2d7a7dc48` (was `844c6dd06a8177ae`) |
+| `m-sov01` | PASS | `7f683e9ff7a6c716` (was `1ed80b2eabf7f2cb`) |
+| `m-lose` | PASS | `63207b943877f614` (was `ccc8340943cd2baa`) |
+| `ui-campaign` | PASS | `9c3bfe42d1e3fd7f` (was `93692c6ee26595eb`) |
+| `air` / `naval` / `sw` | PASS | `cc0f701752a6f8e8` / `de56fa937aeaf935` / `6ffc7e946bd18889` (unchanged) |
+| `sk-a` / `sk-s` / `sk-end` / `sk-a-lose` / `sk-lobby` | PASS | unchanged (`7525b71fc44fcc7f` / `a099e461333761ff` / `95a67a058e3882b9` / `47af64760366a980` / `4daf570e159f13e0`) |
+| `shell-smoke` / `controls` / `world-depth` | PASS | unchanged |
+| `ui-hud` / `ui-pages` / `ui-result` / `ui-shell` / `gfx-vis` / `gfx-fx` | PASS | — |
+| `probe-game` / `probe-garrison` / `probe-perf` / `probe-shell` / `probe-soviet-econ` | PASS | — |
+| `probe-bridge` / `probe-flow` | FAIL (pre-existing, same on master) | — |
+
+Full suite (Debug): 790 test cases / 350283 assertions, 0 failed. Gates:
+`--demo-campaign` re-pinned `5d033b6aa019beaa`, `--demo-saveload`
+`c19113168b76bae7` (save v11), `--demo-triggers` unchanged `b8cd267e98f5e002`
+(causes in README).
