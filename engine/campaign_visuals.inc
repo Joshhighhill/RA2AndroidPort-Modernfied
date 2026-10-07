@@ -20,7 +20,8 @@
 // 114 SetTabTo     the sidebar tab Value.
 // 131 FlashBuildingsOfType: every building of BuildingTypes[Value] flashes.
 private:
-    struct CampPan { bool on = false; double x0 = 0, y0 = 0, x1 = 0, y1 = 0, p = 0, rate = 0; };
+    struct CampPan { bool on = false; double x0 = 0, y0 = 0, x1 = 0, y1 = 0, p = 0, rate = 0;
+                     bool moved = false; int cx = 0, cy = 0; };   // W4-MC-05: the camera the pan last set
     CampPan camp_pan_;
     std::vector<std::string> camp_anims_, camp_psys_;
     bool camp_lists_ = false;
@@ -109,6 +110,7 @@ private:
                 }
                 static const double kRate[5] = {0.0015, 0.003, 0.0075, 0.03, 0.06};
                 camp_pan_.on = true;
+                camp_pan_.moved = false;
                 camp_view_cell(camp_pan_.x0, camp_pan_.y0);
                 camp_pan_.x1 = x;
                 camp_pan_.y1 = y;
@@ -177,9 +179,21 @@ private:
     }
     void camp_pan_step() {
         if (!camp_pan_.on) return;
+        // W4-MC-05 [RE-FALLBACK: the original pans with input locked; where a
+        // map unlocks mid-pan (SOV01: unlock at 26 s, the speed-0 pan runs
+        // ~44 s) the player's own scroll wins]: anything else that moved the
+        // camera since the last pan step (finger / arrow / edge / right-drag
+        // scroll, a radar click) ends the scripted pan.
+        if (camp_pan_.moved && !input_locked_ && (cam_.x != camp_pan_.cx || cam_.y != camp_pan_.cy)) {
+            camp_pan_.on = false;
+            return;
+        }
         camp_pan_.p = std::min(1.0, camp_pan_.p + camp_pan_.rate);
         input_.center_on_cell(camp_pan_.x0 + (camp_pan_.x1 - camp_pan_.x0) * camp_pan_.p,
                               camp_pan_.y0 + (camp_pan_.y1 - camp_pan_.y0) * camp_pan_.p);
+        camp_pan_.moved = true;
+        camp_pan_.cx = cam_.x;
+        camp_pan_.cy = cam_.y;
         if (camp_pan_.p >= 1.0) camp_pan_.on = false;
     }
 public:
