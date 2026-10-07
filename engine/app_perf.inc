@@ -130,13 +130,16 @@ void perf_frame(double in_ms, double up_ms, double ren_ms, double pre_ms) {
     }
 }
 
-void perf_draw(SDL_Renderer* ren, int W) {
+// Bottom-left, above the touch mode banner's zone (the bottom 60 px) so it
+// never covers the EVA / objective lines at the top of the battlefield.
+void perf_draw(SDL_Renderer* ren, int W, int H) {
     if (!g_perf.overlay) return;
     char line[160];
     std::snprintf(line, sizeof line, "FPS %.0f  LOGIC %.1f/S  UPD %.1f  REN %.1f  PRES %.1f  MAX %.0f MS",
                   g_perf.fps, g_perf.lps, g_perf.a_update, g_perf.a_render, g_perf.a_present, g_perf.a_worst);
     const int tw = static_cast<int>(std::strlen(line)) * 6 * 2;
-    const int x = std::max(0, (W - tw) / 2), y = 4;
+    (void)W;
+    const int x = 8, y = H - 86;
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 0xB0);
     const SDL_Rect bg{x - 6, y - 3, tw + 12, 20};

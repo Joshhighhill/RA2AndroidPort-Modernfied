@@ -202,14 +202,14 @@ public:
         }
         p.frame(p.dev(lr), true);
         if (mode_ == Save) {
-            if (replace_ && !desc_.empty()) {   // R-152: the selection highlight
+            p.edit(edit_rect_l(), desc_, true, !replace_ && (now_ms / 400) % 2 == 0);
+            if (replace_ && !desc_.empty()) {   // R-152: the selection highlight (over the text)
                 const ra2engine::SbRect e = edit_rect_l();
-                const SDL_Rect hl = p.dev(e.x + 2, e.y + 3, std::min(e.w - 4, 7 * static_cast<int>(desc_.size()) + 4), e.h - 6);
+                const SDL_Rect hl = p.dev(e.x + 2, e.y + 3, e.w - 4, e.h - 6);
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(ren, 60, 90, 170, 0xB0);
+                SDL_SetRenderDrawColor(ren, 70, 110, 220, 0x70);
                 SDL_RenderFillRect(ren, &hl);
             }
-            p.edit(edit_rect_l(), desc_, true, !replace_ && (now_ms / 400) % 2 == 0);
         }
         // Status line: the dialog message (errors), else the STT help.
         std::string st = message_;

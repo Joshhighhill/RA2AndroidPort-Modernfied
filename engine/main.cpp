@@ -4921,7 +4921,7 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         if (!hooks || hooks->want_render(frame)) {   // --play may render sparsely
             plat.begin_frame();
             scene->render(plat, tc);
-            perf_draw(static_cast<SDL_Renderer*>(plat.renderer()), g_ui_w);
+            perf_draw(static_cast<SDL_Renderer*>(plat.renderer()), g_ui_w, g_ui_h);
             pc3 = SDL_GetPerformanceCounter();
         }
         if (hooks) hooks->end(frame, *scene, plat);   // captures read the back buffer
