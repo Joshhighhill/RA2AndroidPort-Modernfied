@@ -795,6 +795,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.deploy_fire = c.deploy_fire;
     u.deploy_fire_slot = c.deploy_fire_slot;
     u.crusher = c.crusher;
+    u.auto_crush = c.auto_crush;   // W5-B R-050
     u.crushable = c.crushable;
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= -> roster index (inert -1
     // for every unit type without the key, i.e. everything but AMCV/SMCV).
@@ -4227,8 +4228,16 @@ void World::step(double dt) {
             sc.down[1] = land_rules_.wheeled_down;
             sc.condition_red = land_rules_.condition_red;
         }
+        std::vector<int> scatter;
+        if (occ_.subcells()) {
+            sc.scatter_out = &scatter;
+            if (!land_speed_armed_) sc.armed = false;
+        }
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
-                   amph ? &amphib_grid() : nullptr, land_speed_armed_ ? &sc : nullptr);
+                   amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr);
+        std::sort(scatter.begin(), scatter.end());
+        scatter.erase(std::unique(scatter.begin(), scatter.end()), scatter.end());
+        for (int s : scatter) order_scatter(s);
     }
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
@@ -4475,6 +4484,7 @@ void World::step(double dt) {
     // forward and settles first try.
     for (Unit& u : units_) {
         if (!u.alive || u.die_time >= 0.0) continue;
+        if (u.crushing) continue;   // W5-B R-050: driving onto a crush target, not holding at range
         if (u.target < 0 || !u.attack_order || u.target >= (int)units_.size()) continue;   // only explicit attackers hold at range
         const Unit& t = units_[u.target];
         if (!t.alive || t.die_time >= 0.0) continue;
@@ -4847,6 +4857,18 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         }
 
         if (blocked) {
+            // W5-B R-050: a vehicle held up by idle infantry of its own house
+            // asks them to scatter out of the way (the original's
+            // Map[cell].Incoming -> Scatter for friendly occupants).
+            if (speed && speed->scatter_out && u.is_vehicle && occ.subcells() && u.path_idx < u.path.size()) {
+                const Cellxy bc = u.path[u.path_idx];
+                for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
+                    const int o = occ.spot_unit(bc.x, bc.y, s);
+                    if (o >= 0 && o < static_cast<int>(units.size()) && units[o].house == u.house &&
+                        !units[o].moving() && units[o].target < 0)
+                        speed->scatter_out->push_back(o);
+                }
+            }
             const double prev_wait = u.wait_time;
             u.wait_time += dt;
             u.frame = seq_frame(seq.stand, u.facing, 0);  // stand while waiting (reads as "holding")

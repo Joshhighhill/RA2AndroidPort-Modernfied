@@ -352,6 +352,8 @@ struct Unit {
     // Original behaviour switches (G-50 / G-42 / G-47): set per World by
     // World::enable_original_combat; see combat.cpp.
     bool crusher = false;            // Crusher=yes (vehicles)
+    bool auto_crush = false;         // W5-B R-050: AutoCrush=yes (the player's harvesters)
+    bool crushing = false;           // W5-B R-050: driving onto its crushable target
     bool crushable = false;          // Crushable=yes (infantry)
     // --- gF MCV deploy [RE: docs/re/mcv-deploy.md] --- inert defaults.
     int deploys_into = -1;           // DeploysInto= building roster index (-1 none)
@@ -520,6 +522,9 @@ struct MoveSpeedCtx {
     // lookup supplied by World (null = none).
     const OreField* ore = nullptr;
     const std::vector<std::uint8_t>* ramp = nullptr;   // TMP ramp type per cell
+    // W5-B R-050 [RE-FALLBACK: CellClass::Incoming scatter not unwound]: idle
+    // friendly infantry blocking a vehicle's next cell, asked to step aside.
+    std::vector<int>* scatter_out = nullptr;
 };
 // The speed multiplier for unit u entering cell (nx, ny) from its cell.
 double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny);
@@ -686,6 +691,20 @@ public:
     void update_sub_offsets();
     // Put infantry idx into spot `spot` (2..4) of its current cell.
     void place_in_spot(int idx, int spot);
+    // W5-B R-050 [RE: UnitClass ShouldCrush FUN_00742720, Mission_Attack
+    // FUN_007402F0]: a Crusher whose crushable enemy target is within
+    // [CombatDamage] Crush (1.8 cells = 460 leptons, 3-D) drives onto it
+    // instead of firing -- the computer always (house IQ >= [IQ] AutoCrush),
+    // the player only with PlayerAutoCrush=yes or an AutoCrush=yes type.
+    struct CrushRules {
+        bool armed = false;
+        int crush_leptons = 460;
+        bool player_auto_crush = false;
+    };
+    void arm_crush(const CrushRules& r) { crush_rules_ = r; }
+    const CrushRules& crush_rules() const { return crush_rules_; }
+    // W5-B: true for a computer-controlled (AI) house.
+    bool house_is_computer(int h) const { return ai_enabled(h); }
     // W5-B R-062: arm per-cell land speed. `land` = LandType per cell from the
     // TMP terrain-type byte (DAT_008278F4 table), `ramp` = TMP ramp type;
     // `cost` = rulesmd [LandType] Foot..FloatBeach fractions (capped at 1).
@@ -2092,6 +2111,7 @@ private:
     std::vector<std::uint8_t> speed_land_, ramp_;
     std::vector<std::int8_t> level_grid_;
     LandSpeedRules land_rules_;
+    CrushRules crush_rules_;   // W5-B R-050
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
     bool inf_anims_ = false;                       // W3-B
     int inf_human_ = 0;

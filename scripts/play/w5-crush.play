@@ -1,0 +1,45 @@
+# W5-B R-050: crush steering (UnitClass ShouldCrush FUN_00742720 / Mission_Attack
+# FUN_007402F0). A computer-owned Apocalypse whose crushable target stands inside
+# [CombatDamage] Crush=1.8 cells drives onto it instead of firing; our own
+# tank, ordered through a cell held by our idle GIs, makes them scatter.
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:speed=3
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# --- 1. AI crusher: an enemy Apocalypse one cell from our lone engineer.
+cheat spawn ENGINEER 0 building 0:GACNST +14 +4
+cheat spawn APOC 1 building 0:GACNST +15 +4
+wait 2
+let ex = ucx(0,ENGINEER,0)
+let ey = ucy(0,ENGINEER,0)
+view building 0:GACNST +14 +4
+shot crush_before
+until 200 units(0,ENGINEER) == 0                                @R-050:B
+# The squash happens as the tracks claim the cell; the hull then rolls in.
+wait 60
+assert ucx(1,APOC,0) == $ex and ucy(1,APOC,0) == $ey            @R-050:B
+shot crush_after
+# --- 2. Friendly infantry step aside for our tank (Incoming -> Scatter).
+cheat spawn E1 0 building 0:GACNST +8 +10
+cheat spawn E1 0 building 0:GACNST +8 +10
+cheat spawn SREF 0 building 0:GACNST +5 +10
+wait 2
+let t0 = ucx(0,SREF,0)
+view building 0:GACNST +8 +10
+click unit 0:SREF
+click building 0:GACNST +11 +10
+until 400 ucx(0,SREF,0) == $t0+6
+shot scatter
+assert ucx(0,SREF,0) == $t0+6                                    @R-050:B
+assert units(0,E1) >= 2                                          @R-050:B
+end

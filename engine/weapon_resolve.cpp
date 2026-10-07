@@ -107,6 +107,7 @@ void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& t
         }
     }
     c.crusher = rules.section_flag(type_id, "Crusher", false);
+    c.auto_crush = rules.section_flag(type_id, "AutoCrush", false);   // W5-B R-050
     // Crushable defaults YES for infantry (Conscripts carry no key and are
     // crushed in the original), NO otherwise [RE-FALLBACK: InfantryTypeClass
     // ctor default not read; rulesmd sets Crushable=yes/no explicitly on the

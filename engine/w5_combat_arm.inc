@@ -6,6 +6,7 @@
 //   R-062 land speed: [LandType] Foot..FloatBeach (GroundType FUN_00673A40),
 //         TMP terrain-type -> LandType (DAT_008278F4), slope and damage
 //         modifiers (DriveLocomotionClass FUN_004B2550).
+//   R-050 crush steering: [CombatDamage] Crush / PlayerAutoCrush (FUN_00742720).
 
 // "75%" -> 0.75, ".5" -> 0.5; absent -> fallback.
 inline double w5_rules_fraction(const Rules& rules, const std::string& sec, const std::string& key,
@@ -60,4 +61,11 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
         }
     }
     world.arm_land_speed(land, ramp, r);
+    // --- R-050 crush steering ------------------------------------------------
+    ra2engine::World::CrushRules cr;
+    cr.armed = true;
+    // [CombatDamage] Crush= cells -> leptons (FUN_00474550: ftol(cells*256)).
+    cr.crush_leptons = static_cast<int>(rules.section_double("CombatDamage", "Crush", 1.8) * 256.0);
+    cr.player_auto_crush = rules.section_flag("CombatDamage", "PlayerAutoCrush", false);
+    world.arm_crush(cr);
 }

@@ -236,6 +236,7 @@ struct SaveAccess {
         save::io(ar, w.ramp_);
         save::io(ar, w.level_grid_);
         save::io(ar, w.land_rules_);
+        save::io(ar, w.crush_rules_);   // W5-B R-050 (v16)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -575,6 +576,9 @@ template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
     io(ar, v.picked); io(ar, v.applied); io(ar, v.house); io(ar, v.unit);
     io(ar, v.x); io(ar, v.y); io(ar, v.amount); io(ar, v.affected);
 }
+template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v16)
+    io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush);
+}
 template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v16)
     for (auto& row : v.cost)
         for (float& c : row) io(ar, c);
@@ -673,6 +677,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.turret);
     io(ar, v.speed_cps);
     io(ar, v.speed_type);   // v16: W5-B
+    io(ar, v.auto_crush);
     io(ar, v.is_vehicle);
     io(ar, v.passengers);
     io(ar, v.size_limit);
@@ -807,6 +812,8 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.sub_y);
     io(ar, v.speed_type);
     io(ar, v.speed_mult);
+    io(ar, v.auto_crush);   // W5-B R-050
+    io(ar, v.crushing);
     io(ar, v.w_proj);
     io(ar, v.target);
     io(ar, v.target_building);

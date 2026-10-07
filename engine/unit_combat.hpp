@@ -161,6 +161,7 @@ struct UnitCombat {
     int deploy_fire_slot = 1;         // DeployFireWeapon=
     bool crusher = false;             // Crusher=
     bool crushable = false;           // Crushable=
+    bool auto_crush = false;          // W5-B R-050: TechnoType AutoCrush= (+0xD2D; HARV/CMIN yes)
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= building id (AMCV->GACNST).
     std::string deploys_into;
     // --- G16 (agent G) [RE: docs/re/world-depth.md] ---

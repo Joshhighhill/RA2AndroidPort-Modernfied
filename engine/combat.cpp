@@ -919,7 +919,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             }
         }
 
-        if (u.target == -1) continue;  // nothing to engage this call
+        if (u.target == -1) {   // nothing to engage this call
+            u.crushing = false;
+            continue;
+        }
 
         // (f) Engage.
         Unit& v = units[u.target];
@@ -933,6 +936,28 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // primary cannot fire inside its minimum range (the unit holds).
         const bool too_close = u.w_active == 0 && u.an.t.min_range > 0.0 &&
                                d < u.an.t.min_range * kLeptonsPerCell;
+
+        // W5-B R-050 [RE: UnitClass ShouldCrush FUN_00742720 / Mission_Attack
+        // FUN_007402F0]: a Crusher with a crushable enemy target inside
+        // [CombatDamage] Crush (3-D, 1.8 cells) drives onto it instead of
+        // firing -- computer houses always, the player only with
+        // PlayerAutoCrush=yes or an AutoCrush=yes type.
+        {
+            const World::CrushRules& cr = world.crush_rules();
+            const bool may = cr.armed && u.crusher && u.is_vehicle && !u.is_aircraft &&
+                             v.crushable && !v.is_vehicle && !v.is_aircraft && !unit_airborne(v) &&
+                             (world.house_is_computer(u.house) || cr.player_auto_crush || u.auto_crush);
+            const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
+                      dz = unit_lept_z(v) - unit_lept_z(u);
+            if (may && std::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
+                if (!u.crushing || u.path.empty() || u.path.back().x != v.cell_x ||
+                    u.path.back().y != v.cell_y)
+                    requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/false});
+                u.crushing = true;
+                continue;   // no shot: the tracks do the work
+            }
+            u.crushing = false;
+        }
 
         if (d <= range_leptons) {
             if (too_close) continue;
