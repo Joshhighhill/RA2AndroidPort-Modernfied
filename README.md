@@ -3679,3 +3679,9 @@ section "W3-FIX-A"), the RE note `docs/re/asset-search.md`, and the `art-*`
   `cheat art_dump`, `cheat view_building TYPE [n]`, `cheat view_unit IMAGE
   [n]`, `cheat view_dressing IMAGE [n]`; probe keys `art.missing`,
   `art.invisible`, `art.dressing_missing`, `img.<IMAGE>`, `img.<IMAGE>.air`.
+- **Gates**: all 27 determinism gates print their pinned values (no
+  re-pin). The playable building roster deliberately resolves the RA2
+  archives only, so the YR-only `NABNKR`/`NAINDP` stay art-absent and
+  unbuildable as before (with the YR tail they gained art and moved
+  `--demo-ai-base`, `--demo-ai-trigger`, `--demo-triggers`, `--demo-roster2`
+  and `--demo-saveload`).
