@@ -6152,6 +6152,7 @@ private:
         l.difficulty = cfg.campaign_difficulty;
         campaign_ = std::make_unique<CampaignRuntime>(l, dir_, ra2_, language_, world_, a_, ua_, ba_,
                                                       rules_, art_, rules_ini_);
+        campaign_->set_ai_roster(&ur_ai_);   // W2-CA-07: map AI teams
         for (const VehicleAssets* v : campaign_->vehicle_assets()) vlist_.push_back(v);
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
         player_credits_ = campaign_->player_credits();

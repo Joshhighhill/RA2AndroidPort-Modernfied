@@ -632,27 +632,76 @@ private:
             }
         }
     }
+    // W2-CA-07 [map-triggers.md §5 action 74 AITriggersBegin; ai-trigger.md]:
+    // once a computer house's AI-trigger flag is set (action 74, house_flags
+    // bit 2) its team brain runs the MAP's own [AITriggerTypes]/[TeamTypes]/
+    // [TaskForces]/[ScriptTypes] (the aimd.ini format) with the map country
+    // as the House=/OwnerHouse key. [RE-FALLBACK (RE-A5 open): the map list
+    // replaces aimd.ini for map houses; IsForSkirmish is not a filter in a
+    // campaign (every map trigger has it 0).] A house with no base nodes
+    // gets an empty catalog: it trains from the factories it owns but plans
+    // no base of its own.
     void arm_production_houses() {
         for (std::size_t i = 1; i < house_names_.size(); ++i) {
-            if (i >= base_nodes_.size() || base_nodes_[i].empty()) continue;
-            if (w_.ai_enabled((int)i) || !w_.house_combatant((int)i)) continue;
-            if (w_.controllable((int)i)) continue;   // W2-CA-02: a human-controlled house has no AI
-            if (!(sys_->house_flags(house_type((int)i)) & 1u)) continue;
+            if (!w_.house_combatant((int)i) || w_.controllable((int)i)) continue;
             const ra2engine::World::Side side = w_.house_side((int)i);
             if (side == ra2engine::World::Side::Neutral) continue;
+            const unsigned fl = sys_->house_flags(house_type((int)i));
+            const bool want_base = (fl & 1u) && i < base_nodes_.size() && !base_nodes_[i].empty();
+            const bool want_teams = (fl & 4u) && ai_roster_ && map_.has("AITriggerTypes");
+            if (armed_.size() < house_names_.size()) armed_.resize(house_names_.size(), 0);
+            // A loaded game's AI houses come back armed with the saved config.
+            if (!armed_[i] && w_.ai_enabled((int)i)) armed_[i] = (std::uint8_t)((want_base ? 1 : 0) | (want_teams ? 2 : 0) | 4);
+            const bool has_base = armed_[i] & 1, has_teams = armed_[i] & 2;
+            if ((has_base || !want_base) && (has_teams || !want_teams)) continue;
+            if (!want_base && !want_teams) continue;
             const Rules rules = Rules::load(rules_ini_);
             const std::string country = camp::trim_comment(map_.get(house_names_[i], "Country", ""));
             ra2engine::AiHouseConfig cfg = make_ai_config(
                 ba_, rules, static_cast<ra2engine::AiDifficulty>(launch_.difficulty),
                 /*start_credits=*/0.0, side, country);   // the house pool flows in via take_income
+            const bool base = want_base || has_base;
+            if (!base) cfg.catalog = ra2engine::AiCatalog{};   // trains, never plans a base
+            if (want_teams || has_teams) arm_map_teams(cfg, (int)i, side, country, rules);
+            armed_[i] = (std::uint8_t)((base ? 1 : 0) | ((want_teams || has_teams) ? 2 : 0) | 4);
             w_.enable_ai_house((int)i, std::move(cfg));
-            w_.set_ai_base_nodes((int)i, base_nodes_[i]);
-            char b[160];
-            std::snprintf(b, sizeof b, "[camp] f%ld production begins: %s nodes=%d", frame_,
+            if (base) w_.set_ai_base_nodes((int)i, base_nodes_[i]);
+            char b[200];
+            std::snprintf(b, sizeof b, "[camp] f%ld %s%s: %s nodes=%d", frame_,
+                          base ? "production begins" : "", (want_teams || has_teams) ? " +map AI triggers" : "",
                           house_names_[i].c_str(), (int)base_nodes_[i].size());
             witness_.emplace_back(b);
         }
     }
+    void arm_map_teams(ra2engine::AiHouseConfig& cfg, int h, ra2engine::World::Side side,
+                       const std::string& country, const Rules& rules) {
+        // This house's share of the AI roster by its stock (parent) country.
+        UnitRoster mine;
+        const std::string parent = camp::trim_comment(map_.get(country, "ParentCountry", ""));
+        const std::string own = parent.empty() ? country : parent;
+        for (const ra2engine::UnitTypeDef& d : ai_roster_->defs)
+            if (aiside::owned_by(rules, d.id, side, own)) mine.defs.push_back(d);
+        int ax = w_.grid_w() / 2, ay = w_.grid_h() / 2;
+        for (const ra2engine::Unit& u : w_.units())
+            if (live(u) && u.house == 0) { ax = u.cell_x; ay = u.cell_y; break; }
+        cfg.team = make_ai_team_config(ba_, mine, rules, map_, cfg.difficulty, ax, ay,
+                                       /*enable_triggers=*/true, &w_.map());
+        for (ra2engine::AITriggerType& t : cfg.team.aimd.triggers) t.is_for_skirmish = true;
+        auto id_of = [&](int t) -> const char* {
+            return (t >= 0 && t < (int)ba_.roster.size()) ? ba_.roster[(std::size_t)t].id.c_str() : "";
+        };
+        const ra2engine::AiCatalog full = make_ai_config(ba_, rules, cfg.difficulty, 0.0, side, own).catalog;
+        cfg.team.inf_factory_types = factory_types_for(ba_, id_of(full.barracks));
+        cfg.team.veh_factory_types = factory_types_for(ba_, id_of(full.war_factory));
+        cfg.team.trigger_side = side == ra2engine::World::Side::Soviet ? 2 : 1;
+        cfg.team.trigger_tech_level = map_.get_int(house_names_[(std::size_t)h], "TechLevel", 10);
+        cfg.team.house_name = country;
+        fill_ai_building_maps(cfg.team, ba_, rules, rules_ini_);
+    }
+public:
+    // W2-CA-07: the GameScene's AI roster (unit defs the map teams can field).
+    void set_ai_roster(const UnitRoster* r) { ai_roster_ = r; }
+private:
     int engine_house_of_name(const std::string& name) const {
         const std::string u = camp::up(name);
         for (std::size_t i = 0; i < house_names_.size(); ++i)
@@ -1693,6 +1742,8 @@ private:
     std::vector<Team> teams_;
     std::vector<Objective> objectives_;
     std::vector<std::string> witness_;
+    const UnitRoster* ai_roster_ = nullptr;   // W2-CA-07 (GameScene's ur_ai_)
+    std::vector<std::uint8_t> armed_;         // W2-CA-07 per house: 1 base, 2 map teams (derived)
     std::vector<AudioReq> audio_;   // W2-CA-12 (presentation only, not hashed/saved)
     std::string note_;
     std::size_t logged_ = 0;
