@@ -194,50 +194,65 @@ std::vector<int> rp_factory_types(const BuildingAssets& ba, const Rules& rules,
 struct RpSwGrant {
     ra2engine::SuperweaponType type = ra2engine::SuperweaponType::None;
     bool is_powered = false;
+    double recharge_secs = 0.0;
+    bool disableable = false;   // DisableableFromShell=yes (the lobby checkbox)
 };
 
-// Per roster building: the SW its SuperWeapon= key grants [RE: superweapon.md
-// §1/§4 -- [<Special>] Type= names the effect; IsPowered= the low-power
-// pause]. Only types whose detonation the engine implements are granted
-// (Type=MultiMissile -> Nuke); the others (IronCurtain, ChronoSphere,
-// LightningStorm, ParaDrop, SpyPlane, ForceShield...) map to None so the
-// sidebar never shows a cameo that cannot fire [open: their effects].
+// W2-AN-04/19: the classic SW Type= names -> the engine enum.
+ra2engine::SuperweaponType rp_sw_type_of(const std::string& type_upper) {
+    using T = ra2engine::SuperweaponType;
+    if (type_upper == "MULTIMISSILE") return T::Nuke;
+    if (type_upper == "IRONCURTAIN") return T::IronCurtain;
+    if (type_upper == "LIGHTNINGSTORM") return T::LightningStorm;
+    if (type_upper == "CHRONOSPHERE") return T::ChronoSphere;
+    if (type_upper == "PARADROP") return T::ParaDrop;
+    if (type_upper == "AMERPARADROP") return T::AmerParaDrop;
+    return T::None;
+}
+
+// Per roster building: the classic SW its SuperWeapon= key grants [RE:
+// superweapon.md §1/§4 -- [<Special>] Type= names the effect, RechargeTime=
+// is minutes, IsPowered= the low-power pause]. YR-only keys are ignored
+// (W2-AN-19). W2-AN-04: every classic type now has an effect.
 std::vector<RpSwGrant> rp_superweapon_table(const BuildingAssets& ba, const Rules& rules) {
     std::vector<RpSwGrant> t(ba.roster.size());
     for (std::size_t i = 0; i < ba.roster.size(); ++i) {
-        const std::string sw = rules.section_string(ba.roster[i].id, "SuperWeapon", "");
+        const std::string sw = rp_building_classic_sw(rules, ba.roster[i].id);
         if (sw.empty()) continue;
-        const std::string type = rp_upper(rules.section_string(sw, "Type", ""));
-        if (type == "MULTIMISSILE") t[i].type = ra2engine::SuperweaponType::Nuke;
+        t[i].type = rp_sw_type_of(rp_upper(rules.section_string(sw, "Type", "")));
         t[i].is_powered = rp_flag(rules, sw, "IsPowered");
+        t[i].recharge_secs = rules.section_double(sw, "RechargeTime", 5.0) * 60.0;
+        t[i].disableable = rp_flag(rules, sw, "DisableableFromShell");
     }
     return t;
 }
 
-// Once per frame, every house: hold the SW of an own operational (Idle)
-// granting building, grant it (fresh, full RechargeTime) when first owned,
-// revoke it when the last such building is gone. The grant starts at the
-// building's grand opening (Buildup -> Idle).
+// Once per frame, every house: hold one SW per type granted by an own
+// operational (Idle) building -- granted (fresh, full RechargeTime) when first
+// owned, revoked when the last such building is gone (W2-AN-04: a house may
+// hold several types at once). The grant starts at the building's grand
+// opening (Buildup -> Idle).
 void rp_sync_superweapons(ra2engine::World& w, const std::vector<RpSwGrant>& table,
                           const SuperweaponParams& nuke) {
+    std::vector<const RpSwGrant*> held;
     for (int h = 0; h < w.house_count(); ++h) {
-        const RpSwGrant* g = nullptr;
+        held.clear();
         for (const ra2engine::Building& b : w.buildings()) {
             if (!b.alive || b.house != h || b.state != ra2engine::Building::State::Idle) continue;
             if (b.type < 0 || b.type >= static_cast<int>(table.size())) continue;
-            if (table[b.type].type == ra2engine::SuperweaponType::None) continue;
-            g = &table[b.type];
-            break;
+            const RpSwGrant& g = table[b.type];
+            if (g.type == ra2engine::SuperweaponType::None) continue;
+            bool dup = false;
+            for (const RpSwGrant* o : held) dup |= o->type == g.type;
+            if (!dup) held.push_back(&g);
         }
-        const ra2engine::Superweapon* cur = w.sw_state(h);
-        if (!g) {
-            if (cur) w.revoke_superweapon(h);
-            continue;
+        for (ra2engine::SuperweaponType t : w.sw_types(h)) {
+            bool keep = false;
+            for (const RpSwGrant* g : held) keep |= g->type == t;
+            if (!keep) w.revoke_superweapon_type(h, t);
         }
-        if (!cur || cur->type != g->type) {
-            w.grant_superweapon(h, g->type, nuke.recharge_secs, nuke.damage, nuke.cell_spread,
-                                nuke.percent_at_max, nuke.verses);
-            w.set_superweapon_powered(h, g->is_powered);
-        }
+        for (const RpSwGrant* g : held)
+            w.grant_superweapon_type(h, g->type, g->recharge_secs, g->is_powered, nuke.damage,
+                                     nuke.cell_spread, nuke.percent_at_max, nuke.verses);
     }
 }

@@ -5,6 +5,7 @@
 #include "projectile.hpp"  // ProjectileSpec (P2; pure, no World)
 #include "veterancy.hpp"  // P5: AbilityMask / WeaponStats (pure, World-free)
 #include "weapon.hpp"     // Gap fix C: WeaponSlot (pure)
+#include "air_naval.hpp"  // W2-AN: AnType (pure)
 
 namespace ra2engine {
 
@@ -142,6 +143,7 @@ struct UnitCombat {
     bool occupier = false;            // Occupier= (may garrison CanBeOccupied buildings, G-48)
     WeaponSlot occupy_weapon;         // OccupyWeapon= (fired from inside a garrison)
     WeaponSlot elite_occupy_weapon;   // EliteOccupyWeapon=
+    AnType an;                        // W2-AN: naval/air/SW type data (air_naval.hpp)
 };
 
 }  // namespace ra2engine

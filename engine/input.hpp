@@ -203,6 +203,11 @@ public:
     // World::fire_superweapon. No existing flow arms this, so this branch is
     // never entered in any existing demo.
     void arm_superweapon() { sw_targeting_ = true; }
+    // W2-AN-04: which SW type the armed targeting is for (SuperweaponType as
+    // int; the cursor shape) and the Chronosphere's second (destination) click.
+    void arm_superweapon(int type, int phase) { sw_targeting_ = true; sw_type_ = type; sw_phase_ = phase; }
+    int sw_armed_type() const { return sw_type_; }
+    int sw_armed_phase() const { return sw_phase_; }
     void cancel_superweapon() { sw_targeting_ = false; }
     bool sw_targeting() const { return sw_targeting_; }
     int placement_type() const { return place_type_; }
@@ -392,6 +397,8 @@ private:
     // CB-4 Superweapons: true while SW-targeting is armed (a click on the map
     // then reports sw_fire_confirmed). Default false -- inert in every demo.
     bool sw_targeting_ = false;
+    int sw_type_ = 0;    // W2-AN-04 armed SW type (cursor)
+    int sw_phase_ = 0;   // 1 = Chronosphere destination pick
 
     // Repair & Sell cursor modes [RE: repair-sell.md §C1]. Default None +
     // 0 owned -> both modes are unreachable until main.cpp arms one.

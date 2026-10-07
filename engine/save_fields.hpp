@@ -67,6 +67,25 @@ struct SaveAccess {
         save::io(ar, s.eff_verses);
         save::io(ar, s.is_powered);   // gap owner A (G-29)
     }
+    template <class Ar> static void an_world(Ar& ar, World::AnWorld& a) {   // W2-AN (v9)
+        save::io(ar, a.any);
+        save::io(ar, a.sw);
+        save::io(ar, a.strikes);
+        save::io(ar, a.events);
+        save::io(ar, a.event_seq);
+        save::io(ar, a.types);
+        save::io(ar, a.dock_offsets);
+        save::io(ar, a.rng);
+        save::io(ar, a.frame);
+        save::io(ar, a.sw_btype);
+        save::io(ar, a.repair_btype);
+        save::io(ar, a.airfield_btype);
+        save::io(ar, a.nuke_set);
+        save::io(ar, a.nuke_damage);
+        save::io(ar, a.nuke_spread);
+        save::io(ar, a.nuke_pmax);
+        save::io(ar, a.nuke_verses);
+    }
     template <class Ar> static void tech_income(Ar& ar, World::TechIncome& t) {
         save::io(ar, t.building);
         save::io(ar, t.amount);
@@ -79,6 +98,7 @@ struct SaveAccess {
     }
     using HouseAiRec = World::HouseAiRec;
     using HouseSuperweapon = World::HouseSuperweapon;
+    using AnWorld = World::AnWorld;   // W2-AN
     using TechIncome = World::TechIncome;
     using PendingHarvestEvent = World::PendingHarvestEvent;
 
@@ -99,6 +119,9 @@ struct SaveAccess {
         // CB-4 superweapons
         save::io(ar, w.sw_houses_);
         save::io(ar, w.sw_any_);
+        // W2-AN (save v9): air/naval/SW v2 state + the amphibious scratch grid
+        save::io(ar, w.an_);
+        save::io(ar, w.amphib_passable_);
         // Capture
         save::io(ar, w.capture_any_);
         save::io(ar, w.tech_income_);
@@ -260,12 +283,55 @@ template <class Ar> void fields(Ar& ar, GameRandom& v) { SaveAccess::game_random
 template <class Ar> void fields(Ar& ar, RadField& v) { SaveAccess::rad_field(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::HouseAiRec& v) { SaveAccess::house_ai(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::HouseSuperweapon& v) { SaveAccess::house_sw(ar, v); }
+template <class Ar> void fields(Ar& ar, SaveAccess::AnWorld& v) { SaveAccess::an_world(ar, v); }   // W2-AN
 template <class Ar> void fields(Ar& ar, SaveAccess::TechIncome& v) { SaveAccess::tech_income(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::PendingHarvestEvent& v) { SaveAccess::harvest_event(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::Trig& v) { SaveAccess::trig(ar, v); }
 template <class Ar> void fields(Ar& ar, SaveAccess::Tag& v) { SaveAccess::tag(ar, v); }
 
 // --- small leaf structs ---
+template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
+    io(ar, v.nuke_up_frames); io(ar, v.nuke_down_frames); io(ar, v.nuke_rad_level);
+    io(ar, v.iron_frames); io(ar, v.chrono_delay_frames); io(ar, v.storm_deferment);
+    io(ar, v.storm_damage); io(ar, v.storm_duration); io(ar, v.storm_hit_delay);
+    io(ar, v.storm_scatter_delay); io(ar, v.storm_cell_spread); io(ar, v.storm_separation);
+    io(ar, v.storm_wh_spread); io(ar, v.storm_wh_pmax); io(ar, v.storm_verses);
+    io(ar, v.amer_para_inf); io(ar, v.amer_para_num); io(ar, v.ally_para_inf);
+    io(ar, v.ally_para_num); io(ar, v.sov_para_inf); io(ar, v.sov_para_num);
+    io(ar, v.paradrop_radius); io(ar, v.cloak_delay_frames); io(ar, v.ship_sinking_weight);
+    io(ar, v.reload_frames); io(ar, v.flight_level); io(ar, v.missile_spread);
+    io(ar, v.missile_pmax); io(ar, v.missile_verses); io(ar, v.repair_step);
+    io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
+}
+template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
+    io(ar, v.kind); io(ar, v.house); io(ar, v.x); io(ar, v.y); io(ar, v.ox); io(ar, v.oy);
+    io(ar, v.frame); io(ar, v.hit_timer); io(ar, v.scatter_timer); io(ar, v.rng);
+    io(ar, v.recent); io(ar, v.done);
+}
+template <class Ar> void fields(Ar& ar, SwEvent& v) {   // W2-AN (save v9)
+    io(ar, v.seq); io(ar, v.kind); io(ar, v.house); io(ar, v.type); io(ar, v.x); io(ar, v.y);
+    io(ar, v.x2); io(ar, v.y2);
+}
+template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
+    io(ar, v.naval_targeting); io(ar, v.land_targeting); io(ar, v.no_passive_acquire);
+    io(ar, v.organic); io(ar, v.teleporter); io(ar, v.underwater); io(ar, v.cloakable);
+    io(ar, v.sensors); io(ar, v.sensors_sight); io(ar, v.crashable); io(ar, v.weight);
+    io(ar, v.min_range); io(ar, v.fixed_wing); io(ar, v.ammo); io(ar, v.fly_speed_cps);
+    io(ar, v.spawned); io(ar, v.missile); io(ar, v.missile_damage); io(ar, v.spawner_slot);
+    io(ar, v.spawns); io(ar, v.spawns_number); io(ar, v.spawn_regen_frames);
+    io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
+}
+template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
+    io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left);
+    io(ar, v.detected_mask); io(ar, v.sinking); io(ar, v.iron_left); io(ar, v.chrono_left);
+    io(ar, v.crashing); io(ar, v.ammo); io(ar, v.sortie); io(ar, v.home); io(ar, v.pad);
+    io(ar, v.reload_timer); io(ar, v.attack_unit); io(ar, v.attack_building);
+    io(ar, v.attack_x); io(ar, v.attack_y); io(ar, v.pass_cool); io(ar, v.spawn_ready);
+    io(ar, v.spawn_out); io(ar, v.spawn_regen_timer); io(ar, v.spawn_reload_timer);
+    io(ar, v.spawn_pending); io(ar, v.spawn_fire_unit); io(ar, v.spawn_fire_building);
+    io(ar, v.owner); io(ar, v.landing); io(ar, v.drop_left); io(ar, v.drop_type);
+    io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
+}
 template <class Ar> void fields(Ar& ar, Cellxy& v) { io(ar, v.x); io(ar, v.y); }
 template <class Ar> void fields(Ar& ar, SeqEntry& v) { io(ar, v.first); io(ar, v.count); io(ar, v.fmult); }
 template <class Ar> void fields(Ar& ar, UnitAnimSeq& v) {
@@ -556,6 +622,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.occupier);
     io(ar, v.occupy_weapon);
     io(ar, v.elite_occupy_weapon);
+    io(ar, v.an);   // W2-AN (save v9)
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -746,6 +813,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.occupy_target);
     io(ar, v.attack_cell_x); io(ar, v.attack_cell_y);
     io(ar, v.cell_shot);
+    io(ar, v.an);   // W2-AN (save v9)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -796,6 +864,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.firing_occupant);
     io(ar, v.garrison_rof_cool);
     io(ar, v.garrison_target);
+    io(ar, v.iron_left);   // W2-AN-04 (save v9)
 }
 
 // --- production ---

@@ -53,4 +53,59 @@ until 300 sel_cx != $x0 or sel_cy != $y0       @W2-AN-09
 wait 120
 assert sel_on_water == 1                       @W2-AN-09
 shot dest_sailed
+
+# --- 2. a Typhoon sub hides submerged until sonar finds it (W2-AN-13/14) ------
+# (an enemy SUB is spawned beside the Destroyer: the AI on this map is Allied)
+cheat spawn SUB 1 point water_near_sel +0 +0
+wait 2
+assert submerged(1) >= 1                       @W2-AN-13
+until 200 sub_detected_by0(1) >= 1             @W2-AN-13
+let sub_hp = unit_hp(1,SUB)
+until 900 unit_hp(1,SUB) < $sub_hp or units(1,SUB) == 0   @W2-AN-12
+assert spawned_out(0) >= 1 or units(1,SUB) == 0 or unit_hp(1,SUB) < $sub_hp   @W2-AN-12
+shot sub_fight
+
+# --- 3. amphibious landing: an Amphibious Transport loads GIs on the shore,
+#        crosses the water and unloads on a beach (W2-AN-10) --------------------
+# (move the Destroyer clear of the yard so the craft is clickable on its own)
+click unit 0:DEST
+click point water_near_sel
+wait 60
+click tab:3
+click cameo:LCRF                                @W2-AN-10
+until 2000 units(0,LCRF) == 1                   @W2-AN-10
+wait 20
+# right-click drops the Destroyer selection (else a click on the transport = Enter)
+click unit 0:LCRF right
+click unit 0:LCRF
+assert sel_on_water == 1                        @W2-AN-10
+# beach it on the nearest shore cell
+click point shore_near_sel                      @W2-AN-10
+until 400 sel_on_water == 0 and sel_moving == 0  @W2-AN-10
+let lx = sel_cx
+let ly = sel_cy
+shot lcrf_beached
+# two GIs board it
+click unit 0:LCRF right
+click unit 0:E1
+click unit 0:LCRF +0 +0
+wait 1
+click unit 0:E1:1 shift
+click unit 0:LCRF
+until 600 cargo_total(0) >= 1                   @W2-AN-10
+# sail out onto the water, then beach elsewhere and unload
+click unit 0:LCRF right
+click unit 0:LCRF
+click point water_near_sel                      @W2-AN-10
+until 400 amphib_on_water(0) >= 1               @W2-AN-10
+wait 60
+shot lcrf_at_sea
+key d
+wait 30
+assert cargo_total(0) >= 1                      @W2-AN-10 # no unload at sea
+click point shore_near_sel                      @W2-AN-10
+until 600 amphib_on_water(0) == 0 and sel_moving == 0  @W2-AN-10
+key d
+until 300 cargo_total(0) == 0                   @W2-AN-10
+shot lcrf_unloaded
 end

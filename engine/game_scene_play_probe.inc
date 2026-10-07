@@ -166,6 +166,14 @@
         if (world_.sw_state(0))
             p.targets["sw"] = ra2play::Rect{lay_.bar.x + ra2engine::kCameoX, lay_.radar.y + 2,
                                             ra2engine::kCameoW, ra2engine::kCameoH};
+        {   // W2-AN-04: one target per granted SW, `sw:<TYPE>` (Nuke, IronCurtain, ...)
+            const std::vector<ra2engine::SuperweaponType> swt = world_.sw_types(0);
+            for (int k = 0; k < static_cast<int>(swt.size()); ++k) {
+                const ra2engine::SbRect r = sw_slot_rect(lay_, k);
+                p.targets[std::string("sw:") + ra2engine::superweapon_type_name(swt[k])] =
+                    ra2play::Rect{r.x, r.y, r.w, r.h};
+            }
+        }
         if (sidebar_up_ && ba_.has_optbtns) {
             const int w = ba_.sb_optbtn.width() > 0 ? ba_.sb_optbtn.width() : 70;
             const int h = ba_.sb_optbtn.height() > 0 ? ba_.sb_optbtn.height() : 16;

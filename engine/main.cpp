@@ -435,6 +435,9 @@ struct BuildingAssets {
     // is false if NukeIcon is absent (the SW slot then draws a placeholder shade).
     ra2assets::ShpFile sb_nukeicon;
     bool sw_has_cameo = false;
+    // W2-AN-23: every classic SW's SidebarImage cameo, keyed by SuperweaponType
+    // (NukeIcon, IRCRICON, BOLTICON, CHROICON, PARAICON, APARICON).
+    std::map<int, ra2assets::ShpFile> sw_cameos;
     ra2assets::ShpFile sb_radar, sb_side3, sb_addon, sb_rup, sb_rdn, sb_repair, sb_sell,
                        sb_optbtn, sb_diplobtn;
     bool has_radar = false, has_side3 = false, has_addon = false, has_scroll = false,
@@ -733,6 +736,8 @@ inline std::string to_lower(std::string s) {
 // confirms which numbers got pinned for E1/E2 (Task 8 ground truth: E1 GI
 // M60 15/20/4 SA armor=none str=125; E2 CONS M1Carbine 15/25/4 SA armor=flak
 // str=125).
+#include "w2air_main.inc"   // W2-AN: resolve_an_type / resolve_sw_params (wave-2 air/naval/SW)
+
 ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id) {
     ResolvedUnit r;
     r.combat.image = rules.image(unit_id);
@@ -871,6 +876,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.has_elite_proj = true;
     }
     ra2engine::fill_unit_combat_extras(rules, unit_id, tw, r.combat);
+    resolve_an_type(rules, unit_id, tw.slot[0].id, tw.slot[1].id, r);   // W2-AN (w2air_main.inc)
 
     std::cerr << "[unit] id=" << unit_id << " image=" << r.combat.image << " speed=" << r.speed
               << " strength=" << r.combat.strength << " armor=" << r.combat.armor
@@ -2220,6 +2226,24 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         }
     } catch (const std::exception&) { ba.sw_has_cameo = false; }
     std::cerr << "[sw] NukeIcon cameo " << (ba.sw_has_cameo ? "loaded" : "absent") << "\n";
+    // W2-AN-23 [rules.ini [<Special>] SidebarImage=]: one cameo per classic SW.
+    try {
+        MixFile cameo_mix = language.open_nested("cameo.mix");
+        const std::pair<ra2engine::SuperweaponType, const char*> kSwIcons[] = {
+            {ra2engine::SuperweaponType::Nuke, "nukeicon"},
+            {ra2engine::SuperweaponType::IronCurtain, "ircricon"},
+            {ra2engine::SuperweaponType::LightningStorm, "bolticon"},
+            {ra2engine::SuperweaponType::ChronoSphere, "chroicon"},
+            {ra2engine::SuperweaponType::ChronoWarp, "chroicon"},
+            {ra2engine::SuperweaponType::ParaDrop, "paraicon"},
+            {ra2engine::SuperweaponType::AmerParaDrop, "aparicon"}};
+        for (const auto& kv : kSwIcons)
+            if (const MixEntry* ce = cameo_mix.find(std::string(kv.second) + ".shp")) {
+                ra2assets::ShpFile shp = ShpFile::load(cameo_mix.read(*ce));
+                if (shp.count() > 0) ba.sw_cameos[static_cast<int>(kv.first)] = std::move(shp);
+            }
+    } catch (const std::exception&) {}
+    std::cerr << "[sw] SW cameos loaded=" << ba.sw_cameos.size() << "\n";
 
     // Shared death explosion (TWLT070) from conquer.mix + anim.pal (guarded;
     // render-only). Mirrors the vehicle death-anim path [RE: building-render.md §4].
@@ -3742,26 +3766,44 @@ void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint
 // sidebar slot, reusing the EXISTING gclock2.shp 55-frame chrome + the flashing-
 // green READY tint. Drawn ONLY when house 0 has a granted SW, so no existing
 // demo (which grants none) changes its sidebar. `slot` is the target rect.
+// W2-AN-04/23: the sidebar rect of house 0's k-th superweapon (grant order),
+// a 2-wide grid from the radar area's top-left (the CB-4 slot is k = 0).
+ra2engine::SbRect sw_slot_rect(const ra2engine::SidebarLayout& lay, int k) {
+    return ra2engine::SbRect{lay.bar.x + ra2engine::kCameoX + (k % 2) * ra2engine::kCameoW,
+                             lay.radar.y + 2 + (k / 2) * ra2engine::kCameoH, ra2engine::kCameoW,
+                             ra2engine::kCameoH};
+}
+
 void draw_sw_slot(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
-                  const ra2engine::World& world, const ra2engine::SbRect& slot, double t_now) {
-    const ra2engine::Superweapon* sw = world.sw_state(0);
-    if (!sw) return;                                    // no SW granted -> nothing drawn
-    // Cameo (art-guarded): NukeIcon, else a placeholder shade.
-    if (ba.sw_has_cameo)
+                  const ra2engine::World& world, const ra2engine::SbRect& slot0, double t_now) {
+    const std::vector<ra2engine::SuperweaponType> types = world.sw_types(0);
+    for (int k = 0; k < static_cast<int>(types.size()); ++k) {
+    const ra2engine::SuperweaponType ty = types[k];
+    const ra2engine::Superweapon* sw = world.sw_state(0, ty);
+    if (!sw) continue;
+    const ra2engine::SbRect slot{slot0.x + (k % 2) * ra2engine::kCameoW,
+                                 slot0.y + (k / 2) * ra2engine::kCameoH, slot0.w, slot0.h};
+    // Cameo (art-guarded): the SW's SidebarImage, else a placeholder shade.
+    auto cam = ba.sw_cameos.find(static_cast<int>(ty));
+    if (cam != ba.sw_cameos.end())
+        blit_shp(ren, tc, "swcam:" + std::to_string(static_cast<int>(ty)), cam->second, 0,
+                 ba.cameo_pal, slot.x, slot.y);
+    else if (ba.sw_has_cameo)
         blit_shp(ren, tc, "swcam:nukeicon", ba.sb_nukeicon, 0, ba.cameo_pal, slot.x, slot.y);
     else
         shade_rect(ren, slot, 140);                     // placeholder tile
-    if (world.sw_ready(0)) {
+    if (sw->ready) {
         // READY: 2 Hz flashing-green tint (the existing production-ready state).
         if (static_cast<int>(t_now * 2) % 2 == 0) shade_rect(ren, slot, 90, 0, 200, 0);
     } else {
         // Charging: gclock2 frame over a shade (the build-clock chrome, §6).
         shade_rect(ren, slot, 90);
-        int gframe = (int)std::lround(world.sw_charge_fraction(0) * 54.0);
+        int gframe = (int)std::lround(sw->charge_fraction() * 54.0);
         if (gframe < 0) gframe = 0;
         if (gframe >= ba.sb_gclock.count()) gframe = ba.sb_gclock.count() - 1;
         blit_shp(ren, tc, "sw:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
                  slot.x, slot.y);
+    }
     }
 }
 
@@ -4957,13 +4999,13 @@ public:
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
-                // SW cameo slot: left-click arms SW-targeting when house 0's SW is READY.
-                if (world_.sw_state(0)) {
-                    const ra2engine::SbRect sw_slot{lay_.bar.x + ra2engine::kCameoX,
-                                                    lay_.radar.y + 2, ra2engine::kCameoW,
-                                                    ra2engine::kCameoH};
-                    if (sw_slot.contains(ev.x, ev.y)) {
-                        if (world_.sw_ready(0)) input_.arm_superweapon();
+                // SW cameo slots (W2-AN-04: one per granted type): left-click
+                // arms that SW's targeting when it is READY.
+                {
+                    const std::vector<ra2engine::SuperweaponType> swt = world_.sw_types(0);
+                    for (int k = 0; k < static_cast<int>(swt.size()); ++k) {
+                        if (!sw_slot_rect(lay_, k).contains(ev.x, ev.y)) continue;
+                        if (world_.sw_ready(0, swt[k])) w2_arm_sw(swt[k]);
                         return;  // consumed by the SW slot
                     }
                 }
@@ -5197,7 +5239,7 @@ public:
             }
         }
         // CB-4 Superweapons: a committed SW target cell -> fire.
-        if (act.sw_fire_confirmed) world_.fire_superweapon(0, act.sw_cx, act.sw_cy);
+        if (act.sw_fire_confirmed) w2_sw_target(act.sw_cx, act.sw_cy);   // W2-AN-04 (w2air_play.inc)
 
         // G-80/G-81/G-82: voices, reports, deaths, EVA, music, effects -- one
         // observation pass over this frame's state (pres_game.inc). Logs even
