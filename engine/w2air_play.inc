@@ -297,6 +297,37 @@
     bool w2_cheat(const std::vector<std::string>& a, std::string& out) {
         out.clear();
         if (a.size() < 2 || a[0] != "w2") return false;
+        if (a[1] == "build" && a.size() >= 3) {
+            // w2 build ID [H]: an instant, fully built structure on the nearest
+            // legal spot to house 0's first building (the sidebar's own
+            // placement test) -- a set-up shortcut like B's `building` cheat.
+            int t = -1;
+            for (int i = 0; i < static_cast<int>(ba_.roster.size()); ++i)
+                if (ba_.roster[i].id == a[2]) t = i;
+            if (t < 0) { out = "unknown building " + a[2]; return true; }
+            const int house = a.size() >= 4 ? std::atoi(a[3].c_str()) : 0;
+            int ax = -1, ay = -1;
+            for (const ra2engine::Building& b : world_.buildings())
+                if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) {
+                    ax = b.cx + b.fw / 2;
+                    ay = b.cy + b.fh / 2;
+                    break;
+                }
+            if (ax < 0) { out = "no own building"; return true; }
+            const ra2engine::BuildingTypeDef& d = ba_.roster[t];
+            for (int r = 1; r <= 30; ++r)
+                for (int oy = ay - r; oy <= ay + r; ++oy)
+                    for (int ox = ax - r; ox <= ax + r; ++ox) {
+                        if (std::max(std::abs(ox - ax), std::abs(oy - ay)) != r) continue;
+                        if (!placement_ok(t, ox, oy)) continue;
+                        world_.add_building(t, ox, oy, d.fw, d.fh, house, d.strength, d.armor_ix,
+                                            ba_.art[t].buildup_total, /*instant=*/true, d.sight,
+                                            d.grants_map_reveal);
+                        return true;
+                    }
+            out = "no spot for " + a[2];
+            return true;
+        }
         if (a[1] == "damage" && a.size() >= 4) {
             std::vector<std::string> parts;
             std::string cur;

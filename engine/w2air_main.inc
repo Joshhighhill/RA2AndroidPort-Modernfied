@@ -20,7 +20,7 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
     a.no_passive_acquire = !rules.section_flag(unit_id, "CanPassiveAquire", true);
     // InfantryTypes are organic by type (the Chronosphere and the Iron Curtain
     // kill infantry); vehicles only with Organic=yes (DLPH, SQD).
-    a.organic = rules.section_flag(unit_id, "Organic", !r.combat.is_vehicle);
+    a.organic = rules.section_flag(unit_id, "Organic", rules.is_infantry(unit_id));
     a.teleporter = rules.section_flag(unit_id, "Teleporter", false);
     a.underwater = rules.section_flag(unit_id, "Underwater", false);
     a.cloakable = rules.section_flag(unit_id, "Cloakable", false);
