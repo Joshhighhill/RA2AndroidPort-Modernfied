@@ -33,6 +33,9 @@
 #include <iostream>
 #include <deque>
 #include <map>
+#include <mutex>
+#include <thread>
+#include <atomic>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -42,6 +45,8 @@
 #include "audio_mixer.hpp"
 #include "bridges.hpp"      // G16 (agent G): bridge overlay classes
 #include "audio_sdl.hpp"
+#include "music_stream.hpp"
+#include <chrono>     // W2-GA-22 streamed score
 #include "building.hpp"
 #include "cargo.hpp"        // cargo_total_size (pip fill) [CB-1 Transports/Cargo]
 #include "capture.hpp"      // kNeutralHouse (Engineer/Spy Capture phase)
@@ -212,7 +217,7 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
                    const MapSelection& sel = MapSelection{}) {
     // Map: read the selected map INI. The default selection is byte-for-byte
     // the old hardcoded one (mapsmd03.mix / 0x133a0cb2).
-    MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+    MixFile maps = MixFile::open_path(dir + sel.mix);
     const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
     if (!me) throw std::runtime_error("map entry not found in " + sel.mix + ": " +
                                       (sel.name.empty() ? "id 0x133a0cb2" : sel.name));
@@ -242,7 +247,7 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
     // default TEMPERATE path never touches it (maps.md §7 rule 5).
     std::unique_ptr<MixFile> yr;
     if (chain->yr_only || ini_is_md)
-        yr.reset(new MixFile(MixFile::open(ra2assets::read_file(dir + "ra2md.mix"))));
+        yr.reset(new MixFile(MixFile::open_path(dir + "ra2md.mix")));
     const MixFile& parent = chain->yr_only ? *yr : ra2;
 
     // Palette: the iso TILE palette.
@@ -321,7 +326,10 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
         return raw;
     };
     auto try_load = [&](const std::string& name, ra2assets::ShpFile& out) -> bool {
-        for (const char* ext : {".tem", ".shp"})
+        // W2-GA-01: the theater's own extension (.tem/.sno/.urb), then .shp
+        // [RE: economy.md §5, maps.md §6 TheaterChain].
+        const std::string theater_ext = std::string(".") + art_chain().ext;
+        for (const std::string& ext : {theater_ext, std::string(".shp")})
             for (const auto& c : ra2assets::theater_candidates(name, art_chain().letter,
                                                                art_chain().iso_mix,
                                                                art_chain().art_mix, ext)) {
@@ -359,7 +367,7 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
         }
     } catch (const std::exception&) { oa.has_pal = false; }
     oa.any = ok > 0;
-    std::cerr << "[ore] art files loaded=" << ok << " pal=" << (oa.has_pal ? "temperat" : "FALLBACK")
+    std::cerr << "[ore] art files loaded=" << ok << " pal=" << (oa.has_pal ? art_chain().theater_pal : "FALLBACK")
               << " tib01=" << (oa.present[0][0] ? std::to_string(oa.shp[0][0].count()) : "absent")
               << "f tib02=" << (oa.present[0][1] ? std::to_string(oa.shp[0][1].count()) : "absent")
               << "f gem01=" << (oa.present[1][0] ? std::to_string(oa.shp[1][0].count()) : "absent")
@@ -411,7 +419,13 @@ struct VehicleAssets {
     };
     std::shared_ptr<const VoxelSrc> vsrc;
     mutable std::map<int, std::shared_ptr<std::array<ra2engine::FacingSet, 3>>> color_sets;
+    // W2-GA-12: hull ground-shadow masks per facing (colour-independent).
+    mutable std::shared_ptr<std::vector<ra2engine::VoxelSprite>> shadow;
 };
+// W2-GA-P4: color_sets is filled by the draw path AND by GameScene's
+// background prewarm thread; this lock guards the map (the built sets are
+// immutable once published, so returned references stay valid).
+std::mutex g_vxl_mu;
 
 // All SHP + palette assets for one building type, resolved through the
 // NewTheater candidate list [RE: building-render.md §1] over the already-open
@@ -489,7 +503,7 @@ struct BuildingAssets {
 // their Ini by reference -- see rules.hpp/art.hpp) -- callers keep both as
 // locals in the same function scope.
 Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
-    MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
+    MixFile top = MixFile::open_path(dir + "ra2md.mix");
 
     std::vector<uint8_t> ini_bytes;
     if (const MixEntry* e = top.find(mix_id(name))) {
@@ -526,7 +540,7 @@ Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
 // rulesmd.ini omits it -- looking that up in AudioSystem::voices and playing
 // it is then just a silent no-op (Mixer::play on an empty/unregistered key
 // returns false).
-struct UnitVoices { std::string select, move, attack, die, report; };
+struct UnitVoices { std::string select, move, attack, die, report, move_sound, crush; };   // W2-GA-25 move_sound/crush
 
 // Everything the audio wiring needs at runtime. `mixer` is a unique_ptr (not
 // a plain Mixer member) because Mixer stores its SoundBank BY REFERENCE (see
@@ -624,7 +638,7 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
     ra2assets::Sounds sounds = ra2assets::Sounds::load(snd_ini);
 
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     ra2assets::MixFile audio_mix = language.open_nested("audio.mix");
     const ra2assets::MixEntry* ie = audio_mix.find("audio.idx");
     if (!ie) throw std::runtime_error("audio.idx not found in language.mix/audio.mix");
@@ -1113,8 +1127,22 @@ ShpFile load_unit_shp(const MixFile& conquer, const std::string& image) {
         se = conquer.find(lower);
         shp_name = lower;
     }
-    if (!se)
+    if (!se) {
+        // W2-GA-10: a few RA2-roster SHPs ship only in ra2md.mix/conqmd.mix on
+        // a combined install (GGI, the Guardian GI) -- the same conquer ->
+        // conqmd pair PresFx::load_shp searches.
+        try {
+            static const MixFile conqmd =
+                MixFile::open_path(env_install_dir() + "ra2md.mix").open_nested("conqmd.mix");
+            if (const MixEntry* me = conqmd.find(shp_name)) {
+                ShpFile shp = ShpFile::load(conqmd.read(*me));
+                std::cerr << "[shp] image=" << image << " file=conqmd.mix/" << shp_name
+                          << " frames=" << shp.count() << "\n";
+                return shp;
+            }
+        } catch (const std::exception&) {}
         throw std::runtime_error("unit SHP not found in ra2.mix/conquer.mix: " + image + ".shp");
+    }
     ShpFile shp = ShpFile::load(conquer.read(*se));
     std::cerr << "[shp] image=" << image << " file=" << shp_name << " frames=" << shp.count()
               << " canvas=" << shp.width() << "x" << shp.height() << "\n";
@@ -1222,7 +1250,7 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
                 md_tried = true;
                 try {
                     md_top = std::make_unique<MixFile>(
-                        MixFile::open(ra2assets::read_file(dir + "ra2md.mix")));
+                        MixFile::open_path(dir + "ra2md.mix"));
                     md_local = std::make_unique<MixFile>(md_top->open_nested("localmd.mix"));
                 } catch (const std::exception&) { md_local.reset(); }
             }
@@ -1522,7 +1550,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
     // leaves every unit cameo absent (defs still gate on the cameo NAME string).
     std::unique_ptr<MixFile> cameo_mix;
     try {
-        MixFile language = MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        MixFile language = MixFile::open_path(dir + "language.mix");
         cameo_mix = std::make_unique<MixFile>(language.open_nested("cameo.mix"));
     } catch (const std::exception&) { cameo_mix.reset(); }
 
@@ -2497,6 +2525,8 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
 #include "pres_map.inc"
+#include "pres_light.inc"    // W2-GA-05 map [Lighting]
+#include "pres_turret.inc"   // W2-GA-13 defence turrets
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
@@ -2515,6 +2545,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     const BuildingArt& art = ba.art[b.type];
     if (!art.ok) return;
     const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
+    g_overlay_bld = &b;   // W2-GA-14: per-building anim state for the overlay pass
 
     // Foundation screen bbox = union of the fw*fh cell diamonds (60x30 rects).
     int minx = INT_MAX, miny = INT_MAX, maxx = INT_MIN, maxy = INT_MIN;
@@ -2625,9 +2656,11 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 1);
 
-    // Foundation-width HP bar when damaged (render-only; buildings aren't
-    // selectable so there's no selection marker).
-    if (b.hp < b.max_hp && b.max_hp > 0) {
+    // Foundation-width HP bar when damaged (render-only). W2-GA-19: the live
+    // game (g_map_dressing set) shows building health only on the SELECTED
+    // building (GameScene::draw_selected_building's pips, ConditionYellow/
+    // Red), as the original does; the demos keep this debug bar.
+    if (!g_map_dressing && b.hp < b.max_hp && b.max_hp > 0) {
         const int bw = std::max(24, maxx - minx - 8);
         const int bx = fcx - bw / 2, by = miny - 6;
         SDL_Rect bg{bx - 1, by - 1, bw + 2, 5};
@@ -2656,24 +2689,55 @@ inline int vxl_house(int h) { return h == 0 ? 0 : 1; }
 // G-16 (render): the facing set for part (0 hull, 1 turret, 2 barrel) in house
 // h's colour. Unconfigured worlds (every gate) keep the pre-built blue/red sets;
 // a configured skirmish rasterizes each MP colour once, on first draw.
+std::shared_ptr<std::array<ra2engine::FacingSet, 3>> vxl_build_color(const VehicleAssets& va, int key) {
+    auto set = std::make_shared<std::array<ra2engine::FacingSet, 3>>();
+    const VehicleAssets::VoxelSrc& s = *va.vsrc;
+    const ra2assets::Palette hp = ra2engine::pal_for_color(s.pal, key - 10);
+    (*set)[0] = ra2engine::build_facing_set(s.hull, s.hull_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    if (va.has_turret)
+        (*set)[1] = ra2engine::build_facing_set(s.tur, s.tur_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    if (va.has_barrel)
+        (*set)[2] = ra2engine::build_facing_set(s.barl, s.barl_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    return set;
+}
 const ra2engine::FacingSet& vxl_set(const VehicleAssets& va, int part, int house) {
     const int key = ra2engine::house_draw_key(house);
     if (key < 10 || !va.vsrc) {
         const int hi = vxl_house(house);
         return part == 0 ? va.hull[hi] : part == 1 ? va.turret[hi] : va.barrel[hi];
     }
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
     auto& slot = va.color_sets[key];
-    if (!slot) {
-        slot = std::make_shared<std::array<ra2engine::FacingSet, 3>>();
-        const VehicleAssets::VoxelSrc& s = *va.vsrc;
-        const ra2assets::Palette hp = ra2engine::pal_for_color(s.pal, key - 10);
-        (*slot)[0] = ra2engine::build_facing_set(s.hull, s.hull_h, ra2engine::kVehicleFacings, s.vpl, hp);
-        if (va.has_turret)
-            (*slot)[1] = ra2engine::build_facing_set(s.tur, s.tur_h, ra2engine::kVehicleFacings, s.vpl, hp);
-        if (va.has_barrel)
-            (*slot)[2] = ra2engine::build_facing_set(s.barl, s.barl_h, ra2engine::kVehicleFacings, s.vpl, hp);
-    }
+    if (!slot) slot = vxl_build_color(va, key);   // not prewarmed yet: build now
     return (*slot)[part];
+}
+// W2-GA-P4: rasterise a (vehicle, colour) set off the draw path; a no-op when
+// the draw path got there first.
+void vxl_prewarm(const VehicleAssets& va, int key) {
+    if (key < 10 || !va.vsrc) return;
+    {
+        std::lock_guard<std::mutex> lk(g_vxl_mu);
+        auto it = va.color_sets.find(key);
+        if (it != va.color_sets.end() && it->second) return;
+    }
+    auto built = vxl_build_color(va, key);   // outside the lock
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
+    auto& slot = va.color_sets[key];
+    if (!slot) slot = std::move(built);
+}
+// W2-GA-12: the hull's ground shadow at facing bi (built once per type).
+const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi) {
+    if (!va.vsrc) return nullptr;
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
+    if (!va.shadow) {
+        auto v = std::make_shared<std::vector<ra2engine::VoxelSprite>>();
+        for (int i = 0; i < ra2engine::kVehicleFacings; ++i)
+            v->push_back(ra2engine::rasterize_shadow(va.vsrc->hull, va.vsrc->hull_h,
+                                                     ra2engine::index_to_yaw(i, ra2engine::kVehicleFacings), 128));
+        va.shadow = v;
+    }
+    if (bi < 0 || bi >= static_cast<int>(va.shadow->size())) return nullptr;
+    return &(*va.shadow)[static_cast<std::size_t>(bi)];
 }
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
@@ -2706,6 +2770,9 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
                                       vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
+    else if (const ra2engine::VoxelSprite* sh = vxl_shadow(va, bi))
+        ra2engine::draw_voxel_sprite(ren, tc, "vxlsh:" + img + ":" + std::to_string(bi), *sh, u.fx, u.fy,
+                                     u.level, cam, W, H, 0);   // W2-GA-12 ground shadow
 
     ra2engine::draw_voxel_sprite(
         ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi),
@@ -2764,9 +2831,10 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
               const ra2engine::World* vis = nullptr) {
     if (!oa.any) return;
     const ra2assets::Palette& ore_pal = oa.has_pal ? oa.pal : pal;
-    for (const ra2assets::MapCell& c : map.cells()) {
-        if (!ore.has_ore(c.x, c.y)) continue;
-        if (vis && !vis->explored_at(0, c.x, c.y)) continue;   // G-84: never under shroud
+    // W2-GA-P1: only the cells that can reach the view (cached painter rows).
+    ra2engine::for_each_visible_cell(map, cam, W, H, 48, [&](const ra2assets::MapCell& c, int, int) {
+        if (!ore.has_ore(c.x, c.y)) return;
+        if (vis && !vis->explored_at(0, c.x, c.y)) return;   // G-84: never under shroud
         const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
         int slot = ore.variant_at(c.x, c.y);
         if (slot < 0 || slot >= 20) slot = 0;
@@ -2774,10 +2842,10 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
         // to the set's base art (slot 0) when this exact variant is absent.
         if (!oa.present[kind][slot]) {
             slot = 0;
-            if (!oa.present[kind][slot]) continue;
+            if (!oa.present[kind][slot]) return;
         }
         const ra2assets::ShpFile& shp = oa.shp[kind][slot];
-        if (shp.count() <= 0) continue;
+        if (shp.count() <= 0) return;
         // Image frames = first half (second half shadows), like every TS SHP.
         const int image_frames = std::max(1, shp.count() / 2);
         int frame = ore.density_at(c.x, c.y);
@@ -2787,16 +2855,17 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
             ra2engine::cell_to_screen(c.x, c.y, static_cast<int>(c.level), 60, 30, 15);
         const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
         SDL_Rect dst{p.x + cam.x + f.x, p.y + cam.y + f.y, f.w, f.h};
-        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) continue;
+        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) return;
         char key[48];
-        std::snprintf(key, sizeof key, "ore:%d:%d:%d", kind, slot, frame);
+        // Theater-tagged: each theater draws its ore with its own palette.
+        std::snprintf(key, sizeof key, "ore:%s:%d:%d:%d", art_chain().ext, kind, slot, frame);
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
         if (!tex) {
             std::vector<uint8_t> idx = shp.decode_indexed(frame);
             tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, ore_pal));
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
-    }
+    });
 }
 
 // --- P5 Veterancy + Crates art [RE: veterancy.md V13/C3] ---------------------
@@ -2821,7 +2890,7 @@ const P5Art* g_p5_art = nullptr;
 P5Art load_p5_art(const std::string& dir, const ra2assets::MixFile& ra2) {
     P5Art art;
     try {
-        MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
+        MixFile top = MixFile::open_path(dir + "ra2md.mix");
         MixFile conqmd = top.open_nested("conqmd.mix");
         if (const MixEntry* e = conqmd.find(std::string("pips.shp"))) {
             art.pips = ShpFile::load(conqmd.read(*e));
@@ -2970,7 +3039,7 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const ra2assets::MapCell* mc =
             map.at(ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y));
         // G-84: a shell over a cell house 0 cannot currently see is not drawn.
-        if (!world.visible_at(0, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
+        if (!world.object_visible_at(0, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
             continue;
         const int level = mc ? mc->level : 0;
         const int gx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
@@ -2999,20 +3068,77 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
 
 bool pres_target_lines();   // G-88: RA2.INI UnitActionLines (defined after g_user_settings)
 
+// W2-GA-11 [RE: RE-Q14, UnitTypeClass art read FUN_00746450 + ctor defaults
+// FUN_00745f00; UnitClass SHP draw FUN_0073b520]: SHP (artmd Voxel=no)
+// vehicles -- Terror Drone, Dolphin, Squid -- pick their frame from the
+// facing group and Walk/Standing/Firing ranges instead of an infantry
+// sequence. Filled by GameScene for roster images with Voxel=no; render-only
+// (the sim keeps the unit's existing semantics).
+struct ShpVehicleArt {
+    int facings = 8, walk = 12, fire = 0, stand = 0;
+    int start_walk = 0, start_stand = 0, start_fire = 0;
+};
+std::map<std::string, ShpVehicleArt> g_shp_vehicles;
+ShpVehicleArt shp_vehicle_art(const Ini& art, const std::string& image) {
+    auto gi = [&](const char* k, int d) {
+        const std::string v = pres_clean(art.get(image, k));
+        return v.empty() ? d : std::atoi(v.c_str());
+    };
+    ShpVehicleArt s;
+    s.walk = gi("WalkFrames", 12);
+    s.fire = gi("FiringFrames", 0);
+    s.stand = gi("StandingFrames", s.fire > 0 ? 1 : 0);
+    const bool turret = pres_lower(pres_clean(art.get(image, "Turret"))).rfind("y", 0) == 0;
+    s.facings = gi("Facings", (s.fire == 0 && !turret) ? 1 : 8);
+    s.start_walk = std::max(0, gi("StartWalkFrame", 0));
+    const int ss = gi("StartStandFrame", -1);
+    s.start_stand = ss >= 0 ? ss : (s.stand ? s.walk * s.facings : s.start_walk);
+    const int sf = gi("StartFiringFrame", -1);
+    s.start_fire = sf >= 0 ? sf : (s.fire ? (s.walk + s.stand) * s.facings : s.start_stand);
+    return s;
+}
+int shp_vehicle_frame(const ShpVehicleArt& s, const ra2engine::Unit& u, int count) {
+    // facing group: (((raw>>12)+1)>>1)+1)&7 for Facings=8, else group 0.
+    // An infantry-path unit (the sim keeps DRON there) carries the SHP facing
+    // block index directly (u.facing, the infantry-anim.md §4 order).
+    int fg = 0;
+    if (s.facings == 8) {
+        if (!u.is_vehicle) {
+            fg = ((u.facing % 8) + 8) % 8;
+        } else {
+            const int raw = static_cast<int>(u.body_facing) & 0xFFFF;
+            fg = ((((raw >> 12) + 1) >> 1) + 1) & 7;
+        }
+    }
+    const long t = g_pres_tick;
+    int f;
+    if (u.fire_flash > 0 && s.fire > 0)
+        f = s.fire * fg + s.start_fire + static_cast<int>((t / 2) % s.fire);
+    else if (u.moving())
+        f = static_cast<int>(t % std::max(1, s.walk)) + s.walk * fg + s.start_walk;
+    else if (s.stand)
+        f = s.stand * fg + s.start_stand;
+    else
+        f = s.walk * fg + s.start_walk;
+    return std::clamp(f, 0, std::max(0, count / 2 - 1));   // second half = shadows
+}
+
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
     ra2engine::set_color_world(&world);   // G-16: house colours for every sprite draw
-    // G-84: terrain is drawn in full; shroud/fog are a post-pass over every
-    // object (draw_shroud_pass below) instead of per-tile black rectangles that
-    // overdrew the already-drawn neighbours.
-    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, nullptr);
+    tc.next_frame();                      // W2-GA-P5: LRU clock (evicts only over budget)
+    // W2-GA-02: never-explored cells are not drawn at all (their cliff/slope
+    // extras no longer leak through the shroud); the SHROUD.SHP post-pass
+    // (draw_shroud_pass below) softens the edges over every object.
+    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world);   // W2-GA-02
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
     // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
     if (g_map_dressing) g_map_dressing->draw_ground(ren, tc, world, g_map_pals, cam, W, H);
+    if (g_fx && g_map_dressing) g_fx->draw_radiation(ren, world, a.map, cam, W, H);   // W2-GA-15
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -3045,11 +3171,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // down the whole frame.
     auto draw_one_unit = [&](int idx) {
         const ra2engine::Unit& u = us[idx];
-        // Shroud/Fog [RE: shroud.md §5]: hide mobile objects in cells not
-        // currently VISIBLE to the local player (house 0). Inert with shroud
+        // Shroud/Fog [RE: shroud.md §5, W2-GA-03]: hide mobile objects in cells
+        // house 0 cannot see (object_visible_at: explored, or visible with FogOfWar). Inert with shroud
         // off (visible_at returns true on empty grids) -> every existing render
         // is pixel-identical. Own units (u.house == 0) are always drawn.
-        if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) return;
+        if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) return;
         // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
         // SHP for its disguise type (draw_unit then blits it in the disguised
         // house's palette). When NOT disguised draw_image == u.image -> this is
@@ -3060,9 +3186,29 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             return;
         }
         auto it = ua.shps.find(draw_image);
+        if (it == ua.shps.end() && g_map_dressing) {
+            // Live game only: a unit type no roster registered (a cheat /
+            // trigger / captured-factory spawn) loads its SHP on first sight
+            // (conquer.mix, then conqmd.mix) instead of staying invisible.
+            static std::set<std::string> tried;
+            if (tried.insert(draw_image).second) {
+                try {
+                    static const MixFile conquer =
+                        MixFile::open_path(env_install_dir() + "ra2.mix").open_nested("conquer.mix");
+                    it = ua.shps.emplace(draw_image, load_unit_shp(conquer, draw_image)).first;
+                } catch (const std::exception&) {}
+            }
+        }
         if (it == ua.shps.end()) {
             std::cerr << "[render] no SHP loaded for image=" << draw_image << " (unit " << idx
                       << "); skipping\n";
+            return;
+        }
+        auto sv = g_shp_vehicles.find(draw_image);
+        if (sv != g_shp_vehicles.end() && u.die_time < 0.0) {   // W2-GA-11
+            ra2engine::Unit tmp = u;
+            tmp.frame = shp_vehicle_frame(sv->second, u, it->second.count());
+            ra2engine::draw_unit(ren, tc, tmp, it->second, ua.pal, cam, W, H);
             return;
         }
         ra2engine::draw_unit(ren, tc, u, it->second, ua.pal, cam, W, H);
@@ -3086,11 +3232,26 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             if (bs[i].alive && pres_building_seen(world, bs[i])) A.push_back({bkey(i), 0, i});
         std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         // G-87: map [Terrain] objects / civilian buildings sort with the buildings.
+        // W2-GA-P1: they are static, so their order is built once per dressing
+        // set and merged (buildings first on ties, as the stable sort gave).
         if (g_map_dressing) {
+            static const PresMap* s_for = nullptr;
+            static std::size_t s_n = 0;
+            static std::vector<DrawItem> s_objs;
             const auto& objs = g_map_dressing->objects();
-            for (int i = 0; i < static_cast<int>(objs.size()); ++i)
-                A.push_back({(objs[i].x + (objs[i].fw - 1) / 2.0) + (objs[i].y + (objs[i].fh - 1) / 2.0), 2, i});
-            std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+            if (s_for != g_map_dressing || s_n != objs.size()) {
+                s_for = g_map_dressing;
+                s_n = objs.size();
+                s_objs.clear();
+                for (int i = 0; i < static_cast<int>(objs.size()); ++i)
+                    s_objs.push_back({(objs[i].x + (objs[i].fw - 1) / 2.0) + (objs[i].y + (objs[i].fh - 1) / 2.0), 2, i});
+                std::stable_sort(s_objs.begin(), s_objs.end(),
+                                 [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+            }
+            std::vector<DrawItem> AB(A.size() + s_objs.size());
+            std::merge(A.begin(), A.end(), s_objs.begin(), s_objs.end(), AB.begin(),
+                       [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+            A.swap(AB);
         }
         for (int i : uorder) B.push_back({us[i].fx + us[i].fy, 1, i});
         merged.resize(A.size() + B.size());
@@ -3107,6 +3268,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
             draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
                           &world.buildings());
+            if (g_turrets && b.type >= 0 && b.type < static_cast<int>(ba->roster.size()))   // W2-GA-13
+                g_turrets->draw(ren, tc, world, b, ba->roster[static_cast<std::size_t>(b.type)].id,
+                                mc ? mc->level : 0, cam, W, H);
         } else {
             draw_one_unit(d.idx);
         }
@@ -3116,6 +3280,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // no existing demo screenshot changes.
     draw_projectiles(ren, world, a.map, cam, W, H, &tc);
     if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
+    // W2-GA-05: the map's ambient light over every world sprite (GameScene only).
+    if (g_light) g_light->pass(ren, W, H);
     // G-84: fog + shroud over every object, under the HUD bars.
     draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
@@ -3183,12 +3349,12 @@ int run_screenshot(const std::string& out_path) {
     // ra2.mix opened ONCE and shared by both loaders; the buffer stays
     // resident for the run (accepted tradeoff, see the load_assets comment).
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -3842,7 +4008,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
                         radar_rect.y + static_cast<int>(y * sy),
                         std::max(1, static_cast<int>(sx)), std::max(1, static_cast<int>(sy))};
             // terrain tint (dim if fogged, brighter if visible)
-            Uint8 g = world.visible_at(0, x, y) ? 120 : 60;
+            Uint8 g = (!world.fog_of_war() || world.visible_at(0, x, y)) ? 120 : 60;   // W2-GA-03
             SDL_SetRenderDrawColor(ren, 30, g, 30, 255);
             SDL_RenderFillRect(ren, &px);
         }
@@ -3853,7 +4019,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
     // the building/unit sprites use.
     for (const ra2engine::Unit& u : world.units()) {
         if (!u.alive) continue;
-        if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) continue;
+        if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) continue;
         SDL_Rect bp{radar_rect.x + static_cast<int>(u.cell_x * sx),
                     radar_rect.y + static_cast<int>(u.cell_y * sy), 2, 2};
         const ra2assets::Rgba col = world.house_palette(ba.unit_pal, u.house)[24];
@@ -4218,6 +4384,8 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
 // built-in defaults -- so the byte-identity gates cannot see a user's settings.
 ra2engine::Settings* g_user_settings = nullptr;
 bool pres_target_lines() { return g_user_settings ? g_user_settings->unit_action_lines : true; }
+bool pres_score_shuffle() { return g_user_settings ? g_user_settings->is_score_shuffle : false; }   // W2-GA-21
+bool pres_score_repeat() { return g_user_settings ? g_user_settings->is_score_repeat : false; }
 
 // <SDL pref dir>/RA2.INI: %APPDATA%\ra2engine\RA2\ on Windows, the app's
 // internal (always writable) files dir on Android. Never the install dir. Empty
@@ -4334,6 +4502,11 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
     ra2engine::EventSource& events = src ? *src : static_cast<ra2engine::EventSource&>(plat);
     Uint32 prev = SDL_GetTicks();
     int frame = 0;
+    // W2-GA-P6: frame pacing by deadline (60 Hz) instead of a fixed 16 ms
+    // sleep AFTER the frame's work; with the vsync'd renderer present()
+    // already waits, so this only sleeps the part of the budget left.
+    Uint64 frame_start = SDL_GetPerformanceCounter();
+    const double perf_ms = 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
     while (scene && !scene->wants_quit()) {
         if (hooks && !hooks->begin(frame, *scene)) return 0;
         ra2engine::InputEvent ev;
@@ -4359,7 +4532,11 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
             scene.reset(nx);
             if (hooks) hooks->transition(frame);
         }
-        if (fixed_dt <= 0.0) SDL_Delay(16);
+        if (fixed_dt <= 0.0) {
+            const double used = (SDL_GetPerformanceCounter() - frame_start) * perf_ms;
+            if (used < 16.0) SDL_Delay(static_cast<Uint32>(16.667 - used));
+            frame_start = SDL_GetPerformanceCounter();
+        }
         ++frame;
     }
     if (hooks) hooks->quit(frame, scene.get(), "scene wants_quit");
@@ -4785,7 +4962,7 @@ public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
         : no_audio_(no_audio),
           dir_(env_install_dir()),
-          ra2_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "ra2.mix"))),
+          ra2_(ra2assets::MixFile::open_path(dir_ + "ra2.mix")),
           // [RE: maps.md §2/§7 rule 2] Load the config's chosen multiplayer map
           // when one is set; an EMPTY map_file keeps the engine's historical
           // default selection, so nothing that does not pick a map changes.
@@ -4803,7 +4980,7 @@ public:
                ra2engine::set_sidebar_style(std::string(g_sidebar_mix) == "sidec02.mix" ? 1 : 0),   // W2-UI-08
                load_unit_assets(dir_, ra2_))),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
-          language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
+          language_(ra2assets::MixFile::open_path(dir_ + "language.mix")),
           // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
           // rules_ini_/art_ini_ are members constructed before rules_/art_ (mirrors
           // the old run_interactive's named-local Inis kept alive for the whole run).
@@ -4856,6 +5033,7 @@ public:
             lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
         }
         g_gf_spawned.clear();
+        start_vxl_prewarm();   // W2-GA-P4
         // gF G-23: clicking the selected MCV deploys it (ACTION_SELF, B's hook).
         input_.set_deploy_check([](const ra2engine::Unit& u) { return u.deploys_into >= 0; });
 
@@ -4870,12 +5048,24 @@ public:
                     try {
                         ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
                         ua_.anims.emplace(d.combat.image, anim_from_art(art_, d.combat.image));
+                        // W2-GA-11: Voxel=no vehicle art (DRON) draws by facing/walk frames.
+                        if (pres_lower(pres_clean(art_ini_.get(d.combat.image, "Voxel"))).rfind("n", 0) == 0)
+                            g_shp_vehicles[d.combat.image] = shp_vehicle_art(art_ini_, d.combat.image);
                     } catch (const std::exception& ex) {
                         std::cerr << "[unit-roster] infantry SHP " << d.combat.image
                                   << " unavailable (" << ex.what() << ")\n";
                     }
                 }
         } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+        // W2-GA-11: every [VehicleTypes] entry whose art says Voxel=no (DRON,
+        // DLPH, SQD) draws with the SHP-vehicle frame rule, roster or not.
+        for (const auto& kv : rules_ini_.section("VehicleTypes")) {
+            const std::string id = pres_upper(pres_clean(kv.second));
+            if (id.empty()) continue;
+            const std::string img = pres_upper(rules_.image(id));
+            if (pres_lower(pres_clean(art_ini_.get(img, "Voxel"))).rfind("n", 0) == 0 && !g_shp_vehicles.count(img))
+                g_shp_vehicles[img] = shp_vehicle_art(art_ini_, img);
+        }
 
         // [G-60/G-62/G-64] The real-play AI: teams + triggers + side-correct
         // catalogs for every AI slot (after the infantry SHP/anim registration
@@ -4989,9 +5179,16 @@ public:
         apply_loaded(f);
     }
     ~GameScene() override {
+        prewarm_stop_ = true;
+        if (prewarm_.joinable()) prewarm_.join();
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
-        if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
+        if (g_map_dressing == &map_dressing_) { g_map_dressing = nullptr; g_smudge_hook = nullptr; }
         if (g_radar == &radar_) g_radar = nullptr;
+        if (g_turrets == &turrets_) g_turrets = nullptr;
+        if (g_light == &light_) {
+            g_light = nullptr;
+            ra2engine::set_terrain_level_palettes(nullptr);
+        }
     }
 
     static ra2engine::SkirmishConfig config_of(const ra2engine::save::SaveFile& f) {
@@ -5274,11 +5471,17 @@ public:
                 !cfg_.campaign_map.empty()
                     ? MapSelection{camp::mix_for_map(cfg_.campaign_map), 0u, camp::lower(cfg_.campaign_map)}
                     : cfg_.map_file.empty() ? MapSelection{} : MapSelection{"multimd.mix", 0u, cfg_.map_file};
-            MixFile maps = MixFile::open(ra2assets::read_file(dir_ + sel.mix));
+            MixFile maps = MixFile::open_path(dir_ + sel.mix);
             const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
             if (!me) return;
             const auto raw = maps.read(*me);
             const Ini map_ini = Ini::parse(std::string(raw.begin(), raw.end()));
+            // W2-GA-05: the map's [Lighting] (tiles baked per height + ambient).
+            light_.load(map_ini, a_.pal);
+            g_light = &light_;
+            turrets_.load(ra2_, dir_, rules_ini_, ba_, ba_.unit_pal);   // W2-GA-13
+            g_turrets = &turrets_;
+            ra2engine::set_terrain_level_palettes(light_.active ? &light_.level_pals : nullptr);
             map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
             if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
                 int neutral = -1;
@@ -5311,6 +5514,7 @@ public:
             map_pals_[2] = &ba_.unit_pal;
             for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
             g_map_dressing = &map_dressing_;
+            g_smudge_hook = [this](bool crater, double fx, double fy) { map_dressing_.add_smudge(crater, fx, fy); };
         } catch (const std::exception& ex) {
             std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
         }
@@ -5877,6 +6081,34 @@ private:
     PresMap              map_dressing_;               // G-87
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
+    PresLight light_;   // W2-GA-05
+    PresTurrets turrets_;   // W2-GA-13
+    // W2-GA-P4: every roster vehicle x every house colour rasterised on a
+    // worker thread at game start instead of in the first frame each colour's
+    // tank appears (51-69 ms per set at -O0, 9-20 ms at -O2).
+    std::thread prewarm_;
+    std::atomic<bool> prewarm_stop_{false};
+    void start_vxl_prewarm() {
+        if (!world_.houses_configured()) return;
+        std::vector<int> keys;
+        for (int h = 0; h < world_.house_count(); ++h) {
+            const int k = 10 + world_.house_color(h);
+            if (std::find(keys.begin(), keys.end(), k) == keys.end()) keys.push_back(k);
+        }
+        const std::vector<const VehicleAssets*> list = vlist_;
+        prewarm_ = std::thread([this, keys, list]() {
+            const auto t0 = std::chrono::steady_clock::now();
+            int n = 0;
+            for (int k : keys)
+                for (const VehicleAssets* va : list) {
+                    if (prewarm_stop_) return;
+                    if (va) { vxl_prewarm(*va, k); ++n; }
+                }
+            std::cerr << "[vxl-prewarm] " << n << " sets in "
+                      << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()
+                      << " ms (worker thread)\n";
+        });
+    }
     std::vector<std::pair<double, double>> prev_audio_state_;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
@@ -6067,7 +6299,7 @@ struct MenuArtStore {
 std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
     auto ma = std::make_unique<MenuAudio>();
     try {
-        MixFile theme = MixFile::open(read_file(dir + "theme.mix"));
+        MixFile theme = MixFile::open_path(dir + "theme.mix");
         const MixEntry* e = theme.find("grinder.wav");
         if (!e) { std::cerr << "[menu-music] grinder.wav not in theme.mix\n"; return ma; }
         std::vector<uint8_t> bytes = theme.read(*e);
@@ -6091,7 +6323,7 @@ std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
         try {
             Ini snd_ini = load_ini_from_ra2md(dir, "soundmd.ini");
             ra2assets::Sounds sounds = ra2assets::Sounds::load(snd_ini);
-            MixFile language = MixFile::open(read_file(dir + "language.mix"));
+            MixFile language = MixFile::open_path(dir + "language.mix");
             MixFile audio_mix = language.open_nested("audio.mix");
             const MixEntry* ie = audio_mix.find("audio.idx");
             const MixEntry* be = audio_mix.find("audio.bag");
@@ -6161,7 +6393,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
         }
     };
     try {
-        MixFile ra2 = MixFile::open(read_file(dir + "ra2.mix"));
+        MixFile ra2 = MixFile::open_path(dir + "ra2.mix");
         try { MixFile neutral = ra2.open_nested("neutral.mix");
               store.bg = try_shp(neutral, "mnscrnl.shp");
               // [Task 1] True-design shell chrome (loaded, not yet composited).
@@ -6264,7 +6496,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     // parse error) leaves bink_dec null -> draw_shell falls back to the static
     // mnscrns radar map (partial-install safe, never crashes).
     try {
-        MixFile language = MixFile::open(read_file(dir + "language.mix"));
+        MixFile language = MixFile::open_path(dir + "language.mix");
         if (const MixEntry* be = language.find(std::string("ra2ts_s.bik"))) {
             store.bink_file = std::make_unique<ra2assets::BinkFile>(
                 ra2assets::BinkFile::parse(language.read(*be)));
@@ -7135,7 +7367,7 @@ int run_demo_move(int goal_x, int goal_y) {
     const std::string end_png = scratch + "task12_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 1);
@@ -7229,7 +7461,7 @@ int run_demo_move(int goal_x, int goal_y) {
 // stranded. Prints the numbers; exits 0 only if both checks hold.
 int run_demo_retarget(int x1, int y1, int x2, int y2) {
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 1);
@@ -7309,7 +7541,7 @@ int run_demo_group(int n, int gx, int gy) {
     const std::string end_png = scratch + "demo_group_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, n);
@@ -7712,7 +7944,7 @@ int run_demo_tank() {
     const std::string end_png = scratch + "demo_tank_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
@@ -7804,7 +8036,7 @@ int run_demo_combat(int seed) {
     const std::string end_png = scratch + "demo_combat_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
 
@@ -8131,11 +8363,11 @@ int run_demo_base() {
     const std::string end_png = scratch + "demo_base_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -8479,11 +8711,11 @@ int run_demo_econ() {
     const std::string end_png = scratch + "demo_econ_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -8784,11 +9016,11 @@ int run_demo_prod() {
     const std::string end_png = scratch + "demo_prod_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -9078,11 +9310,11 @@ int run_demo_techtree() {
     const std::string end_png = scratch + "demo_techtree_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -9286,11 +9518,11 @@ int run_demo_ai_base() {
     const std::string end_png = scratch + "demo_ai_base_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -9580,11 +9812,11 @@ int run_demo_ai_team() {
     const std::string end_png = scratch + "demo_ai_team_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -9934,11 +10166,11 @@ int run_demo_ai_trigger() {
     const std::string end_png = scratch + "demo_ai_trigger_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -10242,7 +10474,7 @@ int run_demo_transport() {
     const std::string end_png = scratch + "demo_transport_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     TransportAssets ta = load_transport_assets(dir, ra2, ua.pal);
@@ -10523,7 +10755,7 @@ int run_demo_aircraft() {
     const std::string end_png = scratch + "demo_aircraft_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     AircraftAssets aa = load_aircraft_assets(dir, ra2, ua.pal);
@@ -10829,7 +11061,7 @@ int run_demo_naval() {
     const std::string end_png = scratch + "demo_naval_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     NavalAssets na = load_naval_assets(dir, ra2, ua.pal);
@@ -11095,7 +11327,7 @@ int run_demo_superweapon() {
     const std::string end_png = scratch + "demo_superweapon_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;           // no voxel units in this gate
@@ -11429,7 +11661,7 @@ int run_demo_capture() {
     const std::string end_png = scratch + "demo_capture_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
@@ -11515,6 +11747,10 @@ DemoShroudResult simulate_shroud(Assets& a, UnitAssets& ua,
     DemoShroudResult r;
     ra2engine::World world = build_world(a, ua, 0);    // count=0 -> no pre-spawned units
     world.enable_shroud(true);
+    // W2-GA-03: this gate exercises the FogOfWar=yes mechanics (stage 4: a
+    // fogged enemy is not seen); fog is now an explicit scenario flag, off by
+    // default as in the original, so the gate opts in.
+    world.set_fog_of_war(true);
 
     const int gw = world.grid_w(), gh = world.grid_h();
     auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };
@@ -11706,7 +11942,7 @@ int run_demo_shroud() {
     const std::string end_png = scratch + "demo_shroud_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
@@ -12097,7 +12333,7 @@ int run_demo_multihouse() {
     const std::string end_png = scratch + "demo_multihouse_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
@@ -12300,11 +12536,11 @@ int run_demo_skirmish() {
     const std::string end_png = scratch + "demo_skirmish_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -12778,7 +13014,7 @@ int run_demo_maps() {
     const std::string end_png   = scratch + "demo_maps_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
 
     // The catalog (multimd.mix + langmd.mix) -- opened HERE, in the gate, never
     // inside load_assets (maps.md §7 rule 5).
@@ -12794,7 +13030,7 @@ int run_demo_maps() {
     Assets a = load_assets(dir, ra2, MapSelection{"multimd.mix", 0u, kDemoMapsFile});
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -13314,14 +13550,14 @@ int run_demo_triggers() {
     const std::string end_png = scratch + "demo_triggers_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);   // DEFAULT selection: sov07tmd.map
     // The same map entry, re-read as INI for its trigger sections (gate-local;
     // load_assets/MapFile are untouched).
     ra2assets::Ini map_ini = ra2assets::Ini::parse("");
     {
         const MapSelection sel;
-        MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+        MixFile maps = MixFile::open_path(dir + sel.mix);
         const MixEntry* me = maps.find(sel.id);
         if (!me) {
             std::cerr << "[demo-triggers] FAILED: gate map entry not found\n";
@@ -13332,7 +13568,7 @@ int run_demo_triggers() {
     }
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -13401,11 +13637,11 @@ int run_demo_roster() {
     const std::string end_png = scratch + "demo_roster_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -13803,11 +14039,11 @@ int run_demo_roster2() {
     const std::string end_png = scratch + "demo_roster2_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -14262,11 +14498,11 @@ int run_demo_repair() {
     const std::string end_png = scratch + "demo_repair_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -14592,7 +14828,7 @@ int run_demo_projectile() {
     const std::string end_png = scratch + "demo_projectile_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets rhino = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
@@ -15088,11 +15324,11 @@ int run_demo_abilities() {
     const std::string end_png = scratch + "demo_abilities_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -15556,7 +15792,7 @@ int run_demo_veterancy() {
     const std::string end_png = scratch + "demo_veterancy_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -15932,11 +16168,11 @@ SlResult sl_run_triggers(Assets& a, UnitAssets& ua, const TriggerDemoTables& t,
 
 int run_demo_saveload() {
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);   // DEFAULT selection: sov07tmd.map
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -15967,7 +16203,7 @@ int run_demo_saveload() {
     ra2assets::Ini map_ini = ra2assets::Ini::parse("");
     {
         const MapSelection sel;
-        MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+        MixFile maps = MixFile::open_path(dir + sel.mix);
         const MixEntry* me = maps.find(sel.id);
         if (!me) {
             std::cerr << "[demo-saveload] FAILED: gate map entry not found\n";

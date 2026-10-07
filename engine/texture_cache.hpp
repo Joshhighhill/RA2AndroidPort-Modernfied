@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -41,9 +42,42 @@ public:
 
     void* peek(const std::string& key) const;
 
+    // --- W2-GA-P5: bounded cache -------------------------------------------
+    // Every lookup stamps the entry with the current frame. next_frame() (the
+    // game calls it once per rendered frame) advances the clock and, when the
+    // estimated texture bytes exceed the budget, destroys the least-recently
+    // used UNPINNED entries that were not touched in the last two frames, so
+    // a pointer fetched this frame is never freed under its caller. Pinned
+    // entries (pin(), or the get_pinned_* uploads) are never evicted: use them
+    // for textures whose pointer is cached across frames (terrain draw list).
+    void next_frame();
+    void set_budget_bytes(std::size_t b) { budget_ = b; }
+    std::size_t bytes() const { return bytes_; }
+    std::size_t size() const { return cache_.size(); }
+    std::size_t evicted() const { return evicted_; }
+    void pin(const std::string& key);
+    // Unique per TextureCache instance (never reused, unlike the address), so
+    // a cache of texture pointers can tell it is talking to the same cache.
+    std::uint64_t instance_id() const { return id_; }
+    void* renderer() const { return renderer_; }
+
 private:
+    struct Entry {
+        void* tex = nullptr;              // SDL_Texture*
+        std::size_t bytes = 0;
+        mutable std::uint64_t used = 0;   // frame of last lookup
+        bool pinned = false;
+    };
+    void* insert(const std::string& key, void* tex, int w, int h);
+    void* touch(const Entry& e) const { e.used = frame_; return e.tex; }
+
     void* renderer_;  // SDL_Renderer*, non-owning
-    std::unordered_map<std::string, void*> cache_;  // key -> SDL_Texture*
+    std::unordered_map<std::string, Entry> cache_;  // key -> SDL_Texture*
+    std::uint64_t id_ = 0;
+    std::uint64_t frame_ = 1;
+    std::size_t bytes_ = 0;
+    std::size_t budget_ = std::size_t(384) << 20;   // ~384 MB of RGBA
+    std::size_t evicted_ = 0;
 };
 
 }  // namespace ra2engine

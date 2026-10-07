@@ -45,15 +45,11 @@ private:
             case 19:   // PlaySoundEffect (global)
                 if (!r.name.empty()) pres_.sound().play(r.name, 0.0, "trigger sound");
                 break;
-            case 99: {   // PlaySoundAtWaypoint: positional from the view centre
+            case 99: {   // PlaySoundAtWaypoint: panned/attenuated from the view (play_at)
                 int x = 0, y = 0;
-                double d = 0.0;
-                if (campaign_->waypoint_xy(r.waypoint, x, y)) {
-                    const double vcx = playfield_w_ / 2.0 - cam_.x, vcy = kWinH / 2.0 - cam_.y;
-                    const double sx = (x - y) * 30.0 - vcx, sy = (x + y) * 15.0 - vcy;
-                    d = std::max(std::abs(sx), 2.0 * std::abs(sy)) / 60.0;
-                }
-                if (!r.name.empty()) pres_.sound().play(r.name, d, "trigger sound at waypoint");
+                if (r.name.empty()) break;
+                if (campaign_->waypoint_xy(r.waypoint, x, y)) pres_.sound().play_at(r.name, x, y, "trigger sound at waypoint");
+                else pres_.sound().play(r.name, 0.0, "trigger sound");
                 break;
             }
             case 20: {   // PlayMusicTheme

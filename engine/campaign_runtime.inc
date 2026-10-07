@@ -48,7 +48,7 @@ Ini load_ra2_local_ini(const MixFile& ra2, const std::string& name) {
 // RA2 rules.ini: the expand01.mix patch copy wins over ra2.mix/local.mix (RE §1/§6).
 Ini load_ra2_rules_ini(const std::string& dir, const MixFile& ra2) {
     try {
-        MixFile ex = MixFile::open(ra2assets::read_file(dir + "expand01.mix"));
+        MixFile ex = MixFile::open_path(dir + "expand01.mix");
         if (const MixEntry* e = ex.find(std::string("rules.ini"))) {
             const auto raw = ex.read(*e);
             return Ini::parse(std::string(raw.begin(), raw.end()));
@@ -67,7 +67,7 @@ std::string lower(std::string s) {
     return s;
 }
 Ini load_map_ini(const std::string& dir, const std::string& map) {
-    MixFile maps = MixFile::open(ra2assets::read_file(dir + mix_for_map(map)));
+    MixFile maps = MixFile::open_path(dir + mix_for_map(map));
     const MixEntry* e = maps.find(lower(map));
     if (!e) throw std::runtime_error("campaign map not found: " + map);
     const auto raw = maps.read(*e);
@@ -88,7 +88,7 @@ const ra2assets::CsfStrings* csf(const std::string& dir) {
     } catch (const std::exception&) {}
     if (!s) {
         try {
-            MixFile lang = MixFile::open(ra2assets::read_file(dir + "language.mix"));
+            MixFile lang = MixFile::open_path(dir + "language.mix");
             if (const MixEntry* e = lang.find(std::string("ra2.csf"))) {
                 const auto raw = lang.read(*e);
                 s = std::make_unique<ra2assets::CsfStrings>(
@@ -584,6 +584,13 @@ private:
             else w_.grant_credits_for_test((int)i, credits);
         }
         w_.enable_shroud(true);
+        // W2-GA-03 hand-off: the scenario's own FogOfWar flag ([Basic], every
+        // RA2 campaign map says no).
+        {
+            std::string fog = camp::up(camp::trim_comment(map_.get("Basic", "FogOfWar", "")));
+            if (fog.empty()) fog = camp::up(camp::trim_comment(map_.get("Map", "FogOfWar", "no")));
+            w_.set_fog_of_war(!fog.empty() && (fog[0] == 'Y' || fog[0] == 'T' || fog[0] == '1'));
+        }
         destroyed_units_.assign(house_names_.size(), 0);
         destroyed_buildings_.assign(house_names_.size(), 0);
         last_built_.assign(house_names_.size(), {-1, -1, -1, -1});

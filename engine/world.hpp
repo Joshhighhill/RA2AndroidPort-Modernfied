@@ -1251,6 +1251,19 @@ public:
     // no-op). enable(false) is not needed by any gate (left as a hard reset).
     void enable_shroud(bool on);
     bool shroud_enabled() const { return shroud_any_; }
+    // W2-GA-03 FogOfWar [RE: presentation.md §4 FUN_00480100 draws FOG.SHP only
+    // when Scen->Flags & 0x1000; rulesmd [General] FogOfWar=no, MP default no;
+    // shroud.md §4]. OFF by default: an explored cell keeps showing everything
+    // in it. When ON, objects need a currently-VISIBLE cell. NOT hashed.
+    void set_fog_of_war(bool on) { fog_of_war_ = on; }
+    bool fog_of_war() const { return fog_of_war_; }
+    // The ONE object-visibility query (drawing, cursor, targeting, AI): can
+    // house h see an object standing in cell (x,y)? Fog off -> the cell is
+    // explored (mapped); fog on -> currently visible. Inert (true) with the
+    // shroud off, like explored_at/visible_at.
+    bool object_visible_at(int house, int x, int y) const {
+        return fog_of_war_ ? visible_at(house, x, y) : explored_at(house, x, y);
+    }
 
     // --- Projectile phase (P2) [RE: projectile.md] ---------------------------
     // Open the projectile firewall: from now on a shot whose Unit::w_proj
@@ -1696,6 +1709,7 @@ private:
     // enable_shroud).
     std::vector<std::vector<std::uint8_t>> explored_;
     std::vector<std::vector<std::uint8_t>> visible_;
+    bool fog_of_war_ = false;   // W2-GA-03: FogOfWar scenario flag (default off)
     bool shroud_any_ = false;   // the step_visibility firewall (opened by
                                 // enable_shroud); false in every existing gate.
     // SpySat/GPS latch per house [RE: shroud.md §7A]. Recomputed each tick from

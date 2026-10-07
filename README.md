@@ -2370,6 +2370,13 @@ cmake -S . -B build -G Ninja
 cmake --build build
 ```
 
+An unset `CMAKE_BUILD_TYPE` now means **RelWithDebInfo** (`-O2 -g`; W2-GA-P2 —
+the old default was unoptimised `-O0`, 2.5–3.5x slower in terrain draw, IMA
+decode and voxel rasterising). For a shipping build pass
+`-DCMAKE_BUILD_TYPE=Release` (`-O3`, no debug info); `-DCMAKE_BUILD_TYPE=Debug`
+gets `-O0` back. Every gate hash is identical across these build types
+(re-verified on the wave-2 gfx branch).
+
 Run tests (PowerShell — the compiled test exe must be launched from PowerShell,
 not Git Bash, on this Windows setup; set `RA2_INSTALL_DIR` to exercise the
 real-asset tests, otherwise they skip cleanly):
@@ -2687,7 +2694,7 @@ the P6 Roster Breadth gate.
 | `--demo-triggers` | `trigger_hash=b8cd267e98f5e002` | `deterministic=yes lines=76`; **re-pinned by gap F (G-95)**: bisected on the first-parent merges -- P5 84b8217 prints the old `20347f4dfa462eb4` with `placed structures=66`, P6 7e754d5 prints `02f4226456db131d` with 70, gap A 5948a41 (and master fddbcb3, and gF) print `b8cd267e98f5e002` with 82; the witness diffs ONLY in that placed-structure count and the end-of-run building total (the bigger rosters let `place_map_objects` resolve more of `sov07tmd`'s `[Structures]`), every trigger fire/action line is identical; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=fb2ce78432058b4a` (final-verification re-pin, was `b23b7d9924a99c85`: moved twice inside gap C 477ab70 -- b3ade7e Ini inline-`;` comment cut (RC-5) makes `GAWEAT Image=GAWETH ;GEF ...` resolve, GAWEAT art-present 3x3 (14 art-present, was 13) -> `72ceaad0c333e4bc`; then 1d074af G-42 speed scale -- ORCA/BEAG `speed_lpf` 179.2 -> 56.0, fire f=77/81, land f=152/160, `Reloaded` f=422/430 (+270)) | `deterministic=yes lines=74`; 15 appended buildings (14 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=77/81, land f=152/160, `Reloaded` f=422/430 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
-| `--demo-saveload` | `saveload_hash=7fde8a2b895cf6ae` (G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-saveload` | `saveload_hash=653c22b544488e64` (W2-GA-03 re-pin, was `7fde8a2b895cf6ae`: save v9 serialises the FogOfWar flag + fog-off targeting in the skirmish scenario; witnesses unchanged. Earlier: G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
 | `--demo-campaign` | `campaign_hash=b1d3c453c416e4fb` (combined gap D + gap F re-pin) | `deterministic=yes lines=737`; **combined re-pin**: gap D (`17830b0f7c233223`, lines 737: campaign enemy houses build out from ProductionBegins/AI triggers) plus gap F: actions 108 executed (logged `CreateCrate ... -> skipped` in the gate, whose World has no crate system), ALL01 reinforcement ships on water instead of the nearest land cell (fewer EnteredBy raises), death raises in the recovered order 7, 48, 29; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
@@ -3398,3 +3405,51 @@ output in `D:\ra2-re\w2fix-uiout\`.
   * the credits tally colour and roll rate;
   * the tab flash on a new cameo;
   * the score formula.
+
+## In-world graphics, audio and render performance (wave-2 W2-GA fixes)
+
+The per-row status, the RE answers and the before/after perf numbers are in
+`docs/gap/wave2/05-gfx-audio-perf.md` §6. In short:
+
+- **Terrain and visibility.** Never-explored cells (cliff and slope extras
+  included) are not drawn, so the layout no longer leaks through the shroud.
+  Fog of war is a scenario flag that is **off** by default (RE-Q3:
+  `IsLocationFogged` is a stub, and FogOfWar comes from the MP options).
+  `World::object_visible_at` is the single query for drawing, picking,
+  auto-acquire and the radar: with fog off, an explored cell shows everything
+  in it. Omitted IsoMapPack5 cells are clear ground (RE-Q5). Ore and gems use
+  the theater's own art. The map's `[Lighting]` is applied (RE-Q7).
+- **Map dressing and units.** Ore mines draw in the unit palette and animate.
+  Trees and civilian buildings cast shadows. High-bridge decks are drawn.
+  Rocks and bridges use the iso palette. The Guardian GI art comes from
+  conqmd.mix. SHP vehicles (Terror Drone) use the RE-Q14 frame rule. Ground
+  vehicles cast a voxel shadow. Defence turrets are drawn (`TurretAnim`
+  voxels). The war factory opens its door, and the superweapon buildings show
+  their charge anims. Tesla bolts and Prism beams are drawn, explosions leave
+  craters and scorch marks, and radiation glows.
+- **Audio.** The RA2 `theme.ini` / `theme.mix` playlist uses the recovered
+  `Next_Song` and RA2.INI shuffle/repeat. Music is **streamed** on a worker
+  thread (`engine/music_stream.*`). Output is a stereo SDL callback sink with
+  the RE-Q11 pan law, live re-attenuation and a soft limiter. VShift, FShift,
+  ALL, ATTACK, DECAY and LOOP are supported. Added sounds: move-start, crush
+  and water impact. Each superweapon type now has its own Ready, Detected and
+  Launched EVA lines, and there are ore-miner and ally under-attack lines.
+- **Performance.** The terrain draw list is cached per map (XMP27T8: 39 ms →
+  0.1 ms). The shroud, ore and radiation passes use visible-row iteration.
+  `MapFile::at` is O(1). MIX archives are read by file offset with nested
+  views (no whole-archive reads, peak memory 724 → ~330 MB). `TextureCache`
+  has an LRU budget with pinning. Voxel colour sets are prewarmed on a worker
+  thread. The renderer uses vsync with deadline pacing. The default build is
+  RelWithDebInfo.
+- **Harness.** `--scene-shot --script tanks|fight` works with the MCV start.
+  New options: `--view X,Y` and `--reveal`. New play scripts:
+  `scripts/play/gfx-vis.play` (base, units, door, Patriot) and
+  `scripts/play/gfx-fx.play` (bolts, beams, craters).
+
+Gate re-pin: `--demo-saveload` `7fde8a2b895cf6ae` → `653c22b544488e64`.
+Causes: save format v9 serialises the FogOfWar flag (one more byte in each
+save, which changes both scenario digests), and the skirmish scenario now
+targets explored cells with fog off. Every witness count is unchanged:
+N=123, 13 launches, 8 produced, 149 ability events, 1 rad site. Every other
+gate is byte-identical, at `-O0` and at `-O2`; `--demo-shroud` opts into
+FogOfWar for its fogged-enemy stage.
