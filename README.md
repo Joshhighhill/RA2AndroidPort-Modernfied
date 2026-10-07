@@ -3789,3 +3789,33 @@ saved.
   scripts: 60/63 pass; `probe-bridge`, `probe-flow` and `robust-missing` fail
   identically on master (pre-existing). The fx scripts also pass at
   `RA2_PLAY_HZ=30` (effects step on the World frame, not the render frame).
+
+## Object draw positions (wave-4 W4-FIX-POS)
+
+Details and evidence: `docs/gap/wave4/01-positioning.md` (the recovered draw
+formulas and the "W4-FIX-POS status" section), `docs/re/building-render.md` §2
+(rewritten) and the `pos-*` `--play` scripts. Every SHP is a centred blit; only
+the anchor differs per object kind (shared helpers in `engine/iso_project.*`):
+
+- **Buildings and everything attached to them** draw with the canvas centred on
+  the **top vertex of the foundation's origin cell**
+  (`ra2engine::building_draw_point`, original `FUN_00459ee0` /
+  RA2 `FUN_00453c70` = `Location - (128,128)`): the main image and shadow, bib,
+  ActiveAnim/Idle/Production/Super slots, doors, damage fires (`FUN_0043c050`),
+  rubble, the DestroyAnim ruin, voxel turrets (`TurretAnimX/Y`) and the
+  civilian/landmark map dressing. The old foundation-centre anchor drew every
+  building `((fw-fh)*15, (fw+fh)*7.5)` px low (the Statue of Liberty 45 px, the
+  White House 60 px). The depth key stays the foundation centre.
+- **FX anims use the real terrain level** (impacts, building explosions,
+  superweapon anims, defence muzzles/beams, the DestroyAnim ruin); anims apply
+  their art `YDrawOffset`.
+- **Overlays, ore, gems, crates**: the cell centre plus the original's Y offset
+  (`overlay_y_offset`: -12 Wall/Tiberium/Crate, -1 Railroad, -16 high-bridge
+  cells and -31 for OverlayData 9..17). Bridges join their roads, walls meet
+  their towers, ore sits in its own cell.
+- **Smudges**: the cell's top vertex. Ore-mine (`SpawnsTiberium`) shadows are
+  lifted 16 px with the image.
+- `RA2_POS_DBG=1` outlines each building foundation and marks its draw point;
+  `cheat view_key PREFIX [n]` centres on a `terr:`/`civ:`/`ovl:`/`smudge:` map
+  object. Scripts: `pos-all01`, `pos-all03`, `pos-all08`, `pos-all12`,
+  `pos-sov05` (screenshots to read against `docs/gap/wave4/01-evidence/ref`).
