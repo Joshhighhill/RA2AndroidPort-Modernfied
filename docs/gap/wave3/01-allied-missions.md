@@ -485,3 +485,15 @@ The 03 report's §3.1 also applies to every animation that does work here: anims
   to the cell LightConvert, and whether `Powered=true` lamps go dark without power (W2-GA-05).
 - **RE-W3-4** `Apply100Damage` (`FUN_006dfa00`): the anim used for its five C4Warhead explosions (the warhead's
   `AnimList`?) and their spread around the waypoint.
+
+## W3-FIX-A status (branch `w3fix-assets`)
+
+| RC | Status | Evidence (`scripts/play/art-*.play`, shots under `play-out/<script>/`) |
+|---|---|---|
+| RC-1a campaign art hard-wired TEMPERATE | FIXED | `art-all02` (snow houses + chapel), `art-all10` (cottages), `art-all12` (Kremlin palace/walls) |
+| RC-1b MIX scope (isogen, `<ext>.mix`) + `Palette=lib` | FIXED | `art-all01` statue (green), `art-all03`/`art-all06` White House + memorials, `art-all04` Chicago, `art-all08` Arch, `art-all12` St Basil's, `art-all10` ammo crates |
+| RC-1c munge ignores `NewTheater` | OPEN | see 03 status (RE-W3-1) |
+| RC-2 InvisibleInGame + light sources | FIXED | `art-all01`/`art-all03` (`art.invisible`), ALL03 night light pools |
+| RC-5 water-bound map structures | FIXED | `art-all07` (player GAYARD), `art-all11` (GAYARD + 2 NAYARD), `art-all04` (NAYARD) |
+| RC-6 campaign SHP units | FIXED | `art-all11` (4 DLPH, 4 SQD placed; squid submerged as the original), `art-all12` (2 DRON) |
+| RC-3/4/7/9/10 animations, RC-8 trigger visuals | fix agents B / C | — |

@@ -3630,3 +3630,52 @@ The player guide is `docs/INSTALL.md`.
   - Version from `VERSION` (window title / `--version`: `0.9.0+g<hash>`).
   - `LICENSE`, `THIRD_PARTY_NOTICES.md`.
   - `-Wall -Wextra` with 0 warnings; `-ffp-contract=off` on both builds.
+
+## Art and asset loading (wave-3 W3-FIX-A)
+
+Details and evidence: `docs/gap/wave3/03-asset-anim-systems.md` (status
+section "W3-FIX-A"), the RE note `docs/re/asset-search.md`, and the `art-*`
+`--play` scripts in `scripts/play/`.
+
+- **One MIX search list per theater** (`ra2assets::AssetFS`,
+  `src/asset_fs.cpp`; engine glue `engine/asset_search.inc`). The original
+  resolves every file with one global lookup over all opened archives, first
+  opened first (RA2 `game.exe` `FUN_005952f0` appends, `FUN_00595aa0` walks
+  head to tail). The recovered RA2 load order: `expand99..00`, `ra2`,
+  `cache`, `local`, `ecache*`/`elocal*`, `conquer`, then per theater
+  `generic` (not for SNOW), `<theater>`, `<ext>` (`tem/sno/urb`),
+  `iso<theater>`, `isogen`, `neutral`. The YR `ra2md.mix` archives follow as
+  a fallback tail [RE-FALLBACK] so YR-only art (the civilian buildings of the
+  default lobby map `hillbtwn`) draws without overriding RA2 art. Buildings
+  (roster, campaign, garrison extras), map dressing, building and
+  `[Animations]` anims (incl. `Theater=yes` debris/waterfall art), infantry
+  and SHP-vehicle bodies, and voxels all resolve through it.
+- **Theater-aware campaign buildings**: `camp::Types::building` uses the
+  map's theater (was hard-coded TEMPERATE): snow missions get snow roofs and
+  the snow Kremlin.
+- **Landmarks**: the Statue of Liberty, White House, the Washington
+  memorials, the Chicago landmarks, the Gateway Arch, St Basil's, the Eiffel
+  Tower and Arc de Triomphe (`isogen.mix`) and the ALL10 ammo crates
+  (`sno.mix`) are drawn.
+- **Art `Palette=`**: `<name><theater ext>.pal` (`Palette=lib` ->
+  `liburb.pal`), drawn without house remap (`FUN_00604540`).
+- **`InvisibleInGame=yes`** buildings (the lamp posts) are not drawn; they
+  keep their cells and tags (`FUN_00459a00`: Invisible + RadarVisible=no).
+- **Building light sources**: every live building with `LightIntensity`
+  lights the cells within `LightVisibility` leptons (linear falloff, intensity
+  and tint added per cell, `FUN_00479440`), so the night missions get street
+  lighting; NEGLAMP darkens. Drawn as a per-cell light map multiplied over the
+  playfield (above 1.0 clamps [RE-FALLBACK]).
+- **Campaign SHP units**: Terror Drones, Dolphins and Giant Squid exist as
+  map units and TaskForce members (they were sent to the voxel loader).
+- **Water-bound map structures**: map-placed Naval Yards (ALL04/07/11) are
+  placed on the water grid.
+- **Map-placed BalloonHover aircraft** (the SOV11/12 Kirovs) start at their
+  hover height.
+- **Census**: `ninja art_census; art_census "D:/Red Alert 2/"` resolves
+  every placed object with the engine's real resolver: campaign 28,394 /
+  28,399 (99.98 %, was 92.8 %), RA2-theater lobby maps 91,959 / 91,963.
+- `--play` verbs for these checks (play harness only): `cheat reveal`,
+  `cheat art_dump`, `cheat view_building TYPE [n]`, `cheat view_unit IMAGE
+  [n]`, `cheat view_dressing IMAGE [n]`; probe keys `art.missing`,
+  `art.invisible`, `art.dressing_missing`, `img.<IMAGE>`, `img.<IMAGE>.air`.

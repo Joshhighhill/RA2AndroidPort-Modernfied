@@ -444,3 +444,15 @@ LeaveRubble drawing; the light-source falloff (`LightVisibility` radius versus
 intensity); and whether RA2 `game.exe` (not gamemd) gates the `c?`→theater letter munge
 on `NewTheater` (RA2 `art.ini` marks `CAUSFGL`/`CARUFGL`/`NAPSYB` `NewTheater=no`, yet
 theater twins ship, so the clone's name-pattern munge is probably right).
+
+## W3-FIX-A status (branch `w3fix-assets`)
+
+| R | Status | Evidence (`scripts/play/art-*.play`) |
+|---|---|---|
+| R1 temperate-only campaign art + no `isogen.mix` | FIXED | `art-sov05` (Eiffel Tower, Arc de Triomphe), `art-sov08` (White House, memorials), `art-sov11` (snow Kremlin, cottages), `art-sov07` |
+| R2 InvisibleInGame | FIXED | `art-sov07` (`art.invisible`) |
+| R7 map-placed Kirovs on the ground | FIXED | `art-sov11` (`img.ZEP.air>=2`, alt 750) |
+| R10 light sources | FIXED | `art-sov07` (night .46): per-cell light pools around the lamp posts; formula `FUN_00479440` (`docs/re/asset-search.md` §4) |
+| R11 1.006 patch archives | FIXED | AssetFS opens `expand01`/`ecache01` ahead of `conquer.mix` |
+| R3/R4/R5 animations, R6 trigger visuals | fix agents B / C | — |
+| R8 movies, R9 LocalSize | not in scope | — |
