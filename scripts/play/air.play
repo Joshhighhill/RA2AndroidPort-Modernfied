@@ -101,7 +101,11 @@ click building 0:GACNST +8 +10                      @W2-AN-08
 until 60 sel_altitude > 0                           @W2-AN-08
 until 600 sel_altitude == 0 and sel_moving == 0     @W2-AN-08
 click unit 0:SHAD right
-click unit 0:E1
+# W2-SK: a fresh passenger beside the landed Night Hawk (the start-force GI
+# now engages enemies inside its Sight, W2-SK-25, and may be off fighting).
+cheat spawn E2 0 building 0:GACNST +9 +12
+wait 2
+click unit 0:E2
 click unit 0:SHAD                                   @W2-AN-08
 until 600 cargo_total(0) >= 1                       @W2-AN-08
 click unit 0:SHAD right

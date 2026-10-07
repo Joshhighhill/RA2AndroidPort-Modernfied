@@ -17,7 +17,9 @@ require scene == lobby
 # Game Speed slider at 3 (the [Options] GameSpeed=3 pacing these steps were
 # written against).
 click combo:ai1
-click "pick:Medium Enemy"
+# W2-SK: Easy -- the Medium AI now fields full waves (W2-SK-06) that reach
+# the base (W2-SK-05) and razed this scripted player's ConYard by min 6.
+click "pick:Easy Enemy"
 click combo:country1
 click list:down
 click list:down
@@ -29,7 +31,7 @@ click check:crates
 click slider:speed=3
 assert side(0) == ALLIED
 assert side(1) == SOVIET
-assert ai(1) == Medium
+assert ai(1) == Easy
 assert check(crates) == 0
 assert cash == 10000
 click start
@@ -134,6 +136,10 @@ until 1500 units(0,MTNK) >= 1
 # W2-GA-03: with FogOfWar off (the original's default, RE-Q3) the AI engages the
 # player's miner in explored ground earlier, so the first Chrono Miner may be
 # gone by now: check that one more is trained, not that two are alive.
+# W2-SK: the vehicle factory holds one build at a time -- wait for the Grizzly
+# to leave it before ordering the miner (the click was refused when the AI's
+# changed pace made the tank still in production here).
+until 1800 q.vehicle == -1
 let cmin0 = units(0,CMIN)
 let lost0 = units_lost(0)
 click cameo:CMIN                              @G-22:A

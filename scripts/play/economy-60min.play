@@ -42,6 +42,14 @@ cheat spawn MTNK 0 building 0:GACNST +6 +6
 cheat spawn MTNK 0 building 0:GACNST +7 +6
 cheat spawn MTNK 0 building 0:GACNST +6 +7
 cheat spawn MTNK 0 building 0:GACNST +7 +7
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
+cheat place GAPILL 0 building 0:GACNST -3 -3
+cheat place GAPILL 0 building 0:GACNST +5 -3
+cheat place GAPILL 0 building 0:GACNST -3 +5
+cheat place GAPILL 0 building 0:GACNST +8 +8
 wait 900
 let c1 = credits
 let m0 = mine_spawned
@@ -52,6 +60,13 @@ assert credits > $c1 @W2-SK-03
 let m1 = mine_spawned
 let i1 = income(1)
 let c2 = credits
+# reinforce the guard (scaffolding: only the economy is under test)
+cheat spawn MTNK 0 building 0:GACNST -4 -4
+cheat spawn MTNK 0 building 0:GACNST +6 +6
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
 # 30
 wait 10125
 assert mine_spawned > $m1 @W2-SK-01
@@ -61,6 +76,13 @@ assert income(1) > $i1 @W2-SK-04
 let m2 = mine_spawned
 let i2 = income(1)
 let c3 = credits
+# reinforce the guard (scaffolding: only the economy is under test)
+cheat spawn MTNK 0 building 0:GACNST -4 -4
+cheat spawn MTNK 0 building 0:GACNST +6 +6
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
 # 45
 wait 10125
 assert mine_spawned > $m2 @W2-SK-01
@@ -70,6 +92,13 @@ assert income(1) > $i2 @W2-SK-04
 let m3 = mine_spawned
 let i3 = income(1)
 let c4 = credits
+# reinforce the guard (scaffolding: only the economy is under test)
+cheat spawn MTNK 0 building 0:GACNST -4 -4
+cheat spawn MTNK 0 building 0:GACNST +6 +6
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
 # 60
 wait 10125
 assert mine_spawned > $m3 @W2-SK-01

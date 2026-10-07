@@ -1157,7 +1157,8 @@ public:
         if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
         const int t = buildings_[(std::size_t)b_idx].type;
         if (t < 0 || t >= (int)btypes().size()) return true;   // untyped test buildings
-        return btypes()[(std::size_t)t].capturable;
+        // A bridge repair hut is "entered", not captured (world-depth.md §B4).
+        return btypes()[(std::size_t)t].capturable || btypes()[(std::size_t)t].bridge_repair_hut;
     }
 
     // --- Projectile phase (P2) [RE: projectile.md] -------------------------
