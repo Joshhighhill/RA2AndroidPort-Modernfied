@@ -3136,6 +3136,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
     // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
     if (g_map_dressing) g_map_dressing->draw_ground(ren, tc, world, g_map_pals, cam, W, H);
+    if (g_fx && g_map_dressing) g_fx->draw_radiation(ren, world, a.map, cam, W, H);   // W2-GA-15
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -5165,7 +5166,7 @@ public:
         prewarm_stop_ = true;
         if (prewarm_.joinable()) prewarm_.join();
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
-        if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
+        if (g_map_dressing == &map_dressing_) { g_map_dressing = nullptr; g_smudge_hook = nullptr; }
         if (g_radar == &radar_) g_radar = nullptr;
         if (g_turrets == &turrets_) g_turrets = nullptr;
         if (g_light == &light_) {
@@ -5496,6 +5497,7 @@ public:
             map_pals_[2] = &ba_.unit_pal;
             for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
             g_map_dressing = &map_dressing_;
+            g_smudge_hook = [this](bool crater, double fx, double fy) { map_dressing_.add_smudge(crater, fx, fy); };
         } catch (const std::exception& ex) {
             std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
         }

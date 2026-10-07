@@ -1,0 +1,32 @@
+# gfx-fx -- W2-GA-15 combat effects acceptance shots: a Tesla Trooper's
+# electric bolt, a Prism Tank's beam, explosion craters / scorch marks, on the
+# default lobby map. Spawns via cheats right beside the deployed yard.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Medium Enemy"
+click start
+until 90 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn SHK 0 building 0:GACNST +6 +0
+cheat spawn SREF 0 building 0:GACNST +6 +2
+cheat spawn E1 1 building 0:GACNST +9 +0
+cheat spawn E1 1 building 0:GACNST +9 +1
+cheat spawn HTNK 1 building 0:GACNST +10 +3
+cheat spawn HTNK 1 building 0:GACNST +10 +4
+view building 0:GACNST +7 +2
+until 120 moving(0) >= 0 and units_lost(1) >= 1
+view building 0:GACNST +7 +2
+shot f01_beams
+wait 2
+shot f02_beams
+wait 240
+view building 0:GACNST +7 +2
+shot f03_after
+end

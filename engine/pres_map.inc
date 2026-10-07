@@ -180,6 +180,36 @@ public:
                   << "\n";
     }
 
+    // W2-GA-15: a crater (Crater=yes smudge types) or scorch mark (Burn=yes)
+    // left where a Crater=/Scorch= explosion anim went off; one per cell.
+    void add_smudge(bool crater, double fx, double fy) {
+        const int x = static_cast<int>(std::lround(fx)), y = static_cast<int>(std::lround(fy));
+        if (!map_ || !map_->at(x, y)) return;
+        if (!smudge_cells_.insert(y * 1000 + x).second) return;
+        if (smudge_kinds_[0].empty() && rules_) {
+            for (const auto& kv : rules_->section("SmudgeTypes")) {
+                const std::string n = pres_upper(pres_clean(kv.second));
+                if (n.empty()) continue;
+                if (!rget(n, "Width").empty() || !rget(n, "Height").empty()) continue;   // 1x1 only
+                if (pres_lower(rget(n, "Crater")).rfind("y", 0) == 0) smudge_kinds_[0].push_back(n);
+                else if (pres_lower(rget(n, "Burn")).rfind("y", 0) == 0) smudge_kinds_[1].push_back(n);
+            }
+        }
+        const std::vector<std::string>& kinds = smudge_kinds_[crater ? 0 : 1];
+        if (kinds.empty()) return;
+        smudge_rng_ = smudge_rng_ * 1103515245u + 12345u;
+        const std::string& type = kinds[(smudge_rng_ >> 8) % kinds.size()];
+        Obj o;
+        o.shp = art_shp(type);
+        if (!o.shp) return;
+        o.x = x;
+        o.y = y;
+        o.level = level(x, y);
+        o.key = "smudge:" + type;
+        o.pal = 0;
+        o.centered = false;
+        smudges_.push_back(o);
+    }
     const std::vector<std::pair<int, int>>& blocked() const { return block_; }
     const std::vector<Obj>& objects() const { return objects_; }
     const std::vector<Obj>& overlays() const { return overlays_; }
@@ -363,6 +393,9 @@ private:
     std::vector<std::pair<int, int>> block_;
     int missing_ = 0, placed_ = 0, civ_ = 0;
     long last_tick_ = 0;
+    std::set<int> smudge_cells_;
+    std::vector<std::string> smudge_kinds_[2];
+    uint32_t smudge_rng_ = 0x5A17u;
 };
 
 PresMap* g_map_dressing = nullptr;                    // live game only

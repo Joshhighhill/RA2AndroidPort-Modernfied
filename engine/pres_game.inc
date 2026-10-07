@@ -123,6 +123,7 @@ public:
         power_eva(w, ba);
         building_events(w, ba);
         building_anim_events(w, ba);   // W2-GA-14
+        if (ba.ok) unit_pal_ = &ba.unit_pal;
         unit_audio(w, act);
         for (const auto& e : vet) {
             if (e.unit < 0 || e.unit >= static_cast<int>(w.units().size())) continue;
@@ -439,6 +440,13 @@ private:
             }
             fx_.spawn(name, u.fx, u.fy, u.level, lift, ox);
         }
+        if (wp->bolt || wp->laser) {   // W2-GA-15 Tesla / Prism beams
+            double tx = 0, ty = 0, tl = 0;
+            int tlev = 0;
+            if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
+                fx_.add_beam(u.fx, u.fy, u.level, u.is_vehicle ? 18.0 : 15.0, tx, ty, tlev, tl, *wp,
+                             house_color(w, u.house));
+        }
         if (!u.w_proj.flies()) {
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
@@ -451,6 +459,29 @@ private:
             }
         }
     }
+    bool target_point(const ra2engine::World& w, int tu, int tb, double& x, double& y, int& level,
+                      double& lift) const {
+        const auto& us = w.units();
+        if (tu >= 0 && tu < static_cast<int>(us.size())) {
+            const ra2engine::Unit& t = us[static_cast<std::size_t>(tu)];
+            x = t.fx; y = t.fy; level = t.level;
+            lift = t.is_vehicle ? 10.0 : 8.0;
+            return true;
+        }
+        if (tb >= 0 && tb < static_cast<int>(w.buildings().size())) {
+            const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(tb)];
+            x = b.cx + (b.fw - 1) / 2.0; y = b.cy + (b.fh - 1) / 2.0; level = 0;
+            lift = 20.0;
+            return true;
+        }
+        return false;
+    }
+    SDL_Color house_color(const ra2engine::World& w, int house) const {
+        if (!unit_pal_) return SDL_Color{255, 0, 255, 255};
+        const ra2assets::Rgba c = w.house_palette(*unit_pal_, house)[24];
+        return SDL_Color{c.r, c.g, c.b, 255};
+    }
+    const ra2assets::Palette* unit_pal_ = nullptr;
     // Building death: the type's Explosion= anims scattered over the
     // foundation [RE-FALLBACK: RE-P5 open -- count/placement; one per
     // foundation cell, cycling the list], each with its Report=.
@@ -650,6 +681,14 @@ public:
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
             snd_.play_at(fx_.weapon_report(e.weapon), fx, fy, "defense report");
             if (b.house != 0 && !w.object_visible_at(0, b.cx, b.cy)) continue;
+            // W2-GA-15: Tesla Coil bolts / Prism Tower beams from the tower top.
+            const FxWeapon& bw = fx_.weapon_def(e.weapon);
+            if (bw.bolt || bw.laser) {
+                double tx = 0, ty = 0, tl = 0;
+                int tlev = 0;
+                if (target_point(w, e.target_unit, e.target_building, tx, ty, tlev, tl))
+                    fx_.add_beam(fx, fy, 0, 60.0, tx, ty, tlev, tl, bw, house_color(w, b.house));
+            }
             const std::vector<std::string> m = fx_.weapon_muzzle(e.weapon);
             if (!m.empty()) fx_.spawn(m.front(), fx, fy, 0, 20.0);   // [RE-FALLBACK: building FireFLH not applied]
         }
