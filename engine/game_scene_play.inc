@@ -202,6 +202,11 @@
             if (a.invisible) ++out["art.invisible"];
             else if (!a.ok) ++out["art.missing"];
         }
+        for (const ra2engine::Unit& u : world_.units()) {   // W3-FIX-A: per image, any house
+            if (!u.alive || u.die_time >= 0.0) continue;
+            ++out["img." + u.image];
+            if (u.is_aircraft && u.altitude > 0.0) ++out["img." + u.image + ".air"];
+        }
     }
 
     bool cheat(const std::vector<std::string>& args) override {
