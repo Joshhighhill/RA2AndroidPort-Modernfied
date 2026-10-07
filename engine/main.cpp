@@ -2692,7 +2692,8 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         // W3-B LeaveRubble=yes: the rubble frame (and its shadow) stays.
         const int rf = (g_fx && !b.sold) ? pres_building_rubble_frame(def.id, art.shp.count()) : -1;
         if (rf >= 0 && rf < art.shp.count()) {
-            const ra2assets::Palette rp = ra2engine::house_draw_palette(ba.unit_pal, b.house);
+            const ra2assets::Palette rp =
+                art.own_pal ? *art.own_pal : ra2engine::house_draw_palette(ba.unit_pal, b.house);
             g_fx->blit_shadow(ren, tc, art.shp, "rubs:" + def.id, rf + art.shp.count() / 2, fcx, fcy, W, H);
             g_fx->blit(ren, tc, art.shp, "rub:" + def.id + ":c" + std::to_string(ra2engine::house_draw_key(b.house)),
                        rf, fcx, fcy, 255, W, H, &rp);
