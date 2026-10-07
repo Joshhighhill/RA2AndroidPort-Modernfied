@@ -100,3 +100,36 @@ bool pres_draw_primary_label(SDL_Renderer* ren, ra2engine::TextureCache& tc, con
     }
     return true;
 }
+
+// [RE: TacticalClass::DrawFactoryRallyLines 0x6D9F40, docs/re/w5-presentation.md §3]:
+// for the selected own factory with a rally target, a dashed line (pattern
+// 0x8418D0: 5 px on, 3 off, offset (INT_MAX - Frame) % 15 -- marching ants)
+// from the building centre to the target cell centre: black at y+2, then the
+// house colour at y+1 and y+0.
+void pres_draw_rally_line(SDL_Renderer* ren, const ra2engine::World& world, const ra2engine::Building& b, int ax,
+                          int ay, int bx, int by) {
+    const ra2assets::Rgba hc = g_map_pals[2] ? world.house_palette(*g_map_pals[2], b.house)[16]
+                                             : ra2assets::Rgba{255, 255, 255, 255};
+    const int phase = static_cast<int>((0x7fffffffL - g_pres_tick) % 15);
+    auto dashed = [&](int dy, Uint8 r, Uint8 g, Uint8 bl) {
+        SDL_SetRenderDrawColor(ren, r, g, bl, 255);
+        int x0 = ax, y0 = ay + dy;
+        const int x1 = bx, y1 = by + dy;
+        const int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        const int ddy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = dx + ddy, i = 0;
+        for (;;) {
+            if (((i + phase) & 7) < 5) SDL_RenderDrawPoint(ren, x0, y0);
+            if (x0 == x1 && y0 == y1) break;
+            const int e2 = 2 * err;
+            if (e2 >= ddy) { err += ddy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+            ++i;
+        }
+    };
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+    dashed(2, 0, 0, 0);
+    dashed(1, hc.r, hc.g, hc.b);
+    dashed(0, hc.r, hc.g, hc.b);
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+}

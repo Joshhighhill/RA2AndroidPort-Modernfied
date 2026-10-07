@@ -2,6 +2,7 @@
 #   place-ok      PLACE.SHP frame 0 cells beside the ConYard (valid)
 #   place-blocked frame 2+ramp cells over the ConYard (blocked)
 #   primary       the selected primary Barracks shows the TXT_PRIMARY label
+#   rally         its rally point: a dashed house-colour line to the cell
 set render_every 300
 set on_quit continue
 click button "Single Player"
@@ -41,4 +42,8 @@ click building 0:GAPILE
 wait 2
 dump
 shot primary
+# rally: the selected factory + a ground click -> the marching-ants rally line
+click building 0:GAPILE +5 +4
+wait 3
+shot rally
 end

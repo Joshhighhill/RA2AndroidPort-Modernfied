@@ -4746,7 +4746,20 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
     const int sb = input.selected_building();
     if (sb >= 0 && sb < static_cast<int>(world.buildings().size())) {
         const ra2engine::Building& b = world.buildings()[sb];
-        if (b.alive && b.has_rally) {
+        if (b.alive && b.has_rally && b.house == 0 && tc && g_fx) {
+            // W5-PRES R-144: the original's marching-ants rally line.
+            const ra2assets::MapCell* bm = a.map.at(b.cx, b.cy);
+            const double bx = b.cx + (b.fw - 1) / 2.0, by = b.cy + (b.fh - 1) / 2.0;
+            const int lv = bm ? bm->level : 0;
+            const int ax = static_cast<int>(std::lround((bx - by) * 30.0)) + cam.x + 30;
+            const int ay = static_cast<int>(std::lround((bx + by) * 15.0 - lv * 15)) + cam.y + 15;
+            int rx = 0, ry = 0;
+            cell_center_px(b.rally_x, b.rally_y, rx, ry);
+            const SDL_Rect clip{0, 0, playfield_w, 10000};
+            SDL_RenderSetClipRect(ren, &clip);
+            pres_draw_rally_line(ren, world, b, ax, ay, rx, ry);
+            SDL_RenderSetClipRect(ren, nullptr);
+        } else if (b.alive && b.has_rally) {
             int sx = 0, sy = 0;
             cell_center_px(b.rally_x, b.rally_y, sx, sy);
             if (sx >= 0 && sx < playfield_w) {
