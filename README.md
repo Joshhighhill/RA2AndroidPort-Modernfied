@@ -3889,3 +3889,8 @@ Fixes the "I can't control the mission" report (`docs/gap/wave4/02-mission-contr
   `input_locked`, `ctl_units`, `ctl_on_screen`, `view_cx/cy`, `touch_*`, `tooltip_up`.
   Control scripts: `ctl-all01` (real clicks), `ctl-touch-all01` (real gestures), `ctl-all02`,
   `ctl-sov01`, `ctl-sides`.
+- **Verification** (merged with master `f3f1ea1`): unit suite 822/822; 74 of 77 `--play` scripts pass,
+  one at a time (`probe-bridge`, `probe-flow`, `robust-missing` fail as on master); `all01-opening`
+  passes with the rockets live and the input lock. Gates: every `--demo-*` gate prints its pin except
+  `--demo-campaign`, re-pinned to `9261ef609a25c962` (above). Save format unchanged (v15: the lock is
+  not saved). Emulator (`ra2x86`): `docs/gap/wave4/06-evidence-fix/`.
