@@ -239,9 +239,9 @@ during the load was 259 MB.
 | W2-AR-24 | **FIXED** | `docs/INSTALL.md` (players). The README Android section is corrected: `ra2.ndkPath`, both ABIs, the import flow, where RA2.INI and saves live, and the build types. |
 | W2-AR-25 | **FIXED** | `-Wall -Wextra` on the engine with **0 warnings** (24 before, counting the new code); stb is included as a SYSTEM include. Java is set to 17. |
 | W2-AR-26 | **FIXED** | `TextureCache::clear()` on `SDL_RENDER_DEVICE_RESET` / `TARGETS_RESET` (takes a new `instance_id` so the terrain list rebuilds), and `trim()` on `SDL_APP_LOWMEMORY`. The LRU budget came with W2-GA-P5. |
-| W2-AR-27 | OPEN (owner: skirmish/AI) | Empty AI teams and the economy freeze belong to the skirmish-match agent. Append-only entity vectors are not changed here. |
+| W2-AR-27 | FIXED on w2fix-skirmish (see 03-skirmish-match.md §7.4) | 60-min AI-vs-AI soak: teams_live peaks at 11 and ends at 0; credits and production move all hour. Entity slots stay append-only by design (stable indices); dead slots release their storage. |
 | W2-AR-28 | OK | — |
-| W2-AR-29 | OPEN (owner: skirmish-match, sim performance) | — |
+| W2-AR-29 | IMPROVED on w2fix-skirmish (see 03-skirmish-match.md §7.4) | 7-AI Brutal xmp27t8, -O0 headless: about 290-400 logic frames/s (was 16.5-23.7). Not yet re-measured on a phone. |
 | W2-AR-30 | **FIXED** | `SDL_SetAssertionHandler` logs `SDL ASSERTION (ignored)` and returns `ALWAYS_IGNORE`, so it never prompts. `SDL_ASSERTIONS` is `release` in optimised builds and in the Android release APK, and `enabled` in Debug and the Android debug APK. |
 
 ### Q1 decision (for the owner, not changed here)

@@ -357,3 +357,10 @@ tech-capture witnesses, and a team dump for every AI house).
 | AI-vs-AI, May Day (2 mines), 40 min | M1: no winner, credits frozen from min 17 | No winner: both bases are heavily walled and defended. Mines keep spawning (140 cells by min 40), but 2 mines cannot feed 16 miners |
 | 1v3 Brutal, Arena, scripted active player | M5: frozen from min 13 to 38; the player lost 6 units | The player is overrun and **LOST at ~min 14** |
 | Passive vs Brutal Soviet, xmp31s2, 20 min | M9: ConYard 83/1000 alive | Defeated at min 15 |
+
+### 7.4 Cross-referenced rows from 06-android-robustness.md
+
+| Row | Covered by | Evidence on this branch |
+|---|---|---|
+| W2-AR-27 (economy frozen at 367 credits; empty AI teams 4 → 26) | W2-SK-01/03/04 (economy), W2-SK-24 (unfilled teams dissolve), W2-SK-06 (teams fill before they leave), W2-SK-15 (dead slots keep stable indices but release their storage; slots are not reused, by design) | Same run as the report, `--ai-soak --minutes 60 --ai-vs-ai --diff brutal` (May Day): `teams_live` peaks at 11 and ends at 0; AI-1 credits move all hour (291 / 134 / 2896 / 1032 / 6014 at min 10/18/20/30/40); `ai_units_built` 24 → 156 (was frozen at 25 from min 18); 104 s wall, peak 222 MB |
+| W2-AR-29 (8-player simulation throughput) | W2-SK-15 (bucketed acquisition), W2-SK-16 (A* scratch and budgets), plus the master perf work it sits on | 7 Brutal AIs on `xmp27t8` (passive human, desktop `-O0`, headless): 4,500 frames in 11.2 s, then 4,500 in 15.3 s (≈400 and ≈290 logic frames/s; the report measured 16.5 and 23.7/s). Six AIs still have 13–17 buildings and 17–50 units at the end |
