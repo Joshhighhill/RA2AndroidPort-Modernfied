@@ -18,6 +18,7 @@ struct InputEvent {
     bool ctrl = false;                      // Ctrl held at event time
     bool alt = false;                       // Alt held at event time
     bool touch = false;                     // produced by a finger, not a mouse
+    bool system_back = false;               // W2-AR-14: Key from Android BACK (also Esc)
     uint32_t t_ms = 0;                      // event timestamp (ms) for double-click
     int key = 0;                            // Key: kKey* code (0 = vk-only key)
     // Key: the Windows virtual-key code of the pressed key -- the code space

@@ -166,6 +166,7 @@ void key_event_from_sdl(int k, int mod, InputEvent& ev) {
     ev.alt = (mod & KMOD_ALT) != 0;
     ev.vk = vk_from_sdl(k);
     ev.key = 0;
+    ev.system_back = (k == SDLK_AC_BACK);
     // P7: the named keys the save/load UI + P10 briefing consume.
     // G-01: Escape is an ordinary key (KeyboardMD.ini [Hotkey] Options=27 --
     // the in-game options dialog; dialogs treat it as Back). Only the window
@@ -278,8 +279,12 @@ bool Platform::poll(InputEvent& ev) {
             ev.kind = InputEvent::None;
             break;
         case SDL_FINGERUP:
-            p_->touch.finger_up(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
-                                static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            if (e.tfinger.pressure < 0.0f)   // W2-AR-18: SDLSurface marks ACTION_CANCEL
+                p_->touch.finger_cancel(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                        static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            else
+                p_->touch.finger_up(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                    static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
             ev.kind = InputEvent::None;
             break;
         case SDL_FINGERMOTION:

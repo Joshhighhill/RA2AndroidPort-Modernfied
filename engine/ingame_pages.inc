@@ -60,7 +60,13 @@ public:
         down_ = false;
         last_click_ms_ = 0;
         last_click_row_ = -1;
-        if (m == Save) SDL_StartTextInput();
+        if (m == Save) {
+            // W2-AR-15: the IME keeps the description edit (and SAVE/BACK under it) in view.
+            const ra2engine::SbRect e = edit_rect_l();
+            const SDL_Rect d = ui_xform().dev(e.x, e.y, e.w, e.h + 60);
+            set_text_input_rect_logical(d.x, d.y, d.w, d.h);
+            SDL_StartTextInput();
+        }
     }
     void close() {
         open_ = false;

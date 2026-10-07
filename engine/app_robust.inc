@@ -174,6 +174,19 @@ Scene* defer_scene(std::string title, std::function<Scene*()> make,
 
 Scene* make_main_menu_scene(bool no_audio);   // campaign_scenes.inc
 
+// W2-AR-15: tell SDL (-> Android's IME) where the edited field is, in WINDOW
+// coordinates, so the soft keyboard pans the view to keep it (and the
+// dialog buttons just below) visible instead of covering it.
+void set_text_input_rect_logical(int x, int y, int w, int h) {
+    if (!g_platform) return;
+    SDL_Renderer* ren = static_cast<SDL_Renderer*>(g_platform->renderer());
+    int wx0 = 0, wy0 = 0, wx1 = 0, wy1 = 0;
+    SDL_RenderLogicalToWindow(ren, static_cast<float>(x), static_cast<float>(y), &wx0, &wy0);
+    SDL_RenderLogicalToWindow(ren, static_cast<float>(x + w), static_cast<float>(y + h), &wx1, &wy1);
+    SDL_Rect r{wx0, wy0, std::max(1, wx1 - wx0), std::max(1, wy1 - wy0)};
+    SDL_SetTextInputRect(&r);
+}
+
 // A first scene that immediately hands over to `n` (typically a
 // DeferredScene, so even the first game of a run gets the loading screen).
 struct BootScene : Scene {

@@ -7268,7 +7268,14 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     // does not press [RE-FALLBACK: the main dialog's IDCANCEL handling is
     // G-14's Exit-confirm, owned by the shell agent].
     if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
-        if (page_ == PAGE_MAIN) return;
+        if (page_ == PAGE_MAIN) {
+            // W2-AR-14: Android BACK on the root page leaves the app -- through
+            // the same Exit confirm as the Exit Game button (Esc stays inert).
+            if (ev.system_back)
+                gf_confirm_.ask(gf_csf("GUI:ExitAreYouSure", "Are you sure you want to exit Red Alert 2?"),
+                                {gf_csf("GUI:OK", "OK"), gf_csf("GUI:Cancel", "Cancel")});
+            return;
+        }
         for (const ShellButton& b : layout())
             if (b.enabled && b.rect.y == rowY(5) && b.action == ACT_GOTO) {
                 const ra2engine::SbRect d = to_device(b.rect);

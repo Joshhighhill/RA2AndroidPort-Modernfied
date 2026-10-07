@@ -437,7 +437,13 @@ private:
         editing_ = on;
         // Show the soft keyboard on Android; restore the previous text-input
         // state on leave (desktop SDL starts with text input active).
-        if (on) { text_was_active_ = SDL_IsTextInputActive(); SDL_StartTextInput(); }
+        if (on) {
+            text_was_active_ = SDL_IsTextInputActive();
+            const ra2engine::SbRect e = name_rect();   // W2-AR-15: keep the edit in view
+            const SDL_Rect d = xform().dev(e.x, e.y, e.w, e.h);
+            set_text_input_rect_logical(d.x, d.y, d.w, d.h);
+            SDL_StartTextInput();
+        }
         else if (!text_was_active_) SDL_StopTextInput();
     }
     void play_ui(const char* key) const {
