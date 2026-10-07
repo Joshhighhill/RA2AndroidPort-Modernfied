@@ -238,3 +238,39 @@ order, no bridge state, bridge cells are water, no ground force-fire).
 | NEW-2 | ALL01 with no player input: every house-0 unit is dead by f≈2459 but the mission stays RUNNING (no LOST, no result screen). Needs RE of the map's `Lose 13` chain / house-defeat path before fixing. | `m-all01` L44 | F (campaign) |
 | NEW-3 | **FIXED @gA2** -- Soviet War Miner never unloads: full at 40 bales, `ReturnToRef` forever, not moving; the Allied Chrono Miner path works. | `sk-s` L68, `probe-soviet-econ.play` dumps | A (G-20) |
 | NEW-4 | The Allied AI slot neither builds GA\* power nor trains in 3000 frames, while the Soviet AI does train (sk-a L116 PASS). **Fixed on gD-ai:** the lobby cycled the slot to Allied but left country=Russians, so the Owner-filtered catalog picked NACNST as the plan head while the house stood on a GACNST; the AI country is now checked against rulesmd `[Sides]`. | `sk-s` L88-L94 | D (G-64) |
+
+## Wave-2 UI fixes (branch `w2fix-ui`, W2-UI-01..30)
+
+These results come from running every script on its own on the `w2fix-ui` tip
+(`run-all.ps1`, output in `build/play-final/`). The UI fixes changed some
+script targets:
+
+- `shell-smoke` now checks `banner == "Mission Saved"`. This is the
+  `TXT_GAME_WAS_SAVED` message-list line.
+- `m-all01`, `m-sov01` and `m-lose` go through the new Campaign page 0x94:
+  `require scene == "shell:Campaign"`, then `click well:allied` or `well:soviet`,
+  then `click button Load`.
+- `button:Back` still resolves on pages whose bottom button is now labelled
+  "Main Menu".
+
+| Script | Result | play_hash |
+|---|---|---|
+| `controls` | PASS | `1546660df2b00b6f` |
+| `m-all01` | PASS | `f1bfd06283ccfeb7` |
+| `m-lose` | PASS | `e8c89e9e605251d6` |
+| `m-sov01` | PASS | `c3538a86f04ff4cb` |
+| `shell-smoke` | PASS | `787f0c96de7028bb` |
+| `sk-a` | PASS | `d00d60f6ac308736` |
+| `sk-a-lose` | PASS | `0c9c954868feb215` |
+| `sk-end` | PASS | `c7e7cd2aa9217021` |
+| `sk-lobby` | PASS | `4daf570e159f13e0` |
+| `sk-s` | PASS | `5924a716722272a7` |
+| `world-depth` | PASS | `5895f5a6f9b77bb6` |
+| `probe-game` / `probe-garrison` / `probe-perf` / `probe-shell` / `probe-soviet-econ` | PASS | — |
+| `probe-bridge` | FAIL, 2. It uses the `map:+` lobby target, which the Skirmish page removed. The same failure happens on master `dfff02a`. | — |
+| `probe-flow` | FAIL, 7. It expects a ConYard at the start, but the skirmish now starts with an MCV. The same failure happens on master `dfff02a`. | — |
+| **new** `ui-hud` | PASS | `74645b1b4832590f` |
+| **new** `ui-pages` | PASS | `201f6d614d0b9b6e` |
+| **new** `ui-campaign` | PASS | `841913f27b3ae367` |
+| **new** `ui-result` | PASS | `7dac2ea048d278bb` |
+| **new** `ui-shell` | PASS | `e948779eb0ab3bb3` |

@@ -12,6 +12,7 @@
     // [RE-FALLBACK: the original's building health pips (pips.shp frames) are
     // agent E's art; this draws the same information with plain rects.]
     // Colour thresholds = [General] ConditionYellow / ConditionRed.
+    mutable ra2engine::TextureCache* pip_tc_ = nullptr;   // W2-UI-11 (set by render)
     void draw_selected_building(SDL_Renderer* ren) const {
         const int sb = input_.selected_building();
         if (sb < 0 || sb >= static_cast<int>(world_.buildings().size())) return;
@@ -29,6 +30,14 @@
         px(b.cx, b.cy + b.fh, lx, ly);
         px(b.cx + b.fw, b.cy, rx, ry);
         px(b.cx + b.fw, b.cy + b.fh, bx, by);
+        if (g_pips) {   // W2-UI-11: the original's diagonal PIPS line (hud_pips.inc)
+            const std::string& id = ba_.roster[(std::size_t)b.type].id;
+            const std::string h = pres_clean(art_ini_.get(ba_.roster[(std::size_t)b.type].image.empty()
+                                                              ? id : ba_.roster[(std::size_t)b.type].image, "Height"));
+            const int height = h.empty() ? 4 : std::atoi(h.c_str());
+            draw_building_pips(ren, *pip_tc_, b.hp, b.max_hp, tx, ty, b.fh, height * 15, g_pip_yellow, g_pip_red);
+            return;
+        }
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(ren, 255, 255, 255, 230);
         const int k = 10;   // bracket arm length
@@ -51,15 +60,19 @@
         SDL_RenderFillRect(ren, &fill);
     }
 
-    // --- G-04: KeyboardMD.ini hotkeys ---------------------------------------
-    // The install's KeyboardMD.ini (the original's binding file) overrides the
-    // shipped defaults; a missing file leaves the defaults.
+    // --- G-04 / W2-UI-27: Keyboard.ini hotkeys --------------------------------
+    // RA2 game.exe reads KEYBOARD.INI (FUN_00519240, string 0x7DD718) -- the
+    // install's Keyboard.ini overrides the shipped defaults. KeyboardMD.ini is
+    // the YR file; it is only a fallback when Keyboard.ini is absent.
     static ra2engine::HotkeyTable load_hotkeys() {
         ra2engine::HotkeyTable t = ra2engine::HotkeyTable::defaults();
-        try {
-            const std::vector<uint8_t> raw = ra2assets::read_file(env_install_dir() + "KeyboardMD.ini");
-            t.load_ini_text(std::string(raw.begin(), raw.end()));
-        } catch (const std::exception&) { /* defaults */ }
+        for (const char* f : {"Keyboard.ini", "KeyboardMD.ini"}) {
+            try {
+                const std::vector<uint8_t> raw = ra2assets::read_file(env_install_dir() + f);
+                t.load_ini_text(std::string(raw.begin(), raw.end()));
+                break;
+            } catch (const std::exception&) { /* next / defaults */ }
+        }
         return t;
     }
     ra2engine::HotkeyTable hotkeys_ = load_hotkeys();
@@ -142,7 +155,7 @@
         using C = ra2engine::HotCmd;
         switch (b.cmd) {
             case C::None: return false;
-            case C::Options: menu_.open_ = true; return true;
+            case C::Options: menu_.open(); return true;
             case C::StopObject: input_.stop_selected(); return true;
             case C::GuardObject: input_.guard_selected(); return true;
             case C::ScatterObject: input_.scatter_selected(); return true;
@@ -346,23 +359,25 @@
             }
         }
     }
-    // Count badge (x+60, y+1, right-aligned) and "on hold" marker (x+30, y+1)
-    // over the visible cameos [RE: construction.md §11a strip draw 0x6A8BD0].
-    // [RE-FALLBACK: drawn with the rect font; the original uses the game font.]
-    void draw_queue_badges(SDL_Renderer* ren) const {
+    // W2-UI-03/04 [RE: wave2/04 #2, FUN_0067F800 + FUN_0069D770]: the queue
+    // count "%d" right-aligned at (x+60, y+1) -- shown when > 1, or when 1 and
+    // the type is queued but is not the current product -- and the CSF status
+    // TXT_READY "Ready" / TXT_HOLD "On Hold" centred at (x+30, y+1), moved to
+    // (x+2, y+1) left-aligned when a count is shown; game.fnt in the UI colour
+    // over a 0xAF black box (hud_text.inc draw_cameo_text).
+    void draw_queue_badges(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         if (!(ba_.ok && ba_.sidebar_ok)) return;
         for (const ra2engine::CameoCell& cell : lay_.cameos) {
             ra2engine::QueueCat cat;
             if (active_tab_ >= 2) cat = rp_cat_of_unit(cell.type);
             else cat = active_tab_ == 1 ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
             const int n = queued_count(cell.type, cat);
-            if (n > 1) {
-                const std::string s = std::to_string(n);
-                draw_text(ren, s, cell.rect.x + 60 - static_cast<int>(s.size()) * 6 - 1, cell.rect.y + 2, 1,
-                          255, 255, 255);
-            }
-            if (queues_.producing(cat) == cell.type && held_.count(static_cast<int>(cat)))
-                draw_text(ren, "HOLD", cell.rect.x + 30 - 12, cell.rect.y + 2, 1, 255, 230, 120);
+            const bool current = queues_.producing(cat) == cell.type;
+            const int shown = (n > 1 || (n == 1 && !current)) ? n : 0;
+            std::string status;
+            if (current && queues_.state(cat).slot.ready) status = g_txt_ready;
+            else if (current && held_.count(static_cast<int>(cat))) status = g_txt_hold;
+            if (shown || !status.empty()) draw_cameo_text(ren, tc, cell.rect.x, cell.rect.y, status, shown);
         }
     }
 
