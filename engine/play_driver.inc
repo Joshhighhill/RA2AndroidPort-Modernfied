@@ -53,6 +53,7 @@ SDL_Scancode scancode_for(const std::string& name_in) {
 
 class Runner final : public DriverHooks, public ra2engine::EventSource {
 public:
+    const Script& script() const { return s_; }   // W2-CA-19 (start scene)
     Runner(Script s, std::string out_dir) : s_(std::move(s)), out_(std::move(out_dir)) {
         log_.open(out_ + "/play.log", std::ios::trunc);
     }
@@ -236,6 +237,7 @@ private:
             else if (k == "states") verbose_states_ = v != "off";
             else if (k == "on_quit") quit_continue_ = (v == "continue");
             else if (k == "cycle_max") cycle_max_ = std::max(1, std::atoi(v.c_str()));
+            else if (k == "campaign") {}   // W2-CA-19: consumed by run_play (start scene)
             else { fail(c, "unknown setting"); }
             ++pc_;
             return kNext;
@@ -769,7 +771,17 @@ int run_play(const std::string& script_path, const std::string& out_dir_in) {
         g_user_settings = &user;
         g_menu_rules = &rules;
         g_menu_art = &store.art;
-        run_scene_driver(plat, tc, new MainMenuScene(rules, /*no_audio=*/true, store.art), &r, r.dt(), &r);
+        // W2-CA-19: `set campaign <MAP> <GDI|Nod> [difficulty]` starts that
+        // mission's loading screen directly (missions 2-12 without winning
+        // every earlier one); otherwise the real shell's main menu.
+        Scene* first = nullptr;
+        for (const ra2play::Cmd& c : r.script().cmds)
+            if (c.op == "set" && c.args.size() >= 3 && ra2play_drv::lower(c.args[0]) == "campaign")
+                first = new CampaignLoadScene(/*no_audio=*/true,
+                                              campaign_config(c.args[1], c.args[2],
+                                                              c.args.size() > 3 ? std::atoi(c.args[3].c_str()) : 1));
+        if (!first) first = new MainMenuScene(rules, /*no_audio=*/true, store.art);
+        run_scene_driver(plat, tc, first, &r, r.dt(), &r);
         g_menu_rules = nullptr;
         g_menu_art = nullptr;
         g_user_settings = nullptr;

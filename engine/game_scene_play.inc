@@ -196,6 +196,7 @@
     }
 
     bool cheat(const std::vector<std::string>& args) override {
+        if (campaign_cheat(args)) return true;   // W2-CA-19 (campaign_play.inc)
         if (args.size() == 1 && args[0] == "center_own") {   // camera on the first own unit
             for (const ra2engine::Unit& u : world_.units())
                 if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {

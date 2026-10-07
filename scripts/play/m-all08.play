@@ -1,0 +1,24 @@
+# M-ALL08 -- W2-CA-09 team release/recruit. ALL08u: the paradrop start team
+# finishes and 'Each to His Own House' recruits Tanya/GIs/engineers into the
+# TanyaLand/GILand/EngineerLand teams -> no '_Loss (Tanya KIA)' (the run
+# must survive past f=900 with no input), then the Soviet houses removed
+# (combat skip) -> '_Win Occurred' -> WON.
+set render_every 600
+set on_quit continue
+set campaign ALL08u.MAP GDI
+
+until 60 scene == campaign-load
+require scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+wait 1200
+assert outcome == RUNNING
+assert units(5) > 0
+assert units(6) > 0
+wait 600
+cheat kill_house 1
+cheat kill_house 2
+until 1500 outcome == WON
+assert outcome == WON

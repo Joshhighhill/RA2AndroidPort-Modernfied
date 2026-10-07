@@ -446,6 +446,15 @@ public:
         return true;
     }
 
+    // W2-CA-19 play-script cheat: place a map/TaskForce type like a reinforcement.
+    int spawn(const std::string& type, int house, int x, int y) {
+        return place_unit(type, house, x, y, 256, std::string(), "Guard", /*far=*/true);
+    }
+    const std::string& unit_type(int i) const {
+        static const std::string none;
+        return i >= 0 && i < (int)utrack_.size() ? utrack_[(std::size_t)i].type : none;
+    }
+
     // W2-CA-12: trigger audio the scene plays through its presentation.
     struct AudioReq { int action; std::string name; int value; int waypoint; };
     std::vector<AudioReq> take_audio() { std::vector<AudioReq> o; o.swap(audio_); return o; }

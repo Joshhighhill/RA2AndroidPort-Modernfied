@@ -1,0 +1,25 @@
+# M-ALL04 -- W2-CA-08 sea reinforcement delivery. ALL04u: the AMCV landing
+# team (AMCV + LCRF at sea waypoint 2) lands on the beach connected to its
+# move-waypoint; the MCV drives to a legal spot and unfolds into a ConYard.
+# Cheat: camp_deploy = the player's move + deploy orders.
+set render_every 600
+set on_quit continue
+set campaign ALL04u.MAP GDI
+
+until 60 scene == campaign-load
+require scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+until 3000 units(0) >= 8
+assert units(0) >= 8
+cheat camp_move E1 115 45
+cheat camp_move GI 115 45
+cheat camp_move MTNK 115 45
+wait 300
+cheat camp_deploy
+wait 900
+cheat camp_deploy
+until 900 buildings(0) >= 1
+assert buildings(0) >= 1

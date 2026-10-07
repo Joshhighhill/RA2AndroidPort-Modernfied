@@ -5442,6 +5442,7 @@ public:
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
 #include "campaign_audio.inc"  // W2-CA-12 mission speech / sound / music
+#include "campaign_play.inc"   // W2-CA-19 campaign play-script cheats
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
 
