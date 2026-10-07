@@ -307,6 +307,9 @@ add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
 add_executable(ra2extract tools/ra2extract.cpp)
 target_include_directories(ra2extract PRIVATE third_party)
 target_link_libraries(ra2extract PRIVATE ra2assets)
+# W3-FIX-A: the art-resolution census (developer tool, not built by default).
+add_executable(art_census EXCLUDE_FROM_ALL tools/art_census.cpp)
+target_link_libraries(art_census PRIVATE ra2assets)
 
 option(RA2_BUILD_ENGINE "Build the SDL2 engine/app (needs SDL2)" ON)
 if (RA2_BUILD_ENGINE)
