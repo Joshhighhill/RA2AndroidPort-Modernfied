@@ -798,6 +798,21 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // other stat) but consumed ONLY behind World::projectiles_enabled_ -- which
     // no byte-identity gate opens. Not part of the [unit] log line below.
     r.combat.proj = ra2engine::resolve_projectile_spec(rules, primary);
+    // W2-SK-22 [RE: rulesmd [Comet] ShrapnelWeapon=CometFragment ShrapnelCount=5;
+    // [CometFragment] Damage=30 Range=3 Warhead=CometWH]: the Prism Tank beam
+    // splits on impact.
+    {
+        const std::string sw = rules.section_string(primary, "ShrapnelWeapon", "");
+        const int sc = (int)rules.section_double(primary, "ShrapnelCount", 0.0);
+        if (!sw.empty() && sc > 0) {
+            r.combat.shrapnel_count = sc;
+            r.combat.shrapnel_damage = rules.weapon_damage(sw);
+            r.combat.shrapnel_range = rules.weapon_range(sw);
+            r.combat.shrapnel_verses = rules.verses(rules.weapon_warhead(sw));
+        }
+        r.combat.disguise_when_still = rules.section_flag(unit_id, "CanDisguise", false) &&
+                                       rules.section_flag(unit_id, "DisguiseWhenStill", false);
+    }
     // W2-SK-13 [RE: rulesmd [V3Launcher] Spawner=yes Damage=1 Warhead=Special;
     // [V3] Spawns=V3ROCKET; [General] V3RocketType=V3ROCKET V3RocketDamage=200;
     // [CombatDamage] V3Warhead=V3WH]: the launcher's 1-damage "Special" shot

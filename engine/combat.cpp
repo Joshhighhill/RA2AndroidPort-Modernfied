@@ -126,6 +126,27 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         // EXISTING single-target delivery -- UNCHANGED (byte-identical path).
         deliver_unit_hit(units, occ, attacker_idx, victim_idx);
     }
+    // W2-SK-22 Prism split [RE: [Comet] ShrapnelWeapon/ShrapnelCount;
+    // RE-FALLBACK: the fragments go to the ShrapnelCount nearest other
+    // hostiles within the fragment weapon's Range of the impact, ascending
+    // distance then index]. No-op for every weapon without shrapnel.
+    if (u.shrapnel_count > 0 && u.shrapnel_damage > 0) {
+        std::vector<std::pair<double, int>> near;
+        const double r2 = u.shrapnel_range * u.shrapnel_range;
+        for (int j = 0; j < static_cast<int>(units.size()); ++j) {
+            if (j == victim_idx || j == attacker_idx) continue;
+            const Unit& w = units[j];
+            if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0 || w.house == u.house || w.is_aircraft) continue;
+            const double dx = w.fx - v.fx, dy = w.fy - v.fy;
+            if (dx * dx + dy * dy <= r2) near.push_back({dx * dx + dy * dy, j});
+        }
+        std::sort(near.begin(), near.end());
+        Unit frag = u;
+        frag.w_damage = u.shrapnel_damage;
+        frag.w_verses = u.shrapnel_verses;
+        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k)
+            deliver_hit_from(units, occ, frag, attacker_idx, -1, near[static_cast<std::size_t>(k)].second);
+    }
 }
 
 }  // namespace

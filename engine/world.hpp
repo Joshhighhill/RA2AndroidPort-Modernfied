@@ -348,6 +348,13 @@ struct Unit {
     int occupy_target = -1;          // pending "enter garrison" order -> building
     int attack_cell_x = -1, attack_cell_y = -1;   // force-fire ground target (-1 none)
     bool cell_shot = false;          // fired at attack_cell this step (World resolves it)
+    // --- W2-SK-22 (save v10) ---
+    int shrapnel_count = 0;
+    int shrapnel_damage = 0;
+    double shrapnel_range = 0.0;
+    std::vector<int> shrapnel_verses;
+    bool disguise_when_still = false;
+    int still_frames = 0;            // Mirage: frames stopped and not firing
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -1188,6 +1195,7 @@ public:
     int depot_client(int b_idx) const;
     bool depot_servicing(int house) const;
     void step_service_depots();
+    void step_disguises();   // W2-SK-22 Mirage disguise-when-still
 
     // Consume a unit (the capture/repair gesture spends its engineer, and any
     // future "removed from map" consumer): tombstone it directly (no die anim --

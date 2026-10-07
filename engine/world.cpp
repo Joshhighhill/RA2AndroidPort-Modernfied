@@ -634,6 +634,11 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.occupier = c.occupier;
     u.occupy_w = c.occupy_weapon;
     u.occupy_w_elite = c.elite_occupy_weapon;
+    u.shrapnel_count = c.shrapnel_count;          // W2-SK-22
+    u.shrapnel_damage = c.shrapnel_damage;
+    u.shrapnel_range = c.shrapnel_range;
+    u.shrapnel_verses = c.shrapnel_verses;
+    u.disguise_when_still = c.disguise_when_still;
     // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
     // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
     // past this point unless vet_any_). Only a vet-enabled World arms the
@@ -932,6 +937,13 @@ void World::order_attack(int target_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        // W2-SK-22 Spy disguise [RE: capture.md §C; [SPY] Primary=MakeupKit
+        // "virtual weapon that picks disguise"]: a spy "attacking" an enemy
+        // infantry takes on its look instead.
+        if (u.image == "SPY") {
+            if (!tgt.is_vehicle && !tgt.is_aircraft) set_disguise(static_cast<int>(i), tgt.image, tgt.house);
+            continue;
+        }
         u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above (selected + house 0); the shared mutation
         // tail (target/attack_order + occupancy re-assert + path clear) is
@@ -1917,6 +1929,31 @@ void World::step_service_depots() {
         if (pool < (double)cost) continue;   // broke: no partial step, no free repair
         pool -= (double)cost;
         u.hp = std::min(u.max_hp, u.hp + repair_rules_.repair_step);
+    }
+}
+
+// W2-SK-22 Mirage Tank [RE: rulesmd [MGTK] CanDisguise=yes DisguiseWhenStill=yes;
+// [General] DefaultMirageDisguises=TREE01..]: a Mirage that has stood still
+// and not fired for a moment turns into a tree -- enemies do not auto-acquire
+// it (the disguise skip in step_combat) -- and drops the disguise the moment
+// it moves or fires. [RE-FALLBACK: 15 frames still. PARTIAL: it is still
+// drawn as the tank -- the tree is terrain art the unit renderer cannot
+// draw.] Dogs (DetectDisguise) still reveal it.
+void World::step_disguises() {
+    for (Unit& u : units_) {
+        if (!u.disguise_when_still || !u.alive || u.die_time >= 0.0) continue;
+        if (u.moving() || u.fire_flash > 0.0 || u.cargo_of >= 0) {
+            u.still_frames = 0;
+            if (u.disguised) u.disguised = false;
+            continue;
+        }
+        if (++u.still_frames >= 15 && !u.disguised) {
+            u.disguised = true;
+            // Drawn as itself (the tree art is terrain, not a unit SHP).
+            u.disguised_as_type = u.image;
+            u.disguised_as_house = u.house;
+            capture_any_ = true;   // arm the DetectDisguise pass
+        }
     }
 }
 
@@ -3377,6 +3414,15 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     const BuildingTypeDef& fdef = rec.cfg.roster[buildings_[fi].type];
     const int uidx = launch_unit(fi, fdef, tc.unit_roster[uslot].combat);
     if (uidx < 0) return false;  // exit blocked -> HOLD ready (retry next frame)
+    if (units_[(std::size_t)uidx].image == "SPY") {   // W2-SK-22: AI spies go out disguised
+        const int foe = rec.enemy_house;
+        std::string look;
+        int look_house = foe;
+        for (const Unit& e : units_)
+            if (e.alive && e.die_time < 0.0 && e.house == foe && !e.is_vehicle && !e.is_aircraft &&
+                e.image != "SPY") { look = e.image; break; }
+        if (!look.empty()) set_disguise(uidx, look, look_house);
+    }
     if (!tc.unit_roster[uslot].combat.deploys_into.empty()) {   // W2-SK-07: unfold it
         order_deploy_mcv(uidx);
         rec.queues.placed(cat);
@@ -3951,6 +3997,7 @@ void World::step(double dt) {
     // every existing demo pays (no demo issues a capture order) [spec §8].
     step_capture(dt);
     step_service_depots();   // W2-SK-19
+    step_disguises();        // W2-SK-22
 
     // gF MCV deploy [RE: docs/re/mcv-deploy.md]: the turn-then-unfold mission.
     // `if (!deploy_any_) return;` inside -- no gate issues a deploy order.

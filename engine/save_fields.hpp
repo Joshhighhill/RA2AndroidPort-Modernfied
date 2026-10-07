@@ -579,6 +579,11 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.occupier);
     io(ar, v.occupy_weapon);
     io(ar, v.elite_occupy_weapon);
+    io(ar, v.shrapnel_count);        // W2-SK-22 (v10)
+    io(ar, v.shrapnel_damage);
+    io(ar, v.shrapnel_range);
+    io(ar, v.shrapnel_verses);
+    io(ar, v.disguise_when_still);
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -775,6 +780,12 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.occupy_target);
     io(ar, v.attack_cell_x); io(ar, v.attack_cell_y);
     io(ar, v.cell_shot);
+    io(ar, v.shrapnel_count);        // W2-SK-22 (v10)
+    io(ar, v.shrapnel_damage);
+    io(ar, v.shrapnel_range);
+    io(ar, v.shrapnel_verses);
+    io(ar, v.disguise_when_still);
+    io(ar, v.still_frames);
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
