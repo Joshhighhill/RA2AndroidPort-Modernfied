@@ -143,6 +143,15 @@ const ra2assets::TheaterChain* g_art_chain = nullptr;
 // G-91: the sidebar chrome mix -- sidec01 (Allied, every gate) or sidec02
 // (Soviet), chosen by GameScene from the player's side before the art loads.
 const char* g_sidebar_mix = "sidec01.mix";
+// W4-AM-04: the sidebar chrome (sidecNN.mix art + sidebar.pal) differs per
+// side, and the TextureCache lives for the whole menu session -- so a second
+// mission of the other side showed the first side's cached art. Every
+// side-art key ("sb:*", the SW clock "sw:gclk*") is cached per side.
+inline std::string side_tex_key(const std::string& k) {
+    if (k.compare(0, 3, "sb:") == 0 || k.compare(0, 7, "sw:gclk") == 0)
+        return (std::string(g_sidebar_mix) == "sidec02.mix" ? "S2" : "S1") + k;
+    return k;
+}
 void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
 // W2-UI-06: per-tab "has buildables" published by GameScene before the
 // sidebar draws (-1 = unknown: headless renders treat every tab as stocked).
@@ -4043,9 +4052,10 @@ void draw_text(SDL_Renderer* ren, const std::string& s, int x, int y, int scale,
 
 // Blit one SHP frame at screen (x,y) (frame bbox offset applied), palettized
 // via tc under `key` (position-independent, so the same key caches once).
-void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
+void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key_in,
               const ra2assets::ShpFile& shp, int frame, const ra2assets::Palette& pal, int x, int y) {
     if (frame < 0 || frame >= shp.count()) return;
+    const std::string key = side_tex_key(key_in);   // W4-AM-04
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     // An empty frame (0-dim, e.g. gclock2.shp frame 0 -- the build/recharge clock
     // starts its progress art at frame 1) draws nothing; skip it rather than let
