@@ -30,6 +30,10 @@ struct FxAnimType {
     std::string report;        // StartSound= (wins), else Report= sound event
     std::string next;          // Next= chained anim
     bool crater = false, scorch = false;   // W2-GA-15 Crater=/Scorch= (leave a smudge)
+    // W4-FIX-POS [RE: AnimType +0x344, loader FUN_00427c80 @0x428299; draw
+    // FUN_00422cc0 point.y += it]: YDrawOffset= px (art; FSGRND -20, BIGBLUE -50).
+    // Every AnimClass draw adds it -- FX, building slot anims, fires.
+    int ydraw = 0;
     // [RE: presentation.md §5] Rate= stores 900/Rate game frames per anim
     // frame (no Rate -> 1); Start/End (End defaults to the image frames),
     // LoopStart/LoopEnd (LoopEnd defaults to End), LoopCount (0/1 = once,
@@ -484,6 +488,7 @@ public:
         t.next = aget(key, "Next");
         t.crater = pres_lower(aget(key, "Crater")).rfind("y", 0) == 0;
         t.scorch = pres_lower(aget(key, "Scorch")).rfind("y", 0) == 0;
+        t.ydraw = num("YDrawOffset", 0);
     }
     std::shared_ptr<ra2assets::ShpFile> projectile_shp(const std::string& image) {
         auto it = proj_shps_.find(image);
@@ -547,7 +552,7 @@ public:
             if (fr < 0) continue;
             const int cx = static_cast<int>(std::lround((a.sx - a.sy) * 30.0 + a.ox_px)) + cam.x + 30;
             const int cy = static_cast<int>(std::lround((a.sx + a.sy) * 15.0 - a.level * 15 - a.lift_px)) +
-                           cam.y + 15;
+                           cam.y + 15 + a.t->ydraw;
             draw_anim_frame(ren, tc, *a.t, fr, cx, cy, W, H, a.t->altpal ? alt_palette(a.house) : nullptr,
                             a.t->altpal ? ":h" + std::to_string(a.house) : std::string());
         }

@@ -22,4 +22,30 @@ void screen_to_cell(int px, int py, int tile_w, int tile_h, int& cell_x, int& ce
     cell_y = static_cast<int>(std::lround(fy));
 }
 
+ScreenPt cell_top_vertex(int cell_x, int cell_y, int level) {
+    ScreenPt p = cell_to_screen(cell_x, cell_y, level, 60, 30, 15);
+    p.x += 30;
+    return p;
+}
+
+int overlay_y_offset(bool wall_tib_crate, bool railroad, int overlay_index, bool bridge_cell, int overlay_data) {
+    int y = (wall_tib_crate || overlay_index == 0x7E) ? -12 : 0;
+    if (railroad) y -= 1;
+    if (overlay_index == 0x7E) y -= 1;
+    if (bridge_cell) {
+        y -= 16;
+        if (overlay_data >= 9 && overlay_data <= 17) y -= 15;
+    } else if (overlay_index == 0xEF) {
+        y -= 15;
+    }
+    return y;
+}
+
+ScreenPt overlay_draw_center(int cell_x, int cell_y, int level, int yoff) {
+    ScreenPt p = cell_to_screen(cell_x, cell_y, level, 60, 30, 15);
+    p.x += 30;
+    p.y += 15 + yoff;
+    return p;
+}
+
 }  // namespace ra2engine

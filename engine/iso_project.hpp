@@ -52,4 +52,30 @@ ScreenPt cell_to_screen(int cell_x, int cell_y, int level, int tile_w, int tile_
 // returns the nearest (cell_x, cell_y).
 void screen_to_cell(int px, int py, int tile_w, int tile_h, int& cell_x, int& cell_y);
 
+// ---- W4-FIX-POS: the original's draw anchors (60x30 tiles, 15 px/level) -----
+// Every SHP below is blitted CENTRED (CC_Draw_Shape flag 0x200): the canvas
+// centre lands on the returned point. Frame offsets stay canvas-relative.
+//
+// Building draw point [RE: docs/re/building-render.md §2; gamemd.exe
+// BuildingClass vtbl+0xAC FUN_00459ee0 = Location - (128,128,0), RA2 game.exe
+// FUN_00453c70]: the TOP (north) vertex of the foundation's ORIGIN cell (cx,cy)
+// at the building's level -- independent of the foundation size. Bib, slot
+// anims, doors, damage fires, rubble, DestroyAnim and voxel turrets
+// (TurretAnimX/Y) all hang off this same point. The depth-sort key is NOT this
+// point (it stays the foundation centre, building-render.md §3).
+// The same point is the smudge anchor [RE: FUN_00480260 -> SmudgeType::DrawIt
+// FUN_006b4c70]: a smudge centres on its cell's top vertex.
+ScreenPt cell_top_vertex(int cell_x, int cell_y, int level);
+inline ScreenPt building_draw_point(int cell_x, int cell_y, int level) { return cell_top_vertex(cell_x, cell_y, level); }
+
+// Overlay per-type Y offset [RE: FUN_005fd4b0 + FUN_00480020]:
+//   -12 if the type is Wall=, Tiberium= or Crate= (or runtime overlay #126)
+//   -1  if its Land= is Railroad;  -1 more for overlay #126
+//   -16 if the cell is a high-bridge cell (CellFlags 0x80), and -15 more when
+//       OverlayData is 9..17 (or, without the flag, for overlay #239).
+int overlay_y_offset(bool wall_tib_crate, bool railroad, int overlay_index, bool bridge_cell, int overlay_data);
+// Overlay / ore / gem / crate canvas centre [RE: FUN_006d6280 -> CellClass::
+// DrawOverlay FUN_0047f5b0]: the cell centre + (0, yoff).
+ScreenPt overlay_draw_center(int cell_x, int cell_y, int level, int yoff);
+
 }  // namespace ra2engine

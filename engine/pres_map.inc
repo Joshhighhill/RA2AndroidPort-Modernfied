@@ -16,7 +16,14 @@ public:
         int pal = 0;   // 0 iso/terrain palette, 1 theater (overlay) palette, 2 unit palette
         std::string key;
         std::shared_ptr<ra2assets::Palette> own_pal;   // W3-FIX-A art Palette= (no remap)
-        bool centered = true;   // building-style anchor (foundation centre) vs ore-style top-left
+        // W4-FIX-POS draw anchor (the SHP canvas centre) [RE: docs/gap/wave4/
+        // 01-positioning.md §1]: terrain objects at the cell centre (TerrainClass
+        // Location); civilian buildings and smudges at the origin cell's top
+        // vertex (building_draw_point / FUN_00480260); overlays at the cell
+        // centre + the per-type yoff (FUN_005fd4b0/FUN_00480020).
+        enum class Anchor { CellCentre, TopVertex, Overlay };
+        Anchor anchor = Anchor::CellCentre;
+        int yoff = 0;           // Anchor::Overlay only
         int ovl_id = -1;        // G16: runtime overlay index (live bridge state lookup)
         // W2-GA-06/08 [RE: TerrainClass::Draw_It FUN_0071b450]: terrain objects
         // draw their shadow half (frame + Frames/2, Darken) -- DAT_00821cf1 is a
@@ -87,7 +94,7 @@ public:
             o.key = "smudge:" + type;
             o.level = level(o.x, o.y);
             o.pal = 0;
-            o.centered = false;
+            o.anchor = Obj::Anchor::TopVertex;
             smudges_.push_back(o);
         }
         // Non-ore overlays.
@@ -122,7 +129,15 @@ public:
                 // cell convert = the ISO palette (visual check: srock/bridge art is
                 // clean only with iso*.pal); walls use the unit palette.
                 o.pal = wall ? 2 : 0;
-                o.centered = false;
+                o.anchor = Obj::Anchor::Overlay;
+                // [RE: FUN_005fd4b0] Wall/Tiberium/Crate -12, Land=Railroad -1;
+                // [FUN_00480020] high-bridge cells (CellFlags 0x80) -16, and -15
+                // more for OverlayData 9..17. The bridge-owner flag is stood in
+                // for by the high-bridge overlay family (BRIDGE1/2, BRIDGEB1/B2).
+                const bool crate = pres_lower(rget(name, "Crate")).rfind("y", 0) == 0;
+                const bool rail = pres_lower(rget(name, "Land")) == "railroad";
+                const bool high_bridge = name.rfind("BRIDGE", 0) == 0;
+                o.yoff = ra2engine::overlay_y_offset(wall || crate, rail, id, high_bridge, o.frame);
                 overlays_.push_back(o);
                 if (wall) { wall_ids_[c.y * 1000 + c.x] = id; block_.push_back({c.x, c.y}); }
             }
@@ -181,6 +196,7 @@ public:
             o.fh = fh;
             o.level = level(x, y);
             o.key = "civ:" + image;
+            o.anchor = Obj::Anchor::TopVertex;
             o.anim_image = pres_upper(image);   // W3-B
             o.pal = 2;
             o.shadow = true;
@@ -220,7 +236,7 @@ public:
         o.level = level(x, y);
         o.key = "smudge:" + type;
         o.pal = 0;
-        o.centered = false;
+        o.anchor = Obj::Anchor::TopVertex;
         smudges_.push_back(o);
     }
     const std::vector<std::pair<int, int>>& blocked() const { return block_; }
@@ -242,6 +258,7 @@ public:
     struct LightObj { std::string type; int x, y, fw, fh; };
     const std::vector<LightObj>& lights() const { return lights_; }
     const std::vector<Obj>& overlays() const { return overlays_; }
+    const std::vector<Obj>& smudges() const { return smudges_; }   // W4-FIX-POS (cheat view_key)
 
     void draw_ground(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
                      const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
@@ -309,17 +326,12 @@ public:
         const ra2assets::ShpFile::Frame f = o.shp->frame_info(fr);
         if (f.w <= 0 || f.h <= 0) return;
         const ra2engine::ScreenPt p = ra2engine::cell_to_screen(o.x, o.y, o.level, 60, 30, 15);
-        int ox, oy;   // SHP canvas origin on screen
-        if (o.centered) {
-            // Foundation bbox centre (building-render.md §2 centre registration).
-            const int cx = p.x + cam.x + 30 + (o.fw - o.fh) * 15;
-            const int cy = p.y + cam.y + 15 + (o.fw + o.fh - 2) * 15 / 2;
-            ox = cx - o.shp->width() / 2;
-            oy = cy - o.shp->height() / 2 - o.lift;
-        } else {
-            ox = p.x + cam.x;
-            oy = p.y + cam.y - o.lift;
-        }
+        // W4-FIX-POS: every kind is a centred blit; only the anchor differs.
+        int cx = p.x + cam.x + 30, cy = p.y + cam.y;          // TopVertex
+        if (o.anchor == Obj::Anchor::CellCentre) cy += 15;
+        else if (o.anchor == Obj::Anchor::Overlay) cy += 15 + o.yoff;
+        const int ox = cx - o.shp->width() / 2;               // SHP canvas origin on screen
+        const int oy = cy - o.shp->height() / 2 - o.lift;
         const SDL_Rect dst{ox + f.x, oy + f.y, f.w, f.h};
         // Shadow extents can exceed the image: cull on a generous box.
         if (dst.x + dst.w + 96 <= 0 || dst.y + dst.h + 64 <= 0 || dst.x - 96 >= W || dst.y - 64 >= H) return;
@@ -345,8 +357,9 @@ public:
                     }
                     tc.pin(skey);
                 }
-                // The shadow sits on the ground: no SpawnsTiberium lift.
-                const SDL_Rect sd{ox + s.x, oy + o.lift + s.y, s.w, s.h};
+                // W4-FIX-POS [RE: FUN_0071b450]: the image and the shadow share
+                // one point -- a SpawnsTiberium mine's shadow is lifted 16 px too.
+                const SDL_Rect sd{ox + s.x, oy + s.y, s.w, s.h};
                 SDL_RenderCopy(ren, st, nullptr, &sd);
             }
         }
