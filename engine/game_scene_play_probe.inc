@@ -25,6 +25,19 @@
         p.set("fx_debris", static_cast<double>(pres_.effects().debris_count()));
         p.set("fx_twinkles", static_cast<double>(pres_.effects().twinkle_count()));
         p.set("fx_wakes", static_cast<double>(pres_.effects().wakes_spawned()));
+        p.set("fx_lines", static_cast<double>(pres_.effects().line_count()));
+        p.set("projectiles", static_cast<double>(world_.projectiles().size()));
+        {   // W3-FX: who fired the newest projectile (trail checks)
+            std::string who;
+            if (!world_.projectiles().empty()) {
+                const ra2engine::Projectile& pj = world_.projectiles().back();
+                if (pj.attacker >= 0 && pj.attacker < static_cast<int>(world_.units().size()))
+                    who = world_.units()[static_cast<std::size_t>(pj.attacker)].image;
+                else if (pj.attacker_building >= 0)
+                    who = "building";
+            }
+            p.set_s("proj_last", who);
+        }
         p.set("fx_anims", static_cast<double>(pres_.fx().live()));
         p.set("radar_pings", static_cast<double>(g_radar_pings.size()));
         p.set("sw_strikes", static_cast<double>(world_.sw_strikes().size()));

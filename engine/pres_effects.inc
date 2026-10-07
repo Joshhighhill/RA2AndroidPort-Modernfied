@@ -127,10 +127,19 @@ public:
         Owner(int k = 0, int i = -1) : kind(k), index(i) {}
     };
 
-    void init(PresFx& fx, const Ini& rules, const ra2assets::MixFile& ra2) {
+    void init(PresFx& fx, const Ini& rules, const ra2assets::MixFile& ra2, const std::string& dir) {
         fx_ = &fx;
         rules_ = &rules;
         ra2_ = &ra2;
+        // The RA2 rules.ini (expand01 patch copy): the effect keys are read
+        // from it first (see rget).
+        try {
+            ra2assets::MixFile ex = ra2assets::MixFile::open_path(dir + "expand01.mix");
+            if (const ra2assets::MixEntry* e = ex.find(std::string("rules.ini"))) {
+                const auto raw = ex.read(*e);
+                ra2_rules_ = Ini::parse(std::string(raw.begin(), raw.end()));
+            }
+        } catch (...) {}
         auto gen = [&](const char* k) {
             std::string v = pres_clean(rules.get("General", k));
             if (v.empty()) v = pres_clean(rules.get("AudioVisual", k));
@@ -225,6 +234,7 @@ public:
         return n;
     }
     std::size_t debris_count() const { return bouncers_.size() + voxels_.size(); }
+    std::size_t line_count() const { return lines_.size(); }
 
     // Debris of a destroyed techno (`id` rules section) at world leptons.
     void spawn_debris(const std::string& id, double x, double y, double z, bool on_water) {
@@ -959,7 +969,7 @@ private:
         auto it = ps_types_.find(key);
         if (it != ps_types_.end()) return it->second.get();
         std::unique_ptr<FxPsType> t;
-        if (rules_ && rules_->has(key) && !rget(key, "HoldsWhat").empty()) {
+        if (has_sec(key) && !rget(key, "HoldsWhat").empty()) {
             t = std::make_unique<FxPsType>();
             t->name = key;
             t->holds = pres_upper(rget(key, "HoldsWhat"));
@@ -994,7 +1004,7 @@ private:
         auto it = pt_types_.find(key);
         if (it != pt_types_.end()) return it->second.get();
         std::unique_ptr<FxPtType> t;
-        if (rules_ && rules_->has(key)) {
+        if (has_sec(key)) {
             t = std::make_unique<FxPtType>();
             t->name = key;
             const std::string img = rget(key, "Image");
@@ -1136,7 +1146,12 @@ private:
         const std::string s = pres_lower(v);
         return !s.empty() && (s[0] == 'y' || s[0] == 't' || s[0] == '1');
     }
+    // The original is RA2: a section RA2 rules.ini has is read from it (YR's
+    // rulesmd comments out e.g. GACNST DamageParticleSystems and drops
+    // LargeRedSmoke); YR-only sections fall back to rulesmd.
+    bool has_sec(const std::string& s) const { return ra2_rules_.has(s) || (rules_ && rules_->has(s)); }
     std::string rget(const std::string& s, const std::string& k) const {
+        if (ra2_rules_.has(s)) return pres_clean(ra2_rules_.get(s, k));
         return rules_ ? pres_clean(rules_->get(s, k)) : std::string();
     }
     std::string aget(const std::string& s, const std::string& k) const {
@@ -1175,6 +1190,7 @@ private:
 
     PresFx* fx_ = nullptr;
     const Ini* rules_ = nullptr;
+    Ini ra2_rules_ = Ini::parse("");
     const ra2assets::MixFile* ra2_ = nullptr;
     std::unique_ptr<ra2assets::MixFile> local_;
     ra2assets::Vpl vpl_;

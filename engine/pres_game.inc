@@ -19,7 +19,7 @@ public:
         for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) fx_.add_unit(id, rules.image(id));
         g_fx = &fx_;
         // W3-FX: particles, debris, trails, wakes, twinkles (pres_effects.inc).
-        effects_.init(fx_, rules_ini, ra2);
+        effects_.init(fx_, rules_ini, ra2, dir);
         for (const auto* list : defs)
             for (const ra2engine::UnitTypeDef& d : *list) effects_.note_unit_id(d.combat.image, d.id);
         g_fx3 = &effects_;

@@ -1,0 +1,96 @@
+# fx-particles -- W3-FX effects acceptance on the default skirmish map: a
+# damaged Construction Yard smoking (DamageParticleSystems at
+# DamageSmokeOffset), a damaged Rhino trailing smoke, debris from destroyed
+# tanks / a harvester (MetallicDebris Bouncer anims + AXLE voxel debris), an
+# IFV's missile line trail (DRAGON UseLineTrail), the V3 rocket's
+# V3TAKOFF/V3TRAIL puffs, and the ore twinkles (OreTwinkle).
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Medium Enemy"
+click start
+until 90 scene == game
+require scene == game
+cheat credits 100000
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+assert fx_twinkles > 0                              @W3-FX-twinkle
+cheat reveal
+# --- 1. damaged building smoke ---------------------------------------------------
+cheat damage_building 0:GACNST 700                  @W3-FX-smoke
+wait 30
+assert fx_systems >= 1                              @W3-FX-smoke
+assert fx_particles >= 1                            @W3-FX-smoke
+view building 0:GACNST
+wait 60
+view building 0:GACNST
+shot p01_yard_smoke                                 @W3-FX-smoke
+wait 90
+view building 0:GACNST
+shot p02_yard_smoke_later                           @W3-FX-smoke
+# --- 2. a damaged tank trails smoke, destroyed tanks throw debris ---------------
+cheat spawn HTNK 0 building 0:GACNST +6 +4
+cheat spawn HTNK 1 building 0:GACNST +8 +6
+cheat spawn HTNK 1 building 0:GACNST +9 +6
+cheat spawn HTNK 1 building 0:GACNST +8 +7
+cheat spawn HARV 1 building 0:GACNST +10 +7
+wait 2
+cheat damage_unit 0:HTNK 500                        @W3-FX-smoke
+wait 40
+view building 0:GACNST +7 +5
+shot p03_tank_smoke                                 @W3-FX-smoke
+cheat spawn HTNK 1 building 0:GACNST +14 +12
+cheat spawn HTNK 1 building 0:GACNST +15 +12
+cheat spawn HTNK 1 building 0:GACNST +14 +13
+cheat spawn HARV 1 building 0:GACNST +15 +13
+cheat spawn HARV 1 building 0:GACNST +16 +12
+wait 1
+let d0 = fx_debris
+cheat w2 kill 1:HTNK:0
+cheat w2 kill 1:HTNK:0
+cheat w2 kill 1:HTNK:0
+cheat w2 kill 1:HTNK:0
+cheat w2 kill 1:HARV:0
+cheat w2 kill 1:HARV:0
+view building 0:GACNST +15 +12
+wait 3
+assert fx_debris > $d0                              @W3-FX-debris
+view building 0:GACNST +15 +12
+shot p04_debris_a                                   @W3-FX-debris
+wait 3
+view building 0:GACNST +15 +12
+shot p05_debris_b                                   @W3-FX-debris
+wait 5
+view building 0:GACNST +15 +12
+shot p06_debris_c                                   @W3-FX-debris
+# --- 3. IFV missile line trail -----------------------------------------------------
+cheat spawn FV 0 building 0:GACNST +3 +12
+cheat spawn HTNK 1 building 0:GACNST +3 +18
+wait 2
+click unit 0:FV
+click unit 1:HTNK
+view building 0:GACNST +3 +15
+until 300 projectiles >= 1
+assert fx_lines >= 1                                @W3-FX-trail
+shot p07_ifv_trail                                  @W3-FX-trail
+wait 2
+shot p08_ifv_trail_b
+# --- 4. V3 rocket trail ------------------------------------------------------------
+cheat spawn V3 0 building 0:GACNST -6 +2
+cheat spawn HTNK 1 building 0:GACNST -6 +16
+wait 2
+click unit 0:V3
+click unit 1:HTNK
+view building 0:GACNST -6 +8
+until 600 airborne(0) >= 1                          @W3-FX-trail
+wait 20
+view building 0:GACNST -6 +8
+shot p09_v3_trail                                   @W3-FX-trail
+wait 10
+view building 0:GACNST -6 +10
+shot p10_v3_trail_b                                 @W3-FX-trail
+end

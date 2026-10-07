@@ -81,6 +81,11 @@ public:
             MixFile md = MixFile::open_path(dir + "ra2md.mix");
             conqmd_ = std::make_unique<MixFile>(md.open_nested("conqmd.mix"));
         } catch (...) {}
+        // W3-FX: the RA2 patch caches hold anims conquer.mix lacks (the
+        // particle image FLGRYSMK1 is only in ecache01.mix). Searched last.
+        // [W3 merge note: agent A owns the MIX search list.]
+        try { ecache_ = std::make_unique<MixFile>(MixFile::open_path(dir + "ecache01.mix")); } catch (...) {}
+        try { expand_ = std::make_unique<MixFile>(MixFile::open_path(dir + "expand01.mix")); } catch (...) {}
         try {
             MixFile cache = ra2.open_nested("cache.mix");
             if (const MixEntry* e = cache.find(std::string("anim.pal"))) {
@@ -490,7 +495,7 @@ private:
     }
     std::shared_ptr<ra2assets::ShpFile> load_shp(const std::string& image) {
         const std::string file = pres_lower(image) + ".shp";
-        for (MixFile* m : {conqmd_.get(), conquer_.get()}) {
+        for (MixFile* m : {conqmd_.get(), conquer_.get(), ecache_.get(), expand_.get()}) {
             if (!m) continue;
             if (const MixEntry* e = m->find(file)) {
                 try {
@@ -515,7 +520,7 @@ private:
     std::map<std::string, BldAnims> bld_;
     const Ini* rules_ = nullptr;
     const Ini* art_ = nullptr;
-    std::unique_ptr<MixFile> conquer_, conqmd_;
+    std::unique_ptr<MixFile> conquer_, conqmd_, ecache_, expand_;
     ra2assets::Palette pal_;
     bool has_pal_ = false;
     std::map<std::string, std::unique_ptr<FxAnimType>> types_;
