@@ -126,7 +126,25 @@ struct AiSoakProbe {
                           << " executing=" << executing
                           << " triggers_fired=" << (tr ? tr->triggers_fired : 0)
                           << " sw_shots=" << sw_shots
-                          << " human_base_hp=" << hp.first << "/" << hp.second << "  [";
+                          << " human_base_hp=" << hp.first << "/" << hp.second;
+                {   // W2-SK economy witnesses: ore left, mine output, every house's wallet + miner states
+                    int cells = 0, mined = 0;
+                    for (int y = 0; y < w.ore().h(); ++y)
+                        for (int x = 0; x < w.ore().w(); ++x) cells += w.ore().has_ore(x, y) ? 1 : 0;
+                    for (const ra2engine::OreMine& m : w.ore().mines()) mined += m.spawned;
+                    std::cout << " ore_cells=" << cells << " mines=" << w.ore().mines().size()
+                              << " mine_spawned=" << mined;
+                    for (int h = 0; h < w.house_count(); ++h) {
+                        if (!w.house_combatant(h)) continue;
+                        int st[8] = {0};
+                        for (const ra2engine::Unit& u : w.units())
+                            if (u.alive && u.house == h && u.is_harvester) ++st[std::min(7, (int)u.harv)];
+                        std::cout << " h" << h << "{cr=" << (long long)(w.ai_enabled(h) ? w.ai_credits(h) : g.player_credits_)
+                                  << " harv=" << st[1] << "/" << st[2] << "/" << st[3] << "/" << st[4] << "/"
+                                  << st[5] << "/" << st[6] << "}";
+                    }
+                }
+                std::cout << "  [";
                 for (const auto& kv : types) std::cout << kv.first << "x" << kv.second << " ";
                 std::cout << "]\n";
             }
@@ -159,6 +177,22 @@ struct AiSoakProbe {
                 if (n) std::cout << " at=(" << sx / n << "," << sy / n << ") human_base=(" << hx << "," << hy << ")";
                 std::cout << "\n";
             }
+        }
+        // W2-SK economy diagnostics: every live miner at the end.
+        for (int i = 0; i < (int)w.units().size(); ++i) {
+            const ra2engine::Unit& u = w.units()[(std::size_t)i];
+            if (!u.alive || !u.is_harvester) continue;
+            std::cout << "[ai-soak] miner " << i << " h" << u.house << " at=(" << u.cell_x << "," << u.cell_y
+                      << ") st=" << (int)u.harv << " bales=" << (u.bales_ore + u.bales_gems)
+                      << " ref=" << u.dock_refinery << " moving=" << u.moving() << " path=" << u.path.size()
+                      << " target=(" << u.harv_cell_x << "," << u.harv_cell_y << ")";
+            if (u.dock_refinery >= 0 && u.dock_refinery < (int)w.buildings().size()) {
+                const ra2engine::Building& b = w.buildings()[(std::size_t)u.dock_refinery];
+                const int dx = ra2engine::dock_cell_x(b), dy = ra2engine::dock_cell_y(b);
+                std::cout << " dock=(" << dx << "," << dy << ") dock_owner=" << w.occupancy().at(dx, dy)
+                          << " pass=" << w.walkable(dx, dy);
+            }
+            std::cout << "\n";
         }
         const auto ai_hp = base_hp(ai);
         std::cout << "[ai-soak] ai_base_hp_end=" << ai_hp.first << "/" << ai_hp.second

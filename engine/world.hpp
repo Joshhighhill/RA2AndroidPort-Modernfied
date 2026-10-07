@@ -162,6 +162,7 @@ struct Unit {
                                      // or CMIN post-unload warp in transit)
     double harv_timer = 0.0;         // gulp/unload/rescan/warp accumulator
     bool manual_hold = false;        // player move order: pause auto-resume until arrival
+    int harv_skip_x = -1, harv_skip_y = -1;   // W2-SK-04: ore cell the last move failed to reach
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---------------------
     // ALL defaults INERT (spec §8): no existing demo issues a load/unload
@@ -729,6 +730,16 @@ public:
     }
     // Gap owner A (G-27) [RE: economy.md §2]: rulesmd [General] PurifierBonus.
     void set_purifier_bonus(double b) { purifier_bonus_ = b; }
+    // W2-SK-02: rules [General] TiberiumLongScan / TiberiumShortScan (cells).
+    void set_harvest_scan(int long_scan, int short_scan) {
+        harvest_scan_.long_scan = long_scan > 0 ? long_scan : kOreScanRadius;
+        harvest_scan_.short_scan = short_scan > 0 ? short_scan : 6;
+    }
+    const HarvestScan& harvest_scan() const { return harvest_scan_; }
+    // W2-SK-01: register a map ore mine (TerrainType SpawnsTiberium=yes).
+    void add_ore_mine(int x, int y, int half_frames, int anim_rate, double anim_prob) {
+        ore_.add_mine(x, y, half_frames, anim_rate, anim_prob);
+    }
 
     // The type roster for non-economy consumers (repair/sell). set_economy's
     // roster wins when present so gate worlds behave exactly as before.
@@ -1754,6 +1765,7 @@ private:
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
     double purifier_bonus_ = 0.0;   // rules [General] PurifierBonus (gap owner A, G-27)
+    HarvestScan harvest_scan_;      // W2-SK-02 (save v9)
     // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
     // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
     // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/

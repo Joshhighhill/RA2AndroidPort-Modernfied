@@ -30,7 +30,7 @@ bool is_passable(const std::vector<std::uint8_t>& passable, int gw, int gh, int 
 // ties broken by scan order (y ascending, then x ascending), which is
 // equivalent to "smaller y, then smaller x" since only STRICTLY smaller
 // distances replace the running best.]
-bool find_nearest_ore(const OreField& ore, int cx, int cy, int radius, int& out_x, int& out_y) {
+[[maybe_unused]] bool find_nearest_ore(const OreField& ore, int cx, int cy, int radius, int& out_x, int& out_y) {
     bool found = false;
     int best_dist = INT_MAX;
     int y0 = std::max(0, cy - radius), y1 = std::min(ore.h() - 1, cy + radius);
@@ -140,7 +140,89 @@ Cellxy dock_approach_cell(const Building& b, const std::vector<std::uint8_t>& pa
     return {dx, dy};
 }
 
+// W2-SK-03: true when (x, y) is (or touches) the dock / dock-approach cell of
+// any live refinery -- a miner with nothing to do must not sit there.
+bool on_dock_area(const std::vector<Building>& buildings, const std::vector<int>& refinery_types,
+                  const std::vector<std::uint8_t>& passable, int gw, int gh, int x, int y) {
+    for (const Building& b : buildings) {
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (std::find(refinery_types.begin(), refinery_types.end(), b.type) == refinery_types.end())
+            continue;
+        const Cellxy a = dock_approach_cell(b, passable, gw, gh);
+        if (std::max(std::abs(a.x - x), std::abs(a.y - y)) <= 1) return true;
+        if (std::max(std::abs(dock_cell_x(b) - x), std::abs(dock_cell_y(b) - y)) <= 1) return true;
+    }
+    return false;
+}
+
+// W2-SK-03 [RE-FALLBACK: an idle original miner waits beside its refinery,
+// never on the pad]: the nearest free passable cell (rings 2..8 around the
+// miner, scan order) that is not part of any refinery's dock area.
+bool parking_cell(const std::vector<Building>& buildings, const std::vector<int>& refinery_types,
+                  const std::vector<std::uint8_t>& passable, int gw, int gh, const Occupancy& occ,
+                  int cx, int cy, int& out_x, int& out_y) {
+    for (int r = 2; r <= 8; ++r)
+        for (int y = cy - r; y <= cy + r; ++y)
+            for (int x = cx - r; x <= cx + r; ++x) {
+                if (std::max(std::abs(x - cx), std::abs(y - cy)) != r) continue;
+                if (!is_passable(passable, gw, gh, x, y) || !occ.is_free(x, y)) continue;
+                if (on_dock_area(buildings, refinery_types, passable, gw, gh, x, y)) continue;
+                out_x = x;
+                out_y = y;
+                return true;
+            }
+    return false;
+}
+
 }  // namespace
+
+bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& passable, int gw,
+                        int gh, const Occupancy& occ, int self, int cx, int cy, int radius,
+                        int skip_x, int skip_y, int& out_x, int& out_y) {
+    const int x0 = std::max(0, cx - radius), x1 = std::min(std::min(ore.w(), gw) - 1, cx + radius);
+    const int y0 = std::max(0, cy - radius), y1 = std::min(std::min(ore.h(), gh) - 1, cy + radius);
+    if (x0 > x1 || y0 > y1) return false;
+    const int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    // Zone flood (4-connected == reachable without corner cutting) inside the
+    // scan box, seeded from the miner's own cell.
+    std::vector<std::uint8_t> reach((std::size_t)bw * bh, 0);
+    std::vector<int> stack;
+    if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) {
+        reach[(std::size_t)(cy - y0) * bw + (cx - x0)] = 1;
+        stack.push_back((cy - y0) * bw + (cx - x0));
+    }
+    static const int ndx[4] = {1, -1, 0, 0}, ndy[4] = {0, 0, 1, -1};
+    while (!stack.empty()) {
+        const int i = stack.back();
+        stack.pop_back();
+        const int x = x0 + i % bw, y = y0 + i / bw;
+        for (int d = 0; d < 4; ++d) {
+            const int nx = x + ndx[d], ny = y + ndy[d];
+            if (nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
+            const int j = (ny - y0) * bw + (nx - x0);
+            if (reach[(std::size_t)j] || !is_passable(passable, gw, gh, nx, ny)) continue;
+            reach[(std::size_t)j] = 1;
+            stack.push_back(j);
+        }
+    }
+    bool found = false;
+    int best = INT_MAX;
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x) {
+            if (!reach[(std::size_t)(y - y0) * bw + (x - x0)] || !ore.has_ore(x, y)) continue;
+            if (x == skip_x && y == skip_y) continue;
+            const int o = occ.at(x, y);
+            if (o != Occupancy::kEmpty && o != self) continue;   // Cell_Techno() != NULL
+            const int dist = std::max(std::abs(x - cx), std::abs(y - cy));
+            if (dist < best) {
+                best = dist;
+                out_x = x;
+                out_y = y;
+                found = true;
+            }
+        }
+    return found;
+}
 
 int nearest_refinery(const std::vector<Building>& buildings,
                      const std::vector<BuildingTypeDef>& /*types*/,
@@ -192,7 +274,8 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   const std::vector<std::uint8_t>& passable, int gw, int gh, Occupancy& occ,
                   double dt, const OreValues& values, double house_credits[2],
                   std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events,
-                  int n_houses, const int* purifiers, double purifier_bonus) {
+                  int n_houses, const int* purifiers, double purifier_bonus,
+                  const HarvestScan& scan) {
     for (int idx = 0; idx < (int)units.size(); ++idx) {
         Unit& u = units[idx];
         if (!u.is_harvester || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 ||
@@ -227,12 +310,39 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 if (u.harv_timer > 0.0) break;
                 u.harv_timer = kRescanSecs;
                 int ox = 0, oy = 0;
-                if (find_nearest_ore(ore, u.cell_x, u.cell_y, kOreScanRadius, ox, oy)) {
+                // W2-SK-02/04: TiberiumShortScan first, then TiberiumLongScan
+                // (RA1 Mission_Harvest FINDINGSPOT order); zone- and occupant-
+                // filtered; the last cell a move to failed is skipped once.
+                const bool got =
+                    find_reachable_ore(ore, passable, gw, gh, occ, idx, u.cell_x, u.cell_y,
+                                       scan.short_scan, u.harv_skip_x, u.harv_skip_y, ox, oy) ||
+                    find_reachable_ore(ore, passable, gw, gh, occ, idx, u.cell_x, u.cell_y,
+                                       scan.long_scan, u.harv_skip_x, u.harv_skip_y, ox, oy);
+                u.harv_skip_x = u.harv_skip_y = -1;
+                if (got) {
                     u.harv_cell_x = ox;
                     u.harv_cell_y = oy;
                     u.has_harv_cell = true;  // real stamp -- see world.hpp
                     moves.push_back({idx, ox, oy});
                     u.harv = HarvState::MoveToOre;
+                    break;
+                }
+                // Nothing in reach. A part-loaded miner banks what it has
+                // [RE-FALLBACK: RA1 Mission_Harvest -- no tiberium found and
+                // Tiberium_Load() > 0 -> return to the refinery].
+                if (u.bales_ore + u.bales_gems > 0.0) {
+                    u.harv = HarvState::ReturnToRef;
+                    u.harv_timer = 0.0;
+                    break;
+                }
+                // W2-SK-03: an empty miner never idles on a refinery's dock
+                // area (it froze every full miner queued behind it).
+                if (!u.moving() && on_dock_area(buildings, refinery_types, passable, gw, gh,
+                                                u.cell_x, u.cell_y)) {
+                    int px = 0, py = 0;
+                    if (parking_cell(buildings, refinery_types, passable, gw, gh, occ, u.cell_x,
+                                     u.cell_y, px, py))
+                        moves.push_back({idx, px, py});
                 }
                 break;
             }
@@ -254,7 +364,17 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 if (!at_cell && !u.moving()) {
                     // Stopped without arriving: the path was abandoned
                     // (unreachable / collision give-up in step_units).
-                    u.harv = HarvState::SeekOre;
+                    // W2-SK-04: the next scan skips that cell (no livelock on
+                    // one unreachable target); a miner that is ON ore digs.
+                    u.harv_skip_x = u.harv_cell_x;
+                    u.harv_skip_y = u.harv_cell_y;
+                    if (ore.has_ore(u.cell_x, u.cell_y)) {
+                        u.harv_cell_x = u.cell_x;
+                        u.harv_cell_y = u.cell_y;
+                        u.harv = HarvState::Harvesting;
+                    } else {
+                        u.harv = HarvState::SeekOre;
+                    }
                     u.harv_timer = 0.0;
                 }
                 break;
@@ -349,27 +469,55 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                     }
                 } else {
                     bool at_dock = (u.cell_x == dcx && u.cell_y == dcy && !u.moving());
+                    // W2-SK-03 dock queue [RE-FALLBACK: artmd QueueingCell=4,1
+                    // "a harvester will aim for this cell if it wasn't allowed
+                    // to reserve the docking cell"]: while the dock is taken
+                    // (a unit on it, or another miner docked/unloading here),
+                    // or another returning miner of this refinery is nearer
+                    // the dock, wait at the queueing cell instead of crowding
+                    // the pad -- the crowd sealed the empty miner leaving it.
+                    bool busy = false;
+                    const int on_dock = occ.at(dcx, dcy);
+                    if (on_dock != Occupancy::kEmpty && on_dock != idx) busy = true;
+                    const int my_d = std::max(std::abs(u.cell_x - dcx), std::abs(u.cell_y - dcy));
+                    for (std::size_t j = 0; j < units.size() && !busy; ++j) {
+                        if ((int)j == idx) continue;
+                        const Unit& o = units[j];
+                        if (!o.alive || !o.is_harvester || o.dock_refinery != ref) continue;
+                        if (o.harv == HarvState::WaitDock || o.harv == HarvState::Unloading) busy = true;
+                        else if (o.harv == HarvState::ReturnToRef && !o.chrono_miner) {
+                            const int od = std::max(std::abs(o.cell_x - dcx), std::abs(o.cell_y - dcy));
+                            if (od < my_d || (od == my_d && (int)j < idx)) busy = true;
+                        }
+                    }
                     if (at_dock) {
                         u.harv = HarvState::WaitDock;
                         u.harv_timer = 0.0;
+                    } else if (busy && !at_dock) {
+                        const Building& rb = buildings[(size_t)ref];
+                        const int qx = rb.cx + rb.fw, qy = rb.cy + 1;   // QueueingCell=4,1
+                        const int qd = std::max(std::abs(u.cell_x - qx), std::abs(u.cell_y - qy));
+                        const bool near_dock = my_d <= 2;
+                        if (u.moving() && !near_dock) {
+                            // keep driving; re-evaluated every tick
+                            const Cellxy t = u.path.back();
+                            if (t.x == dcx && t.y == dcy && my_d <= 4) {   // don't close on a busy pad
+                                u.path.resize(u.path_idx < u.path.size() ? u.path_idx + 1 : u.path.size());
+                            }
+                        } else if (qd > 2 || near_dock) {
+                            int px = qx, py = qy;
+                            if (!is_passable(passable, gw, gh, qx, qy) || !occ.is_free(qx, qy) ||
+                                on_dock_area(buildings, refinery_types, passable, gw, gh, qx, qy))
+                                parking_cell(buildings, refinery_types, passable, gw, gh, occ, qx, qy, px, py);
+                            if (!u.moving() || u.path.back().x != px || u.path.back().y != py)
+                                moves.push_back({idx, px, py});
+                        }
                     } else if (!u.moving() || u.path.back().x != dcx ||
                                u.path.back().y != dcy) {
                         // Review Important-1: emit the HarvestMove ONLY when
                         // the unit isn't already pathing to this exact dock
-                        // cell -- mirroring SeekOre's emit-once-on-transition
-                        // pattern (MoveToOre never re-emits either). The old
-                        // unconditional push_back() here forced World to run
-                        // a full A* repath every tick for every driving
-                        // harvester (wasteful) AND reset wait_time=0 every
-                        // tick via order_unit_move, silently disabling
-                        // step_units' kBlockedWait/kGiveUpAfter give-up
-                        // machinery for returning harvesters. Now step_units
-                        // owns the drive (and its own re-path/give-up
-                        // handling) once the move is issued; this branch only
-                        // re-fires when the unit stops without having
-                        // arrived (blocked give-up cleared its path, or the
-                        // stamped dock changed), exactly like MoveToOre's
-                        // "stopped without arriving -> retry" case.
+                        // cell (step_units owns the drive and its re-path /
+                        // give-up handling once the move is issued).
                         moves.push_back({idx, dcx, dcy});
                     }
                 }

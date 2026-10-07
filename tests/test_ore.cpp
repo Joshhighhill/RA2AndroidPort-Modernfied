@@ -83,3 +83,42 @@ TEST_CASE("ore: gems never grow") {
     f.step(300.1, 300.0, 0.06, 0.06, pass, r);
     CHECK(f.density_at(1, 1) == 3);
 }
+
+// W2-SK-01 [RE: gamemd TerrainClass::AI 0x71B9D0 / FUN_00483690]: an ore mine
+// animates, then spawns ONE ore cell at OverlayData 3 on an empty neighbour.
+TEST_CASE("ore: mine animation end spawns one neighbour cell at density 3") {
+    OreField f(10, 10);
+    std::vector<std::uint8_t> pass(100, 1);
+    pass[5 * 10 + 5] = 0;                 // the mine itself is impassable
+    f.add_mine(5, 5, /*half_frames=*/2, /*rate=*/1, /*prob=*/1.0);
+    f.add_mine(5, 5, 2, 1, 1.0);          // duplicate cell ignored
+    REQUIRE(f.mines().size() == 1);
+    OreRng rng;
+    CHECK(f.step_mines(1, pass, rng) == 0);   // stage 1 of 2
+    CHECK(f.step_mines(1, pass, rng) == 1);   // stage 2 == half -> spawn
+    int n = 0;
+    for (int y = 4; y <= 6; ++y)
+        for (int x = 4; x <= 6; ++x)
+            if (f.has_ore(x, y)) {
+                ++n;
+                CHECK(f.density_at(x, y) == kMineSpawnDensity);
+                CHECK(f.kind_at(x, y) == OreKind::Ore);
+            }
+    CHECK(n == 1);
+    CHECK_FALSE(f.has_ore(5, 5));            // never on the mine cell
+    // Run long: the 8-ring fills, then the mine stops adding cells.
+    for (int i = 0; i < 200; ++i) f.step_mines(1, pass, rng);
+    n = 0;
+    for (int y = 0; y < 10; ++y)
+        for (int x = 0; x < 10; ++x) n += f.has_ore(x, y) ? 1 : 0;
+    CHECK(n == 8);
+    CHECK(f.mines()[0].spawned == 8);
+}
+
+TEST_CASE("ore: mine with zero probability never animates") {
+    OreField f(6, 6);
+    std::vector<std::uint8_t> pass(36, 1);
+    f.add_mine(2, 2, 2, 1, 0.0);
+    OreRng rng;
+    CHECK(f.step_mines(500, pass, rng) == 0);
+}

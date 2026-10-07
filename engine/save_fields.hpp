@@ -34,6 +34,10 @@ struct SaveAccess {
         save::io(ar, f.density_);
         save::io(ar, f.variant_);
         save::io(ar, f.timer_);
+        save::io(ar, f.mines_);   // W2-SK-01 ore mines (v9)
+        save::io(ar, f.growth_frames_);
+        save::io(ar, f.spread_frames_);
+        save::io(ar, f.spread_timer_);
     }
     template <class Ar> static void queues(Ar& ar, ProductionQueues& q) { save::io(ar, q.q_); }
     template <class Ar> static void rad_field(Ar& ar, RadField& f) {   // P4 radiation
@@ -143,6 +147,7 @@ struct SaveAccess {
         save::io(ar, w.growth_pct_);
         save::io(ar, w.spread_pct_);
         save::io(ar, w.purifier_bonus_);   // gap owner A (G-27)
+        save::io(ar, w.harvest_scan_);     // W2-SK-02 (v9)
         save::io(ar, w.house_credits_);
         save::io(ar, w.harvest_events_);
         // Repair & Sell
@@ -272,6 +277,21 @@ template <class Ar> void fields(Ar& ar, UnitAnimSeq& v) {
     io(ar, v.stand); io(ar, v.walk); io(ar, v.fire); io(ar, v.die);
 }
 template <class Ar> void fields(Ar& ar, OreRng& v) { io(ar, v.s); }
+template <class Ar> void fields(Ar& ar, HarvestScan& v) {   // W2-SK-02 (v9)
+    io(ar, v.long_scan);
+    io(ar, v.short_scan);
+}
+template <class Ar> void fields(Ar& ar, OreMine& v) {   // W2-SK-01 (v9)
+    io(ar, v.x);
+    io(ar, v.y);
+    io(ar, v.half_frames);
+    io(ar, v.anim_rate);
+    io(ar, v.anim_prob);
+    io(ar, v.stage);
+    io(ar, v.rate);
+    io(ar, v.timer);
+    io(ar, v.spawned);
+}
 template <class Ar> void fields(Ar& ar, ProjRng& v) { io(ar, v.s); }
 template <class Ar> void fields(Ar& ar, ProjectileRules& v) { io(ar, v.gravity); io(ar, v.ballistic_scatter); }
 template <class Ar> void fields(Ar& ar, Superweapon& v) {
@@ -657,6 +677,8 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.dock_refinery);
     io(ar, v.harv_timer);
     io(ar, v.manual_hold);
+    io(ar, v.harv_skip_x);   // W2-SK-04 (v9)
+    io(ar, v.harv_skip_y);
     // cargo
     io(ar, v.passengers_max);
     io(ar, v.size_limit);

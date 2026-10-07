@@ -308,13 +308,15 @@ TEST_CASE("harvest: CMIN warps home, HARV drives") {
     CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
     for (const auto& m : r.moves) CHECK(m.unit != 0);  // no HarvestMove for unit 0
 
-    // HARV: a HarvestMove to the dock cell, no chrono events, hasn't arrived.
+    // HARV: no chrono events, hasn't arrived. W2-SK-03: the CMIN now holds
+    // the dock (WaitDock), so the HARV heads for the QueueingCell (cx+fw,
+    // cy+1) = (12, 9) instead of crowding the pad.
     bool harv_move_found = false;
     for (const auto& m : r.moves) {
         if (m.unit == 1) {
             harv_move_found = true;
-            CHECK(m.gx == 10);
-            CHECK(m.gy == 11);
+            CHECK(m.gx == 12);
+            CHECK(m.gy == 9);
         }
     }
     CHECK(harv_move_found);
@@ -701,4 +703,43 @@ TEST_CASE("harvest: a War Miner whose dock cell is blocked drives to the Queuein
     r.units[0].path.clear();
     r.step(0.1);
     CHECK(r.units[0].harv == HarvState::WaitDock);
+}
+
+// W2-SK-04: the ore search is zone (reachability) and occupant filtered.
+TEST_CASE("harvest: reachable-ore search skips walled-off and occupied cells") {
+    OreField ore(20, 20);
+    std::vector<std::uint8_t> pass(400, 1);
+    Occupancy occ(20, 20);
+    for (int y = 0; y < 20; ++y) pass[y * 20 + 10] = 0;   // a wall at x=10
+    ore.set(11, 5, OreKind::Ore, 5, 0);                     // nearest, but across the wall
+    ore.set(2, 5, OreKind::Ore, 5, 0);                      // reachable, farther
+    int ox = -1, oy = -1;
+    REQUIRE(find_reachable_ore(ore, pass, 20, 20, occ, 0, 8, 5, 48, -1, -1, ox, oy));
+    CHECK(ox == 2);
+    CHECK(oy == 5);
+    occ.set(2, 5, 7);   // another unit sits on it
+    CHECK_FALSE(find_reachable_ore(ore, pass, 20, 20, occ, 0, 8, 5, 48, -1, -1, ox, oy));
+    occ.clear(2, 5);
+    CHECK_FALSE(find_reachable_ore(ore, pass, 20, 20, occ, 0, 8, 5, 48, 2, 5, ox, oy));   // skip cell
+}
+
+// W2-SK-03: an empty miner with no ore never idles on the dock area.
+TEST_CASE("harvest: empty miner with no ore leaves the refinery dock") {
+    Rig r;
+    // Rig refinery at (8,8) 4x3 -> dock cell (10, 11).
+    Unit& u = r.harv(10, 11);
+    (void)u;
+    r.step(0.1);
+    REQUIRE(r.moves.size() == 1);
+    const HarvestMove m = r.moves[0];
+    CHECK(std::max(std::abs(m.gx - 10), std::abs(m.gy - 11)) >= 2);
+}
+
+// RA1 Mission_Harvest fallback: a part-loaded miner with no ore left banks it.
+TEST_CASE("harvest: part-loaded miner with no ore in reach returns to the refinery") {
+    Rig r;
+    Unit& u = r.harv(2, 2);
+    u.bales_ore = 5;
+    r.step(0.1);
+    CHECK(r.units[0].harv == HarvState::ReturnToRef);
 }

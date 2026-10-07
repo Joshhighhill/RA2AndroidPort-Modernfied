@@ -128,8 +128,71 @@ OreKind OreField::take_bale(int x, int y) {
     return k;
 }
 
+void OreField::step_original(double dt, double growth_pct, double spread_pct,
+                             const std::vector<std::uint8_t>& passable, OreRng& rng,
+                             const Occupancy* occ) {
+    static const int dx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+    static const int dy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+    auto can_hold = [&](int x, int y) {   // FUN_004837F0
+        return in(x, y) && kind_at(x, y) == OreKind::None && !is_mine(x, y) &&
+               passable[(size_t)x + (size_t)y * w_] != 0;
+    };
+    timer_ += dt;
+    const double g_secs = growth_frames_ / 15.0;
+    while (growth_frames_ > 0 && timer_ >= g_secs) {
+        timer_ -= g_secs;
+        if (growth_pct < 1e-5) continue;
+        std::vector<int> cand;
+        for (int i = 0; i < w_ * h_; ++i)
+            if (kind_[i] == (std::uint8_t)OreKind::Ore && density_[i] < kMaxOreDensity) cand.push_back(i);
+        if (cand.empty()) continue;
+        const int cap = std::max(5, std::min(50, (int)(cand.size() * growth_pct)));
+        int n = rng.below(cap) + 1;
+        for (; n > 0 && !cand.empty(); --n) {
+            const int j = rng.below((int)cand.size());
+            ++density_[cand[(size_t)j]];
+            cand.erase(cand.begin() + j);
+        }
+    }
+    spread_timer_ += dt;
+    const double s_secs = spread_frames_ / 15.0;
+    while (spread_frames_ > 0 && spread_timer_ >= s_secs) {
+        spread_timer_ -= s_secs;
+        if (spread_pct < 1e-5) continue;
+        std::vector<int> cand;
+        for (int i = 0; i < w_ * h_; ++i) {
+            if (kind_[i] != (std::uint8_t)OreKind::Ore || density_[i] == 0) continue;   // density > tib/2
+            const int x = i % w_, y = i / w_;
+            if (occ && !occ->is_free(x, y)) continue;   // an object on the cell
+            bool open = false;
+            for (int d = 0; d < 8 && !open; ++d) open = can_hold(x + dx[d], y + dy[d]);
+            if (open) cand.push_back(i);
+        }
+        if (cand.empty()) continue;
+        const int cap = std::max(5, std::min(25, (int)(cand.size() * spread_pct)));
+        int n = rng.below(cap) + 1;
+        for (; n > 0 && !cand.empty(); --n) {
+            const int j = rng.below((int)cand.size());
+            const int i = cand[(size_t)j];
+            cand.erase(cand.begin() + j);
+            const int sx = i % w_, sy = i / w_;
+            const int start = rng.below(8);
+            for (int d = 0; d < 8; ++d) {
+                const int nx = sx + dx[(start + d) & 7], ny = sy + dy[(start + d) & 7];
+                if (!can_hold(nx, ny)) continue;
+                set(nx, ny, (OreKind)kind_[i], kMineSpawnDensity, rng.below(12));
+                break;
+            }
+        }
+    }
+}
+
 void OreField::step(double dt, double interval_secs, double growth_pct, double spread_pct,
-                     const std::vector<std::uint8_t>& passable, OreRng& rng) {
+                     const std::vector<std::uint8_t>& passable, OreRng& rng, const Occupancy* occ) {
+    if (growth_frames_ > 0 || spread_frames_ > 0) {
+        step_original(dt, growth_pct, spread_pct, passable, rng, occ);
+        return;
+    }
     timer_ += dt;
     while (timer_ >= interval_secs) {
         timer_ -= interval_secs;
@@ -172,5 +235,60 @@ void OreField::step(double dt, double interval_secs, double growth_pct, double s
 }
 
 double OreField::timer() const { return timer_; }
+
+void OreField::add_mine(int x, int y, int half_frames, int anim_rate, double anim_prob) {
+    if (!in(x, y) || is_mine(x, y)) return;
+    OreMine m;
+    m.x = x;
+    m.y = y;
+    m.half_frames = std::max(1, half_frames);
+    m.anim_rate = std::max(1, anim_rate);
+    m.anim_prob = anim_prob;
+    mines_.push_back(m);
+}
+
+bool OreField::is_mine(int x, int y) const {
+    for (const OreMine& m : mines_)
+        if (m.x == x && m.y == y) return true;
+    return false;
+}
+
+int OreField::step_mines(int frames, const std::vector<std::uint8_t>& passable, OreRng& rng) {
+    // DAT_0089E5F8 neighbour order [RE-FALLBACK: the table's values are the
+    // harvest.cpp ring, N,NE,E,SE,S,SW,W,NW].
+    static const int dx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+    static const int dy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+    int spawned = 0;
+    for (int f = 0; f < frames; ++f) {
+        for (OreMine& m : mines_) {
+            // TerrainClass::AI: not animating -> roll AnimationProbability.
+            if (m.rate == 0 && (double)rng.below(1000000) * 1e-6 < m.anim_prob) {
+                m.stage = 0;
+                m.rate = m.anim_rate;
+                m.timer = m.anim_rate;
+            }
+            if (m.rate == 0) continue;
+            if (--m.timer > 0) continue;
+            ++m.stage;
+            m.timer = m.rate;
+            if (m.stage != m.half_frames) continue;
+            // Animation end -> stop + CellClass forced spread (one cell).
+            m.stage = 0;
+            m.rate = 0;
+            const OreKind k = kind_at(m.x, m.y) == OreKind::None ? OreKind::Ore : kind_at(m.x, m.y);
+            const int start = rng.below(8);
+            for (int d = 0; d < 8; ++d) {
+                const int nx = m.x + dx[(start + d) & 7], ny = m.y + dy[(start + d) & 7];
+                if (!in(nx, ny) || kind_at(nx, ny) != OreKind::None || is_mine(nx, ny)) continue;
+                if (!passable[(size_t)nx + (size_t)ny * w_]) continue;
+                set(nx, ny, k, kMineSpawnDensity, rng.below(12));   // FUN_0065C220(0,11) art
+                ++m.spawned;
+                ++spawned;
+                break;
+            }
+        }
+    }
+    return spawned;
+}
 
 }  // namespace ra2engine

@@ -3612,7 +3612,10 @@ void World::step(double dt) {
     // task-6-brief.md) steps with zero ore/harvest activity: ore_.step is
     // also gated (not just step_harvest), so ore().timer() stays exactly 0.
     if (!types_.empty()) {
-        ore_.step(dt, growth_interval_, growth_pct_, spread_pct_, passable_, ore_rng_);
+        ore_.step(dt, growth_interval_, growth_pct_, spread_pct_, passable_, ore_rng_, &occ_);
+        // W2-SK-01: ore mines (TerrainClass::AI per logic frame).
+        if (!ore_.mines().empty())
+            ore_.step_mines(std::max(1, (int)std::llround(dt * 15.0)), passable_, ore_rng_);
         std::vector<HarvestMove> h_moves;
         std::vector<HarvestEvent> h_events;
         // Gap owner A (G-27): own operational Ore Purifiers per house.
@@ -3629,7 +3632,7 @@ void World::step(double dt) {
                     grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
                     house_credits_.data(), h_moves, h_events,
                     static_cast<int>(house_credits_.size()),
-                    any_purifier ? purifiers.data() : nullptr, purifier_bonus_);
+                    any_purifier ? purifiers.data() : nullptr, purifier_bonus_, harvest_scan_);
         // Path each requested move the same way step_combat's MoveRequests
         // are executed above (order_unit_move mirrors that pattern).
         for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);

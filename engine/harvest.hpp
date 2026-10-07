@@ -16,7 +16,7 @@ namespace ra2engine {
 // but their timer constants are [RE-FALLBACK adjudicated] to these values:
 constexpr double kGulpSecs = 1.0;        // one bale per second while parked
 constexpr double kUnloadSecsPerBale = 2.0 / 15.0;  // 40 bales ~ 5.3 s
-constexpr int kOreScanRadius = 32;       // Chebyshev cells
+// kOreScanRadius / HarvestScan (W2-SK-02) live in ore.hpp (World needs them).
 constexpr double kRescanSecs = 3.0;      // idle rescan cadence
 constexpr double kChronoWarpSecs = 1.0;  // CMIN in-transit time per warp
 // Tiberium bale values, resolved by the caller from Rules (Riparius 25,
@@ -63,7 +63,17 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                   double dt, const OreValues& values, double house_credits[2],
                   std::vector<HarvestMove>& moves, std::vector<HarvestEvent>& events,
                   int n_houses = 2, const int* purifiers = nullptr,
-                  double purifier_bonus = 0.0);
+                  double purifier_bonus = 0.0, const HarvestScan& scan = HarvestScan{});
+
+// W2-SK-04 [RE-FALLBACK: RA1 FootClass::Goto_Tiberium walks the scan rings and
+// takes only cells in the miner's movement ZONE with no other techno on them;
+// the RA2 reader of Rules+0x177C was not isolated]. Nearest (Chebyshev, ring
+// scan order y asc, x asc) ore cell within `radius` that is 4-connected-
+// reachable from (cx, cy) on `passable`, not owned in `occ` by another unit,
+// and not (skip_x, skip_y). Exposed for tests.
+bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& passable, int gw,
+                        int gh, const Occupancy& occ, int self, int cx, int cy, int radius,
+                        int skip_x, int skip_y, int& out_x, int& out_y);
 // Gap owner A: `house_credits` has `n_houses` entries (every skirmish house
 // is paid, not just 0/1 -- house 2+ income used to land in house 0's pool).
 // [RE: economy.md §2 CONFIRMED] each unloaded bale also pays

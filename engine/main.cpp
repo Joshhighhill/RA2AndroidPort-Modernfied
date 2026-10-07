@@ -1793,6 +1793,13 @@ void wire_economy(ra2engine::World& world, const BuildingAssets& ba, const Rules
     world.set_repair_sell_rules(ba.repair_sell);
     // Gap owner A (G-27) [RE: economy.md §2]: rulesmd [General] PurifierBonus=.25.
     world.set_purifier_bonus(rules.general_double("PurifierBonus", 0.0));
+    // W2-SK-01: the original per-type growth/spread clocks ([Riparius]
+    // Growth=2200 / Spread=2200 frames), see OreField::set_original_timing.
+    world.ore().set_original_timing(static_cast<int>(rules.section_double("Riparius", "Growth", 0.0)),
+                                    static_cast<int>(rules.section_double("Riparius", "Spread", 0.0)));
+    // W2-SK-02: [General] TiberiumLongScan=48 / TiberiumShortScan=6 (cells).
+    world.set_harvest_scan(static_cast<int>(rules.general_double("TiberiumLongScan", 32.0)),
+                           static_cast<int>(rules.general_double("TiberiumShortScan", 6.0)));
 }
 
 // FreeUnit grand-opening spawn [RE: economy.md §6]: for every building that
@@ -5244,6 +5251,10 @@ public:
                 world_.refresh_building_types(ba_.roster);   // G16: newly registered types
             }
             for (const auto& [x, y] : map_dressing_.blocked()) world_.block_cell(x, y);
+            // W2-SK-01: ore mines spawn ore (TerrainClass::AI, see ore.hpp).
+            map_dressing_.for_each_ore_mine([&](int x, int y, int half, int rate, double prob) {
+                world_.add_ore_mine(x, y, half, rate, prob);
+            });
             map_pals_[0] = &a_.pal;
             map_pals_[1] = ore_art_.has_pal ? &ore_art_.pal : &a_.pal;
             map_pals_[2] = &ba_.unit_pal;
