@@ -1172,6 +1172,7 @@ template <class Ar> void fields(Ar& ar, CampaignHostSave& v) {
     io(ar, v.u_tag); io(ar, v.u_cx); io(ar, v.u_cy); io(ar, v.u_hp); io(ar, v.u_team);
     io(ar, v.u_type); io(ar, v.u_flags);
     io(ar, v.u_mc_victim); io(ar, v.u_mc_orig);   // W2-CA-15
+    io(ar, v.u_mission);                          // W4-SQ-05 (save v16)
     io(ar, v.b_tag); io(ar, v.b_hp); io(ar, v.b_type); io(ar, v.b_flags);
     io(ar, v.t_type); io(ar, v.t_script); io(ar, v.t_house); io(ar, v.t_pc);
     io(ar, v.t_goal_x); io(ar, v.t_goal_y); io(ar, v.t_members);

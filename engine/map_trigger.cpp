@@ -954,6 +954,9 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         if (!campaign_mode_) goto unhandled;
         effect(find_house(t, a.value, host));
         return;
+    case 81: case 82: case 83:   // W4-SQ-05 Wakeup* (object / all sleepers / all harmless)
+        effect(th);
+        break;
     case 32: case 63:
     case 60: case 111:   // W2-CA-13: SellBuilding / EvictOccupiers on the tagged objects
         if (!campaign_mode_) goto unhandled;

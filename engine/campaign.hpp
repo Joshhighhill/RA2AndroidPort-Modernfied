@@ -228,6 +228,7 @@ struct CampaignHostSave {
     std::vector<std::string> u_type;
     std::vector<std::uint8_t> u_flags;   // dead|discovered<<1|selected<<2|hunt<<3|initial<<4|dmg<<5
     std::vector<int> u_mc_victim, u_mc_orig;   // W2-CA-15 mind control (save v12)
+    std::vector<std::uint8_t> u_mission;       // W4-SQ-05: 1 Sleep, 2 Harmless (save v16)
     std::vector<int> b_tag, b_hp;
     std::vector<std::string> b_type;
     std::vector<std::uint8_t> b_flags;

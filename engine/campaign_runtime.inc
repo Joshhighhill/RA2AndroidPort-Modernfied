@@ -397,6 +397,7 @@ public:
             h.u_hp.push_back(t.hp); h.u_team.push_back(t.team); h.u_type.push_back(t.type);
             h.u_flags.push_back(flags_of(t));
             h.u_mc_victim.push_back(t.mc_victim); h.u_mc_orig.push_back(t.mc_orig);
+            h.u_mission.push_back(t.mission);
         }
         for (const Track& t : btrack_) {
             h.b_tag.push_back(t.tag); h.b_hp.push_back(t.hp); h.b_type.push_back(t.type);
@@ -436,6 +437,7 @@ public:
             set_flags(t, h.u_flags[i]);
             if (i < h.u_mc_victim.size()) t.mc_victim = h.u_mc_victim[i];
             if (i < h.u_mc_orig.size()) t.mc_orig = h.u_mc_orig[i];
+            if (i < h.u_mission.size()) t.mission = h.u_mission[i];
             utrack_.push_back(t);
         }
         btrack_.clear();
@@ -577,6 +579,7 @@ private:
         std::uint8_t dmg_stage = 0; // W2-CA-14: 1 damaged, 2 <= half, 4 <= quarter raised
         int mc_victim = -1;         // W2-CA-15: unit this controller holds
         int mc_orig = -1;           // W2-CA-15: house before it was mind-controlled
+        std::uint8_t mission = 0;   // W4-SQ-05: 1 Sleep, 2 Harmless (placed Mission=)
     };
     struct Team {
         int type = -1;              // teams_data_.teams index
@@ -1027,9 +1030,52 @@ private:
         // ctor attaches the map's own objects once the system exists).
         if (t.tag >= 0 && sys_) sys_->attach_tag(t.tag);
         t.hunt = ra2engine::mission_from_name(mission) == ra2engine::kMissionHunt;
+        // W4-SQ-05 [RE: map-triggers.md §1 object Mission=; TS lineage Mission_Sleep /
+        // Mission_Harmless]: a Sleep or Harmless object never picks a target and
+        // does not shoot back until a WakeUp action (81/82/83) [RE-FALLBACK: the
+        // clone's acquire/retaliate switches stand in for the mission].
+        {
+            const int mi = ra2engine::mission_from_name(mission);
+            if (mi == ra2engine::kMissionSleep || mi == 23 /* Harmless */) {
+                t.mission = mi == ra2engine::kMissionSleep ? 1 : 2;
+                set_dormant(idx, true);
+            }
+        }
         return idx;
     }
     static bool ua_anims_has(const std::string&) { return true; }
+    void set_dormant(int idx, bool on) {
+        ra2engine::Unit& u = w_.units()[(std::size_t)idx];
+        if (on) {
+            u.an.t.no_passive_acquire = true;
+            u.abil.no_retaliate = true;
+            u.target = -1;
+            u.target_building = -1;
+            return;
+        }
+        const std::string& id = utrack_[(std::size_t)idx].type;
+        u.an.t.no_passive_acquire = !rules_flag_default(id, "CanPassiveAquire", true);
+        u.abil.no_retaliate = !rules_flag_default(id, "CanRetaliate", true);
+    }
+    bool rules_flag_default(const std::string& id, const char* key, bool def) const {
+        const std::string v = camp::up(camp::trim_comment(rules_ini_.get(id, key, def ? "yes" : "no")));
+        return !v.empty() && (v[0] == 'Y' || v[0] == 'T' || v[0] == '1');
+    }
+    // 81 WakeupSelf (tagged objects), 82 WakeupAllSleepers, 83 WakeupAllHarmless.
+    int wake(int kind, int trigger_type) {
+        int n = 0;
+        for (std::size_t i = 0; i < utrack_.size(); ++i) {
+            Track& t = utrack_[i];
+            if (t.dead || t.mission == 0) continue;
+            if (kind == 81 && !(t.tag >= 0 && sys_->tag_has_trigger(t.tag, trigger_type))) continue;
+            if (kind == 82 && t.mission != 1) continue;
+            if (kind == 83 && t.mission != 2) continue;
+            t.mission = 0;
+            set_dormant((int)i, false);
+            ++n;
+        }
+        return n;
+    }
     void place_objects(const std::vector<ra2engine::MapObjectRec>& objs) {
         for (const ra2engine::MapObjectRec& o : objs) {
             const int eh = engine_house_of_name(o.owner);
@@ -2316,6 +2362,8 @@ private:
             visuals_.push_back(v);
             return true;
         }
+        case 81: case 82: case 83:   // W4-SQ-05 WakeupSelf / WakeupAllSleepers / WakeupAllHarmless
+            return wake(e.action, e.trigger_type) > 0;
         case 63: {   // Apply100Damage [DEVIATION §9.6: the waypoint cell, no splash]
             int x = 0, y = 0;
             if (!waypoint_cell(e.waypoint, x, y)) return false;
