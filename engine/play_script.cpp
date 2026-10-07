@@ -199,7 +199,7 @@ const std::set<std::string>& known_ops() {
     static const std::set<std::string> k = {
         "set",  "wait", "click", "drag",   "move",    "key",   "hold", "type", "view",
         "place", "shot", "assert", "until", "require", "let",  "cheat", "log", "end",
-        "expect", "dump", "cycle", "if"};
+        "expect", "dump", "cycle", "if", "touch"};
     return k;
 }
 
@@ -322,7 +322,7 @@ bool parse_script(const std::string& text, Script& out, std::string& err) {
             }
         } else if (c.op == "click" || c.op == "key" || c.op == "shot" || c.op == "set" ||
                    c.op == "type" || c.op == "cheat" || c.op == "move" || c.op == "view" ||
-                   c.op == "drag" || c.op == "place" || c.op == "expect") {
+                   c.op == "drag" || c.op == "place" || c.op == "expect" || c.op == "touch") {
             if (!need(1)) return false;
         }
         c.raw = rejoin(0);   // the command without its @tags

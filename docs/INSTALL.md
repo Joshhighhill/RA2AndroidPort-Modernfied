@@ -88,20 +88,43 @@ If the app is closed in the background (low memory), the game was saved to
 - Hotkeys come from `KeyboardMD.ini`: S stop, G guard, X scatter, D deploy,
   Ctrl+1..0 create a team, 1..0 select a team, Esc options.
 
-**Touch:**
-- Tap is a left-click. A long press or two-finger tap is a right-click.
-- Drag a box to select. Pan with two fingers.
-- The **command bar** at the bottom of the battlefield gives you:
+**Touch** (the original is a mouse game; this is the engine's touch scheme):
+
+| Gesture | Does |
+|---|---|
+| Tap | Select, or give an order with a selection (a left-click) |
+| Double tap a unit | Select every unit of that type on screen |
+| Drag with one finger | Scroll the map |
+| Drag with two fingers | Scroll the map |
+| Hold (a ring fills at the finger), then drag | Draw a selection box |
+| Hold, then lift | Cancel the armed mode (sell, repair, placement, superweapon target). It never deselects. On a cameo: hold / cancel the build. On a team button: create the team. |
+| Two-finger tap | Right-click: cancel a mode, else deselect everything |
+| Hold on a cameo or a sidebar button | Show its tooltip |
+| Drag on the radar | Scroll the view with the finger |
+| Swipe up / down on the cameo strip | Scroll the build list |
+
+- A short hint with these gestures shows for 12 seconds when you get control.
+- The **command column** sits on the left edge of the battlefield. It is
+  closed by default: tap **CMD** to open it. It closes itself after a command
+  or after 6 seconds. It holds:
   - **+SEL**: taps add to the selection;
   - **FIRE**: force-fire the next order;
   - **MOVE**: force-move the next order;
   - **STOP**, **GRD**, **SCAT**, **DPLY**;
-  - **1**..**5**: tap to select the team, long press to create it.
-  - **CMD** folds the bar away.
+  - **BRF**: the mission briefing (campaign; tap the map to close it);
+  - **1**..**5**: tap to select the team, hold to create it.
+  While +SEL, FIRE or MOVE is armed, the closed **CMD** button shows it.
+- Sell, repair, placement and superweapon targeting show a banner at the
+  bottom of the battlefield. Tap **X** on the banner (or hold anywhere) to
+  cancel the mode.
 - To place a building, tap once to see where it goes, then tap the same spot
   again to place it.
+- During a mission's intro the game ignores input (as the original does) until
+  the intro ends; Back still opens the options menu.
 - Back opens the options menu in a game, goes back on menu pages, and asks to
   exit on the main menu.
+- The engine build (for example `ENGINE 0.9.0+g1a2b3c4`) is shown in the
+  bottom-left corner of the main menu and as the app's version name.
 
 ## 5. Troubleshooting
 

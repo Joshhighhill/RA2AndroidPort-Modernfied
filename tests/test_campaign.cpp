@@ -387,3 +387,31 @@ TEST_CASE("campaign: SemiPersistant tag fires on the last attached object (RE §
     CHECK(r.fired);
     CHECK(sys.local(3));
 }
+
+// W4-MC-03/04 [RE: FUN_00689890 HomeCell, FUN_00577e90 IsWithinUsableArea]:
+// ALL01 ([Map] Size=0,0,50,64 LocalSize=2,6,46,52): the GIs' home waypoint 98
+// (58,72) is playable; Tanya's off-board staging cell (62,108) is not.
+TEST_CASE("W4-MC-03/04: HomeCell and LocalSize usable area (ALL01)") {
+    const Ini m = Ini::parse(
+        "[Basic]\nHomeCell=98\nAltHomeCell=99\n[Map]\nSize=0,0,50,64\nLocalSize=2,6,46,52\n");
+    const ScenarioBasic b = parse_scenario_basic(m);
+    CHECK(b.home_cell == 98);
+    CHECK(b.alt_home_cell == 99);
+    const ra2engine::MapLocalSize ls = ra2engine::parse_map_local_size(m);
+    REQUIRE(ls.valid);
+    CHECK(ls.size_w == 50);
+    CHECK(ls.h == 52);
+    CHECK(ra2engine::within_usable_area(ls, 58, 72));
+    CHECK_FALSE(ra2engine::within_usable_area(ls, 62, 108));   // staged Tanya
+    // edges: s = cx+cy in (62, 168], d = cx-cy in (-46, 46)
+    CHECK_FALSE(ra2engine::within_usable_area(ls, 31, 31));    // s = 62
+    CHECK(ra2engine::within_usable_area(ls, 32, 31));          // s = 63
+    CHECK(ra2engine::within_usable_area(ls, 84, 84));          // s = 168
+    CHECK_FALSE(ra2engine::within_usable_area(ls, 85, 84));    // s = 169
+    CHECK_FALSE(ra2engine::within_usable_area(ls, 76, 30));    // d = 46
+    CHECK_FALSE(ra2engine::within_usable_area(ls, 30, 76));    // d = -46
+    CHECK(ra2engine::within_usable_area(ls, 75, 30));
+    const ScenarioBasic d = parse_scenario_basic(Ini::parse("[Basic]\n"));
+    CHECK(d.home_cell == 98);
+    CHECK_FALSE(ra2engine::parse_map_local_size(Ini::parse("")).valid);
+}

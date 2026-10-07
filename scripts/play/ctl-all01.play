@@ -1,0 +1,70 @@
+# CTL-ALL01 -- W4-MC-07: control-level check of Allied mission 1 through the
+# REAL shell with REAL clicks only (no cheats, no `set campaign`, no harness
+# centring: every click is `onscreen`, the view is moved with the arrow keys).
+# The original's opening: input locked on [Basic] HomeCell (wp98, the GIs on
+# Liberty Island), the pan to the harbour, Tanya walks in; she must SWIM to the
+# island (MovementZone=AmphibiousDestroyer), which hands the 11 GIs to the player.
+set render_every 0
+set on_quit continue
+
+click button "Single Player"
+click button "New Campaign"
+require scene == "shell:Campaign"
+click well:allied
+click button Load
+until 30 scene == campaign-load
+until 300 scene == game
+require scene == game
+shot t0
+
+# --- 1. the opening: locked, on the home waypoint, nothing of ours on screen ----
+until 60 input_locked == 1                    @W4-MC-02
+assert view_cx >= 52 and view_cx <= 61 and view_cy >= 66 and view_cy <= 75   @W4-MC-03
+assert own_on_screen == 0                     @W4-MC-04
+assert ctl_units == 0                         @W4-MC-04
+# a click while locked does nothing
+let cx0 = cam_x
+hold left 20
+wait 25
+assert cam_x == $cx0                          @W4-MC-02
+click xy 400 300
+wait 2
+assert selected == 0                          @W4-MC-02
+
+# --- 2. control: select Tanya, order her into the water toward the island -------
+until 1200 input_locked == 0                  @W4-MC-02
+wait 5
+assert ctl_units >= 1                         @W4-MC-07
+assert ctl_on_screen >= 1                     @W4-MC-07
+click unit 0:TANY onscreen                    @W4-MC-07
+wait 1
+require selected == 1                         @W4-MC-07
+assert selected_type(TANY) == 1
+shot sel
+# Liberty Island is up the screen from the pier: scroll up until the island's
+# pier cell is visible, then order the move there.
+hold up 10
+wait 12
+click cell 62 77 onscreen                     @W4-MC-01
+wait 1
+assert sel_moving >= 1                        @W4-MC-01
+shot order
+
+# --- 3. she swims; the GIs become the player's -----------------------------------
+until 900 units(0,E1) >= 8                    @W4-MC-01
+shot handed
+assert units(0,TANY) >= 1
+# the handed-over GIs answer a box select + move like any own unit: scroll
+# back to the island, band-select, order a move
+hold down 6
+hold right 6
+wait 10
+shot island
+until 60 ctl_on_screen >= 4                   @W4-MC-07
+drag xy 300 150 1050 650
+wait 1
+assert selected >= 4                          @W4-MC-07
+click xy 600 420
+wait 1
+assert sel_moving >= 1                        @W4-MC-07
+end

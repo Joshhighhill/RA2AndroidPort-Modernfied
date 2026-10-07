@@ -170,8 +170,17 @@ public:
     // Centre the view on the selection (FUN_004AE1A0: mean position; with
     // >2 objects the one farthest from the mean is excluded).
     void center_on_selection();
-    // Centre the camera on (fractional) map cell (cx, cy).
-    void center_on_cell(double cx, double cy);
+    // Centre the camera on (fractional) map cell (cx, cy); `level` lifts the
+    // point by the cell height (W4-MC-03: the home waypoint's ground point).
+    void center_on_cell(double cx, double cy, int level = 0);
+    // W4-MC-04 [RE: FUN_00577e90 IsWithinUsableArea, [Map] LocalSize]: keep
+    // the view inside a WORLD-pixel rectangle (screen = world + cam). A view
+    // larger than the rectangle is centred on it (TacticalClass clamp
+    // FUN_006d7bb0 bounds the view centre the same way).
+    void set_view_limits(int min_x, int min_y, int max_x, int max_y);
+    // W4-MC-02: drop a half-done gesture (band box / right-drag) without
+    // acting on it (LockInput's FUN_0054f3b0).
+    void cancel_gesture() { l_down_ = dragging_ = false; r_down_ = r_drag_ = false; }
     // Clear every cursor mode (repair / sell / SW targeting; a pending
     // placement survives) -- the group-hotkey prologue.
     void clear_cursor_modes();
@@ -424,6 +433,8 @@ private:
     // G-05/G-04 state.
     Scheme scheme_ = Scheme::Original;
     bool mod_shift_ = false, mod_ctrl_ = false, mod_alt_ = false;  // latest event's modifiers
+    bool ev_touch_ = false;                    // W4-AM-09: latest pointer event was a finger
+    bool box_has_own_unit() const;             // W4-AM-01: the band box holds a controllable unit
     bool r_down_ = false, r_drag_ = false;     // right-button gesture (drag = scroll)
     int r_last_x_ = 0, r_last_y_ = 0, r_down_x_ = 0, r_down_y_ = 0;
     std::vector<int> unit_group_;              // per unit index: group 1..10, 0 = none

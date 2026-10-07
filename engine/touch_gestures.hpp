@@ -1,19 +1,25 @@
 #pragma once
-// G-70 / G-71: touch gesture layer (Android). Pure C++17, no SDL -- the
-// Platform feeds it finger events and drains the InputEvents it produces.
+// G-70 / G-71 / W4-AM-01: touch gesture layer (Android). Pure C++17, no SDL --
+// the Platform feeds it finger events and drains the InputEvents it produces.
 //
 // The original is a mouse game; its scheme (left = select AND order, right =
 // cancel/deselect, right-drag = scroll; see input_original.cpp) maps onto a
-// finger like this [RE-FALLBACK: no original touch mapping exists; the time /
-// distance thresholds are Android's ViewConfiguration defaults: long-press
-// timeout 500 ms, touch slop 8 dp (~12 logical px at 1280x720 on a phone)]:
-//   tap                       -> left click (select / order / sidebar / menu)
-//   one-finger drag           -> left drag (band-box select)
-//   long-press (no movement)  -> right click (cancel one mode, else deselect;
-//                                on a cameo: hold / abandon)
-//   two-finger drag           -> Pan (scroll the map with the fingers)
-//   two-finger tap            -> right click
+// finger like this (W4-AM-01, the common mobile-RTS convention) [RE-FALLBACK:
+// no original touch mapping exists; the slop is Android's touch slop (8 dp
+// ~ 12 logical px), the hold is 600 ms (Android's 500 ms long-press timeout
+// turned slow taps into deselects, W4-AM-07)]:
+//   tap                         -> left click (select / order / sidebar / menu)
+//   one-finger drag             -> Pan (the map follows the finger)
+//   hold, then drag             -> left band box from the hold point (box select)
+//   hold, then lift             -> right click marked `hold` (cancel the armed
+//                                  mode; on a cameo: hold / abandon; on a team
+//                                  button: create the team). It NEVER deselects
+//                                  units (W4-AM-07).
+//   two-finger drag             -> Pan
+//   two-finger tap              -> right click (cancel a mode, else deselect)
 // Every emitted event has touch = true (GameScene then never edge-scrolls).
+// hold_feedback() reports the hold progress so the scene can draw a ring at
+// the finger before the hold fires.
 #include <cstdint>
 #include <deque>
 
@@ -24,9 +30,10 @@ namespace ra2engine {
 class TouchGestures {
 public:
     struct Config {
-        uint32_t long_press_ms = 500;
+        uint32_t long_press_ms = 600;
         int slop_px = 12;
         uint32_t two_finger_tap_ms = 300;
+        uint32_t feedback_delay_ms = 150;   // the hold ring appears after this
     };
     TouchGestures() = default;
     explicit TouchGestures(Config c) : cfg_(c) {}
@@ -35,11 +42,15 @@ public:
     void finger_move(int64_t id, int x, int y, uint32_t t_ms);
     void finger_up(int64_t id, int x, int y, uint32_t t_ms);
     // W2-AR-18: the system took the gesture (back-swipe, notification pull):
-    // a pending tap / long-press / two-finger tap produces NO click; a band
-    // box already pressed is released where it is.
+    // a pending tap / hold / two-finger tap produces NO click; a band box
+    // already pressed is released where it is.
     void finger_cancel(int64_t id, int x, int y, uint32_t t_ms);
-    // Time passing with no finger event (long-press detection).
+    // Time passing with no finger event (hold detection).
     void tick(uint32_t now_ms);
+
+    // W4-AM-07: the hold ring. True while one finger rests (within the slop)
+    // past feedback_delay_ms; progress 0..1 reaches 1 when the hold fires.
+    bool hold_feedback(uint32_t now_ms, int& x, int& y, float& progress) const;
 
     bool pending() const { return !out_.empty(); }
     bool pop(InputEvent& ev) {
@@ -50,14 +61,16 @@ public:
     }
 
 private:
-    enum class State { Idle, Pending, Dragging, LongPressed, TwoFinger };
+    enum class State { Idle, Pending, Panning, Held, BandDrag, WaitUp, TwoFinger };
     void emit(InputEvent::Kind k, int x, int y, bool right, uint32_t t);
-    void emit_click(int x, int y, bool right, uint32_t t);
+    void emit_click(int x, int y, bool right, uint32_t t, bool hold = false);
+    void emit_pan(int dx, int dy, int x, int y, uint32_t t);
 
     Config cfg_;
     State st_ = State::Idle;
     int64_t id0_ = -1, id1_ = -1;
     int x0_ = 0, y0_ = 0, cx_ = 0, cy_ = 0;   // first finger: start / current
+    int px_ = 0, py_ = 0;                     // one-finger pan: last emitted point
     int x1_ = 0, y1_ = 0;                     // second finger current
     uint32_t t0_ = 0;
     int mid_x_ = 0, mid_y_ = 0;               // two-finger centroid (last emitted)

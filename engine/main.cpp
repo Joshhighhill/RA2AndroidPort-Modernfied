@@ -143,6 +143,15 @@ const ra2assets::TheaterChain* g_art_chain = nullptr;
 // G-91: the sidebar chrome mix -- sidec01 (Allied, every gate) or sidec02
 // (Soviet), chosen by GameScene from the player's side before the art loads.
 const char* g_sidebar_mix = "sidec01.mix";
+// W4-AM-04: the sidebar chrome (sidecNN.mix art + sidebar.pal) differs per
+// side, and the TextureCache lives for the whole menu session -- so a second
+// mission of the other side showed the first side's cached art. Every
+// side-art key ("sb:*", the SW clock "sw:gclk*") is cached per side.
+inline std::string side_tex_key(const std::string& k) {
+    if (k.compare(0, 3, "sb:") == 0 || k.compare(0, 7, "sw:gclk") == 0)
+        return (std::string(g_sidebar_mix) == "sidec02.mix" ? "S2" : "S1") + k;
+    return k;
+}
 void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
 // W2-UI-06: per-tab "has buildables" published by GameScene before the
 // sidebar draws (-1 = unknown: headless renders treat every tab as stocked).
@@ -914,8 +923,14 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.movement_domain = ra2engine::MovementDomain::Water;
     // W2-AN-10 [rules [LCRF]/[SAPC]: SpeedType=Hover, MovementZone=Amphibious]:
     // the landing craft paths over land OR water.
+    // W4-MC-01 [RE: gamemd MovementZone name table, docs/re/movement-zones.md]:
+    // EVERY Amphibious* zone (AmphibiousDestroyer = Tanya/SEAL/PCOMMANDO/JFISH/
+    // CPHAL, AmphibiousCrusher = APC, Amphibious = LCRF/SAPC/HVR) and every
+    // SpeedType=Amphibious type crosses land AND water. The old exact match left
+    // Tanya land-bound, so the ALL01 GI hand-over (water cells) never fired.
     else if (!r.combat.is_aircraft &&
-             to_lower(rules.section_string(unit_id, "MovementZone", "")) == "amphibious")
+             ra2engine::is_amphibious_zone(rules.section_string(unit_id, "MovementZone", ""),
+                                           rules.section_string(unit_id, "SpeedType", "")))
         r.combat.movement_domain = ra2engine::MovementDomain::Amphibious;
 
     // P5 Veterancy + Crates [RE: veterancy.md V3/V4/V10/V11/V14/C8]: the
@@ -4084,9 +4099,10 @@ void draw_text(SDL_Renderer* ren, const std::string& s, int x, int y, int scale,
 
 // Blit one SHP frame at screen (x,y) (frame bbox offset applied), palettized
 // via tc under `key` (position-independent, so the same key caches once).
-void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
+void blit_shp(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key_in,
               const ra2assets::ShpFile& shp, int frame, const ra2assets::Palette& pal, int x, int y) {
     if (frame < 0 || frame >= shp.count()) return;
+    const std::string key = side_tex_key(key_in);   // W4-AM-04
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     // An empty frame (0-dim, e.g. gclock2.shp frame 0 -- the build/recharge clock
     // starts its progress art at frame 1) draws nothing; skip it rather than let
@@ -5572,9 +5588,17 @@ public:
         if (lifecycle_event(ev_in)) return;   // W2-AR-09 (game_scene_lifecycle.inc)
         ra2engine::InputEvent ev = ev_in;     // W2-AR-08: the touch bar may add modifiers
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
+        if (ev.touch) touch_ui_ = true;   // W4-AM: the touch column / banner appear (also while locked)
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
+        // W4-MC-02 [RE: TAction 0x2E LockInput -> FUN_00683c80 sets
+        // DAT_00a8dd04; while set the tactical WndProc FUN_00692ab0, edge
+        // scroll FUN_00692940, the keyboard FUN_0054ee90/FUN_0054f420 and the
+        // sidebar FUN_006ab0b0 ignore input -- only Esc reaches the options]:
+        // every pointer / key / touch event past the options menu is dropped.
+        if (input_locked_) return;
         if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
         if (touch_bar_handle(ev)) return;   // W2-AR-08 touch command bar (touch_bar.inc)
+        if (touch_ui_handle(ev)) return;    // W4-AM touch router (touch_ui.inc)
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
@@ -5632,6 +5656,8 @@ public:
     // production, exit handoff, free units, audio events, placement/SW confirm.
     void update(double dt) override {
         tooltip_tick(dt);   // W2-UI-07 hover timer (game time)
+        touch_bar_tick(dt);   // W4-AM-05: the open touch column closes itself
+        touch_hint_tick(dt);  // W4-AM-01: the gesture hint
         // P7: the options menu / save-load dialog pause the game (the original
         // runs them as a modal loop; the scenario does not advance meanwhile).
         if (menu_.open_ || sld_.is_open()) {
@@ -5658,6 +5684,7 @@ public:
         }
         dir_x = (dir_x > 0) - (dir_x < 0);
         dir_y = (dir_y > 0) - (dir_y < 0);
+        if (input_locked_) dir_x = dir_y = 0;   // W4-MC-02: FUN_00692940 off while locked
         // [P8 / options.md §5, FUN_00669ec0] The original scrolls
         // trunc(table[idx] * ScrollMultiplier) px per 16 ms tick, idx = 8-accel
         // floored at ScrollRate+1 -- a slow start that accelerates one step per
@@ -6017,9 +6044,12 @@ public:
         // cursor is hidden only while it draws.
         // W2-AR-16a: no software cursor left at the last tap point -- only a
         // real mouse has a pointer to draw.
-        bool drew = mouse_present_ && !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
-                    draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
-                                     world_.repair_frame());
+        // W4-MC-02: LockInput hides the mouse (FUN_00683c80 -> cursor vtbl +0xc):
+        // no software cursor, and the OS pointer is hidden too (drew = true).
+        bool drew = input_locked_ ||
+                    (mouse_present_ && !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
+                     draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
+                                      world_.repair_frame()));
         // G-08 (draw half): every other pointer is the MOUSE.SHP action cursor.
         if (!drew && mouse_present_)
             drew = pres_.draw_cursor(ren, tc, mouse_, world_, input_, mx_, my_,
@@ -6031,6 +6061,9 @@ public:
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
         draw_touch_bar(ren);      // W2-AR-08 (touch only)
+        draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
+        draw_touch_hint(ren);          // W4-AM-01 (touch only)
+        draw_touch_hold_ring(ren);     // W4-AM-07 (touch only)
         if (campaign_) draw_campaign_overlay(ren, tc);   // P10 objectives / mission end (W2-UI-21)
         gf_render(ren, tc);   // gF: victory / defeat text during BorrowedTime (W2-UI-20 game font)
         // P7 overlays + the transient "game saved / load failed" banner.
@@ -6292,6 +6325,7 @@ private:
 #include "realplay_scene.inc"   // gap owner A: placement/production/roster members
 #include "game_scene_lifecycle.inc"   // W2-AR-09: background autosave + pause
 #include "touch_bar.inc"              // W2-AR-07/-08/-16: touch command bar
+#include "touch_ui.inc"               // W4-AM: touch router, mode banner, hold ring, hint
     friend struct CombatProbe;   // gap owner C: --probe-combat drives the real scene
     // The window is always created at 1280x720 (see run_interactive); the sidebar
     // layout/camera/input all key off these, so the driver's plat matches.
@@ -6568,6 +6602,11 @@ private:
     // --- Repair & Sell [RE: repair-sell.md §C1/§D8] ---
     ModeCursor           mouse_;
     bool                 os_cursor_hidden_ = false;
+    // W4-MC-02 LockInput/UnlockInput (trigger actions 46/47). NOT saved: the
+    // original's DAT_00a8dd04 is a plain global (a loaded game is unlocked,
+    // FUN_0053b290). A safety deadline releases a lock no trigger undoes.
+    bool                 input_locked_ = false;
+    long                 input_lock_frame_ = 0;
 
     // --- [P8] edge-scroll acceleration (options.md §5) ---
     static constexpr double kScrollTick = 0.016;   // timeGetTime()>>4 tick
@@ -6621,18 +6660,50 @@ private:
         }
         buildable_ = tab_buildable(active_tab_);
         lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
-        // The mission opens on the player's first unit.
-        for (const ra2engine::Unit& u : world_.units())
-            if (u.house == 0) {
-                cam_.x = static_cast<int>(playfield_w_ / 2.0 - (u.fx - u.fy) * 30.0);
-                cam_.y = static_cast<int>(kWinH / 2.0 - (u.fx + u.fy) * 15.0);
-                break;
-            }
+        campaign_view_setup();   // W4-MC-03/04: LocalSize limits + the HomeCell view
         const ra2engine::CampaignTables tables = camp::load_tables(ra2_);
         const ra2engine::MissionInfo mi = tables.mission(cfg.campaign_map);
         if (!mi.ui_name.empty()) mission_name_ = camp::csf_text(dir_, mi.ui_name);
         briefing_ = camp::csf_text(dir_, mi.briefing.empty() ? campaign_->basic().briefing : mi.briefing);
     }
+    // W4-MC-04 [RE: FUN_00577e90]: the view stays inside [Map] LocalSize.
+    // W4-MC-03 [RE: FUN_004acd80 -> FUN_006d55e0(Waypoint[HomeCell])]: the
+    // mission opens on the home waypoint (ALL01: wp98 (58,72), the GIs on
+    // Liberty Island), with the map centre for a missing waypoint (the
+    // original first sets the waypoint there).
+    void campaign_view_setup() {
+        local_ = campaign_->local_size();
+        if (local_.valid) {
+            // [RE: TacticalClass clamp FUN_006d7bb0 (CONFIRMED), in the
+            // original's pixel space (cell centre x = 30*(cx-cy), y =
+            // 15*(cx+cy)+15; this engine's world x is +30)]: view edges
+            // left 30*(2Lx-W), right 30*(2(Lx+Lw)-W), top 15*(W-5+2Ly),
+            // bottom = top + 30*Lh + 135.
+            const int W = local_.size_w;
+            const int top = 15 * (W - 5 + 2 * local_.y);
+            input_.set_view_limits(30 * (2 * local_.x - W) + 30, top,
+                                   30 * (2 * (local_.x + local_.w) - W) + 30,
+                                   top + 30 * local_.h + 135);
+        }
+        int hx = 0, hy = 0;
+        const int home = campaign_->basic().home_cell;
+        if (campaign_->waypoint_xy(home, hx, hy)) {
+            const ra2assets::MapCell* mc = a_.map.at(hx, hy);
+            input_.center_on_cell(hx, hy, mc ? mc->level : 0);
+        } else if (local_.valid) {
+            // the usable area's centre cell: s = W + 2y + h + 1, d = 2x + w - W
+            const int s = local_.size_w + 2 * local_.y + local_.h + 1;
+            const int d = 2 * local_.x + local_.w - local_.size_w;
+            input_.center_on_cell((s + d) / 2.0, (s - d) / 2.0);
+        }
+    }
+    // W4-MC-04: an object is on the board (inside the usable area).
+    bool on_board(int cx, int cy) const {
+        if (!local_.valid) return true;
+        const ra2assets::MapCell* mc = a_.map.at(cx, cy);
+        return ra2engine::within_usable_area(local_, cx, cy, mc ? mc->level : 0);
+    }
+    ra2engine::MapLocalSize local_;   // invalid (no limits) in a skirmish
     // Word-wrapped text block (the 5x7 glyph font, `cols` characters per line).
     static int draw_wrapped(SDL_Renderer* ren, const std::string& text, int x, int y, int cols,
                             int scale, int max_y, Uint8 r, Uint8 g, Uint8 b) {
@@ -7534,6 +7605,14 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
                header(), shell_version_text(), monitor_frame(), bink_tex, 0,
                trans ? rowf : nullptr);
+    // W4-AM-12: the ENGINE build (VERSION + commit, "0.9.0+g1a2b3c4") in the
+    // bottom-left corner of the main menu, so two builds can be told apart
+    // (the original's own "Version 1.006" line stays where it was).
+    if (page_ == PAGE_MAIN) {
+        std::string v = std::string("ENGINE ") + RA2_VERSION;
+        for (char& ch : v) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        draw_text(ren, v, 6, plat.height() - 12, 1, 150, 150, 150);
+    }
     // [P8 / options.md §1/§4] The 0xD5 controls over the static MNSCRNS screen.
     if (page_ == PAGE_OPTIONS) {
         const std::string res = std::to_string(plat.width()) + " x " +

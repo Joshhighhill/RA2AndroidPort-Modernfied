@@ -1,0 +1,47 @@
+# CTL-SOV01 -- W4-MC-07: control-level check of Soviet mission 1 through the
+# REAL shell with REAL clicks / touch gestures only (no cheats, no centring).
+# The original's opening: input locked, the start scroll, then control.
+set render_every 0
+set on_quit continue
+
+click button "Single Player"
+click button "New Campaign"
+require scene == "shell:Campaign"
+click well:soviet
+click button Load
+until 30 scene == campaign-load
+until 300 scene == game
+require scene == game
+until 60 input_locked == 1                    @W4-MC-02
+shot t0
+until 1200 input_locked == 0                  @W4-MC-02
+wait 5
+assert ctl_units >= 5                         @W4-MC-07
+assert ctl_on_screen >= 1                     @W4-MC-07
+shot unlocked
+
+# --- band select whatever of ours is on screen, order a move ----------------------
+drag xy 30 30 1080 690                        @W4-MC-07
+wait 1
+assert selected >= 1                          @W4-MC-07
+let n = selected
+click unit 0:E2 +2 +2 onscreen                @W4-MC-07
+wait 1
+assert sel_moving >= 1                        @W4-MC-07
+wait 45
+
+# --- the same by touch: one-finger scroll, tap-select, tap-move ---------------------
+touch tap unit 0:E2 onscreen                  @W4-MC-07
+wait 1
+assert selected == 1
+touch tap unit 0:E2 -2 +2 onscreen            @W4-MC-07
+wait 1
+assert sel_moving >= 1                        @W4-MC-07
+let cx0 = cam_x
+touch drag xy 520 300 400 300                 @W4-AM-01
+wait 1
+assert cam_x == $cx0-120                      @W4-AM-01
+assert selected == 1                          @W4-AM-01
+shot moved
+assert outcome == RUNNING
+end

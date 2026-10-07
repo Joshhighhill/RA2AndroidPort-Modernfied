@@ -24,6 +24,26 @@ namespace ra2engine {
 // crossing; the landing craft loads/unloads on the shore).
 enum class MovementDomain { Land = 0, Water = 1, Amphibious = 2 };
 
+// W4-MC-01 [RE: gamemd MovementZone name table (docs/re/movement-zones.md):
+// Normal, Crusher, Destroyer, AmphibiousDestroyer, AmphibiousCrusher,
+// Amphibious, Subterrannean, Infantry, InfantryDestroyer, Fly, Water,
+// WaterBeach, CrusherAll]: the three Amphibious* zones path over land AND
+// water; SpeedType=Amphibious (Tanya/SEAL/APC/...) is the matching cost row.
+// Case-insensitive, surrounding blanks ignored ("[SAPC] MovementZone=Amphibious ").
+inline bool is_amphibious_zone(const std::string& movement_zone, const std::string& speed_type) {
+    auto norm = [](const std::string& v) {
+        std::string o;
+        for (char ch : v) {
+            if (ch == ' ' || ch == 9 || ch == 13) continue;   // blank, tab, CR
+            o += (ch >= 'A' && ch <= 'Z') ? static_cast<char>(ch - 'A' + 'a') : ch;
+        }
+        return o;
+    };
+    const std::string mz = norm(movement_zone);
+    return mz == "amphibious" || mz == "amphibiousdestroyer" || mz == "amphibiouscrusher" ||
+           norm(speed_type) == "amphibious";
+}
+
 // Per-unit combat stats resolved once by the caller (main.cpp, from Rules)
 // and handed to World::add_combat_unit to fill in a spawned Unit's hp/armor/
 // weapon fields. Mirrors the Rules-derived values Task 2 exposes (strength,

@@ -1,0 +1,47 @@
+# CTL-ALL02 -- W4-MC-07: control-level check of Allied mission 2 (started the
+# way the result screen's Continue starts it: `set campaign`, the same
+# CampaignLoadScene). REAL clicks and REAL touch gestures only, no cheats, no
+# harness centring (`onscreen`). ALL02 has no start lock; the player's own
+# engineers / GIs and Tanya (in the PlayerControl house Germans) answer orders.
+set render_every 0
+set on_quit continue
+set campaign ALL02s.MAP GDI
+
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+wait 30
+assert input_locked == 0                      @W4-MC-02
+assert ctl_units >= 5                         @W4-MC-07
+assert ctl_on_screen >= 1                     @W4-MC-07
+shot t0
+
+# --- own engineer: click-select, click-move (it walks there) ---------------------
+click unit 0:ENGINEER onscreen                @W4-MC-07
+wait 1
+require selected == 1
+let ey = sel_cy
+click unit 0:ENGINEER +0 -3 onscreen          @W4-MC-07
+wait 15
+assert sel_cy < $ey                           @W4-MC-07
+
+# --- Tanya (PlayerControl house Germans): touch-select, touch-move -----------------
+touch tap unit 3:TANY onscreen                @W4-MC-07
+wait 1
+assert selected_type(TANY) == 1               @W4-MC-07
+let ty = sel_cy
+touch tap unit 3:TANY +0 -3 onscreen          @W4-MC-07
+wait 15
+assert sel_cy < $ty                           @W4-MC-07
+
+# --- band box over the start force, one group order ---------------------------------
+drag xy 60 60 1050 660
+wait 1
+assert selected >= 3                          @W4-MC-07
+click unit 0:E1 +0 -4 onscreen
+wait 2
+assert moving(0) >= 2                         @W4-MC-07
+shot moved
+assert outcome == RUNNING
+end

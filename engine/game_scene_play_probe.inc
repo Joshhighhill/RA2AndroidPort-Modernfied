@@ -187,11 +187,37 @@
                 const int sy = static_cast<int>(std::lround((fx + fy) * 15.0)) + 15 + cam_.y;
                 return sx >= 0 && sx < playfield_w_ && sy >= 0 && sy < kWinH;
             };
-            for (const ra2engine::Unit& u : world_.units())
-                if (u.house == 0 && u.alive && u.die_time < 0.0 && vis(u.fx, u.fy)) ++on;
+            // W4-MC-07 (HB-3): only objects a human can actually see and use:
+            // alive, not carried, on the board (LocalSize) and not under shroud.
+            auto seen = [&](int cx, int cy) {
+                // (before the first logic tick nothing is revealed yet)
+                return on_board(cx, cy) && (world_.vet_frame() == 0 || world_.object_visible_at(0, cx, cy));
+            };
+            int ctl = 0, ctl_on = 0;
+            for (const ra2engine::Unit& u : world_.units()) {
+                if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+                const bool usable = seen(u.cell_x, u.cell_y);
+                if (u.house == 0 && usable && vis(u.fx, u.fy)) ++on;
+                if (world_.controllable(u.house) && usable) {
+                    ++ctl;
+                    if (vis(u.fx, u.fy)) ++ctl_on;
+                }
+            }
             for (const ra2engine::Building& b : world_.buildings())
-                if (b.house == 0 && b.alive && vis(b.cx + b.fw / 2.0, b.cy + b.fh / 2.0)) ++on;
+                if (b.house == 0 && b.alive && seen(b.cx, b.cy) && vis(b.cx + b.fw / 2.0, b.cy + b.fh / 2.0)) ++on;
             p.set("own_on_screen", on);
+            p.set("ctl_units", ctl);         // controllable (house 0 + PlayerControl) usable units
+            p.set("ctl_on_screen", ctl_on);  // ... of which inside the view
+            p.set("input_locked", input_locked_ ? 1 : 0);
+            p.set("touch_ui", touch_ui_ ? 1 : 0);              // W4-AM touch keys
+            p.set("touch_bar_open", touch_bar_open_ ? 1 : 0);
+            p.set("touch_banner", touch_banner_visible() ? 1 : 0);
+            p.set("touch_mode", touch_mode());
+            p.set("tooltip_up", tooltip_now().empty() ? 0 : 1);
+            double vcx = 0, vcy = 0;
+            if (campaign_) camp_view_cell(vcx, vcy);
+            p.set("view_cx", vcx);
+            p.set("view_cy", vcy);
         }
         // Session verdict as the player sees it. A skirmish has no end path on
         // this tree (GameScene never reads the World's victory state, G-02), so
@@ -249,6 +275,17 @@
         }
         for (std::size_t i = 0; i < lay_.cameos.size() && i < buildable_.size(); ++i)
             p.targets["cameo:" + play_entry_id(active_tab_, buildable_[i])] = rect(lay_.cameos[i].rect);
+        if (touch_bar_visible()) {   // W4-AM: touch column buttons + the mode banner's [X]
+            for (int i = 0; i < touch_btn_count(); ++i) {
+                const SDL_Rect r = touch_btn_rect(i);
+                p.targets[std::string("touch:") + touch_buttons()[static_cast<std::size_t>(i)].label] =
+                    ra2play::Rect{r.x, r.y, r.w, r.h};
+            }
+        }
+        if (touch_banner_visible()) {
+            const SDL_Rect r = touch_cancel_rect();
+            p.targets["touch:cancel"] = ra2play::Rect{r.x, r.y, r.w, r.h};
+        }
         std::string ids;
         for (int t = 0; t < 4; ++t) {
             for (int e : tab_buildable(t)) {
@@ -412,6 +449,9 @@
                     for (int ox = ax - r; ox <= ax + r; ++ox) {
                         if (std::max(std::abs(ox - ax), std::abs(oy - ay)) != r) continue;
                         if (!placement_ok(type, ox, oy)) continue;   // the confirm's own test
+                        // W4-MC-04: a human places where the view can show it --
+                        // not on the last rows at the LocalSize edge.
+                        if (!on_board(ox - 2, oy - 2) || !on_board(ox + d.fw + 1, oy + d.fh + 1)) continue;
                         cx = ox + d.fw / 2;
                         cy = oy + d.fh / 2;
                         return true;

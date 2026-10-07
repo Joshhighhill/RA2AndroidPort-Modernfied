@@ -164,7 +164,49 @@ ScenarioBasic parse_scenario_basic(const ra2assets::Ini& map) {
     b.one_time_only = yes(map.get("Basic", "OneTimeOnly", "no"));
     b.skip_map_select = yes(map.get("Basic", "SkipMapSelect", "no"));
     b.carry_over_money = std::atof(strip(map.get("Basic", "CarryOverMoney", "0")).c_str());
+    b.home_cell = map.get_int("Basic", "HomeCell", 98);
+    b.alt_home_cell = map.get_int("Basic", "AltHomeCell", 99);
     return b;
+}
+
+namespace {
+bool parse4(const std::string& v, int out[4]) {
+    int n = 0;
+    std::size_t p = 0;
+    while (n < 4 && p <= v.size()) {
+        const std::size_t c = v.find(',', p);
+        const std::string tok = strip(v.substr(p, c == std::string::npos ? std::string::npos : c - p));
+        if (tok.empty()) return false;
+        out[n++] = std::atoi(tok.c_str());
+        if (c == std::string::npos) break;
+        p = c + 1;
+    }
+    return n == 4;
+}
+}  // namespace
+
+MapLocalSize parse_map_local_size(const ra2assets::Ini& map) {
+    MapLocalSize m;
+    int sz[4], ls[4];
+    if (!parse4(map.get("Map", "Size", ""), sz) || !parse4(map.get("Map", "LocalSize", ""), ls))
+        return m;
+    if (sz[2] <= 0 || sz[3] <= 0 || ls[2] <= 0 || ls[3] <= 0) return m;
+    m.valid = true;
+    m.size_w = sz[2];
+    m.size_h = sz[3];
+    m.x = ls[0];
+    m.y = ls[1];
+    m.w = ls[2];
+    m.h = ls[3];
+    return m;
+}
+
+bool within_usable_area(const MapLocalSize& m, int cx, int cy, int level) {
+    if (!m.valid) return true;
+    const int W = m.size_w;
+    const int s = cx + cy, d = cx - cy;
+    return W + 2 * m.y + level < s && s <= W + 2 + 2 * (m.h + m.y) + level &&
+           d < 2 * (m.w + m.x) - W && -d < W - 2 * m.x;
 }
 
 // ---------------------------------------------------------------------------

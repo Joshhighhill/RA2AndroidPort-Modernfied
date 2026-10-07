@@ -81,8 +81,30 @@ struct ScenarioBasic {
     bool one_time_only = false;
     bool skip_map_select = false;
     double carry_over_money = 0.0;
+    // W4-MC-03 [RE: gamemd ScenarioClass::Read FUN_00689890 reads [Basic]
+    // HomeCell -> Scenario+0x20c, AltHomeCell -> +0x210; the map load
+    // FUN_004acd80 centres the tactical view (FUN_006d55e0) on
+    // Waypoint[HomeCell] (AltHomeCell when the alt flag +0x1cb0 is set; a
+    // missing waypoint is first set to the map centre).]
+    int home_cell = 98;
+    int alt_home_cell = 99;
 };
 ScenarioBasic parse_scenario_basic(const ra2assets::Ini& map);
+
+// W4-MC-04 [RE: gamemd MapClass::Read FUN_004acd80 stores [Map] Size at
+// Map+0xEC and LocalSize at Map+0xFC; IsWithinUsableArea FUN_00577e90]:
+// the playable rectangle. Cells outside it are the off-board staging strip.
+struct MapLocalSize {
+    bool valid = false;
+    int size_w = 0, size_h = 0;          // [Map] Size= w,h (x,y are 0)
+    int x = 0, y = 0, w = 0, h = 0;      // [Map] LocalSize=
+};
+MapLocalSize parse_map_local_size(const ra2assets::Ini& map);
+// FUN_00577e90 (CONFIRMED, decompiled): with W = Size.w, s = cx+cy, d = cx-cy
+//   W + 2*L.y + lvl < s <= W + 2 + 2*(L.y+L.h) + lvl,
+//   2*L.x - W < d < 2*(L.x+L.w) - W.
+// `level` is the cell height when the caller checks levels (0 otherwise).
+bool within_usable_area(const MapLocalSize& m, int cx, int cy, int level = 0);
 
 // ---------------------------------------------------------------------------
 // Pre-placed objects [RE §4]. kind: 0 structure, 1 vehicle unit, 2 infantry,

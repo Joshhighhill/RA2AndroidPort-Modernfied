@@ -17,10 +17,22 @@ public:
         const std::vector<std::uint8_t>& grid =
             water ? world_.grid_for(ra2engine::MovementDomain::Water) : world_.passable();
         if (water && grid.empty()) return {};
-        return ra2engine::placement_check(cx, cy, d.fw, d.fh, 0, d.adjacent, grid, world_.grid_w(),
-                                          world_.grid_h(), world_.occupancy(), world_.buildings(),
-                                          /*bypass_adjacency=*/false,
-                                          rp_on_ ? &rp_base_normal_ : nullptr);
+        ra2engine::PlacementCheck r =
+            ra2engine::placement_check(cx, cy, d.fw, d.fh, 0, d.adjacent, grid, world_.grid_w(),
+                                       world_.grid_h(), world_.occupancy(), world_.buildings(),
+                                       /*bypass_adjacency=*/false,
+                                       rp_on_ ? &rp_base_normal_ : nullptr);
+        // W4-MC-04 [RE: FUN_00577e90]: never build in the off-board strip
+        // outside [Map] LocalSize (campaign maps; a skirmish has no limits).
+        if (local_.valid)
+            for (int y = cy; y < cy + d.fh; ++y)
+                for (int x = cx; x < cx + d.fw; ++x)
+                    if (!on_board(x, y)) {
+                        r.ok = false;
+                        const std::size_t k = static_cast<std::size_t>((y - cy) * d.fw + (x - cx));
+                        if (k < r.cell_ok.size()) r.cell_ok[k] = false;
+                    }
+        return r;
     }
     bool placement_ok(int type, int cx, int cy) const { return placement_eval(type, cx, cy).ok; }
 

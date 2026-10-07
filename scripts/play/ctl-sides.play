@@ -1,0 +1,30 @@
+# CTL-SIDES -- W4-AM-04: an Allied mission, Abort, then a Soviet mission in the
+# SAME process: the second sidebar must be the Soviet art (the texture cache
+# used to keep the first side's "sb:*" textures). Check the shots by eye:
+# side_allied.png (blue eagle) / side_soviet.png (red hammer and sickle).
+set render_every 0
+set on_quit continue
+click button "Single Player"
+click button "New Campaign"
+click well:allied
+click button Load
+until 30 scene == campaign-load
+until 300 scene == game
+wait 5
+shot side_allied
+key esc
+wait 2
+click "menu:ABORT MISSION"
+wait 2
+if confirm_open == 1 then click confirm:yes
+until 60 scene == "shell:Main Menu"
+click button "Single Player"
+click button "New Campaign"
+click well:soviet
+click button Load
+until 30 scene == campaign-load
+until 300 scene == game
+wait 5
+shot side_soviet
+assert mode == campaign
+end

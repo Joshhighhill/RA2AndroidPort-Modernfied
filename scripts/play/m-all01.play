@@ -22,7 +22,12 @@ assert mode == campaign
 shot start
 
 # --- 1. the mission is live ----------------------------------------------------
-assert own_on_screen > 0
+# W4-MC-02/03: the original opens LOCKED on [Basic] HomeCell (wp98, the GIs on
+# Liberty Island); the player's Tanya is staged off-board, so nothing of the
+# player's own is on screen yet (own_on_screen excludes off-board units).
+until 60 input_locked == 1                    @W4-MC-02
+assert view_cx >= 52 and view_cx <= 61 and view_cy >= 66 and view_cy <= 75   @W4-MC-03
+assert own_on_screen == 0                     @W4-MC-04
 assert units(0) > 0
 until 900 objectives >= 1
 assert triggers_fired > 0
