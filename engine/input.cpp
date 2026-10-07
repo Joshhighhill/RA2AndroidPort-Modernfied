@@ -358,6 +358,7 @@ void Input::commit_double(int px, int py) {
 // now shared by Legacy right-down and Original left-up. G-06: the attack
 // gates use World::is_enemy(0, house) (allies/neutrals are not attack targets).
 void Input::issue_order(int px, int py) {
+    world_.mark_player_order();   // W4-SQ: a player order leaves the script team
     InputEvent ev;   // the body below reads ev.x / ev.y
     ev.x = px;
     ev.y = py;

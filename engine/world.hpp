@@ -366,6 +366,9 @@ struct Unit {
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
+// W4-SQ-06: the cargo_of sentinel of a paratrooper still under its parachute
+// (off the map for every system; AnUnit::para_alt holds its height).
+constexpr int kParachuteCargo = 0x3FFFFFFE;
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
 // frame via World::take_cargo_events -- the take_harvest_events pattern:
@@ -944,6 +947,19 @@ public:
     // W2-CA-17: the same unload order for one transport of any house (team
     // script action 8). No-op unless it is alive with cargo.
     void order_unload(int idx);
+    // W4-SQ-01 [RE: FUN_0065d770 -> FUN_004732d0 AddPassenger]: a campaign
+    // reinforcement created INSIDE its transport. The passenger never touches
+    // the map (no occupancy) and the original adds it without a capacity
+    // test. Returns the new unit index, -1 when the transport is not alive.
+    int add_unit_in_transport(int t_idx, int house, const UnitCombat& c);
+    // W4-SQ-01 [RE: FUN_006ec760 team Load]: one unit of ANY house walks to
+    // and boards transport t_idx (can_load re-checked on arrival).
+    bool order_board(int p_idx, int t_idx);
+    // W4-SQ-06 [RE: FUN_0065d320 Droppod branch]: a paradrop plane (an AN
+    // type registered as `plane_id`) enters at (sx,sy) flying, drops its CARGO
+    // over (dx,dy) and leaves over (ex,ey). -1 when the plane type is unknown.
+    int spawn_drop_plane(const std::string& plane_id, int house, int sx, int sy, int dx, int dy,
+                         int ex, int ey);
     // Drain the board/refuse/eject events accumulated by step_cargo since
     // the last call (the take_harvest_events pattern). Empty if no cargo
     // activity ever happened.
@@ -1151,6 +1167,19 @@ public:
     // allying house b with house a never drags b's other relations along.
     // Inert (empty matrix) until a campaign trigger calls it.
     void set_pair_alliance(int a, int b, bool allied);
+    // W4-SQ: one house's OWN view of another (HouseClass::IsAlliedWith reads
+    // the house's own Allies= bits, so the relation can be one-sided); only
+    // [a][b] changes. Same lazily-built matrix as set_pair_alliance.
+    void set_ally_view(int a, int b, bool allied);
+    // W4-SQ / W4-MC-06: the player just ordered the current selection (Input
+    // calls this beside every selected-unit order). The campaign runtime
+    // drains it and releases those units from their script teams. Transient
+    // (not saved, not hashed).
+    void mark_player_order() {
+        for (int i = 0; i < static_cast<int>(units_.size()); ++i)
+            if (units_[i].selected && units_[i].alive) player_orders_.push_back(i);
+    }
+    std::vector<int> take_player_orders() { std::vector<int> o; o.swap(player_orders_); return o; }
 
     // AllyReveal [RE: multihouse.md §3, D4]: allied houses share revealed shroud.
     // Firewalled behind houses_configured_ + shroud_any_ -> OFF in every gate.
@@ -1688,6 +1717,12 @@ public:
     void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
     int order_occupy_selected(int b_idx);                    // house-0 selection; returns #ordered
     void unload_occupants(int b_idx);                        // BuildingClass::UnloadOccupants
+    // W4-SQ-02: a campaign reinforcement / garrison team member enters a
+    // building at once (FUN_0065d320 all-infantry branch; the script 46
+    // arrival). campaign_can_occupy: the type CanBeOccupied, live, idle,
+    // not full (no unit test).
+    bool campaign_can_occupy(int b_idx) const;
+    bool campaign_occupy_now(int unit_idx, int b_idx);
     bool garrison_firing(int b_idx) const;                   // CanOccupyFire && occupants
     double garrison_range(int b_idx) const;                  // cells
     struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind; int building; int house; };
@@ -1863,6 +1898,8 @@ private:
     void an_nuke_detonate(const SwStrike& s);
     void an_storm_bolt(SwStrike& s, int x, int y);
     void an_paradrop(int house, SuperweaponType type, int cx, int cy);
+    bool an_drop_passenger(int plane);   // W4-SQ-06: one carried paratrooper out
+    void an_step_parachutes(double dt);  // W4-SQ-06: falling paratroopers
     void an_chrono(int house, int sx, int sy, int dx, int dy);
     void an_iron_curtain(int house, int cx, int cy);
     int an_spawn(const std::string& id, int house, int x, int y);
@@ -1976,6 +2013,7 @@ private:
     // cargo_any_ (the firewall: false until the first enter/unload order).
     void step_cargo(double dt);
     bool cargo_any_ = false;
+    std::vector<int> player_orders_;   // W4-SQ: transient, see mark_player_order
     std::vector<CargoEvent> cargo_events_;
 
     // CB-2 Aircraft [RE: aircraft.md §3/§6]: the airborne movement pass --

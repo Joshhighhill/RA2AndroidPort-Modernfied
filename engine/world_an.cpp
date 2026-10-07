@@ -10,6 +10,7 @@
 
 #include "combat.hpp"
 #include "flight.hpp"
+#include "group_move.hpp"   // nearest_free_cells (W4-SQ-06)
 #include "roster2.hpp"
 #include "weapon_unit.hpp"
 #include "world.hpp"
@@ -396,6 +397,22 @@ void World::an_step_fixed_wing(double dt) {
                 break;
             case kParadrop: {
                 // PDPLANE: straight run over the drop site, then off the map.
+                // W4-SQ-06: a team plane drops its CARRIED members instead.
+                if (!u.cargo.empty()) {
+                    goal_x = u.an.drop_x;
+                    goal_y = u.an.drop_y;
+                    fly = true;
+                    if (cdist(u.fx, u.fy, u.an.drop_x, u.an.drop_y) * kLept <= P.paradrop_radius &&
+                        !an_drop_passenger(i)) {
+                        // No landing room left: the plane flies on and tries
+                        // again over its next cells (the original keeps
+                        // looping over the target; RE-FALLBACK).
+                        Unit& pl = units_[i];
+                        pl.an.drop_x = std::max(0, std::min(grid_w_ - 1, pl.an.drop_x + (pl.an.exit_x > pl.an.drop_x ? 1 : pl.an.exit_x < pl.an.drop_x ? -1 : 0)));
+                        pl.an.drop_y = std::max(0, std::min(grid_h_ - 1, pl.an.drop_y + (pl.an.exit_y > pl.an.drop_y ? 1 : pl.an.exit_y < pl.an.drop_y ? -1 : 0)));
+                    }
+                    break;
+                }
                 const bool dropping = u.an.drop_left > 0;
                 goal_x = dropping ? u.an.drop_x : u.an.exit_x;
                 goal_y = dropping ? u.an.drop_y : u.an.exit_y;
@@ -577,6 +594,94 @@ void World::an_paradrop(int house, SuperweaponType type, int cx, int cy) {
     }
 }
 
+// ------------------------------------------------- W4-SQ-06 team paradrop --
+
+int World::spawn_drop_plane(const std::string& plane_id, int house, int sx, int sy, int dx, int dy,
+                            int ex, int ey) {
+    const int pi = an_spawn(plane_id, house, sx, sy);
+    if (pi < 0) return -1;
+    Unit& p = units_[pi];
+    p.fx = p.cell_x;
+    p.fy = p.cell_y;
+    p.altitude = an_.sw.flight_level;
+    p.flight_state = FlightState::Cruising;
+    p.an.sortie = kParadrop;
+    p.an.drop_left = 0;
+    p.an.drop_type.clear();
+    p.an.drop_x = std::max(0, std::min(grid_w_ - 1, dx));
+    p.an.drop_y = std::max(0, std::min(grid_h_ - 1, dy));
+    p.an.exit_x = std::max(0, std::min(grid_w_ - 1, ex));
+    p.an.exit_y = std::max(0, std::min(grid_h_ - 1, ey));
+    const int f = facing_from_delta(dx - sx, dy - sy);
+    if (f >= 0) p.facing = f;
+    p.body_facing = facing_u16_from_delta(dx - sx, dy - sy);
+    return pi;
+}
+
+// One carried member jumps: it leaves the plane over the nearest free land
+// cell around the drop site and falls under its parachute from the plane's
+// height [RE-FALLBACK: the per-jump cadence and the landing-cell scan of the
+// ParadropApproach mission were not traced; one jump per frame onto the
+// first free cell of the rings around the target, as the SW plane does].
+bool World::an_drop_passenger(int i) {
+    Unit& pl = units_[i];
+    if (pl.cargo.empty()) return false;
+    for (int r = 0; r <= 6; ++r)
+        for (int oy = -r; oy <= r; ++oy)
+            for (int ox = -r; ox <= r; ++ox) {
+                if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
+                const int cx = pl.an.drop_x + ox, cy = pl.an.drop_y + oy;
+                if (!walkable(cx, cy) || !occ_.is_free(cx, cy) || building_at_cell(cx, cy) >= 0) continue;
+                const int p = pl.cargo.front();
+                pl.cargo.erase(pl.cargo.begin());
+                if (p < 0 || p >= static_cast<int>(units_.size())) return true;
+                Unit& u = units_[p];
+                u.cargo_of = kParachuteCargo;
+                u.cell_x = cx;
+                u.cell_y = cy;
+                u.fx = cx;
+                u.fy = cy;
+                u.guard_x = cx;
+                u.guard_y = cy;
+                u.an.para_alt = std::max(1.0, pl.altitude);
+                if (const ra2assets::MapCell* mc = map_->at(cx, cy)) u.level = mc->level;
+                occ_.set(cx, cy, p);   // the landing cell is taken from the jump on
+                u.ia.seq = -1;         // W3-B: the machine restarts on landing
+                an_event(SwEvent::Dropped, pl.house, SuperweaponType::ParaDrop, cx, cy);
+                return true;
+            }
+    return false;
+}
+
+void World::an_step_parachutes(double dt) {
+    const double fall = std::max(1, an_.sw.parachute_fall) * 15.0 * dt;
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        Unit& u = units_[i];
+        if (u.cargo_of != kParachuteCargo) continue;
+        if (!u.alive) { u.cargo_of = -1; u.an.para_alt = 0.0; continue; }
+        u.an.para_alt -= fall;
+        if (u.an.para_alt > 0.0) continue;
+        u.an.para_alt = 0.0;
+        u.cargo_of = -1;   // touched down: an ordinary unit on its cell
+        if (occ_.at(u.cell_x, u.cell_y) != i) {
+            if (occ_.is_free(u.cell_x, u.cell_y)) occ_.set(u.cell_x, u.cell_y, i);
+            else {
+                const std::vector<Cellxy> g = nearest_free_cells({u.cell_x, u.cell_y}, 1, passable_, grid_w_,
+                                                                 grid_h_, occ_);
+                if (!g.empty()) {
+                    u.cell_x = g[0].x;
+                    u.cell_y = g[0].y;
+                    u.fx = u.cell_x;
+                    u.fy = u.cell_y;
+                    occ_.set(u.cell_x, u.cell_y, i);
+                }
+            }
+        }
+        u.guard_x = u.cell_x;
+        u.guard_y = u.cell_y;
+    }
+}
+
 // ---------------------------------------------------------- AI naval yard --
 
 bool World::ai_naval_spot_ok(int house, const HouseAiRec& rec, const BuildingTypeDef& t, int cx,
@@ -636,6 +741,7 @@ void World::step_air_naval(double dt) {
     an_step_naval(dt);
     an_step_spawners(dt);
     an_step_fixed_wing(dt);
+    an_step_parachutes(dt);   // W4-SQ-06
     an_step_deaths(dt);
     // Night Hawk (W2-AN-08) [RE: aircraft.md §2, BalloonHover +0xD6A]: a
     // non-BalloonHover Landable jumpjet with no goal and no target lands.

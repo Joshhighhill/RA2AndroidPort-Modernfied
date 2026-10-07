@@ -410,7 +410,7 @@ public:
             h.t_issued_frame.push_back(t.issued_frame);
             h.t_created.push_back(t.created);
             h.t_flags.push_back((std::uint8_t)((t.st.issued ? 1 : 0) | (t.st.done ? 2 : 0) |
-                                               (t.recruiting ? 4 : 0)));
+                                               (t.recruiting ? 4 : 0) | (t.airdrop ? 8 : 0)));
         }
         h.destroyed_units = destroyed_units_;
         h.destroyed_buildings = destroyed_buildings_;
@@ -457,6 +457,7 @@ public:
             t.st.issued = (h.t_flags[i] & 1) != 0;
             t.st.done = (h.t_flags[i] & 2) != 0;
             t.recruiting = (h.t_flags[i] & 4) != 0;
+            t.airdrop = (h.t_flags[i] & 8) != 0;   // W4-SQ-06 (save v15)
             teams_.push_back(t);
         }
         destroyed_units_ = h.destroyed_units;
@@ -587,6 +588,7 @@ private:
         long issued_frame = 0;
         bool recruiting = false;
         long created = 0;
+        bool airdrop = false;       // W4-SQ-06: members still in the drop plane / falling
     };
 
     static std::uint8_t flags_of(const Track& t) {
@@ -667,6 +669,20 @@ private:
             if (i == 0) player_credits_ = credits;
             else w_.grant_credits_for_test((int)i, credits);
         }
+        // W4-SQ (SOV09 / ALL05 triage) [RE: HouseClass::IsAlliedWith reads the
+        // house's OWN Allies= bitfield]: every house sees every other through
+        // its own Allies= list, one-sided where the map makes it so. The
+        // player's side (team 0: the player, PlayerControl houses, mutual
+        // allies) stays allied both ways [the W2-CA-02 deviation]. Before, all
+        // non-player combatants were one alliance: SOV09's Russian drop groups
+        // never fought the Americans and hunted the Yuris instead, and ALL05's
+        // Tanya shot down the spy helicopter of a house that lists her.
+        for (std::size_t a = 0; a < house_names_.size(); ++a)
+            for (std::size_t b = 0; b < house_names_.size(); ++b) {
+                if (a == b || !w_.house_combatant((int)a) || !w_.house_combatant((int)b)) continue;
+                const bool team0 = w_.house_team((int)a) == 0 && w_.house_team((int)b) == 0;
+                w_.set_ally_view((int)a, (int)b, team0 || lists(house_names_[a], house_names_[b]));
+            }
         w_.enable_shroud(true);
         // W2-GA-03 hand-off: the scenario's own FogOfWar flag ([Basic], every
         // RA2 campaign map says no).
@@ -973,7 +989,13 @@ private:
                    !(far && far_cell(x, y, /*water=*/false, goal_x, goal_y, cx, cy))) {
             return -1;
         }
-        w_.add_combat_unit(cx, cy, eh, ut->combat);
+        if (place_vet_ > 0) {   // W4-SQ-04: TeamType VeteranLevel on a created member
+            ra2engine::UnitCombat c = ut->combat;
+            c.veteran_rank = place_vet_;
+            w_.add_combat_unit(cx, cy, eh, c);
+        } else {
+            w_.add_combat_unit(cx, cy, eh, ut->combat);
+        }
         const int idx = (int)w_.units().size() - 1;
         ra2engine::Unit& u = w_.units()[(std::size_t)idx];
         if (health > 0) u.hp = ra2engine::campaign_strength(u.max_hp, health, false);
@@ -1217,6 +1239,10 @@ private:
             }
             if (!live(u)) {
                 t.dead = true;
+                if (std::getenv("RA2_CAMP_DEBUG"))
+                    std::cerr << "[camp-debug] f" << frame_ << " unit " << i << " " << t.type << " house " << u.house
+                              << " died at " << u.cell_x << "," << u.cell_y << " by house "
+                              << gf_attacker_house((int)i, -1, u.house) << "\n";
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
                 // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
@@ -1297,7 +1323,7 @@ private:
             // team is finished, or its TeamType says AreTeamMembersRecruitable.
             if (t.team >= 0 && !member_recruitable(t.team, &tm)) continue;
             const ra2engine::Unit& u = w_.units()[i];
-            if (!live(u) || u.house != tm.house) continue;
+            if (!live(u) || u.house != tm.house || u.cargo_of >= 0) continue;   // W4-SQ-01: on the map only
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (need[k] > 0 && t.type == types[k]) {
                     --need[k];
@@ -1329,6 +1355,132 @@ private:
     void adopt(Team& tm, int team_idx) {
         for (int m : tm.members) utrack_[(std::size_t)m].team = team_idx;
     }
+    // --- W4-SQ-01/06 reinforcement delivery [RE: FUN_0065d770] -------------
+    struct Member { std::string type; bool transport = false; };
+    bool rules_flag(const std::string& id, const char* key) const {
+        const std::string v = camp::up(camp::trim_comment(rules_ini_.get(id, key, "no")));
+        return !v.empty() && (v[0] == 'Y' || v[0] == 'T' || v[0] == '1');
+    }
+    // The TaskForce expanded to one entry per object, in creation order, with
+    // the transport split of FUN_0065d770: with Full=yes, a member whose type
+    // has Passengers>0 is a transport when it is a UnitClass (an AircraftClass
+    // when the TaskForce holds an AircraftType with Passengers, FUN_006EE9D0)
+    // and, if any TaskForce type is Naval (TechnoType +0xCCE), only a Naval one.
+    std::vector<Member> team_members_of(const ra2engine::MapTeamType& tt) {
+        std::vector<Member> ms;
+        unresolved_ = 0;
+        const auto* tf = teams_data_.taskforce(tt.taskforce);
+        if (!tf) return ms;
+        bool air_team = false, naval_team = false;
+        for (const ra2engine::MapTaskMember& m : *tf) {
+            const camp::UnitType* ut = types_.unit(m.type);
+            if (!ut) continue;
+            if (ut->combat.is_aircraft && ut->combat.passengers > 0) air_team = true;
+            if (rules_flag(camp::up(m.type), "Naval")) naval_team = true;
+        }
+        for (const ra2engine::MapTaskMember& m : *tf) {
+            const camp::UnitType* ut = types_.unit(m.type);
+            if (!ut) { unresolved_ += std::max(0, m.count); continue; }
+            const std::string id = camp::up(m.type);
+            const bool unit_class = !ut->combat.is_aircraft && camp::index_of(ra2_vehicles_, id) >= 0;
+            const bool klass = air_team ? ut->combat.is_aircraft : unit_class;
+            const bool transport = tt.full && ut->combat.passengers > 0 && klass &&
+                                   (!naval_team || rules_flag(id, "Naval"));
+            for (int k = 0; k < m.count; ++k) ms.push_back({m.type, transport});
+        }
+        return ms;
+    }
+    // A member created inside `carrier` (FUN_004732d0): never on the map.
+    int add_passenger(int carrier, const std::string& type, int house, const std::string& tag) {
+        const camp::UnitType* ut = types_.unit(type);
+        if (!ut) return -1;
+        ra2engine::UnitCombat c = ut->combat;
+        if (place_vet_ > 0) c.veteran_rank = place_vet_;
+        const int idx = w_.add_unit_in_transport(carrier, house, c);
+        if (idx < 0) return -1;
+        placing_ = true;
+        sync_tracks();
+        placing_ = false;
+        Track& t = utrack_[(std::size_t)idx];
+        t.type = camp::up(type);
+        t.initial = true;
+        t.hp = w_.units()[(std::size_t)idx].hp;
+        t.cx = t.cy = -1;   // its first on-map cell raises the cell events
+        t.tag = tag.empty() ? -1 : data_.find_tag(tag);
+        if (t.tag >= 0 && sys_) sys_->attach_tag(t.tag);
+        return idx;
+    }
+    // W4-SQ-06 [RE: FUN_0065d320 Droppod branch, @0x65d5e6..0x65d74d]: the
+    // house's paradrop plane (AircraftTypes "PDPLANE", the name string at
+    // 0x838700) is created flying, at the TransportWaypoint when
+    // UseTransportOrigin=yes, else on the house's Edge= (house +0x1E0; an
+    // invalid edge -> FUN_0050D8A0), takes every created member aboard
+    // (FUN_004732D0) and flies Mission ParadropApproach (0x1A) to the
+    // reinforcement waypoint. [RE-FALLBACK: MapClass::PickCellOnEdge
+    // FUN_004AA350 picks a random edge cell; the clone takes the edge cell
+    // straight up/right/down/left of the drop point on screen, and the plane
+    // leaves across the map on the same heading.] Returns the plane index, -1
+    // when no plane type is registered (the members are then put down at the
+    // waypoint, the old fallback).
+    int deliver_droppod(Team& tm, const ra2engine::MapTeamType& tt, const std::vector<Member>& ms, int x,
+                        int y, int& placed, int& carried) {
+        const int W = w_.grid_w(), H = w_.grid_h();
+        int sx = -1, sy = -1;
+        if (tt.use_transport_origin && tt.transport_waypoint >= 0 && !waypoint_cell(tt.transport_waypoint, sx, sy))
+            sx = sy = -1;
+        // Screen directions in cell space: N (-1,-1), E (+1,-1), S (+1,+1), W (-1,+1).
+        static const int kDir[4][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+        if (sx < 0) {
+            const int edge = edge_of_house(tm.house);
+            int cx = x, cy = y;
+            while (cx + kDir[edge][0] >= 0 && cx + kDir[edge][0] < W && cy + kDir[edge][1] >= 0 &&
+                   cy + kDir[edge][1] < H) {
+                cx += kDir[edge][0];
+                cy += kDir[edge][1];
+            }
+            sx = cx;
+            sy = cy;
+        }
+        // Exit: on across the map along the entry -> drop heading.
+        double dx = x - sx, dy = y - sy;
+        const double len = std::hypot(dx, dy);
+        if (len < 0.5) { dx = 1.0; dy = 1.0; } else { dx /= len; dy /= len; }
+        double ex = x, ey = y;
+        for (int k = 0; k < 4 * (W + H); ++k) {
+            const double nx = ex + dx, ny = ey + dy;
+            if (nx < 0 || ny < 0 || nx > W - 1 || ny > H - 1) break;
+            ex = nx;
+            ey = ny;
+        }
+        const std::string team_tag =
+            tt.tag.empty() || camp::up(tt.tag) == "<NONE>" ? std::string() : tt.tag;
+        const int plane = w_.spawn_drop_plane("PDPLANE", tm.house, sx, sy, x, y, (int)std::lround(ex),
+                                              (int)std::lround(ey));
+        if (plane >= 0) {
+            placing_ = true;
+            sync_tracks();   // the plane is not a team member
+            placing_ = false;
+            utrack_[(std::size_t)plane].type = "PDPLANE";
+        }
+        for (const Member& m : ms) {
+            const int idx = plane >= 0 ? add_passenger(plane, m.type, tm.house, team_tag)
+                                       : place_unit(m.type, tm.house, x, y, 256, team_tag, "Guard", /*far=*/true);
+            if (idx < 0) continue;
+            tm.members.push_back(idx);
+            (plane >= 0 ? carried : placed)++;
+        }
+        return plane;
+    }
+    // [Houses] Edge= (North/East/South/West) [RE: house +0x1E0; any other
+    // value -> FUN_0050D8A0 -> 0].
+    int edge_of_house(int eh) const {
+        if (eh < 0 || eh >= (int)house_names_.size()) return 0;
+        const std::string e = camp::up(camp::trim_comment(map_.get(house_names_[(std::size_t)eh], "Edge", "")));
+        if (e == "EAST") return 1;
+        if (e == "SOUTH") return 2;
+        if (e == "WEST") return 3;
+        return 0;
+    }
     // CreateTeam (4) / Reinforcement (7/80/107).
     bool create_team(const std::string& id, bool reinforce, int waypoint) {
         const int ti = teams_data_.find_team(id);
@@ -1342,11 +1494,14 @@ private:
         if (tm.house < 0) { note_ = "[no house]"; return false; }
         char b[160];
         if (reinforce) {
-            // [RE-FALLBACK §9.3] TaskForce members appear at the team waypoint.
+            // [RE: FUN_0065d320 Reinforcement -> FUN_0065d770 create + FUN_0065da50
+            // place]: the members are created, then a Droppod team flies in by
+            // plane (W4-SQ-06), a Full team rides inside its transport
+            // (W4-SQ-01), and the rest are put down at the waypoint.
             const int wp = waypoint >= 0 ? waypoint : tt.waypoint;
             int x = 0, y = 0;
             if (!waypoint_cell(wp, x, y)) { note_ = "[no waypoint]"; return false; }
-            int placed = 0, skipped = 0;
+            int placed = 0, skipped = 0, carried = 0;
             // W2-CA-08: the team's first move-waypoint is the landing goal.
             int gx = -1, gy = -1;
             if (tm.script >= 0)
@@ -1355,29 +1510,67 @@ private:
                         if (!waypoint_cell(sa.arg, gx, gy)) gx = gy = -1;
                         break;
                     }
-            if (const auto* tf = teams_data_.taskforce(tt.taskforce))
-                for (const ra2engine::MapTaskMember& m : *tf)
-                    for (int k = 0; k < m.count; ++k) {
-                        // TeamType Tag= rides on every member [map-triggers.md §1].
-                        const std::string team_tag =
-                            tt.tag.empty() || camp::up(tt.tag) == "<NONE>" ? std::string() : tt.tag;
-                        const int idx = place_unit(m.type, tm.house, x, y, 256, team_tag, "Guard",
-                                                   /*far=*/true, gx, gy);
-                        // W2-CA-08: a far landing becomes the team's anchor, so
-                        // the rest spread around it instead of lining the shore.
-                        if (idx >= 0) {
-                            const ra2engine::Unit& pu = w_.units()[(std::size_t)idx];
-                            const int ddx = pu.cell_x - x, ddy = pu.cell_y - y;
-                            if (!pu.is_naval && std::max(std::abs(ddx), std::abs(ddy)) > 12) {
-                                x = pu.cell_x;
-                                y = pu.cell_y;
-                            }
-                        }
-                        if (idx >= 0) { tm.members.push_back(idx); ++placed; }
-                        else ++skipped;
+            // TeamType Tag= rides on every member [map-triggers.md §1].
+            const std::string team_tag =
+                tt.tag.empty() || camp::up(tt.tag) == "<NONE>" ? std::string() : tt.tag;
+            // W4-SQ-04 [RE: FUN_0065d770 -> FUN_0074ee80/eeb0/eed0]: VeteranLevel
+            // 2 = veteran, 3 = elite (0 = the -0.25 "green" rookie, no stat effect).
+            place_vet_ = tt.veteran_level >= 3 ? 2 : tt.veteran_level == 2 ? 1 : 0;
+            const std::vector<Member> ms = team_members_of(tt);
+            skipped += unresolved_;
+            if (tt.droppod) {
+                const int n = deliver_droppod(tm, tt, ms, x, y, placed, carried);
+                place_vet_ = 0;
+                char db[200];
+                std::snprintf(db, sizeof db, "[house=%d wp=%d(%d,%d) droppod plane=%d placed=%d aboard=%d skipped=%d]",
+                              tm.house, wp, x, y, n, placed, carried, skipped);
+                note_ = db;
+                if (placed + carried == 0) return false;
+                tm.airdrop = n >= 0;
+                teams_.push_back(tm);
+                adopt(teams_.back(), (int)teams_.size() - 1);
+                ++teams_created_;
+                return true;
+            }
+            bool any_t = false, any_p = false;
+            for (const Member& m : ms) (m.transport ? any_t : any_p) = true;
+            const bool load = any_t && any_p;   // FUN_004732d0 into the transport list head
+            // [RE: FUN_0065d320 @0x65d3fa..0x65d540: an all-infantry, non-Droppod
+            // reinforcement whose waypoint cell or a neighbour holds a building
+            // with a free cell around it (FUN_00459C90) is kicked out of that
+            // building (vtbl +0x100 KickOutUnit), the misfits deleted; the clone's
+            // placement around the waypoint stands in for the door exit.]
+            int carrier = -1;
+            for (const Member& m : ms) {
+                if (load && !m.transport) continue;
+                const int idx = place_unit(m.type, tm.house, x, y, 256, team_tag, "Guard",
+                                           /*far=*/true, gx, gy);
+                // W2-CA-08: a far landing becomes the team's anchor, so
+                // the rest spread around it instead of lining the shore.
+                if (idx >= 0) {
+                    const ra2engine::Unit& pu = w_.units()[(std::size_t)idx];
+                    const int ddx = pu.cell_x - x, ddy = pu.cell_y - y;
+                    if (!pu.is_naval && std::max(std::abs(ddx), std::abs(ddy)) > 12) {
+                        x = pu.cell_x;
+                        y = pu.cell_y;
                     }
-            std::snprintf(b, sizeof b, "[house=%d wp=%d(%d,%d) placed=%d skipped=%d]", tm.house, wp,
-                          x, y, placed, skipped);
+                    if (m.transport) carrier = idx;   // the LAST created transport is the list head
+                }
+                if (idx >= 0) { tm.members.push_back(idx); ++placed; }
+                else ++skipped;
+            }
+            if (load)
+                for (const Member& m : ms) {
+                    if (m.transport) continue;
+                    const int idx = carrier >= 0 ? add_passenger(carrier, m.type, tm.house, team_tag)
+                                                 : place_unit(m.type, tm.house, x, y, 256, team_tag, "Guard",
+                                                              /*far=*/true, gx, gy);
+                    if (idx >= 0) { tm.members.push_back(idx); (carrier >= 0 ? carried : placed)++; }
+                    else ++skipped;
+                }
+            place_vet_ = 0;
+            std::snprintf(b, sizeof b, "[house=%d wp=%d(%d,%d) placed=%d aboard=%d skipped=%d]", tm.house, wp,
+                          x, y, placed, carried, skipped);
             if (placed == 0) { note_ = b; return false; }
         } else {
             recruit(tm);
@@ -1424,7 +1617,44 @@ private:
         if (building) w_.order_unit_attack_building(m, target);
         else w_.order_unit_attack(m, target);
     }
+    // W4-SQ-01: a member inside a transport / drop plane / under its
+    // parachute / in a garrison is not on the map: team coordination skips it
+    // (the original tests ObjectClass +0x90 IsOnMap per member).
+    bool on_map(int m) const { return w_.units()[(std::size_t)m].cargo_of < 0; }
+    // Still travelling: a ground path, a helicopter/jumpjet flight goal, or a
+    // fixed-wing outbound/move sortie (W2-AN kOutbound=1 / kMoveTo=2).
+    static bool busy(const ra2engine::Unit& u) {
+        if (u.moving()) return true;
+        if (!u.is_aircraft) return false;
+        return u.has_flight_goal || u.an.sortie == 1 || u.an.sortie == 2 ||
+               u.flight_state == ra2engine::FlightState::TakingOff;
+    }
+    bool is_team_transport(const Team& tm, int m) const {
+        const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+        if (u.passengers_max <= 0) return false;
+        // [RE: FUN_006ee670] when the TaskForce holds an aircraft transport type,
+        // only aircraft members count as the transports.
+        bool air_team = false;
+        for (int o : tm.members) {
+            const ra2engine::Unit& v = w_.units()[(std::size_t)o];
+            if (v.is_aircraft && v.passengers_max > 0) air_team = true;
+        }
+        return !air_team || u.is_aircraft;
+    }
     void step_teams() {
+        // W4-MC-06 [RE-FALLBACK, RE-W4-MC-2 open: the RA1/TS lineage removes a
+        // unit the player gives an order from its TeamClass]: a player order
+        // takes the unit out of its script team, so the script no longer
+        // overrides the player (SOV09's Yuris, ALL01's Tanya).
+        for (int idx : w_.take_player_orders()) {
+            if (idx < 0 || idx >= (int)utrack_.size()) continue;
+            Track& t = utrack_[(std::size_t)idx];
+            t.hunt = false;
+            if (t.team < 0 || t.team >= (int)teams_.size()) continue;
+            std::vector<int>& mm = teams_[(std::size_t)t.team].members;
+            mm.erase(std::remove(mm.begin(), mm.end(), idx), mm.end());
+            t.team = -1;
+        }
         for (std::size_t ti = 0; ti < teams_.size(); ++ti) {
             Team& tm = teams_[ti];
             if (tm.st.done) { if (!tm.members.empty()) release_team(tm, (int)ti); continue; }
@@ -1446,28 +1676,51 @@ private:
                 else if (frame_ - tm.created > 900) tm.st.done = true;
                 if (tm.recruiting) continue;
             }
+            // W4-SQ-06: the script starts once the paratroopers are down.
+            if (tm.airdrop) {
+                bool aloft = false;
+                for (int m : tm.members) if (!on_map(m)) aloft = true;
+                if (aloft) continue;
+                tm.airdrop = false;
+            }
             if (tm.script < 0) { tm.st.done = true; continue; }
             const ra2engine::MapScript& sc = teams_data_.scripts[(std::size_t)tm.script];
             ra2engine::MapTeamView v;
             v.live_members = (int)tm.members.size();
             bool all_idle = true, all_close = true;
+            int lead = -1;
             for (int m : tm.members) {
                 const ra2engine::Unit& u = w_.units()[(std::size_t)m];
-                if (u.moving() || u.target >= 0 || u.target_building >= 0) all_idle = false;
+                if (!on_map(m)) {
+                    // W4-SQ-01 [RE: FUN_006ec760 / case 43]: who is still to board.
+                    continue;
+                }
+                if (lead < 0) lead = m;
+                if (busy(u) || u.target >= 0 || u.target_building >= 0) all_idle = false;
                 if (tm.goal_x >= 0) {
                     const double dx = u.cell_x - tm.goal_x, dy = u.cell_y - tm.goal_y;
                     if (dx * dx + dy * dy > 2.25 * 2.25) all_close = false;
                 }
             }
+            // Transport bookkeeping for Unload (8) / Load (14) / WaitLoaded (43).
+            for (int m : tm.members) {
+                const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+                if (u.passengers_max > 0 && is_team_transport(tm, m)) {
+                    if (!u.cargo.empty()) v.unloaded = false;
+                    if ((int)u.cargo.size() < u.passengers_max) v.full = false;
+                } else if (on_map(m)) {
+                    v.loaded = false;   // a non-transport member still on the map
+                }
+            }
             v.arrived = all_close || (all_idle && frame_ - tm.issued_frame > 2);
             v.members_idle = false;
             v.target_exists = true;
-            if (!tm.members.empty() && tm.st.pc >= 0 && tm.st.pc < (int)sc.actions.size()) {
+            if (lead >= 0 && tm.st.pc >= 0 && tm.st.pc < (int)sc.actions.size()) {
                 const ra2engine::MapScriptAction& a = sc.actions[(std::size_t)tm.st.pc];
                 if (a.action == ra2engine::kSaAttack || a.action == ra2engine::kSaAttackEnemyBuilding) {
                     bool isb = false;
-                    const ra2engine::Unit& lead = w_.units()[(std::size_t)tm.members[0]];
-                    v.target_exists = nearest_enemy(tm.house, lead.cell_x, lead.cell_y,
+                    const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
+                    v.target_exists = nearest_enemy(tm.house, lu.cell_x, lu.cell_y,
                                                     a.action == ra2engine::kSaAttack ? a.arg : 2,
                                                     isb) >= 0;
                 } else if (a.action == ra2engine::kSaAttackWaypoint) {
@@ -1478,27 +1731,26 @@ private:
                 }
             }
             const ra2engine::MapTeamCommand c = ra2engine::step_map_team(tm.st, sc, v, frame_);
-            execute_team(tm, c, all_idle);
+            execute_team(tm, (int)ti, c, all_idle, lead);
         }
     }
-    void execute_team(Team& tm, const ra2engine::MapTeamCommand& c, bool all_idle) {
+    void execute_team(Team& tm, int team_idx, const ra2engine::MapTeamCommand& c, bool all_idle, int lead) {
         using K = ra2engine::MapTeamCommand::Kind;
         switch (c.kind) {
         case K::MoveWaypoint:
         case K::MoveCell: {
-            if (!c.fresh) return;
+            if (!c.fresh || lead < 0) return;
             int x = -1, y = -1;
+            const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
             if (c.kind == K::MoveCell) { x = c.arg % 128; y = c.arg / 128; }
             else if (c.action == ra2engine::kSaMoveEnemyBuilding ||
                      c.action == ra2engine::kSaGatherEnemy) {
                 bool isb = false;
-                const ra2engine::Unit& lead = w_.units()[(std::size_t)tm.members[0]];
-                const int t = nearest_enemy(tm.house, lead.cell_x, lead.cell_y, 2, isb);
+                const int t = nearest_enemy(tm.house, lu.cell_x, lu.cell_y, 2, isb);
                 if (t >= 0 && isb) { x = w_.buildings()[(std::size_t)t].cx; y = w_.buildings()[(std::size_t)t].cy; }
             } else if (c.action == ra2engine::kSaGatherBase) {
-                const ra2engine::Unit& lead = w_.units()[(std::size_t)tm.members[0]];
-                x = lead.cell_x;
-                y = lead.cell_y;
+                x = lu.cell_x;
+                y = lu.cell_y;
             } else if (!waypoint_cell(c.arg, x, y)) {
                 x = -1;
             }
@@ -1507,7 +1759,7 @@ private:
             tm.issued_frame = frame_;
             if (x < 0) return;
             for (int m : tm.members)
-                if (!w_.order_fixed_wing(m, -1, -1, x, y)) w_.order_unit_move(m, x, y);
+                if (on_map(m) && !w_.order_fixed_wing(m, -1, -1, x, y)) w_.order_unit_move(m, x, y);
             return;
         }
         case K::Attack:
@@ -1518,7 +1770,13 @@ private:
             tm.goal_x = -1;
             for (int m : tm.members) {
                 const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+                if (!on_map(m)) continue;
                 if (!c.fresh && (u.target >= 0 || u.target_building >= 0 || u.moving())) continue;
+                // A mind controller holding its victim is done with the team's
+                // quarry [RE-FALLBACK: TMission_Attack FUN_006EC5F0 keeps ONE team
+                // target (+0x3C); re-arming the controller every idle tick made
+                // it trade its victim for the next one each frame (SOV09)].
+                if (!c.fresh && utrack_[(std::size_t)m].mc_victim >= 0) continue;
                 bool isb = false;
                 int t = -1;
                 if (c.kind == K::AttackWaypoint) {
@@ -1569,12 +1827,64 @@ private:
             for (int m : tm.members)
                 if (w_.is_mcv(m)) w_.order_deploy_mcv(m);
             return;
+        // W4-SQ-01 [RE: FUN_006ee670]: every member transport unloads; the line
+        // completes once they are all empty (step_map_team), and then the arg
+        // mode decides who stays in the team: 0 everyone, 1 the transports
+        // (the unloaded units leave), 2 the unloaded units (the transports
+        // leave), 3 nobody. TransportsReturnOnUnload=yes sends the transports
+        // home whatever the mode.
         case K::Unload:
-            for (int m : tm.members) w_.order_unload(m);
+            for (int m : tm.members)
+                if (on_map(m) && is_team_transport(tm, m)) w_.order_unload(m);
             return;
+        case K::UnloadDone: {
+            const ra2engine::MapTeamType& tt = teams_data_.teams[(std::size_t)tm.type];
+            std::vector<int> keep;
+            for (int m : tm.members) {
+                const bool tr = w_.units()[(std::size_t)m].passengers_max > 0 && is_team_transport(tm, m);
+                bool leave = tr ? (tt.transports_return || c.arg == 2 || c.arg == 3) : (c.arg == 1 || c.arg == 3);
+                if (leave) {
+                    utrack_[(std::size_t)m].team = -1;
+                    if (tr && tt.transports_return) send_home(m);
+                } else {
+                    keep.push_back(m);
+                }
+            }
+            tm.members = keep;
+            char b[120];
+            std::snprintf(b, sizeof b, "[camp] f%ld team %s unloaded mode=%d members=%d", frame_,
+                          tt.name.c_str(), c.arg, (int)keep.size());
+            witness_.emplace_back(b);
+            return;
+        }
+        // W4-SQ-01 [RE: FUN_006ec760]: the first member transport that is not
+        // full; every other member on the map walks over and boards it.
+        case K::Load: {
+            int tr = -1;
+            for (int m : tm.members) {
+                const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+                if (on_map(m) && is_team_transport(tm, m) && (int)u.cargo.size() < u.passengers_max) { tr = m; break; }
+            }
+            if (tr < 0) return;
+            for (int m : tm.members) {
+                if (m == tr || !on_map(m) || is_team_transport(tm, m)) continue;
+                const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+                if (u.enter_target == tr) continue;   // already on its way
+                if (!w_.order_board(m, tr)) {
+                    // Cannot board (size / full): it stays out and stops
+                    // blocking the line [RE-FALLBACK: the original would keep
+                    // re-issuing the Enter mission].
+                    utrack_[(std::size_t)m].team = -1;
+                    tm.members.erase(std::remove(tm.members.begin(), tm.members.end(), m), tm.members.end());
+                    return;
+                }
+            }
+            return;
+        }
         case K::Scatter:
             for (int m : tm.members) {
                 const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+                if (!on_map(m)) continue;
                 int x = 0, y = 0;
                 if (u.moving() || !free_cell_near(u.cell_x + 1, u.cell_y + 1, x, y, 2)) continue;
                 w_.order_unit_move(m, x, y);
@@ -1587,6 +1897,27 @@ private:
         default:
             return;
         }
+        (void)team_idx;
+    }
+    // [RE-FALLBACK: TransportsReturnOnUnload sends the transport to its
+    // ArchiveTarget (+0x218), not traced for a reinforcement] -- the nearest
+    // building of its own house, else it stays.
+    void send_home(int m) {
+        const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+        int best = -1;
+        long bd = 0;
+        for (std::size_t i = 0; i < w_.buildings().size(); ++i) {
+            const ra2engine::Building& b = w_.buildings()[i];
+            if (!live(b) || b.house != u.house) continue;
+            const long d = (long)(b.cx - u.cell_x) * (b.cx - u.cell_x) + (long)(b.cy - u.cell_y) * (b.cy - u.cell_y);
+            if (best < 0 || d < bd) { best = (int)i; bd = d; }
+        }
+        if (best < 0) return;
+        int x = 0, y = 0;
+        const ra2engine::Building& b = w_.buildings()[(std::size_t)best];
+        if (u.is_naval) { if (!free_water_near(b.cx, b.cy, x, y, 8)) return; }
+        else if (!free_cell_near(b.cx, b.cy, x, y, 8)) return;
+        w_.order_unit_move(m, x, y);
     }
     // W2-CA-11: does any trigger on this tag (its chain) lose the mission,
     // directly or by enabling a trigger that does?
@@ -2006,6 +2337,8 @@ private:
     int placed_b_ = 0, placed_u_ = 0, skipped_ = 0;
     int teams_created_ = 0, raises_ = 0;
     bool placing_ = false;
+    int place_vet_ = 0;      // W4-SQ-04: rank given to the members being created
+    int unresolved_ = 0;     // TaskForce objects whose type did not resolve
 };
 
 // The World a campaign GameScene starts from: the plain map world (no

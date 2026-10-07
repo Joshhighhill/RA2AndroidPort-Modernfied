@@ -105,6 +105,9 @@ struct AnUnit {
     std::string drop_type;            // paradrop infantry rules id
     int drop_x = -1, drop_y = -1;     // drop site
     int exit_x = -1, exit_y = -1;     // map-edge exit after the drop
+    // W4-SQ-06 (save v15): a paratrooper's height while it falls under its
+    // parachute (cargo_of == kParachuteCargo); 0 on the ground.
+    double para_alt = 0.0;
 };
 
 // --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------
@@ -145,6 +148,9 @@ struct SwParams {
     std::string sov_para_inf = "E2";
     int sov_para_num = 9;
     int paradrop_radius = 1024;
+    // W4-SQ-06 [rules [General] ParachuteMaxFallRate=-5]: a paratrooper under
+    // its parachute sinks this many leptons per game frame (save v15).
+    int parachute_fall = 5;
     // Naval / aircraft [General].
     int cloak_delay_frames = 18;      // CloakDelay=.02 min x 900
     double ship_sinking_weight = 3.0; // ShipSinkingWeight=

@@ -150,6 +150,7 @@ struct SaveAccess {
         // Cargo / flight
         save::io(ar, w.cargo_any_);
         save::io(ar, w.cargo_events_);
+        save::io(ar, w.player_orders_);   // W4-SQ (save v15)
         save::io(ar, w.aircraft_any_);
         // Core
         save::io(ar, w.units_);
@@ -316,6 +317,7 @@ template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
     io(ar, v.reload_frames); io(ar, v.flight_level); io(ar, v.missile_spread);
     io(ar, v.missile_pmax); io(ar, v.missile_verses); io(ar, v.repair_step);
     io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
+    io(ar, v.parachute_fall);   // W4-SQ-06 (save v15)
 }
 template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
     io(ar, v.kind); io(ar, v.house); io(ar, v.x); io(ar, v.y); io(ar, v.ox); io(ar, v.oy);
@@ -345,6 +347,7 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.spawn_pending); io(ar, v.spawn_fire_unit); io(ar, v.spawn_fire_building);
     io(ar, v.owner); io(ar, v.landing); io(ar, v.drop_left); io(ar, v.drop_type);
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
+    io(ar, v.para_alt);   // W4-SQ-06 (save v15)
 }
 template <class Ar> void fields(Ar& ar, Cellxy& v) { io(ar, v.x); io(ar, v.y); }
 template <class Ar> void fields(Ar& ar, SeqEntry& v) { io(ar, v.first); io(ar, v.count); io(ar, v.fmult); }

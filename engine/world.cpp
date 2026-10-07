@@ -481,6 +481,13 @@ void World::set_pair_alliance(int a, int b, bool allied) {
     ally_pairs_[(std::size_t)b * n + a] = allied ? 1 : 0;
 }
 
+void World::set_ally_view(int a, int b, bool allied) {
+    const int n = (int)houses_.size();
+    if (a < 0 || b < 0 || a >= n || b >= n || a == b) return;
+    if (ally_pairs_.size() != (std::size_t)n * n) set_pair_alliance(a, b, are_allied(a, b));
+    ally_pairs_[(std::size_t)a * n + b] = allied ? 1 : 0;
+}
+
 bool World::is_enemy(int a, int b) const {
     if (!houses_configured_) return a != b;        // EXACTLY today's behavior
     if (a == b) return false;
@@ -1284,6 +1291,45 @@ void World::order_unload(int idx) {
     if (!u.alive || u.die_time >= 0.0 || u.passengers_max <= 0 || u.cargo.empty()) return;
     u.unload_pending = true;
     cargo_any_ = true;
+}
+
+int World::add_unit_in_transport(int t_idx, int house, const UnitCombat& c) {
+    if (t_idx < 0 || t_idx >= static_cast<int>(units_.size())) return -1;
+    if (!units_[t_idx].alive || units_[t_idx].die_time >= 0.0) return -1;
+    const int cx = units_[t_idx].cell_x, cy = units_[t_idx].cell_y;
+    const int prev = occ_.at(cx, cy);
+    add_combat_unit(cx, cy, house, c);
+    const int p = static_cast<int>(units_.size()) - 1;
+    if (prev == Occupancy::kEmpty) occ_.clear(cx, cy);   // the passenger never claims the cell
+    else occ_.set(cx, cy, prev);
+    Unit& u = units_[p];
+    u.fx = units_[t_idx].fx;
+    u.fy = units_[t_idx].fy;
+    u.cargo_of = t_idx;
+    units_[t_idx].cargo.push_back(p);
+    cargo_any_ = true;
+    return p;
+}
+
+bool World::order_board(int p_idx, int t_idx) {
+    if (p_idx < 0 || t_idx < 0 || p_idx >= static_cast<int>(units_.size()) ||
+        t_idx >= static_cast<int>(units_.size()))
+        return false;
+    if (!can_load(units_, t_idx, p_idx)) return false;
+    cargo_any_ = true;
+    Unit& u = units_[p_idx];
+    u.target = -1;
+    u.target_building = -1;
+    u.attack_order = false;
+    u.unload_pending = false;
+    u.enter_target = t_idx;
+    const Unit& t = units_[t_idx];
+    const int adx = u.cell_x - t.cell_x, ady = u.cell_y - t.cell_y;
+    if (std::max(adx < 0 ? -adx : adx, ady < 0 ? -ady : ady) <= 1) return true;   // boards next step
+    const std::vector<Cellxy> g = nearest_free_cells({t.cell_x, t.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
+    if (!g.empty()) order_unit_move(p_idx, g[0].x, g[0].y);
+    units_[p_idx].enter_target = t_idx;
+    return true;
 }
 
 std::vector<CargoEvent> World::take_cargo_events() {

@@ -56,6 +56,22 @@ bool World::can_occupy(int ui, int bi) const {
     return owner_ok && static_cast<int>(b.occupants.size()) != t.max_occupants;
 }
 
+bool World::campaign_can_occupy(int bi) const {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
+    const Building& b = buildings_[bi];
+    if (!b.alive || b.state != Building::State::Idle || b.selling) return false;
+    if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) return false;
+    const BuildingTypeDef& t = btypes()[b.type];
+    return t.can_be_occupied && static_cast<int>(b.occupants.size()) < t.max_occupants;
+}
+
+bool World::campaign_occupy_now(int ui, int bi) {
+    if (!can_occupy(ui, bi)) return false;
+    garrison_any_ = true;
+    occupy_now(ui, bi);
+    return true;
+}
+
 void World::order_occupy(int ui, int bi) {
     if (!can_occupy(ui, bi)) return;
     garrison_any_ = true;
