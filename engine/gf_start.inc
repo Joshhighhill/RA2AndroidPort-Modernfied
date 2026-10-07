@@ -270,7 +270,7 @@ struct GfSkirmishStats {
     // W2-UI-20 (score page 0xBC6): per house -- name, kills (dead objects whose
     // killed_by stamp is this house's unit), losses, built (every object it
     // ever owned [RE-FALLBACK: starting units included]).
-    struct Row { std::string name; int kills = 0, losses = 0, built = 0; };
+    struct Row { std::string name; int kills = 0, losses = 0, built = 0; bool listed = true; };
     std::vector<Row> rows;
 };
 Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg, int outcome,

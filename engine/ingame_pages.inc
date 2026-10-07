@@ -332,7 +332,10 @@ private:
 class InGameMenu {
 public:
     enum Choice { None, Resume, Load, Save, Delete, Abort, Restart, Settings, Committed, MusicPlay, MusicStop };
-    enum Page { P_OPTIONS = 0, P_CONTROLS, P_SOUND, P_ABORT };
+    enum Page { P_OPTIONS = 0, P_CONTROLS, P_SOUND, P_ABORT, P_DIPLOMACY };
+    // W2-UI-29: one row of the Diplomacy page 0x73 (read-only in skirmish).
+    struct DipRow { std::string name; SDL_Color color{0, 0, 0, 255}; bool ally = false; bool self = false; int kills = 0; };
+    void set_diplomacy(std::vector<DipRow> rows) { dip_ = std::move(rows); }
     // `open_` stays a public flag (gf_scene / controls set it); open() also
     // resets the page and reseeds the controls from the user's settings.
     bool open_ = false;
@@ -364,7 +367,7 @@ public:
         if (ev.button == IE::Left && ev.kind == IE::PointerUp) down_ = false;
         if (ev.kind == IE::Quit || (ev.kind == IE::Key && ev.key == ra2engine::kKeyEscape)) {
             // G-01: Esc = the page's bottom button (Resume / Back).
-            if (page_ == P_OPTIONS || page_ == P_ABORT) { close(); return Resume; }
+            if (page_ == P_OPTIONS || page_ == P_ABORT || page_ == P_DIPLOMACY) { close(); return Resume; }
             const Choice c = page_ == P_SOUND ? (page_ = P_CONTROLS, Committed) : (page_ = P_OPTIONS, Committed);
             return c;
         }
@@ -445,6 +448,29 @@ public:
             if (kStop.contains(lx, ly)) status = gf_csf("STT:SoundOptButtonStop", "");
         } else if (page_ == P_ABORT) {
             p.label(gf_csf("GUI:AskAbortMission", "What would you like to do?"), 66, 222, 345, 30, 1);
+        } else if (page_ == P_DIPLOMACY) {
+            // Dialog 0x73 template (px): Player (82,48) / Allies (262,48) / Chat
+            // (330,48) / Kills (397,48); rows at y 73 + 32.5k: colour well
+            // (19, y-4, 48, 19), name (82, y, 165, 16), Allies / Chat checks
+            // (262 / 330, y), kills (397, y, 61, 16).
+            p.header(gf_csf("GUI:Player", "Player"), 82, 48, 165, 16, 0);
+            p.header(gf_csf("GUI:Allies", "Allies"), 262, 48, 52, 16, 0);
+            p.header(gf_csf("GUI:Chat", "Chat"), 330, 48, 52, 16, 0);
+            p.header(gf_csf("GUI:Kills", "Kills"), 397, 48, 90, 16, 0);
+            for (std::size_t k = 0; k < dip_.size() && k < 8; ++k) {
+                const DipRow& r = dip_[k];
+                const int y = 73 + static_cast<int>(k * 65 / 2);
+                p.fill(p.dev(19, y - 4, 48, 19), r.color.r, r.color.g, r.color.b);
+                p.frame(p.dev(19, y - 4, 48, 19), true);
+                p.label(p.fit(r.name, 165), 82, y, 165, 16, 0);
+                if (!r.self) {
+                    p.checkbox({262, y, 40, 16}, r.ally, "", false);
+                    p.checkbox({330, y, 40, 16}, true, "", false);
+                }
+                p.label(std::to_string(r.kills), 397, y, 61, 16, 0);
+            }
+            if (lx >= 262 && lx < 290 && ly >= 70 && ly < 320) status = gf_csf("STT:DiplomacyCBoxAllies", "");
+            if (lx >= 397 && lx < 460 && ly >= 70 && ly < 320) status = gf_csf("STT:DiplomacyCBoxKills", "");
         }
         for (int i = 0; i < kSliders; ++i) {
             if (!slider_on_page(i)) continue;
@@ -465,7 +491,8 @@ public:
     void play_probe(ra2play::Probe& p) const {
         p.set("menu_open", open_ ? 1 : 0);
         if (!open_) return;
-        static const char* kPages[4] = {"options", "controls", "sound", "abort"};
+        static const char* kPages[5] = {"options", "controls", "sound", "abort", "diplomacy"};
+        p.set("diplomacy_rows", static_cast<int>(dip_.size()));
         p.set_s("menu_page", kPages[page_]);
         auto put = [&](const std::string& k, const ra2engine::SbRect& lr) {
             const ra2engine::SbRect r = ui_dev(lr);
@@ -530,6 +557,7 @@ private:
         switch (page_) {
             case P_SOUND: return gf_csf("GUI:SoundOptions", "Sound Options");
             case P_ABORT: return gf_csf("GUI:AbortMission", "Abort Mission");
+            case P_DIPLOMACY: return gf_csf("GUI:DiplomacyMenu", "Diplomacy Options");
             default: return gf_csf("GUI:GameOptions", "Game Options");
         }
     }
@@ -544,6 +572,8 @@ private:
                         b(5, gf_csf("GUI:Back", "Back"), true, A_BACK)};
             case P_SOUND:
                 return {b(5, gf_csf("GUI:Back", "Back"), true, A_BACK)};
+            case P_DIPLOMACY:   // 0x423 GUI:Return
+                return {b(5, gf_csf("GUI:Return", "Return"), true, A_RESUME)};
             case P_ABORT: {
                 std::vector<ShellButton> v{b(0, gf_csf("GUI:Abort", "Abort"), true, A_ABORT)};
                 if (campaign_) v.push_back(b(1, gf_csf("GUI:Restart", "Restart"), true, A_RESTART));
@@ -566,7 +596,8 @@ private:
             case A_SAVE: return gf_csf("STT:IGSingleOptButtonSave", "");
             case A_DELETE: return gf_csf("STT:IGSingleOptButtonDelete", "");
             case A_ABORTPAGE: return gf_csf("STT:IGSingleOptButtonAbort", "");
-            case A_RESUME: return gf_csf(page_ == P_ABORT ? "STT:ConfirmExitButtonResume" : "STT:IGSingleOptButtonBack", "");
+            case A_RESUME: return gf_csf(page_ == P_ABORT ? "STT:ConfirmExitButtonResume"
+                                         : page_ == P_DIPLOMACY ? "STT:DiplomacyButtonReturn" : "STT:IGSingleOptButtonBack", "");
             case A_SOUND: return gf_csf("STT:MainOptButtonSound", "");
             case A_KEYBOARD: return gf_csf("STT:MainOptButtonKeyboard", "");
             case A_BACK: return gf_csf(page_ == P_SOUND ? "STT:SoundOptButtonBack" : "STT:GameOptButtonBack", "");
@@ -676,6 +707,7 @@ private:
     Page page_ = P_OPTIONS;
     bool campaign_ = false, soviet_ = false;
     ra2engine::Settings set_{};
+    std::vector<DipRow> dip_;   // W2-UI-29
     ShellList tracks_{{157, 157, 262, 160}, {}, {}, {}, 0, -1, 9, 17};
     int mx_ = -1, my_ = -1, drag_ = -1;
     bool down_ = false;

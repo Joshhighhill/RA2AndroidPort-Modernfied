@@ -51,6 +51,7 @@ public:
         for (int c = 0; c < 5; ++c) p.header(gf_csf(ck[c], cf[c]), cx[c], 173, 100, 20, 0);
         int y = 199;
         for (const GfSkirmishStats::Row& r : st_.rows) {
+            if (!r.listed) continue;
             p.label(p.fit(r.name, 100), cx[0], y, 100, 20, 0);
             p.label(std::to_string(r.kills), cx[1], y, 60, 20, 0);
             p.label(std::to_string(r.losses), cx[2], y, 60, 20, 0);

@@ -89,4 +89,13 @@ shot p08_abort_page
 click confirm:no
 wait 2
 assert menu_open == 0
+# W2-UI-29: the sidebar Diplomacy button -> dialog 0x73
+click button:diplomacy
+wait 2
+assert menu_page == "diplomacy"
+assert diplomacy_rows >= 2
+shot p09_diplomacy
+key esc
+wait 2
+assert menu_open == 0
 end

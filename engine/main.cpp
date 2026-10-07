@@ -5619,12 +5619,35 @@ private:
             menu_.open();
             return true;
         }
+        // W2-UI-29: the sidebar Diplomacy button opens dialog 0x73.
+        if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left &&
+            sidebar_up_ && ba_.has_optbtns && lay_.diplo_btn.contains(ev.x, ev.y)) {
+            open_diplomacy();
+            return true;
+        }
         return false;
     }
     // W2-UI-14: the Game Controls / Sound pages apply live -- the speed slider
     // drives the G-13 logic accumulator (the lobby speed when the skirmish
     // came from the lobby), volumes go to the mixer buses.
     std::vector<std::string> jukebox_sections_;   // W2-UI-14 0xB8 list -> theme section
+    void open_diplomacy() {   // W2-UI-29: rows = the lobby houses (score-page tallies)
+        const GfSkirmishStats st = gf_stats();
+        std::vector<InGameMenu::DipRow> rows;
+        for (std::size_t h = 0; h < st.rows.size(); ++h) {
+            if (!st.rows[h].listed) continue;
+            InGameMenu::DipRow r;
+            r.name = st.rows[h].name;
+            r.kills = st.rows[h].kills;
+            r.self = h == 0;
+            r.ally = world_.house_team((int)h) == world_.house_team(0);
+            const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, (int)h)[24];
+            r.color = SDL_Color{c.r, c.g, c.b, 255};
+            rows.push_back(r);
+        }
+        menu_.set_diplomacy(std::move(rows));
+        menu_.open(InGameMenu::P_DIPLOMACY);
+    }
     void menu_apply_settings() {
         const ra2engine::Settings& st = menu_.settings();
         if (cfg_.game_speed >= 0) cfg_.game_speed = st.game_speed;

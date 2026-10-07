@@ -198,6 +198,8 @@ private:
                                   : std::string("Computer");
             const std::string lbl = camp::csf_text(dir_, "Name:" + who);
             s.rows[(std::size_t)h].name = lbl.rfind("Name:", 0) == 0 ? who : lbl;
+            // Only the lobby's playing slots are listed (not the neutral house).
+            s.rows[(std::size_t)h].listed = cfg_.slots.empty() || cfg_.slots[(std::size_t)h].combatant;
         }
         auto killer_house = [&](int ui) {
             return (ui >= 0 && ui < (int)world_.units().size()) ? world_.units()[(std::size_t)ui].house : -1;
