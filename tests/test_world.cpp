@@ -4887,3 +4887,19 @@ TEST_CASE("World W2-CA-10: MakeAlly/MakeEnemy are pairwise (FUN_004f9990/FUN_004
     CHECK(world.is_enemy(1, 2));
     CHECK(world.is_enemy(2, 1));
 }
+
+// W5-PRES R-103 [RE: ColorScheme ramp 0x68BDB0 + HSV2RGB 0x517260]: Gold
+// 43,239,255, shade 0 -> S' = trunc(SIN(50deg)*239) = 183, V' = trunc(COS(pi/16)*255)
+// = 250 -> sector 1 (q, V, p) = (248, 250, 70); index 31 is the darkest.
+TEST_CASE("pal_for_hsv: the original ColorScheme ramp (Gold shade 0, monotone darkening)") {
+    ra2assets::Palette src{};
+    for (int i = 0; i < 256; ++i) src[i] = ra2assets::Rgba{10, 20, 30, 255};
+    const ra2assets::Palette out = ra2engine::pal_for_hsv(src, 43, 239, 255);
+    CHECK(out[16].r == 248);
+    CHECK(out[16].g == 250);
+    CHECK(out[16].b == 70);
+    for (int i = 17; i <= 31; ++i) CHECK(out[i].g <= out[i - 1].g);
+    CHECK(out[31].g < 40);
+    CHECK(out[15].r == 10);   // outside the band untouched
+    CHECK(out[32].r == 10);
+}
