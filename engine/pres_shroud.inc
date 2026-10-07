@@ -90,24 +90,25 @@ inline SDL_Texture* diamond_tex(ra2engine::TextureCache& tc, bool fog) {
 
 }  // namespace pres_shroud
 
-// Draws shroud then fog over the whole view for house 0. No-op with shroud off.
+// Draws shroud then (FogOfWar only, W2-GA-03) fog over the view for house 0.
+// No-op with shroud off. W2-GA-P1: only the cells that can reach the view are
+// visited (cached painter-order rows), not the whole map twice per frame.
 void draw_shroud_pass(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::MapFile& map,
                       const ra2engine::World& world, const ra2engine::Camera& cam, int W, int H) {
     if (!world.shroud_enabled()) return;
     auto explored = [&](int x, int y) { return world.explored_at(0, x, y); };
     auto visible = [&](int x, int y) { return world.visible_at(0, x, y); };
-    for (int pass = 0; pass < 2; ++pass) {   // 0 shroud, 1 fog (the original's order)
+    // [RE: presentation.md §4, FUN_00480100] FOG.SHP is drawn only when the
+    // scenario's FogOfWar flag is set; RA2 skirmish defaults it off.
+    const int passes = world.fog_of_war() ? 2 : 1;
+    for (int pass = 0; pass < passes; ++pass) {   // 0 shroud, 1 fog (the original's order)
         const bool fog = pass == 1;
         const ra2assets::ShpFile* shp = fog ? g_fog_shp : g_shroud_shp;
-        for (const ra2assets::MapCell& c : map.cells()) {
-            const ra2engine::ScreenPt p =
-                ra2engine::cell_to_screen(c.x, c.y, static_cast<int>(c.level), 60, 30, 15);
-            const int sx = p.x + cam.x, sy = p.y + cam.y;
-            if (sx + 60 <= 0 || sy + 30 <= 0 || sx >= W || sy >= H) continue;
-            if (fog && !explored(c.x, c.y)) continue;   // fully shrouded already
+        ra2engine::for_each_visible_cell(map, cam, W, H, 2, [&](const ra2assets::MapCell& c, int sx, int sy) {
+            if (fog && !explored(c.x, c.y)) return;   // fully shrouded already
             const int fr = fog ? pres_shroud::frame_for(c.x, c.y, visible)
                                : pres_shroud::frame_for(c.x, c.y, explored);
-            if (fr == 0) continue;
+            if (fr == 0) return;
             SDL_Texture* tex = nullptr;
             SDL_Rect dst{sx, sy, 60, 30};
             if (!fog && fr == 15) {
@@ -123,7 +124,7 @@ void draw_shroud_pass(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2a
                 tex = pres_shroud::diamond_tex(tc, fog);
             }
             if (tex) SDL_RenderCopy(ren, tex, nullptr, &dst);
-        }
+        });
     }
 }
 

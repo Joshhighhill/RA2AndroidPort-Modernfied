@@ -17,6 +17,23 @@ public:
         std::string key;
         bool centered = true;   // building-style anchor (foundation centre) vs ore-style top-left
         int ovl_id = -1;        // G16: runtime overlay index (live bridge state lookup)
+        // W2-GA-06/08 [RE: TerrainClass::Draw_It FUN_0071b450]: terrain objects
+        // draw their shadow half (frame + Frames/2, Darken) -- DAT_00821cf1 is a
+        // constant-true gate (RE-Q1); SpawnsTiberium types (ore mines) draw
+        // through the UNIT palette convert 0x87E63C 16 px higher, and
+        // IsAnimated types step frames at AnimationRate.
+        bool shadow = false;
+        int lift = 0;                 // screen px up
+        bool animated = false;
+        int anim_rate = 1;
+        double anim_prob = 0.0;
+        // Render-only animation state (never touches the sim).
+        mutable int anim_stage = -1;  // -1 idle, else current frame
+        mutable int anim_timer = 0;
+        mutable uint32_t anim_rng = 0;
+        // W2-GA-P1: per-frame texture pointers (pinned), no per-frame string keys.
+        mutable std::vector<SDL_Texture*> tex, stex;
+        mutable uint64_t tex_tc = 0;
     };
 
     // `map_ini` = the raw map text, `defs` the playable building roster (for
@@ -41,6 +58,17 @@ public:
             o.key = "terr:" + type;
             o.level = level(o.x, o.y);
             o.pal = 0;
+            o.shadow = true;
+            if (pres_lower(rget(type, "SpawnsTiberium")).rfind("y", 0) == 0) {
+                o.pal = 2;          // RE-Q1: the unit palette convert
+                o.lift = 16;
+            }
+            if (pres_lower(rget(type, "IsAnimated")).rfind("y", 0) == 0) {
+                o.animated = true;
+                o.anim_rate = std::max(1, std::atoi(rget(type, "AnimationRate").c_str()));
+                o.anim_prob = std::atof(rget(type, "AnimationProbability").c_str());
+                o.anim_rng = 0x9E3779B9u ^ static_cast<uint32_t>(packed * 2654435761u);
+            }
             objects_.push_back(o);
             block_.push_back({o.x, o.y});
         }
@@ -88,7 +116,10 @@ public:
                 o.key = "ovl:" + name;
                 o.ovl_id = id;
                 const bool wall = pres_lower(rget(name, "Wall")).rfind("y", 0) == 0;
-                o.pal = wall ? 2 : 1;
+                // Non-ore overlays (rocks, bridges, low bridges) draw through the
+                // cell convert = the ISO palette (visual check: srock/bridge art is
+                // clean only with iso*.pal); walls use the unit palette.
+                o.pal = wall ? 2 : 0;
                 o.centered = false;
                 overlays_.push_back(o);
                 if (wall) { wall_ids_[c.y * 1000 + c.x] = id; block_.push_back({c.x, c.y}); }
@@ -139,6 +170,7 @@ public:
             o.level = level(x, y);
             o.key = "civ:" + image;
             o.pal = 2;
+            o.shadow = true;
             objects_.push_back(o);
             for (int j = 0; j < fh; ++j)
                 for (int i = 0; i < fw; ++i) block_.push_back({x + i, y + j});
@@ -148,12 +180,43 @@ public:
                   << "\n";
     }
 
+    // W2-GA-15: a crater (Crater=yes smudge types) or scorch mark (Burn=yes)
+    // left where a Crater=/Scorch= explosion anim went off; one per cell.
+    void add_smudge(bool crater, double fx, double fy) {
+        const int x = static_cast<int>(std::lround(fx)), y = static_cast<int>(std::lround(fy));
+        if (!map_ || !map_->at(x, y)) return;
+        if (!smudge_cells_.insert(y * 1000 + x).second) return;
+        if (smudge_kinds_[0].empty() && rules_) {
+            for (const auto& kv : rules_->section("SmudgeTypes")) {
+                const std::string n = pres_upper(pres_clean(kv.second));
+                if (n.empty()) continue;
+                if (!rget(n, "Width").empty() || !rget(n, "Height").empty()) continue;   // 1x1 only
+                if (pres_lower(rget(n, "Crater")).rfind("y", 0) == 0) smudge_kinds_[0].push_back(n);
+                else if (pres_lower(rget(n, "Burn")).rfind("y", 0) == 0) smudge_kinds_[1].push_back(n);
+            }
+        }
+        const std::vector<std::string>& kinds = smudge_kinds_[crater ? 0 : 1];
+        if (kinds.empty()) return;
+        smudge_rng_ = smudge_rng_ * 1103515245u + 12345u;
+        const std::string& type = kinds[(smudge_rng_ >> 8) % kinds.size()];
+        Obj o;
+        o.shp = art_shp(type);
+        if (!o.shp) return;
+        o.x = x;
+        o.y = y;
+        o.level = level(x, y);
+        o.key = "smudge:" + type;
+        o.pal = 0;
+        o.centered = false;
+        smudges_.push_back(o);
+    }
     const std::vector<std::pair<int, int>>& blocked() const { return block_; }
     const std::vector<Obj>& objects() const { return objects_; }
     const std::vector<Obj>& overlays() const { return overlays_; }
 
     void draw_ground(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
                      const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
+        step_anims();
         for (const Obj& o : smudges_) draw(ren, tc, w, o, pals, cam, W, H);
         for (const Obj& o : overlays_) draw(ren, tc, w, o, pals, cam, W, H);
     }
@@ -168,6 +231,9 @@ public:
             if (live >= 0 && live != o.ovl_id && live < static_cast<int>(names_.size())) {
                 Obj alt = o;
                 alt.ovl_id = -1;
+                alt.tex.clear();
+                alt.stex.clear();
+                alt.tex_tc = 0;
                 alt.shp = art_shp(names_[live]);
                 alt.key = "ovl:" + names_[live];
                 if (alt.shp) draw(ren, tc, w, alt, pals, cam, W, H);
@@ -175,27 +241,86 @@ public:
             }
         }
         const int images = std::max(1, o.shp->count() / 2);   // second half = shadows
-        const int fr = std::clamp(o.frame, 0, std::max(0, std::min(images, o.shp->count()) - 1));
+        const int want = o.animated && o.anim_stage >= 0 ? o.anim_stage : o.frame;
+        const int fr = std::clamp(want, 0, std::max(0, std::min(images, o.shp->count()) - 1));
         const ra2assets::ShpFile::Frame f = o.shp->frame_info(fr);
         if (f.w <= 0 || f.h <= 0) return;
         const ra2engine::ScreenPt p = ra2engine::cell_to_screen(o.x, o.y, o.level, 60, 30, 15);
-        SDL_Rect dst;
+        int ox, oy;   // SHP canvas origin on screen
         if (o.centered) {
             // Foundation bbox centre (building-render.md §2 centre registration).
             const int cx = p.x + cam.x + 30 + (o.fw - o.fh) * 15;
             const int cy = p.y + cam.y + 15 + (o.fw + o.fh - 2) * 15 / 2;
-            dst = SDL_Rect{cx - o.shp->width() / 2 + f.x, cy - o.shp->height() / 2 + f.y, f.w, f.h};
+            ox = cx - o.shp->width() / 2;
+            oy = cy - o.shp->height() / 2 - o.lift;
         } else {
-            dst = SDL_Rect{p.x + cam.x + f.x, p.y + cam.y + f.y, f.w, f.h};
+            ox = p.x + cam.x;
+            oy = p.y + cam.y - o.lift;
         }
-        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) return;
-        const std::string key = o.key + ":" + std::to_string(fr);
-        SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+        const SDL_Rect dst{ox + f.x, oy + f.y, f.w, f.h};
+        // Shadow extents can exceed the image: cull on a generous box.
+        if (dst.x + dst.w + 96 <= 0 || dst.y + dst.h + 64 <= 0 || dst.x - 96 >= W || dst.y - 64 >= H) return;
+        if (o.tex_tc != tc.instance_id()) {
+            o.tex.assign(static_cast<std::size_t>(o.shp->count()), nullptr);
+            o.stex.assign(static_cast<std::size_t>(o.shp->count()), nullptr);
+            o.tex_tc = tc.instance_id();
+        }
+        // Shadow half first, 50 % Darken (same blend as buildings, G-85).
+        const int sf = fr + o.shp->count() / 2;
+        if (o.shadow && o.shp->count() >= 2 && sf < o.shp->count()) {
+            const ra2assets::ShpFile::Frame s = o.shp->frame_info(sf);
+            if (s.w > 0 && s.h > 0) {
+                SDL_Texture*& st = o.stex[static_cast<std::size_t>(sf)];
+                if (!st) {
+                    const std::string skey = o.key + ":sh" + std::to_string(sf);
+                    st = static_cast<SDL_Texture*>(tc.peek(skey));
+                    if (!st) {
+                        const std::vector<uint8_t> si = o.shp->decode_indexed(sf);
+                        std::vector<uint8_t> rgba(si.size() * 4, 0);
+                        for (std::size_t k = 0; k < si.size(); ++k) if (si[k]) rgba[k * 4 + 3] = 128;
+                        st = static_cast<SDL_Texture*>(tc.get_rgba(skey, rgba.data(), s.w, s.h));
+                    }
+                    tc.pin(skey);
+                }
+                // The shadow sits on the ground: no SpawnsTiberium lift.
+                const SDL_Rect sd{ox + s.x, oy + o.lift + s.y, s.w, s.h};
+                SDL_RenderCopy(ren, st, nullptr, &sd);
+            }
+        }
+        SDL_Texture*& tex = o.tex[static_cast<std::size_t>(fr)];
         if (!tex) {
-            const std::vector<uint8_t> idx = o.shp->decode_indexed(fr);
-            tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, *pals[o.pal]));
+            const std::string key = o.key + ":" + std::to_string(fr);
+            tex = static_cast<SDL_Texture*>(tc.peek(key));
+            if (!tex) {
+                const std::vector<uint8_t> idx = o.shp->decode_indexed(fr);
+                tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, *pals[o.pal]));
+            }
+            tc.pin(key);
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
+    }
+
+    // IsAnimated terrain (TIBTRE ore mines) [RE: FUN_0071b450 frame = anim
+    // stage when IsAnimated]: each game frame an idle object starts with
+    // AnimationProbability, then steps one frame per AnimationRate ticks
+    // through the image half and returns to idle. Render-only RNG.
+    void step_anims() {
+        const long now = g_pres_tick;
+        if (now == last_tick_) return;
+        const long n = std::min<long>(now - last_tick_, 30);
+        last_tick_ = now;
+        for (long t = 0; t < n; ++t)
+            for (const Obj& o : objects_) {
+                if (!o.animated || !o.shp) continue;
+                const int images = std::max(1, o.shp->count() / 2);
+                if (o.anim_stage < 0) {
+                    o.anim_rng = o.anim_rng * 1664525u + 1013904223u;
+                    if ((o.anim_rng >> 8) * (1.0 / 16777216.0) < o.anim_prob) { o.anim_stage = 0; o.anim_timer = 0; }
+                } else if (++o.anim_timer >= o.anim_rate) {
+                    o.anim_timer = 0;
+                    if (++o.anim_stage >= images) o.anim_stage = -1;
+                }
+            }
     }
 
 private:
@@ -230,7 +355,10 @@ private:
         auto it = cache_.find(name);
         if (it != cache_.end()) return it->second;
         const ra2assets::TheaterChain& ch = art_chain();
+        // W2-GA-07: Image= from artmd, else from rules (BRIDGE1/2 carry
+        // Image=BRIDGE in rulesmd only), else the name itself.
         std::string image = pres_clean(art_->get(name, "Image"));
+        if (image.empty()) image = rget(name, "Image");
         if (image.empty()) image = name;
         std::vector<ra2assets::TheaterCandidate> cands;
         for (const std::string ext : {std::string(".") + ch.ext, std::string(".shp")})
@@ -264,6 +392,10 @@ private:
     std::map<int, int> wall_ids_;
     std::vector<std::pair<int, int>> block_;
     int missing_ = 0, placed_ = 0, civ_ = 0;
+    long last_tick_ = 0;
+    std::set<int> smudge_cells_;
+    std::vector<std::string> smudge_kinds_[2];
+    uint32_t smudge_rng_ = 0x5A17u;
 };
 
 PresMap* g_map_dressing = nullptr;                    // live game only

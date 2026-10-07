@@ -212,3 +212,27 @@ TEST_CASE("open_nested opens a real child mix and throws on unknown names") {
     // Verify that unknown nested files throw std::runtime_error
     CHECK_THROWS_AS(m.open_nested("no-such-file.mix"), std::runtime_error);
 }
+
+// W2-GA-P5: a file-backed MIX (offset reads, nested VIEWS) reads exactly the
+// same bytes as the whole-file in-memory open.
+TEST_CASE("mix: open_path + nested views match the in-memory open (real install)") {
+    if (!ra2fixture::assets_available()) { MESSAGE("install absent; skipped"); return; }
+    std::string path = ra2fixture::install_base();
+    if (!path.empty() && path.back() != '/' && path.back() != '\\') path += "/";
+    path += "ra2md.mix";
+    const ra2assets::MixFile& mem = ra2fixture::top_mix();
+    const ra2assets::MixFile disk = ra2assets::MixFile::open_path(path);
+    REQUIRE(disk.count() == mem.count());
+    const ra2assets::MixFile a = mem.open_nested("localmd.mix");
+    const ra2assets::MixFile b = disk.open_nested("localmd.mix");
+    REQUIRE(a.count() == b.count());
+    const ra2assets::MixEntry* ea = a.find(std::string("rulesmd.ini"));
+    const ra2assets::MixEntry* eb = b.find(std::string("rulesmd.ini"));
+    REQUIRE(ea);
+    REQUIRE(eb);
+    CHECK(a.read(*ea) == b.read(*eb));
+    // A second open of the same path shares the handle and still reads right.
+    const ra2assets::MixFile disk2 = ra2assets::MixFile::open_path(path);
+    CHECK(disk2.open_nested("localmd.mix").read(*eb) == a.read(*ea));
+    CHECK_THROWS(ra2assets::MixFile::open_path(path + ".absent"));
+}

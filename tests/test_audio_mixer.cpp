@@ -248,3 +248,128 @@ TEST_CASE("mixer bus: EVA follows the Voice bus; gain 0 silences; gain clamps") 
     m.set_bus_gain(Mixer::Bus::Sound, -5);
     CHECK(m.bus_gain(Mixer::Bus::Sound) == 0);
 }
+
+// ---- W2-GA-22/23/24 -------------------------------------------------------
+TEST_CASE("mixer: render_stereo pans by the RE-Q11 balance law, EVA centred") {
+    SoundBank bank;
+    const int c = bank.add(std::vector<int16_t>(4, 8000));
+    Mixer m(bank, 1);
+    MixerSound s = plain(c);
+    m.register_sound("P", s);
+    CHECK(m.play_at("P", 0.0, 4096) != 0);   // left screen edge
+    int16_t lr[2] = {};
+    m.render_stereo(lr, 1);
+    CHECK(lr[0] == 8000);                     // left full
+    CHECK(lr[1] == 4000);                     // right half
+}
+
+TEST_CASE("mixer: update_voice re-attenuates and stops a voice that leaves range") {
+    SoundBank bank;
+    const int c = bank.add(std::vector<int16_t>(100, 1000));
+    Mixer m(bank, 1);
+    MixerSound s = plain(c);
+    s.range = 10.0;
+    m.register_sound("R", s);
+    const std::uint32_t h = m.play_at("R", 0.0, 8192);
+    REQUIRE(h != 0);
+    CHECK(m.update_voice(h, 5.0, 8192));
+    int16_t out[1] = {};
+    m.render(out, 1);
+    CHECK(out[0] == 500);                     // half gain at half range
+    CHECK_FALSE(m.update_voice(h, 12.0, 8192));   // out of range -> stopped
+    CHECK_FALSE(m.voice_alive(h));
+}
+
+TEST_CASE("mixer: FShift changes the playback rate; LOOP repeats until stopped") {
+    SoundBank bank;
+    const int c = bank.add({1, 2, 3, 4});
+    Mixer m(bank, 1);
+    MixerSound s = plain(c);
+    s.fshift_lo = s.fshift_hi = 100;          // 200 % pitch
+    m.register_sound("F", s);
+    CHECK(m.play("F"));
+    int16_t out[3] = {};
+    m.render(out, 3);
+    CHECK(out[0] == 1);
+    CHECK(out[1] == 3);
+    CHECK(out[2] == 0);                       // finished after 2 frames
+    MixerSound l = plain(c);
+    l.loop = true;
+    m.register_sound("L", l);
+    const std::uint32_t h = m.play_at("L", 0.0, 8192);
+    int16_t o2[6] = {};
+    m.render(o2, 6);
+    CHECK(o2[4] == 1);                        // wrapped to the start
+    CHECK(o2[5] == 2);
+    m.stop_voice(h);
+    m.render(o2, 1);
+    CHECK(o2[0] == 0);
+}
+
+TEST_CASE("mixer: render_stereo soft-limits instead of hard clipping, streams music") {
+    struct Const : MusicSource {
+        std::size_t read(int16_t* lr, std::size_t n) override {
+            for (std::size_t i = 0; i < 2 * n; ++i) lr[i] = 1000;
+            return n;
+        }
+    };
+    SoundBank bank;
+    const int loud = bank.add({30000});
+    Mixer m(bank, 1);
+    m.register_sound("X", plain(loud));
+    CHECK(m.play("X"));
+    CHECK(m.play("X"));
+    m.set_music(std::make_shared<Const>());
+    int16_t lr[2] = {};
+    m.render_stereo(lr, 1);
+    CHECK(lr[0] > 30000);
+    CHECK(lr[0] < 32767);                     // 61000 compressed, not clamped flat
+    int16_t lr2[2] = {};
+    m.render_stereo(lr2, 1);
+    CHECK(lr2[0] == 1000);                    // only the music remains
+}
+
+#include "music_stream.hpp"
+#include "ra2assets/mix.hpp"
+#include "ra2assets/wav.hpp"
+#include "asset_fixture.hpp"
+
+// W2-GA-22: a streamed track yields the same audio as the whole-file decode
+// (here: a 22050 Hz stereo theme passes through untouched), off-thread.
+TEST_CASE("mixer: MusicStream streams theme.mix grinder.wav identically to the whole decode") {
+    std::string path = ra2fixture::install_base();
+    if (!path.empty() && path.back() != '/' && path.back() != '\\') path += "/";
+    path += "theme.mix";
+    ra2assets::MixFile theme;
+    try { theme = ra2assets::MixFile::open_path(path); } catch (const std::exception&) {
+        MESSAGE("theme.mix absent; skipped");
+        return;
+    }
+    const ra2assets::MixEntry* e = theme.find(std::string("grinder.wav"));
+    REQUIRE(e);
+    const std::vector<uint8_t> bytes = theme.read(*e);
+    ra2assets::WavInfo info;
+    const std::vector<int16_t> whole = ra2assets::load_wav_ima(bytes.data(), bytes.size(), info);
+    REQUIRE(info.sample_rate == 22050);
+    REQUIRE(info.channels == 2);
+    MusicStream ms([bytes]() { return bytes; });
+    REQUIRE(ms.wait_ready(5000));
+    CHECK(ms.length_secs() > 60.0);
+    std::vector<int16_t> got;
+    int16_t buf[2048];
+    for (int spins = 0; spins < 2000000 && !ms.finished(); ++spins) {
+        const std::size_t n = ms.read(buf, 1024);
+        got.insert(got.end(), buf, buf + n * 2);
+        if (!n) std::this_thread::yield();
+    }
+    CHECK(ms.finished());
+    CHECK_FALSE(ms.failed());
+    CHECK(got == whole);
+}
+
+TEST_CASE("mixer: MusicStream marks a zero-filled entry failed (the thememd.mix placeholders)") {
+    MusicStream ms([]() { return std::vector<uint8_t>(4096, 0); });
+    CHECK_FALSE(ms.wait_ready(2000));
+    CHECK(ms.failed());
+    CHECK(ms.finished());
+}

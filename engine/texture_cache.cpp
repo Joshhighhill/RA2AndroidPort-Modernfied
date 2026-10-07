@@ -1,29 +1,75 @@
 #include "texture_cache.hpp"
 
 #include <SDL.h>
+#include <algorithm>
 #include <stdexcept>
 #include <vector>
 
 namespace ra2engine {
 
-TextureCache::TextureCache(void* sdl_renderer) : renderer_(sdl_renderer) {}
+static std::uint64_t g_next_cache_id = 1;
+
+TextureCache::TextureCache(void* sdl_renderer) : renderer_(sdl_renderer), id_(g_next_cache_id++) {}
 
 TextureCache::~TextureCache() {
     for (auto& kv : cache_) {
-        SDL_DestroyTexture(static_cast<SDL_Texture*>(kv.second));
+        SDL_DestroyTexture(static_cast<SDL_Texture*>(kv.second.tex));
     }
 }
 
 void* TextureCache::peek(const std::string& key) const {
     auto it = cache_.find(key);
-    return it != cache_.end() ? it->second : nullptr;
+    return it != cache_.end() ? touch(it->second) : nullptr;
+}
+
+void* TextureCache::insert(const std::string& key, void* tex, int w, int h) {
+    Entry e;
+    e.tex = tex;
+    e.bytes = static_cast<std::size_t>(w > 0 ? w : 0) * static_cast<std::size_t>(h > 0 ? h : 0) * 4;
+    e.used = frame_;
+    bytes_ += e.bytes;
+    cache_.emplace(key, e);
+    return tex;
+}
+
+void TextureCache::pin(const std::string& key) {
+    auto it = cache_.find(key);
+    if (it != cache_.end()) it->second.pinned = true;
+}
+
+void TextureCache::next_frame() {
+    ++frame_;
+    if (bytes_ <= budget_) return;
+    // LRU over unpinned entries untouched for >= 2 frames, down to 3/4 budget.
+    std::vector<std::pair<std::uint64_t, const std::string*>> cand;
+    cand.reserve(cache_.size());
+    for (const auto& kv : cache_)
+        if (!kv.second.pinned && kv.second.used + 2 <= frame_) cand.push_back({kv.second.used, &kv.first});
+    std::sort(cand.begin(), cand.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    const std::size_t target = budget_ / 4 * 3;
+    std::vector<std::string> drop;
+    std::size_t b = bytes_;
+    for (const auto& c : cand) {
+        if (b <= target) break;
+        const Entry& e = cache_.at(*c.second);
+        b -= e.bytes;
+        drop.push_back(*c.second);
+    }
+    for (const std::string& k : drop) {
+        auto it = cache_.find(k);
+        SDL_DestroyTexture(static_cast<SDL_Texture*>(it->second.tex));
+        bytes_ -= it->second.bytes;
+        cache_.erase(it);
+        ++evicted_;
+    }
 }
 
 void* TextureCache::get(const std::string& key, const uint8_t* indices, int w,
                          int h, const ra2assets::Palette& pal) {
     auto it = cache_.find(key);
     if (it != cache_.end()) {
-        return it->second;
+        return touch(it->second);
     }
 
     std::vector<ra2assets::Rgba> rgba(static_cast<size_t>(w) * h);
@@ -56,8 +102,7 @@ void* TextureCache::get(const std::string& key, const uint8_t* indices, int w,
     SDL_UpdateTexture(tex, nullptr, rgba.data(), w * 4);
     SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
 
-    cache_.emplace(key, tex);
-    return tex;
+    return insert(key, tex, w, h);
 }
 
 // G-84/G-90: like get(), but palette index `shadow_index` becomes a translucent
@@ -67,7 +112,7 @@ void* TextureCache::get(const std::string& key, const uint8_t* indices, int w,
 void* TextureCache::get_shadowed(const std::string& key, const uint8_t* indices, int w, int h,
                                  const ra2assets::Palette& pal, int shadow_index, int alpha) {
     auto it = cache_.find(key);
-    if (it != cache_.end()) return it->second;
+    if (it != cache_.end()) return touch(it->second);
     std::vector<ra2assets::Rgba> rgba(static_cast<size_t>(w) * h);
     for (int i = 0; i < w * h; ++i) {
         const uint8_t idx = indices[i];
@@ -81,7 +126,7 @@ void* TextureCache::get_shadowed(const std::string& key, const uint8_t* indices,
 void* TextureCache::get_rgba(const std::string& key, const uint8_t* rgba, int w, int h) {
     auto it = cache_.find(key);
     if (it != cache_.end()) {
-        return it->second;
+        return touch(it->second);
     }
 
     // Same RGBA32 byte-order rationale as get() above (SDL's *32 alias resolves
@@ -96,8 +141,7 @@ void* TextureCache::get_rgba(const std::string& key, const uint8_t* rgba, int w,
     SDL_UpdateTexture(tex, nullptr, rgba, w * 4);
     SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
 
-    cache_.emplace(key, tex);
-    return tex;
+    return insert(key, tex, w, h);
 }
 
 }  // namespace ra2engine

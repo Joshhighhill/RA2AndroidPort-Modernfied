@@ -11,6 +11,7 @@ public:
               const Rules& rules, const Ini& rules_ini, const Ini& art_ini,
               const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs, int side_ix) {
         audio_ = &audio;
+        g_bld_events.clear();   // W2-GA-14 per-building anim state is per game
         // G-83: the effects layer (muzzle / impact / death anims, projectile art).
         fx_.init(dir, ra2, rules_ini, art_ini);
         for (const auto* list : defs)
@@ -50,6 +51,8 @@ public:
         sell_sound_ = av("SellSound");
         vet_sound_ = av("UpgradeVeteranSound");
         elite_sound_ = av("UpgradeEliteSound");
+        impact_water_ = av("ImpactWaterSound");
+        snd_.ensure_sound(impact_water_);
         for (const std::string& k : {base_attack_siren_, building_die_, building_damage_, sell_sound_,
                                      vet_sound_, elite_sound_})
             snd_.ensure_sound(k);
@@ -99,11 +102,14 @@ public:
                 const std::vector<ra2engine::ProjectileEvent>& pev) {
         ++frame_;
         g_pres_tick = frame_;
+        world_ = &w;
         fx_.step(dt);
+        snd_.set_view(cam.x, cam.y, view_w, view_h);   // W2-GA-23 positional audio
+        snd_.update_voices();
         for (const ra2engine::ProjectileEvent& e : pev)
             if (e.kind == ra2engine::ProjectileEvent::Detonate) {
                 const double fx = e.x / 256.0, fy = e.y / 256.0;
-                if (!w.visible_at(0, ra2engine::lepton_to_cell(e.x), ra2engine::lepton_to_cell(e.y))) continue;
+                if (!w.object_visible_at(0, ra2engine::lepton_to_cell(e.x), ra2engine::lepton_to_cell(e.y))) continue;
                 const ra2engine::Unit* a = (e.attacker >= 0 && e.attacker < static_cast<int>(w.units().size()))
                                                ? &w.units()[e.attacker] : nullptr;
                 if (a) impact(*a, e.damage, fx, fy, level_at(w, fx, fy), e.z * 36.74 / 256.0);
@@ -116,12 +122,14 @@ public:
         production_eva(w, q, credits);
         power_eva(w, ba);
         building_events(w, ba);
+        building_anim_events(w, ba);   // W2-GA-14
+        if (ba.ok) unit_pal_ = &ba.unit_pal;
         unit_audio(w, act);
         for (const auto& e : vet) {
             if (e.unit < 0 || e.unit >= static_cast<int>(w.units().size())) continue;
             const ra2engine::Unit& u = w.units()[e.unit];
             if (u.house != 0) continue;
-            snd_.play(e.new_rank >= 2 ? elite_sound_ : vet_sound_, dist_of(u.fx, u.fy), "promotion");
+            snd_.play_at(e.new_rank >= 2 ? elite_sound_ : vet_sound_, u.fx, u.fy, "promotion");
             snd_.eva("EVA_UnitPromoted");
         }
         superweapon_eva(w);
@@ -244,7 +252,7 @@ private:
         for (int i = static_cast<int>(us.size()) - 1; i >= 0; --i) {
             const ra2engine::Unit& u = us[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            if (u.house != 0 && !w.visible_at(0, u.cell_x, u.cell_y)) continue;
+            if (u.house != 0 && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
             const int gx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam_.x + 30;
             const int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
             const int hw = u.is_vehicle ? 22 : 10, up = u.is_vehicle ? 24 : 30;
@@ -385,7 +393,7 @@ private:
         const std::size_t comma = list.find(',');
         if (comma != std::string::npos) list = pres_clean(list.substr(0, comma));
         if (const FxAnimType* t = fx_.spawn(list, cx, cy, 0, 0.0))
-            snd_.play(t->report, dist_of(cx, cy), "nuke detonation");
+            snd_.play_at(t->report, cx, cy, "nuke detonation");
         pres_log(frame_, "fx superweapon " + list);
     }
     // ---- G-83 effects -------------------------------------------------------
@@ -399,8 +407,10 @@ private:
         if (!wp || wp->anim_list.empty()) return;
         const int n = static_cast<int>(wp->anim_list.size());
         const int ix = std::clamp(damage / 25, 0, n - 1);
-        if (const FxAnimType* t = fx_.spawn(wp->anim_list[ix], fx, fy, level, lift_px))
-            snd_.play(t->report, dist_of(fx, fy), "impact");
+        const FxAnimType* t = fx_.spawn(wp->anim_list[ix], fx, fy, level, lift_px);
+        // W2-GA-25: a hit on a water cell sounds [AudioVisual] ImpactWaterSound.
+        if (on_water(fx, fy) && !impact_water_.empty()) snd_.play_at(impact_water_, fx, fy, "impact water");
+        else if (t) snd_.play_at(t->report, fx, fy, "impact");
         pres_log(frame_, "fx impact " + wp->anim_list[ix]);
     }
     // Muzzle Anim= at the firing point; an instant (no flying projectile)
@@ -430,6 +440,13 @@ private:
             }
             fx_.spawn(name, u.fx, u.fy, u.level, lift, ox);
         }
+        if (wp->bolt || wp->laser) {   // W2-GA-15 Tesla / Prism beams
+            double tx = 0, ty = 0, tl = 0;
+            int tlev = 0;
+            if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
+                fx_.add_beam(u.fx, u.fy, u.level, u.is_vehicle ? 18.0 : 15.0, tx, ty, tlev, tl, *wp,
+                             house_color(w, u.house));
+        }
         if (!u.w_proj.flies()) {
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
@@ -442,6 +459,29 @@ private:
             }
         }
     }
+    bool target_point(const ra2engine::World& w, int tu, int tb, double& x, double& y, int& level,
+                      double& lift) const {
+        const auto& us = w.units();
+        if (tu >= 0 && tu < static_cast<int>(us.size())) {
+            const ra2engine::Unit& t = us[static_cast<std::size_t>(tu)];
+            x = t.fx; y = t.fy; level = t.level;
+            lift = t.is_vehicle ? 10.0 : 8.0;
+            return true;
+        }
+        if (tb >= 0 && tb < static_cast<int>(w.buildings().size())) {
+            const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(tb)];
+            x = b.cx + (b.fw - 1) / 2.0; y = b.cy + (b.fh - 1) / 2.0; level = 0;
+            lift = 20.0;
+            return true;
+        }
+        return false;
+    }
+    SDL_Color house_color(const ra2engine::World& w, int house) const {
+        if (!unit_pal_) return SDL_Color{255, 0, 255, 255};
+        const ra2assets::Rgba c = w.house_palette(*unit_pal_, house)[24];
+        return SDL_Color{c.r, c.g, c.b, 255};
+    }
+    const ra2assets::Palette* unit_pal_ = nullptr;
     // Building death: the type's Explosion= anims scattered over the
     // foundation [RE-FALLBACK: RE-P5 open -- count/placement; one per
     // foundation cell, cycling the list], each with its Report=.
@@ -453,7 +493,7 @@ private:
             for (int i = 0; i < b.fw; ++i, ++k) {
                 const std::string& name = (*ex)[k % ex->size()];
                 if (const FxAnimType* t = fx_.spawn(name, b.cx + i, b.cy + j, 0, 10.0 + 6.0 * (k % 3)))
-                    if (k == 0) snd_.play(t->report, dist_of(b.cx + i, b.cy + j), "building explosion");
+                    if (k == 0) snd_.play_at(t->report, b.cx + i, b.cy + j, "building explosion");
             }
     }
 
@@ -470,12 +510,41 @@ private:
             const std::string w1 = pres_clean(rules_ini_->get(id, "Weapon1"));
             if (!w1.empty()) v.report = pres_clean(rules.weapon_report(w1));
         }
-        // Report= may list several sounds ("Report=A,B"): the game picks one;
-        // the first is used here [RE-FALLBACK: multi-Report pick not traced].
-        const std::size_t comma = v.report.find(',');
-        if (comma != std::string::npos) v.report = pres_clean(v.report.substr(0, comma));
+        // Report= may list several sounds ("Report=A,B"): the game picks one
+        // per shot (W2-GA-24; uniform pick on the audio-local RNG, the same
+        // RandomRanged rule the event variants use) -- see pick_report.
+        // W2-GA-25: MoveSound (the vehicle move-start one-shot, e.g.
+        // GrizzlyTankMoveStart: Control=random predelay) and CrushSound
+        // (TankCrush on crushers, InfantrySquish on crushable infantry).
+        v.move_sound = pres_clean(rules_ini_->get(id, "MoveSound"));
+        v.crush = pres_clean(rules_ini_->get(id, "CrushSound"));
         audio_->voices[image] = v;
-        for (const std::string& k : {v.select, v.move, v.attack, v.die, v.report}) snd_.ensure_sound(k);
+        for (const std::string& k : {v.select, v.move, v.attack, v.die, v.move_sound, v.crush}) snd_.ensure_sound(k);
+        std::stringstream rs(v.report);
+        for (std::string tok; std::getline(rs, tok, ',');) snd_.ensure_sound(pres_clean(tok));
+    }
+
+    std::string pick_report(const std::string& list) {
+        if (list.find(',') == std::string::npos) return list;
+        std::vector<std::string> opts;
+        std::stringstream rs(list);
+        for (std::string tok; std::getline(rs, tok, ',');)
+            if (!pres_clean(tok).empty()) opts.push_back(pres_clean(tok));
+        if (opts.empty()) return std::string();
+        report_rng_ = report_rng_ * 1664525u + 1013904223u;
+        return opts[(report_rng_ >> 8) % opts.size()];
+    }
+    std::uint32_t report_rng_ = 0x51A7u;
+    std::vector<uint8_t> moving_prev_;
+    std::vector<int> uhp_prev_;
+    std::string impact_water_;
+    const ra2engine::World* world_ = nullptr;
+    bool on_water(double fx, double fy) const {
+        if (!world_) return false;
+        const auto& wg = world_->grid_for(ra2engine::MovementDomain::Water);
+        const int x = static_cast<int>(std::lround(fx)), y = static_cast<int>(std::lround(fy));
+        if (wg.empty() || x < 0 || y < 0 || x >= world_->grid_w() || y >= world_->grid_h()) return false;
+        return wg[static_cast<std::size_t>(y) * world_->grid_w() + x] != 0;
     }
 
     double dist_of(double fx, double fy) const {
@@ -553,6 +622,14 @@ private:
                 continue;
             }
             const bool dead = b.state == ra2engine::Building::State::Dead;
+            // W2-GA-26 [RE: FUN_004f9200 @4f93ce]: an ALLIED (non-local)
+            // house's building attacked -> RadarEvent 16 AllyBaseAttacked ->
+            // EVA_OurAllyIsUnderAttack plus the siren.
+            if (b.house != 0 && b.house == p.house && b.house >= 0 && w.are_allied(0, b.house) &&
+                b.hp < p.hp && !dead && radar_event(16, cx, cy)) {
+                snd_.eva("EVA_OurAllyIsUnderAttack");
+                snd_.play(base_attack_siren_, 0.0, "ally under attack");
+            }
             if (b.house == 0 && p.house == 0 && b.hp < p.hp && !dead) {
                 // [RE: presentation.md §1.2 FUN_004f9200] throttled by
                 // RadarEvent 3 BaseAttacked (8 cells, alive 400 frames); the
@@ -562,16 +639,16 @@ private:
                     snd_.play(base_attack_siren_, 0.0, "base under attack");
                 }
                 const double half = 0.5 * b.max_hp;
-                if (p.hp > half && b.hp <= half) snd_.play(building_damage_, dist_of(cx, cy), "half strength");
+                if (p.hp > half && b.hp <= half) snd_.play_at(building_damage_, cx, cy, "half strength");
             }
             if (dead && !p.dead && !b.sold) {
-                snd_.play(building_die_, dist_of(cx, cy), "building die");
+                snd_.play_at(building_die_, cx, cy, "building die");
                 if (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()) &&
                     pres_building_seen(w, b))
                     building_explode(w, b, ba.roster[b.type].id);
             }
             if (b.selling && !p.selling && b.house == 0) {
-                snd_.play(sell_sound_, dist_of(cx, cy), "sell");
+                snd_.play_at(sell_sound_, cx, cy, "sell");
                 snd_.eva("EVA_StructureSold");
             }
             if (b.house == 0 && p.house != 0 && !dead) snd_.eva("EVA_BuildingCaptured");
@@ -602,8 +679,16 @@ public:
             if (e.building < 0 || e.building >= static_cast<int>(bs.size()) || e.weapon.empty()) continue;
             const ra2engine::Building& b = bs[e.building];
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
-            snd_.play(fx_.weapon_report(e.weapon), dist_of(fx, fy), "defense report");
-            if (b.house != 0 && !w.visible_at(0, b.cx, b.cy)) continue;
+            snd_.play_at(fx_.weapon_report(e.weapon), fx, fy, "defense report");
+            if (b.house != 0 && !w.object_visible_at(0, b.cx, b.cy)) continue;
+            // W2-GA-15: Tesla Coil bolts / Prism Tower beams from the tower top.
+            const FxWeapon& bw = fx_.weapon_def(e.weapon);
+            if (bw.bolt || bw.laser) {
+                double tx = 0, ty = 0, tl = 0;
+                int tlev = 0;
+                if (target_point(w, e.target_unit, e.target_building, tx, ty, tlev, tl))
+                    fx_.add_beam(fx, fy, 0, 60.0, tx, ty, tlev, tl, bw, house_color(w, b.house));
+            }
             const std::vector<std::string> m = fx_.weapon_muzzle(e.weapon);
             if (!m.empty()) fx_.spawn(m.front(), fx, fy, 0, 20.0);   // [RE-FALLBACK: building FireFLH not applied]
         }
@@ -615,22 +700,45 @@ private:
     void unit_audio(const ra2engine::World& w, const ra2engine::InputActions& act) {
         const auto& units = w.units();
         prev_.resize(units.size(), {0.0, -1.0});
+        moving_prev_.resize(units.size(), 0);
+        uhp_prev_.resize(units.size(), -1);
         for (std::size_t i = 0; i < units.size(); ++i) {
             const auto& u = units[i];
-            const double dist = dist_of(u.fx, u.fy);
             const UnitVoices& v = audio_->voices[u.image];
+            // W2-GA-25: a vehicle that starts moving plays its MoveSound.
+            const bool mv = u.alive && u.die_time < 0.0 && u.cargo_of < 0 && u.moving();
+            if (mv && !moving_prev_[i] && u.is_vehicle) snd_.play_at(v.move_sound, u.fx, u.fy, "move start");
+            moving_prev_[i] = mv ? 1 : 0;
+            // W2-GA-26 [RE: presentation.md §1.3 FUN_00736d60]: the player's
+            // harvester taking (non-lethal) damage -> RadarEvent 4
+            // HarvesterAttacked (8 cells) -> EVA_OreMinerUnderAttack, no siren.
+            if (u.house == 0 && u.is_harvester && u.alive && u.die_time < 0.0 && uhp_prev_[i] >= 0 &&
+                u.hp < uhp_prev_[i] && u.hp > 0 && radar_event(4, u.fx, u.fy))
+                snd_.eva("EVA_OreMinerUnderAttack");
+            uhp_prev_[i] = u.hp;
             if (u.fire_flash > prev_[i].first && u.cargo_of < 0) {
-                snd_.play(v.report, dist, "report");
-                if (u.house == 0 || w.visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
+                snd_.play_at(pick_report(v.report), u.fx, u.fy, "report");
+                if (u.house == 0 || w.object_visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
             }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
-                snd_.play(v.die, dist, "die");
+                // W2-GA-25: crushed infantry (killed by an adjacent Crusher
+                // vehicle that ran into its cell) squish instead of dying.
+                const int k = u.vet.killed_by;
+                const bool crushed = k >= 0 && k < static_cast<int>(units.size()) && u.crushable &&
+                                     !u.is_vehicle && units[k].is_vehicle && units[k].crusher &&
+                                     std::abs(units[k].fx - u.fx) <= 1.6 && std::abs(units[k].fy - u.fy) <= 1.6;
+                if (crushed) {
+                    snd_.play_at(v.crush, u.fx, u.fy, "crushed");
+                    snd_.play_at(audio_->voices[units[k].image].crush, units[k].fx, units[k].fy, "crusher");
+                } else {
+                    snd_.play_at(v.die, u.fx, u.fy, "die");
+                }
                 // Vehicle death: the Explosion= anim (drawn by draw_vehicle_unit)
                 // carries its own Report= sound.
-                if (u.is_vehicle && w.visible_at(0, u.cell_x, u.cell_y)) {
+                if (u.is_vehicle && w.object_visible_at(0, u.cell_x, u.cell_y)) {
                     const auto* ex = fx_.explosions(u.image);
                     if (ex && !ex->empty())
-                        if (const FxAnimType* t = fx_.type(ex->front())) snd_.play(t->report, dist, "explosion");
+                        if (const FxAnimType* t = fx_.type(ex->front())) snd_.play_at(t->report, u.fx, u.fy, "explosion");
                 }
                 if (u.house == 0 && radar_event(7, u.fx, u.fy)) snd_.eva("EVA_UnitLost");
             }
@@ -639,29 +747,104 @@ private:
         if (act.actor >= 0 && act.actor < static_cast<int>(units.size())) {
             const auto& au = units[act.actor];
             const UnitVoices& av = audio_->voices[au.image];
-            const double d = dist_of(au.fx, au.fy);
-            if (act.selected) snd_.play(av.select, d, "select");
-            else if (act.attack_ordered) snd_.play(av.attack, d, "attack order");
-            else if (act.move_ordered) snd_.play(av.move, d, "move order");
+            if (act.selected) snd_.play_at(av.select, au.fx, au.fy, "select");
+            else if (act.attack_ordered) snd_.play_at(av.attack, au.fx, au.fy, "attack order");
+            else if (act.move_ordered) snd_.play_at(av.move, au.fx, au.fy, "move order");
         }
         if (act.repair_clicked) snd_.eva("EVA_Repairing");
     }
 
+    // W2-GA-26: each superweapon type speaks its own lines (eva.ini
+    // [EVA_*]): the player's READY line per type (Weather Control no longer
+    // says "Chronosphere ready"); the "Warning: ... detected" line when an
+    // ENEMY house gains a superweapon (EVA_WeatherDeviceReady is the Weather
+    // Control *detected* warning); and the launch / activation warning heard
+    // by everyone when any house fires one. Types without a line (paradrop,
+    // spy plane, ...) stay silent.
+    static const char* sw_line(ra2engine::SuperweaponType t, int what) {   // 0 ready, 1 detected, 2 fired
+        using T = ra2engine::SuperweaponType;
+        static const char* nuke[3] = {"EVA_NuclearMissileReady", "EVA_NuclearSiloDetected", "EVA_NuclearMissileLaunched"};
+        static const char* ic[3] = {"EVA_IronCurtainReady", "EVA_IronCurtainDetected", "EVA_IronCurtainActivated"};
+        static const char* ls[3] = {"EVA_LightningStormReady", "EVA_WeatherDeviceReady", "EVA_LightningStormCreated"};
+        static const char* cs[3] = {"EVA_ChronosphereReady", "EVA_ChronosphereDetected", "EVA_ChronosphereActivated"};
+        switch (t) {
+            case T::Nuke: return nuke[what];
+            case T::IronCurtain: return ic[what];
+            case T::LightningStorm: return ls[what];
+            case T::ChronoSphere: return cs[what];
+            default: return nullptr;
+        }
+    }
     void superweapon_eva(const ra2engine::World& w) {
-        const ra2engine::Superweapon* sw = w.sw_state(0);
-        const bool ready = sw && sw->ready;
-        if (ready && !sw_ready_) {
-            switch (sw->type) {
-                case ra2engine::SuperweaponType::Nuke: snd_.eva("EVA_NuclearMissileReady"); break;
-                case ra2engine::SuperweaponType::IronCurtain: snd_.eva("EVA_IronCurtainReady"); break;
-                default: snd_.eva("EVA_ChronosphereReady"); break;
+        const int n = w.house_count();
+        if (static_cast<int>(sw_prev_.size()) < n) sw_prev_.resize(static_cast<std::size_t>(n));
+        for (int h = 0; h < n; ++h) {
+            const ra2engine::Superweapon* sw = w.sw_state(h);
+            SwSeen& p = sw_prev_[static_cast<std::size_t>(h)];
+            const ra2engine::SuperweaponType t = sw ? sw->type : ra2engine::SuperweaponType::None;
+            const bool ready = sw && sw->ready;
+            if (t != ra2engine::SuperweaponType::None) {
+                if (h == 0 && ready && !p.ready)
+                    if (const char* l = sw_line(t, 0)) snd_.eva(l);
+                if (h != 0 && p.type != t && w.is_enemy(0, h))
+                    if (const char* l = sw_line(t, 1)) snd_.eva(l);
+                // Fired: was ready, same type, charge restarted from zero.
+                if (p.ready && !ready && p.type == t && sw->timer <= 0.5)
+                    if (const char* l = sw_line(t, 2)) snd_.eva(l);
+            }
+            p.type = t;
+            p.ready = ready;
+        }
+    }
+    // W2-GA-14: start the factory door when a unit appears at a factory, and
+    // the superweapon building's charge anims on READY / FIRE edges.
+    void building_anim_events(const ra2engine::World& w, const BuildingAssets& ba) {
+        if (!ba.ok) return;
+        const auto& bs = w.buildings();
+        const auto& us = w.units();
+        auto image_of = [&](const ra2engine::Building& b) -> std::string {
+            if (b.type < 0 || b.type >= static_cast<int>(ba.roster.size())) return std::string();
+            const ra2engine::BuildingTypeDef& d = ba.roster[static_cast<std::size_t>(b.type)];
+            return pres_upper(d.image.empty() ? d.id : d.image);
+        };
+        for (std::size_t i = units_seen_; i < us.size(); ++i) {
+            const ra2engine::Unit& u = us[i];
+            if (!u.alive || u.cargo_of >= 0 || !u.is_vehicle) continue;
+            for (const ra2engine::Building& b : bs) {
+                if (!b.alive || b.house != u.house || b.state != ra2engine::Building::State::Idle) continue;
+                if (u.cell_x < b.cx - 1 || u.cell_x > b.cx + b.fw || u.cell_y < b.cy - 1 || u.cell_y > b.cy + b.fh)
+                    continue;
+                const std::string img = image_of(b);
+                if (img.empty() || !fx_.building(img).door.t) continue;
+                g_bld_events[bld_event_key(b)].door_start = frame_;
+                break;
             }
         }
-        if (!ready && sw_ready_ && sw) {
-            if (sw->type == ra2engine::SuperweaponType::Nuke) snd_.eva("EVA_NuclearMissileLaunched");
+        units_seen_ = us.size();
+        const int n = w.house_count();
+        if (static_cast<int>(sw_anim_prev_.size()) < n) sw_anim_prev_.resize(static_cast<std::size_t>(n), 0);
+        for (int h = 0; h < n; ++h) {
+            const ra2engine::Superweapon* sw = w.sw_state(h);
+            const int st = !sw || sw->type == ra2engine::SuperweaponType::None ? 0 : (sw->ready ? 2 : 1);
+            int& prev = sw_anim_prev_[static_cast<std::size_t>(h)];
+            if (st != prev && st != 0) {
+                for (const ra2engine::Building& b : bs) {
+                    if (!b.alive || b.house != h) continue;
+                    const std::string img = image_of(b);
+                    if (img.empty() || !fx_.building(img).super_[0].t) continue;
+                    BldEventState& e = g_bld_events[bld_event_key(b)];
+                    if (st == 2) { e.super_phase = 0; e.super_start = frame_; }                    // ready: open
+                    else if (prev == 2) { e.super_phase = 2; e.super_start = frame_; }             // fired: close
+                    else if (e.super_phase < 0) { e.super_phase = 2; e.super_start = -1; }          // charging
+                }
+            }
+            prev = st;
         }
-        sw_ready_ = ready;
     }
+    std::size_t units_seen_ = 0;
+    std::vector<int> sw_anim_prev_;
+    struct SwSeen { ra2engine::SuperweaponType type = ra2engine::SuperweaponType::None; bool ready = false; };
+    std::vector<SwSeen> sw_prev_;
 
     struct Slot { int type = -1; bool ready = false; };
     struct Bld { bool seen = false; int hp = 0; int house = -1; bool dead = false; bool selling = false; };

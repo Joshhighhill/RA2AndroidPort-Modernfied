@@ -6,7 +6,7 @@
 // music / effects) so audio triggers can be proven through the real update()
 // path without an audio device.
 //
-//   ra2engine --scene-shot <stem> [--map xmp31s2.map] [--secs 2,30,60]
+//   ra2engine --scene-shot <stem> [--map xmp31s2.map] [--secs 2,30,60] [--view X,Y] [--reveal]
 //             [--ai N] [--script none|fight|build] [--side allied|soviet]
 //             [--color N] [--audio]
 //
@@ -20,6 +20,8 @@ struct PresHarness {
         std::vector<double> secs = {2.0};
         int ai = -1, color = -1, mouse_x = -1, mouse_y = -1;
         bool select_all = false;
+        int view_x = -1, view_y = -1;
+        bool reveal_all = false;
         std::string peek;
         std::vector<std::string> give;   // --give ID: instant house-0 building near the yard   // terrain | overlay | civ: centre + reveal on the first such map object
         bool audio = false;
@@ -34,6 +36,12 @@ struct PresHarness {
             else if (a == "--audio") audio = true;
             else if (a == "--select") select_all = true;
             else if (a == "--peek") peek = next();
+            else if (a == "--view") {   // --view X,Y: centre on + reveal that cell
+                const std::string v = next();
+                view_x = std::atoi(v.c_str());
+                view_y = std::atoi(v.substr(v.find(',') + 1).c_str());
+            }
+            else if (a == "--reveal") reveal_all = true;
             else if (a == "--give") give.push_back(next());
             else if (a == "--mouse") {
                 const std::string v = next();
@@ -105,6 +113,12 @@ struct PresHarness {
                         break;
                     }
             }
+            if (reveal_all) gs.world_.reveal_all_house(0);
+            if (view_x >= 0) {
+                gs.world_.reveal_source(0, view_x, view_y, 10);
+                gs.cam_.x = static_cast<int>(gs.playfield_w_ / 2.0 - (view_x - view_y) * 30.0);
+                gs.cam_.y = static_cast<int>(GameScene::kWinH / 2.0 - (view_x + view_y) * 15.0);
+            }
             if (select_all)
                 for (auto& u : gs.world_.units()) u.selected = (u.house == 0 && u.alive);
             if (t + 1e-9 >= secs[next_shot]) {
@@ -147,7 +161,14 @@ struct PresHarness {
                     const double dx = bs[b].cx - us[i].fx, dy = bs[b].cy - us[i].fy;
                     if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = b; }
                 }
-                if (best >= 0) w.order_unit_attack_building(i, best);
+                if (best >= 0) { w.order_unit_attack_building(i, best); continue; }
+                // MCV start: no enemy building yet -> the nearest enemy unit.
+                for (int j = 0; j < static_cast<int>(us.size()); ++j) {
+                    if (!us[j].alive || us[j].cargo_of >= 0 || !w.is_enemy(0, us[j].house)) continue;
+                    const double dx = us[j].fx - us[i].fx, dy = us[j].fy - us[i].fy;
+                    if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = j; }
+                }
+                if (best >= 0) w.order_unit_attack(i, best);
             }
             for (int i = 0; i < static_cast<int>(us.size()); ++i) {
                 if (!us[i].alive || us[i].house == 0) continue;
@@ -170,27 +191,36 @@ struct PresHarness {
     // house's first building (exercises voxel house colours + tank weapons).
     static void spawn_tanks(GameScene& g) {
         ra2engine::World& w = g.world_;
-        const int nb = static_cast<int>(w.buildings().size());
-        std::vector<int> done;
-        for (int b = 0; b < nb; ++b) {
-            const ra2engine::Building bb = w.buildings()[b];
-            if (!bb.alive || std::find(done.begin(), done.end(), bb.house) != done.end()) continue;
-            done.push_back(bb.house);
-            const UnitRoster& r = (w.house_side(bb.house) == ra2engine::World::Side::Soviet) ? g.ur_ai_ : g.ur_;
+        // Anchor per house: its first building, else (MCV start, gF G-23: no
+        // building at frame 0) its first live unit -- the MCV.
+        struct Anchor { int house, x, y; };
+        std::vector<Anchor> anchors;
+        auto has = [&](int h) {
+            for (const Anchor& a : anchors) if (a.house == h) return true;
+            return false;
+        };
+        for (const ra2engine::Building& bb : w.buildings())
+            if (bb.alive && !has(bb.house)) anchors.push_back({bb.house, bb.cx, bb.cy + bb.fh + 1});
+        for (const ra2engine::Unit& u : w.units())
+            if (u.alive && u.cargo_of < 0 && !has(u.house)) anchors.push_back({u.house, u.cell_x, u.cell_y + 2});
+        for (const Anchor& an : anchors) {
+            const UnitRoster& r = (w.house_side(an.house) == ra2engine::World::Side::Soviet) ? g.ur_ai_ : g.ur_;
             const ra2engine::UnitTypeDef* d = nullptr;
             for (const auto& u : r.defs) if (u.is_vehicle && u.combat.damage > 0) { d = &u; break; }
             if (!d) continue;
-            for (int k = 0; k < 3; ++k) w.add_combat_unit(bb.cx - 2 - k, bb.cy + bb.fh + 1, bb.house, d->combat);
+            for (int k = 0; k < 3; ++k) w.add_combat_unit(an.x - 2 - k, an.y, an.house, d->combat);
         }
     }
     static void follow_action(GameScene& g) {
         double sx = 0, sy = 0;
         int n = 0;
-        for (int pass = 0; pass < 2 && !n; ++pass)
+        // The player's engaged units first (passes 0/1), so the camera stays in
+        // explored ground; then anyone engaged (2/3).
+        for (int pass = 0; pass < 4 && !n; ++pass)
             for (const auto& u : g.world_.units())
-                if (u.alive && u.cargo_of < 0 &&
-                    (pass == 0 ? (u.is_vehicle && (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))
-                               : (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))) {
+                if (u.alive && u.cargo_of < 0 && (pass >= 2 || u.house == 0) &&
+                    ((pass % 2) == 0 ? (u.is_vehicle && (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))
+                                     : (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))) {
                     sx += u.fx; sy += u.fy; ++n;
                 }
         std::cerr << "[scene-shot] action centroid n=" << n << " (" << (n ? sx / n : 0) << ","
@@ -208,6 +238,12 @@ struct PresHarness {
             if (!b.alive) continue;
             if (b.house == 0 && !hp) { px = b.cx; py = b.cy; hp = true; }
             if (b.house != 0 && !he && g.world_.is_enemy(0, b.house)) { ex = b.cx; ey = b.cy; he = true; }
+        }
+        // MCV start (gF G-23): no building yet -> the house's first live unit.
+        for (const auto& u : g.world_.units()) {
+            if (!u.alive || u.cargo_of >= 0) continue;
+            if (u.house == 0 && !hp) { px = u.cell_x; py = u.cell_y; hp = true; }
+            if (u.house != 0 && !he && g.world_.is_enemy(0, u.house)) { ex = u.cell_x; ey = u.cell_y; he = true; }
         }
         if (!hp) return;
         const double cx = he ? px + (ex - px) * toward_enemy : px;

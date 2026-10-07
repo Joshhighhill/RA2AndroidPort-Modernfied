@@ -15,7 +15,7 @@ public:
         : rules_(rules), no_audio_(no_audio), art_(art) {
         try {
             const std::string dir = env_install_dir();
-            ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+            ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
             ra2assets::MixFile local = ra2.open_nested("local.mix");
             if (const ra2assets::MixEntry* e = local.find(std::string("credits.txt"))) {
                 const auto raw = local.read(*e);
