@@ -137,6 +137,54 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                      std::vector<Building>& buildings, Occupancy& occ, double dt,
                                      std::vector<ProjectileLaunch>* launches = nullptr,
                                      ProjRng* rof_rng = nullptr);
+// W5-B R-060 [RE: Modify_Damage FUN_00489090, disassembled]: one object's
+// share of an explosion. damage<0 (healing) applies only within 8 leptons.
+// Otherwise the falloff is LINEAR in float: atmax = damage*PercentAtMax,
+// spread = ftol(CellSpread*256.0f), and when atmax != damage and spread != 0
+// dmg = ftol((damage-atmax)*(spread-distance)/spread + atmax) (no clamp of the
+// distance: past the edge it keeps falling), then max(0,.) and
+// ftol(dmg * Verses[armor]), clamped to [CombatDamage] MaxDamage (10000).
+// No minimum of 1 here (ObjectClass::ReceiveDamage FUN_005f4ba0 floors only
+// buildings at 1 after this call).
+int modify_damage(int damage, const std::vector<int>& verses, int armor_ix, double cell_spread,
+                  double percent_at_max, int distance);
+
+// W5-B R-060 [RE: DamageArea FUN_00489190 + the ring tables DAT_007EC3D0 /
+// DAT_00ABC408 (369 offsets built by the static initializer @0x561540)]:
+// cells scanned for an explosion of CellSpread `s` = the first
+// spread_ring_count(ftol(s)) entries of spread_ring_offset().
+int spread_ring_count(int r);
+void spread_ring_offset(int k, int& dx, int& dy);
+
+// W5-B R-060 [RE: DamageArea FUN_00489190]: the one damage applicator every
+// hit goes through, at impact point (ix, iy, iz) in clone leptons (cell
+// centre = cell*256; z = level*104 + altitude). Objects in the ring cells of
+// ftol(CellSpread), within ftol(CellSpread*256) leptons (3-D distance; an
+// airborne aircraft only when the impact is above the ground, its distance
+// halved), ALL houses -- own and allied units and buildings take splash
+// unless the warhead is AffectsAllies=no (ReceiveDamage 0x700DA0: the
+// shooter's house allied with the victim -> 0). The shooter itself is
+// excluded. A building is hit once per foundation cell in the ring set:
+// distance 0 in the impact cell, else from that cell's centre. `shooter`
+// carries the weapon (w_damage/w_verses/w_cell_spread/...); `src_unit` /
+// `src_building` name the firer (-1 none) for exclusion, retaliation and
+// kill credit.
+struct AreaResult {
+    int damage = 0;              // total HP removed (units + buildings)
+    int first_unit = -1;         // lowest-index unit damaged (event victim)
+};
+AreaResult damage_area(const World& world, std::vector<Unit>& units,
+                       std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
+                       int src_unit, int src_building, int ix, int iy, int iz);
+
+// Lepton position of a unit for damage/aim: cell-centred fx/fy plus the
+// infantry sub-cell offset, z = level*104 + altitude when airborne.
+int unit_lept_x(const Unit& u);
+int unit_lept_y(const Unit& u);
+int unit_lept_z(const Unit& u);
+// Building aim point: the foundation centre (BuildingClass target coords).
+void building_aim_lept(const Building& b, int level, int& x, int& y, int& z);
+
 // Gap fix C (G-50): RearmTimer in seconds = (ROF + Random(0,2)) / 15
 // [veterancy.md V7]; rng null -> no jitter.
 double rearm_secs(int rof_frames, ProjRng* rng);

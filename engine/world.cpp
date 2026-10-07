@@ -560,6 +560,12 @@ void World::set_house(int h, HouseRec rec) {
     houses_configured_ = true;   // open the firewall
 }
 
+int World::cell_level(int x, int y) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
+    const ra2assets::MapCell* mc = map_->at(x, y);
+    return mc ? mc->level : 0;
+}
+
 bool World::walkable(int x, int y) const {
     if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
     return passable_[static_cast<size_t>(y) * grid_w_ + x] != 0;
@@ -639,6 +645,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_prone_damage = c.prone_damage;
     u.w_cell_spread = c.cell_spread;        // CB-2 [aircraft.md §4]: warhead splash
     u.w_percent_at_max = c.percent_at_max;  // radius + edge scale (0 = single-target)
+    u.w_affects_allies = c.affects_allies;  // W5-B R-060
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // spec. Copied unconditionally but READ ONLY behind projectiles_enabled_
     // (the firewall) -- inert in every existing gate.
@@ -722,6 +729,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.verses = c.verses;
     u.vet.base.cell_spread = c.cell_spread;
     u.vet.base.percent_at_max = c.percent_at_max;
+    u.vet.base.affects_allies = c.affects_allies;
     u.vet.base.inf_death = c.inf_death;     // W3-B
     u.vet.base.prone_damage = c.prone_damage;
     u.vet.has_elite = c.has_elite;
@@ -5100,86 +5108,37 @@ void World::detonate_projectile(Projectile& p, int victim) {
         restore_slot = units_[p.attacker].w_active;
         activate_weapon_slot(units_[p.attacker], p.weapon_slot, vet_any_ ? &vet_rules_ : nullptr);
     }
+    // W5-B R-060 [RE: BulletClass::Detonate FUN_004690A0 -> DamageArea
+    // FUN_00489190]: every shell detonates through the one area applicator at
+    // its impact point -- the target (snapped within 32 leptons), bystanders,
+    // own/allied units and buildings in the CellSpread alike. The projectile Z
+    // is terrain-relative; the applicator's is absolute (level*104 added).
+    const int impact_z = iz + cell_level(icx, icy) * 104;
+    const int tb = (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size()))
+                       ? p.target_building : -1;
+    const int tb_before = tb >= 0 ? buildings_[tb].hp : 0;
+    AreaResult ar;
     if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) {
-        const Unit& att = units_[p.attacker];
-        if (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size())) {
-            // Building target: the pre-P2 attack-building hit, iff the impact cell
-            // is inside its (still standing) foundation.
-            Building& b = buildings_[p.target_building];
-            if (b.alive && b.state != Building::State::Dead && icx >= b.cx && icy >= b.cy &&
-                icx < b.cx + b.fw && icy < b.cy + b.fh) {
-                const int before = b.hp;
-                deliver_building_hit(units_, buildings_, p.attacker, p.target_building);
-                building_dmg = before - b.hp;
-                ev.building = p.target_building;
-            }
-        } else if (att.w_cell_spread >= 1.0) {
-            // CellSpread >= 1 (BlimpHE, FlakTWH): the EXISTING area applicator,
-            // centred on the impact point instead of the victim (§7 Detonate ->
-            // FUN_00489190).
-            Unit center;
-            center.fx = ix / 256.0;
-            center.fy = iy / 256.0;
-            // Gap fix C (G-44): a burst aimed at an airborne target detonates in
-            // the air layer (apply_spread_damage layers by unit_airborne).
-            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
-                unit_airborne(units_[p.target_unit])) {
-                center.is_aircraft = true;
-                center.altitude = 1.0;
-            }
-            apply_spread_damage(units_, occ_, att, center);
-        } else {
-            // Single-target warhead: the collided unit, else the original target
-            // if it is still in the impact cell (§8: a dead/moved target is a
-            // miss -- the shell detonates on the cell).
-            int v = victim;
-            if (v < 0 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
-                const Unit& t = units_[p.target_unit];
-                if (lepton_to_cell(unit_lx(t)) == icx && lepton_to_cell(unit_ly(t)) == icy)
-                    v = p.target_unit;
-            }
-            if (v >= 0) {
-                const Unit& w = units_[v];
-                if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(att.house, w.house)) {
-                    deliver_unit_hit(units_, occ_, p.attacker, v);
-                    ev.victim = v;
-                }
-            }
-        }
-    }
-    // Gap fix C (G-40): a base defense's shell -- the same damage layer with a
-    // transient shooter carrying the building's weapon slot.
-    if (p.attacker < 0 && p.attacker_building >= 0 &&
-        p.attacker_building < static_cast<int>(buildings_.size()) &&
-        buildings_[p.attacker_building].type >= 0 &&
-        buildings_[p.attacker_building].type < static_cast<int>(btypes().size())) {
+        ar = damage_area(*this, units_, buildings_, occ_, units_[p.attacker], p.attacker, -1, ix, iy,
+                         impact_z);
+    } else if (p.attacker < 0 && p.attacker_building >= 0 &&
+               p.attacker_building < static_cast<int>(buildings_.size()) &&
+               buildings_[p.attacker_building].type >= 0 &&
+               buildings_[p.attacker_building].type < static_cast<int>(btypes().size())) {
+        // Gap fix C (G-40): a base defense's shell -- a transient shooter
+        // carrying the building's weapon slot.
         const Unit shooter = defense_shooter(p.attacker_building, p.weapon_slot);
-        if (shooter.w_cell_spread >= 1.0) {
-            Unit center;
-            center.fx = ix / 256.0;
-            center.fy = iy / 256.0;
-            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
-                unit_airborne(units_[p.target_unit])) {
-                center.is_aircraft = true;
-                center.altitude = 1.0;
-            }
-            apply_spread_damage(units_, occ_, shooter, center);
-        } else {
-            int v = victim;
-            if (v < 0 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
-                const Unit& t = units_[p.target_unit];
-                if (lepton_to_cell(unit_lx(t)) == icx && lepton_to_cell(unit_ly(t)) == icy)
-                    v = p.target_unit;
-            }
-            if (v >= 0) {
-                const Unit& w = units_[v];
-                if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(shooter.house, w.house)) {
-                    deliver_hit_from(units_, occ_, shooter, -1, p.attacker_building, v);
-                    ev.victim = v;
-                }
-            }
-        }
+        ar = damage_area(*this, units_, buildings_, occ_, shooter, -1, p.attacker_building, ix, iy,
+                         impact_z);
     }
+    if (tb >= 0 && buildings_[tb].hp != tb_before) {
+        building_dmg = tb_before - buildings_[tb].hp;
+        ev.building = tb;
+    }
+    if (ar.first_unit >= 0)
+        ev.victim = (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
+                     units_[p.target_unit].hp != hp_before[static_cast<std::size_t>(p.target_unit)])
+                        ? p.target_unit : ar.first_unit;
     // G16 (agent G) [RE: world-depth.md §B2, FUN_00489190]: the shell's
     // explosion may break a low bridge section in the impact cell (inert unless
     // GameScene armed the depth rules and the map has low bridges).
@@ -5190,9 +5149,9 @@ void World::detonate_projectile(Projectile& p, int victim) {
     }
     if (restore_slot >= 0)
         activate_weapon_slot(units_[p.attacker], restore_slot, vet_any_ ? &vet_rules_ : nullptr);
-    int total = building_dmg;
-    for (std::size_t k = 0; k < units_.size(); ++k) total += hp_before[k] - units_[k].hp;
-    ev.damage = total;
+    (void)victim;   // the collided unit is simply inside the explosion (W5-B)
+    (void)building_dmg;
+    ev.damage = ar.damage;   // W5-B: every object the explosion hurt
     proj_events_.push_back(ev);
 }
 

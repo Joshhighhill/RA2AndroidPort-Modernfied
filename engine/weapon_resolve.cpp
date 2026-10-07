@@ -21,6 +21,7 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.verses = rules.verses(wh);
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
+    s.affects_allies = rules.section_flag(wh, "AffectsAllies", true);   // W5-B R-060
     s.proj = resolve_projectile_spec(rules, weapon);
     // BulletType AA=/AG= [RE-FALLBACK defaults AA=no, AG=yes: the BulletType
     // loader sits in an unanalysed gap (voxel-render.md §7); these are the

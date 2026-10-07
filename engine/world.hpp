@@ -116,6 +116,7 @@ struct Unit {
     std::vector<int> w_verses;     // warhead Verses percents (11 entries)
     double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
     double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
+    bool w_affects_allies = true;  // W5-B R-060: warhead AffectsAllies= (default yes)
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // (default kind=Instant = the pre-P2 instant-hit path). Read ONLY when the
     // World's projectiles_enabled_ firewall is open; NOT read by world_hash.
@@ -638,6 +639,9 @@ public:
     explicit World(const ra2assets::MapFile& map);
 
     const ra2assets::MapFile& map() const { return *map_; }
+    // W5-B: terrain height level of a cell (0 off-map) -- the Z of 3-D
+    // distances (level * 104 leptons, Unsorted::LevelHeight).
+    int cell_level(int x, int y) const;
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }

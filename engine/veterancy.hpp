@@ -58,6 +58,7 @@ struct WeaponStats {
     std::vector<int> verses;
     double cell_spread = 0.0;
     double percent_at_max = 1.0;
+    bool affects_allies = true;   // W5-B R-060: warhead AffectsAllies=
     // W3-B [RE: InfantryClass::ReceiveDamage FUN_00517db5]: the warhead's
     // InfDeath= (death anim / Die sequence of a killed infantry; absent = 0)
     // and ProneDamage= (damage multiplier on a prone infantry; absent = 1).

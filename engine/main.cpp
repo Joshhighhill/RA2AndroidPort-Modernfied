@@ -816,6 +816,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // CellSpread>=1 warheads (BlimpHE=2) splash. Default 0 = single-target.
     r.combat.cell_spread = rules.section_double(warhead, "CellSpread", 0.0);
     r.combat.percent_at_max = rules.section_double(warhead, "PercentAtMax", 1.0);
+    r.combat.affects_allies = rules.section_flag(warhead, "AffectsAllies", true);   // W5-B R-060
 
     // Projectile phase (P2) [RE: projectile.md §2/§6]: the primary weapon's
     // projectile class + flight parameters. Resolved for EVERY unit (like every
@@ -957,6 +958,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.verses = rules.verses(ewh);
         r.combat.elite.cell_spread = rules.section_double(ewh, "CellSpread", 0.0);
         r.combat.elite.percent_at_max = rules.section_double(ewh, "PercentAtMax", 1.0);
+        r.combat.elite.affects_allies = rules.section_flag(ewh, "AffectsAllies", true);   // W5-B R-060
         r.combat.elite.inf_death = static_cast<int>(rules.section_double(ewh, "InfDeath", 0.0));   // W3-B
         r.combat.elite.prone_damage = ra2engine::warhead_prone_damage(rules, ewh);
         r.combat.elite_proj = tw.elite[0].proj;
