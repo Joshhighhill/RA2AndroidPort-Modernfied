@@ -151,6 +151,7 @@ struct SaveAccess {
         save::io(ar, w.cargo_any_);
         save::io(ar, w.cargo_events_);
         save::io(ar, w.player_orders_);   // W4-SQ (save v15)
+        save::io(ar, w.passive_houses_);  // W4-SQ-02 (save v15)
         save::io(ar, w.aircraft_any_);
         // Core
         save::io(ar, w.units_);

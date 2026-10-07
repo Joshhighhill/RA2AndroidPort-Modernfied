@@ -1278,7 +1278,8 @@ void World::order_enter_transport(int t_idx) {
 
 void World::order_unload_selected() {
     for (Unit& u : units_) {
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        // W4-SQ-01: any house the player commands (PlayerControl, W2-CA-02).
+        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;
         if (u.passengers_max <= 0 || u.cargo.empty()) continue;
         u.unload_pending = true;
         cargo_any_ = true;

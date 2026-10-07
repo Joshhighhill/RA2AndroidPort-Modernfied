@@ -399,6 +399,7 @@ MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const Ma
         case kSaGatherEnemy:
         case kSaGatherBase:
         case kSaMoveEnemyBuilding:
+        case kSaMoveFriendlyBuilding:   // W4-SQ-11: 58, the 47 encoding on own buildings
             if (!view.waypoint_ok && st.issued) { advance(); continue; }
             if (st.issued && view.arrived) { advance(); continue; }
             c.kind = a.action == kSaMoveCell ? MapTeamCommand::Kind::MoveCell

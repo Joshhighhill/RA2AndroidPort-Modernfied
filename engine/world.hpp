@@ -1722,6 +1722,17 @@ public:
     // arrival). campaign_can_occupy: the type CanBeOccupied, live, idle,
     // not full (no unit test).
     bool campaign_can_occupy(int b_idx) const;
+    // W4-SQ-02 [RE: FUN_00457CE0 tests the owner's HouseType MultiplayPassive
+    // (+0x1A6)]: a campaign house whose country is passive (the civilian
+    // houses) lends its occupiable buildings to anyone's Occupier.
+    void set_passive_house(int h, bool on) {
+        if (h < 0) return;
+        if ((int)passive_houses_.size() <= h) passive_houses_.resize((std::size_t)h + 1, 0);
+        passive_houses_[(std::size_t)h] = on ? 1 : 0;
+    }
+    bool passive_house(int h) const {
+        return h >= 0 && h < (int)passive_houses_.size() && passive_houses_[(std::size_t)h] != 0;
+    }
     bool campaign_occupy_now(int unit_idx, int b_idx);
     bool garrison_firing(int b_idx) const;                   // CanOccupyFire && occupants
     double garrison_range(int b_idx) const;                  // cells
@@ -2014,6 +2025,7 @@ private:
     void step_cargo(double dt);
     bool cargo_any_ = false;
     std::vector<int> player_orders_;   // W4-SQ: transient, see mark_player_order
+    std::vector<std::uint8_t> passive_houses_;   // W4-SQ-02 (save v15)
     std::vector<CargoEvent> cargo_events_;
 
     // CB-2 Aircraft [RE: aircraft.md §3/§6]: the airborne movement pass --

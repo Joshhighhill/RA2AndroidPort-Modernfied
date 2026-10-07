@@ -52,7 +52,7 @@ bool World::can_occupy(int ui, int bi) const {
     if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) return false;
     const BuildingTypeDef& t = btypes()[b.type];
     if (!t.can_be_occupied) return false;
-    const bool owner_ok = b.house == u.house || !house_combatant(b.house);
+    const bool owner_ok = b.house == u.house || !house_combatant(b.house) || passive_house(b.house);
     return owner_ok && static_cast<int>(b.occupants.size()) != t.max_occupants;
 }
 

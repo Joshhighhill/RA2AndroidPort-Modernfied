@@ -663,6 +663,11 @@ private:
             }
             if (i == 0) player_side_ = rec.side;
             w_.set_house((int)i, rec);
+            {   // W4-SQ-02: [<Country>] MultiplayPassive= (map, else RA2 rules.ini)
+                std::string mp = camp::up(camp::trim_comment(map_.get(country, "MultiplayPassive", "")));
+                if (mp.empty()) mp = camp::up(camp::trim_comment(ra2_rules_.get(country, "MultiplayPassive", "no")));
+                w_.set_passive_house((int)i, !mp.empty() && (mp[0] == 'Y' || mp[0] == 'T' || mp[0] == '1'));
+            }
             // [X House] Credits= is in hundreds (RA1 HouseClass::Read_INI
             // lineage, PROBABLE).
             const double credits = 100.0 * map_.get_int(hn, "Credits", 0);
@@ -1717,12 +1722,12 @@ private:
             v.target_exists = true;
             if (lead >= 0 && tm.st.pc >= 0 && tm.st.pc < (int)sc.actions.size()) {
                 const ra2engine::MapScriptAction& a = sc.actions[(std::size_t)tm.st.pc];
-                if (a.action == ra2engine::kSaAttack || a.action == ra2engine::kSaAttackEnemyBuilding) {
+                const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
+                if (a.action == ra2engine::kSaAttack) {
                     bool isb = false;
-                    const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
-                    v.target_exists = nearest_enemy(tm.house, lu.cell_x, lu.cell_y,
-                                                    a.action == ra2engine::kSaAttack ? a.arg : 2,
-                                                    isb) >= 0;
+                    v.target_exists = nearest_enemy(tm.house, lu.cell_x, lu.cell_y, a.arg, isb) >= 0;
+                } else if (a.action == ra2engine::kSaAttackEnemyBuilding) {
+                    v.target_exists = find_team_building(tm, a.arg, lu.cell_x, lu.cell_y) >= 0;
                 } else if (a.action == ra2engine::kSaAttackWaypoint) {
                     int x = 0, y = 0;
                     v.target_exists = waypoint_cell(a.arg, x, y) &&
@@ -1730,9 +1735,43 @@ private:
                     v.members_idle = all_idle && frame_ - tm.issued_frame > 2;
                 }
             }
+            // W4-SQ-02: a garrison team whose infantry all went inside has
+            // done its building order (the building is now theirs).
+            if (lead < 0 && !tm.members.empty()) {
+                bool garrisoned = true;
+                for (int m : tm.members)
+                    if (w_.units()[(std::size_t)m].cargo_of != ra2engine::kGarrisonCargo) garrisoned = false;
+                if (garrisoned) { v.target_exists = false; v.arrived = true; }
+            }
             const ra2engine::MapTeamCommand c = ra2engine::step_map_team(tm.st, sc, v, frame_);
             execute_team(tm, (int)ti, c, all_idle, lead);
         }
+    }
+    // W4-SQ-02 [RE: FUN_006EE130, called by script 46 FUN_006ED870 / 47
+    // FUN_006ED950 / 58]: arg low 16 bits = the BuildingTypes index, arg >> 16
+    // the selector (0 least threat, 1 most threat, 2 nearest, 3 farthest).
+    // Candidates: live buildings of that type owned by a house the team's
+    // house is not allied with, or by a passive (neutral) house; for 58 the
+    // team's own / allied ones. [RE-FALLBACK: the threat selectors 0/1 rank by
+    // the type's Strength x Cost threat value, not modelled -- 1 takes the
+    // strongest, 0 the weakest.]
+    int find_team_building(const Team& tm, int arg, int x, int y, bool friendly = false) const {
+        const std::string want = building_type_id(arg & 0xFFFF);
+        if (want.empty()) return -1;
+        const int sel = (arg >> 16) & 0xFFFF;
+        int best = -1;
+        long key = 0;
+        for (std::size_t i = 0; i < w_.buildings().size() && i < btrack_.size(); ++i) {
+            const ra2engine::Building& b = w_.buildings()[i];
+            if (!live(b) || btrack_[i].type != want) continue;
+            const bool own_side = w_.are_allied(tm.house, b.house);
+            const bool passive = !w_.house_combatant(b.house) || w_.passive_house(b.house);
+            if (friendly ? !own_side : (own_side && !passive)) continue;
+            const long d = (long)(b.cx - x) * (b.cx - x) + (long)(b.cy - y) * (b.cy - y);
+            long k = sel == 3 ? -d : sel == 1 ? -(long)b.hp : sel == 0 ? (long)b.hp : d;
+            if (best < 0 || k < key) { best = (int)i; key = k; }
+        }
+        return best;
     }
     void execute_team(Team& tm, int team_idx, const ra2engine::MapTeamCommand& c, bool all_idle, int lead) {
         using K = ra2engine::MapTeamCommand::Kind;
@@ -1744,7 +1783,11 @@ private:
             const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
             if (c.kind == K::MoveCell) { x = c.arg % 128; y = c.arg / 128; }
             else if (c.action == ra2engine::kSaMoveEnemyBuilding ||
-                     c.action == ra2engine::kSaGatherEnemy) {
+                     c.action == ra2engine::kSaMoveFriendlyBuilding) {
+                const int t = find_team_building(tm, c.arg, lu.cell_x, lu.cell_y,
+                                                 c.action == ra2engine::kSaMoveFriendlyBuilding);
+                if (t >= 0) { x = w_.buildings()[(std::size_t)t].cx; y = w_.buildings()[(std::size_t)t].cy; }
+            } else if (c.action == ra2engine::kSaGatherEnemy) {
                 bool isb = false;
                 const int t = nearest_enemy(tm.house, lu.cell_x, lu.cell_y, 2, isb);
                 if (t >= 0 && isb) { x = w_.buildings()[(std::size_t)t].cx; y = w_.buildings()[(std::size_t)t].cy; }
@@ -1795,9 +1838,22 @@ private:
                     if (tag >= 0 && tag_guards_loss(tag)) continue;
                     if (tb >= 0) { t = tb; isb = true; }
                     else if (tu >= 0) { t = tu; isb = false; }
+                } else if (c.kind == K::AttackBuilding) {
+                    t = find_team_building(tm, c.arg, u.cell_x, u.cell_y);
+                    isb = true;
+                    if (std::getenv("RA2_CAMP_DEBUG") && c.fresh)
+                        std::cerr << "[camp-debug] f" << frame_ << " team 46 arg " << c.arg << " type "
+                                  << building_type_id(c.arg & 0xFFFF) << " -> b" << t << " occ="
+                                  << (t >= 0 ? (int)w_.can_occupy(m, t) : -1) << "\n";
+                    // An Occupier "attacking" an occupiable building it may
+                    // enter goes inside (FUN_00457CE0 CanBeOccupiedBy -> the
+                    // infantry's Enter path), the ALL03/04 garrison teams.
+                    if (t >= 0 && w_.can_occupy(m, t)) {
+                        w_.order_occupy(m, t);
+                        continue;
+                    }
                 } else {
-                    t = nearest_enemy(tm.house, u.cell_x, u.cell_y,
-                                      c.kind == K::Attack ? c.arg : 2, isb);
+                    t = nearest_enemy(tm.house, u.cell_x, u.cell_y, c.arg, isb);
                 }
                 if (t >= 0) order_attack(m, t, isb);
             }
