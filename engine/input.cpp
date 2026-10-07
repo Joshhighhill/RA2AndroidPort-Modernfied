@@ -42,7 +42,7 @@ static int sel_engineer_idx(const World& world) {
     int found = -1;
     for (int i = 0; i < static_cast<int>(world.units().size()); ++i) {
         const Unit& u = world.units()[i];
-        if (!u.selected || !u.alive || u.die_time >= 0.0 || u.house != 0) continue;
+        if (!u.selected || !u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
         if (found >= 0) return -1;                 // more than one unit selected
         found = i;
     }
@@ -59,7 +59,7 @@ static int sel_spy_idx(const World& world) {
     int found = -1;
     for (int i = 0; i < static_cast<int>(world.units().size()); ++i) {
         const Unit& u = world.units()[i];
-        if (!u.selected || !u.alive || u.die_time >= 0.0 || u.house != 0) continue;
+        if (!u.selected || !u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
         if (found >= 0) return -1;                 // more than one unit selected
         found = i;
     }
@@ -296,7 +296,7 @@ void Input::commit_click(int px, int py, bool shift) {
     // unit is treated exactly like a pick on empty ground (falls through to
     // the clear-selection branch below).
     int idx = unit_under(px, py);
-    if (idx >= 0 && world_.units()[idx].house != 0) idx = -1;
+    if (idx >= 0 && !world_.controllable(world_.units()[idx].house)) idx = -1;
     if (idx >= 0) {
         if (shift) {
             world_.units()[idx].selected = !world_.units()[idx].selected;  // toggle
@@ -321,7 +321,7 @@ void Input::commit_box(bool shift) {
         // house != 0, dead/dying, and cargo_of >= 0 (aboard a transport,
         // off-map [CB-1]) are skipped even if their ground point falls
         // inside the dragged rectangle.
-        if (u.house != 0 || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+        if (!world_.controllable(u.house) || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         int gx, gy;
         unit_ground_px(u, gx, gy);
         if (gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1) u.selected = true;
@@ -334,7 +334,7 @@ void Input::commit_double(int px, int py) {
     // Same house-0-only rule as commit_click: a double-click landing on a
     // hostile does nothing (no type-select, no selection change).
     const int idx = unit_under(px, py);
-    if (idx < 0 || world_.units()[idx].house != 0) return;
+    if (idx < 0 || !world_.controllable(world_.units()[idx].house)) return;
     const std::string type = world_.units()[idx].image;
     world_.clear_selection();
     for (Unit& u : world_.units()) {
@@ -342,7 +342,7 @@ void Input::commit_double(int px, int py) {
         // CARRIED units (a hostile, a dead unit, or one aboard a transport
         // (cargo_of >= 0 [CB-1]) sharing the clicked unit's image must never
         // join the selection).
-        if (u.house != 0 || u.image != type || !u.alive || u.die_time >= 0.0 ||
+        if (!world_.controllable(u.house) || u.image != type || !u.alive || u.die_time >= 0.0 ||
             u.cargo_of >= 0)
             continue;
         int gx, gy;
@@ -428,7 +428,7 @@ void Input::issue_order(int px, int py) {
         // right-clicks fall straight through to attack/move below.
         bool harv_selected = false;
         for (const Unit& su : world_.units())
-            if (su.selected && su.is_harvester && su.house == 0 && su.alive &&
+            if (su.selected && su.is_harvester && world_.controllable(su.house) && su.alive &&
                 su.die_time < 0.0) {
                 harv_selected = true;
                 break;
@@ -454,7 +454,7 @@ void Input::issue_order(int px, int py) {
                 if (!su.selected || !su.alive || su.die_time >= 0.0 ||
                     su.cargo_of >= 0)
                     continue;
-                if (su.is_harvester && su.house == 0)
+                if (su.is_harvester && world_.controllable(su.house))
                     harv_idx.push_back(i);
                 else
                     any_other = true;
@@ -488,12 +488,12 @@ void Input::issue_order(int px, int py) {
         // refinery win for miners) and BEFORE attack-building/
         // move. The original's "enter" cursor is cosmetic; ours
         // stays default (noted divergence, no new UI systems).
-        if (idx >= 0 && world_.units()[idx].house == 0 &&
+        if (idx >= 0 && world_.controllable(world_.units()[idx].house) &&
             world_.units()[idx].passengers_max > 0) {
             bool eligible = false;
             for (std::size_t si = 0; si < world_.units().size(); ++si) {
                 const Unit& su = world_.units()[si];
-                if (!su.selected || su.house != 0 || !su.alive ||
+                if (!su.selected || !world_.controllable(su.house) || !su.alive ||
                     su.die_time >= 0.0 || static_cast<int>(si) == idx)
                     continue;
                 if (su.passengers_max > 0) continue;  // transports

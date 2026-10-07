@@ -975,7 +975,15 @@ public:
         std::string country       = "";
         int         alliance_team = -1;     // sentinel; -1 -> own id on read
         bool        combatant     = true;
+        // W2-CA-02 [RE: HouseClass::ReadINI FUN_00500960 -> house+0x1ED]:
+        // [<House>] PlayerControl=yes -- the local player selects and
+        // orders this house's units as its own.
+        bool        player_control = false;
     };
+    // True for house 0 and every PlayerControl house (W2-CA-02).
+    bool controllable(int h) const {
+        return h == 0 || (h > 0 && h < (int)houses_.size() && houses_[h].player_control);
+    }
     // Number of houses (default 3). The six per-house vectors + house_defeated_
     // are sized to this. Grows via set_house.
     int  house_count() const { return houses_.empty() ? 3 : (int)houses_.size(); }

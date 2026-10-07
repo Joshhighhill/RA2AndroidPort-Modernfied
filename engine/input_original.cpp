@@ -36,7 +36,7 @@ int lone_selected_with_image(const World& w, const char* image) {
     int found = -1;
     for (int i = 0; i < static_cast<int>(w.units().size()); ++i) {
         const Unit& u = w.units()[i];
-        if (!u.selected || !u.alive || u.die_time >= 0.0 || u.house != 0) continue;
+        if (!u.selected || !u.alive || u.die_time >= 0.0 || !w.controllable(u.house)) continue;
         if (found >= 0) return -1;
         found = i;
     }
@@ -46,7 +46,7 @@ int lone_selected_with_image(const World& w, const char* image) {
 
 bool Input::any_own_selected() const {
     for (const Unit& u : world_.units())
-        if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0) return true;
+        if (u.selected && world_.controllable(u.house) && u.alive && u.die_time < 0.0) return true;
     return false;
 }
 
@@ -113,7 +113,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     const bool units_sel = any_own_selected();
 
     if (!units_sel) {
-        if (idx >= 0 && us[idx].house == 0) return shift ? Action::ToggleSelect : Action::Select;
+        if (idx >= 0 && world_.controllable(us[idx].house)) return shift ? Action::ToggleSelect : Action::Select;
         if (b >= 0 && world_.buildings()[b].house == 0) {
             if (selected_building_valid() && b == selected_building_ &&
                 is_unit_factory_type(world_.buildings()[b].type))
@@ -127,14 +127,14 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     }
     // Force-fire (Ctrl) on any object that is not part of the selection.
     if (ctrl) {
-        if (idx >= 0 && !us[idx].selected && us[idx].house != 0) return Action::Attack;
+        if (idx >= 0 && !us[idx].selected && !world_.controllable(us[idx].house)) return Action::Attack;
         if (b >= 0 && world_.buildings()[b].house != 0) return Action::Attack;
         if (idx < 0 && b < 0) return Action::Attack;   // G16: force-fire the ground cell
     }
     if (alt) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;   // force-move
     if (idx >= 0) {
         const Unit& u = us[idx];
-        if (u.house == 0) {
+        if (world_.controllable(u.house)) {
             if (shift) return Action::ToggleSelect;
             // ACTION_SELF: clicking the selected unit itself deploys / unloads it.
             if (u.selected) {
@@ -145,7 +145,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
             if (u.passengers_max > 0) {
                 for (std::size_t si = 0; si < us.size(); ++si) {
                     const Unit& su = us[si];
-                    if (!su.selected || su.house != 0 || !su.alive || su.die_time >= 0.0 ||
+                    if (!su.selected || !world_.controllable(su.house) || !su.alive || su.die_time >= 0.0 ||
                         static_cast<int>(si) == idx || su.passengers_max > 0)
                         continue;
                     return Action::Enter;
@@ -158,7 +158,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     }
     bool harv = false;
     for (const Unit& su : us)
-        if (su.selected && su.is_harvester && su.house == 0 && su.alive && su.die_time < 0.0) {
+        if (su.selected && su.is_harvester && world_.controllable(su.house) && su.alive && su.die_time < 0.0) {
             harv = true;
             break;
         }
@@ -169,7 +169,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         // G16 (agent G) [RE: world-depth.md §A2]: selected Occupier infantry on
         // a building they may garrison (CanBeOccupiedBy) -> the enter cursor.
         for (int si = 0; si < static_cast<int>(us.size()); ++si)
-            if (us[si].selected && us[si].house == 0 && world_.can_occupy(si, b)) return Action::Enter;
+            if (us[si].selected && world_.controllable(us[si].house) && world_.can_occupy(si, b)) return Action::Enter;
         if (lone_selected_with_image(world_, "SPY") >= 0 && B.house != 0) return Action::Infiltrate;
         if (lone_selected_with_image(world_, "ENGINEER") >= 0) {
             if (B.house != 0) return Action::Capture;
@@ -407,12 +407,12 @@ bool Input::type_select() {
     auto& us = world_.units();
     std::vector<std::string> types;
     for (const Unit& u : us)
-        if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0 &&
+        if (u.selected && world_.controllable(u.house) && u.alive && u.die_time < 0.0 &&
             std::find(types.begin(), types.end(), u.image) == types.end())
             types.push_back(u.image);
     if (types.empty()) return false;
     auto matches = [&](const Unit& u) {
-        return u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
+        return world_.controllable(u.house) && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
                std::find(types.begin(), types.end(), u.image) != types.end();
     };
     auto on_screen = [&](const Unit& u) {
@@ -441,7 +441,7 @@ void Input::group_create(int n) {
     sync_groups();
     auto& us = world_.units();
     for (std::size_t i = 0; i < us.size(); ++i) {
-        if (us[i].house != 0) continue;
+        if (!world_.controllable(us[i].house)) continue;
         if (unit_group_[i] == n) unit_group_[i] = 0;
         if (us[i].selected) unit_group_[i] = n;
     }
@@ -452,7 +452,7 @@ void Input::group_add_select(int n) {
     sync_groups();
     auto& us = world_.units();
     for (std::size_t i = 0; i < us.size(); ++i)
-        if (unit_group_[i] == n && us[i].house == 0 && us[i].alive && us[i].die_time < 0.0 &&
+        if (unit_group_[i] == n && world_.controllable(us[i].house) && us[i].alive && us[i].die_time < 0.0 &&
             us[i].cargo_of < 0)
             us[i].selected = true;
     const int lo = lowest_selected();

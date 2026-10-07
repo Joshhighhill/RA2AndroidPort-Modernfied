@@ -541,7 +541,19 @@ private:
             // player lists as an ally is a neutral non-combatant; every other
             // house is the enemy team 1.
             const bool mutual = i == 0 || (lists(player, hn) && lists(hn, player));
-            if (rec.side == ra2engine::World::Side::Neutral && (i == 0 || lists(player, hn))) {
+            // W2-CA-02 [RE: FUN_00500960 reads PlayerControl -> house+0x1ED;
+            // FUN_0050B510 ControlledByHuman = +0x1EC IsHuman || +0x1ED outside a
+            // network session]: the player commands this house's units. It
+            // fights on the player's side [RE-FALLBACK: the maps list it in
+            // the player's Allies=; the clone forces the mutual team-0 bond].
+            {
+                const std::string pc = camp::up(camp::trim_comment(map_.get(hn, "PlayerControl", "no")));
+                rec.player_control = i > 0 && !pc.empty() && (pc[0] == 'Y' || pc[0] == 'T' || pc[0] == '1');
+            }
+            if (rec.player_control) {
+                rec.combatant = true;
+                rec.alliance_team = 0;
+            } else if (rec.side == ra2engine::World::Side::Neutral && (i == 0 || lists(player, hn))) {
                 rec.combatant = false;
                 rec.alliance_team = (int)i + 100;
             } else {
@@ -602,6 +614,7 @@ private:
         for (std::size_t i = 1; i < house_names_.size(); ++i) {
             if (i >= base_nodes_.size() || base_nodes_[i].empty()) continue;
             if (w_.ai_enabled((int)i) || !w_.house_combatant((int)i)) continue;
+            if (w_.controllable((int)i)) continue;   // W2-CA-02: a human-controlled house has no AI
             if (!(sys_->house_flags(house_type((int)i)) & 1u)) continue;
             const ra2engine::World::Side side = w_.house_side((int)i);
             if (side == ra2engine::World::Side::Neutral) continue;
