@@ -3783,3 +3783,9 @@ saved.
   `fx-naval`, `fx-m-all01`, `fx-m-all12`, `fx-m-sov01`, `fx-m-sov10`.
 - Deliberately cosmetic [RE-FALLBACK]: Gas particle damage (no RA2 weapon
   makes Gas particles) and debris impact damage (DBRIS*LG, PIECE).
+- **Gates**: all 31 `--demo-*` gates print master's pins after the merge with
+  W3-FIX-A/B (no re-pin: the effects are unhashed, the trigger log lines are
+  unchanged and LightningStrikeAt/Storm only run in SOV03/SOV10). Play
+  scripts: 60/63 pass; `probe-bridge`, `probe-flow` and `robust-missing` fail
+  identically on master (pre-existing). The fx scripts also pass at
+  `RA2_PLAY_HZ=30` (effects step on the World frame, not the render frame).
