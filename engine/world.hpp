@@ -1053,6 +1053,16 @@ public:
     // storm (SwStrike); (Amer)ParaDrop: a paradrop plane.
     bool fire_superweapon_at(int house, SuperweaponType type, int cx, int cy, int cx2 = -1,
                              int cy2 = -1);
+    // W3-FX map trigger actions (campaign host). 90 LightningStrikeAt [RE:
+    // FUN_00539e70 -- a WeatherConClouds cloud at the cell whose bolt strikes
+    // it]: one storm bolt (damage + the Bolt presentation event) at (cx, cy)
+    // [RE-FALLBACK: the cloud's manifest delay before the bolt is not
+    // modelled -- the bolt lands at once]. 102 [RE: Execute 0x66 -> unless
+    // LightningStorm::IsActive (FUN_00539e30), LightningStorm::Start(cell,
+    // house) FUN_00539be0]: a full storm owned by `house`, outside any SW
+    // charge. Both return false off the map (102: also while a storm rages).
+    bool trigger_lightning_strike(int house, int cx, int cy);
+    bool trigger_lightning_storm(int house, int cx, int cy);
     void set_sw_params(const SwParams& p) { an_.sw = p; }
     // Building roster index -> the SuperweaponType (int) it grants (0 none):
     // finds the Nuke's silo for the launch point.

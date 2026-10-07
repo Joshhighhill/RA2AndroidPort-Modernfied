@@ -3738,3 +3738,54 @@ section "W3-FIX-B"), the RE notes `docs/re/infantry-anim.md` §8-§14 and
   to `b029b2825cf11e6f` (save format v14, see the table). The infantry
   machine, fear and ProneDamage are armed only by GameScene, so every
   headless gate keeps its sim.
+
+## Effects and mission visuals (wave-3 W3-FIX-C)
+
+Details and evidence: `docs/re/effects.md` (the recovered behaviour), the
+status sections "W3-FIX-C" of `docs/gap/wave3/01..03`, and the `fx-*`
+`--play` scripts. All of it is presentation: it observes the World, owns its
+own RNG, steps once per World frame (`vet_frame`), and is never hashed or
+saved.
+
+- **Trigger visual actions run** (campaign): PlayAnimAt (the RA2
+  deduplicated `[Animations]` index: objective arrows, ALL12/SOV12 chrono
+  flashes, SOV01 FLAMEGUY), ParticleAnim, MoveCameraToWaypoint (the recovered
+  pan-speed table) and CenterCamera, CreateRadarEvent (the minimap zoom
+  square, also drawn for the EVA radar events), FlashTeam /
+  FlashBuildingsOfType, MakeHouseCheer (CheerSound; the infantry Cheer is
+  W3-B's), SetTabTo, DoExplosionAt (the warhead's impact anim).
+  They reach the scene through `TriggerHost::present` (the trigger log, its
+  hash and the save layout are unchanged). LightningStrikeAt (90) and the
+  trigger lightning storm (102) are World actions (SOV03/SOV10 storms now
+  strike and damage).
+- **Particle systems** (`engine/pres_effects.inc`): Smoke / Spark / Railgun /
+  Gas behaviours from `[ParticleSystems]`/`[Particles]`; damaged units and
+  buildings smoke from `DamageParticleSystems` at `DamageSmokeOffset` on the
+  health-condition edges, the smoke follows its owner and stops above
+  ConditionYellow.
+- **Debris**: destroyed vehicles and buildings throw `MetallicDebris` /
+  `DebrisAnims` Bouncer anims (bounce physics, TrailerAnim smoke, ExpireAnim)
+  and `DebrisTypes` voxel debris (TIRE, AXLE).
+- **Trails**: projectile `Trailer=` every SpawnDelay frames, `UseLineTrail`
+  line trails (IFV / Patriot / Harrier missiles), the V3/Dreadnought rocket
+  `V3TAKOFF`/`V3TRAIL` puffs.
+- **Water**: ship wakes (`Wake=`, every 8 frames while sailing), splashes
+  (`SplashList` for Conventional warheads on water).
+- **Ore twinkles** (`OreTwinkle`, chance 1/`OreTwinkleChance` per ore cell)
+  and object **AmbientSound** loops (ore mines, fountains, cows, ships...).
+- Effect keys are read from the RA2 `rules.ini` first (YR's rulesmd drops
+  `LargeRedSmoke` and comments out building smoke).
+- `--play` hooks: `cheat camp_fire NAME` (fire a map trigger now),
+  `cheat camp_log SUBSTR`; probe keys `fx_systems`, `fx_particles`,
+  `fx_debris`, `fx_twinkles`, `fx_wakes`, `fx_lines`, `fx_v3_puffs`,
+  `fx_splashes`, `fx_anims`, `radar_pings`, `ambient_live`, `sw_strikes`,
+  `sw_bolts`, `projectiles`, `proj_last`. Scripts: `fx-particles`,
+  `fx-naval`, `fx-m-all01`, `fx-m-all12`, `fx-m-sov01`, `fx-m-sov10`.
+- Deliberately cosmetic [RE-FALLBACK]: Gas particle damage (no RA2 weapon
+  makes Gas particles) and debris impact damage (DBRIS*LG, PIECE).
+- **Gates**: all 31 `--demo-*` gates print master's pins after the merge with
+  W3-FIX-A/B (no re-pin: the effects are unhashed, the trigger log lines are
+  unchanged and LightningStrikeAt/Storm only run in SOV03/SOV10). Play
+  scripts: 60/63 pass; `probe-bridge`, `probe-flow` and `robust-missing` fail
+  identically on master (pre-existing). The fx scripts also pass at
+  `RA2_PLAY_HZ=30` (effects step on the World frame, not the render frame).

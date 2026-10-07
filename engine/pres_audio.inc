@@ -295,6 +295,29 @@ public:
         locate(fx, fy, d, pan);
         if (const std::uint32_t h = audio_->mixer->play_at(key, d, pan)) live_.push_back({h, fx, fy});
     }
+    // W3-FX object AmbientSound [RE: ObjectClass::AI FUN_005f3680 -- while
+    // not in limbo, an object whose type has AmbientSound (+0x1F4) keeps it
+    // playing through its sound controller (+0x3C, FUN_0074f800) at its
+    // coords]: a positional voice the caller owns (0 = none / no device).
+    std::uint32_t loop_at(const std::string& key, double fx, double fy) {
+        if (key.empty() || !mixer_live()) return 0;
+        ensure_sound(key);
+        double d = 0.0;
+        int pan = 8192;
+        locate(fx, fy, d, pan);
+        return audio_->mixer->play_at(key, d, pan);
+    }
+    // Re-attenuates a loop voice; false once it has ended (the caller restarts it).
+    bool update_loop(std::uint32_t h, double fx, double fy) {
+        if (!h || !mixer_live()) return false;
+        double d = 0.0;
+        int pan = 8192;
+        locate(fx, fy, d, pan);
+        return audio_->mixer->update_voice(h, d, pan);
+    }
+    void stop_loop(std::uint32_t h) {
+        if (h && mixer_live()) audio_->mixer->stop_voice(h);
+    }
     // Per frame: follow the camera for every live positional voice.
     void update_voices() {
         if (!mixer_live()) { live_.clear(); return; }

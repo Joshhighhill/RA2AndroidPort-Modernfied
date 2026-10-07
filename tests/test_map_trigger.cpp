@@ -247,6 +247,8 @@ struct FakeHost : TriggerHost {
         effects.push_back(e);
         return true;
     }
+    std::vector<VisualRequest> visuals;   // W3-FX
+    void present(const VisualRequest& v) override { visuals.push_back(v); }
 };
 
 const char* kHead = "[Countries]\n0=Player\n";
@@ -775,4 +777,53 @@ TEST_CASE("map_trigger: house flags from ProductionBegins / AITriggers") {
     s.tick(h);
     CHECK(s.house_flags(2) == (1u | 4u));
     CHECK(s.house_flags(1) == 0u);   // Alliance has no house instance
+}
+
+TEST_CASE("map_trigger: W3-FX presentation actions queue typed requests in campaign mode only") {
+    const std::string text = std::string(kHead) +
+        "[TeamTypes]\n0=TEAMAAAA\n[TEAMAAAA]\nName=x\n"
+        "[Triggers]\nTRG00001=Player,<none>,fx,0,1,1,1,0\n"
+        "[Events]\nTRG00001=1,13,0,0\n"
+        "[Actions]\nTRG00001=7,"
+        "41,0,253,0,0,0,0,U,"          // PlayAnimAt AnimTypes[253] at U
+        "55,0,3,0,0,0,0,B,"            // CreateRadarEvent type 3 at B
+        "88,0,12,0,0,0,0,AM,"          // ParticleAnim system 12 at AM
+        "48,0,4,0,0,0,0,C,"            // MoveCamera speed 4 to C
+        "113,0,3,0,0,0,0,A,"           // MakeHouseCheer house 3
+        "104,1,TEAMAAAA,0,0,0,0,30,"   // FlashTeam
+        "90,0,32,0,0,0,0,AG\n"         // LightningStrikeAt -> host
+        "[Tags]\nTAG00001=0,T,TRG00001\n";
+    MapTriggerData d = parse(text);
+    {   // P9 mode: nothing queued, 90 stays unimplemented, log as before
+        MapTriggerSystem s(d, 1, 1);
+        FakeHost h;
+        s.start(h);
+        s.tick(h);
+        CHECK(h.visuals.empty());
+        CHECK(h.effects.empty());
+    }
+    MapTriggerSystem s(d, 1, 1);
+    s.set_campaign_mode(true);
+    FakeHost h;
+    s.start(h);
+    s.tick(h);
+    const std::vector<VisualRequest>& v = h.visuals;
+    REQUIRE(v.size() == 6);
+    CHECK(v[0].action == 41);
+    CHECK(v[0].value == 253);
+    CHECK(v[0].waypoint == map_waypoint_letters("U"));
+    CHECK(v[1].action == 55);
+    CHECK(v[1].value == 3);
+    CHECK(v[2].action == 88);
+    CHECK(v[2].value == 12);
+    CHECK(v[2].waypoint == map_waypoint_letters("AM"));
+    CHECK(v[3].action == 48);
+    CHECK(v[3].value == 4);
+    CHECK(v[4].action == 113);
+    CHECK(v[4].house_type == 3);
+    CHECK(v[5].action == 104);
+    CHECK(v[5].team == "TEAMAAAA");
+    REQUIRE(h.effects.size() == 1);    // 90 goes to the host (it damages)
+    CHECK(h.effects[0].action == 90);
+    CHECK(h.effects[0].waypoint == map_waypoint_letters("AG"));
 }

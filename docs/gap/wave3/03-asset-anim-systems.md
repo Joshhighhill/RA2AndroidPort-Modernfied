@@ -352,3 +352,18 @@ Open RE after W3-FIX-B: RE-Q7 (damage fire spawner), RE-Q8 (slot ZAdjust/YSort),
 (RA2 `game.exe` vs `gamemd.exe`), the DestroyAnim persistence and pixel origin, the gate
 open/close mission timing, the refinery's own StorageClass amount, the win-time cheer call
 site, the 8-way muzzle rounding rule.
+
+## W3-FIX-C status (branch `w3fix-fx`)
+
+RE: `docs/re/effects.md` (all functions cited there). Scripts `fx-particles`, `fx-naval`, `fx-m-*`.
+
+| Row | Status |
+|---|---|
+| §3.2 Damage smoke (DamageParticleSystems) | FIXED (Smoke-behaving entries, ReceiveDamage edge rule; Spark entries are DamageSparks-only in the original) |
+| §3.4 Debris | FIXED (MetallicDebris / DebrisAnims Bouncers, DebrisTypes voxels); debris impact damage cosmetic [RE-FALLBACK] |
+| §3.4 Ship wakes, splashes | FIXED |
+| §3.5 Ore twinkle | FIXED |
+| §3.6 Bouncer, Elasticity, Trailer, TrailerSeperation | FIXED for debris anims and projectiles (`Trailer=`/SpawnDelay, `UseLineTrail`), V3/DMISL rocket trails |
+| §3.7 ParticleSystems | FIXED (Smoke, Spark, Railgun; Gas/Fire drawn like smoke, no damage) |
+| §3.7 AmbientSound | FIXED (units, buildings, map terrain) |
+| §3.6 Spawns/IsMeteor/MakeInfantry, RandomRate (non-debris), StartSound | OPEN |

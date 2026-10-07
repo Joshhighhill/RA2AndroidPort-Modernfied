@@ -792,6 +792,22 @@ void MapTriggerSystem::fire_actions(Tag* tag, int trig_slot, Trig& t, TriggerHos
     cur_trigger_ = saved;
 }
 
+int MapTriggerSystem::force_fire(const std::string& name, TriggerHost& host) {
+    int type = -1;
+    for (std::size_t i = 0; i < d_.triggers.size() && type < 0; ++i)
+        if (ieq(d_.triggers[i].name, name) || ieq(d_.triggers[i].id, name)) type = (int)i;
+    if (type < 0) return 0;
+    int n = 0;
+    for (Tag& tag : tags_)
+        for (std::size_t i = tag.trigs.size(); i-- > 0;)
+            if (tag.trigs[i].type == type && !tag.trigs[i].destroyed) {
+                tag.trigs[i].enabled = true;
+                fire_actions(nullptr, -1, tag.trigs[i], host);
+                ++n;
+            }
+    return n;
+}
+
 void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
     // FUN_006dce20 [RE §5].
     const int th = trigger_house(t, host);
@@ -955,8 +971,35 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         if (!campaign_mode_) goto unhandled;
         effect(find_house(t, a.value, host));
         return;
+    // W3-FX [RE: Execute 0x2a -> FUN_006e1900 DoExplosionAt (WeaponTypes[Value]
+    // anim + DamageArea at the waypoint), 0x5a -> FUN_00539e70 LightningStrikeAt
+    // (a storm cloud + bolt at the waypoint), 0x66 -> LightningStorm::Start at
+    // the waypoint for the trigger house unless a storm is already active]:
+    // campaign mode only (they damage), resolved by the host.
+    case 42: case 90: case 102:
+        if (!campaign_mode_) goto unhandled;
+        effect(th);
+        return;
     default:
     unhandled:
+        if (campaign_mode_) {
+            switch (a.kind) {
+            case 41: case 48: case 55: case 88: case 104: case 112: case 113: case 114:
+            case 115: case 131: {
+                VisualRequest v;
+                v.action = a.kind;
+                v.value = a.value;
+                v.waypoint = a.waypoint;
+                v.text = a.text;
+                if (a.team >= 0 && a.team < (int)d_.team_ids.size()) v.team = d_.team_ids[(std::size_t)a.team];
+                if (a.kind == 113) v.house_type = find_house(t, a.value, host);
+                host.present(v);
+                break;
+            }
+            default:
+                break;
+            }
+        }
         if (presentation_action(a.kind)) {
             logf("  a%d %s v=%d wp=%d %s (recorded)", a.kind, action_label(a.kind), a.value,
                  a.waypoint, a.text.empty() ? "-" : a.text.c_str());

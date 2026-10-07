@@ -2726,6 +2726,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
 #include "pres_bldanim.inc"  // W3-B building anim slots (per logic tick)
+#include "pres_effects.inc"  // W3-FX particles / debris / trails / wakes / twinkles
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
@@ -3406,6 +3407,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
     if (g_map_dressing) g_map_dressing->draw_ground(ren, tc, world, g_map_pals, cam, W, H);
     if (g_fx && g_map_dressing) g_fx->draw_radiation(ren, world, a.map, cam, W, H);   // W2-GA-15
+    if (g_fx3) g_fx3->draw_ground(ren, tc, cam, W, H);   // W3-FX wakes / ore twinkles (ground layer)
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -3560,6 +3562,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // no existing demo screenshot changes.
     draw_projectiles(ren, world, a.map, cam, W, H, &tc);
     if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
+    if (g_fx3) g_fx3->draw(ren, tc, cam, W, H);   // W3-FX particles / debris / line trails
     // W2-GA-05: the map's ambient light over every world sprite (GameScene only).
     if (g_light) g_light->pass(ren, W, H, cam);   // W3-FIX-A: + light sources
     // G-84: fog + shroud over every object, under the HUD bars.
@@ -5675,6 +5678,7 @@ public:
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
+        campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
         pres_.logic_tick(world_, ba_, player_credits_, world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
@@ -5994,6 +5998,7 @@ public:
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
 #include "campaign_audio.inc"  // W2-CA-12 mission speech / sound / music
+#include "campaign_visuals.inc"  // W3-FX trigger presentation actions
 #include "campaign_play.inc"   // W2-CA-19 campaign play-script cheats
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"

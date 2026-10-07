@@ -19,6 +19,11 @@ public:
             for (const ra2engine::UnitTypeDef& d : *list) fx_.add_unit(d.id, d.combat.image);
         for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) fx_.add_unit(id, rules.image(id));
         g_fx = &fx_;
+        // W3-FX: particles, debris, trails, wakes, twinkles (pres_effects.inc).
+        effects_.init(fx_, rules_ini, ra2, dir);
+        for (const auto* list : defs)
+            for (const ra2engine::UnitTypeDef& d : *list) effects_.note_unit_id(d.combat.image, d.id);
+        g_fx3 = &effects_;
         rules_ini_ = &rules_ini;
         snd_.open(dir, &audio, audio_on || g_pres_log_on);
         snd_.set_side(side_ix);
@@ -41,6 +46,17 @@ public:
             std::string tok;
             for (int i = 0; i < 6 && std::getline(ds, tok, ','); ++i) radar_dist_[i] = std::atof(tok.c_str());
             for (int i = 0; i < 6 && std::getline(us, tok, ','); ++i) radar_dur_[i] = std::atoi(tok.c_str());
+            std::stringstream vs(gen("RadarEventVisibilityDurations"));   // W3-FX minimap square
+            for (int i = 0; i < 6 && std::getline(vs, tok, ','); ++i) radar_vis_[i] = std::atoi(tok.c_str());
+            auto avd = [&](const char* k, double& out) {
+                const std::string v = av(k);
+                if (!v.empty()) out = std::atof(v.c_str());
+            };
+            avd("RadarEventMinRadius", g_radar_min_r);
+            avd("RadarEventSpeed", g_radar_speed);
+            avd("RadarEventRotationSpeed", g_radar_rot);
+            avd("RadarEventColorSpeed", g_radar_col);
+            g_radar_pings.clear();
             const std::string sd = gen("SpeakDelay");
             if (!sd.empty()) speak_delay_frames_ = static_cast<long>(std::atof(sd.c_str()) * 900.0);
         }
@@ -91,9 +107,24 @@ public:
         if (g_fog_shp == fog_.get()) g_fog_shp = nullptr;
         if (g_game_font == font_.get()) { g_game_font = nullptr; g_game_font_pal = nullptr; }
         if (g_fx == &fx_) g_fx = nullptr;
+        if (g_fx3 == &effects_) g_fx3 = nullptr;
     }
 
     PresAudio& sound() { return snd_; }
+    // W3-FX: the trigger visuals (campaign_visuals.inc) drive these.
+    PresFx& fx() { return fx_; }
+    PresEffects& effects() { return effects_; }
+    // Action 55 / any caller: a radar event at a cell (the minimap flash).
+    bool radar_ping(int type, double x, double y) {
+        return radar_event(std::clamp(type, 0, 16), x, y);
+    }
+    struct RadarPing { int type; double x, y; long born, until; };
+    // Live radar events for the minimap "zoom square" (pres_radar.inc).
+    std::vector<RadarPing> radar_pings() const {
+        std::vector<RadarPing> out;
+        for (const RadarEv& e : radar_) out.push_back(RadarPing{e.type, e.x, e.y, e.born, e.until});
+        return out;
+    }
 
     // Per-frame. `credits` = the player's wallet after this frame's production.
     void update(double dt, const ra2engine::World& w, const ra2engine::ProductionQueues& q,
@@ -106,6 +137,10 @@ public:
         // below, called once per fixed 15 Hz step), not this per-render-frame
         // counter -- every anim keyed on it is frame-rate independent.
         world_ = &w;
+        // W3-FX: particles / debris / trails / wakes on the World-frame clock.
+        if (ba.ok) effects_.set_unit_palette(&ba.unit_pal);
+        effects_.update(w, ba);
+        ambient_sounds(w, ba);   // W3-FX AmbientSound loops
         snd_.set_view(cam.x, cam.y, view_w, view_h);   // W2-GA-23 positional audio
         snd_.update_voices();
         projectile_fx(w, pev);   // events not already taken per tick (W3-B)
@@ -148,6 +183,11 @@ public:
             }
             radar_online_ = online;
         }
+        // W3-FX: the live radar events for the minimap zoom square.
+        g_radar_pings.clear();
+        for (const RadarEv& e : radar_)
+            if (e.until > frame_ && radar_vis_[e.type] > 0)
+                g_radar_pings.push_back(RadarPingDraw{e.x, e.y, frame_ - e.born, radar_vis_[e.type]});
         snd_.pump(clock_);
         snd_.music_update(clock_);
         if (audio_ && audio_->enabled && audio_->mixer) audio_->out.pump(*audio_->mixer);
@@ -518,6 +558,21 @@ private:
                 double lift_px) {
         const FxWeapon* wp = fx_.weapon(shooter.image);
         if (!wp || wp->anim_list.empty()) return;
+        // W3-FX [RE: FUN_0048a400 SelectDamageAnimation]: a Conventional
+        // warhead landing low on a water cell shows SplashList[min(damage,
+        // n*35-1)/35] instead of its AnimList.
+        const std::vector<std::string>& splash = effects_.splash_list();
+        if (wp->conventional && !splash.empty() && on_water(fx, fy) && lift_px < 30.0) {
+            const int ns = static_cast<int>(splash.size());
+            const std::string& sname = splash[static_cast<std::size_t>(std::min(damage, ns * 35 - 1) / 35)];
+            if (const FxAnimType* st = fx_.spawn(sname, fx, fy, level, 0.0)) {
+                if (!impact_water_.empty()) snd_.play_at(impact_water_, fx, fy, "impact water");
+                else snd_.play_at(st->report, fx, fy, "splash");
+                pres_log(frame_, "fx splash " + sname);
+                effects_.note_splash();
+                return;
+            }
+        }
         const int n = static_cast<int>(wp->anim_list.size());
         const int ix = std::clamp(damage / 25, 0, n - 1);
         const FxAnimType* t = fx_.spawn(wp->anim_list[ix], fx, fy, level, lift_px);
@@ -566,6 +621,14 @@ private:
                              house_color(w, u.house));
         }
         if (!u.w_proj.flies()) {
+            // W3-FX: an instant shot whose projectile art has a line trail.
+            {
+                double tx = 0, ty = 0, tl = 0;
+                int tlev = 0;
+                if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
+                    effects_.instant_line(effects_.unit_weapon(u.image, 0), u.fx * 256.0, u.fy * 256.0,
+                                          u.level * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
+            }
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
                 const ra2engine::Unit& t = us[u.target];
@@ -762,8 +825,13 @@ private:
             if (dead && !p.dead && !b.sold) {
                 snd_.play_at(building_die_, cx, cy, "building die");
                 if (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()) &&
-                    pres_building_seen(w, b))
+                    pres_building_seen(w, b)) {
                     building_explode(w, b, ba.roster[b.type].id);
+                    // W3-FX: building debris (the same TechnoClass death path).
+                    const ra2assets::MapCell* mc = w.map().at(b.cx, b.cy);
+                    effects_.spawn_debris(ba.roster[b.type].id, (b.cx + (b.fw - 1) / 2.0) * 256.0,
+                                          (b.cy + (b.fh - 1) / 2.0) * 256.0, (mc ? mc->level : 0) * 104.0, false);
+                }
                 // W3-B: DestroyAnim= ruins (landmarks) [RE: TechnoType read
                 // FUN_00711510 "DestroyAnim"], drawn through the owner's convert.
                 if (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size())) {
@@ -919,6 +987,12 @@ private:
                             ++explosions_;
                         }
                     }
+                    // W3-FX [RE: FUN_00700da0 death]: Min/MaxDebris debris
+                    // (voxel DebrisTypes / DebrisAnims / MetallicDebris), none
+                    // when low over water.
+                    const double z = u.level * 104.0 + (u.is_aircraft ? u.altitude : 0.0);
+                    effects_.spawn_debris(effects_.unit_id(u.image), u.fx * 256.0, u.fy * 256.0, z,
+                                          on_water(u.fx, u.fy) && (!u.is_aircraft || u.altitude < 11.0));
                 }
                 if (u.house == 0 && radar_event(7, u.fx, u.fy)) snd_.eva("EVA_UnitLost");
             }
@@ -1028,6 +1102,70 @@ private:
             prev = st;
         }
     }
+    // W3-FX AmbientSound: one looping positional voice per live object whose
+    // type has AmbientSound= (units, buildings, map terrain objects such as
+    // the ore mines' OreMineExtract), restarted when it ends, stopped when the
+    // object dies. Keyed by kind + index ("u", "b", "t").
+    struct Amb { std::string key; std::uint32_t h = 0; double x = 0, y = 0; bool seen = false; };
+    std::map<std::string, Amb> amb_;
+    std::map<std::string, std::string> amb_type_;   // type id -> AmbientSound ("" none)
+    long amb_started_ = 0;
+    const std::string& ambient_of(const std::string& id) {
+        auto it = amb_type_.find(id);
+        if (it != amb_type_.end()) return it->second;
+        return amb_type_.emplace(id, effects_.rules_key(id, "AmbientSound")).first->second;
+    }
+    void ambient_sounds(const ra2engine::World& w, const BuildingAssets& ba) {
+        for (auto& kv : amb_) kv.second.seen = false;
+        auto keep = [&](const std::string& k, const std::string& snd, double x, double y) {
+            if (snd.empty()) return;
+            Amb& a = amb_[k];
+            a.seen = true;
+            a.x = x;
+            a.y = y;
+            if (a.key.empty()) {
+                a.key = snd;
+                a.h = snd_.loop_at(snd, x, y);
+                ++amb_started_;
+                pres_log(frame_, "sound " + snd + " (ambient " + k + ")");
+            } else if (a.h && !snd_.update_loop(a.h, x, y)) {
+                a.h = snd_.loop_at(snd, x, y);   // the controller keeps it going
+            }
+        };
+        const auto& us = w.units();
+        for (std::size_t i = 0; i < us.size(); ++i) {
+            const ra2engine::Unit& u = us[i];
+            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+            keep("u" + std::to_string(i), ambient_of(effects_.unit_id(u.image)), u.fx, u.fy);
+        }
+        const auto& bs = w.buildings();
+        for (std::size_t i = 0; i < bs.size(); ++i) {
+            const ra2engine::Building& b = bs[i];
+            if (!b.alive || b.state == ra2engine::Building::State::Dead || b.type < 0 ||
+                b.type >= static_cast<int>(ba.roster.size()))
+                continue;
+            keep("b" + std::to_string(i), ambient_of(ba.roster[static_cast<std::size_t>(b.type)].id),
+                 b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0);
+        }
+        if (g_map_dressing) {
+            const auto& os = g_map_dressing->objects();
+            for (std::size_t i = 0; i < os.size(); ++i)
+                if (os[i].key.rfind("terr:", 0) == 0)
+                    keep("t" + std::to_string(i), ambient_of(os[i].key.substr(5)), os[i].x, os[i].y);
+        }
+        for (auto it = amb_.begin(); it != amb_.end();) {
+            if (!it->second.seen) {
+                snd_.stop_loop(it->second.h);
+                it = amb_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+public:
+    long ambient_started() const { return amb_started_; }
+    std::size_t ambient_live() const { return amb_.size(); }
+private:
     std::size_t units_seen_ = 0;
     std::vector<int> sw_anim_prev_;
     struct SwSeen { ra2engine::SuperweaponType type = ra2engine::SuperweaponType::None; bool ready = false; };
@@ -1039,9 +1177,10 @@ private:
     // false while a live event of the same type lies within its distance.
     // {dist cells, duration frames}; entries 0..5 are overridden by [General]
     // RadarEventSuppressionDistances / RadarEventDurations (read in init).
-    struct RadarEv { int type; double x, y; long until; };
+    struct RadarEv { int type; double x, y; long until; long born = 0; };
     double radar_dist_[17] = {8, 8, 8, 8, 8, 6, 2, 8, 2, 5, 8, 8, 8, 8, 8, 8, 8};
     int radar_dur_[17] = {400, 400, 400, 600, 400, 400, 200, 200, 400, 400, 100, 200, 400, 5, 200, 400, 600};
+    int radar_vis_[17] = {200, 200, 200, 200, 200, 200, 0, 0, 0, 0, 0, 200, 200, 0, 0, 0, 200};
     bool radar_supp_[17] = {1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1};
     std::vector<RadarEv> radar_;
     bool radar_event(int type, double x, double y) {
@@ -1055,7 +1194,7 @@ private:
                     static_cast<int>(std::sqrt((e.x - x) * (e.x - x) + (e.y - y) * (e.y - y))) <
                         radar_dist_[type])
                     return false;
-        radar_.push_back(RadarEv{type, x, y, frame_ + radar_dur_[type]});
+        radar_.push_back(RadarEv{type, x, y, frame_ + radar_dur_[type], frame_});
         return true;
     }
     const std::vector<RadarEv>& radar_events() const { return radar_; }
@@ -1064,6 +1203,7 @@ private:
 
     PresAudio snd_;
     PresFx fx_;
+    PresEffects effects_;   // W3-FX
     std::unique_ptr<ShpFile> shroud_, fog_;
     std::unique_ptr<ra2assets::Font> font_;
     ra2assets::Palette font_pal_;

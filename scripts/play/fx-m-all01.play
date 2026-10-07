@@ -1,0 +1,27 @@
+# fx-m-all01 -- W3-FX trigger visuals, Allied 1 (Lone Guardian): the bridge-hut
+# objective arrows (PlayAnimAt 479 = ARRWSE at waypoints BE / BH) and the
+# opening camera scroll ("Start Scroll": MoveCameraToWaypoint S at speed
+# Value 1 = 0.003 progress per frame). Note: the "Break Bridges" Apply100Damage
+# actions draw nothing themselves [RE: FUN_006dfa00 = five DamageArea(100,
+# C4Warhead) calls, no AnimClass]; see docs/re/effects.md §5.2.
+set render_every 300
+set on_quit continue
+set campaign ALL01T.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+wait 15
+cheat reveal
+view cell 81 48
+cheat camp_fire "Bridge Hut Anim"                   @W3-FX-41
+wait 4
+assert fx_anims >= 2                                @W3-FX-41
+view cell 81 48
+shot a01_bridge_hut_arrows                          @W3-FX-41
+let c0 = cam_y
+cheat camp_fire "Start Scroll"                      @W3-FX-48
+wait 60
+assert cam_y != $c0                                 @W3-FX-48
+shot a02_camera_scroll                              @W3-FX-48
+end

@@ -1,0 +1,69 @@
+# fx-naval -- W3-FX water effects on Bay of Pigs: a Destroyer's wake (Wake=
+# WAKE1 every 8 frames while it sails), shells landing on water (SplashList
+# H2O_EXP* for a Conventional warhead) in a destroyer duel, and the
+# Dreadnought missile's RocketLocomotion trail (V3TAKOFF / V3TRAIL).
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xbayopigs.map
+click button "Use Map"
+wait 2
+click slider:speed=2
+click start
+until 120 scene == game
+require scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+cheat reveal
+cheat spawn E1 0 building 0:GACNST +3 +3
+wait 2
+click unit 0:E1
+cheat spawn DEST 0 point beach_near_sel +0 +0
+wait 2
+click unit 0:DEST
+cheat spawn DEST 0 point water_near_sel +0 +0
+wait 2
+click unit 0:DEST:1
+move point water_near_sel
+click point water_near_sel
+until 300 fx_wakes >= 3                             @W3-FX-wake
+view unit 0:DEST:1
+shot n01_wake                                       @W3-FX-wake
+wait 10
+view unit 0:DEST:1
+shot n02_wake_b                                     @W3-FX-wake
+# --- destroyer duel: splashes ------------------------------------------------------
+cheat spawn DEST 1 point water_near_sel +5 +5
+wait 2
+click unit 1:DEST
+until 900 fx_splashes >= 1                          @W3-FX-splash
+view unit 1:DEST
+shot n03_splash                                     @W3-FX-splash
+wait 3
+view unit 1:DEST
+shot n04_splash_b                                   @W3-FX-splash
+# --- Dreadnought missile trail -------------------------------------------------------
+cheat spawn DRED 0 point water_near_sel +0 +0
+click unit 0:DRED
+cheat spawn HTNK 1 point shore_far_sel +0 +0
+wait 2
+click unit 1:HTNK
+until 1500 fx_v3_puffs >= 2                         @W3-FX-trail
+wait 70
+view unit 0:DRED
+shot n05_missile_trail                              @W3-FX-trail
+wait 5
+view unit 0:DRED
+shot n06_missile_trail_b                            @W3-FX-trail
+wait 5
+view unit 0:DRED
+shot n07_missile_trail_c                            @W3-FX-trail
+wait 5
+view unit 0:DRED
+shot n08_missile_trail_d                            @W3-FX-trail
+end

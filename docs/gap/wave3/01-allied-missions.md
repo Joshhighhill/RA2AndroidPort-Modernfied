@@ -515,3 +515,17 @@ remaining open items: `03-asset-anim-systems.md`, section "W3-FIX-B"):
   Explosion=, TurretOffset; wakes are agent C's.
 - Every animation now runs on the 15 Hz logic clock (it ran per render frame, ~4x too
   fast at 60 Hz).
+
+## W3-FIX-C status (branch `w3fix-fx`)
+
+RE: `docs/re/effects.md`. Scripts `scripts/play/fx-*.play`, shots under `play-out/<script>/`.
+
+| Item | Status | Evidence |
+|---|---|---|
+| RC-8 41 PlayAnimAt (index space RE-W3-2) | FIXED. Read against the RA2 local.mix `[Animations]`, deduplicated: 479 ARRWSE, 471 ARRWDEST, 253 CHRONOTG (fits all 68 uses; effects.md §5.1) | `fx-m-all01` (bridge-hut arrows), `fx-m-all12` (CHRONOTG at U/S/T) |
+| RC-8 63 Apply100Damage (RE-W3-4) | NOT A GAP. `FUN_006dfa00` = five `DamageArea(100, C4Warhead)`, no anim; the visible result in the original is a high-bridge collapse, which needs destructible high bridges (W2-GA-07) | effects.md §5.2 |
+| RC-8 42 DoExplosionAt (ALL10) | FIXED (impact anim + damage at the waypoint); WeaponTypes index order RE-FALLBACK | — |
+| RC-8 88 ParticleAnim (ALL03 IFV sparks, ALL05 smoke) | FIXED | `fx-m-sov01` (same action) |
+| RC-8 48/112 camera, 55 radar ping, 104/131 flash, 113 cheer, 114 tab | FIXED (cheer: CheerSound + hook for the Cheer sequence, agent B); 115 FlashCameo OPEN | `fx-m-all01` (Start Scroll), `fx-particles` (radar square) |
+| RC-4 debris, damage smoke | FIXED (DamageParticleSystems, MetallicDebris/DebrisAnims/DebrisTypes) | `fx-particles` p01-p06 |
+| RC-10 wakes / splashes | FIXED | `fx-naval` n01-n04 |
