@@ -193,3 +193,18 @@ Keys reserved for later phases (scripts already assert them and report
 | `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
 
 The expected results on each tree are kept in `docs/gap/PLAYTEST-STATUS.md`.
+
+## Campaign missions directly (W2-CA-19)
+
+`set campaign <MAP> <GDI|Nod> [difficulty]` anywhere in a script makes the run
+start at that mission's loading screen (a `CampaignLoadScene`) instead of the
+main menu, so missions 2-12 are testable without winning every earlier one
+(`click start`, then `until 300 scene == game`). Campaign-only scene cheats
+(`cheat camp_*`, engine/campaign_play.inc) skip combat or issue the player's
+real World orders: `camp_killb H TYPE`, `camp_killu H TYPE|*`, `camp_killdef`
+(armed enemy buildings), `camp_spawn TYPE H X Y [n]` (placed like a
+reinforcement), `camp_move UTYPE|* X Y`, `camp_capture UTYPE BH BTYPE`,
+`camp_occupy ...`, `camp_attackb BH BTYPE [UTYPE]`, `camp_attacku UTYPE TH TTYPE`,
+`camp_deploy` (first controllable MCV: unfold, or drive to a legal spot).
+Scripts: `m-all02`, `m-all04`, `m-all08`, `m-sov03`, `m-sov05`, `m-sov06`,
+`m-sov09` (one per fixed W2-CA blocker class).

@@ -2351,12 +2351,52 @@ aircraft objects not placed; object facing/sub-cell/veterancy/Sleep not
 applied; MCV deploy now exists (gap F, see "Real play: MCV, skirmish start,
 game over"); unit stats
 from `rulesmd.ini` (RA2 `rules.ini` only for index spaces); map-embedded rules
-overrides ignored; civilian building art uses the temperate candidate walk.
+overrides now applied (W2-CA-04, below); civilian building art uses the temperate candidate walk.
 
 **Carry-forwards:** team transport delivery + paradrops, missile interception,
 map rules overrides, enemy base AI from map `[<House>]` IQ/nodes, bridges.
 (MCV deploy, the player's TechLevel cap, trigger crates (108), reshroud (101),
 fire sale (9) and events 29/44/25/26 landed in gap F.)
+
+### Campaign wave-2 fixes (branch `w2fix-campaign`, W2-CA-01..19)
+
+Audit: `docs/gap/wave2/01-campaign.md` (§5 has the row-by-row status and the
+per-mission table). Every one of the 24 RA2 missions now reaches its own `Win`
+action through its trigger chain; before/after real-play winnability
+6 YES / 5 PROBABLE / 2 DOUBTFUL / 11 NO -> 16 YES / 8 PROBABLE / 0 / 0.
+
+* **EnteredBy on buildings (W2-CA-01)** -- World records campaign-only
+  `EnteredEvent`s (engineer capture/repair, spy infiltrate, garrison, bridge
+  hut); the runtime raises 1 on the building's tag (+2 for spies) and 48 on the
+  consumed infantry [RE `FUN_00519449`].
+* **PlayerControl houses (W2-CA-02)** -- `[<House>] PlayerControl=yes` ->
+  `World::controllable(h)`; selection and orders accept those units
+  [RE `FUN_0050B510` ControlledByHuman reads `house+0x1ED`].
+* **Rules-driven campaign roster + map rules overlay (W2-CA-03/04)** -- the
+  campaign GameScene's rules are rulesmd with the map's rules sections laid
+  over them; the sidebar is the skirmish rp path with the player house's
+  country/TechLevel and the classic RA2 type list.
+* **Side fallback (05), events 55/56 (06), team release (09), pairwise
+  MakeAlly/MakeEnemy (10), attack-waypoint hold only on loss-guarding targets
+  (11), SellBuilding/EvictOccupiers (13), damage events 38-43 and 22 (14).**
+* **Map AI (W2-CA-07)** -- action 74 runs the map's own AITriggerTypes/
+  TeamTypes; **sea/edge landings (W2-CA-08)** land at the nearest free cell
+  connected to the team's first move-waypoint; **aircraft (W2-CA-16)** placed
+  through the W2-AN flight model; **mind control (W2-CA-15)**; script actions
+  Deploy/Unload/Scatter (17).
+* **Mission audio (W2-CA-12)** -- PlaySpeech/PlaySoundEffect/
+  PlaySoundAtWaypoint/PlayMusicTheme and `[Basic] Theme=` through the
+  presentation audio (RA2 `eva.ini` Mis_* lines).
+* **Play scripts at mission N (W2-CA-19)** -- `set campaign <MAP> <GDI|Nod>`
+  starts a `--play` script at that mission; `cheat camp_*` (killb/killu/
+  killdef/spawn/move/capture/occupy/attackb/attacku/deploy). New scripts:
+  `m-all02`, `m-all04`, `m-all08`, `m-sov03`, `m-sov05`, `m-sov06`, `m-sov09`.
+* Save format **v11** (PlayerControl, pair alliances, entered events,
+  mind-control links).
+
+Still cut: real transport/paradrop delivery (RE-C1), `Mission=` Sleep/Harmless
+(W2-CA-18), actions 88/90/102/18/42/35/..., script actions 14/55/42/58,
+events 31/5.
 
 ## Building
 
