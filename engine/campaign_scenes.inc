@@ -163,7 +163,7 @@ public:
         const bool na = no_audio_;
         const ra2engine::SkirmishConfig cfg = cfg_;
         return defer_scene("LOADING", [na, cfg]() -> Scene* {
-                               GameScene::set_canvas_width(game_logical_width());   // W2-AR-06
+                               { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }   // W2-AR-06
                                return new GameScene(na, cfg);
                            },
                            [keep](SDL_Renderer* ren, ra2engine::TextureCache& tc, double frac) {

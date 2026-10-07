@@ -17,7 +17,7 @@ const MenuArt& shell_art();
 
 // W2-AR-06: centred in the CURRENT canvas (1280 on the shell, the wider game
 // canvas for the in-game pages on a 20:9 panel).
-inline ShellXform ui_xform() { return ShellXform::make(g_ui_w, 720); }
+inline ShellXform ui_xform() { return ShellXform::make(g_ui_w, g_ui_h); }
 inline ra2engine::SbRect ui_dev(const ra2engine::SbRect& r) { return ui_xform().hit(r); }
 inline void ui_to_logical(int dx, int dy, int& lx, int& ly) {
     const ShellXform xf = ui_xform();

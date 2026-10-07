@@ -4385,6 +4385,7 @@ struct Scene {
     // always 720). The shell pages are fixed 1280 (the original's 800x600
     // shell, centred); GameScene widens with the panel's aspect.
     virtual int    logical_width() const                    { return 1280; }
+    virtual int    logical_height() const                   { return 720; }
 };
 
 // G0: per-frame observer of run_scene_driver (the --play harness). begin()
@@ -4429,7 +4430,8 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         // as wide as the panel's aspect allows) BEFORE input is polled, so
         // pointer/finger coordinates map to the same canvas.
         g_ui_w = scene->logical_width();
-        plat.set_logical_size(g_ui_w, 720);
+        g_ui_h = scene->logical_height();
+        plat.set_logical_size(g_ui_w, g_ui_h);
         if (hooks && !hooks->begin(frame, *scene)) return 0;
         ra2engine::InputEvent ev;
         while (events.poll(ev)) {
@@ -5128,11 +5130,13 @@ public:
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
     // then Input. G-01: Esc never reaches here as a quit -- ui_handle maps it to
     // the options dialog (KeyboardMD.ini Options=27); right-click cancels modes.
-    void handle(const ra2engine::InputEvent& ev) override {
-        if (lifecycle_event(ev)) return;   // W2-AR-09 (game_scene_lifecycle.inc)
+    void handle(const ra2engine::InputEvent& ev_in) override {
+        if (lifecycle_event(ev_in)) return;   // W2-AR-09 (game_scene_lifecycle.inc)
+        ra2engine::InputEvent ev = ev_in;     // W2-AR-08: the touch bar may add modifiers
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
         if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
+        if (touch_bar_handle(ev)) return;   // W2-AR-08 touch command bar (touch_bar.inc)
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
@@ -5532,11 +5536,13 @@ public:
         draw_tooltip(ren, tc);         // W2-UI-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
-        bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
+        // W2-AR-16a: no software cursor left at the last tap point -- only a
+        // real mouse has a pointer to draw.
+        bool drew = mouse_present_ && !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
                     draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
                                      world_.repair_frame());
         // G-08 (draw half): every other pointer is the MOUSE.SHP action cursor.
-        if (!drew)
+        if (!drew && mouse_present_)
             drew = pres_.draw_cursor(ren, tc, mouse_, world_, input_, mx_, my_,
                                      sidebar_up_ && lay_.contains(mx_, my_), playfield_w_, kWinW,
                                      kWinH, world_.repair_frame(), static_cast<int>(cursor_action()));
@@ -5545,6 +5551,7 @@ public:
             os_cursor_hidden_ = drew;
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
+        draw_touch_bar(ren);      // W2-AR-08 (touch only)
         if (campaign_) draw_campaign_overlay(ren, tc);   // P10 objectives / mission end (W2-UI-21)
         gf_render(ren, tc);   // gF: victory / defeat text during BorrowedTime (W2-UI-20 game font)
         // P7 overlays + the transient "game saved / load failed" banner.
@@ -5801,6 +5808,7 @@ private:
     friend struct AiSoakProbe;     // gap owner D: --ai-soak drives the real scene
 #include "realplay_scene.inc"   // gap owner A: placement/production/roster members
 #include "game_scene_lifecycle.inc"   // W2-AR-09: background autosave + pause
+#include "touch_bar.inc"              // W2-AR-07/-08/-16: touch command bar
     friend struct CombatProbe;   // gap owner C: --probe-combat drives the real scene
     // The window is always created at 1280x720 (see run_interactive); the sidebar
     // layout/camera/input all key off these, so the driver's plat matches.
@@ -5809,10 +5817,14 @@ private:
     // the original's tactical view grows with ScreenWidth and the sidebar
     // stays anchored right. Set by defer_game_scene before construction.
     static inline int kWinW = 1280;
-    static constexpr int kWinH = 720;
+    // W2-AR-07: 720 on desktop; ~480 on a phone (touch canvas: every sidebar
+    // button and cameo ~1.5x bigger, >= 40 dp) -- like the original running
+    // at a low ScreenHeight.
+    static inline int kWinH = 720;
     int logical_width() const override { return kWinW; }
+    int logical_height() const override { return kWinH; }
 public:
-    static void set_canvas_width(int w) { kWinW = w; }
+    static void set_canvas_size(int w, int h) { kWinW = w; kWinH = h; }
 private:
 
     // --- G16 named map points for --play scripts (agent G) ---
@@ -7075,14 +7087,14 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
 Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg) {
     auto c = std::make_shared<ra2engine::SkirmishConfig>(std::move(cfg));
     return defer_scene("LOADING", [no_audio, c]() -> Scene* {
-        GameScene::set_canvas_width(game_logical_width());   // W2-AR-06
+        { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }   // W2-AR-06
         return new GameScene(no_audio, *c);
     });
 }
 Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
     auto sf = std::make_shared<ra2engine::save::SaveFile>(std::move(f));
     return defer_scene("LOADING SAVED GAME", [no_audio, sf]() -> Scene* {
-        GameScene::set_canvas_width(game_logical_width());   // W2-AR-06
+        { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }   // W2-AR-06
         return new GameScene(no_audio, *sf);
     });
 }
