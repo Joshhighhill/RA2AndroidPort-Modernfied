@@ -914,8 +914,14 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.movement_domain = ra2engine::MovementDomain::Water;
     // W2-AN-10 [rules [LCRF]/[SAPC]: SpeedType=Hover, MovementZone=Amphibious]:
     // the landing craft paths over land OR water.
+    // W4-MC-01 [RE: gamemd MovementZone name table, docs/re/movement-zones.md]:
+    // EVERY Amphibious* zone (AmphibiousDestroyer = Tanya/SEAL/PCOMMANDO/JFISH/
+    // CPHAL, AmphibiousCrusher = APC, Amphibious = LCRF/SAPC/HVR) and every
+    // SpeedType=Amphibious type crosses land AND water. The old exact match left
+    // Tanya land-bound, so the ALL01 GI hand-over (water cells) never fired.
     else if (!r.combat.is_aircraft &&
-             to_lower(rules.section_string(unit_id, "MovementZone", "")) == "amphibious")
+             ra2engine::is_amphibious_zone(rules.section_string(unit_id, "MovementZone", ""),
+                                           rules.section_string(unit_id, "SpeedType", "")))
         r.combat.movement_domain = ra2engine::MovementDomain::Amphibious;
 
     // P5 Veterancy + Crates [RE: veterancy.md V3/V4/V10/V11/V14/C8]: the
