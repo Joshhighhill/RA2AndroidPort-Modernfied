@@ -69,14 +69,34 @@ bool rp_country_allows(const Rules& rules, const std::string& id, const std::str
     return !rp_has(rp_list(rules, id, "ForbiddenHouses"), country);
 }
 
-// [SK-27] A structure the lobby's Superweapons checkbox removes: it carries a
-// SuperWeapon= (or SuperWeapon2=) and is not one of the [AI] BuildTech tech
-// centres (whose YR SuperWeapon= is the side special).
+// W2-AN-19: the classic RA2 [SuperWeaponTypes] (rules.ini from ra2.mix/local.mix):
+// MultiSpecial, IronCurtainSpecial, LightningStormSpecial, ChronoSphereSpecial,
+// ChronoWarpSpecial, ParaDropSpecial, AmericanParaDropSpecial. The engine reads
+// YR rulesmd.ini, whose YR-only SW keys (NARADR SpyPlaneSpecial, GATECH/NATECH
+// ForceShieldSpecial, Yuri's specials) must not leak into a classic game.
+bool rp_classic_sw_type(const std::string& type_upper) {
+    return type_upper == "MULTIMISSILE" || type_upper == "IRONCURTAIN" ||
+           type_upper == "LIGHTNINGSTORM" || type_upper == "CHRONOSPHERE" ||
+           type_upper == "CHRONOWARP" || type_upper == "PARADROP" || type_upper == "AMERPARADROP";
+}
+
+// The classic SW section a building grants ("" when its SuperWeapon= is
+// absent or YR-only).
+std::string rp_building_classic_sw(const Rules& rules, const std::string& id) {
+    const std::string sw = rules.section_string(id, "SuperWeapon", "");
+    if (sw.empty()) return "";
+    return rp_classic_sw_type(rp_upper(rules.section_string(sw, "Type", ""))) ? sw : "";
+}
+
+// [SK-27] W2-AN-18: a structure the lobby's Superweapons checkbox removes:
+// it grants a classic superweapon whose [<Special>] DisableableFromShell=yes
+// (Nuke, Iron Curtain, Lightning Storm, Chronosphere). AmerParaDrop
+// (AMRADR) is DisableableFromShell=no; YR-only SW keys (NARADR SpyPlane,
+// tech-centre ForceShield) do not count -- so the radars stay.
 bool rp_is_lobby_sw_building(const Rules& rules, const std::string& id) {
-    if (rules.section_string(id, "SuperWeapon", "").empty() &&
-        rules.section_string(id, "SuperWeapon2", "").empty())
-        return false;
-    return !rp_has(rp_list(rules, "AI", "BuildTech"), id);
+    const std::string sw = rp_building_classic_sw(rules, id);
+    if (sw.empty()) return false;
+    return rp_flag(rules, sw, "DisableableFromShell");
 }
 
 // The human's country: the lobby slot's country when its [Country] Side=

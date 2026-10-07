@@ -476,7 +476,8 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 // it, so ground re-pathing is byte-identical.
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
-                Occupancy& occ, double dt, double move_cps, const AnimTable& anims);
+                Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
+                const std::vector<std::uint8_t>* amphib_passable = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -666,8 +667,18 @@ public:
     // returns the new water_passable_ grid. Structural byte-identity: a
     // default-Land unit resolves to the identical grid object (spec §8).
     const std::vector<std::uint8_t>& grid_for(MovementDomain d) const {
+        if (d == MovementDomain::Amphibious) return amphib_grid();
         return d == MovementDomain::Water ? water_passable_ : passable_;
     }
+    // W2-AN-10: Land OR Water, rebuilt on every call into a cached buffer
+    // (derived state, never saved; both source grids mutate in many places).
+    const std::vector<std::uint8_t>& amphib_grid() const;
+    // W2-AN-09: can unit `idx` stand on cell (x, y) by its movement domain
+    // (aircraft: any in-bounds cell)?
+    bool unit_can_enter_cell(const Unit& u, int x, int y) const;
+    // W2-AN-09: is (x, y) enterable by ANY selected live house-`house` unit?
+    // No selection -> the Land grid (the pre-fix answer).
+    bool selection_can_enter(int house, int x, int y) const;
     // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§2]: build the WATER grid from a
     // per-cell LandType array (main.cpp's resolve_land_types, indexed y*grid_w+x),
     // intersected with the Land grid passable_ (a ship never paths on a non-
@@ -1728,6 +1739,7 @@ private:
     // first naval order (naval movement reuses step_units -- no separate step to
     // firewall, unlike flight's step_flight).
     std::vector<std::uint8_t> water_passable_;
+    mutable std::vector<std::uint8_t> amphib_passable_;   // W2-AN-10 scratch (amphib_grid)
     bool naval_any_ = false;
     Occupancy occ_;
     int grid_w_ = 0;

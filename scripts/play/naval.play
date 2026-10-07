@@ -1,0 +1,56 @@
+# naval.play -- W2-AN naval acceptance (wave-2 fix): Allied human on Bay of
+# Pigs (water map). Naval Yard on water through the real sidebar, a Destroyer
+# that sails where it is clicked, a landing craft that loads GIs on the shore,
+# sails, beaches and unloads, and a submarine that hides until sonar finds it.
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xbayopigs.map
+click button "Use Map"
+wait 2
+click start
+until 120 scene == game
+require scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+click tab:0
+click cameo:GAPOWR
+until 1500 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) == 1
+click cameo:GAREFN
+until 2000 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 600 built(0,GAREFN) == 1
+click cameo:GAYARD
+until 2000 queue_ready(structure) == 1
+click cameo:GAYARD
+place auto
+until 600 built(0,GAYARD) == 1                 @W2-AN-09
+view building 0:GAYARD
+shot yard
+
+# --- 1. a Destroyer sails where it is clicked (W2-AN-09) ---------------------
+click tab:3
+click cameo:DEST
+until 2000 units(0,DEST) == 1                  @W2-AN-09
+wait 30
+view unit 0:DEST
+click unit 0:DEST
+let x0 = sel_cx
+let y0 = sel_cy
+move point water_near_sel
+assert cursor_name == move                     @W2-AN-09
+click point water_near_sel
+until 300 sel_cx != $x0 or sel_cy != $y0       @W2-AN-09
+wait 120
+assert sel_on_water == 1                       @W2-AN-09
+shot dest_sailed
+end

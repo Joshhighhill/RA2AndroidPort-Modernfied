@@ -314,6 +314,7 @@
             p.set("bridge_version", world_.bridge_version());
             p.set("depth_armed", world_.depth_rules().armed ? 1 : 0);
         }
+        w2_play_probe(p);   // wave-2 air/naval/SW keys (w2air_play.inc)
         p.find_point = [this](const std::string& name, double& cx, double& cy) {
             return play_find_point(name, cx, cy);
         };
@@ -409,6 +410,10 @@
                                                        ? ua_.anims.at(def->combat.image)
                                                        : ra2engine::default_anim());
                 return "";
+            }
+            {   // wave-2 air/naval/SW cheats (w2air_play.inc)
+                std::string r;
+                if (w2_cheat(a, r)) return r;
             }
             return "unknown cheat (have: kill_house H, damage_building H:TYPE[:n] DMG, credits N, "
                    "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY)";

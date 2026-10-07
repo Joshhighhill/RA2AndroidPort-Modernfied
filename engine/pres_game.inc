@@ -245,7 +245,9 @@ private:
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
             if (u.house != 0 && !w.visible_at(0, u.cell_x, u.cell_y)) continue;
             const int gx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam_.x + 30;
-            const int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
+            int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
+            // W2-AN-24: the cursor tracks the RAISED sprite of an airborne unit.
+            if (u.is_aircraft && u.altitude > 0.0) gy -= ra2engine::altitude_to_screen_dy(u.altitude);
             const int hw = u.is_vehicle ? 22 : 10, up = u.is_vehicle ? 24 : 30;
             if (mx >= gx - hw && mx <= gx + hw && my >= gy - up && my <= gy + 6) { hit = i; break; }
         }
@@ -278,10 +280,9 @@ private:
         int cx = 0, cy = 0;
         ra2engine::screen_to_cell(mx - cam_.x, my - cam_.y, 60, 30, cx, cy);
         if (!w.explored_at(0, cx, cy)) return kMove;
-        const auto& pass = w.passable();
         const int gw = w.grid_w(), gh = w.grid_h();
         if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) return kNoMove;
-        return pass[static_cast<std::size_t>(cy) * gw + cx] ? kMove : kNoMove;
+        return w.selection_can_enter(0, cx, cy) ? kMove : kNoMove;   // W2-AN-09
     }
 
     // B's Input::Action (the authoritative "what would a click do") ->

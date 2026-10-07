@@ -536,6 +536,38 @@ bool World::walkable(int x, int y) const {
     return passable_[static_cast<size_t>(y) * grid_w_ + x] != 0;
 }
 
+const std::vector<std::uint8_t>& World::amphib_grid() const {
+    amphib_passable_ = passable_;
+    const std::size_t n = std::min(amphib_passable_.size(), water_passable_.size());
+    for (std::size_t i = 0; i < n; ++i)
+        if (water_passable_[i]) amphib_passable_[i] = 1;
+    return amphib_passable_;
+}
+
+bool World::unit_can_enter_cell(const Unit& u, int x, int y) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
+    if (u.is_aircraft) return true;   // flight ignores the ground grids
+    const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+    const bool land = i < passable_.size() && passable_[i] != 0;
+    const bool water = i < water_passable_.size() && water_passable_[i] != 0;
+    switch (u.movement_domain) {
+        case MovementDomain::Water: return water;
+        case MovementDomain::Amphibious: return land || water;
+        default: return land;
+    }
+}
+
+bool World::selection_can_enter(int house, int x, int y) const {
+    bool any = false;
+    for (const Unit& u : units_) {
+        if (!u.selected || u.house != house || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0)
+            continue;
+        any = true;
+        if (unit_can_enter_cell(u, x, y)) return true;
+    }
+    return !any && walkable(x, y);
+}
+
 Unit& World::add_unit(int cell_x, int cell_y, const std::string& image, int frame) {
     Unit u;
     u.cell_x = cell_x;
@@ -876,8 +908,36 @@ void World::order_move_selected(int goal_x, int goal_y) {
         }
     if (sel.empty()) return;
 
-    std::vector<Cellxy> targets =
-        assign_formation({goal_x, goal_y}, cur, passable_, grid_w_, grid_h_, occ_);
+    // W2-AN-09: one formation per movement domain -- ships spread over the
+    // water grid, amphibious craft over land OR water, aircraft anywhere, the
+    // rest over the land grid (the pre-fix single call, byte-identical for an
+    // all-ground selection).
+    std::vector<Cellxy> targets(sel.size(), Cellxy{goal_x, goal_y});
+    {
+        std::vector<std::uint8_t> air_grid;
+        for (int dom = 0; dom < 4; ++dom) {
+            std::vector<std::size_t> ks;
+            std::vector<Cellxy> dcur;
+            for (std::size_t k = 0; k < sel.size(); ++k) {
+                const Unit& u = units_[sel[k]];
+                const int d = u.is_aircraft ? 3 : static_cast<int>(u.movement_domain);
+                if (d != dom) continue;
+                ks.push_back(k);
+                dcur.push_back(cur[k]);
+            }
+            if (ks.empty()) continue;
+            const std::vector<std::uint8_t>* g = &passable_;
+            if (dom == 1) g = &water_passable_;
+            else if (dom == 2) g = &amphib_grid();
+            else if (dom == 3) {
+                air_grid.assign(static_cast<std::size_t>(grid_w_) * grid_h_, 1);
+                g = &air_grid;
+            }
+            const std::vector<Cellxy> t =
+                (g->empty()) ? dcur : assign_formation({goal_x, goal_y}, dcur, *g, grid_w_, grid_h_, occ_);
+            for (std::size_t j = 0; j < ks.size(); ++j) targets[ks[j]] = t[j];
+        }
+    }
 
     for (std::size_t k = 0; k < sel.size(); ++k) {
         Unit& u = units_[sel[k]];
@@ -1004,7 +1064,9 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
     // Gap owner A (G-24) [RE: roster2.md TL;DR 8]: a ship leaves its Naval Yard
     // onto the first free WATER ring cell (roster2's naval_exit_cell); every
     // other unit keeps the land walk below.
-    if (c.is_naval) {
+    // W2-AN-10: an amphibious craft (LCRF/SAPC, built at the yard) also
+    // launches onto the water ring.
+    if (c.is_naval || c.movement_domain == MovementDomain::Amphibious) {
         if (water_passable_.empty()) return -1;
         const Cellxy wx = naval_exit_cell(f, factory_def, water_passable_, grid_w_, grid_h_,
                                           [this](int x, int y) {
@@ -1253,6 +1315,12 @@ void World::step_cargo(double /*dt*/) {
         if (!t.alive || t.die_time >= 0.0) { t.unload_pending = false; continue; }
         if (t.cargo.empty()) { t.unload_pending = false; continue; }
         if (t.moving()) continue;              // a STATIONARY transport ejects [spec §5]
+        // W2-AN-10: a landing craft unloads only once beached on a LAND cell
+        // (the eject ring is land-only); an unload order at sea is dropped.
+        if (t.movement_domain == MovementDomain::Amphibious && !walkable(t.cell_x, t.cell_y)) {
+            t.unload_pending = false;
+            continue;
+        }
         const int p = next_eject(t);           // LIFO -- the LAST-boarded leaves
                                                // first [RE-GATE APPLIED:
                                                // transport-cargo.md §6 -- CONFIRMED]
@@ -3433,7 +3501,14 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 }
 
 void World::step(double dt) {
-    step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
+    {
+        // W2-AN-10: an amphibious unit re-paths over Land OR Water.
+        bool amph = false;
+        for (const Unit& u : units_)
+            if (u.movement_domain == MovementDomain::Amphibious && u.alive) { amph = true; break; }
+        step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
+                   amph ? &amphib_grid() : nullptr);
+    }
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
     // crate cell, then lifetime expiry -> relocation. A pure INSERTION;
@@ -3813,7 +3888,8 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
 
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
-                Occupancy& occ, double dt, double move_cps, const AnimTable& anims) {
+                Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
+                const std::vector<std::uint8_t>* amphib_passable) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
@@ -3995,7 +4071,9 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 // SAME field; inert today (is_naval == Water-domain). CONFIRMED:
                 // one occ_ cell + shared FootClass repath (§1/§3).
                 const std::vector<std::uint8_t>& g =
-                    u.movement_domain == MovementDomain::Water ? water_passable : passable;
+                    u.movement_domain == MovementDomain::Water ? water_passable
+                    : (u.movement_domain == MovementDomain::Amphibious && amphib_passable)
+                        ? *amphib_passable : passable;
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
                 std::vector<Cellxy> np = find_path(p2, w, h, {u.cell_x, u.cell_y}, goal);

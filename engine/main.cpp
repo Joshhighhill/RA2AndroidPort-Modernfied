@@ -837,6 +837,11 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         (!nloco.empty() && to_lower(nloco) == to_lower(kNavalClsid));
     if (r.combat.is_naval)
         r.combat.movement_domain = ra2engine::MovementDomain::Water;
+    // W2-AN-10 [rules [LCRF]/[SAPC]: SpeedType=Hover, MovementZone=Amphibious]:
+    // the landing craft paths over land OR water.
+    else if (!r.combat.is_aircraft &&
+             to_lower(rules.section_string(unit_id, "MovementZone", "")) == "amphibious")
+        r.combat.movement_domain = ra2engine::MovementDomain::Amphibious;
 
     // P5 Veterancy + Crates [RE: veterancy.md V3/V4/V10/V11/V14/C8]: the
     // per-type experience/ability/elite-weapon keys. Inert unless a World
@@ -5344,6 +5349,7 @@ public:
 #include "game_scene_controls.inc"
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
+#include "w2air_play.inc"   // wave-2 air/naval/SW --play keys, points, cheats
 
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
@@ -5554,6 +5560,7 @@ private:
         return false;
     }
     bool play_find_point(const std::string& name, double& cx, double& cy) const {
+        if (w2_find_point(name, cx, cy)) return true;   // wave-2 air/naval/SW points
         int ax = 0, ay = 0;
         if (!play_anchor(ax, ay)) return false;
         auto d2 = [&](int x, int y) { return (x - ax) * (x - ax) + (y - ay) * (y - ay); };

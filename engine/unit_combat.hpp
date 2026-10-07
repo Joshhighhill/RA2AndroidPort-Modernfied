@@ -18,7 +18,10 @@ namespace ra2engine {
 // MovementDomain field, and unit_combat.hpp is included by BOTH world.hpp and
 // unit_type.hpp BEFORE world.hpp's own body -- so the enum must be visible at
 // this point. world.hpp gets it transitively via its unit_combat.hpp include.
-enum class MovementDomain { Land = 0, Water = 1 };
+// W2-AN-10 [RE: naval.md §2 table; rules [LCRF]/[SAPC] MovementZone=Amphibious,
+// Hover loco {4A582742}]: Amphibious = the Land OR the Water grid (beach
+// crossing; the landing craft loads/unloads on the shore).
+enum class MovementDomain { Land = 0, Water = 1, Amphibious = 2 };
 
 // Per-unit combat stats resolved once by the caller (main.cpp, from Rules)
 // and handed to World::add_combat_unit to fill in a spawned Unit's hp/armor/
