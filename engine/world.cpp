@@ -4167,11 +4167,15 @@ void World::step(double dt) {
                 ++purifiers[b.house];
                 any_purifier = true;
             }
+        const std::vector<double> before_harvest = house_credits_;   // W2-SK income witness
         step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
                     grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
                     house_credits_.data(), h_moves, h_events,
                     static_cast<int>(house_credits_.size()),
                     any_purifier ? purifiers.data() : nullptr, purifier_bonus_, harvest_scan_);
+        if (harvest_income_.size() < house_credits_.size()) harvest_income_.resize(house_credits_.size(), 0.0);
+        for (std::size_t h = 0; h < house_credits_.size() && h < before_harvest.size(); ++h)
+            harvest_income_[h] += house_credits_[h] - before_harvest[h];
         // Path each requested move the same way step_combat's MoveRequests
         // are executed above (order_unit_move mirrors that pattern).
         for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);

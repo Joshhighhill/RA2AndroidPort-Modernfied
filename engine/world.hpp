@@ -747,6 +747,10 @@ public:
         harvest_scan_.short_scan = short_scan > 0 ? short_scan : 6;
     }
     const HarvestScan& harvest_scan() const { return harvest_scan_; }
+    // W2-SK: total refinery unload income a house has earned (probe/soak).
+    double harvest_income(int house) const {
+        return house >= 0 && house < (int)harvest_income_.size() ? harvest_income_[(std::size_t)house] : 0.0;
+    }
     // W2-SK-01: register a map ore mine (TerrainType SpawnsTiberium=yes).
     void add_ore_mine(int x, int y, int half_frames, int anim_rate, double anim_prob) {
         ore_.add_mine(x, y, half_frames, anim_rate, anim_prob);
@@ -1838,6 +1842,7 @@ private:
     double spread_pct_ = 0.0;
     double purifier_bonus_ = 0.0;   // rules [General] PurifierBonus (gap owner A, G-27)
     HarvestScan harvest_scan_;      // W2-SK-02 (save v10)
+    std::vector<double> harvest_income_;   // W2-SK: cumulative unload income per house (v10)
     // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
     // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
     // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/

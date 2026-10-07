@@ -151,6 +151,7 @@ struct SaveAccess {
         save::io(ar, w.spread_pct_);
         save::io(ar, w.purifier_bonus_);   // gap owner A (G-27)
         save::io(ar, w.harvest_scan_);     // W2-SK-02 (v10)
+        save::io(ar, w.harvest_income_);   // W2-SK income witness (v10)
         save::io(ar, w.house_credits_);
         save::io(ar, w.harvest_events_);
         // Repair & Sell

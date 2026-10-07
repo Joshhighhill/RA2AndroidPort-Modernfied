@@ -77,6 +77,19 @@
             }
         }
         p.set("selected", selected);
+        {   // W2-SK economy probes: ore left, ore-mine output, AI wallets
+            int cells = 0, mined = 0;
+            for (int y = 0; y < world_.ore().h(); ++y)
+                for (int x = 0; x < world_.ore().w(); ++x) cells += world_.ore().has_ore(x, y) ? 1 : 0;
+            for (const ra2engine::OreMine& m : world_.ore().mines()) mined += m.spawned;
+            p.set("ore_cells", cells);
+            p.set("ore_mines", static_cast<double>(world_.ore().mines().size()));
+            p.set("mine_spawned", mined);
+            for (int h = 0; h < world_.house_count(); ++h) {
+                if (world_.ai_enabled(h)) p.set("ai_credits(" + std::to_string(h) + ")", world_.ai_credits(h));
+                p.set("income(" + std::to_string(h) + ")", world_.harvest_income(h));
+            }
+        }
         {   // the lowest-index selected unit's cell (for "did it move" checks)
             const ra2engine::Unit* s0 = nullptr;
             for (const ra2engine::Unit& u : world_.units())
