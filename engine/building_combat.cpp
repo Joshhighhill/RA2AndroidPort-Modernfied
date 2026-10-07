@@ -62,7 +62,11 @@ void World::launch_defense_projectile(int b_idx, int target_unit, int slot) {
     const Building& b = buildings_[b_idx];
     const ProjectileSpec& spec = btypes()[b.type].weapon[slot].proj;
     const Unit& v = units_[target_unit];
-    const Vec3i src{ftol(bcenter_x(b) * kLept), ftol(bcenter_y(b) * kLept), 0};
+    // W4: the muzzle height. [RE-FALLBACK: the building art PrimaryFireFLH is
+    // not resolved for defence weapon slots; 100 = NASAM's H (90,50,100) --
+    // a homing bullet launched at height 0 would fail its height < 1 test.]
+    const int muzzle_z = spec.flh[2] > 0 ? spec.flh[2] : (spec.kind == ProjKind::Homing ? 100 : 0);
+    const Vec3i src{ftol(bcenter_x(b) * kLept), ftol(bcenter_y(b) * kLept), muzzle_z};
     const Vec3i tgt{ftol(v.fx * kLept), ftol(v.fy * kLept),
                     v.is_aircraft ? ftol(v.altitude) : 0};
     const LaunchResult lr = compute_launch(spec, proj_rules_, src, tgt, proj_rng_);
@@ -97,6 +101,10 @@ void World::launch_defense_projectile(int b_idx, int target_unit, int slot) {
     p.launch_frame = proj_frame_;
     p.launch_speed = lr.speed;
     p.max_z = src.z;
+    if (p.kind == ProjKind::Homing) {   // W4: the Patriot's missile flies
+        init_homing(p, spec, lr.speed);
+        p.target_air = unit_airborne(v);
+    }
     projectiles_.push_back(p);
 }
 
@@ -144,6 +152,7 @@ void World::step_building_combat(double dt) {
             if (!is_enemy(b.house, v.house) || v.disguised) return false;
             // W2-AN-13/14: base defenses are NavalTargeting=0 (UNDERWATER_NEVER).
             if (v.an.submerged) return false;
+            if (rocket_on_launcher(v)) return false;   // W4: not yet in the air
             if (!(v.seen_by_mask & (1u << b.house))) return false;
             const int s = slot_for(v);
             return s >= 0 && in_range(v, s);

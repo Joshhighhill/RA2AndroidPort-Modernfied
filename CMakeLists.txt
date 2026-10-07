@@ -252,7 +252,8 @@ target_sources(ra2assets_tests PRIVATE tests/test_repair_sell.cpp engine/repair_
 # launch solver (Fire), ballistic/vertical integrators (Update), scatter, and the
 # deterministic projectile RNG. World-free; the collision/detonation pass lives in
 # engine/world.cpp (already on test_world's line).
-target_sources(ra2assets_tests PRIVATE tests/test_projectile.cpp engine/projectile.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_projectile.cpp engine/projectile.cpp
+                                       tests/test_rocket.cpp engine/rocket.cpp)
 # P9 Map triggers [RE: map-triggers.md]: the pure map-trigger parser + runtime
 # (TagClass/TriggerClass/TEvent/TAction semantics over an abstract TriggerHost).
 # World-free; compiled into both this test binary and ra2engine.

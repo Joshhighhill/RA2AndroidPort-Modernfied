@@ -118,6 +118,7 @@ struct SaveAccess {
         save::io(ar, w.proj_events_);
         save::io(ar, w.proj_accum_);
         save::io(ar, w.proj_frame_);
+        save::io(ar, w.proj_seq_);   // W4 (v15)
         // AI-1/2/3
         save::io(ar, w.ai_houses_);
         save::io(ar, w.ai_any_);
@@ -150,8 +151,8 @@ struct SaveAccess {
         // Cargo / flight
         save::io(ar, w.cargo_any_);
         save::io(ar, w.cargo_events_);
-        save::io(ar, w.player_orders_);   // W4-SQ (save v15)
-        save::io(ar, w.passive_houses_);  // W4-SQ-02 (save v15)
+        save::io(ar, w.player_orders_);   // W4-SQ (save v16)
+        save::io(ar, w.passive_houses_);  // W4-SQ-02 (save v16)
         save::io(ar, w.aircraft_any_);
         // Core
         save::io(ar, w.units_);
@@ -315,10 +316,10 @@ template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
     io(ar, v.amer_para_inf); io(ar, v.amer_para_num); io(ar, v.ally_para_inf);
     io(ar, v.ally_para_num); io(ar, v.sov_para_inf); io(ar, v.sov_para_num);
     io(ar, v.paradrop_radius); io(ar, v.cloak_delay_frames); io(ar, v.ship_sinking_weight);
-    io(ar, v.reload_frames); io(ar, v.flight_level); io(ar, v.missile_spread);
-    io(ar, v.missile_pmax); io(ar, v.missile_verses); io(ar, v.repair_step);
+    io(ar, v.reload_frames); io(ar, v.flight_level); io(ar, v.rockets);   // W4 (v15)
+    io(ar, v.repair_step);
     io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
-    io(ar, v.parachute_fall);   // W4-SQ-06 (save v15)
+    io(ar, v.parachute_fall);   // W4-SQ-06 (save v16)
 }
 template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
     io(ar, v.kind); io(ar, v.house); io(ar, v.x); io(ar, v.y); io(ar, v.ox); io(ar, v.oy);
@@ -337,6 +338,7 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.spawned); io(ar, v.missile); io(ar, v.missile_damage); io(ar, v.spawner_slot);
     io(ar, v.spawns); io(ar, v.spawns_number); io(ar, v.spawn_regen_frames);
     io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
+    io(ar, v.rocket_kind); io(ar, v.rocket_speed); io(ar, v.no_shadow);   // W4 (v15)
 }
 template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left);
@@ -348,7 +350,23 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.spawn_pending); io(ar, v.spawn_fire_unit); io(ar, v.spawn_fire_building);
     io(ar, v.owner); io(ar, v.landing); io(ar, v.drop_left); io(ar, v.drop_type);
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
-    io(ar, v.para_alt);   // W4-SQ-06 (save v15)
+    io(ar, v.rocket_elite); io(ar, v.rocket_end); io(ar, v.rocket);   // W4 (v15)
+    io(ar, v.para_alt);   // W4-SQ-06 (save v16)
+}
+template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
+    io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
+}
+template <class Ar> void fields(Ar& ar, RocketBlock& v) {   // W4 (v15)
+    io(ar, v.pause_frames); io(ar, v.tilt_frames); io(ar, v.pitch_initial); io(ar, v.pitch_final);
+    io(ar, v.turn_rate); io(ar, v.raise_rate); io(ar, v.acceleration); io(ar, v.altitude);
+    io(ar, v.damage); io(ar, v.elite_damage); io(ar, v.body_length); io(ar, v.lazy_curve);
+    io(ar, v.warhead); io(ar, v.elite_warhead);
+}
+template <class Ar> void fields(Ar& ar, RocketParams& v) { io(ar, v.block); io(ar, v.type_id); }   // W4 (v15)
+template <class Ar> void fields(Ar& ar, RocketFlight& v) {   // W4 (v15)
+    io(ar, v.phase); io(ar, v.timer); io(ar, v.pitch); io(ar, v.speed); io(ar, v.horiz0);
+    io(ar, v.x); io(ar, v.y); io(ar, v.z); io(ar, v.yaw); io(ar, v.frames);
+    io(ar, v.tx); io(ar, v.ty); io(ar, v.tz);
 }
 template <class Ar> void fields(Ar& ar, Cellxy& v) { io(ar, v.x); io(ar, v.y); }
 template <class Ar> void fields(Ar& ar, SeqEntry& v) { io(ar, v.first); io(ar, v.count); io(ar, v.fmult); }
@@ -372,7 +390,10 @@ template <class Ar> void fields(Ar& ar, OreMine& v) {   // W2-SK-01 (v13)
     io(ar, v.spawned);
 }
 template <class Ar> void fields(Ar& ar, ProjRng& v) { io(ar, v.s); }
-template <class Ar> void fields(Ar& ar, ProjectileRules& v) { io(ar, v.gravity); io(ar, v.ballistic_scatter); }
+template <class Ar> void fields(Ar& ar, ProjectileRules& v) {
+    io(ar, v.gravity); io(ar, v.ballistic_scatter);
+    io(ar, v.rot_var); io(ar, v.safety_altitude);   // W4 (v15)
+}
 template <class Ar> void fields(Ar& ar, Superweapon& v) {
     io(ar, v.type); io(ar, v.recharge_secs); io(ar, v.timer); io(ar, v.ready);
 }
@@ -407,6 +428,7 @@ template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
     io(ar, v.detonation_altitude);
     io(ar, v.weapon_range);
     io(ar, v.flh);
+    io(ar, v.level); io(ar, v.airburst); io(ar, v.very_high); io(ar, v.course_lock);   // W4 (v15)
 }
 template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.kind);
@@ -427,6 +449,10 @@ template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.max_z);
     io(ar, v.weapon_slot);   // Gap fix C
     io(ar, v.attacker_building);
+    // W4 (v15): homing state
+    io(ar, v.uid); io(ar, v.rot); io(ar, v.speed); io(ar, v.level); io(ar, v.airburst);
+    io(ar, v.very_high); io(ar, v.course_lock); io(ar, v.lock_frames); io(ar, v.locked);
+    io(ar, v.giveup_n); io(ar, v.giveup_acc); io(ar, v.prev_dist); io(ar, v.lost); io(ar, v.target_air);
 }
 // Gap fix C: one shot event (World::FireEvent).
 template <class Ar> void fields(Ar& ar, World::FireEvent& v) {

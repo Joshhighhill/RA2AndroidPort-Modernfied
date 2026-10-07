@@ -506,7 +506,7 @@ private:
                     else if (t == T::ParaDrop || t == T::AmerParaDrop) snd_.eva("EVA_ReinforcementsReady");
                     break;
                 case E::Launched:
-                    fx_.spawn(gen_s("NukeTakeOff"), e.x2, e.y2, 0, 20.0);
+                    fx_.spawn(gen_s("NukeTakeOff"), e.x2, e.y2, level_at(w, e.x2, e.y2), 20.0);
                     snd_.eva("EVA_NuclearMissileLaunched");
                     pres_log(frame_, "fx superweapon launch");
                     break;
@@ -516,29 +516,29 @@ private:
                     std::string list = pres_clean(rules_ini_->get(pres_upper(wh), "AnimList"));
                     const std::size_t comma = list.find(',');
                     if (comma != std::string::npos) list = pres_clean(list.substr(0, comma));
-                    if (const FxAnimType* ft = fx_.spawn(list, e.x, e.y, 0, 0.0))
+                    if (const FxAnimType* ft = fx_.spawn(list, e.x, e.y, level_at(w, e.x, e.y), 0.0))
                         snd_.play_at(ft->report, e.x, e.y, "nuke detonation");
                     pres_log(frame_, "fx superweapon " + list);
                     break;
                 }
                 case E::Activated:
                     if (t == T::IronCurtain) {
-                        fx_.spawn(gen_s("IronCurtainInvokeAnim"), e.x, e.y, 0, 0.0);
+                        fx_.spawn(gen_s("IronCurtainInvokeAnim"), e.x, e.y, level_at(w, e.x, e.y), 0.0);
                         snd_.eva("EVA_IronCurtainActivated");
                     } else if (t == T::ChronoSphere || t == T::ChronoWarp) {
-                        fx_.spawn(gen_s("ChronoBlast"), e.x, e.y, 0, 0.0);
-                        fx_.spawn(gen_s("ChronoBlastDest"), e.x2, e.y2, 0, 0.0);
+                        fx_.spawn(gen_s("ChronoBlast"), e.x, e.y, level_at(w, e.x, e.y), 0.0);
+                        fx_.spawn(gen_s("ChronoBlastDest"), e.x2, e.y2, level_at(w, e.x2, e.y2), 0.0);
                         snd_.eva("EVA_ChronosphereActivated");
                     } else if (t == T::LightningStorm) {
-                        fx_.spawn(gen_s("WeatherConClouds"), e.x, e.y, 0, 60.0);
+                        fx_.spawn(gen_s("WeatherConClouds"), e.x, e.y, level_at(w, e.x, e.y), 60.0);
                         snd_.eva("EVA_LightningStormCreated");
                     }
                     pres_log(frame_, std::string("fx superweapon activated ") + ra2engine::superweapon_type_name(t));
                     break;
                 case E::Bolt:
-                    if (const FxAnimType* ft = fx_.spawn(gen_s("WeatherConBolts"), e.x, e.y, 0, 0.0))
+                    if (const FxAnimType* ft = fx_.spawn(gen_s("WeatherConBolts"), e.x, e.y, level_at(w, e.x, e.y), 0.0))
                         snd_.play_at(ft->report, e.x, e.y, "bolt");
-                    fx_.spawn(gen_s("WeatherConBoltExplosion"), e.x, e.y, 0, 0.0);
+                    fx_.spawn(gen_s("WeatherConBoltExplosion"), e.x, e.y, level_at(w, e.x, e.y), 0.0);
                     snd_.play_at(gen_s("LightningSounds"), e.x, e.y, "bolt");
                     break;
                 case E::Dropped:
@@ -550,7 +550,17 @@ private:
         }
     }
     // ---- G-83 effects -------------------------------------------------------
-    static int level_at(const ra2engine::World&, double, double) { return 0; }
+    // W4-FIX-POS: the terrain level of the cell holding cell-space point
+    // (x, y) (was a stub returning 0: every FX anim on raised ground drew
+    // 15 px/level too low). Cell (x, y)'s centre is the integer point.
+    static int level_at(const ra2engine::World& w, double x, double y) {
+        const ra2assets::MapCell* c =
+            w.map().at(static_cast<int>(std::lround(x)), static_cast<int>(std::lround(y)));
+        return c ? static_cast<int>(c->level) : 0;
+    }
+    static int building_level(const ra2engine::World& w, const ra2engine::Building& b) {
+        return level_at(w, b.cx, b.cy);   // a building flattens to its origin cell's level
+    }
     // Warhead AnimList impact + the anim's Report=.
     // [RE-FALLBACK: RE-P5 open -- AnimList pick] index = damage / 25, clamped
     // to the list (bigger hits -> later, larger anims).
@@ -580,6 +590,59 @@ private:
         if (on_water(fx, fy) && !impact_water_.empty()) snd_.play_at(impact_water_, fx, fy, "impact water");
         else if (t) snd_.play_at(t->report, fx, fy, "impact");
         pres_log(frame_, "fx impact " + wp->anim_list[ix]);
+    }
+    // W4: a RocketLocomotion rocket's explosion -- its block's warhead
+    // AnimList (FUN_0048A400 pick: damage / 25, as impact()), at its height;
+    // a splash when it comes down low on water.
+    void rocket_fx(const ra2engine::World& w, const ra2engine::Unit& u) {
+        const ra2engine::RocketBlock& blk = w.sw_params().rockets.block[static_cast<std::size_t>(
+            std::clamp(u.an.t.rocket_kind < 0 ? 1 : u.an.t.rocket_kind, 0, 2))];
+        const ra2engine::RocketWarhead& wh = ra2engine::rocket_warhead(blk, u.an.rocket_elite);
+        const int damage = ra2engine::rocket_damage(blk, u.an.rocket_elite);
+        const double lift = u.altitude * kFxLepPx;
+        if (u.an.rocket_end == 2 || (u.alive && u.an.rocket_end == 0)) {
+            // Shot down (killed this tick; World marks rocket_end next step): the ordinary death -- a random Explosion= entry, in the air.
+            const auto* ex = fx_.explosions(u.image);
+            if (ex && !ex->empty()) {
+                const uint32_t h = (static_cast<uint32_t>(u.cell_x * 131 + u.cell_y) * 2654435761u) ^
+                                   (static_cast<uint32_t>(g_pres_tick) * 40503u);
+                if (const FxAnimType* t = fx_.spawn((*ex)[(h >> 7) % ex->size()], u.fx, u.fy, level_at(w, u.fx, u.fy), lift)) {
+                    snd_.play_at(t->report, u.fx, u.fy, "rocket shot down");
+                    ++explosions_;
+                }
+            }
+            return;
+        }
+        const std::vector<std::string>& splash = effects_.splash_list();
+        if (!splash.empty() && on_water(u.fx, u.fy) && lift < 30.0) {
+            const int ns = static_cast<int>(splash.size());
+            const std::string& sname = splash[static_cast<std::size_t>(std::min(damage, ns * 35 - 1) / 35)];
+            if (const FxAnimType* st = fx_.spawn(sname, u.fx, u.fy, level_at(w, u.fx, u.fy), 0.0)) {
+                snd_.play_at(st->report, u.fx, u.fy, "splash");
+                effects_.note_splash();
+                return;
+            }
+        }
+        std::vector<std::string> list;
+        {
+            const std::string raw = pres_clean(rules_ini_->get(pres_upper(wh.id), "AnimList"));
+            std::string cur;
+            for (char c : raw + ",") {
+                if (c == ',') {
+                    const std::string t = pres_clean(cur);
+                    if (!t.empty()) list.push_back(t);
+                    cur.clear();
+                } else {
+                    cur += c;
+                }
+            }
+        }
+        if (list.empty()) return;
+        const int ix = std::clamp(damage / 25, 0, static_cast<int>(list.size()) - 1);
+        if (const FxAnimType* t = fx_.spawn(list[static_cast<std::size_t>(ix)], u.fx, u.fy, level_at(w, u.fx, u.fy), lift)) {
+            snd_.play_at(t->report, u.fx, u.fy, "rocket explosion");
+            ++explosions_;
+        }
     }
     // Muzzle Anim= at the firing point; an instant (no flying projectile)
     // weapon also lands its impact on the target now.
@@ -636,7 +699,7 @@ private:
             } else if (u.target_building >= 0 &&
                        u.target_building < static_cast<int>(w.buildings().size())) {
                 const ra2engine::Building& b = w.buildings()[u.target_building];
-                impact(u, u.w_damage, b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0, 0, 20.0);
+                impact(u, u.w_damage, b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0, building_level(w, b), 20.0);
             }
         }
     }
@@ -651,7 +714,7 @@ private:
         }
         if (tb >= 0 && tb < static_cast<int>(w.buildings().size())) {
             const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(tb)];
-            x = b.cx + (b.fw - 1) / 2.0; y = b.cy + (b.fh - 1) / 2.0; level = 0;
+            x = b.cx + (b.fw - 1) / 2.0; y = b.cy + (b.fh - 1) / 2.0; level = building_level(w, b);
             lift = 20.0;
             return true;
         }
@@ -666,14 +729,14 @@ private:
     // Building death: the type's Explosion= anims scattered over the
     // foundation [RE-FALLBACK: RE-P5 open -- count/placement; one per
     // foundation cell, cycling the list], each with its Report=.
-    void building_explode(const ra2engine::World&, const ra2engine::Building& b, const std::string& id) {
+    void building_explode(const ra2engine::World& w, const ra2engine::Building& b, const std::string& id) {
         const auto* ex = fx_.explosions(id);
         if (!ex || ex->empty()) return;
         int k = 0;
         for (int j = 0; j < b.fh; ++j)
             for (int i = 0; i < b.fw; ++i, ++k) {
                 const std::string& name = (*ex)[k % ex->size()];
-                if (const FxAnimType* t = fx_.spawn(name, b.cx + i, b.cy + j, 0, 10.0 + 6.0 * (k % 3)))
+                if (const FxAnimType* t = fx_.spawn(name, b.cx + i, b.cy + j, building_level(w, b), 10.0 + 6.0 * (k % 3)))
                     if (k == 0) snd_.play_at(t->report, b.cx + i, b.cy + j, "building explosion");
             }
     }
@@ -836,7 +899,13 @@ private:
                 // FUN_00711510 "DestroyAnim"], drawn through the owner's convert.
                 if (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size())) {
                     const std::string& da = fx_.building_rules(pres_upper(ba.roster[b.type].id)).destroy_anim;
-                    if (!da.empty()) fx_.spawn_hold(da, cx, cy, level_at(w, cx, cy), b.house);
+                    // W4-FIX-POS [RE: 0x441C2C-0x441C9A new AnimClass(DestroyAnim,
+                    // vtbl+0xAC, ...)]: the ruin shares the building's draw point
+                    // (origin-cell top vertex = cell (cx-0.5, cy-0.5)'s centre) and
+                    // level; ruin SHPs share the building canvas.
+                    std::shared_ptr<ra2assets::Palette> own;   // W4: art Palette= (lib) for the ruin
+                    if (static_cast<std::size_t>(b.type) < ba.art.size()) own = ba.art[static_cast<std::size_t>(b.type)].own_pal;
+                    if (!da.empty()) fx_.spawn_hold(da, b.cx - 0.5, b.cy - 0.5, building_level(w, b), b.house, own);
                 }
             }
             if (b.selling && !p.selling && b.house == 0) {
@@ -884,10 +953,10 @@ public:
                 double tx = 0, ty = 0, tl = 0;
                 int tlev = 0;
                 if (target_point(w, e.target_unit, e.target_building, tx, ty, tlev, tl))
-                    fx_.add_beam(fx, fy, 0, 60.0, tx, ty, tlev, tl, bw, house_color(w, b.house));
+                    fx_.add_beam(fx, fy, building_level(w, b), 60.0, tx, ty, tlev, tl, bw, house_color(w, b.house));
             }
             const std::vector<std::string> m = fx_.weapon_muzzle(e.weapon);
-            if (!m.empty()) fx_.spawn(m.front(), fx, fy, 0, 20.0);   // [RE-FALLBACK: building FireFLH not applied]
+            if (!m.empty()) fx_.spawn(m.front(), fx, fy, building_level(w, b), 20.0);   // [RE-FALLBACK: building FireFLH not applied]
         }
     }
 
@@ -975,7 +1044,12 @@ private:
                 // carries its own Report= sound.
                 // W3-B [RE: presentation.md §5 FUN_007376c0]: a uniformly
                 // random Explosion= entry, spawned here on the death tick.
-                if (u.is_vehicle && !u.an.crashing && !u.an.sinking &&
+                if (u.an.t.missile) {
+                    // W4 [FUN_00662A70]: a rocket (detonated or shot down)
+                    // explodes with its warhead's anim where it is -- in the
+                    // air when it was hit in flight.
+                    if (w.object_visible_at(0, u.cell_x, u.cell_y)) rocket_fx(w, u);
+                } else if (u.is_vehicle && !u.an.crashing && !u.an.sinking &&
                     w.object_visible_at(0, u.cell_x, u.cell_y)) {
                     const auto* ex = fx_.explosions(u.image);
                     if (ex && !ex->empty()) {

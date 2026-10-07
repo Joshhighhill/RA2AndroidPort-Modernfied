@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 
@@ -302,7 +303,8 @@ TEST_CASE("projectile: resolve_projectile_spec classifies a synthetic roster") {
     CHECK(k.detonation_altitude == 20000);
 
     CHECK(resolve_projectile_spec(rules, "M60").kind == ProjKind::Instant);        // Inviso
-    CHECK(resolve_projectile_spec(rules, "SubTorpedo").kind == ProjKind::Instant); // homing deferred
+    CHECK(resolve_projectile_spec(rules, "SubTorpedo").kind == ProjKind::Homing);  // W4: homing flies
+    CHECK(resolve_projectile_spec(rules, "SubTorpedo").acceleration == 3);          // ctor default
     CHECK(resolve_projectile_spec(rules, "SubTorpedo").rot == 12);
     CHECK(resolve_projectile_spec(rules, "").kind == ProjKind::Instant);
     CHECK(resolve_projectile_spec(rules, "NoSuchWeapon").kind == ProjKind::Instant);
@@ -587,4 +589,81 @@ TEST_CASE("projectile world: scattered (Inaccurate+FlakScatter) launches are det
         if (a[i].kind == ProjectileEvent::Launch && (a[i].scatter_dx || a[i].scatter_dy)) ++scattered;
     }
     CHECK(scattered >= 3);
+}
+
+// ---- W4: homing (ROT>0) flight -------------------------------------------------
+namespace {
+Projectile homing_shot(int rot, int cap, int accel, int z0) {
+    Projectile p;
+    p.kind = ProjKind::Homing;
+    p.z = z0;
+    p.vx = 1.0;
+    p.speed = 1.0;
+    p.rot = rot;
+    p.speed_cap = cap;
+    p.acceleration = accel;
+    p.locked = true;
+    p.prev_dist = -1;
+    return p;
+}
+}  // namespace
+
+TEST_CASE("projectile homing: a Patriot RedEye2 (ROT 80, Speed 100, Acc 3) reaches a rocket 7 cells away") {
+    Projectile p = homing_shot(80, weapon_speed_leptons(100), 3, 64);
+    p.target_air = true;
+    const HomingRules hr;
+    const Vec3i tgt{7 * 256, 3 * 256, 900};
+    int r = 0, f = 0;
+    double max_speed = 0.0;
+    for (f = 1; f <= 200 && r == 0; ++f) {
+        r = integrate_homing(p, tgt, f, hr);
+        max_speed = std::max(max_speed, p.speed);
+    }
+    CHECK(r == 1);                 // snapped onto the target
+    CHECK(f > 20);                 // it FLIES: 1 lept/frame + 3/frame, ~40 frames
+    CHECK(f < 80);
+    CHECK(p.x == tgt.x);
+    CHECK(p.z == tgt.z);
+    CHECK(max_speed > 50.0);
+}
+
+TEST_CASE("projectile homing: a Level torpedo never leaves the water line") {
+    Projectile p = homing_shot(12, weapon_speed_leptons(25), 3, 0);
+    p.level = true;
+    const HomingRules hr;
+    const Vec3i tgt{-5 * 256, 4 * 256, 0};   // behind and to the side: it has to turn
+    int r = 0, f = 0;
+    for (f = 1; f <= 400 && r == 0; ++f) {
+        r = integrate_homing(p, tgt, f, hr);
+        REQUIRE(p.z == 0);
+    }
+    CHECK(r != 0);
+    CHECK(std::abs(p.x - tgt.x) < 256);
+    CHECK(std::abs(p.y - tgt.y) < 256);
+}
+
+TEST_CASE("projectile homing: an air target lost mid-flight -> climb, self-destruct at MissileSafetyAltitude") {
+    Projectile p = homing_shot(80, 255, 3, 64);
+    p.target_air = true;
+    p.lost = true;
+    const HomingRules hr;   // 750
+    int r = 0, f = 0;
+    for (f = 1; f <= 300 && r == 0; ++f) r = integrate_homing(p, Vec3i{5000, 0, 0}, f, hr);
+    CHECK(r == 2);
+    CHECK(p.z >= 750);
+}
+
+TEST_CASE("projectile homing: the MissileROTVar wobble keeps the turn between ROT and 1.5 ROT") {
+    // A target straight behind: the yaw turns by the limit each frame.
+    for (int frame = 0; frame < 15; ++frame) {
+        Projectile p = homing_shot(20, 255, 0, 500);
+        p.locked = false;
+        p.speed = 10.0;
+        p.vx = 10.0;
+        integrate_homing(p, Vec3i{-10000, 1, 500}, frame, HomingRules{});
+        const double turned = std::fabs(std::atan2(p.vy, p.vx));
+        const double u = 2.0 * 3.14159265358979323846 / 65536.0 * 256.0;   // 1/256 circle
+        CHECK(turned >= 20 * u - 1e-9);
+        CHECK(turned <= 30 * u + 1e-9);
+    }
 }

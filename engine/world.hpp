@@ -1100,8 +1100,16 @@ public:
     // ===== Wave-2 W2-AN: naval / aircraft (world_an.cpp) =====================
     // A cloaked (submerged) enemy sub that `house` has no sonar contact on.
     bool unit_hidden_from(int house, const Unit& v) const {
+        // W4: a rocket still on its launcher (RocketLocomotion pause / tilt)
+        // is not in the air and not a target [PROBABLE: ALL01's Liberty
+        // Island Patriots sit 7 cells from the Dreadnoughts and never blow up
+        // the fleet's own missiles on deck in the original].
+        if (rocket_on_launcher(v)) return true;
         return v.an.submerged && house >= 0 && house < 8 && v.house != house &&
                !(v.an.detected_mask & (1u << house));
+    }
+    static bool rocket_on_launcher(const Unit& v) {
+        return v.an.t.missile && v.an.rocket_end == 0 && v.an.rocket.phase < kRocketClimb;
     }
     // Dock pads of an airfield building (cells), GAAIRC DockingOffset0..3.
     void set_dock_offsets(const std::vector<std::pair<int, int>>& offs) { an_.dock_offsets = offs; }
@@ -1257,6 +1265,11 @@ public:
     std::vector<ProjectileEvent> proj_events_;  // pending take_projectile_events
     double proj_accum_ = 0.0;                   // dt accumulator -> 15 Hz frames
     int proj_frame_ = 0;                        // logic-frame counter
+    int proj_seq_ = 0;                          // W4: bullet ID source (homing wobble phase)
+    // W4: fill a launched homing bullet's state (uid, ROT, keys, lock).
+    void init_homing(Projectile& p, const ProjectileSpec& spec, double launch_speed);
+    // W4: the homing target point this frame; false when the target is gone.
+    bool homing_target(Projectile& p, Vec3i& out) const;
     // Firewalled World::step pass (pure insertion before step_combat): advance
     // every projectile one logic frame per accumulated 1/15 s.
     void step_projectiles(double dt);
@@ -1917,7 +1930,11 @@ private:
     void an_damage_unit(int idx, int dmg, int attacker);
     void an_damage_building(int b, int dmg);
     void an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
-                        const std::array<int, 11>& verses, bool hit_air, bool spare_house);
+                        const std::array<int, 11>& verses, bool hit_air, bool spare_house,
+                        double z = 0.0);   // W4: explosion height (0 = the 2-D test)
+    // W4 RocketLocomotion (world_an.cpp): target point, explosion.
+    bool rocket_target_point(int tu, int tb, double& x, double& y, double& z) const;
+    void rocket_explode(int i, int end);
     bool sw_any_ = false;                      // the step() firewall bool
     void step_superweapon(double dt);          // firewalled World::step pass (§3)
 
@@ -2025,7 +2042,7 @@ private:
     void step_cargo(double dt);
     bool cargo_any_ = false;
     std::vector<int> player_orders_;   // W4-SQ: transient, see mark_player_order
-    std::vector<std::uint8_t> passive_houses_;   // W4-SQ-02 (save v15)
+    std::vector<std::uint8_t> passive_houses_;   // W4-SQ-02 (save v16)
     std::vector<CargoEvent> cargo_events_;
 
     // CB-2 Aircraft [RE: aircraft.md §3/§6]: the airborne movement pass --

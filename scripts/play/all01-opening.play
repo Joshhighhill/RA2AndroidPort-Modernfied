@@ -1,0 +1,43 @@
+# W4 fix (docs/gap/wave4/03-all01-opening.md): Allied mission 1's opening,
+# from the main menu with NO input for 4 minutes. The four BadGuy2
+# Dreadnoughts shell the Statue of Liberty from t=0 ("Mission Start" ->
+# team "BG1 - Dreadnought 1" -> AttackWaypoint 0), the two Liberty Island
+# Patriots (Other2) shoot missiles down, and each missile that gets through
+# does the original's 300 x DMISLWH 2% = 6 damage -- the Statue stands and the
+# mission keeps RUNNING. Houses: 2 = BadGuy2 (fleet), 5 = Other1 (Statue),
+# 6 = Other2 (Liberty Island Patriots).
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button "New Campaign"
+require scene == "shell:Campaign"
+click well:allied
+click button Load
+until 30 scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+require buildings(5,CANEWY04) == 1
+require units(2,DRED) == 4
+assert buildings(6,NASAM) == 2
+shot o000
+# DMislPauseFrames 20 + TiltFrames 60 on deck, then the climb to the map's 1550.
+until 600 rockets_launched(2) > 0
+shot o_first
+wait 900
+shot o060
+assert rockets_launched(2) > 0
+wait 900
+shot o120
+wait 900
+shot o180
+assert rockets_shot(2) > 0
+wait 900
+shot o240
+# 4 minutes: missiles launched, some shot down by the Patriots, the Statue alive.
+assert rockets_launched(2) >= 8
+assert rockets_shot(2) > 0
+assert buildings(5,CANEWY04) == 1
+assert bhp(5,CANEWY04) > 4000
+assert units(2,DRED) == 4
+end expect RUNNING

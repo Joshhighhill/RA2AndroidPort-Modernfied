@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+#include "rocket.hpp"   // W4: RocketLocomotion blocks + per-type warheads
+
 namespace ra2engine {
 
 // [rules.ini comment block above [E1], classic RA2]
@@ -53,6 +55,9 @@ struct AnType {
     bool spawned = false;             // Spawned= (no player control)
     bool missile = false;             // MissileSpawn= (DMISL/V3ROCKET: a homing rocket)
     int missile_damage = 0;           // [General] DMislDamage / V3RocketDamage
+    int rocket_kind = -1;             // W4: RocketKind block (FUN_00661D00 head), -1 = not a rocket
+    int rocket_speed = 0;             // W4: Speed= -> min(255, Speed*256/100) leptons/frame (type+0x678)
+    bool no_shadow = false;           // W4: NoShadow= (V3ROCKET / DMISL)
     // Spawner weapon (Spawner=yes): which slot (0 primary / 1 secondary, -1 none)
     // launches `spawns` instead of firing.
     int spawner_slot = -1;
@@ -105,7 +110,11 @@ struct AnUnit {
     std::string drop_type;            // paradrop infantry rules id
     int drop_x = -1, drop_y = -1;     // drop site
     int exit_x = -1, exit_y = -1;     // map-edge exit after the drop
-    // W4-SQ-06 (save v15): a paratrooper's height while it falls under its
+    // --- W4: RocketLocomotion (spawned V3/DMisl/CMisl) ---
+    bool rocket_elite = false;        // locomotor +0x4D: the launcher was elite at launch
+    int rocket_end = 0;               // 0 flying, 1 detonated (FUN_00662A70), 2 shot down (Strength 0)
+    RocketFlight rocket;              // W4: the RocketLocomotion state (FUN_00661D00)
+    // W4-SQ-06 (save v16): a paratrooper's height while it falls under its
     // parachute (cargo_of == kParachuteCargo); 0 on the ground.
     double para_alt = 0.0;
 };
@@ -149,17 +158,17 @@ struct SwParams {
     int sov_para_num = 9;
     int paradrop_radius = 1024;
     // W4-SQ-06 [rules [General] ParachuteMaxFallRate=-5]: a paratrooper under
-    // its parachute sinks this many leptons per game frame (save v15).
+    // its parachute sinks this many leptons per game frame (save v16).
     int parachute_fall = 5;
     // Naval / aircraft [General].
     int cloak_delay_frames = 18;      // CloakDelay=.02 min x 900
     double ship_sinking_weight = 3.0; // ShipSinkingWeight=
     int reload_frames = 270;          // ReloadRate=.3 min x 900, per ammo point
     int flight_level = 1500;          // FlightLevel= (leptons)
-    // V3 / Dreadnought missile warhead [V3Warhead=V3WH].
-    double missile_spread = 1.0;
-    double missile_pmax = 0.5;
-    std::array<int, 11> missile_verses{};
+    // W4: the three RocketLocomotion blocks (V3 / DMisl / CMisl) with their
+    // OWN warheads [FUN_00662A70: Rules+0xFB0..0xFC4] -- replaces the old
+    // single V3Warhead every rocket exploded with.
+    RocketParams rockets;
     // Naval Yard UnitRepair [RE-FALLBACK: the service-depot cadence --
     // [General] RepairStep=7 hp per RepairRate=.016 min (~14 frames), cost
     // RepairPercent=.15 of the unit cost pro rata].

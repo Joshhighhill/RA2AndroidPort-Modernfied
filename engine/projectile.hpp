@@ -30,7 +30,9 @@ namespace ra2engine {
 //               is the inert DEFAULT: a value-initialised spec never flies.
 //  Ballistic -- ROT==0, !Vertical, !Inviso: gravity integrator (§6.1).
 //  Vertical  -- [Projectile] Vertical=yes: the falling bomb (§6.2).
-enum class ProjKind : std::uint8_t { Instant = 0, Ballistic = 1, Vertical = 2 };
+//  Homing    -- W4: ROT>0 (not Inviso, not Vertical): the BulletClass::Update
+//               homing branch (docs/gap/wave4/04-projectiles.md §1.1).
+enum class ProjKind : std::uint8_t { Instant = 0, Ballistic = 1, Vertical = 2, Homing = 3 };
 
 // One weapon's resolved projectile parameters (main.cpp resolves it from Rules
 // once per unit type, like every other combat stat). ALL defaults are inert.
@@ -41,12 +43,18 @@ struct ProjectileSpec {
     bool flak_scatter = false;  // FlakScatter (+0x2A3)
     bool inviso = false;        // Inviso (+0x29E)
     bool floater = false;       // Floater (+0x295): half gravity
-    int rot = 0;                // ROT (+0x2DC): >0 = homing (deferred -> Instant)
+    int rot = 0;                // ROT (+0x2DC): >0 = homing (W4: flies, ProjKind::Homing)
     int speed_cap = 0;          // weapon Speed -> leptons/frame (weapon_speed_leptons)
-    int acceleration = 0;       // Acceleration (+0x2D0) [RE-FALLBACK absent default: 0]
+    int acceleration = 0;       // Acceleration (+0x2D0); absent -> 3 (W4: the BulletTypeClass
+                                // ctor stores 3 at +0x2D0 / +0x2E4, gamemd 0x46BB2D)
     int detonation_altitude = 0;  // DetonationAltitude (+0x2BC); 0 = absent -> no cap
     int weapon_range = 0;       // ftol(Range*256) leptons: the §5.2 divisor
     int flh[3] = {0, 0, 0};     // PrimaryFireFLH F,L,H (leptons) -- artmd.ini
+    // W4 homing keys (FUN_005B1B20 arguments, FUN_004666D0 homing branch).
+    bool level = false;         // Level (+0x29D): no pitch change (torpedoes)
+    bool airburst = false;      // Airburst (+0x294)
+    bool very_high = false;     // VeryHigh (+0x299)
+    int course_lock = 0;        // CourseLockDuration (+0x2E0) frames
     bool flies() const { return kind != ProjKind::Instant; }
 };
 
@@ -54,6 +62,8 @@ struct ProjectileSpec {
 struct ProjectileRules {
     double gravity = 6.0;        // [AudioVisual] Gravity=6 (§0.1 -- NOT [General])
     int ballistic_scatter = 256; // [CombatDamage] BallisticScatter=1.0 -> ftol(1.0*256)
+    double rot_var = 0.25;       // W4: [General] MissileROTVar (homing wobble)
+    int safety_altitude = 750;   // W4: [General] MissileSafetyAltitude
 };
 
 // Deterministic projectile RNG (spec D3). The bit source is the project's
@@ -93,6 +103,19 @@ struct Projectile {
     int max_z = 0;              // apex (diagnostics / witnesses)
     int weapon_slot = 0;        // Gap fix C: firer's weapon slot at launch (0/1)
     int attacker_building = -1; // Gap fix C: a base defense fired it (attacker = -1)
+    // --- W4 homing (ProjKind::Homing) state ---
+    int uid = 0;                // bullet ID: the 15-frame MissileROTVar phase
+    int rot = 0;                // Type->ROT
+    double speed = 0.0;         // |V| (leptons/frame)
+    bool level = false, airburst = false, very_high = false;
+    int course_lock = 0;        // CourseLockDuration
+    int lock_frames = 0;        // frames held (+0x108)
+    bool locked = true;         // course lock flag (+0x105)
+    int giveup_n = 0;           // +0x118: closing samples taken (to 60)
+    double giveup_acc = 0.0;    // +0x120: closing-rate accumulator
+    int prev_dist = -1;         // last returned distance
+    bool lost = false;          // target gone: climb to MissileSafetyAltitude (air) / last point (ground)
+    bool target_air = false;    // the target is an airborne aircraft (direct pitch mode)
 };
 
 // One observable projectile event (World::take_projectile_events). Feeds the
@@ -160,6 +183,27 @@ void integrate_ballistic(Projectile& p, double gravity);
 // One logic frame of the Vertical integrator (§6.2, CONFIRMED):
 // s = ftol(|V|); if s < cap: V = normalize(V) * (s + Acceleration); pos = ftol(pos + V).
 void integrate_vertical(Projectile& p);
+
+// W4: one logic frame of the homing branch (FUN_004666D0 ROT>=1 + the
+// FUN_005B1B20 steering), docs/gap/wave4/04-projectiles.md §1.1:
+//  * speed: launch 1, |V| += Acceleration to the weapon Speed (CourseLock with
+//    CourseLockDuration=0 alternates +1/+0 per frame until Speed > 39 or
+//    reached), |V| -= Acceleration/2 above it;
+//  * turn = ftol((V*sin(ph) + V + 1) * ROT), ph = ((uid + frame) % 15)/15 * 2pi
+//    (V = [General] MissileROTVar), x1.5 inside 256 leptons, 0 while locked;
+//    the limit is (byte)turn in 1/256-circle units;
+//  * yaw turned at the target by <= limit; pitch: Level = none, an air target
+//    = straight at it, else the terrain-following cruise (min(d_cells,5) x
+//    LevelHeight above the floor, 10 levels for Airburst/VeryHigh, +-18 nudge
+//    beyond 20 leptons, pitch toward climb/dive/level at limit/2);
+//  * no target: pitch toward climb; detonate at MissileSafetyAltitude.
+// `tgt` is the target point (z = height above the ground). Returns 0 = fly,
+// 1 = detonate snapped onto the target, 2 = detonate where it is.
+struct HomingRules {
+    double rot_var = 0.25;          // [General] MissileROTVar (Rules+0x598)
+    int safety_altitude = 750;      // [General] MissileSafetyAltitude (Rules+0x5A0)
+};
+int integrate_homing(Projectile& p, const Vec3i& tgt, int frame, const HomingRules& hr);
 
 // --- rules resolution (Task 3) ---------------------------------------------
 // The game's INI bool (WW INIClass::Get_Bool): strip an inline ';' comment,

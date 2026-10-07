@@ -2734,9 +2734,10 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
 // Draws one building in render_world's merged back-to-front pass. Anchors the
-// SHP canvas CENTER at the foundation's screen bbox center [RE-GATE APPLIED:
-// building-render.md §2 center-center registration, replacing the pre-hunt
-// bottom-center rule]. State selects SHP + frame: Buildup -> buildup MK frame;
+// SHP canvas CENTER on the TOP vertex of the foundation's origin cell
+// [RE: building-render.md §2, W4-FIX-POS -- BuildingClass vtbl+0xAC
+// FUN_00459ee0 = Location - (128,128); RA2 FUN_00453c70], via the shared
+// ra2engine::building_draw_point (bib, slot anims, fires, rubble too). State selects SHP + frame: Buildup -> buildup MK frame;
 // Idle -> main frame 0 (healthy) / 1 (damaged, hp/max<=ConditionYellow); Dead
 // -> explosion anim (TWLT070) over kBuildingDieSecs. `level` = the foundation
 // origin cell's terrain level (buildings flatten their footprint).
@@ -2764,9 +2765,12 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
             maxx = std::max(maxx, x0 + 60);
             maxy = std::max(maxy, y0 + 30);
         }
-    const int fcx = (minx + maxx) / 2, fcy = (miny + maxy) / 2;
+    // W4-FIX-POS: the draw point (canvas centre) is the origin cell's top
+    // vertex; (minx..maxy) stays for the demo HP bar only.
+    const ra2engine::ScreenPt dp = ra2engine::building_draw_point(b.cx, b.cy, level);
+    const int fcx = dp.x + cam.x, fcy = dp.y + cam.y;
 
-    // Dead: explosion anim centered on the foundation (render-only nicety).
+    // Dead: explosion anim at the draw point (render-only nicety).
     if (b.state == ra2engine::Building::State::Dead) {
         // W3-B LeaveRubble=yes: the rubble frame (and its shadow) stays.
         const int rf = (g_fx && !b.sold) ? pres_building_rubble_frame(def.id, art.shp.count()) : -1;
@@ -2875,6 +2879,22 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (overlay)
         pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 1);
+    // W4-FIX-POS: RA2_POS_DBG=1 outlines the foundation (magenta) and marks
+    // the draw point (green x) -- the visual check for the anchor.
+    static const bool pos_dbg = std::getenv("RA2_POS_DBG") != nullptr;
+    if (pos_dbg) {
+        SDL_SetRenderDrawColor(ren, 255, 0, 255, 255);
+        for (int j = 0; j < b.fh; ++j)
+            for (int i = 0; i < b.fw; ++i) {
+                const ra2engine::ScreenPt p = ra2engine::cell_to_screen(b.cx + i, b.cy + j, level, 60, 30, 15);
+                const int x = p.x + cam.x, y = p.y + cam.y;
+                const SDL_Point d[5] = {{x + 30, y}, {x + 60, y + 15}, {x + 30, y + 30}, {x, y + 15}, {x + 30, y}};
+                SDL_RenderDrawLines(ren, d, 5);
+            }
+        SDL_SetRenderDrawColor(ren, 40, 255, 40, 255);
+        SDL_RenderDrawLine(ren, fcx - 6, fcy - 6, fcx + 6, fcy + 6);
+        SDL_RenderDrawLine(ren, fcx - 6, fcy + 6, fcx + 6, fcy - 6);
+    }
 
     // Foundation-width HP bar when damaged (render-only). W2-GA-19: the live
     // game (g_map_dressing set) shows building health only on the SELECTED
@@ -2882,7 +2902,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     // Red), as the original does; the demos keep this debug bar.
     if (!g_map_dressing && b.hp < b.max_hp && b.max_hp > 0) {
         const int bw = std::max(24, maxx - minx - 8);
-        const int bx = fcx - bw / 2, by = miny - 6;
+        const int bx = (minx + maxx) / 2 - bw / 2, by = miny - 6;
         SDL_Rect bg{bx - 1, by - 1, bw + 2, 5};
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 200);
         SDL_RenderFillRect(ren, &bg);
@@ -3012,7 +3032,9 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude)
         : (u.an.sinking && u.die_time >= 0.0) ? -static_cast<int>(u.die_time * 24.0)   // W2-AN-25
         : 0;
-    if (extra_dy > 0)
+    if (u.an.t.no_shadow) {
+        // W4: NoShadow=yes (V3ROCKET / DMISL) -- no ground shadow at all.
+    } else if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
                                       vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
     else if (const ra2engine::VoxelSprite* sh = vxl_shadow(va, bi))
@@ -3028,6 +3050,24 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         return vxl_frame_sprite(va, part, u.house, fi, hf);
     };
     const std::string fkey = hf ? ":f" + std::to_string(hf) : std::string();
+    // W4: a RocketLocomotion rocket draws its hull at its pitch (the tilt on
+    // the launcher, the climb, the arc, the dive) [FUN_00661D00 +0x50].
+    if (u.an.t.missile && va.vsrc && std::fabs(u.an.rocket.pitch) > 1e-3) {
+        const int pq = static_cast<int>(std::lround(u.an.rocket.pitch * 180.0 / 3.14159265358979 / 5.0));
+        const std::string key = "vxlp:" + img + ":" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" +
+                                std::to_string(bi) + ":" + std::to_string(pq);
+        static std::map<std::string, ra2engine::VoxelSprite> pitched;
+        auto it = pitched.find(key);
+        if (it == pitched.end()) {
+            const VehicleAssets::VoxelSrc& s = *va.vsrc;
+            it = pitched.emplace(key, ra2engine::rasterize_model(
+                                          s.hull, s.hull_h, ra2engine::index_to_yaw(bi, ra2engine::kVehicleFacings),
+                                          s.vpl, ra2engine::house_draw_palette(s.pal, u.house), 0,
+                                          pq * 5.0 * 3.14159265358979 / 180.0)).first;
+        }
+        ra2engine::draw_voxel_sprite(ren, tc, key, it->second, u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        return;
+    }
     ra2engine::draw_voxel_sprite(
         ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi) + fkey,
         part_sprite(0, bi), u.fx, u.fy, u.level, cam, W, H, extra_dy);
@@ -3113,10 +3153,12 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
         int frame = ore.density_at(c.x, c.y);
         if (frame >= image_frames) frame = image_frames - 1;
         if (frame < 0) frame = 0;
-        const ra2engine::ScreenPt p =
-            ra2engine::cell_to_screen(c.x, c.y, static_cast<int>(c.level), 60, 30, 15);
+        // W4-FIX-POS [RE: FUN_005fd4b0 Tiberium=yes]: centred on the cell
+        // centre - 12 px (was canvas top-left -> drawn in the cell below).
+        const ra2engine::ScreenPt p = ra2engine::overlay_draw_center(
+            c.x, c.y, static_cast<int>(c.level), ra2engine::overlay_y_offset(true, false, -1, false, 0));
         const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
-        SDL_Rect dst{p.x + cam.x + f.x, p.y + cam.y + f.y, f.w, f.h};
+        SDL_Rect dst{p.x + cam.x - shp.width() / 2 + f.x, p.y + cam.y - shp.height() / 2 + f.y, f.w, f.h};
         if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) return;
         char key[48];
         // Theater-tagged: each theater draws its ore with its own palette.
@@ -3246,9 +3288,12 @@ void draw_p5_crates(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2eng
         if (!world.explored_at(0, c.x, c.y)) continue;   // G-84: crates respect shroud
         const ra2assets::MapCell* mc = map.at(c.x, c.y);
         const int level = mc ? static_cast<int>(mc->level) : 0;
-        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(c.x, c.y, level, 60, 30, 15);
+        // W4-FIX-POS [RE: FUN_005fd4b0 Crate=yes]: cell centre - 12 px, centred.
+        const ra2engine::ScreenPt p =
+            ra2engine::overlay_draw_center(c.x, c.y, level, ra2engine::overlay_y_offset(true, false, -1, false, 0));
         const ra2assets::ShpFile::Frame f = g_p5_art->crate.frame_info(0);
-        SDL_Rect dst{p.x + cam.x + f.x, p.y + cam.y + f.y, f.w, f.h};
+        SDL_Rect dst{p.x + cam.x - g_p5_art->crate.width() / 2 + f.x, p.y + cam.y - g_p5_art->crate.height() / 2 + f.y,
+                     f.w, f.h};
         if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) continue;
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek("p5:crate:0"));
         if (!tex) {
@@ -3309,6 +3354,8 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const int gy = static_cast<int>(std::lround((x + y) * 15.0 - level * 15)) + cam.y + 15;
         const int sy = gy - static_cast<int>(std::lround((p.z / 256.0) * 36.74));
         if (gx < -8 || gx > W + 8 || sy > H + 8 || gy < -8) continue;
+        // W4: the FIRING weapon's art (slot / base defence / voxel bullet).
+        if (tc && g_fx3 && g_fx3->draw_projectile(ren, *tc, world, p, gx, sy, gy, W, H)) continue;
         // G-83: the projectile's Image= art when the live game's FX layer has it.
         if (tc && pres_draw_projectile(ren, *tc, world, p, gx, sy, W, H)) continue;
         SDL_Rect shadow{gx - 2, gy - 1, 4, 2};
@@ -5873,7 +5920,19 @@ public:
             map_pals_[2] = &ba_.unit_pal;
             for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
             g_map_dressing = &map_dressing_;
-            g_smudge_hook = [this](bool crater, double fx, double fy) { map_dressing_.add_smudge(crater, fx, fy); };
+            g_smudge_hook = [this](bool crater, double fx, double fy) {
+                // W4: no crater / scorch smudge on a water cell (the shot-down
+                // ALL01 missiles left crater rings on the harbour). [RE-FALLBACK:
+                // the original's SmudgeType placement test was not traced; its
+                // smudges never appear on water.]
+                const int x = static_cast<int>(std::lround(fx)), y = static_cast<int>(std::lround(fy));
+                const std::vector<std::uint8_t>& wg = world_.grid_for(ra2engine::MovementDomain::Water);
+                if (x >= 0 && y >= 0 && x < world_.grid_w() && y < world_.grid_h() &&
+                    static_cast<std::size_t>(y) * world_.grid_w() + x < wg.size() &&
+                    wg[static_cast<std::size_t>(y) * world_.grid_w() + x])
+                    return;
+                map_dressing_.add_smudge(crater, fx, fy);
+            };
         } catch (const std::exception& ex) {
             std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
         }

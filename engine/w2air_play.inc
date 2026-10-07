@@ -163,6 +163,43 @@
         }
         for (const ra2engine::Building& b : world_.buildings())
             if (b.alive && b.iron_left > 0.0) p.add("iron_buildings(" + std::to_string(b.house) + ")", 1);
+        // W4: RocketLocomotion rockets per house -- launched (ever spawned),
+        // shot down (killed by damage before detonating) and detonated.
+        for (const char* f : {"rockets_launched", "rockets_shot", "rockets_hit", "rockets_live", "bhp"})
+            p.zero_families.insert(f);
+        for (const ra2engine::Unit& u : world_.units()) {
+            if (!u.an.t.missile) continue;
+            const std::string hs = std::to_string(u.house);
+            p.add("rockets_launched(" + hs + ")", 1);
+            if (u.an.rocket_end == 2) p.add("rockets_shot(" + hs + ")", 1);
+            if (u.an.rocket_end == 1) p.add("rockets_hit(" + hs + ")", 1);
+            if (u.alive && u.die_time < 0.0) {   // live rockets: count, highest altitude / phase
+                p.add("rockets_live(" + hs + ")", 1);
+                const std::string ka = "rocket_alt(" + hs + ")", kp = "rocket_phase(" + hs + ")";
+                if (!p.n.count(ka) || p.n.at(ka) < u.altitude) p.set(ka, u.altitude);
+                if (!p.n.count(kp) || p.n.at(kp) < u.an.rocket.phase) p.set(kp, u.an.rocket.phase);
+            }
+        }
+        {   // W4: homing projectiles in flight (count, top height, nearest miss distance)
+            int nh = 0, top = 0, near = -1, spd = 0;
+            for (const ra2engine::Projectile& q : world_.projectiles()) {
+                if (q.kind != ra2engine::ProjKind::Homing) continue;
+                ++nh;
+                top = std::max(top, q.z);
+                spd = std::max(spd, static_cast<int>(q.speed));
+                if (q.prev_dist >= 0 && (near < 0 || q.prev_dist < near)) near = q.prev_dist;
+            }
+            p.set("homing_live", nh);
+            p.set("homing_top", top);
+            p.set("homing_near", near);
+            p.set("homing_speed", spd);
+        }
+        for (const ra2engine::Building& b : world_.buildings()) {   // W4: first live building's HP
+            if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
+            if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size())) continue;
+            const std::string k = "bhp(" + std::to_string(b.house) + "," + ba_.roster[(std::size_t)b.type].id + ")";
+            if (!p.n.count(k)) p.set(k, b.hp);
+        }
         for (const ra2engine::Unit& u : world_.units())   // W2-AN-25: ever sunk (dying or gone)
             if (u.an.sinking) p.add("sunk(" + std::to_string(u.house) + ")", 1);
         for (const ra2engine::Unit& u : world_.units())   // W2-AN-07: falling wrecks

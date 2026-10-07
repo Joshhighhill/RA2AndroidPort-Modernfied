@@ -160,30 +160,44 @@ center.y = coord.y + fh*128 − 128
 i.e. the stored object coordinate is the origin cell's position and the center
 is the middle of the W×H foundation rectangle.
 
-**Canvas registration.** The main image is blitted by the shared
-`Techno_Draw_Object` path (`FUN_00705290`, same routine units/infantry use,
-shadow pass via flag `0x100`). As established in the unit/infantry phases, that
-path anchors the **SHP canvas center** at the object's screen draw point, with
-per-frame offsets (`SHPFrame.Left/Top`) already relative to the canvas. The
-building's draw point is the screen projection of `Center_Coord` (the Draw_It
-listing converts between center- and origin-relative points by projecting
-`((fw−1)·256, (fh−1)·256)` leptons — visible at `0x43D692`–`0x43D6FE`).
+**Canvas registration (rewritten W4-FIX-POS; the earlier "centre–centre"
+reading was WRONG).** Recovered in `docs/gap/wave4/01-positioning.md` §1:
 
-Exact pixel formula at our 60×30 cell metric (30-half-width), for canvas
-`(cw, ch)` and foundation `(fw, fh)` at origin cell `(cx, cy)`:
+* `BuildingClass::Render` (`FUN_0043ce20`, same three steps as ObjectClass
+  `FUN_005f4320`) calls the draw-coord virtual `vtbl+0xAC`, projects it with
+  `FUN_006d16b0` (Tactical CoordsToClient) and calls `DrawIt` (`vtbl+0x114`,
+  `FUN_0043d210` → `Techno_Draw_Object` `FUN_00705290`) with that point. Every SHP
+  is blitted by `CC_Draw_Shape` `FUN_004aec80` with **Centered (0x200)**: the
+  canvas centre lands on the point; frame offsets are canvas-relative.
+* The building draw coord is **`FUN_00459ee0` = `Location − (128, 128, 0)`**.
+  A building's `Location` is the origin cell's CENTRE, so the draw coord is the
+  **TOP (north) vertex of the foundation's origin cell**, at the building's z.
+  RA2 `game.exe` is identical (`FUN_00453c70`, `vtbl+0xA8` there; vtable `0x79CBBC`).
+* `DrawIt` adds **no foundation-size term**. The `((fw−1)·256, (fh−1)·256)`
+  projection at `0x43D6D5` (`FUN_006d1550`) feeds only the Z-shape point
+  (`ZShapePointMove + (0xC6, 0x1BE)`) for the Z-buffer — that projection is what
+  this section previously misread as a centre registration.
+
+Pixel formula at our 60×30 metric (`cell_to_screen` = the tile rect's top-left):
 
 ```
-fnd_center_screen = screen projection of cell-space point
-                    (cx + (fw−1)/2 + 0.5,  cy + (fh−1)/2 + 0.5)
-                  = center of the union bbox of the fw×fh cell diamonds
-px = fnd_center_screen.x − cw/2
-py = fnd_center_screen.y − ch/2
+draw_point = cell_to_screen(cx, cy, level) + (30, 0)       // ra2engine::building_draw_point
+px = draw_point.x − cw/2
+py = draw_point.y − ch/2
 ```
 
-(center–center registration, NOT bottom-center; the art canvases are authored
-around the foundation center — e.g. `ggcnst.shp` 284×226 vs the 4×4
-foundation's 240×120 diamond bbox, leaving symmetric margin plus headroom that
-the frame offsets consume.)
+The old foundation-centre anchor sat `((fw−fh)·15, (fw+fh)·7.5)` px away
+(1x1 +15 px down, 4x4 +60, 2x6 (−60,+60)). The art confirms the vertex anchor:
+`ggcnst` (4x4) spans y −39..+108 around the canvas centre against a foundation
+running 0..120 below the top vertex.
+
+**Everything attached to a building uses the same point:** the main image and
+its shadow half, `BibShape`, the slot anims (`PlayAnim` `FUN_00451880` creates
+the AnimClass at `vtbl+0xAC + <Slot>X/Y`; `<Slot>ZAdjust`/`<Slot>YSort` are depth
+only), doors, rubble, `DestroyAnim` (`0x441C2C`: `new AnimClass(DestroyAnim,
+vtbl+0xAC, …)` — the ruin SHPs share the building canvas), and the voxel turret
+(`TurretAnimX/Y`, offsets consistent with the draw point; blit not traced).
+`Center_Coord` (above) is still the target/impact coord and the depth key (§3).
 
 ## §3 Draw order
 
@@ -303,7 +317,7 @@ are the rulesmd `[AudioVisual]` ones: `ConditionYellow=50%`,
 | §1 mix load set per theater | decompiled Init_Theater + bootstrap | **High** |
 | §2 origin = min corner; occupy = full W×H rect | occupy-table filler `FUN_0045B1B0` dwords + name/enum/dims tables | **High** |
 | §2 center = origin + (f−1)·128 leptons | `FUN_00447A10` | **High** |
-| §2 canvas center ↦ foundation-center screen point | shared draw path convention (established phases) + Draw_It (fw−1,fh−1)·256 projection; not a single literal formula in one place | **Medium-High** |
+| §2 canvas centre ↦ origin cell's top vertex (`Location − 128`) | decompiled `FUN_00459ee0` (YR) + `FUN_00453c70` (RA2), Render → DrawIt → Centered blit; art bounding boxes (W4 audit 01) | **High** |
 | §3 sort key = center x+y (+Gate/TurretAnimIsVoxel tweaks); no YSort/ZAdjust on main image | `FUN_005F63C0`, `FUN_00449360`, key sweep of LoadFromINI | **High** |
 | §4 frame rule (0 healthy, 1 damaged at ≤ ConditionYellow; clamp < frames/2; shadows = 2nd half) | `FUN_0043EF10` + Draw_It listing + empirical 6-frame layout | **High** |
 | §4 role of frame 2 (anim-stage path only) | Shape_Number damaged path reading anim-slot ends | **Medium** |
@@ -331,10 +345,11 @@ Resolving every `[RE: building-render.md §N]` marker in the plan (Tasks 2–7):
   Confirmed; the plan's pre-hunt convention stands. Ignore the bib row for
   occupancy (Bib only pads placement height; GAWEAP renders fine without it —
   documented divergence if skipped).
-- **§2 canvas registration (Task 7d)**: REPLACE the pre-hunt bottom-center
-  formula. Correct rule: `px = fnd_bbox_center_x − canvas_w/2`,
-  `py = fnd_bbox_center_y − canvas_h/2`, where `fnd_bbox` is the union of the
-  `fw×fh` cell diamonds from `cell_to_screen` (center–center registration).
+- **§2 canvas registration (Task 7d; corrected W4-FIX-POS)**: canvas centre =
+  `ra2engine::building_draw_point(cx, cy, level)` = `cell_to_screen(cx, cy,
+  level) + (30, 0)`, the origin cell's top vertex, for every foundation size and
+  for every attachment (bib, slot anims, fires, rubble, DestroyAnim, turret,
+  civilian dressing). The earlier foundation-bbox-centre rule is withdrawn.
 - **§3 depth key (Task 7d)**: use `(cx + (fw−1)/2) + (cy + (fh−1)/2)` — note
   the `(f−1)/2`, not `f/2`, per Center_Coord — merged into `unit_draw_order`'s
   `(fx+fy)` space; buildings before units on ties is a safe tiebreak (the

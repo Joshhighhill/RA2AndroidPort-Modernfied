@@ -4886,7 +4886,45 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     p.launch_speed = lr.speed;
     p.max_z = src.z;
     p.weapon_slot = u.w_active;   // Gap fix C: detonate with the slot that fired
+    if (p.kind == ProjKind::Homing) {
+        init_homing(p, spec, lr.speed);
+        p.target_air = target_unit >= 0 && unit_airborne(units_[target_unit]);
+    }
     projectiles_.push_back(p);
+}
+
+void World::init_homing(Projectile& p, const ProjectileSpec& spec, double launch_speed) {
+    p.uid = proj_seq_++;
+    p.rot = spec.rot;
+    p.speed = launch_speed;   // §12.3: a homing bullet leaves at 1
+    p.level = spec.level;
+    p.airburst = spec.airburst;
+    p.very_high = spec.very_high;
+    p.course_lock = spec.course_lock;
+    p.lock_frames = 0;
+    p.locked = true;
+    p.giveup_n = 0;
+    p.giveup_acc = 0.0;
+    p.prev_dist = -1;
+    p.lost = false;
+    if (p.level) p.vz = 0.0;   // torpedoes run level
+    else if (p.z < 1) p.z = 1;   // [RE-FALLBACK] a muzzle with no FLH height (H=0) still starts in the air
+}
+
+bool World::homing_target(Projectile& p, Vec3i& out) const {
+    if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
+        const Unit& t = units_[p.target_unit];
+        if (!t.alive || t.die_time >= 0.0 || t.cargo_of >= 0) return false;
+        out = Vec3i{unit_lx(t), unit_ly(t), unit_lz(t)};
+        return true;
+    }
+    if (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size())) {
+        const Building& b = buildings_[p.target_building];
+        if (!b.alive || b.state == Building::State::Dead) return false;
+        out = Vec3i{p.tx, p.ty, 0};   // the foundation cell aimed at launch
+        return true;
+    }
+    return false;
 }
 
 void World::step_projectiles_frame() {
@@ -4896,7 +4934,63 @@ void World::step_projectiles_frame() {
     // Detonations apply damage immediately, so a later projectile this frame
     // sees the updated HP -- the original's sequential Logic-layer update.
     const std::vector<Projectile> flying = projectiles_;
+    // W4 (W4-PJ-16): one O(U) pass builds each cell's ground occupants in
+    // ascending unit index; first_unit_in_cell then reads only its cell
+    // instead of scanning every unit per projectile. Nothing moves during the
+    // projectile pass, so the answer is the old ascending scan's exactly.
+    std::vector<int> cell_head, cell_next;
+    const bool grid = grid_w_ > 0 && grid_h_ > 0 && !flying.empty();
+    if (grid) {
+        cell_head.assign(static_cast<std::size_t>(grid_w_) * grid_h_, -1);
+        cell_next.assign(units_.size(), -1);
+        for (int j = static_cast<int>(units_.size()) - 1; j >= 0; --j) {
+            const Unit& w = units_[j];
+            if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0 || w.is_aircraft) continue;
+            const int ux = lepton_to_cell(unit_lx(w)), uy = lepton_to_cell(unit_ly(w));
+            if (ux < 0 || uy < 0 || ux >= grid_w_ || uy >= grid_h_) continue;
+            const std::size_t c = static_cast<std::size_t>(uy) * grid_w_ + ux;
+            cell_next[static_cast<std::size_t>(j)] = cell_head[c];
+            cell_head[c] = j;
+        }
+    }
+    const HomingRules hr{proj_rules_.rot_var, proj_rules_.safety_altitude};
     for (Projectile p : flying) {
+        if (p.kind == ProjKind::Homing) {
+            // W4: the homing branch (FUN_004666D0 ROT>=1 + FUN_005B1B20).
+            Vec3i tgt;
+            if (!p.lost && homing_target(p, tgt)) {
+                p.tx = tgt.x; p.ty = tgt.y; p.tz = tgt.z;
+            } else if (!p.lost && p.target_air) {
+                p.lost = true;   // an air target died: climb out to MissileSafetyAltitude
+            }
+            const int r = integrate_homing(p, Vec3i{p.tx, p.ty, p.tz}, proj_frame_, hr);
+            const int hcx = lepton_to_cell(p.x), hcy = lepton_to_cell(p.y);
+            const int age = proj_frame_ - p.launch_frame;
+            const bool off_map = grid_w_ > 0 && grid_h_ > 0 &&
+                                 (hcx < 0 || hcy < 0 || hcx >= grid_w_ || hcy >= grid_h_);
+            if (r == 0 && (off_map || age >= kProjMaxLifetime)) {
+                ProjectileEvent ev;
+                ev.kind = ProjectileEvent::Removed;
+                ev.frame = proj_frame_;
+                ev.attacker = p.attacker;
+                ev.x = p.x; ev.y = p.y; ev.z = p.z;
+                ev.flight_frames = age;
+                ev.apex = p.max_z;
+                proj_events_.push_back(ev);
+                continue;
+            }
+            if (r != 0) {
+                if (p.z < 0) p.z = 0;
+                int victim = -1;
+                if (r == 1 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
+                    units_[p.target_unit].alive && units_[p.target_unit].die_time < 0.0)
+                    victim = p.target_unit;
+                detonate_projectile(p, victim);
+                continue;
+            }
+            live.push_back(p);
+            continue;
+        }
         if (p.kind == ProjKind::Vertical)
             integrate_vertical(p);
         else
@@ -4914,6 +5008,16 @@ void World::step_projectiles_frame() {
         // index stands in for the cell's occupier list). Carried units and
         // aircraft are not ground occupants (no AA in this phase).
         auto first_unit_in_cell = [&]() {
+            if (grid) {
+                if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) return -1;
+                for (int j = cell_head[static_cast<std::size_t>(cy) * grid_w_ + cx]; j >= 0;
+                     j = cell_next[static_cast<std::size_t>(j)]) {
+                    const Unit& w = units_[j];
+                    if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0 || w.is_aircraft) continue;
+                    return j;
+                }
+                return -1;
+            }
             for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
                 const Unit& w = units_[j];
                 if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0 || w.is_aircraft) continue;

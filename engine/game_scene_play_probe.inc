@@ -162,7 +162,7 @@
             int lost = 0, blost = 0;
             long hp_lost = 0;
             for (const ra2engine::Unit& u : world_.units())
-                if (u.house == h && (!u.alive || u.die_time >= 0.0)) ++lost;
+                if (u.house == h && (!u.alive || u.die_time >= 0.0) && !u.vet.dont_score) ++lost;   // W4: DontScore
             for (const ra2engine::Building& b : world_.buildings()) {
                 if (b.house != h) continue;
                 if (!b.alive || b.state == ra2engine::Building::State::Dead) ++blost;
