@@ -2879,6 +2879,22 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (overlay)
         pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 1);
+    // W4-FIX-POS: RA2_POS_DBG=1 outlines the foundation (magenta) and marks
+    // the draw point (green x) -- the visual check for the anchor.
+    static const bool pos_dbg = std::getenv("RA2_POS_DBG") != nullptr;
+    if (pos_dbg) {
+        SDL_SetRenderDrawColor(ren, 255, 0, 255, 255);
+        for (int j = 0; j < b.fh; ++j)
+            for (int i = 0; i < b.fw; ++i) {
+                const ra2engine::ScreenPt p = ra2engine::cell_to_screen(b.cx + i, b.cy + j, level, 60, 30, 15);
+                const int x = p.x + cam.x, y = p.y + cam.y;
+                const SDL_Point d[5] = {{x + 30, y}, {x + 60, y + 15}, {x + 30, y + 30}, {x, y + 15}, {x + 30, y}};
+                SDL_RenderDrawLines(ren, d, 5);
+            }
+        SDL_SetRenderDrawColor(ren, 40, 255, 40, 255);
+        SDL_RenderDrawLine(ren, fcx - 6, fcy - 6, fcx + 6, fcy + 6);
+        SDL_RenderDrawLine(ren, fcx - 6, fcy + 6, fcx + 6, fcy - 6);
+    }
 
     // Foundation-width HP bar when damaged (render-only). W2-GA-19: the live
     // game (g_map_dressing set) shows building health only on the SELECTED

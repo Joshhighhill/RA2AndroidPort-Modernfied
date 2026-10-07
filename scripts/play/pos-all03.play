@@ -5,7 +5,7 @@
 #   gacnst      the player ConYard 4x4 + ActiveAnim, clear of the ore field;
 #               ore centred in its own cells (cell centre - 12)
 #   bases       player 2x2 (GAPOWR), 3x3 (GAOREP + ActiveAnim, GADEPT + bib),
-#               4x3 (GAREFN + bib + lights), 2x2 voxel turret (GTGCAN)
+#               2x2 voxel turret (GTGCAN), on the open field north of the ConYard
 #   wh2 / wh2_ruin  a second White House killed: its DestroyAnim ruin
 #               (CAWS01DM, L4) lies exactly on the foundation (was 120 px low)
 set render_every 600
@@ -35,11 +35,10 @@ shot sandbag
 cheat view_building GACNST
 wait 2
 shot gacnst
-cheat building GAPOWR 86 126
-cheat building GAOREP 86 121
-cheat building GADEPT 90 125
-cheat building GAREFN 90 120
-cheat building GTGCAN 92 129
+cheat building GAPOWR 79 122
+cheat building GAOREP 82 121
+cheat building GADEPT 85 119
+cheat building GTGCAN 80 125
 wait 30
 cheat view_building GAOREP
 wait 2
