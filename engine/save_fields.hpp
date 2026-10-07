@@ -112,6 +112,7 @@ struct SaveAccess {
         // Multi-house / victory
         save::io(ar, w.houses_);
         save::io(ar, w.houses_configured_);
+        save::io(ar, w.ally_pairs_);       // W2-CA-10 (save v9)
         save::io(ar, w.victory_enabled_);
         save::io(ar, w.short_game_);
         save::io(ar, w.house_defeated_);
@@ -186,6 +187,8 @@ struct SaveAccess {
         save::io(ar, w.garrison_any_);
         save::io(ar, w.garrison_shots_);
         save::io(ar, w.garrison_events_);
+        save::io(ar, w.entered_events_);   // W2-CA-01 (save v9)
+        save::io(ar, w.track_entered_);
         save::io(ar, w.bridge_ovl_);
         save::io(ar, w.bridge_tile_land_);
         save::io(ar, w.bridge_version_);
@@ -288,6 +291,7 @@ template <class Ar> void fields(Ar& ar, RepairSellRules& v) {
 }
 template <class Ar> void fields(Ar& ar, World::HouseRec& v) {
     io(ar, v.side); io(ar, v.color_ix); io(ar, v.country); io(ar, v.alliance_team); io(ar, v.combatant);
+    io(ar, v.player_control);   // W2-CA-02 (save v9)
 }
 template <class Ar> void fields(Ar& ar, CargoEvent& v) {
     io(ar, v.kind); io(ar, v.unit); io(ar, v.transport); io(ar, v.x); io(ar, v.y);
@@ -353,6 +357,9 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
     io(ar, v.occupy_damage_mult); io(ar, v.occupy_rof_mult); io(ar, v.occupy_weapon_range);
     io(ar, v.bridge_strength); io(ar, v.bridge_destruction); io(ar, v.armed);
+}
+template <class Ar> void fields(Ar& ar, World::EnteredEvent& v) {   // W2-CA-01
+    io(ar, v.kind); io(ar, v.unit); io(ar, v.building); io(ar, v.house); io(ar, v.consumed);
 }
 template <class Ar> void fields(Ar& ar, World::GarrisonEvent& v) {
     io(ar, v.kind); io(ar, v.building); io(ar, v.house);

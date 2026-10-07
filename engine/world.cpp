@@ -449,7 +449,25 @@ bool World::are_allied(int a, int b) const {
     if (a == b) return true;                       // self always allied to self
     if (!houses_configured_) return false;         // today: only same-house is friendly
     if (!house_combatant(a) || !house_combatant(b)) return false;   // neutral: not an ally
+    const int n = (int)houses_.size();
+    if (!ally_pairs_.empty() && a >= 0 && b >= 0 && a < n && b < n &&
+        ally_pairs_.size() == (std::size_t)n * n)
+        return ally_pairs_[(std::size_t)a * n + b] != 0;   // W2-CA-10
     return house_team(a) == house_team(b);
+}
+
+void World::set_pair_alliance(int a, int b, bool allied) {
+    const int n = (int)houses_.size();
+    if (a < 0 || b < 0 || a >= n || b >= n || a == b) return;
+    if (ally_pairs_.size() != (std::size_t)n * n) {
+        std::vector<std::uint8_t> m((std::size_t)n * n, 0);
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j)
+                m[(std::size_t)i * n + j] = (i == j || house_team(i) == house_team(j)) ? 1 : 0;
+        ally_pairs_ = std::move(m);
+    }
+    ally_pairs_[(std::size_t)a * n + b] = allied ? 1 : 0;
+    ally_pairs_[(std::size_t)b * n + a] = allied ? 1 : 0;
 }
 
 bool World::is_enemy(int a, int b) const {
@@ -1114,6 +1132,14 @@ void World::order_unload_selected() {
         u.unload_pending = true;
         cargo_any_ = true;
     }
+}
+
+void World::order_unload(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    Unit& u = units_[idx];
+    if (!u.alive || u.die_time >= 0.0 || u.passengers_max <= 0 || u.cargo.empty()) return;
+    u.unload_pending = true;
+    cargo_any_ = true;
 }
 
 std::vector<CargoEvent> World::take_cargo_events() {

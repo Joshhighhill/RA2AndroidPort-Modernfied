@@ -4856,3 +4856,25 @@ TEST_CASE("World: G-66 a charged AI superweapon fires at the enemy's highest-val
     CHECK(fired);
     CHECK(world.buildings()[pw].hp < hp0);   // the nuke landed on the power plant
 }
+
+TEST_CASE("World W2-CA-10: MakeAlly/MakeEnemy are pairwise (FUN_004f9990/FUN_004f9db0)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    for (int h = 0; h < 4; ++h) {
+        ra2engine::World::HouseRec r;
+        r.alliance_team = h < 1 ? 0 : 1;   // player alone on team 0; three enemies on team 1
+        world.set_house(h, r);
+    }
+    CHECK(world.are_allied(1, 3));
+    CHECK(world.is_enemy(0, 1));
+    // An enemy house allies the player: only that pair changes.
+    world.set_pair_alliance(1, 0, true);
+    CHECK(world.are_allied(0, 1));
+    CHECK(world.is_enemy(0, 2));      // the player is NOT dragged onto team 1
+    CHECK(world.is_enemy(0, 3));
+    CHECK(world.are_allied(1, 2));    // house 1 keeps its old friends
+    world.set_pair_alliance(1, 2, false);
+    CHECK(world.is_enemy(1, 2));
+    CHECK(world.is_enemy(2, 1));
+}

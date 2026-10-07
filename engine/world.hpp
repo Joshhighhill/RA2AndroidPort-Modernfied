@@ -874,6 +874,9 @@ public:
     // supersedes -- our order-model convention, not overturned by the hunt).
     // Sets the cargo_any_ firewall.
     void order_unload_selected();
+    // W2-CA-17: the same unload order for one transport of any house (team
+    // script action 8). No-op unless it is alive with cargo.
+    void order_unload(int idx);
     // Drain the board/refuse/eject events accumulated by step_cargo since
     // the last call (the take_harvest_events pattern). Empty if no cargo
     // activity ever happened.
@@ -1013,6 +1016,12 @@ public:
     // share a team with. Self is always allied to self. NOT read by world_hash.
     bool are_allied(int a, int b) const;
     bool is_enemy(int a, int b) const;
+    // W2-CA-10 [RE: MakeAlly/MakeEnemy FUN_004f9990/FUN_004f9db0 are PAIRWISE,
+    // campaign.md §2/§10]: the first call snapshots the team relation into a
+    // per-pair matrix; from then on are_allied() reads the matrix, so
+    // allying house b with house a never drags b's other relations along.
+    // Inert (empty matrix) until a campaign trigger calls it.
+    void set_pair_alliance(int a, int b, bool allied);
 
     // AllyReveal [RE: multihouse.md §3, D4]: allied houses share revealed shroud.
     // Firewalled behind houses_configured_ + shroud_any_ -> OFF in every gate.
@@ -1702,6 +1711,7 @@ private:
     // construction (0=Allied/team0/comb, 1=Soviet/team1/comb, 2=Neutral/team2/
     // non-comb) so house_count()==3 and today's world is reproduced. NOT hashed.
     std::vector<HouseRec> houses_;
+    std::vector<std::uint8_t> ally_pairs_;   // W2-CA-10: n*n, empty = team model
     bool houses_configured_ = false;   // the side/color/enmity/AllyReveal firewall;
                                        // false in every existing gate.
 

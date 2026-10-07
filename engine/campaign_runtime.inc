@@ -722,8 +722,65 @@ private:
             btrack_.push_back(t);
         }
     }
+    // W2-CA-08 [RE-C1 open -> RE-FALLBACK]: a reinforcement whose waypoint
+    // has no legal cell within 12 (at sea, off the land grid, beyond the
+    // map edge) lands on the nearest free legal cell anywhere: ships on the
+    // nearest free water, ground units on the nearest free land cell that is
+    // CONNECTED to the team's first move-waypoint (the beach the landing
+    // craft would have run to), else the nearest free land cell. The
+    // original delivers by transport/edge entry (TeamClass FUN_006eff20).
+    bool far_cell(int x, int y, bool water, int goal_x, int goal_y, int& ox, int& oy) {
+        const int W = w_.grid_w(), H = w_.grid_h();
+        if (W <= 0 || H <= 0) return false;
+        const std::vector<std::uint8_t>& wg = w_.grid_for(ra2engine::MovementDomain::Water);
+        std::vector<std::uint8_t> reach;
+        if (!water && goal_x >= 0 && w_.walkable(goal_x, goal_y)) {
+            reach.assign((std::size_t)W * H, 0);
+            std::vector<int> q{goal_y * W + goal_x};
+            reach[(std::size_t)q[0]] = 1;
+            for (std::size_t k = 0; k < q.size(); ++k) {
+                const int cx = q[k] % W, cy = q[k] / W;
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = cx + dx, ny = cy + dy;
+                        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+                        const std::size_t ni = (std::size_t)ny * W + nx;
+                        if (reach[ni] || !w_.walkable(nx, ny)) continue;
+                        reach[ni] = 1;
+                        q.push_back((int)ni);
+                    }
+            }
+        }
+        x = std::clamp(x, 0, W - 1);
+        y = std::clamp(y, 0, H - 1);
+        const int maxr = std::max(W, H);
+        for (int pass = 0; pass < 2; ++pass) {
+            if (pass == 1 && reach.empty()) break;
+            const bool need_reach = pass == 0 && !reach.empty();
+            for (int r = 0; r <= maxr; ++r)
+                for (int dy = -r; dy <= r; ++dy)
+                    for (int dx = -r; dx <= r; ++dx) {
+                        if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                        const int cx = x + dx, cy = y + dy;
+                        if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
+                        const std::size_t ci = (std::size_t)cy * W + cx;
+                        if (water) {
+                            if (wg.empty() || !wg[ci] || !w_.occupancy().is_free(cx, cy)) continue;
+                        } else {
+                            if (!w_.walkable(cx, cy)) continue;
+                            if (need_reach && !reach[ci]) continue;
+                        }
+                        if (w_.unit_at_cell(cx, cy) >= 0 || w_.building_at_cell(cx, cy) >= 0) continue;
+                        ox = cx;
+                        oy = cy;
+                        return true;
+                    }
+            if (water) break;
+        }
+        return false;
+    }
     int place_unit(const std::string& type, int eh, int x, int y, int health, const std::string& tag,
-                   const std::string& mission) {
+                   const std::string& mission, bool far = false, int goal_x = -1, int goal_y = -1) {
         const camp::UnitType* ut = types_.unit(type);
         if (!ut) return -1;
         int cx = 0, cy = 0;
@@ -732,8 +789,11 @@ private:
         // nearest free shore cell within 12 [RE-FALLBACK §9.3: the original
         // delivers by transport / edge entry; no TeamClass delivery yet].
         if (ut->combat.is_naval) {
-            if (!free_water_near(x, y, cx, cy, 12)) return -1;
-        } else if (!free_cell_near(x, y, cx, cy) && !free_cell_near(x, y, cx, cy, 12)) {
+            if (!free_water_near(x, y, cx, cy, 12) &&
+                !(far && far_cell(x, y, /*water=*/true, -1, -1, cx, cy)))
+                return -1;
+        } else if (!free_cell_near(x, y, cx, cy) && !free_cell_near(x, y, cx, cy, 12) &&
+                   !(far && far_cell(x, y, /*water=*/false, goal_x, goal_y, cx, cy))) {
             return -1;
         }
         w_.add_combat_unit(cx, cy, eh, ut->combat);
@@ -1010,10 +1070,29 @@ private:
             int x = 0, y = 0;
             if (!waypoint_cell(wp, x, y)) { note_ = "[no waypoint]"; return false; }
             int placed = 0, skipped = 0;
+            // W2-CA-08: the team's first move-waypoint is the landing goal.
+            int gx = -1, gy = -1;
+            if (tm.script >= 0)
+                for (const ra2engine::MapScriptAction& sa : teams_data_.scripts[(std::size_t)tm.script].actions)
+                    if (sa.action == ra2engine::kSaMoveWaypoint) {
+                        if (!waypoint_cell(sa.arg, gx, gy)) gx = gy = -1;
+                        break;
+                    }
             if (const auto* tf = teams_data_.taskforce(tt.taskforce))
                 for (const ra2engine::MapTaskMember& m : *tf)
                     for (int k = 0; k < m.count; ++k) {
-                        const int idx = place_unit(m.type, tm.house, x, y, 256, std::string(), "Guard");
+                        const int idx = place_unit(m.type, tm.house, x, y, 256, std::string(), "Guard",
+                                                   /*far=*/true, gx, gy);
+                        // W2-CA-08: a far landing becomes the team's anchor, so
+                        // the rest spread around it instead of lining the shore.
+                        if (idx >= 0) {
+                            const ra2engine::Unit& pu = w_.units()[(std::size_t)idx];
+                            const int ddx = pu.cell_x - x, ddy = pu.cell_y - y;
+                            if (!pu.is_naval && std::max(std::abs(ddx), std::abs(ddy)) > 12) {
+                                x = pu.cell_x;
+                                y = pu.cell_y;
+                            }
+                        }
                         if (idx >= 0) { tm.members.push_back(idx); ++placed; }
                         else ++skipped;
                     }
@@ -1160,12 +1239,21 @@ private:
                 bool isb = false;
                 int t = -1;
                 if (c.kind == K::AttackWaypoint) {
-                    // [DEVIATION §9.7] Attack-waypoint bombardments (Allied 1's
-                    // dreadnought/V3 shelling of the Statue) rely on Patriot
-                    // missile interception, which the engine does not model;
-                    // executed literally they destroy the objective in seconds.
-                    // The team holds position instead (logged in the witness).
-                    continue;
+                    // [DEVIATION §9.7, narrowed by W2-CA-11] An attack-waypoint
+                    // bombardment of an object whose tag guards the player's
+                    // LOSS (Allied 1's dreadnought/V3 shelling of the Statue)
+                    // relies on Patriot interception, which the engine does
+                    // not model; that one is held. Every other attack-waypoint
+                    // (artillery, building assaults) executes literally.
+                    int wx = 0, wy = 0;
+                    if (!waypoint_cell(c.arg, wx, wy)) continue;
+                    const int tb = w_.building_at_cell(wx, wy);
+                    const int tu = tb < 0 ? w_.unit_at_cell(wx, wy) : -1;
+                    const int tag = tb >= 0 && tb < (int)btrack_.size() ? btrack_[(std::size_t)tb].tag
+                                  : tu >= 0 && tu < (int)utrack_.size() ? utrack_[(std::size_t)tu].tag : -1;
+                    if (tag >= 0 && tag_guards_loss(tag)) continue;
+                    if (tb >= 0) { t = tb; isb = true; }
+                    else if (tu >= 0) { t = tu; isb = false; }
                 } else {
                     t = nearest_enemy(tm.house, u.cell_x, u.cell_y,
                                       c.kind == K::Attack ? c.arg : 2, isb);
@@ -1191,6 +1279,24 @@ private:
             tm.st.done = true;
             return;
         }
+        // W2-CA-17: Deploy (9) unfolds every member MCV (enemy MCVs too);
+        // Unload (8) empties every member transport; Scatter (21) steps each
+        // member to a nearby free cell [campaign.md §7].
+        case K::Deploy:
+            for (int m : tm.members)
+                if (w_.is_mcv(m)) w_.order_deploy_mcv(m);
+            return;
+        case K::Unload:
+            for (int m : tm.members) w_.order_unload(m);
+            return;
+        case K::Scatter:
+            for (int m : tm.members) {
+                const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+                int x = 0, y = 0;
+                if (u.moving() || !free_cell_near(u.cell_x + 1, u.cell_y + 1, x, y, 2)) continue;
+                w_.order_unit_move(m, x, y);
+            }
+            return;
         case K::DeleteMembers:
             for (int m : tm.members) w_.campaign_erase_unit(m);
             tm.members.clear();
@@ -1198,6 +1304,26 @@ private:
         default:
             return;
         }
+    }
+    // W2-CA-11: does any trigger on this tag (its chain) lose the mission,
+    // directly or by enabling a trigger that does?
+    bool tag_guards_loss(int tag) const {
+        if (tag < 0 || tag >= (int)data_.tags.size()) return false;
+        auto loses = [&](int ti) {
+            for (const ra2engine::MapAction& a : data_.triggers[(std::size_t)ti].actions)
+                if (a.kind == 2) return true;
+            return false;
+        };
+        int guard = 0;
+        for (int ti = data_.tags[(std::size_t)tag].first_trigger;
+             ti >= 0 && ti < (int)data_.triggers.size() && guard < 32;
+             ti = data_.triggers[(std::size_t)ti].linked, ++guard) {
+            if (loses(ti)) return true;
+            for (const ra2engine::MapAction& a : data_.triggers[(std::size_t)ti].actions)
+                if (a.kind == 53 && a.trigger >= 0 && a.trigger < (int)data_.triggers.size() && loses(a.trigger))
+                    return true;
+        }
+        return false;
     }
     void step_hunters() {
         if (frame_ % 15 != 0) return;
@@ -1421,18 +1547,25 @@ private:
                 }
             return true;
         }
-        case 37: case 38: {   // MakeAlly / MakeEnemy, both directions (Execute 0x25/0x26)
+        case 37: case 38: {   // MakeAlly / MakeEnemy (Execute 0x25/0x26)
+            // W2-CA-10 [RE FUN_004f9990/FUN_004f9db0]: pairwise and mutual for
+            // the two houses only -- house 0 is never moved onto the enemy team.
             const int a = engine_house(e.trigger_house_type), b = engine_house(e.house_type);
             if (a < 0 || b < 0 || a == b) return false;
-            ra2engine::World::HouseRec rb;
-            rb.side = w_.house_side(b);
-            rb.color_ix = w_.house_color(b);
-            rb.country = map_.get(house_names_[(std::size_t)b], "Country", "");
-            rb.combatant = true;
-            // [DEVIATION: symmetric team model] ally = join a's team; enemy =
-            // leave it for the other combat team.
-            rb.alliance_team = e.action == 37 ? w_.house_team(a) : (w_.house_team(a) == 0 ? 1 : 0);
-            w_.set_house(b, rb);
+            for (int h : {a, b})
+                if (e.action == 37 && !w_.house_combatant(h)) {
+                    // A civilian-side house that is allied becomes a combatant
+                    // on its own (it has no team of its own to bring along).
+                    ra2engine::World::HouseRec r;
+                    r.side = w_.house_side(h);
+                    r.color_ix = w_.house_color(h);
+                    r.country = map_.get(house_names_[(std::size_t)h], "Country", "");
+                    r.combatant = true;
+                    r.alliance_team = 200 + h;
+                    r.player_control = w_.controllable(h) && h != 0;
+                    w_.set_house(h, r);
+                }
+            w_.set_pair_alliance(a, b, e.action == 37);
             return true;
         }
         case 32: {   // DestroyAttachedObject (FUN_006e15c0)

@@ -439,6 +439,9 @@ MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const Ma
         case kSaClearLocal: c.kind = MapTeamCommand::Kind::ClearLocal; advance(); return c;
         case kSaChangeHouse: c.kind = MapTeamCommand::Kind::ChangeHouse; advance(); return c;
         case kSaScatter: c.kind = MapTeamCommand::Kind::Scatter; advance(); return c;
+        // W2-CA-17 [campaign.md §7, FUN_006ee670 / FUN_006eca30]: one-shot.
+        case kSaUnload: c.kind = MapTeamCommand::Kind::Unload; advance(); return c;
+        case kSaDeploy: c.kind = MapTeamCommand::Kind::Deploy; advance(); return c;
         case kSaDeleteMembers: c.kind = MapTeamCommand::Kind::DeleteMembers; advance(); return c;
         default:
             c.kind = MapTeamCommand::Kind::Skip;

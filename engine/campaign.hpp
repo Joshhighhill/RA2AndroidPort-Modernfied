@@ -182,7 +182,8 @@ struct MapTeamCommand {
     enum class Kind {
         None, MoveWaypoint, MoveCell, Attack, AttackWaypoint, Guard, Win, Lose, SetGlobal,
         ClearGlobal, SetLocal, ClearLocal, ChangeHouse, Scatter, DeleteMembers, Mission,
-        AttackBuilding, Skip, Done
+        AttackBuilding, Skip, Done,
+        Deploy, Unload   // W2-CA-17
     };
     Kind kind = Kind::None;
     int arg = 0;
