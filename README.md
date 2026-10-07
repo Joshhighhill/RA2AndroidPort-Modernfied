@@ -3501,3 +3501,55 @@ keys). Save format **v10**.
   saveload, campaign (table above); the rest unchanged.
 * **Still open:** CAAIRP Tech Airport paradrop, jumpjet air-speed bias (Q3), yard
   repair cost, sub cloak shimmer, AI fixed-wing aircraft, Squid grab.
+
+## Android, robustness and release readiness (wave-2 W2-AR fixes)
+
+Details and evidence: `docs/gap/wave2/06-android-robustness.md` section 7.
+The player guide is `docs/INSTALL.md`.
+
+- **One audio device** (W2-AR-01). `AudioOutput` is a refcounted handle on a
+  single SDL device. The menu and the game swap the mixer it plays, so there
+  are no AAudio assertions on Android.
+- **SDL assertions never block** (W2-AR-30). A handler logs them and
+  continues. They are compiled out of optimised builds.
+- **Loading screen and teardown before build** (W2-AR-02/-10/-05).
+  - Scene changes into a game are `DeferredScene`s. The driver destroys the
+    old scene first, then builds the game under a progress screen fed by
+    `load_progress()` checkpoints.
+  - A build that throws (for example a missing campaign `.mix`) becomes an
+    error page with a MAIN MENU button.
+  - Emulator start went from 9 min to 4.5 s, and the load-a-save peak from
+    1.4 GB to 405 MB.
+- **Finding the game files** (W2-AR-03/-22).
+  - Desktop search order: `--data <dir>`, `RA2_INSTALL_DIR`,
+    `RA2.INI [Engine] DataDir`, the exe folder, the registry `InstallPath`,
+    `D:\Red Alert 2`.
+  - Missing required files open a **GAME FILES NEEDED** page (RETRY /
+    BROWSE / EXIT; IMPORT on Android).
+  - New flags: `--version`, `--help`, and `--quick-skirmish` (dev: the
+    default 1v1 through the loading screen).
+  - Evidence hooks: `RA2_AUTOSHOT_DIR=<dir>` saves the loading / error /
+    missing-files screens, and `RA2_QUIT_AFTER_LOAD_MS=<ms>` quits that long
+    after the first load.
+- **Android app**:
+  - `SetupActivity` launcher with a SAF importer.
+  - Immersive fullscreen, and a game canvas that follows the panel aspect.
+  - Touch canvas of about 480 px on phones, for bigger cameos and buttons.
+  - Touch command bar: +SEL / FIRE / MOVE / STOP / GRD / SCAT / DPLY /
+    teams 1-5.
+  - Two-tap placement.
+  - Back on the root menu asks to exit.
+  - IME text rects.
+  - Cancelled touches never click.
+  - Background: pause + `AUTOSAVE.SAV`, then a resume prompt after a kill.
+  - Texture cache clear/trim on device reset or low memory.
+  - The process ends after quit.
+- **Saves are format v11**: v10 plus a CRC-32 trailer. Corrupt files are
+  listed as "Damaged" and refused.
+- **Release build**:
+  - Both APK build types are optimised.
+  - 16 KB page-aligned `.so` files; targetSdk 35.
+  - `keystore.properties` signing.
+  - Version from `VERSION` (window title / `--version`: `0.9.0+g<hash>`).
+  - `LICENSE`, `THIRD_PARTY_NOTICES.md`.
+  - `-Wall -Wextra` with 0 warnings; `-ffp-contract=off` on both builds.
