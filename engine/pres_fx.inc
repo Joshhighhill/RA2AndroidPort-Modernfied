@@ -388,9 +388,25 @@ public:
     const FxAnimType* theater_type(const std::string& name) {
         if (name.empty()) return nullptr;
         if (const FxAnimType* t = type(name)) return t;
-        // NewTheater building anims live in the theater mixes.
+        // NewTheater building anims live in the theater mixes; W3-B: a
+        // Theater=yes anim (waterfalls WA01X.., tunnel tops) is
+        // "<image>.<theater ext>" there (wa01x.tem in isotemp.mix).
         const std::string key = pres_upper(name);
-        auto shp = theater_shp(aget(key, "Image").empty() ? key : aget(key, "Image"));
+        const std::string img = aget(key, "Image").empty() ? key : aget(key, "Image");
+        std::shared_ptr<ra2assets::ShpFile> shp;
+        if (pres_lower(aget(key, "Theater")).rfind("y", 0) == 0 && ra2_) {
+            const ra2assets::TheaterChain& ch = art_chain();
+            const std::string file = pres_lower(img) + "." + ch.ext;
+            for (const char* mx : {ch.iso_mix, ch.art_mix}) {
+                MixFile* m = nested(mx);
+                if (!m) continue;
+                if (const MixEntry* e = m->find(file)) {
+                    try { shp = std::make_shared<ra2assets::ShpFile>(ShpFile::load(m->read(*e))); } catch (...) {}
+                    if (shp) break;
+                }
+            }
+        }
+        if (!shp) shp = theater_shp(img);
         if (!shp) return nullptr;
         auto t = std::make_unique<FxAnimType>();
         fill_type(*t, key, shp);

@@ -60,6 +60,17 @@ public:
     // recovered LandType source (the .tmp TerrainType byte was FALSIFIED).
     ra2assets::LandType land_type_of_cell(uint32_t global_index) const;
 
+    // W3-B [RE-Q6]: theater tile animations -- the set's SetName section of
+    // the control INI lists Tile<NN>Anim / XOffset / YOffset / AttachesTo /
+    // ZAdjust for template NN (temperat.ini [Waterfalls] WA01X..WD04X, the
+    // [Tunnels...] TUNTOP01..04). The anim stands on the template cell whose
+    // sub-tile index == AttachesTo. nullptr when the template has none.
+    struct TileAnim { std::string anim; int xoff = 0, yoff = 0, attaches_to = 0, zadjust = 0; };
+    const TileAnim* tile_anim(uint32_t global_index) const {
+        auto it = tile_anims_.find(global_index);
+        return it == tile_anims_.end() ? nullptr : &it->second;
+    }
+
 private:
     struct Slot {
         std::string file;  // FileName= (lower/verbatim from INI)
@@ -73,6 +84,7 @@ private:
     std::string ext_;
     std::vector<Slot> slots_;  // global index -> slot
     ra2assets::TileSetClass general_;  // [General] tile-set classification [RE: naval.md §2]
+    std::unordered_map<uint32_t, TileAnim> tile_anims_;   // W3-B global index -> anim
     // filename -> decoded TmpFile (absent entries stored as a nullptr sentinel
     // via `misses_`); keeps repeated cells cheap.
     std::unordered_map<std::string, ra2assets::TmpFile> cache_;

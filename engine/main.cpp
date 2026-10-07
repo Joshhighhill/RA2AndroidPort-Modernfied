@@ -5640,6 +5640,7 @@ public:
             g_turrets = &turrets_;
             ra2engine::set_terrain_level_palettes(light_.active ? &light_.level_pals : nullptr);
             map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
+            map_dressing_.load_tile_anims(a_.theater, a_.map);   // W3-B waterfalls / tunnel tops
             if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
                 int neutral = -1;
                 for (int h = 0; h < world_.house_count(); ++h)

@@ -233,6 +233,40 @@ public:
         step_anims();
         for (const Obj& o : smudges_) draw(ren, tc, w, o, pals, cam, W, H);
         for (const Obj& o : overlays_) draw(ren, tc, w, o, pals, cam, W, H);
+        draw_tile_anims(ren, tc, w, pals, cam, W, H);   // W3-B
+    }
+    // W3-B [RE-Q6]: theater tile anims (ALL07's waterfalls). One anim per
+    // template instance, on the cell whose sub-tile == AttachesTo, at that
+    // cell's centre + (XOffset, YOffset) px [Medium: the offset origin was
+    // fitted to the waterfall art, not traced]. Flat, ShouldUseCellDrawer=yes
+    // -> the iso (tile) palette; loops on the logic-tick clock.
+    struct TileAnimObj { int x, y, level, xoff, yoff; std::string anim; };
+    void load_tile_anims(ra2engine::Theater& th, const ra2assets::MapFile& map) {
+        tile_anims_.clear();
+        for (const ra2assets::MapCell& c : map.cells()) {
+            const ra2engine::Theater::TileAnim* ta = th.tile_anim(c.tile);
+            if (!ta || static_cast<int>(c.subtile) != ta->attaches_to) continue;
+            tile_anims_.push_back({c.x, c.y, c.level, ta->xoff, ta->yoff, ta->anim});
+        }
+        std::cerr << "[map-dressing] tile anims=" << tile_anims_.size();
+        for (std::size_t i = 0; i < tile_anims_.size() && i < 4; ++i)
+            std::cerr << " " << tile_anims_[i].anim << "@" << tile_anims_[i].x << "," << tile_anims_[i].y;
+        std::cerr << std::endl;
+    }
+    std::size_t tile_anim_count() const { return tile_anims_.size(); }
+    void draw_tile_anims(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
+                         const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
+        if (!g_fx) return;
+        for (const TileAnimObj& o : tile_anims_) {
+            if (!w.explored_at(0, o.x, o.y)) continue;
+            const FxAnimType* t = g_fx->theater_type(o.anim);
+            if (!t) continue;
+            const int fr = bld_run_frame(*t, 0, g_pres_tick);
+            if (fr < 0) continue;
+            const ra2engine::ScreenPt p = ra2engine::cell_to_screen(o.x, o.y, o.level, 60, 30, 15);
+            g_fx->blit(ren, tc, *t->shp, "tanim:" + t->name, fr, p.x + cam.x + 30 + o.xoff,
+                       p.y + cam.y + 15 + o.yoff, PresFx::alpha_for(*t, fr), W, H, pals[0]);
+        }
     }
     // One depth-sorted object (render_world merges these with buildings/units).
     void draw(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w, const Obj& o,
@@ -414,6 +448,7 @@ private:
     std::vector<std::pair<int, int>> block_;
     int missing_ = 0, placed_ = 0, civ_ = 0;
     long last_tick_ = 0;
+    std::vector<TileAnimObj> tile_anims_;   // W3-B
     std::set<int> smudge_cells_;
     std::vector<std::string> smudge_kinds_[2];
     uint32_t smudge_rng_ = 0x5A17u;
