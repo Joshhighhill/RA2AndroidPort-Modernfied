@@ -76,7 +76,7 @@ bool state_b(int k) {   // FUN_0071ec60
 // model) -> false + counted [spec §2].
 bool unimplemented_event(int k) {
     switch (k) {
-    case 3: case 5: case 18: case 23: case 34: case 35: case 45: case 46:
+    case 3: case 18: case 23: case 34: case 35: case 45: case 46:
     case 53: case 54:
         return true;
     default:
@@ -656,6 +656,7 @@ bool MapTriggerSystem::has_occurred(int type, int ev_idx, int kind, int trig_hou
         break;
     }
     if (e.kind == kEvNone) return false;
+    if (e.kind == 5) return e.value >= 0 && host.house_discovered(e.value);   // W4-SQ-11
     if (unimplemented_event(e.kind)) return false;
     if (e.kind != 19 && e.kind != 20 && e.kind != 21 && object_kind(e.kind) && kind != e.kind)
         return false;
@@ -829,7 +830,7 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         e.house_type = house;
         e.trigger_house_type = th;
         if (a.team >= 0 && a.team < (int)d_.team_ids.size()) e.team = d_.team_ids[(std::size_t)a.team];
-        e.waypoint = (a.kind == 17 || (campaign_mode_ && a.kind == 63)) ? a.value : a.waypoint;
+        e.waypoint = (a.kind == 17 || a.kind == 18 || (campaign_mode_ && a.kind == 63)) ? a.value : a.waypoint;
         e.value = a.value;
         e.text = a.text;
         e.trigger_id = cur_trigger_;
@@ -955,7 +956,8 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         effect(find_house(t, a.value, host));
         return;
     case 81: case 82: case 83:   // W4-SQ-05 Wakeup* (object / all sleepers / all harmless)
-        effect(th);
+    case 18:                     // W4-SQ-11 RevealZone (the waypoint cell's zone)
+        effect(a.kind == 18 ? player : th);
         break;
     case 32: case 63:
     case 60: case 111:   // W2-CA-13: SellBuilding / EvictOccupiers on the tagged objects

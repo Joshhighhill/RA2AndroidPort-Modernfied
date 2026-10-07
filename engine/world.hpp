@@ -1186,6 +1186,20 @@ public:
     // calls this beside every selected-unit order). The campaign runtime
     // drains it and releases those units from their script teams. Transient
     // (not saved, not hashed).
+    // W4-SQ-12 [RE-FALLBACK, RE-W4-SQ-2 not traced: the TS-lineage
+    // HouseClass::AI_Unit trains what its under-strength teams still miss]:
+    // the campaign hands each computer house the members its scripted
+    // (CreateTeam) teams still need; step_ai_teams adds them to the AI-2 team
+    // shortfall it trains for. Recomputed by the campaign every frame.
+    void set_ai_script_demand(int house, std::vector<std::string> ids, std::vector<int> counts) {
+        if (house < 0) return;
+        if ((int)ai_demand_ids_.size() <= house) {
+            ai_demand_ids_.resize((std::size_t)house + 1);
+            ai_demand_counts_.resize((std::size_t)house + 1);
+        }
+        ai_demand_ids_[(std::size_t)house] = std::move(ids);
+        ai_demand_counts_[(std::size_t)house] = std::move(counts);
+    }
     void mark_player_order() {
         for (int i = 0; i < static_cast<int>(units_.size()); ++i)
             if (units_[i].selected && units_[i].alive) player_orders_.push_back(i);
@@ -2058,6 +2072,8 @@ private:
     bool cargo_any_ = false;
     std::vector<int> player_orders_;   // W4-SQ: transient, see mark_player_order
     std::vector<std::uint8_t> passive_houses_;   // W4-SQ-02 (save v16)
+    std::vector<std::vector<std::string>> ai_demand_ids_;   // W4-SQ-12 (save v16)
+    std::vector<std::vector<int>> ai_demand_counts_;
     std::vector<CargoEvent> cargo_events_;
 
     // CB-2 Aircraft [RE: aircraft.md §3/§6]: the airborne movement pass --

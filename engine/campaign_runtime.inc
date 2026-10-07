@@ -357,6 +357,7 @@ public:
         arm_production_houses();   // [G-69]
         poll_objects();
         step_teams();
+        push_script_demand();
         step_hunters();
         if (sys_->outcome() != 0) flag_end(sys_->outcome());
         ++frame_;
@@ -1688,6 +1689,29 @@ private:
         if (building) w_.order_unit_attack_building(m, target);
         else w_.order_unit_attack(m, target);
     }
+    // W4-SQ-12: what every computer house's recruiting scripted teams still
+    // miss, handed to its AI production (World::set_ai_script_demand).
+    void push_script_demand() {
+        std::vector<std::map<std::string, int>> want(house_names_.size());
+        for (const Team& tm : teams_) {
+            if (tm.st.done || !tm.recruiting || tm.house <= 0 || tm.house >= (int)want.size()) continue;
+            if (w_.controllable(tm.house) || !w_.ai_enabled(tm.house)) continue;
+            std::vector<std::string> types;
+            std::vector<int> need = taskforce_counts(tm, types);
+            for (int m : tm.members)
+                for (std::size_t k = 0; k < types.size(); ++k)
+                    if (utrack_[(std::size_t)m].type == types[k] && need[k] > 0) { --need[k]; break; }
+            for (std::size_t k = 0; k < types.size(); ++k)
+                if (need[k] > 0) want[(std::size_t)tm.house][types[k]] += need[k];
+        }
+        for (std::size_t h = 1; h < want.size(); ++h) {
+            if (!w_.ai_enabled((int)h)) continue;
+            std::vector<std::string> ids;
+            std::vector<int> counts;
+            for (const auto& kv : want[h]) { ids.push_back(kv.first); counts.push_back(kv.second); }
+            w_.set_ai_script_demand((int)h, std::move(ids), std::move(counts));
+        }
+    }
     // W4-SQ-01: a member inside a transport / drop plane / under its
     // parachute / in a garrison is not on the map: team coordination skips it
     // (the original tests ObjectClass +0x90 IsOnMap per member).
@@ -1736,7 +1760,9 @@ private:
                     live_m.push_back(m);
             tm.members = live_m;
             if (tm.recruiting) {
-                if (recruit(tm)) adopt(tm, (int)ti);
+                // W4-SQ-12: the wait for members restarts on every recruit (the
+                // house may be training them).
+                if (recruit(tm)) { adopt(tm, (int)ti); tm.created = frame_; }
                 const bool full = teams_data_.teams[(std::size_t)tm.type].full;
                 std::vector<std::string> types;
                 std::vector<int> need = taskforce_counts(tm, types);
@@ -2167,6 +2193,15 @@ private:
             const int eh = rt.engine_house(ht);
             return eh >= 0 ? rt.destroyed_buildings_[(std::size_t)eh] : 0;
         }
+        bool house_discovered(int ht) const override {
+            const int eh = rt.engine_house(ht);
+            if (eh < 0) return false;
+            for (std::size_t i = 0; i < rt.utrack_.size() && i < rt.w_.units().size(); ++i)
+                if (rt.utrack_[i].discovered && rt.w_.units()[i].house == eh) return true;
+            for (std::size_t i = 0; i < rt.btrack_.size() && i < rt.w_.buildings().size(); ++i)
+                if (rt.btrack_[i].discovered && rt.w_.buildings()[i].house == eh) return true;
+            return false;
+        }
         int house_destroyed_units(int ht) const override {
             const int eh = rt.engine_house(ht);
             return eh >= 0 ? rt.destroyed_units_[(std::size_t)eh] : 0;
@@ -2380,6 +2415,31 @@ private:
             v.waypoint = e.waypoint;
             v.text = camp::trim_comment(ra2_rules_.get(wpn, "Warhead", ""));
             visuals_.push_back(v);
+            return true;
+        }
+        case 18: {   // W4-SQ-11 RevealZone [RE-FALLBACK: MapClass zone = the
+                     // waypoint cell's connected ground area, walked to 64 cells out]
+            int x = 0, y = 0;
+            if (!waypoint_cell(e.waypoint, x, y)) return false;
+            const int W = w_.grid_w(), H = w_.grid_h();
+            std::vector<std::uint8_t> seen((std::size_t)W * H, 0);
+            std::vector<int> q{y * W + x};
+            seen[(std::size_t)q[0]] = 1;
+            const bool land = w_.walkable(x, y);
+            for (std::size_t k = 0; k < q.size(); ++k) {
+                const int cx = q[k] % W, cy = q[k] / W;
+                if ((cx + cy) % 3 == 0) w_.reveal_source(0, cx, cy, 2);
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = cx + dx, ny = cy + dy;
+                        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+                        if (std::abs(nx - x) > 64 || std::abs(ny - y) > 64) continue;
+                        const std::size_t ni = (std::size_t)ny * W + nx;
+                        if (seen[ni] || w_.walkable(nx, ny) != land) continue;
+                        seen[ni] = 1;
+                        q.push_back((int)ni);
+                    }
+            }
             return true;
         }
         case 81: case 82: case 83:   // W4-SQ-05 WakeupSelf / WakeupAllSleepers / WakeupAllHarmless

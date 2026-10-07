@@ -3790,6 +3790,14 @@ void World::step_ai_teams(double dt) {
                 for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut)
                     need[ut] += std::max(0, ai_team_need(t, tc.aimd, ut));
             }
+            // W4-SQ-12: the campaign's scripted teams of this house.
+            if (h < (int)ai_demand_ids_.size())
+                for (std::size_t k = 0; k < ai_demand_ids_[(std::size_t)h].size(); ++k)
+                    for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut)
+                        if (tc.unit_roster[ut].id == ai_demand_ids_[(std::size_t)h][k]) {
+                            need[ut] += ai_demand_counts_[(std::size_t)h][k];
+                            break;
+                        }
             int best_inf = 0, best_veh = 0;
             for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut) {
                 if (need[ut] <= 0) continue;
