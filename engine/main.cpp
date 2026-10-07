@@ -310,7 +310,10 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
         return raw;
     };
     auto try_load = [&](const std::string& name, ra2assets::ShpFile& out) -> bool {
-        for (const char* ext : {".tem", ".shp"})
+        // W2-GA-01: the theater's own extension (.tem/.sno/.urb), then .shp
+        // [RE: economy.md §5, maps.md §6 TheaterChain].
+        const std::string theater_ext = std::string(".") + art_chain().ext;
+        for (const std::string& ext : {theater_ext, std::string(".shp")})
             for (const auto& c : ra2assets::theater_candidates(name, art_chain().letter,
                                                                art_chain().iso_mix,
                                                                art_chain().art_mix, ext)) {
@@ -348,7 +351,7 @@ OreArt load_ore_art(const ra2assets::MixFile& ra2) {
         }
     } catch (const std::exception&) { oa.has_pal = false; }
     oa.any = ok > 0;
-    std::cerr << "[ore] art files loaded=" << ok << " pal=" << (oa.has_pal ? "temperat" : "FALLBACK")
+    std::cerr << "[ore] art files loaded=" << ok << " pal=" << (oa.has_pal ? art_chain().theater_pal : "FALLBACK")
               << " tib01=" << (oa.present[0][0] ? std::to_string(oa.shp[0][0].count()) : "absent")
               << "f tib02=" << (oa.present[0][1] ? std::to_string(oa.shp[0][1].count()) : "absent")
               << "f gem01=" << (oa.present[1][0] ? std::to_string(oa.shp[1][0].count()) : "absent")

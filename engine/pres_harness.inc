@@ -147,7 +147,14 @@ struct PresHarness {
                     const double dx = bs[b].cx - us[i].fx, dy = bs[b].cy - us[i].fy;
                     if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = b; }
                 }
-                if (best >= 0) w.order_unit_attack_building(i, best);
+                if (best >= 0) { w.order_unit_attack_building(i, best); continue; }
+                // MCV start: no enemy building yet -> the nearest enemy unit.
+                for (int j = 0; j < static_cast<int>(us.size()); ++j) {
+                    if (!us[j].alive || us[j].cargo_of >= 0 || !w.is_enemy(0, us[j].house)) continue;
+                    const double dx = us[j].fx - us[i].fx, dy = us[j].fy - us[i].fy;
+                    if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = j; }
+                }
+                if (best >= 0) w.order_unit_attack(i, best);
             }
             for (int i = 0; i < static_cast<int>(us.size()); ++i) {
                 if (!us[i].alive || us[i].house == 0) continue;
@@ -170,17 +177,24 @@ struct PresHarness {
     // house's first building (exercises voxel house colours + tank weapons).
     static void spawn_tanks(GameScene& g) {
         ra2engine::World& w = g.world_;
-        const int nb = static_cast<int>(w.buildings().size());
-        std::vector<int> done;
-        for (int b = 0; b < nb; ++b) {
-            const ra2engine::Building bb = w.buildings()[b];
-            if (!bb.alive || std::find(done.begin(), done.end(), bb.house) != done.end()) continue;
-            done.push_back(bb.house);
-            const UnitRoster& r = (w.house_side(bb.house) == ra2engine::World::Side::Soviet) ? g.ur_ai_ : g.ur_;
+        // Anchor per house: its first building, else (MCV start, gF G-23: no
+        // building at frame 0) its first live unit -- the MCV.
+        struct Anchor { int house, x, y; };
+        std::vector<Anchor> anchors;
+        auto has = [&](int h) {
+            for (const Anchor& a : anchors) if (a.house == h) return true;
+            return false;
+        };
+        for (const ra2engine::Building& bb : w.buildings())
+            if (bb.alive && !has(bb.house)) anchors.push_back({bb.house, bb.cx, bb.cy + bb.fh + 1});
+        for (const ra2engine::Unit& u : w.units())
+            if (u.alive && u.cargo_of < 0 && !has(u.house)) anchors.push_back({u.house, u.cell_x, u.cell_y + 2});
+        for (const Anchor& an : anchors) {
+            const UnitRoster& r = (w.house_side(an.house) == ra2engine::World::Side::Soviet) ? g.ur_ai_ : g.ur_;
             const ra2engine::UnitTypeDef* d = nullptr;
             for (const auto& u : r.defs) if (u.is_vehicle && u.combat.damage > 0) { d = &u; break; }
             if (!d) continue;
-            for (int k = 0; k < 3; ++k) w.add_combat_unit(bb.cx - 2 - k, bb.cy + bb.fh + 1, bb.house, d->combat);
+            for (int k = 0; k < 3; ++k) w.add_combat_unit(an.x - 2 - k, an.y, an.house, d->combat);
         }
     }
     static void follow_action(GameScene& g) {
@@ -208,6 +222,12 @@ struct PresHarness {
             if (!b.alive) continue;
             if (b.house == 0 && !hp) { px = b.cx; py = b.cy; hp = true; }
             if (b.house != 0 && !he && g.world_.is_enemy(0, b.house)) { ex = b.cx; ey = b.cy; he = true; }
+        }
+        // MCV start (gF G-23): no building yet -> the house's first live unit.
+        for (const auto& u : g.world_.units()) {
+            if (!u.alive || u.cargo_of >= 0) continue;
+            if (u.house == 0 && !hp) { px = u.cell_x; py = u.cell_y; hp = true; }
+            if (u.house != 0 && !he && g.world_.is_enemy(0, u.house)) { ex = u.cell_x; ey = u.cell_y; he = true; }
         }
         if (!hp) return;
         const double cx = he ? px + (ex - px) * toward_enemy : px;
