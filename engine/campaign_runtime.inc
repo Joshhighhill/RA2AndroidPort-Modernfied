@@ -169,7 +169,9 @@ public:
                     ua_.anims.emplace(img, anim_from_art(art_, img));
                 }
                 t.ok = true;
-            } else if (index_of(vehicles_, id) >= 0) {
+            } else if (index_of(vehicles_, id) >= 0 || index_of(aircraft_, id) >= 0) {
+                // W2-CA-16: aircraft resolve through the same voxel loader
+                // (resolve_an_type sets the fixed-wing / jumpjet flight model).
                 auto va = std::make_unique<VehicleAssets>(load_vehicle_assets(dir_, ra2_, ua_.pal, id));
                 if (va->ok) {
                     t.combat = va->combat;
@@ -178,8 +180,6 @@ public:
                     vas_.push_back(std::move(va));
                 }
             }
-            // Aircraft: no campaign placement path yet (none in the two first
-            // missions) -- logged as skipped by the caller.
         } catch (const std::exception& ex) {
             std::cerr << "[campaign] unit type " << id << " unavailable (" << ex.what() << ")\n";
             t.ok = false;
@@ -294,7 +294,7 @@ public:
         const std::vector<ra2engine::MapObjectRec> objs = ra2engine::parse_map_objects(map_);
         for (const ra2engine::MapObjectRec& o : objs)
             if (o.kind == 0) types_.building(ba_, o.type);
-            else if (o.kind != 3) types_.unit(o.type);
+            else types_.unit(o.type);   // W2-CA-16: aircraft too
         for (const auto& tf : teams_data_.taskforces)
             for (const ra2engine::MapTaskMember& m : tf.second) types_.unit(m.type);
         resolve_base_nodes();   // [G-69] before the roster is handed to the World
@@ -859,7 +859,26 @@ private:
         // §1 water grid); a ground unit whose waypoint lies at sea goes to the
         // nearest free shore cell within 12 [RE-FALLBACK §9.3: the original
         // delivers by transport / edge entry; no TeamClass delivery yet].
-        if (ut->combat.is_naval) {
+        if (ut->combat.is_aircraft) {
+            // W2-CA-16: an aircraft enters at its waypoint (the map edge for
+            // most teams) on a free cell nearby; it takes off on its first order.
+            x = std::clamp(x, 0, std::max(0, w_.grid_w() - 1));
+            y = std::clamp(y, 0, std::max(0, w_.grid_h() - 1));
+            cx = x;
+            cy = y;
+            bool found = false;
+            for (int r = 0; r <= 12 && !found; ++r)
+                for (int dy = -r; dy <= r && !found; ++dy)
+                    for (int dx = -r; dx <= r && !found; ++dx) {
+                        if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                        const int ax = x + dx, ay = y + dy;
+                        if (ax < 0 || ay < 0 || ax >= w_.grid_w() || ay >= w_.grid_h()) continue;
+                        if (w_.unit_at_cell(ax, ay) >= 0 || w_.building_at_cell(ax, ay) >= 0) continue;
+                        if (!w_.occupancy().is_free(ax, ay)) continue;
+                        cx = ax; cy = ay; found = true;
+                    }
+            if (!found) return -1;
+        } else if (ut->combat.is_naval) {
             if (!free_water_near(x, y, cx, cy, 12) &&
                 !(far && far_cell(x, y, /*water=*/true, -1, -1, cx, cy)))
                 return -1;
@@ -908,8 +927,9 @@ private:
                 t.tag = o.tag.empty() ? -1 : data_.find_tag(o.tag);
                 t.hp = b.hp;
                 ++placed_b_;
-            } else if (o.kind == 3) {
-                ++skipped_;   // aircraft: no campaign placement path (cut, logged)
+            } else if (o.kind == 3) {   // W2-CA-16: [Aircraft] objects
+                if (place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission) >= 0) ++placed_u_;
+                else ++skipped_;
             } else {
                 if (!w_.walkable(o.x, o.y) && !types_.unit(o.type)) { ++skipped_; continue; }
                 if (place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission) >= 0) ++placed_u_;
@@ -1210,6 +1230,8 @@ private:
         return best;
     }
     void order_attack(int m, int target, bool building) {
+        // W2-CA-16: a fixed-wing team member flies a strike sortie.
+        if (w_.order_fixed_wing(m, building ? -1 : target, building ? target : -1, -1, -1)) return;
         if (building) w_.order_unit_attack_building(m, target);
         else w_.order_unit_attack(m, target);
     }
@@ -1295,7 +1317,8 @@ private:
             tm.goal_y = y;
             tm.issued_frame = frame_;
             if (x < 0) return;
-            for (int m : tm.members) w_.order_unit_move(m, x, y);
+            for (int m : tm.members)
+                if (!w_.order_fixed_wing(m, -1, -1, x, y)) w_.order_unit_move(m, x, y);
             return;
         }
         case K::Attack:
