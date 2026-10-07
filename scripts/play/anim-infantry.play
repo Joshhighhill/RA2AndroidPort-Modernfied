@@ -1,0 +1,130 @@
+# anim-infantry -- W3-B infantry sequence state machine (engine/inf_anim.cpp).
+#
+# Same conventions as anim-buildings.play: `set align 2` + tick-gated input
+# (a gate after a shot burst of n shots must be >= 2n ticks later, or the
+# 30 Hz run reaches it a frame late),
+# shots <prefix>_<tick>.png in bursts, every shot centred on the construction
+# yard (the squads stand east of it); anim_check.py <out> (pairs change) and
+# anim_check.py --cross <out60> <out30> (RA2_PLAY_HZ=30 re-run: 0 px).
+# Probe keys iseq(<Sequence>), iprone, corpses, death_anims assert the state.
+#   gi_*      six GIs standing -> idle fidgets (idle_*: Idle1 / Idle2)
+#   prone_*   three enemy Conscripts open fire: the GIs drop prone (Down ->
+#             Prone, FireProne), fear decays, they stand up (Up)
+#   die_*     death by warhead InfDeath: 1 Die1, 2 Die2 (bodies), 3 InfantryExplode,
+#             4 FlamingInfantry, 5 ELECTRO, 6 InfantryHeadPop (death anims)
+#   corpse_*  DeadBodies corpses after Die1/Die2
+#   civ_*     enemy civilians (Fraidycat) under fire: Panic + scatter
+#   dep_*     Guardian GI deploy (Deploy -> Deployed)
+#   cheer_*   cheat cheer 0 (trigger action 113 MakeHouseCheer)
+set hz 60
+set align 2
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 400 scene == game
+until 4000 anim_tick >= 20
+click unit 0:AMCV
+key d
+until 4000 anim_tick >= 200
+assert built(0,GACNST) == 1
+cheat spawn E1 0 building 0:GACNST +4 +0
+cheat spawn E1 0 building 0:GACNST +4 +1
+cheat spawn E1 0 building 0:GACNST +4 +2
+cheat spawn E1 0 building 0:GACNST +5 +0
+cheat spawn E1 0 building 0:GACNST +5 +1
+cheat spawn E1 0 building 0:GACNST +5 +2
+view building 0:GACNST
+until 4000 anim_tick >= 220
+shot gi_{tick}
+shot gi_{tick}
+# --- idle fidgets: IdleActionFrequency .15 min -> every 68..270 ticks -------
+until 4000 iseq(Idle1) >= 1 or iseq(Idle2) >= 1
+shot idle_{tick}
+shot idle_{tick}
+shot idle_{tick}
+shot idle_{tick}
+until 4000 anim_tick >= 500
+shot gi_{tick}
+shot gi_{tick}
+# --- under fire: enemy Conscripts -> fear 100 -> Down -> Prone / FireProne ----
+until 4000 anim_tick >= 520
+cheat spawn E2 1 building 0:GACNST +10 +0
+cheat spawn E2 1 building 0:GACNST +10 +1
+cheat spawn E2 1 building 0:GACNST +10 +2
+until 4000 iprone >= 2
+shot prone_{tick}
+shot prone_{tick}
+shot prone_{tick}
+shot prone_{tick}
+until 4000 anim_tick >= 700
+shot prone_{tick}
+shot prone_{tick}
+# --- deaths by InfDeath -------------------------------------------------------
+until 4000 anim_tick >= 900
+cheat spawn E2 0 building 0:GACNST +1 +6
+cheat spawn E2 0 building 0:GACNST +2 +6
+cheat spawn E2 0 building 0:GACNST +3 +6
+cheat spawn E2 0 building 0:GACNST +1 +7
+cheat spawn E2 0 building 0:GACNST +2 +7
+cheat spawn E2 0 building 0:GACNST +3 +7
+until 4000 anim_tick >= 920
+shot die_{tick}
+shot die_{tick}
+until 4000 anim_tick >= 926
+cheat infkill 0:E2 1
+cheat infkill 0:E2 2
+cheat infkill 0:E2 3
+cheat infkill 0:E2 4
+cheat infkill 0:E2 5
+cheat infkill 0:E2 6
+until 4000 anim_tick >= 930
+shot die_{tick}
+shot die_{tick}
+until 4000 anim_tick >= 936
+shot die_{tick}
+shot die_{tick}
+until 4000 anim_tick >= 990
+assert corpses >= 2
+assert death_anims >= 3
+shot corpse_{tick}
+shot corpse_{tick}
+until 4000 anim_tick >= 1100
+shot corpse_{tick}
+shot corpse_{tick}
+# --- enemy civilians under our fire: Panic ------------------------------------
+until 4000 anim_tick >= 1120
+cheat spawn CIV1 1 building 0:GACNST +7 +4
+cheat spawn CIV2 1 building 0:GACNST +7 +5
+cheat spawn CIV3 1 building 0:GACNST +8 +4
+until 6000 iseq(Panic) >= 1
+shot civ_{tick}
+shot civ_{tick}
+shot civ_{tick}
+shot civ_{tick}
+# --- GI deploy ---------------------------------------------------------------
+until 8000 anim_tick >= 1600
+cheat spawn GGI 0 building 0:GACNST +2 +6
+until 8000 anim_tick >= 1602
+click unit 0:GGI
+until 8000 anim_tick >= 1604
+key d
+until 600 iseq(Deploy) >= 1 or iseq(Deployed) >= 1
+shot dep_{tick}
+shot dep_{tick}
+shot dep_{tick}
+shot dep_{tick}
+until 8000 iseq(Deployed) >= 1
+shot dep_{tick}
+shot dep_{tick}
+# --- cheer --------------------------------------------------------------------
+until 8000 anim_tick >= 1800
+cheat cheer 0
+until 600 iseq(Cheer) >= 1
+shot cheer_{tick}
+shot cheer_{tick}
+shot cheer_{tick}
+shot cheer_{tick}
+end

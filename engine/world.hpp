@@ -13,6 +13,7 @@
 #include "ore.hpp"  // OreField/OreKind/OreRng (Economy phase)
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
+#include "inf_anim.hpp"               // W3-B infantry sequence machine (Unit::ia)
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "repair_sell.hpp"  // Repair & Sell: RepairSellRules + the pure tick arithmetic
 #include "crate.hpp"  // P5 Crates: GameRandom/CrateRules/Powerup (pure)
@@ -127,6 +128,12 @@ struct Unit {
     bool attack_order = false;     // explicit order (pursues) vs auto-acquire
     double rof_cool = 0.0;         // seconds until the weapon may fire again
     double fire_flash = 0.0;       // seconds of fire-anim left (renderer)
+    // W3-B: the active weapon's warhead InfDeath= / ProneDamage= (set with the
+    // other w_* fields) and the infantry sequence state. Inert unless
+    // World::enable_infantry_anims armed the unit; never hashed.
+    int w_inf_death = 0;
+    double w_prone_damage = 1.0;
+    InfAnimState ia;
     int guard_x = 0, guard_y = 0;  // guard anchor (cell when target auto-acquired)
     bool alive = true;             // TOMBSTONE: false after die anim; never erased
     double die_time = -1.0;        // >=0: dying (die anim playing); alive stays true until it ends
@@ -657,6 +664,27 @@ public:
     // `image`; anim_for_image falls back to default_anim() for any image
     // never registered here (main.cpp/Task 4 wires this from artmd.ini).
     void set_anim(const std::string& image, const UnitAnimSeq& seq);
+    // W3-B: the live game's infantry DoType machine (inf_anim.hpp). Off in
+    // every gate/test World (frames then come from set_anim's 4 entries).
+    // `human_house` = the player's house (no fear-drop while it is moving),
+    // `idle_frequency` = rules [AudioVisual] IdleActionFrequency.
+    void enable_infantry_anims(int human_house, double idle_frequency) {
+        inf_anims_ = true;
+        inf_human_ = human_house;
+        inf_idle_freq_ = idle_frequency;
+    }
+    bool infantry_anims() const { return inf_anims_; }
+    void set_inf_table(const std::string& image, const InfTable& t) { inf_tables_[image] = t; }
+    const InfTable* inf_table(const std::string& image) const {
+        auto it = inf_tables_.find(image);
+        return it == inf_tables_.end() ? nullptr : &it->second;
+    }
+    // Trigger action 113 MakeHouseCheer / the victory cheer: every idle
+    // infantry of `house` plays its Cheer sequence.
+    void make_house_cheer(int house) {
+        for (Unit& u : units_)
+            if (u.alive && u.die_time < 0.0 && u.house == house && !u.is_vehicle) u.ia.cheer = true;
+    }
 
     // Deselect every unit.
     void clear_selection();
@@ -1971,6 +1999,10 @@ private:
     int grid_h_ = 0;
     double move_cps_ = 3.0;
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
+    bool inf_anims_ = false;                       // W3-B
+    int inf_human_ = 0;
+    double inf_idle_freq_ = 0.15;
+    std::map<std::string, InfTable> inf_tables_;
 
     // --- Economy phase [RE: economy.md] ---
     OreField ore_;

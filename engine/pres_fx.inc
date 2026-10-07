@@ -493,7 +493,7 @@ public:
                             double ox_px = 0.0, int house = -1) {
         const FxAnimType* t = type(name);
         if (!t || t->frames <= 0) return nullptr;
-        anims_.push_back(Anim{t, fx, fy, level, lift_px, 0, ox_px, house, instance_delay(*t)});
+        anims_.push_back(Anim{t, fx, fy, level, lift_px, 0, ox_px, house, instance_delay(*t, fx, fy)});
         if ((t->crater || t->scorch) && g_smudge_hook && lift_px < 30.0) g_smudge_hook(t->crater, fx, fy);
         return t;
     }
@@ -510,6 +510,7 @@ public:
         anims_.push_back(a);
     }
     void tick() {
+        ++rand_tick_;
         ++beam_tick_;
         for (Beam& b : beams_) ++b.age;
         beams_.erase(std::remove_if(beams_.begin(), beams_.end(),
@@ -521,7 +522,7 @@ public:
             if (a.hold || a.t->frame_at(a.age, a.delay) >= 0) continue;
             if (!a.t->next.empty())
                 if (const FxAnimType* n = type(a.t->next))
-                    next.push_back(Anim{n, a.sx, a.sy, a.level, a.lift_px, 0, a.ox_px, a.house, instance_delay(*n)});
+                    next.push_back(Anim{n, a.sx, a.sy, a.level, a.lift_px, 0, a.ox_px, a.house, instance_delay(*n, a.sx, a.sy)});
             a.t = nullptr;
         }
         anims_.erase(std::remove_if(anims_.begin(), anims_.end(), [](const Anim& a) { return !a.t; }),
@@ -605,12 +606,17 @@ public:
         unit_pal_ = unit_pal;
         world_for_pal_ = w;
     }
-    // RandomRate: a fresh Random(min,max) delay per instance (render RNG).
-    int instance_delay(const FxAnimType& t) {
+    // RandomRate: a Random(min,max) delay per instance, hashed from the
+    // spawn tick and place (render-only; independent of spawn order, so the
+    // same at any render rate).
+    int instance_delay(const FxAnimType& t, double fx = 0.0, double fy = 0.0) {
         if (t.rand_max <= 0) return t.delay;
-        fx_rng_ = fx_rng_ * 1664525u + 1013904223u;
-        return t.rand_min + static_cast<int>((fx_rng_ >> 8) % static_cast<uint32_t>(t.rand_max - t.rand_min + 1));
+        uint32_t h = static_cast<uint32_t>(rand_tick_) * 2654435761u ^ static_cast<uint32_t>(std::lround(fx * 256.0)) * 40503u ^
+                     static_cast<uint32_t>(std::lround(fy * 256.0)) * 2246822519u;
+        for (char c : t.name) h = (h ^ static_cast<uint8_t>(c)) * 16777619u;
+        return t.rand_min + static_cast<int>((h >> 8) % static_cast<uint32_t>(t.rand_max - t.rand_min + 1));
     }
+    long rand_tick_ = 0;   // the logic tick (set by tick())
     // Centered SHP frame blit with anim.pal (`alpha` 255 = opaque).
     void blit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::ShpFile& shp,
               const std::string& tag, int fr, int cx, int cy, int alpha, int W, int H,

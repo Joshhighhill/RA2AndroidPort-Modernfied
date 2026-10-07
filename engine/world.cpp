@@ -635,6 +635,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_rof = c.rof;
     u.w_range = c.range;
     u.w_verses = c.verses;
+    u.w_inf_death = c.inf_death;            // W3-B
+    u.w_prone_damage = c.prone_damage;
     u.w_cell_spread = c.cell_spread;        // CB-2 [aircraft.md §4]: warhead splash
     u.w_percent_at_max = c.percent_at_max;  // radius + edge scale (0 = single-target)
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
@@ -720,6 +722,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.verses = c.verses;
     u.vet.base.cell_spread = c.cell_spread;
     u.vet.base.percent_at_max = c.percent_at_max;
+    u.vet.base.inf_death = c.inf_death;     // W3-B
+    u.vet.base.prone_damage = c.prone_damage;
     u.vet.has_elite = c.has_elite;
     u.vet.elite = c.elite;
     u.vet.base_speed_cps = c.speed_cps;
@@ -4363,6 +4367,42 @@ void World::step(double dt) {
             if (t.alive) {
                 const int f = facing_from_delta(t.fx - u.fx, t.fy - u.fy);
                 if (f >= 0) u.facing = f;
+            }
+        }
+
+        // W3-B: the live game's infantry sequence machine (inf_anim.cpp),
+        // one step per 15 Hz logic tick of accumulated time.
+        if (inf_anims_ && !u.is_vehicle && !u.is_aircraft && !u.is_naval && u.cargo_of < 0) {
+            const InfTable* it = inf_table(u.image);
+            if (it) {
+                const int ui = static_cast<int>(&u - units_.data());
+                if (!u.ia.armed) {
+                    u.ia.armed = true;
+                    u.ia.fearless = it->fearless;
+                    u.ia.fraidycat = it->fraidycat;
+                    if (u.ia.rng == 0) u.ia.rng = static_cast<std::uint32_t>(ui) * 2654435761u + 0x9E3779B9u;
+                }
+                InfTickCtx c;
+                c.moving = u.moving();
+                c.has_destination = !u.path.empty();
+                c.human = u.house == inf_human_;
+                const std::size_t ci = static_cast<std::size_t>(u.cell_y) * grid_w_ + u.cell_x;
+                c.in_water = u.cell_x >= 0 && u.cell_y >= 0 && ci < water_passable_.size() && water_passable_[ci];
+                c.has_target = u.target >= 0 || u.target_building >= 0;
+                c.dying = u.die_time >= 0.0;
+                c.deployed = u.deployed;
+                c.fire_flash = u.fire_flash;
+                c.idle_frequency = inf_idle_freq_;
+                if (it->fraidycat) c.scatter = [this, ui]() { order_scatter(ui); };
+                u.ia.acc += dt * 15.0;
+                bool stepped = false;
+                while (u.ia.acc >= 1.0 - 1e-9) {
+                    u.ia.acc -= 1.0;
+                    u.frame = inf_anim_tick(u.ia, *it, u.facing, c);
+                    stepped = true;
+                }
+                if (!stepped) u.frame = inf_anim_frame(u.ia, *it, u.facing);
+                continue;
             }
         }
 

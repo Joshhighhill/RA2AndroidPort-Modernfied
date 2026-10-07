@@ -116,7 +116,6 @@ public:
         vh_ = view_h;
         production_eva(w, q, credits);
         power_eva(w, ba);
-        building_events(w, ba);
         if (ba.ok) unit_pal_ = &ba.unit_pal;
         if (ba.ok) fx_.set_unit_palette(&ba.unit_pal, &w);   // W3-B AltPalette base
         unit_audio(w, act);
@@ -173,9 +172,11 @@ public:
         std::vector<ra2engine::World::FireEvent> fresh;
         for (std::size_t i = std::min(fire_seen_, fe.size()); i < fe.size(); ++i) fresh.push_back(fe[i]);
         fire_seen_ = fe.size();
+        defense_fire_tick(w, fresh);   // muzzle / beam / report on the tick of the shot
         pres_bld_anim_tick(w, ba, fx_, g_pres_tick, fresh, units_seen_, bld_seen_,
                            [&](int h) { return h == 0 ? player_credits : w.house_credits(h); });
         building_anim_events(w, ba);   // W2-GA-14 SW charge edges, per tick
+        building_events(w, ba);        // damage EVA, death explosion + DestroyAnim, per tick (W3-B)
     }
     std::size_t fire_seen_ = 0, bld_seen_ = 0;   // W3-B
     void projectile_fx(const ra2engine::World& w, const std::vector<ra2engine::ProjectileEvent>& pev) {
@@ -789,8 +790,12 @@ public:
     // Base-defense shots (gap fix C's World::take_fire_events; unit shots are
     // already observed through fire_flash in unit_audio): the weapon's Report=
     // sound and muzzle Anim= at the building's centre, when visible.
-    void defense_fire(const ra2engine::World& w, const std::vector<ra2engine::World::FireEvent>& evs) {
-        fire_seen_ = 0;   // W3-B: the queue was just taken
+    // W3-B: GameScene drains the queue once per frame; the events were
+    // already handled tick by tick (defense_fire_tick from logic_tick).
+    void defense_fire(const ra2engine::World&, const std::vector<ra2engine::World::FireEvent>&) {
+        fire_seen_ = 0;
+    }
+    void defense_fire_tick(const ra2engine::World& w, const std::vector<ra2engine::World::FireEvent>& evs) {
         const auto& bs = w.buildings();
         for (const auto& e : evs) {
             if (e.building < 0 || e.building >= static_cast<int>(bs.size()) || e.weapon.empty()) continue;
@@ -812,6 +817,55 @@ public:
     }
 
 private:
+    // W3-B [RE: InfantryClass::ReceiveDamage FUN_00517db5 InfDeath switch;
+    // sequence-finished FUN_00520810 Die1-5 case]: an armed infantry whose
+    // kill picked a death ANIM (World set ia.vanish) gets it at the body:
+    // 3 InfantryExplode, 4 FlamingInfantry, 5 ELECTRO (AnimTypes[1] = rules
+    // [Animations] second entry), 6 InfantryHeadPop, 7 InfantryNuked,
+    // 8 InfantryVirus, 10 InfantryBrute (0: nothing). A body that played
+    // Die1/Die2 leaves a corpse when it tombstones: a random entry of the
+    // type's DeadBodies= or, for humans, [General] DeadBodies=.
+    std::vector<char> alive_prev_;
+    uint32_t corpse_rng_ = 0xC0FFEEu;
+public:
+    int corpses_ = 0, death_anims_ = 0;   // W3-B --play probe counters
+private:
+    void infantry_death_fx(const ra2engine::World& w, const ra2engine::Unit& u, bool was_living, bool was_alive) {
+        if (!u.ia.armed || u.is_vehicle || u.is_aircraft || u.cargo_of >= 0) return;
+        if (!w.object_visible_at(0, u.cell_x, u.cell_y) && u.house != 0) return;
+        const int lvl = level_at(w, u.fx, u.fy);
+        if (u.die_time >= 0.0 && was_living && u.ia.vanish) {
+            static const char* kKey[11] = {nullptr, nullptr, nullptr, "InfantryExplode", "FlamingInfantry",
+                                           nullptr, "InfantryHeadPop", "InfantryNuked", "InfantryVirus",
+                                           nullptr, "InfantryBrute"};
+            const int d = u.ia.death;
+            std::string anim;
+            if (d == 5) anim = "ELECTRO";
+            else if (d >= 0 && d <= 10 && kKey[d]) {
+                anim = pres_clean(rules_ini_->get("AudioVisual", kKey[d]));
+                if (anim.empty()) anim = pres_clean(rules_ini_->get("General", kKey[d]));
+            }
+            if (!anim.empty())
+                if (const FxAnimType* t = fx_.spawn(anim, u.fx, u.fy, lvl, 0.0, 0.0, u.house)) {
+                    snd_.play_at(t->report, u.fx, u.fy, "infantry death anim");
+                    ++death_anims_;
+                }
+            return;
+        }
+        if (!u.alive && was_alive && u.die_time >= 0.0 && !u.ia.vanish) {
+            std::string list = pres_clean(rules_ini_->get(u.image, "DeadBodies"));
+            const ra2engine::InfTable* it = w.inf_table(u.image);
+            if (list.empty() && !(it && it->not_human))
+                list = pres_clean(rules_ini_->get("General", "DeadBodies"));
+            std::vector<std::string> v;
+            std::stringstream ss(list);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) { tok = pres_clean(tok); if (!tok.empty()) v.push_back(tok); }
+            if (v.empty()) return;
+            corpse_rng_ = corpse_rng_ * 1664525u + 1013904223u;
+            if (fx_.spawn(v[(corpse_rng_ >> 8) % v.size()], u.fx, u.fy, lvl, 0.0)) ++corpses_;
+        }
+    }
     // W3-B: weapon Report + muzzle/impact anims on each shot and the death
     // sound/explosion, observed once per LOGIC tick (Presentation::logic_tick)
     // so an effect is born on the tick its event happened, whatever the
@@ -819,9 +873,12 @@ private:
     void unit_fx_tick(const ra2engine::World& w) {
         const auto& units = w.units();
         prev_.resize(units.size(), {0.0, -1.0});
+        alive_prev_.resize(units.size(), 1);
         for (std::size_t i = 0; i < units.size(); ++i) {
             const auto& u = units[i];
             const UnitVoices& v = audio_->voices[u.image];
+            infantry_death_fx(w, u, prev_[i].second < 0.0, alive_prev_[i] != 0);   // W3-B
+            alive_prev_[i] = u.alive ? 1 : 0;
             if (u.fire_flash > prev_[i].first && u.cargo_of < 0) {
                 snd_.play_at(pick_report(v.report), u.fx, u.fy, "report");
                 if (u.house == 0 || w.object_visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);

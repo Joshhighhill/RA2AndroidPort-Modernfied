@@ -30,7 +30,19 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.ag = rules.section_flag(proj, "AG", true);
     s.omni_fire = rules.weapon_omnifire(weapon);
     s.wall = rules.section_flag(wh, "Wall", false);   // G16: WarheadType +0x144
+    s.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));   // W3-B
+    s.prone_damage = warhead_prone_damage(rules, wh);
     return s;
+}
+
+// W3-B: ProneDamage= "50%" (or a fraction) -> multiplier; absent -> 1.0.
+double warhead_prone_damage(const ra2assets::Rules& rules, const std::string& wh) {
+    std::string v = rules.section_string(wh, "ProneDamage", "");
+    const std::size_t sc = v.find(';');
+    if (sc != std::string::npos) v = v.substr(0, sc);
+    if (v.empty()) return 1.0;
+    const double d = std::atof(v.c_str());
+    return v.find('%') != std::string::npos ? d / 100.0 : d;
 }
 
 std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& type_id, int i,

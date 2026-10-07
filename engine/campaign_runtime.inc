@@ -1596,6 +1596,14 @@ private:
                     l.find("(recorded)") != std::string::npos)
                     audio_.push_back({k, name[0] == '-' && name[1] == 0 ? std::string() : std::string(name), v, wp});
             }
+            {   // W3-B: action 113 MakeHouseCheer -> that house's infantry cheer.
+                int k = 0, v = 0;
+                if (std::sscanf(l.c_str(), "  a%d %*s v=%d", &k, &v) == 2 && k == 113 &&
+                    l.find("(recorded)") != std::string::npos) {
+                    const int eh = engine_house(v);
+                    if (eh >= 0) w_.make_house_cheer(eh);
+                }
+            }
             if (l.rfind("  a11 ", 0) == 0) {
                 // "  a11 TextTrigger v=.. wp=.. LABEL (recorded)"
                 const std::size_t e = l.rfind(" (recorded)");

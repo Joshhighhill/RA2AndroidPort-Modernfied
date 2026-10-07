@@ -253,6 +253,8 @@ void World::step_garrison_combat(double dt) {
         shooter.w_verses = w.verses;
         shooter.w_cell_spread = w.cell_spread;
         shooter.w_percent_at_max = w.percent_at_max;
+        shooter.w_inf_death = w.inf_death;          // W3-B
+        shooter.w_prone_damage = w.prone_damage;
         shooter.alive = false;
         fire_events_.push_back({-1, bi, b.garrison_target, -1, 0, w.id});
         ++garrison_shots_;

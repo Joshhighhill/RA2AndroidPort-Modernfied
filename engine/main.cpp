@@ -789,6 +789,8 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
+    r.combat.inf_death = static_cast<int>(rules.section_double(warhead, "InfDeath", 0.0));   // W3-B
+    r.combat.prone_damage = ra2engine::warhead_prone_damage(rules, warhead);
     // gF [RE: docs/re/mcv-deploy.md]: TechnoType DeploysInto= (+0x404, FUN_00711510).
     r.combat.deploys_into = rules.section_string(unit_id, "DeploysInto", "");
 
@@ -935,6 +937,8 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.verses = rules.verses(ewh);
         r.combat.elite.cell_spread = rules.section_double(ewh, "CellSpread", 0.0);
         r.combat.elite.percent_at_max = rules.section_double(ewh, "PercentAtMax", 1.0);
+        r.combat.elite.inf_death = static_cast<int>(rules.section_double(ewh, "InfDeath", 0.0));   // W3-B
+        r.combat.elite.prone_damage = ra2engine::warhead_prone_damage(rules, ewh);
         r.combat.elite_proj = tw.elite[0].proj;
         r.combat.has_elite_proj = true;
     }
@@ -1163,6 +1167,67 @@ ra2engine::UnitAnimSeq anim_from_art(const ra2assets::Art& art, const std::strin
               << seq.fire.count << "," << seq.fire.fmult << " die1=" << seq.die.first
               << "," << seq.die.count << "\n";
     return seq;
+}
+
+// W3-B: the live game's infantry sequence machine (engine/inf_anim.hpp) --
+// every [InfantryTypes] image gets its FULL art Sequence= table (all 42 keys,
+// with the optional facing label), art Crawls=, rules Fearless= / Fraidycat=
+// / NotHuman=, and the [AudioVisual] IdleActionFrequency idle timer base.
+// GameScene only; gates keep the 4-entry set_anim tables.
+void enable_live_infantry_anims(ra2engine::World& world, const Ini& rules_ini, const Ini& art_ini,
+                                int human_house) {
+    auto clean = [](std::string v) {
+        const std::size_t sc = v.find(';');
+        if (sc != std::string::npos) v = v.substr(0, sc);
+        while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
+        while (!v.empty() && std::isspace(static_cast<unsigned char>(v.front()))) v.erase(v.begin());
+        return v;
+    };
+    auto yes = [&](const Ini& ini, const std::string& sec, const char* k, bool d) {
+        const std::string v = clean(ini.get(sec, k));
+        if (v.empty()) return d;
+        const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(v[0])));
+        return c == 'y' || c == 't' || c == '1';
+    };
+    static const char* kFace[8] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+    int n = 0;
+    for (const auto& kv : rules_ini.section("InfantryTypes")) {
+        const std::string id = clean(kv.second);
+        if (id.empty()) continue;
+        std::string image = clean(rules_ini.get(id, "Image"));
+        if (image.empty()) image = id;
+        const std::string seq = clean(art_ini.get(image, "Sequence"));
+        if (seq.empty()) continue;
+        ra2engine::InfTable t;
+        for (int q = 0; q < ra2engine::kSqCount; ++q) {
+            const std::string v = clean(art_ini.get(seq, ra2engine::inf_seq_name(q)));
+            if (v.empty()) continue;
+            std::vector<std::string> f;
+            std::string cur;
+            for (char ch : v) { if (ch == ',') { f.push_back(clean(cur)); cur.clear(); } else cur += ch; }
+            f.push_back(clean(cur));
+            ra2engine::InfSeqEntry& e = t.e[static_cast<std::size_t>(q)];
+            e.has = true;
+            e.first = std::atoi(f[0].c_str());
+            e.count = f.size() > 1 ? std::max(1, std::atoi(f[1].c_str())) : 1;
+            e.fmult = f.size() > 2 ? std::atoi(f[2].c_str()) : 0;
+            if (f.size() > 3) {
+                std::string lab = f[3];
+                for (char& ch : lab) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                for (int k = 0; k < 8; ++k)
+                    if (lab == kFace[k]) e.facing = k;
+            }
+        }
+        t.crawls = yes(art_ini, image, "Crawls", true);
+        t.fearless = yes(rules_ini, id, "Fearless", false);
+        t.fraidycat = yes(rules_ini, id, "Fraidycat", false);
+        t.not_human = yes(rules_ini, id, "NotHuman", false);
+        world.set_inf_table(image, t);
+        ++n;
+    }
+    const std::string f = clean(rules_ini.get("AudioVisual", "IdleActionFrequency"));
+    world.enable_infantry_anims(human_house, f.empty() ? 0.15 : std::atof(f.c_str()));
+    std::cerr << "[inf-anim] tables=" << n << std::endl;
 }
 
 // Loads one image's SHP from ra2.mix/conquer.mix ("<Image>.shp", falling
@@ -3325,6 +3390,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) return;
         // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
         if (world.unit_hidden_from(0, u)) return;
+        if (u.ia.vanish) return;   // W3-B: a death anim replaced the body
         // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
         // SHP for its disguise type (draw_unit then blits it in the disguised
         // house's palette). When NOT disguised draw_image == u.image -> this is
@@ -5650,6 +5716,12 @@ public:
         pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
                      pres_vet_, world_.take_projectile_events());   // (W3-B: drained per tick; normally empty)
         pres_vet_.clear();
+        // W3-B: the player's infantry cheer once on victory [RE-FALLBACK: the
+        // original's win-time cheer call site was not traced].
+        if (!victory_cheered_ && world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(0)) {
+            world_.make_house_cheer(0);
+            victory_cheered_ = true;
+        }
         // Drain gap fix C's fire events every frame (unbounded otherwise);
         // base-defense shots get their sound + muzzle flash here.
         pres_.defense_fire(world_, world_.take_fire_events());
@@ -5750,6 +5822,7 @@ public:
         // (skirmish-start / AI-built infantry otherwise fall back to
         // default_anim and pick frames from the wrong SHP layout).
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
+        enable_live_infantry_anims(world_, rules_ini_, art_ini_, 0);   // W3-B
         const ra2engine::World::Side s = world_.house_side(0);
         pres_.init(dir_, ra2_, audio_, audio_.enabled, rules_, rules_ini_, art_ini_, {&ur_.defs, &ur_ai_.defs},
                    s == ra2engine::World::Side::Soviet ? 1 : s == ra2engine::World::Side::Yuri ? 2 : 0);
@@ -6352,6 +6425,7 @@ private:
     static constexpr double kScrollTick = 0.016;   // timeGetTime()>>4 tick
     double               scroll_mult_ = 0.07;      // [General] ScrollMultiplier
     double               scroll_tick_accum_ = 0.0;
+    bool                 victory_cheered_ = false;   // W3-B
     int                  scroll_accel_ = 0;
 
     // --- P7 Save / Load ---
