@@ -609,13 +609,20 @@ public:
         if (!d.image.empty() && pres_lower(d.image) != "none") {
             d.voxel = yes(aget(d.image, "Voxel"));
             d.rotates = yes(aget(d.image, "Rotates"));
+            // Art AnimPalette (def=no): a bullet SHP draws in the unit
+            // palette unless it asks for anim.pal (the 120MM shell's indices
+            // 137..143 are dull grey-brown in unittem.pal, garbage in anim.pal).
+            d.anim_pal = yes(aget(d.image, "AnimPalette"));
+            // [Projectile] Shadow= (def=yes): the ground shadow under the shell.
+            const std::string sh = rget(pj, "Shadow");
+            d.shadow = sh.empty() ? true : yes(sh);
             if (d.voxel) d.vox = voxel_def(d.image);
             if (!d.vox) d.shp = fx_->projectile_shp(d.image);
         }
         return proj_draw_.emplace(weapon, std::move(d)).first->second;
     }
     bool draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
-                         const ra2engine::Projectile& p, int gx, int sy, int W, int H) {
+                         const ra2engine::Projectile& p, int gx, int sy, int gy, int W, int H) {
         const std::string wid = projectile_weapon(w, p);
         if (wid.empty()) return false;
         auto& d = proj_draw(wid);
@@ -650,6 +657,12 @@ public:
             return true;
         }
         if (!d.shp || d.shp->count() <= 0) return false;
+        if (d.shadow && gy > sy + 2) {   // Shadow=yes: a dark blob on the ground below
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 110);
+            SDL_Rect r{gx - 2, gy - 1, 4, 2};
+            SDL_RenderFillRect(ren, &r);
+        }
         int fr = 0;
         if (d.rotates && d.shp->count() > 1) {
             // Facing frames: 0 = north, clockwise (TS/RA2 bullet SHP convention)
@@ -661,7 +674,10 @@ public:
             fr = static_cast<int>(std::lround((ang < 0 ? ang + 2 * 3.14159265358979 : ang) /
                                               (2 * 3.14159265358979) * n)) % n;
         }
-        fx_->blit(ren, tc, *d.shp, "proj:" + d.image, fr, gx, sy, 255, W, H);
+        if (!d.anim_pal && unit_pal_)
+            fx_->blit(ren, tc, *d.shp, "projU:" + d.image, fr, gx, sy, 255, W, H, unit_pal_);
+        else
+            fx_->blit(ren, tc, *d.shp, "proj:" + d.image, fr, gx, sy, 255, W, H);
         return true;
     }
 
@@ -738,7 +754,7 @@ private:
     struct ProjArt { std::string trailer; int spawn_delay = 3; bool line = false; SDL_Color line_color{255, 255, 255, 255}; int line_decrement = 16; };
     struct ProjDraw {
         std::string image;
-        bool voxel = false, rotates = false;
+        bool voxel = false, rotates = false, anim_pal = false, shadow = true;
         const VoxelDef* vox = nullptr;
         std::shared_ptr<ra2assets::ShpFile> shp;
         std::map<int, ra2engine::VoxelSprite> sprites;   // yaw x pitch -> sprite

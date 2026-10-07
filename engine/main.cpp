@@ -3355,7 +3355,7 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const int sy = gy - static_cast<int>(std::lround((p.z / 256.0) * 36.74));
         if (gx < -8 || gx > W + 8 || sy > H + 8 || gy < -8) continue;
         // W4: the FIRING weapon's art (slot / base defence / voxel bullet).
-        if (tc && g_fx3 && g_fx3->draw_projectile(ren, *tc, world, p, gx, sy, W, H)) continue;
+        if (tc && g_fx3 && g_fx3->draw_projectile(ren, *tc, world, p, gx, sy, gy, W, H)) continue;
         // G-83: the projectile's Image= art when the live game's FX layer has it.
         if (tc && pres_draw_projectile(ren, *tc, world, p, gx, sy, W, H)) continue;
         SDL_Rect shadow{gx - 2, gy - 1, 4, 2};

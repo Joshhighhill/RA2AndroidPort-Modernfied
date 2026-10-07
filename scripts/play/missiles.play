@@ -1,0 +1,138 @@
+# missiles.play -- W4 fix acceptance: every land/air weapon class fires and its
+# projectile FLIES with its own art (screenshots to READ): Rhino shell, IFV
+# homing missile + line trail, Kirov voxel bomb, V3 tilt/climb/arc, Grand Cannon
+# voxel shell, Apocalypse tusks (the Patriot interception is
+# missiles-intercept.play, the ALL01 Dreadnoughts all01-opening.play).
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 120 scene == game
+require scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+cheat reveal
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+log side0=$side(0)
+dump
+# --- A: Rhino 120mm (Cannon, Arcing) vs Grizzly at ~4 cells ------------------
+cheat spawn HTNK 0 building 0:GACNST +7 +0
+cheat spawn MTNK 1 building 0:GACNST +11 +0
+wait 2
+until 300 projectiles >= 1
+view unit 0:HTNK +2 +0
+shot a1_cannon
+wait 3
+view unit 0:HTNK +2 +0
+shot a2_cannon
+wait 3
+view unit 0:HTNK +2 +0
+shot a3_cannon
+wait 3
+view unit 0:HTNK +2 +0
+shot a4_cannon
+log a_proj=$projectiles
+cheat w2 kill 1:MTNK
+cheat w2 kill 0:HTNK
+wait 30
+# --- B: IFV HoverMissile (ROT=60 homing, DRAGON + UseLineTrail) vs Rhino ------
+cheat spawn FV 0 building 0:GACNST +7 +4
+cheat spawn HTNK 1 building 0:GACNST +12 +4
+until 300 homing_live >= 1
+view unit 0:FV +2 +0
+shot b1_ifv
+wait 1
+view unit 0:FV +2 +0
+shot b2_ifv
+wait 1
+view unit 0:FV +2 +0
+shot b3_ifv
+wait 1
+view unit 0:FV +2 +0
+shot b4_ifv
+wait 1
+view unit 0:FV +2 +0
+shot b5_ifv
+cheat w2 kill 1:HTNK
+cheat w2 kill 0:FV
+wait 30
+# --- D: Kirov bomb (BlimpBombP Vertical, ZBOMB voxel) on an enemy Rhino: the
+# Kirov is ordered to attack, takes off and bombs from its cruise height ------
+cheat spawn ZEP 0 building 0:GACNST +4 -8
+cheat spawn HTNK 1 building 0:GACNST +4 -13
+wait 2
+click unit 0:ZEP
+click unit 1:HTNK
+until 900 projectiles >= 1
+view unit 1:HTNK
+shot d1_kirov
+wait 2
+view unit 1:HTNK
+shot d2_kirov
+wait 2
+view unit 1:HTNK
+shot d3_kirov
+wait 2
+view unit 1:HTNK
+shot d4_kirov
+cheat w2 kill 0:ZEP
+cheat w2 kill 1:HTNK
+wait 30
+# --- E: V3 launcher (Spawner -> V3ROCKET, RocketLocomotion) vs an engineer ---
+cheat spawn V3 0 building 0:GACNST -6 -2
+cheat spawn ENGINEER 1 building 0:GACNST -6 -15
+wait 2
+click unit 0:V3
+click unit 1:ENGINEER
+until 600 spawned_out(0) >= 1
+view unit 0:V3 +0 -3
+shot e1_v3
+wait 20
+view unit 0:V3 +0 -3
+shot e2_v3
+wait 30
+view unit 0:V3 +0 -6
+shot e3_v3
+wait 20
+view unit 0:V3 +0 -9
+shot e4_v3
+wait 15
+view unit 0:V3 +0 -12
+shot e5_v3
+wait 15
+view unit 0:V3 +0 -12
+shot e6_v3
+log e_out=$spawned_out(0) e_eng=$units(1,ENGINEER)
+cheat w2 kill 0:V3
+wait 60
+# --- G: Grand Cannon (GrandCannonBall Arcing, Range 15) vs enemy Rhino ----------
+cheat place GTGCAN 0 building 0:GACNST +4 +12
+cheat spawn HTNK 1 building 0:GACNST +4 +22
+until 600 projectiles >= 1
+view building 0:GTGCAN +0 +4
+shot g1_gcan
+wait 6
+view building 0:GTGCAN +0 +4
+shot g2_gcan
+wait 6
+view building 0:GTGCAN +0 +4
+shot g3_gcan
+cheat w2 kill 1:HTNK
+wait 30
+# --- H: Apocalypse tusks (MammothTusk ROT=80, secondary AA) vs Kirov ---------
+cheat spawn APOC 0 building 0:GACNST +10 +10
+cheat spawn ZEP 1 building 0:GACNST +10 +16
+let zhp2 = unit_hp(1,ZEP)
+until 600 unit_hp(1,ZEP) < $zhp2
+view unit 0:APOC +0 +2
+shot h1_tusk
+wait 3
+view unit 0:APOC +0 +2
+shot h2_tusk
+end
