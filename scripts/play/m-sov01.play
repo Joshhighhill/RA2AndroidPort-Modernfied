@@ -1,5 +1,5 @@
 # M-SOV01 -- Soviet mission 1 (SOV01t: SMCV + reinforcements, no base) from the
-# REAL shell: Single Player -> New Campaign -> Soviet Campaign -> START.
+# REAL shell: Single Player -> New Campaign -> Campaign page 0x94 (Soviet well, Load) -> START.
 # Checks the mission starts, objectives arm, the SMCV deploys into a ConYard,
 # the Soviet sidebar is used and the TechLevel cap holds.
 # EXPECTED TO FAIL in places on master 63edea6 (docs/gap/PLAYTEST-STATUS.md).
@@ -8,8 +8,9 @@ set on_quit continue
 
 click button "Single Player"
 click button "New Campaign"
-require scene == "shell:New Campaign"
-click button "Soviet Campaign"
+require scene == "shell:Campaign"
+click well:soviet
+click button Load
 until 30 scene == campaign-load
 require scene == campaign-load
 assert side == Nod

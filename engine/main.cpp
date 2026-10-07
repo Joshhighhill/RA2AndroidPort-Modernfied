@@ -4488,6 +4488,9 @@ struct MenuArt {
     ra2assets::ShpFile* pudlg = nullptr;     // pudlgbga.shp (Allied / shell)
     ra2assets::ShpFile* pudlg_s = nullptr;   // pudlgbgs.shp (Soviet)
     const ra2assets::Palette* dialog_pal = nullptr;
+    // W2-UI-18: campaign page 0x94 screen (neutral.mix fsbkgdsm.shp, fsscrn.pal).
+    ra2assets::ShpFile* fsbkgd = nullptr;
+    const ra2assets::Palette* fsscrn_pal = nullptr;
     bool ok = false;                          // essentials (bg+pal) decoded
     // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
     // in the low nibble) with image_ofs-relative glyph offsets (the real bug was
@@ -4516,7 +4519,8 @@ enum ShellPage {
 // ShellPage in ShellButton::target; ACT_SKIRMISH is the ONLY live game path
 // (-> SkirmishSetupScene -> GameScene); ACT_QUIT exits.
 enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */,
-                   ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */ };
+                   ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */,
+                   ACT_CAMPAIGN_LOAD /* W2-UI-18: 0x94 Load */ };
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -4745,6 +4749,7 @@ inline void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, c
 // W2-UI-13..17/23: shell-page helpers shared by the in-game dialogs and the
 // shell pages (status line, popup 0x120, MNBTTN small buttons, lazy art).
 #include "shell_pages.inc"
+#include "campaign_page.inc"   // W2-UI-18 Campaign select 0x94
 
 #include "ingame_pages.inc"   // W2-UI-13..16: SaveLoadDialog + InGameMenu as shell pages
 
@@ -5987,6 +5992,8 @@ struct MenuArtStore {
     std::unique_ptr<ra2assets::PcxImage> trakgrip, trofl, trofm, trofr, chk_off, chk_on;
     std::unique_ptr<ra2assets::PcxImage> flags[11];   // [SK-10]
     std::unique_ptr<ra2assets::ShpFile> pudlg, pudlg_s;   // W2-UI-17
+    std::unique_ptr<ra2assets::ShpFile> fsbkgd;           // W2-UI-18
+    std::unique_ptr<ra2assets::Palette> fsscrn_pal;       // W2-UI-18
     std::unique_ptr<ra2assets::Palette> dialog_pal;    // W2-UI-17
     std::unique_ptr<ra2assets::Font> font;
     ra2assets::Palette font_pal{};
@@ -6116,6 +6123,13 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               // neutral.mix; SDBTNANM has its OWN palette (also in neutral.mix).
               store.sdbtnanm  = try_shp(neutral, "sdbtnanm.shp");
               store.sdwrnanm  = try_shp(neutral, "sdwrnanm.shp");
+              // W2-UI-18: campaign page 0x94 screen (Allied / tutorial / Soviet
+              // emblems) under FSSCRN.PAL [mainmenu_true.md §8.2, FUN_006F2C40].
+              store.fsbkgd    = try_shp(neutral, "fsbkgdsm.shp");
+              if (const MixEntry* fe = neutral.find(std::string("fsscrn.pal"))) {
+                  std::vector<uint8_t> fb = neutral.read(*fe);
+                  store.fsscrn_pal = std::make_unique<ra2assets::Palette>(ra2assets::Palette::load(fb.data(), fb.size()));
+              }
               if (const MixEntry* ae = neutral.find(std::string("sdbtnanm.pal"))) {
                   std::vector<uint8_t> ab = neutral.read(*ae);
                   store.sdbtnanm_pal = ra2assets::Palette::load(ab.data(), ab.size());
@@ -6238,6 +6252,8 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     for (int fi = 0; fi < 11; ++fi) store.art.flags[fi] = store.flags[fi].get();
     store.art.pudlg      = store.pudlg.get();
     store.art.pudlg_s    = store.pudlg_s.get();
+    store.art.fsbkgd     = store.fsbkgd.get();
+    store.art.fsscrn_pal = store.fsscrn_pal.get();
     store.art.dialog_pal = store.dialog_pal.get();
     store.art.audio    = store.audio.get();
     // [Task 1] Wire true-design chrome + palettes (non-owning views into store).
@@ -6433,6 +6449,7 @@ public:
         // the OptionsClass defaults when none are published, e.g. --menu-shot).
         if (page_ == PAGE_OPTIONS)
             opt_.load(g_user_settings ? *g_user_settings : ra2engine::Settings{});
+        if (page_ == PAGE_CAMPAIGN) camp_.load(g_user_settings);   // W2-UI-18
     }
     void   handle(const ra2engine::InputEvent& ev) override;   // out-of-line: needs SkirmishSetupScene
     void   update(double dt) override;                         // pumps the looping menu music
@@ -6465,6 +6482,7 @@ public:
         }
         p.set("quit_requested", quit_ ? 1 : 0);
         p.set("dialog_open", 0);
+        if (page_ == PAGE_CAMPAIGN) camp_.play_probe(p);   // W2-UI-18
         sld_.play_probe(p);
         gf_confirm_.play_probe(p);   // gF G-14
     }
@@ -6484,7 +6502,7 @@ private:
             case PAGE_SINGLE:   return "Single Player";
             case PAGE_MOVIES:   return "Movies & Credits";
             case PAGE_OPTIONS:  return "Options";
-            case PAGE_CAMPAIGN: return "New Campaign";
+            case PAGE_CAMPAIGN: return "Campaign";   // W2-UI-18/22 GUI:CampaignMenu
             default:            return "Main Menu";
         }
     }
@@ -6525,11 +6543,11 @@ private:
                     btn(1, "Network",   false, ACT_GOTO, PAGE_MAIN),
                     btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
-            case PAGE_CAMPAIGN: // dialog 0x94 -- P10: battle.ini ALL1 / SOV1 [RE: campaign.md §3]
+            case PAGE_CAMPAIGN: // dialog 0x94 (W2-UI-18): Load row 0, Back row 5; the
+                // emblem wells / list / difficulty slider are campaign_page.inc
                 return {
-                    btn(0, "Allied Campaign", true, ACT_CAMPAIGN_ALLIED, PAGE_SINGLE),
-                    btn(1, "Soviet Campaign", true, ACT_CAMPAIGN_SOVIET, PAGE_SINGLE),
-                    btn(5, "Back",            true,  ACT_GOTO, PAGE_SINGLE),
+                    btn(0, "Load", true, ACT_CAMPAIGN_LOAD, PAGE_SINGLE),
+                    btn(5, "Back", true, ACT_GOTO, PAGE_SINGLE),
                 };
             default:            // PAGE_MAIN, dialog 0xE2
                 return {
@@ -6548,6 +6566,7 @@ private:
     ShellPage    page_ = PAGE_MAIN;
     // [P8] Options page (dialog 0xD5) controls; unused on other pages.
     OptionsPageState opt_;
+    CampaignPageState camp_;   // W2-UI-18 (PAGE_CAMPAIGN only)
     bool audio_live() const {
         return art_.audio && art_.audio->sys.enabled && art_.audio->sys.mixer;
     }
@@ -6714,7 +6733,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     // [Task 5 / §9] Upload the current decoded Bink frame to the reused streaming
     // texture (only when the frame changed); draw_shell blits it into the CRT rect
     // over the mnscrns backdrop. Null when the movie is absent -> static backdrop.
-    SDL_Texture* bink_tex = (page_ == PAGE_OPTIONS) ? nullptr : bink_texture(ren);
+    SDL_Texture* bink_tex = (page_ == PAGE_OPTIONS || page_ == PAGE_CAMPAIGN) ? nullptr : bink_texture(ren);
     draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
                header(), "v1.006", monitor_frame(), bink_tex);
     // [P8 / options.md §1/§4] The 0xD5 controls over the static MNSCRNS screen.
@@ -6722,6 +6741,11 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
         const std::string res = std::to_string(plat.width()) + " x " +
                                 std::to_string(plat.height()) + " x 16";
         draw_options_page(ren, tc, art_, xform(), opt_, audio_live(), res);
+    }
+    if (page_ == PAGE_CAMPAIGN) {   // W2-UI-18: FSBKGD wells + list + difficulty
+        int lx = 0, ly = 0;
+        to_logical(mx_, my_, lx, ly);
+        camp_.render(ren, tc, art_, xform(), lx, ly);
     }
     sld_.render(ren, tc, SDL_GetTicks());   // P7 / W2-UI-16: the Load page over the shell
     gf_confirm_.render(ren, tc);        // gF G-14 / W2-UI-17: Exit confirm popup 0x120
@@ -6840,6 +6864,17 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     }
     // [P8] Options page controls get the pointer first (sliders/checkboxes).
     if (page_ == PAGE_OPTIONS && options_handle(ev)) return;
+    if (page_ == PAGE_CAMPAIGN) {   // W2-UI-18: wells / list / difficulty
+        int lx = 0, ly = 0;
+        to_logical(ev.x, ev.y, lx, ly);
+        bool consumed = false;
+        if (camp_.handle(ev, lx, ly, consumed)) {
+            const CampaignPageState::Entry& e = CampaignPageState::entry(camp_.selected());
+            next_ = make_campaign_start_scene(no_audio_, e.battle, e.side, camp_.difficulty);
+            return;
+        }
+        if (consumed) return;
+    }
     if (ev.kind != ra2engine::InputEvent::PointerDown ||
         ev.button != ra2engine::InputEvent::Left)
         return;
@@ -6860,6 +6895,13 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             // P10: battle.ini ALL1 / SOV1 -> the first mission's loading screen.
             case ACT_CAMPAIGN_ALLIED: next_ = make_campaign_start_scene(no_audio_, "ALL1", "GDI"); return;
             case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
+            case ACT_CAMPAIGN_LOAD:   // W2-UI-18: 0x94 Load = the selected campaign
+                if (camp_.selected() >= 0 && camp_.selected() < CampaignPageState::kEntries) {
+                    if (g_user_settings) save_user_settings(*g_user_settings);   // the slider's Difficulty
+                    const CampaignPageState::Entry& e = CampaignPageState::entry(camp_.selected());
+                    next_ = make_campaign_start_scene(no_audio_, e.battle, e.side, camp_.difficulty);
+                }
+                return;
             // Page transition (incl. Back): construct the target page's ShellScene.
             case ACT_GOTO:
                 // [P8 / options.md §2] Leaving 0xD5: FUN_00542280 commits the
