@@ -132,8 +132,7 @@ public:
             snd_.play_at(e.new_rank >= 2 ? elite_sound_ : vet_sound_, u.fx, u.fy, "promotion");
             snd_.eva("EVA_UnitPromoted");
         }
-        superweapon_eva(w);
-        if (act.sw_fire_confirmed) superweapon_fx(w, act.sw_cx, act.sw_cy);
+        superweapon_events(w);   // W2-AN-05/20: the World SW event feed (any house)
         // [RE: presentation.md §1.3 FUN_004fc800 / FUN_004fc9f0] end of game,
         // local player only, once.
         if (!end_spoken_) {
@@ -175,6 +174,25 @@ private:
         kDeploy = 0x1B, kNoDeploy = 0x1C, kNuke = 0x35, kIronCurtain = 0x39, kChronosphere = 0x3A,
         kLightningStorm = 0x32,
     };
+    // W2-AN-04 [RE: presentation.md §3 ConvertAction: 0x14 Nuke -> 0x35,
+    // 0x25 IronCurtain -> 0x39, 0x26 LightningStorm -> 0x32, 0x27/0x28 Chrono
+    // -> 0x3A, 0x29 ParaDrop -> 0x2F]: the armed SW's targeting cursor.
+    mutable int armed_sw_ = 0;
+    static int sw_cursor(int armed, const ra2engine::World& w) {
+        using T = ra2engine::SuperweaponType;
+        T t = static_cast<T>(armed);
+        if (t == T::None) {
+            const ra2engine::Superweapon* sw = w.sw_state(0);
+            if (sw) t = sw->type;
+        }
+        switch (t) {
+            case T::IronCurtain: return kIronCurtain;
+            case T::LightningStorm: return kLightningStorm;
+            case T::ChronoSphere: case T::ChronoWarp: return kChronosphere;
+            case T::ParaDrop: case T::AmerParaDrop: return kNuke;   // [0x2F frames not in the dumped table]
+            default: return kNuke;
+        }
+    }
     struct CursorDesc { int start, count, rate, hx, hy; };
     static const CursorDesc& cursor_desc(int id) {
         static const CursorDesc kTable[] = {
@@ -241,11 +259,7 @@ private:
             return kScrollN + dir[dy + 1][dx + 1];
         }
         if (over_sidebar || in.placement_active()) return kDefault;
-        if (in.sw_targeting()) {
-            const ra2engine::Superweapon* sw = w.sw_state(0);
-            if (sw && sw->type == ra2engine::SuperweaponType::IronCurtain) return kIronCurtain;
-            return kNuke;
-        }
+        if (in.sw_targeting()) return sw_cursor(in.sw_armed_type(), w);   // W2-AN-04
         // Object under the pointer.
         int hit = -1;
         const auto& us = w.units();
@@ -254,7 +268,9 @@ private:
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
             if (u.house != 0 && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
             const int gx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam_.x + 30;
-            const int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
+            int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
+            // W2-AN-24: the cursor tracks the RAISED sprite of an airborne unit.
+            if (u.is_aircraft && u.altitude > 0.0) gy -= ra2engine::altitude_to_screen_dy(u.altitude);
             const int hw = u.is_vehicle ? 22 : 10, up = u.is_vehicle ? 24 : 30;
             if (mx >= gx - hw && mx <= gx + hw && my >= gy - up && my <= gy + 6) { hit = i; break; }
         }
@@ -287,10 +303,9 @@ private:
         int cx = 0, cy = 0;
         ra2engine::screen_to_cell(mx - cam_.x, my - cam_.y, 60, 30, cx, cy);
         if (!w.explored_at(0, cx, cy)) return kMove;
-        const auto& pass = w.passable();
         const int gw = w.grid_w(), gh = w.grid_h();
         if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) return kNoMove;
-        return pass[static_cast<std::size_t>(cy) * gw + cx] ? kMove : kNoMove;
+        return w.selection_can_enter(0, cx, cy) ? kMove : kNoMove;   // W2-AN-09
     }
 
     // B's Input::Action (the authoritative "what would a click do") ->
@@ -322,11 +337,7 @@ private:
             case A::NoSell: return 0x20;
             case A::Repair: return 0x21;
             case A::NoRepair: return 0x23;
-            case A::SuperWeapon: {
-                const ra2engine::Superweapon* sw = w.sw_state(0);
-                if (sw && sw->type == ra2engine::SuperweaponType::IronCurtain) return kIronCurtain;
-                return kNuke;
-            }
+            case A::SuperWeapon: return sw_cursor(armed_sw_, w);   // W2-AN-04
             default: return kDefault;
         }
     }
@@ -338,6 +349,7 @@ public:
                      bool over_sidebar, int view_w, int win_w, int win_h, std::uint64_t game_frame,
                      int action = -1) {
         if (!mc.ok) return false;
+        armed_sw_ = in.sw_armed_type();
         int id = probe_cursor(w, in, mx, my, over_sidebar, view_w, win_w, win_h);
         // Edge-scroll arrows and the sidebar keep the probe's answer; the
         // playfield follows B's action_at when supplied.
@@ -374,27 +386,97 @@ public:
 
 private:
     int last_cursor_ = -1;
-    // G-83 superweapon visuals [rulesmd [General] NukeTakeOff=NUKETO at the
-    // silo; NukeWarhead=Nuke -> [NUKE] AnimList=NUKEANIM at the target, with its
-    // Report=]. The clone detonates instantly (fire_superweapon), so the
-    // missile's flight is not shown [RE-FALLBACK: G-25 owns the delayed impact].
-    void superweapon_fx(const ra2engine::World& w, int cx, int cy) {
-        const ra2engine::Superweapon* sw = w.sw_state(0);
-        if (!sw || sw->type != ra2engine::SuperweaponType::Nuke) return;
-        auto gen = [&](const char* k) { return pres_clean(rules_ini_->get("General", k)); };
-        for (const ra2engine::Building& b : w.buildings())
-            if (b.alive && b.house == 0 && b.grants_superweapon) {
-                fx_.spawn(gen("NukeTakeOff"), b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0, 0, 20.0);
-                break;
+    // G-83 / W2-AN-05/20 superweapon visuals + EVA, driven by the World's SW
+    // event feed (World::sw_events, read by sequence number) so an AI launch
+    // shows and sounds like the player's.
+    //  * Launched: [General] NukeTakeOff=NUKETO at the silo; EVA
+    //    EVA_NuclearMissileLaunched for EVERY player [RE: presentation.md §1,
+    //    FUN_006cba10 @6cd208 -- no local-player check].
+    //  * Detonated: [NUKE] AnimList=NUKEANIM at the target + its Report=.
+    //  * Activated: IronCurtainInvokeAnim=IRONBLST / ChronoBlast=CHRONOFD +
+    //    ChronoBlastDest=CHRONOTG / the storm clouds; EVA *Activated /
+    //    LightningStormCreated for every player.
+    //  * Granted to an enemy house: EVA_NuclearSiloDetected /
+    //    IronCurtainDetected / ChronosphereDetected / WeatherDeviceReady [RE:
+    //    FUN_00445ee0 -- played only when the placing house is not the player
+    //    and not allied; SW types 0..3 only].
+    //  * Ready (own): EVA_*Ready.
+    //  * Bolt: WeatherConBolts=WCLBOLT1 + WeatherConBoltExplosion + LightningSounds.
+    int sw_seen_ = 0;
+    std::string gen_s(const char* k) const {
+        std::string v = pres_clean(rules_ini_->get("General", k));
+        if (v.empty()) v = pres_clean(rules_ini_->get("AudioVisual", k));
+        const std::size_t c = v.find(',');
+        return c == std::string::npos ? v : pres_clean(v.substr(0, c));
+    }
+    void superweapon_events(const ra2engine::World& w) {
+        using T = ra2engine::SuperweaponType;
+        using E = ra2engine::SwEvent;
+        for (const ra2engine::SwEvent& e : w.sw_events()) {
+            if (e.seq <= sw_seen_) continue;
+            sw_seen_ = e.seq;
+            const T t = static_cast<T>(e.type);
+            const bool own = e.house == 0;
+            const bool hostile = !own && w.is_enemy(0, e.house);
+            switch (e.kind) {
+                case E::Granted:
+                    if (!hostile) break;
+                    if (t == T::Nuke) snd_.eva("EVA_NuclearSiloDetected");
+                    else if (t == T::IronCurtain) snd_.eva("EVA_IronCurtainDetected");
+                    else if (t == T::ChronoSphere) snd_.eva("EVA_ChronosphereDetected");
+                    else if (t == T::LightningStorm) snd_.eva("EVA_WeatherDeviceReady");
+                    break;
+                case E::Ready:
+                    if (!own) break;
+                    if (t == T::Nuke) snd_.eva("EVA_NuclearMissileReady");
+                    else if (t == T::IronCurtain) snd_.eva("EVA_IronCurtainReady");
+                    else if (t == T::ChronoSphere) snd_.eva("EVA_ChronosphereReady");
+                    else if (t == T::LightningStorm) snd_.eva("EVA_LightningStormReady");
+                    else if (t == T::ParaDrop || t == T::AmerParaDrop) snd_.eva("EVA_ReinforcementsReady");
+                    break;
+                case E::Launched:
+                    fx_.spawn(gen_s("NukeTakeOff"), e.x2, e.y2, 0, 20.0);
+                    snd_.eva("EVA_NuclearMissileLaunched");
+                    pres_log(frame_, "fx superweapon launch");
+                    break;
+                case E::Detonated: {
+                    std::string wh = gen_s("NukeWarhead");
+                    if (wh.empty()) wh = "NUKE";
+                    std::string list = pres_clean(rules_ini_->get(pres_upper(wh), "AnimList"));
+                    const std::size_t comma = list.find(',');
+                    if (comma != std::string::npos) list = pres_clean(list.substr(0, comma));
+                    if (const FxAnimType* ft = fx_.spawn(list, e.x, e.y, 0, 0.0))
+                        snd_.play_at(ft->report, e.x, e.y, "nuke detonation");
+                    pres_log(frame_, "fx superweapon " + list);
+                    break;
+                }
+                case E::Activated:
+                    if (t == T::IronCurtain) {
+                        fx_.spawn(gen_s("IronCurtainInvokeAnim"), e.x, e.y, 0, 0.0);
+                        snd_.eva("EVA_IronCurtainActivated");
+                    } else if (t == T::ChronoSphere || t == T::ChronoWarp) {
+                        fx_.spawn(gen_s("ChronoBlast"), e.x, e.y, 0, 0.0);
+                        fx_.spawn(gen_s("ChronoBlastDest"), e.x2, e.y2, 0, 0.0);
+                        snd_.eva("EVA_ChronosphereActivated");
+                    } else if (t == T::LightningStorm) {
+                        fx_.spawn(gen_s("WeatherConClouds"), e.x, e.y, 0, 60.0);
+                        snd_.eva("EVA_LightningStormCreated");
+                    }
+                    pres_log(frame_, std::string("fx superweapon activated ") + ra2engine::superweapon_type_name(t));
+                    break;
+                case E::Bolt:
+                    if (const FxAnimType* ft = fx_.spawn(gen_s("WeatherConBolts"), e.x, e.y, 0, 0.0))
+                        snd_.play_at(ft->report, e.x, e.y, "bolt");
+                    fx_.spawn(gen_s("WeatherConBoltExplosion"), e.x, e.y, 0, 0.0);
+                    snd_.play_at(gen_s("LightningSounds"), e.x, e.y, "bolt");
+                    break;
+                case E::Dropped:
+                    if (own) snd_.eva("EVA_ReinforcementsHaveArrived");
+                    break;
+                default:
+                    break;
             }
-        std::string wh = gen("NukeWarhead");
-        if (wh.empty()) wh = "NUKE";
-        std::string list = pres_clean(rules_ini_->get(pres_upper(wh), "AnimList"));
-        const std::size_t comma = list.find(',');
-        if (comma != std::string::npos) list = pres_clean(list.substr(0, comma));
-        if (const FxAnimType* t = fx_.spawn(list, cx, cy, 0, 0.0))
-            snd_.play_at(t->report, cx, cy, "nuke detonation");
-        pres_log(frame_, "fx superweapon " + list);
+        }
     }
     // ---- G-83 effects -------------------------------------------------------
     static int level_at(const ra2engine::World&, double, double) { return 0; }

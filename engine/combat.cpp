@@ -60,8 +60,10 @@ double dist_leptons(double x1, double y1, double x2, double y2) {
 bool valid_target(const std::vector<Unit>& units, const World& world, const Unit& self, int idx) {
     if (idx < 0 || idx >= static_cast<int>(units.size())) return false;
     const Unit& v = units[idx];
+    // W2-AN-13: a submerged sub no sonar of self's house has found is not a
+    // target (its cell is not "seen" in the water layer).
     return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && world.is_enemy(self.house, v.house) &&
-           unit_weapon_for_unit(self, v) >= 0;
+           !world.unit_hidden_from(self.house, v) && unit_weapon_for_unit(self, v) >= 0;
     // Multi-house/Alliances [RE: multihouse.md §3/§4]: hostility routes through
     // World::is_enemy. carried: untargetable (CB-1).
     // Gap fix C (G-44/G-50) [RE: docs/re/weapons.md §2, combat.md §2]: the old
@@ -103,6 +105,13 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
               ProjRng* rng) {
     u.rof_cool = rearm_secs(u.w_rof, rng);
     u.fire_flash = kFireFlashSecs;
+    // W2-AN-12 [rules Spawner=yes: HornetLauncher/ASWLauncher/DredLauncher/
+    // V3Launcher]: the "shot" launches a spawned aircraft/missile at the
+    // victim (World::step_air_naval) -- the launcher weapon itself deals no damage.
+    if (u.an.t.spawner_slot >= 0 && u.w_active == u.an.t.spawner_slot) {
+        u.an.spawn_fire_unit = victim_idx;
+        return;
+    }
     // P4 [RE: abilities.md §B1/§C2/§E/§F]: a weapon whose warhead/weapon flags
     // make it an ABILITY (Parasite / Temporal / IvanBomb / Suicide) deals no
     // plain damage -- the shot is handed to World::step_abilities, which
@@ -159,7 +168,8 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     // v.vet.recv is false in every legacy World -> raw == u.w_damage as before.
     int raw = u.w_damage;
     if (v.vet.recv) raw = vet_receive(raw, v.vet);
-    const int dmg = damage_vs(raw, u.w_verses, v.armor_ix);
+    // W2-AN-04: an Iron-Curtained unit takes no damage.
+    const int dmg = v.an.iron_left > 0.0 ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
     v.hp -= dmg;
     // Return fire only if IDLE (spec: "return fire when hit" applies to
     // idle/guarding units; a unit under a move order keeps walking rather
@@ -202,7 +212,7 @@ void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& build
     // (ArmorMultiplier, max 1, then Verses); false in every legacy World.
     int raw = u.w_damage;
     if (b->vet_recv) raw = receive_damage(raw, b->armor_mult, false, 1.0);
-    const int dmg = damage_vs(raw, u.w_verses, b->armor_ix);
+    const int dmg = b->iron_left > 0.0 ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04
     b->hp -= dmg;
     if (b->hp <= 0) {
         b->killed_by = attacker_idx;   // P5 [V3]: inert stamp
@@ -246,6 +256,7 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         // (the original's 3-D distance; the clone has no shared Z scale).
         if (unit_airborne(w) != unit_airborne(center)) continue;
         if (w.house == attacker.house) continue;                     // enemies only
+        if (w.an.iron_left > 0.0) continue;                          // W2-AN-04 Iron Curtain
         const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
         if (d > radius_lept) continue;                               // outside the splash
         const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
@@ -330,6 +341,9 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // being erased, deployed) neither fires, acquires nor pursues.
         // Inert: frozen is false unless a P4 profile is bound.
         if (u.frozen) continue;
+        // W2-AN-02/12: fixed-wing aircraft and missiles fight in
+        // World::step_air_naval (sorties / spawner strikes), not here.
+        if (u.an.t.fixed_wing || u.an.t.missile) continue;
 
         // (c) ROF cooldown + fire-flash decay -- every living, non-dying
         // unit, every call, regardless of target state. docs/re/combat.md
@@ -410,6 +424,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // pre-P4 (fire_kind None, c4 false).
                         if (u.abil.fire_kind != AbilityKind::None || u.abil.c4) {
                             u.ability_fired_building = b_idx;
+                            continue;
+                        }
+                        // W2-AN-12: a spawner launches at the structure.
+                        if (u.an.t.spawner_slot >= 0 && u.w_active == u.an.t.spawner_slot) {
+                            u.an.spawn_fire_building = b_idx;
                             continue;
                         }
                         // P2 firewall: a flying projectile defers the hit to
@@ -508,7 +527,9 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             // is always false there.
             // P4 [RE: abilities.md §F]: CanPassiveAquire=no (the terrorist)
             // never auto-acquires. Inert: false unless a P4 profile is bound.
-            if (u.moving() || u.has_flight_goal || u.abil.no_passive_acquire) { /* no auto-acquire */ }
+            // W2-AN-14: CanPassiveAquire=no (Carrier, Dreadnought) likewise.
+            if (u.moving() || u.has_flight_goal || u.abil.no_passive_acquire ||
+                u.an.t.no_passive_acquire) { /* no auto-acquire */ }
             else {
                 int best = -1;
                 double best_d = 0.0;
@@ -601,8 +622,13 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         activate_weapon_slot(u, unit_weapon_for_unit(u, v), vet_rules_of(world));
         const double range_leptons = u.w_range * kLeptonsPerCell;
         const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
+        // W2-AN-12 [rules [DredLauncher] MinimumRange=8, [V3Launcher] 5]: the
+        // primary cannot fire inside its minimum range (the unit holds).
+        const bool too_close = u.w_active == 0 && u.an.t.min_range > 0.0 &&
+                               d < u.an.t.min_range * kLeptonsPerCell;
 
         if (d <= range_leptons) {
+            if (too_close) continue;
             if (u.rof_cool <= 0.0) {
                 // Aim gate (docs/re/voxel-render.md §5, FireError::FACING): a
                 // vehicle holds fire until its turret has finished slewing onto

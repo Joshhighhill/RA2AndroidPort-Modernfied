@@ -58,9 +58,9 @@ bool Input::selected_building_valid() const {
 
 bool Input::cell_walkable(int cx, int cy) const {
     if (cx < 0 || cy < 0 || cx >= world_.grid_w() || cy >= world_.grid_h()) return false;
-    const auto& p = world_.passable();
-    const std::size_t i = static_cast<std::size_t>(cy) * world_.grid_w() + cx;
-    return i < p.size() && p[i] != 0;
+    // W2-AN-09: walkable for the SELECTION's movement domains (a ship moves on
+    // the water grid, a landing craft on either, an aircraft anywhere).
+    return world_.selection_can_enter(0, cx, cy);
 }
 
 const char* Input::action_name(Action a) {

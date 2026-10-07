@@ -118,6 +118,21 @@ struct RealPlayProbe {
         }
         return -1;
     }
+    // W2-AN-22: the skirmish starts from an MCV (gF G-23). Deploy the
+    // player's MCV and run until its Construction Yard is up, so every
+    // section below starts from the base the pre-G-23 probe assumed.
+    static void deploy_start(GameScene& g) {
+        ra2engine::World& w = g.world_;
+        for (int i = 0; i < (int)w.units().size(); ++i)
+            if (w.units()[(std::size_t)i].house == 0 && w.is_mcv(i)) { w.order_deploy_mcv(i); break; }
+        for (int f = 0; f < 15 * 60; ++f) {
+            for (const ra2engine::Building& b : w.buildings())
+                if (b.alive && b.house == 0 && b.state == ra2engine::Building::State::Idle &&
+                    g.ba_.roster[b.type].conyard)
+                    return;
+            g.update(1.0 / 15.0);
+        }
+    }
     static int count_cameos_not_laid_out(GameScene& g) {
         return static_cast<int>(g.buildable_.size()) - static_cast<int>(g.lay_.cameos.size());
     }
@@ -137,6 +152,7 @@ int run_probe_realplay() {
         ra2engine::SkirmishConfig cfg = P::menu_config(rules);
         cfg.starting_cash = 7500.0;   // a non-default slider value
         GameScene g(/*no_audio=*/true, cfg);
+        P::deploy_start(g);
         ra2engine::World& w = P::world(g);
         p.check(P::credits(g) == 7500.0,
                 "G-21 human wallet == lobby Money (7500), got " + std::to_string(P::credits(g)));
@@ -199,6 +215,7 @@ int run_probe_realplay() {
     {
         ra2engine::SkirmishConfig cfg = P::menu_config(rules);
         GameScene g(/*no_audio=*/true, cfg);
+        P::deploy_start(g);
         std::vector<std::string> t0 = P::tab_ids(g, 0);
         std::cout << "[probe] allied start tab0=" << join(t0) << "\n";
         p.check(P::has(t0, "GAPOWR") && !P::has(t0, "NAPOWR") && !P::has(t0, "GAREFN"),
@@ -240,14 +257,22 @@ int run_probe_realplay() {
                 "row 17 BuildLimit=1: Tanya leaves the strip while one is alive");
     }
 
-    // ---- row 19: Soviet human (stale lobby country "Americans") ----
+    // ---- row 19: Soviet human ----
+    // W2-AN-22: the SK lobby now picks a COUNTRY (its side follows), and the
+    // gF start force spawns the country's BaseUnit -- the old "side button,
+    // stale Americans" set-up started a Soviet human on an AMCV. Model the
+    // real lobby: Russia.
     {
         ra2engine::SkirmishConfig cfg = P::menu_config(rules);
-        cfg.slots[0].side = ra2engine::World::Side::Soviet;   // lobby side button; country stays
+        cfg.slots[0].side = ra2engine::World::Side::Soviet;
+        cfg.slots[0].country = "Russians";
         cfg.slots[1].side = ra2engine::World::Side::Allied;
         cfg.slots[1].country = "Americans";
         GameScene g(/*no_audio=*/true, cfg);
-        P::add_instant(g, "NAREFN");
+        P::deploy_start(g);
+        // W2-AN-22: the MCV start has no pre-built base -- grow the one the
+        // pre-G-23 probe assumed (power, refinery, barracks, factory).
+        for (const char* id : {"NAPOWR", "NAREFN", "NAHAND", "NAWEAP"}) P::add_instant(g, id);
         P::run(g, 2);
         const std::vector<std::string> t0 = P::tab_ids(g, 0);
         const std::vector<std::string> t2 = P::tab_ids(g, 2);
@@ -272,6 +297,7 @@ int run_probe_realplay() {
         cfg.tech_level = 3;
         cfg.slots[0].country = "Germans";
         GameScene g(/*no_audio=*/true, cfg);
+        P::deploy_start(g);
         bool sref = false, tnkd = false, fv = false;
         for (const ra2engine::UnitTypeDef& d : P::ur(g).defs) {
             sref |= d.id == "SREF";
@@ -286,6 +312,7 @@ int run_probe_realplay() {
     {
         ra2engine::SkirmishConfig cfg = P::menu_config(rules);
         GameScene g(/*no_audio=*/true, cfg);
+        P::deploy_start(g);
         ra2engine::World& w = P::world(g);
         for (const char* id : {"GAPOWR", "GAREFN", "GAPILE", "GAWEAP"}) P::add_instant(g, id);
         const std::vector<std::uint8_t>& water = w.grid_for(ra2engine::MovementDomain::Water);
@@ -301,7 +328,9 @@ int run_probe_realplay() {
         // Grow an outpost to the nearest water (scripted, instant) so the yard
         // can be adjacent, then place it through the real rule set.
         int yx = -1, yy = -1;
-        const ra2engine::Building& cy0 = w.buildings()[P::own_index(g, "GACNST")];
+        const int cy_ix = P::own_index(g, "GACNST");
+        p.check(cy_ix >= 0, "W2-AN-22 the deployed MCV gives the probe a GACNST");
+        const ra2engine::Building cy0 = cy_ix >= 0 ? w.buildings()[cy_ix] : ra2engine::Building{};
         int best = 1 << 30;
         const ra2engine::BuildingTypeDef& yd = P::ba(g).roster[yard];
         for (int y = 0; y < w.grid_h(); ++y)
@@ -336,6 +365,28 @@ int run_probe_realplay() {
             p.check(s >= 0 && w.units()[s].is_naval &&
                         water[(size_t)w.units()[s].cell_y * w.grid_w() + w.units()[s].cell_x] != 0,
                     "G-24 a sidebar-built Destroyer launched from the yard onto water");
+            // W2-AN-09: the move order reaches the ship over the WATER grid.
+            if (s >= 0) {
+                const int sx = w.units()[s].cell_x, sy = w.units()[s].cell_y;
+                int gx = -1, gy = -1;
+                for (int r = 6; r >= 3 && gx < 0; --r)
+                    for (int dy = -r; dy <= r && gx < 0; ++dy)
+                        for (int dx = -r; dx <= r && gx < 0; ++dx)
+                            if (std::max(std::abs(dx), std::abs(dy)) == r &&
+                                w.unit_can_enter_cell(w.units()[s], sx + dx, sy + dy)) {
+                                gx = sx + dx; gy = sy + dy;
+                            }
+                for (ra2engine::Unit& u : w.units()) u.selected = false;
+                w.units()[s].selected = true;
+                p.check(gx >= 0 && w.selection_can_enter(0, gx, gy) && !w.walkable(gx, gy),
+                        "W2-AN-09 a water cell is a Move target for the selected Destroyer");
+                if (gx >= 0) w.order_move_selected(gx, gy);
+                P::run(g, 15 * 20);
+                p.check(w.units()[s].cell_x != sx || w.units()[s].cell_y != sy,
+                        "W2-AN-09 the Destroyer sailed (" + std::to_string(sx) + "," + std::to_string(sy) +
+                            " -> " + std::to_string(w.units()[s].cell_x) + "," +
+                            std::to_string(w.units()[s].cell_y) + ")");
+            }
         }
         // Walls: build time x3 and free line fill.
         const int wall = roster_index(P::ba(g), "GAWALL");
@@ -374,6 +425,7 @@ int run_probe_realplay() {
         for (int with = 0; with < 2; ++with) {
             ra2engine::SkirmishConfig cfg = P::menu_config(rules);
             GameScene g(/*no_audio=*/true, cfg);
+        P::deploy_start(g);
             P::add_instant(g, "GAPOWR");
             P::add_instant(g, "GAPOWR");
             if (with) P::add_instant(g, "GAOREP");
@@ -394,9 +446,11 @@ int run_probe_realplay() {
     {
         ra2engine::SkirmishConfig cfg = P::menu_config(rules);
         cfg.slots[0].side = ra2engine::World::Side::Soviet;
+        cfg.slots[0].country = "Russians";   // W2-AN-22: the lobby picks a country
         cfg.slots[1].side = ra2engine::World::Side::Allied;
         cfg.slots[1].country = "Americans";
         GameScene g(/*no_audio=*/true, cfg);
+        P::deploy_start(g);
         ra2engine::World& w = P::world(g);
         P::run(g, 2);
         p.check(!w.sw_state(0) && !w.sw_state(1), "G-25 nobody holds a superweapon at game start");

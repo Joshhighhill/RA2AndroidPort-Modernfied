@@ -3511,9 +3511,16 @@ TEST_CASE("World SW: the detonation kills enemies in radius, spares the firing h
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 30 && !world.sw_ready(0); ++f) world.step(dt);
     REQUIRE(world.sw_ready(0));
-    REQUIRE(world.fire_superweapon(0, 20, 20));         // detonate AT the enemy cluster cell
+    REQUIRE(world.fire_superweapon(0, 20, 20));         // launch AT the enemy cluster cell
+    // W2-AN-05: the missile climbs 200 frames and falls 200 frames first.
+    CHECK(world.units()[0].hp > 0);
+    for (int f = 0; f < 399; ++f) world.step(dt);
+    CHECK(world.units()[0].hp > 0);                     // still in flight at frame 399
+    world.step(dt);
     CHECK(world.units()[0].hp <= 0);                    // near enemy dead (600 dmg >> 100 hp)
-    CHECK(world.units()[1].hp == own_hp0);              // firing house SPARED (enemies-only)
+    // W2-AN-06 [RE: superweapon.md §5 -- FUN_00489190 has no house filter]:
+    // the firing house's own unit in the blast dies too.
+    CHECK(world.units()[1].hp < own_hp0);
     CHECK(world.units()[2].hp == far_hp0);              // 70 cells away -> outside CellSpread=10
 }
 
@@ -3534,6 +3541,7 @@ TEST_CASE("World SW: the detonation falloff -- edge damage < center damage") {
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 30 && !world.sw_ready(0); ++f) world.step(dt);
     REQUIRE(world.fire_superweapon(0, 20, 20));
+    for (int f = 0; f < 400; ++f) world.step(dt);       // W2-AN-05 flight time
     const int c_dmg = c_hp0 - world.units()[0].hp;
     const int e_dmg = e_hp0 - world.units()[1].hp;
     CHECK(c_dmg > 0);
@@ -3562,11 +3570,11 @@ TEST_CASE("World SW: the detonation splashes BUILDINGS -- in-radius damaged/dest
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 30 && !world.sw_ready(0); ++f) world.step(dt);
     REQUIRE(world.sw_ready(0));
-    REQUIRE(world.fire_superweapon(0, 20, 20));         // detonate AT the enemy building
+    REQUIRE(world.fire_superweapon(0, 20, 20));         // launch AT the enemy building
+    for (int f = 0; f < 400; ++f) world.step(dt);       // W2-AN-05 flight time
     CHECK(world.buildings()[near_enemy_b].hp <= 0);     // 600 dmg >> 100 hp -> destroyed
     CHECK(world.buildings()[near_enemy_b].state == ra2engine::Building::State::Dead);
-    CHECK(world.buildings()[own_b].hp == own_hp0);      // firing house building SPARED (enemies-only)
-    CHECK(world.buildings()[own_b].state != ra2engine::Building::State::Dead);
+    CHECK(world.buildings()[own_b].hp < own_hp0);       // W2-AN-06: own structures are hit too
     CHECK(world.buildings()[far_enemy_b].hp == far_hp0);  // 40 cells away -> outside CellSpread=10
     CHECK(world.buildings()[far_enemy_b].state != ra2engine::Building::State::Dead);
 }
@@ -4844,5 +4852,6 @@ TEST_CASE("World: G-66 a charged AI superweapon fires at the enemy's highest-val
         if (ready && !world.sw_ready(1)) fired = true;
     }
     CHECK(fired);
+    for (int i = 0; i < 410; ++i) world.step(1.0 / 15.0);   // W2-AN-05: 200 up + 200 down
     CHECK(world.buildings()[pw].hp < hp0);   // the nuke landed on the power plant
 }
