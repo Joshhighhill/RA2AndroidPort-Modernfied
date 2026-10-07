@@ -1,0 +1,206 @@
+#pragma once
+// Wave-2 fix (W2-AN-*): aircraft / naval / superweapon per-unit state.
+// AnType = the per-type rules data resolved once (main.cpp resolve_combat_unit)
+// and carried in UnitCombat::an; AnUnit = the per-unit runtime state carried in
+// Unit::an (it embeds the AnType it was spawned with). Plain aggregates, SDL-
+// and World-free; the save visitors live in save_fields.hpp.
+//
+// Offsets below are the TechnoTypeClass::LoadFromINI stores recovered for this
+// fix with a byte scan of gamemd.exe (push "<Key>" ... mov [esi+disp], al):
+//   Organic +0xD97, Teleporter +0xCD4 (the Chrono Warp kill test),
+//   Underwater +0xD69, Cloakable +0xCD0, Sensors +0xC9D, SensorsSight +0x5F0,
+//   NavalTargeting +0x600, LandTargeting +0x604, CanPassiveAquire +0xD99,
+//   Crashable +0xD95, BalloonHover +0xD6A.
+#include <array>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace ra2engine {
+
+// [rules.ini comment block above [E1], classic RA2]
+//   NavalTargeting: 0 UNDERWATER_NEVER, 1 UNDERWATER_SECONDARY, 2 UNDERWATER_ONLY,
+//                   3 ORGANIC_SECONDARY, 4 SEAL_SPECIAL, 5 NAVAL_ALL, 6 NAVAL_NONE
+//   LandTargeting:  0 LAND_OKAY, 1 LAND_NOT_OKAY   ("Defaults are 0's")
+enum : int {
+    kNavUnderwaterNever = 0,
+    kNavUnderwaterSecondary = 1,
+    kNavUnderwaterOnly = 2,
+    kNavOrganicSecondary = 3,
+    kNavSealSpecial = 4,
+    kNavNavalAll = 5,
+    kNavNavalNone = 6,
+};
+
+struct AnType {
+    int naval_targeting = 0;          // NavalTargeting=
+    int land_targeting = 0;           // LandTargeting=
+    bool no_passive_acquire = false;  // CanPassiveAquire=no (CARRIER, DRED)
+    bool organic = false;             // Organic=
+    bool teleporter = false;          // Teleporter=
+    bool underwater = false;          // Underwater= (submersible)
+    bool cloakable = false;           // Cloakable=
+    bool sensors = false;             // Sensors=
+    int sensors_sight = 0;            // SensorsSight= (cells)
+    bool crashable = false;           // Crashable=
+    double weight = 1.0;              // Weight= (ShipSinkingWeight test)
+    double min_range = 0.0;           // primary weapon MinimumRange= (cells)
+    // Fixed-wing aircraft (FlyLocomotion {4A582746}) -- ORCA/BEAG, spawned
+    // HORNET/ASW, PDPLANE.
+    bool fixed_wing = false;
+    int ammo = 0;                     // Ammo=
+    double fly_speed_cps = 0.0;       // Speed= -> cells/sec
+    bool spawned = false;             // Spawned= (no player control)
+    bool missile = false;             // MissileSpawn= (DMISL/V3ROCKET: a homing rocket)
+    int missile_damage = 0;           // [General] DMislDamage / V3RocketDamage
+    // Spawner weapon (Spawner=yes): which slot (0 primary / 1 secondary, -1 none)
+    // launches `spawns` instead of firing.
+    int spawner_slot = -1;
+    std::string spawns;               // Spawns= rules id
+    int spawns_number = 0;            // SpawnsNumber=
+    int spawn_regen_frames = 0;       // SpawnRegenRate= (frames to rebuild a lost spawn)
+    int spawn_reload_frames = 0;      // SpawnReloadRate= (frames to rearm a returned spawn)
+    // Landing-capable jumpjet (Night Hawk): !BalloonHover lands at its goal.
+    bool landable = false;            // Landable=
+    // Explicit death delivery for missiles / crashes: the warhead verses used by
+    // a missile detonation (V3WH) and its splash.
+    double missile_spread = 0.0;
+};
+
+struct AnUnit {
+    AnType t;
+    // --- naval ---
+    bool in_water = false;            // stands on a water cell (ships always)
+    bool submerged = false;           // cloaked sub (Underwater+Cloakable)
+    double surface_left = 0.0;        // seconds left surfaced after firing (CloakDelay)
+    std::uint8_t detected_mask = 0;   // bit h: house h's sonar sees this sub
+    bool sinking = false;             // ShipSinkingWeight death (renderer)
+    // --- superweapons ---
+    double iron_left = 0.0;           // Iron Curtain invulnerability left (seconds)
+    double chrono_left = 0.0;         // frozen after a Chrono Warp (seconds)
+    // --- aircraft ---
+    bool crashing = false;            // Crashable death: falling (renderer tilts)
+    int ammo = 0;                     // fixed-wing ammo left
+    int sortie = 0;                   // 0 idle/docked, 1 takeoff/outbound, 2 attack run,
+                                      // 3 return to base, 4 landing, 5 parked away
+    int home = -1;                    // airfield building index (-1 none)
+    int pad = -1;                     // dock pad on `home`
+    int reload_timer = 0;             // frames toward the next +1 ammo while docked
+    int attack_unit = -1;             // sortie target (unit) ...
+    int attack_building = -1;         // ... or building
+    int attack_x = -1, attack_y = -1; // ... or a cell (move / strike point)
+    double pass_cool = 0.0;           // seconds before the next attack pass may fire
+    // --- spawner (carrier / dreadnought / destroyer ASW / V3) ---
+    int spawn_ready = 0;              // spawns docked and armed
+    int spawn_out = 0;                // spawns airborne
+    int spawn_regen_timer = 0;        // frames toward rebuilding a lost spawn
+    int spawn_reload_timer = 0;       // frames toward rearming a returned spawn
+    int spawn_pending = 0;            // spawns returned, waiting to rearm
+    int spawn_fire_unit = -1;         // a spawner shot this frame -> launch at ...
+    int spawn_fire_building = -1;
+    int owner = -1;                   // a spawned unit: its spawner unit index
+    // --- Night Hawk / paradrop plane ---
+    bool landing = false;             // descending to land at its goal
+    int drop_left = 0;                // paradrop plane: paratroopers still aboard
+    std::string drop_type;            // paradrop infantry rules id
+    int drop_x = -1, drop_y = -1;     // drop site
+    int exit_x = -1, exit_y = -1;     // map-edge exit after the drop
+};
+
+// --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------
+// [rules.ini [General] + the [<Special>] sections, classic RA2]; resolved once
+// by main.cpp (resolve_sw_params) and handed to World::set_sw_params.
+struct SwParams {
+    // Nuke [RE: superweapon.md §2 + this fix: the dispatcher FUN_006cba10 case 0
+    // spawns the down missile 20000 leptons above the target with velocity
+    // (0,0,-100) (DAT_007eca88 = -100.0) -> 200 frames down; the up missile
+    // (NukeCarrier, GiantNukeUp Vertical, launch speed 1, Acceleration=1, cap
+    // 255) passes DetonationAltitude=20000 after 200 frames (sum 1..200=20100)].
+    int nuke_up_frames = 200;
+    int nuke_down_frames = 200;
+    int nuke_rad_level = 500;         // [NukePayload] RadLevel=
+    // Iron Curtain [rules [General] IronCurtainDuration=750 frames].
+    int iron_frames = 750;
+    // Chronosphere [ChronoDelay=60].
+    int chrono_delay_frames = 60;
+    // Lightning Storm [LightningDeferment=250, Damage=250, StormDuration=180,
+    // HitDelay=10, ScatterDelay=5, CellSpread=10, Separation=3, Warhead=IonWH].
+    int storm_deferment = 250;
+    int storm_damage = 250;
+    int storm_duration = 180;
+    int storm_hit_delay = 10;
+    int storm_scatter_delay = 5;
+    int storm_cell_spread = 10;
+    int storm_separation = 3;
+    double storm_wh_spread = 2.0;     // [IonWH] CellSpread
+    double storm_wh_pmax = 0.5;       // [IonWH] PercentAtMax
+    std::array<int, 11> storm_verses{};
+    // Chrono kill warhead [Rules+0xFA8; damage = the victim's full Strength].
+    // Paradrops [AmerParaDropInf/Num, AllyParaDropInf/Num, SovParaDropInf/Num,
+    // ParadropRadius=1024 leptons].
+    std::string amer_para_inf = "E1";
+    int amer_para_num = 8;
+    std::string ally_para_inf = "E1";
+    int ally_para_num = 6;
+    std::string sov_para_inf = "E2";
+    int sov_para_num = 9;
+    int paradrop_radius = 1024;
+    // Naval / aircraft [General].
+    int cloak_delay_frames = 18;      // CloakDelay=.02 min x 900
+    double ship_sinking_weight = 3.0; // ShipSinkingWeight=
+    int reload_frames = 270;          // ReloadRate=.3 min x 900, per ammo point
+    int flight_level = 1500;          // FlightLevel= (leptons)
+    // V3 / Dreadnought missile warhead [V3Warhead=V3WH].
+    double missile_spread = 1.0;
+    double missile_pmax = 0.5;
+    std::array<int, 11> missile_verses{};
+    // Naval Yard UnitRepair [RE-FALLBACK: the service-depot cadence --
+    // [General] RepairStep=7 hp per RepairRate=.016 min (~14 frames), cost
+    // RepairPercent=.15 of the unit cost pro rata].
+    int repair_step = 7;
+    int repair_rate_frames = 14;
+    double repair_percent = 0.15;
+};
+
+// One superweapon effect in progress (a nuke in flight or a lightning storm).
+struct SwStrike {
+    int kind = 0;          // 1 = nuke, 2 = lightning storm, 3 = chrono freeze
+    int house = -1;
+    int x = 0, y = 0;      // target cell
+    int ox = 0, oy = 0;    // origin (silo) cell
+    int frame = 0;         // logic frames elapsed
+    int hit_timer = 0, scatter_timer = 0;
+    std::uint32_t rng = 1; // per-strike deterministic LCG (bolt scatter)
+    std::vector<int> recent;   // recent bolt cells (x, y pairs) for LightningSeparation
+    bool done = false;
+};
+
+// Presentation feed: appended by World, read (never drained) by PresGame by
+// sequence number.
+struct SwEvent {
+    enum Kind : int {
+        Granted = 1,     // a house gained a SW (enemy -> "detected" EVA)
+        Ready = 2,       // charged
+        Launched = 3,    // nuke left the silo (x,y = target, x2,y2 = silo)
+        NukeFalling = 4, // the down missile appears over the target
+        Detonated = 5,   // nuke impact
+        Activated = 6,   // Iron Curtain / Chronosphere (x2,y2 = destination) / Storm / Paradrop
+        Bolt = 7,        // one lightning bolt at (x, y)
+        Dropped = 8,     // paratroopers landed at (x, y)
+    };
+    int seq = 0;
+    int kind = 0;
+    int house = -1;
+    int type = 0;          // SuperweaponType as int
+    int x = 0, y = 0, x2 = -1, y2 = -1;
+};
+
+// Pure targeting rule (W2-AN-14): may weapon slot `slot` of an attacker with
+// type data `a` engage a victim in the given situation? Returns the slot to use
+// (0/1), or -1. `want` = the slot the ordinary armor/AA choice picked (-1 =
+// none), `has_secondary` = the attacker has a valid slot 1.
+int an_naval_slot(const AnType& a, int want, bool has_secondary, bool victim_in_water,
+                  bool victim_submerged, bool victim_organic, bool victim_airborne,
+                  bool victim_is_building);
+
+}  // namespace ra2engine

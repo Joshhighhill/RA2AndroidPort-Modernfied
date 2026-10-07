@@ -149,6 +149,20 @@ Battle), `status` (tooltip line), `confirm_open` / `confirm_text`.
 | `bridge_cells`, `bridge_destroyed`, `bridge_version`, `depth_armed`, `on_bridge(h)`, `pt_<name>_x/y`, `sel_dist_<name>` | G16 low bridges; named points below |
 | `sel_occupier`, `sel_occupy_target`, `sel_attack_cell`, `sel_target`, `sel_rof_cool`, `sel_turret`, `sel_body`, `sel_damage`, `sel_wall` | first selected unit (debug) |
 
+**W2-AN keys** (engine/w2air_play.inc): `cursor_name` (Input action name),
+`sel_on_water`, `sel_hp`, `sel_max_hp`, `sel_cargo`, `sel_altitude`, `sel_flight_state`,
+`sel_flight_goal`, `sel_unload_pending`; per house h `submerged(h)`, `sub_detected_by0(h)`,
+`iron_units(h)`, `iron_buildings(h)`, `chrono_units(h)`, `airborne(h)`, `spawned_out(h)`,
+`planes(h)`, `planes_docked(h)`, `plane_ammo(h)`, `amphib_on_water(h)`, `cargo_total(h)`,
+`sunk(h)`, `crashing(h)`, `unit_hp(h,ID)`, `pos_x(h,ID)`/`pos_y(h,ID)` (first unit);
+superweapons `sw_count(h)`, `sw_has(h,TYPE)`, `sw_ready_t(h,TYPE)`, `sw_charge(h,TYPE)`
+(TYPE = Nuke IronCurtain LightningStorm ChronoSphere ParaDrop AmerParaDrop), `sw_armed`,
+`sw_armed_phase`, `sw_strikes`, `sw_ev_launched|detonated|activated|bolts|dropped`,
+`rad_total`. Targets: `sw:<TYPE>` (one sidebar slot per granted SW); named points
+`water_near_sel`, `shore_near_sel`, `shore_far_sel`, `beach_near_sel`, `yard_dock`.
+Cheats: `w2 build ID [H]` (instant structure on the nearest legal spot), `w2 damage
+H:TYPE[:n] DMG`, `w2 kill H:TYPE[:n]`.
+
 **Cheats** (`game` only; dev hooks for reaching a state quickly — acceptance
 should prefer real input): `kill_house H`, `damage_building H:TYPE[:n] DMG`,
 `credits N`, `spawn TYPE H cell X Y`, `spawn TYPE H building H:TYPE[:n] +DX +DY`
@@ -173,6 +187,9 @@ Keys reserved for later phases (scripts already assert them and report
 | `m-sov01.play` | Soviet mission 1: objectives, SMCV deploy, Soviet sidebar, TechLevel cap |
 | `shell-smoke.play` | Menus, Options round trip, lobby round trip, Esc in menu/lobby/game/placement, F10 menu, save -> load -> resume, Abort/Exit confirmation |
 | `world-depth.play` | G16: crush; garrison a civilian building, fire out, evict; May Day: engineer repairs the blown bridge at the hut, a tank drives across, Ctrl force-fire collapses a section, a hut repairs it |
+| `naval.play` | W2-AN naval (Bay of Pigs): Naval Yard on water, a Destroyer sails where it is clicked, a submerged Typhoon sub found by sonar and hunted by the ASW Osprey, a landing craft that beaches / loads GIs / crosses / unloads on land (not at sea), yard repair, Carrier Hornets + Dreadnought missiles, a sinking Destroyer, the SHP Dolphin |
+| `air.play` | W2-AN aircraft: Airforce Command (AMRADR) through the sidebar, a Harrier built onto its pad, a strike (take off, attack pass, Ammo 0, return, land, rearm at ReloadRate), a Rocketeer that lifts off on exit and obeys Stop, a Kirov killed in the air that crashes, a Night Hawk that lands to load and lands to unload |
+| `sw.play` | W2-AN superweapons v2: five SW buildings (set-up cheat), five sidebar slots with their own cameos, each SW charges in real time and is armed from its slot: American paratroopers, Iron Curtain (3x3, expires), Chronosphere (source + destination picks, GI chrono-killed), nuke (launch, ~400 frames of flight, blast + fallout), Lightning Storm (bolts until the storm ends) |
 | `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
 
 The expected results on each tree are kept in `docs/gap/PLAYTEST-STATUS.md`.

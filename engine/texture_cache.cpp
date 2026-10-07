@@ -93,6 +93,12 @@ void* TextureCache::get(const std::string& key, const uint8_t* indices, int w,
     if (it != cache_.end()) {
         return touch(it->second);
     }
+    // W2-AN-03: an empty SHP frame (w or h == 0, e.g. the NAMISL silo's
+    // SuperAnim frames) draws nothing. SDL_CreateTexture refuses 0-dim
+    // textures ("Texture dimensions can't be 0") and the throw used to kill the
+    // game on the first render of a silo. Callers pass the nullptr to SDL draw
+    // calls, which reject it harmlessly. Render-only; no gate folds textures.
+    if (w <= 0 || h <= 0) return nullptr;
 
     std::vector<ra2assets::Rgba> rgba(static_cast<size_t>(w) * h);
     for (int i = 0; i < w * h; ++i) {
@@ -150,6 +156,7 @@ void* TextureCache::get_rgba(const std::string& key, const uint8_t* rgba, int w,
     if (it != cache_.end()) {
         return touch(it->second);
     }
+    if (w <= 0 || h <= 0) return nullptr;  // W2-AN-03 (see get())
 
     // Same RGBA32 byte-order rationale as get() above (SDL's *32 alias resolves
     // to the packed format matching R,G,B,A memory order on this platform).

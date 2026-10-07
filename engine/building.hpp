@@ -168,6 +168,8 @@ struct Building {
     int firing_occupant = 0;
     double garrison_rof_cool = 0.0;
     int garrison_target = -1;
+    // W2-AN-04: Iron Curtain invulnerability left (seconds); 0 = none.
+    double iron_left = 0.0;
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

@@ -94,14 +94,17 @@ private:
             cfg.slots.empty() ? ra2engine::SkirmishSlot{} : cfg.slots.front();
         return load_player_unit_roster(dir, ra2, ua, rules, art, rules_ini,
                                        rp_player_country(rules, s0), cfg.tech_level,
-                                       /*with_aircraft=*/false);
+                                       /*with_aircraft=*/true);   // W2-AN-01: fixed-wing in World
     }
 
     // Ctor tail (skirmish only): factories by rules Factory=, the building
     // country/tech mask, and the first sidebar list.
     void rp_setup() {
         load_progress("SIDEBAR");   // W2-AR-02 loading-screen checkpoint
-        if (!cfg_.campaign_map.empty()) return;
+        if (!cfg_.campaign_map.empty()) {
+            w2_setup(/*skirmish=*/false);   // W2-AN: SW/naval/air params (w2air_play.inc)
+            return;
+        }
         rp_on_ = true;
         const ra2engine::SkirmishSlot s0 =
             cfg_.slots.empty() ? ra2engine::SkirmishSlot{} : cfg_.slots.front();
@@ -122,10 +125,15 @@ private:
         input_.set_unit_factory_types(unit_ft);
         input_.set_infantry_factory_types(inf_ft_);
         input_.set_vehicle_factory_types(any_veh);
-        if (cfg_.superweapons) {
-            rp_sw_table_ = rp_superweapon_table(ba_, rules_);
-            rp_nuke_ = resolve_superweapon(rules_);
-        }
+        // W2-AN-04/18: every classic SW building grants its SW; the lobby
+        // checkbox removes only the DisableableFromShell=yes ones (AmerParaDrop
+        // stays with superweapons off).
+        rp_sw_table_ = rp_superweapon_table(ba_, rules_);
+        if (!cfg_.superweapons)
+            for (RpSwGrant& g : rp_sw_table_)
+                if (g.disableable) g = RpSwGrant{};
+        rp_nuke_ = resolve_superweapon(rules_);
+        w2_setup(/*skirmish=*/true);
         rp_base_normal_.assign(ba_.roster.size(), 1);
         for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
             const std::string v = rules_.section_string(ba_.roster[i].id, "BaseNormal", "");

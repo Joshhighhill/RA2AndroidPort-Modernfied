@@ -1,0 +1,115 @@
+# air.play -- W2-AN fixed-wing + jumpjet acceptance (wave-2 fix): human
+# Americans. Airforce Command through the real sidebar, a Harrier built onto
+# its dock pad, a strike on an enemy tank (take off, attack pass, Ammo--,
+# return, land, rearm at ReloadRate), a Kirov-style jumpjet that lifts off on
+# exit and obeys Stop, and a Night Hawk that lands to load/unload.
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+cheat credits 100000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+click tab:0
+click cameo:GAPOWR
+until 1500 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) == 1
+click cameo:GAREFN
+until 2000 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 600 built(0,GAREFN) == 1
+click cameo:AMRADR                                  @W2-AN-01
+until 2000 queue_ready(structure) == 1              @W2-AN-01
+click cameo:AMRADR                                  @W2-AN-01
+place auto                                          @W2-AN-01
+until 600 built(0,AMRADR) == 1                      @W2-AN-01
+
+# --- 1. the Harrier is buildable at Airforce Command and parks on a pad -------
+click tab:3
+assert cameo(ORCA) == 1                             @W2-AN-01
+click cameo:ORCA                                    @W2-AN-01
+until 2000 units(0,ORCA) == 1                       @W2-AN-01
+wait 5
+assert planes_docked(0) == 1                        @W2-AN-02
+assert plane_ammo(0) == 1                           @W2-AN-02
+view building 0:AMRADR
+shot harrier_docked
+
+# --- 2. strike: take off, attack pass, return, land, rearm ------------------
+cheat spawn HTNK 1 building 0:AMRADR +14 +4
+wait 2
+click unit 0:ORCA
+let thp = unit_hp(1,HTNK)
+click unit 1:HTNK                                   @W2-AN-02
+until 60 airborne(0) >= 1                           @W2-AN-02
+shot harrier_takeoff
+until 600 unit_hp(1,HTNK) < $thp                    @W2-AN-02
+assert plane_ammo(0) == 0                           @W2-AN-02
+until 900 planes_docked(0) == 1                     @W2-AN-02
+shot harrier_landed
+until 300 plane_ammo(0) == 1                        @W2-AN-02 # ReloadRate=.3 -> 270 frames
+
+# --- 3. a jumpjet lifts off on exit; Stop holds it (W2-AN-07) --------------
+click tab:0
+click cameo:GAPILE
+until 2000 queue_ready(structure) == 1
+click cameo:GAPILE
+place auto
+until 600 built(0,GAPILE) == 1
+click tab:2
+click cameo:JUMPJET                                 @W2-AN-07
+until 1500 units(0,JUMPJET) == 1                    @W2-AN-07
+until 30 airborne(0) >= 1                           @W2-AN-07
+click unit 0:JUMPJET
+click building 0:GACNST +12 +12
+wait 10
+key s                                               @W2-AN-07
+wait 2
+let sx = sel_cx
+let sy = sel_cy
+wait 60
+assert sel_cx == $sx and sel_cy == $sy              @W2-AN-07
+shot rocketeer_stop
+
+# --- 4. a Kirov killed in the air falls and crashes (Crashable=yes) ---------
+click unit 0:JUMPJET right
+cheat spawn ZEP 0 building 0:GACNST +6 -6
+wait 2
+click unit 0:ZEP
+click building 0:GACNST +10 -10
+until 120 airborne(0) >= 2                          @W2-AN-07
+wait 30
+cheat w2 kill 0:ZEP
+wait 1
+assert crashing(0) >= 1                             @W2-AN-07
+until 300 crashing(0) == 0                          @W2-AN-07
+shot kirov_crash
+
+# --- 5. the Night Hawk lands at its goal; boards/unloads only when landed ----
+cheat spawn SHAD 0 building 0:GACNST +4 +8
+wait 2
+click unit 0:SHAD
+click building 0:GACNST +8 +10                      @W2-AN-08
+until 60 sel_altitude > 0                           @W2-AN-08
+until 600 sel_altitude == 0 and sel_moving == 0     @W2-AN-08
+click unit 0:SHAD right
+click unit 0:E1
+click unit 0:SHAD                                   @W2-AN-08
+until 600 cargo_total(0) >= 1                       @W2-AN-08
+click unit 0:SHAD right
+click unit 0:SHAD
+click building 0:GACNST -6 +10                      @W2-AN-08
+until 60 sel_altitude > 0                           @W2-AN-08
+key d                                               @W2-AN-08 # lands first, then unloads
+until 600 sel_altitude == 0                         @W2-AN-08
+until 300 cargo_total(0) == 0                       @W2-AN-08
+shot nighthawk_unloaded
+end
