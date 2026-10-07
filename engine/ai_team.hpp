@@ -49,6 +49,8 @@ constexpr int kAiGatherRadius = 3;
 // when all live members are within Rules.CloseEnough (+0x1718 = 2.25 cells).
 constexpr double kAiStrayCells = 2.0;
 constexpr double kAiCloseEnoughCells = 2.25;
+// W2-SK-06 [RE-FALLBACK]: longest an under-strength team musters (seconds).
+constexpr double kAiMusterSecs = 60.0;
 // W2-SK-06 [RE-FALLBACK: the original packs up to 5 infantry per cell and
 // measures Stray/CloseEnough in leptons; this engine holds ONE unit per cell,
 // so a big team could never fit inside a 2-cell disc and its gather / move

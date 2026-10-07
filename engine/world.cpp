@@ -3681,7 +3681,13 @@ void World::step_ai_teams(double dt) {
                 return b.alive && b.house == h && b.state == Building::State::Idle && b.type >= 0 &&
                        b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard;
             });
-            if (cy && ht >= 0 && ht < (int)rec.cfg.roster.size() &&
+            // Core economy structures only (power / refinery / barracks / war
+            // factory / radar): banking for a 5000-credit superweapon or the
+            // tech centre would starve the army for minutes.
+            const AiCatalog& ct = rec.cfg.catalog;
+            const bool core = ht == ct.power || ht == ct.refinery || ht == ct.barracks ||
+                              ht == ct.war_factory || ht == ct.radar;
+            if (cy && core && ht >= 0 && ht < (int)rec.cfg.roster.size() &&
                 rec.queues.producing(QueueCat::Structure) == -1)
                 base_hold = rec.cfg.roster[ht].cost * rec.cfg.mods.cost_mul;
         }

@@ -109,6 +109,7 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             // the dissolve timer [RE-GATE APPLIED: ai-team.md §2].
             if (complete || (!tt.full && alive > 0)) {
                 team.state = TeamState::Gathering;
+                team.recruit_timer = 0.0;   // W2-SK-06: the muster clock
                 // W2-SK-06: the pre-script muster is at the OWN base (the stock
                 // scripts open with 54 regroup-at-base then 53 gather-at-enemy;
                 // mustering on the enemy ring first marched every wave across
@@ -153,7 +154,14 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             }
             // GATHERED = all live members within Rules.Stray (2.0 cells) of the
             // gather focus [RE-GATE APPLIED: ai-team.md §2].
-            if (all_within(view, team.gather_x, team.gather_y, team_reach_cells(kAiStrayCells, alive))) {
+            // W2-SK-06 [RE-FALLBACK]: an under-strength Full=no team keeps
+            // recruiting while it musters (its new units join it) and leaves
+            // when complete or after kAiMusterSecs -- a lone first recruit no
+            // longer marches off as a 1-unit "wave".
+            team.recruit_timer += dt;
+            const bool filled = team_shortfall_type(team, aimd) < 0;
+            if ((filled || team.recruit_timer >= kAiMusterSecs) &&
+                all_within(view, team.gather_x, team.gather_y, team_reach_cells(kAiStrayCells, alive))) {
                 team.state = TeamState::Executing;
                 team.script_pc = 0;
                 team.script_timer = 0.0;
