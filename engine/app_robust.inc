@@ -416,7 +416,7 @@ bool ensure_data_files(ra2engine::Platform& plat) {
         lines.push_back("OR START WITH --DATA <FOLDER> / SET RA2_INSTALL_DIR.");
         const std::vector<std::string> buttons = {"RETRY", "BROWSE", "EXIT"};
 #endif
-        SDL_Log("[assets] %zu required file(s) missing in %s", p.missing_required.size(), p.dir.c_str());
+        SDL_Log("[assets] %lu required file(s) missing in %s", static_cast<unsigned long>(p.missing_required.size()), p.dir.c_str());
         const int choice = run_message_page(plat, "GAME FILES NEEDED", lines, buttons);
         if (choice < 0 || choice == static_cast<int>(buttons.size()) - 1) return false;
 #ifdef __ANDROID__

@@ -2049,7 +2049,6 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     ba.roster.reserve(39);
     ba.art.reserve(39);
     int ok_n = 0;
-    int roster_i = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
         // [RE: roster2.md §A, RE-FALLBACK] P6 indices honour rules Image= for the
@@ -2059,7 +2058,6 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         // art-absent, i.e. unbuildable for the player AND the AI. Moves the
         // roster/AI gate witnesses (re-pinned).
         (void)kRoster2First;
-        ++roster_i;
         const std::string art_id = rules.image(id);
         ra2engine::BuildingTypeDef d;
         d.id = id;
@@ -3789,36 +3787,10 @@ SDL_Texture* shp_frame_tex(ra2engine::TextureCache& tc, const std::string& key,
 // [Task 5] Blit a decoded PCX (opaque, a=255 for every pixel) at screen (x,y)
 // through the TextureCache's ready-RGBA path (index-0-transparent does NOT apply
 // -- PCX logos use index 0 as a real color). Cached by `key` (position-indep).
-void blit_pcx(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
-              const ra2assets::PcxImage& img, int x, int y) {
-    if (img.w <= 0 || img.h <= 0) return;
-    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
-    if (!tex) {
-        std::vector<uint8_t> rgba = img.rgba();
-        tex = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img.w, img.h));
-    }
-    SDL_Rect dst{x, y, img.w, img.h};
-    SDL_RenderCopy(ren, tex, nullptr, &dst);
-}
 
 // [Task 5] Scaled variant of blit_pcx: fit the logo/title into a target width
 // (preserving aspect), returned height via out_h. Used to size logo.pcx above
 // the button column without distortion.
-void blit_pcx_scaled(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
-                     const ra2assets::PcxImage& img, int cx, int y, int target_w, int* out_h) {
-    if (img.w <= 0 || img.h <= 0) { if (out_h) *out_h = 0; return; }
-    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
-    if (!tex) {
-        std::vector<uint8_t> rgba = img.rgba();
-        tex = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img.w, img.h));
-    }
-    const double s = static_cast<double>(target_w) / img.w;
-    const int w = target_w;
-    const int h = static_cast<int>(std::lround(img.h * s));
-    SDL_Rect dst{cx - w / 2, y, w, h};
-    SDL_RenderCopy(ren, tex, nullptr, &dst);
-    if (out_h) *out_h = h;
-}
 
 // [Task 5] The Westwood shell font stores per-pixel values as a small
 // shading/bevel RAMP (0 = transparent, ~1..N = increasing "lit" level), NOT
@@ -4231,7 +4203,7 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
 // red (cell blocked OR adjacency fails -> whole grid red) [RE: construction.md §9].
 void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
                            const BuildingAssets& ba, const ra2engine::Input& input,
-                           const Assets& a, const ra2engine::Camera& cam, int W, int H,
+                           const Assets& a, const ra2engine::Camera& cam, int /*W*/, int /*H*/,
                            const ra2engine::PlacementCheck* pre_chk = nullptr) {
     if (!input.placement_active()) return;
     const int type = input.placement_type();
@@ -4534,7 +4506,7 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
                 tc.clear();
                 SDL_Log("[lifecycle] render device reset: texture cache cleared");
             } else if (ev.kind == ra2engine::InputEvent::AppLowMemory) {
-                SDL_Log("[lifecycle] low memory: freed %zu texture bytes", tc.trim());
+                SDL_Log("[lifecycle] low memory: freed %lu texture bytes", static_cast<unsigned long>(tc.trim()));
             }
             scene->handle(ev);
         }
@@ -16307,7 +16279,7 @@ int run_demo_saveload() {
 
     // --- scenario 1: skirmish (the interactive game's World + scene record).
     SlSkirmishEnv env{a,      ua,         ba, rules, ur, ur_ai, miners, rules_ini,
-                      ra2engine::default_skirmish_config(rules)};
+                      ra2engine::default_skirmish_config(rules), {}, {}};
     env.cfg.crates = true;
     env.inf_ft = factory_types_for(ba, "GAPILE");
     env.veh_ft = factory_types_for(ba, "GAWEAP");

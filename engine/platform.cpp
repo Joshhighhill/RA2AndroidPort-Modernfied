@@ -73,7 +73,7 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
     SDL_RenderSetLogicalSize(renderer, w, h);
 
     Platform p;
-    p.p_ = new Impl{window, renderer, w, h};
+    p.p_ = new Impl{window, renderer, w, h, TouchGestures{}};
     return p;
 }
 

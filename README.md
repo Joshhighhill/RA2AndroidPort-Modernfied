@@ -1,5 +1,18 @@
 # ra2assets + ra2engine
 
+> **Players:** read [`docs/INSTALL.md`](docs/INSTALL.md). It covers the game
+> files you need, desktop and Android install, mouse and touch controls, and
+> troubleshooting. Version: `VERSION` (`ra2engine --version`).
+>
+> **Legal.** This repository contains an engine only (license: [`LICENSE`](LICENSE);
+> third-party code: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)). It does
+> not include and does not distribute any Command & Conquer: Red Alert 2 /
+> Yuri's Revenge game data. The engine runs only on game files that the player
+> supplies from their own legally obtained copy. "Command & Conquer" and
+> "Red Alert" are trademarks of Electronic Arts Inc. This project is not
+> affiliated with, endorsed by or sponsored by Electronic Arts. The art,
+> logos, sounds and text shown at run time come from the player's own files.
+
 A portable C++17 library that decodes Red Alert 2 / Yuri's Revenge game data
 (`ra2assets`: MIX archives, PAL palettes, SHP sprites, VXL/HVA voxel models
 (vehicle meshes + animation transforms, decode only), LZO/LCW map packs, INI,
@@ -2867,7 +2880,7 @@ print('machine=0x%x' % machine, 'AArch64' if machine == 0xB7 else 'NOT-ARM64')
 
 Expected output: `machine=0xb7 AArch64`.
 
-## Android app (APK — arm64-v8a)
+## Android app (APK — arm64-v8a + x86_64)
 
 `android/` is a self-contained SDL2 Android project that packages the whole
 engine (all of `engine/*.cpp` + the `ra2assets` library from `src/`) into an
@@ -2896,12 +2909,17 @@ the app's external files dir (see "Assets on device" below).
   `-DSDL2_SRC_DIR=` if it lives elsewhere).
 
 Create `android/local.properties` (gitignored — machine-specific) pointing at
-your SDK + NDK:
+your SDK + NDK. The NDK key is **`ra2.ndkPath`**, not `ndk.dir`: AGP reads
+`ndk.dir` itself and fails with `[CXX1100]` when both are set
+(`app/build.gradle`):
 
 ```properties
 sdk.dir=D:/android-sdk
-ndk.dir=D:/android-ndk-r27c
+ra2.ndkPath=D:/android-ndk-r27c
 ```
+
+The SDK also needs `platforms;android-35` (compileSdk/targetSdk 35, W2-AR-11):
+`sdkmanager "platforms;android-35"`.
 
 ### Build the APK
 
@@ -2915,7 +2933,22 @@ Set-Location D:\ra2-android\android
 .\gradlew.bat assembleDebug
 ```
 
-Output: `android/app/build/outputs/apk/debug/app-debug.apk` (arm64-v8a only).
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`, with both
+arm64-v8a and x86_64 native libraries. **Both build types compile the native
+code optimised** (W2-AR-13). `debug` is RelWithDebInfo (`-O2 -g`) and keeps
+SDL's internal asserts, which the engine logs without blocking. `release`
+(`.\gradlew.bat assembleRelease`) is Release (`-O3`) with SDL asserts
+compiled out. The release APK is signed with the key in
+`android/keystore.properties` (gitignored: `storeFile`, `storePassword`,
+`keyAlias`, `keyPassword`); without that file it falls back to the debug key,
+which is fine for side-loading but not for Play.
+
+Every `.so` is linked with 16 KB-compatible `LOAD` segments
+(`-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`). Play requires this for
+targetSdk 35. Check it with
+`llvm-readelf -l lib/arm64-v8a/libmain.so`: every `LOAD` must show
+`align 0x4000`. versionName comes from `VERSION`, and versionCode is the git
+commit count.
 Verify it contains AArch64 native libs (no device needed):
 
 ```powershell
@@ -2945,59 +2978,38 @@ run time from the app's own external files dir.
    ```powershell
    adb install -r android\app\build\outputs\apk\debug\app-debug.apk
    ```
-2. **Place your own game files** where the app reads them. The engine reads the
-   mix chain from `SDL_AndroidGetExternalStoragePath()/ra2/`, i.e.
-   `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2/`. The menu,
-   skirmish and campaign open these files from that folder (gap G-72 — the old
-   three-file list made Skirmish/Campaign die with `fatal: cannot open file`):
-
-   | File | Needed by |
-   |---|---|
-   | `ra2.mix` | everything (rules/art/theaters/units/shell art, nested mixes) |
-   | `ra2md.mix` | rulesmd/artmd/soundmd/evamd, YR voxels |
-   | `language.mix` | audio.mix (voices, EVA), cameo.mix, CSF |
-   | `langmd.mix` | YR map names (skirmish map list) |
-   | `multimd.mix` | the skirmish maps |
-   | `mapsmd03.mix` | the engine's historical default map (no map picked) |
-   | `theme.mix` | the menu music |
-   | `expand01.mix` | the campaign `rules.ini` patch |
-   | `Maps01.mix`, `MAPS02.MIX` | Allied / Soviet campaign maps |
-   | `ra2.csf` | the patched string table (falls back to language.mix's copy) |
-
-   Android's file system is **case-sensitive**: keep the names exactly as
-   above (`Maps01.mix` but `MAPS02.MIX`, as the retail install ships them).
-
-   **The files must be readable by the app** — this is the #1 cause of "it
-   opens then instantly closes". `Android/data/<pkg>/` is scoped storage, so:
-   - **Real phone:** copy the files in with a file manager / MTP, or
-     `adb push` **as the normal (non-root) shell user** — both route through
-     MediaProvider and give the files the correct SELinux label
-     (`media_rw_data_file`) that the app is allowed to read.
-   - **Do NOT `adb root` then push** into that folder: root-created files get
-     the `storage_file` label and the app's sandbox is SELinux-denied `read`
-     (you'll see `avc: denied { read } ... tcontext=...storage_file` in
-     logcat). If you already did this, either re-push as non-root, or on an
-     emulator only, work around it with `adb root; adb shell setenforce 0`.
+2. **Supply your own game files** (the list is in `docs/INSTALL.md`). The app
+   opens on **SetupActivity**, which lists the missing files and offers
+   **Import game files**: a system folder picker (Storage Access Framework).
+   It needs no permissions and works on Android 5 to 15. The files are copied,
+   with their names normalised to the retail case, into
+   `Android/data/org.ra2.engine/files/ra2/`, the folder the engine reads.
+   **On Android 11+ `adb push` into `Android/data` is refused** for the shell
+   user (W2-AR-04), so stage the files in a shared folder and import them:
    ```powershell
-   # non-root push (correct label); create the dir first if needed
-   adb shell mkdir -p /sdcard/Android/data/org.ra2.engine/files/ra2
+   adb shell mkdir -p /sdcard/Download/RA2
    foreach ($f in "ra2.mix","ra2md.mix","language.mix","langmd.mix","multimd.mix",
                   "mapsmd03.mix","theme.mix","expand01.mix","Maps01.mix","MAPS02.MIX","ra2.csf") {
-     adb push "D:\Red Alert 2\$f" /sdcard/Android/data/org.ra2.engine/files/ra2/
+     adb push "D:\Red Alert 2\$f" /sdcard/Download/RA2/
    }
    ```
-3. **Launch** the app (`RA2 Engine`) from the launcher, or:
-   ```powershell
-   adb shell am start -n org.ra2.engine/.RA2Activity
-   ```
-   It opens the main menu. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
+   Then tap **Import game files**, choose `Download/RA2` and allow access.
+   MTP (USB file transfer from a PC straight into
+   `Android/data/org.ra2.engine/files/ra2/`) also works. If you `adb root`
+   and push into that folder on an emulator, the files get the wrong SELinux
+   label (`storage_file`) and the app cannot read them.
+3. **Launch** the app (`RA2 Engine`) from the launcher, or with
+   `adb shell am start -n org.ra2.engine/.SetupActivity`. With all required
+   files present it goes straight to the main menu (immersive fullscreen).
+   Settings (`RA2.INI`) and `Saved Games/` live in the app's internal storage
+   (`/data/data/org.ra2.engine/files/`; on a debug build you can reach them with
+   `adb shell run-as org.ra2.engine ls files`).
 
-   **Diagnosing failures:** the engine logs to Android logcat under the
-   `SDL/APP` tag. On startup it prints `[assets] android asset dir = <path>`,
-   and any fatal error is logged as `fatal: <reason>` (e.g.
-   `cannot open file: .../ra2.mix`) before it exits — so
-   `adb logcat -s SDL/APP:V` tells you exactly what went wrong instead of the
-   app vanishing silently.
+   **Diagnosing failures:** `adb logcat -s SDL SDL/APP RA2Setup` shows the
+   asset folder (`[assets] android asset dir = ...`), the audio device
+   (`[audio] ... sdl_devices=1`), the per-stage load timings (`[load] ...`),
+   lifecycle events (`[lifecycle] ...`) and any `fatal:` error. A fatal error
+   is also shown on screen.
 
    **Note on x86_64 emulator:** it uses software GL (SwiftShader) and slow
    emulated storage, so first load takes ~1 minute; a real arm64 phone is far

@@ -25,13 +25,13 @@ static STest::Step st_key(const char* label, int k, bool ctrl = false, bool shif
 }
 static STest::Step st_expect(const std::string& key, long long v, int timeout = 30) {
     STest::Step st{"expect " + key + " == " + std::to_string(v),
-                   [key, v](STest& t, Scene& s, int) { return STest::pv(s, key) == v; }};
+                   [key, v](STest&, Scene& s, int) { return STest::pv(s, key) == v; }};
     st.timeout = timeout;
     return st;
 }
 static STest::Step st_expect_ge(const std::string& key, long long v, int timeout = 30) {
     STest::Step st{"expect " + key + " >= " + std::to_string(v),
-                   [key, v](STest& t, Scene& s, int) { return STest::pv(s, key) >= v; }};
+                   [key, v](STest&, Scene& s, int) { return STest::pv(s, key) >= v; }};
     st.timeout = timeout;
     return st;
 }
@@ -148,7 +148,7 @@ void add_controls_selftest_steps(STest& t) {
     S.push_back(st_key("1 (TeamSelect_1)", SDLK_1));
     S.push_back(st_expect("sel", 1));
     S.push_back(st_key("T (TypeSelect)", SDLK_t));
-    S.push_back({"T selected every on-screen GI", [](STest& t, Scene& s, int) {
+    S.push_back({"T selected every on-screen GI", [](STest&, Scene& s, int) {
                      return STest::pv(s, "sel") == STest::pv(s, "units.0.GI") ||
                             STest::pv(s, "sel") > 1;
                  }});

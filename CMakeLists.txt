@@ -339,7 +339,11 @@ if (RA2_BUILD_ENGINE)
   target_compile_options(ra2engine PRIVATE -ffp-contract=off)
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
-  target_include_directories(ra2engine PRIVATE include engine third_party)
+  target_include_directories(ra2engine PRIVATE include engine)
+  # W2-AR-25: warnings on for the engine; vendored headers are SYSTEM so
+  # their own warnings (stb) stay out of the count.
+  target_include_directories(ra2engine SYSTEM PRIVATE third_party)
+  target_compile_options(ra2engine PRIVATE -Wall -Wextra)
   # NOTE: link order deviates from the brief's literal listing (SDL2 then
   # SDL2main) to (SDL2main then SDL2). Under MinGW/GNU ld, static archives
   # are resolved in a single left-to-right pass: SDL2main.a's WinMain is

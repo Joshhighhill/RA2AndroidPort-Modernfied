@@ -23,38 +23,6 @@ struct CampButton {
     const char* label;
     bool enabled;
 };
-void draw_camp_button(SDL_Renderer* ren, const CampButton& b, bool hover) {
-    SDL_Rect s{b.r.x, b.r.y, b.r.w, b.r.h};
-    SDL_SetRenderDrawColor(ren, b.enabled ? (hover ? 110 : 70) : 40, b.enabled ? 30 : 30,
-                           b.enabled ? 26 : 30, 255);
-    SDL_RenderFillRect(ren, &s);
-    SDL_SetRenderDrawColor(ren, b.enabled ? 210 : 90, b.enabled ? 70 : 90, b.enabled ? 60 : 90, 255);
-    SDL_RenderDrawRect(ren, &s);
-    const int lw = static_cast<int>(std::strlen(b.label)) * 12;
-    draw_text(ren, b.label, b.r.x + (b.r.w - lw) / 2, b.r.y + (b.r.h - 14) / 2, 2,
-              b.enabled ? 235 : 120, b.enabled ? 235 : 120, b.enabled ? 240 : 120);
-}
-
-// Word-wrap into the 5x7 glyph font.
-int draw_camp_wrapped(SDL_Renderer* ren, const std::string& text, int x, int y, int cols, int scale,
-                      int max_y, Uint8 r, Uint8 g, Uint8 b) {
-    const std::string t = camp::up(text);
-    std::size_t p = 0;
-    while (p < t.size() && y < max_y) {
-        std::size_t n = std::min<std::size_t>((std::size_t)cols, t.size() - p);
-        const std::size_t nl = t.find('\n', p);
-        if (nl != std::string::npos && nl < p + n) {
-            n = nl - p;
-        } else if (p + n < t.size()) {
-            const std::size_t sp = t.rfind(' ', p + n);
-            if (sp != std::string::npos && sp > p) n = sp - p;
-        }
-        draw_text(ren, t.substr(p, n), x, y, scale, r, g, b);
-        y += 10 * scale;
-        p += n + 1;
-    }
-    return y;
-}
 
 // ---------------------------------------------------------------------------
 // The loading screen [RE §3.2]: mission.ini LS800BkgdName (ra2.mix/load.mix)

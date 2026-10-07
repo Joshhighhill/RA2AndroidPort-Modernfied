@@ -114,14 +114,6 @@ ra2engine::CampaignTables load_tables(const MixFile& ra2) {
                                             load_ra2_local_ini(ra2, "mapsel.ini"));
 }
 
-// Map a [<Side>] mapsel section to the World side.
-ra2engine::World::Side side_of(const std::string& s) {
-    const std::string u = up(s);
-    if (u == "GDI") return ra2engine::World::Side::Allied;
-    if (u == "NOD") return ra2engine::World::Side::Soviet;
-    return ra2engine::World::Side::Neutral;
-}
-
 // The campaign selection a GameScene / gate starts from.
 struct Launch {
     std::string map;          // e.g. "ALL01t.MAP"
