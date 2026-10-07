@@ -281,6 +281,7 @@ public:
     // a unit on the deck draws over it. `layer_decks_` false = the old ground
     // pass (diagnostic).
     const std::vector<int>& decks() const { return decks_; }
+    const ra2assets::MapFile* map() const { return map_; }
     bool deck_cell(int x, int y) const { return deck_cells_.count(y * 1000 + x) != 0; }
     void set_layer_decks(bool on) { layer_decks_ = on; }
     bool layer_decks() const { return layer_decks_; }

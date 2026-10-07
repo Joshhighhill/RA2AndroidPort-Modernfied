@@ -50,3 +50,35 @@ if (args.size() == 2 && args[0] == "deck_layers") {
     map_dressing_.set_layer_decks(args[1] == "on");
     return true;
 }
+// W5-PRES R-120 state-effect verbs (sim fields set directly -- --play only):
+//   cheat pres_iron H:TYPE[:n]      Iron Curtain the unit (IronCurtainDuration)
+//   cheat pres_vet H:TYPE[:n] V     set its veterancy (2.0 = elite -> promotion)
+auto pres_find_unit = [&](const std::string& spec) -> int {
+    std::vector<std::string> p;
+    std::stringstream ss(spec);
+    std::string tok;
+    while (std::getline(ss, tok, ':')) p.push_back(tok);
+    if (p.size() < 2) return -1;
+    const int h = std::atoi(p[0].c_str());
+    int want = p.size() >= 3 ? std::atoi(p[2].c_str()) : 0;
+    for (int i = 0; i < static_cast<int>(world_.units().size()); ++i) {
+        const ra2engine::Unit& u = world_.units()[static_cast<std::size_t>(i)];
+        if (!u.alive || u.die_time >= 0.0 || u.house != h) continue;
+        if (p[1] != "*" && play_unit_id(u) != p[1]) continue;
+        if (want-- > 0) continue;
+        return i;
+    }
+    return -1;
+};
+if (args.size() == 2 && args[0] == "pres_iron") {
+    const int i = pres_find_unit(args[1]);
+    if (i < 0) return false;
+    world_.units()[static_cast<std::size_t>(i)].an.iron_left = std::max(1, world_.sw_params().iron_frames) / 15.0;
+    return true;
+}
+if (args.size() == 3 && args[0] == "pres_vet") {
+    const int i = pres_find_unit(args[1]);
+    if (i < 0) return false;
+    world_.units()[static_cast<std::size_t>(i)].vet.veterancy = static_cast<float>(std::atof(args[2].c_str()));
+    return true;
+}

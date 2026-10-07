@@ -108,6 +108,8 @@ public:
         if (g_game_font == font_.get()) { g_game_font = nullptr; g_game_font_pal = nullptr; }
         if (g_fx == &fx_) g_fx = nullptr;
         if (g_fx3 == &effects_) g_fx3 = nullptr;
+        g_state_world = nullptr;      // W5-PRES R-120
+        g_state_fx = PresStateFx{};
     }
 
     PresAudio& sound() { return snd_; }
@@ -205,6 +207,7 @@ public:
                     const std::vector<ra2engine::ProjectileEvent>& pev) {
         g_pres_tick = ++logic_;
         fx_.tick();
+        pres_state_tick(w, fx_);   // W5-PRES R-120 chrono warp anims / sparkles
         projectile_fx(w, pev);   // W3-B: impacts on the tick they detonate
         if (audio_) unit_fx_tick(w);
         // W3-B: the building slot machine sees this tick's state and events.

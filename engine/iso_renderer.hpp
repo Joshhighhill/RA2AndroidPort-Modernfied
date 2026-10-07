@@ -235,6 +235,27 @@ ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s,
 // houses are unconfigured, i.e. every gate); house_draw_key = the colour id
 // for texture-cache keys.
 void set_color_world(const World* w);
+
+// W5-PRES (R-104/R-120): a per-object draw tint the object blits apply
+// (draw_unit, draw_voxel_sprite, and main.cpp's building / turret blits via
+// blit_object). `mod` multiplies the sprite (texture colour mod, <= 1.0),
+// `add` brightens it by drawing it a second time additively scaled by add/255
+// (dst + src*add/255 = src*(1 + add/255) over an opaque pixel, clamped at 255
+// -- the original's light > 1.0 / Flash brightening). `alpha` < 255 draws the
+// sprite translucent. The caller sets it around one object and clears it
+// (null); null = the plain RenderCopy every gate uses.
+struct ObjTint {
+    unsigned char mod[3] = {255, 255, 255};
+    unsigned char add[3] = {0, 0, 0};
+    unsigned char alpha = 255;
+    bool plain() const {
+        return mod[0] == 255 && mod[1] == 255 && mod[2] == 255 && !add[0] && !add[1] && !add[2] && alpha == 255;
+    }
+};
+void set_obj_tint(const ObjTint* t);
+const ObjTint* obj_tint();
+// RenderCopy `tex` (an SDL_Texture*) at `dst` (an SDL_Rect*) with the current ObjTint.
+void blit_object(void* sdl_renderer, void* tex, const void* dst);
 ra2assets::Palette house_draw_palette(const ra2assets::Palette& base, int house);
 int house_draw_key(int house);
 

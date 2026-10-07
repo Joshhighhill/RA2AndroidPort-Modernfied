@@ -473,7 +473,8 @@ public:
             const int fr = PresFx::loop_frame(*b.t, b.age * std::max(1, b.t->delay) / std::max(1, b.delay));
             fx_->blit(ren, tc, *b.t->shp, "fx:" + b.t->name, fr, sx, sy, b.t->translucent, W, H);
         }
-        draw_flashes(ren, cam);
+        // W5-PRES R-120: flashing objects are drawn brightened per object
+        // (pres_state.inc ObjTint) -- the old additive-diamond stand-in is off.
         if (unit_pal_ && has_vpl_)
             for (const VoxelDebris& v : voxels_) {
                 int sx = 0, sy = 0;

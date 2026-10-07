@@ -2746,6 +2746,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
 #include "pres_layers.inc"   // W5-PRES R-100/R-101 deck + air layers
+#include "pres_state.inc"    // W5-PRES R-120 Iron Curtain / elite flash / chrono warp
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
@@ -2891,7 +2892,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
                 art.own_pal ? *art.own_pal : ra2engine::house_draw_palette(ba.unit_pal, b.house);   // G-16
             tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, hp));
         }
-        SDL_RenderCopy(ren, tex, nullptr, &dst);
+        ra2engine::blit_object(ren, tex, &dst);   // W5-PRES ObjTint (none in the gates)
     }
     if (overlay)
         pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
@@ -3513,6 +3514,12 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             up = &*lifted;
         }
         const ra2engine::Unit& u = *up;
+        // W5-PRES R-120: Iron Curtain / elite flash / chrono warp draw tint.
+        ra2engine::ObjTint tint;
+        struct TintScope {
+            explicit TintScope(const ra2engine::ObjTint* t) { ra2engine::set_obj_tint(t); }
+            ~TintScope() { ra2engine::set_obj_tint(nullptr); }
+        } tint_scope(pres_unit_tint(world, idx, tint) ? &tint : nullptr);
         // Shroud/Fog [RE: shroud.md §5, W2-GA-03]: hide mobile objects in cells
         // house 0 cannot see (object_visible_at: explored, or visible with FogOfWar). Inert with shroud
         // off (visible_at returns true on empty grids) -> every existing render
@@ -3633,11 +3640,14 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         } else if (d.kind == 0) {
             const ra2engine::Building& b = world.buildings()[d.idx];
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
+            ra2engine::ObjTint btint;   // W5-PRES R-120 Iron Curtain envelope
+            ra2engine::set_obj_tint(pres_building_tint(world, b, btint) ? &btint : nullptr);
             draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
                           &world.buildings());
             if (g_turrets && b.type >= 0 && b.type < static_cast<int>(ba->roster.size()))   // W2-GA-13
                 g_turrets->draw(ren, tc, world, b, ba->roster[static_cast<std::size_t>(b.type)].id,
                                 mc ? mc->level : 0, cam, W, H);
+            ra2engine::set_obj_tint(nullptr);
         } else {
             draw_one_unit(d.idx);
         }
