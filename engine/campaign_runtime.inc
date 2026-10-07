@@ -287,6 +287,7 @@ public:
           host_(*this) {
         ra2_vehicles_ = camp::list_values(ra2_rules_, "VehicleTypes");
         ra2_infantry_ = camp::list_values(ra2_rules_, "InfantryTypes");
+        ra2_aircraft_ = camp::list_values(ra2_rules_, "AircraftTypes");
         reveal_radius_ = rules_ini.get_int("General", "RevealTriggerRadius", 9);
         setup_houses();
         // Every type the mission can place, resolved up front (so the render
@@ -493,6 +494,7 @@ private:
         int team = -1;              // map team index
         bool hunt = false;          // Hunt mission
         bool initial = true;        // placed by the map (not "built")
+        std::uint8_t dmg_stage = 0; // W2-CA-14: 1 damaged, 2 <= half, 4 <= quarter raised
     };
     struct Team {
         int type = -1;              // teams_data_.teams index
@@ -508,10 +510,11 @@ private:
 
     static std::uint8_t flags_of(const Track& t) {
         return (std::uint8_t)((t.dead ? 1 : 0) | (t.discovered ? 2 : 0) | (t.selected ? 4 : 0) |
-                              (t.hunt ? 8 : 0) | (t.initial ? 16 : 0));
+                              (t.hunt ? 8 : 0) | (t.initial ? 16 : 0) | ((t.dmg_stage & 7) << 5));
     }
     static void set_flags(Track& t, std::uint8_t f) {
         t.dead = f & 1; t.discovered = f & 2; t.selected = f & 4; t.hunt = f & 8; t.initial = f & 16;
+        t.dmg_stage = (std::uint8_t)((f >> 5) & 7);
     }
 
     // --- houses [RE §3.3, map-triggers §6] ------------------------------------
@@ -777,6 +780,9 @@ private:
                 const int vi = camp::index_of(ra2_vehicles_, t.type);
                 const int ii = camp::index_of(ra2_infantry_, t.type);
                 if (vi >= 0) last_built_[(std::size_t)u.house][1] = vi;
+                // W2-CA-14: event 22 BuildAircraftType.
+                const int ai = camp::index_of(ra2_aircraft_, t.type);
+                if (ai >= 0) last_built_[(std::size_t)u.house][3] = ai;
                 if (ii >= 0) last_built_[(std::size_t)u.house][2] = ii;
             }
             utrack_.push_back(t);
@@ -1016,6 +1022,23 @@ private:
             }
         }
     }
+    // W2-CA-14: 38/41 first damage, 39/42 at or below half, 40/43 at or below
+    // a quarter of Strength, each once per object [map-triggers.md §3 event
+    // table; RE-W2-4 open: the combat-only (38-40) vs any-source (41-43) split
+    // is not modelled -- the clone has no non-combat damage source on these
+    // objects, so both of a pair are raised together (RE-FALLBACK)].
+    void raise_damage_stages(Track& t, int hp, int max_hp, int house) {
+        if (max_hp <= 0 || t.tag < 0) return;
+        const struct { std::uint8_t bit; bool hit; int ev_combat, ev_any; } st[] = {
+            {1, hp < max_hp, 38, 41}, {2, 2 * hp <= max_hp, 39, 42}, {4, 4 * hp <= max_hp, 40, 43}};
+        for (const auto& s : st) {
+            if (!s.hit || (t.dmg_stage & s.bit)) continue;
+            t.dmg_stage |= s.bit;
+            raise_obj(t, s.ev_combat, house);
+            if (t.tag >= 0) raise_obj(t, s.ev_any, house);
+            if (t.tag < 0) return;
+        }
+    }
     void poll_objects() {
         sync_tracks();
         poll_entered();
@@ -1052,6 +1075,7 @@ private:
                 gf_raise_lines(t.cx, t.cy, c);
             }
             if (u.hp < t.hp) raise_attacked(t, u.house, gf_attacker_house((int)i, -1, u.house));
+            if (u.hp < t.hp) raise_damage_stages(t, u.hp, u.max_hp, u.house);
             t.hp = u.hp;
             if (!t.discovered && u.house != 0 && w_.explored_at(0, u.cell_x, u.cell_y)) {
                 t.discovered = true;
@@ -1077,6 +1101,7 @@ private:
                 continue;
             }
             if (b.hp < t.hp) raise_attacked(t, b.house, gf_attacker_house(-1, (int)i, b.house));
+            if (b.hp < t.hp) raise_damage_stages(t, b.hp, b.max_hp, b.house);
             t.hp = b.hp;
             if (!t.discovered && b.house != 0 && w_.explored_at(0, b.cx, b.cy)) {
                 t.discovered = true;
@@ -1758,7 +1783,7 @@ private:
     std::vector<int> house_type_of_;
     std::vector<int> houses_order_ht_;
     std::vector<std::vector<ra2engine::PlannedNode>> base_nodes_;   // [G-69] per engine house
-    std::vector<std::string> ra2_vehicles_, ra2_infantry_;
+    std::vector<std::string> ra2_vehicles_, ra2_infantry_, ra2_aircraft_;
     std::vector<int> destroyed_units_, destroyed_buildings_;
     std::vector<std::array<int, 4>> last_built_;
     std::vector<Track> utrack_, btrack_;
