@@ -1,0 +1,40 @@
+// pres_compat.inc -- W5-PRES: compile-time hooks onto sim state that other
+// wave-5 branches add (w4fix-seq: high-bridge destruction, paratroopers;
+// agent B: the infantry sub-cell offset). Each helper detects the member with
+// SFINAE, so this branch builds and renders correctly before AND after those
+// branches merge; with the member absent the hook is inert.
+// Included by main.cpp before pres_map.inc.
+
+// w4fix-seq W4-SQ-10: World::high_bridge_destroyed(x, y) -- a broken span's
+// deck stops drawing.
+template <class Wd>
+auto pres_hbd_impl(const Wd& w, int x, int y, int) -> decltype(bool(w.high_bridge_destroyed(x, y))) {
+    return w.high_bridge_destroyed(x, y);
+}
+template <class Wd>
+bool pres_hbd_impl(const Wd&, int, int, long) { return false; }
+inline bool pres_high_deck_destroyed(const ra2engine::World& w, int x, int y) { return pres_hbd_impl(w, x, y, 0); }
+
+// w4fix-seq W4-SQ-06: a paratrooper hangs under its chute while
+// u.cargo_of == kParachuteCargo (0x3FFFFFFE) with u.an.para_alt > 0 (leptons).
+constexpr int kPresParachuteCargo = 0x3FFFFFFE;
+template <class U>
+auto pres_para_alt_impl(const U& u, int) -> decltype(double(u.an.para_alt)) { return u.an.para_alt; }
+template <class U>
+double pres_para_alt_impl(const U&, long) { return 0.0; }
+inline double pres_para_alt(const ra2engine::Unit& u) {
+    return u.cargo_of == kPresParachuteCargo ? pres_para_alt_impl(u, 0) : 0.0;
+}
+
+// Agent B (R-061, 3 infantry per cell): the sub-cell position. When B's units
+// carry their sub-cell spot in fx/fy the renderer needs nothing; if B exposes
+// a separate lepton offset (u.subcell_dx / u.subcell_dy, leptons) it is added
+// to the draw position here. [hook: inert until B lands]
+template <class U>
+auto pres_subcell_impl(const U& u, double& dx, double& dy, int) -> decltype(void(u.subcell_dx), void(u.subcell_dy)) {
+    dx = u.subcell_dx / 256.0;
+    dy = u.subcell_dy / 256.0;
+}
+template <class U>
+void pres_subcell_impl(const U&, double& dx, double& dy, long) { dx = dy = 0.0; }
+inline void pres_subcell_offset(const ra2engine::Unit& u, double& dx, double& dy) { pres_subcell_impl(u, dx, dy, 0); }

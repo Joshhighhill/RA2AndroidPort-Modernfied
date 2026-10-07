@@ -2742,8 +2742,10 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
 #include "pres_bldanim.inc"  // W3-B building anim slots (per logic tick)
 #include "pres_effects.inc"  // W3-FX particles / debris / trails / wakes / twinkles
+#include "pres_compat.inc"  // W5-PRES hooks onto w4fix-seq / agent-B sim state
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
+#include "pres_layers.inc"   // W5-PRES R-100/R-101 deck + air layers
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
@@ -3502,7 +3504,15 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // image is logged and skipped (not thrown) so one bad unit can't take
     // down the whole frame.
     auto draw_one_unit = [&](int idx) {
-        const ra2engine::Unit& u = us[idx];
+        // W5-PRES R-100: a unit on a high-bridge deck draws BridgeHeight up.
+        std::optional<ra2engine::Unit> lifted;
+        const ra2engine::Unit* up = &us[idx];
+        if (const int lv = pres_unit_lift_levels(world, *up)) {
+            lifted.emplace(*up);
+            lifted->level += lv;
+            up = &*lifted;
+        }
+        const ra2engine::Unit& u = *up;
         // Shroud/Fog [RE: shroud.md §5, W2-GA-03]: hide mobile objects in cells
         // house 0 cannot see (object_visible_at: explored, or visible with FogOfWar). Inert with shroud
         // off (visible_at returns true on empty grids) -> every existing render
@@ -3583,12 +3593,19 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             static std::size_t s_n = 0;
             static std::vector<DrawItem> s_objs;
             const auto& objs = g_map_dressing->objects();
-            if (s_for != g_map_dressing || s_n != objs.size()) {
+            static bool s_decks = false;   // W5-PRES: rebuilt when deck layering toggles
+            if (s_for != g_map_dressing || s_n != objs.size() || s_decks != g_map_dressing->layer_decks()) {
                 s_for = g_map_dressing;
                 s_n = objs.size();
+                s_decks = g_map_dressing->layer_decks();
                 s_objs.clear();
                 for (int i = 0; i < static_cast<int>(objs.size()); ++i)
                     s_objs.push_back({(objs[i].x + (objs[i].fw - 1) / 2.0) + (objs[i].y + (objs[i].fh - 1) / 2.0), 2, i});
+                // W5-PRES R-100: high-bridge decks sort with the objects (kind 3).
+                for (int di : g_map_dressing->decks()) {
+                    const auto& o = g_map_dressing->overlays()[static_cast<std::size_t>(di)];
+                    if (g_map_dressing->layer_decks()) s_objs.push_back({o.x + o.y + kPresDeckBias, 3, di});
+                }
                 std::stable_sort(s_objs.begin(), s_objs.end(),
                                  [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
             }
@@ -3597,7 +3614,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                        [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
             A.swap(AB);
         }
-        for (int i : uorder) B.push_back({us[i].fx + us[i].fy, 1, i});
+        // W5-PRES R-100/R-101: on-deck units sort after their deck; airborne
+        // units leave the ground sort for the air layer (drawn below).
+        for (int i : uorder)
+            if (!(g_map_dressing && pres_airborne(us[i]))) B.push_back({pres_unit_key(world, us[i]), 1, i});
+        std::stable_sort(B.begin(), B.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         merged.resize(A.size() + B.size());
         std::merge(A.begin(), A.end(), B.begin(), B.end(), merged.begin(),
                    [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
@@ -3605,7 +3626,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         for (int i : uorder) merged.push_back({0.0, 1, i});
     }
     for (const DrawItem& d : merged) {
-        if (d.kind == 2) {
+        if (d.kind == 3) {
+            g_map_dressing->draw_deck(ren, tc, world, d.idx, g_map_pals, cam, W, H);
+        } else if (d.kind == 2) {
             g_map_dressing->draw(ren, tc, world, g_map_dressing->objects()[d.idx], g_map_pals, cam, W, H);
         } else if (d.kind == 0) {
             const ra2engine::Building& b = world.buildings()[d.idx];
@@ -3618,6 +3641,15 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         } else {
             draw_one_unit(d.idx);
         }
+    }
+    // W5-PRES R-101: the air layer -- airborne aircraft / jumpjets over every
+    // ground object (live game; the gates keep the single sort above).
+    if (ba && g_map_dressing) {
+        std::vector<DrawItem> air;
+        for (int i : uorder)
+            if (pres_airborne(us[i])) air.push_back({us[i].fx + us[i].fy, 1, i});
+        std::stable_sort(air.begin(), air.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+        for (const DrawItem& d : air) draw_one_unit(d.idx);
     }
     // Projectile phase (P2): shells/bombs in flight, over the objects. EMPTY
     // unless enable_projectiles was called (the game + --demo-projectile), so
@@ -3641,7 +3673,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             if (u.selected) {
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
                 const int sx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
-                const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15 - up;
+                const int lv = u.level + pres_unit_lift_levels(world, u);   // W5-PRES R-100 deck
+                const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - lv * 15)) + cam.y + 15 - up;
                 draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red);
             }
         } else if (u.selected || u.hp < u.max_hp)
