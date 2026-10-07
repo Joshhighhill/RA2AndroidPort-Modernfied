@@ -45,6 +45,9 @@ UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixF
         {"ENGINEER", false, "GAPILE"}, {"SENGINEER", false, "NAHAND"}, {"SPY", false, "GAPILE"},
         // W2-SK-07: the MCVs (a ConYard-less AI rebuys and redeploys one)
         {"AMCV", true, "GAWEAP"},  {"SMCV", true, "NAWEAP"},
+        // Wave-5 (R-042): the stolen-tech infantry aimd names (TaskForce
+        // "0=2,CCOMAND"); buildable only once a spy stole the tech.
+        {"CCOMAND", false, "GAPILE"}, {"CIVAN", false, "NAHAND"},
     };
     UnitRoster ur = load_unit_roster_table(dir, ra2, ua, rules, art, kAiUnits,
                                            sizeof(kAiUnits) / sizeof(kAiUnits[0]), /*full_parse=*/true);
@@ -54,6 +57,7 @@ UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixF
             d.storage = rules.storage(d.id);
             d.chrono_miner = d.id == "CMIN";
         }
+        rp_arm_stolen_tech(rules, d);   // wave-5 (R-042)
     }
     return ur;
 }

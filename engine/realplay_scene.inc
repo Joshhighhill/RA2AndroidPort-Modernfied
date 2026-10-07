@@ -233,6 +233,7 @@ private:
             const ra2engine::QueueCat c = rp_unit_cat(d);
             if ((c == ra2engine::QueueCat::Infantry) != (tab == 2)) continue;
             const bool queued = queues_.producing(c) == i;
+            if (!queued && d.tech_level <= 0) continue;   // wave-5 R-042: tech not (yet) stolen
             if (!queued &&
                 !ra2engine::prerequisites_met(d.prerequisite, bs, ba_.roster, 0, ba_.groups))
                 continue;
@@ -252,6 +253,17 @@ private:
     // Once per frame: the strip follows the buildable set (a finished Barracks
     // makes its units appear, a lost Tech Center removes its items).
     void rp_after_world_step() {
+        // Wave-5 (R-056): map tech buildings (CAAIRP ParaDropSpecial) join the
+        // roster after rp_setup -- extend the SW table to the grown roster.
+        if (rp_on_ && rp_sw_table_.size() != ba_.roster.size()) {
+            const std::vector<RpSwGrant> full = rp_superweapon_table(ba_, rules_);
+            const std::size_t old_n = rp_sw_table_.size();
+            rp_sw_table_.resize(full.size());
+            for (std::size_t i = old_n; i < full.size(); ++i) rp_sw_table_[i] = full[i];
+            std::vector<int> swb(rp_sw_table_.size(), 0);
+            for (std::size_t i = 0; i < swb.size(); ++i) swb[i] = static_cast<int>(rp_sw_table_[i].type);
+            world_.set_sw_building_types(swb);
+        }
         if (rp_on_ && !rp_sw_table_.empty()) rp_sync_superweapons(world_, rp_sw_table_, rp_nuke_);
     }
 

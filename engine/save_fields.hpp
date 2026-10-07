@@ -228,6 +228,7 @@ struct SaveAccess {
         save::io(ar, w.bridge_tile_land_);
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
+        save::io(ar, w.w5_);   // wave-5 abilities (agent C)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -639,6 +640,19 @@ template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
     io(ar, v.kind); io(ar, v.a); io(ar, v.b); io(ar, v.x); io(ar, v.y); io(ar, v.building);
 }
 
+// --- wave-5 abilities (agent C, abil_w5.hpp) ---
+template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
+    io(ar, v.spy_purpose); io(ar, v.radar); io(ar, v.prism); io(ar, v.overpowerable);
+    io(ar, v.gap_radius); io(ar, v.inf_self_heal); io(ar, v.unit_self_heal); io(ar, v.cloning);
+    io(ar, v.psychic_radius); io(ar, v.sensors_sight);
+}
+template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
+    io(ar, v.requires_stolen); io(ar, v.base_tech_level);
+}
+template <class Ar> void fields(Ar& ar, BldW5& v) { io(ar, v.dummy); }
+template <class Ar> void fields(Ar& ar, UnitW5& v) { io(ar, v.dummy); }
+template <class Ar> void fields(Ar& ar, WorldW5& v) { io(ar, v.stolen_tech); }
+
 // --- unit / building types ---
 template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.strength);
@@ -718,6 +732,7 @@ template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.aircraft);
     io(ar, v.harvester);
     io(ar, v.storage);
+    io(ar, v.w5);   // wave-5 stolen tech (agent C)
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.id);
@@ -761,6 +776,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.can_occupy_fire);
     io(ar, v.max_occupants);
     io(ar, v.bridge_repair_hut);
+    io(ar, v.w5);   // wave-5 abilities (agent C)
 }
 
 // --- the live objects ---
@@ -908,6 +924,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.disguise_when_still);
     io(ar, v.still_frames);
     io(ar, v.an);   // W2-AN (save v9)
+    io(ar, v.w5);   // wave-5 abilities (agent C)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -959,6 +976,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.garrison_rof_cool);
     io(ar, v.garrison_target);
     io(ar, v.iron_left);   // W2-AN-04 (save v9)
+    io(ar, v.w5);          // wave-5 abilities (agent C)
 }
 
 // --- production ---

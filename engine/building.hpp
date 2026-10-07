@@ -8,6 +8,7 @@
 #include <vector>
 #include "occupancy.hpp"
 #include "pathfind.hpp"  // Cellxy
+#include "abil_w5.hpp"   // wave-5 abilities (BldTypeW5 / BldW5)
 
 namespace ra2engine {
 
@@ -90,6 +91,7 @@ struct BuildingTypeDef {
     bool can_occupy_fire = false;   // CanOccupyFire=     (+0x157C)
     int max_occupants = 0;          // MaxNumberOccupants= (+0x1580)
     bool bridge_repair_hut = false; // BridgeRepairHut=   (+0x16B6)
+    BldTypeW5 w5;                   // wave-5 abilities (abil_w5.hpp)
 };
 
 // A placed building instance.
@@ -175,6 +177,7 @@ struct Building {
     int garrison_target = -1;
     // W2-AN-04: Iron Curtain invulnerability left (seconds); 0 = none.
     double iron_left = 0.0;
+    BldW5 w5;                        // wave-5 abilities (abil_w5.hpp)
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

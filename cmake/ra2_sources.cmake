@@ -115,6 +115,8 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/roster2.cpp
     ${RA2_ROOT}/engine/abilities.cpp
     ${RA2_ROOT}/engine/world_abilities.cpp
+    ${RA2_ROOT}/engine/world_w5.cpp
+    ${RA2_ROOT}/engine/abil_w5_rules.cpp
     ${RA2_ROOT}/engine/world_mcv.cpp
     ${RA2_ROOT}/engine/world_sw.cpp      # W2-AN superweapons v2
     ${RA2_ROOT}/engine/world_an.cpp      # W2-AN naval / aircraft

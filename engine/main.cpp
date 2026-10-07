@@ -86,6 +86,7 @@
 #include "weapon_resolve.hpp"  // Gap fix C: TechnoType weapon slots
 #include "gamespeed.hpp"       // Gap fix C: RE-T1 logic rate per GameSpeed
 #include "world.hpp"
+#include "abil_w5_rules.hpp"   // wave-5 (agent C): requires_stolen_bits
 
 #include "ra2assets/art.hpp"
 #include "ra2assets/asset_fs.hpp"   // W3-FIX-A (asset_search.inc)
@@ -1965,6 +1966,15 @@ std::vector<int> refinery_type_indices(const BuildingAssets& ba, const Rules& ru
     return v;
 }
 
+// Wave-5 (R-042) [RE: abilities-w5.md §1]: a RequiresStolen*Tech type keeps its
+// rules TechLevel in w5.base_tech_level and starts unbuildable (TechLevel 0);
+// World::apply_stolen_tech_gate restores it once the house stole the tech.
+void rp_arm_stolen_tech(const Rules& rules, ra2engine::UnitTypeDef& d) {
+    d.w5.requires_stolen = ra2engine::requires_stolen_bits(rules, d.id);
+    d.w5.base_tech_level = d.tech_level;
+    if (d.w5.requires_stolen) d.tech_level = 0;
+}
+
 // Engineer/Spy Capture [RE: capture.md §B]: map every roster building TYPE to its
 // spy-infiltration purpose (the interactive spy right-click gesture; input.cpp).
 // Resolved ONCE from the id + power field, priority Refinery > PowerPlant >
@@ -1984,6 +1994,10 @@ infiltrate_purposes_for(const BuildingAssets& ba, const Rules& rules) {
         const ra2engine::BuildingTypeDef& d = ba.roster[i];
         const std::string& id = d.id;
         if (!d.spyable) continue;   // W2-SK-20: Spyable=no -> refused (None)
+        // Wave-5: the binary's own dispatch order, resolved from rules by
+        // fill_building_abilities (abil_w5_rules.cpp) -- fixes the old id
+        // list's GACHRO (the Chronosphere is GACSPH) and Battle Lab = radar.
+        if (d.w5.spy_purpose >= 0) { out[i] = static_cast<P>(d.w5.spy_purpose); continue; }
         if (!rules.free_unit(id).empty()) { out[i] = P::Refinery; continue; }  // GAREFN/NAREFN
         if (d.power > 0) { out[i] = P::PowerPlant; continue; }                 // GAPOWR/NAPOWR
         if (in(id, {"NAMISL", "GACHRO", "NAIRON", "GAWEAT", "GAWEATH", "GAAIRC",
@@ -2142,7 +2156,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
     // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
     // placeholder (buildings are never dropped on art failure).
-    static const char* kRoster[39] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    static const char* kRoster[40] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
@@ -2169,7 +2183,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                        // (kept, art.ok=false, never placed).
                                        "GAYARD", "NAYARD", "GAWALL", "GADEPT", "NADEPT",
                                        "NATECH", "NAIRON", "NAMISL", "GACSPH", "GAGAP",
-                                       "GAOREP", "GTGCAN", "AMRADR", "GAWEAT", "NAINDP"};
+                                       "GAOREP", "GTGCAN", "AMRADR", "GAWEAT", "NAINDP",
+                                       // Wave-5 (agent C, item 4) APPEND-ONLY at index
+                                       // 39: the Allied Spy Satellite Uplink (GASPYSAT
+                                       // SpySat=yes -> grants_map_reveal, the shroud.md
+                                       // §7A latch that had no rostered owner). Only
+                                       // the roster= WITNESS grows 39 -> 40.
+                                       "GASPYSAT"};
     constexpr int kRoster2First = 24;   // first P6-appended index
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
@@ -2238,8 +2258,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     };
     (void)get_mix;
 
-    ba.roster.reserve(39);
-    ba.art.reserve(39);
+    ba.roster.reserve(40);
+    ba.art.reserve(40);
     int ok_n = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
@@ -5754,6 +5774,7 @@ public:
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
+        world_.apply_stolen_tech_gate(ur_.defs, 0);   // wave-5 (R-042): spy-stolen tech unlocks
         pres_.logic_tick(world_, ba_, player_credits_, world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over

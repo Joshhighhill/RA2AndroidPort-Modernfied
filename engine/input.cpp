@@ -500,7 +500,10 @@ void Input::issue_order(int px, int py) {
         // refinery win for miners) and BEFORE attack-building/
         // move. The original's "enter" cursor is cosmetic; ours
         // stays default (noted divergence, no new UI systems).
-        if (idx >= 0 && world_.controllable(world_.units()[idx].house) &&
+        // Wave-5 (R-052): an allied house's transport takes the player's
+        // infantry too (the original's IsAlliedWith enter test).
+        if (idx >= 0 && (world_.controllable(world_.units()[idx].house) ||
+                         world_.are_allied(0, world_.units()[idx].house)) &&
             world_.units()[idx].passengers_max > 0) {
             bool eligible = false;
             for (std::size_t si = 0; si < world_.units().size(); ++si) {

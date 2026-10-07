@@ -1,0 +1,41 @@
+# Wave-5 R-042: a spy infiltrating an enemy Battle Lab steals its tech.
+# Allied player vs a Soviet AI: the spy enters the Soviet Battle Lab (NATECH,
+# AIBasePlanningSide=1 -> Side1TechInfiltrated), after which the Chrono Ivan
+# (CIVAN RequiresStolenSovietTech=yes, Prerequisite=BARRACKS) appears on the
+# infantry tab and can be trained [RE: docs/re/abilities-w5.md §1].
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat place GAPOWR 0 building 0:GACNST +5 -3
+cheat place GAPILE 0 building 0:GACNST +5 +2
+wait 5
+# Before: no stolen tech -> the Chrono Ivan is not buildable.
+assert can_build(CIVAN) == 0 @R-042:C
+assert cameo(CIVAN) == 0 @R-042:C
+assert cameo(CCOMAND) == 0 @R-042:C
+assert can_build(E1) == 1 @R-042:C
+# The enemy Battle Lab and the spy.
+cheat place NATECH 1 building 0:GACNST -10 +6
+cheat spawn SPY 0 building 0:GACNST -6 +5
+wait 2
+click unit 0:SPY
+click building 1:NATECH
+until 400 units(0,SPY) == 0 @R-042:C
+wait 5
+assert can_build(CIVAN) == 1 @R-042:C
+assert cameo(CIVAN) == 1 @R-042:C
+assert cameo(CCOMAND) == 0 @R-042:C
+# Train one.
+click cameo:CIVAN
+until 1500 units(0,CIVAN) >= 1 @R-042:C
+shot stolen_tech_civan
+end
