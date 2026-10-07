@@ -110,6 +110,7 @@ struct AnUnit {
     int exit_x = -1, exit_y = -1;     // map-edge exit after the drop
     // --- W4: RocketLocomotion (spawned V3/DMisl/CMisl) ---
     bool rocket_elite = false;        // locomotor +0x4D: the launcher was elite at launch
+    int rocket_end = 0;               // 0 flying, 1 detonated (FUN_00662A70), 2 shot down (Strength 0)
 };
 
 // --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------

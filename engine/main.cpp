@@ -5860,7 +5860,19 @@ public:
             map_pals_[2] = &ba_.unit_pal;
             for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
             g_map_dressing = &map_dressing_;
-            g_smudge_hook = [this](bool crater, double fx, double fy) { map_dressing_.add_smudge(crater, fx, fy); };
+            g_smudge_hook = [this](bool crater, double fx, double fy) {
+                // W4: no crater / scorch smudge on a water cell (the shot-down
+                // ALL01 missiles left crater rings on the harbour). [RE-FALLBACK:
+                // the original's SmudgeType placement test was not traced; its
+                // smudges never appear on water.]
+                const int x = static_cast<int>(std::lround(fx)), y = static_cast<int>(std::lround(fy));
+                const std::vector<std::uint8_t>& wg = world_.grid_for(ra2engine::MovementDomain::Water);
+                if (x >= 0 && y >= 0 && x < world_.grid_w() && y < world_.grid_h() &&
+                    static_cast<std::size_t>(y) * world_.grid_w() + x < wg.size() &&
+                    wg[static_cast<std::size_t>(y) * world_.grid_w() + x])
+                    return;
+                map_dressing_.add_smudge(crater, fx, fy);
+            };
         } catch (const std::exception& ex) {
             std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
         }

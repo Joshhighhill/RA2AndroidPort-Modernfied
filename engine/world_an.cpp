@@ -298,6 +298,7 @@ void World::an_step_fixed_wing(double dt) {
                 an_area_damage(u.house, tx, ty, rocket_damage(blk, u.an.rocket_elite), wh.spread, wh.pmax,
                                wh.verses, /*hit_air=*/false, /*spare_house=*/false);
                 fire_events_.push_back({i, -1, -1, -1, 0, ""});
+                u.an.rocket_end = 1;
                 u.alive = false;   // the missile is spent (no wreck)
                 u.die_time = 1.0;
                 const int ow = u.an.owner;
@@ -489,6 +490,17 @@ void World::an_step_deaths(double dt) {
     for (int i = 0; i < n; ++i) {
         Unit& u = units_[i];
         if (!u.alive || u.die_time < 0.0) continue;
+        // W4: a rocket killed in flight (FUN_00661D00: Strength < 1 ->
+        // FUN_00662A70) -- shot down; its launcher may rebuild it
+        // (SpawnRegenRate counts it lost, not out).
+        if (u.an.t.missile) {
+            if (u.an.rocket_end == 0) {
+                u.an.rocket_end = 2;
+                const int ow = u.an.owner;
+                if (ow >= 0 && ow < n && units_[ow].an.spawn_out > 0) --units_[ow].an.spawn_out;
+            }
+            continue;
+        }
         // W2-AN-07 [RE: aircraft.md §2 Crashable +0xD95; JumpjetCrash]: a
         // Crashable flier (and every fixed-wing aircraft) killed in the air
         // falls at its crash rate, then explodes where it hits the ground.
