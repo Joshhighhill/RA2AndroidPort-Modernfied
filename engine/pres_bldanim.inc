@@ -308,9 +308,10 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
     auto draw_t = [&](const FxAnimType* t, int fr, int x, int y) {
         if (!t || fr < 0) return;
         if (t->shadow)
-            g_fx->blit_shadow(ren, tc, *t->shp, "bsh:" + t->name, fr + t->shp->count() / 2, fcx + x, fcy + y, W, H);
-        g_fx->blit(ren, tc, *t->shp, "banim:" + t->name + ck, fr, fcx + x, fcy + y, PresFx::alpha_for(*t, fr), W,
-                   H, &pal);
+            g_fx->blit_shadow(ren, tc, *t->shp, "bsh:" + t->name, fr + t->shp->count() / 2, fcx + x,
+                              fcy + y + t->ydraw, W, H);
+        g_fx->blit(ren, tc, *t->shp, "banim:" + t->name + ck, fr, fcx + x, fcy + y + t->ydraw,
+                   PresFx::alpha_for(*t, fr), W, H, &pal);
     };
     const bool roof = ev && ev->door_roof;
     const PresFx::BldAnims::Slot& door = roof ? a.roof_door : a.door;
@@ -355,7 +356,8 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
     if (damaged && !a.fire_offsets.empty()) {
         // [RE-FALLBACK: RE-P6 open -- fire spawn code not read] one
         // DamageFireTypes anim per DamageFireOffset while below ConditionYellow,
-        // offsets in pixels from the building's centre.
+        // offsets in pixels from the building's draw point (W4-FIX-POS: the
+        // origin-cell top vertex, like every other building attachment).
         static std::vector<std::string> fires = g_fx->damage_fires();
         if (fires.empty()) return;
         for (std::size_t i = 0; i < a.fire_offsets.size(); ++i) {
@@ -363,7 +365,7 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
             if (!t) continue;
             const int fr = PresFx::loop_frame(*t, now + static_cast<long>(i) * 7);
             g_fx->blit(ren, tc, *t->shp, "fx:" + t->name, fr, fcx + a.fire_offsets[i].first,
-                       fcy + a.fire_offsets[i].second, PresFx::alpha_for(*t, fr), W, H);
+                       fcy + a.fire_offsets[i].second + t->ydraw, PresFx::alpha_for(*t, fr), W, H);
         }
     }
 }
@@ -383,8 +385,8 @@ void pres_dressing_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
         if (fr < 0) continue;
         if (t->shadow)
             g_fx->blit_shadow(ren, tc, *t->shp, "bsh:" + t->name, fr + t->shp->count() / 2, cx + a.slot[s].x,
-                              cy + a.slot[s].y, W, H);
-        g_fx->blit(ren, tc, *t->shp, "danim:" + t->name, fr, cx + a.slot[s].x, cy + a.slot[s].y,
+                              cy + a.slot[s].y + t->ydraw, W, H);
+        g_fx->blit(ren, tc, *t->shp, "danim:" + t->name, fr, cx + a.slot[s].x, cy + a.slot[s].y + t->ydraw,
                    PresFx::alpha_for(*t, fr), W, H, &pal);
     }
 }
