@@ -502,6 +502,30 @@ TEST_CASE("Input: left-click a hostile selects nothing") {
     CHECK_FALSE(world.units()[fx.cons].selected);
 }
 
+TEST_CASE("Input: W2-CA-02 a PlayerControl house's unit is selectable like house 0") {
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    Camera cam;
+    Input input(world, cam, 1280, 720);
+    input.set_scheme(Input::Scheme::Legacy);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+    const int h = world.units()[fx.cons].house;
+    REQUIRE(h != 0);
+    CHECK_FALSE(world.controllable(h));
+    World::HouseRec rec;
+    rec.side = World::Side::Allied;
+    rec.alliance_team = 0;
+    rec.player_control = true;   // [RE FUN_0050B510: +0x1ED -> ControlledByHuman]
+    world.set_house(h, rec);
+    CHECK(world.controllable(h));
+    int px, py;
+    ground_px_for_unit(world.units()[fx.cons], px, py);
+    left_click(input, px, py, /*shift=*/false, /*t=*/1000);
+    CHECK(world.units()[fx.cons].selected);
+}
+
 TEST_CASE("Input: box over both squads selects only house-0") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }

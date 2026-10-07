@@ -149,7 +149,7 @@ private:
     int w_ = 0, h_ = 0;
     std::vector<std::uint8_t> kind_, density_, variant_;
     double timer_ = 0.0;
-    std::vector<OreMine> mines_;   // W2-SK-01 (save v12)
+    std::vector<OreMine> mines_;   // W2-SK-01 (save v13)
     int growth_frames_ = 0, spread_frames_ = 0;   // W2-SK-01 original timing (0 = fallback)
     double spread_timer_ = 0.0;                    // W2-SK-01 spread clock (s)
     void step_original(double dt, double growth_pct, double spread_pct,

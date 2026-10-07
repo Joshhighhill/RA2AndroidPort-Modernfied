@@ -153,6 +153,7 @@ struct MapTeamType {
     int waypoint = -1;        // Waypoint= letter code
     int max = 0;
     bool full = false;
+    bool recruitable = false;   // AreTeamMembersRecruitable= (W2-CA-09)
     int veteran_level = 0;
 };
 struct MapTeamData {
@@ -181,7 +182,8 @@ struct MapTeamCommand {
     enum class Kind {
         None, MoveWaypoint, MoveCell, Attack, AttackWaypoint, Guard, Win, Lose, SetGlobal,
         ClearGlobal, SetLocal, ClearLocal, ChangeHouse, Scatter, DeleteMembers, Mission,
-        AttackBuilding, Skip, Done
+        AttackBuilding, Skip, Done,
+        Deploy, Unload   // W2-CA-17
     };
     Kind kind = Kind::None;
     int arg = 0;
@@ -212,7 +214,8 @@ struct CampaignHostSave {
     // per World unit / building tracking (parallel to the World arrays)
     std::vector<int> u_tag, u_cx, u_cy, u_hp, u_team;
     std::vector<std::string> u_type;
-    std::vector<std::uint8_t> u_flags;   // dead|discovered<<1|selected<<2|hunt<<3|initial<<4
+    std::vector<std::uint8_t> u_flags;   // dead|discovered<<1|selected<<2|hunt<<3|initial<<4|dmg<<5
+    std::vector<int> u_mc_victim, u_mc_orig;   // W2-CA-15 mind control (save v12)
     std::vector<int> b_tag, b_hp;
     std::vector<std::string> b_type;
     std::vector<std::uint8_t> b_flags;

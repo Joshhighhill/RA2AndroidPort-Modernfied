@@ -348,7 +348,7 @@ struct Unit {
     int occupy_target = -1;          // pending "enter garrison" order -> building
     int attack_cell_x = -1, attack_cell_y = -1;   // force-fire ground target (-1 none)
     bool cell_shot = false;          // fired at attack_cell this step (World resolves it)
-    // --- W2-SK-22 (save v12) ---
+    // --- W2-SK-22 (save v13) ---
     int shrapnel_count = 0;
     int shrapnel_damage = 0;
     double shrapnel_range = 0.0;
@@ -913,6 +913,9 @@ public:
     // supersedes -- our order-model convention, not overturned by the hunt).
     // Sets the cargo_any_ firewall.
     void order_unload_selected();
+    // W2-CA-17: the same unload order for one transport of any house (team
+    // script action 8). No-op unless it is alive with cargo.
+    void order_unload(int idx);
     // Drain the board/refuse/eject events accumulated by step_cargo since
     // the last call (the take_harvest_events pattern). Empty if no cargo
     // activity ever happened.
@@ -1066,7 +1069,15 @@ public:
         std::string country       = "";
         int         alliance_team = -1;     // sentinel; -1 -> own id on read
         bool        combatant     = true;
+        // W2-CA-02 [RE: HouseClass::ReadINI FUN_00500960 -> house+0x1ED]:
+        // [<House>] PlayerControl=yes -- the local player selects and
+        // orders this house's units as its own.
+        bool        player_control = false;
     };
+    // True for house 0 and every PlayerControl house (W2-CA-02).
+    bool controllable(int h) const {
+        return h == 0 || (h > 0 && h < (int)houses_.size() && houses_[h].player_control);
+    }
     // Number of houses (default 3). The six per-house vectors + house_defeated_
     // are sized to this. Grows via set_house.
     int  house_count() const { return houses_.empty() ? 3 : (int)houses_.size(); }
@@ -1096,6 +1107,12 @@ public:
     // share a team with. Self is always allied to self. NOT read by world_hash.
     bool are_allied(int a, int b) const;
     bool is_enemy(int a, int b) const;
+    // W2-CA-10 [RE: MakeAlly/MakeEnemy FUN_004f9990/FUN_004f9db0 are PAIRWISE,
+    // campaign.md §2/§10]: the first call snapshots the team relation into a
+    // per-pair matrix; from then on are_allied() reads the matrix, so
+    // allying house b with house a never drags b's other relations along.
+    // Inert (empty matrix) until a campaign trigger calls it.
+    void set_pair_alliance(int a, int b, bool allied);
 
     // AllyReveal [RE: multihouse.md §3, D4]: allied houses share revealed shroud.
     // Firewalled behind houses_configured_ + shroud_any_ -> OFF in every gate.
@@ -1635,6 +1652,21 @@ public:
     double garrison_range(int b_idx) const;                  // cells
     struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind; int building; int house; };
     std::vector<GarrisonEvent> take_garrison_events();
+    // W2-CA-01 [RE: FUN_00519449 raises event 1 EnteredBy on the TARGET
+    // building's tag at every "infantry arrived into a building" site
+    // (capture, repair, infiltrate, occupy, bridge hut), then 48 on the
+    // consumed infantry]. Recorded only once a consumer opted in (the
+    // campaign runtime), so no other mode ever accumulates them.
+    struct EnteredEvent {
+        enum Kind { Capture, Repair, Infiltrate, Occupy, BridgeHut } kind;
+        int unit; int building; int house; bool consumed;
+    };
+    void set_track_entered(bool on) { track_entered_ = on; }
+    std::vector<EnteredEvent> take_entered_events() {
+        std::vector<EnteredEvent> out;
+        out.swap(entered_events_);
+        return out;
+    }
     // Bridges. `overlay` = per-cell RUNTIME overlay index (-1 none), `tile_land`
     // = the cells' tile land types BEFORE overlay overrides (y*grid_w+x).
     void set_bridges(std::vector<int> overlay, std::vector<ra2assets::LandType> tile_land);
@@ -1844,7 +1876,7 @@ private:
     // T3 [RE: multihouse.md §D2]: bool[3] -> std::vector<uint8_t> sized
     // house_count(). NOT hashed. Sized in ensure_houses_default/grow_house_arrays.
     std::vector<std::uint8_t> produced_veteran_;   // W2-SK-20: bit (1 << factory_kind)
-    std::vector<double> wallet_hint_;              // W2-SK-20 (v12)
+    std::vector<double> wallet_hint_;              // W2-SK-20 (v13)
     // The single firewalled Capture per-frame pass: tech-structure income +
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.
@@ -1880,6 +1912,7 @@ private:
     // construction (0=Allied/team0/comb, 1=Soviet/team1/comb, 2=Neutral/team2/
     // non-comb) so house_count()==3 and today's world is reproduced. NOT hashed.
     std::vector<HouseRec> houses_;
+    std::vector<std::uint8_t> ally_pairs_;   // W2-CA-10: n*n, empty = team model
     bool houses_configured_ = false;   // the side/color/enmity/AllyReveal firewall;
                                        // false in every existing gate.
 
@@ -1956,8 +1989,8 @@ private:
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
     double purifier_bonus_ = 0.0;   // rules [General] PurifierBonus (gap owner A, G-27)
-    HarvestScan harvest_scan_;      // W2-SK-02 (save v12)
-    std::vector<double> harvest_income_;   // W2-SK: cumulative unload income per house (v12)
+    HarvestScan harvest_scan_;      // W2-SK-02 (save v13)
+    std::vector<double> harvest_income_;   // W2-SK: cumulative unload income per house (v13)
     // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
     // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
     // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/
@@ -2026,6 +2059,11 @@ private:
     bool garrison_any_ = false;                    // an occupy order was ever given
     long long garrison_shots_ = 0;                 // shots fired out of garrisons
     std::vector<GarrisonEvent> garrison_events_;
+    std::vector<EnteredEvent> entered_events_;   // W2-CA-01 (campaign only)
+    bool track_entered_ = false;
+    void note_entered(EnteredEvent::Kind k, int ui, int bi, int house, bool consumed) {
+        if (track_entered_) entered_events_.push_back({k, ui, bi, house, consumed});
+    }
     std::vector<std::int16_t> bridge_ovl_;         // current runtime overlay per cell (-1)
     std::vector<std::uint8_t> bridge_tile_land_;   // the tile's LandType under each cell
     std::uint32_t bridge_version_ = 0;

@@ -127,6 +127,7 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(SaveAccess::AnWorld);
     CHECK_ARITY(RepairSellRules);
     CHECK_ARITY(World::HouseRec);
+    CHECK_ARITY(World::EnteredEvent);   // W2-CA-01
     CHECK_ARITY(CampaignHostSave);   // P10
     CHECK_ARITY(QueueSlot);
     CHECK_ARITY(ProductionState);
@@ -188,7 +189,7 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 4616);   // gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v11
+    CHECK(sizeof(World) == 4672);   // gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
     CHECK(sizeof(MapTriggerSystem) == 368);   // P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 128);   // W2-SK-01 +mines_ (v10)
     CHECK(sizeof(Occupancy) == 32);

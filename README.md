@@ -2364,12 +2364,52 @@ aircraft objects not placed; object facing/sub-cell/veterancy/Sleep not
 applied; MCV deploy now exists (gap F, see "Real play: MCV, skirmish start,
 game over"); unit stats
 from `rulesmd.ini` (RA2 `rules.ini` only for index spaces); map-embedded rules
-overrides ignored; civilian building art uses the temperate candidate walk.
+overrides now applied (W2-CA-04, below); civilian building art uses the temperate candidate walk.
 
 **Carry-forwards:** team transport delivery + paradrops, missile interception,
 map rules overrides, enemy base AI from map `[<House>]` IQ/nodes, bridges.
 (MCV deploy, the player's TechLevel cap, trigger crates (108), reshroud (101),
 fire sale (9) and events 29/44/25/26 landed in gap F.)
+
+### Campaign wave-2 fixes (branch `w2fix-campaign`, W2-CA-01..19)
+
+Audit: `docs/gap/wave2/01-campaign.md` (§5 has the row-by-row status and the
+per-mission table). Every one of the 24 RA2 missions now reaches its own `Win`
+action through its trigger chain; before/after real-play winnability
+6 YES / 5 PROBABLE / 2 DOUBTFUL / 11 NO -> 16 YES / 8 PROBABLE / 0 / 0.
+
+* **EnteredBy on buildings (W2-CA-01)** -- World records campaign-only
+  `EnteredEvent`s (engineer capture/repair, spy infiltrate, garrison, bridge
+  hut); the runtime raises 1 on the building's tag (+2 for spies) and 48 on the
+  consumed infantry [RE `FUN_00519449`].
+* **PlayerControl houses (W2-CA-02)** -- `[<House>] PlayerControl=yes` ->
+  `World::controllable(h)`; selection and orders accept those units
+  [RE `FUN_0050B510` ControlledByHuman reads `house+0x1ED`].
+* **Rules-driven campaign roster + map rules overlay (W2-CA-03/04)** -- the
+  campaign GameScene's rules are rulesmd with the map's rules sections laid
+  over them; the sidebar is the skirmish rp path with the player house's
+  country/TechLevel and the classic RA2 type list.
+* **Side fallback (05), events 55/56 (06), team release (09), pairwise
+  MakeAlly/MakeEnemy (10), attack-waypoint hold only on loss-guarding targets
+  (11), SellBuilding/EvictOccupiers (13), damage events 38-43 and 22 (14).**
+* **Map AI (W2-CA-07)** -- action 74 runs the map's own AITriggerTypes/
+  TeamTypes; **sea/edge landings (W2-CA-08)** land at the nearest free cell
+  connected to the team's first move-waypoint; **aircraft (W2-CA-16)** placed
+  through the W2-AN flight model; **mind control (W2-CA-15)**; script actions
+  Deploy/Unload/Scatter (17).
+* **Mission audio (W2-CA-12)** -- PlaySpeech/PlaySoundEffect/
+  PlaySoundAtWaypoint/PlayMusicTheme and `[Basic] Theme=` through the
+  presentation audio (RA2 `eva.ini` Mis_* lines).
+* **Play scripts at mission N (W2-CA-19)** -- `set campaign <MAP> <GDI|Nod>`
+  starts a `--play` script at that mission; `cheat camp_*` (killb/killu/
+  killdef/spawn/move/capture/occupy/attackb/attacku/deploy). New scripts:
+  `m-all02`, `m-all04`, `m-all08`, `m-sov03`, `m-sov05`, `m-sov06`, `m-sov09`.
+* Save format **v12** (PlayerControl, pair alliances, entered events,
+  mind-control links).
+
+Still cut: real transport/paradrop delivery (RE-C1), `Mission=` Sleep/Harmless
+(W2-CA-18), actions 88/90/102/18/42/35/..., script actions 14/55/42/58,
+events 31/5.
 
 ## Building
 
@@ -2710,6 +2750,9 @@ the P6 Roster Breadth gate.
 | `--demo-saveload` | `saveload_hash=6de782487586986d` (W2-SK re-pin, was `8291b85b9957b34a`: save format v12 (on top of W2-AR v11 CRC) adds the W2-SK state (ore mines + original growth timing, harvest scan/skip/income, wallet hints, depot/capture/spy type flags, shrapnel/Mirage unit fields, AI enemy house / MultipleFactory); W2-SK-25 makes the opening fight close in sooner, so the skirmish segment now saves from frame 10 (shells_at_save=2); A==B everywhere) `saveload_hash=8291b85b9957b34a` (W2-AN re-pin, was `653c22b544488e64` on master 844033b: save format v10 adds the W2-AN state -- Unit/UnitCombat `an`, Building `iron_left`, World `an_` + per-type SW lists + AI catalog `naval_yard` + `nav_factory_types`; `identical=yes`. Earlier: W2-GA-03 re-pin, was `7fde8a2b895cf6ae`: save v9 serialises the FogOfWar flag + fog-off targeting in the skirmish scenario; witnesses unchanged. Earlier: G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
 | `--demo-campaign` | `campaign_hash=40dad3a5fe6613be` (W2-SK re-pin, was `760c46ae2eed28b4`: W2-SK-25 guard-range acquisition/pursuit and W2-SK-05 nearest-reachable moves change the mission fights; both maps still reach their scripted outcomes, lines 822) `campaign_hash=760c46ae2eed28b4` (W2-AN re-pin, was `b1d3c453c416e4fb`: ALL01 death raises 45 -> 48 at f=1800 -- its ships now fight with the naval rules (sub cloak + sonar, NavalTargeting, Destroyer ASW spawner, W2-AN-12/13/14); every other line identical) (earlier: `campaign_hash=b1d3c453c416e4fb` (combined gap D + gap F re-pin) | `deterministic=yes lines=737`; **combined re-pin**: gap D (`17830b0f7c233223`, lines 737: campaign enemy houses build out from ProductionBegins/AI triggers) plus gap F: actions 108 executed (logged `CreateCrate ... -> skipped` in the gate, whose World has no crate system), ALL01 reinforcement ships on water instead of the nearest land cell (fewer EnteredBy raises), death raises in the recovered order 7, 48, 29; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
+| `--demo-saveload` | `saveload_hash=c19113168b76bae7` (W2-CA re-pin, was `8291b85b9957b34a`: save format v12 adds HouseRec `player_control`, World `ally_pairs_`/`entered_events_`/`track_entered_` and the campaign host's mind-control links; `identical=yes`) (earlier: `8291b85b9957b34a` W2-AN re-pin, was `653c22b544488e64` on master 844033b: save format v10 adds the W2-AN state -- Unit/UnitCombat `an`, Building `iron_left`, World `an_` + per-type SW lists + AI catalog `naval_yard` + `nav_factory_types`; `identical=yes`. Earlier: W2-GA-03 re-pin, was `7fde8a2b895cf6ae`: save v9 serialises the FogOfWar flag + fog-off targeting in the skirmish scenario; witnesses unchanged. Earlier: G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
+| `--demo-campaign` | `campaign_hash=5d033b6aa019beaa` (W2-CA re-pin, was `760c46ae2eed28b4`, lines 737 -> 739: ALL01's aircraft reinforcements (cargo plane / FALC teams at wp 83/85/87/89) are now placed (W2-CA-16) so `Transport Retreat 1` fires at f=665 and 4 more teams exist (13 vs 9, raises 48 -> 45); SOV01's start team recruits all 18 members incl. the SMCV (W2-CA-09: no `!moving()` filter, finished teams release) and its script's Deploy action (W2-CA-17) unfolds the SMCV -> `Con Yard Exists` fires (house loop 1); every other line identical; master-equivalent w2fix-air build prints the old hash) (earlier: `760c46ae2eed28b4` W2-AN re-pin, was `b1d3c453c416e4fb`: ALL01 death raises 45 -> 48 at f=1800 -- its ships now fight with the naval rules (sub cloak + sonar, NavalTargeting, Destroyer ASW spawner, W2-AN-12/13/14); every other line identical) (earlier: `campaign_hash=b1d3c453c416e4fb` (combined gap D + gap F re-pin) | `deterministic=yes lines=737`; **combined re-pin**: gap D (`17830b0f7c233223`, lines 737: campaign enemy houses build out from ProductionBegins/AI triggers) plus gap F: actions 108 executed (logged `CreateCrate ... -> skipped` in the gate, whose World has no crate system), ALL01 reinforcement ships on water instead of the nearest land cell (fewer EnteredBy raises), death raises in the recovered order 7, 48, 29; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
 **Gap owner A re-pins (real-play economy/production, docs/gap G-20..G-30).**
 --demo-skirmish e9ad3f1fd88495f9 -> fde3f587e747f765 and --demo-maps

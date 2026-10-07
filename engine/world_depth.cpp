@@ -116,6 +116,7 @@ void World::occupy_now(int ui, int bi) {
     u.garrison_of = bi;
     b.occupants.push_back(ui);
     garrison_events_.push_back({GarrisonEvent::Entered, bi, u.house});
+    note_entered(EnteredEvent::Occupy, ui, bi, u.house, false);   // W2-CA-01
     if (b.occupants.size() == 1) garrison_events_.push_back({GarrisonEvent::Garrisoned, bi, u.house});
     sync_garrison_owner(bi);
 }

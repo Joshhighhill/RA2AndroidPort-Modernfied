@@ -36,7 +36,7 @@ namespace save {
 // Bump on ANY change to what is serialized (a field added to a visitor, a
 // section's layout). A save with a different version is listed but refused
 // on load -- the original's FileEntryClass::IsWrongVersion.
-constexpr std::uint32_t kFormatVersion = 12;  // 12: W2-SK ore mines + harvester/AI/spy/depot/unit-special state; 11: W2-AR-20 CRC-32 trailer over the whole file; 10: W2-AN air/naval/SW state; 9: W2-GA-03 FogOfWar flag; 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state; 8: skirmish-page game_speed/mcv_redeploys in the config
+constexpr std::uint32_t kFormatVersion = 13;   // 13: W2-SK ore mines + harvester/AI/spy/depot/unit-special state; 12: w2fix-campaign PlayerControl/pair alliances/entered events/mind control; 11: W2-AR-20 CRC-32 trailer over the whole file; 10: W2-AN air/naval/SW state; 9: W2-GA-03 FogOfWar flag; 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state; 8: skirmish-page game_speed/mcv_redeploys in the config
 
 // --- archives ---------------------------------------------------------------
 class Writer {

@@ -88,8 +88,15 @@ private:
                                      const UnitAssets& ua, const Rules& rules, const Art& art,
                                      const Ini& rules_ini, const ra2engine::SkirmishConfig& cfg) {
         load_progress("ROSTER");   // W2-AR-02 loading-screen checkpoint
-        if (soviet_campaign(cfg)) return load_soviet_unit_roster(dir, ra2, ua, rules, art);
-        if (!cfg.campaign_map.empty()) return load_unit_roster(dir, ra2, ua, rules, art);
+        // W2-CA-03: a campaign player builds from the same rules-driven roster
+        // as skirmish -- its house's country (ParentCountry) and map
+        // TechLevel, the map overrides already in `rules`, RA2 types only.
+        if (!cfg.campaign_map.empty()) {
+            const camp::PlayerRules pr =
+                camp::campaign_player_rules(dir, ra2, cfg.campaign_map, cfg.campaign_side);
+            return load_player_unit_roster(dir, ra2, ua, rules, art, rules_ini, pr.country,
+                                           pr.tech_level, /*with_aircraft=*/true, &pr.allowed);
+        }
         const ra2engine::SkirmishSlot s0 =
             cfg.slots.empty() ? ra2engine::SkirmishSlot{} : cfg.slots.front();
         return load_player_unit_roster(dir, ra2, ua, rules, art, rules_ini,
@@ -101,14 +108,20 @@ private:
     // country/tech mask, and the first sidebar list.
     void rp_setup() {
         load_progress("SIDEBAR");   // W2-AR-02 loading-screen checkpoint
-        if (!cfg_.campaign_map.empty()) {
-            w2_setup(/*skirmish=*/false);   // W2-AN: SW/naval/air params (w2air_play.inc)
-            return;
-        }
         rp_on_ = true;
         const ra2engine::SkirmishSlot s0 =
             cfg_.slots.empty() ? ra2engine::SkirmishSlot{} : cfg_.slots.front();
-        rp_country_ = rp_player_country(rules_, s0);
+        int tech = cfg_.tech_level;
+        bool sw = cfg_.superweapons;
+        camp::PlayerRules pr;   // W2-CA-03: campaign = the mission's player house
+        if (!cfg_.campaign_map.empty()) {
+            pr = camp::campaign_player_rules(dir_, ra2_, cfg_.campaign_map, cfg_.campaign_side);
+            rp_country_ = pr.country;
+            tech = pr.tech_level;
+            sw = true;
+        } else {
+            rp_country_ = rp_player_country(rules_, s0);
+        }
         // [RE: roster2.md TL;DR 7; production.md §1.1] every factory of the
         // category counts (a captured enemy factory still produces).
         inf_ft_ = rp_factory_types(ba_, rules_, "InfantryType");
@@ -127,13 +140,13 @@ private:
         input_.set_vehicle_factory_types(any_veh);
         // W2-AN-04/18: every classic SW building grants its SW; the lobby
         // checkbox removes only the DisableableFromShell=yes ones (AmerParaDrop
-        // stays with superweapons off).
+        // stays with superweapons off). W2-CA-03: a campaign keeps them all.
         rp_sw_table_ = rp_superweapon_table(ba_, rules_);
-        if (!cfg_.superweapons)
+        if (!sw)
             for (RpSwGrant& g : rp_sw_table_)
                 if (g.disableable) g = RpSwGrant{};
         rp_nuke_ = resolve_superweapon(rules_);
-        w2_setup(/*skirmish=*/true);
+        w2_setup(/*skirmish=*/true);   // campaigns run the rules-driven path too (W2-CA-03)
         rp_base_normal_.assign(ba_.roster.size(), 1);
         for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
             const std::string v = rules_.section_string(ba_.roster[i].id, "BaseNormal", "");
@@ -145,13 +158,14 @@ private:
         rp_bld_allowed_.assign(ba_.roster.size(), 0);
         for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
             const ra2engine::BuildingTypeDef& d = ba_.roster[i];
-            rp_bld_allowed_[i] = d.tech_level > 0 && d.tech_level <= cfg_.tech_level &&
-                                 rp_country_allows(rules_, d.id, rp_country_);
+            rp_bld_allowed_[i] = d.tech_level > 0 && d.tech_level <= tech &&
+                                 rp_country_allows(rules_, d.id, rp_country_) &&
+                                 camp::allowed_type(pr, d.id);
             // [SK-27] Lobby Superweapons off: "Super Weapons can be built" is
             // false, so no SuperWeapon= structure is offered. [RE-FALLBACK: the
             // [AI] BuildTech tech centres stay buildable -- their YR
             // SuperWeapon= is the side special, not a lobby superweapon.]
-            if (!cfg_.superweapons && rp_bld_allowed_[i] && rp_is_lobby_sw_building(rules_, d.id))
+            if (!sw && rp_bld_allowed_[i] && rp_is_lobby_sw_building(rules_, d.id))
                 rp_bld_allowed_[i] = 0;
         }
         buildable_ = tab_buildable(active_tab_);

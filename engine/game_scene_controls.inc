@@ -108,7 +108,7 @@
             return;
         }
         for (const ra2engine::Unit& u : world_.units())
-            if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
+            if (world_.controllable(u.house) && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
                 input_.center_on_cell(u.fx, u.fy);
                 return;
             }
@@ -125,7 +125,7 @@
             world_.unload_occupants(sb);
         world_.order_unload_selected();
         for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
-            if (world_.units()[i].selected && world_.units()[i].house == 0) world_.order_deploy(i);
+            if (world_.units()[i].selected && world_.controllable(world_.units()[i].house)) world_.order_deploy(i);
     }
 
     // Next/PreviousObject [RE-FALLBACK: FUN_005362D0/536740 execs not
@@ -140,7 +140,7 @@
         for (int k = 1; k <= n; ++k) {
             const int i = ((start < 0 ? (dir > 0 ? -1 : 0) : start) + dir * k + n * 4) % n;
             const ra2engine::Unit& u = us[i];
-            if (u.house != 0 || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+            if (!world_.controllable(u.house) || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
             world_.clear_selection();
             world_.units()[i].selected = true;
             input_.center_on_selection();
@@ -414,7 +414,7 @@
         if (!radar_active() || !radar_cell_at(ev.x, ev.y, cx, cy)) return true;   // consumed, inert
         bool any = false;
         for (const ra2engine::Unit& u : world_.units())
-            if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0) { any = true; break; }
+            if (u.selected && world_.controllable(u.house) && u.alive && u.die_time < 0.0) { any = true; break; }
         if (any) world_.order_move_selected(cx, cy);
         else input_.center_on_cell(cx, cy);
         return true;

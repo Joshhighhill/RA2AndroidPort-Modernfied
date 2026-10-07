@@ -77,7 +77,7 @@ bool state_b(int k) {   // FUN_0071ec60
 bool unimplemented_event(int k) {
     switch (k) {
     case 3: case 5: case 18: case 23: case 34: case 35: case 45: case 46:
-    case 53: case 54: case 55: case 56:
+    case 53: case 54:
         return true;
     default:
         return false;
@@ -110,7 +110,7 @@ const char* action_label(int k) {
     case 107: return "ReinforcementByChrono"; case 112: return "CenterCamera";
     case 113: return "MakeHouseCheer"; case 114: return "SetTabTo";
     case 115: return "FlashCameo"; case 116: return "PlayMovieAndPause";
-    case 125: return "CreateBuilding"; case 108: return "CreateCrate"; case 101: return "ReshroudMapAtWaypoint"; case 9: return "FireSale"; case 131: return "FlashBuildingsOfType";
+    case 125: return "CreateBuilding"; case 60: return "SellBuilding"; case 111: return "EvictOccupiers"; case 108: return "CreateCrate"; case 101: return "ReshroudMapAtWaypoint"; case 9: return "FireSale"; case 131: return "FlashBuildingsOfType";
     default: return "?";
     }
 }
@@ -732,6 +732,16 @@ bool MapTriggerSystem::has_occurred(int type, int ev_idx, int kind, int trig_hou
             host.house_infantry(vh) > 0)
             return false;
         break;
+    // W2-CA-06 [RE p9out tev0_0071dbe0.c case 0x37/0x38]: 55 = the house's
+    // naval unit count (+0x2EC) <= 0; 56 = land vehicles (units +0x2E8 minus
+    // naval +0x2EC) <= 0 and infantry (+0x2F4) <= 0.
+    case kEvDestroyedUnitsNaval:
+        if (host.house_naval_units(vh) > 0) return false;
+        break;
+    case kEvDestroyedUnitsLand:
+        if (host.house_vehicles(vh) - host.house_naval_units(vh) > 0 || host.house_infantry(vh) > 0)
+            return false;
+        break;
     case kEvLowPower:
         if (host.house_power_ratio(vh) >= 1.0) return false;
         break;
@@ -929,6 +939,7 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         effect(find_house(t, a.value, host));
         return;
     case 32: case 63:
+    case 60: case 111:   // W2-CA-13: SellBuilding / EvictOccupiers on the tagged objects
         if (!campaign_mode_) goto unhandled;
         effect(th);
         return;

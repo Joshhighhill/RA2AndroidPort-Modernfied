@@ -453,7 +453,25 @@ bool World::are_allied(int a, int b) const {
     if (a == b) return true;                       // self always allied to self
     if (!houses_configured_) return false;         // today: only same-house is friendly
     if (!house_combatant(a) || !house_combatant(b)) return false;   // neutral: not an ally
+    const int n = (int)houses_.size();
+    if (!ally_pairs_.empty() && a >= 0 && b >= 0 && a < n && b < n &&
+        ally_pairs_.size() == (std::size_t)n * n)
+        return ally_pairs_[(std::size_t)a * n + b] != 0;   // W2-CA-10
     return house_team(a) == house_team(b);
+}
+
+void World::set_pair_alliance(int a, int b, bool allied) {
+    const int n = (int)houses_.size();
+    if (a < 0 || b < 0 || a >= n || b >= n || a == b) return;
+    if (ally_pairs_.size() != (std::size_t)n * n) {
+        std::vector<std::uint8_t> m((std::size_t)n * n, 0);
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j)
+                m[(std::size_t)i * n + j] = (i == j || house_team(i) == house_team(j)) ? 1 : 0;
+        ally_pairs_ = std::move(m);
+    }
+    ally_pairs_[(std::size_t)a * n + b] = allied ? 1 : 0;
+    ally_pairs_[(std::size_t)b * n + a] = allied ? 1 : 0;
 }
 
 bool World::is_enemy(int a, int b) const {
@@ -1247,6 +1265,14 @@ void World::order_unload_selected() {
         u.unload_pending = true;
         cargo_any_ = true;
     }
+}
+
+void World::order_unload(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    Unit& u = units_[idx];
+    if (!u.alive || u.die_time >= 0.0 || u.passengers_max <= 0 || u.cargo.empty()) return;
+    u.unload_pending = true;
+    cargo_any_ = true;
 }
 
 std::vector<CargoEvent> World::take_cargo_events() {
@@ -2100,6 +2126,7 @@ void World::step_capture(double dt) {
                     // the hut itself is never captured.
                     repair_bridge_near(bi);
                     consumed = true;
+                    note_entered(EnteredEvent::BridgeHut, (int)i, bi, eng_house, true);
                 } else if (!are_allied(eng_house, b.house) && !building_capturable(bi)) {
                     // W2-SK-12 [RE: capture.md §A3]: Capturable=false (pillbox,
                     // tesla coil, prism tower, SAM, superweapons...) refuses the
@@ -2116,9 +2143,12 @@ void World::step_capture(double dt) {
                     const int startup = (b.type >= 0 && b.type < (int)types_.size())
                                             ? types_[b.type].produce_cash_startup : 0;
                     consumed = capture_building(bi, eng_house, startup);         // enemy/neutral
+                    if (consumed) note_entered(EnteredEvent::Capture, (int)i, bi, eng_house, true);
                 }
-                else
+                else {
                     consumed = repair_building(bi, eng_house);                   // own damaged
+                    if (consumed) note_entered(EnteredEvent::Repair, (int)i, bi, eng_house, true);
+                }
                 u.capture_target = -1;             // intent resolved on arrival regardless
                 if (consumed) consume_unit(static_cast<int>(i));  // engineer always consumed
                 // own-undamaged building -> repair_building returned false: the
@@ -2167,6 +2197,7 @@ void World::step_capture(double dt) {
                                                        u.infiltrate_steal_pct,
                                                        u.infiltrate_blackout);
                 u.infiltrate_target = -1;          // intent resolved on arrival regardless
+                if (acted) note_entered(EnteredEvent::Infiltrate, (int)i, bi, spy_house, true);
                 if (acted) consume_unit(static_cast<int>(i));   // spy consumed on success
                 // self-spy / no-op -> infiltrate_building returned false: the spy
                 // arrived, did nothing, NOT consumed (graceful fall-through).
