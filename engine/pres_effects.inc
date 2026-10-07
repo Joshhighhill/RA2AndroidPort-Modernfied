@@ -492,6 +492,7 @@ public:
     // ---- per-frame hooks fed by Presentation ------------------------------
     // Projectile trailers + line trails; the V3 rocket trail; ship wakes.
     void observe_projectiles(const ra2engine::World& w, const BuildingAssets& ba) {
+        proj_ba_ = &ba;
         std::map<long long, bool> seen;
         for (const ra2engine::Projectile& p : w.projectiles()) {
             std::string wid;
@@ -537,13 +538,17 @@ public:
                 // pass under the ships (agent B's shared anim drawing).
                 if (fx_->spawn(wake_, u.fx, u.fy, u.level, 0.0)) ++wakes_;
             }
-            // V3 rocket (RocketLocomotion): takeoff puffs, then the flight trail.
-            if (pres_upper(u.image) == v3_image() || pres_upper(u.image) == dmisl_image()) {
+            // V3 / Dreadnought rocket (RocketLocomotion, FUN_00661D00): the
+            // launch anim when the tilt ends and it leaves the launcher, then
+            // the trail every 3 frames while it flies.
+            if (u.an.t.missile || pres_upper(u.image) == v3_image() || pres_upper(u.image) == dmisl_image()) {
                 const double z = u.level * 104.0 + u.altitude;
-                if (u.altitude < 96.0) {
-                    if (frame_ % 24 == 0 && fx_->spawn("V3TAKOFF", u.fx, u.fy, 0, std::max(0.0, z - 10.0) * kFxLepPx)) ++v3_puffs_;
-                } else if (frame_ % 3 == 0) {
-                    if (fx_->spawn("V3TRAIL", u.fx, u.fy, 0, z * kFxLepPx)) ++v3_puffs_;
+                if (u.an.rocket.phase >= ra2engine::kRocketClimb) {
+                    if (rocket_launched_.insert(i).second) {
+                        if (fx_->spawn("V3TAKOFF", u.fx, u.fy, 0, std::max(0.0, z - 10.0) * kFxLepPx)) ++v3_puffs_;
+                    } else if (frame_ % 3 == 0) {
+                        if (fx_->spawn("V3TRAIL", u.fx, u.fy, 0, z * kFxLepPx)) ++v3_puffs_;
+                    }
                 }
             }
         }
@@ -574,6 +579,108 @@ public:
     std::string unit_weapon(const std::string& image, int slot) { return weapon_of(unit_id(image), slot); }
     // A rules key with the effects' RA2-first section lookup (AmbientSound, ...).
     std::string rules_key(const std::string& s, const std::string& k) const { return rget(s, k); }
+    std::set<std::size_t> rocket_launched_;   // W4: rockets that showed their launch anim
+    // W4 (W4-PJ-02/03/05/06/07): the projectile in flight, drawn from the
+    // weapon that FIRED it (unit slot or base defence), its art [Image]:
+    // Voxel=yes bullets (ZBOMB, SUBT, the Grand Cannon shell) as a voxel at
+    // the velocity's yaw and pitch, else the SHP, by facing when the ART
+    // section says Rotates=yes (BulletTypeClass reads Rotates from ArtINI,
+    // 0x46C180 / 0x886100). Returns false -> the caller's placeholder.
+    std::string projectile_weapon(const ra2engine::World& w, const ra2engine::Projectile& p) {
+        if (p.attacker >= 0 && p.attacker < static_cast<int>(w.units().size())) {
+            const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(p.attacker)];
+            return weapon_of(unit_ids_.count(u.image) ? unit_ids_[u.image] : u.image, p.weapon_slot);
+        }
+        if (proj_ba_ && p.attacker_building >= 0 && p.attacker_building < static_cast<int>(w.buildings().size())) {
+            const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(p.attacker_building)];
+            if (b.type >= 0 && b.type < static_cast<int>(proj_ba_->roster.size()))
+                return weapon_of(proj_ba_->roster[static_cast<std::size_t>(b.type)].id, p.weapon_slot);
+        }
+        return std::string();
+    }
+    auto& proj_draw(const std::string& weapon) {
+        auto it = proj_draw_.find(weapon);
+        if (it != proj_draw_.end()) return it->second;
+        ProjDraw d{};
+        const std::string pj = rget(weapon, "Projectile");
+        std::string img = pj.empty() ? std::string() : rget(pj, "Image");
+        if (img.empty()) img = pj;
+        d.image = pres_upper(img);
+        if (!d.image.empty() && pres_lower(d.image) != "none") {
+            d.voxel = yes(aget(d.image, "Voxel"));
+            d.rotates = yes(aget(d.image, "Rotates"));
+            // Art AnimPalette (def=no): a bullet SHP draws in the unit
+            // palette unless it asks for anim.pal (the 120MM shell's indices
+            // 137..143 are dull grey-brown in unittem.pal, garbage in anim.pal).
+            d.anim_pal = yes(aget(d.image, "AnimPalette"));
+            // [Projectile] Shadow= (def=yes): the ground shadow under the shell.
+            const std::string sh = rget(pj, "Shadow");
+            d.shadow = sh.empty() ? true : yes(sh);
+            if (d.voxel) d.vox = voxel_def(d.image);
+            if (!d.vox) d.shp = fx_->projectile_shp(d.image);
+        }
+        return proj_draw_.emplace(weapon, std::move(d)).first->second;
+    }
+    bool draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
+                         const ra2engine::Projectile& p, int gx, int sy, int gy, int W, int H) {
+        const std::string wid = projectile_weapon(w, p);
+        if (wid.empty()) return false;
+        auto& d = proj_draw(wid);
+        if (d.vox && unit_pal_ && has_vpl_) {
+            const double hv = std::sqrt(p.vx * p.vx + p.vy * p.vy);
+            // Model yaw in the voxel convention (index_to_yaw: +X = facing 0x4000
+            // = screen east): the lepton-plane heading atan2(vy, vx) maps to
+            // facing_u16_from_delta(vx, vy).
+            const double fu16 = ra2engine::facing_u16_from_delta(p.vx, p.vy);
+            const int yi = ra2engine::facing_to_index(fu16, 32);
+            const double pitch = std::atan2(p.vz, std::max(hv, 1e-6));
+            const int pi = static_cast<int>(std::lround(pitch * 180.0 / 3.14159265358979 / 15.0));
+            const int key = yi * 64 + (pi + 16);
+            auto it = d.sprites.find(key);
+            if (it == d.sprites.end()) {
+                ra2engine::VoxelSprite sp;
+                try {
+                    sp = ra2engine::rasterize_model(d.vox->vxl, d.vox->hva, ra2engine::index_to_yaw(yi, 32), vpl_,
+                                                    *unit_pal_, 0, pi * 15.0 * 3.14159265358979 / 180.0);
+                } catch (...) {}
+                it = d.sprites.emplace(key, std::move(sp)).first;
+            }
+            const ra2engine::VoxelSprite& sp = it->second;
+            if (sp.w <= 0) return false;
+            const std::string tk = "pvx:" + d.image + ":" + std::to_string(key);
+            SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(tk));
+            if (!tex) tex = static_cast<SDL_Texture*>(tc.get_rgba(tk, sp.rgba.data(), sp.w, sp.h));
+            if (!tex) return false;
+            SDL_Rect dst{gx - sp.anchor_x, sy - sp.anchor_y, sp.w, sp.h};
+            if (dst.x > W || dst.y > H || dst.x + dst.w < 0 || dst.y + dst.h < 0) return true;
+            SDL_RenderCopy(ren, tex, nullptr, &dst);
+            return true;
+        }
+        if (!d.shp || d.shp->count() <= 0) return false;
+        if (d.shadow && gy > sy + 2) {   // Shadow=yes: a dark blob on the ground below
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 110);
+            SDL_Rect r{gx - 2, gy - 1, 4, 2};
+            SDL_RenderFillRect(ren, &r);
+        }
+        int fr = 0;
+        if (d.rotates && d.shp->count() > 1) {
+            // Facing frames: 0 = north, clockwise (TS/RA2 bullet SHP convention)
+            // [RE-FALLBACK: RE-P5 open -- rotating-bullet frame order]; the
+            // screen-space velocity (voxel-render.md §6).
+            const double sdx = (p.vx - p.vy) * 30.0, sdy = (p.vx + p.vy) * 15.0 - p.vz * 36.74;
+            const double ang = std::atan2(sdx, -sdy);
+            const int n = d.shp->count();
+            fr = static_cast<int>(std::lround((ang < 0 ? ang + 2 * 3.14159265358979 : ang) /
+                                              (2 * 3.14159265358979) * n)) % n;
+        }
+        if (!d.anim_pal && unit_pal_)
+            fx_->blit(ren, tc, *d.shp, "projU:" + d.image, fr, gx, sy, 255, W, H, unit_pal_);
+        else
+            fx_->blit(ren, tc, *d.shp, "proj:" + d.image, fr, gx, sy, 255, W, H);
+        return true;
+    }
+
     long wakes_spawned() const { return wakes_; }
     long v3_puffs() const { return v3_puffs_; }
     void note_splash() { ++splashes_; }
@@ -645,6 +752,15 @@ private:
     struct LinePt { double x, y, z; int intensity; };
     struct LineTrail { std::vector<LinePt> pts; SDL_Color color{255, 255, 255, 255}; int decrement = 16; bool live = true; };
     struct ProjArt { std::string trailer; int spawn_delay = 3; bool line = false; SDL_Color line_color{255, 255, 255, 255}; int line_decrement = 16; };
+    struct ProjDraw {
+        std::string image;
+        bool voxel = false, rotates = false, anim_pal = false, shadow = true;
+        const VoxelDef* vox = nullptr;
+        std::shared_ptr<ra2assets::ShpFile> shp;
+        std::map<int, ra2engine::VoxelSprite> sprites;   // yaw x pitch -> sprite
+    };
+    const BuildingAssets* proj_ba_ = nullptr;
+    std::map<std::string, ProjDraw> proj_draw_;
     static constexpr int kVoxYaws = 16;
 
     // ---- one game frame ----------------------------------------------------

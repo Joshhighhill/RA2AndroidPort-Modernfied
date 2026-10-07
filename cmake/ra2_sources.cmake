@@ -107,6 +107,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/settings.cpp
 
     ${RA2_ROOT}/engine/projectile.cpp
+    ${RA2_ROOT}/engine/rocket.cpp
     ${RA2_ROOT}/engine/map_trigger.cpp
     ${RA2_ROOT}/engine/campaign.cpp
     ${RA2_ROOT}/engine/veterancy.cpp

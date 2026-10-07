@@ -98,6 +98,7 @@ public:
         int house = -1;          // W3-B owner (AltPalette remap), -1 none
         int delay = 1;           // W3-B per-instance delay (RandomRate), else the type's
         bool hold = false;       // W3-B: stays on its last frame (DestroyAnim ruins)
+        std::shared_ptr<ra2assets::Palette> own_pal;   // W4: the building's art Palette= (lib)
     };
 
     void init(const std::string& dir, const ra2assets::MixFile& ra2, const Ini& rules_ini,
@@ -512,11 +513,16 @@ public:
     // render rate.
     // W3-B: a DestroyAnim ruin -- plays once, then holds its last frame
     // [RE-FALLBACK: what keeps the original's ruins on the map was not traced].
-    void spawn_hold(const std::string& name, double fx, double fy, int level, int house) {
+    // W4: `own_pal` = the dead building's art Palette= (the Statue's
+    // Palette=lib -> liburb.pal); its DestroyAnim ruin draws through it too
+    // (CANY04DM was magenta noise in the unit palette).
+    void spawn_hold(const std::string& name, double fx, double fy, int level, int house,
+                    std::shared_ptr<ra2assets::Palette> own_pal = nullptr) {
         const FxAnimType* t = theater_type(name);
         if (!t || t->frames <= 0) return;
         Anim a{t, fx, fy, level, 0.0, 0, 0.0, house, t->delay};
         a.hold = true;
+        a.own_pal = std::move(own_pal);
         anims_.push_back(a);
     }
     void tick() {
@@ -553,8 +559,11 @@ public:
             const int cx = static_cast<int>(std::lround((a.sx - a.sy) * 30.0 + a.ox_px)) + cam.x + 30;
             const int cy = static_cast<int>(std::lround((a.sx + a.sy) * 15.0 - a.level * 15 - a.lift_px)) +
                            cam.y + 15 + a.t->ydraw;
-            draw_anim_frame(ren, tc, *a.t, fr, cx, cy, W, H, a.t->altpal ? alt_palette(a.house) : nullptr,
-                            a.t->altpal ? ":h" + std::to_string(a.house) : std::string());
+            if (a.own_pal)
+                draw_anim_frame(ren, tc, *a.t, fr, cx, cy, W, H, a.own_pal.get(), ":own");
+            else
+                draw_anim_frame(ren, tc, *a.t, fr, cx, cy, W, H, a.t->altpal ? alt_palette(a.house) : nullptr,
+                                a.t->altpal ? ":h" + std::to_string(a.house) : std::string());
         }
         if (pass == 1) draw_beams(ren, cam);   // W2-GA-15
     }

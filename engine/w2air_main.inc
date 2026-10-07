@@ -76,10 +76,15 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
         }
         if (a.missile || loco == kRocket) {
             a.missile = true;
-            const bool dred = to_lower(unit_id) == to_lower(rules.section_string("General", "DMislType", "DMISL"));
-            a.missile_damage = static_cast<int>(
-                rules.general_double(dred ? "DMislDamage" : "V3RocketDamage", dred ? 300.0 : 200.0));
+            // W4 [FUN_00661D00 head]: the rocket's OWN type picks its block --
+            // V3RocketType -> V3, CMislType -> CMisl, anything else DMisl.
+            const ra2engine::RocketParams rp = ra2engine::resolve_rocket_params(rules);
+            a.rocket_kind = ra2engine::rocket_kind_for(rp, unit_id);
+            a.missile_damage = rp.block[static_cast<std::size_t>(a.rocket_kind)].damage;
+            // type+0x678 = min(255, clamp(Speed,0,100)*256/100) (voxel-render.md 5).
+            a.rocket_speed = std::min(255, std::max(0, std::min(100, r.speed)) * 256 / 100);
         }
+        a.no_shadow = rules.section_flag(unit_id, "NoShadow", false);
     }
 }
 
@@ -117,10 +122,8 @@ ra2engine::SwParams resolve_sw_params(const Rules& rules) {
     p.ship_sinking_weight = gd("ShipSinkingWeight", 3.0);
     p.reload_frames = std::max(1, static_cast<int>(gd("ReloadRate", 0.3) * 900.0));
     p.flight_level = static_cast<int>(gd("FlightLevel", 1500.0));
-    const std::string v3wh = gs("V3Warhead", "V3WH");
-    p.missile_spread = rules.section_double(v3wh, "CellSpread", 1.0);
-    p.missile_pmax = rules.section_double(v3wh, "PercentAtMax", 0.5);
-    p.missile_verses = w2_verses11(rules, v3wh);
+    // W4 [FUN_00662A70]: every rocket type explodes with its OWN warhead.
+    p.rockets = ra2engine::resolve_rocket_params(rules);
     p.repair_step = static_cast<int>(gd("RepairStep", 7.0));
     p.repair_rate_frames = std::max(1, static_cast<int>(gd("RepairRate", 0.016) * 900.0));
     p.repair_percent = gd("RepairPercent", 0.15);

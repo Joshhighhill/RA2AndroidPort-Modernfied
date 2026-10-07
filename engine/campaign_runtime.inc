@@ -1522,19 +1522,18 @@ private:
                 bool isb = false;
                 int t = -1;
                 if (c.kind == K::AttackWaypoint) {
-                    // [DEVIATION §9.7, narrowed by W2-CA-11] An attack-waypoint
-                    // bombardment of an object whose tag guards the player's
-                    // LOSS (Allied 1's dreadnought/V3 shelling of the Statue)
-                    // relies on Patriot interception, which the engine does
-                    // not model; that one is held. Every other attack-waypoint
-                    // (artillery, building assaults) executes literally.
+                    // Every attack-waypoint executes literally -- including
+                    // Allied 1's Dreadnought shelling of the Statue (W4 fix:
+                    // the old W2-CA-11 hold is lifted). It was only "needed"
+                    // because every rocket exploded with the V3 warhead
+                    // (150000 damage per hit); with the per-type DMISLWH the
+                    // original's 6 damage per missile lands, and the Liberty
+                    // Island Patriots shoot the missiles down
+                    // (docs/gap/wave4/03-all01-opening.md §0).
                     int wx = 0, wy = 0;
                     if (!waypoint_cell(c.arg, wx, wy)) continue;
                     const int tb = w_.building_at_cell(wx, wy);
                     const int tu = tb < 0 ? w_.unit_at_cell(wx, wy) : -1;
-                    const int tag = tb >= 0 && tb < (int)btrack_.size() ? btrack_[(std::size_t)tb].tag
-                                  : tu >= 0 && tu < (int)utrack_.size() ? utrack_[(std::size_t)tu].tag : -1;
-                    if (tag >= 0 && tag_guards_loss(tag)) continue;
                     if (tb >= 0) { t = tb; isb = true; }
                     else if (tu >= 0) { t = tu; isb = false; }
                 } else {
@@ -1587,26 +1586,6 @@ private:
         default:
             return;
         }
-    }
-    // W2-CA-11: does any trigger on this tag (its chain) lose the mission,
-    // directly or by enabling a trigger that does?
-    bool tag_guards_loss(int tag) const {
-        if (tag < 0 || tag >= (int)data_.tags.size()) return false;
-        auto loses = [&](int ti) {
-            for (const ra2engine::MapAction& a : data_.triggers[(std::size_t)ti].actions)
-                if (a.kind == 2) return true;
-            return false;
-        };
-        int guard = 0;
-        for (int ti = data_.tags[(std::size_t)tag].first_trigger;
-             ti >= 0 && ti < (int)data_.triggers.size() && guard < 32;
-             ti = data_.triggers[(std::size_t)ti].linked, ++guard) {
-            if (loses(ti)) return true;
-            for (const ra2engine::MapAction& a : data_.triggers[(std::size_t)ti].actions)
-                if (a.kind == 53 && a.trigger >= 0 && a.trigger < (int)data_.triggers.size() && loses(a.trigger))
-                    return true;
-        }
-        return false;
     }
     void step_hunters() {
         if (frame_ % 15 != 0) return;

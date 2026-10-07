@@ -19,6 +19,10 @@ namespace ra2engine {
 namespace {
 constexpr double kLept = 256.0;
 constexpr double kFlyClimbLps = 100.0 * 15.0;   // [RE-FALLBACK roster2.md §C] 100 leptons/frame
+// W4: a rocket on its launcher sits this high (the deck) [RE-FALLBACK: the
+// spawn's coords on the launcher were not traced]; the safety lifetime.
+constexpr double kRocketDeckZ = 40.0;
+constexpr int kRocketMaxFrames = 1800;
 enum Sortie : int { kDocked = 0, kOutbound = 1, kMoveTo = 2, kReturn = 3, kLanding = 4, kParadrop = 5 };
 bool live(const Unit& u) { return u.alive && u.die_time < 0.0 && u.cargo_of < 0; }
 double cdist(double ax, double ay, double bx, double by) { return std::hypot(ax - bx, ay - by); }
@@ -178,6 +182,66 @@ void World::an_step_naval(double dt) {
 
 // --------------------------------------------------------------- spawners ---
 
+// W4: a rocket's target point in cells (+ its height in leptons): a live
+// unit (its altitude when airborne) or a building's centre.
+bool World::rocket_target_point(int tu, int tb, double& x, double& y, double& z) const {
+    const int n = static_cast<int>(units_.size());
+    if (tu >= 0 && tu < n && live(units_[tu])) {
+        const Unit& t = units_[tu];
+        x = t.fx;
+        y = t.fy;
+        z = (t.is_aircraft && t.altitude > 0.0) ? t.altitude : 0.0;
+        return true;
+    }
+    if (tb >= 0 && tb < static_cast<int>(buildings_.size()) && buildings_[tb].alive &&
+        buildings_[tb].state != Building::State::Dead) {
+        const Building& b = buildings_[tb];
+        x = b.cx + (b.fw - 1) / 2.0;
+        y = b.cy + (b.fh - 1) / 2.0;
+        z = 0.0;
+        return true;
+    }
+    return false;
+}
+
+// W4: a rocket explodes [FUN_00662A70]: its own block's warhead (elite when
+// the launcher was elite) at the nose point; then it is gone. A rocket SHOT
+// DOWN dies the ordinary TechnoClass death instead: Explodes=no on
+// V3ROCKET/DMISL, so no warhead damage -- only its Explosion= anims (the
+// Process tail's Strength<1 -> FUN_00662A70 path is the defensive case for a
+// rocket left alive at 0 HP) [PROBABLE: ALL01's Patriots, 7 cells from the
+// fleet, would otherwise blow up the Dreadnoughts with their own missiles].
+void World::rocket_explode(int i, int end) {
+    Unit& u = units_[i];
+    const RocketBlock& blk = an_.sw.rockets.block[static_cast<std::size_t>(
+        std::clamp(u.an.t.rocket_kind < 0 ? 1 : u.an.t.rocket_kind, 0, 2))];
+    const RocketWarhead& wh = rocket_warhead(blk, u.an.rocket_elite);
+    double nx = 0, ny = 0, nz = 0;
+    rocket_nose(blk, u.an.rocket, nx, ny, nz);
+    if (end == 2) {   // shot down: the explosion is where the rocket is
+        nx = u.an.rocket.x;
+        ny = u.an.rocket.y;
+        nz = u.an.rocket.z;
+    }
+    u.an.rocket_end = end;
+    u.fx = nx / kLept;
+    u.fy = ny / kLept;
+    u.altitude = std::max(0.0, nz);
+    const int house = u.house;
+    if (end == 1)
+        an_area_damage(house, nx / kLept, ny / kLept, rocket_damage(blk, u.an.rocket_elite), wh.spread,
+                       wh.pmax, wh.verses, /*hit_air=*/false, /*spare_house=*/false, std::max(0.0, nz));
+    Unit& r = units_[i];   // (an_area_damage never reallocates units_; re-fetch anyway)
+    if (end == 1) {
+        fire_events_.push_back({i, -1, -1, -1, 0, ""});
+        r.alive = false;   // the rocket is spent (no wreck); DontScore
+        r.die_time = 1.0;
+    }   // (shot down: the kill already started its death)
+    const int ow = r.an.owner;
+    if (ow >= 0 && ow < static_cast<int>(units_.size()) && units_[ow].an.spawn_out > 0)
+        --units_[ow].an.spawn_out;
+}
+
 void World::an_step_spawners(double dt) {
     (void)dt;
     const int n = static_cast<int>(units_.size());
@@ -191,7 +255,15 @@ void World::an_step_spawners(double dt) {
         const AnType& t = o.an.t;
         // SpawnRegenRate: a lost spawn is rebuilt; SpawnReloadRate: a returned
         // one is rearmed [rules [CARRIER]/[DRED]/[DEST]].
-        if (o.an.spawn_ready + o.an.spawn_out + o.an.spawn_pending < t.spawns_number) {
+        // W4 [PROBABLE: SpawnManagerClass, MissileSpawn nodes -- "missile
+        // spawn don't come back" (SpawnReloadRate=0)]: a launched rocket's
+        // node is spent at once, so SpawnRegenRate runs from the launch, not
+        // from its detonation (ALL01: each Dreadnought rebuilds a missile
+        // every 80 frames while the last ones are still in the air).
+        const auto st = an_.types.find(t.spawns);
+        const bool missile_spawns = st != an_.types.end() && st->second.an.missile;
+        const int out_held = missile_spawns ? 0 : o.an.spawn_out;
+        if (o.an.spawn_ready + out_held + o.an.spawn_pending < t.spawns_number) {
             if (++o.an.spawn_regen_timer >= std::max(1, t.spawn_regen_frames)) {
                 o.an.spawn_regen_timer = 0;
                 ++o.an.spawn_ready;
@@ -232,8 +304,23 @@ void World::an_step_spawners(double dt) {
             s.flight_state = FlightState::TakingOff;
             s.altitude = 1.0;
             s.body_facing = own.body_facing;
-            // DMislPauseFrames + DMislTiltFrames (V3: 0 + 60) on the launcher.
-            s.an.pass_cool = missile ? (own.an.t.spawns == "DMISL" ? 80.0 : 60.0) / 15.0 : 0.0;
+            // W4: locomotor +0x4D -- the launcher's elite rank picks the elite warhead.
+            s.an.rocket_elite = missile && is_elite(own.vet.veterancy);
+            if (missile) {
+                // W4 RocketLocomotion [FUN_00661D00]: on the launcher's deck,
+                // PauseFrames + TiltFrames from the rocket's own block.
+                double gx = s.fx, gy = s.fy, gz = 0.0;
+                rocket_target_point(tu, tb, gx, gy, gz);
+                const RocketBlock& blk = an_.sw.rockets.block[static_cast<std::size_t>(
+                    std::clamp(s.an.t.rocket_kind < 0 ? 1 : s.an.t.rocket_kind, 0, 2))];
+                rocket_launch(blk, s.an.rocket, s.fx * kLept, s.fy * kLept, kRocketDeckZ, gx * kLept,
+                              gy * kLept);
+                s.an.rocket.tx = gx * kLept;
+                s.an.rocket.ty = gy * kLept;
+                s.an.rocket.tz = gz;
+                s.altitude = kRocketDeckZ;
+                s.body_facing = facing_u16_from_delta(std::cos(s.an.rocket.yaw), std::sin(s.an.rocket.yaw));
+            }
             --own.an.spawn_ready;
             ++own.an.spawn_out;
         }
@@ -271,35 +358,30 @@ void World::an_step_fixed_wing(double dt) {
             const Building& b = buildings_[tb];
             gx = b.cx + (b.fw - 1) / 2.0; gy = b.cy + (b.fh - 1) / 2.0; have_goal = target_alive = true;
         }
-        // Missile: fly at the target point, detonate on arrival.
+        // W4 RocketLocomotion [FUN_00661D00]: pause, tilt, climb to the block
+        // Altitude, LazyCurve arc or level-off + dive, nose-contact explode.
         if (u.an.t.missile) {
-            if (have_goal) { u.an.attack_x = static_cast<int>(std::lround(gx)); u.an.attack_y = static_cast<int>(std::lround(gy)); }
-            if (u.an.attack_x < 0) { u.alive = false; u.die_time = 1.0; continue; }
-            if (u.an.pass_cool > 0.0) {   // pause + tilt on the launcher
-                u.an.pass_cool -= dt;
-                u.altitude = std::min(256.0, u.altitude + 8.0);
-                continue;
+            RocketFlight& f = u.an.rocket;
+            if (have_goal) {   // the live target keeps being tracked
+                double px = gx, py = gy, pz = 0.0;
+                rocket_target_point(tu, tb, px, py, pz);
+                f.tx = px * kLept;
+                f.ty = py * kLept;
+                f.tz = pz;
             }
-            u.altitude = std::min(768.0, u.altitude + 0.8 * 15.0 * 15.0 * dt);   // DMislAltitude
-            const double tx = u.an.attack_x, ty = u.an.attack_y;
-            u.body_facing = heading_toward(u.body_facing, tx - u.fx, ty - u.fy, 1e9, false);
-            const bool arrived = cruise_step(u.fx, u.fy, tx, ty, u.an.t.fly_speed_cps * dt);
-            u.cell_x = static_cast<int>(std::lround(u.fx));
-            u.cell_y = static_cast<int>(std::lround(u.fy));
-            u.flight_state = FlightState::Cruising;
-            if (arrived) {
-                std::array<int, 11> verses = P.missile_verses;
-                bool any = false;
-                for (int v : verses) any |= v != 0;
-                if (!any) verses.fill(100);
-                an_area_damage(u.house, tx, ty, u.an.t.missile_damage, P.missile_spread, P.missile_pmax,
-                               verses, /*hit_air=*/false, /*spare_house=*/false);
-                fire_events_.push_back({i, -1, -1, -1, 0, ""});
-                u.alive = false;   // the missile is spent (no wreck)
-                u.die_time = 1.0;
-                const int ow = u.an.owner;
-                if (ow >= 0 && ow < n && units_[ow].an.spawn_out > 0) --units_[ow].an.spawn_out;
-            }
+            const RocketBlock& blk = P.rockets.block[static_cast<std::size_t>(
+                std::clamp(u.an.t.rocket_kind < 0 ? 1 : u.an.t.rocket_kind, 0, 2))];
+            const int r = rocket_step(blk, u.an.t.rocket_speed, f, f.tx, f.ty, f.tz);
+            u.fx = f.x / kLept;
+            u.fy = f.y / kLept;
+            u.altitude = std::max(0.0, f.z);
+            u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
+            u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
+            u.body_facing = facing_u16_from_delta(std::cos(f.yaw), std::sin(f.yaw));
+            u.flight_state = f.phase >= kRocketClimb ? FlightState::Cruising : FlightState::TakingOff;
+            const bool off_map = grid_w_ > 0 && grid_h_ > 0 &&
+                                 (f.x < -kLept || f.y < -kLept || f.x > grid_w_ * kLept || f.y > grid_h_ * kLept);
+            if (r == kRocketDetonate || off_map || f.frames > kRocketMaxFrames) rocket_explode(i, 1);
             continue;
         }
         // Home airfield (a spawned plane's home is its spawner).
@@ -364,18 +446,23 @@ void World::an_step_fixed_wing(double dt) {
                 // Attack pass: in weapon range -> fire one ammo point.
                 if (cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rof_cool <= 0.0 &&
                     u.altitude >= P.flight_level * 0.5) {
+                    // W4: a flying projectile (the Harrier / Black Eagle
+                    // Maverick, the Hornet / Osprey bombs: ROT>0 homing) is
+                    // launched behind the P2 firewall and hits at detonation.
                     if (tu >= 0) {
                         const int slot = unit_weapon_for_unit(u, units_[tu]);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
+                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, tu, -1);
+                            else if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
                             else deliver_unit_hit(units_, occ_, i, tu);
                         }
                     } else if (tb >= 0) {
                         const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
+                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
+                            else if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
                         }
                     }
                     u.rof_cool = std::max(1, u.w_rof) / 15.0;
@@ -486,6 +573,16 @@ void World::an_step_deaths(double dt) {
     for (int i = 0; i < n; ++i) {
         Unit& u = units_[i];
         if (!u.alive || u.die_time < 0.0) continue;
+        // W4: a rocket killed in flight (FUN_00661D00: Strength < 1 ->
+        // FUN_00662A70) -- shot down; its launcher may rebuild it
+        // (SpawnRegenRate counts it lost, not out).
+        if (u.an.t.missile) {
+            if (u.an.rocket_end == 0) {
+                // FUN_00661D00 tail: Strength < 1 -> FUN_00662A70 at the rocket.
+                rocket_explode(i, 2);
+            }
+            continue;
+        }
         // W2-AN-07 [RE: aircraft.md §2 Crashable +0xD95; JumpjetCrash]: a
         // Crashable flier (and every fixed-wing aircraft) killed in the air
         // falls at its crash rate, then explodes where it hits the ground.

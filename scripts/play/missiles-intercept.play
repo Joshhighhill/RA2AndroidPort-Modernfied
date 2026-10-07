@@ -1,0 +1,45 @@
+# W4 fix: interception made visible. In ALL01 (campaign, the audit's
+# experiment B), a Soviet-owned Patriot site is built next to the player's
+# lamp post and a player V3 attacks it: the rocket tilts on its launcher,
+# climbs and arcs (RocketLocomotion, LazyCurve), the Patriots' RedEye2 homing
+# missiles fly up with their line trails and shoot it down; the Patriot takes
+# no damage and the spent rocket is not a unit loss (DontScore).
+set render_every 300
+set on_quit continue
+set campaign ALL01T.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+cheat reveal
+cheat w2 build NAPOWR 1
+cheat w2 build NASAM 1
+cheat w2 build NASAM 1
+cheat camp_spawn V3 0 37 58
+wait 2
+require units(0,V3) >= 1
+require buildings(1,NASAM) >= 2
+let lost0 = units_lost(0)
+cheat camp_attackb 1 NASAM V3
+view cell 31 60
+until 120 rockets_launched(0) >= 1
+shot i00_tilt
+wait 20
+shot i20_tilt
+wait 25
+shot i45_climb
+until 300 homing_live >= 1
+shot i_patriot1
+wait 3
+shot i_patriot2
+wait 3
+shot i_patriot3
+wait 3
+shot i_patriot4
+until 400 rockets_shot(0) >= 1
+shot i_shotdown
+wait 4
+shot i_shotdown2
+assert hp_lost(1) == 0
+assert units_lost(0) == $lost0
+end expect RUNNING
