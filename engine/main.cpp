@@ -5532,6 +5532,12 @@ public:
         ra2engine::InputEvent ev = ev_in;     // W2-AR-08: the touch bar may add modifiers
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
+        // W4-MC-02 [RE: TAction 0x2E LockInput -> FUN_00683c80 sets
+        // DAT_00a8dd04; while set the tactical WndProc FUN_00692ab0, edge
+        // scroll FUN_00692940, the keyboard FUN_0054ee90/FUN_0054f420 and the
+        // sidebar FUN_006ab0b0 ignore input -- only Esc reaches the options]:
+        // every pointer / key / touch event past the options menu is dropped.
+        if (input_locked_) return;
         if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
         if (touch_bar_handle(ev)) return;   // W2-AR-08 touch command bar (touch_bar.inc)
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
@@ -5617,6 +5623,7 @@ public:
         }
         dir_x = (dir_x > 0) - (dir_x < 0);
         dir_y = (dir_y > 0) - (dir_y < 0);
+        if (input_locked_) dir_x = dir_y = 0;   // W4-MC-02: FUN_00692940 off while locked
         // [P8 / options.md §5, FUN_00669ec0] The original scrolls
         // trunc(table[idx] * ScrollMultiplier) px per 16 ms tick, idx = 8-accel
         // floored at ScrollRate+1 -- a slow start that accelerates one step per
@@ -5964,9 +5971,12 @@ public:
         // cursor is hidden only while it draws.
         // W2-AR-16a: no software cursor left at the last tap point -- only a
         // real mouse has a pointer to draw.
-        bool drew = mouse_present_ && !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
-                    draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
-                                     world_.repair_frame());
+        // W4-MC-02: LockInput hides the mouse (FUN_00683c80 -> cursor vtbl +0xc):
+        // no software cursor, and the OS pointer is hidden too (drew = true).
+        bool drew = input_locked_ ||
+                    (mouse_present_ && !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
+                     draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
+                                      world_.repair_frame()));
         // G-08 (draw half): every other pointer is the MOUSE.SHP action cursor.
         if (!drew && mouse_present_)
             drew = pres_.draw_cursor(ren, tc, mouse_, world_, input_, mx_, my_,
@@ -6515,6 +6525,11 @@ private:
     // --- Repair & Sell [RE: repair-sell.md §C1/§D8] ---
     ModeCursor           mouse_;
     bool                 os_cursor_hidden_ = false;
+    // W4-MC-02 LockInput/UnlockInput (trigger actions 46/47). NOT saved: the
+    // original's DAT_00a8dd04 is a plain global (a loaded game is unlocked,
+    // FUN_0053b290). A safety deadline releases a lock no trigger undoes.
+    bool                 input_locked_ = false;
+    long                 input_lock_frame_ = 0;
 
     // --- [P8] edge-scroll acceleration (options.md §5) ---
     static constexpr double kScrollTick = 0.016;   // timeGetTime()>>4 tick

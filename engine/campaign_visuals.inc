@@ -60,6 +60,16 @@ private:
     // Once per scene update, after campaign_->update (with the audio pump).
     void campaign_visuals_pump() {
         if (!campaign_) return;
+        // W4-MC-02 no soft-lock [RE-FALLBACK: the original releases a stuck
+        // lock through its main-loop deadline DAT_00b066f4 and the game-end
+        // paths]: a lock no trigger undoes is released after 2 game minutes
+        // (the longest stock lock, SOV09, is 65 s), and a finished mission
+        // never stays locked.
+        if (input_locked_ && ((long)world_.vet_frame() - input_lock_frame_ > 1800 ||
+                              campaign_->finished())) {
+            input_locked_ = false;
+            pres_log((long)world_.vet_frame(), "input lock released (safety)");
+        }
         camp_pan_step();
         for (const ra2engine::VisualRequest& r : campaign_->take_visuals()) {
             int x = 0, y = 0, lv = 0;
@@ -106,6 +116,17 @@ private:
                 camp_pan_.rate = kRate[std::clamp(r.value, 0, 4)];
                 break;
             }
+            case 46:   // W4-MC-02 LockInput (FUN_00683c80): drop the pending
+                       // drag / band state too (FUN_0054f3b0).
+                input_locked_ = true;
+                input_lock_frame_ = (long)world_.vet_frame();
+                input_.cancel_gesture();
+                pres_log((long)world_.vet_frame(), "trigger LockInput");
+                break;
+            case 47:   // W4-MC-02 UnlockInput (FUN_00683cd0)
+                if (input_locked_) pres_log((long)world_.vet_frame(), "trigger UnlockInput");
+                input_locked_ = false;
+                break;
             case 55:   // CreateRadarEvent(type = Value)
                 if (camp_wp(r.waypoint, x, y, lv)) pres_.radar_ping(r.value, x, y);
                 break;

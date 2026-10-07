@@ -29,6 +29,7 @@ namespace {
 constexpr int kDragThresholdO = 6;      // same band threshold as the legacy model
 constexpr uint32_t kDblMsO = 400;
 constexpr int kDblSlopO = 6;
+constexpr int kLevelPxO = 15;           // one height level in screen px (input.cpp kLevelPx)
 // [RE: FUN_00730290] TeamSelect re-press window: timeGetTime() delta < 800 ms.
 constexpr uint32_t kGroupRepeatMs = 800;
 
@@ -489,11 +490,29 @@ void Input::group_center(int n) {
     center_on_selection();
 }
 
-void Input::center_on_cell(double cx, double cy) {
+void Input::center_on_cell(double cx, double cy, int level) {
     // Screen point of the cell centre is ((cx-cy)*30 + 30 + cam.x, (cx+cy)*15 +
-    // 15 + cam.y); put it at the middle of the playfield.
+    // 15 - level*kLevelPx + cam.y); put it at the middle of the playfield.
     cam_.x = static_cast<int>(std::lround(view_w_ / 2.0 - (cx - cy) * 30.0 - 30.0));
-    cam_.y = static_cast<int>(std::lround(view_h_ / 2.0 - (cx + cy) * 15.0 - 15.0));
+    cam_.y = static_cast<int>(std::lround(view_h_ / 2.0 - (cx + cy) * 15.0 - 15.0 +
+                                          level * static_cast<double>(kLevelPxO)));
+    clamp_camera();
+}
+
+void Input::set_view_limits(int min_x, int min_y, int max_x, int max_y) {
+    // The visible world rect is [-cam.x, -cam.x + view_w) x [-cam.y, -cam.y + view_h).
+    if (max_x - min_x >= view_w_) {
+        min_cam_x_ = view_w_ - max_x;
+        max_cam_x_ = -min_x;
+    } else {
+        min_cam_x_ = max_cam_x_ = (view_w_ - max_x - min_x) / 2;
+    }
+    if (max_y - min_y >= view_h_) {
+        min_cam_y_ = view_h_ - max_y;
+        max_cam_y_ = -min_y;
+    } else {
+        min_cam_y_ = max_cam_y_ = (view_h_ - max_y - min_y) / 2;
+    }
     clamp_camera();
 }
 
