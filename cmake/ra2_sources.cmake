@@ -45,6 +45,7 @@ set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/rules.cpp
     ${RA2_ROOT}/src/art.cpp
     ${RA2_ROOT}/src/theater_name.cpp
+    ${RA2_ROOT}/src/asset_fs.cpp
     ${RA2_ROOT}/src/sounds.cpp
     ${RA2_ROOT}/src/map.cpp
     ${RA2_ROOT}/src/pkt.cpp
