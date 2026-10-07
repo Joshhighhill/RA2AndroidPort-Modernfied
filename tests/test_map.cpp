@@ -490,3 +490,26 @@ TEST_CASE("map: real xmp31s2.map -> SNOW 70x83, 2 starts (the --demo-maps map)")
     // Every start must land on a real IsoMapPack5 cell (maps.md §4.3).
     for (const MapWaypoint& w : m.start_waypoints()) CHECK(m.at(w.x, w.y) != nullptr);
 }
+
+// W2-GA-04: the whole [Map] Size diamond is ground; omitted pack cells are
+// materialised as tile 0 / level 0 and present cells are never touched.
+TEST_CASE("map: fill_missing_diamond completes the Size diamond with clear ground") {
+    const int w = 4, h = 3;
+    std::vector<MapCell> all;
+    detail::fill_missing_diamond(all, w, h);
+    CHECK(all.size() == (size_t)((2 * w - 1) * h));   // the pack enumeration size
+    // Drop two cells, give the rest a marker level, refill.
+    std::vector<MapCell> some(all.begin() + 2, all.end());
+    for (MapCell& c : some) { c.tile = 7; c.level = 2; }
+    detail::fill_missing_diamond(some, w, h);
+    REQUIRE(some.size() == all.size());
+    int filled = 0;
+    for (const MapCell& c : some)
+        if (c.tile == 0) { ++filled; CHECK(c.level == 0); }
+        else CHECK(c.level == 2);
+    CHECK(filled == 2);
+    // A complete set is left unchanged.
+    const size_t before = some.size();
+    detail::fill_missing_diamond(some, w, h);
+    CHECK(some.size() == before);
+}

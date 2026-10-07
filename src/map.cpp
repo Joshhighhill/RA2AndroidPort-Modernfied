@@ -84,6 +84,34 @@ std::vector<MapCell> parse_cell_records(const uint8_t* data, size_t len) {
     return cells;
 }
 
+void fill_missing_diamond(std::vector<MapCell>& cells, int w, int h) {
+    if (w <= 0 || h <= 0) return;
+    // The IsoMapPack5 cell enumeration (FinalAlert/XCC): for each row y and
+    // column x in [0, 2w-2], dy = 2y + (x&1), rx = (x+dy)/2 + 1,
+    // ry = dy - rx + w + 1. Verified: every pack record of every full map
+    // lies in this set and the set size equals the record count.
+    const int span = 2 * w + 2 * h + 4;
+    std::vector<uint8_t> have((size_t)span * span, 0);
+    auto in = [&](int x, int y) { return x >= 0 && y >= 0 && x < span && y < span; };
+    for (const MapCell& c : cells)
+        if (in(c.x, c.y)) have[(size_t)c.y * span + c.x] = 1;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x <= 2 * w - 2; ++x) {
+            const int dy = 2 * y + (x & 1);
+            const int rx = (x + dy) / 2 + 1;
+            const int ry = dy - rx + w + 1;
+            if (!in(rx, ry) || have[(size_t)ry * span + rx]) continue;
+            have[(size_t)ry * span + rx] = 1;
+            MapCell c;
+            c.x = rx;
+            c.y = ry;
+            c.tile = 0;
+            c.subtile = 0;
+            c.level = 0;
+            cells.push_back(c);
+        }
+}
+
 } // namespace detail
 
 MapFile MapFile::parse(const std::string& ini_text) {
@@ -109,6 +137,12 @@ MapFile MapFile::parse(const std::string& ini_text) {
             map.cells_ = detail::parse_cell_records(raw.data(), raw.size());
         }
     }
+    // W2-GA-04: the original's cell array covers the whole [Map] Size diamond
+    // as clear ground; IsoMapPack5 records only overwrite it, so a cell the
+    // pack omits is ordinary tile-0 ground, not a void [RE: maps.md, RE-Q5].
+    // Materialise every absent in-diamond cell as tile 0 / level 0, appended
+    // after the pack records (a complete pack -- every gate map -- adds none).
+    if (!map.cells_.empty()) detail::fill_missing_diamond(map.cells_, map.width_, map.height_);
 
     // [OverlayPack]/[OverlayDataPack]: same collect-and-decode shape as
     // [IsoMapPack5] above, but the Format5 chunk BODY codec is LCW ("Format80"),

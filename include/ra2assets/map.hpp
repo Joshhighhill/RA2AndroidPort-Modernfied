@@ -64,6 +64,10 @@ namespace detail {
 // entire record-walking contract MapFile::parse() relies on for terrain, so
 // testing it directly with raw bytes exercises exactly the same logic.
 std::vector<MapCell> parse_cell_records(const uint8_t* data, size_t len);
+// W2-GA-04: append a tile-0/level-0 cell for every in-diamond (x,y) of a
+// w x h [Map] Size that `cells` lacks (the original clears the whole map
+// to ground before applying IsoMapPack5). No-op on a complete pack.
+void fill_missing_diamond(std::vector<MapCell>& cells, int w, int h);
 } // namespace detail
 
 // One [Waypoints] entry, decoded [RE: maps.md §4.3, CONFIRMED]. The INI value
