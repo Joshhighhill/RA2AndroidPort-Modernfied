@@ -91,13 +91,26 @@
 
     // The tooltip currently up ("" = none).
     std::string tooltip_now() const {
-        if (!tooltips_enabled() || tt_hold_ < kTooltipDelay) return "";
+        if (!tooltips_enabled()) return "";
         if (menu_.open_ || sld_.is_open()) return "";
+        // W4-AM-06: a finger has no hover -- a tap must not leave a tooltip
+        // behind; on touch the tooltip shows only while a finger HOLDS on the
+        // item (past half the hold ring).
+        if (!mouse_present_) {
+            int hx = 0, hy = 0;
+            float pr = 0.0f;
+            if (g_platform && g_platform->touch_hold(hx, hy, pr) && pr >= 0.5f) return tooltip_at(hx, hy);
+            return "";
+        }
+        if (tt_hold_ < kTooltipDelay) return "";
         return tooltip_at(mx_, my_);
     }
 
     void draw_tooltip(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         const std::string t = tooltip_now();
         if (t.empty()) return;
-        draw_tooltip_box(ren, tc, t, mx_, my_, kWinW, kWinH, /*left_of_pointer=*/lay_.contains(mx_, my_));
+        int px = mx_, py = my_;
+        float pr = 0.0f;
+        if (!mouse_present_ && g_platform) g_platform->touch_hold(px, py, pr);
+        draw_tooltip_box(ren, tc, t, px, py, kWinW, kWinH, /*left_of_pointer=*/lay_.contains(px, py));
     }

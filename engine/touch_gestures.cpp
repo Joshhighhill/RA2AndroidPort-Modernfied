@@ -15,10 +15,29 @@ void TouchGestures::emit(InputEvent::Kind k, int x, int y, bool right, uint32_t 
     out_.push_back(e);
 }
 
-void TouchGestures::emit_click(int x, int y, bool right, uint32_t t) {
+void TouchGestures::emit_click(int x, int y, bool right, uint32_t t, bool hold) {
     emit(InputEvent::PointerMove, x, y, false, t);
     emit(InputEvent::PointerDown, x, y, right, t);
     emit(InputEvent::PointerUp, x, y, right, t);
+    if (hold) {   // W4-AM-07: a hold-release right click never deselects
+        out_[out_.size() - 2].hold = true;
+        out_.back().hold = true;
+    }
+}
+
+void TouchGestures::emit_pan(int dx, int dy, int x, int y, uint32_t t) {
+    if (!dx && !dy) return;
+    InputEvent e;
+    e.kind = InputEvent::Pan;
+    e.dx = dx;   // the map follows the finger(s)
+    e.dy = dy;
+    e.x = x;
+    e.y = y;
+    e.x0 = x0_;   // where the gesture started (sidebar / radar routing)
+    e.y0 = y0_;
+    e.t_ms = t;
+    e.touch = true;
+    out_.push_back(e);
 }
 
 void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
@@ -26,12 +45,14 @@ void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
         case State::Idle:
             st_ = State::Pending;
             id0_ = id;
-            x0_ = cx_ = x;
-            y0_ = cy_ = y;
+            x0_ = cx_ = px_ = x;
+            y0_ = cy_ = py_ = y;
             t0_ = t;
             return;
         case State::Pending:
-            // A second finger before the first moved: two-finger gesture.
+        case State::Panning:
+            // A second finger: two-finger gesture (a one-finger pan simply
+            // continues as a two-finger pan).
             st_ = State::TwoFinger;
             id1_ = id;
             x1_ = x;
@@ -42,7 +63,7 @@ void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
             t2_ = t;
             return;
         default:
-            return;   // extra fingers during a drag / long-press are ignored
+            return;   // extra fingers during a band box / hold are ignored
     }
 }
 
@@ -54,15 +75,7 @@ void TouchGestures::finger_move(int64_t id, int x, int y, uint32_t t) {
         const int mx = (cx_ + x1_) / 2, my = (cy_ + y1_) / 2;
         const int dx = mx - mid_x_, dy = my - mid_y_;
         if (dx || dy) {
-            InputEvent e;
-            e.kind = InputEvent::Pan;
-            e.dx = dx;   // the map follows the fingers
-            e.dy = dy;
-            e.x = mx;
-            e.y = my;
-            e.t_ms = t;
-            e.touch = true;
-            out_.push_back(e);
+            emit_pan(dx, dy, mx, my, t);
             travel_ += std::abs(dx) + std::abs(dy);
             mid_x_ = mx;
             mid_y_ = my;
@@ -72,29 +85,44 @@ void TouchGestures::finger_move(int64_t id, int x, int y, uint32_t t) {
     if (id != id0_) return;
     cx_ = x;
     cy_ = y;
-    if (st_ == State::Pending &&
-        (std::abs(x - x0_) > cfg_.slop_px || std::abs(y - y0_) > cfg_.slop_px)) {
-        st_ = State::Dragging;   // band box: press at the START point
+    const bool beyond = std::abs(x - x0_) > cfg_.slop_px || std::abs(y - y0_) > cfg_.slop_px;
+    if (st_ == State::Pending && beyond) {
+        st_ = State::Panning;   // W4-AM-01: one-finger drag scrolls
+        emit_pan(x - px_, y - py_, x, y, t);
+        px_ = x;
+        py_ = y;
+        return;
+    }
+    if (st_ == State::Panning) {
+        emit_pan(x - px_, y - py_, x, y, t);
+        px_ = x;
+        py_ = y;
+        return;
+    }
+    if (st_ == State::Held && beyond) {
+        st_ = State::BandDrag;   // hold-then-drag: band box from the hold point
         emit(InputEvent::PointerMove, x0_, y0_, false, t0_);
         emit(InputEvent::PointerDown, x0_, y0_, false, t0_);
     }
-    if (st_ == State::Dragging) emit(InputEvent::PointerMove, x, y, false, t);
+    if (st_ == State::BandDrag) emit(InputEvent::PointerMove, x, y, false, t);
 }
 
 void TouchGestures::finger_cancel(int64_t id, int x, int y, uint32_t t) {
     switch (st_) {
         case State::Pending:
-        case State::LongPressed:
+        case State::Panning:
+        case State::Held:
+        case State::WaitUp:
             if (id == id0_) st_ = State::Idle;
             return;
-        case State::Dragging:
+        case State::BandDrag:
             if (id != id0_) return;
             emit(InputEvent::PointerUp, x, y, false, t);
             st_ = State::Idle;
             return;
         case State::TwoFinger:
             if (id != id0_ && id != id1_) return;
-            st_ = State::LongPressed;   // wait for the other finger, no click
+            st_ = State::WaitUp;   // wait for the other finger, no click
             id0_ = (id == id0_) ? id1_ : id0_;
             return;
         default:
@@ -109,13 +137,19 @@ void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
             emit_click(x0_, y0_, false, t);   // tap
             st_ = State::Idle;
             return;
-        case State::Dragging:
+        case State::Panning:
+        case State::WaitUp:
+            if (id == id0_) st_ = State::Idle;
+            return;
+        case State::Held:
+            if (id != id0_) return;
+            emit_click(x0_, y0_, true, t, /*hold=*/true);   // hold-release = right click
+            st_ = State::Idle;
+            return;
+        case State::BandDrag:
             if (id != id0_) return;
             emit(InputEvent::PointerUp, x, y, false, t);
             st_ = State::Idle;
-            return;
-        case State::LongPressed:
-            if (id == id0_) st_ = State::Idle;
             return;
         case State::TwoFinger: {
             if (id != id0_ && id != id1_) return;
@@ -123,7 +157,7 @@ void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
             if (travel_ <= cfg_.slop_px && t - t2_ <= cfg_.two_finger_tap_ms)
                 emit_click(x0_, y0_, true, t);
             // Wait for the other finger without re-entering a one-finger state.
-            st_ = State::LongPressed;
+            st_ = State::WaitUp;
             id0_ = (id == id0_) ? id1_ : id0_;
             return;
         }
@@ -133,10 +167,23 @@ void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
 }
 
 void TouchGestures::tick(uint32_t now) {
-    if (st_ == State::Pending && now - t0_ >= cfg_.long_press_ms) {
-        emit_click(x0_, y0_, true, now);   // long-press = right click
-        st_ = State::LongPressed;
+    if (st_ == State::Pending && now - t0_ >= cfg_.long_press_ms) st_ = State::Held;
+}
+
+bool TouchGestures::hold_feedback(uint32_t now, int& x, int& y, float& progress) const {
+    if (st_ == State::Held) {
+        x = x0_;
+        y = y0_;
+        progress = 1.0f;
+        return true;
     }
+    if (st_ != State::Pending || now - t0_ < cfg_.feedback_delay_ms) return false;
+    x = x0_;
+    y = y0_;
+    const float span = static_cast<float>(cfg_.long_press_ms - cfg_.feedback_delay_ms);
+    progress = span > 0.0f ? static_cast<float>(now - t0_ - cfg_.feedback_delay_ms) / span : 1.0f;
+    if (progress > 1.0f) progress = 1.0f;
+    return true;
 }
 
 }  // namespace ra2engine

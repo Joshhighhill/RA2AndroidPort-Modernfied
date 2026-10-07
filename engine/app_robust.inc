@@ -18,10 +18,12 @@ bool g_session_no_audio = false;
 int g_ui_w = 1280, g_ui_h = 720;
 ra2engine::Platform* g_platform = nullptr;
 // The game canvas for the panel: H = 720 on desktop; on Android (touch) the
-// height that makes one canvas pixel ~0.85 dp (a 6" 1080p phone -> ~480,
-// clamped 480..720 -- tablets keep 720), so the sidebar's 60x48 cameos are
-// >= 40 dp. W = H * aspect, at least 16:9 (narrower panels letterbox, as
-// before) and at most ~21:9. 1280x720 under --play (hidden 1280x720 window).
+// height that makes one canvas pixel ~0.75 dp (W4-AM-02: a 6" 1080p 420 dpi
+// phone -> ~548, clamped 520..720 -- tablets keep 720; it was 0.85 dp / 484
+// px, which showed only 42% of the desktop's map area), so the sidebar's
+// 60x48 cameos stay ~45x36 dp. W = H * aspect, at least 16:9 (narrower panels
+// letterbox, as before) and at most ~21:9: a 20:9 phone gets the extra width
+// as more map. 1280x720 under --play (hidden 1280x720 window).
 void game_logical_size(int& out_w, int& out_h) {
     out_w = 1280;
     out_h = 720;
@@ -34,8 +36,8 @@ void game_logical_size(int& out_w, int& out_h) {
     float ddpi = 0, hdpi = 0, vdpi = 0;
     if (SDL_GetDisplayDPI(0, &ddpi, &hdpi, &vdpi) == 0 && vdpi > 0.0f) {
         const double px_per_dp = vdpi / 160.0;
-        lh = static_cast<int>(std::lround(h / (0.85 * px_per_dp)));
-        lh = std::max(480, std::min(720, lh)) & ~1;
+        lh = static_cast<int>(std::lround(h / (0.75 * px_per_dp)));
+        lh = std::max(520, std::min(720, lh)) & ~1;
     }
 #endif
     const int lw = static_cast<int>(std::lround(static_cast<double>(lh) * w / h)) & ~1;

@@ -208,6 +208,11 @@
             p.set("ctl_units", ctl);         // controllable (house 0 + PlayerControl) usable units
             p.set("ctl_on_screen", ctl_on);  // ... of which inside the view
             p.set("input_locked", input_locked_ ? 1 : 0);
+            p.set("touch_ui", touch_ui_ ? 1 : 0);              // W4-AM touch keys
+            p.set("touch_bar_open", touch_bar_open_ ? 1 : 0);
+            p.set("touch_banner", touch_banner_visible() ? 1 : 0);
+            p.set("touch_mode", touch_mode());
+            p.set("tooltip_up", tooltip_now().empty() ? 0 : 1);
             double vcx = 0, vcy = 0;
             if (campaign_) camp_view_cell(vcx, vcy);
             p.set("view_cx", vcx);
@@ -269,6 +274,17 @@
         }
         for (std::size_t i = 0; i < lay_.cameos.size() && i < buildable_.size(); ++i)
             p.targets["cameo:" + play_entry_id(active_tab_, buildable_[i])] = rect(lay_.cameos[i].rect);
+        if (touch_bar_visible()) {   // W4-AM: touch column buttons + the mode banner's [X]
+            for (int i = 0; i < touch_btn_count(); ++i) {
+                const SDL_Rect r = touch_btn_rect(i);
+                p.targets[std::string("touch:") + touch_buttons()[static_cast<std::size_t>(i)].label] =
+                    ra2play::Rect{r.x, r.y, r.w, r.h};
+            }
+        }
+        if (touch_banner_visible()) {
+            const SDL_Rect r = touch_cancel_rect();
+            p.targets["touch:cancel"] = ra2play::Rect{r.x, r.y, r.w, r.h};
+        }
         std::string ids;
         for (int t = 0; t < 4; ++t) {
             for (int e : tab_buildable(t)) {

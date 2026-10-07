@@ -433,6 +433,8 @@ private:
     // G-05/G-04 state.
     Scheme scheme_ = Scheme::Original;
     bool mod_shift_ = false, mod_ctrl_ = false, mod_alt_ = false;  // latest event's modifiers
+    bool ev_touch_ = false;                    // W4-AM-09: latest pointer event was a finger
+    bool box_has_own_unit() const;             // W4-AM-01: the band box holds a controllable unit
     bool r_down_ = false, r_drag_ = false;     // right-button gesture (drag = scroll)
     int r_last_x_ = 0, r_last_y_ = 0, r_down_x_ = 0, r_down_y_ = 0;
     std::vector<int> unit_group_;              // per unit index: group 1..10, 0 = none

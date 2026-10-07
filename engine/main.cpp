@@ -5531,6 +5531,7 @@ public:
         if (lifecycle_event(ev_in)) return;   // W2-AR-09 (game_scene_lifecycle.inc)
         ra2engine::InputEvent ev = ev_in;     // W2-AR-08: the touch bar may add modifiers
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
+        if (ev.touch) touch_ui_ = true;   // W4-AM: the touch column / banner appear (also while locked)
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
         // W4-MC-02 [RE: TAction 0x2E LockInput -> FUN_00683c80 sets
         // DAT_00a8dd04; while set the tactical WndProc FUN_00692ab0, edge
@@ -5540,6 +5541,7 @@ public:
         if (input_locked_) return;
         if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
         if (touch_bar_handle(ev)) return;   // W2-AR-08 touch command bar (touch_bar.inc)
+        if (touch_ui_handle(ev)) return;    // W4-AM touch router (touch_ui.inc)
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
@@ -5597,6 +5599,8 @@ public:
     // production, exit handoff, free units, audio events, placement/SW confirm.
     void update(double dt) override {
         tooltip_tick(dt);   // W2-UI-07 hover timer (game time)
+        touch_bar_tick(dt);   // W4-AM-05: the open touch column closes itself
+        touch_hint_tick(dt);  // W4-AM-01: the gesture hint
         // P7: the options menu / save-load dialog pause the game (the original
         // runs them as a modal loop; the scenario does not advance meanwhile).
         if (menu_.open_ || sld_.is_open()) {
@@ -5988,6 +5992,9 @@ public:
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
         draw_touch_bar(ren);      // W2-AR-08 (touch only)
+        draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
+        draw_touch_hint(ren);          // W4-AM-01 (touch only)
+        draw_touch_hold_ring(ren);     // W4-AM-07 (touch only)
         if (campaign_) draw_campaign_overlay(ren, tc);   // P10 objectives / mission end (W2-UI-21)
         gf_render(ren, tc);   // gF: victory / defeat text during BorrowedTime (W2-UI-20 game font)
         // P7 overlays + the transient "game saved / load failed" banner.
@@ -6249,6 +6256,7 @@ private:
 #include "realplay_scene.inc"   // gap owner A: placement/production/roster members
 #include "game_scene_lifecycle.inc"   // W2-AR-09: background autosave + pause
 #include "touch_bar.inc"              // W2-AR-07/-08/-16: touch command bar
+#include "touch_ui.inc"               // W4-AM: touch router, mode banner, hold ring, hint
     friend struct CombatProbe;   // gap owner C: --probe-combat drives the real scene
     // The window is always created at 1280x720 (see run_interactive); the sidebar
     // layout/camera/input all key off these, so the driver's plat matches.

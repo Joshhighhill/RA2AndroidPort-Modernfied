@@ -29,6 +29,10 @@ namespace {
 constexpr int kDragThresholdO = 6;      // same band threshold as the legacy model
 constexpr uint32_t kDblMsO = 400;
 constexpr int kDblSlopO = 6;
+// W4-AM-09: a finger's double tap lands ~5 dp apart at best; touch uses a
+// 32 logical px slop (~24 dp on a phone canvas) and a 500 ms window.
+constexpr int kDblSlopTouch = 32;
+constexpr uint32_t kDblMsTouch = 500;
 constexpr int kLevelPxO = 15;           // one height level in screen px (input.cpp kLevelPx)
 // [RE: FUN_00730290] TeamSelect re-press window: timeGetTime() delta < 800 ms.
 constexpr uint32_t kGroupRepeatMs = 800;
@@ -188,9 +192,10 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
         case Action::None:
             return;
         case Action::Select: {
-            const bool is_double = (t_ms - last_click_t_) <= kDblMsO &&
-                                   std::abs(px - last_click_x_) <= kDblSlopO &&
-                                   std::abs(py - last_click_y_) <= kDblSlopO;
+            const int slop = ev_touch_ ? kDblSlopTouch : kDblSlopO;
+            const bool is_double = (t_ms - last_click_t_) <= (ev_touch_ ? kDblMsTouch : kDblMsO) &&
+                                   std::abs(px - last_click_x_) <= slop &&
+                                   std::abs(py - last_click_y_) <= slop;
             selected_building_ = -1;
             if (is_double) {
                 commit_double(px, py);
@@ -289,6 +294,7 @@ void Input::handle_original(const InputEvent& ev) {
         mod_shift_ = ev.shift;
         mod_ctrl_ = ev.ctrl;
         mod_alt_ = ev.alt;
+        ev_touch_ = ev.touch;
     }
     const bool any_mode = sw_targeting_ || placement_active() || mode_ != BaseMode::None;
     switch (ev.kind) {
@@ -338,7 +344,10 @@ void Input::handle_original(const InputEvent& ev) {
             if (ev.button == InputEvent::Right) {
                 if (r_down_ && !r_drag_) {
                     if (placement_active()) actions_.place_cancelled = true;
-                    right_click_cancel();
+                    // W4-AM-07: a finger HOLD cancels an armed mode but never
+                    // deselects (slow taps used to drop the selection).
+                    if (ev.hold) (void)cancel_one_mode();
+                    else right_click_cancel();
                 }
                 r_down_ = r_drag_ = false;
                 return;
@@ -373,7 +382,8 @@ void Input::handle_original(const InputEvent& ev) {
                     }
                 }
             } else if (dragging_) {
-                commit_box(down_shift_);
+                // W4-AM-01: an empty touch band box keeps the selection.
+                if (!ev.touch || box_has_own_unit()) commit_box(down_shift_);
                 if (any_own_selected()) selected_building_ = -1;
             } else {
                 left_click_original(ev.x, ev.y, down_shift_, ev.t_ms);
