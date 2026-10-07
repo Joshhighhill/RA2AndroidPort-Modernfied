@@ -4605,9 +4605,10 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
 
 // Placement cursor: draw the fw*fh foundation cell diamonds green (cell OK) /
 // red (cell blocked OR adjacency fails -> whole grid red) [RE: construction.md §9].
-void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
+#include "pres_place.inc"   // W5-PRES R-102 PLACE.SHP grid, R-144 primary / rally markers
+void draw_placement_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
                            const BuildingAssets& ba, const ra2engine::Input& input,
-                           const Assets& a, const ra2engine::Camera& cam, int /*W*/, int /*H*/,
+                           const Assets& a, const ra2engine::Camera& cam, int W, int H,
                            const ra2engine::PlacementCheck* pre_chk = nullptr) {
     if (!input.placement_active()) return;
     const int type = input.placement_type();
@@ -4622,6 +4623,8 @@ void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
         world.occupancy(), world.buildings(), /*bypass_adjacency=*/false);
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     const std::vector<ra2engine::Cellxy> cells = ra2engine::foundation_cells(cx, cy, d.fw, d.fh);
+    // W5-PRES R-102: the live game draws PLACE.SHP (CellClass::DrawPlacement).
+    if (pres_draw_place_grid(ren, tc, chk, cells, a, cam, W, H)) return;
     for (std::size_t k = 0; k < cells.size(); ++k) {
         const ra2assets::MapCell* mc = a.map.at(cells[k].x, cells[k].y);
         const int level = mc ? mc->level : 0;
@@ -4700,7 +4703,8 @@ bool draw_mode_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Mode
 // viewport width (window minus the sidebar strip).
 void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
                             const ra2engine::Input& input, const Assets& a,
-                            const ra2engine::Camera& cam, int playfield_w) {
+                            const ra2engine::Camera& cam, int playfield_w,
+                            ra2engine::TextureCache* tc = nullptr) {
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     auto cell_center_px = [&](int cx, int cy, int& sx, int& sy) {
         const ra2assets::MapCell* mc = a.map.at(cx, cy);
@@ -4709,9 +4713,24 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
         sx = p.x + cam.x + 30;   // + tile_w/2 (diamond center)
         sy = p.y + cam.y + 15;   // + tile_h/2
     };
+    // W5-PRES R-144: the live game shows the original's TXT_PRIMARY label on
+    // the selected primary factory (pres_place.inc) instead of the triangle.
+    if (tc && g_fx && g_game_font) {
+        const int sbi = input.selected_building();
+        if (sbi >= 0 && sbi < static_cast<int>(world.buildings().size())) {
+            const ra2engine::Building& b = world.buildings()[sbi];
+            if (b.alive && b.house == 0 && b.primary) {
+                const ra2engine::ScreenPt dp = ra2engine::building_draw_point(b.cx, b.cy,
+                    a.map.at(b.cx, b.cy) ? a.map.at(b.cx, b.cy)->level : 0);
+                pres_draw_primary_label(ren, *tc, world, b, dp.x + cam.x, dp.y + cam.y + 15 * (b.fw + b.fh) / 2,
+                                        playfield_w);
+            }
+        }
+    }
     // Primary-factory markers.
     SDL_SetRenderDrawColor(ren, 255, 220, 40, 220);
     for (const ra2engine::Building& b : world.buildings()) {
+        if (tc && g_fx && g_game_font) break;   // W5-PRES: replaced by the label above
         if (!b.alive || b.house != 0 || !b.primary) continue;
         int sx = 0, sy = 0;
         cell_center_px(b.cx + b.fw / 2, b.cy + b.fh / 2, sx, sy);
@@ -6049,7 +6068,7 @@ public:
             input_.placement_cell(pcx, pcy);
             const ra2engine::PlacementCheck pchk =
                 placement_eval(input_.placement_type(), pcx, pcy);   // gap owner A rules
-            draw_placement_cursor(ren, world_, ba_, input_, a_, cam_, kWinW, kWinH,
+            draw_placement_cursor(ren, tc, world_, ba_, input_, a_, cam_, kWinW, kWinH,
                                   input_.placement_active() ? &pchk : nullptr);
         }
         if (ba_.ok && ba_.sidebar_ok) {
@@ -6068,7 +6087,7 @@ public:
                          bm == ra2engine::Input::BaseMode::Repair ? 1
                          : bm == ra2engine::Input::BaseMode::Sell ? 2 : 0);
         }
-        draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
+        draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_, &tc);
         pip_tc_ = &tc;
         draw_selected_building(ren);   // G-10 / W2-UI-11
         draw_queue_badges(ren, tc);    // G-07 / W2-UI-03/04
