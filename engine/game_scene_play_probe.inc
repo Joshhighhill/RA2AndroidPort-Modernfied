@@ -190,7 +190,8 @@
             // W4-MC-07 (HB-3): only objects a human can actually see and use:
             // alive, not carried, on the board (LocalSize) and not under shroud.
             auto seen = [&](int cx, int cy) {
-                return on_board(cx, cy) && world_.object_visible_at(0, cx, cy);
+                // (before the first logic tick nothing is revealed yet)
+                return on_board(cx, cy) && (world_.vet_frame() == 0 || world_.object_visible_at(0, cx, cy));
             };
             int ctl = 0, ctl_on = 0;
             for (const ra2engine::Unit& u : world_.units()) {

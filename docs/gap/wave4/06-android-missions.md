@@ -205,3 +205,31 @@ Severity values: BLOCKER, MAJOR, MINOR.
 - The DocumentsUI picker needs kernel taps: `bash 06-evidence/ktap.sh X Y`, with portrait coordinates.
 - FPS: `dumpsys SurfaceFlinger --latency "SurfaceView - org.ra2.engine/org.ra2.engine.RA2Activity#0"`
   over 5 s.
+
+## W4-FIX-CTL status (branch `w4fix-ctl`)
+
+Final touch scheme: tap = select / order; double tap = all of type (32 px / 500 ms); one-finger drag = scroll;
+two-finger drag = scroll; hold (600 ms, a ring fills) + drag = band box; hold + lift = cancel the armed mode
+(never deselects; cameo hold/abandon and team create unchanged); two-finger tap = deselect; hold on a sidebar
+item = tooltip; drag on the radar = scroll; swipe on the cameo strip = scroll the list. `docs/INSTALL.md` §4.
+
+| ID | Status |
+|---|---|
+| W4-AM-01 | **Fixed** (`touch_gestures.cpp`; empty touch box keeps the selection; 12 s gesture hint). |
+| W4-AM-02 | **Fixed:** opening on HomeCell (W4-MC-03); phone canvas 0.75 dp/px (~548 px on 1080p/420 dpi, was 484): 16:9 ≈ 55 %, 20:9 ≈ 72 % of the desktop map area. |
+| W4-AM-03 | **Fixed:** sell / repair / placement / SW banner with a 56 px [X]; hold also cancels. |
+| W4-AM-04 | **Fixed:** side-keyed sidebar textures (desktop too); `ctl-sides.play`, emulator ALL01 → SOV01. |
+| W4-AM-05 | **Fixed:** left-edge command column, closed by default, closes after a one-shot command or 6 s; nothing over the bottom of the playfield. |
+| W4-AM-06 | **Fixed:** no tooltips from taps; tooltip only while holding. |
+| W4-AM-07 | **Fixed:** 600 ms hold with a ring; a hold never deselects. |
+| W4-AM-08 | **Partly:** sidebar near-miss taps snap to the nearest tab / strip arrow / repair / sell within 20 px (≥ 48 dp tall; the four tabs stay ~21 dp wide, limited by the art). Cameo rows are ~36 dp at the new scale; shell list rows (campaign / load lists) unchanged — open. |
+| W4-AM-09 | **Fixed** (touch double-tap slop 32 px, 500 ms). |
+| W4-AM-10 | Open (setup text / `EXTRA_INITIAL_URI`). |
+| W4-AM-11 | **Fixed:** BRF button (campaign), tap closes the briefing; radar drag scrolls. |
+| W4-AM-12 | **Fixed:** versionName `0.9.0+g<hash>[-dirty]`, versionCode = commit count; `ENGINE …` on the main menu. |
+| W4-AM-13 | Open (re-layout on resize). |
+
+Emulator evidence (`ra2x86`, APK `0.9.0+g2c0c3f3`, versionCode 789): `06-evidence-fix/` — `01_menu` (version
+line), `07_drag` (one-finger scroll, Tanya stays selected), `08_swim` (Tanya across the harbour), `14_sell` (banner
++ [X]), `16_cmd` (column), `19_brf2` (briefing), `25_r2` (hold ring), `30_sov01` (Soviet sidebar after ALL01 in the
+same process), `31_cameo` (no tooltip after a cameo tap; ConYard clear of any bar).
