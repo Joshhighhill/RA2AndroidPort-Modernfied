@@ -1,0 +1,18 @@
+# ART-ALL06 -- W3-FIX-A art acceptance. ALL06 (URBAN, Washington DC): the White House and the memorials stand (no black tile holes); the TaskForce Terror Drones are resolvable.
+set render_every 600
+set on_quit continue
+set campaign ALL06U.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+wait 30
+cheat reveal
+cheat art_dump
+assert art.missing == 0
+cheat view_building CAWASH01
+wait 2
+shot whitehouse
+cheat view_building CAWSH12
+wait 2
+shot monument

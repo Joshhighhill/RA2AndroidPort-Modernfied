@@ -235,6 +235,7 @@ public:
         }
     }
     const std::vector<Obj>& objects() const { return objects_; }
+    int missing() const { return missing_; }   // W3-FIX-A: objects dropped for missing art
     // W3-FIX-A: dressing structures that carry a light source (LightIntensity != 0).
     struct LightObj { std::string type; int x, y, fw, fh; };
     const std::vector<LightObj>& lights() const { return lights_; }

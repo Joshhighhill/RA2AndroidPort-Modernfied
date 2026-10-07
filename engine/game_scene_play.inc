@@ -202,6 +202,7 @@
             if (a.invisible) ++out["art.invisible"];
             else if (!a.ok) ++out["art.missing"];
         }
+        out["art.dressing_missing"] = map_dressing_.missing();
         for (const ra2engine::Unit& u : world_.units()) {   // W3-FIX-A: per image, any house
             if (!u.alive || u.die_time >= 0.0) continue;
             ++out["img." + u.image];

@@ -8,6 +8,7 @@
 //                                invisible, own palette) and unit image
 //   cheat view_building TYPE [n] centre the camera on the n-th live TYPE
 //   cheat view_unit IMAGE [n]    centre the camera on the n-th live unit image
+//   cheat view_dressing IMAGE [n] centre on the n-th civilian map-dressing object
 if (args.size() == 1 && args[0] == "reveal") {
     world_.reveal_all_house(0);
     return true;
@@ -27,6 +28,10 @@ if (args.size() == 1 && args[0] == "art_dump") {
         ++uc[u.image + " h=" + std::to_string(u.house) + (u.is_aircraft ? " air alt=" + std::to_string((int)u.altitude)
                                                                          : u.is_vehicle ? " veh" : " inf")];
     }
+    std::map<std::string, int> dc;
+    for (const PresMap::Obj& o : map_dressing_.objects())
+        if (o.key.rfind("civ:", 0) == 0) ++dc[o.key.substr(4) + (o.own_pal ? " ownpal" : "")];
+    for (const auto& kv : dc) std::cerr << "[art-dump] dressing " << kv.first << " x" << kv.second << "\n";
     for (const auto& kv : bc) std::cerr << "[art-dump] bld " << kv.first << " x" << kv.second << "\n";
     for (const auto& kv : uc) std::cerr << "[art-dump] unit " << kv.first << " x" << kv.second << "\n";
     return true;
@@ -45,6 +50,15 @@ if ((args.size() == 2 || args.size() == 3) && (args[0] == "view_building" || arg
     for (const ra2engine::Unit& u : world_.units()) {
         if (!u.alive || u.die_time >= 0.0 || u.image != args[1] || want-- > 0) continue;
         input_.center_on_cell(u.fx, u.fy);
+        return true;
+    }
+    return false;
+}
+if ((args.size() == 2 || args.size() == 3) && args[0] == "view_dressing") {
+    int want = args.size() == 3 ? std::atoi(args[2].c_str()) : 0;
+    for (const PresMap::Obj& o : map_dressing_.objects()) {
+        if (o.key != "civ:" + args[1] || want-- > 0) continue;
+        input_.center_on_cell(o.x + o.fw / 2.0, o.y + o.fh / 2.0);
         return true;
     }
     return false;
