@@ -267,7 +267,9 @@ public:
         const FxAnimType* t = fx_->type(name);
         if (!t) return false;
         const std::string key = pres_upper(name);
-        if (!yes(aget(key, "Bouncer"))) {
+        // W5-PRES R-123 [RE: ctor FUN_00421ec0]: IsMeteor=yes runs the same
+        // bounce physics as Bouncer=yes.
+        if (!yes(aget(key, "Bouncer")) && !yes(aget(key, "IsMeteor"))) {
             fx_->spawn(name, x / 256.0, y / 256.0, 0, z * kFxLepPx);
             return true;
         }
@@ -288,15 +290,14 @@ public:
         b.trailer = aget(key, "TrailerAnim");
         b.trailer_sep = std::max(1, aint(key, "TrailerSeperation", 3));
         b.expire = aget(key, "ExpireAnim");
-        // RandomRate=a,b: a per-anim frame delay between 900/b and 900/a.
-        const std::vector<std::string> rr = split(aget(key, "RandomRate"));
-        if (rr.size() >= 2) {
-            const int d0 = 900 / std::max(1, std::atoi(rr[1].c_str()));
-            const int d1 = 900 / std::max(1, std::atoi(rr[0].c_str()));
-            b.delay = std::max(1, d0 + static_cast<int>(rnd() % static_cast<std::uint32_t>(std::max(1, d1 - d0 + 1))));
-        } else {
-            b.delay = std::max(1, t->delay);
-        }
+        // W5-PRES R-123 [RE: AI FUN_00423ae0 impact]: Spawns= x
+        // (Random(0,SpawnCount) + Random(0,SpawnCount)) on a land impact.
+        b.spawns = aget(key, "Spawns");
+        b.spawn_count = std::max(0, aint(key, "SpawnCount", 0));
+        // RandomRate=a,b [RE: reader FUN_00427c80, W5-PRES R-123]: 900/a, 900/b
+        // with `if (max < min) min = max` -- every artmd entry (a < b) is a
+        // fixed 900/b (the type's rand_min == rand_max).
+        b.delay = std::max(1, t->rand_max > 0 ? t->rand_min : t->delay);
         bouncers_.push_back(b);
         return true;
     }
@@ -725,6 +726,8 @@ private:
         double x = 0, y = 0, z = 0, vx = 0, vy = 0, vz = 0;
         double elasticity = 0;
         std::string trailer, expire;
+        std::string spawns;      // W5-PRES R-123 Spawns= / SpawnCount=
+        int spawn_count = 0;
         int trailer_sep = 3;
         int delay = 1;
         long age = 0;
@@ -940,6 +943,11 @@ private:
             const double sp = std::sqrt(b.vx * b.vx + b.vy * b.vy + b.vz * b.vz) * b.elasticity;
             if (b.elasticity <= 0.0 || sp < 4.0) {   // Impact [RE-FALLBACK: threshold]
                 if (!b.expire.empty()) fx_->spawn(b.expire, b.x / 256.0, b.y / 256.0, 0, b.z * kFxLepPx);
+                if (!b.spawns.empty() && b.spawn_count > 0) {
+                    const std::uint32_t m = static_cast<std::uint32_t>(b.spawn_count + 1);
+                    const int n = static_cast<int>(rnd() % m + rnd() % m);
+                    for (int k = 0; k < n; ++k) fx_->spawn(b.spawns, b.x / 256.0, b.y / 256.0, 0, b.z * kFxLepPx);
+                }
                 b.done = true;
                 return;
             }

@@ -51,10 +51,31 @@ struct FxAnimType {
                                         (end - loop_start);
         return steps * dly;
     }
+    // W5-PRES R-123 [RE: AnimClass AI FUN_00423ae0, ctor FUN_00421ec0]:
+    // PingPong flips the step at End/0 (LoopEnd/Start with loops) BEFORE the
+    // end test, so it bounces forever; Reverse starts at LoopEnd-1 stepping
+    // back to 0, a loop restarts at LoopEnd.
+    bool pingpong = false, reverse = false;
     int frame_at(long t) const { return frame_at(t, delay); }
     int frame_at(long t, int dly) const {
         if (dly <= 0) return start;
         long step = t / dly;
+        if (pingpong) {
+            const int lo = loops < 2 ? 0 : start, hi = loops < 2 ? end : loop_end - start;
+            const long span = std::max(1, hi - lo);
+            const long ph = step % (2 * span);
+            return static_cast<int>(std::clamp<long>(ph <= span ? lo + ph : lo + 2 * span - ph, 0, end - 1));
+        }
+        if (reverse) {
+            // first pass LoopEnd-1 .. 0, every further pass LoopEnd .. 0 (loops-1 more)
+            const long first = loop_end;            // frames LoopEnd-1 .. 0
+            const long pass = loop_end + 1;          // LoopEnd .. 0
+            const long total = loops >= 255 ? -1 : first + static_cast<long>(std::max(0, loops - 1)) * pass;
+            if (total >= 0 && step >= total) return -1;
+            if (step < first) return static_cast<int>(std::clamp<long>(loop_end - 1 - step, 0, end - 1));
+            step = (step - first) % pass;
+            return static_cast<int>(std::clamp<long>(loop_end - step, 0, end - 1));
+        }
         const long first = loop_end - start;          // first pass to LoopEnd
         const long mid = loop_end - loop_start;       // each middle pass
         if (loops <= 1) return step < end - start ? static_cast<int>(start + step) : -1;
@@ -464,13 +485,15 @@ public:
         t.altpal = yes("AltPalette");
         t.report = aget(key, "StartSound");
         if (t.report.empty()) t.report = aget(key, "Report");
-        {   // RandomRate=a,b [RE: presentation.md §5]: each 900/x, min <= max.
+        {   // RandomRate=a,b [RE: presentation.md §5]: each 900/x; W5-PRES R-123
+            // [RE: reader FUN_00427c80] `if (max < min) min = max` -- a clamp,
+            // NOT a swap: every artmd entry (a < b) ends up a fixed 900/b.
             const std::string rr = aget(key, "RandomRate");
             const std::size_t c = rr.find(',');
             if (c != std::string::npos) {
                 const int a = std::atoi(rr.c_str()), b = std::atoi(rr.c_str() + c + 1);
                 int da = a > 0 ? (a > 900 ? 0 : 900 / a) : 0, db = b > 0 ? (b > 900 ? 0 : 900 / b) : 0;
-                if (da > db) std::swap(da, db);
+                if (db < da) da = db;
                 if (da > 0 || db > 0) { t.rand_min = std::max(1, da); t.rand_max = std::max(t.rand_min, db); }
             }
         }
@@ -480,6 +503,15 @@ public:
         };
         const int rate = num("Rate", 0);
         t.delay = rate > 0 ? (rate > 900 ? 0 : 900 / rate) : 1;
+        // W5-PRES R-123 Normalized=yes [RE: FUN_005faad0 at GameSpeed 4, the
+        // clone's 15 Hz]: delays 1..4 unchanged, d >= 5 -> d*8/5.
+        if (yes("Normalized")) {
+            if (t.delay >= 5) t.delay = t.delay * 8 / 5;
+            if (t.rand_min >= 5) t.rand_min = t.rand_min * 8 / 5;
+            if (t.rand_max >= 5) t.rand_max = t.rand_max * 8 / 5;
+        }
+        t.pingpong = yes("PingPong");
+        t.reverse = yes("Reverse");
         t.start = std::clamp(num("Start", 0), 0, t.frames - 1);
         t.end = std::clamp(num("End", t.frames), t.start + 1, t.frames);
         t.loop_start = std::clamp(num("LoopStart", t.start), t.start, t.end - 1);
