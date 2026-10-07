@@ -577,6 +577,47 @@ void World::an_paradrop(int house, SuperweaponType type, int cx, int cy) {
     }
 }
 
+// ---------------------------------------------------------- AI naval yard --
+
+bool World::ai_naval_spot_ok(int house, const HouseAiRec& rec, const BuildingTypeDef& t, int cx,
+                             int cy) const {
+    if (water_passable_.empty()) return false;
+    for (const Cellxy& c : foundation_cells(cx, cy, t.fw, t.fh)) {
+        if (c.x < 0 || c.y < 0 || c.x >= grid_w_ || c.y >= grid_h_) return false;
+        if (!water_passable_[static_cast<std::size_t>(c.y) * grid_w_ + c.x]) return false;
+        if (building_at_cell(c.x, c.y) >= 0 || !occ_.is_free(c.x, c.y)) return false;
+    }
+    const int adj = rec.cfg.catalog.naval_yard_adjacency;
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.house != house || b.state == Building::State::Dead) continue;
+        if (b.type < 0 || b.type >= static_cast<int>(rec.cfg.roster.size()) ||
+            !rec.cfg.roster[b.type].conyard)
+            continue;
+        if (std::max(std::abs(cx - b.cx), std::abs(cy - b.cy)) <= adj) return true;
+    }
+    return false;
+}
+
+Cellxy World::ai_naval_spot_scan(int house, const HouseAiRec& rec, const BuildingTypeDef& t) const {
+    int ax = -1, ay = -1;
+    for (const Building& b : buildings_)
+        if (b.alive && b.house == house && b.state != Building::State::Dead && b.type >= 0 &&
+            b.type < static_cast<int>(rec.cfg.roster.size()) && rec.cfg.roster[b.type].conyard) {
+            ax = b.cx;
+            ay = b.cy;
+            break;
+        }
+    if (ax < 0) return Cellxy{-1, -1};
+    const int adj = rec.cfg.catalog.naval_yard_adjacency;
+    for (int r = 1; r <= adj; ++r)   // nearest ring first, deterministic order
+        for (int y = ay - r; y <= ay + r; ++y)
+            for (int x = ax - r; x <= ax + r; ++x) {
+                if (std::max(std::abs(x - ax), std::abs(y - ay)) != r) continue;
+                if (ai_naval_spot_ok(house, rec, t, x, y)) return Cellxy{x, y};
+            }
+    return Cellxy{-1, -1};
+}
+
 // ------------------------------------------------------------------ driver --
 
 void World::step_air_naval(double dt) {

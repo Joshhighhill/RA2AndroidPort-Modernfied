@@ -920,6 +920,7 @@ template <class Ar> void fields(Ar& ar, AiCatalog& v) {
     io(ar, v.conyard); io(ar, v.power); io(ar, v.refinery); io(ar, v.barracks);
     io(ar, v.war_factory); io(ar, v.radar); io(ar, v.defenses); io(ar, v.wall);
     io(ar, v.tech); io(ar, v.superweapons);
+    io(ar, v.naval_yard); io(ar, v.naval_yard_adjacency);   // W2-AN-16 (save v9)
 }
 // --- AI-2 ---
 template <class Ar> void fields(Ar& ar, TeamInstance& v) {
@@ -1018,6 +1019,7 @@ template <class Ar> void fields(Ar& ar, AiTeamConfig& v) {
     io(ar, v.unit_roster);
     io(ar, v.inf_factory_types);
     io(ar, v.veh_factory_types);
+    io(ar, v.nav_factory_types);   // W2-AN-16 (save v9)
     io(ar, v.waypoints);
     io(ar, v.house_name);
     io(ar, v.building_type_roster);

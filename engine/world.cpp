@@ -2330,6 +2330,7 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
         // per-cell buildable/unoccupied grid still applies, probed over the
         // foundation expanded by the AIBaseSpacing(1) gap [RE-FALLBACK: gap
         // modeled as an expanded-foundation probe].
+        if (node.type == rec.cfg.catalog.naval_yard) return ai_naval_spot_ok(house, rec, t, cx, cy);
         const int s = rec.cfg.ai.base_spacing;
         return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
                                house, t.adjacent, passable_,
@@ -2352,6 +2353,7 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
                                ? rec.cfg.buildup_totals[node.type] : 0.0;
     const int idx = add_building(node.type, px, py, t.fw, t.fh, house, t.strength,
                                  t.armor_ix, buildup, /*instant=*/false);
+    if (node.type == rec.cfg.catalog.naval_yard) block_water_footprint(px, py, t.fw, t.fh);   // W2-AN-16
     node.building = idx;
     node.dead = false;
     rec.queues.placed(cat);
@@ -2555,13 +2557,21 @@ void World::step_ai_houses(double dt) {
             auto can_place = [&](int cx, int cy) {
                 // Same AI validity as ai_place_ready: Adjacent= BYPASSED +
                 // AIBaseSpacing(1) gap [RE-GATE APPLIED: ai-base.md §3].
+                if (d.type == cfg.catalog.naval_yard) return ai_naval_spot_ok(h, rec, t, cx, cy);
                 const int s = cfg.ai.base_spacing;
                 return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
                                        h, t.adjacent, passable_,
                                        grid_w_, grid_h_, occ_, buildings_,
                                        /*bypass_adjacency=*/true).ok;
             };
-            const Cellxy loc = find_build_location(view, is_def, can_place);
+            Cellxy loc = find_build_location(view, is_def, can_place);
+            if (loc.x < 0 && d.type == cfg.catalog.naval_yard) loc = ai_naval_spot_scan(h, rec, t);
+            if (loc.x < 0 && d.type == cfg.catalog.naval_yard) {
+                // W2-AN-16: no water within AINavalYardAdjacency -- drop the
+                // node (a gap) so the head-only walk is never wedged on it.
+                pn.type = -1;
+                continue;
+            }
             if (loc.x < 0) continue;  // boxed in: try again next clock
             pn.cx = loc.x; pn.cy = loc.y;
         }
@@ -2736,7 +2746,7 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house ||
-            u.is_harvester || u.is_aircraft)  // CB-2: AI never fields/recruits aircraft
+            u.is_harvester || u.an.t.fixed_wing || u.an.t.missile)  // W2-AN-16: jumpjets recruit
             continue;
         if (u.moving() || u.attack_order) continue;
         const int t = ai_unit_type_of(rec, u);
@@ -2754,8 +2764,8 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
 
 bool World::ai_quarry_exists(int house, const HouseAiRec& rec, int quarry) const {
     for (const Unit& u : units_)
-        if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.is_aircraft &&
-            is_enemy(house, u.house) && quarry_unit_match(quarry, u))  // CB-2: aircraft never a quarry
+        if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.an.t.fixed_wing && !u.an.t.missile &&
+            is_enemy(house, u.house) && quarry_unit_match(quarry, u))  // W2-AN-16: jumpjets count
             return true;
     for (const Building& b : buildings_)
         if (b.alive && b.state != Building::State::Dead && is_enemy(house, b.house) &&
@@ -3042,8 +3052,14 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     // ready slot was consumed.
     if (!rec.queues.ready(cat)) return false;
     const AiTeamConfig& tc = rec.cfg.team;
-    const std::vector<int>& ft =
-        cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
+    // W2-AN-16: a ship (naval or amphibious) leaves the house's Naval Yard.
+    const int pslot = rec.queues.producing(cat);
+    const bool naval_unit = cat == QueueCat::Vehicle && pslot >= 0 &&
+                            pslot < (int)tc.unit_roster.size() &&
+                            (tc.unit_roster[pslot].combat.is_naval ||
+                             tc.unit_roster[pslot].combat.movement_domain == MovementDomain::Amphibious);
+    const std::vector<int>& ft = naval_unit ? tc.nav_factory_types
+                                 : cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
     const int fi = primary_factory(buildings_, ft, house);
     if (fi < 0) return false;  // no factory: the lost-check cancels the queue
     const int uslot = rec.queues.producing(cat);

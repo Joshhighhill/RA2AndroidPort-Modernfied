@@ -557,6 +557,7 @@ struct AiTeamConfig {
     std::vector<UnitTypeDef> unit_roster; // producible/recruitable combat types
     std::vector<int> inf_factory_types;   // BUILDING roster indices (barracks)
     std::vector<int> veh_factory_types;   // BUILDING roster indices (war factory)
+    std::vector<int> nav_factory_types;   // W2-AN-16: BUILDING roster indices (naval yard)
     std::vector<Cellxy> waypoints;        // waypoint index -> cell (main.cpp table)
     std::string house_name;               // aimd House= token (e.g. "Russians")
     // [G-61] rulesmd [BuildingTypes] index -> building-roster index (-1 = not
@@ -1616,6 +1617,12 @@ private:
     void ai_try_fire_superweapon(int house, HouseAiRec& rec);   // [G-66]
     BaseView make_ai_base_view(int house, const HouseAiRec& rec) const;
     bool ai_place_ready(int house, HouseAiRec& rec, QueueCat cat);
+    // W2-AN-16: an AI Naval Yard spot -- every foundation cell water, free, no
+    // building, within AINavalYardAdjacency of the house's Construction Yard
+    // (world_an.cpp); and the full scan used when the base-ring scan finds none.
+    bool ai_naval_spot_ok(int house, const HouseAiRec& rec, const BuildingTypeDef& t, int cx,
+                          int cy) const;
+    Cellxy ai_naval_spot_scan(int house, const HouseAiRec& rec, const BuildingTypeDef& t) const;
 
     // --- AI-2 offensive-teams phase [RE: ai-team.md] ---
     void step_ai_teams(double dt);
