@@ -103,7 +103,12 @@ public:
         if (clock_ >= kAutoStart) start_ = true;
     }
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
-        SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+        // W2-AR-02: the 1.5 s pre-roll fills the first 15% of the bar; the
+        // real load (the deferred GameScene build) fills the rest.
+        draw_screen(static_cast<SDL_Renderer*>(plat.renderer()), tc,
+                    loading_ ? kPreroll : kPreroll * std::min(1.0, clock_ / kAutoStart));
+    }
+    void draw_screen(SDL_Renderer* ren, ra2engine::TextureCache& tc, double frac) const {
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
         SDL_RenderClear(ren);
         // Art letterboxed into the 1280x720 window (aspect kept).
@@ -136,7 +141,6 @@ public:
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 0xAF);
         SDL_RenderFillRect(ren, &bar);
-        const double frac = loading_ ? 1.0 : std::min(1.0, clock_ / kAutoStart);
         SDL_Rect fill{bar.x + 1, bar.y + 1, static_cast<int>((bar.w - 2) * frac), bar.h - 2};
         SDL_SetRenderDrawColor(ren, col.r, col.g, col.b, 255);
         SDL_RenderFillRect(ren, &fill);
@@ -153,7 +157,18 @@ public:
         // Draw one full-bar frame before the (multi-second) GameScene build.
         if (!loading_) { loading_ = true; return nullptr; }
         start_ = false;
-        return new GameScene(no_audio_, cfg_);
+        // W2-AR-02/-10: this screen stays up as the loading screen's backdrop
+        // (a copy, since the driver destroys this scene before the build).
+        auto keep = std::make_shared<CampaignLoadScene>(*this);
+        const bool na = no_audio_;
+        const ra2engine::SkirmishConfig cfg = cfg_;
+        return defer_scene("LOADING", [na, cfg]() -> Scene* {
+                               GameScene::set_canvas_width(game_logical_width());   // W2-AR-06
+                               return new GameScene(na, cfg);
+                           },
+                           [keep](SDL_Renderer* ren, ra2engine::TextureCache& tc, double frac) {
+                               keep->draw_screen(ren, tc, kPreroll + (1.0 - kPreroll) * frac);
+                           });
     }
     bool wants_quit() const override { return quit_; }
     // G0 --play: the chosen mission; `start` = anywhere (a click starts).
@@ -167,6 +182,7 @@ public:
 
 private:
     static constexpr double kAutoStart = 1.5;
+    static constexpr double kPreroll = 0.15;
     static std::string wrap_hud(const std::string& text, int max_w) {
         std::string out, line, word;
         auto flush_word = [&]() {

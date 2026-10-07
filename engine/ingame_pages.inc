@@ -168,8 +168,9 @@ public:
             } else {
                 const ra2engine::save::SlotEntry& s = slots_[static_cast<size_t>(row - (mode_ == Save ? 1 : 0))];
                 label = s.header.description.empty() ? s.file_name : s.header.description;
-                bad = s.wrong_version;
-                if (bad) when = "Wrong version";
+                bad = s.wrong_version || s.damaged;
+                if (s.damaged) when = "Damaged";   // W2-AR-21
+                else if (bad) when = "Wrong version";
                 else if (s.header.unix_time > 0) when = format_time(s.header.unix_time);
             }
             p.label(p.fit(label, r.w - 130), r.x + 3, r.y, r.w - 130, r.h, 0, !bad);
@@ -284,6 +285,7 @@ private:
         if (!action_enabled()) return None;
         const ra2engine::save::SlotEntry* s = selected_slot();
         if (mode_ == Load) {
+            if (s->damaged) { message_ = "This saved game is damaged."; return None; }   // W2-AR-21
             if (s->wrong_version) { message_ = "This saved game is from another version."; return None; }
             path_ = s->path;
             close();

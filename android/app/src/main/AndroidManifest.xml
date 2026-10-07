@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Replace com.test.game with the identifier of your game below, e.g.
-     com.gamemaker.game
--->
+<!-- RA2 engine (org.ra2.engine). versionCode/versionName come from
+     app/build.gradle (the repo's VERSION file), not from here (W2-AR-11). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    android:versionCode="1"
-    android:versionName="1.0"
     android:installLocation="auto">
 
     <!-- OpenGL ES 2.0 -->
@@ -31,69 +28,51 @@
         android:name="android.hardware.type.pc"
         android:required="false" />
 
-    <!-- Audio recording support -->
-    <!-- if you want to capture audio, uncomment this. -->
-    <!-- <uses-feature
-        android:name="android.hardware.microphone"
-        android:required="false" /> -->
+    <!-- No permissions: the game files come in through the Storage Access
+         Framework picker (SetupActivity) or MTP into the app's own external
+         files dir; saves and RA2.INI live in internal storage. -->
 
-    <!-- Allow downloading to the external storage on Android 5.1 and older -->
-    <!-- <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="22" /> -->
-
-    <!-- Allow access to Bluetooth devices -->
-    <!-- Currently this is just for Steam Controller support and requires setting SDL_HINT_JOYSTICK_HIDAPI_STEAM -->
-    <!-- <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" /> -->
-    <!-- <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /> -->
-
-    <!-- Allow access to the vibrator -->
-    <uses-permission android:name="android.permission.VIBRATE" />
-
-    <!-- if you want to capture audio, uncomment this. -->
-    <!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->
-
-    <!-- Create a Java class extending SDLActivity and place it in a
-         directory under app/src/main/java matching the package, e.g. app/src/main/java/com/gamemaker/game/MyGame.java
- 
-         then replace "SDLActivity" with the name of your class (e.g. "MyGame")
-         in the XML below.
-
-         An example Java class can be found in README-android.md
-    -->
+    <!-- W2-AR-12: backups keep RA2.INI + saves only (never the user's ~750 MB
+         of game files). -->
     <application android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:appCategory="game"
+        android:isGame="true"
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true" >
 
-        <!-- Example of setting SDL hints from AndroidManifest.xml:
-        <meta-data android:name="SDL_ENV.SDL_ACCELEROMETER_AS_JOYSTICK" android:value="0"/>
-         -->
-     
-        <activity android:name="org.ra2.engine.RA2Activity"
+        <!-- W2-AR-03/-04: launcher. Checks for the game files, offers the
+             in-app import, then starts the game. Own process so the engine's
+             exit() cannot kill it. -->
+        <activity android:name="org.ra2.engine.SetupActivity"
             android:label="@string/app_name"
-            android:alwaysRetainTaskState="true"
-            android:launchMode="singleInstance"
-            android:screenOrientation="landscape"
-            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
-            android:preferMinimalPostProcessing="true"
-            android:exported="true"
-            >
+            android:process=":setup"
+            android:screenOrientation="sensorLandscape"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- The game (SDL). W2-AR-12: sensorLandscape so the device can be
+             flipped 180 degrees. -->
+        <activity android:name="org.ra2.engine.RA2Activity"
+            android:label="@string/app_name"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="false"
+            >
             <!-- Let Android know that we can handle some USB devices and should receive this event -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
-            <!-- Drop file event -->
-            <!--
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            -->
         </activity>
     </application>
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- W2-AR-12: Auto Backup (Android 6-11). Keep RA2.INI + saved games (internal
+     files); never the ~750 MB of user-supplied game files in the external
+     files dir (they would blow the 25 MB quota and fail every backup). -->
+<full-backup-content>
+    <exclude domain="external" path="." />
+</full-backup-content>

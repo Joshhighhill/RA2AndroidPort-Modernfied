@@ -37,6 +37,28 @@ void TextureCache::pin(const std::string& key) {
     if (it != cache_.end()) it->second.pinned = true;
 }
 
+void TextureCache::clear() {
+    for (auto& kv : cache_) SDL_DestroyTexture(static_cast<SDL_Texture*>(kv.second.tex));
+    cache_.clear();
+    bytes_ = 0;
+    id_ = g_next_cache_id++;
+}
+
+std::size_t TextureCache::trim() {
+    const std::size_t before = bytes_;
+    for (auto it = cache_.begin(); it != cache_.end();) {
+        if (!it->second.pinned && it->second.used < frame_) {
+            SDL_DestroyTexture(static_cast<SDL_Texture*>(it->second.tex));
+            bytes_ -= it->second.bytes;
+            it = cache_.erase(it);
+            ++evicted_;
+        } else {
+            ++it;
+        }
+    }
+    return before - bytes_;
+}
+
 void TextureCache::next_frame() {
     ++frame_;
     if (bytes_ <= budget_) return;

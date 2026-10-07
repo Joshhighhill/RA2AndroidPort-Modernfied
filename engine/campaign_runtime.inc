@@ -1455,6 +1455,7 @@ private:
 // pre-spawned squads) with the water grid; the CampaignRuntime then configures
 // houses and places the map's own objects.
 ra2engine::World build_campaign_world(Assets& a, UnitAssets& ua) {
+    load_progress("CAMPAIGN WORLD");   // W2-AR-02 loading-screen checkpoint
     ra2engine::World world = build_world(a, ua, 0);
     const int gw = world.grid_w(), gh = world.grid_h();
     // Gap fix C (G-43): water grid + ground blocked on water/cliffs.

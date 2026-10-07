@@ -2,6 +2,9 @@
 <resources>
     <!-- Base application theme. -->
     <style name="AppTheme" parent="android:Theme.NoTitleBar.Fullscreen">
-        <!-- Customize your theme here. -->
+        <!-- W2-AR-16b: no green focus outline around the SDL surface after the IME closes. -->
+        <item name="android:defaultFocusHighlightEnabled">false</item>
+        <!-- W2-AR-06: draw under the display cutout in landscape (full panel). -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

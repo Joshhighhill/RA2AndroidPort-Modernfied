@@ -8,6 +8,25 @@
 # resolves correctly no matter which CMakeLists includes it.
 get_filename_component(RA2_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
+# W2-AR-23: one version for both builds -- VERSION (semver) + the git commit,
+# e.g. "0.9.0+g1a2b3c4" ("-dirty" with local edits). Shown in the window
+# title, the Android logcat banner and `ra2engine --version`; the APK's
+# versionName/versionCode come from the same VERSION file (app/build.gradle).
+if(NOT DEFINED RA2_VERSION)
+    file(READ "${RA2_ROOT}/VERSION" RA2_VERSION_BASE)
+    string(STRIP "${RA2_VERSION_BASE}" RA2_VERSION_BASE)
+    set(RA2_VERSION "${RA2_VERSION_BASE}")
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${RA2_ROOT}" describe --always --dirty --abbrev=7
+                        OUTPUT_VARIABLE RA2_GIT_DESC OUTPUT_STRIP_TRAILING_WHITESPACE
+                        RESULT_VARIABLE RA2_GIT_RC ERROR_QUIET)
+        if(RA2_GIT_RC EQUAL 0 AND RA2_GIT_DESC)
+            set(RA2_VERSION "${RA2_VERSION_BASE}+g${RA2_GIT_DESC}")
+        endif()
+    endif()
+endif()
+
 # ra2assets library (pure C++17, no SDL/OS deps).
 set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/_placeholder.cpp
@@ -46,6 +65,7 @@ set(RA2_LIB_SOURCES
 set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/main.cpp
     ${RA2_ROOT}/engine/platform.cpp
+    ${RA2_ROOT}/engine/platform_os.cpp
     ${RA2_ROOT}/engine/texture_cache.cpp
     ${RA2_ROOT}/engine/iso_project.cpp
     ${RA2_ROOT}/engine/iso_renderer.cpp

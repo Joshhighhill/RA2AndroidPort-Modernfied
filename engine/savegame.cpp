@@ -2,7 +2,9 @@
 #include "savegame.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -51,7 +53,25 @@ std::uint64_t fnv1a(const std::vector<std::uint8_t>& bytes, std::uint64_t h) {
     return h;
 }
 
+std::uint32_t crc32(const std::uint8_t* data, std::size_t n, std::uint32_t crc) {
+    static const std::array<std::uint32_t, 256> table = [] {
+        std::array<std::uint32_t, 256> t{};
+        for (std::uint32_t i = 0; i < 256; ++i) {
+            std::uint32_t c = i;
+            for (int k = 0; k < 8; ++k) c = (c & 1u) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            t[i] = c;
+        }
+        return t;
+    }();
+    crc = ~crc;
+    for (std::size_t i = 0; i < n; ++i) crc = table[(crc ^ data[i]) & 0xFFu] ^ (crc >> 8);
+    return ~crc;
+}
+
 // --- container -----------------------------------------------------------------
+// v10 layout: magic, version, header block, section count, sections, then a
+// 4-byte little-endian CRC-32 of every byte before it (W2-AR-20: a flipped
+// byte anywhere is refused instead of loading silently altered state).
 std::vector<std::uint8_t> encode_save(const SaveFile& f) {
     Writer w;
     w.bytes(kMagic, 8);
@@ -69,6 +89,8 @@ std::vector<std::uint8_t> encode_save(const SaveFile& f) {
         std::vector<std::uint8_t> body = kv.second;
         io(w, body);
     }
+    const std::uint32_t crc = crc32(w.buf.data(), w.buf.size());
+    for (int i = 0; i < 4; ++i) w.buf.push_back(static_cast<std::uint8_t>(crc >> (8 * i)));
     return std::move(w.buf);
 }
 
@@ -95,16 +117,32 @@ bool decode_save(const std::vector<std::uint8_t>& bytes, SaveFile& out, bool hea
         out.header.version = version;
     }
     if (version != kFormatVersion || header_only) return true;
-    std::uint64_t n = 0;
-    io(r, n);
-    for (std::uint64_t i = 0; i < n && r.ok(); ++i) {
-        std::uint32_t t = 0;
-        r.bytes(&t, 4);
-        std::vector<std::uint8_t> body;
-        io(r, body);
-        if (r.ok()) out.sections[t] = std::move(body);
+    // W2-AR-20: verify the CRC-32 trailer, then parse the body without it.
+    if (bytes.size() < 4 + 12) return false;
+    const std::size_t body_n = bytes.size() - 4;
+    std::uint32_t stored = 0;
+    for (int i = 0; i < 4; ++i) stored |= static_cast<std::uint32_t>(bytes[body_n + i]) << (8 * i);
+    if (crc32(bytes.data(), body_n) != stored) return false;
+    const std::vector<std::uint8_t> body_bytes(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(body_n));
+    Reader br(body_bytes);
+    {
+        char m[8];
+        std::uint32_t v = 0;
+        std::vector<std::uint8_t> skip;
+        br.bytes(m, 8);
+        br.bytes(&v, 4);
+        io(br, skip);
     }
-    return r.ok() && r.at_end();
+    std::uint64_t n = 0;
+    io(br, n);
+    for (std::uint64_t i = 0; i < n && br.ok(); ++i) {
+        std::uint32_t t = 0;
+        br.bytes(&t, 4);
+        std::vector<std::uint8_t> body;
+        io(br, body);
+        if (br.ok()) out.sections[t] = std::move(body);
+    }
+    return br.ok() && br.at_end();
 }
 
 bool write_file(const std::string& path, const std::vector<std::uint8_t>& bytes) {
@@ -157,14 +195,20 @@ std::vector<SlotEntry> list_saves(const std::string& dir) {
         const std::string name = de.path().filename().string();
         if (name.size() < 4 || upper(name.substr(name.size() - 4)) != ".SAV") continue;
         std::vector<std::uint8_t> bytes;
-        if (!read_file_bytes(de.path().string(), bytes)) continue;
-        SaveFile f;
-        if (!decode_save(bytes, f, /*header_only=*/true)) continue;
         SlotEntry e;
         e.path = de.path().string();
         e.file_name = name;
-        e.header = f.header;
-        e.wrong_version = (f.header.version != kFormatVersion);
+        SaveFile f;
+        if (!read_file_bytes(de.path().string(), bytes) || !decode_save(bytes, f, /*header_only=*/true)) {
+            e.damaged = true;   // W2-AR-21: listed as damaged, not hidden
+        } else {
+            e.header = f.header;
+            e.wrong_version = (f.header.version != kFormatVersion);
+            // Current-version files are fully checked (CRC + framing) so a
+            // corrupt one is flagged in the list, not discovered on load.
+            SaveFile full;
+            if (!e.wrong_version && !decode_save(bytes, full)) e.damaged = true;
+        }
         const auto t = std::filesystem::last_write_time(de.path(), ec);
         e.mtime = ec ? 0 : static_cast<std::int64_t>(t.time_since_epoch().count());
         out.push_back(std::move(e));

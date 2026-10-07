@@ -8,9 +8,26 @@
 
 namespace ra2engine {
 
-void AudioOutput::callback(void* self, uint8_t* stream, int len) {
-    AudioOutput* o = static_cast<AudioOutput*>(self);
-    Mixer* m = o->mixer_.load();
+// W2-AR-01: ONE SDL playback device for the life of the process. The original
+// opens a single DirectSound device; SDL's Android AAudio backend supports
+// exactly one playback device (a second SDL_OpenAudioDevice trips
+// SDL_aaudio.c:81 and overwrites the backend's single `audioDevice` global).
+// The menu's AudioSystem and every GameScene's AudioSystem each own an
+// AudioOutput, but those are now only HANDLES on this shared device: the first
+// open() opens it, the last close() closes it, and pump() hands the callback
+// whichever Mixer is current (the scene on screen). All state below is touched
+// on the main thread only, except `mixer`, which the callback reads.
+namespace {
+struct SharedDevice {
+    SDL_AudioDeviceID dev = 0;
+    int refs = 0;
+    std::atomic<Mixer*> mixer{nullptr};
+};
+SharedDevice g_audio;
+}  // namespace
+
+void AudioOutput::callback(void*, uint8_t* stream, int len) {
+    Mixer* m = g_audio.mixer.load();
     const std::size_t frames = static_cast<std::size_t>(len) / 4;   // S16 stereo
     if (!m) {
         std::memset(stream, 0, static_cast<std::size_t>(len));
@@ -21,51 +38,67 @@ void AudioOutput::callback(void* self, uint8_t* stream, int len) {
 
 bool AudioOutput::open() {
     if (dev_ != 0) return true;
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) return false;
-    inited_ = true;
+    if (g_audio.refs == 0) {
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) return false;
+        SDL_AudioSpec want;
+        SDL_zero(want);
+        want.freq = 22050;
+        want.format = AUDIO_S16SYS;
+        want.channels = 2;
+        want.samples = static_cast<Uint16>(kChunkFrames);
+        want.callback = &AudioOutput::callback;
+        want.userdata = nullptr;
 
-    SDL_AudioSpec want;
-    SDL_zero(want);
-    want.freq = 22050;
-    want.format = AUDIO_S16SYS;
-    want.channels = 2;
-    want.samples = static_cast<Uint16>(kChunkFrames);
-    want.callback = &AudioOutput::callback;
-    want.userdata = this;
-
-    SDL_AudioSpec have;
-    SDL_zero(have);
-    // allowed_changes=0: SDL converts to the hardware format itself, so the
-    // mixer's fixed 22050 Hz stereo S16 render never resamples at runtime.
-    dev_ = SDL_OpenAudioDevice(nullptr, 0, &want, &have, /*allowed_changes=*/0);
-    if (dev_ == 0) return false;
-
-    SDL_PauseAudioDevice(dev_, 0);  // run the callback (silence until attached)
+        SDL_AudioSpec have;
+        SDL_zero(have);
+        // allowed_changes=0: SDL converts to the hardware format itself, so the
+        // mixer's fixed 22050 Hz stereo S16 render never resamples at runtime.
+        g_audio.dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, /*allowed_changes=*/0);
+        if (g_audio.dev == 0) {
+            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+            return false;
+        }
+        SDL_PauseAudioDevice(g_audio.dev, 0);  // run the callback (silence until attached)
+    }
+    ++g_audio.refs;
+    dev_ = g_audio.dev;
     return true;
 }
 
 void AudioOutput::pump(Mixer& mixer) {
     if (dev_ == 0) return;
     mixer_.store(&mixer);
+    g_audio.mixer.store(&mixer);   // this handle's scene is the one on screen
 }
 
 void AudioOutput::detach() {
     if (dev_ == 0) return;
+    // Under the device lock: once this returns the callback is not inside (and
+    // will never again enter) this handle's mixer, so it may be destroyed.
     SDL_LockAudioDevice(dev_);
+    Mixer* mine = mixer_.load();
+    if (mine && g_audio.mixer.load() == mine) g_audio.mixer.store(nullptr);
     mixer_.store(nullptr);
     SDL_UnlockAudioDevice(dev_);
 }
 
 void AudioOutput::close() {
-    if (dev_ != 0) {
-        SDL_CloseAudioDevice(dev_);   // stops + joins the callback thread
-        dev_ = 0;
-    }
-    mixer_.store(nullptr);
-    if (inited_) {
+    if (dev_ == 0) return;
+    detach();
+    dev_ = 0;
+    if (--g_audio.refs == 0) {
+        SDL_CloseAudioDevice(g_audio.dev);   // stops + joins the callback thread
+        g_audio.dev = 0;
+        g_audio.mixer.store(nullptr);
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
-        inited_ = false;
     }
 }
+
+void AudioOutput::set_paused(bool paused) {
+    if (g_audio.dev != 0) SDL_PauseAudioDevice(g_audio.dev, paused ? 1 : 0);
+}
+
+int AudioOutput::open_device_count() { return g_audio.dev != 0 ? 1 : 0; }
+int AudioOutput::handle_count() { return g_audio.refs; }
 
 }  // namespace ra2engine

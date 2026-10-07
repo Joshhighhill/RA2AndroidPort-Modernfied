@@ -522,7 +522,7 @@ private:
                 std::cerr << "[lobby] start map=" << cfg.map_file << " slots=" << cfg.slots.size()
                           << " speed=" << cfg.game_speed << " units=" << cfg.unit_count
                           << " cash=" << cfg.starting_cash << "\n";
-                next_ = new GameScene(no_audio_, cfg);   // GameScene ctor runs launch_skirmish(cfg)
+                next_ = defer_game_scene(no_audio_, cfg);   // W2-AR-02/-10: built under the loading screen (ctor runs launch_skirmish)
                 return;
             }
             case A_CHOOSE: enter_customize(); return;
