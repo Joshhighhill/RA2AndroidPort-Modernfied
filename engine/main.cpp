@@ -11093,14 +11093,24 @@ DemoSuperweaponResult simulate_superweapon(Assets& a, UnitAssets& ua,
         r.witness.emplace_back(b);
     }
 
-    // 3) DETONATE: count the in-radius kills + confirm own spared / far untouched.
+    // 2b) W2-AN-05: the missile's flight -- 200 frames up + 200 frames down
+    //     (FUN_006cba10 case 0) before the blast lands.
+    const long fired_at = frame;
+    while (!world.sw_strikes().empty() && frame < fired_at + 600) step_one();
+    {
+        char b[96];
+        std::snprintf(b, sizeof b, "[sw] flight frames=%ld", frame - fired_at);
+        r.witness.emplace_back(b);
+    }
+    // 3) DETONATE: count the in-radius kills + the own unit (W2-AN-06: the blast
+    //    hits the firing house too) / far untouched.
     int killed = 0, damaged = 0;
     for (int idx : in_radius) {
         const ra2engine::Unit& u = world.units()[idx];
         if (u.hp <= 0 || !u.alive) ++killed;
         else if (u.hp < 100) ++damaged;
     }
-    const bool own_spared = world.units()[own_idx].hp == own_hp0;
+    const bool own_spared = world.units()[own_idx].hp == own_hp0;   // W2-AN-06: expected "no"
     const bool far_untouched = world.units()[far_idx].hp == far_hp0;
     h = superweapon_fold(h, world, 0, cx, cy);         // checkpoint 3: post-detonate
     {

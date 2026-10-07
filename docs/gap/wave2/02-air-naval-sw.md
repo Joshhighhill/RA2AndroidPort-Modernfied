@@ -169,3 +169,42 @@ missing or wrong; MINOR = fidelity. Effort: S < 1 day, M 1-3 days, L > 3 days.
 8. **Sub cloak.** Submerge/cloak loop `{4A582741}` (`FUN_00740780`): the CloakDelay timer reset on fire, sonar reveal radius (SensorsSight cells vs leptons), and whether surfaced subs are targetable by everything.
 9. **Dolphin and Squid art.** Classic RA2 ships `dlph`/`sqd` art; find which MIX and name the loader misses (voxel or SHP) on this install.
 10. **SW sidebar placement.** In classic RA2, are SW cameos inserted into a specific strip (tab) and in which order relative to the building cameos? This affects the UI only.
+
+## 5. Fix status (wave-2 fix, branch `w2fix-air`)
+
+Acceptance is real play: `scripts/play/naval.play`, `air.play`, `sw.play` (all PASS),
+the fixed `--probe-realplay` (0 fails) and `--ai-soak --map xbayopigs.map --cash 50000
+--diff brutal --minutes 30`. Save format v9.
+
+| ID | Status | Fix | Evidence |
+|---|---|---|---|
+| W2-AN-01 | FIXED | `with_aircraft=true`; ORCA/BEAG in the Aircraft queue (AMRADR/GAAIRC) | `air.play` L37-L44 `cameo(ORCA)=1`, built onto a pad |
+| W2-AN-02 | FIXED | FlyLocomotion CLSID -> `AnType::fixed_wing`; `World::an_step_fixed_wing` sortie (pad, takeoff to FlightLevel, attack pass, Ammo--, RTB, land, +1 ammo per `ReloadRate` 270 frames); AirportBound crash with no airfield | `air.play` L47-L58 (airborne, tank hit, ammo 0, docked, ammo 1) |
+| W2-AN-03 | FIXED | `TextureCache::get/get_rgba` return nullptr for 0-dim frames | auditor `w2-swbld.play` PASS (exit 0), `sw.play` renders NAMISL |
+| W2-AN-04 | FIXED | one SW record per type per house (`sw_houses_[h]` list), Iron Curtain (3x3, 750 frames, organic killed [RE-FALLBACK]), Chronosphere two-pick + chrono kill (Organic && !Teleporter, RE'd `TechnoType+0xD97/+0xCD4`), Lightning Storm (deferment 250, 180 frames of bolts) | `sw.play` (iron/chrono/storm sections) |
+| W2-AN-05 | FIXED | nuke = `SwStrike`: 200 frames up (GiantNukeUp, Acceleration 1, DetonationAltitude 20000) + 200 frames down (RE: `FUN_006cba10` spawns the down missile 20000 lept above the target at -100 lept/frame, `DAT_007eca88=-100.0`); FX/EVA from the World event feed (AI launches show too) | `sw.play` L80-L86 (launched, still in flight at +10, detonated later) |
+| W2-AN-06 | FIXED | blast hits every house and airborne units; `[NukePayload] RadLevel=500` RadSite | `sw.play` L86-L87 (`hp_lost(1)`, `rad_total>0`); unit tests updated |
+| W2-AN-07 | FIXED | jumpjets lift off on exit; Stop drops the cruise goal; Crashable / fixed-wing deaths fall and explode on impact [RE-FALLBACK impact damage = Strength/4] | `air.play` sections 3-4 |
+| W2-AN-08 | FIXED | non-BalloonHover Landable jumpjets land at the goal (nearest free cell); board/unload only when grounded (unload order lands first) | `air.play` section 5 |
+| W2-AN-09 | FIXED | `World::selection_can_enter` (per movement domain) for clicks and the cursor; per-domain group formation | `naval.play` section 1; `--probe-realplay` W2-AN-09 rows |
+| W2-AN-10 | FIXED | `MovementDomain::Amphibious` (land OR water), yard launch, beaching, unload only on land | `naval.play` section 3 |
+| W2-AN-11 | FIXED [RE-FALLBACK cost] | UnitRepair yard heals a stopped ship within 1 cell, `RepairStep` per `RepairRate`; not charged | `naval.play` section 4 |
+| W2-AN-12 | FIXED | Spawner weapons: Carrier Hornets, Destroyer ASW, Dreadnought/V3 missiles (regen/reload, volley, DMisl pause+tilt), `MinimumRange`, `CanPassiveAquire=no`; ASWLauncher `Range=-2` = infinite | `naval.play` sections 2 and 5 |
+| W2-AN-13 | FIXED [RE-FALLBACK shimmer] | submerged = Underwater+Cloakable unless it fired within CloakDelay (18 frames); Sensors/SensorsSight sonar mask; hidden subs untargetable, undrawn, ignored by defenses | `naval.play` section 2 |
+| W2-AN-14 | FIXED | `an_naval_slot`: the classic NavalTargeting 0..6 / LandTargeting table (rules.ini comment block) | unit + play coverage (sub never targets land; ASW secondary vs submerged) |
+| W2-AN-15 | FIXED | RE: artmd `[DLPH]`/`[SQD]` are `Voxel=no` SHP ships (WalkFrames/FiringFrames) -- loaded from conquer.mix; SQD's ParasitePlus grab not modelled | `naval.play` section 6 |
+| W2-AN-16 | FIXED | AI: `[AI] BuildNavalYard` + `AINavalYardAdjacency=20` water placement (node dropped when no water), ships + Kirov/Night Hawk/Rocketeer in the AI roster, ships launch at the yard, jumpjets recruit | soak: NAYARD built, 4 ships + 2 Kirovs |
+| W2-AN-17 | PARTIAL | American paratroopers (PDPLANE run, 8 E1 dropped within ParadropRadius); generic ParaDrop effect works but CAAIRP (Tech Airport) is not in the building roster | `sw.play` paradrop section |
+| W2-AN-18 | FIXED | lobby filter = classic SW with `DisableableFromShell=yes` | auditor `w2-swoff.play` PASS (`cameo(NARADR)=1`) |
+| W2-AN-19 | FIXED | classic SW whitelist (`rp_classic_sw_type`) | NARADR/tech centres grant nothing |
+| W2-AN-20 | FIXED | SW event feed: enemy grant -> *Detected/WeatherDeviceReady; Launched/Activated for every house; own Ready | `sw.play` events |
+| W2-AN-21 | FIXED | AI fires every charged type (nuke/storm/paradrop at the best enemy target; Iron Curtain on its densest vehicle 3x3; Chronosphere that cluster into the enemy base) [RE-FALLBACK pickers]; tech/SW/yard planned after the refineries | soak: NATECH/NAMISL/NAIRON, 3 launches |
+| W2-AN-22 | FIXED | `--probe-realplay` deploys the MCV, grows the old bases, checks a Destroyer sails | 0 fails |
+| W2-AN-23 | FIXED | per-type SidebarImage cameos, one slot each (2-wide grid in the radar area) | `sw.play` `sw_slots.png` |
+| W2-AN-24 | FIXED | cursor hit test raises airborne units | code (pres_game.inc) |
+| W2-AN-25 | FIXED | ShipSinkingWeight ships slide under instead of exploding | `naval.play` `sunk(1)>=1` |
+| W2-AN-26 | OPEN [RE-FALLBACK] | jumpjet/air speed keeps the ground GameSpeedBias (Q3 not traced) | -- |
+
+RE answers: Q1 (0-dim frames are skipped), Q2 (0xD97 = Organic, 0xCD4 = Teleporter, by a
+byte scan of the LoadFromINI stores), Q9 (Voxel=no SHP ships). Q3/Q4/Q5/Q6/Q7/Q8/Q10
+remain [RE-FALLBACK] as marked in the code.
