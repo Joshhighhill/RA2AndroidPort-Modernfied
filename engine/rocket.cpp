@@ -10,6 +10,8 @@ namespace ra2engine {
 
 namespace {
 
+int ftol_i(double v) { return static_cast<int>(std::trunc(v)); }
+
 std::string upper(std::string s) {
     for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     return s;
@@ -109,6 +111,132 @@ RocketParams resolve_rocket_params(const ra2assets::Rules& rules) {
     p.type_id[kRocketDMisl] = type("DMislType", "DMISL");
     p.type_id[kRocketCMisl] = type("CMislType", "CMISL");
     return p;
+}
+
+namespace {
+constexpr double kHalfPi = 1.57079632679489661923;   // 0x7E1820
+}  // namespace
+
+void rocket_launch(const RocketBlock& b, RocketFlight& f, double x, double y, double z, double tx,
+                   double ty) {
+    f = RocketFlight{};
+    f.phase = kRocketPause;
+    f.timer = std::max(0, b.pause_frames);
+    f.pitch = b.pitch_initial * kHalfPi;
+    f.speed = 0.0;
+    f.x = x;
+    f.y = y;
+    f.z = z;
+    const double dx = tx - x, dy = ty - y;
+    f.yaw = (dx == 0.0 && dy == 0.0) ? 0.0 : std::atan2(dy, dx);
+}
+
+void rocket_nose(const RocketBlock& b, const RocketFlight& f, double& x, double& y, double& z) {
+    const double c = std::cos(f.pitch);
+    x = f.x + b.body_length * c * std::cos(f.yaw);
+    y = f.y + b.body_length * c * std::sin(f.yaw);
+    z = f.z + b.body_length * std::sin(f.pitch);
+}
+
+namespace {
+// FUN_00661B30: the nose at or below the target's height, or the rocket's own
+// height below 1 [the bridge-layer case is not modelled: the clone's combat
+// plane is flat].
+bool nose_contact(const RocketBlock& b, const RocketFlight& f, double tz) {
+    double nx = 0, ny = 0, nz = 0;
+    rocket_nose(b, f, nx, ny, nz);
+    return ftol_i(nz) <= ftol_i(tz) || f.z < 1.0;
+}
+}  // namespace
+
+int rocket_step(const RocketBlock& b, int speed_cap, RocketFlight& f, double tx, double ty, double tz) {
+    ++f.frames;
+    int result = kRocketFlying;
+    const double cap = static_cast<double>(std::max(1, speed_cap));
+    auto accelerate = [&]() {
+        f.speed = std::min(cap, f.speed + b.acceleration);   // +0x18, capped at type+0x678
+    };
+    switch (f.phase) {
+        case kRocketPause:
+            f.speed = 0.0;
+            if (f.timer > 0) {
+                --f.timer;
+                if (f.timer > 0) break;
+            }
+            f.phase = kRocketTilt;
+            f.timer = std::max(0, b.tilt_frames);
+            if (f.timer > 0) break;
+            [[fallthrough]];
+        case kRocketTilt: {
+            f.speed = 0.0;
+            const double p0 = b.pitch_initial * kHalfPi, p1 = b.pitch_final * kHalfPi;
+            if (f.timer > 0) {
+                --f.timer;
+                const int total = std::max(1, b.tilt_frames);
+                const double t = static_cast<double>(total - f.timer) / total;
+                if (f.timer > 0) {
+                    f.pitch = p0 + (p1 - p0) * t;
+                    break;
+                }
+            }
+            // End of the tilt: PitchFinal, leave the launcher (launch anim).
+            f.pitch = p1;
+            f.phase = kRocketClimb;
+            result = kRocketLeftLauncher;
+            break;
+        }
+        case kRocketClimb:
+            accelerate();
+            if (static_cast<double>(b.altitude) <= f.z) {
+                f.phase = kRocketCruise;
+                f.horiz0 = ftol_i(std::hypot(tx - f.x, ty - f.y));
+            }
+            break;
+        case kRocketCruise: {
+            accelerate();
+            const double horiz = std::hypot(tx - f.x, ty - f.y);
+            if (!b.lazy_curve || f.horiz0 == 0) {
+                // LazyCurve=no: level off by TurnRate, then dive once the
+                // target is inside the 45-degree cone below [RE-FALLBACK: the
+                // decompile's distance term is ambiguous; the horizontal
+                // distance against the height above the target is the reading
+                // that dives instead of overflying].
+                if (f.pitch > 0.0) {
+                    f.pitch -= b.turn_rate;
+                    if (f.pitch < 0.0) f.pitch = 0.0;
+                }
+                if (ftol_i(horiz) <= ftol_i(f.z - tz)) f.phase = kRocketDive;
+            } else {
+                if (nose_contact(b, f, tz)) return kRocketDetonate;
+                // LazyCurve=yes: blend the line of sight and PitchFinal by the
+                // remaining horizontal fraction -- the big lazy arc.
+                const double t = horiz / static_cast<double>(f.horiz0);
+                const double los = horiz <= 0.0 ? -kHalfPi : std::atan((tz - f.z) / horiz);
+                f.pitch = los * (1.0 - t) + b.pitch_final * kHalfPi * t;
+            }
+            if (horiz > 0.0) f.yaw = std::atan2(ty - f.y, tx - f.x);   // re-aimed every frame
+            break;
+        }
+        case kRocketDive: {
+            if (nose_contact(b, f, tz)) return kRocketDetonate;
+            const double horiz = std::hypot(tx - f.x, ty - f.y);
+            const double want = horiz <= 0.0 ? -kHalfPi : std::atan((tz - f.z) / horiz);   // 0x7EFC10
+            const double d = want - f.pitch;
+            if (std::fabs(d) <= b.turn_rate) f.pitch += d;
+            else f.pitch += d > 0.0 ? b.turn_rate : -b.turn_rate;
+            break;
+        }
+        default:
+            break;
+    }
+    // Common tail: move speed along the pitch and the yaw.
+    if (f.speed > 0.0) {
+        const double c = std::cos(f.pitch);
+        f.x += f.speed * c * std::cos(f.yaw);
+        f.y += f.speed * c * std::sin(f.yaw);
+        f.z += f.speed * std::sin(f.pitch);
+    }
+    return result;
 }
 
 int rocket_kind_for(const RocketParams& p, const std::string& unit_id) {

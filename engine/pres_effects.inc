@@ -537,13 +537,17 @@ public:
                 // pass under the ships (agent B's shared anim drawing).
                 if (fx_->spawn(wake_, u.fx, u.fy, u.level, 0.0)) ++wakes_;
             }
-            // V3 rocket (RocketLocomotion): takeoff puffs, then the flight trail.
-            if (pres_upper(u.image) == v3_image() || pres_upper(u.image) == dmisl_image()) {
+            // V3 / Dreadnought rocket (RocketLocomotion, FUN_00661D00): the
+            // launch anim when the tilt ends and it leaves the launcher, then
+            // the trail every 3 frames while it flies.
+            if (u.an.t.missile || pres_upper(u.image) == v3_image() || pres_upper(u.image) == dmisl_image()) {
                 const double z = u.level * 104.0 + u.altitude;
-                if (u.altitude < 96.0) {
-                    if (frame_ % 24 == 0 && fx_->spawn("V3TAKOFF", u.fx, u.fy, 0, std::max(0.0, z - 10.0) * kFxLepPx)) ++v3_puffs_;
-                } else if (frame_ % 3 == 0) {
-                    if (fx_->spawn("V3TRAIL", u.fx, u.fy, 0, z * kFxLepPx)) ++v3_puffs_;
+                if (u.an.rocket.phase >= ra2engine::kRocketClimb) {
+                    if (rocket_launched_.insert(i).second) {
+                        if (fx_->spawn("V3TAKOFF", u.fx, u.fy, 0, std::max(0.0, z - 10.0) * kFxLepPx)) ++v3_puffs_;
+                    } else if (frame_ % 3 == 0) {
+                        if (fx_->spawn("V3TRAIL", u.fx, u.fy, 0, z * kFxLepPx)) ++v3_puffs_;
+                    }
                 }
             }
         }
@@ -574,6 +578,7 @@ public:
     std::string unit_weapon(const std::string& image, int slot) { return weapon_of(unit_id(image), slot); }
     // A rules key with the effects' RA2-first section lookup (AmbientSound, ...).
     std::string rules_key(const std::string& s, const std::string& k) const { return rget(s, k); }
+    std::set<std::size_t> rocket_launched_;   // W4: rockets that showed their launch anim
     long wakes_spawned() const { return wakes_; }
     long v3_puffs() const { return v3_puffs_; }
     void note_splash() { ++splashes_; }

@@ -128,6 +128,7 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(RocketWarhead);   // W4
     CHECK_ARITY(RocketBlock);
     CHECK_ARITY(RocketParams);
+    CHECK_ARITY(RocketFlight);
     CHECK_ARITY(SwStrike);
     CHECK_ARITY(SwEvent);
     CHECK_ARITY(SaveAccess::AnWorld);

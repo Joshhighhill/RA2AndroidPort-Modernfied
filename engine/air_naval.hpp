@@ -56,6 +56,8 @@ struct AnType {
     bool missile = false;             // MissileSpawn= (DMISL/V3ROCKET: a homing rocket)
     int missile_damage = 0;           // [General] DMislDamage / V3RocketDamage
     int rocket_kind = -1;             // W4: RocketKind block (FUN_00661D00 head), -1 = not a rocket
+    int rocket_speed = 0;             // W4: Speed= -> min(255, Speed*256/100) leptons/frame (type+0x678)
+    bool no_shadow = false;           // W4: NoShadow= (V3ROCKET / DMISL)
     // Spawner weapon (Spawner=yes): which slot (0 primary / 1 secondary, -1 none)
     // launches `spawns` instead of firing.
     int spawner_slot = -1;
@@ -111,6 +113,7 @@ struct AnUnit {
     // --- W4: RocketLocomotion (spawned V3/DMisl/CMisl) ---
     bool rocket_elite = false;        // locomotor +0x4D: the launcher was elite at launch
     int rocket_end = 0;               // 0 flying, 1 detonated (FUN_00662A70), 2 shot down (Strength 0)
+    RocketFlight rocket;              // W4: the RocketLocomotion state (FUN_00661D00)
 };
 
 // --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------

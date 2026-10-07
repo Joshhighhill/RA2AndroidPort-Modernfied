@@ -81,7 +81,10 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
             const ra2engine::RocketParams rp = ra2engine::resolve_rocket_params(rules);
             a.rocket_kind = ra2engine::rocket_kind_for(rp, unit_id);
             a.missile_damage = rp.block[static_cast<std::size_t>(a.rocket_kind)].damage;
+            // type+0x678 = min(255, clamp(Speed,0,100)*256/100) (voxel-render.md 5).
+            a.rocket_speed = std::min(255, std::max(0, std::min(100, r.speed)) * 256 / 100);
         }
+        a.no_shadow = rules.section_flag(unit_id, "NoShadow", false);
     }
 }
 

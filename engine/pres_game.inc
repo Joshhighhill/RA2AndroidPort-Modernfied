@@ -581,6 +581,59 @@ private:
         else if (t) snd_.play_at(t->report, fx, fy, "impact");
         pres_log(frame_, "fx impact " + wp->anim_list[ix]);
     }
+    // W4: a RocketLocomotion rocket's explosion -- its block's warhead
+    // AnimList (FUN_0048A400 pick: damage / 25, as impact()), at its height;
+    // a splash when it comes down low on water.
+    void rocket_fx(const ra2engine::World& w, const ra2engine::Unit& u) {
+        const ra2engine::RocketBlock& blk = w.sw_params().rockets.block[static_cast<std::size_t>(
+            std::clamp(u.an.t.rocket_kind < 0 ? 1 : u.an.t.rocket_kind, 0, 2))];
+        const ra2engine::RocketWarhead& wh = ra2engine::rocket_warhead(blk, u.an.rocket_elite);
+        const int damage = ra2engine::rocket_damage(blk, u.an.rocket_elite);
+        const double lift = u.altitude * kFxLepPx;
+        if (u.an.rocket_end == 2 || (u.alive && u.an.rocket_end == 0)) {
+            // Shot down (killed this tick; World marks rocket_end next step): the ordinary death -- a random Explosion= entry, in the air.
+            const auto* ex = fx_.explosions(u.image);
+            if (ex && !ex->empty()) {
+                const uint32_t h = (static_cast<uint32_t>(u.cell_x * 131 + u.cell_y) * 2654435761u) ^
+                                   (static_cast<uint32_t>(g_pres_tick) * 40503u);
+                if (const FxAnimType* t = fx_.spawn((*ex)[(h >> 7) % ex->size()], u.fx, u.fy, u.level, lift)) {
+                    snd_.play_at(t->report, u.fx, u.fy, "rocket shot down");
+                    ++explosions_;
+                }
+            }
+            return;
+        }
+        const std::vector<std::string>& splash = effects_.splash_list();
+        if (!splash.empty() && on_water(u.fx, u.fy) && lift < 30.0) {
+            const int ns = static_cast<int>(splash.size());
+            const std::string& sname = splash[static_cast<std::size_t>(std::min(damage, ns * 35 - 1) / 35)];
+            if (const FxAnimType* st = fx_.spawn(sname, u.fx, u.fy, u.level, 0.0)) {
+                snd_.play_at(st->report, u.fx, u.fy, "splash");
+                effects_.note_splash();
+                return;
+            }
+        }
+        std::vector<std::string> list;
+        {
+            const std::string raw = pres_clean(rules_ini_->get(pres_upper(wh.id), "AnimList"));
+            std::string cur;
+            for (char c : raw + ",") {
+                if (c == ',') {
+                    const std::string t = pres_clean(cur);
+                    if (!t.empty()) list.push_back(t);
+                    cur.clear();
+                } else {
+                    cur += c;
+                }
+            }
+        }
+        if (list.empty()) return;
+        const int ix = std::clamp(damage / 25, 0, static_cast<int>(list.size()) - 1);
+        if (const FxAnimType* t = fx_.spawn(list[static_cast<std::size_t>(ix)], u.fx, u.fy, u.level, lift)) {
+            snd_.play_at(t->report, u.fx, u.fy, "rocket explosion");
+            ++explosions_;
+        }
+    }
     // Muzzle Anim= at the firing point; an instant (no flying projectile)
     // weapon also lands its impact on the target now.
     void fire_fx(const ra2engine::World& w, const ra2engine::Unit& u) {
@@ -975,7 +1028,12 @@ private:
                 // carries its own Report= sound.
                 // W3-B [RE: presentation.md §5 FUN_007376c0]: a uniformly
                 // random Explosion= entry, spawned here on the death tick.
-                if (u.is_vehicle && !u.an.crashing && !u.an.sinking &&
+                if (u.an.t.missile) {
+                    // W4 [FUN_00662A70]: a rocket (detonated or shot down)
+                    // explodes with its warhead's anim where it is -- in the
+                    // air when it was hit in flight.
+                    if (w.object_visible_at(0, u.cell_x, u.cell_y)) rocket_fx(w, u);
+                } else if (u.is_vehicle && !u.an.crashing && !u.an.sinking &&
                     w.object_visible_at(0, u.cell_x, u.cell_y)) {
                     const auto* ex = fx_.explosions(u.image);
                     if (ex && !ex->empty()) {

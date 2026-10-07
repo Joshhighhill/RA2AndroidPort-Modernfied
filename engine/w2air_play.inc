@@ -165,7 +165,7 @@
             if (b.alive && b.iron_left > 0.0) p.add("iron_buildings(" + std::to_string(b.house) + ")", 1);
         // W4: RocketLocomotion rockets per house -- launched (ever spawned),
         // shot down (killed by damage before detonating) and detonated.
-        for (const char* f : {"rockets_launched", "rockets_shot", "rockets_hit", "bhp"})
+        for (const char* f : {"rockets_launched", "rockets_shot", "rockets_hit", "rockets_live", "bhp"})
             p.zero_families.insert(f);
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.an.t.missile) continue;
@@ -173,6 +173,12 @@
             p.add("rockets_launched(" + hs + ")", 1);
             if (u.an.rocket_end == 2) p.add("rockets_shot(" + hs + ")", 1);
             if (u.an.rocket_end == 1) p.add("rockets_hit(" + hs + ")", 1);
+            if (u.alive && u.die_time < 0.0) {   // live rockets: count, highest altitude / phase
+                p.add("rockets_live(" + hs + ")", 1);
+                const std::string ka = "rocket_alt(" + hs + ")", kp = "rocket_phase(" + hs + ")";
+                if (!p.n.count(ka) || p.n.at(ka) < u.altitude) p.set(ka, u.altitude);
+                if (!p.n.count(kp) || p.n.at(kp) < u.an.rocket.phase) p.set(kp, u.an.rocket.phase);
+            }
         }
         for (const ra2engine::Building& b : world_.buildings()) {   // W4: first live building's HP
             if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;

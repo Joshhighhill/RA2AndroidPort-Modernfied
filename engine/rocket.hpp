@@ -79,4 +79,50 @@ inline const RocketWarhead& rocket_warhead(const RocketBlock& b, bool elite) {
 }
 inline int rocket_damage(const RocketBlock& b, bool elite) { return elite ? b.elite_damage : b.damage; }
 
+// ---- the flight (FUN_00661D00 / FUN_00661B30) --------------------------------
+// One rocket's RocketLocomotion state. Positions are leptons in the clone's
+// plane (x = fx*256, y = fy*256); z is the height above the ground (the flat
+// combat plane, projectile.md 11.6). Pitch is radians, + = nose up (the
+// original keeps it as a float at locomotor +0x50, field x pi/2 = 0x7E1820).
+enum RocketPhase : int {
+    kRocketPause = 1,   // PauseFrames on the launcher (launch smoke every 24 frames)
+    kRocketTilt = 2,    // TiltFrames: pitch PitchInitial -> PitchFinal, then leave the launcher
+    kRocketClimb = 3,   // speed += Acceleration (cap: type Speed) until height >= Altitude
+    kRocketCruise = 4,  // LazyCurve arc, or level-off by TurnRate until the dive cone
+    kRocketDive = 5,    // pitch turns at the target by TurnRate per frame
+};
+struct RocketFlight {
+    int phase = kRocketPause;
+    int timer = 0;            // frames left in the pause / tilt
+    double pitch = 0.0;       // radians, + = nose up
+    double speed = 0.0;       // leptons per frame (locomotor +0x44, double)
+    int horiz0 = 0;           // horizontal distance at the end of the climb (+0x54)
+    double x = 0.0, y = 0.0, z = 0.0;   // leptons; z = height above the ground
+    double yaw = 0.0;         // radians in the lepton plane: heading (cos yaw, sin yaw)
+    int frames = 0;           // frames since launch (safety lifetime)
+    double tx = 0.0, ty = 0.0, tz = 0.0;   // last known target point (leptons, tz = height)
+};
+
+// Launch on the launcher at (x, y, z) aimed at (tx, ty): the pause timer, the
+// initial pitch, and the yaw toward the target [RE-FALLBACK: the spawn
+// manager's facing hand-over (FUN_006B7230) was not traced -- the rocket
+// leaves facing its target].
+void rocket_launch(const RocketBlock& b, RocketFlight& f, double x, double y, double z, double tx,
+                   double ty);
+
+// What one rocket_step frame did.
+enum RocketStepResult : int { kRocketFlying = 0, kRocketLeftLauncher = 1, kRocketDetonate = 2 };
+
+// One logic frame of FUN_00661D00 for a rocket of Speed cap `speed_cap`
+// (leptons/frame, the type's converted Speed= at +0x678) toward the target
+// point (tx, ty, tz) (tz = its height above the ground). Returns
+// kRocketDetonate when FUN_00661B30 fires (the nose reaches the target's
+// height, or the rocket's height drops below 1); the caller explodes it at
+// rocket_nose(). kRocketLeftLauncher on the frame the tilt ends.
+int rocket_step(const RocketBlock& b, int speed_cap, RocketFlight& f, double tx, double ty, double tz);
+
+// The nose point (BodyLength ahead along pitch and yaw): FUN_00661B30's test
+// point and FUN_00662A70's explosion point.
+void rocket_nose(const RocketBlock& b, const RocketFlight& f, double& x, double& y, double& z);
+
 }  // namespace ra2engine

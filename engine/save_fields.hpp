@@ -334,7 +334,7 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.spawned); io(ar, v.missile); io(ar, v.missile_damage); io(ar, v.spawner_slot);
     io(ar, v.spawns); io(ar, v.spawns_number); io(ar, v.spawn_regen_frames);
     io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
-    io(ar, v.rocket_kind);   // W4 (v15)
+    io(ar, v.rocket_kind); io(ar, v.rocket_speed); io(ar, v.no_shadow);   // W4 (v15)
 }
 template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left);
@@ -346,7 +346,7 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.spawn_pending); io(ar, v.spawn_fire_unit); io(ar, v.spawn_fire_building);
     io(ar, v.owner); io(ar, v.landing); io(ar, v.drop_left); io(ar, v.drop_type);
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
-    io(ar, v.rocket_elite); io(ar, v.rocket_end);   // W4 (v15)
+    io(ar, v.rocket_elite); io(ar, v.rocket_end); io(ar, v.rocket);   // W4 (v15)
 }
 template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
     io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
@@ -358,6 +358,11 @@ template <class Ar> void fields(Ar& ar, RocketBlock& v) {   // W4 (v15)
     io(ar, v.warhead); io(ar, v.elite_warhead);
 }
 template <class Ar> void fields(Ar& ar, RocketParams& v) { io(ar, v.block); io(ar, v.type_id); }   // W4 (v15)
+template <class Ar> void fields(Ar& ar, RocketFlight& v) {   // W4 (v15)
+    io(ar, v.phase); io(ar, v.timer); io(ar, v.pitch); io(ar, v.speed); io(ar, v.horiz0);
+    io(ar, v.x); io(ar, v.y); io(ar, v.z); io(ar, v.yaw); io(ar, v.frames);
+    io(ar, v.tx); io(ar, v.ty); io(ar, v.tz);
+}
 template <class Ar> void fields(Ar& ar, Cellxy& v) { io(ar, v.x); io(ar, v.y); }
 template <class Ar> void fields(Ar& ar, SeqEntry& v) { io(ar, v.first); io(ar, v.count); io(ar, v.fmult); }
 template <class Ar> void fields(Ar& ar, UnitAnimSeq& v) {

@@ -144,6 +144,7 @@ void World::step_building_combat(double dt) {
             if (!is_enemy(b.house, v.house) || v.disguised) return false;
             // W2-AN-13/14: base defenses are NavalTargeting=0 (UNDERWATER_NEVER).
             if (v.an.submerged) return false;
+            if (rocket_on_launcher(v)) return false;   // W4: not yet in the air
             if (!(v.seen_by_mask & (1u << b.house))) return false;
             const int s = slot_for(v);
             return s >= 0 && in_range(v, s);
