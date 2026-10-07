@@ -77,6 +77,13 @@ public:
     // insensitive); false if absent.
     bool new_theater(const std::string& image) const;
 
+    // W3-FIX-A: [image] Palette= (a palette base name, e.g. "lib"), or "".
+    // The value is trimmed and an inline ';' comment dropped.
+    std::string palette(const std::string& image) const;
+
+    // W3-FIX-A: [image] Theater=yes (the art takes the theater extension).
+    bool theater(const std::string& image) const;
+
 private:
     explicit Art(const Ini& ini) : ini_(&ini) {}
     const Ini* ini_;

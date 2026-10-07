@@ -320,17 +320,13 @@ public:
         types_[key] = std::move(t);
         return raw;
     }
+    // W3-FIX-A: NewTheater names over the global MIX search list (isogen
+    // holds the landmark anims, the theater mixes the building anims).
     std::shared_ptr<ra2assets::ShpFile> theater_shp(const std::string& image) {
         if (!ra2_) return nullptr;
-        const ra2assets::TheaterChain& ch = art_chain();
-        for (const auto& c : ra2assets::theater_candidates(image, ch.letter, ch.iso_mix, ch.art_mix, ".shp")) {
-            MixFile* m = nested(c.mix);
-            if (!m) continue;
-            if (const MixEntry* e = m->find(c.file)) {
-                try { return std::make_shared<ra2assets::ShpFile>(ShpFile::load(m->read(*e))); } catch (...) {}
-            }
-        }
-        return nullptr;
+        ra2assets::ShpFile shp;
+        if (!asset_building_shp(image, shp)) return nullptr;
+        return std::make_shared<ra2assets::ShpFile>(std::move(shp));
     }
     // Looping frame for building anims (they loop until the building changes).
     static int loop_frame(const FxAnimType& t, long tick) {
@@ -350,7 +346,10 @@ public:
         std::unique_ptr<FxAnimType> t;
         std::string image = aget(key, "Image");
         if (image.empty()) image = key;
-        if (auto shp = load_shp(image)) {
+        // W3-FIX-A: Theater=yes anims (debris, waterfalls) take the theater
+        // extension [RE: asset-search.md §1].
+        const bool th = pres_lower(aget(key, "Theater")).rfind("y", 0) == 0;
+        if (auto shp = th ? theater_ext_shp(image) : load_shp(image)) {
             t = std::make_unique<FxAnimType>();
             fill_type(*t, key, shp);
         }
@@ -475,17 +474,21 @@ private:
         }
         return out;
     }
+    // W3-FIX-A: "<image>.shp" over the global MIX search list -- RA2's
+    // conquer.mix before YR's conqmd.mix (the old conqmd-first walk let the YR
+    // copy override the RA2 anim) [RE: asset-search.md §1].
     std::shared_ptr<ra2assets::ShpFile> load_shp(const std::string& image) {
-        const std::string file = pres_lower(image) + ".shp";
-        for (MixFile* m : {conqmd_.get(), conquer_.get()}) {
-            if (!m) continue;
-            if (const MixEntry* e = m->find(file)) {
-                try {
-                    return std::make_shared<ra2assets::ShpFile>(ShpFile::load(m->read(*e)));
-                } catch (...) {}
-            }
-        }
+        std::vector<uint8_t> raw;
+        if (!asset_read(pres_lower(image) + ".shp", raw)) return nullptr;
+        try {
+            return std::make_shared<ra2assets::ShpFile>(ShpFile::load(raw));
+        } catch (...) {}
         return nullptr;
+    }
+    std::shared_ptr<ra2assets::ShpFile> theater_ext_shp(const std::string& image) {
+        ra2assets::ShpFile shp;
+        if (asset_art_shp(image, /*theater_ext=*/true, shp).empty()) return nullptr;
+        return std::make_shared<ra2assets::ShpFile>(std::move(shp));
     }
 
     MixFile* nested(const std::string& name) {
