@@ -1,0 +1,81 @@
+# Wave-5 tech buildings (R-056 + item 3): engineer-capturable map structures
+# are real neutral World buildings with their original effects once captured:
+#   CAAIRP Tech Airport  -> ParaDropSpecial (paradrop superweapon)
+#   CAPOWR Tech Power    -> Power=200
+#   CATHOSP Tech Hospital -> InfantryGainSelfHeal (owned infantry heal)
+#   CAMACH Machine Shop  -> UnitsGainSelfHeal (owned vehicles heal)
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# Neutral tech buildings beside the base (house 2 = the neutral house).
+cheat place CAAIRP 2 building 0:GACNST +8 -6
+cheat place CAPOWR 2 building 0:GACNST +12 0
+cheat place CATHOSP 2 building 0:GACNST -8 +6
+cheat place CAMACH 2 building 0:GACNST +8 +6
+wait 2
+# The map may already hold neutral tech buildings (now real World buildings).
+assert buildings(2,CAAIRP) >= 1 @R-056:C
+let a0 = buildings(2,CAAIRP)
+assert sw(0) == 0 @R-056:C
+let p0 = power_out
+# --- Tech Airport: capture -> the paradrop superweapon.
+cheat spawn ENGINEER 0 building 0:GACNST +5 -4
+wait 2
+click unit 0:ENGINEER
+if buildings(2,CAAIRP) == 1 then click building 2:CAAIRP
+if buildings(2,CAAIRP) == 2 then click building 2:CAAIRP:1
+if buildings(2,CAAIRP) == 3 then click building 2:CAAIRP:2
+until 400 buildings(0,CAAIRP) == 1 @R-056:C
+until 30 sw(0) >= 1 @R-056:C
+# --- Tech Power Plant: capture -> +200 power.
+cheat spawn ENGINEER 0 building 0:GACNST +9 +1
+wait 2
+click unit 0:ENGINEER
+if buildings(2,CAPOWR) == 1 then click building 2:CAPOWR
+if buildings(2,CAPOWR) == 2 then click building 2:CAPOWR:1
+if buildings(2,CAPOWR) == 3 then click building 2:CAPOWR:2
+until 400 buildings(0,CAPOWR) == 1 @W5-TECH:C
+wait 2
+assert power_out >= $p0+200 @W5-TECH:C
+shot tech_power
+# --- Hospital: a wounded GI heals once the hospital is ours.
+cheat spawn E1 0 building 0:GACNST -3 +8
+cheat spawn ENGINEER 0 building 0:GACNST -5 +5
+wait 2
+cheat damage_unit 0:E1 80
+wait 1
+let h0 = uhp(0,E1)
+wait 120
+assert uhp(0,E1) == $h0 @W5-TECH:C
+click unit 0:ENGINEER
+if buildings(2,CATHOSP) == 1 then click building 2:CATHOSP
+if buildings(2,CATHOSP) == 2 then click building 2:CATHOSP:1
+if buildings(2,CATHOSP) == 3 then click building 2:CATHOSP:2
+until 400 buildings(0,CATHOSP) == 1 @W5-TECH:C
+wait 150
+assert uhp(0,E1) > $h0 @W5-TECH:C
+# --- Machine Shop: a damaged tank heals once the shop is ours.
+cheat spawn MTNK 0 building 0:GACNST -1 +10
+cheat spawn ENGINEER 0 building 0:GACNST +12 +9
+wait 2
+cheat damage_unit 0:MTNK 100
+wait 1
+let v0 = uhp(0,MTNK)
+click unit 0:ENGINEER
+if buildings(2,CAMACH) == 1 then click building 2:CAMACH
+if buildings(2,CAMACH) == 2 then click building 2:CAMACH:1
+if buildings(2,CAMACH) == 3 then click building 2:CAMACH:2
+until 400 buildings(0,CAMACH) == 1 @W5-TECH:C
+wait 200
+assert uhp(0,MTNK) > $v0 @W5-TECH:C
+shot tech_buildings_captured
+end

@@ -644,14 +644,31 @@ template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
 template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
     io(ar, v.spy_purpose); io(ar, v.radar); io(ar, v.prism); io(ar, v.overpowerable);
     io(ar, v.gap_radius); io(ar, v.inf_self_heal); io(ar, v.unit_self_heal); io(ar, v.cloning);
-    io(ar, v.psychic_radius); io(ar, v.sensors_sight);
+    io(ar, v.psychic_radius); io(ar, v.sensors_sight); io(ar, v.delayed_fire_delay);
 }
 template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
     io(ar, v.requires_stolen); io(ar, v.base_tech_level);
 }
-template <class Ar> void fields(Ar& ar, BldW5& v) { io(ar, v.dummy); }
-template <class Ar> void fields(Ar& ar, UnitW5& v) { io(ar, v.dummy); }
-template <class Ar> void fields(Ar& ar, WorldW5& v) { io(ar, v.stolen_tech); }
+template <class Ar> void fields(Ar& ar, BldW5& v) {
+    io(ar, v.prism_stage); io(ar, v.delay); io(ar, v.supporting); io(ar, v.master);
+    io(ar, v.overpowerers); io(ar, v.overpowered); io(ar, v.gap_on);
+}
+template <class Ar> void fields(Ar& ar, UnitProfileW5& v) {
+    io(ar, v.assault); io(ar, v.assault_rof); io(ar, v.open_topped);
+}
+template <class Ar> void fields(Ar& ar, UnitW5& v) {
+    io(ar, v.bound); io(ar, v.p); io(ar, v.charging); io(ar, v.next_assault);
+}
+template <class Ar> void fields(Ar& ar, RulesW5& v) {
+    io(ar, v.prism_support_modifier); io(ar, v.prism_support_max); io(ar, v.prism_support_delay);
+    io(ar, v.prism_support_duration); io(ar, v.self_heal_inf_frames); io(ar, v.self_heal_inf_amount);
+    io(ar, v.self_heal_unit_frames); io(ar, v.self_heal_unit_amount);
+    io(ar, v.open_topped_range_bonus); io(ar, v.open_topped_damage_mult);
+}
+template <class Ar> void fields(Ar& ar, WorldW5& v) {
+    io(ar, v.stolen_tech); io(ar, v.armed); io(ar, v.rules); io(ar, v.profiles); io(ar, v.frame);
+    io(ar, v.gap_created); io(ar, v.passenger_shots); io(ar, v.prism_supports);
+}
 
 // --- unit / building types ---
 template <class Ar> void fields(Ar& ar, UnitCombat& v) {

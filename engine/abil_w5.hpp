@@ -8,6 +8,7 @@
 //
 // RE notes: docs/re/abilities-w5.md.
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,7 @@ struct BldTypeW5 {
     bool cloning = false;        // Cloning=yes (NACLON)
     int psychic_radius = 0;      // PsychicDetectionRadius= (NAPSIS)
     int sensors_sight = 0;       // SensorArray=yes -> SensorsSight=
+    int delayed_fire_delay = 0;  // art IsAnimDelayedFire=yes -> DelayedFireDelay= (GAPRIS 28)
 };
 
 // Per UNIT TYPE in a producible roster.
@@ -45,17 +47,58 @@ struct UnitTypeW5 {
 
 // Per building OBJECT.
 struct BldW5 {
-    int dummy = 0;
+    // Prism forwarding [RE: abilities-w5.md §2]: BuildingClass PrismStage
+    // (+0x704: 0 idle / 1 master / 2 slave), DelayBeforeFiring (+0x714),
+    // SupportingPrisms (+0x664); `master` = the building a slave beams at.
+    int prism_stage = 0;
+    int delay = 0;
+    int supporting = 0;
+    int master = -1;
+    // Tesla charging [§3]: Overpowerers (+0x66C, trooper unit indices) and
+    // IsOverpowered (+0x661).
+    std::vector<int> overpowerers;
+    bool overpowered = false;
+    // Gap Generator [§4]: GeneratingGap (TechnoClass +0x269).
+    bool gap_on = false;
+};
+
+// Per-unit-TYPE profile bound by image (wave-5 unit abilities).
+struct UnitProfileW5 {
+    bool assault = false;        // Secondary warhead ElectricAssault=yes (Tesla Trooper)
+    int assault_rof = 25;        // that weapon's ROF (AssaultBolt 25)
+    bool open_topped = false;    // OpenTopped=yes (Battle Fortress)
 };
 
 // Per unit OBJECT.
 struct UnitW5 {
-    int dummy = 0;
+    bool bound = false;
+    UnitProfileW5 p;
+    int charging = -1;           // building index this trooper is overpowering
+    std::int64_t next_assault = 0;
+};
+
+// Recovered globals.
+struct RulesW5 {
+    int prism_support_modifier = 150;   // [General] PrismSupportModifier (percent)
+    int prism_support_max = 8;
+    int prism_support_delay = 45;       // frames
+    int prism_support_duration = 15;
+    int self_heal_inf_frames = 50, self_heal_inf_amount = 20;
+    int self_heal_unit_frames = 75, self_heal_unit_amount = 5;
+    double open_topped_range_bonus = 2.0;
+    double open_topped_damage_mult = 1.2;
 };
 
 // World-wide state.
 struct WorldW5 {
     std::vector<std::uint8_t> stolen_tech;   // per house: kStolen* bits
+    bool armed = false;                      // wire_w5 ran (real play only)
+    RulesW5 rules;
+    std::map<std::string, UnitProfileW5> profiles;   // by image
+    std::uint64_t frame = 0;                 // the global Frame of this pass
+    bool gap_created = false;                // a gap switched on this frame
+    long long passenger_shots = 0;           // OpenTopped shots fired (probe witness)
+    long long prism_supports = 0;            // support beams fired (probe witness)
 };
 
 }  // namespace ra2engine

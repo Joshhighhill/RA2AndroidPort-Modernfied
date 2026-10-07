@@ -263,6 +263,8 @@ private:
             std::vector<int> swb(rp_sw_table_.size(), 0);
             for (std::size_t i = 0; i < swb.size(); ++i) swb[i] = static_cast<int>(rp_sw_table_[i].type);
             world_.set_sw_building_types(swb);
+            w5_arm_building_art(ba_, art_ini_);           // wave-5: art keys of the new types
+            world_.refresh_building_types(ba_.roster);
         }
         if (rp_on_ && !rp_sw_table_.empty()) rp_sync_superweapons(world_, rp_sw_table_, rp_nuke_);
     }

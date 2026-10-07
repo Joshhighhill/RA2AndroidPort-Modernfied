@@ -1175,6 +1175,56 @@ void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini)
     }
 }
 
+// Wave-5 (agent C) [RE: docs/re/abilities-w5.md]: the real-play-only wave-5
+// mechanics -- recovered globals, per-image unit profiles (Tesla Trooper
+// ElectricAssault, OpenTopped) and the art-side DelayedFireDelay of every
+// roster building. Called by GameScene only (never a gate), after the
+// roster may have grown (map tech buildings) too.
+void w5_arm_building_art(BuildingAssets& ba, const Ini& art_ini) {
+    for (ra2engine::BuildingTypeDef& d : ba.roster) {
+        const std::string img = d.image.empty() ? d.id : d.image;
+        const std::string v = art_ini.get(img, "IsAnimDelayedFire", "");
+        const bool on = !v.empty() && (v[0] == 'y' || v[0] == 'Y' || v[0] == 't' || v[0] == 'T' || v[0] == '1');
+        d.w5.delayed_fire_delay = on ? std::max(0, std::atoi(art_ini.get(img, "DelayedFireDelay", "0").c_str())) : 0;
+    }
+}
+void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, const Ini& ini,
+             const Ini& art_ini) {
+    ra2engine::RulesW5 r;
+    r.prism_support_modifier = (int)std::lround(rules.general_double("PrismSupportModifier", 150.0));
+    r.prism_support_max = (int)rules.general_double("PrismSupportMax", 8.0);
+    r.prism_support_delay = (int)rules.general_double("PrismSupportDelay", 45.0);
+    r.prism_support_duration = (int)rules.general_double("PrismSupportDuration", 15.0);
+    r.self_heal_inf_frames = (int)rules.general_double("SelfHealInfantryFrames", 50.0);
+    r.self_heal_inf_amount = (int)rules.general_double("SelfHealInfantryAmount", 20.0);
+    r.self_heal_unit_frames = (int)rules.general_double("SelfHealUnitFrames", 75.0);
+    r.self_heal_unit_amount = (int)rules.general_double("SelfHealUnitAmount", 5.0);
+    r.open_topped_range_bonus = rules.section_double("CombatDamage", "OpenToppedRangeBonus", 2.0);
+    r.open_topped_damage_mult = rules.section_double("CombatDamage", "OpenToppedDamageMultiplier", 1.2);
+    std::map<std::string, ra2engine::UnitProfileW5> prof;
+    for (const char* list : {"InfantryTypes", "VehicleTypes", "AircraftTypes"}) {
+        if (!ini.has(list)) continue;
+        for (const auto& kv : ini.section(list)) {
+            const std::string& id = kv.second;
+            if (id.empty() || !ini.has(id)) continue;
+            ra2engine::UnitProfileW5 p;
+            const std::string sec = ra2engine::type_weapon_id(rules, id, 1, false);
+            if (!sec.empty()) {
+                const std::string wh = rules.section_string(sec, "Warhead", "");
+                if (!wh.empty() && rules.section_flag(wh, "ElectricAssault", false)) {
+                    p.assault = true;
+                    p.assault_rof = (int)rules.section_double(sec, "ROF", 25.0);
+                }
+            }
+            p.open_topped = rules.section_flag(id, "OpenTopped", false);
+            if (p.assault || p.open_topped) prof[rules.image(id)] = p;
+        }
+    }
+    w5_arm_building_art(ba, art_ini);
+    world.refresh_building_types(ba.roster);
+    world.arm_w5(r, prof);
+}
+
 // Logs the fire/die entries (mirrors resolve_combat_unit's [unit] log line)
 // so a real-install run visibly confirms the real artmd.ini numbers got
 // pinned (ground truth: GI/CONS fireup=164,6,6 die1=134,15).
@@ -5515,6 +5565,7 @@ public:
         // Deliberately NOT in launch_skirmish -- the skirmish/maps gates call
         // that, and must keep the abilities firewall closed.
         wire_abilities(world_, rules_, rules_ini_);
+        wire_w5(world_, ba_, rules_, rules_ini_, art_ini_);   // wave-5 (agent C)
 
         // Survivor crews [RE: repair-sell.md §B3/§D1]: World is asset-free, so
         // each side's crew infantry is resolved HERE from [General]
@@ -6222,6 +6273,7 @@ private:
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
             wire_abilities(world_, rules_, rules_ini_);
+            wire_w5(world_, ba_, rules_, rules_ini_, art_ini_);   // wave-5 (agent C)
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
             init_map_dressing();   // G-87: the fresh world gets its map dressing again
             show_banner(camp::csf_text(dir_, "TXT_ERROR_LOADING_GAME"));

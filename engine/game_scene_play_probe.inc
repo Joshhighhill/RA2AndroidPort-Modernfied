@@ -395,6 +395,26 @@
         }
         p.set("garrisonable", garrisonable);
         p.set("garrison_shots", static_cast<double>(world_.garrison_shots()));
+        // Wave-5 (agent C) witnesses.
+        p.set("prism_supports", static_cast<double>(world_.w5_state().prism_supports));
+        p.set("passenger_shots", static_cast<double>(world_.w5_state().passenger_shots));
+        p.set("stolen_tech", static_cast<double>(world_.stolen_tech(0)));
+        p.set("gap_hidden", static_cast<double>(world_.w5_gap_hidden(0)));
+        {
+            int carried = 0;
+            for (const ra2engine::Unit& u : world_.units())
+                carried += u.alive && u.house == 0 && u.cargo_of >= 0 && u.cargo_of != ra2engine::kGarrisonCargo;
+            p.set("in_cargo", static_cast<double>(carried));
+        }
+        {
+            int ov = 0, opw = 0;
+            for (const ra2engine::Building& b : world_.buildings()) {
+                ov += b.alive && b.house == 0 && b.w5.overpowered;
+                opw += b.alive && b.house == 0 ? (int)b.w5.overpowerers.size() : 0;
+            }
+            p.set("overpowered", static_cast<double>(ov));
+            p.set("overpowerers", static_cast<double>(opw));
+        }
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.alive || u.die_time >= 0.0) continue;
             if (u.garrison_of >= 0) p.add("in_garrison(" + std::to_string(u.house) + ")", 1);
@@ -525,7 +545,11 @@
                 return "no unit " + a[1];
             }
             if (c == "place" && a.size() >= 7 && a[3] == "building") {
-                const int t = roster_index(ba_, a[1]);
+                int t = roster_index(ba_, a[1]);
+                if (t < 0 && depth_world_building(rules_, a[1])) {   // wave-5: tech/civilian types
+                    t = depth_register_building(ba_, ra2_, rules_, art_, a[1]);
+                    world_.refresh_building_types(ba_.roster);
+                }
                 if (t < 0) return "no building type " + a[1];
                 const int bi = play_find_building(a[4]);
                 if (bi < 0) return "no building " + a[4];

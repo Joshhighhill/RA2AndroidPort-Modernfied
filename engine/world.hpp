@@ -1754,6 +1754,15 @@ public:
     void apply_stolen_tech_gate(std::vector<UnitTypeDef>& defs, int house) const;
     // The per-frame wave-5 pass (called from step()).
     void step_w5(double dt);
+    // Arm the real-play wave-5 mechanics (recovered globals + per-image unit
+    // profiles). Never called by a gate.
+    void arm_w5(const RulesW5& rules, const std::map<std::string, UnitProfileW5>& profiles);
+    bool w5_armed() const { return w5_.armed; }
+    const WorldW5& w5_state() const { return w5_; }
+    // IsPowerOnline with the Tesla overpower exception.
+    bool w5_power_online(int b_idx) const;
+    // Cells an enemy gap currently keeps black for house h (probe witness).
+    int w5_gap_hidden(int h) const;
 
 private:
     // --- P5 Veterancy + Crates [RE: veterancy.md] (all inert until enabled) ---
@@ -2136,6 +2145,9 @@ private:
 
     // --- Wave-5 abilities (world_w5.cpp) ---
     WorldW5 w5_;
+    std::vector<std::uint8_t> w5_hide_, w5_own_;   // gap scratch (per frame, not saved)
+    void w5_gap_pass(int phase);
+    bool w5_prism_fire(int bi, int target_unit, int slot);   // building_combat.cpp
     // --- G16 world depth (world_depth.cpp) ---
     DepthRules depth_rules_;
     bool garrison_any_ = false;                    // an occupy order was ever given

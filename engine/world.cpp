@@ -2387,6 +2387,8 @@ void World::step_visibility() {
             for (int fx = 0; fx < b.fw; ++fx)
                 reveal_source(b.house, b.cx + fx, b.cy + fy, b.sight);
     }
+    // Wave-5 (R-044): enemy Gap Generators shroud their radius (world_w5.cpp).
+    w5_gap_pass(0);
     // 4) Stamp each unit's seen_by_mask: bit h set iff h can see an object in its
     //    cell (object_visible_at: explored with FogOfWar off, visible with it on).
     for (Unit& u : units_) {
@@ -2401,6 +2403,7 @@ void World::step_visibility() {
     // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
     for (int h = 0; h < house_count(); ++h)
         if (map_reveal_[h]) reveal_all_house(h);
+    w5_gap_pass(1);   // wave-5: a SpySat does not lift an enemy gap
     // AllyReveal [RE: multihouse.md §3, D4]: OR-merge allied houses' explored_/
     // visible_ (shroud sharing) AFTER per-house sight + seen_by_mask are computed,
     // so targeting still uses each house's OWN sight (seen_by_mask), while

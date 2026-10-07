@@ -131,6 +131,8 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(BldW5);
     CHECK_ARITY(UnitW5);
     CHECK_ARITY(WorldW5);
+    CHECK_ARITY(UnitProfileW5);
+    CHECK_ARITY(RulesW5);
     CHECK_ARITY(RocketBlock);
     CHECK_ARITY(RocketParams);
     CHECK_ARITY(RocketFlight);
