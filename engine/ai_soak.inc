@@ -67,7 +67,7 @@ struct AiSoakProbe {
                 }
             return std::make_pair(hp, mx);
         };
-        const auto hp0 = base_hp(human);
+        auto hp0 = base_hp(human);   // W2-SK-27: re-based while the base grows (MCV deploy)
         long long ai_units_built = 0, first_dmg = -1, repair_frames = 0, sell_frames = 0;
         int max_alive = 0, sw_shots = 0;
         bool sw_was_ready = false;
@@ -104,7 +104,12 @@ struct AiSoakProbe {
             for (std::size_t u = prev_units; u < w.units().size(); ++u)
                 if (w.units()[u].house == ai) ++ai_units_built;
             prev_units = w.units().size();
-            if (first_dmg < 0 && base_hp(human).first < hp0.first) first_dmg = f;
+            {   // W2-SK-27: the baseline is the HP of the standing base (the MCV
+                // unfolds after frame 0); a drop below it is the first damage.
+                const auto now = base_hp(human);
+                if (first_dmg < 0 && now.second == hp0.second && now.first < hp0.first) first_dmg = f;
+                if (now.second != hp0.second || now.first > hp0.first) hp0 = now;   // re-base on growth
+            }
             int alive = 0;
             for (const ra2engine::Unit& u : w.units())
                 if (u.alive && u.house == ai) ++alive;
