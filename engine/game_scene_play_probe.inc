@@ -8,6 +8,7 @@
     // only a script can call them). Keys are documented in
     // scripts/play/README.md; a field that a later phase renames or removes
     // makes scripts report missing-probe:<key> instead of crashing.
+    mutable int w5_peak_sorties_ = 0;   // wave-5: peak AI fixed-wing sorties seen
     void play_probe(ra2play::Probe& p) override {
         p.scene = "game";
         p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
@@ -403,6 +404,15 @@
             for (const ra2engine::Building& b : world_.buildings()) bombs += b.alive && b.house == 0 && b.bomb_frame >= 0;
             p.set("bombs", static_cast<double>(bombs));
         }
+        {
+            int air = 0;
+            for (const ra2engine::Unit& u : world_.units())
+                air += u.alive && u.house == 1 && u.an.t.fixed_wing && !u.an.t.spawned && u.an.sortie != 0;
+            if (air > w5_peak_sorties_) w5_peak_sorties_ = air;
+            p.set("ai_air_sorties", static_cast<double>(w5_peak_sorties_));
+        }
+        p.set("ai_garrisons", static_cast<double>(world_.w5_state().ai_garrisons));
+        p.set("ai_tech_captures", static_cast<double>(world_.w5_state().ai_tech_captures));
         p.set("ifv_repairs", static_cast<double>(world_.w5_state().repairs));
         p.set("defusals", static_cast<double>(world_.w5_state().defusals));
         p.set("passenger_shots", static_cast<double>(world_.w5_state().passenger_shots));

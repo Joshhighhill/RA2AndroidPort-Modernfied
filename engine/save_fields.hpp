@@ -670,6 +670,7 @@ template <class Ar> void fields(Ar& ar, RulesW5& v) {
 template <class Ar> void fields(Ar& ar, WorldW5& v) {
     io(ar, v.stolen_tech); io(ar, v.armed); io(ar, v.rules); io(ar, v.profiles); io(ar, v.frame);
     io(ar, v.gap_created); io(ar, v.passenger_shots); io(ar, v.prism_supports); io(ar, v.defusals); io(ar, v.repairs);
+    io(ar, v.ai_garrisons); io(ar, v.ai_tech_captures);
 }
 
 // --- unit / building types ---

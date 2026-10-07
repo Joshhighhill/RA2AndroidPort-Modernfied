@@ -111,6 +111,8 @@ struct WorldW5 {
     long long prism_supports = 0;            // support beams fired (probe witness)
     long long defusals = 0;                  // Ivan bombs disarmed by engineers
     long long repairs = 0;                   // IFV RepairBullet heals
+    long long ai_garrisons = 0;              // AI garrison orders (R-081)
+    long long ai_tech_captures = 0;          // AI engineer tech-capture orders
 };
 
 }  // namespace ra2engine

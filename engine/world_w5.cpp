@@ -64,6 +64,7 @@ void World::step_w5(double dt) {
     }
     if (!w5_.armed) return;
     const std::uint64_t F = w5_.frame;
+    if (F % 450 == 0) w5_ai_pass();   // every 30 s
     const int nu = (int)units_.size();
     const int nb = (int)buildings_.size();
     const std::vector<BuildingTypeDef>& types = btypes();
@@ -403,6 +404,75 @@ void World::w5_step_repair_ifv(double dt) {
             const std::vector<Cellxy> g = nearest_free_cells({v.cell_x, v.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
             if (!g.empty()) order_unit_move(i, g[0].x, g[0].y);
         }
+    }
+}
+
+// AI use of the wave-5 world (R-081 garrisons, tech-building capture)
+// [RE-FALLBACK: the original skirmish AI's garrison / tech-capture choice was
+// not traced (the stock aimd scripts never name a civilian building); here an
+// AI house, every 30 s, (a) sends idle Occupier infantry that no team owns
+// into the nearest empty neutral garrison within 20 cells of its base centre
+// and (b) sends an idle, team-less engineer to the nearest neutral
+// Capturable tech building within 30 cells.]
+void World::w5_ai_pass() {
+    const std::vector<BuildingTypeDef>& types = btypes();
+    for (int h = 0; h < (int)ai_houses_.size(); ++h) {
+        const HouseAiRec& rec = ai_houses_[(std::size_t)h];
+        if (!rec.is_ai || !rec.cfg.team.enabled) continue;
+        const BaseView view = make_ai_base_view(h, rec);
+        if (view.own.empty()) continue;
+        const std::vector<IdleUnitView> idle = ai_idle_units(h, rec);
+        auto dist_base = [&](const Building& b) {
+            return std::hypot(b.cx + b.fw / 2.0 - view.center_x, b.cy + b.fh / 2.0 - view.center_y);
+        };
+        // (a) garrison
+        int gb = -1;
+        double gbd = 0.0;
+        for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+            const Building& b = buildings_[(std::size_t)bi];
+            if (!live_bld(b) || house_combatant(b.house) || !b.occupants.empty()) continue;
+            if (b.type < 0 || b.type >= (int)types.size() || !types[(std::size_t)b.type].can_be_occupied) continue;
+            const double d = dist_base(b);
+            if (d > 20.0 || (gb >= 0 && d >= gbd)) continue;
+            gb = bi;
+            gbd = d;
+        }
+        if (gb >= 0) {
+            int sent = 0;
+            const int cap = types[(std::size_t)buildings_[(std::size_t)gb].type].max_occupants;
+            for (const IdleUnitView& iv : idle) {
+                if (sent >= cap) break;
+                const Unit& u = units_[(std::size_t)iv.unit];
+                if (!u.occupier || u.occupy_target >= 0) continue;
+                if (!can_occupy(iv.unit, gb)) continue;
+                order_occupy(iv.unit, gb);
+                ++sent;
+            }
+            if (sent > 0) ++w5_.ai_garrisons;
+        }
+        // (b) tech-building capture
+        int tb = -1;
+        double tbd = 0.0;
+        for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+            const Building& b = buildings_[(std::size_t)bi];
+            if (!live_bld(b) || house_combatant(b.house) || !building_capturable(bi)) continue;
+            if (b.type < 0 || b.type >= (int)types.size() || types[(std::size_t)b.type].bridge_repair_hut) continue;
+            bool claimed = false;
+            for (const Unit& u : units_) claimed |= u.alive && u.capture_target == bi;
+            if (claimed) continue;
+            const double d = dist_base(b);
+            if (d > 30.0 || (tb >= 0 && d >= tbd)) continue;
+            tb = bi;
+            tbd = d;
+        }
+        if (tb >= 0)
+            for (const IdleUnitView& iv : idle) {
+                const Unit& u = units_[(std::size_t)iv.unit];
+                if (u.image != "ENGINEER" || u.capture_target >= 0) continue;
+                order_engineer_capture(iv.unit, tb);
+                ++w5_.ai_tech_captures;
+                break;
+            }
     }
 }
 

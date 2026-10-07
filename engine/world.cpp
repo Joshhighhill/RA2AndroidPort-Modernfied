@@ -3104,8 +3104,11 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house ||
-            u.is_harvester || u.an.t.fixed_wing || u.an.t.missile)  // W2-AN-16: jumpjets recruit
+            u.is_harvester || u.an.t.missile)  // W2-AN-16: jumpjets recruit
             continue;
+        // Wave-5 (R-080): a docked, armed fixed-wing aircraft is recruitable;
+        // spawned ones (Hornets) and planes on a sortie are not.
+        if (u.an.t.fixed_wing && (u.an.t.spawned || u.an.sortie != 0 || u.an.ammo <= 0)) continue;
         if (u.moving() || u.attack_order) continue;
         const int t = ai_unit_type_of(rec, u);
         if (t < 0) continue;
@@ -3560,7 +3563,16 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
                             pslot < (int)tc.unit_roster.size() &&
                             (tc.unit_roster[pslot].combat.is_naval ||
                              tc.unit_roster[pslot].combat.movement_domain == MovementDomain::Amphibious);
-    const std::vector<int>& ft = naval_unit ? tc.nav_factory_types
+    // Wave-5 (R-080): a fixed-wing aircraft is built onto an own airfield pad
+    // (any Helipad=yes AircraftType factory the World knows of).
+    const bool air_unit = cat == QueueCat::Vehicle && pslot >= 0 && pslot < (int)tc.unit_roster.size() &&
+                          tc.unit_roster[pslot].combat.an.fixed_wing;
+    std::vector<int> air_ft;
+    if (air_unit)
+        for (int bt = 0; bt < (int)an_.airfield_btype.size(); ++bt)
+            if (an_.airfield_btype[(std::size_t)bt]) air_ft.push_back(bt);
+    const std::vector<int>& ft = air_unit ? air_ft
+                                 : naval_unit ? tc.nav_factory_types
                                  : cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
     const int fi = primary_factory(buildings_, ft, house);
     if (fi < 0) return false;  // no factory: the lost-check cancels the queue
