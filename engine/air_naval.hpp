@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+#include "rocket.hpp"   // W4: RocketLocomotion blocks + per-type warheads
+
 namespace ra2engine {
 
 // [rules.ini comment block above [E1], classic RA2]
@@ -53,6 +55,7 @@ struct AnType {
     bool spawned = false;             // Spawned= (no player control)
     bool missile = false;             // MissileSpawn= (DMISL/V3ROCKET: a homing rocket)
     int missile_damage = 0;           // [General] DMislDamage / V3RocketDamage
+    int rocket_kind = -1;             // W4: RocketKind block (FUN_00661D00 head), -1 = not a rocket
     // Spawner weapon (Spawner=yes): which slot (0 primary / 1 secondary, -1 none)
     // launches `spawns` instead of firing.
     int spawner_slot = -1;
@@ -105,6 +108,8 @@ struct AnUnit {
     std::string drop_type;            // paradrop infantry rules id
     int drop_x = -1, drop_y = -1;     // drop site
     int exit_x = -1, exit_y = -1;     // map-edge exit after the drop
+    // --- W4: RocketLocomotion (spawned V3/DMisl/CMisl) ---
+    bool rocket_elite = false;        // locomotor +0x4D: the launcher was elite at launch
 };
 
 // --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------
@@ -150,10 +155,10 @@ struct SwParams {
     double ship_sinking_weight = 3.0; // ShipSinkingWeight=
     int reload_frames = 270;          // ReloadRate=.3 min x 900, per ammo point
     int flight_level = 1500;          // FlightLevel= (leptons)
-    // V3 / Dreadnought missile warhead [V3Warhead=V3WH].
-    double missile_spread = 1.0;
-    double missile_pmax = 0.5;
-    std::array<int, 11> missile_verses{};
+    // W4: the three RocketLocomotion blocks (V3 / DMisl / CMisl) with their
+    // OWN warheads [FUN_00662A70: Rules+0xFB0..0xFC4] -- replaces the old
+    // single V3Warhead every rocket exploded with.
+    RocketParams rockets;
     // Naval Yard UnitRepair [RE-FALLBACK: the service-depot cadence --
     // [General] RepairStep=7 hp per RepairRate=.016 min (~14 frames), cost
     // RepairPercent=.15 of the unit cost pro rata].

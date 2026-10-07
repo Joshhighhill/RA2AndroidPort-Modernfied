@@ -232,6 +232,8 @@ void World::an_step_spawners(double dt) {
             s.flight_state = FlightState::TakingOff;
             s.altitude = 1.0;
             s.body_facing = own.body_facing;
+            // W4: locomotor +0x4D -- the launcher's elite rank picks the elite warhead.
+            s.an.rocket_elite = missile && is_elite(own.vet.veterancy);
             // DMislPauseFrames + DMislTiltFrames (V3: 0 + 60) on the launcher.
             s.an.pass_cool = missile ? (own.an.t.spawns == "DMISL" ? 80.0 : 60.0) / 15.0 : 0.0;
             --own.an.spawn_ready;
@@ -288,12 +290,13 @@ void World::an_step_fixed_wing(double dt) {
             u.cell_y = static_cast<int>(std::lround(u.fy));
             u.flight_state = FlightState::Cruising;
             if (arrived) {
-                std::array<int, 11> verses = P.missile_verses;
-                bool any = false;
-                for (int v : verses) any |= v != 0;
-                if (!any) verses.fill(100);
-                an_area_damage(u.house, tx, ty, u.an.t.missile_damage, P.missile_spread, P.missile_pmax,
-                               verses, /*hit_air=*/false, /*spare_house=*/false);
+                // W4 [FUN_00662A70]: the rocket's OWN block and warhead (elite
+                // when its launcher was elite) -- not the V3 warhead for all.
+                const int rk = std::clamp(u.an.t.rocket_kind < 0 ? 1 : u.an.t.rocket_kind, 0, 2);
+                const RocketBlock& blk = P.rockets.block[static_cast<std::size_t>(rk)];
+                const RocketWarhead& wh = rocket_warhead(blk, u.an.rocket_elite);
+                an_area_damage(u.house, tx, ty, rocket_damage(blk, u.an.rocket_elite), wh.spread, wh.pmax,
+                               wh.verses, /*hit_air=*/false, /*spare_house=*/false);
                 fire_events_.push_back({i, -1, -1, -1, 0, ""});
                 u.alive = false;   // the missile is spent (no wreck)
                 u.die_time = 1.0;

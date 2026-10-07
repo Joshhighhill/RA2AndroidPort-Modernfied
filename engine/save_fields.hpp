@@ -313,8 +313,8 @@ template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
     io(ar, v.amer_para_inf); io(ar, v.amer_para_num); io(ar, v.ally_para_inf);
     io(ar, v.ally_para_num); io(ar, v.sov_para_inf); io(ar, v.sov_para_num);
     io(ar, v.paradrop_radius); io(ar, v.cloak_delay_frames); io(ar, v.ship_sinking_weight);
-    io(ar, v.reload_frames); io(ar, v.flight_level); io(ar, v.missile_spread);
-    io(ar, v.missile_pmax); io(ar, v.missile_verses); io(ar, v.repair_step);
+    io(ar, v.reload_frames); io(ar, v.flight_level); io(ar, v.rockets);   // W4 (v15)
+    io(ar, v.repair_step);
     io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
 }
 template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
@@ -334,6 +334,7 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.spawned); io(ar, v.missile); io(ar, v.missile_damage); io(ar, v.spawner_slot);
     io(ar, v.spawns); io(ar, v.spawns_number); io(ar, v.spawn_regen_frames);
     io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
+    io(ar, v.rocket_kind);   // W4 (v15)
 }
 template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left);
@@ -345,7 +346,18 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.spawn_pending); io(ar, v.spawn_fire_unit); io(ar, v.spawn_fire_building);
     io(ar, v.owner); io(ar, v.landing); io(ar, v.drop_left); io(ar, v.drop_type);
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
+    io(ar, v.rocket_elite);   // W4 (v15)
 }
+template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
+    io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
+}
+template <class Ar> void fields(Ar& ar, RocketBlock& v) {   // W4 (v15)
+    io(ar, v.pause_frames); io(ar, v.tilt_frames); io(ar, v.pitch_initial); io(ar, v.pitch_final);
+    io(ar, v.turn_rate); io(ar, v.raise_rate); io(ar, v.acceleration); io(ar, v.altitude);
+    io(ar, v.damage); io(ar, v.elite_damage); io(ar, v.body_length); io(ar, v.lazy_curve);
+    io(ar, v.warhead); io(ar, v.elite_warhead);
+}
+template <class Ar> void fields(Ar& ar, RocketParams& v) { io(ar, v.block); io(ar, v.type_id); }   // W4 (v15)
 template <class Ar> void fields(Ar& ar, Cellxy& v) { io(ar, v.x); io(ar, v.y); }
 template <class Ar> void fields(Ar& ar, SeqEntry& v) { io(ar, v.first); io(ar, v.count); io(ar, v.fmult); }
 template <class Ar> void fields(Ar& ar, UnitAnimSeq& v) {
