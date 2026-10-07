@@ -3639,6 +3639,7 @@ TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on 
                                       /*armor_ix=*/0, 0.0, /*instant=*/true);   // enemy building
     REQUIRE(bi >= 0);
     world.units()[0].selected = true;
+    world.set_track_entered(true);   // W2-CA-01 campaign opt-in
     world.order_engineer_capture(0, bi);
     // Order recorded; NOTHING happens on the same frame the order is issued.
     CHECK(world.units()[0].capture_target == bi);
@@ -3654,6 +3655,15 @@ TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on 
     CHECK(world.buildings()[bi].house == 0);                    // captured -> house 0
     CHECK_FALSE(world.units()[0].alive);                        // engineer consumed on arrival
     CHECK(world.units()[0].capture_target == -1);               // intent cleared
+    // W2-CA-01: exactly one EnteredBy record (capture, consumed engineer).
+    const auto ev = world.take_entered_events();
+    REQUIRE(ev.size() == 1);
+    CHECK(ev[0].kind == ra2engine::World::EnteredEvent::Capture);
+    CHECK(ev[0].unit == 0);
+    CHECK(ev[0].building == bi);
+    CHECK(ev[0].house == 0);
+    CHECK(ev[0].consumed);
+    CHECK(world.take_entered_events().empty());
 }
 
 TEST_CASE("World spy infiltrate: a DISTANT order defers -- the effect (cash steal) happens on "
@@ -4854,4 +4864,26 @@ TEST_CASE("World: G-66 a charged AI superweapon fires at the enemy's highest-val
     CHECK(fired);
     for (int i = 0; i < 410; ++i) world.step(1.0 / 15.0);   // W2-AN-05: 200 up + 200 down
     CHECK(world.buildings()[pw].hp < hp0);   // the nuke landed on the power plant
+}
+
+TEST_CASE("World W2-CA-10: MakeAlly/MakeEnemy are pairwise (FUN_004f9990/FUN_004f9db0)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
+    ra2engine::World world(map);
+    for (int h = 0; h < 4; ++h) {
+        ra2engine::World::HouseRec r;
+        r.alliance_team = h < 1 ? 0 : 1;   // player alone on team 0; three enemies on team 1
+        world.set_house(h, r);
+    }
+    CHECK(world.are_allied(1, 3));
+    CHECK(world.is_enemy(0, 1));
+    // An enemy house allies the player: only that pair changes.
+    world.set_pair_alliance(1, 0, true);
+    CHECK(world.are_allied(0, 1));
+    CHECK(world.is_enemy(0, 2));      // the player is NOT dragged onto team 1
+    CHECK(world.is_enemy(0, 3));
+    CHECK(world.are_allied(1, 2));    // house 1 keeps its old friends
+    world.set_pair_alliance(1, 2, false);
+    CHECK(world.is_enemy(1, 2));
+    CHECK(world.is_enemy(2, 1));
 }

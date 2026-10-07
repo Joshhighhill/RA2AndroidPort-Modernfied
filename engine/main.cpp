@@ -4612,6 +4612,8 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
 
 // P10 Campaign runtime (CampaignRuntime, camp::*) [RE: campaign.md].
 #include "campaign_runtime.inc"
+// W2-CA-03/04: campaign rules overlay + the player's rules-driven roster.
+#include "campaign_rules.inc"
 // gF: real skirmish start (MCV + recovered start force) and MCV wiring.
 #include "gf_start.inc"
 
@@ -5055,7 +5057,9 @@ public:
           // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
           // rules_ini_/art_ini_ are members constructed before rules_/art_ (mirrors
           // the old run_interactive's named-local Inis kept alive for the whole run).
-          rules_ini_(load_ini_from_ra2md(dir_, "rulesmd.ini")),
+          // W2-CA-04: a campaign mission's map overlays its rules sections.
+          rules_ini_(cfg.campaign_map.empty() ? load_ini_from_ra2md(dir_, "rulesmd.ini")
+                                              : camp::load_campaign_rules_ini(dir_, cfg.campaign_map)),
           rules_(Rules::load(rules_ini_)),
           art_ini_(load_ini_from_ra2md(dir_, "artmd.ini")),
           art_(Art::load(art_ini_)),
@@ -5237,6 +5241,7 @@ public:
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
         rp_setup();   // gap owner A: side-correct factories + sidebar (skirmish)
         init_presentation();   // G-80..G-91 (pres_game.inc)
+        campaign_audio_init();   // W2-CA-12 (campaign only)
     }
     // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
     // the save's skirmish config, then overwrite the World and the scene
@@ -5425,6 +5430,7 @@ public:
             player_credits_ = 0.0;
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
+        campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         world_.step(dt);
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
@@ -5720,6 +5726,8 @@ public:
 #include "game_scene_controls.inc"
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
+#include "campaign_audio.inc"  // W2-CA-12 mission speech / sound / music
+#include "campaign_play.inc"   // W2-CA-19 campaign play-script cheats
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
 #include "w2air_play.inc"   // wave-2 air/naval/SW --play keys, points, cheats
@@ -6243,6 +6251,7 @@ private:
         l.difficulty = cfg.campaign_difficulty;
         campaign_ = std::make_unique<CampaignRuntime>(l, dir_, ra2_, language_, world_, a_, ua_, ba_,
                                                       rules_, art_, rules_ini_);
+        campaign_->set_ai_roster(&ur_ai_);   // W2-CA-07: map AI teams
         for (const VehicleAssets* v : campaign_->vehicle_assets()) vlist_.push_back(v);
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
         player_credits_ = campaign_->player_credits();

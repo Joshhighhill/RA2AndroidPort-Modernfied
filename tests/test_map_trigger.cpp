@@ -220,6 +220,8 @@ struct FakeHost : TriggerHost {
     int house_buildings(int ht) const override { return get(buildings, ht); }
     int house_vehicles(int ht) const override { return get(vehicles, ht); }
     int house_infantry(int ht) const override { return get(infantry, ht); }
+    std::map<int, int> naval;
+    int house_naval_units(int ht) const override { return get(naval, ht); }
     int house_building_type_count(int ht, int bt) const override {
         auto it = btype.find({ht, bt});
         return it == btype.end() ? 0 : it->second;
@@ -588,6 +590,41 @@ TEST_CASE("map_trigger: DestroyedAll / BuildingsAll / UnitsAll + absent-house ru
     for (int i = 9; i <= 16; ++i) s.tick(h);
     CHECK(s.local(1));
     CHECK(s.local(4));
+}
+
+TEST_CASE("map_trigger: W2-CA-06 DestroyedUnitsNaval (55) / DestroyedUnitsLand (56)") {
+    // [RE tev0_0071dbe0.c case 0x37/0x38] value-house switch.
+    const std::string text = std::string(kHead) +
+        "[Triggers]\n"
+        "TRGNAV02=Player,<none>,nav2,0,1,1,1,0\n"
+        "TRGLND02=Player,<none>,lnd2,0,1,1,1,0\n"
+        "TRGNAV01=Player,<none>,nav1,0,1,1,1,0\n"
+        "[Events]\nTRGNAV02=1,55,0,2\nTRGLND02=1,56,0,2\nTRGNAV01=1,55,0,1\n"
+        "[Actions]\nTRGNAV02=1,56,0,1,0,0,0,0,A\nTRGLND02=1,56,0,2,0,0,0,0,A\n"
+        "TRGNAV01=1,56,0,3,0,0,0,0,A\n"
+        "[Tags]\nTAG00001=0,a,TRGNAV02\nTAG00002=0,b,TRGLND02\nTAG00003=0,c,TRGNAV01\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    FakeHost h;
+    h.vehicles[2] = 3;   // 2 ships + 1 tank
+    h.naval[2] = 2;
+    h.infantry[2] = 1;
+    s.start(h);
+    s.tick(h);
+    CHECK_FALSE(s.local(1));   // ships remain
+    CHECK_FALSE(s.local(2));   // tank + infantry remain
+    CHECK(s.local(3));         // Alliance absent -> TRUE
+    h.naval[2] = 0;
+    h.vehicles[2] = 1;
+    for (int i = 1; i <= 8; ++i) s.tick(h);
+    CHECK(s.local(1));
+    CHECK_FALSE(s.local(2));
+    h.vehicles[2] = 0;
+    for (int i = 9; i <= 16; ++i) s.tick(h);
+    CHECK_FALSE(s.local(2));   // infantry still alive
+    h.infantry[2] = 0;
+    for (int i = 17; i <= 24; ++i) s.tick(h);
+    CHECK(s.local(2));
 }
 
 TEST_CASE("map_trigger: BuildingDoesNotExist, credits, power events") {

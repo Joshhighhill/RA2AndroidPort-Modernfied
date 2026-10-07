@@ -136,6 +136,7 @@ struct SaveAccess {
         // Multi-house / victory
         save::io(ar, w.houses_);
         save::io(ar, w.houses_configured_);
+        save::io(ar, w.ally_pairs_);       // W2-CA-10 (save v12)
         save::io(ar, w.victory_enabled_);
         save::io(ar, w.short_game_);
         save::io(ar, w.house_defeated_);
@@ -210,6 +211,8 @@ struct SaveAccess {
         save::io(ar, w.garrison_any_);
         save::io(ar, w.garrison_shots_);
         save::io(ar, w.garrison_events_);
+        save::io(ar, w.entered_events_);   // W2-CA-01 (save v12)
+        save::io(ar, w.track_entered_);
         save::io(ar, w.bridge_ovl_);
         save::io(ar, w.bridge_tile_land_);
         save::io(ar, w.bridge_version_);
@@ -355,6 +358,7 @@ template <class Ar> void fields(Ar& ar, RepairSellRules& v) {
 }
 template <class Ar> void fields(Ar& ar, World::HouseRec& v) {
     io(ar, v.side); io(ar, v.color_ix); io(ar, v.country); io(ar, v.alliance_team); io(ar, v.combatant);
+    io(ar, v.player_control);   // W2-CA-02 (save v12)
 }
 template <class Ar> void fields(Ar& ar, CargoEvent& v) {
     io(ar, v.kind); io(ar, v.unit); io(ar, v.transport); io(ar, v.x); io(ar, v.y);
@@ -420,6 +424,9 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
     io(ar, v.occupy_damage_mult); io(ar, v.occupy_rof_mult); io(ar, v.occupy_weapon_range);
     io(ar, v.bridge_strength); io(ar, v.bridge_destruction); io(ar, v.armed);
+}
+template <class Ar> void fields(Ar& ar, World::EnteredEvent& v) {   // W2-CA-01
+    io(ar, v.kind); io(ar, v.unit); io(ar, v.building); io(ar, v.house); io(ar, v.consumed);
 }
 template <class Ar> void fields(Ar& ar, World::GarrisonEvent& v) {
     io(ar, v.kind); io(ar, v.building); io(ar, v.house);
@@ -1073,6 +1080,7 @@ template <class Ar> void fields(Ar& ar, SkirmishConfig& v) {
 template <class Ar> void fields(Ar& ar, CampaignHostSave& v) {
     io(ar, v.u_tag); io(ar, v.u_cx); io(ar, v.u_cy); io(ar, v.u_hp); io(ar, v.u_team);
     io(ar, v.u_type); io(ar, v.u_flags);
+    io(ar, v.u_mc_victim); io(ar, v.u_mc_orig);   // W2-CA-15
     io(ar, v.b_tag); io(ar, v.b_hp); io(ar, v.b_type); io(ar, v.b_flags);
     io(ar, v.t_type); io(ar, v.t_script); io(ar, v.t_house); io(ar, v.t_pc);
     io(ar, v.t_goal_x); io(ar, v.t_goal_y); io(ar, v.t_members);

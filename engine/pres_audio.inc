@@ -247,6 +247,25 @@ public:
         audio_->mixer->play(key, dist_cells);
     }
 
+    // W2-CA-12: a classic RA2 campaign speaks lines evamd.ini lacks (the
+    // Mis_* mission dialogue lives in RA2 local.mix/eva.ini only). Entries
+    // already known keep their evamd definition.
+    void add_eva_fallback(const Ini& eva) {
+        for (const auto& kv : eva.section("DialogList")) {
+            const std::string name = pres_clean(kv.second);
+            if (name.empty() || !eva.has(name) || eva_.count(name)) continue;
+            EvaDef d;
+            d.clip[0] = pres_clean(eva.get(name, "Allied"));
+            d.clip[1] = pres_clean(eva.get(name, "Russian"));
+            d.clip[2] = pres_clean(eva.get(name, "Yuri"));
+            const std::string p = pres_upper(pres_clean(eva.get(name, "Priority", "NORMAL")));
+            d.priority = p == "LOW" ? 0 : p == "IMPORTANT" ? 2 : p == "CRITICAL" ? 3 : 1;
+            const std::string t = pres_upper(pres_clean(eva.get(name, "Type", "STANDARD")));
+            d.type = t == "QUEUE" ? 1 : t == "INTERRUPT" ? 2 : t == "QUEUED_INTERRUPT" ? 3 : 0;
+            eva_[name] = d;
+        }
+    }
+    bool has_eva(const std::string& name) const { return eva_.count(name) != 0; }
     // W2-GA-23 [RE: audio-playback.md §3, RE-Q11 FUN_0074f8e0]: the tactical
     // view the positional sounds are measured from (set every frame).
     void set_view(int cam_x, int cam_y, int view_w, int view_h) {

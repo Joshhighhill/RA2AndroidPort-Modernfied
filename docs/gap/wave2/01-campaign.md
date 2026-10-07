@@ -124,3 +124,78 @@ in a Release build) and add one `--play` script per fixed mission once W2-CA-19 
 - **RE-W2-4** Damage-threshold events 38–43: which hp ratios and "combat vs any" split (`FUN_004deac0` raises 41).
 - **RE-A5 (open)** campaign AITrigger enable for map houses (action 74) and map `[AITriggerTypes]` precedence over aimd.ini.
 - **RE-W2-5** MindControl/CaptureManager and whether a mind-control shot raises 6/44 on the victim (SOV09's win).
+
+## 5. Fix status — branch `w2fix-campaign` (wave-2 fix)
+
+Probe = `camp_probe` (the audit's scratch harness: the real campaign `GameScene`,
+Release build; cheats only skip combat/time or issue the same World orders a
+player's clicks issue); play = `ra2engine --play scripts/play/<name>.play`,
+started directly at the mission with `set campaign <MAP> <SIDE>` (W2-CA-19).
+After the fixes **every one of the 24 missions reaches `a1 Win` through its own
+trigger chain**, and no reinforcement team is skipped any more (0 `placed=0`
+teams in the 24 probes; before: 24 skipped teams in 9 missions).
+
+| ID | Status | Fix (commit) | Evidence |
+|---|---|---|---|
+| W2-CA-01 | **FIXED** | World `EnteredEvent` queue (capture / repair / infiltrate / occupy / bridge hut, campaign opt-in) -> `CampaignRuntime::poll_entered` raises 1 (+2 for spies) on the building tag and 48 on the consumed infantry (39a7063). RE-W2-2: every "infantry arrived into a building" branch of `FUN_00519449` raises 1 on `[bld+0x34]` with the infantry as the object; no SpiedBy (2) site was found there (2 is RE-FALLBACK) | SOV03 `Entered Battle Lab` f=902 (was never); ALL02 chapel -> `American Captures 1st` -> WON; play `m-sov03`, `m-all02` PASS; unit test (World engineer capture) asserts the record |
+| W2-CA-02 | **FIXED** | RE-W2-1 resolved: `FUN_0050B510` = ControlledByHuman = `house+0x1EC` IsHuman OR `+0x1ED` PlayerControl outside a network session (about 60 readers; `FUN_0050A3E0` clears both). `HouseRec::player_control`, `World::controllable`; Input and the scene controls use it; PlayerControl houses are team 0 and never AI-armed (a82d278) | SOV05 Other3 troopers -> `Player Near Tower` -> WON; ALL05 Tanya C4s silo 2; ALL08 three PC houses orderable; play `m-sov05` PASS; test `Input: W2-CA-02 ...` |
+| W2-CA-03 | **FIXED** | campaigns run `rp_load_roster`/`rp_setup`: the player house's country (stock, or a same-side `ParentCountry`), the map `TechLevel`, only the types the classic RA2 rules.ini or the map lists (no YR GGI); naval/air factories, SW table, aircraft (627b11b, 87f4187) | ALL01 strip `E1 ENGINEER ADOG` / `MTNK CMIN FV`, no GAWEAP/GGI; SOV12 `SUB HYD` (DRED after NATECH) |
+| W2-CA-04 | **FIXED** [RE-W2-3 RE-FALLBACK] | GameScene rules Ini = rulesmd + the map's rules sections (per-key override, registries gain new names, scenario sections skipped) (627b11b) | ALL01 GAWEAP gone (map TL -1); SOV03 `[NAPSYB] Cost=50` lets Other3 raise the beacon in time -> WON |
+| W2-CA-05 | **FIXED** | `Side=` falls back to the RA2 rules.ini country sections (39a7063) | ALL02/SOV02/SOV09 player `comb=1` at f=0; `m-all02` asserts `side(0) == ALLIED` |
+| W2-CA-06 | **FIXED** | events 55/56 in the value-house switch + `TriggerHost::house_naval_units` (39a7063) | SOV06 `AllNavyDestroyed` -> WON f=2535; play `m-sov06` PASS; unit test `W2-CA-06 ...` |
+| W2-CA-07 | **FIXED** [RE-A5 RE-FALLBACK] | action 74 arms the house's team brain with the MAP's AITriggerTypes/TeamTypes/TaskForces/ScriptTypes, the map country as House/OwnerHouse; IsForSkirmish is not a campaign filter; a node-less house trains but plans no base (93b3fb8) | ALL06 BadGuy1/2: 22 triggers, 40 teams, teams created by f=3000; SOV11 BadGuy1 4 teams by f=6000 |
+| W2-CA-08 | **FIXED** [RE-C1 open, RE-FALLBACK] | no legal cell within 12 -> nearest free water (ships) / nearest free land cell connected to the team's first move-waypoint; the first far landing anchors the team (f21d3fc) | ALL04 AMCV+LCRF land and the MCV deploys into GACNST (play `m-all04` PASS); SOV10 SMCV/HTNK/E2 landings placed; SOV04 Allied fleet placed, probe WON f=12675 |
+| W2-CA-09 | **FIXED** | finished teams release their members; recruit takes members of finished or `AreTeamMembersRecruitable` teams; no `!moving()` filter (39a7063) | ALL08 no longer LOST at f=826; play `m-all08` PASS |
+| W2-CA-10 | **FIXED** | `World::set_pair_alliance` per-pair matrix (snapshotted from the teams); MakeAlly/MakeEnemy pairwise, house 0 never moved (f21d3fc) | ALL12 house 0 stays team 0; unit test `World W2-CA-10 ...` |
+| W2-CA-11 | **FIXED** | the hold applies only to a target whose tag chain loses the mission (ALL01 Statue); every other attack-waypoint attacks the object (f21d3fc) | ALL01 still WON f=454; `m-all01` |
+| W2-CA-12 | **FIXED** | 19/20/21/99 -> PresAudio (`eva`, `play`, `play_at`, `jukebox_play`); RA2 `eva.ini` Mis_* lines added; `[Basic] Theme=` and `No theme` honoured (d92cef0, baabb85) | ALL01 `Mis_A1_EvaProtectStatue` -> clip ma1ev03 (6.63 s); 27 ambient sounds |
+| W2-CA-13 | PARTIAL | 60 SellBuilding and 111 EvictOccupiers executed (627b11b); 88/90/102/18/42/35/40/44/51/61/77/78/117 still unimplemented | SOV03 `Sell Lab` sells the lab |
+| W2-CA-14 | PARTIAL [RE-W2-4 open] | 38-43 damage thresholds (both of a pair together, RE-FALLBACK) and 22 BuildAircraftType (a1079eb); 31 AllBridgesDestroyed and 5 HouseDiscovered still not raised | — |
+| W2-CA-15 | **FIXED** [RE-W2-5 RE-FALLBACK] | a MindControl-warhead unit takes over its enemy target in range (one victim, released on death or a new capture); 6/44 raised with the controller's house (0eb2607) | SOV09 `Pres is Captured` -> WON f=826; play `m-sov09` PASS |
+| W2-CA-16 | **FIXED** | [Aircraft] objects and aircraft TaskForce members placed through the W2-AN flight model; fixed-wing members fly sorties (4329546) | SOV04/SOV07 ORCA raids placed (were skipped) |
+| W2-CA-17 | PARTIAL | 9 Deploy, 8 Unload (`World::order_unload`), 21 Scatter (f21d3fc); 14 Load, 55 IronCurtainMe, 42, 58, 10, 19/41 still skipped | interpreter unit test |
+| W2-CA-18 | OPEN | `Mission=` Sleep/Harmless/Area Guard not honoured (no passive-unit flag in World) | — |
+| W2-CA-19 | **FIXED** | `set campaign <MAP> <SIDE> [diff]` starts a play script at that mission's loading screen; `camp_*` cheats (2c8ce83) | 7 new mission scripts |
+
+Also fixed on the way: TeamType `Tag=` rides on reinforcement members (SOV09's
+President), objects created after the scenario start attach their tag, and the
+map's `FogOfWar=` is honoured (all 24 maps: `no`).
+
+### Per-mission winnability: before (audit dfff02a) vs after (w2fix-campaign)
+
+| Mission | Before | After | Evidence (after) |
+|---|---|---|---|
+| ALL01 | YES | YES | probe WON f=454; play `m-all01` |
+| ALL02 | NO | **YES** | play `m-all02` PASS (an engineer captures the chapel -> WON) |
+| ALL03 | YES (probable) | YES (probable) | probe WON f=1757; Engineer/ADOG in the roster |
+| ALL04 | NO | PROBABLE | play `m-all04` PASS (MCV lands and deploys); probe WON f=3856 |
+| ALL05 | NO | PROBABLE | Tanya (PC house) C4s silo 2 by real orders; silo 1's foundation is ringed by unwalkable cells, so infantry cannot get adjacent (combat approach, not campaign); probe WON f=3951 |
+| ALL06 | YES (probable) | YES (probable) | probe WON f=2475; map AI teams attack |
+| ALL07 | PROBABLE | PROBABLE | probe WON f=1875; 38-43 now raised |
+| ALL08 | NO | **YES** | play `m-all08` PASS |
+| ALL09 | DOUBTFUL | PROBABLE | SEALs (Hack, PC) orderable, `Captured X` EnteredBy live; probe WON f=1875 |
+| ALL10 | YES (probable) | YES (probable) | probe WON f=1875 |
+| ALL11 | NO | PROBABLE | full naval/air/Chronosphere roster (W2-AN merged); probe WON f=2027 |
+| ALL12 | DOUBTFUL | PROBABLE | the player stays on team 0 (pairwise MakeAlly); probe WON f=2750 |
+| SOV01 | YES | YES | probe WON f=1055; play `m-sov01` |
+| SOV02 | PROBABLE | YES (probable) | player combatant at f=0, both landings placed; probe WON f=2475 |
+| SOV03 | NO | **YES** | play `m-sov03` PASS (capture -> beacon -> defend -> WON) |
+| SOV04 | PROBABLE | YES (probable) | the Allied fleet and ORCA raids arrive; probe WON f=12675 |
+| SOV05 | NO | **YES** | play `m-sov05` PASS |
+| SOV06 | NO | **YES** | play `m-sov06` PASS |
+| SOV07 | PROBABLE | PROBABLE | final wave + ORCA raids placed; probe WON f=38475 (combat skipped) |
+| SOV08 | YES | YES | probe WON f=1336 |
+| SOV09 | NO | **YES** | play `m-sov09` PASS (Yuri mind-controls the President) |
+| SOV10 | NO | YES (probable) | both landings placed; probe WON f=2476 |
+| SOV11 | YES (probable) | YES (probable) | probe WON f=1351 |
+| SOV12 | NO | PROBABLE | ships offered (NAYARD -> SUB/HYD, DRED); probe WON f=1936 |
+
+**Before: 6 YES / 5 PROBABLE / 2 DOUBTFUL / 11 NO. After: 16 YES (9 proven by a
+play script incl. m-all01/m-sov01) / 8 PROBABLE / 0 DOUBTFUL / 0 NO.** PROBABLE
+= the trigger chain is proven to the win and the player has the forces and
+production the objective needs, but no full-length play-through is scripted.
+
+Still open: W2-CA-13 (cosmetic/rare actions), W2-CA-14 (31, 5), W2-CA-17 (14
+Load, 55 IronCurtainMe, 42, 58), W2-CA-18, RE-C1 (real transport delivery),
+RE-W2-4, RE-A5 (map vs aimd precedence), RE-W2-5 (exact MindControl capacity
+and release rules).

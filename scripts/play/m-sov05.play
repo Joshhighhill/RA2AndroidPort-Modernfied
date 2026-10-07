@@ -1,0 +1,27 @@
+# M-SOV05 -- W2-CA-02 PlayerControl houses. SOV05u: the Tesla Troopers of the
+# PlayerControl house Other3 obey the player's move order onto the Paris Tower
+# cells -> 'Player Near Tower' (EnteredBy Other3) -> Tower Energized -> win
+# timer -> WON. Cheats: three Other3 troopers placed near the tower and the
+# Allied houses removed (combat skip); the move is the real World order.
+set render_every 600
+set on_quit continue
+set campaign sov05u.MAP Nod
+
+until 60 scene == campaign-load
+require scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+until 900 objectives >= 1
+cheat camp_spawn SHK 7 47 36 3
+wait 5
+cheat camp_move SHK 45 31
+until 900 objectives >= 2
+cheat kill_house 1
+cheat kill_house 2
+wait 300
+if outcome == RUNNING then cheat kill_house 1
+if outcome == RUNNING then cheat kill_house 2
+until 3000 outcome == WON
+assert outcome == WON

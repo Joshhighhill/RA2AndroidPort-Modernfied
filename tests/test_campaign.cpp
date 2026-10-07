@@ -202,13 +202,25 @@ TEST_CASE("campaign: map team script interpreter (RE §7 numbering)") {
     CHECK(step_map_team(st, s, v, 20).kind == MapTeamCommand::Kind::Done);
 }
 
-TEST_CASE("campaign: interpreter win/lose/unknown actions") {
+TEST_CASE("campaign: W2-CA-17 interpreter unload/deploy/scatter are one-shot commands") {
     MapScript s;
-    s.actions = {{8, 0}, {7, 0}, {23, 0}};
+    s.actions = {{8, 1}, {9, 0}, {21, 0}};
     MapTeamState st;
     MapTeamView v;
     v.live_members = 1;
-    CHECK(step_map_team(st, s, v, 0).kind == MapTeamCommand::Kind::Skip);   // unload: inert
+    CHECK(step_map_team(st, s, v, 0).kind == MapTeamCommand::Kind::Unload);
+    CHECK(step_map_team(st, s, v, 1).kind == MapTeamCommand::Kind::Deploy);
+    CHECK(step_map_team(st, s, v, 2).kind == MapTeamCommand::Kind::Scatter);
+    CHECK(step_map_team(st, s, v, 3).kind == MapTeamCommand::Kind::Done);
+}
+
+TEST_CASE("campaign: interpreter win/lose/unknown actions") {
+    MapScript s;
+    s.actions = {{13, 0}, {7, 0}, {23, 0}};
+    MapTeamState st;
+    MapTeamView v;
+    v.live_members = 1;
+    CHECK(step_map_team(st, s, v, 0).kind == MapTeamCommand::Kind::Skip);   // idle anim: inert
     CHECK(step_map_team(st, s, v, 1).kind == MapTeamCommand::Kind::Win);
     CHECK(step_map_team(st, s, v, 2).kind == MapTeamCommand::Kind::Lose);
     CHECK(step_map_team(st, s, v, 3).kind == MapTeamCommand::Kind::Done);

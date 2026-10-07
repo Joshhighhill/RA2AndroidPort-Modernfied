@@ -1,0 +1,101 @@
+# M-SOV03 -- W2-CA-01 (EnteredBy on a building) + W2-CA-04 (map rules overlay)
+# + W2-CA-13 (SellBuilding). SOV03u started directly (W2-CA-19 `set campaign`):
+# an engineer captures the Allied Battle Lab -> "Entered Battle Lab" -> the lab
+# is sold -> Other3 raises the Psychic Beacon (map [NAPSYB] Cost=50) -> defend
+# it until the Allies are converted -> WON. Cheats only skip combat (enemy
+# units removed between attack waves) and place the engineer near the lab;
+# the capture itself is the real World engineer order.
+set render_every 600
+set on_quit continue
+set campaign sov03u.MAP Nod
+
+until 60 scene == campaign-load
+require scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+until 900 objectives >= 1
+cheat camp_killu 1 *
+cheat camp_spawn SENGINEER 0 104 31
+wait 5
+assert units(0) == 2
+cheat camp_capture SENGINEER 1 GATECH
+until 1200 buildings(0) >= 3
+assert units(0) == 1
+until 900 objectives >= 2
+assert outcome == RUNNING
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+if outcome == RUNNING then cheat camp_killu 1 *
+if outcome == RUNNING then cheat camp_killu 2 *
+wait 300
+until 9000 outcome == WON
+assert outcome == WON

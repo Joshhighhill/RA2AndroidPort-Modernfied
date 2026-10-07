@@ -1,0 +1,22 @@
+# M-ALL02 -- W2-CA-05 side fallback + W2-CA-01 EnteredBy. ALL02s: the player
+# house (Americans, side from RA2 rules.ini) is a combatant from f=0; an
+# engineer captures the chapel -> 'American Captures 1st' -> 'Player Wins'
+# -> WON (no 'Chapel Destroyed' loss). The capture is the real engineer order;
+# the Confederation/Russian houses are removed on the way (combat skip).
+set render_every 600
+set on_quit continue
+set campaign ALL02s.MAP GDI
+
+until 60 scene == campaign-load
+require scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+assert side(0) == ALLIED
+until 6000 objectives >= 1
+cheat camp_capture ENGINEER 13 CACOLO01
+cheat kill_house 7
+cheat kill_house 8
+until 9000 outcome == WON
+assert outcome == WON
