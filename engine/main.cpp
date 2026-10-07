@@ -2140,7 +2140,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // W3-FIX-A: over the theater's global MIX search list (asset_search.inc).
     auto resolve_shp = [&](const std::string& image) -> ShpFile {
         ShpFile shp;
-        if (asset_building_shp(image, shp)) return shp;
+        if (asset_building_shp(image, shp, /*ra2_only=*/true)) return shp;
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
     (void)get_mix;

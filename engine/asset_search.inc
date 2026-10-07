@@ -26,9 +26,9 @@ inline bool asset_read(const std::string& file, std::vector<uint8_t>& out) {
 // Decodes the first SHP found for `bases` x `exts` (ext-major). Returns the
 // file name ("" when none) and fills `out`.
 inline std::string asset_find_shp(const std::vector<std::string>& bases, const std::vector<std::string>& exts,
-                                  ra2assets::ShpFile& out) {
+                                  ra2assets::ShpFile& out, bool ra2_only = false) {
     std::vector<uint8_t> raw;
-    const std::string f = ra2assets::find_art(asset_fs(), bases, exts, &raw);
+    const std::string f = ra2assets::find_art(asset_fs(), bases, exts, &raw, ra2_only);
     if (f.empty()) return f;
     try {
         out = ra2assets::ShpFile::load(raw);
@@ -39,8 +39,11 @@ inline std::string asset_find_shp(const std::vector<std::string>& bases, const s
 }
 
 // A building / NewTheater image: [themed, 'g'] (or literal) + ".shp".
-inline bool asset_building_shp(const std::string& image, ra2assets::ShpFile& out) {
-    return !asset_find_shp(ra2assets::art_base_names(image, art_chain().letter), {".shp"}, out).empty();
+// `ra2_only` (the playable roster): RA2 archives only -- a YR-only roster
+// building (NABNKR, NAINDP) stays art-absent and therefore unbuildable, as
+// before; map objects and dressing take the YR tail too.
+inline bool asset_building_shp(const std::string& image, ra2assets::ShpFile& out, bool ra2_only = false) {
+    return !asset_find_shp(ra2assets::art_base_names(image, art_chain().letter), {".shp"}, out, ra2_only).empty();
 }
 
 // Map-dressing / anim art: `Theater=yes` names take the theater extension

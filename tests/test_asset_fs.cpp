@@ -86,6 +86,7 @@ TEST_CASE("AssetFS: real install -- landmarks, snow art, patch art, YR civilians
     CHECK(urb.where("liburb.pal") == "ra2.mix/cache.mix");
     // hillbtwn civilian art: YR-only, reached through the tail.
     CHECK(urb.where("cula07.shp").rfind("ra2md.mix", 0) == 0);
+    CHECK(urb.find("cula07.shp", nullptr, nullptr, /*ra2_only=*/true) == nullptr);
     AssetFS sno(dir(), theater_chain("SNOW"));
     // Ammo crates (all10s): only in <ext>.mix.
     CHECK(sno.where("ammo01.shp") == "ra2.mix/sno.mix");

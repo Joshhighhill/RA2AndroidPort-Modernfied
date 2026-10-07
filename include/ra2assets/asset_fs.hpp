@@ -48,8 +48,9 @@ public:
 
     // First archive (in search order) holding `name` (case-insensitive).
     // Returns nullptr when absent everywhere; `label` gets the archive label.
+    // `ra2_only` stops before the YR tail (the RA2 game.exe archives only).
     const MixEntry* find(const std::string& name, const MixFile** owner = nullptr,
-                         std::string* label = nullptr) const;
+                         std::string* label = nullptr, bool ra2_only = false) const;
     bool has(const std::string& name) const { return find(name) != nullptr; }
     // Reads `name`; returns false (out untouched) when absent.
     bool read(const std::string& name, std::vector<uint8_t>& out) const;
@@ -63,6 +64,7 @@ public:
 private:
     const TheaterChain* chain_ = nullptr;
     std::vector<std::pair<std::string, std::shared_ptr<MixFile>>> mixes_;
+    std::size_t yr_begin_ = 0;   // index of the first YR (ra2md.mix) archive
 };
 
 // The candidate BASE NAMES (no extension, lower case) the original tries for
@@ -77,6 +79,7 @@ std::vector<std::string> art_base_names(const std::string& image, char theater_l
 // every base with exts[1], ...) over the global search list. Returns the
 // file name found ("" when none) and fills `data`.
 std::string find_art(const AssetFS& fs, const std::vector<std::string>& bases,
-                     const std::vector<std::string>& exts, std::vector<uint8_t>* data = nullptr);
+                     const std::vector<std::string>& exts, std::vector<uint8_t>* data = nullptr,
+                     bool ra2_only = false);
 
 }  // namespace ra2assets

@@ -106,7 +106,9 @@ AssetFS::AssetFS(const std::string& install_dir, const TheaterChain* chain)
         tops.push_back({t, m});
         return m;
     };
+    yr_begin_ = static_cast<std::size_t>(-1);
     for (const AssetMixSpec& s : asset_search_order(chain_, patches)) {
+        if (s.top == "ra2md.mix" && yr_begin_ == static_cast<std::size_t>(-1)) yr_begin_ = mixes_.size();
         std::shared_ptr<MixFile> t = get_top(s.top);
         if (!t) continue;
         if (s.nested.empty()) { mixes_.push_back({s.label(), t}); continue; }
@@ -115,12 +117,16 @@ AssetFS::AssetFS(const std::string& install_dir, const TheaterChain* chain)
             mixes_.push_back({s.label(), std::make_shared<MixFile>(t->open_nested(s.nested))});
         } catch (...) {}
     }
+    if (yr_begin_ == static_cast<std::size_t>(-1)) yr_begin_ = mixes_.size();
 }
 
-const MixEntry* AssetFS::find(const std::string& name, const MixFile** owner, std::string* label) const {
+const MixEntry* AssetFS::find(const std::string& name, const MixFile** owner, std::string* label,
+                              bool ra2_only) const {
     if (name.empty()) return nullptr;
     const uint32_t id = mix_id(name);
-    for (const auto& m : mixes_) {
+    const std::size_t end = ra2_only ? yr_begin_ : mixes_.size();
+    for (std::size_t k = 0; k < end; ++k) {
+        const auto& m = mixes_[k];
         if (const MixEntry* e = m.second->find(id)) {
             if (owner) *owner = m.second.get();
             if (label) *label = m.first;
@@ -164,12 +170,12 @@ std::vector<std::string> art_base_names(const std::string& image, char theater_l
 }
 
 std::string find_art(const AssetFS& fs, const std::vector<std::string>& bases,
-                     const std::vector<std::string>& exts, std::vector<uint8_t>* data) {
+                     const std::vector<std::string>& exts, std::vector<uint8_t>* data, bool ra2_only) {
     for (const std::string& ext : exts)
         for (const std::string& b : bases) {
             const std::string f = b + ext;
             const MixFile* m = nullptr;
-            if (const MixEntry* e = fs.find(f, &m)) {
+            if (const MixEntry* e = fs.find(f, &m, nullptr, ra2_only)) {
                 if (data) *data = m->read(*e);
                 return f;
             }
