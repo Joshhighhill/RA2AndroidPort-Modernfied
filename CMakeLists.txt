@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 project(ra2assets LANGUAGES CXX)
 
+# W2-GA-P2: an unset build type used to mean NO optimisation (-O0): terrain
+# draw, IMA decode and voxel rasterisation ran 2.5-3.5x slower. Single-config
+# generators now default to RelWithDebInfo (-O2 -g); pass
+# -DCMAKE_BUILD_TYPE=Release for a shipping build (-O3, no debug info) or
+# Debug to get -O0 back. The sim is integer/SSE2 double math with no
+# -ffast-math, so every gate hash is identical across these (re-verified).
+if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Debug / RelWithDebInfo / Release / MinSizeRel" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -143,7 +153,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_building.cpp engine/building.c
 # rules, linear attenuation + GLOBAL floor, and the EVA FIFO queue
 # (docs/re/audio-playback.md). Compiled into both this test binary and
 # ra2engine from one source of truth (same pattern as combat.cpp above).
-target_sources(ra2assets_tests PRIVATE tests/test_audio_mixer.cpp engine/audio_mixer.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_audio_mixer.cpp engine/audio_mixer.cpp engine/music_stream.cpp)
 # voxel_raster.cpp is the pure C++17 voxel rasterizer (no SDL): VXL/HVA model +
 # yaw + voxels.vpl lighting + palette -> RGBA sprite (docs/re/voxel-render.md).
 # Compiled into both this test binary and ra2engine from one source of truth

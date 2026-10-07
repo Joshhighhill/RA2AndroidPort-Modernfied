@@ -152,4 +152,52 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
     return out;
 }
 
+VoxelSprite rasterize_shadow(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
+                             double yaw_rad, int alpha) {
+    const double c = std::cos(yaw_rad), s = std::sin(yaw_rad);
+    VoxelSprite out;
+    if (m.sections.empty() || hva.frames.empty() || hva.frames[0].empty()) return out;
+    // Collect the flattened projections first (bounds), then plot.
+    std::vector<std::pair<int, int>> pts;
+    double mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
+    for (size_t si = 0; si < m.sections.size(); ++si) {
+        const auto& sec = m.sections[si];
+        const auto& xf = hva.frames.at(0).at(std::min(si, hva.frames[0].size() - 1));
+        const double stepx = (sec.max_bounds[0] - sec.min_bounds[0]) / sec.size_x;
+        const double stepy = (sec.max_bounds[1] - sec.min_bounds[1]) / sec.size_y;
+        const double stepz = (sec.max_bounds[2] - sec.min_bounds[2]) / sec.size_z;
+        for (int z = 0; z < sec.size_z; ++z)
+            for (int y = 0; y < sec.size_y; ++y)
+                for (int x = 0; x < sec.size_x; ++x) {
+                    const auto& v = sec.voxels[x + static_cast<size_t>(sec.size_x) *
+                                                       (y + static_cast<size_t>(sec.size_y) * z)];
+                    if (!v.present) continue;
+                    const V3 local = {sec.min_bounds[0] + x * stepx, sec.min_bounds[1] + y * stepy,
+                                      sec.min_bounds[2] + z * stepz};
+                    V3 w = yaw_rotate(apply_xform(xf.transform, sec.scale, local), c, s);
+                    w.z = 0.0;   // flattened onto the ground plane
+                    double sx, sy, d;
+                    project(w, sx, sy, d);
+                    pts.push_back({static_cast<int>(std::round(sx)), static_cast<int>(std::round(sy))});
+                    mnx = std::min(mnx, sx); mxx = std::max(mxx, sx);
+                    mny = std::min(mny, sy); mxy = std::max(mxy, sy);
+                }
+    }
+    if (pts.empty()) return out;
+    const int pad = 2;
+    out.anchor_x = static_cast<int>(std::round(-mnx)) + pad;
+    out.anchor_y = static_cast<int>(std::round(-mny)) + pad;
+    out.w = static_cast<int>(std::ceil(mxx - mnx)) + 2 * pad + 2;
+    out.h = static_cast<int>(std::ceil(mxy - mny)) + 2 * pad + 1;
+    out.rgba.assign(static_cast<size_t>(out.w) * out.h * 4, 0);
+    const uint8_t a = static_cast<uint8_t>(std::max(0, std::min(255, alpha)));
+    for (const auto& p : pts)
+        for (int dx = 0; dx < 2; ++dx) {   // the hull's 2x1 footprint
+            const int qx = p.first + out.anchor_x + dx, qy = p.second + out.anchor_y;
+            if (qx < 0 || qy < 0 || qx >= out.w || qy >= out.h) continue;
+            out.rgba[(static_cast<size_t>(qy) * out.w + qx) * 4 + 3] = a;
+        }
+    return out;
+}
+
 }  // namespace ra2engine

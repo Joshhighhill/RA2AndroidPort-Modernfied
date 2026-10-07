@@ -61,8 +61,8 @@ std::vector<MapEntry> build_map_catalog(const std::string& pkt_text,
 MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_tag) {
     // maps.md §1: the YR multiplayer maps live in multimd.mix; the manifest
     // (missionsmd.pkt) and the string table (ra2md.csf) live in langmd.mix.
-    ra2assets::MixFile maps = ra2assets::MixFile::open(ra2assets::read_file(dir + "multimd.mix"));
-    ra2assets::MixFile lang = ra2assets::MixFile::open(ra2assets::read_file(dir + "langmd.mix"));
+    ra2assets::MixFile maps = ra2assets::MixFile::open_path(dir + "multimd.mix");
+    ra2assets::MixFile lang = ra2assets::MixFile::open_path(dir + "langmd.mix");
 
     const ra2assets::MixEntry* pe = lang.find(std::string("missionsmd.pkt"));
     if (!pe) throw std::runtime_error("missionsmd.pkt not found in langmd.mix");

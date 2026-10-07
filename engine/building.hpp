@@ -68,7 +68,7 @@ struct BuildingTypeDef {
     // MCV turns to before it unfolds into this type.
     int  deploy_facing    = 0x80;
     bool ore_purifier     = false;  // OrePurifier=     gap owner A (G-27) [RE: economy.md §2]
-    // --- W2-SK-12/19/20 (save v9) ---
+    // --- W2-SK-12/19/20 (save v10) ---
     bool capturable       = false;  // Capturable=  (rulesmd: absent = no; walls/defences no)
     bool spyable          = false;  // Spyable=     (absent = no)
     bool unit_repair      = false;  // UnitRepair=  (GADEPT/NADEPT service depot)

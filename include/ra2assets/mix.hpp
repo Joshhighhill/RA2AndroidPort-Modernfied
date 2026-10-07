@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
+#include <memory>
 #include <vector>
 #include <string>
 
@@ -13,9 +14,16 @@ size_t westwood_blowfish_key(const uint8_t src[80], uint8_t out_key[56]);
 
 namespace ra2assets {
 struct MixEntry { uint32_t id; uint32_t offset; uint32_t size; };
+namespace detail { struct MixSource; }
 class MixFile {
 public:
     static MixFile open(std::vector<uint8_t> bytes);
+    // W2-GA-P5: open a MIX on disk WITHOUT reading it whole. Only the header
+    // and index are read; entries are read on demand (file offset reads), and
+    // open_nested() returns a VIEW into the same file instead of copying the
+    // child archive. Opening the same path twice shares one handle. Throws
+    // like read_file ("cannot open file: <path>") when absent.
+    static MixFile open_path(const std::string& path);
     bool encrypted() const { return encrypted_; }
     bool checksummed() const { return checksummed_; }
     size_t count() const { return entries_.size(); }
@@ -28,7 +36,11 @@ public:
     // Extract a child MIX by name and open it.
     MixFile open_nested(const std::string& name) const;
 private:
-    std::vector<uint8_t> bytes_;
+    static MixFile open_view(std::shared_ptr<detail::MixSource> src, uint64_t base, uint64_t size);
+    void read_raw(uint64_t pos, void* dst, size_t n) const;   // pos relative to base_
+    std::shared_ptr<detail::MixSource> src_;
+    uint64_t base_ = 0;     // archive start within the source
+    uint64_t size_ = 0;     // archive length
     std::vector<MixEntry> entries_;
     size_t body_start_ = 0;
     bool encrypted_ = false, checksummed_ = false;

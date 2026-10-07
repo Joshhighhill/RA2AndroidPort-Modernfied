@@ -9,7 +9,7 @@ int run_depth_survey() {
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     const std::vector<std::string> ovl = overlay_type_names(rules_ini);
     const ra2engine::MapCatalog cat = ra2engine::load_yr_map_catalog(dir, "standard");
-    MixFile maps = MixFile::open(ra2assets::read_file(dir + "multimd.mix"));
+    MixFile maps = MixFile::open_path(dir + "multimd.mix");
     auto flag = [&](const std::string& sec, const char* key) {
         const std::string v = camp::lower(rules_ini.get(sec, key));
         return !v.empty() && (v[0] == 'y' || v[0] == 't' || v[0] == '1');
@@ -56,7 +56,7 @@ int run_depth_survey() {
 // data) of every cell in the rectangle (".." = none). Dev aid.
 int run_depth_dump(const std::string& mapname, int x0, int y0, int x1, int y1) {
     const std::string dir = env_install_dir();
-    MixFile maps = MixFile::open(ra2assets::read_file(dir + "multimd.mix"));
+    MixFile maps = MixFile::open_path(dir + "multimd.mix");
     const MixEntry* me = maps.find(mapname);
     if (!me) { std::cerr << "no map " << mapname << "\n"; return 1; }
     const auto raw = maps.read(*me);

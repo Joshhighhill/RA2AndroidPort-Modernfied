@@ -84,6 +84,34 @@ std::vector<MapCell> parse_cell_records(const uint8_t* data, size_t len) {
     return cells;
 }
 
+void fill_missing_diamond(std::vector<MapCell>& cells, int w, int h, uint8_t level) {
+    if (w <= 0 || h <= 0) return;
+    // The IsoMapPack5 cell enumeration (FinalAlert/XCC): for each row y and
+    // column x in [0, 2w-2], dy = 2y + (x&1), rx = (x+dy)/2 + 1,
+    // ry = dy - rx + w + 1. Verified: every pack record of every full map
+    // lies in this set and the set size equals the record count.
+    const int span = 2 * w + 2 * h + 4;
+    std::vector<uint8_t> have((size_t)span * span, 0);
+    auto in = [&](int x, int y) { return x >= 0 && y >= 0 && x < span && y < span; };
+    for (const MapCell& c : cells)
+        if (in(c.x, c.y)) have[(size_t)c.y * span + c.x] = 1;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x <= 2 * w - 2; ++x) {
+            const int dy = 2 * y + (x & 1);
+            const int rx = (x + dy) / 2 + 1;
+            const int ry = dy - rx + w + 1;
+            if (!in(rx, ry) || have[(size_t)ry * span + rx]) continue;
+            have[(size_t)ry * span + rx] = 1;
+            MapCell c;
+            c.x = rx;
+            c.y = ry;
+            c.tile = 0;
+            c.subtile = 0;
+            c.level = level;
+            cells.push_back(c);
+        }
+}
+
 } // namespace detail
 
 MapFile MapFile::parse(const std::string& ini_text) {
@@ -108,6 +136,30 @@ MapFile MapFile::parse(const std::string& ini_text) {
                 decompress_mappack(packed.data(), packed.size(), MapPackCodec::LZO);
             map.cells_ = detail::parse_cell_records(raw.data(), raw.size());
         }
+    }
+    // W2-GA-04: the original's cell array covers the whole [Map] Size diamond
+    // as clear ground; IsoMapPack5 records only overwrite it, so a cell the
+    // pack omits is ordinary tile-0 ground, not a void [RE: maps.md, RE-Q5].
+    // Materialise every absent in-diamond cell as tile 0 / level 0, appended
+    // after the pack records (a complete pack -- every gate map -- adds none).
+    // [RE: RE-Q5, FUN_004acd80] the pre-fill is the first Clear tile at
+    // height [Map] Level= (default 0). ([Map] Fill=Water -> random water
+    // tiles is not modelled: no RA2 MP map uses it.)
+    if (!map.cells_.empty())
+        detail::fill_missing_diamond(map.cells_, map.width_, map.height_,
+                                     (uint8_t)std::max(0, ini.get_int("Map", "Level", 0)));
+    // (x,y) -> first record index, for at(). Cells outside 0..511 keep the
+    // linear fallback semantics by disabling the index.
+    {
+        bool ok = true;
+        map.index_.assign((size_t)512 * 512, -1);
+        for (size_t i = 0; i < map.cells_.size(); ++i) {
+            const MapCell& c = map.cells_[i];
+            if (c.x < 0 || c.y < 0 || c.x >= 512 || c.y >= 512) { ok = false; break; }
+            int32_t& slot = map.index_[(size_t)c.y * 512 + (size_t)c.x];
+            if (slot < 0) slot = (int32_t)i;
+        }
+        if (!ok) map.index_.clear();
     }
 
     // [OverlayPack]/[OverlayDataPack]: same collect-and-decode shape as
@@ -171,6 +223,13 @@ MapFile MapFile::parse(const std::string& ini_text) {
 }
 
 const MapCell* MapFile::at(int x, int y) const {
+    // W2-GA-P1: O(1) through the 512x512 index built at parse (render paths
+    // look a cell up per building/projectile per frame).
+    if (!index_.empty()) {
+        if (x < 0 || y < 0 || x >= 512 || y >= 512) return nullptr;
+        const int32_t i = index_[(size_t)y * 512 + (size_t)x];
+        return i < 0 ? nullptr : &cells_[(size_t)i];
+    }
     for (const auto& c : cells_) {
         if (c.x == x && c.y == y) return &c;
     }
