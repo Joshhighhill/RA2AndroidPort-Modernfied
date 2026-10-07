@@ -19,6 +19,7 @@
         p.set("playfield_w", playfield_w_);
         p.set("cam_x", cam_.x);
         p.set("cam_y", cam_.y);
+        p.set("anim_tick", static_cast<double>(g_pres_tick));   // W3-B: the logic-tick anim clock
         const int houses = world_.house_count();
         p.set("houses", houses);
         for (int h = 0; h < houses; ++h) {

@@ -5490,6 +5490,7 @@ public:
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         world_.step(dt);
+        pres_.logic_tick();      // W3-B: the anim clock advances with the logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
         if (repair_bridge) player_credits_ += world_.take_income(0);

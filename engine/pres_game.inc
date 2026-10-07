@@ -12,6 +12,7 @@ public:
               const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs, int side_ix) {
         audio_ = &audio;
         g_bld_events.clear();   // W2-GA-14 per-building anim state is per game
+        g_pres_tick = 0;        // W3-B: the logic-tick anim clock restarts per game
         // G-83: the effects layer (muzzle / impact / death anims, projectile art).
         fx_.init(dir, ra2, rules_ini, art_ini);
         for (const auto* list : defs)
@@ -101,9 +102,10 @@ public:
                 const std::vector<ra2engine::World::VetEvent>& vet,
                 const std::vector<ra2engine::ProjectileEvent>& pev) {
         ++frame_;
-        g_pres_tick = frame_;
+        // W3-B anim clock: g_pres_tick is the LOGIC tick count (logic_tick()
+        // below, called once per fixed 15 Hz step), not this per-render-frame
+        // counter -- every anim keyed on it is frame-rate independent.
         world_ = &w;
-        fx_.step(dt);
         snd_.set_view(cam.x, cam.y, view_w, view_h);   // W2-GA-23 positional audio
         snd_.update_voices();
         for (const ra2engine::ProjectileEvent& e : pev)
@@ -146,10 +148,10 @@ public:
         {
             const bool online = w.shroud_enabled() && house_owns_operational_radar(w, ba, 0);
             if (online && !radar_online_) {
-                g_radar_online_since = frame_;
+                g_radar_online_since = g_pres_tick;
                 snd_.play(radar_on_, 0.0, "radar on");
             } else if (!online && radar_online_) {
-                g_radar_offline_since = frame_;   // W2-UI-09 power-down animation
+                g_radar_offline_since = g_pres_tick;   // W2-UI-09 power-down animation
                 snd_.play(radar_off_, 0.0, "radar off");
             }
             radar_online_ = online;
@@ -160,6 +162,17 @@ public:
     }
 
     long frame() const { return frame_; }
+
+    // W3-B [RE: presentation.md §5 -- AnimClass::AI steps once per LOGIC
+    // frame; Rate stores 900/Rate game frames per anim frame]: GameScene calls
+    // this once per fixed logic tick (inside its G-13 accumulator loop), so
+    // every anim (effects, building slots, terrain, radar) advances with game
+    // time -- at the original rate on a 60 Hz desktop and a 30 Hz phone alike,
+    // and scaled by GameSpeed exactly as the original's frames are.
+    void logic_tick() {
+        g_pres_tick = ++logic_;
+        fx_.tick();
+    }
 
 private:
     // ---- G-08 (draw half) action cursors from MOUSE.SHP ---------------------
@@ -898,7 +911,7 @@ private:
                     continue;
                 const std::string img = image_of(b);
                 if (img.empty() || !fx_.building(img).door.t) continue;
-                g_bld_events[bld_event_key(b)].door_start = frame_;
+                g_bld_events[bld_event_key(b)].door_start = g_pres_tick;
                 break;
             }
         }
@@ -915,8 +928,8 @@ private:
                     const std::string img = image_of(b);
                     if (img.empty() || !fx_.building(img).super_[0].t) continue;
                     BldEventState& e = g_bld_events[bld_event_key(b)];
-                    if (st == 2) { e.super_phase = 0; e.super_start = frame_; }                    // ready: open
-                    else if (prev == 2) { e.super_phase = 2; e.super_start = frame_; }             // fired: close
+                    if (st == 2) { e.super_phase = 0; e.super_start = g_pres_tick; }                    // ready: open
+                    else if (prev == 2) { e.super_phase = 2; e.super_start = g_pres_tick; }             // fired: close
                     else if (e.super_phase < 0) { e.super_phase = 2; e.super_start = -1; }          // charging
                 }
             }
@@ -965,6 +978,7 @@ private:
     AudioSystem* audio_ = nullptr;
     const Ini* rules_ini_ = nullptr;
     long frame_ = 0;
+    long logic_ = 0;   // W3-B: logic ticks since init (g_pres_tick)
     double clock_ = 0.0;
     ra2engine::Camera cam_;
     int vw_ = 1280, vh_ = 720;

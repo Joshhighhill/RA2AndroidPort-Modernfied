@@ -319,7 +319,10 @@ public:
     void step_anims() {
         const long now = g_pres_tick;
         if (now == last_tick_) return;
-        const long n = std::min<long>(now - last_tick_, 30);
+        // W3-B: every logic tick since the last draw is replayed (a sparse
+        // render -- --play render_every, a stalled phone frame -- must not drop
+        // ticks, or the result would depend on the render rate).
+        const long n = std::min<long>(now - last_tick_, 100000);
         last_tick_ = now;
         for (long t = 0; t < n; ++t)
             for (const Obj& o : objects_) {

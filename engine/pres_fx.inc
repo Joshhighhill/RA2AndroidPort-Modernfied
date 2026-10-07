@@ -66,7 +66,7 @@ public:
         double sx = 0, sy = 0;   // cell-space position (fx, fy)
         int level = 0;
         double lift_px = 0;      // screen-space height above the ground point
-        double age = 0;
+        long age = 0;            // W3-B: logic ticks since spawn (was wall-clock seconds)
         double ox_px = 0;        // extra screen-x offset (FLH muzzle point)
     };
 
@@ -137,13 +137,13 @@ public:
         int l0, l1;
         bool bolt;
         int life;          // game frames
-        double age = 0.0;
+        long age = 0;      // W3-B: logic ticks
         SDL_Color inner, outer;
         uint32_t seed;
     };
     void add_beam(double x0, double y0, int l0, double lift0, double x1, double y1, int l1, double lift1,
                   const FxWeapon& fw, SDL_Color house) {
-        Beam b{x0, y0, lift0, x1, y1, lift1, l0, l1, fw.bolt, fw.bolt ? 8 : fw.laser_frames, 0.0,
+        Beam b{x0, y0, lift0, x1, y1, lift1, l0, l1, fw.bolt, fw.bolt ? 8 : fw.laser_frames, 0,
                SDL_Color{255, 255, 255, 255}, SDL_Color{110, 110, 255, 255}, beam_seed_++ * 2654435761u};
         if (fw.laser) {
             // [RE-FALLBACK: LaserInner/OuterColor are commented out in rulesmd;
@@ -164,7 +164,7 @@ public:
             int ax, ay, bx, by;
             pt(b.x0, b.y0, b.l0, b.lift0, ax, ay);
             pt(b.x1, b.y1, b.l1, b.lift1, bx, by);
-            const double fade = 1.0 - b.age * 15.0 / std::max(1, b.life);
+            const double fade = 1.0 - static_cast<double>(b.age) / std::max(1, b.life);
             const Uint8 a = static_cast<Uint8>(std::clamp(fade, 0.0, 1.0) * 255.0);
             if (!b.bolt) {
                 SDL_SetRenderDrawColor(ren, b.outer.r, b.outer.g, b.outer.b, static_cast<Uint8>(a / 2));
@@ -394,20 +394,23 @@ public:
                             double ox_px = 0.0) {
         const FxAnimType* t = type(name);
         if (!t || t->frames <= 0) return nullptr;
-        anims_.push_back(Anim{t, fx, fy, level, lift_px, 0.0, ox_px});
+        anims_.push_back(Anim{t, fx, fy, level, lift_px, 0, ox_px});
         if ((t->crater || t->scorch) && g_smudge_hook && lift_px < 30.0) g_smudge_hook(t->crater, fx, fy);
         return t;
     }
-    void step(double dt) {
+    // W3-B: one logic tick (Presentation::logic_tick, inside GameScene's
+    // fixed 15 Hz loop) -- anims and beams age in game frames, never by the
+    // render rate.
+    void tick() {
         ++beam_tick_;
-        for (Beam& b : beams_) b.age += dt;
+        for (Beam& b : beams_) ++b.age;
         beams_.erase(std::remove_if(beams_.begin(), beams_.end(),
-                                    [](const Beam& b) { return b.age * 15.0 >= b.life; }),
+                                    [](const Beam& b) { return b.age >= b.life; }),
                      beams_.end());
         std::vector<Anim> next;
         for (Anim& a : anims_) {
-            a.age += dt;
-            if (a.t->frame_at(static_cast<long>(a.age * 15.0)) >= 0) continue;
+            ++a.age;
+            if (a.t->frame_at(a.age) >= 0) continue;
             if (!a.t->next.empty())
                 if (const FxAnimType* n = type(a.t->next)) next.push_back(Anim{n, a.sx, a.sy, a.level, a.lift_px, 0, a.ox_px});
             a.t = nullptr;
@@ -419,7 +422,7 @@ public:
     void draw(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Camera& cam, int W,
               int H) {
         for (const Anim& a : anims_) {
-            const int fr = a.t->frame_at(static_cast<long>(a.age * 15.0));
+            const int fr = a.t->frame_at(a.age);
             if (fr < 0) continue;
             const int cx = static_cast<int>(std::lround((a.sx - a.sy) * 30.0 + a.ox_px)) + cam.x + 30;
             const int cy = static_cast<int>(std::lround((a.sx + a.sy) * 15.0 - a.level * 15 - a.lift_px)) +
@@ -542,7 +545,7 @@ bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
     return true;
 }
 
-long g_pres_tick = 0;          // presentation game-frame clock (Presentation::update)
+long g_pres_tick = 0;          // W3-B: LOGIC-tick anim clock (Presentation::logic_tick)
 // W2-GA-14: the building draw_building is drawing (its overlay pass reads the
 // per-building event state below) and that state, keyed by the building's
 // identity (origin cell + type, stable for its life).
