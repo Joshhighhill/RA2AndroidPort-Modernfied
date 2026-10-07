@@ -147,7 +147,7 @@ private:
                                   : cfg_.slots[(std::size_t)h].country;
                     const std::size_t ps = t.find("%s");
                     if (ps != std::string::npos) t.replace(ps, 2, who);
-                    show_banner(camp::up(t));
+                    show_banner(t);   // W2-UI-21 mixed-case CSF line
                 }
             }
         if (gf_outcome_ == 0) {
@@ -161,7 +161,7 @@ private:
                     rules_.general_double("SavourDelay", 0.1));
                 // EVA_YouAreVictorious / EVA_YouHaveLost: spoken by E's
                 // presentation pass (pres_game.inc), not repeated here.
-                gf_end_text_ = camp::up(camp::csf_text(dir_, outcome > 0 ? "TXT_VICTORIOUS" : "TXT_LOST"));
+                gf_end_text_ = camp::csf_text(dir_, outcome > 0 ? "TXT_VICTORIOUS" : "TXT_LOST");   // W2-UI-20 mixed case
             }
             return;
         }
@@ -188,14 +188,9 @@ private:
         return s;
     }
 
-    void gf_render(SDL_Renderer* ren) {
+    void gf_render(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         if (gf_outcome_ == 0 || gf_end_text_.empty()) return;
-        const int w = static_cast<int>(gf_end_text_.size()) * 24;
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
-        SDL_Rect b{(playfield_w_ - w) / 2 - 20, kWinH / 2 - 40, w + 40, 64};
-        SDL_RenderFillRect(ren, &b);
-        draw_text(ren, gf_end_text_, (playfield_w_ - w) / 2, kWinH / 2 - 24, 4, 255, 220, 90);
+        draw_end_banner(ren, tc, gf_end_text_);   // W2-UI-20: game font, mixed case
     }
 public:
     // Put cell (x, y) at the centre of the playfield.

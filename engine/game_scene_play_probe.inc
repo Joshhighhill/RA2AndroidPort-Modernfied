@@ -211,7 +211,7 @@
         menu_.play_probe(p);
         gf_abort_.play_probe(p);   // gF G-14: Abort Mission confirm
         sld_.play_probe(p);
-        p.set_s("banner", (!banner_.empty() && SDL_GetTicks() < banner_until_) ? banner_ : "");
+        p.set_s("banner", newest_message());   // W2-UI-21 message list
         if (campaign_) {
             p.set_s("map", cfg_.campaign_map);
             p.set("campaign_frame", static_cast<double>(campaign_->frame_count()));

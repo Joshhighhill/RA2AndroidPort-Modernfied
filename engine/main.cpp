@@ -5028,6 +5028,7 @@ public:
             now_ = SDL_GetTicks();
             return;
         }
+        messages_tick(dt);   // W2-UI-21 message expiry + TXT_LOW_POWER
         // Scroll direction from the arrow keys + the window-edge band (unchanged).
         const Uint8* ks = SDL_GetKeyboardState(nullptr);
         int dir_x = 0, dir_y = 0;
@@ -5336,25 +5337,13 @@ public:
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;
         }
-        if (campaign_) draw_campaign_overlay(ren);   // P10 objectives / mission end
-        gf_render(ren);   // gF: victory / defeat text during BorrowedTime
+        draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
+        if (campaign_) draw_campaign_overlay(ren, tc);   // P10 objectives / mission end (W2-UI-21)
+        gf_render(ren, tc);   // gF: victory / defeat text during BorrowedTime (W2-UI-20 game font)
         // P7 overlays + the transient "game saved / load failed" banner.
         menu_.render(ren);
         gf_abort_.render(ren);   // gF G-14
         sld_.render(ren, SDL_GetTicks());
-        if (!banner_.empty() && SDL_GetTicks() < banner_until_) {
-            const int w = g_game_font ? fnt_text_width(*g_game_font, banner_) * 2
-                                      : static_cast<int>(banner_.size()) * 18;
-            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
-            SDL_Rect b{(playfield_w_ - w) / 2 - 16, 80, w + 32, 44};
-            SDL_RenderFillRect(ren, &b);
-            if (g_game_font && g_game_font_pal)   // G-88
-                draw_fnt_text(ren, tc, *g_game_font, *g_game_font_pal, banner_, (playfield_w_ - w) / 2, 88,
-                              "hudf:", 2);
-            else
-                draw_text(ren, banner_, (playfield_w_ - w) / 2, 91, 3, 240, 220, 120);
-        }
     }
 
 #include "gf_scene.inc"
@@ -5366,6 +5355,7 @@ public:
     // Agent B controls/UI members (cursor state, building selection, hotkeys).
 #include "game_scene_controls.inc"
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
+#include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
 
@@ -5437,6 +5427,7 @@ public:
 
 private:
     void show_banner(const std::string& s) {
+        post_message(s);   // W2-UI-21: banners are message-list lines
         banner_ = s;
         banner_until_ = SDL_GetTicks() + 2500;
     }
@@ -5460,7 +5451,7 @@ private:
             // dressing's cells (passability is rebuilt from the map on load).
             for (const auto& [bx, by] : map_dressing_.blocked()) world_.block_cell(bx, by);
             apply_save(sc);
-            show_banner("GAME LOADED");
+            banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {
             // Never run a half-loaded World: start the same scenario fresh.
             campaign_.reset();
@@ -5475,7 +5466,7 @@ private:
             wire_abilities(world_, rules_, rules_ini_);
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
             init_map_dressing();   // G-87: the fresh world gets its map dressing again
-            show_banner("LOAD FAILED");
+            show_banner(camp::csf_text(dir_, "TXT_ERROR_LOADING_GAME"));
         }
         std::cerr << "[saveload] load " << (ok ? "ok" : "FAILED") << " frame=" << f.header.frame
                   << " desc=" << f.header.description << "\n";
@@ -5506,7 +5497,7 @@ private:
             switch (sld_.handle(ev)) {
                 case SaveLoadDialog::DoSave:
                     if (save_game(sld_.path(), sld_.description())) {
-                        show_banner("GAME SAVED");   // TXT_GAME_WAS_SAVED, back to the game
+                        show_banner(camp::csf_text(dir_, "TXT_GAME_WAS_SAVED"));   // TXT_GAME_WAS_SAVED, back to the game
                     } else {
                         sld_.open(SaveLoadDialog::Save, sld_.description());
                         sld_.set_message("ERROR SAVING GAME");   // TXT_ERROR_SAVING_GAME
@@ -5857,43 +5848,39 @@ private:
         }
         return y;
     }
-    void draw_campaign_overlay(SDL_Renderer* ren) {
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-        // Objectives (TextTrigger lines) for 20 s each, newest last.
+    // W2-UI-21: objectives (TextTrigger lines, 20 s each) join the top-left
+    // message list; the mission timer / end banner / F1 briefing use the HUD
+    // font (hud_messages.inc). The permanent "F1 BRIEFING" hint is gone.
+    void draw_campaign_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         const long f = campaign_->frame_count();
-        int y = 40;
+        int y = 8;
+        for (const HudMsg& m : msgs_)
+            if (m.expire > msg_clock_) y += hud_text_height(m.text) + 4;
+        const SDL_Color col = hud_ui_color();
         for (const CampaignRuntime::Objective& o : campaign_->objectives()) {
             if (f - o.frame > 300) continue;
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 150);
-            SDL_Rect bg{8, y - 4, playfield_w_ - 16, 44};
-            SDL_RenderFillRect(ren, &bg);
-            y = draw_wrapped(ren, o.text, 14, y, (playfield_w_ - 40) / 12, 2, y + 40, 120, 255, 120) + 8;
+            const std::string t = hud_wrap(o.text, playfield_w_ - 32);
+            hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true);
+            y += hud_text_height(t) + 4;
         }
         // Mission timer (actions 23-27) when running.
         const ra2engine::MapTriggerSystem& ts = campaign_->triggers();
         if (ts.mission_timer_start() != -1) {
             const long left =
                 std::max(0L, ts.mission_timer_left() - (ts.frame() - ts.mission_timer_start()));
-            char b[32];
-            std::snprintf(b, sizeof b, "TIMER %02ld:%02ld", left / 15 / 60, (left / 15) % 60);
-            draw_text(ren, b, playfield_w_ / 2 - 60, 10, 2, 255, 230, 120);
+            draw_mission_timer(ren, tc, left);
         }
-        if (campaign_->outcome() != 0) {
-            const char* m = campaign_->outcome() == 1 ? "MISSION ACCOMPLISHED" : "MISSION FAILED";
-            const int w = static_cast<int>(std::strlen(m)) * 24;
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
-            SDL_Rect bg{(playfield_w_ - w) / 2 - 20, kWinH / 2 - 30, w + 40, 60};
-            SDL_RenderFillRect(ren, &bg);
-            draw_text(ren, m, (playfield_w_ - w) / 2, kWinH / 2 - 14, 4, 255, 220, 90);
-        }
+        if (campaign_->outcome() != 0)
+            draw_end_banner(ren, tc, camp::csf_text(dir_, campaign_->outcome() == 1 ? "TXT_SCENARIO_WON"
+                                                                                   : "TXT_SCENARIO_LOST"));
         if (show_briefing_) {
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(ren, 0, 0, 0, 210);
             SDL_Rect bg{60, 80, playfield_w_ - 120, 440};
             SDL_RenderFillRect(ren, &bg);
-            draw_text(ren, camp::up(mission_name_), 80, 96, 3, 255, 220, 90);
-            draw_wrapped(ren, briefing_, 80, 140, (playfield_w_ - 180) / 12, 2, 500, 230, 230, 230);
-        } else {
-            draw_text(ren, "F1 BRIEFING", 10, kWinH - 20, 2, 200, 200, 200);
+            hud_text(ren, tc, mission_name_, 80, 96, col, kHudLeft, false, true, 2.0);
+            hud_text(ren, tc, hud_wrap(briefing_, (playfield_w_ - 180) / 2), 80, 140, col, kHudLeft, false, true,
+                     2.0);
         }
     }
 };
