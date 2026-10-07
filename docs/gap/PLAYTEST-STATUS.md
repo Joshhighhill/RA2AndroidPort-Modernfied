@@ -306,3 +306,30 @@ is trained (`units(0,CMIN)=0` when the player clicks the cameo,
 | `ui-hud` / `ui-pages` / `ui-campaign` / `ui-result` / `ui-shell` | PASS | unchanged from w2fix-ui |
 | **new** `gfx-vis` (base, GGI, Terror Drone, war-factory door, Patriot turret, shadows, lighting) | PASS | `7e202ab530ebb43f` |
 | **new** `gfx-fx` (Tesla bolt, Prism beam, craters) | PASS | `41b1d11e0e6bc843` |
+
+### Wave-2 W2-AN (aircraft, naval, superweapons) -- branch `w2fix-air` over master 844033b
+
+Every script run one at a time on the merged tree; all PASS. The three new
+scripts were run twice with identical `play_hash`.
+
+| Script | Result | play_hash |
+|---|---|---|
+| `naval` (new) | PASS | `de56fa937aeaf935` |
+| `air` (new) | PASS | `cc0f701752a6f8e8` |
+| `sw` (new) | PASS | `6ffc7e946bd18889` |
+| `sk-a` | PASS | `7525b71fc44fcc7f` |
+| `sk-s` | PASS | `a099e461333761ff` |
+| `sk-end` | PASS | `95a67a058e3882b9` |
+| `sk-a-lose` | PASS | `47af64760366a980` |
+| `sk-lobby` | PASS | `4daf570e159f13e0` |
+| `m-all01` | PASS | `844c6dd06a8177ae` |
+| `m-sov01` | PASS | `1ed80b2eabf7f2cb` |
+| `m-lose` | PASS | `ccc8340943cd2baa` |
+| `shell-smoke` | PASS | `520e202cf28c6070` |
+| `controls` | PASS | `299536cc427c8525` |
+| `world-depth` | PASS | `c30243df544b3c2a` |
+| `ui-hud` / `ui-pages` / `ui-campaign` / `ui-result` / `ui-shell` | PASS | `6ab1e68d829d928d` / `d9b913b15d4fd971` / `93692c6ee26595eb` / `cf809b78de945e17` / `e948779eb0ab3bb3` |
+
+W2-AN rows closed by play evidence: W2-AN-01/02/07/08 (`air`), W2-AN-04/05/06/17/23
+(`sw`), W2-AN-09/10/11/12/13/15/25 (`naval`); W2-AN-22 by `--probe-realplay`
+(0 fails); W2-AN-16/21 by `--ai-soak --map xbayopigs.map --cash 50000`.

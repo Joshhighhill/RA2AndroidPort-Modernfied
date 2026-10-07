@@ -174,7 +174,7 @@ missing or wrong; MINOR = fidelity. Effort: S < 1 day, M 1-3 days, L > 3 days.
 
 Acceptance is real play: `scripts/play/naval.play`, `air.play`, `sw.play` (all PASS),
 the fixed `--probe-realplay` (0 fails) and `--ai-soak --map xbayopigs.map --cash 50000
---diff brutal --minutes 30`. Save format v9.
+--diff brutal --minutes 30`. Save format v10.
 
 | ID | Status | Fix | Evidence |
 |---|---|---|---|
