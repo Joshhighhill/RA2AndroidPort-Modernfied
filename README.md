@@ -3685,3 +3685,52 @@ section "W3-FIX-A"), the RE note `docs/re/asset-search.md`, and the `art-*`
   unbuildable as before (with the YR tail they gained art and moved
   `--demo-ai-base`, `--demo-ai-trigger`, `--demo-triggers`, `--demo-roster2`
   and `--demo-saveload`).
+
+## Animation systems (wave-3 W3-FIX-B)
+
+Details and evidence: `docs/gap/wave3/03-asset-anim-systems.md` (status
+section "W3-FIX-B"), the RE notes `docs/re/infantry-anim.md` §8-§14 and
+`docs/re/presentation.md` §8, and the `anim-*` `--play` scripts.
+
+- **Anim clock on the logic tick.** `Presentation::logic_tick` runs inside
+  GameScene's fixed 15 Hz loop and drives `g_pres_tick`; AnimClass anims,
+  building slot anims, terrain/tile anims, the radar anim, beams, infantry
+  sequences and the vehicle walk stage all advance per game frame (was per
+  render frame, ~4x too fast at 60 Hz and half speed on a 30 Hz phone; it
+  now scales with GameSpeed like the original). Fire/death effects,
+  projectile impacts, defence muzzles and building deaths are spawned on the
+  tick of their event. Same-tick screenshots of a 60 Hz and a 30 Hz run are
+  pixel-identical (`anim_check.py --cross`).
+- **AnimClass draw keys** (shared `pres_fx.inc`): `Translucent=yes` fades by
+  life (25/50/75 % at 0.2/0.4/0.6 of End), `Translucency=` levels, `Shadow=`
+  darken frames, `Flat`/ground-layer anims under objects, `AltPalette` through
+  the owner's (else ColorSchemes[0]) unit-palette remap, `RandomRate`,
+  `StartSound`.
+- **Infantry DoType machine** (`engine/inf_anim.cpp`, live game only): all
+  42 art sequences with the original DoControls rates, idle fidgets on the
+  IdleActionFrequency timer, fear -> Down/Prone/FireProne/Up with the
+  warhead's `ProneDamage`, civilian Panic + scatter (Fraidycat), deaths by the
+  warhead's `InfDeath` (Die1/Die2 or INFDIE/FLAMEGUY/ELECTRO/YURIDIE/
+  NUKEDIE/...), `DeadBodies` corpses, GI/Guardian GI Deploy/Deployed/
+  DeployedFire/Undeploy, Swim/Wet set in water, Cheer on trigger 113 and on
+  victory. Save format v14.
+- **Building slots** (`engine/pres_bldanim.inc`): all 21 art slots with
+  Damaged/Garrisoned variants; construction-yard crane on placement, shipyard
+  production, service-depot Special -> SpecialTwo -> SpecialThree -> Idle,
+  refinery storage level (one ActiveAnim) and ore dump, Tesla/Prism charge
+  per shot, ground and roof factory doors, CanBeOccupied 4-state and Gate
+  frames, LeaveRubble rubble, DestroyAnim ruins, civilian dressing anims.
+- **Terrain**: theater tile anims (`Tile<NN>Anim` of the tile set's
+  SetName section: ALL07's waterfalls, tunnel tops).
+- **Vehicles**: HVA frames by the walk stage (Night Hawk rotors), SHP-vehicle
+  WalkRate/IdleRate, `TurretOffset`, `UnloadingClass` while dumping, a
+  random `Explosion=` entry, 8-way muzzle anims by turret facing.
+- `--play` additions: `set hz N` / `set dt S` for the whole run and
+  `RA2_PLAY_HZ` to re-run a script at another render rate, `set align N`
+  (inputs/cheats on aligned logic ticks), `{tick}` in shot names,
+  `<out>/shots.txt` (screen point of the `view` target per shot), probe keys
+  `anim_tick`, `iseq(<Sequence>)`, `iprone`, `corpses`, `death_anims`,
+  `veh_explosions`; cheats `infkill H:TYPE[:n] INFDEATH`, `cheer H`.
+  Scripts: `anim-buildings.play`, `anim-infantry.play`, `anim-vehicles.play`,
+  `anim-terrain.play`; checker `scripts/play/anim_check.py <out>` (each shot
+  pair changes) and `--cross <out60> <out30>` (0 px).

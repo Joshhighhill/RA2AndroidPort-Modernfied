@@ -125,3 +125,97 @@ with fan-out achieved by assigning each attacker its own free firing cell.
 Full decompile of ApproachTarget's destination choice NOT done (content-
 anchored hunt deferred); our ring-assignment is a behavioral equivalent,
 flagged MEDIUM.
+
+---
+
+# Wave 3 (W3-B): the full DoType machine — recovered from gamemd.exe
+
+Ghidra on a private copy of the `p4proj` gamemd.exe project (`D:\ra2-re\w3fix-b`,
+scripts `disp.py`/`fnat.py`/`dis.py`/`dw.py`/`xref.py`/`callctx.py`, outputs under
+`D:\ra2-re\w3fix-b-out\`). Implemented in `engine/inf_anim.{hpp,cpp}`; armed only in
+the live game (`World::enable_infantry_anims`), so gates/tests keep the §2 tables.
+
+## 8. Sequence table and DoControls (HIGH)
+
+The art `Sequence=` section is read as 42 entries in YRpp `Sequence` order (Ready,
+Guard, Prone, Walk, FireUp, Down, Crawl, Up, FireProne, Idle1, Idle2, Die1..Die5,
+Tread, Swim, WetIdle1/2, WetDie1/2, WetAttack, Hover, Fly, Tumble, FireFly, Deploy,
+Deployed, DeployedFire, DeployedIdle, Undeploy, Cheer, Paradrop, AirDeathStart/
+Falling/Finish, Panic, Shovel, Carry, SecondaryFire, SecondaryProne); each entry is
+0x24 bytes at type+0xE3C. The InfantryClass vtable is at 0x7EA058 (ctor
+0x517BBD), PlayAnim = vtbl+0x558 = `FUN_0051d4c0`.
+
+Per-sequence hard-coded controls, dumped from `0x7E9F7C` (4 bytes each:
+Interrupt, IsMobile, RandomStart, Rate). Rate = game frames per stage:
+Ready/Guard 0 (static), Prone 6, Walk 3, FireUp 1, Down 1, Crawl 1, Up 1,
+FireProne 1, Idle1/2 3, Die1-5 1, Tread 3, Swim 1, WetIdle 3, WetDie 1,
+WetAttack 1, Hover 2, Fly/Tumble/FireFly 1, Deploy..Undeploy 1, Cheer 3,
+Paradrop 1, AirDeathStart 3, AirDeathFalling 1, AirDeathFinish 3, Panic 4,
+Shovel 6, Carry 3, Secondary* 1. Not interruptible: Down, Up, Die*, WetDie*,
+Deploy, Undeploy, Cheer, AirDeath*. Idle/WetIdle/Hover/Cheer rates go through the
+game-speed normaliser `FUN_005faad0` [the clone runs them at the logic rate].
+This replaces the §6 `kWalkFps = 9` guess: Walk advances every 3 frames (5 fps).
+
+## 9. PlayAnim substitutions (`FUN_0051d4c0`, HIGH)
+
+- Amphibious soldiers on a water/beach cell use the wet set: Walk/Crawl -> Swim,
+  Ready/Prone -> Tread, Idle1/2 -> WetIdle1/2, Die1/2 -> WetDie1/2,
+  FireUp/FireProne -> WetAttack (with Enter/LeaveWaterSound on the switch).
+- Walk -> Panic when fear (+0x6D4) > 199.
+- Down is refused unless art `Crawls=yes` (read from the ART section, `0x5243DE`).
+  Down sets the prone flag (+0x6DB); Up and Deploy clear it.
+- A running sequence whose Interrupt byte is 0 is only replaced when forced.
+
+## 10. A finished sequence (`FUN_00520810`, HIGH)
+
+Runs when stage >= FrameCount: Die1-5 -> corpse (type `DeathAnims` indexed by
+InfDeath, else for humans a random `[General] DeadBodies`, unless NotHuman
+(type+0xEAD) and no own DeadBodies) and UnInit; WetDie1/2 and AirDeathFinish ->
+UnInit; Deploy -> Deployed; Undeploy -> Ready; AirDeathStart -> AirDeathFalling;
+otherwise: moving -> Walk / Crawl, deploy group -> Deployed, prone -> Prone, else
+Ready. A finished sequence with a facing label (e.g. `Idle1=56,15,0,S`) turns the
+soldier to that facing (SequenceFacing N=0..NW=7, clockwise). Per-frame sequence
+sounds play when `stage % count == frame`.
+
+## 11. Fear, prone and ProneDamage (HIGH)
+
+`InfantryClass::ReceiveDamage` (`FUN_00517db5`): a prone soldier takes
+`ftol(damage * Warhead.ProneDamage)` (warhead+0xF8; rulesmd `ProneDamage=50%`
+etc.), min 1. After the hit: with an attacker and fear <= 99 -> fear = 100
+(Fraidycat 300, Fearless unchanged); otherwise (no attacker, or already afraid)
++50, +25 above ConditionRed, +12 above ConditionYellow, cap 300; Fearless never.
+Per frame (`FUN_0051fde0`): fear-- (not Fearless); standing and fear > 49 (and not
+a player-controlled soldier with a destination/moving, not Fraidycat, not in the
+deploy group) -> PlayAnim(Down); prone and fear < 50 -> Up; a computer-owned
+Fraidycat with fear > 50 standing still Scatters. A player move order makes a
+prone soldier stand (`FUN_0051a830`). No locomotor reads the prone flag: crawling
+keeps the walking speed.
+
+## 12. Idle actions (`FUN_0051cb80`, gate `FUN_00521400`, HIGH)
+
+Called from the guard missions when there is no target, if: not moving, not prone,
+not firing, sequence in {Ready, Guard, Tread}. Re-arms the timer to
+`Random over [IdleActionFrequency*450, IdleActionFrequency*1800]` frames
+(rules [AudioVisual] `IdleActionFrequency=.15` -> 67..270 frames), then rolls
+Random(0,10): 1,2,7 -> Idle2 (+ a VoiceComment 50 % for player units); 3,4,5 ->
+Idle1; 6,9,10 -> turn to a random facing; 8 -> turn + Scatter for a
+computer-owned Fraidycat; 0 -> nothing. A Fraidycat with fear > 50 scatters
+instead.
+
+## 13. Death by InfDeath (`FUN_00517db5` switch, HIGH; 5 MEDIUM)
+
+warhead+0x120 `InfDeath`: 1 Die1; 2 Die2; 3 `InfantryExplode` anim; 4
+`FlamingInfantry`; 5 `AnimTypes[1]` (= ELECTRO, the second `[Animations]` entry);
+6 `InfantryHeadPop`; 7 `InfantryNuked`; 8 `InfantryVirus` (+ sound); 9 Die2 (YR
+mutate path); 10 `InfantryBrute`; 0 / absent -> the body is removed with no anim.
+NotHuman -> Die1 always. A type `DeathAnims=` list overrides (indexed by InfDeath).
+The [AudioVisual] keys are rules+0x9C..0xB4 (Wake 0x94 is the drowning anim).
+
+## 14. Walk stage of vehicles (`FUN_004da440`, HIGH)
+
+FootClass::AI increments WalkedFramesSoFar (+0x538) every `WalkRate` frames
+(TechnoType +0x294, default 1) while the locomotor moves, every `IdleRate` frames
+(+0x298, default 0 = never) standing. SHP units (`FUN_0073b520`) show
+`stage % WalkFrames` when moving or IdleRate != 0; voxels (`FUN_0073a3a0`) show HVA
+frame `stage % HVA frames`; a Harvester=yes unit that is unloading draws its
+`UnloadingClass` (`0x73C1CC`).

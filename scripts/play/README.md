@@ -52,6 +52,7 @@ A `"double quoted"` run is one argument.
 | Command | Meaning | Frames |
 |---|---|---|
 | `set render_every <n>` / `set max_frames <n>` / `set park <x> <y>` / `set states on\|off` / `set on_quit stop\|continue` | Run options. `render_every` renders (and presents) every n-th frame; shots always render. `on_quit continue` records `InputEvent::Quit` reaching the driver as a failure and keeps going (default `stop`: the run ends there, like the real program). | 0 |
+| `set hz <n>` / `set dt <s>` / `set align <n>` | W3-B: the driver's fixed step for the WHOLE run (`RA2_PLAY_HZ=<n>` overrides it, to re-run a script at another render rate); `align N` makes every input / cheat wait for an anim tick that is a multiple of N (and, for frame-consuming input, later than the last input), so 60 Hz and 30 Hz runs feed identical input at identical logic ticks. `{tick}` in a `shot` name becomes the scene's `anim_tick`; `<out>/shots.txt` records each shot's `view`-target screen point (`scripts/play/anim_check.py`). | 0 |
 | `wait <n>` | Let n frames pass. | n |
 | `click <target> [right] [shift] [ctrl] [alt] [nopark]` | Move + press + release at the target (original scheme: left = select AND order, right = cancel/deselect). The pointer then parks at (560,360) next frame so it does not sit in an edge-scroll band. A `cameo:ID` on another tab clicks that tab first. | 1 |
 | `drag cell\|xy x1 y1 x2 y2 [right]` | Press, move, release (box select). | 1 |
@@ -190,6 +191,10 @@ Keys reserved for later phases (scripts already assert them and report
 | `naval.play` | W2-AN naval (Bay of Pigs): Naval Yard on water, a Destroyer sails where it is clicked, a submerged Typhoon sub found by sonar and hunted by the ASW Osprey, a landing craft that beaches / loads GIs / crosses / unloads on land (not at sea), yard repair, Carrier Hornets + Dreadnought missiles, a sinking Destroyer, the SHP Dolphin |
 | `air.play` | W2-AN aircraft: Airforce Command (AMRADR) through the sidebar, a Harrier built onto its pad, a strike (take off, attack pass, Ammo 0, return, land, rearm at ReloadRate), a Rocketeer that lifts off on exit and obeys Stop, a Kirov killed in the air that crashes, a Night Hawk that lands to load and lands to unload |
 | `sw.play` | W2-AN superweapons v2: five SW buildings (set-up cheat), five sidebar slots with their own cameos, each SW charges in real time and is armed from its slot: American paratroopers, Iron Curtain (3x3, expires), Chronosphere (source + destination picks, GI chrono-killed), nuke (launch, ~400 frames of flight, blast + fallout), Lightning Storm (bolts until the storm ends) |
+| `anim-buildings.play` | W3-B building slots: construction-yard crane, power plant loop, service depot cycle, Prism SpecialAnim per shot, war factory door, refinery level + ore dump (`live_*`). Shots `<prefix>_<tick>`; check with `anim_check.py` |
+| `anim-infantry.play` | W3-B infantry machine: idle fidgets, prone under fire, InfDeath deaths + corpses, civilian Panic, Guardian GI deploy, Cheer |
+| `anim-vehicles.play` | W3-B vehicles: Night Hawk rotor HVA frames, random Explosion=, harvester UnloadingClass (`live_*`) |
+| `anim-terrain.play` | W3-B ALL07 waterfalls (theater tile anims) |
 | `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
 
 The expected results on each tree are kept in `docs/gap/PLAYTEST-STATUS.md`.
