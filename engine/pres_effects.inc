@@ -440,7 +440,7 @@ public:
                 to_screen(cam, a.x, a.y, a.z, ax, ay);
                 to_screen(cam, b.x, b.y, b.z, bx, by);
                 SDL_SetRenderDrawColor(ren, lt.color.r, lt.color.g, lt.color.b, static_cast<Uint8>(alpha));
-                SDL_RenderDrawLine(ren, ax, ay, bx, by);
+                plot_line(ren, ax, ay, bx, by);
             }
         }
         for (const Sys& s : systems_) {
@@ -450,7 +450,7 @@ public:
                 to_screen(cam, s.tx, s.ty, s.tz, bx, by);
                 const Uint8 a = static_cast<Uint8>(std::clamp(s.laser_left * 32, 0, 255));
                 SDL_SetRenderDrawColor(ren, s.t->laser_color.r, s.t->laser_color.g, s.t->laser_color.b, a);
-                SDL_RenderDrawLine(ren, ax, ay, bx, by);
+                plot_line(ren, ax, ay, bx, by);
             }
             for (const Part& p : s.parts) {
                 int sx = 0, sy = 0;
@@ -544,17 +544,44 @@ public:
                 }
             }
             // V3 rocket (RocketLocomotion): takeoff puffs, then the flight trail.
-            if (u.is_aircraft && pres_upper(u.image) == v3_image()) {
+            if (pres_upper(u.image) == v3_image() || pres_upper(u.image) == dmisl_image()) {
                 const double z = u.level * 104.0 + u.altitude;
                 if (u.altitude < 96.0) {
-                    if (frame_ % 24 == 0) fx_->spawn("V3TAKOFF", u.fx, u.fy, 0, std::max(0.0, z - 10.0) * kFxLepPx);
+                    if (frame_ % 24 == 0 && fx_->spawn("V3TAKOFF", u.fx, u.fy, 0, std::max(0.0, z - 10.0) * kFxLepPx)) ++v3_puffs_;
                 } else if (frame_ % 3 == 0) {
-                    fx_->spawn("V3TRAIL", u.fx, u.fy, 0, z * kFxLepPx);
+                    if (fx_->spawn("V3TRAIL", u.fx, u.fy, 0, z * kFxLepPx)) ++v3_puffs_;
                 }
             }
         }
     }
+    // A weapon whose shot the clone resolves instantly (no flying
+    // projectile) but whose projectile art draws a line trail (UseLineTrail,
+    // e.g. the IFV's HoverMissile -> DRAGON): the trail is laid along the
+    // shot, newest at the target, and fades at LineTrailColorDecrement.
+    // [RE-FALLBACK: the original lays it point by point as the missile flies.]
+    void instant_line(const std::string& weapon, double x0, double y0, double z0, double x1, double y1,
+                      double z1) {
+        if (weapon.empty()) return;
+        const ProjArt& pa = proj_art(weapon);
+        if (!pa.line) return;
+        LineTrail lt;
+        lt.color = pa.line_color;
+        lt.decrement = pa.line_decrement;
+        lt.live = false;
+        const int n = 12;
+        for (int k = 0; k <= n; ++k) {
+            const double f = static_cast<double>(k) / n;
+            const double arc = std::sin(f * 3.14159265) * 64.0;   // a shallow missile arc
+            lt.pts.push_back(LinePt{x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, z0 + (z1 - z0) * f + arc,
+                                    255 - (n - k) * lt.decrement});
+        }
+        lines_[--instant_key_] = lt;
+    }
+    std::string unit_weapon(const std::string& image, int slot) { return weapon_of(unit_id(image), slot); }
     long wakes_spawned() const { return wakes_; }
+    long v3_puffs() const { return v3_puffs_; }
+    void note_splash() { ++splashes_; }
+    long splashes() const { return splashes_; }
     void note_unit_id(const std::string& image, const std::string& id) {
         if (!image.empty() && !id.empty() && !unit_ids_.count(image)) unit_ids_[image] = id;
     }
@@ -846,8 +873,9 @@ private:
             to_screen(cam, x, y, z, sx, sy);
             for (int r = 0; r < hh; ++r) {
                 const int w = hw * (hh - r) / hh;
-                SDL_RenderDrawLine(ren, sx - w, sy - r, sx + w, sy - r);
-                SDL_RenderDrawLine(ren, sx - w, sy + r, sx + w, sy + r);
+                SDL_Rect a{sx - w, sy - r, 2 * w + 1, 1}, b{sx - w, sy + r, 2 * w + 1, 1};
+                SDL_RenderFillRect(ren, &a);
+                if (r) SDL_RenderFillRect(ren, &b);
             }
         };
         for (const auto& kv : g_flash_units) {
@@ -870,6 +898,16 @@ private:
     }
 
     // ---- helpers ---------------------------------------------------------------
+    // A 2-px line from filled rects (the shot renderer drops RenderDrawLine
+    // primitives on some targets; rects always land).
+    static void plot_line(SDL_Renderer* ren, int x0, int y0, int x1, int y1) {
+        const int n = std::max(std::abs(x1 - x0), std::abs(y1 - y0));
+        for (int i = 0; i <= n; ++i) {
+            const int x = n ? x0 + (x1 - x0) * i / n : x0, y = n ? y0 + (y1 - y0) * i / n : y0;
+            SDL_Rect r{x, y, 2, 2};
+            SDL_RenderFillRect(ren, &r);
+        }
+    }
     int condition(int hp, int max_hp) const {
         const double r = max_hp > 0 ? static_cast<double>(hp) / max_hp : 1.0;
         return r <= red_ ? 2 : r <= yellow_ ? 1 : 0;
@@ -1122,6 +1160,15 @@ private:
         if (w.empty()) w = rget(id, slot == 1 ? "Weapon2" : "Weapon1");
         return w;
     }
+    std::string dmisl_image() {   // the Dreadnought missile flies the same RocketLocomotion
+        if (dmisl_.empty()) {
+            std::string id = pres_upper(pres_clean(rules_ ? rules_->get("General", "DMislType") : std::string()));
+            if (id.empty()) id = "DMISL";
+            std::string img = pres_upper(rget(id, "Image"));
+            dmisl_ = img.empty() ? id : img;
+        }
+        return dmisl_;
+    }
     std::string v3_image() {
         if (v3_.empty()) {
             std::string id = pres_upper(pres_clean(rules_ ? rules_->get("General", "V3RocketType") : std::string()));
@@ -1197,7 +1244,7 @@ private:
     long frame_ = 0, last_frame_ = -1;
     std::uint32_t rng_ = 0x3FA7C0DEu;
     double gravity_ = 6.0, yellow_ = 0.5, red_ = 0.25;
-    std::string wake_, twinkle_, v3_;
+    std::string wake_, twinkle_, v3_, dmisl_;
     int twinkle_chance_ = 30;
     std::vector<std::string> metallic_, splash_;
     int next_id_ = 0;
@@ -1216,7 +1263,8 @@ private:
     std::map<std::string, std::unique_ptr<VoxelDef>> vox_defs_;
     std::map<std::string, std::string> unit_ids_;
     std::vector<int> ucond_, bcond_, usmoke_, bsmoke_;
-    long wakes_ = 0;
+    long wakes_ = 0, v3_puffs_ = 0, splashes_ = 0;
+    long long instant_key_ = 0;
 };
 
 PresEffects* g_fx3 = nullptr;   // the live game's W3 effects (GameScene); null in gates

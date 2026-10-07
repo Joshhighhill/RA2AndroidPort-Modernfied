@@ -537,6 +537,7 @@ private:
                 if (!impact_water_.empty()) snd_.play_at(impact_water_, fx, fy, "impact water");
                 else snd_.play_at(st->report, fx, fy, "splash");
                 pres_log(frame_, "fx splash " + sname);
+                effects_.note_splash();
                 return;
             }
         }
@@ -583,6 +584,14 @@ private:
                              house_color(w, u.house));
         }
         if (!u.w_proj.flies()) {
+            // W3-FX: an instant shot whose projectile art has a line trail.
+            {
+                double tx = 0, ty = 0, tl = 0;
+                int tlev = 0;
+                if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
+                    effects_.instant_line(effects_.unit_weapon(u.image, 0), u.fx * 256.0, u.fy * 256.0,
+                                          u.level * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
+            }
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
                 const ra2engine::Unit& t = us[u.target];
