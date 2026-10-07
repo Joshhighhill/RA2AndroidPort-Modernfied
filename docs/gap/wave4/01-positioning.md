@@ -296,3 +296,8 @@ Acceptance (real play, `scripts/play/pos-*.play`, all PASS; screenshots read aga
 St Basil's inside the Kremlin walls with the walls meeting the towers (`all12_basils`), the Eiffel Tower and the
 Arc de Triomphe (`eiffel`, `arc`), and player 2x2/3x3/4x4 buildings with bib, ActiveAnim and a voxel turret inside
 their foundations (`all03_bases_dbg`, `RA2_POS_DBG=1`).
+
+Verification: unit suite 811/811 test cases pass (new `proj:` cases for the draw point and the overlay offset
+table); all 27 `--demo-*` determinism gates print master's pins (drawing is unhashed; nothing re-pinned); 65 of 68
+`--play` scripts pass, one at a time, and `probe-bridge`, `probe-flow` and `robust-missing` fail exactly as on
+master (pre-existing, unrelated: lobby map cycling, missing building/cameo targets, missing-asset scene).
