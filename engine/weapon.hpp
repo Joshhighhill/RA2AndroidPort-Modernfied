@@ -25,6 +25,11 @@ struct WeaponSlot {
     bool ag = true;                // projectile AG= (can hit ground)
     bool omni_fire = false;        // weapon OmniFire=
     bool wall = false;             // warhead Wall= (G-49: may break bridges, FUN_00489190)
+    // W3-B [RE: InfantryClass::ReceiveDamage FUN_00517db5]: the warhead's
+    // InfDeath= (death anim / Die sequence of a killed infantry; absent = 0)
+    // and ProneDamage= (damage multiplier on a prone infantry; absent = 1).
+    int inf_death = 0;
+    double prone_damage = 1.0;
 };
 
 // GetFireError's warhead gate [RE: combat.md §2, FUN_006fb5d0]: a weapon whose

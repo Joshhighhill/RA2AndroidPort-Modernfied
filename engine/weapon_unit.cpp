@@ -78,6 +78,8 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         u.w_verses = w.verses;
         u.w_cell_spread = w.cell_spread;
         u.w_percent_at_max = w.percent_at_max;
+        u.w_inf_death = w.inf_death;          // W3-B
+        u.w_prone_damage = w.prone_damage;
         u.w_proj = (vet && unit_is_elite(u) && u.p_proj_elite_set) ? u.p_proj_elite : u.p_proj;
         u.w_aa = u.p_aa;
         u.w_ag = u.p_ag;
@@ -89,6 +91,8 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         u.w_verses = s.verses;
         u.w_cell_spread = s.cell_spread;
         u.w_percent_at_max = s.percent_at_max;
+        u.w_inf_death = s.inf_death;          // W3-B
+        u.w_prone_damage = s.prone_damage;
         u.w_proj = s.proj;
         u.w_aa = s.aa;
         u.w_ag = s.ag;

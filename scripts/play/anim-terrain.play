@@ -1,0 +1,28 @@
+# anim-terrain -- W3-B theater tile anims (RE-Q6): ALL07's waterfalls
+# (temperat.ini [Waterfalls] Tile01..04Anim = WA01X..WA04X on the template's
+# AttachesTo cell). Two scouts explore the falls; shot pairs 10 ticks apart
+# must change on the cliff face (anim_check.py), and a 30 Hz re-run
+# (RA2_PLAY_HZ=30) gives identical same-tick shots (anim_check.py --cross).
+set hz 60
+set align 2
+set render_every 600
+set on_quit continue
+set campaign ALL07T.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 3000 anim_tick >= 10
+cheat camp_spawn E1 0 146 158
+cheat camp_spawn E1 0 147 163
+until 3000 anim_tick >= 40
+view cell 147 160
+shot wf_{tick}
+shot wf_{tick}
+shot wf_{tick}
+shot wf_{tick}
+until 3000 anim_tick >= 50
+shot wf_{tick}
+shot wf_{tick}
+shot wf_{tick}
+shot wf_{tick}
+end

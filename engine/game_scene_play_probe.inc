@@ -19,6 +19,21 @@
         p.set("playfield_w", playfield_w_);
         p.set("cam_x", cam_.x);
         p.set("cam_y", cam_.y);
+        p.set("anim_tick", static_cast<double>(g_pres_tick));   // W3-B: the logic-tick anim clock
+        {   // W3-B: live infantry per sequence (iseq(Walk), iseq(Prone) ...), prone /
+            // vanished counts, and the presentation's corpse / death-anim counters.
+            p.zero_families.insert("iseq");
+            p.set("iprone", 0);
+            for (const ra2engine::Unit& u : world_.units()) {
+                if (!u.ia.armed || !u.alive) continue;
+                p.add(std::string("iseq(") + ra2engine::inf_seq_name(u.ia.seq) + ")", 1);
+                if (u.ia.prone) p.add("iprone", 1);
+            }
+            p.set("corpses", pres_.corpses_);
+            p.set("death_anims", pres_.death_anims_);
+            p.set("veh_explosions", pres_.explosions_);
+            p.set("unloading_drawn", static_cast<double>(g_unloading_class.size()));
+        }
         const int houses = world_.house_count();
         p.set("houses", houses);
         for (int h = 0; h < houses; ++h) {
@@ -393,6 +408,27 @@
             if (c == "bridge_hit" && a.size() >= 4) {   // G16 debug: one explosion roll
                 world_.bridge_explosion(std::atoi(a[1].c_str()), std::atoi(a[2].c_str()),
                                         std::atoi(a[3].c_str()), true);
+                return "";
+            }
+            if (c == "infkill" && a.size() >= 3) {   // W3-B: infkill H:TYPE[:n] INFDEATH (death-kind check)
+                int h = 0, n = 0;
+                std::string type;
+                if (!play_parse_spec(a[1], h, type, n)) return "bad spec " + a[1];
+                for (ra2engine::Unit& u : world_.units()) {
+                    if (!u.alive || u.die_time >= 0.0 || u.house != h || play_unit_id(u) != type) continue;
+                    if (n-- > 0) continue;
+                    u.hp = 0;
+                    u.die_time = 0.0;
+                    u.ia.death = std::atoi(a[2].c_str());
+                    u.target = -1;
+                    u.path.clear();
+                    u.path_idx = 0;
+                    return "";
+                }
+                return "no unit " + a[1];
+            }
+            if (c == "cheer" && a.size() >= 2) {   // W3-B: cheer H (MakeHouseCheer)
+                world_.make_house_cheer(std::atoi(a[1].c_str()));
                 return "";
             }
             if (c == "credits" && a.size() >= 2) {

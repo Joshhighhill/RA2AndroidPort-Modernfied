@@ -2748,7 +2748,7 @@ the P6 Roster Breadth gate.
 | `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=fb2ce78432058b4a` (final-verification re-pin, was `b23b7d9924a99c85`: moved twice inside gap C 477ab70 -- b3ade7e Ini inline-`;` comment cut (RC-5) makes `GAWEAT Image=GAWETH ;GEF ...` resolve, GAWEAT art-present 3x3 (14 art-present, was 13) -> `72ceaad0c333e4bc`; then 1d074af G-42 speed scale -- ORCA/BEAG `speed_lpf` 179.2 -> 56.0, fire f=77/81, land f=152/160, `Reloaded` f=422/430 (+270)) | `deterministic=yes lines=74`; 15 appended buildings (14 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=77/81, land f=152/160, `Reloaded` f=422/430 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
-| `--demo-saveload` | `saveload_hash=ef78bd7f13287dbc` (W2-SK re-pin on top of W2-CA, was `c19113168b76bae7`: save format v13 adds the W2-SK state -- ore mines + original growth timing, harvest scan/skip/income, wallet hints, depot/capture/spy/factory type flags, shrapnel/Mirage unit fields, AI enemy house / MultipleFactory; W2-SK-25 guard-range pursuit makes the opening fight close in sooner, so the skirmish segment saves from frame 10 (shells_at_save=2); A==B everywhere) `saveload_hash=c19113168b76bae7` (W2-CA re-pin, was `8291b85b9957b34a`: save format v12 adds HouseRec `player_control`, World `ally_pairs_`/`entered_events_`/`track_entered_` and the campaign host's mind-control links; `identical=yes`) (earlier: `8291b85b9957b34a` W2-AN re-pin, was `653c22b544488e64` on master 844033b: save format v10 adds the W2-AN state -- Unit/UnitCombat `an`, Building `iron_left`, World `an_` + per-type SW lists + AI catalog `naval_yard` + `nav_factory_types`; `identical=yes`. Earlier: W2-GA-03 re-pin, was `7fde8a2b895cf6ae`: save v9 serialises the FogOfWar flag + fog-off targeting in the skirmish scenario; witnesses unchanged. Earlier: G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-saveload` | `saveload_hash=b029b2825cf11e6f` (W3-B re-pin, was `ef78bd7f13287dbc`: save format v14 adds the infantry sequence/fear state `Unit::ia`, the warhead `InfDeath`/`ProneDamage` on Unit/UnitCombat/WeaponSlot/WeaponStats, and World's live-infantry switches + per-image sequence tables; the real-GameScene segment arms the infantry machine; `identical=yes`, A==B everywhere) `saveload_hash=ef78bd7f13287dbc` (W2-SK re-pin on top of W2-CA, was `c19113168b76bae7`: save format v13 adds the W2-SK state -- ore mines + original growth timing, harvest scan/skip/income, wallet hints, depot/capture/spy/factory type flags, shrapnel/Mirage unit fields, AI enemy house / MultipleFactory; W2-SK-25 guard-range pursuit makes the opening fight close in sooner, so the skirmish segment saves from frame 10 (shells_at_save=2); A==B everywhere) `saveload_hash=c19113168b76bae7` (W2-CA re-pin, was `8291b85b9957b34a`: save format v12 adds HouseRec `player_control`, World `ally_pairs_`/`entered_events_`/`track_entered_` and the campaign host's mind-control links; `identical=yes`) (earlier: `8291b85b9957b34a` W2-AN re-pin, was `653c22b544488e64` on master 844033b: save format v10 adds the W2-AN state -- Unit/UnitCombat `an`, Building `iron_left`, World `an_` + per-type SW lists + AI catalog `naval_yard` + `nav_factory_types`; `identical=yes`. Earlier: W2-GA-03 re-pin, was `7fde8a2b895cf6ae`: save v9 serialises the FogOfWar flag + fog-off targeting in the skirmish scenario; witnesses unchanged. Earlier: G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-campaign` | `campaign_hash=d6f8eda4e434b348` (W2-SK re-pin on top of W2-CA, was `5d033b6aa019beaa`, lines 739 -> 765: W2-SK-25 guard-range acquisition/pursuit and W2-SK-05 nearest-reachable moves change the mission fights; both maps still reach their scripted outcomes) `campaign_hash=5d033b6aa019beaa` (W2-CA re-pin, was `760c46ae2eed28b4`, lines 737 -> 739: ALL01's aircraft reinforcements (cargo plane / FALC teams at wp 83/85/87/89) are now placed (W2-CA-16) so `Transport Retreat 1` fires at f=665 and 4 more teams exist (13 vs 9, raises 48 -> 45); SOV01's start team recruits all 18 members incl. the SMCV (W2-CA-09: no `!moving()` filter, finished teams release) and its script's Deploy action (W2-CA-17) unfolds the SMCV -> `Con Yard Exists` fires (house loop 1); every other line identical; master-equivalent w2fix-air build prints the old hash) (earlier: `760c46ae2eed28b4` W2-AN re-pin, was `b1d3c453c416e4fb`: ALL01 death raises 45 -> 48 at f=1800 -- its ships now fight with the naval rules (sub cloak + sonar, NavalTargeting, Destroyer ASW spawner, W2-AN-12/13/14); every other line identical) (earlier: `campaign_hash=b1d3c453c416e4fb` (combined gap D + gap F re-pin) | `deterministic=yes lines=737`; **combined re-pin**: gap D (`17830b0f7c233223`, lines 737: campaign enemy houses build out from ProductionBegins/AI triggers) plus gap F: actions 108 executed (logged `CreateCrate ... -> skipped` in the gate, whose World has no crate system), ALL01 reinforcement ships on water instead of the nearest land cell (fewer EnteredBy raises), death raises in the recovered order 7, 48, 29; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
 **Gap owner A re-pins (real-play economy/production, docs/gap G-20..G-30).**
@@ -3685,3 +3685,56 @@ section "W3-FIX-A"), the RE note `docs/re/asset-search.md`, and the `art-*`
   unbuildable as before (with the YR tail they gained art and moved
   `--demo-ai-base`, `--demo-ai-trigger`, `--demo-triggers`, `--demo-roster2`
   and `--demo-saveload`).
+
+## Animation systems (wave-3 W3-FIX-B)
+
+Details and evidence: `docs/gap/wave3/03-asset-anim-systems.md` (status
+section "W3-FIX-B"), the RE notes `docs/re/infantry-anim.md` §8-§14 and
+`docs/re/presentation.md` §8, and the `anim-*` `--play` scripts.
+
+- **Anim clock on the logic tick.** `Presentation::logic_tick` runs inside
+  GameScene's fixed 15 Hz loop and drives `g_pres_tick`; AnimClass anims,
+  building slot anims, terrain/tile anims, the radar anim, beams, infantry
+  sequences and the vehicle walk stage all advance per game frame (was per
+  render frame, ~4x too fast at 60 Hz and half speed on a 30 Hz phone; it
+  now scales with GameSpeed like the original). Fire/death effects,
+  projectile impacts, defence muzzles and building deaths are spawned on the
+  tick of their event. Same-tick screenshots of a 60 Hz and a 30 Hz run are
+  pixel-identical (`anim_check.py --cross`).
+- **AnimClass draw keys** (shared `pres_fx.inc`): `Translucent=yes` fades by
+  life (25/50/75 % at 0.2/0.4/0.6 of End), `Translucency=` levels, `Shadow=`
+  darken frames, `Flat`/ground-layer anims under objects, `AltPalette` through
+  the owner's (else ColorSchemes[0]) unit-palette remap, `RandomRate`,
+  `StartSound`.
+- **Infantry DoType machine** (`engine/inf_anim.cpp`, live game only): all
+  42 art sequences with the original DoControls rates, idle fidgets on the
+  IdleActionFrequency timer, fear -> Down/Prone/FireProne/Up with the
+  warhead's `ProneDamage`, civilian Panic + scatter (Fraidycat), deaths by the
+  warhead's `InfDeath` (Die1/Die2 or INFDIE/FLAMEGUY/ELECTRO/YURIDIE/
+  NUKEDIE/...), `DeadBodies` corpses, GI/Guardian GI Deploy/Deployed/
+  DeployedFire/Undeploy, Swim/Wet set in water, Cheer on trigger 113 and on
+  victory. Save format v14.
+- **Building slots** (`engine/pres_bldanim.inc`): all 21 art slots with
+  Damaged/Garrisoned variants; construction-yard crane on placement, shipyard
+  production, service-depot Special -> SpecialTwo -> SpecialThree -> Idle,
+  refinery storage level (one ActiveAnim) and ore dump, Tesla/Prism charge
+  per shot, ground and roof factory doors, CanBeOccupied 4-state and Gate
+  frames, LeaveRubble rubble, DestroyAnim ruins, civilian dressing anims.
+- **Terrain**: theater tile anims (`Tile<NN>Anim` of the tile set's
+  SetName section: ALL07's waterfalls, tunnel tops).
+- **Vehicles**: HVA frames by the walk stage (Night Hawk rotors), SHP-vehicle
+  WalkRate/IdleRate, `TurretOffset`, `UnloadingClass` while dumping, a
+  random `Explosion=` entry, 8-way muzzle anims by turret facing.
+- `--play` additions: `set hz N` / `set dt S` for the whole run and
+  `RA2_PLAY_HZ` to re-run a script at another render rate, `set align N`
+  (inputs/cheats on aligned logic ticks), `{tick}` in shot names,
+  `<out>/shots.txt` (screen point of the `view` target per shot), probe keys
+  `anim_tick`, `iseq(<Sequence>)`, `iprone`, `corpses`, `death_anims`,
+  `veh_explosions`; cheats `infkill H:TYPE[:n] INFDEATH`, `cheer H`.
+  Scripts: `anim-buildings.play`, `anim-infantry.play`, `anim-vehicles.play`,
+  `anim-terrain.play`; checker `scripts/play/anim_check.py <out>` (each shot
+  pair changes) and `--cross <out60> <out30>` (0 px).
+- **Gates**: 26 of 27 print their pinned values; `--demo-saveload` re-pinned
+  to `b029b2825cf11e6f` (save format v14, see the table). The infantry
+  machine, fear and ProneDamage are armed only by GameScene, so every
+  headless gate keeps its sim.

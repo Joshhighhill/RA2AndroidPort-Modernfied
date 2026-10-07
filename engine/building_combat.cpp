@@ -49,6 +49,8 @@ Unit World::defense_shooter(int b_idx, int slot) const {
     s.w_verses = w.verses;
     s.w_cell_spread = w.cell_spread;
     s.w_percent_at_max = w.percent_at_max;
+    s.w_inf_death = w.inf_death;          // W3-B
+    s.w_prone_damage = w.prone_damage;
     s.w_proj = w.proj;
     s.w_aa = w.aa;
     s.w_ag = w.ag;

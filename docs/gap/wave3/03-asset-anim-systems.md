@@ -305,3 +305,50 @@ Remainder and cause: `CASIN01E/S/W` ×5 (sov03u/sov09u) ABSENT_EVERYWHERE (no fi
 install, the original draws nothing either); `NAPSIS` ×1 (temperate lobby map) name munge not gated
 on `NewTheater` (clone `ngpsis`, original `napsis`); `SCHP` ×3 (YR Siege Chopper on lobby maps,
 voxel parts absent under the clone's name scheme).
+
+## W3-FIX-B status (branch `w3fix-anims`)
+
+Fix agent B (animation systems, §3). RE: `docs/re/infantry-anim.md` §8-§14,
+`docs/re/presentation.md` §8 (Ghidra on a private `p4proj` copy; scripts and
+dumps in `D:\ra2-re\w3fix-b`, `D:\ra2-re\w3fix-b-out`). Acceptance: `--play`
+scripts `anim-buildings`, `anim-infantry`, `anim-vehicles`, `anim-terrain`, each run
+at 60 Hz and with `RA2_PLAY_HZ=30`; `scripts/play/anim_check.py <out>` shows every
+shot pair changing, `--cross <out60> <out30>` shows 0 changed px on every same-tick
+shot (frame-rate independence).
+
+| Item | Status | Where | Evidence |
+|---|---|---|---|
+| §3.1 anim tick source | FIXED | `Presentation::logic_tick` (GameScene fixed loop), `PresFx::tick`, `PresMap::step_anims` (no 30-tick cap) | all four scripts: `cross_rate_mismatches=0` |
+| §3.2 ActiveAnim 1-4 / Damaged | FIXED (+Garrisoned) | `engine/pres_bldanim.inc` | `pw_*` |
+| §3.2 ProductionAnim (CY crane) | FIXED | placement -> Production, then Idle | `cy_*`, `[banim] GACNST_B slot=8` |
+| §3.2 IdleAnim | FIXED | grand opening + after Production/depot cycles | `dep_*` |
+| §3.2 SpecialAnim 1-3 | FIXED | depot Special->Two->Three->Idle (`FUN_00451b30`); refinery ore dump on unload; IsAnimDelayedFire per shot | `dep_*`, `tsl_*` (Prism), `live_dump_*` |
+| §3.2 refinery ActiveAnimTwo..Four (RE-Q4) | FIXED | one slot by `stored*4/Storage` (`FUN_004509c0`) [RE-FALLBACK: money share as the stored amount] | `live_ref_*` |
+| §3.2 war factory doors / roof pair | FIXED | ground pair for vehicles, roof pair for aircraft | `wf_*` |
+| §3.2 DestroyAnim ruins | FIXED (offset MEDIUM) | `PresFx::spawn_hold` at the death edge | ALL03 White House -> CAWS01DM (scratch shot) |
+| §3.2 LeaveRubble | FIXED | rubble frame 3 (`FUN_0045f150`), tombstoned buildings stay in the draw list | code path; no stock map shot |
+| §3.2 CanBeOccupied 4-state / Gate stages | FIXED | `pres_building_main_frame` (`FUN_0043ef10`) [Gate open/close timing RE-FALLBACK, visual only] | code path |
+| §3.2 civilian buildings in skirmish frozen | FIXED | `pres_dressing_overlay` (Active/Idle loops) | hillbtwn dressing |
+| §3.2 damage fires / smoke | unchanged (RE-Q7 open; particles = agent C) | — | — |
+| §3.3 sequences (42) | FIXED | `engine/inf_anim.cpp`, `enable_live_infantry_anims` | `anim-infantry` `iseq(...)` probes |
+| §3.3 walk cadence (RE-Q1) | FIXED | DoControls Walk rate 3 (was 9 fps); WalkRate/IdleRate are the SHP-unit/voxel walk stage | `tests/test_inf_anim.cpp` |
+| §3.3 idle fidgets | FIXED | IdleActionFrequency timer, roll 0..10 (`FUN_0051cb80`) | `idle_*` |
+| §3.3 prone under fire (RE-Q5) | FIXED | fear 100/300, +50/25/12, decay 1/frame, >49 Down, <50 Up; ProneDamage (`FUN_00517db5`, `FUN_0051fde0`) | `prone_*`, `iprone>=2` |
+| §3.3 death variety (RE-Q2) | FIXED | InfDeath 1/2/9 Die1/Die2, 3..10 death anims, 0 none; NotHuman (+0xEAD) Die1 | `die_*`, `death_anims>=3` |
+| §3.3 corpses | FIXED | DeadBodies on the tombstone | `corpse_*`, `corpses>=2` |
+| §3.3 panic / cheer / deploy / swim | FIXED (swim: code path) | Panic >199 + Fraidycat scatter; Cheer (113, victory); GI/GGI deploy set | `civ_*`, `cheer_*`, `dep_*` |
+| §3.3 paradrop / parachute | OPEN | the clone places paratroopers on the ground (no fall); `PARACH` not drawn | — |
+| §3.3 sequence sounds | OPEN | (frame, sound) tail not parsed | — |
+| §3.4 HVA animation | FIXED | walk stage % HVA frames (`FUN_0073a3a0`); `shad.hva` 2 frames; `zep.hva` has 1 frame (no Kirov propeller anim in data) | `heli_*` |
+| §3.4 TurretOffset | FIXED | `draw_vehicle_unit` | `[veh] HARV turret_offset=50` |
+| §3.4 UnloadingClass | FIXED | `g_unloading_class` (HARV->HORV, CMIN->CMON) | `live_dump_*` |
+| §3.4 random Explosion= | FIXED | `unit_fx_tick` death edge | `boom_*`, `veh_explosions>=3` |
+| §3.4 muzzle by facing | FIXED (vehicles; infantry were) | `fire_fx` | code path |
+| §3.5 tile anims / waterfalls (RE-Q6) | FIXED | `Theater::tile_anim`, `PresMap::load_tile_anims` [offset origin MEDIUM] | `anim-terrain` (ALL07 falls change 743 px) |
+| §3.6 Shadow / Translucency / Translucent fade / Flat / AltPalette (RE-Q3) / RandomRate / StartSound | FIXED | `PresFx::draw_anim_frame`, `alpha_for`, pass 0 | `die_*` (ELECTRO etc.), corpses |
+| §3.6 ZAdjust/YSort depth (RE-Q8), PingPong/Reverse, Spawns, Bouncer/Trailer | OPEN / agent C | — | — |
+
+Open RE after W3-FIX-B: RE-Q7 (damage fire spawner), RE-Q8 (slot ZAdjust/YSort), RE-Q9
+(RA2 `game.exe` vs `gamemd.exe`), the DestroyAnim persistence and pixel origin, the gate
+open/close mission timing, the refinery's own StorageClass amount, the win-time cheer call
+site, the 8-way muzzle rounding rule.

@@ -60,6 +60,17 @@ public:
     // recovered LandType source (the .tmp TerrainType byte was FALSIFIED).
     ra2assets::LandType land_type_of_cell(uint32_t global_index) const;
 
+    // W3-B [RE-Q6]: theater tile animations -- the set's SetName section of
+    // the control INI lists Tile<NN>Anim / XOffset / YOffset / AttachesTo /
+    // ZAdjust for template NN (temperat.ini [Waterfalls] WA01X..WD04X, the
+    // [Tunnels...] TUNTOP01..04). The anim stands on the template cell whose
+    // sub-tile index == AttachesTo. nullptr when the template has none.
+    struct TileAnim { std::string anim; int xoff = 0, yoff = 0, attaches_to = 0, zadjust = 0; };
+    const TileAnim* tile_anim(uint32_t global_index) const {
+        auto it = tile_anims_.find(global_index);
+        return it == tile_anims_.end() ? nullptr : &it->second;
+    }
+
 private:
     struct Slot {
         std::string file;  // FileName= (lower/verbatim from INI)
@@ -73,6 +84,7 @@ private:
     std::string ext_;
     std::vector<Slot> slots_;  // global index -> slot
     ra2assets::TileSetClass general_;  // [General] tile-set classification [RE: naval.md §2]
+    std::unordered_map<uint32_t, TileAnim> tile_anims_;   // W3-B global index -> anim
     // filename -> decoded TmpFile (absent entries stored as a nullptr sentinel
     // via `misses_`); keeps repeated cells cheap.
     std::unordered_map<std::string, ra2assets::TmpFile> cache_;
@@ -214,6 +226,8 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house);
 //   3 Magenta=221,102,255  4 Purple=201,201,189  5 DarkBlue=153,214,212
 //   6 DarkSky=131,200,230  7 DarkGreen=81,200,210
 ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_ix);
+// W3-B: the pal_for_color remap for an explicit RA2 HSV triple (0..255 each).
+ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s, int v);
 
 // G-16 (render): the World whose 8 MP house colours the sprite draws use.
 // render_world publishes its world here each frame; null -> pal_for_house.

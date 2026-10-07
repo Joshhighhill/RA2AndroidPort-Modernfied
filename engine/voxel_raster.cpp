@@ -70,17 +70,20 @@ double index_to_yaw(int i, int n) {
 
 VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
                             double yaw_rad, const ra2assets::Vpl& vpl,
-                            const ra2assets::Palette& pal) {
+                            const ra2assets::Palette& pal, int hva_frame) {
     const double c = std::cos(yaw_rad), s = std::sin(yaw_rad);
 
     VoxelSprite out;
     if (m.sections.empty() || hva.frames.empty() || hva.frames[0].empty()) return out;
+    // W3-B: the HVA frame (rotor / propeller anims); 0 = the old behaviour.
+    const std::size_t hf = static_cast<std::size_t>(hva_frame < 0 ? 0 : hva_frame) % hva.frames.size();
+    if (hva.frames[hf].empty()) return out;
 
     // Pass 1: bounds. Project each section's 8 transformed bbox corners.
     double mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
     for (size_t si = 0; si < m.sections.size(); ++si) {
         const auto& sec = m.sections[si];
-        const auto& xf = hva.frames.at(0).at(std::min(si, hva.frames[0].size() - 1));
+        const auto& xf = hva.frames.at(hf).at(std::min(si, hva.frames[hf].size() - 1));
         for (int corner = 0; corner < 8; ++corner) {
             const V3 lo = {sec.min_bounds[0], sec.min_bounds[1], sec.min_bounds[2]};
             const V3 hi = {sec.max_bounds[0], sec.max_bounds[1], sec.max_bounds[2]};
@@ -114,7 +117,7 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
     // Pass 2: voxels.
     for (size_t si = 0; si < m.sections.size(); ++si) {
         const auto& sec = m.sections[si];
-        const auto& xf = hva.frames.at(0).at(std::min(si, hva.frames[0].size() - 1));
+        const auto& xf = hva.frames.at(hf).at(std::min(si, hva.frames[hf].size() - 1));
         const double stepx = (sec.max_bounds[0] - sec.min_bounds[0]) / sec.size_x;
         const double stepy = (sec.max_bounds[1] - sec.min_bounds[1]) / sec.size_y;
         const double stepz = (sec.max_bounds[2] - sec.min_bounds[2]) / sec.size_z;

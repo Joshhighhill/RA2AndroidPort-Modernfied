@@ -56,6 +56,20 @@ public:
     const Script& script() const { return s_; }   // W2-CA-19 (start scene)
     Runner(Script s, std::string out_dir) : s_(std::move(s)), out_(std::move(out_dir)) {
         log_.open(out_ + "/play.log", std::ios::trunc);
+        std::ofstream(out_ + "/shots.txt", std::ios::trunc);   // W3-B
+        // W3-B: `set dt <s>` / `set hz <n>` choose the driver's fixed step for
+        // the WHOLE run (run_scene_driver takes it once, before frame 0), so
+        // the same script can render at 60 Hz (dt 1/60: one logic tick every
+        // 4 frames) or 30 Hz and prove anim timing is frame-rate independent.
+        for (const Cmd& c : s_.cmds)
+            if (c.op == "set" && c.args.size() >= 2) {
+                const std::string k = lower(c.args[0]);
+                if (k == "dt") dt_ = std::atof(c.args[1].c_str());
+                else if (k == "hz" && std::atof(c.args[1].c_str()) > 0) dt_ = 1.0 / std::atof(c.args[1].c_str());
+            }
+        // RA2_PLAY_HZ=<n> overrides the script (re-run one script at 30 Hz).
+        if (const char* hz = std::getenv("RA2_PLAY_HZ"))
+            if (std::atof(hz) > 0) dt_ = 1.0 / std::atof(hz);
     }
 
     // ---------------------------------------------------------------- driver
@@ -118,6 +132,22 @@ public:
             }
             if (pc_ >= s_.cmds.size()) { finished_ = true; return false; }
             const Cmd& c = s_.cmds[pc_];
+            // W3-B `set align N`: every input / cheat waits for an anim tick
+            // that is a multiple of N and (for frame-consuming input) later
+            // than the previous input's, so a 60 Hz and a 30 Hz run (N=2)
+            // feed the game the same input at the same logic ticks.
+            if (align_ > 0) {
+                const std::string& o = c.op;
+                const bool cheat_op = o == "cheat";
+                const bool input_op = o == "click" || o == "drag" || o == "move" || o == "key" || o == "hold" ||
+                                      o == "type" || o == "place";
+                auto at = p.n.find("anim_tick");
+                if ((cheat_op || input_op) && at != p.n.end()) {
+                    const long t = static_cast<long>(at->second);
+                    if (t % align_ != 0 || (input_op && t <= last_input_tick_)) return true;
+                    if (input_op) last_input_tick_ = t;
+                }
+            }
             trace(c);
             const int r = exec(c, p);
             if (r == kStop) return false;
@@ -163,7 +193,27 @@ public:
         scene_ptr_ = &s;
         ren_ = static_cast<SDL_Renderer*>(plat.renderer());
         if (!shot_.empty()) {
+            // W3-B: "{tick}" in a shot name -> the scene's anim_tick at capture
+            // (same-tick shots from a 60 Hz and a 30 Hz run share a name).
+            const std::size_t at = shot_.find("{tick}");
+            if (at != std::string::npos) {
+                Probe tp;
+                probe(tp);
+                auto it = tp.n.find("anim_tick");
+                shot_.replace(at, 6, it == tp.n.end() ? std::string("na") : std::to_string(static_cast<long>(it->second)));
+            }
             capture(shot_);
+            // W3-B: <out>/shots.txt -- "<name> <sx> <sy>": the screen point of
+            // the last `view` target at capture (the camera clamps at map
+            // edges, so it is not always the playfield centre).
+            {
+                Probe vp;
+                probe(vp);
+                int sx = -1, sy = -1;
+                if (have_view_ && vp.cell_to_screen) vp.cell_to_screen(view_cx_, view_cy_, sx, sy);
+                std::ofstream sf(out_ + "/shots.txt", std::ios::app);
+                sf << shot_ << " " << sx << " " << sy << std::endl;
+            }
             shot_.clear();
         }
         if (f_ % 15 == 0) {
@@ -230,7 +280,8 @@ private:
         if (op == "set") {
             const std::string k = lower(c.args[0]);
             const std::string v = c.args.size() > 1 ? c.args[1] : "";
-            if (k == "dt") dt_ = std::atof(v.c_str());
+            if (k == "dt" || k == "hz") {}   // W3-B: applied before the run (Runner ctor)
+            else if (k == "align") align_ = std::max(0, std::atoi(v.c_str()));   // W3-B
             else if (k == "render_every") render_every_ = std::max(1, std::atoi(v.c_str()));
             else if (k == "max_frames") max_frames_ = std::atol(v.c_str());
             else if (k == "park" && c.args.size() > 2) { park_x_ = std::atoi(v.c_str()); park_y_ = std::atoi(c.args[2].c_str()); }
@@ -313,6 +364,9 @@ private:
             if (!locate(c, p, 0, cx, cy)) return kNext;
             if (!p.center_on) { fail(c, "missing-probe:center_on"); return kNext; }
             p.center_on(cx, cy);
+            view_cx_ = cx;   // W3-B: shots.txt records where this lands on screen
+            view_cy_ = cy;
+            have_view_ = true;
             return kNext;
         }
         // ---- input gestures (each consumes the frame) ----
@@ -699,6 +753,10 @@ private:
     int park_x_ = 560, park_y_ = 360;
     std::string shot_;
     double dt_ = 1.0 / 15.0;
+    double view_cx_ = 0, view_cy_ = 0;   // W3-B: last `view` target (cells)
+    int align_ = 0;                      // W3-B `set align N`
+    long last_input_tick_ = -1;
+    bool have_view_ = false;
     int render_every_ = 1;
     long max_frames_ = 40000;
     std::map<std::string, Value> vars_;

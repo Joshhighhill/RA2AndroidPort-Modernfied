@@ -456,3 +456,21 @@ theater twins ship, so the clone's name-pattern munge is probably right).
 | R11 1.006 patch archives | FIXED | AssetFS opens `expand01`/`ecache01` ahead of `conquer.mix` |
 | R3/R4/R5 animations, R6 trigger visuals | fix agents B / C | — |
 | R8 movies, R9 LocalSize | not in scope | — |
+
+## W3-FIX-B status (branch `w3fix-anims`)
+
+The animation root causes are fixed in the shared systems (details, evidence and the
+remaining open items: `03-asset-anim-systems.md`, section "W3-FIX-B"):
+- **Infantry frozen** (RC-7 / R5): the full sequence machine — idle fidgets, prone under
+  fire, civilian Panic + scatter, Cheer (trigger 113 and victory), InfDeath deaths and
+  corpses, GI deploy, Swim in water. Paradrop falls and the parachute remain open.
+- **Building slots** (RC-3 / R4): IdleAnim, ProductionAnim (crane), SpecialAnim (depot,
+  refinery dump, Tesla/Prism charge per shot), roof doors, CanBeOccupied 4-state frames,
+  Gate frames (visual), civilian-building anims in skirmish.
+- **Destruction** (RC-4 / R3 rubble): DestroyAnim ruins (ALL03 White House -> CAWS01DM)
+  and LeaveRubble frames; debris and smoke are agent C's.
+- **ALL07 waterfalls** (RC-9): drawn from the theater INI's `[Waterfalls]` tile anims.
+- **Vehicles** (RC-10 part): Night Hawk rotor HVA frames, UnloadingClass, random
+  Explosion=, TurretOffset; wakes are agent C's.
+- Every animation now runs on the 15 Hz logic clock (it ran per render frame, ~4x too
+  fast at 60 Hz).

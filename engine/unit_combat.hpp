@@ -150,6 +150,10 @@ struct UnitCombat {
     std::vector<int> shrapnel_verses; // ShrapnelWeapon= warhead Verses
     bool disguise_when_still = false; // CanDisguise= + DisguiseWhenStill= (Mirage Tank)
     AnType an;                        // W2-AN: naval/air/SW type data (air_naval.hpp)
+    // W3-B (last: keeps the positional aggregate initialisers valid): the
+    // primary warhead's InfDeath= (absent 0) and ProneDamage= (absent 1).
+    int inf_death = 0;
+    double prone_damage = 1.0;
 };
 
 }  // namespace ra2engine
