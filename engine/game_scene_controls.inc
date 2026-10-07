@@ -346,23 +346,25 @@
             }
         }
     }
-    // Count badge (x+60, y+1, right-aligned) and "on hold" marker (x+30, y+1)
-    // over the visible cameos [RE: construction.md §11a strip draw 0x6A8BD0].
-    // [RE-FALLBACK: drawn with the rect font; the original uses the game font.]
-    void draw_queue_badges(SDL_Renderer* ren) const {
+    // W2-UI-03/04 [RE: wave2/04 #2, FUN_0067F800 + FUN_0069D770]: the queue
+    // count "%d" right-aligned at (x+60, y+1) -- shown when > 1, or when 1 and
+    // the type is queued but is not the current product -- and the CSF status
+    // TXT_READY "Ready" / TXT_HOLD "On Hold" centred at (x+30, y+1), moved to
+    // (x+2, y+1) left-aligned when a count is shown; game.fnt in the UI colour
+    // over a 0xAF black box (hud_text.inc draw_cameo_text).
+    void draw_queue_badges(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         if (!(ba_.ok && ba_.sidebar_ok)) return;
         for (const ra2engine::CameoCell& cell : lay_.cameos) {
             ra2engine::QueueCat cat;
             if (active_tab_ >= 2) cat = rp_cat_of_unit(cell.type);
             else cat = active_tab_ == 1 ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
             const int n = queued_count(cell.type, cat);
-            if (n > 1) {
-                const std::string s = std::to_string(n);
-                draw_text(ren, s, cell.rect.x + 60 - static_cast<int>(s.size()) * 6 - 1, cell.rect.y + 2, 1,
-                          255, 255, 255);
-            }
-            if (queues_.producing(cat) == cell.type && held_.count(static_cast<int>(cat)))
-                draw_text(ren, "HOLD", cell.rect.x + 30 - 12, cell.rect.y + 2, 1, 255, 230, 120);
+            const bool current = queues_.producing(cat) == cell.type;
+            const int shown = (n > 1 || (n == 1 && !current)) ? n : 0;
+            std::string status;
+            if (current && queues_.state(cat).slot.ready) status = g_txt_ready;
+            else if (current && held_.count(static_cast<int>(cat))) status = g_txt_hold;
+            if (shown || !status.empty()) draw_cameo_text(ren, tc, cell.rect.x, cell.rect.y, status, shown);
         }
     }
 

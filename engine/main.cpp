@@ -89,6 +89,7 @@
 #include "ra2assets/map.hpp"
 #include "ra2assets/mappack.hpp"
 #include "ra2assets/fnt.hpp"       // Westwood shell font (menu labels) [Task 5]
+#include "ra2assets/ufnt.hpp"      // W2-UI-12 game.fnt HUD face
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"
 #include "ra2assets/pcx.hpp"       // logo.pcx/title.pcx decode [Task 5]
@@ -152,6 +153,7 @@ const ra2assets::TheaterChain* g_art_chain = nullptr;
 // G-91: the sidebar chrome mix -- sidec01 (Allied, every gate) or sidec02
 // (Soviet), chosen by GameScene from the player's side before the art loads.
 const char* g_sidebar_mix = "sidec01.mix";
+void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
 inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
@@ -440,6 +442,8 @@ struct BuildingAssets {
     bool has_radar = false, has_side3 = false, has_addon = false, has_scroll = false,
          has_repair_sell = false, has_optbtns = false;
     ra2assets::Palette sb_pal;                       // sidebar.pal if present, else cameo.pal
+    ra2assets::ShpFile sb_darken;                    // W2-UI-05 language.mix/cameo.mix/darken.shp
+    bool has_darken = false;
     bool sidebar_ok = false;
     // Shared building death explosion (TWLT070) [RE: building-render.md §4] --
     // render-only; null if unavailable (building just vanishes on death).
@@ -1977,13 +1981,11 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     };
     ba.unit_pal = load_pal(art_chain().unit_pal);   // G-86 theater unit palette
     ba.cameo_pal = load_pal("cameo.pal");
-    // Sidebar chrome palette: sidebar.pal if present (the §11 pixel-decode
-    // used it), else cameo.pal (guarded probe).
+    // Sidebar chrome palette (W2-UI-01): every sidec0N.mix chrome SHP draws
+    // under THAT mix's own sidebar.pal [RE: wave2/04 #1 -- cache.mix has no
+    // sidebar.pal; game.exe 0x7F8AF8 "SIDEBAR.PAL"]. Loaded with the chrome
+    // below; cameo.pal stays the fallback and the cameo palette.
     ba.sb_pal = ba.cameo_pal;
-    if (const MixEntry* se = cache.find(std::string("sidebar.pal"))) {
-        auto raw = cache.read(*se);
-        ba.sb_pal = Palette::load(raw.data(), raw.size());
-    }
 
     // Theater art mix cache: open each nested mix once, lazily; a mix that
     // fails to open is remembered as null so later candidates just skip it.
@@ -2152,10 +2154,17 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     }
     ba.ok = ok_n > 0;
 
+    hud_font_load(ra2);   // W2-UI-12 (process-wide, once)
     // Sidebar chrome (player side = Allied sidec01) [RE-GATE: construction.md
     // §11]: four SEPARATE 28x27 tab SHPs + the 55-frame gclock2.shp clock.
     try {
         MixFile sb = ra2.open_nested(g_sidebar_mix);   // G-91: sidec02 for a Soviet player
+        if (const MixEntry* se = sb.find(std::string("sidebar.pal"))) {   // W2-UI-01
+            auto raw = sb.read(*se);
+            ba.sb_pal = Palette::load(raw.data(), raw.size());
+        } else {
+            std::cerr << "[building] " << g_sidebar_mix << "/sidebar.pal missing; chrome uses cameo.pal\n";
+        }
         auto load_sb = [&](const char* fn) -> ShpFile {
             const MixEntry* e = sb.find(std::string(fn));
             if (!e) throw std::runtime_error(std::string("sidebar SHP missing: ") + fn);
@@ -2209,6 +2218,10 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     ba.sw_has_cameo = false;
     try {
         MixFile cameo_mix = language.open_nested("cameo.mix");
+        if (const MixEntry* de = cameo_mix.find(std::string("darken.shp"))) {   // W2-UI-05
+            ba.sb_darken = ShpFile::load(cameo_mix.read(*de));
+            ba.has_darken = ba.sb_darken.count() > 0;
+        }
         if (const MixEntry* ce = cameo_mix.find(std::string("nukeicon.shp"))) {
             ba.sb_nukeicon = ShpFile::load(cameo_mix.read(*ce));
             ba.sw_has_cameo = ba.sb_nukeicon.count() > 0;
@@ -3733,6 +3746,8 @@ void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint
     SDL_RenderFillRect(ren, &rc);
 }
 
+#include "hud_text.inc"   // W2-UI-12/02/03/05/07 HUD font + cameo overlays
+
 // CB-4 Superweapons [spec §6]: draw the SW cameo + recharge indicator in a
 // sidebar slot, reusing the EXISTING gclock2.shp 55-frame chrome + the flashing-
 // green READY tint. Drawn ONLY when house 0 has a granted SW, so no existing
@@ -3746,17 +3761,17 @@ void draw_sw_slot(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         blit_shp(ren, tc, "swcam:nukeicon", ba.sb_nukeicon, 0, ba.cameo_pal, slot.x, slot.y);
     else
         shade_rect(ren, slot, 140);                     // placeholder tile
+    (void)t_now;
     if (world.sw_ready(0)) {
-        // READY: 2 Hz flashing-green tint (the existing production-ready state).
-        if (static_cast<int>(t_now * 2) % 2 == 0) shade_rect(ren, slot, 90, 0, 200, 0);
+        // READY: the CSF "Ready" text, as on a production cameo (W2-UI-03).
+        draw_cameo_text(ren, tc, slot.x, slot.y, g_txt_ready, 0);
     } else {
-        // Charging: gclock2 frame over a shade (the build-clock chrome, §6).
-        shade_rect(ren, slot, 90);
+        // Charging: translucent gclock2 frame (W2-UI-02, the build-clock blit).
         int gframe = (int)std::lround(world.sw_charge_fraction(0) * 54.0);
         if (gframe < 0) gframe = 0;
         if (gframe >= ba.sb_gclock.count()) gframe = ba.sb_gclock.count() - 1;
-        blit_shp(ren, tc, "sw:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
-                 slot.x, slot.y);
+        blit_shp_alpha(ren, tc, "sw:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
+                       slot.x, slot.y, 128);
     }
 }
 
@@ -3997,19 +4012,20 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         else
             can = ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
                                        conyard_alive(world, ba, 0));
+        // W2-UI-02/05 [RE: wave2/04 #2, FUN_0067F800]: DARKEN.SHP (0x401) when
+        // the item cannot be built; while in production GCLOCK2 frame stage+1
+        // TRANSLUCENT (0x404 = 50 %) with no shade under it; a ready item shows
+        // only its "Ready" text (draw_queue_badges).
         if (ps.slot.type == type && ps.slot.ready) {
-            // Ready: 2 Hz brightness flash (green tint overlay; READY text is a
-            // documented divergence -- no game font in this phase).
-            if (static_cast<int>(t_now * 2) % 2 == 0) shade_rect(ren, c.rect, 90, 0, 200, 0);
+            // Ready: no clock (text drawn by GameScene::draw_queue_badges).
         } else if (ps.slot.type == type) {
-            // Building/unit: gclock2 frame (1 + stage) over a shade [§11].
-            shade_rect(ren, c.rect, 90);
             int gframe = 1 + ps.slot.stage;
             if (gframe >= ba.sb_gclock.count()) gframe = ba.sb_gclock.count() - 1;
-            blit_shp(ren, tc, "sb:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
-                     c.rect.x, c.rect.y);
+            blit_shp_alpha(ren, tc, "sb:gclk" + std::to_string(gframe), ba.sb_gclock, gframe, ba.sb_pal,
+                           c.rect.x, c.rect.y, 128);
         } else if (!can) {
-            shade_rect(ren, c.rect, 140);  // Disabled: ~55% black (building AND unit tabs, CB-5)
+            if (ba.has_darken) blit_shp_darken(ren, tc, "sb:darken", ba.sb_darken, 0, c.rect.x, c.rect.y);
+            else shade_rect(ren, c.rect, 128);
         }
     }
     // CB-4 Superweapons [spec §6]: the SW cameo + recharge clock in an unused
@@ -5255,6 +5271,11 @@ public:
     }
     void init_presentation() {
         init_map_dressing();
+        {   // W2-UI-03: CSF TXT_READY / TXT_HOLD for the cameo status text
+            const std::string r = camp::csf_text(dir_, "TXT_READY"), h = camp::csf_text(dir_, "TXT_HOLD");
+            if (r != "TXT_READY") g_txt_ready = r;
+            if (h != "TXT_HOLD") g_txt_hold = h;
+        }
         radar_.init(a_, world_, ore_art_.any ? &ore_art_ : nullptr);
         g_radar = &radar_;
         // G-90: every resolved infantry anim table, in skirmish as in campaign
@@ -5298,7 +5319,7 @@ public:
         }
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
         draw_selected_building(ren);   // G-10
-        draw_queue_badges(ren);        // G-07
+        draw_queue_badges(ren, tc);    // G-07 / W2-UI-03/04
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
         bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
