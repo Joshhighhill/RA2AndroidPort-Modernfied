@@ -120,3 +120,11 @@ void popup_render(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::str
 
 // Device rect of popup button i of n (GfConfirm's hit-test).
 ra2engine::SbRect popup_button_dev(int i, int n) { return ui_dev(popup_button(i, n)); }
+
+// W2-UI-22: control 0x71D = "%s %s" of GUI:Version and the build [RE: wave2/04
+// Q7; the build string is the clone's 1.006].
+inline std::string shell_version_text() {
+    std::string v = gf_csf("GUI:Version", "Version");
+    while (!v.empty() && v.back() == ' ') v.pop_back();
+    return v + " 1.006";
+}

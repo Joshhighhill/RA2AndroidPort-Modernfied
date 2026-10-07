@@ -4520,7 +4520,8 @@ enum ShellPage {
 // (-> SkirmishSetupScene -> GameScene); ACT_QUIT exits.
 enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */,
                    ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */,
-                   ACT_CAMPAIGN_LOAD /* W2-UI-18: 0x94 Load */ };
+                   ACT_CAMPAIGN_LOAD /* W2-UI-18: 0x94 Load */,
+                   ACT_CREDITS /* W2-UI-26: View Credits */ };
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -4570,7 +4571,8 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
                 const ShellXform& xf, const std::vector<ShellButton>& buttons,
                 int hover_ix, int pressed_ix, const std::string& header,
                 const std::string& version, int monitor_frame,
-                SDL_Texture* bink_tex = nullptr, int sdtp_frame = 0) {
+                SDL_Texture* bink_tex = nullptr, int sdtp_frame = 0,
+                const int* row_frames = nullptr /* W2-UI-24: per-row SDBTNANM transition frame, -1 = none */) {
     const double canvas_scale = xf.s;
     // The ONE logical->device transform (shared verbatim with the hit-test).
     auto dev = [&](int lx, int ly, int lw, int lh) -> SDL_Rect {
@@ -4660,6 +4662,8 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
             int frame = 2;                                       // normal
             if (b.enabled && i == pressed_ix)    frame = 4;      // yellow-hot
             else if (b.enabled && i == hover_ix) frame = 3;      // orange glow
+            const int brow = (b.rect.y - 199) / 42;
+            if (row_frames && brow >= 0 && brow < 6 && row_frames[brow] >= 0) frame = row_frames[brow];
             if (frame >= art.sdbtnanm->count()) frame = 0;
             SDL_Texture* bt = shp_frame_tex(tc, "shell:sdbtn" + std::to_string(frame),
                                             *art.sdbtnanm, frame, *sdbtn_pal);
@@ -4720,6 +4724,8 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
         };
         for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
             const ShellButton& b = buttons[i];
+            const int brow = (b.rect.y - 199) / 42;
+            if (row_frames && brow >= 0 && brow < 6 && row_frames[brow] >= 0) continue;   // W2-UI-24
             const bool pressed = (i == pressed_ix);
             centered(b.label, b.rect.x, b.rect.y, b.rect.w, b.rect.h, lbl_scale,
                      pressed ? 2 : 0, pressed ? 5 : 0);
@@ -4739,9 +4745,9 @@ inline void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, c
                        const ShellXform& xf, const std::vector<ShellButton>& buttons,
                        int hover_ix, int pressed_ix, const std::string& header,
                        const std::string& version, int monitor_frame,
-                       SDL_Texture* bink_tex = nullptr, int sdtp_frame = 0) {
+                       SDL_Texture* bink_tex = nullptr, int sdtp_frame = 0, const int* row_frames = nullptr) {
     draw_shell(static_cast<SDL_Renderer*>(plat.renderer()), tc, art, xf, buttons, hover_ix, pressed_ix,
-               header, version, monitor_frame, bink_tex, sdtp_frame);
+               header, version, monitor_frame, bink_tex, sdtp_frame, row_frames);
 }
 
 // Shared control skins (Options + Skirmish pages).
@@ -6456,7 +6462,8 @@ public:
     const char* name() const override { return "shell"; }    // scripted-input hooks
     bool locate(const std::string& what, int& x, int& y) const override {
         for (const ShellButton& b : layout())
-            if (what == std::string("button:") + b.label && b.enabled) {
+            if ((what == std::string("button:") + b.label ||
+                 (what == "button:Back" && b.rect.y == rowY(5) && b.action == ACT_GOTO)) && b.enabled) {
                 const ra2engine::SbRect d = to_device(b.rect);
                 x = d.x + d.w / 2;
                 y = d.y + d.h / 2;
@@ -6479,7 +6486,13 @@ public:
             const ra2engine::SbRect r = to_device(b.rect);
             p.targets["button:" + b.label] = ra2play::Rect{r.x, r.y, r.w, r.h};
             p.set("button_enabled(" + b.label + ")", b.enabled ? 1 : 0);
+            // W2-UI-22: "Back" stays a probe alias of the bottom-row nav button.
+            if (b.rect.y == rowY(5) && b.action == ACT_GOTO && b.label != "Back") {
+                p.targets["button:Back"] = ra2play::Rect{r.x, r.y, r.w, r.h};
+                p.set("button_enabled(Back)", b.enabled ? 1 : 0);
+            }
         }
+        p.set_s("status", status_text());   // W2-UI-23 status line 0x695
         p.set("quit_requested", quit_ ? 1 : 0);
         p.set("dialog_open", 0);
         if (page_ == PAGE_CAMPAIGN) camp_.play_probe(p);   // W2-UI-18
@@ -6525,14 +6538,14 @@ private:
                     btn(0, "New Campaign",    true,  ACT_GOTO,     PAGE_CAMPAIGN),
                     btn(1, "Load Saved Game", true,  ACT_LOADGAME, PAGE_SINGLE),   // P7
                     btn(2, "Skirmish",        true,  ACT_SKIRMISH, PAGE_MAIN),
-                    btn(5, "Back",            true,  ACT_GOTO,     PAGE_MAIN),
+                    btn(5, "Main Menu",       true,  ACT_GOTO,     PAGE_MAIN),   // W2-UI-22 GUI:MainMenu
                 };
             case PAGE_MOVIES:   // dialog 0x101
                 return {
                     btn(0, "Sneak Peeks",  false, ACT_GOTO, PAGE_MAIN),
                     btn(1, "Play Movies",  false, ACT_GOTO, PAGE_MAIN),
-                    btn(2, "View Credits", false, ACT_GOTO, PAGE_MAIN),
-                    btn(5, "Back",         true,  ACT_GOTO, PAGE_MAIN),
+                    btn(2, "View Credits", true,  ACT_CREDITS, PAGE_MOVIES),   // W2-UI-26
+                    btn(5, "Main Menu",    true,  ACT_GOTO, PAGE_MAIN),   // W2-UI-22
                 };
             case PAGE_OPTIONS:  // dialog 0xD5 [RE: options.md §1]
                 // Keyboard (0x5CE -> dlg 0xA3) and Network (0x5CD -> IPX dlg
@@ -6567,6 +6580,39 @@ private:
     // [P8] Options page (dialog 0xD5) controls; unused on other pages.
     OptionsPageState opt_;
     CampaignPageState camp_;   // W2-UI-18 (PAGE_CAMPAIGN only)
+    // W2-UI-23 [RE: FUN_005E22B0 (dialog, control) -> STT:* help text]: the
+    // status line 0x695 shows the STT of the hovered button; every button
+    // press plays [AudioVisual] GUIMainButtonSound = MenuClick.
+    static const char* stt_key(const std::string& label) {
+        static const std::pair<const char*, const char*> k[] = {
+            {"Single Player", "STT:MainButtonSinglePlayer"}, {"Internet", "STT:MainButtonWWOnline"},
+            {"Network", "STT:MainButtonNetwork"}, {"Movies & Credits", "STT:MainButtonMovies"},
+            {"Options", "STT:MainButtonOptions"}, {"Exit Game", "STT:MainButtonExitGame"},
+            {"New Campaign", "STT:SingleButtonNewCampaign"}, {"Load Saved Game", "STT:SingleButtonLoadSavedGame"},
+            {"Skirmish", "STT:SingleButtonSkirmish"}, {"Sneak Peeks", "STT:OptionsButtonSneak"},
+            {"Play Movies", "STT:OptionsButtonMovies"}, {"View Credits", "STT:OptionsButtonCredits"},
+            {"Keyboard", "STT:MainOptButtonKeyboard"}, {"Load", "STT:CampaignButtonLoad"},
+            {"Back", "STT:CampaignButtonBack"}};
+        for (const auto& e : k)
+            if (label == e.first) return e.second;
+        return nullptr;
+    }
+    std::string status_text() const {
+        if (g_user_settings && !g_user_settings->tooltips) return "";
+        for (const ShellButton& b : layout()) {
+            if (!to_device(b.rect).contains(mx_, my_)) continue;
+            if (b.label == "Main Menu")
+                return gf_csf(page_ == PAGE_SINGLE ? "STT:SingleButtonBack"
+                              : page_ == PAGE_OPTIONS ? "STT:MainOptButtonBack" : "STT:OptionsButtonBack", "");
+            if (b.label == "Network" && page_ == PAGE_OPTIONS) return gf_csf("STT:MainOptButtonNetwork", "");
+            const char* k = stt_key(b.label);
+            return k ? gf_csf(k, "") : std::string();
+        }
+        return "";
+    }
+    void play_click() const {
+        if (art_.audio && art_.audio->sys.enabled && art_.audio->sys.mixer) art_.audio->sys.mixer->play("menu:click");
+    }
     bool audio_live() const {
         return art_.audio && art_.audio->sys.enabled && art_.audio->sys.mixer;
     }
@@ -6601,6 +6647,23 @@ private:
     static constexpr double kMonFrameDt = 0.012;
     static constexpr int    kMonFrames  = 91;
     double       mon_accum_ = 0.0;
+    // W2-UI-24 [RE: FUN_005E5150, mainmenu_true.md §7.2]: page enter =
+    // staggered top-to-bottom power-on, one SDBTNANM step per 30 ms tick, row
+    // k starting k ticks late. [RE-FALLBACK: the enter band plays 10 -> 5 (the
+    // button face sliding in over the empty socket); the 11..16 leave band is
+    // not played (page switches stay immediate so scripted clicks land).]
+    double       enter_t_ = 0.0;
+    bool transition_frames(int out[6]) const {
+        if (enter_t_ <= 0.0) return false;   // a never-updated page (--menu-shot) draws settled
+        const int tick = static_cast<int>(enter_t_ / 0.030);
+        bool any = false;
+        for (int r = 0; r < 6; ++r) {
+            const int step = tick - r;
+            out[r] = step < 0 ? 10 : step < 6 ? 10 - step : -1;
+            any = any || out[r] >= 0;
+        }
+        return any;
+    }
     int monitor_frame() const {
         return static_cast<int>(mon_accum_ / kMonFrameDt) % kMonFrames;
     }
@@ -6675,6 +6738,7 @@ void MainMenuScene::update(double dt) {
     // [Task exact / §7.3] Advance the WARNING-monitor animation clock every frame
     // (the scene driver calls update()+render() per frame, so it loops live).
     mon_accum_ += dt;
+    enter_t_ += dt;   // W2-UI-24
     // [Task 5 / §9] Advance the Bink CRT movie at 15 fps (decode one frame/step).
     // [P8] Dialog 0xD5 has no CRT movie control (options.md §1) -> no movie.
     if (page_ != PAGE_OPTIONS) bink_advance(dt);
@@ -6723,9 +6787,8 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     int hover_ix = -1;
     for (int i = 0; i < static_cast<int>(btns.size()); ++i)
         if (btns[i].enabled && to_device(btns[i].rect).contains(mx_, my_)) { hover_ix = i; break; }
-    if (hover_ix < 0)
-        for (int i = 0; i < static_cast<int>(btns.size()); ++i)
-            if (btns[i].enabled) { hover_ix = i; break; }
+    // W2-UI-25: no default-lit button [RE-FALLBACK Q7: no keyboard focus
+    // highlight was traced]; only the button under the pointer is hot.
     const int pressed_ix = (hover_ix >= 0 && down_ &&
                             to_device(btns[hover_ix].rect).contains(mx_, my_))
                                ? hover_ix : -1;
@@ -6734,8 +6797,11 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     // texture (only when the frame changed); draw_shell blits it into the CRT rect
     // over the mnscrns backdrop. Null when the movie is absent -> static backdrop.
     SDL_Texture* bink_tex = (page_ == PAGE_OPTIONS || page_ == PAGE_CAMPAIGN) ? nullptr : bink_texture(ren);
+    int rowf[6];
+    const bool trans = transition_frames(rowf);   // W2-UI-24
     draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
-               header(), "v1.006", monitor_frame(), bink_tex);
+               header(), shell_version_text(), monitor_frame(), bink_tex, 0,
+               trans ? rowf : nullptr);
     // [P8 / options.md §1/§4] The 0xD5 controls over the static MNSCRNS screen.
     if (page_ == PAGE_OPTIONS) {
         const std::string res = std::to_string(plat.width()) + " x " +
@@ -6746,6 +6812,10 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
         int lx = 0, ly = 0;
         to_logical(mx_, my_, lx, ly);
         camp_.render(ren, tc, art_, xform(), lx, ly);
+    }
+    if (!sld_.is_open() && page_ != PAGE_CAMPAIGN) {   // W2-UI-23 status line 0x695
+        const ShellPainter sp{ren, tc, art_, xform()};
+        shell_status_line(sp, status_text());
     }
     sld_.render(ren, tc, SDL_GetTicks());   // P7 / W2-UI-16: the Load page over the shell
     gf_confirm_.render(ren, tc);        // gF G-14 / W2-UI-17: Exit confirm popup 0x120
@@ -6796,6 +6866,8 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
 
 // P10 campaign shell scenes (loading screen / result) [RE: campaign.md].
 #include "campaign_scenes.inc"
+// W2-UI-26: Movies & Credits > View Credits (credits.txt scroller).
+#include "credits_scene.inc"
 // gF: skirmish result screen.
 #include "gf_result.inc"
 
@@ -6883,6 +6955,7 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     for (const ShellButton& b : layout()) {
         if (!b.enabled) continue;
         if (!to_device(b.rect).contains(ev.x, ev.y)) continue;
+        play_click();   // W2-UI-23 MenuClick
         switch (b.action) {
             case ACT_QUIT:     // gF G-14: GUI:ExitAreYouSure, OK / Cancel (dialog 0x120)
                 gf_confirm_.ask(gf_csf("GUI:ExitAreYouSure", "Are you sure you want to exit Red Alert 2?"),
@@ -6895,6 +6968,7 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             // P10: battle.ini ALL1 / SOV1 -> the first mission's loading screen.
             case ACT_CAMPAIGN_ALLIED: next_ = make_campaign_start_scene(no_audio_, "ALL1", "GDI"); return;
             case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
+            case ACT_CREDITS: next_ = new CreditsScene(rules_, no_audio_, art_); return;   // W2-UI-26
             case ACT_CAMPAIGN_LOAD:   // W2-UI-18: 0x94 Load = the selected campaign
                 if (camp_.selected() >= 0 && camp_.selected() < CampaignPageState::kEntries) {
                     if (g_user_settings) save_user_settings(*g_user_settings);   // the slider's Difficulty
