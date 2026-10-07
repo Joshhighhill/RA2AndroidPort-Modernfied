@@ -356,7 +356,7 @@ Gates: `--demo-saveload` `8291b85b9957b34a`, `--demo-skirmish`
 `fde3f587e747f765` and `--demo-campaign` `760c46ae2eed28b4` all match the
 master pins (`--demo-combat` deterministic=yes). The full suite passes:
 788/788.
-### Wave-2 W2-CA (campaign) -- branch `w2fix-campaign` over master 0fc3444
+### Wave-2 W2-CA (campaign) -- branch `w2fix-campaign` over master 256908d
 
 Every script run one at a time (Release build of the merged tree). All campaign
 and regression scripts PASS; `probe-bridge` and `probe-flow` fail identically on
@@ -386,7 +386,7 @@ audio (12), aircraft (16) and the other W2-CA mission logic.
 | `probe-game` / `probe-garrison` / `probe-perf` / `probe-shell` / `probe-soviet-econ` | PASS | — |
 | `probe-bridge` / `probe-flow` | FAIL (pre-existing, same on master) | — |
 
-Full suite (Debug): 790 test cases / 350283 assertions, 0 failed. Gates:
+Full suite (Debug, after merging master 256908d): 792 test cases / 350313 assertions, 0 failed. All 33 scripts re-run on the final merged tree: same results and hashes (gfx-vis `c7a9ed8d8b98498b` moves with the w2fix-android merge). Gates:
 `--demo-campaign` re-pinned `5d033b6aa019beaa`, `--demo-saveload`
 `c19113168b76bae7` (save v12), `--demo-triggers` unchanged `b8cd267e98f5e002`
 (causes in README).
