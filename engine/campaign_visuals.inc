@@ -16,7 +16,7 @@
 //  88 ParticleAnim ParticleSystemTypes[Value] at the waypoint (ground z).
 // 104 FlashTeam    FUN_006f1490: every member Flash(Value frames).
 // 112 CenterCamera FUN_006d55e0: the view jumps to the waypoint.
-// 113 MakeHouseCheer FUN_0050c6e0: the house's infantry cheer + CheerSound.
+// 113 MakeHouseCheer FUN_0050c6e0: CheerSound (the infantry cheer: W3-B).
 // 114 SetTabTo     the sidebar tab Value.
 // 131 FlashBuildingsOfType: every building of BuildingTypes[Value] flashes.
 private:
@@ -131,14 +131,11 @@ private:
                 }
                 break;
             }
-            case 113: {   // MakeHouseCheer
-                const int eh = campaign_->engine_house_of_type(r.house_type);
-                if (eh < 0) break;
-                if ((int)g_house_cheer_until.size() <= eh) g_house_cheer_until.resize((std::size_t)eh + 1, -1);
-                g_house_cheer_until[(std::size_t)eh] = (long)world_.vet_frame() + 60;
+            case 113:   // MakeHouseCheer: the infantry Cheer is the World's
+                        // (agent B, make_house_cheer from the trigger log); the
+                        // scene adds [AudioVisual] CheerSound (FUN_0050c6e0).
                 pres_.sound().play(pres_clean(rules_ini_.get("AudioVisual", "CheerSound")), 0.0, "cheer");
                 break;
-            }
             case 114:   // SetTabTo
                 if (r.value >= 0 && r.value <= 3 && r.value != active_tab_) {
                     active_tab_ = r.value;

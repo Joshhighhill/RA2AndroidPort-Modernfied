@@ -189,9 +189,13 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     // v.vet.recv is false in every legacy World -> raw == u.w_damage as before.
     int raw = u.w_damage;
     if (v.vet.recv) raw = vet_receive(raw, v.vet);
+    raw = inf_prone_damage(v.ia, raw, u.w_prone_damage);   // W3-B ProneDamage (armed infantry only)
     // W2-AN-04: an Iron-Curtained unit takes no damage.
     const int dmg = v.an.iron_left > 0.0 ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
     v.hp -= dmg;
+    if (dmg > 0)   // W3-B fear (FUN_00517db5; inert unless armed)
+        inf_on_hit(v.ia, attacker_idx >= 0 || attacker_building >= 0,
+                   v.max_hp > 0 ? static_cast<double>(v.hp) / v.max_hp : 0.0);
     // Return fire only if IDLE (spec: "return fire when hit" applies to
     // idle/guarding units; a unit under a move order keeps walking rather
     // than stopping to retaliate). Engineer/Spy Capture [RE: capture.md
@@ -211,6 +215,7 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     }
     if (v.hp <= 0) {
         v.die_time = 0.0;
+        v.ia.death = u.w_inf_death;       // W3-B: the killing warhead's InfDeath
         v.vet.killed_by = attacker_idx;   // P5 [V3]: inert stamp (credit pass only)
         occ.release_all_of(victim_idx, -1, -1);
         v.target = -1;
@@ -286,11 +291,15 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         // before the falloff/Verses; only when the victim's hook is armed
         // (never in a legacy World -> the base expression is unchanged).
         const int full = w.vet.recv ? vet_receive(attacker.w_damage, w.vet) : attacker.w_damage;
-        const int base = static_cast<int>(full * scale);  // trunc (combat.md §3)
+        const int base = inf_prone_damage(w.ia, static_cast<int>(full * scale),   // trunc (combat.md §3)
+                                          attacker.w_prone_damage);                // W3-B ProneDamage
         const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
         w.hp -= dmg;
+        if (dmg > 0)   // W3-B fear (inert unless armed)
+            inf_on_hit(w.ia, true, w.max_hp > 0 ? static_cast<double>(w.hp) / w.max_hp : 0.0);
         if (w.hp <= 0) {
             w.die_time = 0.0;
+            w.ia.death = attacker.w_inf_death;   // W3-B
             // P5 [V3]: inert killer stamp; the attacker is a real unit only when
             // it lives in `units` (the nuke's virtual detonator does not).
             if (&attacker >= units.data() && &attacker < units.data() + units.size())

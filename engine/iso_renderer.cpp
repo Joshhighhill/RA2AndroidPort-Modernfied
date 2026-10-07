@@ -37,7 +37,31 @@ Theater::Theater(ra2assets::MixFile isotile_mix, const std::string& control_ini_
         if (!ini.has(sec)) break;
         const int tiles = ini.get_int(sec, "TilesInSet", 1);
         const std::string file = ini.get(sec, "FileName", "");
-        for (int i = 1; i <= tiles; ++i) slots_.push_back(Slot{file, i, set_idx});
+        const std::string set_name = ini.get(sec, "SetName", "");
+        for (int i = 1; i <= tiles; ++i) {
+            // W3-B: Tile<NN>Anim of the set's own section (SetName=).
+            char k[32];
+            std::snprintf(k, sizeof k, "Tile%02dAnim", i);
+            std::string anim = set_name.empty() ? std::string() : ini.get(set_name, k, "");
+            const std::size_t sc = anim.find(';');
+            if (sc != std::string::npos) anim = anim.substr(0, sc);
+            while (!anim.empty() && (anim.back() == ' ' || anim.back() == '\t' || anim.back() == '\r')) anim.pop_back();
+            if (!anim.empty()) {
+                TileAnim ta;
+                ta.anim = anim;
+                auto num = [&](const char* suffix) {
+                    char kk[40];
+                    std::snprintf(kk, sizeof kk, "Tile%02d%s", i, suffix);
+                    return ini.get_int(set_name, kk, 0);
+                };
+                ta.xoff = num("XOffset");
+                ta.yoff = num("YOffset");
+                ta.attaches_to = num("AttachesTo");
+                ta.zadjust = num("ZAdjust");
+                tile_anims_[static_cast<uint32_t>(slots_.size())] = ta;
+            }
+            slots_.push_back(Slot{file, i, set_idx});
+        }
     }
     // CB-3 Naval [RE-GATE APPLIED: naval.md §2]: the [General] tile-set
     // classification the game uses to stamp each tile's LandType. Absent keys

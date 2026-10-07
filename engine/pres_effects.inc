@@ -67,14 +67,10 @@
 
 constexpr double kFxLepPx = 36.74 / 256.0;   // leptons of height -> screen px (flight.cpp)
 
-// W3-FX trigger flashes and cheers, keyed by World object index, valid until
-// a World frame (vet_frame). 104 FlashTeam / 131 FlashBuildingsOfType [RE:
-// FUN_006f1490 -> ObjectClass::Flash(Value frames)]; 113 MakeHouseCheer [RE:
-// FUN_0050c6e0 -- every infantry of the house runs its Cheer DoType, plus
-// [AudioVisual] CheerSound]. [W3 merge note: agent B owns the infantry Cheer
-// sequence; g_house_cheer_until is the hook it reads.]
+// W3-FX trigger flashes, keyed by World object index, valid until a World
+// frame (vet_frame). 104 FlashTeam / 131 FlashBuildingsOfType [RE:
+// FUN_006f1490 -> ObjectClass::Flash(Value frames)].
 std::map<int, long> g_flash_units, g_flash_buildings;
-std::vector<long> g_house_cheer_until;
 
 // W3-FX radar events for the minimap (pres_radar.inc), refreshed by
 // Presentation::update: cell, frames since creation, the type's visibility
@@ -395,10 +391,9 @@ public:
     std::size_t twinkle_count() const { return twinkles_.size(); }
 
     // ---- draw -------------------------------------------------------------
-    // Ground layer (Flat / Layer=ground anims: wakes, ore twinkles), drawn
-    // after the ore and smudges and before every object.
-    // [W3 merge note: agent B owns the anim Flat/Layer keys; this pass is the
-    //  minimal ground layer the wakes and twinkles need.]
+    // Ore twinkles (they loop with RandomLoopDelay pauses and HideIfNoOre, so
+    // they are kept here rather than as one-shot PresFx anims), drawn after
+    // the ore and smudges and before every object.
     void draw_ground(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Camera& cam, int W,
                      int H) {
         if (!fx_) return;
@@ -538,10 +533,9 @@ public:
             // Ship wake: every 8 frames while moving on water.
             if (!wake_.empty() && u.is_naval && u.moving() && frame_ % 8 == 0 &&
                 on_water(w, u.cell_x, u.cell_y) && w.object_visible_at(0, u.cell_x, u.cell_y)) {
-                if (const FxAnimType* t = fx_->type(wake_)) {
-                    grounds_.push_back(Ground{t, u.fx * 256.0, u.fy * 256.0, u.level * 104.0, 0});
-                    ++wakes_;
-                }
+                // WAKE1 is Flat / Layer=ground: PresFx draws it in its ground
+                // pass under the ships (agent B's shared anim drawing).
+                if (fx_->spawn(wake_, u.fx, u.fy, u.level, 0.0)) ++wakes_;
             }
             // V3 rocket (RocketLocomotion): takeoff puffs, then the flight trail.
             if (pres_upper(u.image) == v3_image() || pres_upper(u.image) == dmisl_image()) {

@@ -162,6 +162,8 @@ struct SaveAccess {
         save::io(ar, w.grid_h_);
         save::io(ar, w.move_cps_);
         save::io(ar, w.anims_);
+        save::io(ar, w.inf_anims_); save::io(ar, w.inf_human_); save::io(ar, w.inf_idle_freq_);   // W3-B
+        save::io(ar, w.inf_tables_);
         // Economy
         save::io(ar, w.ore_);
         save::io(ar, w.ore_rng_);
@@ -442,6 +444,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.ag);
     io(ar, v.omni_fire);
     io(ar, v.wall);   // G16
+    io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
 }
 // G16 world depth (agent G)
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
@@ -483,6 +486,21 @@ template <class Ar> void fields(Ar& ar, VeterancyRules& v) {
 template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.damage); io(ar, v.rof); io(ar, v.range); io(ar, v.verses);
     io(ar, v.cell_spread); io(ar, v.percent_at_max);
+    io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
+}
+// W3-B: an art Sequence= entry / a per-image infantry table.
+template <class Ar> void fields(Ar& ar, InfSeqEntry& v) {
+    io(ar, v.first); io(ar, v.count); io(ar, v.fmult); io(ar, v.facing); io(ar, v.has);
+}
+template <class Ar> void fields(Ar& ar, InfTable& v) {
+    io(ar, v.e); io(ar, v.crawls); io(ar, v.fearless); io(ar, v.fraidycat); io(ar, v.not_human);
+}
+// W3-B: the infantry sequence machine state (inf_anim.hpp).
+template <class Ar> void fields(Ar& ar, InfAnimState& v) {
+    io(ar, v.seq); io(ar, v.stage); io(ar, v.stage_timer); io(ar, v.acc); io(ar, v.ticks);
+    io(ar, v.idle_timer); io(ar, v.rng); io(ar, v.fear); io(ar, v.prone); io(ar, v.armed);
+    io(ar, v.fearless); io(ar, v.fraidycat); io(ar, v.death); io(ar, v.vanish); io(ar, v.was_deployed);
+    io(ar, v.prev_fire); io(ar, v.cheer);
 }
 template <class Ar> void fields(Ar& ar, UnitVet& v) {
     io(ar, v.veterancy);
@@ -598,6 +616,7 @@ template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
 // --- unit / building types ---
 template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.strength);
+    io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.armor);
     io(ar, v.image);
     io(ar, v.damage);
@@ -744,6 +763,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.attack_order);
     io(ar, v.rof_cool);
     io(ar, v.fire_flash);
+    io(ar, v.w_inf_death); io(ar, v.w_prone_damage); io(ar, v.ia);   // W3-B
     io(ar, v.guard_x); io(ar, v.guard_y);
     io(ar, v.alive);
     io(ar, v.die_time);

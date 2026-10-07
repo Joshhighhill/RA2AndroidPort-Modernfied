@@ -1,0 +1,124 @@
+# anim-buildings -- W3-B building animation slots on the logic-tick clock.
+#
+# `set align 2`: every input / cheat waits for an even anim tick later than
+# the previous input, and each input group starts with an `until anim_tick
+# >= K`, so a 60 Hz run and an RA2_PLAY_HZ=30 run feed the game identical
+# input at identical logic ticks. World changes in the compared part
+# come from cheats (applied before the frame's logic ticks); GameScene applies
+# sidebar clicks AFTER the frame's ticks, so real-input steps sit in the
+# trailing live_* part, which --cross skips. Shots are <prefix>_<tick>.png
+# (the anim tick at capture), taken in bursts so both runs share tick names.
+#   python scripts/play/anim_check.py <out>                  -> every pair changes
+#   python scripts/play/anim_check.py --cross <out60> <out30> -> 0 px everywhere
+# What each prefix shows (the [banim] console lines name each event):
+#   cy_*        construction yard crane (ProductionAnim) on a placement
+#   pw_*        power plant ActiveAnim loop
+#   dep_*       service depot SpecialAnim -> SpecialAnimTwo (a damaged IFV)
+#   tsl_*       Prism Tower SpecialAnim on each shot (IsAnimDelayedFire)
+#   wf_*        war factory door (DeployingAnim / UnderDoorAnim)
+#   live_cy_*   the crane after a real sidebar placement
+#   live_ref_*  refinery storage-level ActiveAnim; live_dump_* the ore dump
+set hz 60
+set align 2
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 400 scene == game
+until 4000 anim_tick >= 20
+click unit 0:AMCV
+key d
+until 4000 anim_tick >= 200
+assert built(0,GACNST) == 1
+cheat credits 60000
+# --- construction yard crane: a placement next to it --------------------------
+view building 0:GACNST
+until 4000 anim_tick >= 240
+shot cy_{tick}
+shot cy_{tick}
+until 4000 anim_tick >= 250
+cheat w2 build GAPOWR 0
+until 4000 anim_tick >= 270
+shot cy_{tick}
+shot cy_{tick}
+until 4000 anim_tick >= 290
+shot cy_{tick}
+shot cy_{tick}
+# --- the rest of the base -----------------------------------------------------
+until 4000 anim_tick >= 400
+cheat w2 build GADEPT 0
+cheat w2 build GAWEAP 0
+cheat w2 build GAPOWR 0
+cheat w2 build ATESLA 0
+until 4000 anim_tick >= 420
+assert built(0,ATESLA) == 1
+view building 0:GAPOWR:1
+until 4000 anim_tick >= 440
+shot pw_{tick}
+shot pw_{tick}
+until 4000 anim_tick >= 446
+shot pw_{tick}
+shot pw_{tick}
+# --- service depot ------------------------------------------------------------
+until 4000 anim_tick >= 450
+cheat spawn FV 0 building 0:GADEPT +3 +1
+until 4000 anim_tick >= 452
+cheat damage_unit 0:FV 120
+view building 0:GADEPT
+until 4000 anim_tick >= 520
+shot dep_{tick}
+shot dep_{tick}
+until 4000 anim_tick >= 526
+shot dep_{tick}
+shot dep_{tick}
+# --- Prism tower firing (IsAnimDelayedFire SpecialAnim) -----------------------
+until 4000 anim_tick >= 530
+cheat spawn HTNK 1 building 0:ATESLA +3 +0
+view building 0:ATESLA
+until 4000 anim_tick >= 540
+shot tsl_{tick}
+shot tsl_{tick}
+until 4000 anim_tick >= 544
+shot tsl_{tick}
+shot tsl_{tick}
+# --- war factory door: a tank appears at the exit ------------------------------
+until 4000 anim_tick >= 600
+view building 0:GAWEAP
+cheat spawn MTNK 0 building 0:GAWEAP +1 +3
+until 4000 anim_tick >= 602
+shot wf_{tick}
+shot wf_{tick}
+until 4000 anim_tick >= 606
+shot wf_{tick}
+shot wf_{tick}
+until 4000 anim_tick >= 610
+shot wf_{tick}
+shot wf_{tick}
+# --- live part: real sidebar placement (not cross-compared) --------------------
+until 4000 anim_tick >= 700
+click tab:0
+until 4000 anim_tick >= 702
+click cameo:GAREFN
+until 6000 queue_ready(structure) == 1
+view building 0:GACNST
+click cameo:GAREFN
+place auto
+until 600 built(0,GAREFN) == 1
+shot live_cy_{tick}
+shot live_cy_{tick}
+until 6000 anim_tick >= 1400
+shot live_cy_{tick}
+view building 0:GAREFN
+shot live_ref_{tick}
+until 6000 anim_tick >= 1410
+shot live_ref_{tick}
+until 12000 harv(0,Unloading) >= 1
+shot live_dump_{tick}
+shot live_dump_{tick}
+shot live_dump_{tick}
+shot live_dump_{tick}
+shot live_dump_{tick}
+shot live_dump_{tick}
+end

@@ -498,6 +498,24 @@ The 03 report's §3.1 also applies to every animation that does work here: anims
 | RC-6 campaign SHP units | FIXED | `art-all11` (4 DLPH, 4 SQD placed; squid submerged as the original), `art-all12` (2 DRON) |
 | RC-3/4/7/9/10 animations, RC-8 trigger visuals | fix agents B / C | — |
 
+## W3-FIX-B status (branch `w3fix-anims`)
+
+The animation root causes are fixed in the shared systems (details, evidence and the
+remaining open items: `03-asset-anim-systems.md`, section "W3-FIX-B"):
+- **Infantry frozen** (RC-7 / R5): the full sequence machine — idle fidgets, prone under
+  fire, civilian Panic + scatter, Cheer (trigger 113 and victory), InfDeath deaths and
+  corpses, GI deploy, Swim in water. Paradrop falls and the parachute remain open.
+- **Building slots** (RC-3 / R4): IdleAnim, ProductionAnim (crane), SpecialAnim (depot,
+  refinery dump, Tesla/Prism charge per shot), roof doors, CanBeOccupied 4-state frames,
+  Gate frames (visual), civilian-building anims in skirmish.
+- **Destruction** (RC-4 / R3 rubble): DestroyAnim ruins (ALL03 White House -> CAWS01DM)
+  and LeaveRubble frames; debris and smoke are agent C's.
+- **ALL07 waterfalls** (RC-9): drawn from the theater INI's `[Waterfalls]` tile anims.
+- **Vehicles** (RC-10 part): Night Hawk rotor HVA frames, UnloadingClass, random
+  Explosion=, TurretOffset; wakes are agent C's.
+- Every animation now runs on the 15 Hz logic clock (it ran per render frame, ~4x too
+  fast at 60 Hz).
+
 ## W3-FIX-C status (branch `w3fix-fx`)
 
 RE: `docs/re/effects.md`. Scripts `scripts/play/fx-*.play`, shots under `play-out/<script>/`.

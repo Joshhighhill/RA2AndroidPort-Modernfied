@@ -67,6 +67,13 @@ cheat spawn MTNK 0 building 0:GACNST -5 +2
 cheat spawn MTNK 0 building 0:GACNST +2 -5
 cheat spawn MTNK 0 building 0:GACNST +9 +2
 cheat spawn MTNK 0 building 0:GACNST +2 +9
+# W3-B: the AI's infantry now drop prone under fire and take their warhead's
+# ProneDamage (50 % for most), as in the original, so the waves last longer:
+# four more guards (still scaffolding) keep the base alive for the hour.
+cheat spawn MTNK 0 building 0:GACNST -3 -5
+cheat spawn MTNK 0 building 0:GACNST +7 +5
+cheat spawn MTNK 0 building 0:GACNST -5 +3
+cheat spawn MTNK 0 building 0:GACNST +3 -5
 # 30
 wait 10125
 assert mine_spawned > $m1 @W2-SK-01

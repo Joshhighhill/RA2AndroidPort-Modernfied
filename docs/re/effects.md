@@ -169,6 +169,6 @@ CHRONOTG chrono flashes.)
   at once).
 - 104/131: the clone pulses an additive white diamond over the footprint on
   alternate 2-frame beats; the original redraws the object brightened.
-- 113: the Cheer DoType belongs to the infantry sequence table (wave-3 fix
-  agent B); the clone sets `g_house_cheer_until[house]` and plays CheerSound.
+- 113: the infantry Cheer is the World's (`World::make_house_cheer`, W3-B);
+  the scene adds CheerSound.
 - 115 FlashCameo: not drawn.

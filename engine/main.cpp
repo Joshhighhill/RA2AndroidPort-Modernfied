@@ -393,6 +393,8 @@ struct VehicleAssets {
     bool has_turret = false, has_barrel = false;
     ra2engine::UnitCombat combat;
     int flh[3] = {0, 0, 0};                        // PrimaryFireFLH F,L,H (leptons, turret space)
+    int turret_offset = 0;                         // W3-B art TurretOffset= (leptons along the hull)
+    int hva_frames = 1;                            // W3-B max HVA frames (rotors / propellers)
     std::string explosion_image;                   // Explosion= first entry (e.g. "TWLT070")
     std::unique_ptr<ra2assets::ShpFile> explosion;  // death anim SHP; null if unavailable
     ra2assets::Palette explosion_pal;              // anim.pal (or unit pal fallback)
@@ -414,6 +416,9 @@ struct VehicleAssets {
 // background prewarm thread; this lock guards the map (the built sets are
 // immutable once published, so returned references stay valid).
 std::mutex g_vxl_mu;
+// W3-B: harvester image -> its UnloadingClass assets (GameScene fills it).
+std::map<std::string, const VehicleAssets*> g_unloading_class;
+int g_draw_unit_idx = -1;   // the unit render_world is drawing (walk stage lookup)
 
 // All SHP + palette assets for one building type, resolved through the
 // NewTheater candidate list [RE: building-render.md §1] over the already-open
@@ -789,6 +794,8 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
+    r.combat.inf_death = static_cast<int>(rules.section_double(warhead, "InfDeath", 0.0));   // W3-B
+    r.combat.prone_damage = ra2engine::warhead_prone_damage(rules, warhead);
     // gF [RE: docs/re/mcv-deploy.md]: TechnoType DeploysInto= (+0x404, FUN_00711510).
     r.combat.deploys_into = rules.section_string(unit_id, "DeploysInto", "");
 
@@ -935,6 +942,8 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.verses = rules.verses(ewh);
         r.combat.elite.cell_spread = rules.section_double(ewh, "CellSpread", 0.0);
         r.combat.elite.percent_at_max = rules.section_double(ewh, "PercentAtMax", 1.0);
+        r.combat.elite.inf_death = static_cast<int>(rules.section_double(ewh, "InfDeath", 0.0));   // W3-B
+        r.combat.elite.prone_damage = ra2engine::warhead_prone_damage(rules, ewh);
         r.combat.elite_proj = tw.elite[0].proj;
         r.combat.has_elite_proj = true;
     }
@@ -1165,6 +1174,67 @@ ra2engine::UnitAnimSeq anim_from_art(const ra2assets::Art& art, const std::strin
     return seq;
 }
 
+// W3-B: the live game's infantry sequence machine (engine/inf_anim.hpp) --
+// every [InfantryTypes] image gets its FULL art Sequence= table (all 42 keys,
+// with the optional facing label), art Crawls=, rules Fearless= / Fraidycat=
+// / NotHuman=, and the [AudioVisual] IdleActionFrequency idle timer base.
+// GameScene only; gates keep the 4-entry set_anim tables.
+void enable_live_infantry_anims(ra2engine::World& world, const Ini& rules_ini, const Ini& art_ini,
+                                int human_house) {
+    auto clean = [](std::string v) {
+        const std::size_t sc = v.find(';');
+        if (sc != std::string::npos) v = v.substr(0, sc);
+        while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
+        while (!v.empty() && std::isspace(static_cast<unsigned char>(v.front()))) v.erase(v.begin());
+        return v;
+    };
+    auto yes = [&](const Ini& ini, const std::string& sec, const char* k, bool d) {
+        const std::string v = clean(ini.get(sec, k));
+        if (v.empty()) return d;
+        const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(v[0])));
+        return c == 'y' || c == 't' || c == '1';
+    };
+    static const char* kFace[8] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+    int n = 0;
+    for (const auto& kv : rules_ini.section("InfantryTypes")) {
+        const std::string id = clean(kv.second);
+        if (id.empty()) continue;
+        std::string image = clean(rules_ini.get(id, "Image"));
+        if (image.empty()) image = id;
+        const std::string seq = clean(art_ini.get(image, "Sequence"));
+        if (seq.empty()) continue;
+        ra2engine::InfTable t;
+        for (int q = 0; q < ra2engine::kSqCount; ++q) {
+            const std::string v = clean(art_ini.get(seq, ra2engine::inf_seq_name(q)));
+            if (v.empty()) continue;
+            std::vector<std::string> f;
+            std::string cur;
+            for (char ch : v) { if (ch == ',') { f.push_back(clean(cur)); cur.clear(); } else cur += ch; }
+            f.push_back(clean(cur));
+            ra2engine::InfSeqEntry& e = t.e[static_cast<std::size_t>(q)];
+            e.has = true;
+            e.first = std::atoi(f[0].c_str());
+            e.count = f.size() > 1 ? std::max(1, std::atoi(f[1].c_str())) : 1;
+            e.fmult = f.size() > 2 ? std::atoi(f[2].c_str()) : 0;
+            if (f.size() > 3) {
+                std::string lab = f[3];
+                for (char& ch : lab) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                for (int k = 0; k < 8; ++k)
+                    if (lab == kFace[k]) e.facing = k;
+            }
+        }
+        t.crawls = yes(art_ini, image, "Crawls", true);
+        t.fearless = yes(rules_ini, id, "Fearless", false);
+        t.fraidycat = yes(rules_ini, id, "Fraidycat", false);
+        t.not_human = yes(rules_ini, id, "NotHuman", false);
+        world.set_inf_table(image, t);
+        ++n;
+    }
+    const std::string f = clean(rules_ini.get("AudioVisual", "IdleActionFrequency"));
+    world.enable_infantry_anims(human_house, f.empty() ? 0.15 : std::atof(f.c_str()));
+    std::cerr << "[inf-anim] tables=" << n << std::endl;
+}
+
 // Loads one image's SHP from ra2.mix/conquer.mix ("<Image>.shp", falling
 // back to the lowercased form -- conquer.mix's stock entry names are
 // lowercase, e.g. "gi.shp"/"cons.shp"; try as-is first in case a mod/layout
@@ -1371,6 +1441,14 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         ra2assets::Vpl vpl = ra2assets::Vpl::load(vpl_raw.data(), vpl_raw.size());
 
         art.fire_flh(image, va.flh);  // leaves {0,0,0} if absent/malformed
+        // W3-B [art TurretOffset=, HARV 50, HTK -80 ...]: the turret sits that
+        // many leptons forward of the hull centre along the body facing.
+        va.turret_offset = std::atoi(art_ini.get(image, "TurretOffset", "0").c_str());
+        va.hva_frames = static_cast<int>(std::max<std::size_t>(
+            hull_h.frames.size(), std::max(tur_h.frames.size(), barl_h.frames.size())));
+        if (va.hva_frames > 1 || va.turret_offset != 0)
+            std::cerr << "[veh] " << image << " hva_frames=" << va.hva_frames << " turret_offset=" << va.turret_offset
+                      << std::endl;
         // P2: the muzzle offset is also the projectile launch point (projectile.md
         // §4 step 1 -- FLH resolved before the bullet exists).
         for (int k = 0; k < 3; ++k) {
@@ -2647,6 +2725,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_audio.inc"    // G-80..G-82 (helpers also used by the FX layer)
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
+#include "pres_bldanim.inc"  // W3-B building anim slots (per logic tick)
 #include "pres_effects.inc"  // W3-FX particles / debris / trails / wakes / twinkles
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
@@ -2671,6 +2750,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (art.invisible) return;   // W3-FIX-A InvisibleInGame=yes [RE: asset-search.md §3]
     const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
     g_overlay_bld = &b;   // W2-GA-14: per-building anim state for the overlay pass
+    g_overlay_id = def.id;   // W3-B
 
     // Foundation screen bbox = union of the fw*fh cell diamonds (60x30 rects).
     int minx = INT_MAX, miny = INT_MAX, maxx = INT_MIN, maxy = INT_MIN;
@@ -2688,6 +2768,16 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
 
     // Dead: explosion anim centered on the foundation (render-only nicety).
     if (b.state == ra2engine::Building::State::Dead) {
+        // W3-B LeaveRubble=yes: the rubble frame (and its shadow) stays.
+        const int rf = (g_fx && !b.sold) ? pres_building_rubble_frame(def.id, art.shp.count()) : -1;
+        if (rf >= 0 && rf < art.shp.count()) {
+            const ra2assets::Palette rp =
+                art.own_pal ? *art.own_pal : ra2engine::house_draw_palette(ba.unit_pal, b.house);
+            g_fx->blit_shadow(ren, tc, art.shp, "rubs:" + def.id, rf + art.shp.count() / 2, fcx, fcy, W, H);
+            g_fx->blit(ren, tc, art.shp, "rub:" + def.id + ":c" + std::to_string(ra2engine::house_draw_key(b.house)),
+                       rf, fcx, fcy, 255, W, H, &rp);
+        }
+        if (!b.alive) return;
         // A SOLD building is Limbo()'d and deleted in the original -- it does
         // not explode [RE: repair-sell.md §B2 state 2].
         // G-83: in the live game the FX layer plays the type's Explosion= anims.
@@ -2721,6 +2811,9 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
               : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
                         : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    // W3-B: CanBeOccupied 4-state / Gate stages (live game only, g_fx).
+    if (!buildup && g_fx) frame = pres_building_main_frame(b, def.id, def.image.empty() ? def.id : def.image,
+                                                         frame, art.shp.count(), condition_yellow);
     // [RE: roster2.md TL;DR 2/3, §D] a wall draws its connection frame:
     // stage*16 + the N/E/S/W same-wall/same-house mask (Wall_Update). Render-only.
     if (!buildup && all && b.type < static_cast<int>(ba.wall.size()) && ba.wall[b.type] &&
@@ -2866,12 +2959,33 @@ const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi) {
     if (bi < 0 || bi >= static_cast<int>(va.shadow->size())) return nullptr;
     return &(*va.shadow)[static_cast<std::size_t>(bi)];
 }
+// W3-B: one part at facing `fi`, HVA frame `hf` > 0, in the house colours
+// (rasterised on first use; only multi-frame models ever ask).
+const ra2engine::VoxelSprite& vxl_frame_sprite(const VehicleAssets& va, int part, int house, int fi, int hf) {
+    static std::map<std::string, ra2engine::VoxelSprite> cache;
+    static const ra2engine::VoxelSprite empty;
+    if (!va.vsrc) return empty;
+    const std::string key = va.combat.image + ":" + std::to_string(part) + ":" +
+                            std::to_string(ra2engine::house_draw_key(house)) + ":" + std::to_string(fi) + ":" +
+                            std::to_string(hf);
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
+    auto it = cache.find(key);
+    if (it != cache.end()) return it->second;
+    const VehicleAssets::VoxelSrc& s = *va.vsrc;
+    const ra2assets::VxlModel& m = part == 0 ? s.hull : part == 1 ? s.tur : s.barl;
+    const ra2assets::HvaModel& h = part == 0 ? s.hull_h : part == 1 ? s.tur_h : s.barl_h;
+    const ra2assets::Palette hp = ra2engine::house_draw_palette(s.pal, house);
+    return cache.emplace(key, ra2engine::rasterize_model(m, h, ra2engine::index_to_yaw(fi, ra2engine::kVehicleFacings),
+                                                         s.vpl, hp, hf)).first->second;
+}
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
     // W2-AN-07/25: a crashing flier keeps its hull until impact; a sinking
     // ship (ShipSinkingWeight) slides under instead of exploding.
     if (u.die_time >= 0.0 && !u.an.crashing && !u.an.sinking) {
-        if (va.explosion && va.explosion->count() > 0) {
+        // W3-B: in the live game the FX layer plays a RANDOM Explosion= entry
+        // (Presentation::unit_fx_tick) [RE: presentation.md §5 FUN_007376c0].
+        if (va.explosion && va.explosion->count() > 0 && !g_fx) {
             int frame = static_cast<int>(u.die_time * 15.0);
             if (frame >= va.explosion->count()) frame = va.explosion->count() - 1;
             if (frame < 0) frame = 0;
@@ -2905,18 +3019,35 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         ra2engine::draw_voxel_sprite(ren, tc, "vxlsh:" + img + ":" + std::to_string(bi), *sh, u.fx, u.fy,
                                      u.level, cam, W, H, 0);   // W2-GA-12 ground shadow
 
+    // W3-B: a multi-frame HVA (Night Hawk / Spy Plane rotors, Kirov
+    // propellers) shows frame WalkedFramesSoFar % frames [RE: voxel draw
+    // FUN_0073a3a0 reads the walk stage +0x538 modulo the HVA frame count].
+    const int hf = va.hva_frames > 1 ? pres_walk_stage(g_draw_unit_idx) % va.hva_frames : 0;
+    auto part_sprite = [&](int part, int fi) -> const ra2engine::VoxelSprite& {
+        if (hf == 0) return vxl_set(va, part, u.house).sprites[fi];
+        return vxl_frame_sprite(va, part, u.house, fi, hf);
+    };
+    const std::string fkey = hf ? ":f" + std::to_string(hf) : std::string();
     ra2engine::draw_voxel_sprite(
-        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi),
-        vxl_set(va, 0, u.house).sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi) + fkey,
+        part_sprite(0, bi), u.fx, u.fy, u.level, cam, W, H, extra_dy);
     if (va.has_turret) {
         const int ti = ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings);
+        // W3-B TurretOffset: forward along the BODY facing (FLH axes, §6).
+        double tfx = u.fx, tfy = u.fy;
+        if (va.turret_offset != 0) {
+            const double yaw = ra2engine::index_to_yaw(bi, ra2engine::kVehicleFacings);
+            const double f = va.turret_offset / 256.0;
+            tfx += f * std::cos(yaw);
+            tfy -= f * std::sin(yaw);
+        }
         ra2engine::draw_voxel_sprite(
-            ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
-            vxl_set(va, 1, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+            ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+            part_sprite(1, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
         if (va.has_barrel)
             ra2engine::draw_voxel_sprite(
-                ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
-                vxl_set(va, 2, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+                ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+                part_sprite(2, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
@@ -3243,11 +3374,16 @@ int shp_vehicle_frame(const ShpVehicleArt& s, const ra2engine::Unit& u, int coun
         }
     }
     const long t = g_pres_tick;
+    // W3-B [RE: UnitClass SHP draw FUN_0073b520 + FootClass::AI walk stage
+    // FUN_004da440]: walk frames step with the unit's WalkedFramesSoFar --
+    // +1 every WalkRate frames while moving, every IdleRate frames standing
+    // (IdleRate 0: the standing frames).
+    const int stage = pres_walk_stage(g_draw_unit_idx);
     int f;
     if (u.fire_flash > 0 && s.fire > 0)
         f = s.fire * fg + s.start_fire + static_cast<int>((t / 2) % s.fire);
-    else if (u.moving())
-        f = static_cast<int>(t % std::max(1, s.walk)) + s.walk * fg + s.start_walk;
+    else if (u.moving() || pres_idle_rate(u.image) > 0)
+        f = stage % std::max(1, s.walk) + s.walk * fg + s.start_walk;
     else if (s.stand)
         f = s.stand * fg + s.start_stand;
     else
@@ -3275,6 +3411,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
+    if (g_fx) g_fx->draw(ren, tc, cam, W, H, 0);   // W3-B Flat / ground-layer anims under objects
     const std::vector<ra2engine::Unit>& us = world.units();
     // Hull sprite width for a vehicle unit (0 for infantry) -- sizes the
     // selection diamond + HP bar to the wider voxel sprite.
@@ -3311,12 +3448,20 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) return;
         // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
         if (world.unit_hidden_from(0, u)) return;
+        if (u.ia.vanish) return;   // W3-B: a death anim replaced the body
         // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
         // SHP for its disguise type (draw_unit then blits it in the disguised
         // house's palette). When NOT disguised draw_image == u.image -> this is
         // byte-identical to the pre-Task-7 lookup.
         const std::string& draw_image = u.disguised ? u.disguised_as_type : u.image;
         if (const VehicleAssets* va = va_for_image(vlist, draw_image)) {
+            g_draw_unit_idx = idx;   // W3-B: walk stage (HVA frame)
+            // W3-B [RE: FUN_0073c1cc, Harvester=yes + unloading -> UnloadingClass]:
+            // a harvester dumping at the refinery draws its UnloadingClass.
+            if (u.is_harvester && u.harv == ra2engine::HarvState::Unloading) {
+                auto ul = g_unloading_class.find(draw_image);
+                if (ul != g_unloading_class.end() && ul->second) va = ul->second;
+            }
             draw_vehicle_unit(ren, tc, u, *va, cam, W, H);
             return;
         }
@@ -3342,6 +3487,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         auto sv = g_shp_vehicles.find(draw_image);
         if (sv != g_shp_vehicles.end() && u.die_time < 0.0) {   // W2-GA-11
             ra2engine::Unit tmp = u;
+            g_draw_unit_idx = idx;   // W3-B walk stage (WalkRate / IdleRate)
             tmp.frame = shp_vehicle_frame(sv->second, u, it->second.count());
             ra2engine::draw_unit(ren, tc, tmp, it->second, ua.pal, cam, W, H);
             return;
@@ -3364,7 +3510,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         };
         std::vector<DrawItem> A, B;
         for (int i = 0; i < static_cast<int>(bs.size()); ++i)
-            if (bs[i].alive && pres_building_seen(world, bs[i])) A.push_back({bkey(i), 0, i});
+            if ((bs[i].alive || pres_building_leaves_rubble(bs[i], *ba)) && pres_building_seen(world, bs[i]))
+                A.push_back({bkey(i), 0, i});
         std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         // G-87: map [Terrain] objects / civilian buildings sort with the buildings.
         // W2-GA-P1: they are static, so their order is built once per dressing
@@ -5196,6 +5343,7 @@ public:
         for (const VehicleAssets& v : ur_.vehicles) vlist_.push_back(&v);
         for (const VehicleAssets& v : ur_ai_.vehicles) vlist_.push_back(&v);
         if (transport_.ok) vlist_.push_back(&transport_.va);
+        load_unloading_classes();   // W3-B (HARV -> HORV ...)
         // gF: MCV + real-start force render assets.
         if (cfg.campaign_map.empty()) {
             gf_load_assets(g_gf_spawned);
@@ -5532,6 +5680,7 @@ public:
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
+        pres_.logic_tick(world_, ba_, player_credits_, world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
         if (repair_bridge) player_credits_ += world_.take_income(0);
@@ -5634,8 +5783,14 @@ public:
         // observation pass over this frame's state (pres_game.inc). Logs even
         // when there is no audio device; pumps the sink when there is one.
         pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
-                     pres_vet_, world_.take_projectile_events());
+                     pres_vet_, world_.take_projectile_events());   // (W3-B: drained per tick; normally empty)
         pres_vet_.clear();
+        // W3-B: the player's infantry cheer once on victory [RE-FALLBACK: the
+        // original's win-time cheer call site was not traced].
+        if (!victory_cheered_ && world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(0)) {
+            world_.make_house_cheer(0);
+            victory_cheered_ = true;
+        }
         // Drain gap fix C's fire events every frame (unbounded otherwise);
         // base-defense shots get their sound + muzzle flash here.
         pres_.defense_fire(world_, world_.take_fire_events());
@@ -5665,6 +5820,7 @@ public:
             g_turrets = &turrets_;
             ra2engine::set_terrain_level_palettes(light_.active ? &light_.level_pals : nullptr);
             map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
+            map_dressing_.load_tile_anims(a_.theater, a_.map);   // W3-B waterfalls / tunnel tops
             if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
                 int neutral = -1;
                 for (int h = 0; h < world_.house_count(); ++h)
@@ -5735,6 +5891,7 @@ public:
         // (skirmish-start / AI-built infantry otherwise fall back to
         // default_anim and pick frames from the wrong SHP layout).
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
+        enable_live_infantry_anims(world_, rules_ini_, art_ini_, 0);   // W3-B
         const ra2engine::World::Side s = world_.house_side(0);
         pres_.init(dir_, ra2_, audio_, audio_.enabled, rules_, rules_ini_, art_ini_, {&ur_.defs, &ur_ai_.defs},
                    s == ra2engine::World::Side::Soviet ? 1 : s == ra2engine::World::Side::Yuri ? 2 : 0);
@@ -6326,6 +6483,25 @@ private:
     std::vector<std::pair<double, double>> prev_audio_state_;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
+    std::deque<VehicleAssets> unload_va_;   // W3-B UnloadingClass voxels (pointer-stable)
+    // W3-B [rules UnloadingClass=, HARV -> HORV, CMIN -> CMON]: the harvester
+    // body shown while it dumps at a refinery.
+    void load_unloading_classes() {
+        const std::vector<const VehicleAssets*> cur = vlist_;
+        for (const VehicleAssets* v : cur) {
+            if (!v || !v->ok) continue;
+            const std::string img = v->combat.image;
+            if (g_unloading_class.count(img)) continue;
+            std::string uc = rules_ini_.get(img, "UnloadingClass", "");
+            const std::size_t sc = uc.find(';');
+            if (sc != std::string::npos) uc = uc.substr(0, sc);
+            while (!uc.empty() && std::isspace(static_cast<unsigned char>(uc.back()))) uc.pop_back();
+            if (uc.empty()) continue;
+            unload_va_.push_back(load_vehicle_assets(dir_, ra2_, ua_.pal, uc));
+            g_unloading_class[img] = unload_va_.back().ok ? &unload_va_.back() : nullptr;
+            std::cerr << "[veh] " << img << " UnloadingClass=" << uc << " ok=" << unload_va_.back().ok << std::endl;
+        }
+    }
     std::vector<int>     bstates_;
     int                  mx_ = kWinW / 2, my_ = kWinH / 2;   // last pointer (events)
     bool                 mouse_present_ = false;   // a real mouse moved over the window
@@ -6338,6 +6514,7 @@ private:
     static constexpr double kScrollTick = 0.016;   // timeGetTime()>>4 tick
     double               scroll_mult_ = 0.07;      // [General] ScrollMultiplier
     double               scroll_tick_accum_ = 0.0;
+    bool                 victory_cheered_ = false;   // W3-B
     int                  scroll_accel_ = 0;
 
     // --- P7 Save / Load ---
@@ -6369,6 +6546,7 @@ private:
                                                       rules_, art_, rules_ini_);
         campaign_->set_ai_roster(&ur_ai_);   // W2-CA-07: map AI teams
         for (const VehicleAssets* v : campaign_->vehicle_assets()) vlist_.push_back(v);
+        load_unloading_classes();   // W3-B
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
         player_credits_ = campaign_->player_credits();
         queues_.set_credits(player_credits_);
