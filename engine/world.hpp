@@ -958,6 +958,9 @@ public:
     // W4-SQ-06 [RE: FUN_0065d320 Droppod branch]: a paradrop plane (an AN
     // type registered as `plane_id`) enters at (sx,sy) flying, drops its CARGO
     // over (dx,dy) and leaves over (ex,ey). -1 when the plane type is unknown.
+    // W4-SQ-03: a fixed-wing aircraft with no dock leaves over the nearest
+    // map edge and is removed (not a loss: deployed_away).
+    bool order_leave_map(int idx);
     int spawn_drop_plane(const std::string& plane_id, int house, int sx, int sy, int dx, int dy,
                          int ex, int ey);
     // Drain the board/refuse/eject events accumulated by step_cargo since

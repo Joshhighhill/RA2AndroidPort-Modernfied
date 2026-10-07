@@ -1400,8 +1400,26 @@ private:
     // W2-CA-09: a finished team lets its members go.
     void release_team(Team& tm, int team_idx) {
         for (int m : tm.members)
-            if (utrack_[(std::size_t)m].team == team_idx) utrack_[(std::size_t)m].team = -1;
+            if (utrack_[(std::size_t)m].team == team_idx) {
+                utrack_[(std::size_t)m].team = -1;
+                maybe_leave_map(m);
+            }
         tm.members.clear();
+    }
+    // W4-SQ-03: a team-less fixed-wing aircraft of a computer house with no
+    // live airfield of its own (ALL02's British intro Harriers, SOV06/ALL10
+    // flyovers) flies off the map. Player-controlled aircraft are left alone.
+    void maybe_leave_map(int m) {
+        const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+        if (std::getenv("RA2_CAMP_DEBUG"))
+            std::cerr << "[camp-debug] f" << frame_ << " leave? " << m << " " << u.image << " air=" << u.is_aircraft
+                      << " fw=" << u.an.t.fixed_wing << " home=" << u.an.home << "\n";
+        if (!live(u) || !u.is_aircraft || !u.an.t.fixed_wing || w_.controllable(u.house)) return;
+        const int hb = u.an.home;
+        if (hb >= 0 && hb < (int)w_.buildings().size() && live(w_.buildings()[(std::size_t)hb]) &&
+            w_.buildings()[(std::size_t)hb].house == u.house)
+            return;
+        w_.order_leave_map(m);
     }
     void adopt(Team& tm, int team_idx) {
         for (int m : tm.members) utrack_[(std::size_t)m].team = team_idx;
@@ -2190,7 +2208,7 @@ private:
             int n = 0;
             for (std::size_t i = 0; i < teams_.size(); ++i)
                 if (teams_[i].type == ti && !teams_[i].st.done) {
-                    for (int m : teams_[i].members) utrack_[(std::size_t)m].team = -1;
+                    for (int m : teams_[i].members) { utrack_[(std::size_t)m].team = -1; maybe_leave_map(m); }
                     teams_[i].st.done = true;
                     ++n;
                 }

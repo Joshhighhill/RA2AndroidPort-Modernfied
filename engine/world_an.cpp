@@ -525,6 +525,7 @@ void World::an_step_fixed_wing(double dt) {
                 } else if (!dropping && cdist(u.fx, u.fy, goal_x, goal_y) < 0.5) {
                     units_[i].alive = false;   // left the map
                     units_[i].die_time = 1.0;
+                    units_[i].deployed_away = true;   // W4-SQ-03: gone, not destroyed (no loss)
                     continue;
                 }
                 break;
@@ -713,6 +714,42 @@ int World::spawn_drop_plane(const std::string& plane_id, int house, int sx, int 
     if (f >= 0) p.facing = f;
     p.body_facing = facing_u16_from_delta(dx - sx, dy - sy);
     return pi;
+}
+
+// W4-SQ-03 [RE: AircraftClass mission FUN_004176F0 -- an AirportBound
+// aircraft that finds no free dock (vtbl +0x528) takes the no-dock exit
+// (vtbl +0x3DC), and an emptied team transport plane with no team is put on
+// Mission Retreat (4); RE-FALLBACK: both leave over the nearest map edge]:
+// a fixed-wing aircraft with nowhere to land flies off the map.
+bool World::order_leave_map(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return false;
+    Unit& u = units_[idx];
+    if (!u.alive || u.die_time >= 0.0 || !u.is_aircraft || !u.an.t.fixed_wing || u.an.t.spawned) return false;
+    const int W = grid_w_, H = grid_h_;
+    const int dl = u.cell_x, dr = W - 1 - u.cell_x, dt = u.cell_y, db = H - 1 - u.cell_y;
+    int ex = u.cell_x, ey = u.cell_y;
+    const int m = std::min(std::min(dl, dr), std::min(dt, db));
+    if (m == dl) ex = 0; else if (m == dr) ex = W - 1; else if (m == dt) ey = 0; else ey = H - 1;
+    an_.any = true;
+    u.target = -1;
+    u.target_building = -1;
+    u.attack_order = false;
+    u.path.clear();
+    u.path_idx = 0;
+    u.has_flight_goal = false;
+    u.an.attack_unit = u.an.attack_building = -1;
+    u.an.sortie = kParadrop;   // the straight run off the map (no cargo, nothing to drop)
+    u.an.drop_left = 0;
+    u.an.drop_type.clear();
+    u.an.drop_x = u.cell_x;
+    u.an.drop_y = u.cell_y;
+    u.an.exit_x = ex;
+    u.an.exit_y = ey;
+    if (u.flight_state == FlightState::Grounded) {
+        occ_.release_all_of(idx, -1, -1);
+        u.flight_state = FlightState::TakingOff;
+    }
+    return true;
 }
 
 // One carried member jumps: it leaves the plane over the nearest free land
