@@ -11,6 +11,7 @@ public:
               const Rules& rules, const Ini& rules_ini, const Ini& art_ini,
               const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs, int side_ix) {
         audio_ = &audio;
+        g_bld_events.clear();   // W2-GA-14 per-building anim state is per game
         // G-83: the effects layer (muzzle / impact / death anims, projectile art).
         fx_.init(dir, ra2, rules_ini, art_ini);
         for (const auto* list : defs)
@@ -121,6 +122,8 @@ public:
         production_eva(w, q, credits);
         power_eva(w, ba);
         building_events(w, ba);
+        building_anim_events(w, ba);   // W2-GA-14
+        if (ba.ok) unit_pal_ = &ba.unit_pal;
         unit_audio(w, act);
         for (const auto& e : vet) {
             if (e.unit < 0 || e.unit >= static_cast<int>(w.units().size())) continue;
@@ -437,6 +440,13 @@ private:
             }
             fx_.spawn(name, u.fx, u.fy, u.level, lift, ox);
         }
+        if (wp->bolt || wp->laser) {   // W2-GA-15 Tesla / Prism beams
+            double tx = 0, ty = 0, tl = 0;
+            int tlev = 0;
+            if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
+                fx_.add_beam(u.fx, u.fy, u.level, u.is_vehicle ? 18.0 : 15.0, tx, ty, tlev, tl, *wp,
+                             house_color(w, u.house));
+        }
         if (!u.w_proj.flies()) {
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
@@ -449,6 +459,29 @@ private:
             }
         }
     }
+    bool target_point(const ra2engine::World& w, int tu, int tb, double& x, double& y, int& level,
+                      double& lift) const {
+        const auto& us = w.units();
+        if (tu >= 0 && tu < static_cast<int>(us.size())) {
+            const ra2engine::Unit& t = us[static_cast<std::size_t>(tu)];
+            x = t.fx; y = t.fy; level = t.level;
+            lift = t.is_vehicle ? 10.0 : 8.0;
+            return true;
+        }
+        if (tb >= 0 && tb < static_cast<int>(w.buildings().size())) {
+            const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(tb)];
+            x = b.cx + (b.fw - 1) / 2.0; y = b.cy + (b.fh - 1) / 2.0; level = 0;
+            lift = 20.0;
+            return true;
+        }
+        return false;
+    }
+    SDL_Color house_color(const ra2engine::World& w, int house) const {
+        if (!unit_pal_) return SDL_Color{255, 0, 255, 255};
+        const ra2assets::Rgba c = w.house_palette(*unit_pal_, house)[24];
+        return SDL_Color{c.r, c.g, c.b, 255};
+    }
+    const ra2assets::Palette* unit_pal_ = nullptr;
     // Building death: the type's Explosion= anims scattered over the
     // foundation [RE-FALLBACK: RE-P5 open -- count/placement; one per
     // foundation cell, cycling the list], each with its Report=.
@@ -648,6 +681,14 @@ public:
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
             snd_.play_at(fx_.weapon_report(e.weapon), fx, fy, "defense report");
             if (b.house != 0 && !w.object_visible_at(0, b.cx, b.cy)) continue;
+            // W2-GA-15: Tesla Coil bolts / Prism Tower beams from the tower top.
+            const FxWeapon& bw = fx_.weapon_def(e.weapon);
+            if (bw.bolt || bw.laser) {
+                double tx = 0, ty = 0, tl = 0;
+                int tlev = 0;
+                if (target_point(w, e.target_unit, e.target_building, tx, ty, tlev, tl))
+                    fx_.add_beam(fx, fy, 0, 60.0, tx, ty, tlev, tl, bw, house_color(w, b.house));
+            }
             const std::vector<std::string> m = fx_.weapon_muzzle(e.weapon);
             if (!m.empty()) fx_.spawn(m.front(), fx, fy, 0, 20.0);   // [RE-FALLBACK: building FireFLH not applied]
         }
@@ -755,6 +796,53 @@ private:
             p.ready = ready;
         }
     }
+    // W2-GA-14: start the factory door when a unit appears at a factory, and
+    // the superweapon building's charge anims on READY / FIRE edges.
+    void building_anim_events(const ra2engine::World& w, const BuildingAssets& ba) {
+        if (!ba.ok) return;
+        const auto& bs = w.buildings();
+        const auto& us = w.units();
+        auto image_of = [&](const ra2engine::Building& b) -> std::string {
+            if (b.type < 0 || b.type >= static_cast<int>(ba.roster.size())) return std::string();
+            const ra2engine::BuildingTypeDef& d = ba.roster[static_cast<std::size_t>(b.type)];
+            return pres_upper(d.image.empty() ? d.id : d.image);
+        };
+        for (std::size_t i = units_seen_; i < us.size(); ++i) {
+            const ra2engine::Unit& u = us[i];
+            if (!u.alive || u.cargo_of >= 0 || !u.is_vehicle) continue;
+            for (const ra2engine::Building& b : bs) {
+                if (!b.alive || b.house != u.house || b.state != ra2engine::Building::State::Idle) continue;
+                if (u.cell_x < b.cx - 1 || u.cell_x > b.cx + b.fw || u.cell_y < b.cy - 1 || u.cell_y > b.cy + b.fh)
+                    continue;
+                const std::string img = image_of(b);
+                if (img.empty() || !fx_.building(img).door.t) continue;
+                g_bld_events[bld_event_key(b)].door_start = frame_;
+                break;
+            }
+        }
+        units_seen_ = us.size();
+        const int n = w.house_count();
+        if (static_cast<int>(sw_anim_prev_.size()) < n) sw_anim_prev_.resize(static_cast<std::size_t>(n), 0);
+        for (int h = 0; h < n; ++h) {
+            const ra2engine::Superweapon* sw = w.sw_state(h);
+            const int st = !sw || sw->type == ra2engine::SuperweaponType::None ? 0 : (sw->ready ? 2 : 1);
+            int& prev = sw_anim_prev_[static_cast<std::size_t>(h)];
+            if (st != prev && st != 0) {
+                for (const ra2engine::Building& b : bs) {
+                    if (!b.alive || b.house != h) continue;
+                    const std::string img = image_of(b);
+                    if (img.empty() || !fx_.building(img).super_[0].t) continue;
+                    BldEventState& e = g_bld_events[bld_event_key(b)];
+                    if (st == 2) { e.super_phase = 0; e.super_start = frame_; }                    // ready: open
+                    else if (prev == 2) { e.super_phase = 2; e.super_start = frame_; }             // fired: close
+                    else if (e.super_phase < 0) { e.super_phase = 2; e.super_start = -1; }          // charging
+                }
+            }
+            prev = st;
+        }
+    }
+    std::size_t units_seen_ = 0;
+    std::vector<int> sw_anim_prev_;
     struct SwSeen { ra2engine::SuperweaponType type = ra2engine::SuperweaponType::None; bool ready = false; };
     std::vector<SwSeen> sw_prev_;
 

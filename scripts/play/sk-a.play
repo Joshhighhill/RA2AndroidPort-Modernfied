@@ -131,8 +131,14 @@ click tab:3
 assert cameo(AMCV) == 1                       @G-22:A
 click cameo:MTNK
 until 1500 units(0,MTNK) >= 1
+# W2-GA-03: with FogOfWar off (the original's default, RE-Q3) the AI engages the
+# player's miner in explored ground earlier, so the first Chrono Miner may be
+# gone by now: check that one more is trained, not that two are alive.
+let cmin0 = units(0,CMIN)
+let lost0 = units_lost(0)
 click cameo:CMIN                              @G-22:A
-until 1800 units(0,CMIN) >= 2                 @G-22:A
+until 1800 units(0,CMIN) > $cmin0 or units_lost(0) > $lost0   @G-22:A
+until 1800 units(0,CMIN) >= 1                 @G-22:A
 
 # --- 8. the AI plays: trains, attacks ----------------------------------------------
 let u1 = units(1)

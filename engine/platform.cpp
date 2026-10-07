@@ -46,7 +46,7 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
     // G0 --play: a hidden window renders through the software renderer so the
     // captured pixels do not depend on the GPU driver.
     SDL_Renderer* renderer = SDL_CreateRenderer(
-        window, -1, hidden ? SDL_RENDERER_SOFTWARE : SDL_RENDERER_ACCELERATED);
+        window, -1, hidden ? SDL_RENDERER_SOFTWARE : (SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC));   // W2-GA-P6 vsync (no tearing)
     if (!renderer && !hidden) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     if (!renderer) {
         std::string err = SDL_GetError();

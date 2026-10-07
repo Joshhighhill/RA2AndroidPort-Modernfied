@@ -2521,6 +2521,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
+#include "pres_turret.inc"   // W2-GA-13 defence turrets
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
@@ -2539,6 +2540,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     const BuildingArt& art = ba.art[b.type];
     if (!art.ok) return;
     const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
+    g_overlay_bld = &b;   // W2-GA-14: per-building anim state for the overlay pass
 
     // Foundation screen bbox = union of the fw*fh cell diamonds (60x30 rects).
     int minx = INT_MAX, miny = INT_MAX, maxx = INT_MIN, maxy = INT_MIN;
@@ -2649,9 +2651,11 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 1);
 
-    // Foundation-width HP bar when damaged (render-only; buildings aren't
-    // selectable so there's no selection marker).
-    if (b.hp < b.max_hp && b.max_hp > 0) {
+    // Foundation-width HP bar when damaged (render-only). W2-GA-19: the live
+    // game (g_map_dressing set) shows building health only on the SELECTED
+    // building (GameScene::draw_selected_building's pips, ConditionYellow/
+    // Red), as the original does; the demos keep this debug bar.
+    if (!g_map_dressing && b.hp < b.max_hp && b.max_hp > 0) {
         const int bw = std::max(24, maxx - minx - 8);
         const int bx = fcx - bw / 2, by = miny - 6;
         SDL_Rect bg{bx - 1, by - 1, bw + 2, 5};
@@ -3060,6 +3064,61 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
 
 bool pres_target_lines();   // G-88: RA2.INI UnitActionLines (defined after g_user_settings)
 
+// W2-GA-11 [RE: RE-Q14, UnitTypeClass art read FUN_00746450 + ctor defaults
+// FUN_00745f00; UnitClass SHP draw FUN_0073b520]: SHP (artmd Voxel=no)
+// vehicles -- Terror Drone, Dolphin, Squid -- pick their frame from the
+// facing group and Walk/Standing/Firing ranges instead of an infantry
+// sequence. Filled by GameScene for roster images with Voxel=no; render-only
+// (the sim keeps the unit's existing semantics).
+struct ShpVehicleArt {
+    int facings = 8, walk = 12, fire = 0, stand = 0;
+    int start_walk = 0, start_stand = 0, start_fire = 0;
+};
+std::map<std::string, ShpVehicleArt> g_shp_vehicles;
+ShpVehicleArt shp_vehicle_art(const Ini& art, const std::string& image) {
+    auto gi = [&](const char* k, int d) {
+        const std::string v = pres_clean(art.get(image, k));
+        return v.empty() ? d : std::atoi(v.c_str());
+    };
+    ShpVehicleArt s;
+    s.walk = gi("WalkFrames", 12);
+    s.fire = gi("FiringFrames", 0);
+    s.stand = gi("StandingFrames", s.fire > 0 ? 1 : 0);
+    const bool turret = pres_lower(pres_clean(art.get(image, "Turret"))).rfind("y", 0) == 0;
+    s.facings = gi("Facings", (s.fire == 0 && !turret) ? 1 : 8);
+    s.start_walk = std::max(0, gi("StartWalkFrame", 0));
+    const int ss = gi("StartStandFrame", -1);
+    s.start_stand = ss >= 0 ? ss : (s.stand ? s.walk * s.facings : s.start_walk);
+    const int sf = gi("StartFiringFrame", -1);
+    s.start_fire = sf >= 0 ? sf : (s.fire ? (s.walk + s.stand) * s.facings : s.start_stand);
+    return s;
+}
+int shp_vehicle_frame(const ShpVehicleArt& s, const ra2engine::Unit& u, int count) {
+    // facing group: (((raw>>12)+1)>>1)+1)&7 for Facings=8, else group 0.
+    // An infantry-path unit (the sim keeps DRON there) carries the SHP facing
+    // block index directly (u.facing, the infantry-anim.md §4 order).
+    int fg = 0;
+    if (s.facings == 8) {
+        if (!u.is_vehicle) {
+            fg = ((u.facing % 8) + 8) % 8;
+        } else {
+            const int raw = static_cast<int>(u.body_facing) & 0xFFFF;
+            fg = ((((raw >> 12) + 1) >> 1) + 1) & 7;
+        }
+    }
+    const long t = g_pres_tick;
+    int f;
+    if (u.fire_flash > 0 && s.fire > 0)
+        f = s.fire * fg + s.start_fire + static_cast<int>((t / 2) % s.fire);
+    else if (u.moving())
+        f = static_cast<int>(t % std::max(1, s.walk)) + s.walk * fg + s.start_walk;
+    else if (s.stand)
+        f = s.stand * fg + s.start_stand;
+    else
+        f = s.walk * fg + s.start_walk;
+    return std::clamp(f, 0, std::max(0, count / 2 - 1));   // second half = shadows
+}
+
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
@@ -3075,6 +3134,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
     // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
     if (g_map_dressing) g_map_dressing->draw_ground(ren, tc, world, g_map_pals, cam, W, H);
+    if (g_fx && g_map_dressing) g_fx->draw_radiation(ren, world, a.map, cam, W, H);   // W2-GA-15
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -3122,9 +3182,29 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             return;
         }
         auto it = ua.shps.find(draw_image);
+        if (it == ua.shps.end() && g_map_dressing) {
+            // Live game only: a unit type no roster registered (a cheat /
+            // trigger / captured-factory spawn) loads its SHP on first sight
+            // (conquer.mix, then conqmd.mix) instead of staying invisible.
+            static std::set<std::string> tried;
+            if (tried.insert(draw_image).second) {
+                try {
+                    static const MixFile conquer =
+                        MixFile::open_path(env_install_dir() + "ra2.mix").open_nested("conquer.mix");
+                    it = ua.shps.emplace(draw_image, load_unit_shp(conquer, draw_image)).first;
+                } catch (const std::exception&) {}
+            }
+        }
         if (it == ua.shps.end()) {
             std::cerr << "[render] no SHP loaded for image=" << draw_image << " (unit " << idx
                       << "); skipping\n";
+            return;
+        }
+        auto sv = g_shp_vehicles.find(draw_image);
+        if (sv != g_shp_vehicles.end() && u.die_time < 0.0) {   // W2-GA-11
+            ra2engine::Unit tmp = u;
+            tmp.frame = shp_vehicle_frame(sv->second, u, it->second.count());
+            ra2engine::draw_unit(ren, tc, tmp, it->second, ua.pal, cam, W, H);
             return;
         }
         ra2engine::draw_unit(ren, tc, u, it->second, ua.pal, cam, W, H);
@@ -3184,6 +3264,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
             draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
                           &world.buildings());
+            if (g_turrets && b.type >= 0 && b.type < static_cast<int>(ba->roster.size()))   // W2-GA-13
+                g_turrets->draw(ren, tc, world, b, ba->roster[static_cast<std::size_t>(b.type)].id,
+                                mc ? mc->level : 0, cam, W, H);
         } else {
             draw_one_unit(d.idx);
         }
@@ -4425,6 +4508,11 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
     Uint32 prev = SDL_GetTicks();
     int frame = 0;
     g_platform = &plat;
+    // W2-GA-P6: frame pacing by deadline (60 Hz) instead of a fixed 16 ms
+    // sleep AFTER the frame's work; with the vsync'd renderer present()
+    // already waits, so this only sleeps the part of the budget left.
+    Uint64 frame_start = SDL_GetPerformanceCounter();
+    const double perf_ms = 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
     while (scene && !scene->wants_quit()) {
         // W2-AR-06: the canvas follows the scene (shell 1280x720, the game
         // as wide as the panel's aspect allows) BEFORE input is polled, so
@@ -4476,7 +4564,11 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
             }
             if (hooks) hooks->transition(frame);
         }
-        if (fixed_dt <= 0.0) SDL_Delay(16);
+        if (fixed_dt <= 0.0) {
+            const double used = (SDL_GetPerformanceCounter() - frame_start) * perf_ms;
+            if (used < 16.0) SDL_Delay(static_cast<Uint32>(16.667 - used));
+            frame_start = SDL_GetPerformanceCounter();
+        }
         ++frame;
     }
     if (hooks) hooks->quit(frame, scene.get(), "scene wants_quit");
@@ -4990,12 +5082,24 @@ public:
                     try {
                         ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
                         ua_.anims.emplace(d.combat.image, anim_from_art(art_, d.combat.image));
+                        // W2-GA-11: Voxel=no vehicle art (DRON) draws by facing/walk frames.
+                        if (pres_lower(pres_clean(art_ini_.get(d.combat.image, "Voxel"))).rfind("n", 0) == 0)
+                            g_shp_vehicles[d.combat.image] = shp_vehicle_art(art_ini_, d.combat.image);
                     } catch (const std::exception& ex) {
                         std::cerr << "[unit-roster] infantry SHP " << d.combat.image
                                   << " unavailable (" << ex.what() << ")\n";
                     }
                 }
         } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+        // W2-GA-11: every [VehicleTypes] entry whose art says Voxel=no (DRON,
+        // DLPH, SQD) draws with the SHP-vehicle frame rule, roster or not.
+        for (const auto& kv : rules_ini_.section("VehicleTypes")) {
+            const std::string id = pres_upper(pres_clean(kv.second));
+            if (id.empty()) continue;
+            const std::string img = pres_upper(rules_.image(id));
+            if (pres_lower(pres_clean(art_ini_.get(img, "Voxel"))).rfind("n", 0) == 0 && !g_shp_vehicles.count(img))
+                g_shp_vehicles[img] = shp_vehicle_art(art_ini_, img);
+        }
 
         // [G-60/G-62/G-64] The real-play AI: teams + triggers + side-correct
         // catalogs for every AI slot (after the infantry SHP/anim registration
@@ -5112,8 +5216,9 @@ public:
         prewarm_stop_ = true;
         if (prewarm_.joinable()) prewarm_.join();
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
-        if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
+        if (g_map_dressing == &map_dressing_) { g_map_dressing = nullptr; g_smudge_hook = nullptr; }
         if (g_radar == &radar_) g_radar = nullptr;
+        if (g_turrets == &turrets_) g_turrets = nullptr;
         if (g_light == &light_) {
             g_light = nullptr;
             ra2engine::set_terrain_level_palettes(nullptr);
@@ -5410,6 +5515,8 @@ public:
             // W2-GA-05: the map's [Lighting] (tiles baked per height + ambient).
             light_.load(map_ini, a_.pal);
             g_light = &light_;
+            turrets_.load(ra2_, dir_, rules_ini_, ba_, ba_.unit_pal);   // W2-GA-13
+            g_turrets = &turrets_;
             ra2engine::set_terrain_level_palettes(light_.active ? &light_.level_pals : nullptr);
             map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
             if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
@@ -5443,6 +5550,7 @@ public:
             map_pals_[2] = &ba_.unit_pal;
             for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
             g_map_dressing = &map_dressing_;
+            g_smudge_hook = [this](bool crater, double fx, double fy) { map_dressing_.add_smudge(crater, fx, fy); };
         } catch (const std::exception& ex) {
             std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
         }
@@ -6026,6 +6134,7 @@ private:
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     PresLight light_;   // W2-GA-05
+    PresTurrets turrets_;   // W2-GA-13
     // W2-GA-P4: every roster vehicle x every house colour rasterised on a
     // worker thread at game start instead of in the first frame each colour's
     // tank appears (51-69 ms per set at -O0, 9-20 ms at -O2).

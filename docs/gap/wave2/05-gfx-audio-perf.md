@@ -726,3 +726,72 @@ The game had 74–97 units (house 0..7: 9, 15, 16, 16, 10, 6, 10, 15 at frame 24
   `D:\ra2-re\w2-gfx\scripts`.
   - `SpawnsTiberium` is TerrainType `+0x2b1`, read by `FUN_0071d140`.
   - `TerrainClass::Draw_It` is `FUN_0071b450`.
+
+## 6. Fix status (branch `w2fix-gfx`)
+
+Fixed on `w2fix-gfx` (merged with master 4a93ed6, w2fix-ui). Screens come from `scripts/play/gfx-vis.play`,
+`scripts/play/gfx-fx.play` and `--scene-shot` (new `--view X,Y` / `--reveal` options). They are local only; renders
+of original art are not committed. Audio evidence is the `--scene-shot ... --audio` presentation log with
+`SDL_AUDIODRIVER=dummy`.
+
+### RE answers (gamemd.exe, private Ghidra copy `D:\ra2-re\w2-gfx`, outputs `D:\ra2-re\w2-gfxout\q1..q17`)
+
+| Question | Answer | Confidence |
+|---|---|---|
+| RE-Q1 | `[0x0087E63C]` is assigned once at start-up (`FUN_0052b790` @0x52bf2b) from the convert built from the unit palette, so `SpawnsTiberium` terrain draws through the **unit palette**. `DAT_00821cf1` is initialised to 1 and never written, so terrain and tree shadows are always drawn. | Medium-High |
+| RE-Q3 | `MapClass::IsLocationFogged` (`FUN_00586010`) is a stub that returns 0. The tactical draw loop (`FUN_006d8320`) culls only on that fog test, and only under `Scen & 0x1000`. The mouse pick (`FUN_00691d00`) rejects only shrouded cells (`!(cell+0x12C & 8)`) plus the stub. The auto-acquire evaluator (`FUN_006f71d0`) has no shroud or fog test at all; it checks only cloak and sensors. FogOfWar comes from `[MultiplayerDialogSettings] FogOfWar` (or map `[SpecialFlags]`) and is cleared in campaign. `[General] FogOfWar` is never read. | High |
+| RE-Q5 | Before IsoMapPack5 is applied, `FUN_004acd80` pre-fills every cell with the first Clear tile at `[Map] Level=` (default 0). `[Map] Fill=Water` uses random water tiles instead. | High |
+| RE-Q7 | `FUN_00689890` reads the values. `FUN_00484090` computes I = Ambient·1000 + Level·1000·height − Ground·1000 (max 2000). `FUN_00555570` normalises the tint to a max channel of 1000 and moves the brightness into I. The `LightConvertClass` rows scale each palette channel by I·tint. Light sources add `Intensity·(r−d)/r`. | High (formula), Medium (row pick) |
+| RE-Q11 | `FUN_0074f8e0`: pan = clamp(screenX − halfW, ±W)·8192/W + 8192, which is 4096 or 12288 at the screen edges. It is not affected by the vertical position. EVA and music never call it, so they are centred. | High |
+| RE-Q12 | The YR binary reads THEMEMD.INI and opens THEMEMD.MIX, then THEME.MIX if that open fails. `Next_Song` is `FUN_0071fd20` and `Is_Allowed` is `FUN_007203e0` (rules quoted in `pres_audio.inc`). Classic RA2 is the theme.ini / theme.mix pair. | High |
+| RE-Q14 | `FUN_00746450` reads the art and `FUN_00745f00` holds the defaults. `FUN_0073b520` picks the frame as `facing group = ((((raw>>12)+1)>>1)+1)&7`, with `Walk·g + StartWalk + WalkCounter%Walk` when moving, the standing frame or Walk·g when idle, and `Fire·g + StartFire + counter/2` when firing. | High |
+| RE-Q2, Q4, Q6, Q8, Q9, Q10, Q13 | Not resolved. Each fix that depends on one is marked RE-FALLBACK below. | — |
+
+### Rows
+
+| Row | Status | What changed | Evidence |
+|---|---|---|---|
+| W2-GA-01 | **FIXED** | `load_ore_art` searches `.<theater ext>` then `.shp`. The ore texture key is tagged by theater, so a second game in another theater never reuses the wrong palette. | `[ore] art files loaded=32 pal=urban.pal` / `snow.pal`; `gfx-vis/v01_start.png` (hillbtwn ore field) |
+| W2-GA-02 | **FIXED** | `draw_terrain(…, &world)` skips every never-explored cell, base and cliff/slope extra alike (RE-Q4 open: no neighbour clipping). The SHROUD.SHP post-pass is unchanged. | `--scene-shot --map xmp14t2 --peek terrain`: the cliff walls and ramps in the black are gone |
+| W2-GA-03 | **FIXED** | `World::set_fog_of_war` defaults to off (RE-Q3). The one query `World::object_visible_at` returns explored with fog off and visible with fog on. It feeds `seen_by_mask` (unit and defence auto-acquire), the building-defence engage test (`combat.cpp`), unit and projectile drawing, the cursor pick, impact and fire FX, and the radar. The fog pass and terrain dimming run only with the flag set. `--demo-shroud` opts into fog. Note for the combat/AI owners: the binary's auto-acquire has **no** shroud test at all; ours still needs an explored cell. | `gfx-fx`: an enemy in explored but out-of-sight ground is drawn and engaged |
+| W2-GA-04 | **FIXED** | `MapFile::parse` adds every missing cell of the IsoMapPack5 enumeration diamond as tile 0 at `[Map] Level` (RE-Q5). The enumeration matches every full map exactly. Test `map: fill_missing_diamond…`. | hillbtwn: 11 cells filled, the black parallelogram by the start is gone |
+| W2-GA-05 | **FIXED (light sources open)** | `pres_light.inc` applies the RE-Q7 formula. Terrain is baked per height level, and the level-0 ambient·tint is applied as a MOD multiply over the world sprites. Not modelled: light sources, ion storm and Dominator lighting, and per-height light on objects. | xmp06t2 (Ambient .6, night), xmp14t2 (warm .73), hillbtwn (.76 at level 0) shots |
+| W2-GA-06 | **FIXED** | `SpawnsTiberium` terrain uses the unit palette (RE-Q1), is lifted 16 px, and animates `IsAnimated` frames at `AnimationRate`/`AnimationProbability` on a render-only RNG. | hillbtwn ore mine is clean (crop) |
+| W2-GA-07 | **FIXED (bridge layer open)** | Overlay art takes `Image=` from rules when artmd has none, so `BRIDGE1/2` resolve to `BRIDGE`. Non-ore, non-wall overlays (rocks, bridges, low bridges) are drawn with the **iso** palette (visual check). Decks draw in the ground pass; there is no bridge layer for units yet. | xmp14t2 `missing-art=0` (was 22); `--view 89,100` deck shot |
+| W2-GA-08 | **FIXED** | `[Terrain]` objects and civilian dressing draw their shadow half at 50 % (`DAT_00821cf1` is always on). | snow xmp31s2 tree shadows |
+| W2-GA-10 | **FIXED** | `load_unit_shp` falls back to `ra2md.mix/conqmd.mix`. | `[shp] image=GGI file=conqmd.mix/ggi.shp frames=744`; `gfx-vis/v02_units.png` |
+| W2-GA-11 | **FIXED** | `Voxel=no` vehicles (every `[VehicleTypes]` entry) use the RE-Q14 frame rule. The sim is unchanged; DRON stays on the infantry path and takes its facing from `u.facing`. An unregistered unit type now loads its SHP the first time it is seen instead of being invisible. | `gfx-vis/v02_units.png` (Terror Drone) |
+| W2-GA-12 | **FIXED (RE-FALLBACK RE-Q9)** | `rasterize_shadow` builds the hull silhouette flattened to z=0 at 50 % black, per facing, under each ground vehicle. There is no light offset. | `--script tanks` crop |
+| W2-GA-13 | **FIXED (turret ROT open)** | `pres_turret.inc` draws the `TurretAnim` voxel (plus `barl`) per house colour at `TurretAnimX/Y`, facing `def_target`. Patriot, Flak, Sentry and Grand Cannon are covered. | `gfx-vis/v03b_patriot.png` |
+| W2-GA-14 | **PARTIAL** | The war-factory `DeployingAnim` plays over and `UnderDoorAnim` under when a vehicle exits. `SuperAnim..Four` run on READY/FIRE edges (RE-Q13 open, ModEnc order). Still missing: `SpecialAnim` (refinery dump), the roof door set, `IdleAnim`, and `ZAdjust`/`YSort` per slot. | `gfx-vis/v03a_door.png` |
+| W2-GA-15 | **PARTIAL** | `IsElectricBolt` gives three jagged arcs and `IsLaser` gives a house-coloured beam (`IsHouseColor`), for units and defences. `Crater=` / `Scorch=` anims leave `CRATERnn` / `BURNTnn` smudges. Radiation shows as a `RadColor` glow. Still missing: debris, chrono warp, the Iron Curtain tint, and `Trailer=` (no active `Trailer=` in rulesmd/artmd on this install). | `gfx-fx/f01_beams.png`, `gfx-fx/f03_after.png` |
+| W2-GA-16/17/18/20, W2-GA-09 | **OPEN** | Polish rows. Not started. | — |
+| W2-GA-19 | **FIXED** | The live game no longer draws the always-on foundation HP bar. Only the selected building shows health, using the w2fix-ui pips and ConditionYellow/Red. | `gfx-vis` shots |
+| W2-GA-21 | **FIXED** | theme.ini comes from ra2.mix/local.mix and the tracks from theme.mix, with the thememd pair as fallback. Each entry is checked as a real RIFF/WAVE (`IsAvailable`). `Next_Song` and `Is_Allowed` follow RE-Q12, with `IsScoreShuffle`/`IsScoreRepeat` from RA2.INI. The w2fix-ui jukebox (Sound page) plays through the same stream. | `[pres] f=1 music Grinder sound=Grinder src=theme.mix setup_ms=0.22` |
+| W2-GA-22 | **FIXED** | `WavImaStream` (block decoder; test: its concatenated blocks equal `load_wav_ima`) feeds `MusicStream`, a worker thread with a 2 s ring that resamples to 22050 stereo. The game thread only starts the stream: 0.1–0.3 ms, was 443–728 ms. No track PCM is kept. | presentation log `setup_ms`; tests `mixer: MusicStream …` |
+| W2-GA-23 | **FIXED** | Stereo SDL callback sink (2048 frames). RE-Q11 pan law. Live positional voices are re-attenuated every frame and stopped out of range. Soft limiter. Voices retire once per buffer. | tests `mixer: render_stereo pans…`, `…soft-limits…`, `update_voice…` |
+| W2-GA-24 | **FIXED (Delay/AMBIENT/SHROUD open)** | VShift, FShift (playback rate), ALL, ATTACK, DECAY and LOOP in `Mixer`, using the audio-local RNG. `Report=A,B` picks one per shot. | test `mixer: FShift…LOOP` |
+| W2-GA-25 | **PARTIAL** | Added: `MoveSound` (move-start one-shot), `CrushSound` (crushed infantry squish plus crusher), `ImpactWaterSound` on water cells. Still missing: VoiceFeedback, Deploy/Undeploy, VoiceEnter/Capture/Harvest, Sinking/Crashing, TurretRotate, Cheer, BuildingRepaired, Garrisoned, Crate*, CreditTicks. | `[pres] sound GrizzlyTankMoveStart (move start)` |
+| W2-GA-26 | **PARTIAL** | Each SW type now has its own Ready line; Weather says `EVA_LightningStormReady`, not Chronosphere. Added the enemy *Detected* lines (`EVA_WeatherDeviceReady` is the weather-detected warning), the launch/activation lines heard by every player, `EVA_OreMinerUnderAttack` (RadarEvent 4) and `EVA_OurAllyIsUnderAttack` (RadarEvent 16 plus the siren). Still missing (controls/UI hooks): PrimaryBuildingSelected, NewRallyPoint, BuildingOff/OnLine, UnitRepaired, TechBuildingCaptured/Lost, BridgeRepaired, UnableToComply, crate upgrades. | code; `superweapon_eva` |
+| W2-GA-P1 | **FIXED** | `MapIndex` (painter order and depth rows) and `TerrainDrawList` (screen rects plus pinned per-(tile, subtile, level) textures) are built once per map. Shroud, ore and radiation walk only the visible rows. `MapFile::at` is O(1). Dressing objects are pre-sorted. `PresMap::draw` keeps texture pointers instead of building per-frame string keys. | `bench.cpp`, XMP27T8: 39.2 ms → **0.43 ms** (`-O0`) / **0.10 ms** (`-O2`) |
+| W2-GA-P2 | **FIXED (Android build types: Android owner)** | CMake defaults to `RelWithDebInfo`. `Release` and `Debug` are documented in the README. | gate hashes identical at `-O0` and `-O2` |
+| W2-GA-P3 | **PARTIAL** | The render half is fixed (see the table below). The logic half (World::step / AI) belongs to the skirmish-match owner. A 15 Hz accumulator with interpolation is not done. | perf table |
+| W2-GA-P4 | **FIXED** | Voxel colour sets are prewarmed on a worker thread at game start (`vxl_set` is locked). Tile textures are prewarmed when the draw list is built. Music is streamed. Audio runs on the SDL callback thread. | `vxbench` at `-O2`: 9–20 ms per set (was 51–69), off the draw path |
+| W2-GA-P5 | **FIXED** | `MixFile::open_path` uses file-offset reads, nested **views** and one shared handle per path; there are no whole-archive reads. `TextureCache` has an LRU budget (384 MB), pinning and a two-frame safety. | private peak at game start ~200 MB (was 724 MB); see the table below |
+| W2-GA-P6 | **FIXED** | Vsync renderer, plus a deadline sleep instead of a fixed 16 ms after the work. | — |
+
+Harness: `--scene-shot --script tanks|fight` now anchors on the MCV start (the first unit when there is no building),
+the camera follows the player's engaged units, and the `--view X,Y` and `--reveal` options were added.
+
+### Perf after the fixes (same method as section 2, one run at a time)
+
+| Measurement | Before (audit, `-O0`) | After (`w2fix-gfx`, `RelWithDebInfo`) |
+|---|---|---|
+| `draw_terrain`, XMP27T8, 566 tiles | 60–84 ms (39 ms on this box, `-O0`) | 0.43 ms (`-O0` objects), **0.10 ms** avg, 0.23 ms max (`-O2`) |
+| First terrain frame (tile cache fill) | 77–85 ms | 79 ms, once at list build (prewarms **every** tile the map uses) |
+| Whole frame, 8-player XMP27T8, render every frame (`perf-r1.play`, visible) | 92–122 ms | **15.9–17.8 ms** (vsync-capped at 60 Hz). House 0 had 9 units and house 1 had 16 at f=2400 |
+| Same game, logic only (`perf-r0.play`) | 39–92 ms | 4.6–9.4 ms |
+| Voxel set per type × colour | 51–69 ms on the draw path | 9–20 ms on a worker thread |
+| Theme start on the game thread | 443–728 ms, 6.5–10.7 MB PCM kept | 0.1–0.3 ms, nothing kept |
+| Working set / private peak, 8-player game | 573–592 / 724 MB | 339 / 332 MB |
+| Asset start to game frame 0 (8 players) | ~35–45 s | ~8 s |
