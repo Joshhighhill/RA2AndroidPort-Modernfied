@@ -4389,6 +4389,329 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
 // dark panel; interactive only (no gate constructs it).
 // ============================================================================
 
+// W2-UI-13..17: the shell chrome (MenuArt / ShellXform / draw_shell / control
+// skins) is defined here, ahead of the in-game dialogs, so they draw as shell
+// pages. (Moved verbatim from after GameScene.)
+// ============================================================================
+// [Task 5] Faithful menu art + music, loaded once in run_menu and held BY
+// REFERENCE by the menu scenes (outlives them, like `rules_`).
+// ============================================================================
+
+// Looping menu voice (theme.mix/grinder.wav, stereo IMA -> mono). Owned by
+// run_menu; a nullptr/`!enabled` bundle just means "no menu music" (silent,
+// never a crash). Reuses AudioSystem so the SoundBank/Mixer/AudioOutput
+// lifetime rules (bank stable before Mixer built over it) are identical.
+struct MenuAudio {
+    AudioSystem sys;
+};
+
+// Faithful menu art bundle. All fields optional -- a nullptr/empty member falls
+// back to the rect-font placeholder for that element, so a partial-asset install
+// still runs. [RE: mainmenu.md §1/§5]
+struct MenuArt {
+    ra2assets::ShpFile* bg = nullptr;         // neutral.mix/mnscrnl.shp (frame 0)
+    ra2assets::ShpFile* btn = nullptr;        // local.mix/mnbttn.shp (3 state frames)
+    ra2assets::ShpFile* dlg = nullptr;        // sidec01.mix/bkgdlg.shp (setup panel)
+    ra2assets::Palette* pal = nullptr;        // cache.mix/palette.pal (T1-pinned)
+    ra2assets::Palette* dlg_pal = nullptr;    // sidec01.mix/uibkgd.pal (dialog chrome)
+    ra2assets::PcxImage* logo = nullptr;      // local.mix/logo.pcx
+    ra2assets::PcxImage* title = nullptr;     // local.mix/title.pcx
+    ra2assets::Font* font = nullptr;          // cache.mix/12metfnt.fnt
+    const ra2assets::Palette* font_pal = nullptr;  // synthetic ramp (make_font_palette)
+    MenuAudio* audio = nullptr;               // looping grinder.wav (or null)
+    // [Task 1] True-design shell chrome (sidebar/bottom-bar SHPs) + shell/button
+    // palettes. Loaded here so the next task can composite them; nothing renders
+    // these yet. All null/false on a partial install (never crashes).
+    ra2assets::ShpFile* bg_s = nullptr;       // neutral.mix/mnscrns.shp (472x448)
+    ra2assets::ShpFile* lwscrn = nullptr;     // neutral.mix/lwscrns.shp (bottom bar)
+    ra2assets::ShpFile* sdtp = nullptr;       // neutral.mix/sdtp.shp (sidebar top, 2 fr)
+    ra2assets::ShpFile* sdbtm = nullptr;      // neutral.mix/sdbtm.shp (sidebar bottom)
+    ra2assets::ShpFile* sdbtnbkgd = nullptr;  // neutral.mix/sdbtnbkgd.shp (per-button slice)
+    // [Task exact / mainmenu_true.md §7] TRUE main-menu button + monitor assets.
+    ra2assets::ShpFile* sdbtnanm = nullptr;   // neutral.mix/sdbtnanm.shp (156x42, 17fr) — the REAL buttons
+    ra2assets::ShpFile* sdwrnanm = nullptr;   // neutral.mix/sdwrnanm.shp (92x53, 91fr) — WARNING monitor loop
+    ra2assets::Palette shell_pal{};           // cache.mix/shell.pal (chrome palette)
+    ra2assets::Palette shell2_pal{};          // cache.mix/shell2.pal (sdbtnbkgd + sdwrnanm palette)
+    ra2assets::Palette sdbtnanm_pal{};        // neutral.mix/sdbtnanm.pal (SDBTNANM own palette)
+    ra2assets::Palette mainbttn_pal{};        // local.mix/mainbttn.pal (popup-dialog button palette)
+    bool shell_pal_ok = false;
+    bool shell2_pal_ok = false;
+    bool sdbtnanm_pal_ok = false;
+    bool mainbttn_pal_ok = false;
+    // [Task 5 / mainmenu_true.md §9] The REAL animated CRT movie: language.mix/
+    // ra2ts_s.bik (472x450, 431fr, 15fps), decoded by the from-scratch Bink
+    // decoder. `bink_dec` is a NON-owning pointer into MenuArtStore (the decoder +
+    // its BinkFile are heap-owned there and outlive every scene). Non-const so a
+    // scene holding `const MenuArt&` can still drive decode_frame() (const applies
+    // to the pointer, not the pointee). Null on a partial install (language.mix or
+    // ra2ts_s.bik absent / parse failure) -> the static mnscrns backdrop shows.
+    ra2assets::BinkVideoDecoder* bink_dec = nullptr;
+    int bink_frames = 0;                      // ra2ts_s.bik frame count (431)
+    int bink_w = 0, bink_h = 0;               // native movie dims (472x450)
+    // [P8 / options.md §4] Options-page control skins (local.mix PCX, own
+    // palettes): trackbar thumb + numeric readout well, checkbox lamps. Null
+    // on a partial install -> the control draws as plain red frames.
+    ra2assets::PcxImage* trakgrip = nullptr;  // 12x22 thumb
+    ra2assets::PcxImage* trofl = nullptr;     // 8x24  readout left cap
+    ra2assets::PcxImage* trofm = nullptr;     // 114x24 readout middle (stretched)
+    ra2assets::PcxImage* trofr = nullptr;     // 10x24 readout right cap
+    ra2assets::PcxImage* chk_off = nullptr;   // cue_i.pcx 18x18 (unchecked)
+    ra2assets::PcxImage* chk_on = nullptr;    // cce_i.pcx 18x18 (checked)
+    // [SK-10] Skirmish-page flag pictures (local.mix, 47x23, magenta key,
+    // FUN_004D1120): 0..8 = usai japi frai geri gbri djbi arbi lati rusi
+    // (the lobby country order), 9 = rani (Random), 10 = obsi (observer).
+    const ra2assets::PcxImage* flags[11] = {};
+    // Control text ramps (options.md §4: text yellow 0x00FFFF, disabled dark
+    // red 0x00009F) for the 12metfnt glyph shade values.
+    const ra2assets::Palette* font_pal_text = nullptr;
+    const ra2assets::Palette* font_pal_disabled = nullptr;
+    bool ok = false;                          // essentials (bg+pal) decoded
+    // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
+    // in the low nibble) with image_ofs-relative glyph offsets (the real bug was
+    // the missing image_ofs base, NOT bit-depth -- see menufix.md §CORRECTION),
+    // so the menu renders the authentic bevelled 12metfnt face. Set true in
+    // load_menu_art when the font decoded; rect-font remains the fallback if the
+    // font is absent. [RE: menufix.md §1]
+    bool fnt_ok = false;
+};
+
+// ============================================================================
+// [Task 2 / mainmenu_true.md §1+§6] The faithful RA2 shell composition.
+// ============================================================================
+
+// [mainmenu_true.md §3] The shell pages (Win32 dialog resources in game.exe).
+// Each is one draw_shell page: its own header + button column, Back at bottom.
+enum ShellPage {
+    PAGE_MAIN = 0,   // 0xE2  "Main Menu"
+    PAGE_SINGLE,     // 0x100 "Single Player"
+    PAGE_MOVIES,     // 0x101 "Movies & Credits"
+    PAGE_OPTIONS,    // 0xD5  "Options"
+    PAGE_CAMPAIGN,   // 0x94  "New Campaign" (greyed placeholder this task)
+};
+
+// What a menu button does when clicked. Navigation buttons carry a target
+// ShellPage in ShellButton::target; ACT_SKIRMISH is the ONLY live game path
+// (-> SkirmishSetupScene -> GameScene); ACT_QUIT exits.
+enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */,
+                   ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */ };
+
+// One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
+// render() (via draw_shell) and handle() both derive device rects from `rect`
+// with the SAME logical->device transform, so draw rects == hit rects.
+struct ShellButton {
+    ra2engine::SbRect rect;            // LOGICAL 640x480 rect
+    std::string       label;
+    bool              enabled = false; // greyed stubs are NOT hit-tested
+    int               action  = ACT_NONE;
+    ShellPage         target  = PAGE_MAIN;   // ACT_GOTO destination
+};
+
+// [Task 3 transform-unify fix] The SINGLE logical(640x480)->device letterbox
+// transform, shared verbatim by draw_shell (rendering) and the scene hit-test
+// (handle()). Task 2 had two origins -- draw_shell used plat.width()/height()
+// while the hit-test used the kWinW/kWinH constants; provably equal at the fixed
+// 1280x720 window but a latent click!=draw hazard. Both now build this from the
+// same width/height, so there is exactly ONE source of the offset+scale.
+struct ShellXform {
+    double s = 1.0, ox = 0.0, oy = 0.0;
+    static ShellXform make(int W, int H) {
+        const double s = std::min(W / 640.0, H / 480.0);
+        return { s, (W - 640.0 * s) / 2.0, (H - 480.0 * s) / 2.0 };
+    }
+    SDL_Rect dev(int lx, int ly, int lw, int lh) const {
+        return SDL_Rect{ static_cast<int>(std::lround(ox + lx * s)),
+                         static_cast<int>(std::lround(oy + ly * s)),
+                         static_cast<int>(std::lround(lw * s)),
+                         static_cast<int>(std::lround(lh * s)) };
+    }
+    ra2engine::SbRect hit(const ra2engine::SbRect& r) const {
+        return { static_cast<int>(std::lround(ox + r.x * s)),
+                 static_cast<int>(std::lround(oy + r.y * s)),
+                 static_cast<int>(std::lround(r.w * s)),
+                 static_cast<int>(std::lround(r.h * s)) };
+    }
+};
+
+// [mainmenu_true.md §1+§6] Paint ONE faithful RA2 shell page on the 640x480
+// logical canvas, scaled by `canvas_scale` and letterbox-centered in the window
+// (bars filled dark metal). 8-layer draw order (backdrop, bottom bar, sidebar
+// top/bottom, per-button metal slices, buttons, logo emblem, gold labels+header
+// +version). Every art layer is null-guarded: on a partial install a missing SHP
+// simply skips its layer and a missing button SHP leaves label-only buttons --
+// never crashes. Palettes fall back to art.pal when shell/button pals are absent.
+void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const MenuArt& art,
+                const ShellXform& xf, const std::vector<ShellButton>& buttons,
+                int hover_ix, int pressed_ix, const std::string& header,
+                const std::string& version, int monitor_frame,
+                SDL_Texture* bink_tex = nullptr, int sdtp_frame = 0) {
+    SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
+    const double canvas_scale = xf.s;
+    // The ONE logical->device transform (shared verbatim with the hit-test).
+    auto dev = [&](int lx, int ly, int lw, int lh) -> SDL_Rect {
+        return xf.dev(lx, ly, lw, lh);
+    };
+    // Palette fallbacks (partial-install robustness).
+    const ra2assets::Palette* shell_pal = (art.shell_pal_ok ? &art.shell_pal : art.pal);
+    // §7.4: SDBTNBKGD + SDWRNANM pair with SHELL2.PAL (fall back to shell.pal).
+    const ra2assets::Palette* shell2_pal = (art.shell2_pal_ok ? &art.shell2_pal : shell_pal);
+    // §7.2: SDBTNANM under its OWN sdbtnanm.pal (fall back to shell2, then shell).
+    const ra2assets::Palette* sdbtn_pal = (art.sdbtnanm_pal_ok ? &art.sdbtnanm_pal : shell2_pal);
+    // Popup-dialog button palette (mnbttn fallback path only).
+    const ra2assets::Palette* btn_pal   = (art.mainbttn_pal_ok ? &art.mainbttn_pal
+                                          : (art.shell_pal_ok ? &art.shell_pal : art.pal));
+
+    // Letterbox bars = dark metal tone; then paint the canvas over it.
+    SDL_SetRenderDrawColor(ren, 12, 12, 14, 255);
+    SDL_RenderClear(ren);
+
+    auto blit_layer = [&](const char* key, ra2assets::ShpFile* shp, int frame,
+                          const ra2assets::Palette* pal, int lx, int ly, int lw, int lh) {
+        if (!shp || !pal) return;
+        SDL_Texture* t = shp_frame_tex(tc, key, *shp, frame, *pal);
+        if (!t) return;
+        SDL_Rect d = dev(lx, ly, lw, lh);
+        SDL_SetTextureColorMod(t, 255, 255, 255);
+        SDL_RenderCopy(ren, t, nullptr, &d);
+    };
+
+    // 1. Backdrop: mnscrns red radar map (472x448) under shell.pal.
+    blit_layer("shell:bg_s", art.bg_s, 0, shell_pal, 0, 0, 472, 448);
+    // 2. Bottom bar under the screen.
+    blit_layer("shell:lwscrn", art.lwscrn, 0, shell_pal, 0, 448, 472, 32);
+    // 3. Sidebar top: metal panel + WARNING mini-monitor bezel (SDTP frame 0 has
+    //    the warning screen baked in; the animation draws INTO the hole on top).
+    //    [SK-01] Pages without the 0x71C mini-monitor (Skirmish 0x102, Customize
+    //    Battle 0x6B) use SDTP frame 1: the large empty monitor that frames
+    //    the map preview 0x468; they pass monitor_frame < 0 (no WARNING loop).
+    blit_layer(sdtp_frame == 1 ? "shell:sdtp1" : "shell:sdtp", art.sdtp,
+               (art.sdtp && sdtp_frame < art.sdtp->count()) ? sdtp_frame : 0,
+               shell_pal, 472, 0, 168, 199);
+    // 3b. §7.3: animated WARNING monitor (SDWRNANM, shell2.pal) into ctrl-0x71C
+    //     hole at logical (508,47,92,53), current frame from the scene clock.
+    //     Null-guarded: absent SHP/pal simply leaves SDTP's baked screen showing.
+    if (monitor_frame >= 0 && art.sdwrnanm && shell2_pal && art.sdwrnanm->count() > 0) {
+        int mf = ((monitor_frame % art.sdwrnanm->count()) + art.sdwrnanm->count())
+                 % art.sdwrnanm->count();
+        SDL_Texture* mt = shp_frame_tex(tc, "shell:sdwrn" + std::to_string(mf),
+                                        *art.sdwrnanm, mf, *shell2_pal);
+        if (mt) {
+            SDL_SetTextureColorMod(mt, 255, 255, 255);
+            SDL_Rect md = dev(508, 47, 92, 53);
+            SDL_RenderCopy(ren, mt, nullptr, &md);
+        }
+    }
+    // 4. Sidebar bottom: V-console + cables (bottom-anchored).
+    blit_layer("shell:sdbtm", art.sdbtm, 0, shell_pal, 472, 415, 168, 65);
+
+    // 5. Sidebar button grid (§7.2). SDBTNBKGD (shell2.pal) tiles all 6 grid rows
+    //    — this fills the 12px metal strip left of each 156px button AND any empty
+    //    sub-page row. Empty rows additionally get SDBTNANM frame 10 (empty socket).
+    bool row_used[6] = { false, false, false, false, false, false };
+    for (const ShellButton& b : buttons) {
+        const int r = (b.rect.y - 199) / 42;
+        if (r >= 0 && r < 6) row_used[r] = true;
+    }
+    for (int r = 0; r < 6; ++r) {
+        const int ry = 199 + 42 * r;
+        blit_layer("shell:sdbtnbkgd", art.sdbtnbkgd, 0, shell2_pal, 472, ry, 168, 42);
+        if (!row_used[r] && art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 10) {
+            SDL_Texture* et = shp_frame_tex(tc, "shell:sdbtn10", *art.sdbtnanm, 10, *sdbtn_pal);
+            if (et) {
+                SDL_SetTextureColorMod(et, 255, 255, 255);
+                SDL_Rect ed = dev(484, ry, 156, 42);
+                SDL_RenderCopy(ren, et, nullptr, &ed);
+            }
+        }
+    }
+
+    // 6. Buttons (§7.2): SDBTNANM frame 2=normal / 3=hover / 4=pressed under
+    //    sdbtnanm.pal, blitted 1:1 at native 156x42 (NO stretch). Disabled buttons
+    //    render frame 2 dimmed. Fallback to the old stretched mnbttn (states 0/1/2)
+    //    only if SDBTNANM is absent; label-only if neither SHP is present.
+    for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
+        const ShellButton& b = buttons[i];
+        if (art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 0) {
+            int frame = 2;                                       // normal
+            if (b.enabled && i == pressed_ix)    frame = 4;      // yellow-hot
+            else if (b.enabled && i == hover_ix) frame = 3;      // orange glow
+            if (frame >= art.sdbtnanm->count()) frame = 0;
+            SDL_Texture* bt = shp_frame_tex(tc, "shell:sdbtn" + std::to_string(frame),
+                                            *art.sdbtnanm, frame, *sdbtn_pal);
+            if (!bt) continue;
+            if (b.enabled) SDL_SetTextureColorMod(bt, 255, 255, 255);
+            else           SDL_SetTextureColorMod(bt, 120, 120, 130);   // disabled = dimmed
+            SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
+            SDL_RenderCopy(ren, bt, nullptr, &d);
+        } else if (art.btn) {                                    // legacy mnbttn fallback
+            int frame = 0;
+            if (b.enabled && i == pressed_ix)    frame = 2;
+            else if (b.enabled && i == hover_ix) frame = 1;
+            if (frame >= art.btn->count()) frame = 0;
+            SDL_Texture* bt = shp_frame_tex(tc, "shell:btn" + std::to_string(frame),
+                                            *art.btn, frame, *btn_pal);
+            if (!bt) continue;
+            SDL_SetTextureColorMod(bt, b.enabled ? 255 : 120, b.enabled ? 255 : 120,
+                                   b.enabled ? 255 : 130);
+            SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
+            SDL_RenderCopy(ren, bt, nullptr, &d);
+        }
+    }
+
+    // 7. CRT screen content. The ORIGINAL menu plays a looping Bink movie here —
+    //    the animated radar sweep + Statue of Liberty + RA2 logo. It is NOT a VQA:
+    //    the loader tries .BIK before .VQA and language.mix/ra2ts_s.bik (472x450,
+    //    431fr, 15fps) is present in this install (mainmenu_true.md §9). When the
+    //    decoder is available the caller passes the current decoded frame as a
+    //    streaming texture (bink_tex); we blit it 1:1 into the CRT screen rect
+    //    (0,0,472,448 logical -> device via the same ShellXform as the backdrop),
+    //    OVER the mnscrns radar map (layer 1). Its native height (450) is squashed
+    //    2px into the 448 screen area. If bink_tex is null (partial install /
+    //    absent .bik), the static mnscrns backdrop from layer 1 remains — exactly
+    //    the retail no-movie fallback. [RE: mainmenu_true.md §9.3]
+    if (bink_tex) {
+        SDL_SetTextureColorMod(bink_tex, 255, 255, 255);
+        SDL_Rect crt = dev(0, 0, 472, 448);
+        SDL_RenderCopy(ren, bink_tex, nullptr, &crt);
+    }
+
+    // 8. Gold 12metfnt labels centered in each button + "Main Menu" header +
+    //    version line. Native glyph is ~16px; pick an integer scale keyed to the
+    //    canvas scale and shrink per-label if a long label would overflow.
+    if (art.font && art.font_pal && art.fnt_ok) {
+        const ra2assets::Font& f = *art.font;
+        const int lbl_scale = std::max(1, static_cast<int>(std::lround(canvas_scale)));
+        const int hdr_scale = std::max(1, static_cast<int>(std::floor(canvas_scale)));
+        // ldx/ldy = LOGICAL label shift (0 normally; §7.2 pressed = +2,+5).
+        auto centered = [&](const std::string& s, int lx, int ly, int lw, int lh,
+                            int gscale, int ldx = 0, int ldy = 0) {
+            SDL_Rect box = dev(lx, ly, lw, lh);
+            int tw = fnt_text_width(f, s) * gscale;
+            while (gscale > 1 && tw > box.w) { --gscale; tw = fnt_text_width(f, s) * gscale; }
+            const int th = f.height() * gscale;
+            const int tx = box.x + (box.w - tw) / 2 + static_cast<int>(std::lround(ldx * canvas_scale));
+            const int ty = box.y + (box.h - th) / 2 + static_cast<int>(std::lround(ldy * canvas_scale));
+            draw_fnt_text(ren, tc, f, *art.font_pal, s, tx, ty, "shf:", gscale);
+        };
+        for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
+            const ShellButton& b = buttons[i];
+            const bool pressed = (i == pressed_ix);
+            centered(b.label, b.rect.x, b.rect.y, b.rect.w, b.rect.h, lbl_scale,
+                     pressed ? 2 : 0, pressed ? 5 : 0);
+            if (!b.enabled) {                          // dark veil conveys disabled
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(ren, 16, 16, 20, 120);
+                SDL_Rect vd = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
+                SDL_RenderFillRect(ren, &vd);
+            }
+        }
+        if (!header.empty())  centered(header, 477, 2, 162, 16, hdr_scale);
+        if (!version.empty()) centered(version, 477, 461, 162, 16, hdr_scale);
+    }
+}
+
+// Shared control skins (Options + Skirmish pages).
+#include "shell_widgets.inc"
+
 // <SDL pref dir>/Saved Games/ (created on demand). The install dir is never
 // written (read-only on Android). Empty when SDL has no writable path.
 std::string save_games_dir() {
@@ -5905,89 +6228,6 @@ int run_interactive(bool no_audio) {
                             new GameScene(no_audio, ra2engine::default_skirmish_config(rules)));
 }
 
-// ============================================================================
-// [Task 5] Faithful menu art + music, loaded once in run_menu and held BY
-// REFERENCE by the menu scenes (outlives them, like `rules_`).
-// ============================================================================
-
-// Looping menu voice (theme.mix/grinder.wav, stereo IMA -> mono). Owned by
-// run_menu; a nullptr/`!enabled` bundle just means "no menu music" (silent,
-// never a crash). Reuses AudioSystem so the SoundBank/Mixer/AudioOutput
-// lifetime rules (bank stable before Mixer built over it) are identical.
-struct MenuAudio {
-    AudioSystem sys;
-};
-
-// Faithful menu art bundle. All fields optional -- a nullptr/empty member falls
-// back to the rect-font placeholder for that element, so a partial-asset install
-// still runs. [RE: mainmenu.md §1/§5]
-struct MenuArt {
-    ra2assets::ShpFile* bg = nullptr;         // neutral.mix/mnscrnl.shp (frame 0)
-    ra2assets::ShpFile* btn = nullptr;        // local.mix/mnbttn.shp (3 state frames)
-    ra2assets::ShpFile* dlg = nullptr;        // sidec01.mix/bkgdlg.shp (setup panel)
-    ra2assets::Palette* pal = nullptr;        // cache.mix/palette.pal (T1-pinned)
-    ra2assets::Palette* dlg_pal = nullptr;    // sidec01.mix/uibkgd.pal (dialog chrome)
-    ra2assets::PcxImage* logo = nullptr;      // local.mix/logo.pcx
-    ra2assets::PcxImage* title = nullptr;     // local.mix/title.pcx
-    ra2assets::Font* font = nullptr;          // cache.mix/12metfnt.fnt
-    const ra2assets::Palette* font_pal = nullptr;  // synthetic ramp (make_font_palette)
-    MenuAudio* audio = nullptr;               // looping grinder.wav (or null)
-    // [Task 1] True-design shell chrome (sidebar/bottom-bar SHPs) + shell/button
-    // palettes. Loaded here so the next task can composite them; nothing renders
-    // these yet. All null/false on a partial install (never crashes).
-    ra2assets::ShpFile* bg_s = nullptr;       // neutral.mix/mnscrns.shp (472x448)
-    ra2assets::ShpFile* lwscrn = nullptr;     // neutral.mix/lwscrns.shp (bottom bar)
-    ra2assets::ShpFile* sdtp = nullptr;       // neutral.mix/sdtp.shp (sidebar top, 2 fr)
-    ra2assets::ShpFile* sdbtm = nullptr;      // neutral.mix/sdbtm.shp (sidebar bottom)
-    ra2assets::ShpFile* sdbtnbkgd = nullptr;  // neutral.mix/sdbtnbkgd.shp (per-button slice)
-    // [Task exact / mainmenu_true.md §7] TRUE main-menu button + monitor assets.
-    ra2assets::ShpFile* sdbtnanm = nullptr;   // neutral.mix/sdbtnanm.shp (156x42, 17fr) — the REAL buttons
-    ra2assets::ShpFile* sdwrnanm = nullptr;   // neutral.mix/sdwrnanm.shp (92x53, 91fr) — WARNING monitor loop
-    ra2assets::Palette shell_pal{};           // cache.mix/shell.pal (chrome palette)
-    ra2assets::Palette shell2_pal{};          // cache.mix/shell2.pal (sdbtnbkgd + sdwrnanm palette)
-    ra2assets::Palette sdbtnanm_pal{};        // neutral.mix/sdbtnanm.pal (SDBTNANM own palette)
-    ra2assets::Palette mainbttn_pal{};        // local.mix/mainbttn.pal (popup-dialog button palette)
-    bool shell_pal_ok = false;
-    bool shell2_pal_ok = false;
-    bool sdbtnanm_pal_ok = false;
-    bool mainbttn_pal_ok = false;
-    // [Task 5 / mainmenu_true.md §9] The REAL animated CRT movie: language.mix/
-    // ra2ts_s.bik (472x450, 431fr, 15fps), decoded by the from-scratch Bink
-    // decoder. `bink_dec` is a NON-owning pointer into MenuArtStore (the decoder +
-    // its BinkFile are heap-owned there and outlive every scene). Non-const so a
-    // scene holding `const MenuArt&` can still drive decode_frame() (const applies
-    // to the pointer, not the pointee). Null on a partial install (language.mix or
-    // ra2ts_s.bik absent / parse failure) -> the static mnscrns backdrop shows.
-    ra2assets::BinkVideoDecoder* bink_dec = nullptr;
-    int bink_frames = 0;                      // ra2ts_s.bik frame count (431)
-    int bink_w = 0, bink_h = 0;               // native movie dims (472x450)
-    // [P8 / options.md §4] Options-page control skins (local.mix PCX, own
-    // palettes): trackbar thumb + numeric readout well, checkbox lamps. Null
-    // on a partial install -> the control draws as plain red frames.
-    ra2assets::PcxImage* trakgrip = nullptr;  // 12x22 thumb
-    ra2assets::PcxImage* trofl = nullptr;     // 8x24  readout left cap
-    ra2assets::PcxImage* trofm = nullptr;     // 114x24 readout middle (stretched)
-    ra2assets::PcxImage* trofr = nullptr;     // 10x24 readout right cap
-    ra2assets::PcxImage* chk_off = nullptr;   // cue_i.pcx 18x18 (unchecked)
-    ra2assets::PcxImage* chk_on = nullptr;    // cce_i.pcx 18x18 (checked)
-    // [SK-10] Skirmish-page flag pictures (local.mix, 47x23, magenta key,
-    // FUN_004D1120): 0..8 = usai japi frai geri gbri djbi arbi lati rusi
-    // (the lobby country order), 9 = rani (Random), 10 = obsi (observer).
-    const ra2assets::PcxImage* flags[11] = {};
-    // Control text ramps (options.md §4: text yellow 0x00FFFF, disabled dark
-    // red 0x00009F) for the 12metfnt glyph shade values.
-    const ra2assets::Palette* font_pal_text = nullptr;
-    const ra2assets::Palette* font_pal_disabled = nullptr;
-    bool ok = false;                          // essentials (bg+pal) decoded
-    // fnt.cpp now decodes the classic Westwood .fnt as 8bpp (1 byte/pixel, shade
-    // in the low nibble) with image_ofs-relative glyph offsets (the real bug was
-    // the missing image_ofs base, NOT bit-depth -- see menufix.md §CORRECTION),
-    // so the menu renders the authentic bevelled 12metfnt face. Set true in
-    // load_menu_art when the font decoded; rect-font remains the fallback if the
-    // font is absent. [RE: menufix.md §1]
-    bool fnt_ok = false;
-};
-
 // Owns the decoded menu assets (run_menu / --menu-shot lifetime); `art` holds
 // non-owning pointers into it that the scenes reference. Must not be moved once
 // `art` is populated (art.font_pal points at the value member below).
@@ -6297,242 +6537,6 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
               << " ok=" << (store.art.ok ? "y" : "n") << "\n";
 }
 
-// ============================================================================
-// [Task 2 / mainmenu_true.md §1+§6] The faithful RA2 shell composition.
-// ============================================================================
-
-// [mainmenu_true.md §3] The shell pages (Win32 dialog resources in game.exe).
-// Each is one draw_shell page: its own header + button column, Back at bottom.
-enum ShellPage {
-    PAGE_MAIN = 0,   // 0xE2  "Main Menu"
-    PAGE_SINGLE,     // 0x100 "Single Player"
-    PAGE_MOVIES,     // 0x101 "Movies & Credits"
-    PAGE_OPTIONS,    // 0xD5  "Options"
-    PAGE_CAMPAIGN,   // 0x94  "New Campaign" (greyed placeholder this task)
-};
-
-// What a menu button does when clicked. Navigation buttons carry a target
-// ShellPage in ShellButton::target; ACT_SKIRMISH is the ONLY live game path
-// (-> SkirmishSetupScene -> GameScene); ACT_QUIT exits.
-enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */,
-                   ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */ };
-
-// One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
-// render() (via draw_shell) and handle() both derive device rects from `rect`
-// with the SAME logical->device transform, so draw rects == hit rects.
-struct ShellButton {
-    ra2engine::SbRect rect;            // LOGICAL 640x480 rect
-    std::string       label;
-    bool              enabled = false; // greyed stubs are NOT hit-tested
-    int               action  = ACT_NONE;
-    ShellPage         target  = PAGE_MAIN;   // ACT_GOTO destination
-};
-
-// [Task 3 transform-unify fix] The SINGLE logical(640x480)->device letterbox
-// transform, shared verbatim by draw_shell (rendering) and the scene hit-test
-// (handle()). Task 2 had two origins -- draw_shell used plat.width()/height()
-// while the hit-test used the kWinW/kWinH constants; provably equal at the fixed
-// 1280x720 window but a latent click!=draw hazard. Both now build this from the
-// same width/height, so there is exactly ONE source of the offset+scale.
-struct ShellXform {
-    double s = 1.0, ox = 0.0, oy = 0.0;
-    static ShellXform make(int W, int H) {
-        const double s = std::min(W / 640.0, H / 480.0);
-        return { s, (W - 640.0 * s) / 2.0, (H - 480.0 * s) / 2.0 };
-    }
-    SDL_Rect dev(int lx, int ly, int lw, int lh) const {
-        return SDL_Rect{ static_cast<int>(std::lround(ox + lx * s)),
-                         static_cast<int>(std::lround(oy + ly * s)),
-                         static_cast<int>(std::lround(lw * s)),
-                         static_cast<int>(std::lround(lh * s)) };
-    }
-    ra2engine::SbRect hit(const ra2engine::SbRect& r) const {
-        return { static_cast<int>(std::lround(ox + r.x * s)),
-                 static_cast<int>(std::lround(oy + r.y * s)),
-                 static_cast<int>(std::lround(r.w * s)),
-                 static_cast<int>(std::lround(r.h * s)) };
-    }
-};
-
-// [mainmenu_true.md §1+§6] Paint ONE faithful RA2 shell page on the 640x480
-// logical canvas, scaled by `canvas_scale` and letterbox-centered in the window
-// (bars filled dark metal). 8-layer draw order (backdrop, bottom bar, sidebar
-// top/bottom, per-button metal slices, buttons, logo emblem, gold labels+header
-// +version). Every art layer is null-guarded: on a partial install a missing SHP
-// simply skips its layer and a missing button SHP leaves label-only buttons --
-// never crashes. Palettes fall back to art.pal when shell/button pals are absent.
-void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, const MenuArt& art,
-                const ShellXform& xf, const std::vector<ShellButton>& buttons,
-                int hover_ix, int pressed_ix, const std::string& header,
-                const std::string& version, int monitor_frame,
-                SDL_Texture* bink_tex = nullptr, int sdtp_frame = 0) {
-    SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-    const double canvas_scale = xf.s;
-    // The ONE logical->device transform (shared verbatim with the hit-test).
-    auto dev = [&](int lx, int ly, int lw, int lh) -> SDL_Rect {
-        return xf.dev(lx, ly, lw, lh);
-    };
-    // Palette fallbacks (partial-install robustness).
-    const ra2assets::Palette* shell_pal = (art.shell_pal_ok ? &art.shell_pal : art.pal);
-    // §7.4: SDBTNBKGD + SDWRNANM pair with SHELL2.PAL (fall back to shell.pal).
-    const ra2assets::Palette* shell2_pal = (art.shell2_pal_ok ? &art.shell2_pal : shell_pal);
-    // §7.2: SDBTNANM under its OWN sdbtnanm.pal (fall back to shell2, then shell).
-    const ra2assets::Palette* sdbtn_pal = (art.sdbtnanm_pal_ok ? &art.sdbtnanm_pal : shell2_pal);
-    // Popup-dialog button palette (mnbttn fallback path only).
-    const ra2assets::Palette* btn_pal   = (art.mainbttn_pal_ok ? &art.mainbttn_pal
-                                          : (art.shell_pal_ok ? &art.shell_pal : art.pal));
-
-    // Letterbox bars = dark metal tone; then paint the canvas over it.
-    SDL_SetRenderDrawColor(ren, 12, 12, 14, 255);
-    SDL_RenderClear(ren);
-
-    auto blit_layer = [&](const char* key, ra2assets::ShpFile* shp, int frame,
-                          const ra2assets::Palette* pal, int lx, int ly, int lw, int lh) {
-        if (!shp || !pal) return;
-        SDL_Texture* t = shp_frame_tex(tc, key, *shp, frame, *pal);
-        if (!t) return;
-        SDL_Rect d = dev(lx, ly, lw, lh);
-        SDL_SetTextureColorMod(t, 255, 255, 255);
-        SDL_RenderCopy(ren, t, nullptr, &d);
-    };
-
-    // 1. Backdrop: mnscrns red radar map (472x448) under shell.pal.
-    blit_layer("shell:bg_s", art.bg_s, 0, shell_pal, 0, 0, 472, 448);
-    // 2. Bottom bar under the screen.
-    blit_layer("shell:lwscrn", art.lwscrn, 0, shell_pal, 0, 448, 472, 32);
-    // 3. Sidebar top: metal panel + WARNING mini-monitor bezel (SDTP frame 0 has
-    //    the warning screen baked in; the animation draws INTO the hole on top).
-    //    [SK-01] Pages without the 0x71C mini-monitor (Skirmish 0x102, Customize
-    //    Battle 0x6B) use SDTP frame 1: the large empty monitor that frames
-    //    the map preview 0x468; they pass monitor_frame < 0 (no WARNING loop).
-    blit_layer(sdtp_frame == 1 ? "shell:sdtp1" : "shell:sdtp", art.sdtp,
-               (art.sdtp && sdtp_frame < art.sdtp->count()) ? sdtp_frame : 0,
-               shell_pal, 472, 0, 168, 199);
-    // 3b. §7.3: animated WARNING monitor (SDWRNANM, shell2.pal) into ctrl-0x71C
-    //     hole at logical (508,47,92,53), current frame from the scene clock.
-    //     Null-guarded: absent SHP/pal simply leaves SDTP's baked screen showing.
-    if (monitor_frame >= 0 && art.sdwrnanm && shell2_pal && art.sdwrnanm->count() > 0) {
-        int mf = ((monitor_frame % art.sdwrnanm->count()) + art.sdwrnanm->count())
-                 % art.sdwrnanm->count();
-        SDL_Texture* mt = shp_frame_tex(tc, "shell:sdwrn" + std::to_string(mf),
-                                        *art.sdwrnanm, mf, *shell2_pal);
-        if (mt) {
-            SDL_SetTextureColorMod(mt, 255, 255, 255);
-            SDL_Rect md = dev(508, 47, 92, 53);
-            SDL_RenderCopy(ren, mt, nullptr, &md);
-        }
-    }
-    // 4. Sidebar bottom: V-console + cables (bottom-anchored).
-    blit_layer("shell:sdbtm", art.sdbtm, 0, shell_pal, 472, 415, 168, 65);
-
-    // 5. Sidebar button grid (§7.2). SDBTNBKGD (shell2.pal) tiles all 6 grid rows
-    //    — this fills the 12px metal strip left of each 156px button AND any empty
-    //    sub-page row. Empty rows additionally get SDBTNANM frame 10 (empty socket).
-    bool row_used[6] = { false, false, false, false, false, false };
-    for (const ShellButton& b : buttons) {
-        const int r = (b.rect.y - 199) / 42;
-        if (r >= 0 && r < 6) row_used[r] = true;
-    }
-    for (int r = 0; r < 6; ++r) {
-        const int ry = 199 + 42 * r;
-        blit_layer("shell:sdbtnbkgd", art.sdbtnbkgd, 0, shell2_pal, 472, ry, 168, 42);
-        if (!row_used[r] && art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 10) {
-            SDL_Texture* et = shp_frame_tex(tc, "shell:sdbtn10", *art.sdbtnanm, 10, *sdbtn_pal);
-            if (et) {
-                SDL_SetTextureColorMod(et, 255, 255, 255);
-                SDL_Rect ed = dev(484, ry, 156, 42);
-                SDL_RenderCopy(ren, et, nullptr, &ed);
-            }
-        }
-    }
-
-    // 6. Buttons (§7.2): SDBTNANM frame 2=normal / 3=hover / 4=pressed under
-    //    sdbtnanm.pal, blitted 1:1 at native 156x42 (NO stretch). Disabled buttons
-    //    render frame 2 dimmed. Fallback to the old stretched mnbttn (states 0/1/2)
-    //    only if SDBTNANM is absent; label-only if neither SHP is present.
-    for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
-        const ShellButton& b = buttons[i];
-        if (art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 0) {
-            int frame = 2;                                       // normal
-            if (b.enabled && i == pressed_ix)    frame = 4;      // yellow-hot
-            else if (b.enabled && i == hover_ix) frame = 3;      // orange glow
-            if (frame >= art.sdbtnanm->count()) frame = 0;
-            SDL_Texture* bt = shp_frame_tex(tc, "shell:sdbtn" + std::to_string(frame),
-                                            *art.sdbtnanm, frame, *sdbtn_pal);
-            if (!bt) continue;
-            if (b.enabled) SDL_SetTextureColorMod(bt, 255, 255, 255);
-            else           SDL_SetTextureColorMod(bt, 120, 120, 130);   // disabled = dimmed
-            SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
-            SDL_RenderCopy(ren, bt, nullptr, &d);
-        } else if (art.btn) {                                    // legacy mnbttn fallback
-            int frame = 0;
-            if (b.enabled && i == pressed_ix)    frame = 2;
-            else if (b.enabled && i == hover_ix) frame = 1;
-            if (frame >= art.btn->count()) frame = 0;
-            SDL_Texture* bt = shp_frame_tex(tc, "shell:btn" + std::to_string(frame),
-                                            *art.btn, frame, *btn_pal);
-            if (!bt) continue;
-            SDL_SetTextureColorMod(bt, b.enabled ? 255 : 120, b.enabled ? 255 : 120,
-                                   b.enabled ? 255 : 130);
-            SDL_Rect d = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
-            SDL_RenderCopy(ren, bt, nullptr, &d);
-        }
-    }
-
-    // 7. CRT screen content. The ORIGINAL menu plays a looping Bink movie here —
-    //    the animated radar sweep + Statue of Liberty + RA2 logo. It is NOT a VQA:
-    //    the loader tries .BIK before .VQA and language.mix/ra2ts_s.bik (472x450,
-    //    431fr, 15fps) is present in this install (mainmenu_true.md §9). When the
-    //    decoder is available the caller passes the current decoded frame as a
-    //    streaming texture (bink_tex); we blit it 1:1 into the CRT screen rect
-    //    (0,0,472,448 logical -> device via the same ShellXform as the backdrop),
-    //    OVER the mnscrns radar map (layer 1). Its native height (450) is squashed
-    //    2px into the 448 screen area. If bink_tex is null (partial install /
-    //    absent .bik), the static mnscrns backdrop from layer 1 remains — exactly
-    //    the retail no-movie fallback. [RE: mainmenu_true.md §9.3]
-    if (bink_tex) {
-        SDL_SetTextureColorMod(bink_tex, 255, 255, 255);
-        SDL_Rect crt = dev(0, 0, 472, 448);
-        SDL_RenderCopy(ren, bink_tex, nullptr, &crt);
-    }
-
-    // 8. Gold 12metfnt labels centered in each button + "Main Menu" header +
-    //    version line. Native glyph is ~16px; pick an integer scale keyed to the
-    //    canvas scale and shrink per-label if a long label would overflow.
-    if (art.font && art.font_pal && art.fnt_ok) {
-        const ra2assets::Font& f = *art.font;
-        const int lbl_scale = std::max(1, static_cast<int>(std::lround(canvas_scale)));
-        const int hdr_scale = std::max(1, static_cast<int>(std::floor(canvas_scale)));
-        // ldx/ldy = LOGICAL label shift (0 normally; §7.2 pressed = +2,+5).
-        auto centered = [&](const std::string& s, int lx, int ly, int lw, int lh,
-                            int gscale, int ldx = 0, int ldy = 0) {
-            SDL_Rect box = dev(lx, ly, lw, lh);
-            int tw = fnt_text_width(f, s) * gscale;
-            while (gscale > 1 && tw > box.w) { --gscale; tw = fnt_text_width(f, s) * gscale; }
-            const int th = f.height() * gscale;
-            const int tx = box.x + (box.w - tw) / 2 + static_cast<int>(std::lround(ldx * canvas_scale));
-            const int ty = box.y + (box.h - th) / 2 + static_cast<int>(std::lround(ldy * canvas_scale));
-            draw_fnt_text(ren, tc, f, *art.font_pal, s, tx, ty, "shf:", gscale);
-        };
-        for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
-            const ShellButton& b = buttons[i];
-            const bool pressed = (i == pressed_ix);
-            centered(b.label, b.rect.x, b.rect.y, b.rect.w, b.rect.h, lbl_scale,
-                     pressed ? 2 : 0, pressed ? 5 : 0);
-            if (!b.enabled) {                          // dark veil conveys disabled
-                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(ren, 16, 16, 20, 120);
-                SDL_Rect vd = dev(b.rect.x, b.rect.y, b.rect.w, b.rect.h);
-                SDL_RenderFillRect(ren, &vd);
-            }
-        }
-        if (!header.empty())  centered(header, 477, 2, 162, 16, hdr_scale);
-        if (!version.empty()) centered(version, 477, 461, 162, 16, hdr_scale);
-    }
-}
-
-// Shared control skins (Options + Skirmish pages).
-#include "shell_widgets.inc"
 
 // ============================================================================
 // [P8 / docs/re/options.md] The main-menu Options page = dialog 0xD5.
