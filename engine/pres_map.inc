@@ -34,6 +34,7 @@ public:
         // W2-GA-P1: per-frame texture pointers (pinned), no per-frame string keys.
         mutable std::vector<SDL_Texture*> tex, stex;
         mutable uint64_t tex_tc = 0;
+        std::string anim_image;       // W3-B: civilian building art section (slot anims)
     };
 
     // `map_ini` = the raw map text, `defs` the playable building roster (for
@@ -169,6 +170,7 @@ public:
             o.fh = fh;
             o.level = level(x, y);
             o.key = "civ:" + image;
+            o.anim_image = pres_upper(image);   // W3-B
             o.pal = 2;
             o.shadow = true;
             objects_.push_back(o);
@@ -310,6 +312,10 @@ public:
             tc.pin(key);
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
+        // W3-B: a civilian building's Active/Idle anims (were frozen at frame 0).
+        if (!o.anim_image.empty())
+            pres_dressing_overlay(ren, tc, o.anim_image, ox + o.shp->width() / 2, oy + o.shp->height() / 2 + o.lift,
+                                  *pals[o.pal], W, H);
     }
 
     // IsAnimated terrain (TIBTRE ore mines) [RE: FUN_0071b450 frame = anim

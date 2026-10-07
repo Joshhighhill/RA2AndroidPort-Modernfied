@@ -1538,6 +1538,8 @@ public:
         std::string weapon;        // weapon id when known (defenses), else ""
     };
     std::vector<FireEvent> take_fire_events();
+    // W3-B: the not-yet-taken events (the presentation's per-tick observer).
+    const std::vector<FireEvent>& pending_fire_events() const { return fire_events_; }
     // Stop / Guard / Scatter (unit_orders.cpp). B binds S / G / X to the
     // *_selected forms (house-0 selection); the per-unit forms serve AI/tests.
     void order_stop(int idx);

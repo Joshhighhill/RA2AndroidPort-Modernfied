@@ -2612,6 +2612,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_audio.inc"    // G-80..G-82 (helpers also used by the FX layer)
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
+#include "pres_bldanim.inc"  // W3-B building anim slots (per logic tick)
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
@@ -2634,6 +2635,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (!art.ok) return;
     const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
     g_overlay_bld = &b;   // W2-GA-14: per-building anim state for the overlay pass
+    g_overlay_id = def.id;   // W3-B
 
     // Foundation screen bbox = union of the fw*fh cell diamonds (60x30 rects).
     int minx = INT_MAX, miny = INT_MAX, maxx = INT_MIN, maxy = INT_MIN;
@@ -2651,6 +2653,15 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
 
     // Dead: explosion anim centered on the foundation (render-only nicety).
     if (b.state == ra2engine::Building::State::Dead) {
+        // W3-B LeaveRubble=yes: the rubble frame (and its shadow) stays.
+        const int rf = (g_fx && !b.sold) ? pres_building_rubble_frame(def.id, art.shp.count()) : -1;
+        if (rf >= 0 && rf < art.shp.count()) {
+            const ra2assets::Palette rp = ra2engine::house_draw_palette(ba.unit_pal, b.house);
+            g_fx->blit_shadow(ren, tc, art.shp, "rubs:" + def.id, rf + art.shp.count() / 2, fcx, fcy, W, H);
+            g_fx->blit(ren, tc, art.shp, "rub:" + def.id + ":c" + std::to_string(ra2engine::house_draw_key(b.house)),
+                       rf, fcx, fcy, 255, W, H, &rp);
+        }
+        if (!b.alive) return;
         // A SOLD building is Limbo()'d and deleted in the original -- it does
         // not explode [RE: repair-sell.md §B2 state 2].
         // G-83: in the live game the FX layer plays the type's Explosion= anims.
@@ -2684,6 +2695,9 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
               : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
                         : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    // W3-B: CanBeOccupied 4-state / Gate stages (live game only, g_fx).
+    if (!buildup && g_fx) frame = pres_building_main_frame(b, def.id, def.image.empty() ? def.id : def.image,
+                                                         frame, art.shp.count(), condition_yellow);
     // [RE: roster2.md TL;DR 2/3, §D] a wall draws its connection frame:
     // stage*16 + the N/E/S/W same-wall/same-house mask (Wall_Update). Render-only.
     if (!buildup && all && b.type < static_cast<int>(ba.wall.size()) && ba.wall[b.type] &&
@@ -3325,7 +3339,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         };
         std::vector<DrawItem> A, B;
         for (int i = 0; i < static_cast<int>(bs.size()); ++i)
-            if (bs[i].alive && pres_building_seen(world, bs[i])) A.push_back({bkey(i), 0, i});
+            if ((bs[i].alive || pres_building_leaves_rubble(bs[i], *ba)) && pres_building_seen(world, bs[i]))
+                A.push_back({bkey(i), 0, i});
         std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         // G-87: map [Terrain] objects / civilian buildings sort with the buildings.
         // W2-GA-P1: they are static, so their order is built once per dressing
@@ -5491,7 +5506,7 @@ public:
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         world_.step(dt);
-        pres_.logic_tick();      // W3-B: the anim clock advances with the logic tick
+        pres_.logic_tick(world_, ba_, player_credits_, world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
         if (repair_bridge) player_credits_ += world_.take_income(0);
@@ -5594,7 +5609,7 @@ public:
         // observation pass over this frame's state (pres_game.inc). Logs even
         // when there is no audio device; pumps the sink when there is one.
         pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
-                     pres_vet_, world_.take_projectile_events());
+                     pres_vet_, world_.take_projectile_events());   // (W3-B: drained per tick; normally empty)
         pres_vet_.clear();
         // Drain gap fix C's fire events every frame (unbounded otherwise);
         // base-defense shots get their sound + muzzle flash here.
