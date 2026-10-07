@@ -7546,6 +7546,14 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     draw_shell(plat, tc, art_, xform(), btns, hover_ix, pressed_ix,
                header(), shell_version_text(), monitor_frame(), bink_tex, 0,
                trans ? rowf : nullptr);
+    // W4-AM-12: the ENGINE build (VERSION + commit, "0.9.0+g1a2b3c4") in the
+    // bottom-left corner of the main menu, so two builds can be told apart
+    // (the original's own "Version 1.006" line stays where it was).
+    if (page_ == PAGE_MAIN) {
+        std::string v = std::string("ENGINE ") + RA2_VERSION;
+        for (char& ch : v) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        draw_text(ren, v, 6, plat.height() - 12, 1, 150, 150, 150);
+    }
     // [P8 / options.md §1/§4] The 0xD5 controls over the static MNSCRNS screen.
     if (page_ == PAGE_OPTIONS) {
         const std::string res = std::to_string(plat.width()) + " x " +
