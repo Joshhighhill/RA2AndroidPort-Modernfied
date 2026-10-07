@@ -45,6 +45,17 @@ public:
             std::string tok;
             for (int i = 0; i < 6 && std::getline(ds, tok, ','); ++i) radar_dist_[i] = std::atof(tok.c_str());
             for (int i = 0; i < 6 && std::getline(us, tok, ','); ++i) radar_dur_[i] = std::atoi(tok.c_str());
+            std::stringstream vs(gen("RadarEventVisibilityDurations"));   // W3-FX minimap square
+            for (int i = 0; i < 6 && std::getline(vs, tok, ','); ++i) radar_vis_[i] = std::atoi(tok.c_str());
+            auto avd = [&](const char* k, double& out) {
+                const std::string v = av(k);
+                if (!v.empty()) out = std::atof(v.c_str());
+            };
+            avd("RadarEventMinRadius", g_radar_min_r);
+            avd("RadarEventSpeed", g_radar_speed);
+            avd("RadarEventRotationSpeed", g_radar_rot);
+            avd("RadarEventColorSpeed", g_radar_col);
+            g_radar_pings.clear();
             const std::string sd = gen("SpeakDelay");
             if (!sd.empty()) speak_delay_frames_ = static_cast<long>(std::atof(sd.c_str()) * 900.0);
         }
@@ -177,6 +188,11 @@ public:
             }
             radar_online_ = online;
         }
+        // W3-FX: the live radar events for the minimap zoom square.
+        g_radar_pings.clear();
+        for (const RadarEv& e : radar_)
+            if (e.until > frame_ && radar_vis_[e.type] > 0)
+                g_radar_pings.push_back(RadarPingDraw{e.x, e.y, frame_ - e.born, radar_vis_[e.type]});
         snd_.pump(clock_);
         snd_.music_update(clock_);
         if (audio_ && audio_->enabled && audio_->mixer) audio_->out.pump(*audio_->mixer);
@@ -767,8 +783,8 @@ private:
                     building_explode(w, b, ba.roster[b.type].id);
                     // W3-FX: building debris (the same TechnoClass death path).
                     const ra2assets::MapCell* mc = w.map().at(b.cx, b.cy);
-                    effects_.spawn_debris(ba.roster[b.type].id, (b.cx + b.fw / 2.0) * 256.0,
-                                          (b.cy + b.fh / 2.0) * 256.0, (mc ? mc->level : 0) * 104.0, false);
+                    effects_.spawn_debris(ba.roster[b.type].id, (b.cx + (b.fw - 1) / 2.0) * 256.0,
+                                          (b.cy + (b.fh - 1) / 2.0) * 256.0, (mc ? mc->level : 0) * 104.0, false);
                 }
             }
             if (b.selling && !p.selling && b.house == 0) {
@@ -985,6 +1001,7 @@ private:
     struct RadarEv { int type; double x, y; long until; long born = 0; };
     double radar_dist_[17] = {8, 8, 8, 8, 8, 6, 2, 8, 2, 5, 8, 8, 8, 8, 8, 8, 8};
     int radar_dur_[17] = {400, 400, 400, 600, 400, 400, 200, 200, 400, 400, 100, 200, 400, 5, 200, 400, 600};
+    int radar_vis_[17] = {200, 200, 200, 200, 200, 200, 0, 0, 0, 0, 0, 200, 200, 0, 0, 0, 200};
     bool radar_supp_[17] = {1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1};
     std::vector<RadarEv> radar_;
     bool radar_event(int type, double x, double y) {

@@ -5492,6 +5492,7 @@ public:
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
+        campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
@@ -5801,6 +5802,7 @@ public:
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
 #include "campaign_audio.inc"  // W2-CA-12 mission speech / sound / music
+#include "campaign_visuals.inc"  // W3-FX trigger presentation actions
 #include "campaign_play.inc"   // W2-CA-19 campaign play-script cheats
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"

@@ -159,6 +159,29 @@ public:
         SDL_RenderSetClipRect(ren, &bg);
         SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
         SDL_RenderDrawRect(ren, &vr);
+        // W3-FX radar events [RE: presentation.md §1.2, FUN_0065f840]: a
+        // rotating, colour-cycling square that zooms in from the radar size by
+        // RadarEventSpeed px per frame to RadarEventMinRadius, then holds for
+        // the type's visibility frames. [RE-FALLBACK: the colour ramp -- a
+        // white/yellow pulse at RadarEventColorSpeed.]
+        for (const RadarPingDraw& p : g_radar_pings) {
+            const double r0 = std::max(r.w, r.h) / 2.0;
+            const double zoom = std::max(0.0, (r0 - g_radar_min_r) / std::max(0.01, g_radar_speed));
+            if (p.age > zoom + p.vis) continue;
+            const double rad = std::max(g_radar_min_r, r0 - g_radar_speed * p.age);
+            const int cx = ox + static_cast<int>((p.x - p.y - u0_) * s);
+            const int cy = oy + static_cast<int>((p.x + p.y - v0_) * 0.5 * s);
+            const double a = g_radar_rot * p.age;
+            const double pulse = 0.5 + 0.5 * std::sin(p.age * g_radar_col * 6.2831853);
+            SDL_SetRenderDrawColor(ren, 255, 255, static_cast<Uint8>(80 + 175 * pulse), 255);
+            int px[5], py[5];
+            for (int k = 0; k < 5; ++k) {
+                const double t = a + (k % 4) * 1.5707963;
+                px[k] = cx + static_cast<int>(std::lround(std::cos(t) * rad));
+                py[k] = cy + static_cast<int>(std::lround(std::sin(t) * rad));
+            }
+            for (int k = 0; k < 4; ++k) SDL_RenderDrawLine(ren, px[k], py[k], px[k + 1], py[k + 1]);
+        }
         SDL_RenderSetClipRect(ren, nullptr);
     }
 

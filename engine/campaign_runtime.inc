@@ -472,6 +472,21 @@ public:
     // RA2 rules.ini lists the PlayAnimAt / ParticleAnim index spaces (see
     // campaign_visuals.inc) need.
     const Ini& ra2_rules() const { return ra2_rules_; }
+    // W3-FX FlashTeam / MakeHouseCheer / FlashBuildingsOfType helpers.
+    std::vector<int> team_unit_indices(const std::string& team_id) const {
+        std::vector<int> out;
+        const int ti = teams_data_.find_team(team_id);
+        if (ti < 0) return out;
+        for (const Team& t : teams_)
+            if (t.type == ti && !t.st.done)
+                for (int m : t.members) out.push_back(m);
+        return out;
+    }
+    int engine_house_of_type(int ht) const { return engine_house(ht); }
+    std::string building_type_id(int bt) const {
+        return bt >= 0 && bt < (int)data_.building_types.size() ? camp::up(data_.building_types[(std::size_t)bt])
+                                                                 : std::string();
+    }
     // W3-FX DoExplosionAt Value -> WeaponType id. [RE-FALLBACK: the
     // WeaponTypeClass array is find-or-allocated as each TechnoType's INI is
     // read (FUN_00711510 Primary/Secondary/Elite*/Occupy/DeathWeapon); that

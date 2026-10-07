@@ -67,6 +67,24 @@
 
 constexpr double kFxLepPx = 36.74 / 256.0;   // leptons of height -> screen px (flight.cpp)
 
+// W3-FX trigger flashes and cheers, keyed by World object index, valid until
+// a World frame (vet_frame). 104 FlashTeam / 131 FlashBuildingsOfType [RE:
+// FUN_006f1490 -> ObjectClass::Flash(Value frames)]; 113 MakeHouseCheer [RE:
+// FUN_0050c6e0 -- every infantry of the house runs its Cheer DoType, plus
+// [AudioVisual] CheerSound]. [W3 merge note: agent B owns the infantry Cheer
+// sequence; g_house_cheer_until is the hook it reads.]
+std::map<int, long> g_flash_units, g_flash_buildings;
+std::vector<long> g_house_cheer_until;
+
+// W3-FX radar events for the minimap (pres_radar.inc), refreshed by
+// Presentation::update: cell, frames since creation, the type's visibility
+// frames [RE: presentation.md §1.2 table 0x007EF998 / [General]
+// RadarEventVisibilityDurations] and [AudioVisual] RadarEventMinRadius /
+// RadarEventSpeed / RadarEventRotationSpeed / RadarEventColorSpeed.
+struct RadarPingDraw { double x = 0, y = 0; long age = 0; int vis = 0; };
+std::vector<RadarPingDraw> g_radar_pings;
+double g_radar_min_r = 8.0, g_radar_speed = 1.2, g_radar_rot = 0.05, g_radar_col = 0.1;
+
 struct FxPtType {        // [Particles] entry (ParticleTypeClass)
     std::string name;
     const FxAnimType* img = nullptr;      // Image= (anim.pal SHP)
@@ -390,7 +408,7 @@ public:
                 const ra2assets::MapCell* mc = world_->map().at(t.x, t.y);
                 const double z = (mc ? mc->level : 0) * 104.0;
                 int sx = 0, sy = 0;
-                to_screen(cam, t.x * 256.0 + 128.0, t.y * 256.0 + 128.0, z, sx, sy);
+                to_screen(cam, t.x * 256.0, t.y * 256.0, z, sx, sy);
                 fx_->blit(ren, tc, *twinkle_t_->shp, "fx:" + twinkle_t_->name, fr, sx, sy,
                           twinkle_t_->translucent, W, H);
             }
@@ -449,6 +467,7 @@ public:
             const int fr = PresFx::loop_frame(*b.t, b.age * std::max(1, b.t->delay) / std::max(1, b.delay));
             fx_->blit(ren, tc, *b.t->shp, "fx:" + b.t->name, fr, sx, sy, b.t->translucent, W, H);
         }
+        draw_flashes(ren, cam);
         if (unit_pal_ && has_vpl_)
             for (const VoxelDebris& v : voxels_) {
                 int sx = 0, sy = 0;
@@ -803,6 +822,43 @@ private:
         if (--v.life <= 0) v.done = true;   // Duration
     }
 
+    // Flashing objects [RE-FALLBACK: the original redraws a flashing object
+    // with its brightened drawer on alternate frames; the clone pulses an
+    // additive white diamond over the footprint on alternate 2-frame beats].
+    void draw_flashes(SDL_Renderer* ren, const ra2engine::Camera& cam) {
+        if (!world_ || (g_flash_units.empty() && g_flash_buildings.empty())) return;
+        const long now = static_cast<long>(world_->vet_frame());
+        if ((now / 2) % 2) return;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_ADD);
+        SDL_SetRenderDrawColor(ren, 150, 150, 150, 255);
+        auto diamond = [&](double x, double y, double z, int hw, int hh) {
+            int sx = 0, sy = 0;
+            to_screen(cam, x, y, z, sx, sy);
+            for (int r = 0; r < hh; ++r) {
+                const int w = hw * (hh - r) / hh;
+                SDL_RenderDrawLine(ren, sx - w, sy - r, sx + w, sy - r);
+                SDL_RenderDrawLine(ren, sx - w, sy + r, sx + w, sy + r);
+            }
+        };
+        for (const auto& kv : g_flash_units) {
+            if (kv.second < now || kv.first < 0 || kv.first >= static_cast<int>(world_->units().size())) continue;
+            const ra2engine::Unit& u = world_->units()[static_cast<std::size_t>(kv.first)];
+            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+            if (!world_->object_visible_at(0, u.cell_x, u.cell_y)) continue;
+            diamond(u.fx * 256.0, u.fy * 256.0, u.level * 104.0 + (u.is_vehicle ? 60.0 : 90.0),
+                    u.is_vehicle ? 20 : 9, u.is_vehicle ? 12 : 14);
+        }
+        for (const auto& kv : g_flash_buildings) {
+            if (kv.second < now || kv.first < 0 || kv.first >= static_cast<int>(world_->buildings().size())) continue;
+            const ra2engine::Building& b = world_->buildings()[static_cast<std::size_t>(kv.first)];
+            if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
+            double x = 0, y = 0, z = 0;
+            building_pos(b, x, y, z);
+            diamond(x, y, z + 40.0, 15 * (b.fw + b.fh), 15 * (b.fw + b.fh) / 2);
+        }
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    }
+
     // ---- helpers ---------------------------------------------------------------
     int condition(int hp, int max_hp) const {
         const double r = max_hp > 0 ? static_cast<double>(hp) / max_hp : 1.0;
@@ -843,8 +899,8 @@ private:
         return false;
     }
     void building_pos(const ra2engine::Building& b, double& x, double& y, double& z) const {
-        x = (b.cx + b.fw / 2.0) * 256.0;
-        y = (b.cy + b.fh / 2.0) * 256.0;
+        x = (b.cx + (b.fw - 1) / 2.0) * 256.0;   // the clone's footprint centre convention
+        y = (b.cy + (b.fh - 1) / 2.0) * 256.0;
         const ra2assets::MapCell* mc = world_ ? world_->map().at(b.cx, b.cy) : nullptr;
         z = (mc ? mc->level : 0) * 104.0;
     }
