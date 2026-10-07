@@ -6583,18 +6583,50 @@ private:
         }
         buildable_ = tab_buildable(active_tab_);
         lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
-        // The mission opens on the player's first unit.
-        for (const ra2engine::Unit& u : world_.units())
-            if (u.house == 0) {
-                cam_.x = static_cast<int>(playfield_w_ / 2.0 - (u.fx - u.fy) * 30.0);
-                cam_.y = static_cast<int>(kWinH / 2.0 - (u.fx + u.fy) * 15.0);
-                break;
-            }
+        campaign_view_setup();   // W4-MC-03/04: LocalSize limits + the HomeCell view
         const ra2engine::CampaignTables tables = camp::load_tables(ra2_);
         const ra2engine::MissionInfo mi = tables.mission(cfg.campaign_map);
         if (!mi.ui_name.empty()) mission_name_ = camp::csf_text(dir_, mi.ui_name);
         briefing_ = camp::csf_text(dir_, mi.briefing.empty() ? campaign_->basic().briefing : mi.briefing);
     }
+    // W4-MC-04 [RE: FUN_00577e90]: the view stays inside [Map] LocalSize.
+    // W4-MC-03 [RE: FUN_004acd80 -> FUN_006d55e0(Waypoint[HomeCell])]: the
+    // mission opens on the home waypoint (ALL01: wp98 (58,72), the GIs on
+    // Liberty Island), with the map centre for a missing waypoint (the
+    // original first sets the waypoint there).
+    void campaign_view_setup() {
+        local_ = campaign_->local_size();
+        if (local_.valid) {
+            // [RE: TacticalClass clamp FUN_006d7bb0 (CONFIRMED), in the
+            // original's pixel space (cell centre x = 30*(cx-cy), y =
+            // 15*(cx+cy)+15; this engine's world x is +30)]: view edges
+            // left 30*(2Lx-W), right 30*(2(Lx+Lw)-W), top 15*(W-5+2Ly),
+            // bottom = top + 30*Lh + 135.
+            const int W = local_.size_w;
+            const int top = 15 * (W - 5 + 2 * local_.y);
+            input_.set_view_limits(30 * (2 * local_.x - W) + 30, top,
+                                   30 * (2 * (local_.x + local_.w) - W) + 30,
+                                   top + 30 * local_.h + 135);
+        }
+        int hx = 0, hy = 0;
+        const int home = campaign_->basic().home_cell;
+        if (campaign_->waypoint_xy(home, hx, hy)) {
+            const ra2assets::MapCell* mc = a_.map.at(hx, hy);
+            input_.center_on_cell(hx, hy, mc ? mc->level : 0);
+        } else if (local_.valid) {
+            // the usable area's centre cell: s = W + 2y + h + 1, d = 2x + w - W
+            const int s = local_.size_w + 2 * local_.y + local_.h + 1;
+            const int d = 2 * local_.x + local_.w - local_.size_w;
+            input_.center_on_cell((s + d) / 2.0, (s - d) / 2.0);
+        }
+    }
+    // W4-MC-04: an object is on the board (inside the usable area).
+    bool on_board(int cx, int cy) const {
+        if (!local_.valid) return true;
+        const ra2assets::MapCell* mc = a_.map.at(cx, cy);
+        return ra2engine::within_usable_area(local_, cx, cy, mc ? mc->level : 0);
+    }
+    ra2engine::MapLocalSize local_;   // invalid (no limits) in a skirmish
     // Word-wrapped text block (the 5x7 glyph font, `cols` characters per line).
     static int draw_wrapped(SDL_Renderer* ren, const std::string& text, int x, int y, int cols,
                             int scale, int max_y, Uint8 r, Uint8 g, Uint8 b) {

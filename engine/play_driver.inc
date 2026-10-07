@@ -482,7 +482,7 @@ private:
             int cx = 0, cy = 0;
             if (!p.auto_place(cx, cy)) { fail(c, "no valid placement cell (or nothing armed)"); return kConsume; }
             int x = 0, y = 0;
-            if (!cell_point(p, cx, cy, x, y)) { fail(c, "placement cell off-screen"); return kConsume; }
+            if (!cell_point(p, cx, cy, x, y)) { fail(c, "placement cell off-screen (" + std::to_string(cx) + "," + std::to_string(cy) + ")"); return kConsume; }
             move_to(x, y);
             button(x, y, false, true);
             button(x, y, false, false);

@@ -175,8 +175,8 @@ public:
     void center_on_cell(double cx, double cy, int level = 0);
     // W4-MC-04 [RE: FUN_00577e90 IsWithinUsableArea, [Map] LocalSize]: keep
     // the view inside a WORLD-pixel rectangle (screen = world + cam). A view
-    // larger than the rectangle is centred on it. [RE-FALLBACK: the exact
-    // tactical clamp edge is not traced; the usable area itself is.]
+    // larger than the rectangle is centred on it (TacticalClass clamp
+    // FUN_006d7bb0 bounds the view centre the same way).
     void set_view_limits(int min_x, int min_y, int max_x, int max_y);
     // W4-MC-02: drop a half-done gesture (band box / right-drag) without
     // acting on it (LockInput's FUN_0054f3b0).
