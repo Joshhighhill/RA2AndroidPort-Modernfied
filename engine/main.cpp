@@ -2656,9 +2656,11 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 1);
 
-    // Foundation-width HP bar when damaged (render-only; buildings aren't
-    // selectable so there's no selection marker).
-    if (b.hp < b.max_hp && b.max_hp > 0) {
+    // Foundation-width HP bar when damaged (render-only). W2-GA-19: the live
+    // game (g_map_dressing set) shows building health only on the SELECTED
+    // building (GameScene::draw_selected_building's pips, ConditionYellow/
+    // Red), as the original does; the demos keep this debug bar.
+    if (!g_map_dressing && b.hp < b.max_hp && b.max_hp > 0) {
         const int bw = std::max(24, maxx - minx - 8);
         const int bx = fcx - bw / 2, by = miny - 6;
         SDL_Rect bg{bx - 1, by - 1, bw + 2, 5};
@@ -4500,6 +4502,11 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
     ra2engine::EventSource& events = src ? *src : static_cast<ra2engine::EventSource&>(plat);
     Uint32 prev = SDL_GetTicks();
     int frame = 0;
+    // W2-GA-P6: frame pacing by deadline (60 Hz) instead of a fixed 16 ms
+    // sleep AFTER the frame's work; with the vsync'd renderer present()
+    // already waits, so this only sleeps the part of the budget left.
+    Uint64 frame_start = SDL_GetPerformanceCounter();
+    const double perf_ms = 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
     while (scene && !scene->wants_quit()) {
         if (hooks && !hooks->begin(frame, *scene)) return 0;
         ra2engine::InputEvent ev;
@@ -4525,7 +4532,11 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
             scene.reset(nx);
             if (hooks) hooks->transition(frame);
         }
-        if (fixed_dt <= 0.0) SDL_Delay(16);
+        if (fixed_dt <= 0.0) {
+            const double used = (SDL_GetPerformanceCounter() - frame_start) * perf_ms;
+            if (used < 16.0) SDL_Delay(static_cast<Uint32>(16.667 - used));
+            frame_start = SDL_GetPerformanceCounter();
+        }
         ++frame;
     }
     if (hooks) hooks->quit(frame, scene.get(), "scene wants_quit");
