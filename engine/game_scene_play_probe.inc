@@ -15,6 +15,7 @@
         p.set_s("mode", campaign_ ? "campaign" : "skirmish");
         p.set("credits", player_credits_);
         p.set("credits_shown", credits_shown_);
+        p.set_s("tooltip", tooltip_now());   // W2-UI-07
         p.set("playfield_w", playfield_w_);
         p.set("cam_x", cam_.x);
         p.set("cam_y", cam_.y);

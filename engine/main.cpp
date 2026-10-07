@@ -5021,6 +5021,7 @@ public:
     // One step of the former loop body: camera pan, edge-detects, world.step,
     // production, exit handoff, free units, audio events, placement/SW confirm.
     void update(double dt) override {
+        tooltip_tick(dt);   // W2-UI-07 hover timer (game time)
         // P7: the options menu / save-load dialog pause the game (the original
         // runs them as a modal loop; the scenario does not advance meanwhile).
         if (menu_.open_ || sld_.is_open()) {
@@ -5320,6 +5321,7 @@ public:
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
         draw_selected_building(ren);   // G-10
         draw_queue_badges(ren, tc);    // G-07 / W2-UI-03/04
+        draw_tooltip(ren, tc);         // W2-UI-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
         bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
@@ -5363,6 +5365,7 @@ public:
 #include "game_scene_play.inc"
     // Agent B controls/UI members (cursor state, building selection, hotkeys).
 #include "game_scene_controls.inc"
+#include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
 
