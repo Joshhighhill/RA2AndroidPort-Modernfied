@@ -138,6 +138,13 @@ public:
         gest_.finger_up(1, x, y, tnow() + 700);
         drain_gestures();
     }
+    void touch_two_tap(int x, int y) {   // W4-AM: two-finger tap = right click (deselect)
+        gest_.finger_down(1, x, y, tnow());
+        gest_.finger_down(2, x + 60, y, tnow() + 10);
+        gest_.finger_up(2, x + 60, y, tnow() + 80);
+        gest_.finger_up(1, x, y, tnow() + 90);
+        drain_gestures();
+    }
     void touch_pan(int x, int y, int dx, int dy) {
         gest_.finger_down(1, x, y, tnow());
         gest_.finger_down(2, x + 80, y, tnow() + 10);

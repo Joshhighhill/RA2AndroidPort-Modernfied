@@ -987,7 +987,7 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
     unhandled:
         if (campaign_mode_) {
             switch (a.kind) {
-            case 41: case 48: case 55: case 88: case 104: case 112: case 113: case 114:
+            case 41: case 46: case 47: case 48: case 55: case 88: case 104: case 112: case 113: case 114:
             case 115: case 131: {
                 VisualRequest v;
                 v.action = a.kind;

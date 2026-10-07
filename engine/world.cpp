@@ -1137,7 +1137,10 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
     // other unit keeps the land walk below.
     // W2-AN-10: an amphibious craft (LCRF/SAPC, built at the yard) also
     // launches onto the water ring.
-    if (c.is_naval || c.movement_domain == MovementDomain::Amphibious) {
+    // W4-MC-01: only a craft built at a NAVAL factory takes the water ring; an
+    // amphibious infantry (Tanya/SEAL from the barracks) walks out on land.
+    if (c.is_naval || (c.movement_domain == MovementDomain::Amphibious &&
+                       factory_def.factory_kind == 3)) {
         if (water_passable_.empty()) return -1;
         const Cellxy wx = naval_exit_cell(f, factory_def, water_passable_, grid_w_, grid_h_,
                                           [this](int x, int y) {

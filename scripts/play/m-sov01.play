@@ -22,15 +22,19 @@ assert mode == campaign
 shot start
 
 # --- 1. the mission is live ----------------------------------------------------
-assert own_on_screen > 0
+until 60 input_locked == 1                    @W4-MC-02
 assert units(0) > 0
 until 900 objectives >= 1
 assert triggers_fired > 0
 
 # --- 2. deploy the SMCV and build -------------------------------------------------
 until 900 units(0,SMCV) >= 1
-click unit 0:SMCV                             @G-23:F
-key d                                         @G-23:F
+# W4-MC-02/04: the SMCV rolls in from the off-board strip while input is locked.
+until 1200 input_locked == 0                  @W4-MC-02
+until 600 ctl_units >= 1                      @W4-MC-04
+# The start team's script may already have deployed it (W2-CA-17) while locked.
+if units(0,SMCV) >= 1 then click unit 0:SMCV  @G-23:F
+if units(0,SMCV) >= 1 then key d              @G-23:F
 until 450 built(0,NACNST) == 1                @G-23:F
 view building 0:NACNST                        @G-23:F
 shot base

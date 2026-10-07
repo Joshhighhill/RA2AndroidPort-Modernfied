@@ -185,6 +185,10 @@ void key_event_from_sdl(int k, int mod, InputEvent& ev) {
     ev.kind = (ev.key || ev.vk) ? InputEvent::Key : InputEvent::None;
 }
 
+bool Platform::touch_hold(int& x, int& y, float& progress) const {
+    return p_ && p_->touch.hold_feedback(SDL_GetTicks(), x, y, progress);
+}
+
 bool Platform::poll(InputEvent& ev) {
     ev = InputEvent{};
     if (p_->touch.pop(ev)) return true;   // G-70: queued gesture events first

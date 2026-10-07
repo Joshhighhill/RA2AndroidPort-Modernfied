@@ -184,3 +184,19 @@ TEST_CASE("step_units: 3-unit rotational contention resolves without overlap") {
         CHECK(u.cell_y >= 0); CHECK(u.cell_y <= 1);
     }
 }
+
+// W4-MC-01 [RE: gamemd MovementZone name table @0x81AA98]: every Amphibious*
+// zone and SpeedType=Amphibious resolve to the amphibious (land+water) domain.
+TEST_CASE("W4-MC-01: Amphibious* MovementZones and SpeedType=Amphibious are amphibious") {
+    using ra2engine::is_amphibious_zone;
+    CHECK(is_amphibious_zone("AmphibiousDestroyer", "Amphibious"));   // TANY / GHOST
+    CHECK(is_amphibious_zone("AmphibiousCrusher", "Amphibious"));     // APC
+    CHECK(is_amphibious_zone("Amphibious ", "Hover"));                // SAPC (trailing blank)
+    CHECK(is_amphibious_zone("amphibiousdestroyer", ""));             // CPHAL (no SpeedType)
+    CHECK(is_amphibious_zone("", "Amphibious"));
+    CHECK_FALSE(is_amphibious_zone("Normal", "Foot"));                // E1
+    CHECK_FALSE(is_amphibious_zone("Infantry", "Foot"));
+    CHECK_FALSE(is_amphibious_zone("Water", "Float"));
+    CHECK_FALSE(is_amphibious_zone("WaterBeach", "Float"));
+    CHECK_FALSE(is_amphibious_zone("", "Hover"));                      // hover alone is not enough
+}

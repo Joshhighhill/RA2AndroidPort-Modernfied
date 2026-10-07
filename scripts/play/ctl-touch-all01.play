@@ -1,0 +1,108 @@
+# CTL-TOUCH-ALL01 -- W4-AM: Allied mission 1 played through the REAL touch
+# gesture layer (TouchGestures, as on a phone): finger taps, one-finger drags,
+# holds, double taps and hold+drag band boxes, no mouse events in the game.
+# Scheme (W4-AM-01): drag = scroll, tap = select / order, double tap = all of
+# type, hold + drag = box select, hold = cancel a mode (never deselects),
+# two-finger drag = scroll, two-finger tap = deselect.
+set render_every 0
+set on_quit continue
+
+touch tap button "Single Player"
+touch tap button "New Campaign"
+require scene == "shell:Campaign"
+click well:allied
+touch tap button Load
+until 30 scene == campaign-load
+until 300 scene == game
+require scene == game
+
+# --- locked opening: a finger drag does not scroll -------------------------------
+until 60 input_locked == 1                    @W4-MC-02
+let cy0 = cam_y
+touch drag xy 500 300 500 500
+wait 2
+assert cam_y == $cy0                          @W4-MC-02
+assert touch_ui == 1
+assert touch_bar_open == 0                    @W4-AM-05
+
+# --- unlocked: one-finger drag scrolls, the selection survives -------------------
+until 1200 input_locked == 0
+wait 5
+touch tap unit 0:TANY onscreen                @W4-AM-01
+wait 1
+require selected == 1
+let cy1 = cam_y
+touch drag xy 500 300 500 420                 @W4-AM-01
+wait 2
+assert cam_y == $cy1+120                      @W4-AM-01
+assert selected == 1                          @W4-AM-01
+touch drag xy 500 420 500 300
+wait 2
+# a slow (550 ms) tap is still a tap; a hold never deselects
+touch hold xy 560 360                         @W4-AM-07
+wait 2
+assert selected == 1                          @W4-AM-07
+shot after_hold
+# order Tanya across the water (scroll the island into view by finger)
+touch drag xy 500 200 500 340
+wait 2
+touch tap cell 62 77 onscreen                 @W4-MC-01
+wait 1
+assert sel_moving >= 1
+until 900 units(0,E1) >= 8                    @W4-MC-01
+shot handed
+
+# --- the GIs: scroll there, hold+drag box select, double tap -------------------------
+touch drag xy 700 600 400 330
+wait 2
+until 60 ctl_on_screen >= 4
+touch boxdrag xy 250 120 1060 680             @W4-AM-01
+wait 1
+assert selected >= 4                          @W4-AM-01
+let nsel = selected
+# an empty touch box keeps the selection
+touch boxdrag xy 20 20 40 40                  @W4-AM-01
+wait 1
+assert selected == $nsel                      @W4-AM-01
+touch tap xy 600 420
+wait 1
+assert sel_moving >= 1
+
+# --- sell mode: a banner with an [X]; tooltips do not stick after taps ---------------
+touch tap sell                                @W4-AM-03
+wait 2
+assert base_mode == sell                      @W4-AM-03
+let nsel = selected
+assert touch_banner == 1                      @W4-AM-03
+assert tooltip_up == 0                        @W4-AM-06
+shot sell_banner
+touch tap touch:cancel                        @W4-AM-03
+wait 2
+assert base_mode == none                      @W4-AM-03
+assert touch_banner == 0
+assert selected == $nsel                      @W4-AM-03
+# a hold cancels an armed mode too
+touch tap repair
+wait 2
+assert base_mode == repair
+touch hold xy 560 360                         @W4-AM-07
+wait 2
+assert base_mode == none                      @W4-AM-07
+assert selected == $nsel                      @W4-AM-07
+
+# --- the command column: closed, opens, briefing, closes itself ------------------
+touch tap touch:CMD                           @W4-AM-05
+wait 2
+assert touch_bar_open == 1
+touch tap touch:BRF                           @W4-AM-11
+wait 2
+assert briefing_open == 1                     @W4-AM-11
+assert touch_bar_open == 0                    @W4-AM-05
+touch tap xy 560 360
+wait 2
+assert briefing_open == 0                     @W4-AM-11
+touch tap touch:CMD
+wait 120
+assert touch_bar_open == 0                    @W4-AM-05
+shot end
+end

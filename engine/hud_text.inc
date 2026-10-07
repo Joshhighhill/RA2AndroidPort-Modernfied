@@ -147,7 +147,7 @@ void hud_text(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string&
 void blit_shp_alpha(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
                     const ra2assets::ShpFile& shp, int frame, const ra2assets::Palette& pal, int x, int y,
                     Uint8 alpha) {
-    SDL_Texture* tex = shp_frame_tex(tc, key, shp, frame, pal);
+    SDL_Texture* tex = shp_frame_tex(tc, side_tex_key(key), shp, frame, pal);   // W4-AM-04
     if (!tex) return;
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     SDL_SetTextureAlphaMod(tex, alpha);
@@ -158,9 +158,10 @@ void blit_shp_alpha(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::s
 
 // DARKEN.SHP with the Darken blitter (0x401: dst >>= 1 under every opaque
 // source pixel) -- a modulate blend by 50 % grey through the shape's mask.
-void blit_shp_darken(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
+void blit_shp_darken(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key_in,
                      const ra2assets::ShpFile& shp, int frame, int x, int y) {
     if (frame < 0 || frame >= shp.count()) return;
+    const std::string key = side_tex_key(key_in);   // W4-AM-04
     const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
     if (f.w <= 0 || f.h <= 0) return;
     SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));

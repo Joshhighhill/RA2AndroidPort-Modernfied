@@ -457,6 +457,53 @@ private:
             if (!has_word(c, "nopark")) park_pending_ = true;
             return kConsume;
         }
+        if (op == "touch") {
+            ++pc_;
+            // W4-AM: drive the REAL gesture layer (TouchGestures) with finger
+            // events; its output goes through the scenes' handle() like the
+            // Platform's. touch tap|dtap|hold <target> ; touch drag|boxdrag|pan2
+            // xy|cell X1 Y1 X2 Y2 (one-finger drag = scroll, hold+drag = box,
+            // two-finger drag = scroll).
+            if (c.args.empty()) { fail(c, "touch tap|dtap|hold|drag|boxdrag|pan2 ..."); return kConsume; }
+            const std::string g = lower(c.args[0]);
+            const uint32_t t = tnow();
+            if (g == "tap" || g == "dtap" || g == "hold") {
+                int x = 0, y = 0;
+                if (c.args.size() < 2 || !point_of(c, p, 1, x, y)) return kConsume;
+                tg_.finger_down(1, x, y, t);
+                if (g == "hold") tg_.tick(t + 700);
+                tg_.finger_up(1, x, y, g == "hold" ? t + 720 : t + 60);
+                if (g == "dtap") {
+                    tg_.finger_down(1, x + 3, y + 2, t + 200);
+                    tg_.finger_up(1, x + 3, y + 2, t + 260);
+                }
+            } else if (g == "drag" || g == "boxdrag" || g == "pan2") {
+                if (c.args.size() < 6) { fail(c, "touch " + g + " xy|cell X1 Y1 X2 Y2"); return kConsume; }
+                Cmd a = c, b = c;
+                a.args = {c.args[1], c.args[2], c.args[3]};
+                b.args = {c.args[1], c.args[4], c.args[5]};
+                int x1, y1, x2, y2;
+                if (!point_of(a, p, 0, x1, y1) || !point_of(b, p, 0, x2, y2)) return kConsume;
+                uint32_t tt = t;
+                tg_.finger_down(1, x1, y1, tt);
+                if (g == "pan2") tg_.finger_down(2, x1 + 80, y1, tt + 5);
+                if (g == "boxdrag") { tt += 700; tg_.tick(tt); }
+                for (int i = 1; i <= 8; ++i) {
+                    tt += 16;
+                    const int xi = x1 + (x2 - x1) * i / 8, yi = y1 + (y2 - y1) * i / 8;
+                    tg_.finger_move(1, xi, yi, tt);
+                    if (g == "pan2") tg_.finger_move(2, xi + 80, yi, tt + 1);
+                }
+                tg_.finger_up(1, x2, y2, tt + 20);
+                if (g == "pan2") tg_.finger_up(2, x2 + 80, y2, tt + 25);
+            } else {
+                fail(c, "unknown touch gesture '" + g + "'");
+                return kConsume;
+            }
+            ra2engine::InputEvent e;
+            while (tg_.pop(e)) q_.push_back(e);
+            return kConsume;
+        }
         if (op == "drag") {
             ++pc_;
             // drag cell x1 y1 x2 y2 | drag xy x1 y1 x2 y2
@@ -482,7 +529,7 @@ private:
             int cx = 0, cy = 0;
             if (!p.auto_place(cx, cy)) { fail(c, "no valid placement cell (or nothing armed)"); return kConsume; }
             int x = 0, y = 0;
-            if (!cell_point(p, cx, cy, x, y)) { fail(c, "placement cell off-screen"); return kConsume; }
+            if (!cell_point(p, cx, cy, x, y)) { fail(c, "placement cell off-screen (" + std::to_string(cx) + "," + std::to_string(cy) + ")"); return kConsume; }
             move_to(x, y);
             button(x, y, false, true);
             button(x, y, false, false);
@@ -544,7 +591,7 @@ private:
     // labels, B's form), "cameo ID" -> "cameo:ID", else args[i] itself.
     static bool is_flag(const std::string& a) {
         const std::string l = lower(a);
-        return l == "right" || l == "shift" || l == "ctrl" || l == "alt" || l == "nopark";
+        return l == "right" || l == "shift" || l == "ctrl" || l == "alt" || l == "nopark" || l == "onscreen";
     }
     static std::string target_name(const Cmd& c, std::size_t i) {
         std::string name = c.args[i];
@@ -577,6 +624,12 @@ private:
             double cx = 0, cy = 0;
             if (!locate(c, p, i, cx, cy)) return false;
             if (!p.cell_to_screen) { fail(c, "missing-probe:cell_to_screen (scene '" + p.scene + "')"); return false; }
+            // W4-MC-07 (HB-4): `onscreen` = a human must SEE the target -- no
+            // harness centring; an off-screen target is a failure.
+            if (has_word(c, "onscreen")) {
+                if (!p.cell_to_screen(cx, cy, x, y)) { fail(c, "target off-screen (no centring with onscreen)"); return false; }
+                return true;
+            }
             if (!cell_point(p, cx, cy, x, y)) { fail(c, "cell off-screen and cannot centre"); return false; }
             return true;
         }
@@ -736,6 +789,7 @@ private:
     SDL_Renderer* ren_ = nullptr;
     ::Scene* scene_ptr_ = nullptr;
     std::deque<ra2engine::InputEvent> q_;
+    ra2engine::TouchGestures tg_;   // W4-AM: `touch` commands
     std::string quit_why_ = "Quit event";
     int tab_tries_ = 0;
     long f_ = 0;

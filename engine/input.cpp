@@ -311,6 +311,18 @@ void Input::commit_click(int px, int py, bool shift) {
     if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
 }
 
+bool Input::box_has_own_unit() const {
+    const int x0 = std::min(down_x_, cur_x_), x1 = std::max(down_x_, cur_x_);
+    const int y0 = std::min(down_y_, cur_y_), y1 = std::max(down_y_, cur_y_);
+    for (const Unit& u : world_.units()) {
+        if (!world_.controllable(u.house) || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+        int gx, gy;
+        unit_ground_px(u, gx, gy);
+        if (gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1) return true;
+    }
+    return false;
+}
+
 void Input::commit_box(bool shift) {
     int x0, y0, x1, y1;
     x0 = std::min(down_x_, cur_x_); x1 = std::max(down_x_, cur_x_);

@@ -378,6 +378,8 @@ public:
     long frame_count() const { return frame_; }
     const camp::Launch& launch() const { return launch_; }
     const ra2engine::ScenarioBasic& basic() const { return basic_; }
+    // W4-MC-04: the map's [Map] Size / LocalSize (the usable area).
+    ra2engine::MapLocalSize local_size() const { return ra2engine::parse_map_local_size(map_); }
     const std::vector<Objective>& objectives() const { return objectives_; }
     const std::vector<std::string>& witness() const { return witness_; }
     std::vector<const VehicleAssets*> vehicle_assets() const { return types_.vehicle_assets(); }

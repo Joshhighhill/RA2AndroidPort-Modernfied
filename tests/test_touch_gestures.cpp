@@ -29,36 +29,78 @@ TEST_CASE("touch: a tap is ONE left click (no synthetic duplicate)") {
     CHECK(v[1].touch);
 }
 
-TEST_CASE("touch: long-press is a right click and the lift adds nothing") {
+TEST_CASE("touch: a hold fires on the lift as a right click marked hold (W4-AM-07)") {
     TouchGestures g;
     g.finger_down(1, 50, 60, 1000);
-    g.tick(1400);
+    g.tick(1500);                        // 500 ms: still a tap (old threshold)
     CHECK_FALSE(g.pending());
-    g.tick(1500);
+    int hx = 0, hy = 0;
+    float pr = 0.0f;
+    CHECK(g.hold_feedback(1500, hx, hy, pr));   // ring shown after 150 ms
+    CHECK(hx == 50);
+    CHECK(pr > 0.0f);
+    CHECK(pr < 1.0f);
+    g.tick(1600);                        // 600 ms: held, nothing emitted yet
+    CHECK_FALSE(g.pending());
+    CHECK(g.hold_feedback(1600, hx, hy, pr));
+    CHECK(pr == doctest::Approx(1.0f));
+    g.finger_up(1, 50, 60, 1700);
     auto v = drain(g);
     REQUIRE(v.size() == 3);
     CHECK(v[1].button == InputEvent::Right);
+    CHECK(v[1].hold);
     CHECK(v[2].button == InputEvent::Right);
-    g.finger_up(1, 50, 60, 1700);
-    CHECK_FALSE(g.pending());
+    CHECK(v[2].hold);
+
+    TouchGestures s;                     // a 550 ms slow tap is a TAP
+    s.finger_down(1, 50, 60, 1000);
+    s.tick(1550);
+    s.finger_up(1, 50, 60, 1550);
+    v = drain(s);
+    REQUIRE(v.size() == 3);
+    CHECK(v[1].button == InputEvent::Left);
+    CHECK_FALSE(v[1].hold);
 }
 
-TEST_CASE("touch: one-finger drag is a left band drag from the start point") {
+TEST_CASE("touch: one-finger drag PANS the map (W4-AM-01)") {
     TouchGestures g;
     g.finger_down(1, 100, 100, 1000);
     g.finger_move(1, 105, 105, 1010);   // within slop: nothing yet
     CHECK_FALSE(g.pending());
     g.finger_move(1, 160, 140, 1020);
     g.finger_move(1, 200, 180, 1030);
-    g.tick(5000);                        // no long-press once dragging
+    g.tick(5000);                        // no hold once panning
     g.finger_up(1, 200, 180, 1040);
+    const auto v = drain(g);
+    REQUIRE(v.size() == 2);
+    int dx = 0, dy = 0;
+    for (const auto& e : v) {
+        CHECK(e.kind == InputEvent::Pan);
+        CHECK(e.x0 == 100);
+        CHECK(e.y0 == 100);
+        dx += e.dx;
+        dy += e.dy;
+    }
+    CHECK(dx == 100);   // the map follows the finger from the touch-down point
+    CHECK(dy == 80);
+}
+
+TEST_CASE("touch: hold then drag is a left band box from the hold point") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.tick(1700);
+    CHECK_FALSE(g.pending());
+    g.finger_move(1, 160, 140, 1750);
+    g.finger_move(1, 200, 180, 1800);
+    g.finger_up(1, 200, 180, 1850);
     const auto v = drain(g);
     REQUIRE(v.size() == 5);
     CHECK(v[1].kind == InputEvent::PointerDown);
+    CHECK(v[1].button == InputEvent::Left);
     CHECK(v[1].x == 100);
     CHECK(v[3].kind == InputEvent::PointerMove);
     CHECK(v[4].kind == InputEvent::PointerUp);
-    CHECK(v[4].button == InputEvent::Left);
+    CHECK(v[4].x == 200);
 }
 
 TEST_CASE("touch: two-finger drag pans; a two-finger tap is a right click") {
@@ -106,7 +148,8 @@ TEST_CASE("touch: a system-cancelled gesture never clicks (W2-AR-18)") {
 
     TouchGestures d;   // a band box in progress is released, not left pressed
     d.finger_down(1, 100, 100, 1000);
-    d.finger_move(1, 160, 140, 1050);
+    d.tick(1700);
+    d.finger_move(1, 160, 140, 1750);
     (void)drain(d);
     d.finger_cancel(1, 160, 140, 1100);
     auto v = drain(d);

@@ -197,3 +197,22 @@ houses, and that works (wave-2 W2-CA-02 fix).
 | `ctl_census.py`, `census.txt` | per-map player house, PC houses, Lock/Unlock/pan/ChangeHouse triggers |
 | `rc.py`, `rcshots/` | real OS-input driver (posted messages + PrintWindow) and why it was blocked |
 | `D:\ra2-re\w4-ctl-out\` | Ghidra output (lock/unlock and their readers) |
+
+## W4-FIX-CTL status (branch `w4fix-ctl`)
+
+| ID | Status | Where |
+|---|---|---|
+| W4-MC-01 amphibious zones | **Fixed.** `is_amphibious_zone(MovementZone, SpeedType)`: `AmphibiousDestroyer`, `AmphibiousCrusher`, `Amphibious` and `SpeedType=Amphibious` → land+water (gamemd name table @0x81AA98, `docs/re/movement-zones.md`). Only a naval factory launches an amphibious unit onto water (Tanya/SEAL leave the barracks on land). Infantry in water use the Swim set. `ctl-all01`: Tanya swims, `units(0,E1)` 0 → 11. | `unit_combat.hpp`, `main.cpp` unit resolve, `world.cpp` `launch_unit` |
+| W4-MC-02 Lock/UnlockInput | **Fixed.** Actions 46/47 → `GameScene::input_locked_`: pointer / key / touch past the options menu dropped, edge/arrow scroll off, cursor hidden, half gesture cancelled; Esc/Back, F1 and the options button still work. Not saved (a plain global in the original); released after 1800 frames or at mission end (no soft-lock). Probe `input_locked`. | `campaign_visuals.inc`, `map_trigger.cpp`, `main.cpp` `handle`/`update`/render |
+| W4-MC-03 opening view | **Fixed, CONFIRMED** (RE-W4-MC-1 answered): `[Basic] HomeCell` (FUN_00689890) → `Waypoint[HomeCell]` centred by FUN_004acd80/FUN_006d55e0; map centre when missing. ALL01 opens on wp98 (58,72). | `campaign.cpp`, `main.cpp` `campaign_view_setup` |
+| W4-MC-04 LocalSize | **Fixed (campaign).** IsWithinUsableArea FUN_00577e90 and the tactical clamp FUN_006d7bb0 decompiled (`docs/re/mission-view.md`); camera clamped, off-board placement refused, probe counts exclude off-board/shrouded units. Skirmish keeps the old free camera (open). | `campaign.cpp`, `input_original.cpp` `set_view_limits`, `realplay_scene.inc` |
+| W4-MC-05 pan vs scroll | **Fixed** [RE-FALLBACK]: a trigger pan ends once anything else moved the camera after the unlock (SOV01). | `campaign_visuals.inc` |
+| W4-MC-06 player order vs team | Open (RE-W4-MC-2 not traced; mostly hidden by the lock). | — |
+| W4-MC-07 control-level scripts | **Done.** `ctl-all01` (real clicks, `onscreen`, arrow-key scrolling), `ctl-touch-all01` (real gestures), `ctl-all02`, `ctl-sov01`, `ctl-sides`; `m-all01`/`m-sov01` follow the original opening. New `--play` flag `onscreen`, `touch` commands, keys `ctl_units`, `ctl_on_screen`, `input_locked`, `view_cx/cy`. | `scripts/play/ctl-*.play`, `play_driver.inc` |
+| W4-MC-08 SOV09 early loss | Owned by the mission-sequence fix agent. | — |
+| W4-MC-09 raw input replay | Open. | — |
+
+Open observation: ALL01's GI hand-over fires only through the 4-cell strip (61..64,84). On the emulator Tanya
+was ordered to the island's west dock, swam around the strip and the GIs stayed `Other3`; ordering her to the
+island centre (as `ctl-all01` does) crosses it. Whether the original routes a west-dock order through the strip
+was not traced (mission-sequence / pathfinding question).

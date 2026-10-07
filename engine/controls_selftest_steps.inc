@@ -323,8 +323,13 @@ void add_controls_selftest_steps(STest& t) {
                      return STest::pv(s, "cam_x") - t.mem["cam_x"] == 120 &&
                             STest::pv(s, "cam_y") - t.mem["cam_y"] == 60;
                  }});
-    S.push_back({"long-press = right click (deselect)", [](STest& t, Scene&, int) {
+    S.push_back({"hold = cancel a mode, never deselect (W4-AM-07)", [](STest& t, Scene&, int) {
                      t.touch_long(500, 400);
+                     return true;
+                 }});
+    S.push_back(st_expect("sel", 1));
+    S.push_back({"two-finger tap = right click (deselect)", [](STest& t, Scene&, int) {
+                     t.touch_two_tap(500, 400);
                      return true;
                  }});
     S.push_back(st_expect("sel", 0));

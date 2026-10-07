@@ -27,6 +27,11 @@ struct InputEvent {
     int vk = 0;
     int dx = 0, dy = 0;                     // Pan: camera delta (window pixels)
     char text[32] = {0};                    // Text: NUL-terminated UTF-8
+    // W4-AM-01/07 (touch only): `hold` marks the right click a finger hold
+    // produces (it cancels a mode but never deselects); x0/y0 is where a Pan
+    // gesture started (a drag that starts on the sidebar / radar is routed there).
+    bool hold = false;
+    int x0 = 0, y0 = 0;
 };
 enum : int { kKeyBackspace = 1, kKeyEnter = 2, kKeyUp = 3, kKeyDown = 4, kKeyDelete = 5,
              kKeyF10 = 6, kKeyF1 = 7 /* P10 briefing */, kKeyEscape = 8 /* G-01 */ };
@@ -65,6 +70,8 @@ public:
     void set_logical_size(int w, int h);
     // Physical output size in pixels (the window / phone panel).
     void output_size(int& w, int& h) const;
+    // W4-AM-07: a finger resting toward a hold (the scene draws a ring).
+    bool touch_hold(int& x, int& y, float& progress) const;
 private:
     Platform() = default;
     struct Impl; Impl* p_ = nullptr;
