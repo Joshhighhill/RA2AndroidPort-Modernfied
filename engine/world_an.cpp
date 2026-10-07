@@ -660,6 +660,16 @@ void World::an_step_parachutes(double dt) {
         if (u.cargo_of != kParachuteCargo) continue;
         if (!u.alive) { u.cargo_of = -1; u.an.para_alt = 0.0; continue; }
         u.an.para_alt -= fall;
+        // The art Paradrop= sequence while it hangs under the chute (W3-B
+        // tables; the stage cycles at the DoControls rate).
+        if (const InfTable* it = inf_table(u.image)) {
+            const InfSeqEntry& e = it->e[kSqParadrop];
+            if (e.has) {
+                const int n = std::max(1, e.count);
+                const int stage = static_cast<int>((u.an.para_alt / std::max(1.0, fall)) / 2.0) % n;
+                u.frame = e.first + (e.fmult ? ((u.facing % 8 + 8) % 8) * e.fmult : 0) + (n - 1 - stage);
+            }
+        }
         if (u.an.para_alt > 0.0) continue;
         u.an.para_alt = 0.0;
         u.cargo_of = -1;   // touched down: an ordinary unit on its cell
