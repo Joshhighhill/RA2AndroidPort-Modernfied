@@ -16954,8 +16954,6 @@ int run_demo_saveload() {
     return ok ? 0 : 1;
 }
 
-// Agent B controls real-play self-test (dev-only, not a gate).
-#include "controls_selftest.inc"
 // G0 --play front end (agent G): scripted playthroughs (scripts/play/).
 #include "play_driver.inc"
 // G16 (agent G): --depth-survey (bridges / huts / garrisonable structures per MP map).
@@ -17080,8 +17078,14 @@ int main(int argc, char** argv) {
                                       std::atoi(argv[i + 4]), std::atoi(argv[i + 5]));
             } else if (arg == "--depth-survey") {
                 return run_depth_survey();   // G16 (agent G) dev survey
-            } else if (arg == "--controls-selftest" && i + 1 < argc) {
-                return run_controls_selftest(argv[++i]);   // agent B dev check
+            } else if (arg == "--controls-selftest") {
+                // R-183: retired (W5-F). It was written for the pre-MCV start
+                // and the old lobby flow, and it wrote the user's own RA2.INI;
+                // scripts/play/controls.play + ctl-*.play cover it through the
+                // isolated --play harness.
+                std::printf("--controls-selftest is retired: run scripts/play/controls.play and "
+                            "scripts/play/ctl-*.play with --play instead.\n");
+                return 2;
             } else if (arg == "--screenshot" && i + 1 < argc) {
                 screenshot = argv[++i];
             } else if (arg == "--demo-move" && i + 2 < argc) {

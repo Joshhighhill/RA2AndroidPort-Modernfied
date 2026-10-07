@@ -3187,10 +3187,10 @@ nuke flight (damage is instant, G-25), music shuffle setting.
 ## Real-play controls (agent B, G-01/04/05/06/07/08/09/10/12/13/70/71)
 
 Recovered from `gamemd.exe` (hunt "fixB", scripts `D:\ra2-re\scripts\fixB_*.py`)
-and verified in the REAL scene tree by `ra2engine --controls-selftest <outdir>`
-(MainMenu -> Skirmish lobby -> GameScene with scripted InputEvents at a fixed
-1/15 s tick in a hidden window; prints `selftest PASS` + a deterministic
-`probe_hash` and writes screenshots). Not a gate.
+and verified in the REAL scene tree by the `--play` scripts `controls.play` and
+`ctl-*.play` (MainMenu -> Skirmish lobby -> GameScene with scripted input). The
+older `--controls-selftest` was retired in wave 5 (R-183: written for the pre-MCV
+start, and it wrote the user's own RA2.INI). Not a gate.
 
 - **Mouse (G-05)**: the original's tactical WndProc `FUN_00692AB0` dispatches
   WM_LBUTTONUP to Left_Up `FUN_004AB8C0`: with a selection a LEFT click issues
