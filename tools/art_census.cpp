@@ -137,13 +137,14 @@ static const AssetFS& fs_for(const Th* t) {
     return *it->second;
 }
 static const Th* CUR = &kTh[0];   // the row's theater (set by main)
+static bool RA2ONLY = false;      // the playable roster resolves RA2 archives only
 static Res fs_hit(const Th* t, const std::vector<std::string>& bases, const std::vector<std::string>& exts) {
     Res r;
     const AssetFS& fs = fs_for(t);
     for (auto& e : exts) for (auto& b : bases) {
         r.tried += (r.tried.empty() ? "" : "|") + b + e;
-        std::string w = fs.where(b + e);
-        if (!w.empty()) { r.ok = true; r.hit = w + ":" + b + e; return r; }
+        std::string w;
+        if (fs.find(b + e, nullptr, &w, RA2ONLY)) { r.ok = true; r.hit = w + ":" + b + e; return r; }
     }
     return r;
 }
@@ -326,7 +327,7 @@ int main(int argc, char** argv) {
             } else r = clone_voxel(id);
         } else if (akind == "BUILDING") {
             if (ctx == "campaign") r = clone_bld_campaign(id);
-            else if (ctx == "buildable") r = clone_bld_chain(id, ch);
+            else if (ctx == "buildable") { RA2ONLY = true; r = clone_bld_chain(id, ch); RA2ONLY = false; }
             else {
                 // skirmish [Structures]: roster/garrisonable -> chain .shp; else PresMap civ dressing
                 r = clone_bld_chain(id, ch);
