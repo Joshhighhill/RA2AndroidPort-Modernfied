@@ -1496,6 +1496,21 @@ public:
     double garrison_range(int b_idx) const;                  // cells
     struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind; int building; int house; };
     std::vector<GarrisonEvent> take_garrison_events();
+    // W2-CA-01 [RE: FUN_00519449 raises event 1 EnteredBy on the TARGET
+    // building's tag at every "infantry arrived into a building" site
+    // (capture, repair, infiltrate, occupy, bridge hut), then 48 on the
+    // consumed infantry]. Recorded only once a consumer opted in (the
+    // campaign runtime), so no other mode ever accumulates them.
+    struct EnteredEvent {
+        enum Kind { Capture, Repair, Infiltrate, Occupy, BridgeHut } kind;
+        int unit; int building; int house; bool consumed;
+    };
+    void set_track_entered(bool on) { track_entered_ = on; }
+    std::vector<EnteredEvent> take_entered_events() {
+        std::vector<EnteredEvent> out;
+        out.swap(entered_events_);
+        return out;
+    }
     // Bridges. `overlay` = per-cell RUNTIME overlay index (-1 none), `tile_land`
     // = the cells' tile land types BEFORE overlay overrides (y*grid_w+x).
     void set_bridges(std::vector<int> overlay, std::vector<ra2assets::LandType> tile_land);
@@ -1822,6 +1837,11 @@ private:
     bool garrison_any_ = false;                    // an occupy order was ever given
     long long garrison_shots_ = 0;                 // shots fired out of garrisons
     std::vector<GarrisonEvent> garrison_events_;
+    std::vector<EnteredEvent> entered_events_;   // W2-CA-01 (campaign only)
+    bool track_entered_ = false;
+    void note_entered(EnteredEvent::Kind k, int ui, int bi, int house, bool consumed) {
+        if (track_entered_) entered_events_.push_back({k, ui, bi, house, consumed});
+    }
     std::vector<std::int16_t> bridge_ovl_;         // current runtime overlay per cell (-1)
     std::vector<std::uint8_t> bridge_tile_land_;   // the tile's LandType under each cell
     std::uint32_t bridge_version_ = 0;

@@ -166,6 +166,8 @@ public:
     virtual int house_buildings(int ht) const = 0;
     virtual int house_vehicles(int ht) const = 0;
     virtual int house_infantry(int ht) const = 0;
+    // W2-CA-06: live naval units of the house (a subset of house_vehicles).
+    virtual int house_naval_units(int ht) const { (void)ht; return 0; }
     virtual int house_building_type_count(int ht, int building_type) const = 0;
     virtual long house_credits(int ht) const { (void)ht; return 0; }
     // Power output/drain ratio (>= 1.0 = full power; no drain -> 1.0).

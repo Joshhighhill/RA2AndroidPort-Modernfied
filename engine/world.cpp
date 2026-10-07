@@ -1971,6 +1971,7 @@ void World::step_capture(double dt) {
                     // the hut itself is never captured.
                     repair_bridge_near(bi);
                     consumed = true;
+                    note_entered(EnteredEvent::BridgeHut, (int)i, bi, eng_house, true);
                 } else if (!are_allied(eng_house, b.house)) {
                     // Capture ENEMY *and NEUTRAL* buildings (neutral is not an
                     // enemy but IS capturable -- the oil-derrick case); own/ally
@@ -1982,9 +1983,12 @@ void World::step_capture(double dt) {
                     const int startup = (b.type >= 0 && b.type < (int)types_.size())
                                             ? types_[b.type].produce_cash_startup : 0;
                     consumed = capture_building(bi, eng_house, startup);         // enemy/neutral
+                    if (consumed) note_entered(EnteredEvent::Capture, (int)i, bi, eng_house, true);
                 }
-                else
+                else {
                     consumed = repair_building(bi, eng_house);                   // own damaged
+                    if (consumed) note_entered(EnteredEvent::Repair, (int)i, bi, eng_house, true);
+                }
                 u.capture_target = -1;             // intent resolved on arrival regardless
                 if (consumed) consume_unit(static_cast<int>(i));  // engineer always consumed
                 // own-undamaged building -> repair_building returned false: the
@@ -2033,6 +2037,7 @@ void World::step_capture(double dt) {
                                                        u.infiltrate_steal_pct,
                                                        u.infiltrate_blackout);
                 u.infiltrate_target = -1;          // intent resolved on arrival regardless
+                if (acted) note_entered(EnteredEvent::Infiltrate, (int)i, bi, spy_house, true);
                 if (acted) consume_unit(static_cast<int>(i));   // spy consumed on success
                 // self-spy / no-op -> infiltrate_building returned false: the spy
                 // arrived, did nothing, NOT consumed (graceful fall-through).

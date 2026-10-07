@@ -77,7 +77,7 @@ bool state_b(int k) {   // FUN_0071ec60
 bool unimplemented_event(int k) {
     switch (k) {
     case 3: case 5: case 18: case 23: case 34: case 35: case 45: case 46:
-    case 53: case 54: case 55: case 56:
+    case 53: case 54:
         return true;
     default:
         return false;
@@ -730,6 +730,16 @@ bool MapTriggerSystem::has_occurred(int type, int ev_idx, int kind, int trig_hou
     case kEvDestroyedAll:
         if (host.house_buildings(vh) > 0 || host.house_vehicles(vh) > 0 ||
             host.house_infantry(vh) > 0)
+            return false;
+        break;
+    // W2-CA-06 [RE p9out tev0_0071dbe0.c case 0x37/0x38]: 55 = the house's
+    // naval unit count (+0x2EC) <= 0; 56 = land vehicles (units +0x2E8 minus
+    // naval +0x2EC) <= 0 and infantry (+0x2F4) <= 0.
+    case kEvDestroyedUnitsNaval:
+        if (host.house_naval_units(vh) > 0) return false;
+        break;
+    case kEvDestroyedUnitsLand:
+        if (host.house_vehicles(vh) - host.house_naval_units(vh) > 0 || host.house_infantry(vh) > 0)
             return false;
         break;
     case kEvLowPower:

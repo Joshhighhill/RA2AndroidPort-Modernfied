@@ -353,6 +353,7 @@ MapTeamData parse_map_teams(const ra2assets::Ini& map) {
         t.waypoint = wp.empty() ? -1 : map_waypoint_letters(wp);
         t.max = map.get_int(id, "Max", 0);
         t.full = yes(map.get(id, "Full", "no"));
+        t.recruitable = yes(map.get(id, "AreTeamMembersRecruitable", "no"));
         t.veteran_level = map.get_int(id, "VeteranLevel", 0);
         d.teams.push_back(t);
     }

@@ -3631,6 +3631,7 @@ TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on 
                                       /*armor_ix=*/0, 0.0, /*instant=*/true);   // enemy building
     REQUIRE(bi >= 0);
     world.units()[0].selected = true;
+    world.set_track_entered(true);   // W2-CA-01 campaign opt-in
     world.order_engineer_capture(0, bi);
     // Order recorded; NOTHING happens on the same frame the order is issued.
     CHECK(world.units()[0].capture_target == bi);
@@ -3646,6 +3647,15 @@ TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on 
     CHECK(world.buildings()[bi].house == 0);                    // captured -> house 0
     CHECK_FALSE(world.units()[0].alive);                        // engineer consumed on arrival
     CHECK(world.units()[0].capture_target == -1);               // intent cleared
+    // W2-CA-01: exactly one EnteredBy record (capture, consumed engineer).
+    const auto ev = world.take_entered_events();
+    REQUIRE(ev.size() == 1);
+    CHECK(ev[0].kind == ra2engine::World::EnteredEvent::Capture);
+    CHECK(ev[0].unit == 0);
+    CHECK(ev[0].building == bi);
+    CHECK(ev[0].house == 0);
+    CHECK(ev[0].consumed);
+    CHECK(world.take_entered_events().empty());
 }
 
 TEST_CASE("World spy infiltrate: a DISTANT order defers -- the effect (cash steal) happens on "

@@ -525,7 +525,11 @@ private:
             const std::string& hn = house_names_[i];
             const std::string country = camp::trim_comment(map_.get(hn, "Country", ""));
             house_type_of_.push_back(data_.find_house_type(country));
-            const std::string side = camp::up(camp::trim_comment(map_.get(country, "Side", "")));
+            // W2-CA-05: [<Country>] Side= from the map, else from RA2 rules.ini
+            // [Countries] sections (the standard countries live there; the map
+            // only adds countries) [campaign.md §6].
+            std::string side = camp::up(camp::trim_comment(map_.get(country, "Side", "")));
+            if (side.empty()) side = camp::up(camp::trim_comment(ra2_rules_.get(country, "Side", "")));
             ra2engine::World::HouseRec rec;
             rec.side = side == "GDI" ? ra2engine::World::Side::Allied
                      : side == "NOD" ? ra2engine::World::Side::Soviet
@@ -819,8 +823,38 @@ private:
             if (ct.x == x && sys_->raise_cell(ct.x, ct.y, ra2engine::kEvCrossesVerticalLine, c, host_)) ++raises_;
         }
     }
+    // W2-CA-01 [RE: FUN_00519449 @0x519545/0x5195AB/0x51982E/0x519973/
+    // 0x519D2C/0x51A052/0x51A304]: an infantry arriving INTO a building
+    // raises 1 EnteredBy on the building's tag with the infantry as the
+    // object; the consumed infantry then raises 48 on its own tag
+    // (@0x5196B4/0x519E0D) -- not 7/29, and it is not a loss.
+    // [RE-FALLBACK: no SpiedBy (2) RaiseEvent site was found in the infantry
+    // handler; 2 is raised on infiltration beside 1 as the event's name says.]
+    void poll_entered() {
+        w_.set_track_entered(true);
+        for (const ra2engine::World::EnteredEvent& e : w_.take_entered_events()) {
+            if (e.building >= 0 && e.building < (int)btrack_.size()) {
+                Track& bt = btrack_[(std::size_t)e.building];
+                raise_obj(bt, ra2engine::kEvEnteredBy, e.house);
+                if (e.kind == ra2engine::World::EnteredEvent::Infiltrate)
+                    raise_obj(bt, ra2engine::kEvSpiedBy, e.house);
+                char b[120];
+                std::snprintf(b, sizeof b, "[camp] f%ld entered kind=%d unit=%d building=%d %s house=%d",
+                              frame_, (int)e.kind, e.unit, e.building, bt.type.c_str(), e.house);
+                witness_.emplace_back(b);
+            }
+            if (e.consumed && e.unit >= 0 && e.unit < (int)utrack_.size()) {
+                Track& ut = utrack_[(std::size_t)e.unit];
+                if (ut.dead) continue;
+                ut.dead = true;
+                raise_obj(ut, ra2engine::kEvDestroyedByAnything, e.house);
+                if (ut.tag >= 0) { sys_->detach_tag(ut.tag); ut.tag = -1; }
+            }
+        }
+    }
     void poll_objects() {
         sync_tracks();
+        poll_entered();
         for (std::size_t i = 0; i < utrack_.size(); ++i) {
             Track& t = utrack_[i];
             if (t.dead) continue;
@@ -908,18 +942,39 @@ private:
         bool any = false;
         for (std::size_t i = 0; i < utrack_.size(); ++i) {
             Track& t = utrack_[i];
-            if (t.dead || t.team >= 0) continue;
+            if (t.dead) continue;
+            // W2-CA-09 [ai-team.md §2]: a unit is free when it has no team, its
+            // team is finished, or its TeamType says AreTeamMembersRecruitable.
+            if (t.team >= 0 && !member_recruitable(t.team, &tm)) continue;
             const ra2engine::Unit& u = w_.units()[i];
-            if (!live(u) || u.house != tm.house || u.moving()) continue;
+            if (!live(u) || u.house != tm.house) continue;
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (need[k] > 0 && t.type == types[k]) {
                     --need[k];
+                    if (t.team >= 0) {   // leave the old team
+                        std::vector<int>& om = teams_[(std::size_t)t.team].members;
+                        om.erase(std::remove(om.begin(), om.end(), (int)i), om.end());
+                        t.team = -1;
+                    }
                     tm.members.push_back((int)i);
                     any = true;
                     break;
                 }
         }
         return any;
+    }
+    bool member_recruitable(int team_ix, const Team* self) const {
+        if (team_ix < 0 || team_ix >= (int)teams_.size()) return true;
+        const Team& o = teams_[(std::size_t)team_ix];
+        if (&o == self) return false;
+        if (o.st.done) return true;
+        return o.type >= 0 && teams_data_.teams[(std::size_t)o.type].recruitable;
+    }
+    // W2-CA-09: a finished team lets its members go.
+    void release_team(Team& tm, int team_idx) {
+        for (int m : tm.members)
+            if (utrack_[(std::size_t)m].team == team_idx) utrack_[(std::size_t)m].team = -1;
+        tm.members.clear();
     }
     void adopt(Team& tm, int team_idx) {
         for (int m : tm.members) utrack_[(std::size_t)m].team = team_idx;
@@ -998,7 +1053,7 @@ private:
     void step_teams() {
         for (std::size_t ti = 0; ti < teams_.size(); ++ti) {
             Team& tm = teams_[ti];
-            if (tm.st.done) continue;
+            if (tm.st.done) { if (!tm.members.empty()) release_team(tm, (int)ti); continue; }
             // Prune dead members.
             std::vector<int> live_m;
             for (int m : tm.members)
@@ -1188,6 +1243,13 @@ private:
             int n = 0;
             for (const ra2engine::Unit& u : rt.w_.units())
                 if (live(u) && u.house == eh && (u.is_vehicle || u.is_naval) && !u.is_aircraft) ++n;
+            return n;
+        }
+        int house_naval_units(int ht) const override {
+            const int eh = rt.engine_house(ht);
+            int n = 0;
+            for (const ra2engine::Unit& u : rt.w_.units())
+                if (live(u) && u.house == eh && u.is_naval && !u.is_aircraft) ++n;
             return n;
         }
         int house_infantry(int ht) const override {

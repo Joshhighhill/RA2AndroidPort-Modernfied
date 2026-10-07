@@ -153,6 +153,7 @@ struct MapTeamType {
     int waypoint = -1;        // Waypoint= letter code
     int max = 0;
     bool full = false;
+    bool recruitable = false;   // AreTeamMembersRecruitable= (W2-CA-09)
     int veteran_level = 0;
 };
 struct MapTeamData {
