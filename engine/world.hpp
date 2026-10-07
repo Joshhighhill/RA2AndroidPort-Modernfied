@@ -1637,6 +1637,8 @@ private:
     bool ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat);
     // W2-SK-06: how many more of unit type `ut` the team's TaskForce owes.
     static int ai_team_need(const TeamInstance& t, const AimdData& aimd, int ut);
+    int ai_team_transport(const TeamInstance& t) const;        // W2-SK-09
+    InfiltratePurpose ai_infiltrate_purpose(int b_idx) const;  // W2-SK-09
 
     // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
     void ai_fill_trigger_view(int house, const HouseAiRec& rec, TriggerView& v) const;

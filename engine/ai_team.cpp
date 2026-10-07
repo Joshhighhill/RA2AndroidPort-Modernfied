@@ -27,6 +27,10 @@ OpClass classify_op(int action) {
         case kSaScatter:              return OpClass::Scatter;
         case kSaJump:                 return OpClass::Jump;
         case kSaSuccess:              return OpClass::Success;
+        case kSaLoad:                 return OpClass::Load;         // W2-SK-09
+        case kSaWaitLoaded:           return OpClass::WaitLoaded;   // W2-SK-09
+        case kSaUnload:               return OpClass::Unload;       // W2-SK-09
+        case kSaDeploy:               return OpClass::Deploy;       // W2-SK-10
         default:                      return OpClass::Inert;
     }
 }
@@ -291,6 +295,27 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                     advance();
                     return c;
                 }
+                // W2-SK-09/10 [RE: script_actions.hpp 14 FUN_006EC760 load,
+                // 43 wait-until-loaded, 8 FUN_006EE670 unload, 9 FUN_006ECA30
+                // deploy]: the caller fans the order out; 43 holds the line
+                // until everyone is aboard [RE-FALLBACK: 60 s cap].
+                case OpClass::Load:
+                    c.kind = TeamCommand::Kind::Load;
+                    advance();
+                    return c;
+                case OpClass::Unload:
+                    c.kind = TeamCommand::Kind::Unload;
+                    advance();
+                    return c;
+                case OpClass::Deploy:
+                    c.kind = TeamCommand::Kind::Deploy;
+                    advance();
+                    return c;
+                case OpClass::WaitLoaded:
+                    team.script_timer += dt * 15.0;
+                    if (view.all_loaded || team.script_timer >= 900.0) advance();
+                    else c.kind = TeamCommand::Kind::Wait;
+                    return c;
                 case OpClass::Inert:
                 default: {
                     // Valid-but-unimplemented action: logged skip, pc++.

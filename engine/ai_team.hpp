@@ -96,7 +96,8 @@ constexpr int kQuarryBaseThreats = kQuarryThreats;
 enum class OpClass {
     AttackQuarry, AttackBuilding, MoveWaypoint, MoveCell, MoveEnemyBuilding,
     MoveFriendlyBuilding, GatherEnemy, RegroupBase, TimedGuard, DoMission,
-    Scatter, Jump, Success, Inert
+    Scatter, Jump, Success, Inert,
+    Load, WaitLoaded, Unload, Deploy   // W2-SK-09/10: 14 / 43 / 8 / 9
 };
 OpClass classify_op(int action);  // [G-61: the 0..64 executor table]
 
@@ -125,12 +126,16 @@ struct TeamView {
     // buildings and reports the chosen building's cell here.
     bool building_found = false;
     int building_x = 0, building_y = 0;
+    // W2-SK-09: every non-transport live member is aboard the team's
+    // transport (true when the team has no transport).
+    bool all_loaded = true;
 };
 
 // One command per team per tick; the caller fans it out per member
 // [RE: ai-team.md §3 — spec §3's opcode-class -> command table].
 struct TeamCommand {
-    enum class Kind { None, MoveTeam, AttackQuarry, GuardArea, Wait, Inert };
+    enum class Kind { None, MoveTeam, AttackQuarry, GuardArea, Wait, Inert,
+                      Load, Unload, Deploy };   // W2-SK-09/10
     Kind kind = Kind::None;
     int x = 0, y = 0;      // MoveTeam goal / GuardArea center
     int radius = 0;        // GuardArea radius (kAiGatherRadius)

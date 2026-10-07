@@ -20,7 +20,7 @@ struct AiSoakProbe {
     static const BuildingAssets& ba(GameScene& g) { return g.ba_; }
 
     static int run(int argc, char** argv) {
-        int minutes = 15, damage_ai_at = -1;
+        int minutes = 15, damage_ai_at = -1, kill_cy_at = -1;
         ra2engine::AiDifficulty diff = ra2engine::AiDifficulty::Normal;
         bool ai_allied = false, ai_vs_ai = false;
         std::string map_file = "xmp31s2.map", png;   // the --probe-realplay menu map
@@ -38,6 +38,7 @@ struct AiSoakProbe {
             else if (a == "--damage-ai-at") damage_ai_at = std::atoi(next().c_str());
             else if (a == "--png") png = next();
             else if (a == "--ai-vs-ai") ai_vs_ai = true;   // house 0 is an AI too
+            else if (a == "--kill-ai-conyard-at") kill_cy_at = std::atoi(next().c_str());   // W2-SK-07 probe
         }
         const std::string dir = env_install_dir();
         Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -85,6 +86,15 @@ struct AiSoakProbe {
                     }
                 std::cout << "[ai-soak] probe: AI buildings halved at min " << damage_ai_at
                           << " ai_base_hp=" << t << "\n";
+            }
+            if (kill_cy_at >= 0 && f == (long long)kill_cy_at * 900) {   // W2-SK-07: destroy the AI ConYard(s)
+                for (int bi = 0; bi < (int)w.buildings().size(); ++bi) {
+                    const ra2engine::Building& b = w.buildings()[(std::size_t)bi];
+                    if (b.alive && b.house == ai && b.state != ra2engine::Building::State::Dead && b.type >= 0 &&
+                        b.type < (int)b_a.roster.size() && b_a.roster[b.type].conyard)
+                        w.campaign_damage_building(bi, b.hp + 1);
+                }
+                std::cout << "[ai-soak] probe: AI ConYard destroyed at min " << kill_cy_at << "\n";
             }
             const bool ready_before = w.sw_ready(ai);
             g.update(1.0 / 15.0);
@@ -136,13 +146,32 @@ struct AiSoakProbe {
                               << " mine_spawned=" << mined;
                     for (int h = 0; h < w.house_count(); ++h) {
                         if (!w.house_combatant(h)) continue;
-                        int st[8] = {0};
-                        for (const ra2engine::Unit& u : w.units())
+                        int st[8] = {0}, alive_h = 0, bld_h = 0;
+                        for (const ra2engine::Unit& u : w.units()) {
                             if (u.alive && u.house == h && u.is_harvester) ++st[std::min(7, (int)u.harv)];
-                        std::cout << " h" << h << "{cr=" << (long long)(w.ai_enabled(h) ? w.ai_credits(h) : g.player_credits_)
+                            if (u.alive && u.die_time < 0.0 && u.house == h && !u.is_harvester) ++alive_h;
+                        }
+                        for (const ra2engine::Building& b : w.buildings())
+                            if (b.alive && b.house == h && b.state != ra2engine::Building::State::Dead) ++bld_h;
+                        std::cout << " h" << h << "{u=" << alive_h << " b=" << bld_h << " cr=" << (long long)(w.ai_enabled(h) ? w.ai_credits(h) : g.player_credits_)
                                   << " harv=" << st[1] << "/" << st[2] << "/" << st[3] << "/" << st[4] << "/"
                                   << st[5] << "/" << st[6] << "}";
                     }
+                }
+                {   // W2-SK-09/10 witnesses: special infantry, deploys, transports, captures
+                    int eng = 0, spy = 0, dep = 0, aboard = 0, techs = 0;
+                    for (const ra2engine::Unit& u : w.units()) {
+                        if (!u.alive || u.die_time >= 0.0 || u.house != ai) continue;
+                        if (u.image == "ENGINEER") ++eng;
+                        if (u.image == "SPY") ++spy;
+                        if (u.deployed) ++dep;
+                        if (u.cargo_of >= 0) ++aboard;
+                    }
+                    for (const ra2engine::Building& b : w.buildings())
+                        if (b.alive && b.house == ai && b.type >= 0 && b.type < (int)b_a.roster.size() &&
+                            b_a.roster[b.type].produce_cash_amount > 0) ++techs;
+                    std::cout << " ai_eng=" << eng << " ai_spy=" << spy << " ai_deployed=" << dep
+                              << " ai_aboard=" << aboard << " ai_tech=" << techs << " ai_enemy=" << w.ai_enemy_house(ai);
                 }
                 std::cout << "  [";
                 for (const auto& kv : types) std::cout << kv.first << "x" << kv.second << " ";
@@ -150,7 +179,8 @@ struct AiSoakProbe {
             }
         }
         const auto hp1 = base_hp(human);
-        if (const ra2engine::AiTeamState* ts = w.ai_team_state(ai)) {   // where are the teams?
+        for (int ai_h = 0; ai_h < w.house_count(); ++ai_h)   // W2-SK: every AI house
+        if (const ra2engine::AiTeamState* ts = w.ai_team_state(ai_h)) {   // where are the teams?
             int hx = -1, hy = -1;
             for (const ra2engine::Building& b : w.buildings())
                 if (hx < 0 && b.house == human && b.alive) { hx = b.cx; hy = b.cy; }
@@ -160,9 +190,9 @@ struct AiSoakProbe {
                     if (m >= 0 && m < (int)w.units().size() && w.units()[m].alive) {
                         sx += w.units()[m].cell_x; sy += w.units()[m].cell_y; ++n;
                     }
-                std::cout << "[ai-soak] team tt=" << t.teamtype << " state=" << (int)t.state
+                std::cout << "[ai-soak] team h" << ai_h << " tt=" << t.teamtype << " state=" << (int)t.state
                           << " pc=" << t.script_pc << " members=" << n;
-                if (const ra2engine::AiHouseConfig* hc = w.ai_config(ai)) {
+                if (const ra2engine::AiHouseConfig* hc = w.ai_config(ai_h)) {
                     const ra2engine::AimdData& d = hc->team.aimd;
                     if (t.teamtype >= 0 && t.teamtype < (int)d.teams.size()) {
                         const ra2engine::ScriptType& sc = d.scripts[d.teams[t.teamtype].script];

@@ -280,17 +280,16 @@ TEST_CASE("ai_team: timed-guard holds for arg x 15 frames then advances") {
     CHECK(t.script_pc == 3);
 }
 
-TEST_CASE("ai_team: inert opcode is a logged skip that advances the pc") {
+TEST_CASE("ai_team: load opcode emits Load and advances the pc (W2-SK-09)") {
     AimdData d = make_aimd();
     TeamInstance t = make_team();
     std::uint32_t rng = 1u;
     claim_full(t);
     t.state = TeamState::Executing;
-    t.script_pc = 3;                             // action 14 (load onto transport) -> Inert
+    t.script_pc = 3;                             // action 14 (load onto transport)
     TeamView v = full_view(true);
     const TeamCommand c = step_team(t, v, d, rng, kDt);
-    CHECK(c.kind == TeamCommand::Kind::Inert);
-    CHECK(c.opcode == kSaLoad);                  // [RE: ai-team.md §3; script_actions.hpp]
+    CHECK(c.kind == TeamCommand::Kind::Load);    // W2-SK-09: no longer inert
     CHECK(t.script_pc == 4);
 }
 
@@ -696,8 +695,13 @@ TEST_CASE("ai_team: classify_op follows the 0x6E94E4 executor table") {
     CHECK(classify_op(53) == OpClass::GatherEnemy);
     CHECK(classify_op(54) == OpClass::RegroupBase);
     CHECK(classify_op(58) == OpClass::MoveFriendlyBuilding);
-    // Transport / superweapon / berserk / removal / out-of-table -> Inert.
-    for (int op : {2, 8, 9, 12, 14, 43, 55, 57, 60, 63, 64, 65, 0x90})
+    // W2-SK-09/10: transport load / wait / unload and deploy are live.
+    CHECK(classify_op(14) == OpClass::Load);
+    CHECK(classify_op(43) == OpClass::WaitLoaded);
+    CHECK(classify_op(8) == OpClass::Unload);
+    CHECK(classify_op(9) == OpClass::Deploy);
+    // Superweapon / berserk / removal / out-of-table -> Inert.
+    for (int op : {2, 12, 55, 57, 60, 63, 64, 65, 0x90})
         CHECK(classify_op(op) == OpClass::Inert);
     // Quarry enum is YRpp QuarryType (1-based "Anything").
     CHECK(kQuarryAnything == 1);
