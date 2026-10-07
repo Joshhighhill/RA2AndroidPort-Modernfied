@@ -3235,6 +3235,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
+    if (g_fx) g_fx->draw(ren, tc, cam, W, H, 0);   // W3-B Flat / ground-layer anims under objects
     const std::vector<ra2engine::Unit>& us = world.units();
     // Hull sprite width for a vehicle unit (0 for infantry) -- sizes the
     // selection diamond + HP bar to the wider voxel sprite.

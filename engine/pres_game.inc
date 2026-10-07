@@ -126,6 +126,7 @@ public:
         building_events(w, ba);
         building_anim_events(w, ba);   // W2-GA-14
         if (ba.ok) unit_pal_ = &ba.unit_pal;
+        if (ba.ok) fx_.set_unit_palette(&ba.unit_pal, &w);   // W3-B AltPalette base
         unit_audio(w, act);
         for (const auto& e : vet) {
             if (e.unit < 0 || e.unit >= static_cast<int>(w.units().size())) continue;

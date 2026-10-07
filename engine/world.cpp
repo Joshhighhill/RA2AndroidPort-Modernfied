@@ -338,9 +338,16 @@ ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_i
         {131, 200, 230},  // 6 DarkSky
         { 81, 200, 210},  // 7 DarkGreen
     };
-    const double hue  = kHsv[color_ix][0] / 255.0;   // 0..1
-    const double sat  = kHsv[color_ix][1] / 255.0;   // 0..1
-    const double vtop = kHsv[color_ix][2] / 255.0;   // color's nominal ceiling
+    return pal_for_hsv(unit_pal, kHsv[color_ix][0], kHsv[color_ix][1], kHsv[color_ix][2]);
+}
+
+// W3-B: the same remap from an explicit RA2 HSV triple (rules [Colors]), e.g.
+// ColorSchemes[0] LightGold=25,255,255 for AltPalette anims with no owner.
+ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s, int v) {
+    ra2assets::Palette out = unit_pal;
+    const double hue  = h / 255.0;   // 0..1
+    const double sat  = s / 255.0;   // 0..1
+    const double vtop = v / 255.0;   // color's nominal ceiling
     auto clamp_u8 = [](double v) -> std::uint8_t {
         const int i = static_cast<int>(v + 0.5);
         if (i < 0) return 0;

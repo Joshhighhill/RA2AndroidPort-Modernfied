@@ -14,8 +14,20 @@ struct FxAnimType {
     std::string name;
     std::shared_ptr<ra2assets::ShpFile> shp;
     int frames = 0;            // image frames (half the SHP when Shadow=yes)
-    bool translucent = false;  // Translucent=yes -> 50 % blend
-    std::string report;        // Report= sound event
+    // W3-B AnimClass draw keys [RE: AnimTypeClass INI FUN_00427c80 + draw
+    // FUN_00422cc0]: Translucent=yes FADES over the anim's life (frame >
+    // 0.2/0.4/0.6 x End -> 25/50/75 % translucent); Translucency=25/50/75 is
+    // a fixed level; Shadow=yes draws frame + SHP/2 as a 50 % darken under
+    // the body; Flat=yes / Layer=underground|surface draw on the ground under
+    // every object; AltPalette=yes draws through a house colour-scheme convert
+    // of the theater unit palette (the owner's, else scheme 0 LightGold).
+    bool translucent = false;  // Translucent=yes (life fade)
+    int translucency = 0;      // Translucency=25/50/75 (0 = opaque)
+    bool shadow = false;       // Shadow=yes
+    bool flat = false;         // Flat=yes or Layer=underground/surface
+    bool altpal = false;       // AltPalette=yes
+    int rand_min = 0, rand_max = 0;   // RandomRate=a,b as delays (900/x), 0 = unset
+    std::string report;        // StartSound= (wins), else Report= sound event
     std::string next;          // Next= chained anim
     bool crater = false, scorch = false;   // W2-GA-15 Crater=/Scorch= (leave a smudge)
     // [RE: presentation.md §5] Rate= stores 900/Rate game frames per anim
@@ -26,9 +38,10 @@ struct FxAnimType {
     int delay = 1;
     int start = 0, end = 0, loop_start = 0, loop_end = 0, loops = 1;
     // Anim frame for game-frame tick 	, or -1 once finished.
-    int frame_at(long t) const {
-        if (delay <= 0) return start;
-        long step = t / delay;
+    int frame_at(long t) const { return frame_at(t, delay); }
+    int frame_at(long t, int dly) const {
+        if (dly <= 0) return start;
+        long step = t / dly;
         const long first = loop_end - start;          // first pass to LoopEnd
         const long mid = loop_end - loop_start;       // each middle pass
         if (loops <= 1) return step < end - start ? static_cast<int>(start + step) : -1;
@@ -68,6 +81,8 @@ public:
         double lift_px = 0;      // screen-space height above the ground point
         long age = 0;            // W3-B: logic ticks since spawn (was wall-clock seconds)
         double ox_px = 0;        // extra screen-x offset (FLH muzzle point)
+        int house = -1;          // W3-B owner (AltPalette remap), -1 none
+        int delay = 1;           // W3-B per-instance delay (RandomRate), else the type's
     };
 
     void init(const std::string& dir, const ra2assets::MixFile& ra2, const Ini& rules_ini,
@@ -363,8 +378,28 @@ public:
         t.shp = shp;
         const bool shadow = pres_lower(aget(key, "Shadow")).rfind("y", 0) == 0;
         t.frames = shadow ? std::max(1, shp->count() / 2) : shp->count();
-        t.translucent = pres_lower(aget(key, "Translucent")).rfind("y", 0) == 0;
-        t.report = aget(key, "Report");
+        auto yes = [&](const char* k) {
+            const std::string v = pres_lower(aget(key, k));
+            return v.rfind("y", 0) == 0 || v.rfind("t", 0) == 0 || v == "1";
+        };
+        t.translucent = yes("Translucent");
+        t.translucency = std::atoi(aget(key, "Translucency").c_str());
+        t.shadow = shadow;
+        const std::string layer = pres_lower(aget(key, "Layer"));
+        t.flat = yes("Flat") || layer == "underground" || layer == "surface";
+        t.altpal = yes("AltPalette");
+        t.report = aget(key, "StartSound");
+        if (t.report.empty()) t.report = aget(key, "Report");
+        {   // RandomRate=a,b [RE: presentation.md §5]: each 900/x, min <= max.
+            const std::string rr = aget(key, "RandomRate");
+            const std::size_t c = rr.find(',');
+            if (c != std::string::npos) {
+                const int a = std::atoi(rr.c_str()), b = std::atoi(rr.c_str() + c + 1);
+                int da = a > 0 ? (a > 900 ? 0 : 900 / a) : 0, db = b > 0 ? (b > 900 ? 0 : 900 / b) : 0;
+                if (da > db) std::swap(da, db);
+                if (da > 0 || db > 0) { t.rand_min = std::max(1, da); t.rand_max = std::max(t.rand_min, db); }
+            }
+        }
         auto num = [&](const char* k, int d) {
             const std::string v = aget(key, k);
             return v.empty() ? d : std::atoi(v.c_str());
@@ -391,10 +426,10 @@ public:
 
     // Spawns `name` at a cell-space point; returns the type (for the Report).
     const FxAnimType* spawn(const std::string& name, double fx, double fy, int level, double lift_px,
-                            double ox_px = 0.0) {
+                            double ox_px = 0.0, int house = -1) {
         const FxAnimType* t = type(name);
         if (!t || t->frames <= 0) return nullptr;
-        anims_.push_back(Anim{t, fx, fy, level, lift_px, 0, ox_px});
+        anims_.push_back(Anim{t, fx, fy, level, lift_px, 0, ox_px, house, instance_delay(*t)});
         if ((t->crater || t->scorch) && g_smudge_hook && lift_px < 30.0) g_smudge_hook(t->crater, fx, fy);
         return t;
     }
@@ -410,30 +445,101 @@ public:
         std::vector<Anim> next;
         for (Anim& a : anims_) {
             ++a.age;
-            if (a.t->frame_at(a.age) >= 0) continue;
+            if (a.t->frame_at(a.age, a.delay) >= 0) continue;
             if (!a.t->next.empty())
-                if (const FxAnimType* n = type(a.t->next)) next.push_back(Anim{n, a.sx, a.sy, a.level, a.lift_px, 0, a.ox_px});
+                if (const FxAnimType* n = type(a.t->next))
+                    next.push_back(Anim{n, a.sx, a.sy, a.level, a.lift_px, 0, a.ox_px, a.house, instance_delay(*n)});
             a.t = nullptr;
         }
         anims_.erase(std::remove_if(anims_.begin(), anims_.end(), [](const Anim& a) { return !a.t; }),
                      anims_.end());
         anims_.insert(anims_.end(), next.begin(), next.end());
     }
+    // pass 0: Flat / ground-layer anims, drawn after the ground overlays and
+    // before every object; pass 1 (default): the rest, over the objects
+    // [RE-FALLBACK: Ground-layer anims are depth-sorted with objects in the
+    // original (W2-GA-17 open); the clone draws them after the objects].
     void draw(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Camera& cam, int W,
-              int H) {
+              int H, int pass = 1) {
         for (const Anim& a : anims_) {
-            const int fr = a.t->frame_at(a.age);
+            if (a.t->flat != (pass == 0)) continue;
+            const int fr = a.t->frame_at(a.age, a.delay);
             if (fr < 0) continue;
             const int cx = static_cast<int>(std::lround((a.sx - a.sy) * 30.0 + a.ox_px)) + cam.x + 30;
             const int cy = static_cast<int>(std::lround((a.sx + a.sy) * 15.0 - a.level * 15 - a.lift_px)) +
                            cam.y + 15;
-            blit(ren, tc, *a.t->shp, "fx:" + a.t->name, fr, cx, cy, a.t->translucent, W, H);
+            draw_anim_frame(ren, tc, *a.t, fr, cx, cy, W, H, a.t->altpal ? alt_palette(a.house) : nullptr,
+                            a.t->altpal ? ":h" + std::to_string(a.house) : std::string());
         }
-        draw_beams(ren, cam);   // W2-GA-15
+        if (pass == 1) draw_beams(ren, cam);   // W2-GA-15
     }
-    // Centered SHP frame blit with anim.pal (translucent -> 50 %).
+    // W3-B: one anim frame with its Shadow (darken, under the body) and its
+    // translucency; `pal` overrides anim.pal (AltPalette / building convert).
+    void draw_anim_frame(SDL_Renderer* ren, ra2engine::TextureCache& tc, const FxAnimType& t, int fr, int cx,
+                         int cy, int W, int H, const ra2assets::Palette* pal = nullptr,
+                         const std::string& tag_extra = std::string()) {
+        if (t.shadow) blit_shadow(ren, tc, *t.shp, "fxs:" + t.name, fr + t.shp->count() / 2, cx, cy, W, H);
+        blit(ren, tc, *t.shp, "fx:" + t.name + tag_extra, fr, cx, cy, alpha_for(t, fr), W, H, pal);
+    }
+    // [RE: FUN_00422cc0] Translucency=25/50/75 -> BlitterFlags 2/4/6;
+    // Translucent=yes -> by life: frame > 0.6 End -> 6, > 0.4 -> 4, > 0.2 -> 2.
+    // Flag 2/4/6 = 25/50/75 % translucent -> alpha 191/128/64.
+    static int alpha_for(const FxAnimType& t, int fr) {
+        int lvl = 0;
+        if (t.translucent) {
+            const double e = t.end;
+            lvl = fr > e * 0.6 ? 3 : fr > e * 0.4 ? 2 : fr > e * 0.2 ? 1 : 0;
+        } else if (t.translucency >= 75) lvl = 3;
+        else if (t.translucency >= 50) lvl = 2;
+        else if (t.translucency >= 25) lvl = 1;
+        static const int kA[4] = {255, 191, 128, 64};
+        return kA[lvl];
+    }
+    // The Shadow= half: every non-zero pixel halves the destination
+    // [RE: presentation.md §7 Darken blitter] -> black at alpha 128.
+    void blit_shadow(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::ShpFile& shp,
+                     const std::string& tag, int fr, int cx, int cy, int W, int H) {
+        if (fr < 0 || fr >= shp.count()) return;
+        const ra2assets::ShpFile::Frame f = shp.frame_info(fr);
+        if (f.w <= 0 || f.h <= 0) return;
+        SDL_Rect dst{cx - shp.width() / 2 + f.x, cy - shp.height() / 2 + f.y, f.w, f.h};
+        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) return;
+        const std::string key = tag + ":" + std::to_string(fr);
+        SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+        if (!tex) {
+            const std::vector<uint8_t> idx = shp.decode_indexed(fr);
+            std::vector<uint8_t> rgba(idx.size() * 4, 0);
+            for (std::size_t i = 0; i < idx.size(); ++i) rgba[i * 4 + 3] = idx[i] ? 128 : 0;
+            tex = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), f.w, f.h));
+        }
+        if (tex) SDL_RenderCopy(ren, tex, nullptr, &dst);
+    }
+    // AltPalette [RE: FUN_00422cc0 + RE-Q3 resolved: the anim's explicit
+    // convert (anim+0xD4, set from the owner house's ColorScheme where the
+    // spawner passes one) else ColorSchemes[0] (rules [Colors] first entry,
+    // LightGold 25,255,255)] over the theater unit palette.
+    const ra2assets::Palette* alt_palette(int house) {
+        if (!unit_pal_) return nullptr;
+        auto it = alt_pals_.find(house);
+        if (it != alt_pals_.end()) return &it->second;
+        ra2assets::Palette p = house >= 0 && world_for_pal_ ? world_for_pal_->house_palette(*unit_pal_, house)
+                                                            : ra2engine::pal_for_hsv(*unit_pal_, 25, 255, 255);
+        return &alt_pals_.emplace(house, p).first->second;
+    }
+    void set_unit_palette(const ra2assets::Palette* unit_pal, const ra2engine::World* w) {
+        if (unit_pal != unit_pal_ || w != world_for_pal_) alt_pals_.clear();
+        unit_pal_ = unit_pal;
+        world_for_pal_ = w;
+    }
+    // RandomRate: a fresh Random(min,max) delay per instance (render RNG).
+    int instance_delay(const FxAnimType& t) {
+        if (t.rand_max <= 0) return t.delay;
+        fx_rng_ = fx_rng_ * 1664525u + 1013904223u;
+        return t.rand_min + static_cast<int>((fx_rng_ >> 8) % static_cast<uint32_t>(t.rand_max - t.rand_min + 1));
+    }
+    // Centered SHP frame blit with anim.pal (`alpha` 255 = opaque).
     void blit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::ShpFile& shp,
-              const std::string& tag, int fr, int cx, int cy, bool translucent, int W, int H,
+              const std::string& tag, int fr, int cx, int cy, int alpha, int W, int H,
               const ra2assets::Palette* pal_override = nullptr) {
         if (fr < 0 || fr >= shp.count()) return;
         const ra2assets::ShpFile::Frame f = shp.frame_info(fr);
@@ -447,7 +553,7 @@ public:
             tex = static_cast<SDL_Texture*>(
                 tc.get(key, idx.data(), f.w, f.h, pal_override ? *pal_override : pal()));
         }
-        SDL_SetTextureAlphaMod(tex, translucent ? 128 : 255);
+        SDL_SetTextureAlphaMod(tex, static_cast<Uint8>(std::clamp(alpha, 0, 255)));
         SDL_RenderCopy(ren, tex, nullptr, &dst);
         SDL_SetTextureAlphaMod(tex, 255);
     }
@@ -517,6 +623,10 @@ private:
     std::map<std::string, std::vector<std::string>> explosions_;
     std::map<std::string, std::shared_ptr<ra2assets::ShpFile>> proj_shps_;
     std::vector<Anim> anims_;
+    const ra2assets::Palette* unit_pal_ = nullptr;          // W3-B AltPalette base
+    const ra2engine::World* world_for_pal_ = nullptr;
+    std::map<int, ra2assets::Palette> alt_pals_;
+    uint32_t fx_rng_ = 0x5EED1234u;                          // W3-B render-only RNG
 };
 
 PresFx* g_fx = nullptr;   // the live game's effects (GameScene); null in gates
@@ -541,7 +651,7 @@ bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
         const int n = shp->count();
         fr = static_cast<int>(std::lround((ang < 0 ? ang + 2 * 3.14159265358979 : ang) / (2 * 3.14159265358979) * n)) % n;
     }
-    g_fx->blit(ren, tc, *shp, "proj:" + w->proj_image, fr, gx, sy, false, W, H);
+    g_fx->blit(ren, tc, *shp, "proj:" + w->proj_image, fr, gx, sy, 255, W, H);
     return true;
 }
 
@@ -586,14 +696,14 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
     if (pass == 0) {
         if (a.bib && a.bib->count() > 0)
             g_fx->blit(ren, tc, *a.bib, "bib:" + image + ck, damaged && a.bib->count() > 1 ? 1 : 0, fcx,
-                       fcy, false, W, H, &pal);
+                       fcy, 255, W, H, &pal);
         // W2-GA-14: the dark interior behind an opening factory door.
         if (ev && ev->door_start >= 0)
             if (const FxAnimType* d = slot_t(a.door))
                 if (oneshot_frame(*d, ev->door_start, g_pres_tick) >= 0)
                     if (const FxAnimType* u = slot_t(a.under_door))
                         g_fx->blit(ren, tc, *u->shp, "banim:" + u->name + ck, PresFx::loop_frame(*u, g_pres_tick),
-                                   fcx + a.under_door.x, fcy + a.under_door.y, u->translucent, W, H, &pal);
+                                   fcx + a.under_door.x, fcy + a.under_door.y, PresFx::alpha_for(*u, PresFx::loop_frame(*u, g_pres_tick)), W, H, &pal);
         return;
     }
     // W2-GA-14: factory door (one shot per exiting unit) and SW charge states.
@@ -602,7 +712,7 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
             const int fr = oneshot_frame(*d, ev->door_start, g_pres_tick);
             if (fr >= 0)
                 g_fx->blit(ren, tc, *d->shp, "banim:" + d->name + ck, fr, fcx + a.door.x, fcy + a.door.y,
-                           d->translucent, W, H, &pal);
+                           PresFx::alpha_for(*d, fr), W, H, &pal);
         }
     if (ev && ev->super_phase >= 0) {
         const int open = ev->super_phase;          // 0 (ready) or 2 (fired)
@@ -611,18 +721,18 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
         const FxAnimType* t1 = slot_t(s1);
         const int fr = t1 ? oneshot_frame(*t1, ev->super_start, g_pres_tick) : -1;
         if (t1 && fr >= 0)
-            g_fx->blit(ren, tc, *t1->shp, "banim:" + t1->name + ck, fr, fcx + s1.x, fcy + s1.y, t1->translucent,
+            g_fx->blit(ren, tc, *t1->shp, "banim:" + t1->name + ck, fr, fcx + s1.x, fcy + s1.y, PresFx::alpha_for(*t1, fr),
                        W, H, &pal);
         else if (const FxAnimType* t2 = slot_t(s2))
             g_fx->blit(ren, tc, *t2->shp, "banim:" + t2->name + ck, PresFx::loop_frame(*t2, g_pres_tick),
-                       fcx + s2.x, fcy + s2.y, t2->translucent, W, H, &pal);
+                       fcx + s2.x, fcy + s2.y, 255, W, H, &pal);
     }
     for (const PresFx::BldAnims::Slot& s : a.slots) {
         const FxAnimType* t = (damaged && s.dmg) ? s.dmg : s.t;
         if (!t) continue;
         // ActiveAnimPowered (default yes): the anim holds still without power.
         const int fr = (s.powered && !powered) ? t->start : PresFx::loop_frame(*t, g_pres_tick);
-        g_fx->blit(ren, tc, *t->shp, "banim:" + t->name + ck, fr, fcx + s.x, fcy + s.y, t->translucent,
+        g_fx->blit(ren, tc, *t->shp, "banim:" + t->name + ck, fr, fcx + s.x, fcy + s.y, PresFx::alpha_for(*t, fr),
                    W, H, &pal);
     }
     if (damaged && !a.fire_offsets.empty()) {
@@ -636,7 +746,7 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
             if (!t) continue;
             const int fr = PresFx::loop_frame(*t, g_pres_tick + static_cast<long>(i) * 7);
             g_fx->blit(ren, tc, *t->shp, "fx:" + t->name, fr, fcx + a.fire_offsets[i].first,
-                       fcy + a.fire_offsets[i].second, t->translucent, W, H);
+                       fcy + a.fire_offsets[i].second, PresFx::alpha_for(*t, fr), W, H);
         }
     }
 }
