@@ -1576,7 +1576,16 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 }
             }
 
-            if (e.vehicle) {
+            if (e.vehicle && !art.voxel(image) &&
+                to_lower(rules.section_string(e.id, "Locomotor", "")).find("2bea74e1") != std::string::npos) {
+                // W2-AN-15 [RE: artmd [DLPH]/[SQD] Voxel=no WalkFrames= FiringFrames=]:
+                // the Dolphin and the Giant Squid are SHP ships, not voxels --
+                // their SHP is loaded by the scene (w2_setup) like an infantry body.
+                const ResolvedUnit ru = resolve_combat_unit(rules, e.id);
+                d.combat = ru.combat;
+                d.combat.is_vehicle = true;
+                d.combat.speed_cps = speed_to_cps(ru.speed);
+            } else if (e.vehicle) {
                 VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, e.id);
                 if (!va.ok) continue;                 // assets missing -> drop
                 d.combat = va.combat;
@@ -2684,7 +2693,9 @@ const ra2engine::FacingSet& vxl_set(const VehicleAssets& va, int part, int house
 }
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
-    if (u.die_time >= 0.0) {
+    // W2-AN-07/25: a crashing flier keeps its hull until impact; a sinking
+    // ship (ShipSinkingWeight) slides under instead of exploding.
+    if (u.die_time >= 0.0 && !u.an.crashing && !u.an.sinking) {
         if (va.explosion && va.explosion->count() > 0) {
             int frame = static_cast<int>(u.die_time * 15.0);
             if (frame >= va.explosion->count()) frame = va.explosion->count() - 1;
@@ -2709,7 +2720,9 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     // Guarded on is_aircraft && altitude > 0 -- no existing demo spawns an
     // aircraft, so no existing screenshot changes [spec §8].
     const int extra_dy =
-        (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
+        (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude)
+        : (u.an.sinking && u.die_time >= 0.0) ? -static_cast<int>(u.die_time * 24.0)   // W2-AN-25
+        : 0;
     if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
                                       vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
@@ -3055,6 +3068,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // off (visible_at returns true on empty grids) -> every existing render
         // is pixel-identical. Own units (u.house == 0) are always drawn.
         if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) return;
+        // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
+        if (world.unit_hidden_from(0, u)) return;
         // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
         // SHP for its disguise type (draw_unit then blits it in the disguised
         // house's palette). When NOT disguised draw_image == u.image -> this is
@@ -3130,6 +3145,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // transport-cargo.md §1]; capacity itself is the COUNT [spec §6].
     for (const ra2engine::Unit& u : us) {
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+        if (world.unit_hidden_from(0, u)) continue;   // W2-AN-13 submerged, no sonar contact
         if (u.selected || u.hp < u.max_hp)
             ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
         if (u.selected && u.passengers_max > 0)

@@ -108,4 +108,48 @@ until 600 amphib_on_water(0) == 0 and sel_moving == 0  @W2-AN-10
 key d
 until 300 cargo_total(0) == 0                   @W2-AN-10
 shot lcrf_unloaded
+
+# --- 4. the Naval Yard repairs a damaged ship docked beside it (W2-AN-11) ----
+cheat w2 damage 0:DEST 400
+click unit 0:LCRF right
+click unit 0:DEST
+let dhp = unit_hp(0,DEST)
+click point yard_dock                           @W2-AN-11
+until 600 unit_hp(0,DEST) > $dhp                @W2-AN-11
+until 1500 unit_hp(0,DEST) >= 600               @W2-AN-11
+view unit 0:DEST
+shot dest_repaired
+
+# --- 5. Aircraft Carrier Hornets + Dreadnought missiles; ships sink (W2-AN-12/25)
+cheat spawn CARRIER 0 point water_near_sel +0 +0
+cheat spawn DEST 1 point water_near_sel +4 +4
+wait 2
+click unit 0:DEST right
+click unit 0:CARRIER
+let ehp = unit_hp(1,DEST)
+click unit 1:DEST                               @W2-AN-12
+until 300 spawned_out(0) >= 1                   @W2-AN-12
+until 1500 unit_hp(1,DEST) < $ehp or units(1,DEST) == 0   @W2-AN-12
+shot hornets
+until 3000 units(1,DEST) == 0                   @W2-AN-12
+assert sunk(1) >= 1                             @W2-AN-25
+# Dreadnought: V3-style missiles, MinimumRange=8, at a target 10+ cells off
+cheat spawn DRED 0 point water_near_sel +0 +0
+click unit 0:CARRIER right
+click unit 0:DRED
+cheat spawn HTNK 1 point shore_far_sel +0 +0
+wait 2
+let thp = unit_hp(1,HTNK)
+click unit 1:HTNK                               @W2-AN-12
+until 600 spawned_out(0) >= 1                   @W2-AN-12
+until 1500 unit_hp(1,HTNK) < $thp or units(1,HTNK) == 0   @W2-AN-12
+shot dread_missiles
+
+# --- 6. the Dolphin is an SHP ship (artmd Voxel=no) and draws (W2-AN-15) ------
+cheat spawn DLPH 0 point water_near_sel +0 +0
+wait 5
+assert units(0,DLPH) == 1                       @W2-AN-15
+assert submerged(0) >= 1                        @W2-AN-13 # Underwater+Cloakable
+view unit 0:DLPH
+shot dolphin
 end

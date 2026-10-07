@@ -47,8 +47,33 @@
                     }
             return false;
         }
-        if (name == "shore_near_sel" || name == "beach_near_sel") {
-            const bool want_land = name == "shore_near_sel";
+        if (name == "yard_dock") {
+            // The selected ship's own Naval Yard (UnitRepair=yes): the free
+            // water cell touching its footprint nearest the dock pad
+            // (DockingOffset0 = 384,-128 leptons from the centre).
+            int best = -1, bx = 0, by = 0;
+            for (const ra2engine::Building& b : world_.buildings()) {
+                if (!b.alive || b.house != 0 || b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()))
+                    continue;
+                if (!rp_flag(rules_, ba_.roster[b.type].id, "UnitRepair")) continue;
+                const double dkx = (b.cx * 256.0 + b.fw * 128.0 + 384.0) / 256.0;
+                const double dky = (b.cy * 256.0 + b.fh * 128.0 - 128.0) / 256.0;
+                for (int y = b.cy - 1; y <= b.cy + b.fh; ++y)
+                    for (int x = b.cx - 1; x <= b.cx + b.fw; ++x) {
+                        const bool ring = x == b.cx - 1 || y == b.cy - 1 || x == b.cx + b.fw || y == b.cy + b.fh;
+                        if (!ring || !w2_water_cell(x, y) || !free_at(x, y)) continue;
+                        const int d = static_cast<int>((x - dkx) * (x - dkx) + (y - dky) * (y - dky));
+                        if (best < 0 || d < best) { best = d; bx = x; by = y; }
+                    }
+                break;
+            }
+            if (best < 0) return false;
+            cx = bx; cy = by;
+            return true;
+        }
+        if (name == "shore_near_sel" || name == "beach_near_sel" || name == "shore_far_sel") {
+            const bool want_land = name != "beach_near_sel";
+            const int min_d2 = name == "shore_far_sel" ? 11 * 11 : 0;   // beyond MinimumRange=8
             int best = -1, bx = 0, by = 0;
             for (int y = 0; y < gh; ++y)
                 for (int x = 0; x < gw; ++x) {
@@ -62,6 +87,7 @@
                                                 : (world_.walkable(x + k, y + l) && !w2_water_cell(x + k, y + l));
                     if (!touches) continue;
                     const int d = (x - s.cell_x) * (x - s.cell_x) + (y - s.cell_y) * (y - s.cell_y);
+                    if (d < min_d2) continue;
                     if (best < 0 || d < best) { best = d; bx = x; by = y; }
                 }
             if (best < 0) return false;
@@ -76,7 +102,7 @@
         for (const char* f : {"submerged", "sub_detected_by0", "iron_units", "chrono_units", "airborne",
                               "spawned_out", "planes", "planes_docked", "plane_ammo", "amphib_on_water",
                               "unit_hp", "cargo_total", "iron_buildings", "sw_has", "sw_ready_t",
-                              "sw_charge"})
+                              "sw_charge", "sunk"})
             p.zero_families.insert(f);
         p.set("sw_armed", input_.sw_targeting() ? input_.sw_armed_type() : 0);
         p.set("sw_armed_phase", input_.sw_armed_phase());
@@ -137,6 +163,8 @@
         }
         for (const ra2engine::Building& b : world_.buildings())
             if (b.alive && b.iron_left > 0.0) p.add("iron_buildings(" + std::to_string(b.house) + ")", 1);
+        for (const ra2engine::Unit& u : world_.units())   // W2-AN-25: ever sunk (dying or gone)
+            if (u.an.sinking) p.add("sunk(" + std::to_string(u.house) + ")", 1);
         p.set("rad_total", world_.rad_field().total());
         const int si = w2_first_selected();
         if (si >= 0) {
@@ -177,7 +205,10 @@
         // Spawned aircraft / missiles (Spawns=, V3/DMisl types) + the paradrop
         // plane and its infantry.
         const ra2engine::SwParams sp = world_.sw_params();
-        std::vector<std::string> ids = {"PDPLANE", sp.amer_para_inf, sp.ally_para_inf, sp.sov_para_inf};
+        std::vector<std::string> ids = {"PDPLANE", sp.amer_para_inf, sp.ally_para_inf, sp.sov_para_inf,
+                                        rules_.section_string("General", "DMislType", "DMISL"),
+                                        rules_.section_string("General", "V3RocketType", "V3ROCKET"),
+                                        "HORNET", "ASW"};   // any side's spawns (captured / cheat units)
         for (const UnitRoster* r : {&ur_, &ur_ai_})
             for (const ra2engine::UnitTypeDef& d : r->defs)
                 if (!d.combat.an.spawns.empty()) ids.push_back(d.combat.an.spawns);
@@ -200,6 +231,32 @@
             vlist_.push_back(&w2_va_.back());
         }
         if (!infantry_ids.empty()) gf_load_assets(infantry_ids);
+        // W2-AN-15: SHP ships (Dolphin, Giant Squid: artmd Voxel=no) -- body
+        // SHP from conquer.mix, the vehicle SHP layout [WalkFrames x 8 facings,
+        // then FiringFrames x 8 facings].
+        for (const UnitRoster* r : {&ur_, &ur_ai_})
+            for (const ra2engine::UnitTypeDef& d : r->defs) {
+                if (!d.combat.is_vehicle || art_.voxel(d.combat.image)) continue;
+                if (gf_has_vehicle_art(d.combat.image) || ua_.shps.count(d.combat.image)) continue;
+                try {
+                    MixFile conquer = ra2_.open_nested("conquer.mix");
+                    ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
+                    const int walk = std::max(1, static_cast<int>(std::atof(
+                        art_ini_.get(d.combat.image, "WalkFrames", "1").c_str())));
+                    const int fire = std::max(1, static_cast<int>(std::atof(
+                        art_ini_.get(d.combat.image, "FiringFrames", "1").c_str())));
+                    ra2engine::UnitAnimSeq a;
+                    a.stand = {0, 1, walk};
+                    a.walk = {0, walk, walk};
+                    a.fire = {walk * 8, fire, fire};
+                    a.die = {0, 1, 0};
+                    ua_.anims[d.combat.image] = a;
+                    world_.set_anim(d.combat.image, a);
+                    std::cerr << "[w2] SHP ship " << d.id << " image=" << d.combat.image << "\n";
+                } catch (const std::exception& ex) {
+                    std::cerr << "[w2] SHP ship " << d.id << " art unavailable (" << ex.what() << ")\n";
+                }
+            }
         std::cerr << "[w2] setup pads=" << pads.size() << " an-types=" << vehicle_ids.size()
                   << "+" << infantry_ids.size() << "\n";
     }
