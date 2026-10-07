@@ -69,15 +69,22 @@ void draw_touch_hold_ring(SDL_Renderer* ren) {
     int hx = 0, hy = 0;
     float pr = 0.0f;
     if (!g_platform->touch_hold(hx, hy, pr)) return;
+    // A 5 px band (dark rim, bright core) so it reads on any terrain; it
+    // fills clockwise from 12 o'clock and turns green when the hold fires.
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-    const int r = 26;
-    const int n = static_cast<int>(48 * pr);
+    const int r = 28;
+    const int steps = 160;
+    const int n = static_cast<int>(steps * pr);
     for (int k = 0; k <= n; ++k) {
-        const double a = -1.5707963 + 6.2831853 * k / 48.0;
-        for (int d = -1; d <= 1; ++d) {
-            SDL_SetRenderDrawColor(ren, pr >= 1.0f ? 120 : 240, pr >= 1.0f ? 230 : 220, 120, 0xE0);
-            SDL_RenderDrawPoint(ren, hx + static_cast<int>(std::lround((r + d) * std::cos(a))),
-                                hy + static_cast<int>(std::lround((r + d) * std::sin(a))));
+        const double a = -1.5707963 + 6.2831853 * k / steps;
+        const double ca = std::cos(a), sa = std::sin(a);
+        for (int d = -2; d <= 2; ++d) {
+            const bool rim = d == -2 || d == 2;
+            if (rim) SDL_SetRenderDrawColor(ren, 0, 0, 0, 0xC0);
+            else if (pr >= 1.0f) SDL_SetRenderDrawColor(ren, 120, 255, 120, 0xFF);
+            else SDL_SetRenderDrawColor(ren, 255, 235, 120, 0xFF);
+            SDL_RenderDrawPoint(ren, hx + static_cast<int>(std::lround((r + d) * ca)),
+                                hy + static_cast<int>(std::lround((r + d) * sa)));
         }
     }
 }
