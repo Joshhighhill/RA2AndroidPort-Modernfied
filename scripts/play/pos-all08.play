@@ -1,0 +1,34 @@
+# POS-ALL08 -- W4-FIX-POS acceptance (docs/gap/wave4/01-positioning.md §3):
+#   arch     the Gateway Arch (CASTL04 2x6, L2): the pad matches the foundation
+#   bridge   high bridge (BRIDGE2, data 9 -> -31): one continuous deck onto its
+#            abutment (was broken floating chunks)
+#   lobrdg   low bridge (LOBRDG*, cell centre): the deck joins the road end
+#   smudge0 / smudge20  scorches inside their cells (top-vertex anchor)
+#   tree     trees unchanged (control: cell centre was already right)
+set render_every 600
+set on_quit continue
+set campaign ALL08U.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+wait 30
+cheat reveal
+cheat view_building CASTL04
+wait 2
+shot arch
+cheat view_key ovl:BRIDGE 0
+wait 2
+shot bridge
+cheat view_key ovl:LOBRDG 0
+wait 2
+shot lobrdg
+cheat view_key smudge: 0
+wait 2
+shot smudge0
+cheat view_key smudge: 20
+wait 2
+shot smudge20
+cheat view_key terr: 0
+wait 2
+shot tree

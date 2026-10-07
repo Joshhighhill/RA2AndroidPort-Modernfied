@@ -3,7 +3,7 @@
 // GameScene loads it and publishes g_turrets (null in every gate).
 //
 // [RE: rulesmd BuildingTypes Turret=yes, TurretAnim=<vxl>, TurretAnimIsVoxel,
-// TurretAnimX/Y (screen px from the building's centre point), TurretAnimZAdjust
+// TurretAnimX/Y (screen px from the building's draw point = origin-cell top vertex), TurretAnimZAdjust
 // (depth only)]: the turret voxel (+ optional <name>barl) is rasterised per
 // facing in each house colour and drawn over the building, facing the
 // defence's current target (Building::def_target) and holding its last
@@ -96,15 +96,20 @@ public:
                                                          t.src->vpl, hp);
         }
         const int fi = ra2engine::facing_to_index(f, ra2engine::kVehicleFacings);
+        // W4-FIX-POS: TurretAnimX/Y are pixel offsets from the BUILDING DRAW
+        // POINT (the origin cell's top vertex, building_draw_point) -- cell
+        // (cx-0.5, cy-0.5)'s centre in draw_voxel_sprite's frame [RE: FUN_00459ee0;
+        // GTGCAN TurretAnimY=28 ~ its foundation centre, 30 px below the vertex].
+        const double dx = b.cx - 0.5, dy = b.cy - 0.5;
         ra2engine::Camera c2 = cam;
         c2.x += t.x;
         c2.y += t.y;
         const std::string k = "turret:" + id + ":" + std::to_string(key) + ":" + std::to_string(fi);
-        ra2engine::draw_voxel_sprite(ren, tc, k, (*slot)[0].sprites[static_cast<std::size_t>(fi)], cx, cy, level,
+        ra2engine::draw_voxel_sprite(ren, tc, k, (*slot)[0].sprites[static_cast<std::size_t>(fi)], dx, dy, level,
                                      c2, W, H, 0);
         if (t.has_barrel)
-            ra2engine::draw_voxel_sprite(ren, tc, k + ":b", (*slot)[1].sprites[static_cast<std::size_t>(fi)], cx,
-                                         cy, level, c2, W, H, 0);
+            ra2engine::draw_voxel_sprite(ren, tc, k + ":b", (*slot)[1].sprites[static_cast<std::size_t>(fi)], dx,
+                                         dy, level, c2, W, H, 0);
     }
     std::size_t count() const { return types_.size(); }
 
