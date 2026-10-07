@@ -143,7 +143,7 @@ struct UnitCombat {
     bool occupier = false;            // Occupier= (may garrison CanBeOccupied buildings, G-48)
     WeaponSlot occupy_weapon;         // OccupyWeapon= (fired from inside a garrison)
     WeaponSlot elite_occupy_weapon;   // EliteOccupyWeapon=
-    // --- W2-SK-22 (save v11) ---
+    // --- W2-SK-22 (save v12) ---
     int shrapnel_count = 0;           // primary ShrapnelCount= (Prism Tank Comet: 5)
     int shrapnel_damage = 0;          // ShrapnelWeapon= Damage (CometFragment 30)
     double shrapnel_range = 0.0;      // ShrapnelWeapon= Range (cells)

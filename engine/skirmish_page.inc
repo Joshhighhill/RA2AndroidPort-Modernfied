@@ -437,7 +437,13 @@ private:
         editing_ = on;
         // Show the soft keyboard on Android; restore the previous text-input
         // state on leave (desktop SDL starts with text input active).
-        if (on) { text_was_active_ = SDL_IsTextInputActive(); SDL_StartTextInput(); }
+        if (on) {
+            text_was_active_ = SDL_IsTextInputActive();
+            const ra2engine::SbRect e = name_rect();   // W2-AR-15: keep the edit in view
+            const SDL_Rect d = xform().dev(e.x, e.y, e.w, e.h);
+            set_text_input_rect_logical(d.x, d.y, d.w, d.h);
+            SDL_StartTextInput();
+        }
         else if (!text_was_active_) SDL_StopTextInput();
     }
     void play_ui(const char* key) const {
@@ -522,7 +528,7 @@ private:
                 std::cerr << "[lobby] start map=" << cfg.map_file << " slots=" << cfg.slots.size()
                           << " speed=" << cfg.game_speed << " units=" << cfg.unit_count
                           << " cash=" << cfg.starting_cash << "\n";
-                next_ = new GameScene(no_audio_, cfg);   // GameScene ctor runs launch_skirmish(cfg)
+                next_ = defer_game_scene(no_audio_, cfg);   // W2-AR-02/-10: built under the loading screen (ctor runs launch_skirmish)
                 return;
             }
             case A_CHOOSE: enter_customize(); return;

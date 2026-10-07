@@ -66,7 +66,7 @@ public:
     Scene* next() override {
         const int c = choice_;
         choice_ = 0;
-        if (c == 1) return new GameScene(no_audio_, cfg_);
+        if (c == 1) return defer_game_scene(no_audio_, cfg_);   // W2-AR-10
         if (c == 2) {
             if (Scene* m = make_main_menu_scene(no_audio_)) return m;
             quit_ = true;
@@ -110,5 +110,5 @@ Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishCon
 
 Scene* gf_make_restart_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg) {
     if (!cfg.campaign_map.empty()) return new CampaignLoadScene(no_audio, cfg);
-    return new GameScene(no_audio, cfg);
+    return defer_game_scene(no_audio, cfg);   // W2-AR-10: built after the old game is gone
 }

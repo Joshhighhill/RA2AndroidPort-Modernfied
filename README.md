@@ -1,5 +1,18 @@
 # ra2assets + ra2engine
 
+> **Players:** read [`docs/INSTALL.md`](docs/INSTALL.md). It covers the game
+> files you need, desktop and Android install, mouse and touch controls, and
+> troubleshooting. Version: `VERSION` (`ra2engine --version`).
+>
+> **Legal.** This repository contains an engine only (license: [`LICENSE`](LICENSE);
+> third-party code: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)). It does
+> not include and does not distribute any Command & Conquer: Red Alert 2 /
+> Yuri's Revenge game data. The engine runs only on game files that the player
+> supplies from their own legally obtained copy. "Command & Conquer" and
+> "Red Alert" are trademarks of Electronic Arts Inc. This project is not
+> affiliated with, endorsed by or sponsored by Electronic Arts. The art,
+> logos, sounds and text shown at run time come from the player's own files.
+
 A portable C++17 library that decodes Red Alert 2 / Yuri's Revenge game data
 (`ra2assets`: MIX archives, PAL palettes, SHP sprites, VXL/HVA voxel models
 (vehicle meshes + animation transforms, decode only), LZO/LCW map packs, INI,
@@ -2694,7 +2707,7 @@ the P6 Roster Breadth gate.
 | `--demo-triggers` | `trigger_hash=b8cd267e98f5e002` | `deterministic=yes lines=76`; **re-pinned by gap F (G-95)**: bisected on the first-parent merges -- P5 84b8217 prints the old `20347f4dfa462eb4` with `placed structures=66`, P6 7e754d5 prints `02f4226456db131d` with 70, gap A 5948a41 (and master fddbcb3, and gF) print `b8cd267e98f5e002` with 82; the witness diffs ONLY in that placed-structure count and the end-of-run building total (the bigger rosters let `place_map_objects` resolve more of `sov07tmd`'s `[Structures]`), every trigger fire/action line is identical; `sov07tmd.map`'s own 126 triggers for 2700 frames: 18 fires (logic 14, house 4, variable 2), TaskForce reinforcements at team waypoints, recorded presentation; wedge guards armed (`docs/re/map-triggers.md`) |
 | `--demo-veterancy` | `veterancy_hash=3b814501fb6dbd48` (gap fix C re-pin, was `1f02e4c09dba0964`: kill frames shift with G-42/G-50; ranks/dmg/ROF witnesses identical) | `deterministic=yes lines=31`; real E1 hero kills 12 weaponless E2: veteran at kill 6 (dmg 15->16, ROF 20->12), veteran victim counts x2, elite at kill 12 (M60E 25->27); elite first hit taken 10 vs rookie 15 (VeteranArmor); +4 HP self-heal over 56 frames; crates: 1 initial crate, typed Money/Armor/Armor->Money/Firepower/Speed/Veteran/HealBase/Reveal/Unit + one weighted random pick, expiry relocation; wedge guards armed (`docs/re/veterancy.md`) |
 | `--demo-roster2` | `roster2_hash=fb2ce78432058b4a` (final-verification re-pin, was `b23b7d9924a99c85`: moved twice inside gap C 477ab70 -- b3ade7e Ini inline-`;` comment cut (RC-5) makes `GAWEAT Image=GAWETH ;GEF ...` resolve, GAWEAT art-present 3x3 (14 art-present, was 13) -> `72ceaad0c333e4bc`; then 1d074af G-42 speed scale -- ORCA/BEAG `speed_lpf` 179.2 -> 56.0, fire f=77/81, land f=152/160, `Reloaded` f=422/430 (+270)) | `deterministic=yes lines=74`; 15 appended buildings (14 art-present) + 24 unit bodies; wall fills `0/3/2` (free), corner mask `E|S=6`, wall `build_frames=189 (x3.0 of 63)`; naval factories `GAYARD,NAYARD` vs land `GAWEAP,NAWEAP`; GAYARD `water_ok=1 land_refused=1 water_blocked=1`; DEST `total_frames=630 step_ticks=11 ready_after=594` -> water exit; ORCA/BEAG pads 0/1, fire f=77/81, land f=152/160, `Reloaded` f=422/430 (+270); INSTALL-SPECIFIC like `--demo-roster` (`docs/re/roster2.md`) |
-| `--demo-saveload` | `saveload_hash=6de782487586986d` (W2-SK re-pin, was `8291b85b9957b34a`: save format v11 adds the W2-SK state (ore mines + original growth timing, harvest scan/skip/income, wallet hints, depot/capture/spy type flags, shrapnel/Mirage unit fields, AI enemy house / MultipleFactory); W2-SK-25 makes the opening fight close in sooner, so the skirmish segment now saves from frame 10 (shells_at_save=2); A==B everywhere) `saveload_hash=8291b85b9957b34a` (W2-AN re-pin, was `653c22b544488e64` on master 844033b: save format v10 adds the W2-AN state -- Unit/UnitCombat `an`, Building `iron_left`, World `an_` + per-type SW lists + AI catalog `naval_yard` + `nav_factory_types`; `identical=yes`. Earlier: W2-GA-03 re-pin, was `7fde8a2b895cf6ae`: save v9 serialises the FogOfWar flag + fog-off targeting in the skirmish scenario; witnesses unchanged. Earlier: G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
+| `--demo-saveload` | `saveload_hash=6de782487586986d` (W2-SK re-pin, was `8291b85b9957b34a`: save format v12 (on top of W2-AR v11 CRC) adds the W2-SK state (ore mines + original growth timing, harvest scan/skip/income, wallet hints, depot/capture/spy type flags, shrapnel/Mirage unit fields, AI enemy house / MultipleFactory); W2-SK-25 makes the opening fight close in sooner, so the skirmish segment now saves from frame 10 (shells_at_save=2); A==B everywhere) `saveload_hash=8291b85b9957b34a` (W2-AN re-pin, was `653c22b544488e64` on master 844033b: save format v10 adds the W2-AN state -- Unit/UnitCombat `an`, Building `iron_left`, World `an_` + per-type SW lists + AI catalog `naval_yard` + `nav_factory_types`; `identical=yes`. Earlier: W2-GA-03 re-pin, was `7fde8a2b895cf6ae`: save v9 serialises the FogOfWar flag + fog-off targeting in the skirmish scenario; witnesses unchanged. Earlier: G16 re-pin on top of D+F `4876e19f292871e3`: save format v7 adds the garrison/bridge state -- Unit occupier/occupy weapons/garrison_of/ground target, Building occupants, World depth rules + compact bridge grids; the gate map has low bridges; `identical=yes`, two runs equal) | `identical=yes`; **combined re-pin (D then F)**: save format v6 carries both gap D's AI fields (D pinned `2511ec3d0deec668` at v5) and gap F's MCV deploy fields (Unit deploys_into/deploy_mission/goal/deployed_away, UnitCombat deploys_into, BuildingTypeDef deploy_facing, World deploy state), so the save bytes and A/B digests change; every round trip still matches (skirmish, triggers, GameScene identical at load and after 120 frames); P7: skirmish saved at frame 121 (2 shells in flight, 14 launches, 8 produced, 151 ability events, 1 radiation site) -> `SAVEE0E7.SAV` 1.29 MB -> fresh scenario -> frame 900 `A==B`; sov07tmd triggers saved at 900 (17 fires) -> 1900 (18 fires) `A==B`; real GameScene save->load identical at load and after 120 frames (`docs/re/saveload.md`) |
 | `--demo-abilities` | `abilities_hash=732afedaff7cab7f` (gap fix C re-pin, was `e510c5b98c089804`: G-42 speed, G-50 jitter; witnesses identical) | `deterministic=yes lines=9`; P4: drone vs Rhino (first tick immediate, 8 x 50 every 60 frames, drone pops out), drone vs GI (1 tick = 125, exits same frame), Desolator deploy (4 eruptions, center 500 -> 940 after Add, first hit 52 at 5 cells, 16-frame phase, immune), CLEG (10-cell teleport immediate + 53 frozen, GI erased in 157 frames without dying), Tanya C4 (27 frames, sale refused while armed), Ivan (blast on plant+451, neighbor 400->175), Terrorist (1 suicide -> 1 TerrorBomb), IFV (GI -> mode 2 ROF 15, empty -> 0, Desolator -> mode 9 dmg 175); wedge guards armed (`docs/re/abilities.md`) |
 | `--demo-campaign` | `campaign_hash=40dad3a5fe6613be` (W2-SK re-pin, was `760c46ae2eed28b4`: W2-SK-25 guard-range acquisition/pursuit and W2-SK-05 nearest-reachable moves change the mission fights; both maps still reach their scripted outcomes, lines 822) `campaign_hash=760c46ae2eed28b4` (W2-AN re-pin, was `b1d3c453c416e4fb`: ALL01 death raises 45 -> 48 at f=1800 -- its ships now fight with the naval rules (sub cloak + sonar, NavalTargeting, Destroyer ASW spawner, W2-AN-12/13/14); every other line identical) (earlier: `campaign_hash=b1d3c453c416e4fb` (combined gap D + gap F re-pin) | `deterministic=yes lines=737`; **combined re-pin**: gap D (`17830b0f7c233223`, lines 737: campaign enemy houses build out from ProductionBegins/AI triggers) plus gap F: actions 108 executed (logged `CreateCrate ... -> skipped` in the gate, whose World has no crate system), ALL01 reinforcement ships on water instead of the nearest land cell (fewer EnteredBy raises), death raises in the recovered order 7, 48, 29; P10: Allied 1 + Soviet 1 (1800 frames, scripted walker over the cell-tag trip-wires) and their scripted-kill victory runs reaching `WON` through the maps' own triggers (next = `ALL02s.MAP` / `sov02t.MAP`), each rendered + headless; save/load continuity (Allied 1 saved at f300 with World+TRIG+HOST, identical at f600); wedge guards armed (`docs/re/campaign.md`) |
 
@@ -2867,7 +2880,7 @@ print('machine=0x%x' % machine, 'AArch64' if machine == 0xB7 else 'NOT-ARM64')
 
 Expected output: `machine=0xb7 AArch64`.
 
-## Android app (APK — arm64-v8a)
+## Android app (APK — arm64-v8a + x86_64)
 
 `android/` is a self-contained SDL2 Android project that packages the whole
 engine (all of `engine/*.cpp` + the `ra2assets` library from `src/`) into an
@@ -2896,12 +2909,17 @@ the app's external files dir (see "Assets on device" below).
   `-DSDL2_SRC_DIR=` if it lives elsewhere).
 
 Create `android/local.properties` (gitignored — machine-specific) pointing at
-your SDK + NDK:
+your SDK + NDK. The NDK key is **`ra2.ndkPath`**, not `ndk.dir`: AGP reads
+`ndk.dir` itself and fails with `[CXX1100]` when both are set
+(`app/build.gradle`):
 
 ```properties
 sdk.dir=D:/android-sdk
-ndk.dir=D:/android-ndk-r27c
+ra2.ndkPath=D:/android-ndk-r27c
 ```
+
+The SDK also needs `platforms;android-35` (compileSdk/targetSdk 35, W2-AR-11):
+`sdkmanager "platforms;android-35"`.
 
 ### Build the APK
 
@@ -2915,7 +2933,22 @@ Set-Location D:\ra2-android\android
 .\gradlew.bat assembleDebug
 ```
 
-Output: `android/app/build/outputs/apk/debug/app-debug.apk` (arm64-v8a only).
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`, with both
+arm64-v8a and x86_64 native libraries. **Both build types compile the native
+code optimised** (W2-AR-13). `debug` is RelWithDebInfo (`-O2 -g`) and keeps
+SDL's internal asserts, which the engine logs without blocking. `release`
+(`.\gradlew.bat assembleRelease`) is Release (`-O3`) with SDL asserts
+compiled out. The release APK is signed with the key in
+`android/keystore.properties` (gitignored: `storeFile`, `storePassword`,
+`keyAlias`, `keyPassword`); without that file it falls back to the debug key,
+which is fine for side-loading but not for Play.
+
+Every `.so` is linked with 16 KB-compatible `LOAD` segments
+(`-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`). Play requires this for
+targetSdk 35. Check it with
+`llvm-readelf -l lib/arm64-v8a/libmain.so`: every `LOAD` must show
+`align 0x4000`. versionName comes from `VERSION`, and versionCode is the git
+commit count.
 Verify it contains AArch64 native libs (no device needed):
 
 ```powershell
@@ -2945,59 +2978,38 @@ run time from the app's own external files dir.
    ```powershell
    adb install -r android\app\build\outputs\apk\debug\app-debug.apk
    ```
-2. **Place your own game files** where the app reads them. The engine reads the
-   mix chain from `SDL_AndroidGetExternalStoragePath()/ra2/`, i.e.
-   `/storage/emulated/0/Android/data/org.ra2.engine/files/ra2/`. The menu,
-   skirmish and campaign open these files from that folder (gap G-72 — the old
-   three-file list made Skirmish/Campaign die with `fatal: cannot open file`):
-
-   | File | Needed by |
-   |---|---|
-   | `ra2.mix` | everything (rules/art/theaters/units/shell art, nested mixes) |
-   | `ra2md.mix` | rulesmd/artmd/soundmd/evamd, YR voxels |
-   | `language.mix` | audio.mix (voices, EVA), cameo.mix, CSF |
-   | `langmd.mix` | YR map names (skirmish map list) |
-   | `multimd.mix` | the skirmish maps |
-   | `mapsmd03.mix` | the engine's historical default map (no map picked) |
-   | `theme.mix` | the menu music |
-   | `expand01.mix` | the campaign `rules.ini` patch |
-   | `Maps01.mix`, `MAPS02.MIX` | Allied / Soviet campaign maps |
-   | `ra2.csf` | the patched string table (falls back to language.mix's copy) |
-
-   Android's file system is **case-sensitive**: keep the names exactly as
-   above (`Maps01.mix` but `MAPS02.MIX`, as the retail install ships them).
-
-   **The files must be readable by the app** — this is the #1 cause of "it
-   opens then instantly closes". `Android/data/<pkg>/` is scoped storage, so:
-   - **Real phone:** copy the files in with a file manager / MTP, or
-     `adb push` **as the normal (non-root) shell user** — both route through
-     MediaProvider and give the files the correct SELinux label
-     (`media_rw_data_file`) that the app is allowed to read.
-   - **Do NOT `adb root` then push** into that folder: root-created files get
-     the `storage_file` label and the app's sandbox is SELinux-denied `read`
-     (you'll see `avc: denied { read } ... tcontext=...storage_file` in
-     logcat). If you already did this, either re-push as non-root, or on an
-     emulator only, work around it with `adb root; adb shell setenforce 0`.
+2. **Supply your own game files** (the list is in `docs/INSTALL.md`). The app
+   opens on **SetupActivity**, which lists the missing files and offers
+   **Import game files**: a system folder picker (Storage Access Framework).
+   It needs no permissions and works on Android 5 to 15. The files are copied,
+   with their names normalised to the retail case, into
+   `Android/data/org.ra2.engine/files/ra2/`, the folder the engine reads.
+   **On Android 11+ `adb push` into `Android/data` is refused** for the shell
+   user (W2-AR-04), so stage the files in a shared folder and import them:
    ```powershell
-   # non-root push (correct label); create the dir first if needed
-   adb shell mkdir -p /sdcard/Android/data/org.ra2.engine/files/ra2
+   adb shell mkdir -p /sdcard/Download/RA2
    foreach ($f in "ra2.mix","ra2md.mix","language.mix","langmd.mix","multimd.mix",
                   "mapsmd03.mix","theme.mix","expand01.mix","Maps01.mix","MAPS02.MIX","ra2.csf") {
-     adb push "D:\Red Alert 2\$f" /sdcard/Android/data/org.ra2.engine/files/ra2/
+     adb push "D:\Red Alert 2\$f" /sdcard/Download/RA2/
    }
    ```
-3. **Launch** the app (`RA2 Engine`) from the launcher, or:
-   ```powershell
-   adb shell am start -n org.ra2.engine/.RA2Activity
-   ```
-   It opens the main menu. Capture a device screenshot with `adb exec-out screencap -p > shot.png`.
+   Then tap **Import game files**, choose `Download/RA2` and allow access.
+   MTP (USB file transfer from a PC straight into
+   `Android/data/org.ra2.engine/files/ra2/`) also works. If you `adb root`
+   and push into that folder on an emulator, the files get the wrong SELinux
+   label (`storage_file`) and the app cannot read them.
+3. **Launch** the app (`RA2 Engine`) from the launcher, or with
+   `adb shell am start -n org.ra2.engine/.SetupActivity`. With all required
+   files present it goes straight to the main menu (immersive fullscreen).
+   Settings (`RA2.INI`) and `Saved Games/` live in the app's internal storage
+   (`/data/data/org.ra2.engine/files/`; on a debug build you can reach them with
+   `adb shell run-as org.ra2.engine ls files`).
 
-   **Diagnosing failures:** the engine logs to Android logcat under the
-   `SDL/APP` tag. On startup it prints `[assets] android asset dir = <path>`,
-   and any fatal error is logged as `fatal: <reason>` (e.g.
-   `cannot open file: .../ra2.mix`) before it exits — so
-   `adb logcat -s SDL/APP:V` tells you exactly what went wrong instead of the
-   app vanishing silently.
+   **Diagnosing failures:** `adb logcat -s SDL SDL/APP RA2Setup` shows the
+   asset folder (`[assets] android asset dir = ...`), the audio device
+   (`[audio] ... sdl_devices=1`), the per-stage load timings (`[load] ...`),
+   lifecycle events (`[lifecycle] ...`) and any `fatal:` error. A fatal error
+   is also shown on screen.
 
    **Note on x86_64 emulator:** it uses software GL (SwiftShader) and slow
    emulated storage, so first load takes ~1 minute; a real arm64 phone is far
@@ -3526,3 +3538,55 @@ dog, V3, Mirage, spy disguise, Prism split, Demolition Truck). New probe keys:
 `damage_unit H:TYPE[:n] DMG`, `place TYPE H building H:T +DX +DY`. `--ai-soak`
 gained `--kill-ai-conyard-at MIN`, per-house columns and a team dump for every
 AI house.
+
+## Android, robustness and release readiness (wave-2 W2-AR fixes)
+
+Details and evidence: `docs/gap/wave2/06-android-robustness.md` section 7.
+The player guide is `docs/INSTALL.md`.
+
+- **One audio device** (W2-AR-01). `AudioOutput` is a refcounted handle on a
+  single SDL device. The menu and the game swap the mixer it plays, so there
+  are no AAudio assertions on Android.
+- **SDL assertions never block** (W2-AR-30). A handler logs them and
+  continues. They are compiled out of optimised builds.
+- **Loading screen and teardown before build** (W2-AR-02/-10/-05).
+  - Scene changes into a game are `DeferredScene`s. The driver destroys the
+    old scene first, then builds the game under a progress screen fed by
+    `load_progress()` checkpoints.
+  - A build that throws (for example a missing campaign `.mix`) becomes an
+    error page with a MAIN MENU button.
+  - Emulator start went from 9 min to 4.5 s, and the load-a-save peak from
+    1.4 GB to 405 MB.
+- **Finding the game files** (W2-AR-03/-22).
+  - Desktop search order: `--data <dir>`, `RA2_INSTALL_DIR`,
+    `RA2.INI [Engine] DataDir`, the exe folder, the registry `InstallPath`,
+    `D:\Red Alert 2`.
+  - Missing required files open a **GAME FILES NEEDED** page (RETRY /
+    BROWSE / EXIT; IMPORT on Android).
+  - New flags: `--version`, `--help`, and `--quick-skirmish` (dev: the
+    default 1v1 through the loading screen).
+  - Evidence hooks: `RA2_AUTOSHOT_DIR=<dir>` saves the loading / error /
+    missing-files screens, and `RA2_QUIT_AFTER_LOAD_MS=<ms>` quits that long
+    after the first load.
+- **Android app**:
+  - `SetupActivity` launcher with a SAF importer.
+  - Immersive fullscreen, and a game canvas that follows the panel aspect.
+  - Touch canvas of about 480 px on phones, for bigger cameos and buttons.
+  - Touch command bar: +SEL / FIRE / MOVE / STOP / GRD / SCAT / DPLY /
+    teams 1-5.
+  - Two-tap placement.
+  - Back on the root menu asks to exit.
+  - IME text rects.
+  - Cancelled touches never click.
+  - Background: pause + `AUTOSAVE.SAV`, then a resume prompt after a kill.
+  - Texture cache clear/trim on device reset or low memory.
+  - The process ends after quit.
+- **Saves are format v11**: v10 plus a CRC-32 trailer. Corrupt files are
+  listed as "Damaged" and refused.
+- **Release build**:
+  - Both APK build types are optimised.
+  - 16 KB page-aligned `.so` files; targetSdk 35.
+  - `keystore.properties` signing.
+  - Version from `VERSION` (window title / `--version`: `0.9.0+g<hash>`).
+  - `LICENSE`, `THIRD_PARTY_NOTICES.md`.
+  - `-Wall -Wextra` with 0 warnings; `-ffp-contract=off` on both builds.

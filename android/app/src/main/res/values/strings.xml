@@ -1,3 +1,16 @@
 <resources>
     <string name="app_name">RA2 Engine</string>
+    <string name="setup_title">Red Alert 2 game files needed</string>
+    <string name="setup_intro">This app is an engine only. It plays the original Red Alert 2 using the game files from your own copy of the game; no game data is included.</string>
+    <string name="setup_folder">The engine reads the files from:</string>
+    <string name="setup_ready">All required files are present.</string>
+    <string name="setup_missing_required">Missing (required):</string>
+    <string name="setup_missing_optional">Missing (optional, a feature is lost without them):</string>
+    <string name="setup_how">How to add them:\n 1. Copy the files from your Red Alert 2 install folder on your PC (the one holding ra2.mix) to this phone, for example into Download/RA2 (USB file transfer, or: adb push *.mix ra2.csf /sdcard/Download/RA2/).\n 2. Tap IMPORT GAME FILES and choose that folder. The files are copied into the app (about 750 MB).\n\nAlternatively copy them over USB (MTP) straight into the folder shown above.</string>
+    <string name="setup_import">Import game files</string>
+    <string name="setup_start">Start</string>
+    <string name="setup_exit">Exit</string>
+    <string name="setup_copying">Copying %1$s …</string>
+    <string name="setup_imported">Imported %1$d file(s).</string>
+    <string name="setup_failed">Import failed: %1$s</string>
 </resources>

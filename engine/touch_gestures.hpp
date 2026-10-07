@@ -34,6 +34,10 @@ public:
     void finger_down(int64_t id, int x, int y, uint32_t t_ms);
     void finger_move(int64_t id, int x, int y, uint32_t t_ms);
     void finger_up(int64_t id, int x, int y, uint32_t t_ms);
+    // W2-AR-18: the system took the gesture (back-swipe, notification pull):
+    // a pending tap / long-press / two-finger tap produces NO click; a band
+    // box already pressed is released where it is.
+    void finger_cancel(int64_t id, int x, int y, uint32_t t_ms);
     // Time passing with no finger event (long-press detection).
     void tick(uint32_t now_ms);
 

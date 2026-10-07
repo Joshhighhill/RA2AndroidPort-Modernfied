@@ -95,8 +95,8 @@ TEST_CASE("rectfont: A-Z + space + unknown glyph coverage [RE: skirmish.md §UI]
         for (std::uint8_t rowbits : ra2engine::glyph_rows(c)) nonblank |= (rowbits != 0);
         CHECK_MESSAGE(nonblank, "digit not authored: ", c);
     }
-    // Basic punctuation authored: ':' '-' '.'.
-    for (char c : {':', '-', '.'}) {
+    // Basic punctuation authored: ':' '-' '.' (+ W2-AR-03 path/message marks).
+    for (char c : {':', '-', '.', '/', '\\', '_', '(', ')', ',', '\'', '!', '?', '+', '%', '[', ']', '<', '>', '='}) {
         bool nonblank = false;
         for (std::uint8_t rowbits : ra2engine::glyph_rows(c)) nonblank |= (rowbits != 0);
         CHECK_MESSAGE(nonblank, "punctuation not authored: ", c);

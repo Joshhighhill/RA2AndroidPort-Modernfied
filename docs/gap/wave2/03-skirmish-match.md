@@ -298,7 +298,7 @@ Costs, power and prerequisites are read straight from rulesmd. Two prerequisite 
 ## 7. Fix status (branch `w2fix-skirmish`)
 
 The rows below were fixed on `w2fix-skirmish` (merged with master up to the
-w2fix-air merge). Save format **v11**. The evidence is real play: the new
+w2fix-android merge). Save format **v12**. The evidence is real play: the new
 `scripts/play/economy-60min.play` and `scripts/play/unit-specials.play`, plus
 `--ai-soak` runs (the soak gained `--kill-ai-conyard-at MIN`, per-house
 unit/building/wallet/miner columns, ore/mine counters, special-infantry and
@@ -320,7 +320,7 @@ tech-capture witnesses, and a team dump for every AI house).
 
 | ID | Status | What changed | Evidence |
 |---|---|---|---|
-| W2-SK-01 | **FIXED** | `OreField` ore mines (registered from the map `[Terrain]`, SHP frames/2), the original growth/spread clocks, save v11 | economy-60min.play (hillbtwn, 6 mines): `mine_spawned` 4 → 86 → 227 → 369 → 499 at min 0/15/30/45/60, ore never runs out (`ore_cells` 24 / 35 at min 30 / 60), AI refinery income 61.6k / 84.8k / 92.6k / 99.8k at min 15/30/45/60 |
+| W2-SK-01 | **FIXED** | `OreField` ore mines (registered from the map `[Terrain]`, SHP frames/2), the original growth/spread clocks, save v12 | economy-60min.play (hillbtwn, 6 mines): `mine_spawned` 4 → 86 → 227 → 369 → 499 at min 0/15/30/45/60, ore never runs out (`ore_cells` 24 / 35 at min 30 / 60), AI refinery income 61.6k / 84.8k / 92.6k / 99.8k at min 15/30/45/60 |
 | W2-SK-02 | **FIXED** | `TiberiumLongScan=48` / `TiberiumShortScan=6` from rules | unit tests + soaks |
 | W2-SK-03 | **FIXED** | Returning miners queue at the QueueingCell while the pad is taken; an empty idle miner leaves the dock area | hillbtwn AI-vs-AI: before, 6 full miners stuck in ReturnToRef behind an empty miner on the pad (M5 pattern); after, no stuck queue in 40 min |
 | W2-SK-04 | **FIXED** | Zone- and occupant-filtered ore search, failed-cell skip, a part-loaded miner banks its load | test_harvest |

@@ -20,11 +20,34 @@ if (localPropsFile.exists()) {
     ndkDirProp = props.getProperty('ra2.ndkPath')
 }
 
+// W2-AR-11/-23: ONE version source -- the repo's VERSION file (semver) for
+// versionName and the commit count for versionCode (the manifest no longer
+// repeats them). The native RA2_VERSION string adds the git hash (CMake).
+def ra2VersionName = rootProject.file('../VERSION').text.trim()
+def ra2VersionCode = 1
+try {
+    def p = ['git', '-C', rootProject.file('..').absolutePath, 'rev-list', '--count', 'HEAD'].execute()
+    p.waitFor()
+    if (p.exitValue() == 0) ra2VersionCode = p.text.trim().toInteger()
+} catch (ignored) { }
+
+// W2-AR-11: release signing from keystore.properties (gitignored):
+//   storeFile=<path>  storePassword=...  keyAlias=...  keyPassword=...
+// Without it the release APK is signed with the debug key (side-load /
+// emulator testing only -- Play needs the real upload key).
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = null
+if (keystorePropsFile.exists()) {
+    keystoreProps = new Properties()
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     if (buildAsApplication) {
         namespace "org.ra2.engine"
     }
-    compileSdk 34
+    // W2-AR-11: Play requires targetSdk 35 (Android 15) for new apps/updates.
+    compileSdk 35
     // Must match the NDK that ndkPath points at (r27c = 27.2.12479018),
     // otherwise AGP errors [CXX1100] on the version mismatch vs its default.
     ndkVersion "27.2.12479018"
@@ -36,9 +59,9 @@ android {
             applicationId "org.ra2.engine"
         }
         minSdk 21
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        targetSdk 35
+        versionCode ra2VersionCode
+        versionName ra2VersionName
         // arm64-v8a is the real-device target; x86_64 is added so the same APK
         // runs in an accelerated Android emulator on an x86_64 host (the current
         // emulator cannot run arm64 images on x86 hosts) and on x86 Android
@@ -46,7 +69,10 @@ android {
         // ndk block below restricts what gets packaged.
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_STL=c++_shared"
+                // W2-AR-11: 16 KB page-size-compatible ELF segments (NDK r27
+                // switch; r28+ does it by default). Required by Play for apps
+                // targeting Android 15+ and to load at all on 16 KB devices.
+                arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
                 abiFilters 'arm64-v8a', 'x86_64'
             }
         }
@@ -54,11 +80,47 @@ android {
             abiFilters 'arm64-v8a', 'x86_64'
         }
     }
+    signingConfigs {
+        if (keystoreProps != null) {
+            release {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+    // W2-AR-13/-02: the native code is OPTIMISED in both build types (the old
+    // debug APK was -O0: a ~9 minute game start on the emulator). Debug keeps
+    // -g and SDL's internal asserts (logged by the engine's non-blocking
+    // handler, W2-AR-30); release drops both.
     buildTypes {
+        debug {
+            externalNativeBuild {
+                cmake {
+                    // -Pra2.nativeBuildType=Debug gives the old -O0 native code
+                    // back (native debugging; the W2-AR-02 "before" timing).
+                    arguments "-DCMAKE_BUILD_TYPE=" + (project.findProperty('ra2.nativeBuildType') ?: 'RelWithDebInfo'),
+                              "-DSDL_ASSERTIONS=enabled"
+                }
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig keystoreProps != null ? signingConfigs.release : signingConfigs.debug
+            ndk { debugSymbolLevel 'SYMBOL_TABLE' }
+            externalNativeBuild {
+                cmake {
+                    arguments "-DCMAKE_BUILD_TYPE=Release", "-DSDL_ASSERTIONS=release"
+                }
+            }
         }
+    }
+    // W2-AR-25: Java 17 (source/target 8 is obsolete on JDK 21).
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     applicationVariants.all { variant ->
         tasks["merge${variant.name.capitalize()}Assets"]

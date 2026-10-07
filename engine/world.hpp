@@ -348,7 +348,7 @@ struct Unit {
     int occupy_target = -1;          // pending "enter garrison" order -> building
     int attack_cell_x = -1, attack_cell_y = -1;   // force-fire ground target (-1 none)
     bool cell_shot = false;          // fired at attack_cell this step (World resolves it)
-    // --- W2-SK-22 (save v11) ---
+    // --- W2-SK-22 (save v12) ---
     int shrapnel_count = 0;
     int shrapnel_damage = 0;
     double shrapnel_range = 0.0;
@@ -1844,7 +1844,7 @@ private:
     // T3 [RE: multihouse.md §D2]: bool[3] -> std::vector<uint8_t> sized
     // house_count(). NOT hashed. Sized in ensure_houses_default/grow_house_arrays.
     std::vector<std::uint8_t> produced_veteran_;   // W2-SK-20: bit (1 << factory_kind)
-    std::vector<double> wallet_hint_;              // W2-SK-20 (v11)
+    std::vector<double> wallet_hint_;              // W2-SK-20 (v12)
     // The single firewalled Capture per-frame pass: tech-structure income +
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.
@@ -1956,8 +1956,8 @@ private:
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
     double purifier_bonus_ = 0.0;   // rules [General] PurifierBonus (gap owner A, G-27)
-    HarvestScan harvest_scan_;      // W2-SK-02 (save v11)
-    std::vector<double> harvest_income_;   // W2-SK: cumulative unload income per house (v11)
+    HarvestScan harvest_scan_;      // W2-SK-02 (save v12)
+    std::vector<double> harvest_income_;   // W2-SK: cumulative unload income per house (v12)
     // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
     // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
     // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/

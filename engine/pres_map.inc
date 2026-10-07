@@ -373,7 +373,7 @@ private:
         if (image.empty()) image = rget(name, "Image");
         if (image.empty()) image = name;
         std::vector<ra2assets::TheaterCandidate> cands;
-        for (const std::string ext : {std::string(".") + ch.ext, std::string(".shp")})
+        for (const std::string& ext : {std::string(".") + ch.ext, std::string(".shp")})
             for (const auto& c : ra2assets::theater_candidates(image, ch.letter, ch.iso_mix, ch.art_mix, ext))
                 cands.push_back(c);
         cands.push_back({"conquer.mix", pres_lower(image) + ".shp"});
