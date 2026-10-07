@@ -214,11 +214,13 @@ struct PresHarness {
     static void follow_action(GameScene& g) {
         double sx = 0, sy = 0;
         int n = 0;
-        for (int pass = 0; pass < 2 && !n; ++pass)
+        // The player's engaged units first (passes 0/1), so the camera stays in
+        // explored ground; then anyone engaged (2/3).
+        for (int pass = 0; pass < 4 && !n; ++pass)
             for (const auto& u : g.world_.units())
-                if (u.alive && u.cargo_of < 0 &&
-                    (pass == 0 ? (u.is_vehicle && (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))
-                               : (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))) {
+                if (u.alive && u.cargo_of < 0 && (pass >= 2 || u.house == 0) &&
+                    ((pass % 2) == 0 ? (u.is_vehicle && (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))
+                                     : (u.target >= 0 || u.target_building >= 0 || u.fire_flash > 0))) {
                     sx += u.fx; sy += u.fy; ++n;
                 }
         std::cerr << "[scene-shot] action centroid n=" << n << " (" << (n ? sx / n : 0) << ","

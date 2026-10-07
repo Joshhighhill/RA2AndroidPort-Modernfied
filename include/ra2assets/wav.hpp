@@ -23,4 +23,23 @@ struct WavInfo { int sample_rate = 0; int channels = 1; int bits = 16; };
 // chunks, a fmt tag other than 0x0011, or channels outside {1, 2}.
 std::vector<int16_t> load_wav_ima(const uint8_t* data, std::size_t len, WavInfo& out_info);
 
+// W2-GA-22: the same decode one IMA block at a time, so a music track can be
+// streamed (decoded just ahead of playback on a worker thread) instead of
+// decoded whole up front. Concatenating every next_block() output equals
+// load_wav_ima() exactly. Owns the WAV bytes.
+class WavImaStream {
+public:
+    static WavImaStream open(std::vector<uint8_t> bytes);   // throws like load_wav_ima
+    const WavInfo& info() const { return info_; }
+    std::size_t total_frames() const { return total_frames_; }   // per channel
+    bool done() const { return off_ >= body_len_; }
+    bool next_block(std::vector<int16_t>& out);                 // appends; false at end
+private:
+    std::vector<uint8_t> bytes_;
+    WavInfo info_;
+    std::size_t body_ = 0, off_ = 0, frames_out_ = 0, total_frames_ = 0;
+    uint32_t body_len_ = 0;
+    uint16_t block_align_ = 0;
+};
+
 }  // namespace ra2assets

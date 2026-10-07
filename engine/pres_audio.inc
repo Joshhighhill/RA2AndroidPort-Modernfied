@@ -78,8 +78,16 @@ struct EvaDef {
     int type = 0;
 };
 
+// RA2.INI [Audio] IsScoreShuffle / IsScoreRepeat (defined next to
+// g_user_settings in main.cpp).
+bool pres_score_shuffle();
+bool pres_score_repeat();
+
 class PresAudio {
 public:
+    ~PresAudio() {
+        if (audio_ && audio_->mixer) audio_->mixer->set_music(nullptr);
+    }
     // Loads soundmd/evamd/thememd and the clip containers. `audio` may be
     // disabled (no device / --no-audio): everything still runs and logs, so the
     // trigger logic is observable headless; only the mixer calls are skipped.
@@ -109,20 +117,46 @@ public:
         } catch (const std::exception& ex) {
             std::cerr << "[pres-audio] evamd.ini unavailable: " << ex.what() << "\n";
         }
-        try {
-            Ini th = load_ini_from_ra2md(dir, "thememd.ini");
+        // W2-GA-21 [RE: RE-Q12, ThemeClass FUN_0071f830/FUN_0071f720]: the
+        // classic RA2 target reads THEME.INI (ra2.mix/local.mix) and plays
+        // from THEME.MIX; the YR thememd pair is only the fallback (on this
+        // install every thememd.mix track is zero-filled). Per theme: Sound=
+        // ('$'/'#' stripped), Normal (def yes), Repeat (def no), Side (def
+        // all), Scenario (def 0).
+        auto read_themes = [&](const Ini& th) {
             for (const auto& kv : th.section("Themes")) {
                 const std::string sec = pres_clean(kv.second);
                 if (sec.empty() || !th.has(sec)) continue;
                 Theme t;
                 t.section = sec;
                 t.sound = pres_clean(th.get(sec, "Sound"));
-                t.normal = pres_lower(pres_clean(th.get(sec, "Normal", "yes")))[0] != 'n';
-                t.repeat = pres_lower(pres_clean(th.get(sec, "Repeat", "no")))[0] == 'y';
+                while (!t.sound.empty() && (t.sound[0] == '$' || t.sound[0] == '#')) t.sound.erase(0, 1);
+                const std::string nm = pres_lower(pres_clean(th.get(sec, "Normal", "yes")));
+                t.normal = nm.empty() || nm[0] != 'n';
+                const std::string rp = pres_lower(pres_clean(th.get(sec, "Repeat", "no")));
+                t.repeat = !rp.empty() && rp[0] == 'y';
+                t.side = pres_lower(pres_clean(th.get(sec, "Side", "")));
+                t.scenario = std::atoi(pres_clean(th.get(sec, "Scenario", "0")).c_str());
                 if (!t.sound.empty()) themes_.push_back(t);
             }
+        };
+        try {
+            MixFile local = MixFile::open_path(dir + "ra2.mix").open_nested("local.mix");
+            if (const MixEntry* e = local.find(std::string("theme.ini"))) {
+                const std::vector<uint8_t> b = local.read(*e);
+                read_themes(Ini::parse(std::string(b.begin(), b.end())));
+                theme_mix_name_ = "theme.mix";
+            }
         } catch (const std::exception& ex) {
-            std::cerr << "[pres-audio] thememd.ini unavailable: " << ex.what() << "\n";
+            std::cerr << "[pres-audio] theme.ini unavailable: " << ex.what() << "\n";
+        }
+        if (themes_.empty()) {
+            try {
+                read_themes(load_ini_from_ra2md(dir, "thememd.ini"));
+                theme_mix_name_ = "thememd.mix";
+            } catch (const std::exception& ex) {
+                std::cerr << "[pres-audio] thememd.ini unavailable: " << ex.what() << "\n";
+            }
         }
         if (!want_clips) return;
         // Clip containers: YR first, RA2 second.
@@ -145,10 +179,14 @@ public:
                           << "\n";
             }
         }
-        try {
-            theme_mix_ = std::make_unique<MixFile>(
-                MixFile::open_path(dir + "thememd.mix"));
-        } catch (const std::exception&) {}
+        // Theme archives: the one the ini came from first, then the other (the
+        // binary itself opens THEMEMD.MIX and falls back to THEME.MIX when the
+        // open fails, FUN_005301a0). File-backed: tracks are read on demand.
+        for (const std::string name : {theme_mix_name_, std::string(theme_mix_name_ == "theme.mix" ? "thememd.mix" : "theme.mix")}) {
+            try {
+                theme_mixes_.push_back(std::make_unique<MixFile>(MixFile::open_path(dir + name)));
+            } catch (const std::exception&) {}
+        }
         std::cerr << "[pres-audio] eva=" << eva_.size() << " themes=" << themes_.size()
                   << " bags=" << bags_.size() << "\n";
     }
@@ -187,15 +225,67 @@ public:
         ms.global = has_token(e.type, "global");
         ms.range = e.range;
         ms.min_volume = e.min_volume;
+        // W2-GA-24 [RE: audio-playback.md §2/§4]: VShift/FShift jitter and
+        // the ALL / ATTACK / DECAY / LOOP sample sequencing.
+        ms.vshift = e.vshift;
+        ms.fshift_lo = e.fshift_lo;
+        ms.fshift_hi = e.fshift_hi;
+        ms.all = has_token(e.control, "all");
+        ms.attack = has_token(e.control, "attack");
+        ms.decay = has_token(e.control, "decay");
+        ms.loop = has_token(e.control, "loop");
         audio_->mixer->register_sound(key, ms);
     }
-    // Plays a positional sound event; logged even without a device.
+    // Plays a non-positional (screen-centred) sound event; logged even
+    // without a device.
     void play(const std::string& key, double dist_cells, const char* why) {
         if (key.empty()) return;
         pres_log(frame_, std::string("sound ") + key + " (" + why + ")");
         if (!mixer_live()) return;
         ensure_sound(key);
         audio_->mixer->play(key, dist_cells);
+    }
+
+    // W2-GA-23 [RE: audio-playback.md §3, RE-Q11 FUN_0074f8e0]: the tactical
+    // view the positional sounds are measured from (set every frame).
+    void set_view(int cam_x, int cam_y, int view_w, int view_h) {
+        cam_x_ = cam_x; cam_y_ = cam_y; view_w_ = view_w; view_h_ = view_h;
+    }
+    // Chebyshev max(dx, 2|dy|) px from the view centre / 60 -> cells, and the
+    // pan: relX = screen x - halfW clamped to +-W, pan = relX*8192/W + 8192.
+    void locate(double fx, double fy, double& dist_cells, int& pan) const {
+        const double sx = (fx - fy) * 30.0 + cam_x_ + 30.0;
+        const double sy = (fx + fy) * 15.0 + cam_y_ + 15.0;
+        const double hw = view_w_ / 2.0, hh = view_h_ / 2.0;
+        dist_cells = std::max(std::abs(sx - hw), 2.0 * std::abs(sy - hh)) / 60.0;
+        const double w = std::max(1.0, 2.0 * hw);
+        const double rel = std::clamp(sx - hw, -w, w);
+        pan = static_cast<int>(rel * 8192.0 / w + 8192.0);
+    }
+    // A positional event at world (fx, fy): panned, and re-attenuated every
+    // frame while it plays (stopped once it leaves range), as the original
+    // does for live voices (FUN_0074fb60).
+    void play_at(const std::string& key, double fx, double fy, const char* why) {
+        if (key.empty()) return;
+        pres_log(frame_, std::string("sound ") + key + " (" + why + ")");
+        if (!mixer_live()) return;
+        ensure_sound(key);
+        double d = 0.0;
+        int pan = 8192;
+        locate(fx, fy, d, pan);
+        if (const std::uint32_t h = audio_->mixer->play_at(key, d, pan)) live_.push_back({h, fx, fy});
+    }
+    // Per frame: follow the camera for every live positional voice.
+    void update_voices() {
+        if (!mixer_live()) { live_.clear(); return; }
+        std::size_t k = 0;
+        for (const LiveVoice& v : live_) {
+            double d = 0.0;
+            int pan = 8192;
+            locate(v.fx, v.fy, d, pan);
+            if (audio_->mixer->update_voice(v.handle, d, pan)) live_[k++] = v;
+        }
+        live_.resize(k);
     }
 
     // ---- EVA [RE: audio-playback.md §8 FUN_007512a0/007513b0/00751580] -----
@@ -249,37 +339,108 @@ public:
         }
     }
 
-    // ---- music [G-82] --------------------------------------------------------
-    // [RE-FALLBACK: RE-P2 open -- playlist order] The in-game score plays the
-    // Normal=yes [Themes] tracks in list order, looping the list; Repeat=yes
-    // tracks loop themselves. Replace with the recovered ThemeClass rule.
+    // ---- music [G-82, W2-GA-21/22] ------------------------------------------
+    // [RE: RE-Q12] ThemeClass::Next_Song (FUN_0071fd20): with the current
+    // theme not Repeat and IsScoreRepeat off (or nothing playing yet), shuffle
+    // picks Random(0,Count-1) until an allowed theme other than the current
+    // (999 tries, then 0); otherwise the next allowed index after the current,
+    // wrapping (none -> 0). Else the current theme repeats. Is_Allowed
+    // (FUN_007203e0): available && Normal && (Side any || the player's side)
+    // && (not campaign || scenario >= Scenario=). IsScoreRepeat/IsScoreShuffle
+    // come from RA2.INI [Audio] (FUN_005fa500). Tracks are streamed.
     void music_start() {
-        playlist_.clear();
-        for (int i = 0; i < static_cast<int>(themes_.size()); ++i)
-            if (themes_[i].normal) playlist_.push_back(i);
         track_ix_ = -1;
-        music_on_ = !playlist_.empty();
+        music_on_ = false;
+        for (int i = 0; i < static_cast<int>(themes_.size()); ++i)
+            if (allowed(i)) { music_on_ = true; break; }
     }
     void music_update(double now) {
         if (!music_on_) return;
-        if (track_ix_ >= 0 && now < track_end_) return;
-        if (track_ix_ >= 0 && themes_[playlist_[track_ix_]].repeat) {
-            play_track(playlist_[track_ix_], now);
+        if (track_ix_ >= 0) {
+            // Stream still playing (or, deviceless, the header length not yet
+            // elapsed): nothing to do.
+            if (stream_ && !stream_->finished()) return;
+            if (!stream_ && now < track_end_) return;
+        }
+        const int next = next_song(track_ix_);
+        if (next < 0 || next >= static_cast<int>(themes_.size()) || !allowed(next)) {
+            music_on_ = false;
             return;
         }
-        track_ix_ = (track_ix_ + 1) % static_cast<int>(playlist_.size());
-        play_track(playlist_[track_ix_], now);
+        play_track(next, now);
     }
     void music_stop() {
         music_on_ = false;
-        if (mixer_live() && !cur_music_key_.empty()) audio_->mixer->stop(cur_music_key_);
+        if (mixer_live()) audio_->mixer->set_music(nullptr);
+        stream_.reset();
     }
     const std::string& current_track() const { return cur_track_; }
 
 private:
     struct Req { std::string name; int priority; int type; };
     struct Bag { ra2assets::AudioIdx idx; std::vector<uint8_t> bag; };
-    struct Theme { std::string section, sound; bool normal = true, repeat = false; };
+    struct Theme {
+        std::string section, sound, side;
+        bool normal = true, repeat = false;
+        int scenario = 0;
+        int avail = -1;   // -1 unknown, 0 missing/zero-filled, 1 playable
+    };
+    struct LiveVoice { std::uint32_t handle; double fx, fy; };
+
+    // IsAvailable (FUN_0071fa90): the <Sound>.wav entry exists in a theme
+    // archive and is a real RIFF WAVE (the thememd.mix placeholders are
+    // zero-filled). Checked lazily from the first 12 bytes.
+    const MixFile* theme_source(int ti) {
+        Theme& t = themes_[static_cast<std::size_t>(ti)];
+        const std::string file = pres_lower(t.sound) + ".wav";
+        for (const auto& m : theme_mixes_) {
+            const MixEntry* e = m->find(file);
+            if (!e || e->size < 12) continue;
+            if (t.avail < 0) {
+                MixEntry head = *e;
+                head.size = 12;
+                const std::vector<uint8_t> h = m->read(head);
+                if (std::memcmp(h.data(), "RIFF", 4) != 0 || std::memcmp(h.data() + 8, "WAVE", 4) != 0) continue;
+            }
+            t.avail = 1;
+            return m.get();
+        }
+        t.avail = 0;
+        return nullptr;
+    }
+    bool allowed(int ti) {
+        if (ti < 0 || ti >= static_cast<int>(themes_.size())) return false;
+        const Theme& t = themes_[static_cast<std::size_t>(ti)];
+        if (!t.normal) return false;
+        if (!t.side.empty() && t.side != "-1") {
+            const char* mine = side_ == 1 ? "soviet" : side_ == 2 ? "thirdside" : "allied";
+            const bool gdi = t.side == "gdi" || t.side == "allied", nod = t.side == "nod" || t.side == "soviet";
+            if ((gdi && side_ != 0) || (nod && side_ != 1) || (!gdi && !nod && t.side != mine)) return false;
+        }
+        if (t.avail == 0) return false;
+        return theme_source(ti) != nullptr;
+    }
+    int next_song(int cur) {
+        const int count = static_cast<int>(themes_.size());
+        if (count <= 0) return -1;
+        const bool repeat_cur = cur >= 0 && (themes_[static_cast<std::size_t>(cur)].repeat || pres_score_repeat());
+        if (repeat_cur) return cur;
+        if (pres_score_shuffle()) {
+            int n = 0, r = 0;
+            for (;;) {
+                theme_rng_ = theme_rng_ * 1103515245u + 12345u;
+                r = static_cast<int>((theme_rng_ >> 8) % static_cast<std::uint32_t>(count));
+                if (++n > 999) break;
+                if (r != cur && allowed(r)) break;
+            }
+            return n >= 1000 ? 0 : r;
+        }
+        for (int k = count + 1;;) {
+            if (++cur >= count) cur = 0;
+            if (--k == 0) return 0;
+            if (allowed(cur)) return cur;
+        }
+    }
 
     // Decodes the side's clip for `r` (cached), logs, plays, and holds EVA busy
     // for the clip's real length.
@@ -324,44 +485,49 @@ private:
         if (mixer_live() && id >= 0) audio_->mixer->play_eva(id);
     }
 
+    // W2-GA-22: the track is streamed -- a worker thread reads the WAV off
+    // the (file-backed) MIX and decodes it block by block just ahead of the
+    // audio thread; the previous track's stream is released, nothing is kept
+    // in the SoundBank. Deviceless runs only parse the header for the length.
     void play_track(int ti, double now) {
-        const Theme& t = themes_[ti];
+        const auto t0 = std::chrono::steady_clock::now();
+        const Theme& t = themes_[static_cast<std::size_t>(ti)];
+        track_ix_ = ti;
         cur_track_ = t.section;
         double secs = 180.0;
-        const std::string key = "music:" + t.sound;
-        auto it = music_len_.find(key);
-        if (it == music_len_.end() && theme_mix_ && mixer_live()) {
-            if (const MixEntry* e = theme_mix_->find(pres_lower(t.sound) + ".wav")) {
+        const MixFile* src = theme_source(ti);
+        const MixEntry* e = src ? src->find(pres_lower(t.sound) + ".wav") : nullptr;
+        if (mixer_live()) audio_->mixer->set_music(nullptr);
+        stream_.reset();
+        if (src && e) {
+            const MixFile mix = *src;   // shares the file handle
+            const MixEntry ent = *e;
+            if (mixer_live()) {
+                stream_ = std::make_shared<ra2engine::MusicStream>([mix, ent]() { return mix.read(ent); });
+                audio_->mixer->set_music(stream_);
+            } else {
+                // Header only: the length the deviceless clock waits for.
                 try {
-                    auto bytes = theme_mix_->read(*e);
-                    ra2assets::WavInfo info;
-                    std::vector<int16_t> pcm = pres_to_sink(
-                        ra2assets::load_wav_ima(bytes.data(), bytes.size(), info),
-                        info.sample_rate, info.channels);
-                    const double len = pcm.size() / 22050.0;
-                    ra2engine::MixerSound ms;
-                    ms.variants.push_back(audio_->bank.add(std::move(pcm)));
-                    ms.volume = 100;
-                    ms.global = true;
-                    ms.min_volume = 100;
-                    ms.range = 1000.0;
-                    ms.limit = 1;
-                    ms.bus = ra2engine::AudioBus::Score;   // ScoreVolume (options.md §5)
-                    audio_->mixer->register_sound(key, ms);
-                    it = music_len_.emplace(key, len).first;
-                } catch (const std::exception& ex) {
-                    std::cerr << "[pres-audio] theme " << t.sound << " failed: " << ex.what() << "\n";
-                }
+                    const std::vector<uint8_t> b = mix.read(ent);
+                    const ra2assets::WavImaStream w = ra2assets::WavImaStream::open(b);
+                    if (w.info().sample_rate > 0)
+                        secs = static_cast<double>(w.total_frames()) / w.info().sample_rate;
+                } catch (const std::exception&) {}
             }
         }
-        if (it != music_len_.end()) secs = it->second;
-        if (mixer_live()) {
-            if (!cur_music_key_.empty()) audio_->mixer->stop(cur_music_key_);
-            audio_->mixer->play(key, 0.0);
-        }
-        cur_music_key_ = key;
         track_end_ = now + secs;
-        pres_log(frame_, "music " + t.section + " sound=" + t.sound);
+        // Evidence for W2-GA-22: the game thread only starts the stream.
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        char tb[48];
+        std::snprintf(tb, sizeof tb, " setup_ms=%.2f", ms);
+        pres_log(frame_, "music " + t.section + " sound=" + t.sound + " src=" +
+                             (src ? theme_mix_name_of(src) : std::string("none")) + tb);
+    }
+    std::string theme_mix_name_of(const MixFile* m) const {
+        for (std::size_t i = 0; i < theme_mixes_.size(); ++i)
+            if (theme_mixes_[i].get() == m)
+                return i == 0 ? theme_mix_name_ : (theme_mix_name_ == "theme.mix" ? "thememd.mix" : "theme.mix");
+        return "?";
     }
 
     AudioSystem* audio_ = nullptr;
@@ -369,7 +535,12 @@ private:
     std::unique_ptr<ra2assets::Sounds> sounds_;
     std::vector<Bag> bags_;
     std::vector<std::unique_ptr<MixFile>> wav_mixes_;
-    std::unique_ptr<MixFile> theme_mix_;
+    std::vector<std::unique_ptr<MixFile>> theme_mixes_;
+    std::string theme_mix_name_ = "theme.mix";
+    std::shared_ptr<ra2engine::MusicStream> stream_;
+    std::uint32_t theme_rng_ = 0x7E3A11u;
+    std::vector<LiveVoice> live_;
+    int cam_x_ = 0, cam_y_ = 0, view_w_ = 1, view_h_ = 1;
     std::set<std::string> registered_;
     std::map<std::string, EvaDef> eva_;
     struct ClipRec { int id = -1; double secs = 0.0; };
@@ -381,10 +552,8 @@ private:
     int side_ = 0;
     long frame_ = 0;
     std::vector<Theme> themes_;
-    std::vector<int> playlist_;
     int track_ix_ = -1;
     bool music_on_ = false;
     double track_end_ = 0.0;
-    std::string cur_track_, cur_music_key_;
-    std::map<std::string, double> music_len_;
+    std::string cur_track_;
 };

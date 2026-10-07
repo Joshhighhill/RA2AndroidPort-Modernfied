@@ -42,6 +42,8 @@
 #include "audio_mixer.hpp"
 #include "bridges.hpp"      // G16 (agent G): bridge overlay classes
 #include "audio_sdl.hpp"
+#include "music_stream.hpp"
+#include <chrono>     // W2-GA-22 streamed score
 #include "building.hpp"
 #include "cargo.hpp"        // cargo_total_size (pip fill) [CB-1 Transports/Cargo]
 #include "capture.hpp"      // kNeutralHouse (Engineer/Spy Capture phase)
@@ -516,7 +518,7 @@ Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
 // rulesmd.ini omits it -- looking that up in AudioSystem::voices and playing
 // it is then just a silent no-op (Mixer::play on an empty/unregistered key
 // returns false).
-struct UnitVoices { std::string select, move, attack, die, report; };
+struct UnitVoices { std::string select, move, attack, die, report, move_sound, crush; };   // W2-GA-25 move_sound/crush
 
 // Everything the audio wiring needs at runtime. `mixer` is a unique_ptr (not
 // a plain Mixer member) because Mixer stores its SoundBank BY REFERENCE (see
@@ -4208,6 +4210,8 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
 // built-in defaults -- so the byte-identity gates cannot see a user's settings.
 ra2engine::Settings* g_user_settings = nullptr;
 bool pres_target_lines() { return g_user_settings ? g_user_settings->unit_action_lines : true; }
+bool pres_score_shuffle() { return g_user_settings ? g_user_settings->is_score_shuffle : false; }   // W2-GA-21
+bool pres_score_repeat() { return g_user_settings ? g_user_settings->is_score_repeat : false; }
 
 // <SDL pref dir>/RA2.INI: %APPDATA%\ra2engine\RA2\ on Windows, the app's
 // internal (always writable) files dir on Android. Never the install dir. Empty
