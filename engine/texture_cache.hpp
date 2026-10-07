@@ -56,6 +56,14 @@ public:
     std::size_t size() const { return cache_.size(); }
     std::size_t evicted() const { return evicted_; }
     void pin(const std::string& key);
+    // W2-AR-26: drop EVERY texture (SDL_RENDER_DEVICE_RESET: the GL context
+    // was lost, every handle is invalid) and take a new instance_id(), so the
+    // pointer caches keyed on it (terrain draw list) rebuild. Entries come
+    // back lazily on the next lookup.
+    void clear();
+    // W2-AR-09/-26: SDL_APP_LOWMEMORY -- free every unpinned entry not used
+    // this frame (the budget LRU, run to zero). Returns the bytes freed.
+    std::size_t trim();
     // Unique per TextureCache instance (never reused, unlike the address), so
     // a cache of texture pointers can tell it is talking to the same cache.
     std::uint64_t instance_id() const { return id_; }

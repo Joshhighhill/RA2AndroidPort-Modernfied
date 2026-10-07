@@ -315,6 +315,15 @@ if (RA2_BUILD_ENGINE)
     GIT_TAG release-2.30.9)
   set(SDL_TEST OFF CACHE BOOL "" FORCE)
   set(SDL_SHARED ON CACHE BOOL "" FORCE)
+  # W2-AR-30: SDL's internal SDL_assert()s are compiled OUT of optimised
+  # builds (level 1 = SDL_assert_release only); a Debug build keeps them
+  # (level 2) so bugs like W2-AR-01 stay visible. Either way the engine
+  # installs a non-blocking assertion handler (logs, never waits on stdin).
+  if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(SDL_ASSERTIONS "enabled" CACHE STRING "SDL internal assertions (W2-AR-30)")
+  else()
+    set(SDL_ASSERTIONS "release" CACHE STRING "SDL internal assertions (W2-AR-30)")
+  endif()
   FetchContent_MakeAvailable(SDL2)
   # Engine source list comes from cmake/ra2_sources.cmake (shared with the
   # Android jni build so the two cannot drift).
@@ -325,9 +334,17 @@ if (RA2_BUILD_ENGINE)
   # shared RA2_ENGINE_SOURCES list in cmake/ra2_sources.cmake, per the task
   # brief -- it is not part of ra2assets_tests either way.
   target_sources(ra2engine PRIVATE engine/audio_sdl.cpp)
+  # W2-AR-23 version string; Q3: no FMA contraction, so float paths match
+  # the Android (clang, arm64) build bit-for-bit.
+  target_compile_definitions(ra2engine PRIVATE RA2_VERSION="${RA2_VERSION}")
+  target_compile_options(ra2engine PRIVATE -ffp-contract=off)
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
-  target_include_directories(ra2engine PRIVATE include engine third_party)
+  target_include_directories(ra2engine PRIVATE include engine)
+  # W2-AR-25: warnings on for the engine; vendored headers are SYSTEM so
+  # their own warnings (stb) stay out of the count.
+  target_include_directories(ra2engine SYSTEM PRIVATE third_party)
+  target_compile_options(ra2engine PRIVATE -Wall -Wextra)
   # NOTE: link order deviates from the brief's literal listing (SDL2 then
   # SDL2main) to (SDL2main then SDL2). Under MinGW/GNU ld, static archives
   # are resolved in a single left-to-right pass: SDL2main.a's WinMain is
@@ -342,6 +359,11 @@ if (RA2_BUILD_ENGINE)
   # order-sensitive this way, which is why the brief's literal order can
   # look fine there. No SDL2 version/flags changed.
   target_link_libraries(ra2engine PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2)
+  if (WIN32)
+    # W2-AR-22: registry install-path lookup + the BROWSE folder picker
+    # (engine/platform_os.cpp).
+    target_link_libraries(ra2engine PRIVATE advapi32 shell32 ole32)
+  endif()
   # SDL_SHARED=ON builds SDL2.dll; copy it next to ra2engine.exe post-build
   # so the exe can find it at runtime (Windows has no rpath).
   add_custom_command(TARGET ra2engine POST_BUILD

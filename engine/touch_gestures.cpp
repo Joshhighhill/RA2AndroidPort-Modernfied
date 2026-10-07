@@ -81,6 +81,27 @@ void TouchGestures::finger_move(int64_t id, int x, int y, uint32_t t) {
     if (st_ == State::Dragging) emit(InputEvent::PointerMove, x, y, false, t);
 }
 
+void TouchGestures::finger_cancel(int64_t id, int x, int y, uint32_t t) {
+    switch (st_) {
+        case State::Pending:
+        case State::LongPressed:
+            if (id == id0_) st_ = State::Idle;
+            return;
+        case State::Dragging:
+            if (id != id0_) return;
+            emit(InputEvent::PointerUp, x, y, false, t);
+            st_ = State::Idle;
+            return;
+        case State::TwoFinger:
+            if (id != id0_ && id != id1_) return;
+            st_ = State::LongPressed;   // wait for the other finger, no click
+            id0_ = (id == id0_) ? id1_ : id0_;
+            return;
+        default:
+            return;
+    }
+}
+
 void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
     switch (st_) {
         case State::Pending:

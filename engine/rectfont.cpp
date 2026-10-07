@@ -51,6 +51,23 @@ constexpr std::array<std::uint8_t, 7> k9{0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0
 constexpr std::array<std::uint8_t, 7> kColon{0, 0b00100, 0, 0, 0b00100, 0, 0};
 constexpr std::array<std::uint8_t, 7> kDash{0, 0, 0, 0b11111, 0, 0, 0};
 constexpr std::array<std::uint8_t, 7> kDot{0, 0, 0, 0, 0, 0, 0b00100};
+// W2-AR-03: path / message punctuation for the missing-files and error pages.
+constexpr std::array<std::uint8_t, 7> kSlash{0b00001, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b10000};
+constexpr std::array<std::uint8_t, 7> kBackslash{0b10000, 0b10000, 0b01000, 0b00100, 0b00010, 0b00001, 0b00001};
+constexpr std::array<std::uint8_t, 7> kUnderscore{0, 0, 0, 0, 0, 0, 0b11111};
+constexpr std::array<std::uint8_t, 7> kLParen{0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010};
+constexpr std::array<std::uint8_t, 7> kRParen{0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000};
+constexpr std::array<std::uint8_t, 7> kComma{0, 0, 0, 0, 0, 0b00100, 0b01000};
+constexpr std::array<std::uint8_t, 7> kApos{0b00100, 0b00100, 0b01000, 0, 0, 0, 0};
+constexpr std::array<std::uint8_t, 7> kExcl{0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0, 0b00100};
+constexpr std::array<std::uint8_t, 7> kQuest{0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0, 0b00100};
+constexpr std::array<std::uint8_t, 7> kPlus{0, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0};
+constexpr std::array<std::uint8_t, 7> kPercent{0b11001, 0b11001, 0b00010, 0b00100, 0b01000, 0b10011, 0b10011};
+constexpr std::array<std::uint8_t, 7> kLBracket{0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110};
+constexpr std::array<std::uint8_t, 7> kRBracket{0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110};
+constexpr std::array<std::uint8_t, 7> kLess{0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010};
+constexpr std::array<std::uint8_t, 7> kGreater{0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000};
+constexpr std::array<std::uint8_t, 7> kEquals{0, 0, 0b11111, 0, 0b11111, 0, 0};
 }  // namespace
 
 const std::array<std::uint8_t, 7>& glyph_rows(char c) {
@@ -95,6 +112,22 @@ const std::array<std::uint8_t, 7>& glyph_rows(char c) {
         case ':': return kColon;
         case '-': return kDash;
         case '.': return kDot;
+        case '/': return kSlash;
+        case '\\': return kBackslash;
+        case '_': return kUnderscore;
+        case '(': return kLParen;
+        case ')': return kRParen;
+        case ',': return kComma;
+        case '\'': return kApos;
+        case '!': return kExcl;
+        case '?': return kQuest;
+        case '+': return kPlus;
+        case '%': return kPercent;
+        case '[': return kLBracket;
+        case ']': return kRBracket;
+        case '<': return kLess;
+        case '>': return kGreater;
+        case '=': return kEquals;
         case ' ':
         default: return kBlank;
     }

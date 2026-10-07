@@ -334,6 +334,28 @@ W2-AN rows closed by play evidence: W2-AN-01/02/07/08 (`air`), W2-AN-04/05/06/17
 (`sw`), W2-AN-09/10/11/12/13/15/25 (`naval`); W2-AN-22 by `--probe-realplay`
 (0 fails); W2-AN-16/21 by `--ai-soak --map xbayopigs.map --cash 50000`.
 
+### Wave-2 W2-AR (Android, robustness, release) -- branch `w2fix-android` over master 0fc3444
+
+Each script was run on its own on the merged tree (`build/play-final/`).
+**Every `play_hash` matches the W2-AN table above.** Under `--play` the canvas
+is still 1280x720 and the deferred scene build happens in the same frame, so
+the game state is byte-identical.
+
+| Script | Result | play_hash |
+|---|---|---|
+| `controls` / `m-all01` / `m-lose` / `m-sov01` / `shell-smoke` | PASS | `299536cc427c8525` / `844c6dd06a8177ae` / `ccc8340943cd2baa` / `1ed80b2eabf7f2cb` / `520e202cf28c6070` |
+| `sk-a` / `sk-a-lose` / `sk-end` / `sk-lobby` / `sk-s` / `world-depth` | PASS | `7525b71fc44fcc7f` / `47af64760366a980` / `95a67a058e3882b9` / `4daf570e159f13e0` / `a099e461333761ff` / `c30243df544b3c2a` |
+| `ui-campaign` / `ui-hud` / `ui-pages` / `ui-result` / `ui-shell` | PASS | `93692c6ee26595eb` / `6ab1e68d829d928d` / `d9b913b15d4fd971` / `cf809b78de945e17` / `e948779eb0ab3bb3` |
+| `air` / `naval` / `sw` | PASS | `cc0f701752a6f8e8` / `de56fa937aeaf935` / `6ffc7e946bd18889` |
+| `gfx-fx` / `gfx-vis` | PASS | `21e5218607633dda` / `c7a9ed8d8b98498b` |
+| `probe-game` / `-garrison` / `-perf` / `-shell` / `-soviet-econ` | PASS | — |
+| `probe-bridge` / `probe-flow` | FAIL 2 / FAIL 7 | Pre-existing, same as on master. |
+| **new** `robust-missing` (W2-AR-05; run with `RA2_INSTALL_DIR` set to an install without `Maps01.mix`) | PASS | `14650fb0739d0383` |
+
+Gates: `--demo-saveload` `8291b85b9957b34a`, `--demo-skirmish`
+`fde3f587e747f765` and `--demo-campaign` `760c46ae2eed28b4` all match the
+master pins (`--demo-combat` deterministic=yes). The full suite passes:
+788/788.
 ### Wave-2 W2-CA (campaign) -- branch `w2fix-campaign` over master 0fc3444
 
 Every script run one at a time (Release build of the merged tree). All campaign
@@ -366,5 +388,5 @@ audio (12), aircraft (16) and the other W2-CA mission logic.
 
 Full suite (Debug): 790 test cases / 350283 assertions, 0 failed. Gates:
 `--demo-campaign` re-pinned `5d033b6aa019beaa`, `--demo-saveload`
-`c19113168b76bae7` (save v11), `--demo-triggers` unchanged `b8cd267e98f5e002`
+`c19113168b76bae7` (save v12), `--demo-triggers` unchanged `b8cd267e98f5e002`
 (causes in README).

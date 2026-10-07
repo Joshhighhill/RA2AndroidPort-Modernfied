@@ -20,6 +20,7 @@
 // share is filtered by Owner/RequiredHouses/ForbiddenHouses (ai_side_catalog).
 UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixFile& ra2,
                                    const UnitAssets& ua, const Rules& rules, const Art& art) {
+    load_progress("AI ROSTER");   // W2-AR-02 loading-screen checkpoint
     static const UnitRosterEnt kAiUnits[] = {
         // Soviet
         {"E2", false, "NAHAND"},   {"DOG", false, "NAHAND"},  {"FLAKT", false, "NAHAND"},
@@ -148,6 +149,7 @@ void arm_skirmish_ai(ra2engine::World& world, const ra2engine::SkirmishConfig& c
                      const ra2assets::Ini& rules_ini, const UnitRoster& ur_ai,
                      const ra2assets::Ini& aimd, const ra2assets::MapFile* map,
                      const UnitAssets& ua) {
+    load_progress("AI TEAMS");   // W2-AR-02 loading-screen checkpoint
     if (!ba.ok) return;
     // Waypoint-ring anchor: the first non-AI combatant's base (the human),
     // else the grid centre.

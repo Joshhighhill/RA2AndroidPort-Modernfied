@@ -10,6 +10,8 @@
 #include <deque>
 #include <functional>
 
+namespace {   // W2-AR-25: same linkage as DriverHooks/Scene (-Wsubobject-linkage)
+
 class ControlsSelftest : public DriverHooks, public ra2engine::EventSource {
 public:
     explicit ControlsSelftest(std::string outdir) : outdir_(std::move(outdir)) {}
@@ -205,3 +207,4 @@ int run_controls_selftest(const std::string& outdir) {
                 t.failures(), t.frame(), static_cast<unsigned long long>(t.probe_hash()));
     return pass ? 0 : 1;
 }
+}  // namespace

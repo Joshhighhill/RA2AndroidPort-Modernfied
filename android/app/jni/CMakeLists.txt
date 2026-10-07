@@ -4,7 +4,8 @@
 # (our engine/main.cpp main(), renamed by SDL_main.h) is the entry point. It
 # bundles the ra2engine sources + the ra2assets library, linked against SDL2.
 #
-# arm64-v8a only (the ABI is filtered in app/build.gradle).
+# ABIs: arm64-v8a (phones) + x86_64 (emulator / Chromebooks), filtered in
+# app/build.gradle. Optimised in both build types (app/build.gradle).
 
 cmake_minimum_required(VERSION 3.6)
 project(ra2_android CXX C)
@@ -33,6 +34,11 @@ if(NOT EXISTS "${SDL2_SRC_DIR}/CMakeLists.txt")
         "or pass -DSDL2_SRC_DIR=<path to SDL 2.30.9 source>.")
 endif()
 
+# W2-AR-30: SDL internal asserts -- app/build.gradle passes SDL_ASSERTIONS per
+# build type (debug: enabled, release: release = SDL_assert compiled out).
+if(NOT DEFINED SDL_ASSERTIONS)
+    set(SDL_ASSERTIONS "release" CACHE STRING "SDL internal assertions")
+endif()
 add_subdirectory("${SDL2_SRC_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/SDL2")
 
 # Shared source lists (single source of truth with the desktop build).
@@ -43,6 +49,11 @@ add_library(main SHARED ${RA2_ENGINE_SOURCES} ${RA2_LIB_SOURCES})
 # Playback phase). Added directly here (mirrors the top-level CMakeLists.txt)
 # rather than into the shared RA2_ENGINE_SOURCES list in cmake/ra2_sources.cmake.
 target_sources(main PRIVATE "${RA2_ROOT}/engine/audio_sdl.cpp")
+# W2-AR-23 version; Q3: -ffp-contract=off -- arm64 clang would otherwise fuse
+# a*b+c into FMA at -O2 and the float math (and saves) would drift from the
+# desktop build.
+target_compile_definitions(main PRIVATE RA2_VERSION="${RA2_VERSION}")
+target_compile_options(main PRIVATE -ffp-contract=off)
 set_target_properties(main PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON

@@ -87,6 +87,7 @@ private:
     static UnitRoster rp_load_roster(const std::string& dir, const ra2assets::MixFile& ra2,
                                      const UnitAssets& ua, const Rules& rules, const Art& art,
                                      const Ini& rules_ini, const ra2engine::SkirmishConfig& cfg) {
+        load_progress("ROSTER");   // W2-AR-02 loading-screen checkpoint
         // W2-CA-03: a campaign player builds from the same rules-driven roster
         // as skirmish -- its house's country (ParentCountry) and map
         // TechLevel, the map overrides already in `rules`, RA2 types only.
@@ -106,6 +107,7 @@ private:
     // Ctor tail (skirmish only): factories by rules Factory=, the building
     // country/tech mask, and the first sidebar list.
     void rp_setup() {
+        load_progress("SIDEBAR");   // W2-AR-02 loading-screen checkpoint
         rp_on_ = true;
         const ra2engine::SkirmishSlot s0 =
             cfg_.slots.empty() ? ra2engine::SkirmishSlot{} : cfg_.slots.front();

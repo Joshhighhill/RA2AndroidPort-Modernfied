@@ -186,3 +186,81 @@ Effort values: S (≤ 1 day), M (2 to 4 days), L (≥ 1 week).
 - **Q3 (determinism across builds).** Do the byte-identity gates and save portability survive `-O2` and arm64 clang's default `-ffp-contract=on` (FMA)? Saves are probably meant to move between desktop and Android. If floating-point paths feed `world_hash`, add `-ffp-contract=off` to both builds.
 - **Q4 (auto-pause on resume).** The original's single-player behaviour on focus loss has not been traced. The Android recommendation (open the options menu on resume) is a platform norm, not a fidelity claim.
 - **Q5 (shipping channel).** Is the APK meant for Play Store distribution? If so, W2-AR-11 is a hard blocker. If it is side-loaded only, it is MINOR, except for 16 KB alignment on Android 15+ devices.
+
+## 7. Fix status (branch `w2fix-android`)
+
+These fixes were verified on the `ra2x86` emulator (Android 11, x86_64,
+SwiftShader, 3 GB, 4 cores) and on the desktop. Evidence is in
+`06-fix-evidence/`: `emu/*.png` are emulator screenshots; `desk_*` are
+desktop captures made through the `RA2_AUTOSHOT_DIR` hook. The `[load]`,
+`[audio]` and `[lifecycle]` lines below are quoted from logcat.
+
+**Emulator load time (Start Game → first game frame, skirmish 1v1):**
+
+| Build | Time |
+|---|---|
+| Audit, old master, `-O0` debug APK | about 9 min (Load: about 10 min) |
+| Master with W2-GA-P5 file-backed MIX, `-O0` (`-Pra2.nativeBuildType=Debug`) | 30.5 s |
+| This branch, debug APK at RelWithDebInfo `-O2` (the new default) | **4.5 s** |
+| This branch, load a save | 2.3–2.6 s |
+
+The menu now appears about 2 s after launch.
+
+**Memory (emulator):** in-game RSS was 411 MB, against 0.75–0.92 GB in the
+audit. Loading a save from inside a game peaked at **405 MB**, sampled every
+0.2 s, against 1.4 GB in the audit. The old game is freed first: the minimum
+during the load was 259 MB.
+
+| ID | Status | What changed / evidence |
+|---|---|---|
+| W2-AR-01 | **FIXED** | `AudioOutput` is now a refcounted handle on ONE process-wide SDL device (`audio_sdl.cpp`); whichever scene is on screen supplies the mixer. This keeps W2-GA-23's stereo callback mixer and the streamed music. Logcat: `menu handle ok: sdl_devices=1 handles=1`, then `game handle ok: sdl_devices=1 handles=2`. There were 0 SDL assertions across game start, two loads and Exit, on a debug APK built with `SDL_ASSERTIONS=enabled`. |
+| W2-AR-02 | **FIXED** | The native code is optimised in both APK types (see the timings above). `DeferredScene` + `build_deferred` (`app_robust.inc`) draw a loading screen with 49 `load_progress()` checkpoints (`emu/loading_saved.png`, `desk_loading/*.png`). A campaign keeps its LS800 screen as the backdrop (`desk_loading/loading_campaign_mid.png`). The build still runs on the main thread: true async loading is not needed at 2–5 s. |
+| W2-AR-03 | **FIXED** | Desktop: a first-run **GAME FILES NEEDED** page (`desk_nofiles/message_page.png`) lists the required and optional files and the folder searched, with RETRY / BROWSE / EXIT. Android: the `SetupActivity` launcher lists the missing files (`emu/setup_firstrun.png`) and creates `files/ra2/`. The native page also has IMPORT. |
+| W2-AR-04 | **FIXED (code), PARTIAL (evidence)** | `SetupActivity` imports through SAF (`ACTION_OPEN_DOCUMENT_TREE`): it matches names case-insensitively, copies to `.part` files, checks sizes and renames. The picker opens from the app (`emu/saf_picker.png`). On API 30, shell writes to `Android/data` fail as the audit said (`touch: ... Permission denied`); the README and INSTALL now say to push to `Download/RA2` and import. Selecting the folder could not be driven headless: DocumentsUI ignores injected `input tap` on this AVD, although keys reach it. The copy path still needs a manual run on a device. |
+| W2-AR-05 | **FIXED** | A scene build that throws becomes an error page that names the missing file and returns to the main menu (`desk_error_missing_maps01.png`, `scripts/play/robust-missing.play` PASS). `multimd.mix` is now required, so no more silent fallback to the campaign map. |
+| W2-AR-06 | **FIXED** | The Android window is `FULLSCREEN_DESKTOP` (immersive; logcat shows `Window size: 1920x1080`, against 1794x1017 in the audit; `emu/menu.png`). The cutout mode is `shortEdges`. The game canvas width follows the panel aspect (16:9 up to 21:9). The shell stays 1280x720, centred. The in-game pages centre on the current canvas (`ui_xform`). |
+| W2-AR-07 | **FIXED** | Touch canvas: on Android the game canvas height is chosen so that 1 px ≈ 0.85 dp (480 on a 1080p 420 dpi phone), so cameos are ~53x42 dp and the sidebar buttons ~1.5x bigger (`emu/game_deployed.png`). The desktop stays 720. |
+| W2-AR-08 | **FIXED** | A touch command bar (`touch_bar.inc`): +SEL / FIRE / MOVE modifier toggles, STOP / GRD / SCAT / DPLY, and teams 1–5 (tap selects, long-press creates). It calls the same handlers as the hotkeys. `emu/game_touchbar.png`; DPLY deployed the MCV (`emu/game_deployed.png`). Briefing (F1) and the View bookmarks remain keyboard-only. |
+| W2-AR-09 | **FIXED** | `SDL_APP_WILLENTERBACKGROUND` opens the options menu (paused) and writes `AUTOSAVE.SAV`: `[lifecycle] background: paused, autosave ok (20 ms)`. After `am kill`, the next launch offers **RESUME GAME?** (`emu/resume_prompt.png`), which loads the save (`[lifecycle] autosave found (valid): resumed`). A normal end of the game deletes the autosave. |
+| W2-AR-10 | **FIXED** | Teardown before build (see Memory above). The `saveload25` desktop soak was not re-run. |
+| W2-AR-11 | **FIXED** | `ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`: every `LOAD` segment is `align 0x4000` (`release_apk_check.txt`). compileSdk/targetSdk are 35. Release signing comes from `keystore.properties`, falling back to the debug key. versionName/versionCode come from `VERSION` + the commit count; the manifest no longer repeats them. |
+| W2-AR-12 | **PARTIAL** | `sensorLandscape`; no VIBRATE; `appCategory=game`; backup rules exclude the game files; the SDL template comments are gone. The name is still "RA2 Engine" and the icon is still SDL's: a trademark-safe name and icon are a decision for the owner. |
+| W2-AR-13 | **FIXED** | Debug APK = RelWithDebInfo, release = Release (`-O3`). The desktop default RelWithDebInfo came with W2-GA-P2. `-ffp-contract=off` is set on both builds (Q3). |
+| W2-AR-14 | **FIXED** | Android Back on the root menu opens the existing Exit confirm (`emu/back_exit_confirm.png`). Esc stays inert there. |
+| W2-AR-15 | **PARTIAL** | `SDL_SetTextInputRect` is set on the save-description and lobby-name edits, with `adjustPan`. The IME now pans the edit into view (`emu/save_dialog_ime.png`), and IME Enter saves. The SAVE button itself is above the visible area while typing. Selecting the prefilled text on focus is not done. |
+| W2-AR-16 | **FIXED** (a, b, c) | (a) No software cursor is drawn unless a real mouse is present. (b) `defaultFocusHighlightEnabled=false`. (c) Placement by touch: the first tap previews the footprint, a second tap on the same cell places. |
+| W2-AR-17 | **FIXED** | `main()` returns. `RA2Activity.onDestroy()` then calls `killProcess` once SDL has torn down. An `exit()` from the SDL thread SIGSEGV'd on the emulator at quit; that was found and replaced in this branch. |
+| W2-AR-18 | **FIXED** | `SDLSurface` marks `ACTION_CANCEL` with pressure −1, and `TouchGestures::finger_cancel` drops the gesture (unit test `touch: a system-cancelled gesture never clicks`). |
+| W2-AR-19 | **FIXED** (with W2-GA-23) | A callback device with a ~93 ms buffer, not fed from the main loop. SDL pauses AAudio in the background. Audio focus is not requested. |
+| W2-AR-20 | **FIXED** | Save **v11** = v10 (W2-AN) plus a CRC-32 trailer over the whole file. The unit test flips every bit (`0x01`/`0x80`) of every byte after the version and refuses all of them; truncation and extra bytes are refused too. The `--demo-saveload` hash is unchanged (`8291b85b9957b34a`). Range checks on indices in `load_world` are not added; the CRC makes them unreachable for random corruption. |
+| W2-AR-21 | **FIXED** | `list_saves` lists unreadable or CRC-failing `*.SAV` files as **Damaged**. They cannot be loaded. |
+| W2-AR-22 | **FIXED** | `--data`, `RA2_INSTALL_DIR`, `RA2.INI [Engine] DataDir`, the exe folder, the registry `InstallPath`, then `D:\Red Alert 2`. The BROWSE folder picker writes `DataDir`. Fatal errors also show a message box. `--version` and `--help` were added. The exe is still the console subsystem (`--play` needs stdout); `os_attach_parent_console()` is ready for a GUI build. |
+| W2-AR-23 | **FIXED** | `LICENSE` (MIT for the engine code; it grants nothing over the game data), `THIRD_PARTY_NOTICES.md` (SDL2 zlib, stb MIT, doctest MIT, libc++), a README "Legal" block, and the `RA2_VERSION` string (`0.9.0+g<hash>`) in the window title, the logcat banner and `--version`. The license choice should be confirmed by the owner. |
+| W2-AR-24 | **FIXED** | `docs/INSTALL.md` (players). The README Android section is corrected: `ra2.ndkPath`, both ABIs, the import flow, where RA2.INI and saves live, and the build types. |
+| W2-AR-25 | **FIXED** | `-Wall -Wextra` on the engine with **0 warnings** (24 before, counting the new code); stb is included as a SYSTEM include. Java is set to 17. |
+| W2-AR-26 | **FIXED** | `TextureCache::clear()` on `SDL_RENDER_DEVICE_RESET` / `TARGETS_RESET` (takes a new `instance_id` so the terrain list rebuilds), and `trim()` on `SDL_APP_LOWMEMORY`. The LRU budget came with W2-GA-P5. |
+| W2-AR-27 | OPEN (owner: skirmish/AI) | Empty AI teams and the economy freeze belong to the skirmish-match agent. Append-only entity vectors are not changed here. |
+| W2-AR-28 | OK | — |
+| W2-AR-29 | OPEN (owner: skirmish-match, sim performance) | — |
+| W2-AR-30 | **FIXED** | `SDL_SetAssertionHandler` logs `SDL ASSERTION (ignored)` and returns `ALWAYS_IGNORE`, so it never prompts. `SDL_ASSERTIONS` is `release` in optimised builds and in the Android release APK, and `enabled` in Debug and the Android debug APK. |
+
+### Q1 decision (for the owner, not changed here)
+
+The engine loads the **Yuri's Revenge** data set: `rulesmd.ini`,
+`artmd.ini`, `soundmd.ini` and `evamd.ini` from `ra2md.mix`; the YR
+`multimd.mix` skirmish maps with `missionsmd.pkt`; `langmd.mix` map names;
+and `mapsmd03.mix`. It also loads the RA2 base archives `ra2.mix`,
+`language.mix` and the campaign `Maps01.mix` / `MAPS02.MIX` / `expand01.mix`.
+
+So an RA2-only install (no `ra2md.mix` / `multimd.mix`) **cannot start**. The
+first-run page lists those two files as required.
+
+Switching to the RA2-only list (`rules.ini`, `art.ini`, `sound.ini`,
+`multi.mix` + `missions.pkt`) would:
+
+- drop about 290 MB from the Android payload;
+- change every rules-driven gate;
+- need the YR-only units and buildings removed from the rosters.
+
+It is a fidelity and owner decision. The data list in `engine/data_dir.inc`
+(`kDataFiles`) and `docs/INSTALL.md` is the single place to change.

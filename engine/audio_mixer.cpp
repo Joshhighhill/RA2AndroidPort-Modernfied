@@ -137,7 +137,8 @@ std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan) 
     }
     if (d) seq.push_back(s.variants[static_cast<std::size_t>(count - 1)]);
 
-    Voice v{key, seq.front(), 0, 0, s.priority, age_counter_++, s.bus};
+    Voice v{key, seq.front(), 0, 0, s.priority, age_counter_++, s.bus,
+            100, 8192, 0, 65536, 0, {}, 0, -1, false};   // the member defaults, spelled out (-Wextra)
     // [RE: FUN_004055c0] VShift volume drop + FShift pitch.
     v.volume = s.vshift > 0 ? std::max(0, s.volume - s.volume * ranged_(0, std::min(100, s.vshift)) / 100)
                             : s.volume;

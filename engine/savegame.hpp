@@ -36,7 +36,7 @@ namespace save {
 // Bump on ANY change to what is serialized (a field added to a visitor, a
 // section's layout). A save with a different version is listed but refused
 // on load -- the original's FileEntryClass::IsWrongVersion.
-constexpr std::uint32_t kFormatVersion = 11;   // 11: w2fix-campaign PlayerControl/pair alliances/entered events; 10: W2-AN air/naval/SW state; 9: W2-GA-03 FogOfWar flag; 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state; 8: skirmish-page game_speed/mcv_redeploys in the config
+constexpr std::uint32_t kFormatVersion = 12;   // 12: w2fix-campaign PlayerControl/pair alliances/entered events/mind control; 11: W2-AR-20 CRC-32 trailer over the whole file; 10: W2-AN air/naval/SW state; 9: W2-GA-03 FogOfWar flag; 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state; 8: skirmish-page game_speed/mcv_redeploys in the config
 
 // --- archives ---------------------------------------------------------------
 class Writer {
@@ -280,9 +280,15 @@ struct SlotEntry {
     std::string file_name;     // SAVE1A2B.SAV
     SaveHeader header;
     bool wrong_version = false;
+    // W2-AR-20/-21: the file is a *.SAV but unreadable -- bad magic, torn, or
+    // its CRC-32 trailer does not match (listed, never loaded).
+    bool damaged = false;
     std::int64_t mtime = 0;    // file modification time (sort key)
 };
-// Every *.SAV in `dir` whose magic parses, newest first (FileEntryClass::Compare).
+// W2-AR-20: CRC-32 (IEEE 802.3, reflected 0xEDB88320) -- the save trailer.
+std::uint32_t crc32(const std::uint8_t* data, std::size_t n, std::uint32_t crc = 0);
+// Every *.SAV in `dir`, newest first (FileEntryClass::Compare); unreadable
+// ones are flagged `damaged` (W2-AR-21) instead of silently left out.
 std::vector<SlotEntry> list_saves(const std::string& dir);
 // "SAVE%04X.SAV" with a pseudo-random 16-bit number (seeded by `seed`),
 // retried until no such file exists in `dir`.

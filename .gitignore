@@ -27,3 +27,6 @@
 # Ghidra project lives outside the repo, but guard anyway
 *.gpr
 *.rep/
+/android/keystore.properties
+*.jks
+*.keystore

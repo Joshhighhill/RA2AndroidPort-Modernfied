@@ -64,6 +64,9 @@
 #include "iso_project.hpp"
 #include "iso_renderer.hpp"
 #include "platform.hpp"
+#include "platform_os.hpp"   // W2-AR-22 registry / folder picker / console
+#include <functional>        // W2-AR-10 deferred scene factories
+#include <optional>
 #include "production.hpp"
 #include "rectfont.hpp"    // glyph_rows (5x7 rect-font for menu labels) [Task 5]
 #include "repair_sell.hpp" // RepairSellRules (Repair & Sell phase)
@@ -110,30 +113,11 @@ using namespace ra2assets;
 
 namespace {
 
-std::string env_install_dir() {
-#ifdef __ANDROID__
-    // Android has no env vars / CLI. The user pushes the game files to the
-    // app's external files dir (see README "Android": adb push ... ra2.mix,
-    // mapsmd03.mix, ...). SDL_AndroidGetExternalStoragePath() resolves that to
-    // /storage/emulated/0/Android/data/org.ra2.engine/files (no runtime
-    // permission needed for the app's own dir); we read the mix chain from its
-    // `ra2/` subfolder. Assets are NOT bundled in the APK (copyright).
-    const char* ext = SDL_AndroidGetExternalStoragePath();
-    std::string dir = ext ? ext : "/sdcard/Android/data/org.ra2.engine/files";
-    dir += "/ra2/";
-    // std::cerr/std::cout are not captured on Android; SDL_Log routes to
-    // logcat (tag "SDL"). Log the resolved asset dir so a missing/misplaced
-    // game-file set is diagnosable from `adb logcat` instead of the app
-    // silently exiting.
-    SDL_Log("[assets] android asset dir = %s", dir.c_str());
-    return dir;
-#else
-    const char* e = std::getenv("RA2_INSTALL_DIR");
-    std::string dir = e ? e : "D:\\Red Alert 2";
-    if (!dir.empty() && dir.back() != '/' && dir.back() != '\\') dir += '\\';
-    return dir;
-#endif
-}
+// W2-AR-03/-05/-22: data-dir discovery + the required-file preflight.
+#include "data_dir.inc"
+// W2-AR-02: loading-screen checkpoint (app_robust.inc); no-op without a
+// loading screen, so the gates are unaffected.
+void load_progress(const char* stage);
 
 // Everything the renderer needs, loaded once from the mix chain.
 struct Assets {
@@ -215,6 +199,7 @@ struct OreArt {
 // 2026-07-09-foundation-batch-design.md, sub-project 4).
 Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
                    const MapSelection& sel = MapSelection{}) {
+    load_progress("MAP + THEATER");   // W2-AR-02 loading-screen checkpoint
     // Map: read the selected map INI. The default selection is byte-for-byte
     // the old hardcoded one (mapsmd03.mix / 0x133a0cb2).
     MixFile maps = MixFile::open_path(dir + sel.mix);
@@ -312,6 +297,7 @@ std::vector<ra2assets::LandType> resolve_land_types(const ra2assets::MapFile& ma
 // leaves present=false; the cell just doesn't draw). Logs a small probe of
 // frame counts so a real-install run confirms the density-frame layout.
 OreArt load_ore_art(const ra2assets::MixFile& ra2) {
+    load_progress("ORE ART");   // W2-AR-02 loading-screen checkpoint
     OreArt oa;
     std::map<std::string, std::unique_ptr<MixFile>> mix_cache;
     auto get_mix = [&](const std::string& name) -> MixFile* {
@@ -637,6 +623,7 @@ ra2engine::MixerSound resolve_sound_event(AudioSystem& audio, const ra2assets::S
 // or for --demo-combat (its byte-identity gate stays provably unaffected by
 // audio).
 void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) {
+    load_progress("AUDIO");   // W2-AR-02 loading-screen checkpoint
     Ini snd_ini = load_ini_from_ra2md(dir, "soundmd.ini");
     ra2assets::Sounds sounds = ra2assets::Sounds::load(snd_ini);
 
@@ -724,6 +711,9 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
     audio.enabled = audio.out.ok();
     std::cerr << "[audio] device=" << (audio.out.ok() ? "ok" : "none")
               << " clips=" << audio.bank.count() << "\n";
+    // W2-AR-01: one SDL device for the process (menu + game share it).
+    SDL_Log("[audio] game handle %s: sdl_devices=%d handles=%d", audio.out.ok() ? "ok" : "none",
+            ra2engine::AudioOutput::open_device_count(), ra2engine::AudioOutput::handle_count());
 }
 
 // One unit id's full combat + movement profile, resolved from an
@@ -1166,6 +1156,7 @@ ShpFile load_unit_shp(const MixFile& conquer, const std::string& image) {
 // ra2.mix shared with load_assets() (opened once by the mode entry points --
 // avoids slurping the 268 MB file again).
 UnitAssets load_unit_assets(const std::string& dir, const ra2assets::MixFile& ra2) {
+    load_progress("INFANTRY ART");   // W2-AR-02 loading-screen checkpoint
     Ini ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(ini);
 
@@ -1231,6 +1222,7 @@ void spawn_squad(ra2engine::World& world, int origin_x, int origin_y, int count,
 // non-turreted vehicle (Rules::has_turret gates the attempt).
 VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFile& ra2,
                                   const ra2assets::Palette& unit_pal, const std::string& unit_id) {
+    load_progress("VEHICLE VOXELS");   // W2-AR-02 loading-screen checkpoint
     VehicleAssets va;
     try {
         Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -1403,6 +1395,7 @@ struct MinerAssets {
 
 MinerAssets load_miner_assets(const std::string& dir, const ra2assets::MixFile& ra2,
                               const ra2assets::Palette& unit_pal, const Rules& rules) {
+    load_progress("MINER ART");   // W2-AR-02 loading-screen checkpoint
     MinerAssets m;
     m.harv = load_vehicle_assets(dir, ra2, unit_pal, "HARV");
     m.cmin = load_vehicle_assets(dir, ra2, unit_pal, "CMIN");
@@ -1440,6 +1433,7 @@ struct TransportAssets {
 
 TransportAssets load_transport_assets(const std::string& dir, const ra2assets::MixFile& ra2,
                                       const ra2assets::Palette& unit_pal) {
+    load_progress("TRANSPORT ART");   // W2-AR-02 loading-screen checkpoint
     TransportAssets ta;
     for (const char* id : {"HTK", "FV"}) {
         VehicleAssets va = load_vehicle_assets(dir, ra2, unit_pal, id);
@@ -1924,6 +1918,7 @@ ra2engine::World build_world(const Assets& a, const UnitAssets& ua, int count) {
 BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                     const ra2assets::MixFile& language, const Rules& rules,
                                     const Art& art) {
+    load_progress("BUILDING ART");   // W2-AR-02 loading-screen checkpoint
     BuildingAssets ba;
     // Economy phase adds GAREFN/NAREFN (appended so the existing 0..7 indices
     // -- and thus demo-base's world_hash -- stay byte-identical). Both ship a
@@ -2074,7 +2069,6 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     ba.roster.reserve(39);
     ba.art.reserve(39);
     int ok_n = 0;
-    int roster_i = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
         // [RE: roster2.md §A, RE-FALLBACK] P6 indices honour rules Image= for the
@@ -2084,7 +2078,6 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         // art-absent, i.e. unbuildable for the player AND the AI. Moves the
         // roster/AI gate witnesses (re-pinned).
         (void)kRoster2First;
-        ++roster_i;
         const std::string art_id = rules.image(id);
         ra2engine::BuildingTypeDef d;
         d.id = id;
@@ -2930,6 +2923,7 @@ struct P5Art {
 const P5Art* g_p5_art = nullptr;
 
 P5Art load_p5_art(const std::string& dir, const ra2assets::MixFile& ra2) {
+    load_progress("VETERANCY ART");   // W2-AR-02 loading-screen checkpoint
     P5Art art;
     try {
         MixFile top = MixFile::open_path(dir + "ra2md.mix");
@@ -3838,36 +3832,10 @@ SDL_Texture* shp_frame_tex(ra2engine::TextureCache& tc, const std::string& key,
 // [Task 5] Blit a decoded PCX (opaque, a=255 for every pixel) at screen (x,y)
 // through the TextureCache's ready-RGBA path (index-0-transparent does NOT apply
 // -- PCX logos use index 0 as a real color). Cached by `key` (position-indep).
-void blit_pcx(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
-              const ra2assets::PcxImage& img, int x, int y) {
-    if (img.w <= 0 || img.h <= 0) return;
-    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
-    if (!tex) {
-        std::vector<uint8_t> rgba = img.rgba();
-        tex = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img.w, img.h));
-    }
-    SDL_Rect dst{x, y, img.w, img.h};
-    SDL_RenderCopy(ren, tex, nullptr, &dst);
-}
 
 // [Task 5] Scaled variant of blit_pcx: fit the logo/title into a target width
 // (preserving aspect), returned height via out_h. Used to size logo.pcx above
 // the button column without distortion.
-void blit_pcx_scaled(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& key,
-                     const ra2assets::PcxImage& img, int cx, int y, int target_w, int* out_h) {
-    if (img.w <= 0 || img.h <= 0) { if (out_h) *out_h = 0; return; }
-    SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
-    if (!tex) {
-        std::vector<uint8_t> rgba = img.rgba();
-        tex = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), img.w, img.h));
-    }
-    const double s = static_cast<double>(target_w) / img.w;
-    const int w = target_w;
-    const int h = static_cast<int>(std::lround(img.h * s));
-    SDL_Rect dst{cx - w / 2, y, w, h};
-    SDL_RenderCopy(ren, tex, nullptr, &dst);
-    if (out_h) *out_h = h;
-}
 
 // [Task 5] The Westwood shell font stores per-pixel values as a small
 // shading/bevel RAMP (0 = transparent, ~1..N = increasing "lit" level), NOT
@@ -4298,7 +4266,7 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
 // red (cell blocked OR adjacency fails -> whole grid red) [RE: construction.md §9].
 void draw_placement_cursor(SDL_Renderer* ren, const ra2engine::World& world,
                            const BuildingAssets& ba, const ra2engine::Input& input,
-                           const Assets& a, const ra2engine::Camera& cam, int W, int H,
+                           const Assets& a, const ra2engine::Camera& cam, int /*W*/, int /*H*/,
                            const ra2engine::PlacementCheck* pre_chk = nullptr) {
     if (!input.placement_active()) return;
     const int type = input.placement_type();
@@ -4531,6 +4499,11 @@ struct Scene {
     }
     virtual void   probe(std::map<std::string, long long>& out) const { (void)out; }
     virtual bool   cheat(const std::vector<std::string>& args) { (void)args; return false; }
+    // W2-AR-06: the logical canvas width this scene lays out for (height is
+    // always 720). The shell pages are fixed 1280 (the original's 800x600
+    // shell, centred); GameScene widens with the panel's aspect.
+    virtual int    logical_width() const                    { return 1280; }
+    virtual int    logical_height() const                   { return 720; }
 };
 
 // G0: per-frame observer of run_scene_driver (the --play harness). begin()
@@ -4551,6 +4524,10 @@ struct DriverHooks {
     virtual ~DriverHooks() = default;
 };
 
+// W2-AR-02/-03/-05/-10/-30: loading screen, deferred scene construction,
+// error page, missing-files page, SDL assertion handler.
+#include "app_robust.inc"
+
 // The scene-loop driver: owns the active Scene*, pumps input -> handle, ticks
 // update(dt) with the real wall-clock dt, calls render, and on a non-null next()
 // swaps scenes (deleting the old). Returns 0 on clean quit.
@@ -4565,12 +4542,19 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
     ra2engine::EventSource& events = src ? *src : static_cast<ra2engine::EventSource&>(plat);
     Uint32 prev = SDL_GetTicks();
     int frame = 0;
+    g_platform = &plat;
     // W2-GA-P6: frame pacing by deadline (60 Hz) instead of a fixed 16 ms
     // sleep AFTER the frame's work; with the vsync'd renderer present()
     // already waits, so this only sleeps the part of the budget left.
     Uint64 frame_start = SDL_GetPerformanceCounter();
     const double perf_ms = 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
     while (scene && !scene->wants_quit()) {
+        // W2-AR-06: the canvas follows the scene (shell 1280x720, the game
+        // as wide as the panel's aspect allows) BEFORE input is polled, so
+        // pointer/finger coordinates map to the same canvas.
+        g_ui_w = scene->logical_width();
+        g_ui_h = scene->logical_height();
+        plat.set_logical_size(g_ui_w, g_ui_h);
         if (hooks && !hooks->begin(frame, *scene)) return 0;
         ra2engine::InputEvent ev;
         while (events.poll(ev)) {
@@ -4578,6 +4562,14 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
                 if (hooks && hooks->swallow_quit(frame)) continue;   // --play on_quit continue
                 if (hooks) hooks->quit(frame, scene.get(), "Quit event");
                 return 0;
+            }
+            // W2-AR-26/-09: GL context lost -> every texture handle is dead
+            // (entries rebuild lazily); low memory -> drop unpinned textures.
+            if (ev.kind == ra2engine::InputEvent::RenderReset) {
+                tc.clear();
+                SDL_Log("[lifecycle] render device reset: texture cache cleared");
+            } else if (ev.kind == ra2engine::InputEvent::AppLowMemory) {
+                SDL_Log("[lifecycle] low memory: freed %lu texture bytes", static_cast<unsigned long>(tc.trim()));
             }
             scene->handle(ev);
         }
@@ -4592,7 +4584,19 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         if (hooks) hooks->end(frame, *scene, plat);   // captures read the back buffer
         if (!hooks || hooks->want_render(frame)) plat.present();
         if (Scene* nx = scene->next()) {   // transition (variable dt continues)
-            scene.reset(nx);
+            if (auto* d = dynamic_cast<DeferredScene*>(nx)) {
+                // W2-AR-10: tear the current scene down BEFORE building the
+                // next one (a loaded save used to hold two games at once);
+                // W2-AR-02: a loading screen with progress while it builds
+                // (not under --play, whose frames stay exactly as before);
+                // W2-AR-05: a build that throws becomes an error page.
+                std::unique_ptr<DeferredScene> hold(d);
+                scene.reset();
+                scene.reset(build_deferred(*d, plat, tc, /*show_screen=*/hooks == nullptr));
+                prev = SDL_GetTicks();   // the load is not game time
+            } else {
+                scene.reset(nx);
+            }
             if (hooks) hooks->transition(frame);
         }
         if (fixed_dt <= 0.0) {
@@ -5019,6 +5023,12 @@ inline void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, c
 // cursors). Additive files; GameScene owns one Presentation.
 #include "pres_game.inc"
 
+// W2-AR-02/-10: GameScene transitions are DeferredScenes (app_robust.inc) --
+// the driver destroys the current scene first, then builds the game under
+// the loading screen. Defined after GameScene.
+Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg);
+Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
+
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
@@ -5242,6 +5252,7 @@ public:
         apply_loaded(f);
     }
     ~GameScene() override {
+        lifecycle_teardown();   // W2-AR-09: a normal end removes the autosave
         prewarm_stop_ = true;
         if (prewarm_.joinable()) prewarm_.join();
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
@@ -5264,10 +5275,13 @@ public:
     // The former poll-loop body (one event): sidebar consume-in-rect-before-world,
     // then Input. G-01: Esc never reaches here as a quit -- ui_handle maps it to
     // the options dialog (KeyboardMD.ini Options=27); right-click cancels modes.
-    void handle(const ra2engine::InputEvent& ev) override {
+    void handle(const ra2engine::InputEvent& ev_in) override {
+        if (lifecycle_event(ev_in)) return;   // W2-AR-09 (game_scene_lifecycle.inc)
+        ra2engine::InputEvent ev = ev_in;     // W2-AR-08: the touch bar may add modifiers
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
         if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
+        if (touch_bar_handle(ev)) return;   // W2-AR-08 touch command bar (touch_bar.inc)
         if (sidebar_up_ && ev.kind == ra2engine::InputEvent::PointerDown &&
             lay_.contains(ev.x, ev.y)) {
             if (ev.button == ra2engine::InputEvent::Left) {
@@ -5583,6 +5597,7 @@ public:
         }
     }
     void init_presentation() {
+        load_progress("PRESENTATION");   // W2-AR-02 loading-screen checkpoint
         init_map_dressing();
         pips_load(ra2_);   // W2-UI-11
         {
@@ -5670,11 +5685,13 @@ public:
         draw_tooltip(ren, tc);         // W2-UI-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
         // cursor is hidden only while it draws.
-        bool drew = !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
+        // W2-AR-16a: no software cursor left at the last tap point -- only a
+        // real mouse has a pointer to draw.
+        bool drew = mouse_present_ && !(sidebar_up_ && lay_.contains(mx_, my_)) && ba_.ok &&
                     draw_mode_cursor(ren, tc, mouse_, world_, ba_, input_, mx_, my_,
                                      world_.repair_frame());
         // G-08 (draw half): every other pointer is the MOUSE.SHP action cursor.
-        if (!drew)
+        if (!drew && mouse_present_)
             drew = pres_.draw_cursor(ren, tc, mouse_, world_, input_, mx_, my_,
                                      sidebar_up_ && lay_.contains(mx_, my_), playfield_w_, kWinW,
                                      kWinH, world_.repair_frame(), static_cast<int>(cursor_action()));
@@ -5683,6 +5700,7 @@ public:
             os_cursor_hidden_ = drew;
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
+        draw_touch_bar(ren);      // W2-AR-08 (touch only)
         if (campaign_) draw_campaign_overlay(ren, tc);   // P10 objectives / mission end (W2-UI-21)
         gf_render(ren, tc);   // gF: victory / defeat text during BorrowedTime (W2-UI-20 game font)
         // P7 overlays + the transient "game saved / load failed" banner.
@@ -5836,7 +5854,7 @@ private:
             sld_.set_message("COULD NOT LOAD THAT SAVED GAME");
             return;
         }
-        next_scene_ = new GameScene(no_audio_, f);   // the driver swaps scenes
+        next_scene_ = defer_load_scene(no_audio_, std::move(f));   // W2-AR-10: the driver destroys this game first
     }
     // Options button over the sidebar cap (draw_sidebar blits sb_optbtn at
     // (bar.x+11, 20)) -- now live: it opens the in-game menu (dialog 0xB5).
@@ -5941,11 +5959,25 @@ public:
 private:
     friend struct AiSoakProbe;     // gap owner D: --ai-soak drives the real scene
 #include "realplay_scene.inc"   // gap owner A: placement/production/roster members
+#include "game_scene_lifecycle.inc"   // W2-AR-09: background autosave + pause
+#include "touch_bar.inc"              // W2-AR-07/-08/-16: touch command bar
     friend struct CombatProbe;   // gap owner C: --probe-combat drives the real scene
     // The window is always created at 1280x720 (see run_interactive); the sidebar
     // layout/camera/input all key off these, so the driver's plat matches.
-    static constexpr int kWinW = 1280;
-    static constexpr int kWinH = 720;
+    // W2-AR-06: the game canvas is 720 high and as wide as the panel's aspect
+    // (1280 at 16:9 -- the --play harness / gates -- up to 1720 at ~21:9);
+    // the original's tactical view grows with ScreenWidth and the sidebar
+    // stays anchored right. Set by defer_game_scene before construction.
+    static inline int kWinW = 1280;
+    // W2-AR-07: 720 on desktop; ~480 on a phone (touch canvas: every sidebar
+    // button and cameo ~1.5x bigger, >= 40 dp) -- like the original running
+    // at a low ScreenHeight.
+    static inline int kWinH = 720;
+    int logical_width() const override { return kWinW; }
+    int logical_height() const override { return kWinH; }
+public:
+    static void set_canvas_size(int w, int h) { kWinW = w; kWinH = h; }
+private:
 
     // --- G16 named map points for --play scripts (agent G) ---
     // Anchor = house 0's first live building (stable), else its first unit.
@@ -6154,6 +6186,7 @@ private:
     std::thread prewarm_;
     std::atomic<bool> prewarm_stop_{false};
     void start_vxl_prewarm() {
+        load_progress("VOXEL PREWARM");   // W2-AR-02 loading-screen checkpoint
         if (!world_.houses_configured()) return;
         std::vector<int> keys;
         for (int h = 0; h < world_.house_count(); ++h) {
@@ -6211,6 +6244,7 @@ private:
         return !c.campaign_map.empty() && camp::up(c.campaign_side) == "NOD";
     }
     void setup_campaign(const ra2engine::SkirmishConfig& cfg) {
+        load_progress("CAMPAIGN MISSION");   // W2-AR-02 loading-screen checkpoint
         camp::Launch l;
         l.map = cfg.campaign_map;
         l.side = cfg.campaign_side;
@@ -6306,21 +6340,20 @@ private:
 
 #include "pres_harness.inc"   // G-8x --scene-shot acceptance harness
 
-// Thin wrapper [D4]: default-config quick-start. Behavior-preserving relative to
-// the old inline scenario (default_skirmish_config reproduces the 1v1). SAME
-// signature so every existing reference (Android + desktop main() seams) still
-// compiles. Creates the Platform + TextureCache and drives a single GameScene
-// through run_scene_driver.
+// --quick-skirmish (dev/QA, W2-AR-02): the default 1v1 (default_skirmish_config)
+// built through the real loading screen -- the desktop load-time measurement
+// and the loading-screen evidence (RA2_AUTOSHOT_DIR). Was the unused
+// run_interactive quick-start wrapper (W2-AR-25 dead code).
 int run_interactive(bool no_audio) {
+    ra2engine::Platform plat = ra2engine::Platform::create(kWindowTitle, 1280, 720);
+    if (!ensure_data_files(plat)) return 0;
     const std::string dir = env_install_dir();
     // Named local: Rules wraps the Ini by reference, so it must outlive `rules`
     // (which default_skirmish_config reads before GameScene construction).
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
-    ra2engine::Platform plat = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(plat.renderer());
-    return run_scene_driver(plat, tc,
-                            new GameScene(no_audio, ra2engine::default_skirmish_config(rules)));
+    return run_scene_driver(plat, tc, new BootScene(defer_game_scene(no_audio, ra2engine::default_skirmish_config(rules))));
 }
 
 // Owns the decoded menu assets (run_menu / --menu-shot lifetime); `art` holds
@@ -6424,6 +6457,8 @@ std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
         ma->sys.mixer->register_sound("menu:grinder", ms);
         ma->sys.out.open();
         ma->sys.enabled = ma->sys.out.ok();
+        SDL_Log("[audio] menu handle %s: sdl_devices=%d handles=%d", ma->sys.enabled ? "ok" : "none",
+                ra2engine::AudioOutput::open_device_count(), ra2engine::AudioOutput::handle_count());
         std::cerr << "[menu-music] grinder.wav " << (info.channels == 2 ? "stereo->mono" : "mono")
                   << " @" << info.sample_rate << "Hz device="
                   << (ma->sys.enabled ? "ok" : "none") << "\n";
@@ -7204,6 +7239,21 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
     return false;
 }
 
+Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg) {
+    auto c = std::make_shared<ra2engine::SkirmishConfig>(std::move(cfg));
+    return defer_scene("LOADING", [no_audio, c]() -> Scene* {
+        { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }   // W2-AR-06
+        return new GameScene(no_audio, *c);
+    });
+}
+Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
+    auto sf = std::make_shared<ra2engine::save::SaveFile>(std::move(f));
+    return defer_scene("LOADING SAVED GAME", [no_audio, sf]() -> Scene* {
+        { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }   // W2-AR-06
+        return new GameScene(no_audio, *sf);
+    });
+}
+
 // [SK-01..SK-42] The Skirmish setup page (dialog 0x102) + Customize Battle
 // (dialog 0x6B). docs/gap/07-skirmish-page.md.
 #include "skirmish_page.inc"
@@ -7251,7 +7301,7 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
                 ra2engine::save::decode_save(bytes, f) &&
                 f.header.version == ra2engine::save::kFormatVersion &&
                 f.section(ra2engine::save::kTagWorld) && f.section(ra2engine::save::kTagConfig)) {
-                next_ = new GameScene(no_audio_, f);
+                next_ = defer_load_scene(no_audio_, std::move(f));   // W2-AR-02/-10
             } else {
                 sld_.open(SaveLoadDialog::Load, "");
                 sld_.set_message("COULD NOT LOAD THAT SAVED GAME");
@@ -7264,7 +7314,14 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     // does not press [RE-FALLBACK: the main dialog's IDCANCEL handling is
     // G-14's Exit-confirm, owned by the shell agent].
     if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
-        if (page_ == PAGE_MAIN) return;
+        if (page_ == PAGE_MAIN) {
+            // W2-AR-14: Android BACK on the root page leaves the app -- through
+            // the same Exit confirm as the Exit Game button (Esc stays inert).
+            if (ev.system_back)
+                gf_confirm_.ask(gf_csf("GUI:ExitAreYouSure", "Are you sure you want to exit Red Alert 2?"),
+                                {gf_csf("GUI:OK", "OK"), gf_csf("GUI:Cancel", "Cancel")});
+            return;
+        }
         for (const ShellButton& b : layout())
             if (b.enabled && b.rect.y == rowY(5) && b.action == ACT_GOTO) {
                 const ra2engine::SbRect d = to_device(b.rect);
@@ -7337,17 +7394,51 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     }
 }
 
+// W2-AR-09: the resume prompt for a leftover background autosave. Returns
+// the deferred load scene, or nullptr (no autosave / declined / unreadable).
+Scene* offer_resume_autosave(ra2engine::Platform& plat, bool no_audio) {
+    const std::string dir = save_games_dir();
+    if (dir.empty()) return nullptr;
+    const std::string path = dir + "/AUTOSAVE.SAV";
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec)) return nullptr;
+    std::vector<uint8_t> bytes;
+    ra2engine::save::SaveFile f;
+    const bool ok = ra2engine::save::read_file_bytes(path, bytes) && ra2engine::save::decode_save(bytes, f) &&
+                    f.header.version == ra2engine::save::kFormatVersion &&
+                    f.section(ra2engine::save::kTagWorld) && f.section(ra2engine::save::kTagConfig);
+    int choice = 1;
+    if (ok) {
+        std::vector<std::string> lines = {
+            "THE LAST GAME WAS INTERRUPTED WHILE IN THE BACKGROUND.",
+            "IT WAS SAVED AUTOMATICALLY:",
+            "#  " + (f.header.map_file.empty() ? std::string("GAME") : f.header.map_file) + "  -  FRAME " +
+                std::to_string(f.header.frame)};
+        choice = run_message_page(plat, "RESUME GAME?", lines, {"RESUME", "MAIN MENU"});
+    }
+    std::filesystem::remove(path, ec);   // consumed either way (a new one is written on the next background)
+    SDL_Log("[lifecycle] autosave found (%s): %s", ok ? "valid" : "unreadable", choice == 0 ? "resumed" : "declined");
+    if (!ok || choice != 0) return nullptr;
+    return defer_load_scene(no_audio, std::move(f));
+}
+
 // [RE: skirmish.md §2, D6] The default desktop/Android entry: create the
 // Platform/TextureCache, parse Rules (kept alive for the scene lifetime since
 // the scenes hold it by reference), and drive from MainMenuScene. run_interactive
 // STAYS as the thin quick-start wrapper; this is the new menu-first entry.
 int run_menu(bool no_audio) {
+    g_session_no_audio = no_audio;
+    g_interactive_session = true;   // main()'s catch shows a message box
+    // W2-AR-03: the window comes up FIRST, so a missing/misplaced install is
+    // explained on screen (and on Android the app stays open) instead of the
+    // process exiting with a stderr/logcat line.
+    ra2engine::Platform plat = ra2engine::Platform::create(kWindowTitle, 1280, 720);
+    if (!ensure_data_files(plat)) return 0;
     const std::string dir = env_install_dir();
     // Named local: Rules wraps the Ini by reference, so it must outlive `rules`
     // (which the menu scenes hold by reference for the whole driver loop).
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
-    ra2engine::Platform plat = ra2engine::Platform::create("RA2 Engine", 1280, 720);
     ra2engine::TextureCache tc(plat.renderer());
     // Faithful menu art + looping theme (best-effort; outlives the scenes, held
     // by reference like `rules`). GameScene owns its OWN audio init later.
@@ -7364,7 +7455,14 @@ int run_menu(bool no_audio) {
         apply_audio_settings(*store.audio->sys.mixer, user);
     g_menu_rules = &rules;        // P10: a finished/aborted mission returns here
     g_menu_art = &store.art;
-    const int rc = run_scene_driver(plat, tc, new MainMenuScene(rules, no_audio, store.art));
+    // W2-AR-09: a leftover AUTOSAVE.SAV means the last session was killed in
+    // the background (a normal end deletes it): offer to resume it.
+    Scene* first = new MainMenuScene(rules, no_audio, store.art);
+    if (Scene* resume = offer_resume_autosave(plat, no_audio)) {
+        delete first;
+        first = new BootScene(resume);
+    }
+    const int rc = run_scene_driver(plat, tc, first);
     g_menu_rules = nullptr;
     g_menu_art = nullptr;
     g_user_settings = nullptr;
@@ -12105,6 +12203,7 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  Assets& a, UnitAssets& ua, BuildingAssets& ba,
                                  const Rules& rules, const Ini* gf_rules_ini,
                                  std::vector<std::string>* gf_spawned) {
+    load_progress("SKIRMISH WORLD");   // W2-AR-02 loading-screen checkpoint
     ra2engine::World world = build_world(a, ua, 0);          // count=0 -> launcher spawns everything
     ra2engine::configure_skirmish_houses(world, cfg);       // house table + toggles + credit seed + minimal AI
     // Repair & Sell [RE: repair-sell.md §A1]: the interactive game's World never
@@ -16264,7 +16363,7 @@ int run_demo_saveload() {
 
     // --- scenario 1: skirmish (the interactive game's World + scene record).
     SlSkirmishEnv env{a,      ua,         ba, rules, ur, ur_ai, miners, rules_ini,
-                      ra2engine::default_skirmish_config(rules)};
+                      ra2engine::default_skirmish_config(rules), {}, {}};
     env.cfg.crates = true;
     env.inf_ft = factory_types_for(ba, "GAPILE");
     env.veh_ft = factory_types_for(ba, "GAWEAP");
@@ -16363,6 +16462,9 @@ int run_demo_saveload() {
 #include "realplay_combat_probe.inc"   // gap owner C: --probe-combat (real GameScene harness)
 
 int main(int argc, char** argv) {
+    // W2-AR-30: SDL-internal assertions log and continue; they never block on
+    // a console prompt (desktop) or a modal dialog (Android).
+    install_sdl_assert_handler();
     try {
 #ifdef __ANDROID__
         // Android launches straight into the interactive engine: there is no
@@ -16371,8 +16473,39 @@ int main(int argc, char** argv) {
         // SDL_FINGER* handling + input.cpp).
         (void)argc;
         (void)argv;
+        SDL_Log("Red Alert 2 engine %s", RA2_VERSION);
+        // W2-AR-17: return normally -- SDLActivity finishes the activity and
+        // RA2Activity.onDestroy() then ends the process, so the next launch
+        // starts with fresh statics (g_art_chain, caches, ...). (exit() from
+        // this thread raced the Java side's teardown: SIGSEGV on the emulator.)
         return run_menu(/*no_audio=*/false);
 #else
+        // W2-AR-22/-23: --version, --help, --data <dir> (any position).
+        for (int i = 1; i < argc; ++i) {
+            const std::string a = argv[i];
+            if (a == "--version") {
+                ra2engine::os_attach_parent_console();
+                std::printf("Red Alert 2 engine %s\n", RA2_VERSION);
+                return 0;
+            }
+            if (a == "--help" || a == "-h") {
+                ra2engine::os_attach_parent_console();
+                std::printf("Red Alert 2 engine %s\n"
+                            "usage: ra2engine [--data <RA2 folder>] [--no-audio]\n"
+                            "  --data <dir>   folder holding ra2.mix, ra2md.mix, language.mix, ...\n"
+                            "                 (else RA2_INSTALL_DIR, RA2.INI [Engine] DataDir, the exe's\n"
+                            "                 folder, the retail registry key, D:\\Red Alert 2)\n"
+                            "  --no-audio     run silent\n"
+                            "  --version      print the version\n"
+                            "developer modes: --play <script> [--out <dir>], --ai-soak, --demo-*\n",
+                            RA2_VERSION);
+                return 0;
+            }
+            if (a == "--data" && i + 1 < argc) {
+                g_data_dir_cli = argv[i + 1];
+                reset_data_dir();
+            }
+        }
         // G0 verification harness: --play <script> [--out <dir>] drives the
         // REAL shell scene tree with scripted input (engine/play_driver.inc).
         if (argc >= 3 && std::string(argv[1]) == "--play") {
@@ -16400,6 +16533,7 @@ int main(int argc, char** argv) {
         bool demo_aircraft = false;
         bool demo_audio = false;
         bool no_audio = false;
+        bool quick_skirmish = false;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--scene-shot" && i + 1 < argc) {
@@ -16515,6 +16649,8 @@ int main(int argc, char** argv) {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
                 no_audio = true;
+            } else if (arg == "--quick-skirmish") {
+                quick_skirmish = true;   // W2-AR-02 dev: default 1v1 through the loading screen
             } else if (arg == "--campaign" && i + 1 < argc) {
                 campaign_map = argv[++i];   // P10: jump straight to a mission's loading screen
             }
@@ -16537,6 +16673,7 @@ int main(int argc, char** argv) {
         if (demo_move) return run_demo_move(demo_x, demo_y);
         if (!screenshot.empty()) return run_screenshot(screenshot);
         if (!campaign_map.empty()) return run_campaign_direct(campaign_map, no_audio);
+        if (quick_skirmish) return run_interactive(no_audio);
         return run_menu(no_audio);
 #endif
     } catch (const std::exception& ex) {
@@ -16545,6 +16682,12 @@ int main(int argc, char** argv) {
         // instead of the app just vanishing.
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "fatal: %s", ex.what());
         std::cerr << "fatal: " << ex.what() << "\n";
+        // W2-AR-22: a double-clicked desktop build (or the Android app) has
+        // no console -- say it in a message box too.
+        if (g_interactive_session) {
+            const std::string msg = describe_load_failure(ex.what());
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Red Alert 2 engine", msg.c_str(), nullptr);
+        }
         return 1;
     }
 }

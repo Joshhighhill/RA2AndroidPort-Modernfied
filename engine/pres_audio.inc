@@ -183,7 +183,7 @@ public:
         // Theme archives: the one the ini came from first, then the other (the
         // binary itself opens THEMEMD.MIX and falls back to THEME.MIX when the
         // open fails, FUN_005301a0). File-backed: tracks are read on demand.
-        for (const std::string name : {theme_mix_name_, std::string(theme_mix_name_ == "theme.mix" ? "thememd.mix" : "theme.mix")}) {
+        for (const std::string& name : {theme_mix_name_, std::string(theme_mix_name_ == "theme.mix" ? "thememd.mix" : "theme.mix")}) {
             try {
                 theme_mixes_.push_back(std::make_unique<MixFile>(MixFile::open_path(dir + name)));
             } catch (const std::exception&) {}

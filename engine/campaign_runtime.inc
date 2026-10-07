@@ -114,14 +114,6 @@ ra2engine::CampaignTables load_tables(const MixFile& ra2) {
                                             load_ra2_local_ini(ra2, "mapsel.ini"));
 }
 
-// Map a [<Side>] mapsel section to the World side.
-ra2engine::World::Side side_of(const std::string& s) {
-    const std::string u = up(s);
-    if (u == "GDI") return ra2engine::World::Side::Allied;
-    if (u == "NOD") return ra2engine::World::Side::Soviet;
-    return ra2engine::World::Side::Neutral;
-}
-
 // The campaign selection a GameScene / gate starts from.
 struct Launch {
     std::string map;          // e.g. "ALL01t.MAP"
@@ -1876,6 +1868,7 @@ private:
 // pre-spawned squads) with the water grid; the CampaignRuntime then configures
 // houses and places the map's own objects.
 ra2engine::World build_campaign_world(Assets& a, UnitAssets& ua) {
+    load_progress("CAMPAIGN WORLD");   // W2-AR-02 loading-screen checkpoint
     ra2engine::World world = build_world(a, ua, 0);
     const int gw = world.grid_w(), gh = world.grid_h();
     // Gap fix C (G-43): water grid + ground blocked on water/cliffs.

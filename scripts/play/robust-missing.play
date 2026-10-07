@@ -1,0 +1,22 @@
+# W2-AR-05 -- a data file missing in the middle of a session must not kill
+# the process. Run with RA2_INSTALL_DIR pointing at an install copy WITHOUT
+# Maps01.mix (the Allied campaign maps): starting the Allied campaign shows
+# the error page naming the file, and MAIN MENU returns to the shell.
+#   $env:RA2_INSTALL_DIR = "<install copy without Maps01.mix>\"
+set render_every 300
+set on_quit continue
+
+click button "Single Player"
+click button "New Campaign"
+require scene == "shell:Campaign"
+click well:allied
+click button Load
+until 30 scene == campaign-load
+click start
+until 300 scene == error
+require scene == error
+shot error
+click button "MAIN MENU"
+until 60 scene == "shell:Main Menu"
+require scene == "shell:Main Menu"
+end
