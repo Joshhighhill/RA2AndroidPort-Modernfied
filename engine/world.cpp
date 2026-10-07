@@ -856,6 +856,7 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // false in every existing demo) take the exact existing path below.
     if (u.is_aircraft) {
         aircraft_any_ = true;                        // open the step_flight firewall
+        u.an.landing = false;                        // W2-AN-08: a new goal ends a landing
         u.flight_goal_x = gx;
         u.flight_goal_y = gy;
         u.has_flight_goal = true;
@@ -1302,7 +1303,7 @@ void World::step_cargo(double /*dt*/) {
         // W2-AN-08: an AIRBORNE transport (Night Hawk) takes passengers only
         // once it has landed; it lands where it hovers (step_air_naval).
         if (cheb <= 1 && t.is_aircraft && t.flight_state != FlightState::Grounded) {
-            if (t.an.t.landable && !t.balloon_hover) t.has_flight_goal = false;
+            if (t.an.t.landable && !t.balloon_hover && !t.an.landing) t.has_flight_goal = false;
             continue;
         }
         if (cheb <= 1) {
@@ -1371,8 +1372,8 @@ void World::step_cargo(double /*dt*/) {
         if (t.moving()) continue;              // a STATIONARY transport ejects [spec §5]
         // W2-AN-08: an airborne transport lands first, then unloads.
         if (t.is_aircraft && t.flight_state != FlightState::Grounded) {
-            if (t.an.t.landable && !t.balloon_hover) t.has_flight_goal = false;
-            else t.unload_pending = false;
+            if (!t.an.t.landable || t.balloon_hover) t.unload_pending = false;   // can never land
+            else if (!t.an.landing) t.has_flight_goal = false;
             continue;
         }
         // W2-AN-10: a landing craft unloads only once beached on a LAND cell

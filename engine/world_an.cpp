@@ -604,11 +604,28 @@ void World::step_air_naval(double dt) {
         if (!live(u)) continue;
         if (u.flight_state == FlightState::Cruising && !u.has_flight_goal && u.target < 0 &&
             u.target_building < 0) {
-            if (walkable(u.cell_x, u.cell_y) && occ_.is_free(u.cell_x, u.cell_y) &&
-                building_at_cell(u.cell_x, u.cell_y) < 0) {
+            auto pad_ok = [&](int x, int y) {
+                return walkable(x, y) && occ_.is_free(x, y) && building_at_cell(x, y) < 0;
+            };
+            if (pad_ok(u.cell_x, u.cell_y)) {
                 u.flight_state = FlightState::Descending;
                 u.an.landing = true;
                 aircraft_any_ = true;
+            } else {
+                // Blocked landing spot: fly to the nearest free ground cell.
+                bool found = false;
+                for (int r = 1; r <= 4 && !found; ++r)
+                    for (int oy = -r; oy <= r && !found; ++oy)
+                        for (int ox = -r; ox <= r && !found; ++ox) {
+                            if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
+                            if (!pad_ok(u.cell_x + ox, u.cell_y + oy)) continue;
+                            u.flight_goal_x = u.cell_x + ox;
+                            u.flight_goal_y = u.cell_y + oy;
+                            u.has_flight_goal = true;
+                            u.an.landing = true;   // a landing redirect (kept by step_cargo)
+                            aircraft_any_ = true;
+                            found = true;
+                        }
             }
         }
         if (u.an.landing && u.flight_state == FlightState::Grounded) {

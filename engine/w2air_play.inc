@@ -102,7 +102,7 @@
         for (const char* f : {"submerged", "sub_detected_by0", "iron_units", "chrono_units", "airborne",
                               "spawned_out", "planes", "planes_docked", "plane_ammo", "amphib_on_water",
                               "unit_hp", "cargo_total", "iron_buildings", "sw_has", "sw_ready_t",
-                              "sw_charge", "sunk"})
+                              "sw_charge", "sunk", "crashing"})
             p.zero_families.insert(f);
         p.set("sw_armed", input_.sw_targeting() ? input_.sw_armed_type() : 0);
         p.set("sw_armed_phase", input_.sw_armed_phase());
@@ -165,6 +165,8 @@
             if (b.alive && b.iron_left > 0.0) p.add("iron_buildings(" + std::to_string(b.house) + ")", 1);
         for (const ra2engine::Unit& u : world_.units())   // W2-AN-25: ever sunk (dying or gone)
             if (u.an.sinking) p.add("sunk(" + std::to_string(u.house) + ")", 1);
+        for (const ra2engine::Unit& u : world_.units())   // W2-AN-07: falling wrecks
+            if (u.alive && u.an.crashing) p.add("crashing(" + std::to_string(u.house) + ")", 1);
         p.set("rad_total", world_.rad_field().total());
         const int si = w2_first_selected();
         if (si >= 0) {
@@ -174,6 +176,9 @@
             p.set("sel_max_hp", u.max_hp);
             p.set("sel_cargo", static_cast<double>(u.cargo.size()));
             p.set("sel_altitude", u.altitude);
+            p.set("sel_flight_state", static_cast<int>(u.flight_state));
+            p.set("sel_flight_goal", u.has_flight_goal ? 1 : 0);
+            p.set("sel_unload_pending", u.unload_pending ? 1 : 0);
         }
     }
 
@@ -326,6 +331,34 @@
                         return true;
                     }
             out = "no spot for " + a[2];
+            return true;
+        }
+        if (a[1] == "kill" && a.size() >= 3) {
+            // w2 kill H:TYPE[:n]: a lethal hit on that unit (the combat death
+            // path: die_time 0, occupancy released) -- crash / sink checks.
+            std::vector<std::string> parts;
+            std::string cur;
+            for (char ch : a[2]) {
+                if (ch == ':') { parts.push_back(cur); cur.clear(); }
+                else cur += ch;
+            }
+            parts.push_back(cur);
+            if (parts.size() < 2) { out = "kill H:TYPE[:n]"; return true; }
+            const int h = std::atoi(parts[0].c_str());
+            const int nth = parts.size() > 2 ? std::atoi(parts[2].c_str()) : 0;
+            int seen = 0;
+            for (int i = 0; i < static_cast<int>(world_.units().size()); ++i) {
+                ra2engine::Unit& u = world_.units()[i];
+                if (!u.alive || u.die_time >= 0.0 || u.house != h || play_unit_id(u) != parts[1]) continue;
+                if (seen++ != nth) continue;
+                u.hp = 0;
+                u.die_time = 0.0;
+                u.target = -1;
+                u.path.clear();
+                u.path_idx = 0;
+                return true;
+            }
+            out = "no unit " + a[2];
             return true;
         }
         if (a[1] == "damage" && a.size() >= 4) {
