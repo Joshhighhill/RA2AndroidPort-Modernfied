@@ -54,11 +54,19 @@ until 1800 queue_ready(structure) == 1
 click cameo:GAWEAP
 place auto
 until 300 built(0,GAWEAP) == 1
+click tab:1
+click cameo:NASAM
+until 1800 queue_ready(defense) == 1
+click cameo:NASAM
+place auto
+until 300 built(0,NASAM) == 1
 click tab:3
 click cameo:MTNK
 wait 900
 view building 0:GAWEAP
 shot v03_base
+view building 0:NASAM
+shot v03b_patriot
 wait 1200
 view building 0:GACNST
 shot v04_later

@@ -2526,6 +2526,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
+#include "pres_turret.inc"   // W2-GA-13 defence turrets
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
@@ -3263,6 +3264,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             const ra2assets::MapCell* mc = a.map.at(b.cx, b.cy);
             draw_building(ren, tc, b, *ba, mc ? mc->level : 0, ba->condition_yellow, cam, W, H,
                           &world.buildings());
+            if (g_turrets && b.type >= 0 && b.type < static_cast<int>(ba->roster.size()))   // W2-GA-13
+                g_turrets->draw(ren, tc, world, b, ba->roster[static_cast<std::size_t>(b.type)].id,
+                                mc ? mc->level : 0, cam, W, H);
         } else {
             draw_one_unit(d.idx);
         }
@@ -5162,6 +5166,7 @@ public:
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
         if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
         if (g_radar == &radar_) g_radar = nullptr;
+        if (g_turrets == &turrets_) g_turrets = nullptr;
         if (g_light == &light_) {
             g_light = nullptr;
             ra2engine::set_terrain_level_palettes(nullptr);
@@ -5455,6 +5460,8 @@ public:
             // W2-GA-05: the map's [Lighting] (tiles baked per height + ambient).
             light_.load(map_ini, a_.pal);
             g_light = &light_;
+            turrets_.load(ra2_, dir_, rules_ini_, ba_, ba_.unit_pal);   // W2-GA-13
+            g_turrets = &turrets_;
             ra2engine::set_terrain_level_palettes(light_.active ? &light_.level_pals : nullptr);
             map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
             if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
@@ -6053,6 +6060,7 @@ private:
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     PresLight light_;   // W2-GA-05
+    PresTurrets turrets_;   // W2-GA-13
     // W2-GA-P4: every roster vehicle x every house colour rasterised on a
     // worker thread at game start instead of in the first frame each colour's
     // tank appears (51-69 ms per set at -O0, 9-20 ms at -O2).
