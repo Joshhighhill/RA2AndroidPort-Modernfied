@@ -1,7 +1,7 @@
 // W3-FX: the map triggers' presentation actions, executed in the campaign
 // scene (they were recorded only). Textually included INSIDE class GameScene;
 // every member is inert unless campaign_ is set. Presentation only: the
-// requests come from MapTriggerSystem::take_visuals (typed, never hashed or
+// requests come from TriggerHost::present (typed, never hashed or
 // saved), so the trigger log and every gate stay byte-identical.
 //
 // [RE: TActionClass::Execute FUN_006dce20]

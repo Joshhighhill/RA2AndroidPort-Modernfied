@@ -499,10 +499,6 @@ public:
     std::vector<ra2engine::VisualRequest> take_visuals() {
         std::vector<ra2engine::VisualRequest> o;
         o.swap(visuals_);
-        if (sys_) {
-            std::vector<ra2engine::VisualRequest> s = sys_->take_visuals();
-            o.insert(o.end(), s.begin(), s.end());
-        }
         return o;
     }
     // RA2 rules.ini lists the PlayAnimAt / ParticleAnim index spaces (see
@@ -1760,6 +1756,7 @@ private:
             return n;
         }
         bool apply(const ra2engine::TriggerEffect& e) override { return rt.apply(e); }
+        void present(const ra2engine::VisualRequest& v) override { rt.visuals_.push_back(v); }   // W3-FX
     };
 
     bool apply(const ra2engine::TriggerEffect& e) {

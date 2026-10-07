@@ -22,9 +22,14 @@ wait 4
 assert fx_systems >= 1                              @W3-FX-88
 shot s02_flameguy_smoke                             @W3-FX-88
 wait 60
+view cell 93 100
 shot s03_smoke_column                               @W3-FX-88
 view cell 111 114
+let sy0 = fx_systems
 cheat camp_fire "Building 9"                        @W3-FX-88
+wait 2
+assert fx_systems > $sy0                            @W3-FX-88
 wait 60
+view cell 111 114
 shot s04_red_smoke                                  @W3-FX-88
 end

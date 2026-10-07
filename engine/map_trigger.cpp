@@ -993,7 +993,7 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
                 v.text = a.text;
                 if (a.team >= 0 && a.team < (int)d_.team_ids.size()) v.team = d_.team_ids[(std::size_t)a.team];
                 if (a.kind == 113) v.house_type = find_house(t, a.value, host);
-                visuals_.push_back(v);
+                host.present(v);
                 break;
             }
             default:

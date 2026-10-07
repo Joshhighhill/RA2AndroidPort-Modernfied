@@ -151,6 +151,23 @@ struct TriggerEffect {
     int trigger_type = -1;       // P10: the firing trigger's MapTriggerData index
 };
 
+// W3-FX [RE: FUN_006dce20 cases 41 PlayAnimAt (FUN_006e1800), 48 MoveCamera
+// (FUN_006d1990), 55 CreateRadarEvent (FUN_0065f4b0, ECX = Value), 88
+// ParticleAnim (ParticleSystemTypes[Value] at the waypoint), 104 FlashTeam,
+// 112 CenterCamera (FUN_006d55e0), 113 MakeHouseCheer (FUN_0050c6e0), 114/115
+// sidebar tab/cameo, 131 FlashBuildingsOfType]: the presentation actions as
+// typed requests handed to TriggerHost::present (campaign mode only). Never
+// hashed, logged (the log lines stay byte-identical) or saved -- they carry
+// no simulation state, and the trigger system keeps no copy.
+struct VisualRequest {
+    int action = 0;
+    int value = 0;          // action Value (+0x90)
+    int waypoint = -1;      // action Waypoint (+0x44)
+    int house_type = -1;    // 113: FindHouseByIndex(Value)
+    std::string team;       // 104: the TeamType id
+    std::string text;
+};
+
 class TriggerHost {
 public:
     virtual ~TriggerHost() = default;
@@ -188,23 +205,8 @@ public:
     virtual bool apply(const TriggerEffect& e) = 0;
     // Optional detail about the last apply(), appended to its log line.
     virtual std::string take_note() { return std::string(); }
-};
-
-// W3-FX [RE: FUN_006dce20 cases 41 PlayAnimAt (FUN_006e1800), 48 MoveCamera
-// (FUN_006d1990), 55 CreateRadarEvent (FUN_0065f4b0, ECX = Value), 88
-// ParticleAnim (ParticleSystemTypes[Value] at the waypoint), 104 FlashTeam,
-// 112 CenterCamera (FUN_006d55e0), 113 MakeHouseCheer (FUN_0050c6e0), 114/115
-// sidebar tab/cameo, 131 FlashBuildingsOfType]: the presentation actions as
-// typed requests for the campaign scene. Campaign mode only; drained by the
-// host each frame. Never hashed, logged (the log lines stay byte-identical)
-// or saved -- they carry no simulation state.
-struct VisualRequest {
-    int action = 0;
-    int value = 0;          // action Value (+0x90)
-    int waypoint = -1;      // action Waypoint (+0x44)
-    int house_type = -1;    // 113: FindHouseByIndex(Value)
-    std::string team;       // 104: the TeamType id
-    std::string text;
+    // W3-FX: a presentation action to show (campaign mode only). No-op default.
+    virtual void present(const VisualRequest& v) { (void)v; }
 };
 
 // Context of an object/cell raise (RE §3.2 object kinds).
@@ -288,12 +290,6 @@ public:
     // the trigger type named `name` (or with that ID) now, enabling it first
     // (ForceTrigger without the Enabled gate). Returns the instances fired.
     int force_fire(const std::string& name, TriggerHost& host);
-    // W3-FX: the presentation requests queued since the last call.
-    std::vector<VisualRequest> take_visuals() {
-        std::vector<VisualRequest> o;
-        o.swap(visuals_);
-        return o;
-    }
 
 private:
     struct Trig {
@@ -351,7 +347,6 @@ private:
     std::string cur_trigger_;               // for log lines
     bool campaign_mode_ = false;            // P10 firewall (see set_campaign_mode)
     bool semi_detached_ = false;            // set by raise() for raise_object
-    std::vector<VisualRequest> visuals_;    // W3-FX (see take_visuals)
 };
 
 }  // namespace ra2engine
