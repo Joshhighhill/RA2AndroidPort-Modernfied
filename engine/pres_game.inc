@@ -606,7 +606,7 @@ private:
             if (ex && !ex->empty()) {
                 const uint32_t h = (static_cast<uint32_t>(u.cell_x * 131 + u.cell_y) * 2654435761u) ^
                                    (static_cast<uint32_t>(g_pres_tick) * 40503u);
-                if (const FxAnimType* t = fx_.spawn((*ex)[(h >> 7) % ex->size()], u.fx, u.fy, u.level, lift)) {
+                if (const FxAnimType* t = fx_.spawn((*ex)[(h >> 7) % ex->size()], u.fx, u.fy, level_at(w, u.fx, u.fy), lift)) {
                     snd_.play_at(t->report, u.fx, u.fy, "rocket shot down");
                     ++explosions_;
                 }
@@ -617,7 +617,7 @@ private:
         if (!splash.empty() && on_water(u.fx, u.fy) && lift < 30.0) {
             const int ns = static_cast<int>(splash.size());
             const std::string& sname = splash[static_cast<std::size_t>(std::min(damage, ns * 35 - 1) / 35)];
-            if (const FxAnimType* st = fx_.spawn(sname, u.fx, u.fy, u.level, 0.0)) {
+            if (const FxAnimType* st = fx_.spawn(sname, u.fx, u.fy, level_at(w, u.fx, u.fy), 0.0)) {
                 snd_.play_at(st->report, u.fx, u.fy, "splash");
                 effects_.note_splash();
                 return;
@@ -639,7 +639,7 @@ private:
         }
         if (list.empty()) return;
         const int ix = std::clamp(damage / 25, 0, static_cast<int>(list.size()) - 1);
-        if (const FxAnimType* t = fx_.spawn(list[static_cast<std::size_t>(ix)], u.fx, u.fy, u.level, lift)) {
+        if (const FxAnimType* t = fx_.spawn(list[static_cast<std::size_t>(ix)], u.fx, u.fy, level_at(w, u.fx, u.fy), lift)) {
             snd_.play_at(t->report, u.fx, u.fy, "rocket explosion");
             ++explosions_;
         }
