@@ -10,7 +10,7 @@
 // The menu's long-lived state, published by run_menu (like g_user_settings)
 // so a finished/aborted mission can return to the main menu.
 const Rules* g_menu_rules = nullptr;
-const MenuArt* g_menu_art = nullptr;
+// g_menu_art lives in shell_pages.inc (W2-UI-13: also the in-game pages' art).
 
 Scene* make_main_menu_scene(bool no_audio) {
     if (!g_menu_rules || !g_menu_art) return nullptr;
@@ -67,6 +67,7 @@ public:
         : no_audio_(no_audio), cfg_(std::move(cfg)), dir_(env_install_dir()) {
         try {
             ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir_ + "ra2.mix");
+            hud_font_load(ra2);   // W2-UI-19: the loading text is game.fnt
             const ra2engine::CampaignTables tables = camp::load_tables(ra2);
             const ra2engine::MissionInfo mi = tables.mission(cfg_.campaign_map);
             name_ = mi.ui_name.empty() ? cfg_.campaign_map : camp::csf_text(dir_, mi.ui_name);
@@ -88,45 +89,58 @@ public:
         // Dev/smoke aid: RA2_CAMP_AUTOSTART=1 skips the click.
         if (const char* e = std::getenv("RA2_CAMP_AUTOSTART")) start_ = std::atoi(e) != 0;
     }
+    // W2-UI-19: the difficulty is chosen on page 0x94 now; the loading screen
+    // is the LS800 art full-screen with the CSF text in the game font and a
+    // progress bar, and starts the mission by itself (Enter / a click start
+    // it at once). [RE-FALLBACK: text anchors (the art's dark top-left box),
+    // the bar (the art's bottom strip, UI colour) and the 1.5 s fill.]
     void handle(const ra2engine::InputEvent& ev) override {
-        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown) {
-            mx_ = ev.x;
-            my_ = ev.y;
-        }
         if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEnter) start_ = true;
-        if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left) return;
-        for (int d = 0; d < 3; ++d)
-            if (diff_btn(d).r.contains(ev.x, ev.y)) cfg_.campaign_difficulty = d;
-        if (start_btn().r.contains(ev.x, ev.y)) start_ = true;
-        if (back_btn().r.contains(ev.x, ev.y)) back_ = true;
+        if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left) start_ = true;
+    }
+    void update(double dt) override {
+        clock_ += dt;
+        if (clock_ >= kAutoStart) start_ = true;
     }
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
         SDL_RenderClear(ren);
-        if (has_bg_) blit_shp(ren, tc, "camp-ls:" + cfg_.campaign_map, bg_, 0, pal_, 240, 60);
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(ren, 0, 0, 0, 150);
-        SDL_Rect panel{250, 70, 780, 300};
-        SDL_RenderFillRect(ren, &panel);
-        draw_text(ren, camp::up(name_), 266, 84, 3, 255, 220, 90);
-        int y = draw_camp_wrapped(ren, text_, 266, 124, 60, 2, 350, 235, 235, 235);
-        if (!msg_.empty()) draw_camp_wrapped(ren, msg_, 266, y + 10, 60, 2, 365, 180, 200, 255);
-        if (loading_) {
-            draw_text(ren, "LOADING...", 560, 640, 3, 255, 255, 255);
-            return;
-        }
-        for (int d = 0; d < 3; ++d) {
-            CampButton b = diff_btn(d);
-            draw_camp_button(ren, b, b.r.contains(mx_, my_));
-            if (d == cfg_.campaign_difficulty) {
-                SDL_SetRenderDrawColor(ren, 255, 220, 90, 255);
-                SDL_Rect s{b.r.x - 3, b.r.y - 3, b.r.w + 6, b.r.h + 6};
-                SDL_RenderDrawRect(ren, &s);
+        // Art letterboxed into the 1280x720 window (aspect kept).
+        const int aw = has_bg_ ? bg_.width() : 800, ah = has_bg_ ? bg_.height() : 600;
+        const double sc = std::min(1280.0 / aw, 720.0 / ah);
+        const int dw = static_cast<int>(aw * sc), dh = static_cast<int>(ah * sc);
+        const int ox = (1280 - dw) / 2, oy = (720 - dh) / 2;
+        if (has_bg_)
+            if (SDL_Texture* t = shp_frame_tex(tc, "camp-ls:" + cfg_.campaign_map, bg_, 0, pal_)) {
+                const ra2assets::ShpFile::Frame f = bg_.frame_info(0);
+                SDL_Rect d{ox + static_cast<int>(f.x * sc), oy + static_cast<int>(f.y * sc),
+                           static_cast<int>(f.w * sc), static_cast<int>(f.h * sc)};
+                SDL_RenderCopy(ren, t, nullptr, &d);
             }
+        const bool soviet = camp::up(cfg_.campaign_side) == "NOD";
+        const SDL_Color col = soviet ? SDL_Color{255, 255, 0, 255} : SDL_Color{164, 210, 255, 255};
+        const int tx = ox + static_cast<int>(24 * sc), maxw = static_cast<int>(560 * sc / 1.5);
+        int y = oy + static_cast<int>(20 * sc);
+        hud_text(ren, tc, name_, tx, y, col, kHudLeft, false, true, 2.0);
+        y += 2 * (hud_line_h() + 4);
+        if (!text_.empty()) {
+            const std::string t = wrap_hud(text_, maxw);
+            hud_text(ren, tc, t, tx, y, col, kHudLeft, false, true, 1.5);
+            y += static_cast<int>(1.5 * (hud_text_height(t) + 6));
         }
-        draw_camp_button(ren, start_btn(), start_btn().r.contains(mx_, my_));
-        draw_camp_button(ren, back_btn(), back_btn().r.contains(mx_, my_));
+        if (!msg_.empty()) hud_text(ren, tc, wrap_hud(msg_, maxw), tx, y, col, kHudLeft, false, true, 1.5);
+        // Progress bar.
+        const SDL_Rect bar{ox + static_cast<int>(aw * sc * 0.25), oy + dh - static_cast<int>(18 * sc),
+                           static_cast<int>(aw * sc * 0.5), static_cast<int>(8 * sc)};
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 0xAF);
+        SDL_RenderFillRect(ren, &bar);
+        const double frac = loading_ ? 1.0 : std::min(1.0, clock_ / kAutoStart);
+        SDL_Rect fill{bar.x + 1, bar.y + 1, static_cast<int>((bar.w - 2) * frac), bar.h - 2};
+        SDL_SetRenderDrawColor(ren, col.r, col.g, col.b, 255);
+        SDL_RenderFillRect(ren, &fill);
+        SDL_RenderDrawRect(ren, &bar);
     }
     Scene* next() override {
         if (back_) {
@@ -136,34 +150,40 @@ public:
             return nullptr;
         }
         if (!start_) return nullptr;
-        // Draw one "LOADING..." frame before the (multi-second) GameScene build.
+        // Draw one full-bar frame before the (multi-second) GameScene build.
         if (!loading_) { loading_ = true; return nullptr; }
         start_ = false;
         return new GameScene(no_audio_, cfg_);
     }
     bool wants_quit() const override { return quit_; }
-    // G0 --play: the loading screen's buttons + the chosen mission.
+    // G0 --play: the chosen mission; `start` = anywhere (a click starts).
     void play_probe(ra2play::Probe& p) override {
         p.scene = "campaign-load";
         p.set_s("map", cfg_.campaign_map);
         p.set_s("side", cfg_.campaign_side);
         p.set("difficulty", cfg_.campaign_difficulty);
-        for (int d = 0; d < 3; ++d) {
-            const CampButton b = diff_btn(d);
-            p.targets[std::string("diff:") + b.label] = ra2play::Rect{b.r.x, b.r.y, b.r.w, b.r.h};
-        }
-        const CampButton st = start_btn(), bk = back_btn();
-        p.targets["start"] = ra2play::Rect{st.r.x, st.r.y, st.r.w, st.r.h};
-        p.targets["back"] = ra2play::Rect{bk.r.x, bk.r.y, bk.r.w, bk.r.h};
+        p.targets["start"] = ra2play::Rect{560, 300, 160, 120};
     }
 
 private:
-    static CampButton diff_btn(int d) {
-        static const char* kL[3] = {"EASY", "NORMAL", "HARD"};
-        return {{380 + d * 180, 600, 160, 40}, kL[d], true};
+    static constexpr double kAutoStart = 1.5;
+    static std::string wrap_hud(const std::string& text, int max_w) {
+        std::string out, line, word;
+        auto flush_word = [&]() {
+            if (word.empty()) return;
+            const std::string cand = line.empty() ? word : line + " " + word;
+            if (!line.empty() && hud_text_width(cand) > max_w) { out += line + "\n"; line = word; }
+            else line = cand;
+            word.clear();
+        };
+        for (char c : text) {
+            if (c == '\n') { flush_word(); out += line + "\n"; line.clear(); }
+            else if (c == ' ') flush_word();
+            else word += c;
+        }
+        flush_word();
+        return out + line;
     }
-    static CampButton start_btn() { return {{1060, 650, 180, 46}, "START", true}; }
-    static CampButton back_btn() { return {{40, 650, 180, 46}, "BACK", true}; }
     bool no_audio_;
     ra2engine::SkirmishConfig cfg_;
     std::string dir_, name_, text_, msg_;
@@ -171,7 +191,7 @@ private:
     ra2assets::Palette pal_;
     bool has_bg_ = false;
     bool start_ = false, back_ = false, loading_ = false, quit_ = false;
-    int mx_ = 0, my_ = 0;
+    double clock_ = 0.0;
 };
 
 // A campaign config for mission `map` of side `side` ("GDI" / "Nod").
@@ -185,7 +205,7 @@ ra2engine::SkirmishConfig campaign_config(const std::string& map, const std::str
 }
 
 // The first mission of a battle.ini campaign (RE §3.1): ALL1 / SOV1.
-Scene* make_campaign_start_scene(bool no_audio, const char* battle, const char* side) {
+Scene* make_campaign_start_scene(bool no_audio, const char* battle, const char* side, int difficulty = 1) {
     std::string map = std::string(battle) == "SOV1" ? "SOV01t.MAP" : "ALL01t.MAP";
     try {
         const std::string dir = env_install_dir();
@@ -193,7 +213,7 @@ Scene* make_campaign_start_scene(bool no_audio, const char* battle, const char* 
         const ra2engine::CampaignTables t = camp::load_tables(ra2);
         if (const ra2engine::BattleEntry* b = t.battle(battle)) map = b->scenario;
     } catch (const std::exception&) {}
-    return new CampaignLoadScene(no_audio, campaign_config(map, side, 1));
+    return new CampaignLoadScene(no_audio, campaign_config(map, side, difficulty));
 }
 
 // ---------------------------------------------------------------------------
@@ -216,33 +236,54 @@ public:
             name_ = mi.ui_name.empty() ? cfg_.campaign_map : camp::csf_text(dir, mi.ui_name);
         } catch (const std::exception&) {}
     }
+    // W2-UI-20: a shell page -- header GUI:CampaignResults, the CSF
+    // TXT_SCENARIO_WON / TXT_SCENARIO_LOST line, the mission name and time;
+    // Continue (row 0, next mission), Restart (row 1), Main Menu (row 5).
+    // [RE-FALLBACK: the 0xBC7 graph well / First-Second Place panel is not
+    // drawn (no per-house score data in a campaign); Restart / Main Menu are
+    // the clone's way out of a lost mission.]
     void handle(const ra2engine::InputEvent& ev) override {
-        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown) {
+        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown ||
+            ev.kind == ra2engine::InputEvent::PointerUp) {
             mx_ = ev.x;
             my_ = ev.y;
         }
+        if (ev.button == ra2engine::InputEvent::Left && ev.kind == ra2engine::InputEvent::PointerUp) down_ = false;
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left) return;
-        if (cont_btn().enabled && cont_btn().r.contains(ev.x, ev.y)) choice_ = 1;
-        if (retry_btn().r.contains(ev.x, ev.y)) choice_ = 2;
-        if (menu_btn().r.contains(ev.x, ev.y)) choice_ = 3;
+        down_ = true;
+        if (cont_enabled() && ui_dev(shell_row(0)).contains(ev.x, ev.y)) choice_ = 1;
+        if (ui_dev(shell_row(1)).contains(ev.x, ev.y)) choice_ = 2;
+        if (ui_dev(shell_row(5)).contains(ev.x, ev.y)) choice_ = 3;
     }
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
-        (void)tc;
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-        SDL_SetRenderDrawColor(ren, 8, 10, 16, 255);
-        SDL_RenderClear(ren);
-        const char* head = outcome_ == 1 ? (next_.empty() && end_of_game_ ? "CAMPAIGN COMPLETE"
-                                                                            : "MISSION ACCOMPLISHED")
-                                         : "MISSION FAILED";
-        const int w = static_cast<int>(std::strlen(head)) * 24;
-        draw_text(ren, head, (1280 - w) / 2, 200, 4, 255, 220, 90);
-        draw_text(ren, camp::up(name_), (1280 - (int)name_.size() * 12) / 2, 260, 2, 220, 220, 220);
-        char b[64];
-        std::snprintf(b, sizeof b, "TIME %02ld:%02ld", frames_ / 15 / 60, (frames_ / 15) % 60);
-        draw_text(ren, b, (1280 - (int)std::strlen(b) * 12) / 2, 300, 2, 200, 200, 200);
-        draw_camp_button(ren, cont_btn(), cont_btn().r.contains(mx_, my_));
-        draw_camp_button(ren, retry_btn(), retry_btn().r.contains(mx_, my_));
-        draw_camp_button(ren, menu_btn(), menu_btn().r.contains(mx_, my_));
+        const MenuArt& art = shell_art();
+        const ShellXform xf = ui_xform();
+        const ShellPainter p{ren, tc, art, xf};
+        const std::vector<ShellButton> b{
+            ShellButton{shell_row(0), gf_csf("GUI:Continue", "Continue"), cont_enabled(), ACT_NONE, PAGE_MAIN},
+            ShellButton{shell_row(1), gf_csf("GUI:Restart", "Restart"), true, ACT_NONE, PAGE_MAIN},
+            ShellButton{shell_row(5), gf_csf("GUI:MainMenu", "Main Menu"), true, ACT_NONE, PAGE_MAIN}};
+        int lx = 0, ly = 0;
+        ui_to_logical(mx_, my_, lx, ly);
+        int hov = -1;
+        for (int i = 0; i < 3; ++i)
+            if (b[(std::size_t)i].enabled && b[(std::size_t)i].rect.contains(lx, ly)) hov = i;
+        draw_shell(ren, tc, art, xf, b, hov, (hov >= 0 && down_) ? hov : -1,
+                   gf_csf("GUI:CampaignResults", "Campaign Results"), "", 0);
+        const std::string head = outcome_ == 1 ? gf_csf("TXT_SCENARIO_WON", "Mission Accomplished")
+                                               : gf_csf("TXT_SCENARIO_LOST", "Mission Failed");
+        p.header(head, 24, 60, 423, 30, 1);
+        p.label(name_, 24, 100, 423, 20, 1);
+        char t[64];
+        std::snprintf(t, sizeof t, "%s %02ld:%02ld:%02ld", gf_csf("GUI:Time", "Time").c_str(), frames_ / 15 / 3600,
+                      (frames_ / 15 / 60) % 60, (frames_ / 15) % 60);
+        p.label(t, 24, 124, 423, 20, 1);
+        std::string st;
+        if (hov == 0) st = gf_csf("STT:MPCampScoreContinue", "");
+        if (hov == 1) st = gf_csf("STT:ConfirmExitButtonRestart", "");
+        if (hov == 2) st = gf_csf("STT:MPCampScoreQuit", "");
+        shell_status_line(p, st);
     }
     Scene* next() override {
         const int c = choice_;
@@ -265,18 +306,17 @@ public:
         p.set_s("map", cfg_.campaign_map);
         p.set_s("next_map", next_);
         p.set("result_frames", static_cast<double>(frames_));
-        const CampButton c = cont_btn(), r = retry_btn(), m = menu_btn();
-        if (c.enabled) p.targets["continue"] = ra2play::Rect{c.r.x, c.r.y, c.r.w, c.r.h};
-        p.targets["retry"] = ra2play::Rect{r.r.x, r.r.y, r.r.w, r.r.h};
-        p.targets["menu"] = ra2play::Rect{m.r.x, m.r.y, m.r.w, m.r.h};
+        auto put = [&](const char* k, int row) {
+            const ra2engine::SbRect r = ui_dev(shell_row(row));
+            p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
+        };
+        if (cont_enabled()) put("continue", 0);
+        put("retry", 1);
+        put("menu", 5);
     }
 
 private:
-    CampButton cont_btn() const {
-        return {{460, 420, 360, 46}, "CONTINUE", outcome_ == 1 && !next_.empty()};
-    }
-    static CampButton retry_btn() { return {{460, 480, 360, 46}, "RETRY MISSION", true}; }
-    static CampButton menu_btn() { return {{460, 540, 360, 46}, "MAIN MENU", true}; }
+    bool cont_enabled() const { return outcome_ == 1 && !next_.empty(); }
     bool no_audio_;
     ra2engine::SkirmishConfig cfg_;
     int outcome_;
@@ -284,7 +324,7 @@ private:
     std::string next_, name_;
     bool end_of_game_ = false;
     int choice_ = 0;
-    bool quit_ = false;
+    bool quit_ = false, down_ = false;
     int mx_ = 0, my_ = 0;
 };
 

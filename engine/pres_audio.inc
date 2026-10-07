@@ -137,6 +137,7 @@ public:
                 t.repeat = !rp.empty() && rp[0] == 'y';
                 t.side = pres_lower(pres_clean(th.get(sec, "Side", "")));
                 t.scenario = std::atoi(pres_clean(th.get(sec, "Scenario", "0")).c_str());
+                t.name = pres_clean(th.get(sec, "Name"));   // W2-UI-14 jukebox label (CSF)
                 if (!t.sound.empty()) themes_.push_back(t);
             }
         };
@@ -356,6 +357,12 @@ public:
     }
     void music_update(double now) {
         if (!music_on_) return;
+        if (jukebox_pending_ >= 0) {   // W2-UI-14 jukebox Play: that theme now, then Next_Song
+            const int ti = jukebox_pending_;
+            jukebox_pending_ = -1;
+            play_track(ti, now);
+            return;
+        }
         if (track_ix_ >= 0) {
             // Stream still playing (or, deviceless, the header length not yet
             // elapsed): nothing to do.
@@ -375,12 +382,27 @@ public:
         stream_.reset();
     }
     const std::string& current_track() const { return cur_track_; }
+    // W2-UI-14 (0xB8 jukebox): the score list (CSF Name labels, [Themes]
+    // order) and Play = start that theme now, then continue the playlist.
+    std::vector<std::string> theme_labels() const {
+        std::vector<std::string> v;
+        for (const Theme& t : themes_) v.push_back(t.name.empty() ? t.section : t.name);
+        return v;
+    }
+    void jukebox_play(const std::string& section) {
+        int ti = -1;
+        for (int i = 0; i < static_cast<int>(themes_.size()); ++i)
+            if (pres_lower(themes_[i].section) == pres_lower(section)) ti = i;
+        if (ti < 0) return;
+        music_on_ = true;
+        jukebox_pending_ = ti;
+    }
 
 private:
     struct Req { std::string name; int priority; int type; };
     struct Bag { ra2assets::AudioIdx idx; std::vector<uint8_t> bag; };
     struct Theme {
-        std::string section, sound, side;
+        std::string section, sound, side, name;
         bool normal = true, repeat = false;
         int scenario = 0;
         int avail = -1;   // -1 unknown, 0 missing/zero-filled, 1 playable
@@ -553,6 +575,7 @@ private:
     long frame_ = 0;
     std::vector<Theme> themes_;
     int track_ix_ = -1;
+    int jukebox_pending_ = -1;   // W2-UI-14
     bool music_on_ = false;
     double track_end_ = 0.0;
     std::string cur_track_;

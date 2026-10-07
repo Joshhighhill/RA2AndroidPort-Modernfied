@@ -10,6 +10,7 @@
 // t_tmp_image_header: bytes 43..45 left RGB, 46..48 right RGB), averaged.
 
 long g_radar_online_since = -1000;   // game frame the player's radar came online (Presentation)
+long g_radar_offline_since = -1000;  // W2-UI-09: game frame it went offline
 
 class PresRadar {
 public:
@@ -52,11 +53,19 @@ public:
         return true;
     }
     // Radar power-up: radar.shp frames 1..count-2 play once each time the radar
-    // comes online (one per game frame [RE-FALLBACK: boot rate not read]);
-    // returns the frame to show, or 0 once open. Called only while online.
+    // comes online at a 4-tick frame timer (W2-UI-09 [RE: construction.md
+    // §11a -- frames 1-31, ~8 s]); returns the frame to show, or 0 once open.
+    // Called only while online.
     int boot_frame(int count) {
-        const long f = 1 + (g_pres_tick - g_radar_online_since);
+        const long f = 1 + (g_pres_tick - g_radar_online_since) / 4;
         return (count > 2 && f < count - 1) ? static_cast<int>(f) : 0;
+    }
+    // W2-UI-09: power-down plays the boot frames in reverse (count-2 .. 1),
+    // same 4-tick timer; 0 = finished (the side logo, frame 0, shows).
+    int close_frame(int count) const {
+        if (count <= 2 || g_radar_offline_since <= g_radar_online_since) return 0;
+        const long f = (count - 2) - (g_pres_tick - g_radar_offline_since) / 4;
+        return f >= 1 ? static_cast<int>(f) : 0;
     }
     ~PresRadar() { if (tex_) SDL_DestroyTexture(tex_); }
     PresRadar() = default;

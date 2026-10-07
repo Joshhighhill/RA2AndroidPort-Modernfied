@@ -1,0 +1,22 @@
+# W2-UI-20: the end banner (game font) and the skirmish score page 0xBC6.
+set on_quit continue
+set render_every 300
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+wait 30
+cheat kill_house 1
+until 60 world_outcome == WON
+wait 10
+shot r01_victory_banner
+until 300 scene == result
+require scene == result
+assert outcome == WON
+assert score_rows >= 2
+shot r02_score_page
+click continue
+until 30 scene == "shell:Main Menu"
+end

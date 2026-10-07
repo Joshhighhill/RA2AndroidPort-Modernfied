@@ -207,3 +207,61 @@ All coordinates are 640×480 shell pixels (the template DLU rects pass through M
 - **Q7 Shell details.** The runtime version string, whether the first button is lit with no hover, and Esc on the main page.
 - **Q8 Rally point marker.** The waypoint/rally line art when a factory is selected.
 - **Q9 Popup background choice.** Which `pudlgbg` variant (`s` = Soviet emblem vs `n`) is used, keyed by side or by screen.
+
+## Fix status (branch `w2fix-ui`)
+
+The fixes are on branch `w2fix-ui`, in worktree `D:\ra2-wt\w2fix-ui`. The RE
+scripts are `D:\ra2-re\scripts\w2fix_1..4.py`, with their output in
+`D:\ra2-re\w2fix-uiout\`. Screenshots are under
+`D:\ra2-wt\w2fix-ui\build\play-out\<script>\`, taken by the new play scripts
+`ui-hud`, `ui-pages`, `ui-campaign`, `ui-result` and `ui-shell`.
+
+| ID | Status now | What changed | Evidence (screenshot) |
+|---|---|---|---|
+| W2-UI-01 | **FIXED** | `sidebar.pal` is loaded from `g_sidebar_mix`. `cameo.pal` is kept for cameos. | `ui-hud/h03_building_clock.png`, `m-sov01/start.png` |
+| W2-UI-02 | **FIXED** | `GCLOCK2` frame stage+1 at 50% alpha. No shade under it. | `ui-hud/h03_building_clock.png`, `ui-hud/zoom_cameos.png` |
+| W2-UI-03 | **FIXED** | CSF `TXT_READY` / `TXT_HOLD` in `game.fnt` at (x+30, y+1) centred, or (x+2, y+1) when a count shows, over the 0xAF box. | `ui-hud/h04_ready.png`, `ui-hud/h06_on_hold.png` |
+| W2-UI-04 | **FIXED** | `"%d"` right-aligned at (x+60, y+1). Shown when count > 1, or queued but not current. | `ui-hud/h05_queue_count.png` |
+| W2-UI-05 | **PARTIAL** | `DARKEN.SHP` (`language.mix/cameo.mix`) is drawn with the darken blend. The new-item flash is still open. | `ui-hud/h05_queue_count.png` |
+| W2-UI-06 | **PARTIAL** | Frame 1 for the active tab, 0 for the others, 2 (blank) for an empty tab [ANCHORED: TS `ShapeButtonClass` order]. The shade is gone. The flash (frames 3/4) is open (Q2). | `ui-hud/tabs.png` |
+| W2-UI-07 | **FIXED** | Cameo "UIName $Cost" with spaces turned into newlines. Tabs, repair, sell, scroll, options and diplomacy use their CSF tips. Power uses `TXT_POWER_DRAIN`. `[Options] ToolTips` applies. Delay and box are RE-FALLBACK (Q3). | `ui-hud/h07_cameo_hover.png`, `ui-hud/h09_repair_hover.png` |
+| W2-UI-08 | **FIXED** | Soviet constant set in `SidebarLayout` (`set_sidebar_style`). | `m-sov01/start.png` |
+| W2-UI-09 | **FIXED** | Boot = 1 + ticks/4. Reverse power-down. Minimap 140x108 at bar (16, 49), used for both draw and click. | (radar after a power loss; covered by code review) |
+| W2-UI-10 | OPEN | Q4 is not traced. | — |
+| W2-UI-11 | **FIXED** | `PIPBRD` + `PIPS` drawn as `TechnoClass::DrawHealthBar` 0x6C3F00 does. The building line lift is RE-FALLBACK (art `Height` x 15 px). | `ui-hud/zoom_pips.png` |
+| W2-UI-12 | **FIXED** | One HUD font. `ra2assets::UFont` decodes `game.fnt`, and every in-game text path uses it. | `ui-campaign/c05_objectives.png`, `c06_briefing.png` |
+| W2-UI-13 | **FIXED** | 0xB5 is a full-screen shell page (`ingame_pages.inc`) with all 6 rows and the STT status line. | `ui-pages/p02_game_options.png` |
+| W2-UI-14 | **FIXED** | 0xBBB: speed applies live, plus scroll rate and the 3 checks. 0xB8: 3 volumes, jukebox list from RA2 `theme.ini`, Play / Stop, Shuffle. Keyboard row is greyed. | `ui-pages/p03_game_controls.png`, `p04_sound.png` |
+| W2-UI-15 | **FIXED** | Page 0xB6. Restart is shown in a campaign (code 5) and hidden in skirmish. | `ui-pages/p08_abort_page.png`, `ui-campaign/c07_abort_restart.png` |
+| W2-UI-16 | **FIXED** | 0xB7 / 0x2B4 / 0x2B5 shell pages. The confirms are 0x120 popups. The banner is `TXT_GAME_WAS_SAVED`. | `ui-pages/p05_save_page.png`, `p06_load_page.png`, `p07_delete_confirm.png` |
+| W2-UI-17 | **FIXED** | Popup 0x120 on `pudlgbga` / `pudlgbgs` (keyed by side, Q9) with MNBTTN Ok / Cancel. | `ui-pages/p01_exit_popup.png` |
+| W2-UI-18 | **FIXED** | Page 0x94: FSBKGD emblem wells, `battle.ini` list (TUT1 / ALL1 / SOV1), difficulty slider, Load. Hover art is RE-FALLBACK. | `ui-campaign/c01_campaign_page.png`, `c03_campaign_easy.png` |
+| W2-UI-19 | **FIXED** | LS800 art letterboxed to full screen, `game.fnt` text, progress bar, auto start. | `ui-campaign/c04_loading.png` |
+| W2-UI-20 | **PARTIAL** | Skirmish score page 0xBC6 (Player / Kills / Losses / Built per lobby house) and a Campaign Results page. The Score formula and the 0xBC7 graph are open (Q6). | `ui-result/r01_victory_banner.png`, `r02_score_page.png`, `m-lose/lost.png` |
+| W2-UI-21 | **FIXED** | Message list with `MessageDelay`, `TXT_LOW_POWER` on the edge, defeated lines, objectives, "Time Remaining:" timer. The permanent F1 hint is gone. | `ui-campaign/c05_objectives.png` |
+| W2-UI-22 | **FIXED** | "Main Menu" bottom rows (the `button:Back` alias is kept), "Campaign" header, `GUI:Version` line. | `ui-shell/s03_single_settled.png` |
+| W2-UI-23 | **FIXED** | STT status line and `MenuClick` on the Main, Single, Movies, Options, Campaign and in-game pages. | `ui-shell/s01_main_status.png` |
+| W2-UI-24 | **PARTIAL** | Staggered enter power-on (SDBTNANM 10 to 5, 30 ms, 1-row stagger). The leave band is not played (page switches stay immediate for scripts). | `ui-shell/s02_single_transition.png` |
+| W2-UI-25 | **PARTIAL** | No default-lit button. The header shimmer is open. | `ui-shell/s01_main_status.png` |
+| W2-UI-26 | **FIXED** | View Credits scrolls `credits.txt` with CSF labels expanded. Movies stay greyed (no content). | `ui-shell/s04_credits.png` |
+| W2-UI-27 | **PARTIAL** | Hotkeys read RA2 `Keyboard.ini` first. The Keyboard page 0xA3 is open. | — |
+| W2-UI-28 | OPEN | — | — |
+| W2-UI-29 | **FIXED** | Page 0x73 from the sidebar Diplomacy button. | `ui-pages/p09_diplomacy.png` |
+| W2-UI-30 | OPEN | Q8 is not traced. | — |
+
+### Answers to the open RE questions
+
+- **Q1 (pips): answered.** The answer is in `TechnoClass::DrawHealthBar` 0x6C3F00 and its unit tail 0x6C4260.
+  - The pip board is `PIPBRD` frame 1 for infantry, at (x+11, y-25). Other units use frame 0 at (x+1, y-26). Both draws use flags 0xE00 (centred), and the board is drawn only while the object is selected.
+  - Infantry get up to 8 pips starting at (x-5, y-24). Other units get up to 17 starting at (x-15, y-25). Pips are 2 px apart.
+  - The pip frame is 15, 16 when the ratio is at or below `ConditionYellow`, and 17 when it is at or below `ConditionRed`.
+  - The pip count is ftol(ratio × max), with a minimum of 1.
+  - A building gets N = (dy of the box's Y edge) / 2 pips, stepping (-4, +2) from the top corner. The filled pips use frame 1, 2 or 4; the rest use frame 0.
+  - The palette is `palette.pal`.
+- **Q5 (font): answered.** The text is `game.fnt`.
+  - `FUN_00497A60` / `FUN_00497A50` read the `GAME.FNT` global.
+  - `FUN_005FEB60(rect, surf, 0, 0xAF)` is a 0xAF alpha black fill behind each text.
+  - The UI colour pair 0xAC1028 comes from `FUN_006F45A0`: (A4, D2, FF) for side 0 and (FF, FF, 00) for side 1.
+- **Q6: partly answered.** `MPScore.cpp` (`FUN_005AAAE0`) builds the MP score page with the `GUI:SkirmishScore` or `GUI:MultiplayerScore` title. The campaign "Score.CPP" path (SCORE.PCX, BIGFONT) was not followed.
+- **Q9: answered.** The table at 0x7F8744 is {`PUDLGBGA.SHP`, `PUDLGBGS.SHP`}, indexed by side.
+- **Still open:** Q2 (tab flash frames), Q3 (tooltip delay and box), Q4 (credits roll), Q7 (version build string), Q8 (rally marker).

@@ -826,7 +826,7 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
         const ra2engine::SbRect s = status_rect();
         p.label(p.fit(tip, s.w), s.x, s.y, s.w, s.h, 0);
     }
-    confirm_.render(ren);
+    confirm_.render(ren, tc);   // W2-UI-17 popup 0x120
 }
 
 void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
