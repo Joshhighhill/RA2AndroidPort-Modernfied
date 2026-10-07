@@ -4934,8 +4934,8 @@ constexpr double kProjFrameSecs = 1.0 / 15.0;  // one logic frame (§3: lept/fra
 constexpr int kProjMaxLifetime = 1800;
 constexpr double kProjPi = 3.14159265358979323846;
 
-int unit_lx(const Unit& u) { return ftol(u.fx * 256.0); }
-int unit_ly(const Unit& u) { return ftol(u.fy * 256.0); }
+int unit_lx(const Unit& u) { return ftol(u.fx * 256.0 + u.sub_x); }   // W5-B: + sub-cell spot
+int unit_ly(const Unit& u) { return ftol(u.fy * 256.0 + u.sub_y); }
 int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : 0; }
 int dist3(int ax, int ay, int az, int bx, int by, int bz) {
     const double dx = ax - bx, dy = ay - by, dz = az - bz;
