@@ -198,6 +198,8 @@ private:
                                          ? gf_default_country(cfg_.slots[(std::size_t)h].side)
                                          : cfg_.slots[(std::size_t)h].country)
                                   : std::string("Computer");
+            if (campaign_ && h < (int)campaign_->house_names().size())   // W5-E: the map's house
+                who = campaign_->house_names()[(std::size_t)h];
             const std::string lbl = camp::csf_text(dir_, "Name:" + who);
             s.rows[(std::size_t)h].name = lbl.rfind("Name:", 0) == 0 ? who : lbl;
             // Only the lobby's playing slots are listed (not the neutral house).
@@ -222,6 +224,35 @@ private:
             const int k = killer_house(b.killed_by);
             if (k >= 0 && k < n && k != b.house) ++s.rows[(std::size_t)k].kills;
         }
+        // W5-E score [RE: FUN_007021D0 kill credit, FUN_005C92C0 tally]:
+        // victim cost x (1 + victim rank), not for allied victims / DontScore.
+        for (const ra2engine::Unit& u : world_.units()) {
+            if (u.deployed_away || u.vet.dont_score || (u.alive && u.die_time < 0.0)) continue;
+            const int k = killer_house(u.vet.killed_by);
+            if (k < 0 || k >= n || k == u.house || world_.are_allied(k, u.house)) continue;
+            s.rows[(std::size_t)k].score += static_cast<long>(u.vet.cost) * (1 + std::max(0, std::min(2, u.veteran_rank)));
+        }
+        for (const ra2engine::Building& b : world_.buildings()) {
+            if ((b.alive && b.state != ra2engine::Building::State::Dead) || b.sold) continue;
+            const int k = killer_house(b.killed_by);
+            if (k < 0 || k >= n || k == b.house || world_.are_allied(k, b.house)) continue;
+            if (b.type >= 0 && b.type < (int)ba_.roster.size()) s.rows[(std::size_t)k].score += ba_.roster[(std::size_t)b.type].cost;
+        }
+        // The survivors' bonus: score + score/2 + Random(score/2, score)
+        // [RE-FALLBACK: the clone draws from a game-length-seeded LCG, not the
+        // sim's Randomizer, so the result page never perturbs the simulation].
+        std::uint32_t rng = static_cast<std::uint32_t>(gf_frames_) * 2654435761u + 0x5C0E5u;
+        for (int h = 0; h < n; ++h) {
+            GfSkirmishStats::Row& r = s.rows[(std::size_t)h];
+            r.house = h;
+            r.winner = !world_.house_defeated(h);
+            if (!r.winner || r.score <= 0) continue;
+            rng = rng * 1103515245u + 12345u;
+            const long lo = r.score / 2, span = r.score - lo + 1;
+            r.score = r.score + lo + lo + static_cast<long>((rng >> 8) % static_cast<std::uint32_t>(std::max(1L, span)));
+        }
+        std::stable_sort(s.rows.begin(), s.rows.end(),
+                         [](const GfSkirmishStats::Row& a, const GfSkirmishStats::Row& b) { return a.score > b.score; });
         return s;
     }
 

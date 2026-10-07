@@ -5809,6 +5809,7 @@ public:
         // P10: the mission ended (BorrowedTime ran out) -> the result screen.
         if (campaign_ && campaign_->finished() && !campaign_done_ && !next_scene_) {
             campaign_done_ = true;
+            g_campaign_last_stats = gf_stats();   // W5-E: 0xBC7 graph / places
             next_scene_ = make_campaign_result_scene(no_audio_, cfg_, campaign_->outcome(),
                                                      campaign_->frame_count());
         }

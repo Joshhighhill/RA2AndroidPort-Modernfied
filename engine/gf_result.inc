@@ -8,9 +8,10 @@
 // header GUI:SkirmishScore (MPScore.cpp FUN_005AAAE0 picks GUI:SkirmishScore
 // vs GUI:MultiplayerScore), columns Player (16,173) Kills (118,173) Losses
 // (181,173) Built (256,173) Score (331,173), Continue in the button column].
-// [RE-FALLBACK: row pitch 20; the Score formula was not traced (shown as
-// "-"); the outcome line (TXT_VICTORIOUS / TXT_LOST) and the game time sit
-// above the table.]
+// [RE-FALLBACK: row pitch 20; the outcome line (TXT_VICTORIOUS / TXT_LOST)
+// and the game time sit above the table.] W5-E: the Score column is the
+// original's (MPScore.cpp FUN_005C92C0 -- see GfSkirmishStats::Row) and the
+// rows are sorted by it, highest first.
 class GfSkirmishResultScene : public Scene {
 public:
     GfSkirmishResultScene(bool no_audio, ra2engine::SkirmishConfig cfg, int outcome, long frames,
@@ -56,7 +57,7 @@ public:
             p.label(std::to_string(r.kills), cx[1], y, 60, 20, 0);
             p.label(std::to_string(r.losses), cx[2], y, 60, 20, 0);
             p.label(std::to_string(r.built), cx[3], y, 60, 20, 0);
-            p.label("-", cx[4], y, 60, 20, 0);
+            p.label(std::to_string(r.score), cx[4], y, 80, 20, 0);   // W5-E [RE: FUN_005C92C0]
             y += 20;
         }
         std::string st;
@@ -84,6 +85,12 @@ public:
             p.set("score_kills0", st_.rows[0].kills);
             p.set("score_losses0", st_.rows[0].losses);
         }
+        for (const GfSkirmishStats::Row& r : st_.rows)   // W5-E: per house, sorted by score
+            if (r.house >= 0) {
+                p.set("score(" + std::to_string(r.house) + ")", static_cast<double>(r.score));
+                p.set("score_kills(" + std::to_string(r.house) + ")", r.kills);
+            }
+        if (!st_.rows.empty()) p.set("score_top_house", st_.rows[0].house);
         const ra2engine::SbRect m = ui_dev(shell_row(0));
         p.targets["menu"] = ra2play::Rect{m.x, m.y, m.w, m.h};
         p.targets["continue"] = ra2play::Rect{m.x, m.y, m.w, m.h};

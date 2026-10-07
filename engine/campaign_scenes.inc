@@ -223,9 +223,13 @@ public:
     // W2-UI-20: a shell page -- header GUI:CampaignResults, the CSF
     // TXT_SCENARIO_WON / TXT_SCENARIO_LOST line, the mission name and time;
     // Continue (row 0, next mission), Restart (row 1), Main Menu (row 5).
-    // [RE-FALLBACK: the 0xBC7 graph well / First-Second Place panel is not
-    // drawn (no per-house score data in a campaign); Restart / Main Menu are
-    // the clone's way out of a lost mission.]
+    // W5-E: the 0xBC7 graph well (24,136,423,229) and the First / Second
+    // Place panel [RE: wave2/04 W2-UI-20 template]: the player against the
+    // strongest opposing house, scored by the MPScore.cpp rule (FUN_005C92C0,
+    // see GfSkirmishStats). [RE-FALLBACK: the campaign Score.CPP graph art
+    // (SCORE.PCX / bar animation) was not traced; the well draws one bar pair
+    // per tally (Kills / Losses / Built / Score) scaled to the larger value.
+    // Restart / Main Menu are the clone's way out of a lost mission.]
     void handle(const ra2engine::InputEvent& ev) override {
         if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown ||
             ev.kind == ra2engine::InputEvent::PointerUp) {
@@ -258,11 +262,12 @@ public:
         const std::string head = outcome_ == 1 ? gf_csf("TXT_SCENARIO_WON", "Mission Accomplished")
                                                : gf_csf("TXT_SCENARIO_LOST", "Mission Failed");
         p.header(head, 24, 60, 423, 30, 1);
-        p.label(name_, 24, 100, 423, 20, 1);
+        p.label(name_, 24, 92, 423, 20, 1);
         char t[64];
         std::snprintf(t, sizeof t, "%s %02ld:%02ld:%02ld", gf_csf("GUI:Time", "Time").c_str(), frames_ / 15 / 3600,
                       (frames_ / 15 / 60) % 60, (frames_ / 15) % 60);
-        p.label(t, 24, 124, 423, 20, 1);
+        p.label(t, 24, 112, 423, 20, 1);
+        draw_graph(p);
         std::string st;
         if (hov == 0) st = gf_csf("STT:MPCampScoreContinue", "");
         if (hov == 1) st = gf_csf("STT:ConfirmExitButtonRestart", "");
@@ -297,9 +302,56 @@ public:
         if (cont_enabled()) put("continue", 0);
         put("retry", 1);
         put("menu", 5);
+        const Pair pr = pair();
+        p.set("graph_rows", pr.me && pr.them ? 4 : 0);
+        if (pr.me) p.set("graph_me_score", static_cast<double>(pr.me->score));
+        if (pr.them) p.set("graph_them_score", static_cast<double>(pr.them->score));
+        p.set_s("first_place", pr.first ? pr.first->name : std::string());
     }
 
 private:
+    struct Pair { const GfSkirmishStats::Row* me = nullptr; const GfSkirmishStats::Row* them = nullptr;
+                  const GfSkirmishStats::Row* first = nullptr; const GfSkirmishStats::Row* second = nullptr; };
+    Pair pair() const {
+        Pair r;
+        for (const GfSkirmishStats::Row& x : st_.rows) {
+            if (x.house == 0) r.me = &x;
+            else if (x.house > 0 && (x.kills > 0 || x.built > 0) && (!r.them || x.score > r.them->score)) r.them = &x;
+        }
+        if (r.me && r.them) {
+            const bool me_first = r.me->score >= r.them->score;
+            r.first = me_first ? r.me : r.them;
+            r.second = me_first ? r.them : r.me;
+        }
+        return r;
+    }
+    void draw_graph(const ShellPainter& p) const {
+        static constexpr ra2engine::SbRect kWell{24, 136, 423, 229};
+        p.fill(p.dev(kWell), 0, 0, 0, 170);
+        p.frame(p.dev(kWell), true);
+        const Pair pr = pair();
+        if (!pr.me || !pr.them) return;
+        static const char* kKey[4] = {"GUI:Kills", "GUI:Losses", "GUI:Built", "GUI:Score"};
+        static const char* kFb[4] = {"Kills", "Losses", "Built", "Score"};
+        const long a[4] = {pr.me->kills, pr.me->losses, pr.me->built, pr.me->score};
+        const long b[4] = {pr.them->kills, pr.them->losses, pr.them->built, pr.them->score};
+        const int bx = kWell.x + 96, bw = kWell.w - 96 - 70;
+        for (int i = 0; i < 4; ++i) {
+            const int y = kWell.y + 14 + i * 40;
+            const long mx = std::max(1L, std::max(a[i], b[i]));
+            p.label(gf_csf(kKey[i], kFb[i]), kWell.x + 8, y + 4, 84, 18, 0);
+            const int wa = static_cast<int>(bw * a[i] / mx), wb = static_cast<int>(bw * b[i] / mx);
+            p.fill(p.dev(bx, y, std::max(1, wa), 12), 40, 110, 255);   // the player
+            p.fill(p.dev(bx, y + 15, std::max(1, wb), 12), 230, 30, 30);   // the opponent
+            p.label(std::to_string(a[i]), bx + wa + 4, y - 3, 66, 16, 0);
+            p.label(std::to_string(b[i]), bx + wb + 4, y + 12, 66, 16, 0);
+        }
+        // First / Second Place panel.
+        const int py = kWell.y + kWell.h - 50;
+        p.header(gf_csf("GUI:FirstPlace", "First Place") + ": " + pr.first->name, kWell.x + 8, py, kWell.w - 16, 20, 0);
+        p.label(gf_csf("GUI:SecondPlace", "Second Place") + ": " + pr.second->name, kWell.x + 8, py + 22, kWell.w - 16, 18, 0);
+    }
+    GfSkirmishStats st_ = g_campaign_last_stats;
     bool cont_enabled() const { return outcome_ == 1 && !next_.empty(); }
     bool no_audio_;
     ra2engine::SkirmishConfig cfg_;

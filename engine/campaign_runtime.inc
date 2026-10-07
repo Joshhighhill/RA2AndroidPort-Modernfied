@@ -388,6 +388,7 @@ public:
     const ra2engine::MapTriggerSystem& triggers() const { return *sys_; }
     int teams_created() const { return teams_created_; }
     int house_index(const std::string& name) const { return engine_house_of_name(name); }
+    const std::vector<std::string>& house_names() const { return house_names_; }   // W5-E score page
     int raises() const { return raises_; }
 
     // --- P7 save/load (HOST section; the triggers go in TRIG) -----------------
