@@ -272,3 +272,27 @@ move by the deltas in §2.
 * **Medium-high:** the bridge `-16`/`-31` (flag semantics inferred from `CellFlags` 0x80 and the observed deck
   continuity); the voxel turret anchor (inferred from the rules values).
 * **Not traced:** infantry sub-cells, the damage-fire spawner, the tile-anim origin and the altitude scale.
+
+## W4-FIX-POS status (branch `w4fix-pos`)
+
+| Item | Status | Where |
+|---|---|---|
+| P0 building draw point | **Fixed.** `ra2engine::building_draw_point(cx, cy, level)` = origin-cell top vertex (`engine/iso_project.*`, unit-tested for 1x1..4x4, 3x4, 2x6). Used by `draw_building` (body, shadow, rubble, no-fx explosion), `pres_building_overlay` (bib, slot anims, doors, damage fires), `PresTurrets::draw` (voxel turret at the draw point + `TurretAnimX/Y`), PresMap `civ:` dressing (+ its slot anims), and the DestroyAnim spawn (`b.cx-0.5, b.cy-0.5`, the building's level). The depth key is unchanged (centre). The demo-only HP bar stays over the foundation. Placement cursor / selection brackets already used the cell diamonds (no change); the radar uses cell mapping (no change). | `main.cpp` `draw_building`; `pres_bldanim.inc`; `pres_turret.inc`; `pres_map.inc`; `pres_game.inc` |
+| P0 FX height | **Fixed.** `PresGame::level_at` reads the cell level; the literal `0` levels (superweapon anims, building impacts/explosions, defence muzzles and beam origins, `target_point`) use the real level. Projectile `e.z` is ground-relative (`unit_lz` = 0 for ground units), so impacts add the level without double counting. | `pres_game.inc` |
+| P1 overlays / ore / gems / crates | **Fixed.** Cell centre + `overlay_y_offset` (`FUN_005fd4b0`/`FUN_00480020`); high-bridge cells stood in by the `BRIDGE*` overlay family (BRIDGE1/2, BRIDGEB1/B2). | `pres_map.inc`, `draw_ore`, `draw_p5_crates` |
+| P1 smudges | **Fixed.** Centred on the cell's top vertex (map smudges and runtime craters/scorches); a multi-cell smudge draws once at its origin, which equals the original's per-piece shift. | `pres_map.inc` |
+| P2 `YDrawOffset` | **Fixed.** `FxAnimType::ydraw` (art key) added in `PresFx::draw`, building slot anims, damage fires and dressing anims. | `pres_fx.inc`, `pres_bldanim.inc` |
+| P2 ore-mine shadow | **Fixed.** The shadow shares the image's 16 px lift. | `pres_map.inc` |
+| P3 damage fires (RE-P6) | **Traced.** `FUN_0043c050` (from the damage-state update `FUN_0043faa0`): one anim per `DamageFireOffset` (type `+0x15D8`, up to 8) at the draw point (`vtbl+0xAC`) + the pixel offset, flags `0x600`; the type list starts at a random index (clone: from 0, RE-FALLBACK). The clone already drew at draw point + offset after P0. | `pres_bldanim.inc` |
+| P3 infantry sub-cell spots | **Open.** Spot table not located; it is a sim/movement change, not a draw anchor. | — |
+| P3 tile-anim origin (RE-Q6) | **Open.** The keys are read by the theater loader `FUN_00544e80` (`Tile%02dXOffset`/`YOffset`/`AttachesTo`); the consumer was not traced. W3's waterfall fit is unchanged. | — |
+| P3 aircraft Z scale | **Open** (<= 1 px). | — |
+
+Acceptance (real play, `scripts/play/pos-*.play`, all PASS; screenshots read against `01-evidence/ref`, local copies in
+`01-evidence/fix/`): the Statue on its star plinth (`all01_statue`), the ALL01 and ALL08 high bridges one deck
+(`all01_bridge`, `all08_bridge`), the ALL08 low bridge joining its road (`all08_lobrdg`), the Arch on its pad
+(`all08_arch`), the White House inside its sandbag ring (`all03_whitehouse`) and its ruin over the foundation
+(`all03_wh2_dbg` / `all03_wh2_ruin`, matches `ref/whitehouse_ruin_CAWS01DM_4x4.png`), the Lincoln Memorial on its lot,
+St Basil's inside the Kremlin walls with the walls meeting the towers (`all12_basils`), the Eiffel Tower and the
+Arc de Triomphe (`eiffel`, `arc`), and player 2x2/3x3/4x4 buildings with bib, ActiveAnim and a voxel turret inside
+their foundations (`all03_bases_dbg`, `RA2_POS_DBG=1`).
