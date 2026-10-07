@@ -12,6 +12,7 @@
     // [RE-FALLBACK: the original's building health pips (pips.shp frames) are
     // agent E's art; this draws the same information with plain rects.]
     // Colour thresholds = [General] ConditionYellow / ConditionRed.
+    mutable ra2engine::TextureCache* pip_tc_ = nullptr;   // W2-UI-11 (set by render)
     void draw_selected_building(SDL_Renderer* ren) const {
         const int sb = input_.selected_building();
         if (sb < 0 || sb >= static_cast<int>(world_.buildings().size())) return;
@@ -29,6 +30,14 @@
         px(b.cx, b.cy + b.fh, lx, ly);
         px(b.cx + b.fw, b.cy, rx, ry);
         px(b.cx + b.fw, b.cy + b.fh, bx, by);
+        if (g_pips) {   // W2-UI-11: the original's diagonal PIPS line (hud_pips.inc)
+            const std::string& id = ba_.roster[(std::size_t)b.type].id;
+            const std::string h = pres_clean(art_ini_.get(ba_.roster[(std::size_t)b.type].image.empty()
+                                                              ? id : ba_.roster[(std::size_t)b.type].image, "Height"));
+            const int height = h.empty() ? 4 : std::atoi(h.c_str());
+            draw_building_pips(ren, *pip_tc_, b.hp, b.max_hp, tx, ty, b.fh, height * 15, g_pip_yellow, g_pip_red);
+            return;
+        }
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(ren, 255, 255, 255, 230);
         const int k = 10;   // bracket arm length

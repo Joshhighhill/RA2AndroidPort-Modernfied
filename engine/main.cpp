@@ -154,6 +154,12 @@ const ra2assets::TheaterChain* g_art_chain = nullptr;
 // (Soviet), chosen by GameScene from the player's side before the art loads.
 const char* g_sidebar_mix = "sidec01.mix";
 void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
+// W2-UI-11 (hud_pips.inc): PIPBRD/PIPS art + the selected-unit pip draw.
+struct PipArt;
+extern const PipArt* g_pips;
+extern double g_pip_yellow, g_pip_red;
+void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
+                    double yellow, double red);
 inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
@@ -3025,7 +3031,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // the non-interactive render paths keep the old every-unit debug lines.
         if (!input || (u.selected && u.house == 0 && pres_target_lines()))
             ra2engine::draw_path(ren, u, cam, W, H);   // carried units draw nothing
-        if (u.selected) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
+        // W2-UI-11: in the real game the selection marker IS the pip board
+        // (drawn with the bars below); other render paths keep the diamond.
+        if (u.selected && !(input && g_pips)) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
     }
     // Sprites back-to-front so nearer units overlap farther ones. Vehicles
     // (an image with a VehicleAssets entry) draw via voxel sprites; otherwise
@@ -3114,7 +3122,14 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // transport-cargo.md §1]; capacity itself is the COUNT [spec §6].
     for (const ra2engine::Unit& u : us) {
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-        if (u.selected || u.hp < u.max_hp)
+        if (input && g_pips) {   // W2-UI-11: PIPBRD + PIPS on the selected units only
+            if (u.selected) {
+                const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
+                const int sx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
+                const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15 - up;
+                draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red);
+            }
+        } else if (u.selected || u.hp < u.max_hp)
             ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
         if (u.selected && u.passengers_max > 0)
             ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
@@ -3747,6 +3762,7 @@ void shade_rect(SDL_Renderer* ren, const ra2engine::SbRect& r, Uint8 alpha, Uint
 }
 
 #include "hud_text.inc"   // W2-UI-12/02/03/05/07 HUD font + cameo overlays
+#include "hud_pips.inc"   // W2-UI-11 PIPBRD/PIPS health bars
 
 // CB-4 Superweapons [spec §6]: draw the SW cameo + recharge indicator in a
 // sidebar slot, reusing the EXISTING gclock2.shp 55-frame chrome + the flashing-
@@ -5270,6 +5286,15 @@ public:
     }
     void init_presentation() {
         init_map_dressing();
+        pips_load(ra2_);   // W2-UI-11
+        {
+            auto pct = [&](const char* k, double d) {
+                const std::string v = pres_clean(rules_ini_.get("AudioVisual", k));
+                return v.empty() ? d : std::atof(v.c_str()) / 100.0;
+            };
+            g_pip_yellow = pct("ConditionYellow", 0.5);
+            g_pip_red = pct("ConditionRed", 0.25);
+        }
         {   // W2-UI-13/14: page set by mode (0xB5 campaign + skirmish) + jukebox list
             menu_.configure(campaign_ != nullptr, std::string(g_sidebar_mix) == "sidec02.mix");
         }
@@ -5340,7 +5365,8 @@ public:
                          : bm == ra2engine::Input::BaseMode::Sell ? 2 : 0);
         }
         draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_);
-        draw_selected_building(ren);   // G-10
+        pip_tc_ = &tc;
+        draw_selected_building(ren);   // G-10 / W2-UI-11
         draw_queue_badges(ren, tc);    // G-07 / W2-UI-03/04
         draw_tooltip(ren, tc);         // W2-UI-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
