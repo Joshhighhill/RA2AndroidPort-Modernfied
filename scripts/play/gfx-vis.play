@@ -1,0 +1,78 @@
+# gfx-vis -- W2-GA visual acceptance shots on the default lobby map (hillbtwn,
+# URBAN): ore/gems drawn (W2-GA-01), no black hole by the start (W2-GA-04),
+# clean ore mine + tree shadows (06/08), map lighting (05), the Guardian GI and
+# Terror Drone SHP art (10/11), vehicle shadows (12), the deployed base with the
+# war-factory / defence art. Fog of war off: an explored enemy stays drawn (03).
+# Shots are for human comparison with the original; asserts only check the
+# state the shots need.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Medium Enemy"
+click start
+until 90 scene == game
+require scene == game
+shot v01_start
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat credits 60000
+cheat spawn GGI 0 building 0:GACNST +6 +0
+cheat spawn GGI 0 building 0:GACNST +6 +1
+cheat spawn DRON 0 building 0:GACNST +6 +2
+cheat spawn MTNK 0 building 0:GACNST +5 +4
+cheat spawn HTNK 1 building 0:GACNST +8 +5
+wait 3
+view building 0:GACNST
+shot v02_units
+assert units(0,GGI) >= 2
+assert units(0,DRON) >= 1
+click tab:0
+click cameo:GAPOWR
+until 900 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 120 built(0,GAPOWR) == 1
+click tab:0
+click cameo:GAREFN
+until 1800 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 300 built(0,GAREFN) == 1
+click tab:0
+click cameo:GAPILE
+until 900 queue_ready(structure) == 1
+click cameo:GAPILE
+place auto
+until 300 built(0,GAPILE) == 1
+click tab:0
+click cameo:GAWEAP
+until 1800 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+until 300 built(0,GAWEAP) == 1
+click tab:1
+click cameo:NASAM
+until 1800 queue_ready(defense) == 1
+click cameo:NASAM
+place auto
+until 300 built(0,NASAM) == 1
+let tanks = units(0,MTNK)
+click tab:3
+click cameo:MTNK
+until 1500 units(0,MTNK) > $tanks
+wait 6
+view building 0:GAWEAP
+shot v03a_door
+wait 900
+view building 0:GAWEAP
+shot v03_base
+view building 0:NASAM
+shot v03b_patriot
+wait 1200
+view building 0:GACNST
+shot v04_later
+end

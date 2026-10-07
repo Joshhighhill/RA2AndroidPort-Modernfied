@@ -590,7 +590,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         if (b.type < 0 || b.type >= static_cast<int>(bt.size()) || !bt[b.type].armed)
                             continue;
                         if (!world.is_enemy(u.house, b.house)) continue;
-                        if (!world.visible_at(u.house, b.cx, b.cy)) continue;
+                        if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
                         const int ws = unit_weapon_for_building(u, b.armor_ix);
                         if (ws < 0) continue;
                         const double rng = slot_range(u, ws) * kLeptonsPerCell;

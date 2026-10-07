@@ -17,6 +17,7 @@ struct FxAnimType {
     bool translucent = false;  // Translucent=yes -> 50 % blend
     std::string report;        // Report= sound event
     std::string next;          // Next= chained anim
+    bool crater = false, scorch = false;   // W2-GA-15 Crater=/Scorch= (leave a smudge)
     // [RE: presentation.md §5] Rate= stores 900/Rate game frames per anim
     // frame (no Rate -> 1); Start/End (End defaults to the image frames),
     // LoopStart/LoopEnd (LoopEnd defaults to End), LoopCount (0/1 = once,
@@ -48,7 +49,15 @@ struct FxWeapon {
     std::string proj_image;              // projectile Image= ("" / none -> nothing in flight)
     bool proj_rotates = false;
     bool instant = true;                 // no flying projectile -> impact at the target on fire
+    // W2-GA-15 [RE: rulesmd weapon IsElectricBolt (Tesla coil / trooper /
+    // tank), IsLaser + LaserDuration + IsHouseColor (Prism)]: drawn as a beam
+    // from the muzzle to the target instead of only an impact.
+    bool bolt = false, laser = false, laser_house = false;
+    int laser_frames = 15;
 };
+// W2-GA-15: smudge hook (craters / scorch marks left by Crater=/Scorch=
+// explosion anims), set by GameScene to its map dressing.
+std::function<void(bool crater, double fx, double fy)> g_smudge_hook;
 
 class PresFx {
 public:
@@ -68,7 +77,7 @@ public:
         art_ = &art_ini;
         try { conquer_ = std::make_unique<MixFile>(ra2.open_nested("conquer.mix")); } catch (...) {}
         try {
-            MixFile md = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
+            MixFile md = MixFile::open_path(dir + "ra2md.mix");
             conqmd_ = std::make_unique<MixFile>(md.open_nested("conqmd.mix"));
         } catch (...) {}
         try {
@@ -87,6 +96,7 @@ public:
         std::string w = rget(id, "Primary");
         if (w.empty()) w = rget(id, "Weapon1");
         FxWeapon fw;
+        if (!w.empty()) fill_beam(fw, w);
         if (!w.empty()) {
             fw.muzzle = split(rget(w, "Anim"));
             const std::string wh = rget(w, "Warhead");
@@ -102,6 +112,123 @@ public:
         weapons_[image] = fw;
         explosions_[image] = split(rget(id, "Explosion"));
     }
+    void fill_beam(FxWeapon& fw, const std::string& w) {
+        auto yes = [&](const char* k) {
+            const std::string v = pres_lower(rget(w, k));
+            return v.rfind("y", 0) == 0 || v.rfind("t", 0) == 0;
+        };
+        fw.bolt = yes("IsElectricBolt");
+        fw.laser = yes("IsLaser");
+        fw.laser_house = yes("IsHouseColor");
+        const std::string ld = rget(w, "LaserDuration");
+        if (!ld.empty()) fw.laser_frames = std::max(1, std::atoi(ld.c_str()));
+    }
+    // A defence's weapon by id (Tesla Coil CoilBolt, Prism Tower PrismShot).
+    const FxWeapon& weapon_def(const std::string& w) {
+        auto it = weapon_defs_.find(w);
+        if (it != weapon_defs_.end()) return it->second;
+        FxWeapon fw;
+        fill_beam(fw, w);
+        return weapon_defs_.emplace(w, fw).first->second;
+    }
+    // ---- W2-GA-15 beams ----------------------------------------------------
+    struct Beam {
+        double x0, y0, lift0, x1, y1, lift1;
+        int l0, l1;
+        bool bolt;
+        int life;          // game frames
+        double age = 0.0;
+        SDL_Color inner, outer;
+        uint32_t seed;
+    };
+    void add_beam(double x0, double y0, int l0, double lift0, double x1, double y1, int l1, double lift1,
+                  const FxWeapon& fw, SDL_Color house) {
+        Beam b{x0, y0, lift0, x1, y1, lift1, l0, l1, fw.bolt, fw.bolt ? 8 : fw.laser_frames, 0.0,
+               SDL_Color{255, 255, 255, 255}, SDL_Color{110, 110, 255, 255}, beam_seed_++ * 2654435761u};
+        if (fw.laser) {
+            // [RE-FALLBACK: LaserInner/OuterColor are commented out in rulesmd;
+            // IsHouseColor=yes -> the firing house's colour, white core]
+            b.outer = fw.laser_house ? house : SDL_Color{216, 0, 184, 255};
+            b.inner = SDL_Color{255, 255, 255, 255};
+        }
+        beams_.push_back(b);
+    }
+    void draw_beams(SDL_Renderer* ren, const ra2engine::Camera& cam) const {
+        if (beams_.empty()) return;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        for (const Beam& b : beams_) {
+            auto pt = [&](double x, double y, int l, double lift, int& sx, int& sy) {
+                sx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
+                sy = static_cast<int>(std::lround((x + y) * 15.0 - l * 15 - lift)) + cam.y + 15;
+            };
+            int ax, ay, bx, by;
+            pt(b.x0, b.y0, b.l0, b.lift0, ax, ay);
+            pt(b.x1, b.y1, b.l1, b.lift1, bx, by);
+            const double fade = 1.0 - b.age * 15.0 / std::max(1, b.life);
+            const Uint8 a = static_cast<Uint8>(std::clamp(fade, 0.0, 1.0) * 255.0);
+            if (!b.bolt) {
+                SDL_SetRenderDrawColor(ren, b.outer.r, b.outer.g, b.outer.b, static_cast<Uint8>(a / 2));
+                for (int o = -2; o <= 2; ++o) {
+                    SDL_RenderDrawLine(ren, ax + o, ay, bx + o, by);
+                    SDL_RenderDrawLine(ren, ax, ay + o, bx, by + o);
+                }
+                SDL_SetRenderDrawColor(ren, b.inner.r, b.inner.g, b.inner.b, a);
+                SDL_RenderDrawLine(ren, ax, ay, bx, by);
+                continue;
+            }
+            // Electric bolt: three jagged arcs re-jittered every frame.
+            const double len = std::hypot(bx - ax, by - ay);
+            const int segs = std::max(2, static_cast<int>(len / 14.0));
+            const double nx = len > 0 ? -(by - ay) / len : 0, ny = len > 0 ? (bx - ax) / len : 0;
+            uint32_t r = b.seed ^ static_cast<uint32_t>(beam_tick_ * 2246822519u);
+            for (int arc = 0; arc < 3; ++arc) {
+                const SDL_Color c = arc == 0 ? b.inner : b.outer;
+                SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, arc == 0 ? a : static_cast<Uint8>(a * 3 / 4));
+                int px = ax, py = ay;
+                for (int s = 1; s <= segs; ++s) {
+                    r = r * 1664525u + 1013904223u;
+                    const double off = s == segs ? 0.0 : (static_cast<int>((r >> 16) % 13) - 6);
+                    const int qx = static_cast<int>(ax + (bx - ax) * s / static_cast<double>(segs) + nx * off);
+                    const int qy = static_cast<int>(ay + (by - ay) * s / static_cast<double>(segs) + ny * off);
+                    SDL_RenderDrawLine(ren, px, py, qx, qy);
+                    px = qx;
+                    py = qy;
+                }
+            }
+        }
+    }
+    // W2-GA-15 radiation glow: cells with RadLevel tinted with [Radiation]
+    // RadColor, alpha by level / RadLevelMax. [RE-FALLBACK: the original
+    // lights the cell through a radiation LightSource; a translucent cell tint
+    // stands in.]
+    void draw_radiation(SDL_Renderer* ren, const ra2engine::World& w, const ra2assets::MapFile& map,
+                        const ra2engine::Camera& cam, int W, int H) {
+        const ra2engine::RadField& rf = w.rad_field();
+        if (rf.empty() || rf.live_sites() <= 0) return;
+        if (rad_max_ <= 0) {
+            const std::vector<std::string> c = split(rget("Radiation", "RadColor"));
+            if (c.size() >= 3) rad_color_ = SDL_Color{static_cast<Uint8>(std::atoi(c[0].c_str())),
+                                                      static_cast<Uint8>(std::atoi(c[1].c_str())),
+                                                      static_cast<Uint8>(std::atoi(c[2].c_str())), 255};
+            const std::string mx = rget("Radiation", "RadLevelMax");
+            rad_max_ = mx.empty() ? 500 : std::max(1, std::atoi(mx.c_str()));
+        }
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_ADD);
+        ra2engine::for_each_visible_cell(map, cam, W, H, 0, [&](const ra2assets::MapCell& c, int sx, int sy) {
+            const double lv = rf.level_at(c.x, c.y);
+            if (lv <= 0.0) return;
+            const int a = static_cast<int>(std::min(1.0, lv / rad_max_) * 110.0);
+            if (a <= 0) return;
+            SDL_SetRenderDrawColor(ren, rad_color_.r, rad_color_.g, rad_color_.b, static_cast<Uint8>(a));
+            for (int y = 0; y < 30; ++y) {   // the cell's diamond
+                const int half = (y < 15 ? y + 1 : 30 - y) * 2;
+                SDL_RenderDrawLine(ren, sx + 30 - half, sy + y, sx + 30 + half - 1, sy + y);
+            }
+        });
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    }
+    SDL_Color rad_color_{0, 255, 0, 255};
+    int rad_max_ = 0;
     void set_instant(const std::string& image, bool instant) {
         auto it = weapons_.find(image);
         if (it != weapons_.end()) it->second.instant = instant;
@@ -127,6 +254,13 @@ public:
     struct BldAnims {
         struct Slot { const FxAnimType* t = nullptr; const FxAnimType* dmg = nullptr; int x = 0, y = 0; bool powered = true; };
         std::vector<Slot> slots;
+        // W2-GA-14 event slots [RE: presentation.md §6, the 21 BuildingType
+        // anim slots; RE-Q13 open -> RE-FALLBACK ModEnc order]: the factory
+        // door set (DeployingAnim over, UnderDoorAnim under, played once when a
+        // unit leaves) and the superweapon charge states SuperAnim (opening
+        // on READY) -> SuperAnimTwo (loop while ready) -> SuperAnimThree
+        // (closing on FIRE) -> SuperAnimFour (loop while charging).
+        Slot door, under_door, super_[4];
         std::shared_ptr<ra2assets::ShpFile> bib;
         std::vector<std::pair<int, int>> fire_offsets;
     };
@@ -147,6 +281,18 @@ public:
             sl.powered = pw.empty() || pw[0] == 'y' || pw[0] == 't';
             if (sl.t) a.slots.push_back(sl);
         }
+        auto event_slot = [&](const std::string& s) {
+            BldAnims::Slot sl;
+            sl.t = theater_type(aget(image, s));
+            sl.dmg = theater_type(aget(image, s + "Damaged"));
+            sl.x = std::atoi(aget(image, s + "X").c_str());
+            sl.y = std::atoi(aget(image, s + "Y").c_str());
+            return sl;
+        };
+        a.door = event_slot("DeployingAnim");
+        a.under_door = event_slot("UnderDoorAnim");
+        static const char* kSuper[4] = {"SuperAnim", "SuperAnimTwo", "SuperAnimThree", "SuperAnimFour"};
+        for (int i = 0; i < 4; ++i) a.super_[i] = event_slot(kSuper[i]);
         const std::string bib = aget(image, "BibShape");
         if (!bib.empty()) a.bib = theater_shp(bib);
         for (int i = 0; i < 8; ++i) {
@@ -232,6 +378,8 @@ public:
         const int lc = num("LoopCount", 1);
         t.loops = lc < 0 ? 255 : std::max(1, lc);
         t.next = aget(key, "Next");
+        t.crater = pres_lower(aget(key, "Crater")).rfind("y", 0) == 0;
+        t.scorch = pres_lower(aget(key, "Scorch")).rfind("y", 0) == 0;
     }
     std::shared_ptr<ra2assets::ShpFile> projectile_shp(const std::string& image) {
         auto it = proj_shps_.find(image);
@@ -247,9 +395,15 @@ public:
         const FxAnimType* t = type(name);
         if (!t || t->frames <= 0) return nullptr;
         anims_.push_back(Anim{t, fx, fy, level, lift_px, 0.0, ox_px});
+        if ((t->crater || t->scorch) && g_smudge_hook && lift_px < 30.0) g_smudge_hook(t->crater, fx, fy);
         return t;
     }
     void step(double dt) {
+        ++beam_tick_;
+        for (Beam& b : beams_) b.age += dt;
+        beams_.erase(std::remove_if(beams_.begin(), beams_.end(),
+                                    [](const Beam& b) { return b.age * 15.0 >= b.life; }),
+                     beams_.end());
         std::vector<Anim> next;
         for (Anim& a : anims_) {
             a.age += dt;
@@ -272,6 +426,7 @@ public:
                            cam.y + 15;
             blit(ren, tc, *a.t->shp, "fx:" + a.t->name, fr, cx, cy, a.t->translucent, W, H);
         }
+        draw_beams(ren, cam);   // W2-GA-15
     }
     // Centered SHP frame blit with anim.pal (translucent -> 50 %).
     void blit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::ShpFile& shp,
@@ -352,6 +507,10 @@ private:
     bool has_pal_ = false;
     std::map<std::string, std::unique_ptr<FxAnimType>> types_;
     std::map<std::string, FxWeapon> weapons_;
+    std::map<std::string, FxWeapon> weapon_defs_;   // W2-GA-15 defence weapons by id
+    std::vector<Beam> beams_;
+    uint32_t beam_seed_ = 1;
+    long beam_tick_ = 0;
     std::map<std::string, std::vector<std::string>> explosions_;
     std::map<std::string, std::shared_ptr<ra2assets::ShpFile>> proj_shps_;
     std::vector<Anim> anims_;
@@ -384,6 +543,26 @@ bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
 }
 
 long g_pres_tick = 0;          // presentation game-frame clock (Presentation::update)
+// W2-GA-14: the building draw_building is drawing (its overlay pass reads the
+// per-building event state below) and that state, keyed by the building's
+// identity (origin cell + type, stable for its life).
+const ra2engine::Building* g_overlay_bld = nullptr;
+struct BldEventState {
+    long door_start = -1;          // tick a unit left the factory
+    long super_start = -1;         // tick of the last SW state change
+    int super_phase = -1;          // -1 none, 0 opening (ready), 2 closing (fired)
+};
+std::map<long long, BldEventState> g_bld_events;
+inline long long bld_event_key(const ra2engine::Building& b) {
+    return (static_cast<long long>(b.cx) << 32) ^ (static_cast<long long>(b.cy) << 16) ^ b.type;
+}
+// Frame of a one-shot anim started at `start`; -1 once it has run out.
+inline int oneshot_frame(const FxAnimType& t, long start, long now) {
+    if (start < 0) return -1;
+    const long step = t.delay <= 0 ? 0 : (now - start) / t.delay;
+    const long f = t.start + step;
+    return f >= t.end ? -1 : static_cast<int>(f);
+}
 bool g_pres_low_power = false;  // house 0 drain > output (Presentation::power_eva)
 
 // G-85: building overlays, called by draw_building. pass 0 = BibShape (under
@@ -395,11 +574,45 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
     if (!g_fx) return;
     const PresFx::BldAnims& a = g_fx->building(pres_upper(image));
     const std::string ck = ":c" + std::to_string(ckey);
+    const BldEventState* ev = nullptr;
+    if (g_overlay_bld) {
+        auto e = g_bld_events.find(bld_event_key(*g_overlay_bld));
+        if (e != g_bld_events.end()) ev = &e->second;
+    }
+    auto slot_t = [&](const PresFx::BldAnims::Slot& s) { return (damaged && s.dmg) ? s.dmg : s.t; };
     if (pass == 0) {
         if (a.bib && a.bib->count() > 0)
             g_fx->blit(ren, tc, *a.bib, "bib:" + image + ck, damaged && a.bib->count() > 1 ? 1 : 0, fcx,
                        fcy, false, W, H, &pal);
+        // W2-GA-14: the dark interior behind an opening factory door.
+        if (ev && ev->door_start >= 0)
+            if (const FxAnimType* d = slot_t(a.door))
+                if (oneshot_frame(*d, ev->door_start, g_pres_tick) >= 0)
+                    if (const FxAnimType* u = slot_t(a.under_door))
+                        g_fx->blit(ren, tc, *u->shp, "banim:" + u->name + ck, PresFx::loop_frame(*u, g_pres_tick),
+                                   fcx + a.under_door.x, fcy + a.under_door.y, u->translucent, W, H, &pal);
         return;
+    }
+    // W2-GA-14: factory door (one shot per exiting unit) and SW charge states.
+    if (ev && ev->door_start >= 0)
+        if (const FxAnimType* d = slot_t(a.door)) {
+            const int fr = oneshot_frame(*d, ev->door_start, g_pres_tick);
+            if (fr >= 0)
+                g_fx->blit(ren, tc, *d->shp, "banim:" + d->name + ck, fr, fcx + a.door.x, fcy + a.door.y,
+                           d->translucent, W, H, &pal);
+        }
+    if (ev && ev->super_phase >= 0) {
+        const int open = ev->super_phase;          // 0 (ready) or 2 (fired)
+        const PresFx::BldAnims::Slot& s1 = a.super_[open];
+        const PresFx::BldAnims::Slot& s2 = a.super_[open + 1];
+        const FxAnimType* t1 = slot_t(s1);
+        const int fr = t1 ? oneshot_frame(*t1, ev->super_start, g_pres_tick) : -1;
+        if (t1 && fr >= 0)
+            g_fx->blit(ren, tc, *t1->shp, "banim:" + t1->name + ck, fr, fcx + s1.x, fcy + s1.y, t1->translucent,
+                       W, H, &pal);
+        else if (const FxAnimType* t2 = slot_t(s2))
+            g_fx->blit(ren, tc, *t2->shp, "banim:" + t2->name + ck, PresFx::loop_frame(*t2, g_pres_tick),
+                       fcx + s2.x, fcy + s2.y, t2->translucent, W, H, &pal);
     }
     for (const PresFx::BldAnims::Slot& s : a.slots) {
         const FxAnimType* t = (damaged && s.dmg) ? s.dmg : s.t;

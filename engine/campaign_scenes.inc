@@ -66,7 +66,7 @@ public:
     CampaignLoadScene(bool no_audio, ra2engine::SkirmishConfig cfg)
         : no_audio_(no_audio), cfg_(std::move(cfg)), dir_(env_install_dir()) {
         try {
-            ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir_ + "ra2.mix"));
+            ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir_ + "ra2.mix");
             hud_font_load(ra2);   // W2-UI-19: the loading text is game.fnt
             const ra2engine::CampaignTables tables = camp::load_tables(ra2);
             const ra2engine::MissionInfo mi = tables.mission(cfg_.campaign_map);
@@ -209,7 +209,7 @@ Scene* make_campaign_start_scene(bool no_audio, const char* battle, const char* 
     std::string map = std::string(battle) == "SOV1" ? "SOV01t.MAP" : "ALL01t.MAP";
     try {
         const std::string dir = env_install_dir();
-        ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+        ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
         const ra2engine::CampaignTables t = camp::load_tables(ra2);
         if (const ra2engine::BattleEntry* b = t.battle(battle)) map = b->scenario;
     } catch (const std::exception&) {}
@@ -226,7 +226,7 @@ public:
         : no_audio_(no_audio), cfg_(std::move(cfg)), outcome_(outcome), frames_(frames) {
         try {
             const std::string dir = env_install_dir();
-            ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+            ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
             const ra2engine::CampaignTables t = camp::load_tables(ra2);
             const ra2engine::ScenarioBasic b =
                 ra2engine::parse_scenario_basic(camp::load_map_ini(dir, cfg_.campaign_map));

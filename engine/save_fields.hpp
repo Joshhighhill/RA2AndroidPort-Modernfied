@@ -131,6 +131,7 @@ struct SaveAccess {
         save::io(ar, w.explored_);
         save::io(ar, w.visible_);
         save::io(ar, w.shroud_any_);
+        save::io(ar, w.fog_of_war_);   // v9: W2-GA-03 FogOfWar flag
         save::io(ar, w.map_reveal_);
         // Multi-house / victory
         save::io(ar, w.houses_);

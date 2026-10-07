@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "ra2assets/audio_bag.hpp"
+#include "ra2assets/wav.hpp"
 #include "ra2assets/mix.hpp"     // used by the Task-4 real-asset oracle test
 #include "asset_fixture.hpp"
 #include <algorithm>
@@ -359,4 +360,31 @@ TEST_CASE("audio bag: real clips match XCC oracle byte-for-byte") {
         clips_checked++;
     }
     CHECK(clips_checked > 0);   // a manifest exercising zero clips is a failure
+}
+
+// W2-GA-22: the streaming IMA decoder reproduces load_wav_ima exactly (the
+// menu theme, stereo) -- music is streamed block by block, never decoded whole.
+TEST_CASE("audio: WavImaStream blocks concatenate to load_wav_ima (theme.mix grinder.wav)") {
+    const std::string base = ra2fixture::install_base();
+    std::string path = base;
+    if (!path.empty() && path.back() != '/' && path.back() != '\\') path += "/";
+    path += "theme.mix";
+    ra2assets::MixFile theme;
+    try { theme = ra2assets::MixFile::open_path(path); } catch (const std::exception&) {
+        MESSAGE("theme.mix absent; skipped");
+        return;
+    }
+    const ra2assets::MixEntry* e = theme.find(std::string("grinder.wav"));
+    REQUIRE(e);
+    const std::vector<uint8_t> bytes = theme.read(*e);
+    ra2assets::WavInfo info;
+    const std::vector<int16_t> whole = ra2assets::load_wav_ima(bytes.data(), bytes.size(), info);
+    ra2assets::WavImaStream st = ra2assets::WavImaStream::open(bytes);
+    CHECK(st.info().channels == info.channels);
+    CHECK(st.info().sample_rate == info.sample_rate);
+    std::vector<int16_t> acc;
+    while (st.next_block(acc)) {}
+    CHECK(acc.size() == whole.size());
+    CHECK(acc == whole);
+    CHECK(st.total_frames() * static_cast<std::size_t>(info.channels) == whole.size());
 }

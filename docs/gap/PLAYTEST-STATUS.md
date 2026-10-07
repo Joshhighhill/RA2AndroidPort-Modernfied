@@ -274,3 +274,35 @@ script targets:
 | **new** `ui-campaign` | PASS | `841913f27b3ae367` |
 | **new** `ui-result` | PASS | `7dac2ea048d278bb` |
 | **new** `ui-shell` | PASS | `e948779eb0ab3bb3` |
+
+## Wave-2 graphics/audio/perf fixes (branch `w2fix-gfx`, W2-GA)
+
+These results come from running every script on its own on the `w2fix-gfx` tip,
+after merging master b532586 (`run-all.ps1`, output in `build/play-final/`).
+The play hashes move for two reasons. First, FogOfWar is now off by default
+(W2-GA-03): AI and units auto-acquire targets in any explored cell, as the
+original does (RE-Q3). Second, the omitted cells on hillbtwn are now ground
+(W2-GA-04), which changes passability on the default map.
+
+Script fix: in `sk-a`, step L135 used to require two **live** Chrono Miners.
+With fog off, the AI kills the refinery's miner before the player's second one
+is trained (`units(0,CMIN)=0` when the player clicks the cameo,
+`units_lost(0)=3`). The step now checks that one more miner is trained.
+
+| Script | Result | play_hash |
+|---|---|---|
+| `controls` | PASS | `1a363502bda5c1bb` |
+| `m-all01` | PASS | `f1bfd06283ccfeb7` |
+| `m-lose` | PASS | `e8c89e9e605251d6` |
+| `m-sov01` | PASS | `c3538a86f04ff4cb` |
+| `shell-smoke` | PASS | `787f0c96de7028bb` |
+| `sk-a` | PASS (after the script fix) | `31a3a539fb57a9ca` |
+| `sk-a-lose` | PASS | `ebc8ebf2737ab4cf` |
+| `sk-end` | PASS | `c7e7cd2aa9217021` |
+| `sk-lobby` | PASS | `4daf570e159f13e0` |
+| `sk-s` | PASS | `85dc337d5efa7e77` |
+| `world-depth` | PASS | `3fa081b33435d91d` |
+| `probe-game` / `probe-garrison` / `probe-perf` / `probe-shell` / `probe-soviet-econ` | PASS | — |
+| `ui-hud` / `ui-pages` / `ui-campaign` / `ui-result` / `ui-shell` | PASS | unchanged from w2fix-ui |
+| **new** `gfx-vis` (base, GGI, Terror Drone, war-factory door, Patriot turret, shadows, lighting) | PASS | `7e202ab530ebb43f` |
+| **new** `gfx-fx` (Tesla bolt, Prism beam, craters) | PASS | `41b1d11e0e6bc843` |

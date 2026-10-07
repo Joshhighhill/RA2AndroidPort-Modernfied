@@ -2183,14 +2183,15 @@ void World::step_visibility() {
             for (int fx = 0; fx < b.fw; ++fx)
                 reveal_source(b.house, b.cx + fx, b.cy + fy, b.sight);
     }
-    // 4) Stamp each unit's seen_by_mask: bit h set iff its cell is visible_ to h.
+    // 4) Stamp each unit's seen_by_mask: bit h set iff h can see an object in its
+    //    cell (object_visible_at: explored with FogOfWar off, visible with it on).
     for (Unit& u : units_) {
         if (!u.alive) continue;
         std::uint8_t m = 0;
         // T3: seen_by_mask bit-stamp stays capped at 8 combatant houses (the
         // uint8_t mask, D7) even as house_count() may exceed 3.
         for (int h = 0; h < house_count() && h < 8; ++h)
-            if (visible_at(h, u.cell_x, u.cell_y)) m |= (std::uint8_t)(1u << h);
+            if (object_visible_at(h, u.cell_x, u.cell_y)) m |= (std::uint8_t)(1u << h);
         u.seen_by_mask = m;
     }
     // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
