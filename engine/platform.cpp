@@ -236,6 +236,16 @@ bool Platform::poll(InputEvent& ev) {
         case SDL_RENDER_TARGETS_RESET:
             ev.kind = InputEvent::RenderReset;
             break;
+        case SDL_WINDOWEVENT:
+            // R-162: foldables, split screen, a resized desktop window.
+            if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                ev.kind = InputEvent::Resize;
+                ev.x = e.window.data1;
+                ev.y = e.window.data2;
+            } else {
+                ev.kind = InputEvent::None;
+            }
+            break;
         case SDL_TEXTINPUT:
             ev.kind = InputEvent::Text;
             std::snprintf(ev.text, sizeof ev.text, "%s", e.text.text);
