@@ -213,18 +213,13 @@ public:
         d.spyable = rules_.section_flag(id, "Spyable", false);
         d.unit_repair = rules_.section_flag(id, "UnitRepair", false);
         d.crewed = rules_.section_flag(id, "Crewed", false);
+        // W3-FIX-A: the MAP's theater (was hard-coded TEMPERATE -- snow missions
+        // drew summer art) over the global MIX search list (isogen.mix holds
+        // the landmarks, <ext>.mix the ammo crates) [RE: asset-search.md §1].
         BuildingArt slot;
-        for (const auto& c : ra2assets::theater_candidates(art_id, 'T', "isotemp.mix",
-                                                           "temperat.mix", ".shp")) {
-            try {
-                MixFile m = ra2_.open_nested(c.mix);
-                if (const MixEntry* e = m.find(c.file)) {
-                    slot.shp = ShpFile::load(m.read(*e));
-                    slot.ok = true;
-                    break;
-                }
-            } catch (const std::exception&) {}
-        }
+        slot.ok = asset_building_shp(art_id, slot.shp);
+        if (slot.ok) building_art_extras(slot, art_, rules_, id, art_id);
+        else std::cerr << "[campaign] building " << id << " image " << art_id << " has no art\n";
         ra2engine::fill_building_weapons(rules_, id, d);   // Gap fix C (G-40)
         ba.roster.push_back(d);
         ba.art.push_back(std::move(slot));

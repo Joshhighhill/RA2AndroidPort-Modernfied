@@ -15,6 +15,7 @@ public:
         int x = 0, y = 0, fw = 1, fh = 1, level = 0, frame = 0;
         int pal = 0;   // 0 iso/terrain palette, 1 theater (overlay) palette, 2 unit palette
         std::string key;
+        std::shared_ptr<ra2assets::Palette> own_pal;   // W3-FIX-A art Palette= (no remap)
         bool centered = true;   // building-style anchor (foundation centre) vs ore-style top-left
         int ovl_id = -1;        // G16: runtime overlay index (live bridge state lookup)
         // W2-GA-06/08 [RE: TerrainClass::Draw_It FUN_0071b450]: terrain objects
@@ -40,7 +41,7 @@ public:
     // tech buildings that join the world). Returns cells to block.
     void load(const ra2assets::MixFile& ra2, const Ini& map_ini, const Ini& rules_ini, const Ini& art_ini,
               const ra2assets::MapFile& map) {
-        objects_.clear(); smudges_.clear(); overlays_.clear(); wall_ids_.clear(); block_.clear();
+        objects_.clear(); smudges_.clear(); overlays_.clear(); wall_ids_.clear(); block_.clear(); lights_.clear();
         missing_ = placed_ = civ_ = 0;
         ra2_ = &ra2;
         rules_ = &rules_ini;
@@ -153,9 +154,6 @@ public:
             if (add_building(type, x, y, std::atoi(f[2].c_str()))) { ++placed_; continue; }
             std::string image = pres_clean(rget(type, "Image"));
             if (image.empty()) image = type;
-            Obj o;
-            o.shp = art_shp(pres_upper(image));
-            if (!o.shp) { ++missing_; continue; }
             int fw = 1, fh = 1;
             const std::string fnd = pres_clean(art_->get(pres_upper(image), "Foundation"));
             if (fnd.size() >= 3) {
@@ -163,6 +161,19 @@ public:
                 const std::size_t xx = fnd.find_first_of("xX");
                 if (xx != std::string::npos) fh = std::max(1, std::atoi(fnd.c_str() + xx + 1));
             }
+            // W3-FIX-A [RE: asset-search.md §3/§4]: a light post keeps its light
+            // source; InvisibleInGame=yes is never drawn (it still occupies).
+            if (std::atof(rget(type, "LightIntensity").c_str()) != 0.0) lights_.push_back({type, x, y, fw, fh});
+            if (pres_lower(rget(type, "InvisibleInGame")).rfind("y", 0) == 0) {
+                for (int j = 0; j < fh; ++j)
+                    for (int i = 0; i < fw; ++i) block_.push_back({x + i, y + j});
+                ++invisible_;
+                continue;
+            }
+            Obj o;
+            o.shp = art_shp(pres_upper(image));
+            if (!o.shp) { ++missing_; continue; }
+            o.own_pal = asset_art_palette(pres_clean(art_->get(pres_upper(image), "Palette")));
             o.x = x;
             o.y = y;
             o.fw = fw;
@@ -177,7 +188,7 @@ public:
             ++civ_;
         }
         std::cerr << "[map-dressing] structures: neutral-world=" << placed_ << " civilian-dressing=" << civ_
-                  << "\n";
+                  << " invisible=" << invisible_ << " lights=" << lights_.size() << "\n";
     }
 
     // W2-GA-15: a crater (Crater=yes smudge types) or scorch mark (Burn=yes)
@@ -224,6 +235,9 @@ public:
         }
     }
     const std::vector<Obj>& objects() const { return objects_; }
+    // W3-FIX-A: dressing structures that carry a light source (LightIntensity != 0).
+    struct LightObj { std::string type; int x, y, fw, fh; };
+    const std::vector<LightObj>& lights() const { return lights_; }
     const std::vector<Obj>& overlays() const { return overlays_; }
 
     void draw_ground(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
@@ -305,7 +319,7 @@ public:
             tex = static_cast<SDL_Texture*>(tc.peek(key));
             if (!tex) {
                 const std::vector<uint8_t> idx = o.shp->decode_indexed(fr);
-                tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, *pals[o.pal]));
+                tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, o.own_pal ? *o.own_pal : *pals[o.pal]));
             }
             tc.pin(key);
         }
@@ -372,23 +386,15 @@ private:
         std::string image = pres_clean(art_->get(name, "Image"));
         if (image.empty()) image = rget(name, "Image");
         if (image.empty()) image = name;
-        std::vector<ra2assets::TheaterCandidate> cands;
-        for (const std::string& ext : {std::string(".") + ch.ext, std::string(".shp")})
-            for (const auto& c : ra2assets::theater_candidates(image, ch.letter, ch.iso_mix, ch.art_mix, ext))
-                cands.push_back(c);
-        cands.push_back({"conquer.mix", pres_lower(image) + ".shp"});
+        (void)ch;
+        // W3-FIX-A: the theater extension, then .shp, over the global MIX
+        // search list (isogen / <ext>.mix / patch caches / YR tail included).
         std::shared_ptr<ra2assets::ShpFile> out;
-        for (const auto& c : cands) {
-            MixFile* m = nested(c.mix);
-            if (!m) continue;
-            const MixEntry* e = m->find(c.file);
-            if (!e) e = m->find(pres_lower(c.file));
-            if (!e) continue;
-            try {
-                out = std::make_shared<ra2assets::ShpFile>(ShpFile::load(m->read(*e)));
-                break;
-            } catch (...) {}
-        }
+        ra2assets::ShpFile shp;
+        if (!asset_art_shp(image, /*theater_ext=*/true, shp).empty())
+            out = std::make_shared<ra2assets::ShpFile>(std::move(shp));
+        else
+            std::cerr << "[map-dressing] no art for " << name << " (image " << image << ")\n";
         cache_[name] = out;
         return out;
     }
@@ -403,7 +409,8 @@ private:
     std::vector<std::string> names_;   // [OverlayTypes] by runtime index
     std::map<int, int> wall_ids_;
     std::vector<std::pair<int, int>> block_;
-    int missing_ = 0, placed_ = 0, civ_ = 0;
+    int missing_ = 0, placed_ = 0, civ_ = 0, invisible_ = 0;
+    std::vector<LightObj> lights_;
     long last_tick_ = 0;
     std::set<int> smudge_cells_;
     std::vector<std::string> smudge_kinds_[2];

@@ -87,17 +87,9 @@ int depth_register_building(BuildingAssets& ba, const ra2assets::MixFile& ra2, c
     d.spyable = rules.section_flag(id, "Spyable", false);
     d.unit_repair = rules.section_flag(id, "UnitRepair", false);
     BuildingArt slot;
-    for (const auto& c : ra2assets::theater_candidates(art_id, art_chain().letter, art_chain().iso_mix,
-                                                       art_chain().art_mix, ".shp")) {
-        try {
-            MixFile m = ra2.open_nested(c.mix);
-            if (const MixEntry* e = m.find(c.file)) {
-                slot.shp = ShpFile::load(m.read(*e));
-                slot.ok = true;
-                break;
-            }
-        } catch (const std::exception&) {}
-    }
+    (void)ra2;
+    slot.ok = asset_building_shp(art_id, slot.shp);   // W3-FIX-A: global search list
+    if (slot.ok) building_art_extras(slot, art, rules, id, art_id);
     ra2engine::fill_building_weapons(rules, id, d);   // also the G16 garrison/hut keys
     ba.roster.push_back(d);
     ba.art.push_back(std::move(slot));

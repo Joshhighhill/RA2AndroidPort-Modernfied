@@ -143,4 +143,18 @@ bool Art::new_theater(const std::string& image) const {
     return is_truthy(ini_->get(image, "NewTheater", ""));
 }
 
+std::string Art::palette(const std::string& image) const {
+    std::string v = ini_->get(image, "Palette", "");
+    const std::size_t sc = v.find(';');
+    if (sc != std::string::npos) v.erase(sc);
+    while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back()))) v.pop_back();
+    std::size_t i = 0;
+    while (i < v.size() && std::isspace(static_cast<unsigned char>(v[i]))) ++i;
+    return v.substr(i);
+}
+
+bool Art::theater(const std::string& image) const {
+    return is_truthy(ini_->get(image, "Theater", ""));
+}
+
 }  // namespace ra2assets

@@ -193,10 +193,20 @@
         for (const ra2engine::Building& b : world_.buildings())   // first own building
             if (b.alive && b.house == 0) { out["bld0.cx"] = b.cx; out["bld0.cy"] = b.cy; break; }
         if (campaign_) out["campaign.outcome"] = campaign_->outcome();
+        // W3-FIX-A: live buildings drawn without art / hidden by InvisibleInGame.
+        for (const ra2engine::Building& b : world_.buildings()) {
+            if (!b.alive || b.state == ra2engine::Building::State::Dead || b.type < 0 ||
+                b.type >= static_cast<int>(ba_.art.size()))
+                continue;
+            const BuildingArt& a = ba_.art[static_cast<std::size_t>(b.type)];
+            if (a.invisible) ++out["art.invisible"];
+            else if (!a.ok) ++out["art.missing"];
+        }
     }
 
     bool cheat(const std::vector<std::string>& args) override {
         if (campaign_cheat(args)) return true;   // W2-CA-19 (campaign_play.inc)
+#include "play_art_cheats.inc"   // W3-FIX-A art acceptance verbs (--play only)
         if (args.size() == 1 && args[0] == "center_own") {   // camera on the first own unit
             for (const ra2engine::Unit& u : world_.units())
                 if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
