@@ -182,16 +182,21 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
     add_cand(cat.war_factory);
     add_cand(cat.radar);
     for (int i = 0; i < ai.refinery_limit; ++i) add_cand(cat.refinery);
+    // [G-66] tech centre + superweapon structures [RE-FALLBACK: position --
+    // W2-AN-21 moves them (and the W2-AN-16 Naval Yard) from the plan tail to
+    // right after the refineries, ahead of the up-to-25 defenses and their
+    // walls: at the tail a Brutal AI met them only after ~40 minutes, while
+    // the original AI fields its tech centre and superweapons mid-game. The
+    // topo loop still orders them behind their prerequisites.]
+    add_cand(cat.naval_yard);   // W2-AN-16: dropped at placement when no water is near
+    add_cand(cat.tech);
+    for (int t : cat.superweapons) add_cand(t);
     const int defs = std::min(mods.defense_target, ai.defense_limit);
     if (!cat.defenses.empty())
         for (int i = 0; i < defs; ++i)
             add_cand(cat.defenses[i % (int)cat.defenses.size()]);
     if (cat.wall >= 0 && !cat.defenses.empty())
         for (int i = 0; i < defs; ++i) add_cand(cat.wall);
-    // [G-66] tech centre + superweapon structures at the tail [RE-FALLBACK:
-    // tail position; the topo loop still orders them behind their prereqs].
-    add_cand(cat.tech);
-    for (int t : cat.superweapons) add_cand(t);
     // 5) Kahn-style topological loop [RE-GATE APPLIED: ai-base.md §2a —
     // FUN_005052d0's main loop]: emit the FIRST candidate whose prereqs are
     // already met BY THE PLAN-SO-FAR (prereqs_in_plan == the original's

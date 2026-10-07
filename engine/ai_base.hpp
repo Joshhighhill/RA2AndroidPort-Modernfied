@@ -234,6 +234,12 @@ struct AiCatalog {
     // GAWEAT/GACSPH), planned at the tail behind their tech prerequisite.
     int tech = -1;
     std::vector<int> superweapons;
+    // W2-AN-16 [rules [AI] BuildNavalYard=NAYARD,GAYARD; [General]
+    // AINavalYardAdjacency=20 "distance in cells the Computer can place his
+    // Naval Yard from his Con Yard"]. -1 = no yard (no water near the base:
+    // the node is dropped when no water spot exists).
+    int naval_yard = -1;
+    int naval_yard_adjacency = 20;
 };
 
 // next_build's answer. type >= 0: start this roster type now, filling

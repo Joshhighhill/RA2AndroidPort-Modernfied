@@ -68,7 +68,7 @@ struct BuildingTypeDef {
     // MCV turns to before it unfolds into this type.
     int  deploy_facing    = 0x80;
     bool ore_purifier     = false;  // OrePurifier=     gap owner A (G-27) [RE: economy.md §2]
-    // --- W2-SK-12/19/20 (save v10) ---
+    // --- W2-SK-12/19/20 (save v11) ---
     bool capturable       = false;  // Capturable=  (rulesmd: absent = no; walls/defences no)
     bool spyable          = false;  // Spyable=     (absent = no)
     bool unit_repair      = false;  // UnitRepair=  (GADEPT/NADEPT service depot)
@@ -173,6 +173,8 @@ struct Building {
     int firing_occupant = 0;
     double garrison_rof_cool = 0.0;
     int garrison_target = -1;
+    // W2-AN-04: Iron Curtain invulnerability left (seconds); 0 = none.
+    double iron_left = 0.0;
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

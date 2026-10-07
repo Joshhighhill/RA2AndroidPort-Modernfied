@@ -540,6 +540,38 @@ bool World::walkable(int x, int y) const {
     return passable_[static_cast<size_t>(y) * grid_w_ + x] != 0;
 }
 
+const std::vector<std::uint8_t>& World::amphib_grid() const {
+    amphib_passable_ = passable_;
+    const std::size_t n = std::min(amphib_passable_.size(), water_passable_.size());
+    for (std::size_t i = 0; i < n; ++i)
+        if (water_passable_[i]) amphib_passable_[i] = 1;
+    return amphib_passable_;
+}
+
+bool World::unit_can_enter_cell(const Unit& u, int x, int y) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
+    if (u.is_aircraft) return true;   // flight ignores the ground grids
+    const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+    const bool land = i < passable_.size() && passable_[i] != 0;
+    const bool water = i < water_passable_.size() && water_passable_[i] != 0;
+    switch (u.movement_domain) {
+        case MovementDomain::Water: return water;
+        case MovementDomain::Amphibious: return land || water;
+        default: return land;
+    }
+}
+
+bool World::selection_can_enter(int house, int x, int y) const {
+    bool any = false;
+    for (const Unit& u : units_) {
+        if (!u.selected || u.house != house || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0)
+            continue;
+        any = true;
+        if (unit_can_enter_cell(u, x, y)) return true;
+    }
+    return !any && walkable(x, y);
+}
+
 Unit& World::add_unit(int cell_x, int cell_y, const std::string& image, int frame) {
     Unit u;
     u.cell_x = cell_x;
@@ -610,6 +642,13 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // (default is_naval=false / movement_domain=Land = a ground unit).
     u.is_naval = c.is_naval;
     u.movement_domain = c.movement_domain;
+    // W2-AN: naval/air type data; a spawner starts with its full complement
+    // and a fixed-wing aircraft with full ammo.
+    u.an.t = c.an;
+    u.an.spawn_ready = c.an.spawner_slot >= 0 ? c.an.spawns_number : 0;
+    u.an.ammo = c.an.ammo;
+    u.an.in_water = c.is_naval;
+    u.an.submerged = c.an.underwater && c.an.cloakable;
     // Gap fix C [RE: docs/re/weapons.md]: the secondary slot + AA/AG flags.
     // Inert defaults for any hand-built UnitCombat (no secondary, ground-only).
     u.w2 = c.secondary;
@@ -813,6 +852,11 @@ void World::order_unit_move(int idx, int gx, int gy) {
         teleport_unit(idx, gx, gy);
         return;
     }
+    // W2-AN-02: a fixed-wing aircraft flies a sortie to the cell (then RTB).
+    if (u.an.t.fixed_wing) {
+        if (!u.an.t.spawned) order_fixed_wing(idx, -1, -1, gx, gy);
+        return;
+    }
     // CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §1/§6]: an aircraft order sets
     // a FLIGHT GOAL and takes off/cruises -- it never computes an A* path, never
     // tests passable_, and reserves no occ_ cell while airborne (straight-line
@@ -821,6 +865,7 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // false in every existing demo) take the exact existing path below.
     if (u.is_aircraft) {
         aircraft_any_ = true;                        // open the step_flight firewall
+        u.an.landing = false;                        // W2-AN-08: a new goal ends a landing
         u.flight_goal_x = gx;
         u.flight_goal_y = gy;
         u.has_flight_goal = true;
@@ -891,8 +936,36 @@ void World::order_move_selected(int goal_x, int goal_y) {
         }
     if (sel.empty()) return;
 
-    std::vector<Cellxy> targets =
-        assign_formation({goal_x, goal_y}, cur, passable_, grid_w_, grid_h_, occ_);
+    // W2-AN-09: one formation per movement domain -- ships spread over the
+    // water grid, amphibious craft over land OR water, aircraft anywhere, the
+    // rest over the land grid (the pre-fix single call, byte-identical for an
+    // all-ground selection).
+    std::vector<Cellxy> targets(sel.size(), Cellxy{goal_x, goal_y});
+    {
+        std::vector<std::uint8_t> air_grid;
+        for (int dom = 0; dom < 4; ++dom) {
+            std::vector<std::size_t> ks;
+            std::vector<Cellxy> dcur;
+            for (std::size_t k = 0; k < sel.size(); ++k) {
+                const Unit& u = units_[sel[k]];
+                const int d = u.is_aircraft ? 3 : static_cast<int>(u.movement_domain);
+                if (d != dom) continue;
+                ks.push_back(k);
+                dcur.push_back(cur[k]);
+            }
+            if (ks.empty()) continue;
+            const std::vector<std::uint8_t>* g = &passable_;
+            if (dom == 1) g = &water_passable_;
+            else if (dom == 2) g = &amphib_grid();
+            else if (dom == 3) {
+                air_grid.assign(static_cast<std::size_t>(grid_w_) * grid_h_, 1);
+                g = &air_grid;
+            }
+            const std::vector<Cellxy> t =
+                (g->empty()) ? dcur : assign_formation({goal_x, goal_y}, dcur, *g, grid_w_, grid_h_, occ_);
+            for (std::size_t j = 0; j < ks.size(); ++j) targets[ks[j]] = t[j];
+        }
+    }
 
     for (std::size_t k = 0; k < sel.size(); ++k) {
         Unit& u = units_[sel[k]];
@@ -1026,7 +1099,9 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
     // Gap owner A (G-24) [RE: roster2.md TL;DR 8]: a ship leaves its Naval Yard
     // onto the first free WATER ring cell (roster2's naval_exit_cell); every
     // other unit keeps the land walk below.
-    if (c.is_naval) {
+    // W2-AN-10: an amphibious craft (LCRF/SAPC, built at the yard) also
+    // launches onto the water ring.
+    if (c.is_naval || c.movement_domain == MovementDomain::Amphibious) {
         if (water_passable_.empty()) return -1;
         const Cellxy wx = naval_exit_cell(f, factory_def, water_passable_, grid_w_, grid_h_,
                                           [this](int x, int y) {
@@ -1040,6 +1115,35 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
         add_combat_unit(wx.x, wx.y, f.house, cv);
         const int ui = static_cast<int>(units_.size()) - 1;
         if (has_rally) order_unit_move(ui, rx, ry);
+        return ui;
+    }
+    // W2-AN-01/02 [RE: roster2.md §C]: a fixed-wing aircraft is built ONTO a
+    // free dock pad of its Helipad factory (GAAIRC/AMRADR: pad k = centre +
+    // DockingOffset[k]); with every pad taken the queue HOLDS.
+    if (c.an.fixed_wing) {
+        int pad = -1;
+        for (int k = 0; k < static_cast<int>(an_.dock_offsets.size()) && pad < 0; ++k) {
+            bool used = false;
+            for (const Unit& o : units_)
+                if (o.alive && o.die_time < 0.0 && o.an.home == factory_idx && o.an.pad == k) used = true;
+            if (!used) pad = k;
+        }
+        if (pad < 0 && !an_.dock_offsets.empty()) return -1;
+        const double px = (f.cx * 256.0 + f.fw * 128.0 + (pad >= 0 ? an_.dock_offsets[pad].first : 0)) / 256.0 - 0.5;
+        const double py = (f.cy * 256.0 + f.fh * 128.0 + (pad >= 0 ? an_.dock_offsets[pad].second : 0)) / 256.0 - 0.5;
+        UnitCombat cv = c;
+        cv.veteran_rank = produced_veteran(f.house) ? 1 : 0;
+        const int house = f.house;
+        add_combat_unit(static_cast<int>(std::lround(px)), static_cast<int>(std::lround(py)), house, cv);
+        const int ui = static_cast<int>(units_.size()) - 1;
+        occ_.release_all_of(ui, -1, -1);   // parked on the pad: no ground cell
+        Unit& a = units_[ui];
+        a.fx = px;
+        a.fy = py;
+        a.an.home = factory_idx;
+        a.an.pad = pad;
+        a.an.sortie = 0;
+        an_.any = true;
         return ui;
     }
     auto free_cell = [this](int x, int y) {
@@ -1065,6 +1169,13 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
     cv.veteran_rank = produced_veteran_kind(house, factory_def.factory_kind) ? 1 : 0;
     add_combat_unit(ex.x, ex.y, house, cv);
     const int ui = static_cast<int>(units_.size()) - 1;
+    // W2-AN-07: a jumpjet (Kirov, Rocketeer, Night Hawk) lifts off as it
+    // leaves the factory instead of standing on the apron as a ground target.
+    if (c.is_aircraft) {
+        aircraft_any_ = true;
+        occ_.release_all_of(ui, -1, -1);
+        units_[ui].flight_state = FlightState::TakingOff;
+    }
     int gx = rx, gy = ry;
     if (!has_rally) {
         // Default gather = nearest free cell from the building's own coord
@@ -1211,6 +1322,12 @@ void World::step_cargo(double /*dt*/) {
         }
         const int adx = u.cell_x - t.cell_x, ady = u.cell_y - t.cell_y;
         const int cheb = std::max(adx < 0 ? -adx : adx, ady < 0 ? -ady : ady);
+        // W2-AN-08: an AIRBORNE transport (Night Hawk) takes passengers only
+        // once it has landed; it lands where it hovers (step_air_naval).
+        if (cheb <= 1 && t.is_aircraft && t.flight_state != FlightState::Grounded) {
+            if (t.an.t.landable && !t.balloon_hover && !t.an.landing) t.has_flight_goal = false;
+            continue;
+        }
         if (cheb <= 1) {
             // Boarding trigger point = Chebyshev adjacency [RE-GATE APPLIED:
             // transport-cargo.md §3 -- DOCUMENTED DEVIATION: the original
@@ -1275,6 +1392,18 @@ void World::step_cargo(double /*dt*/) {
         if (!t.alive || t.die_time >= 0.0) { t.unload_pending = false; continue; }
         if (t.cargo.empty()) { t.unload_pending = false; continue; }
         if (t.moving()) continue;              // a STATIONARY transport ejects [spec §5]
+        // W2-AN-08: an airborne transport lands first, then unloads.
+        if (t.is_aircraft && t.flight_state != FlightState::Grounded) {
+            if (!t.an.t.landable || t.balloon_hover) t.unload_pending = false;   // can never land
+            else if (!t.an.landing) t.has_flight_goal = false;
+            continue;
+        }
+        // W2-AN-10: a landing craft unloads only once beached on a LAND cell
+        // (the eject ring is land-only); an unload order at sea is dropped.
+        if (t.movement_domain == MovementDomain::Amphibious && !walkable(t.cell_x, t.cell_y)) {
+            t.unload_pending = false;
+            continue;
+        }
         const int p = next_eject(t);           // LIFO -- the LAST-boarded leaves
                                                // first [RE-GATE APPLIED:
                                                // transport-cargo.md §6 -- CONFIRMED]
@@ -1336,6 +1465,7 @@ void World::step_flight(double dt) {
     for (Unit& u : units_) {
         if (!u.is_aircraft) continue;
         if (!u.alive || u.die_time >= 0.0) continue;
+        if (u.an.t.fixed_wing || u.an.t.missile) continue;   // W2-AN: world_an.cpp flies these
         if (u.flight_state == FlightState::Grounded) continue;  // parked: nothing to do
 
         // 1) Altitude: ascend toward cruise (TakingOff) / descend toward 0
@@ -1438,131 +1568,12 @@ double World::ai_credits(int house) const {
     return ai_enabled(house) ? ai_houses_[house].credits : 0.0;
 }
 
-// --- CB-4 Superweapons [RE: superweapon.md] ---
-void World::grant_superweapon(int house, SuperweaponType type, double recharge_secs,
-                              int dmg, double cell_spread, double pmax,
-                              const std::array<int, 11>& verses) {
-    if (house < 0) return;
-    if ((int)sw_houses_.size() <= house) sw_houses_.resize(house + 1);   // enable_ai_house precedent
-    HouseSuperweapon& rec = sw_houses_[house];
-    rec.has_sw = true;
-    rec.sw = Superweapon{};
-    rec.sw.type = type;
-    rec.sw.recharge_secs = recharge_secs;
-    rec.eff_damage = dmg;
-    rec.eff_cell_spread = cell_spread;
-    rec.eff_percent_at_max = pmax;
-    rec.eff_verses = verses;
-    sw_any_ = true;                                                       // open the firewall
-}
-
-bool World::fire_superweapon(int house, int cx, int cy) {
-    if (house < 0 || house >= (int)sw_houses_.size()) return false;
-    HouseSuperweapon& rec = sw_houses_[house];
-    if (!rec.has_sw || !rec.sw.is_ready()) return false;   // refused unless READY (§4)
-    // Gap owner A: only the Nuke's detonation is implemented; any other type
-    // keeps its charge rather than "firing" a no-op.
-    if (rec.sw.type != SuperweaponType::Nuke) return false;
-
-    // Transient virtual detonator [spec §5.1]: a value-initialized STACK Unit
-    // (Unit struct UNCHANGED -- no persistent field). Its house + fx/fy (target
-    // cell, in CELL-space: apply_spread_damage's dist_leptons scales by
-    // kLeptonsPerCell internally, combat.cpp:50/95, and an idle unit's fx/fy IS
-    // its integer cell) + the four warhead fields are EXACTLY and ONLY the fields
-    // apply_spread_damage reads from its attacker/center args.
-    Unit virt;
-    virt.house = house;
-    virt.fx = static_cast<double>(cx);
-    virt.fy = static_cast<double>(cy);
-    virt.w_damage = rec.eff_damage;                 // [NukePayload] Damage=600
-    virt.w_cell_spread = rec.eff_cell_spread;        // [NUKE] CellSpread=10
-    virt.w_percent_at_max = rec.eff_percent_at_max;  // [NUKE] PercentAtMax=.02
-    virt.w_verses.assign(rec.eff_verses.begin(), rec.eff_verses.end());  // [NUKE] Verses
-
-    // Detonate: REUSE the EXACT CB-2 applicator (combat.cpp) -- virt is both the
-    // attacker (house + warhead) and the center (fx/fy). Every alive, non-carried,
-    // non-aircraft ENEMY unit within round(CellSpread)*kLeptonsPerCell of the cell
-    // takes damage_vs(static_cast<int>(Damage*scale), NUKE-Verses, armor) with scale
-    // falling LINEARLY 1.0 -> PercentAtMax across the radius; enemies-only spares the
-    // firing house. NO new damage math (spec §5/§8).
-    apply_spread_damage(units_, occ_, virt, virt);
-
-    // [RE-GATE APPLIED: superweapon.md §5.3] BUILDING SPLASH -- CONFIRMED: the
-    // [NUKE] warhead area-damage (FUN_00489190) enumerates EVERY in-radius object
-    // with IsActive && Strength>0 -- buildings included (Strength>0), corroborated
-    // by [NUKE] WallAbsoluteDestroyer=yes + Wood=yes -- so the nuke levels
-    // structures in the blast. apply_spread_damage above damages UNITS only (the
-    // CB-2 aerial-bomb scope), so this SW-ONLY loop adds the building leg,
-    // mirroring the unit falloff EXACTLY: the same round(CellSpread) radius, the
-    // same linear 1.0->PercentAtMax scale, the same static_cast<int> damage
-    // truncation, damage_vs against the building's armor, and the same enemies-only
-    // rule (firing house spared -- the documented CB-4 divergence from vanilla
-    // friendly-fire, consistent with the unit splash). It is an ADDED clause
-    // reached ONLY by this fire_superweapon call, which no existing demo issues, so
-    // every gate stays byte-identical (buildings_ is untouched by it everywhere
-    // else). Distance is to the building's NEAREST foundation cell (a multi-cell
-    // footprint is hit at its EDGE -- combat.cpp's building-range convention,
-    // combat.cpp:233-244). hp<=0 -> kill_building (Dead + die_time=0, building.hpp);
-    // World::step's existing Dead-building pass releases the foundation blocking
-    // exactly once and step_buildings tombstones it -- no occ_ handling needed here.
-    const double radius_cells = std::round(rec.eff_cell_spread);        // round(CellSpread)
-    const double radius_lept = radius_cells * 256.0;                    // kLeptonsPerCell = 256
-    const double b_pmax = rec.eff_percent_at_max;                       // [NUKE] PercentAtMax
-    const std::vector<int> nuke_verses(rec.eff_verses.begin(), rec.eff_verses.end());
-    for (Building& b : buildings_) {
-        if (!b.alive || b.state == Building::State::Dead) continue;     // gone/already dying
-        if (b.house == house) continue;                                // enemies only (firing house spared)
-        double d = -1.0;                                               // nearest-foundation-cell distance (leptons)
-        for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
-            const double dx = (static_cast<double>(cx) - static_cast<double>(cell.x)) * 256.0;
-            const double dy = (static_cast<double>(cy) - static_cast<double>(cell.y)) * 256.0;
-            const double dc = std::sqrt(dx * dx + dy * dy);
-            if (d < 0.0 || dc < d) d = dc;
-        }
-        if (d < 0.0 || d > radius_lept) continue;                     // outside the splash
-        const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
-        const double scale = 1.0 - (1.0 - b_pmax) * frac;             // 1.0 -> pmax linear (unit-identical, combat.cpp:98)
-        const int base = static_cast<int>(rec.eff_damage * scale);    // trunc (combat.cpp:99)
-        const int dmg = damage_vs(base, nuke_verses, b.armor_ix);     // [NUKE] Verses vs building armor
-        b.hp -= dmg;
-        if (b.hp <= 0) kill_building(b);                              // reuse the existing destroy path
-    }
-
-    rec.sw.on_fired();   // reset timer=0, clear ready (§4)
-    return true;
-}
-
-void World::step_superweapon(double dt) {
-    if (!sw_any_) return;                        // firewall (spec §8) -- no-op everywhere else
-    for (int h = 0; h < static_cast<int>(sw_houses_.size()); ++h) {   // house-id order, no RNG
-        HouseSuperweapon& rec = sw_houses_[h];
-        if (!rec.has_sw) continue;
-        // [RE: superweapon.md §1] IsPowered=true suspends the charge while the
-        // owner is on low power (gap owner A, G-29).
-        if (rec.is_powered && house_low_power(h)) continue;
-        rec.sw.tick(dt);
-    }
-}
+// --- CB-4 Superweapons: moved to world_sw.cpp (W2-AN-04 multi-SW v2) ---
 
 bool World::house_low_power(int house) const {
     const PowerTotals p = apply_blackout(power_totals(buildings_, btypes(), house),
                                          house_blacked_out(house));
     return p.output < p.drain;   // [RE: construction.md §8] low power = output < drain
-}
-
-bool World::sw_ready(int house) const {
-    return house >= 0 && house < (int)sw_houses_.size() &&
-           sw_houses_[house].has_sw && sw_houses_[house].sw.is_ready();
-}
-
-double World::sw_charge_fraction(int house) const {
-    if (house < 0 || house >= (int)sw_houses_.size() || !sw_houses_[house].has_sw) return 0.0;
-    return sw_houses_[house].sw.charge_fraction();
-}
-
-const Superweapon* World::sw_state(int house) const {
-    if (house < 0 || house >= (int)sw_houses_.size() || !sw_houses_[house].has_sw) return nullptr;
-    return &sw_houses_[house].sw;
 }
 
 // --- Engineer/Spy Capture phase [RE: capture.md] ---
@@ -2169,21 +2180,6 @@ void World::step_capture(double dt) {
     }
 }
 
-void World::transfer_superweapon(int old_house, int new_house) {
-    if (old_house < 0 || old_house >= (int)sw_houses_.size()) return;
-    if (new_house < 0) return;                  // lower-bound guard [Task-2 review Minor]
-    if (!sw_houses_[old_house].has_sw) return;
-    if ((int)sw_houses_.size() <= new_house) sw_houses_.resize(new_house + 1);
-    sw_houses_[new_house] = sw_houses_[old_house];      // move the whole record
-    sw_houses_[old_house] = HouseSuperweapon{};          // old house loses it
-    sw_any_ = true;
-}
-
-void World::reset_superweapon(int house) {
-    if (house < 0 || house >= (int)sw_houses_.size() || !sw_houses_[house].has_sw) return;
-    sw_houses_[house].sw.on_fired();                     // timer->0, ready->false
-}
-
 void World::register_tech_income(int b_idx, int amount, int delay) {
     if (b_idx < 0 || amount <= 0 || delay <= 0) return;
     for (const TechIncome& t : tech_income_) if (t.building == b_idx) return;  // idempotent
@@ -2462,6 +2458,7 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
         // per-cell buildable/unoccupied grid still applies, probed over the
         // foundation expanded by the AIBaseSpacing(1) gap [RE-FALLBACK: gap
         // modeled as an expanded-foundation probe].
+        if (node.type == rec.cfg.catalog.naval_yard) return ai_naval_spot_ok(house, rec, t, cx, cy);
         const int s = rec.cfg.ai.base_spacing;
         return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
                                house, t.adjacent, passable_,
@@ -2484,6 +2481,7 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
                                ? rec.cfg.buildup_totals[node.type] : 0.0;
     const int idx = add_building(node.type, px, py, t.fw, t.fh, house, t.strength,
                                  t.armor_ix, buildup, /*instant=*/false);
+    if (node.type == rec.cfg.catalog.naval_yard) block_water_footprint(px, py, t.fw, t.fh);   // W2-AN-16
     node.building = idx;
     node.dead = false;
     rec.queues.placed(cat);
@@ -2748,6 +2746,7 @@ void World::step_ai_houses(double dt) {
             auto can_place = [&](int cx, int cy) {
                 // Same AI validity as ai_place_ready: Adjacent= BYPASSED +
                 // AIBaseSpacing(1) gap [RE-GATE APPLIED: ai-base.md §3].
+                if (d.type == cfg.catalog.naval_yard) return ai_naval_spot_ok(h, rec, t, cx, cy);
                 const int s = cfg.ai.base_spacing;
                 return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
                                        h, t.adjacent, passable_,
@@ -2777,6 +2776,13 @@ void World::step_ai_houses(double dt) {
                 }
             }
             if (loc.x < 0) loc = find_build_location(view, is_def, can_place);
+            if (loc.x < 0 && d.type == cfg.catalog.naval_yard) loc = ai_naval_spot_scan(h, rec, t);
+            if (loc.x < 0 && d.type == cfg.catalog.naval_yard) {
+                // W2-AN-16: no water within AINavalYardAdjacency -- drop the
+                // node (a gap) so the head-only walk is never wedged on it.
+                pn.type = -1;
+                continue;
+            }
             if (loc.x < 0) continue;  // boxed in: try again next clock
             pn.cx = loc.x; pn.cy = loc.y;
         }
@@ -2857,11 +2863,24 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
     // cell]. RE-FALLBACK: "the enemy" = every enemy house (the engine keeps no
     // single house+0x5600 enemy); factory = any Factory= building; the class
     // tests are the engine's building/unit flags. Seeded ai_rand, deterministic.
-    if (!sw_ready(house)) return;
+    // W2-AN-21: every charged type fires (one per tick):
+    //  * Nuke / Lightning Storm / paradrops: the highest-value enemy object.
+    //  * Iron Curtain: the own 3x3 holding the most own vehicles, preferring
+    //    units already ordered at a target [RE-FALLBACK: the per-type picker
+    //    of FUN_00509710 for IronCurtain was not unwound].
+    //  * Chronosphere: that own vehicle cluster -> next to the highest-value
+    //    enemy building [RE-FALLBACK, same].
+    const std::vector<SuperweaponType> types = sw_types(house);
+    SuperweaponType fire_t = SuperweaponType::None;
+    for (SuperweaponType t : types)
+        if (sw_ready(house, t)) { fire_t = t; break; }
+    if (fire_t == SuperweaponType::None) return;
     const AiRules& ai = rec.cfg.ai;
     const AiTeamConfig& tc = rec.cfg.team;
     int best = -1;
     std::vector<Cellxy> ties;
+    Cellxy best_bld{-1, -1};
+    int best_bld_v = -1;
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
         int v = ai.sw_value_building;
@@ -2879,16 +2898,46 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
         const Cellxy c{b.cx + b.fw / 2, b.cy + b.fh / 2};
         if (v > best) { best = v; ties.clear(); }
         if (v == best) ties.push_back(c);
+        if (v > best_bld_v) { best_bld_v = v; best_bld = Cellxy{b.cx + b.fw, b.cy + b.fh}; }
     }
     for (const Unit& u : units_) {
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || !is_enemy(house, u.house)) continue;
+        if (unit_hidden_from(house, u)) continue;
         const int v = u.is_harvester ? ai.sw_value_harvester : ai.sw_value_unit;
         if (v > best) { best = v; ties.clear(); }
         if (v == best) ties.push_back(Cellxy{u.cell_x, u.cell_y});
     }
+    if (fire_t == SuperweaponType::IronCurtain || fire_t == SuperweaponType::ChronoSphere ||
+        fire_t == SuperweaponType::ChronoWarp) {
+        // Own vehicle cluster: the unit whose 3x3 holds the most own vehicles
+        // (an ordered attacker counts double).
+        int cbest = 0;
+        Cellxy src{-1, -1};
+        for (const Unit& u : units_) {
+            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house) continue;
+            if (!u.is_vehicle || u.is_aircraft || u.is_harvester) continue;
+            int score = 0;
+            for (const Unit& o : units_) {
+                if (!o.alive || o.die_time >= 0.0 || o.cargo_of >= 0 || o.house != house) continue;
+                if (!o.is_vehicle || o.is_aircraft) continue;
+                if (std::abs(o.cell_x - u.cell_x) <= 1 && std::abs(o.cell_y - u.cell_y) <= 1)
+                    score += (o.target >= 0 || o.target_building >= 0) ? 2 : 1;
+            }
+            if (score > cbest) { cbest = score; src = Cellxy{u.cell_x, u.cell_y}; }
+        }
+        if (src.x < 0 || cbest < 2) return;   // nothing worth protecting / moving yet
+        if (fire_t == SuperweaponType::IronCurtain) {
+            fire_superweapon_at(house, fire_t, src.x, src.y);
+            return;
+        }
+        if (best_bld.x < 0) return;
+        fire_superweapon_at(house, fire_t, src.x, src.y, std::min(grid_w_ - 2, best_bld.x + 1),
+                            std::min(grid_h_ - 2, best_bld.y + 1));
+        return;
+    }
     if (ties.empty()) return;
     const Cellxy t = ties[ai_rand(rec.state.rng) % (std::uint32_t)ties.size()];
-    fire_superweapon(house, t.x, t.y);
+    fire_superweapon_at(house, fire_t, t.x, t.y);
 }
 
 // --- AI-2 offensive-teams phase [RE: ai-team.md] ----------------------------
@@ -2953,7 +3002,7 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house ||
-            u.is_harvester || u.is_aircraft)  // CB-2: AI never fields/recruits aircraft
+            u.is_harvester || u.an.t.fixed_wing || u.an.t.missile)  // W2-AN-16: jumpjets recruit
             continue;
         if (u.moving() || u.attack_order) continue;
         const int t = ai_unit_type_of(rec, u);
@@ -2971,8 +3020,8 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
 
 bool World::ai_quarry_exists(int house, const HouseAiRec& rec, int quarry) const {
     for (const Unit& u : units_)
-        if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.is_aircraft &&
-            is_enemy(house, u.house) && quarry_unit_match(quarry, u))  // CB-2: aircraft never a quarry
+        if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.an.t.fixed_wing && !u.an.t.missile &&
+            is_enemy(house, u.house) && quarry_unit_match(quarry, u))  // W2-AN-16: jumpjets count
             return true;
     for (const Building& b : buildings_)
         if (b.alive && b.state != Building::State::Dead && is_enemy(house, b.house) &&
@@ -3402,8 +3451,14 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     // ready slot was consumed.
     if (!rec.queues.ready(cat)) return false;
     const AiTeamConfig& tc = rec.cfg.team;
-    const std::vector<int>& ft =
-        cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
+    // W2-AN-16: a ship (naval or amphibious) leaves the house's Naval Yard.
+    const int pslot = rec.queues.producing(cat);
+    const bool naval_unit = cat == QueueCat::Vehicle && pslot >= 0 &&
+                            pslot < (int)tc.unit_roster.size() &&
+                            (tc.unit_roster[pslot].combat.is_naval ||
+                             tc.unit_roster[pslot].combat.movement_domain == MovementDomain::Amphibious);
+    const std::vector<int>& ft = naval_unit ? tc.nav_factory_types
+                                 : cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
     const int fi = primary_factory(buildings_, ft, house);
     if (fi < 0) return false;  // no factory: the lost-check cancels the queue
     const int uslot = rec.queues.producing(cat);
@@ -3970,7 +4025,14 @@ void World::step(double dt) {
                 if (u.path.capacity()) { std::vector<Cellxy>().swap(u.path); u.path_idx = 0; }
                 if (u.cargo.capacity() && u.cargo.empty()) std::vector<int>().swap(u.cargo);
             }
-    step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
+    {
+        // W2-AN-10: an amphibious unit re-paths over Land OR Water.
+        bool amph = false;
+        for (const Unit& u : units_)
+            if (u.movement_domain == MovementDomain::Amphibious && u.alive) { amph = true; break; }
+        step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
+                   amph ? &amphib_grid() : nullptr);
+    }
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
     // crate cell, then lifetime expiry -> relocation. A pure INSERTION;
@@ -4009,6 +4071,8 @@ void World::step(double dt) {
     // combat targeting the SAME frame. A pure INSERTION; `if (!aircraft_any_)
     // return;` inside is the only cost every existing demo pays [spec §8].
     step_flight(dt);
+
+    step_air_naval(dt);   // W2-AN: subs/sonar, spawners, fixed-wing, crashes (world_an.cpp)
 
     // CB-4 Superweapons [RE: superweapon.md §3]: advance each granted house's
     // recharge timer. A pure INSERTION after step_flight; `if (!sw_any_) return;`
@@ -4359,7 +4423,8 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
 
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
-                Occupancy& occ, double dt, double move_cps, const AnimTable& anims) {
+                Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
+                const std::vector<std::uint8_t>* amphib_passable) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
@@ -4541,7 +4606,9 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 // SAME field; inert today (is_naval == Water-domain). CONFIRMED:
                 // one occ_ cell + shared FootClass repath (§1/§3).
                 const std::vector<std::uint8_t>& g =
-                    u.movement_domain == MovementDomain::Water ? water_passable : passable;
+                    u.movement_domain == MovementDomain::Water ? water_passable
+                    : (u.movement_domain == MovementDomain::Amphibious && amphib_passable)
+                        ? *amphib_passable : passable;
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
                 // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used

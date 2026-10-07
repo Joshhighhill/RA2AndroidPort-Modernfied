@@ -12,6 +12,7 @@
 //   ra2engine --ai-soak [--minutes N] [--diff easy|normal|brutal]
 //                       [--ai-side soviet|allied] [--map <file.map>]
 //                       [--damage-ai-at MIN] [--ai-vs-ai] [--png <path>]
+//                       [--cash N]   (W2-AN: lobby money, e.g. to reach tech)
 // ============================================================================
 
 namespace {
@@ -21,6 +22,7 @@ struct AiSoakProbe {
 
     static int run(int argc, char** argv) {
         int minutes = 15, damage_ai_at = -1, kill_cy_at = -1;
+        double cash = -1.0;   // W2-AN: --cash N
         ra2engine::AiDifficulty diff = ra2engine::AiDifficulty::Normal;
         bool ai_allied = false, ai_vs_ai = false;
         std::string map_file = "xmp31s2.map", png;   // the --probe-realplay menu map
@@ -39,6 +41,7 @@ struct AiSoakProbe {
             else if (a == "--png") png = next();
             else if (a == "--ai-vs-ai") ai_vs_ai = true;   // house 0 is an AI too
             else if (a == "--kill-ai-conyard-at") kill_cy_at = std::atoi(next().c_str());   // W2-SK-07 probe
+            else if (a == "--cash") cash = std::atof(next().c_str());
         }
         const std::string dir = env_install_dir();
         Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -46,6 +49,7 @@ struct AiSoakProbe {
         ra2engine::SkirmishConfig cfg = ra2engine::default_skirmish_config(rules);
         if (!map_file.empty() && map_file != "default") { cfg.map_file = map_file; cfg.use_map_starts = true; }
         cfg.slots[1].diff = diff;
+        if (cash > 0.0) cfg.starting_cash = cash;
         if (ai_allied) {   // human Soviet vs Allied AI (the SK-S scenario)
             cfg.slots[0].side = ra2engine::World::Side::Soviet;  cfg.slots[0].country = "Russians";
             cfg.slots[1].side = ra2engine::World::Side::Allied;  cfg.slots[1].country = "Americans";
@@ -96,10 +100,15 @@ struct AiSoakProbe {
                 }
                 std::cout << "[ai-soak] probe: AI ConYard destroyed at min " << kill_cy_at << "\n";
             }
-            const bool ready_before = w.sw_ready(ai);
+            bool ready_before = false;
+            for (ra2engine::SuperweaponType t : w.sw_types(ai)) ready_before |= w.sw_ready(ai, t);
+            const int seq0 = w.sw_events().empty() ? 0 : w.sw_events().back().seq;
             g.update(1.0 / 15.0);
-            // A ready SW that is no longer ready after the AI tick was fired.
-            if (ready_before && !w.sw_ready(ai) && w.sw_state(ai)) ++sw_shots;
+            // W2-AN-21: every AI superweapon launch/activation (any type).
+            for (const ra2engine::SwEvent& e : w.sw_events())
+                if (e.seq > seq0 && e.house == ai &&
+                    (e.kind == ra2engine::SwEvent::Launched || e.kind == ra2engine::SwEvent::Activated))
+                    ++sw_shots;
             sw_was_ready = sw_was_ready || ready_before;
             for (std::size_t u = prev_units; u < w.units().size(); ++u)
                 if (w.units()[u].house == ai) ++ai_units_built;
@@ -130,9 +139,14 @@ struct AiSoakProbe {
                 if (ts) for (const ra2engine::TeamInstance& t : ts->teams)
                     if (t.state == ra2engine::TeamState::Executing) ++executing;
                 const auto hp = base_hp(human);
-                int miners = 0;
-                for (const ra2engine::Unit& u : w.units())
+                int miners = 0, navy = 0, air = 0;
+                for (const ra2engine::Unit& u : w.units()) {
                     if (u.alive && u.house == ai && u.is_harvester) ++miners;
+                    if (u.alive && u.die_time < 0.0 && u.house == ai && !u.an.t.spawned) {
+                        if (u.is_naval || u.movement_domain == ra2engine::MovementDomain::Amphibious) ++navy;
+                        if (u.is_aircraft) ++air;
+                    }
+                }
                 std::cout << "min " << f / 900 << ": ai_buildings=" << nb << " ai_miners=" << miners
                           << " ai_credits=" << (long long)w.ai_credits(ai) << " ai_units_alive=" << alive
                           << " ai_units_built=" << ai_units_built
@@ -141,6 +155,7 @@ struct AiSoakProbe {
                           << " executing=" << executing
                           << " triggers_fired=" << (tr ? tr->triggers_fired : 0)
                           << " sw_shots=" << sw_shots
+                          << " ai_navy=" << navy << " ai_air=" << air
                           << " human_base_hp=" << hp.first << "/" << hp.second;
                 {   // W2-SK economy witnesses: ore left, mine output, every house's wallet + miner states
                     int cells = 0, mined = 0;

@@ -5,6 +5,7 @@
 #include "projectile.hpp"  // ProjectileSpec (P2; pure, no World)
 #include "veterancy.hpp"  // P5: AbilityMask / WeaponStats (pure, World-free)
 #include "weapon.hpp"     // Gap fix C: WeaponSlot (pure)
+#include "air_naval.hpp"  // W2-AN: AnType (pure)
 
 namespace ra2engine {
 
@@ -18,7 +19,10 @@ namespace ra2engine {
 // MovementDomain field, and unit_combat.hpp is included by BOTH world.hpp and
 // unit_type.hpp BEFORE world.hpp's own body -- so the enum must be visible at
 // this point. world.hpp gets it transitively via its unit_combat.hpp include.
-enum class MovementDomain { Land = 0, Water = 1 };
+// W2-AN-10 [RE: naval.md §2 table; rules [LCRF]/[SAPC] MovementZone=Amphibious,
+// Hover loco {4A582742}]: Amphibious = the Land OR the Water grid (beach
+// crossing; the landing craft loads/unloads on the shore).
+enum class MovementDomain { Land = 0, Water = 1, Amphibious = 2 };
 
 // Per-unit combat stats resolved once by the caller (main.cpp, from Rules)
 // and handed to World::add_combat_unit to fill in a spawned Unit's hp/armor/
@@ -139,12 +143,13 @@ struct UnitCombat {
     bool occupier = false;            // Occupier= (may garrison CanBeOccupied buildings, G-48)
     WeaponSlot occupy_weapon;         // OccupyWeapon= (fired from inside a garrison)
     WeaponSlot elite_occupy_weapon;   // EliteOccupyWeapon=
-    // --- W2-SK-22 (save v10) ---
+    // --- W2-SK-22 (save v11) ---
     int shrapnel_count = 0;           // primary ShrapnelCount= (Prism Tank Comet: 5)
     int shrapnel_damage = 0;          // ShrapnelWeapon= Damage (CometFragment 30)
     double shrapnel_range = 0.0;      // ShrapnelWeapon= Range (cells)
     std::vector<int> shrapnel_verses; // ShrapnelWeapon= warhead Verses
     bool disguise_when_still = false; // CanDisguise= + DisguiseWhenStill= (Mirage Tank)
+    AnType an;                        // W2-AN: naval/air/SW type data (air_naval.hpp)
 };
 
 }  // namespace ra2engine
