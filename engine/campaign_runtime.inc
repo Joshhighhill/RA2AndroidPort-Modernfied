@@ -370,6 +370,7 @@ public:
             h.u_tag.push_back(t.tag); h.u_cx.push_back(t.cx); h.u_cy.push_back(t.cy);
             h.u_hp.push_back(t.hp); h.u_team.push_back(t.team); h.u_type.push_back(t.type);
             h.u_flags.push_back(flags_of(t));
+            h.u_mc_victim.push_back(t.mc_victim); h.u_mc_orig.push_back(t.mc_orig);
         }
         for (const Track& t : btrack_) {
             h.b_tag.push_back(t.tag); h.b_hp.push_back(t.hp); h.b_type.push_back(t.type);
@@ -407,6 +408,8 @@ public:
             t.tag = h.u_tag[i]; t.cx = h.u_cx[i]; t.cy = h.u_cy[i]; t.hp = h.u_hp[i];
             t.team = h.u_team[i]; t.type = h.u_type[i];
             set_flags(t, h.u_flags[i]);
+            if (i < h.u_mc_victim.size()) t.mc_victim = h.u_mc_victim[i];
+            if (i < h.u_mc_orig.size()) t.mc_orig = h.u_mc_orig[i];
             utrack_.push_back(t);
         }
         btrack_.clear();
@@ -495,6 +498,8 @@ private:
         bool hunt = false;          // Hunt mission
         bool initial = true;        // placed by the map (not "built")
         std::uint8_t dmg_stage = 0; // W2-CA-14: 1 damaged, 2 <= half, 4 <= quarter raised
+        int mc_victim = -1;         // W2-CA-15: unit this controller holds
+        int mc_orig = -1;           // W2-CA-15: house before it was mind-controlled
     };
     struct Team {
         int type = -1;              // teams_data_.teams index
@@ -905,6 +910,9 @@ private:
         t.initial = true;
         t.hp = u.hp;
         t.tag = tag.empty() ? -1 : data_.find_tag(tag);
+        // An object created after scenario start attaches its tag now (the
+        // ctor attaches the map's own objects once the system exists).
+        if (t.tag >= 0 && sys_) sys_->attach_tag(t.tag);
         t.hunt = ra2engine::mission_from_name(mission) == ra2engine::kMissionHunt;
         return idx;
     }
@@ -1039,9 +1047,64 @@ private:
             if (t.tag < 0) return;
         }
     }
+    // W2-CA-15 [RE-W2-5 open -> RE-FALLBACK; rules: a weapon whose Warhead has
+    // MindControl=yes (Yuri, Psychic Tower/Beacon lineage)]: a controller
+    // whose current target is an enemy unit in weapon range takes it over --
+    // the victim changes to the controller's house and drops its orders; one
+    // victim per controller (a new capture frees the previous one back to
+    // its house); a dead controller frees its victim. The capture raises 6
+    // and 44 (attacker = controller's house) on the victim, as a hit does.
+    bool mind_controller(const std::string& type) {
+        auto it = mc_type_.find(type);
+        if (it != mc_type_.end()) return it->second;
+        const Rules rules = Rules::load(rules_ini_);
+        const std::string wh = rules.weapon_warhead(rules.section_string(type, "Primary", ""));
+        const bool mc = !wh.empty() && rules.section_flag(wh, "MindControl", false);
+        mc_type_[type] = mc;
+        return mc;
+    }
+    void mc_release(Track& ctl) {
+        const int v = ctl.mc_victim;
+        ctl.mc_victim = -1;
+        if (v < 0 || v >= (int)utrack_.size()) return;
+        Track& vt = utrack_[(std::size_t)v];
+        ra2engine::Unit& vu = w_.units()[(std::size_t)v];
+        if (vt.mc_orig >= 0 && live(vu)) { vu.house = vt.mc_orig; vu.target = -1; vu.target_building = -1; }
+        vt.mc_orig = -1;
+    }
+    void poll_mind_control() {
+        for (std::size_t i = 0; i < utrack_.size(); ++i) {
+            Track& t = utrack_[i];
+            ra2engine::Unit& u = w_.units()[i];
+            if (t.mc_victim >= 0 && (!live(u))) { mc_release(t); continue; }
+            if (t.dead || !live(u) || u.target < 0 || u.target >= (int)w_.units().size()) continue;
+            if (!mind_controller(t.type)) continue;
+            ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
+            if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
+            const double dx = v.fx - u.fx, dy = v.fy - u.fy;
+            if (std::sqrt(dx * dx + dy * dy) > std::max(1.0, u.w_range) + 0.5) continue;
+            const int vi = u.target;
+            if (t.mc_victim >= 0 && t.mc_victim != vi) mc_release(t);
+            Track& vt = utrack_[(std::size_t)vi];
+            const int from = v.house;
+            if (vt.mc_orig < 0) vt.mc_orig = from;
+            raise_attacked(vt, from, u.house);
+            v.house = u.house;
+            v.target = -1;
+            v.target_building = -1;
+            u.target = -1;
+            u.attack_order = false;
+            t.mc_victim = vi;
+            char b[120];
+            std::snprintf(b, sizeof b, "[camp] f%ld mind control unit=%d %s house %d -> %d", frame_, vi,
+                          vt.type.c_str(), from, u.house);
+            witness_.emplace_back(b);
+        }
+    }
     void poll_objects() {
         sync_tracks();
         poll_entered();
+        poll_mind_control();
         for (std::size_t i = 0; i < utrack_.size(); ++i) {
             Track& t = utrack_[i];
             if (t.dead) continue;
@@ -1197,7 +1260,10 @@ private:
             if (const auto* tf = teams_data_.taskforce(tt.taskforce))
                 for (const ra2engine::MapTaskMember& m : *tf)
                     for (int k = 0; k < m.count; ++k) {
-                        const int idx = place_unit(m.type, tm.house, x, y, 256, std::string(), "Guard",
+                        // TeamType Tag= rides on every member [map-triggers.md §1].
+                        const std::string team_tag =
+                            tt.tag.empty() || camp::up(tt.tag) == "<NONE>" ? std::string() : tt.tag;
+                        const int idx = place_unit(m.type, tm.house, x, y, 256, team_tag, "Guard",
                                                    /*far=*/true, gx, gy);
                         // W2-CA-08: a far landing becomes the team's anchor, so
                         // the rest spread around it instead of lining the shore.
@@ -1791,6 +1857,7 @@ private:
     std::vector<Objective> objectives_;
     std::vector<std::string> witness_;
     const UnitRoster* ai_roster_ = nullptr;   // W2-CA-07 (GameScene's ur_ai_)
+    std::map<std::string, bool> mc_type_;      // W2-CA-15 cache: type -> MindControl weapon
     std::vector<std::uint8_t> armed_;         // W2-CA-07 per house: 1 base, 2 map teams (derived)
     std::vector<AudioReq> audio_;   // W2-CA-12 (presentation only, not hashed/saved)
     std::string note_;

@@ -1,0 +1,29 @@
+# M-SOV09 -- W2-CA-15 mind control + W2-CA-02 PlayerControl + W2-CA-05.
+# SOV09u: the player (Confederation, side from RA2 rules.ini) orders the two
+# Yuris of the PlayerControl house Africans onto the President; Yuri's
+# MindControl weapon takes him over -> 'Pres is Captured' (event 44 by
+# Africans, the TeamType Tag on the President) -> WON. Cheats: the Allied /
+# Russian patrols and base defences are removed (combat skip); the attack
+# order is the player's real World order.
+set render_every 600
+set on_quit continue
+set campaign sov09u.MAP Nod
+
+until 60 scene == campaign-load
+require scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+assert mode == campaign
+until 3000 units(6,YURI) >= 2
+wait 120
+cheat camp_killu 1 *
+cheat camp_killu 2 *
+cheat camp_killu 4 *
+cheat camp_killu 5 *
+cheat camp_killu 8 *
+cheat camp_killu 9 *
+cheat camp_killdef
+cheat camp_attacku YURI 3 PRES
+until 3000 outcome == WON
+assert outcome == WON

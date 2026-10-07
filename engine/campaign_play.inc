@@ -84,6 +84,19 @@ private:
                     world_.order_unit_attack_building(i, b);
             return true;
         }
+        if (c == "camp_attacku" && a.size() >= 4) {   // UTYPE TH TTYPE : attack the first TTYPE unit of house TH
+            int tu = -1;
+            for (int i = 0; i < (int)world_.units().size() && tu < 0; ++i)
+                if (camp_live(world_.units()[(std::size_t)i]) && world_.units()[(std::size_t)i].house == num(2) &&
+                    camp_unit_is(i, a[3]))
+                    tu = i;
+            if (tu < 0) return false;
+            for (int i = 0; i < (int)world_.units().size(); ++i)
+                if (camp_live(world_.units()[(std::size_t)i]) && world_.controllable(world_.units()[(std::size_t)i].house) &&
+                    camp_unit_is(i, a[1]))
+                    world_.order_unit_attack(i, tu);
+            return true;
+        }
         if (c == "camp_deploy") {   // first controllable MCV: to the nearest deployable cell, or unfold here
             for (int i = 0; i < (int)world_.units().size(); ++i) {
                 const ra2engine::Unit& u = world_.units()[(std::size_t)i];
