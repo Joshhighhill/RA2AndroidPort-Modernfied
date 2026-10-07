@@ -185,6 +185,39 @@ private:
             if (b.sold) continue;
             if (b.house == 0) ++s.buildings_lost; else ++s.buildings_killed;
         }
+        // W2-UI-20: the per-house score rows.
+        // Only the lobby's players (the neutral / civilian houses are not listed).
+        const int n = cfg_.slots.empty() ? world_.house_count()
+                                         : std::min(world_.house_count(), (int)cfg_.slots.size());
+        s.rows.assign((std::size_t)std::max(0, n), GfSkirmishStats::Row{});
+        for (int h = 0; h < n; ++h) {
+            std::string who = h < (int)cfg_.slots.size()
+                                  ? (cfg_.slots[(std::size_t)h].country.empty()
+                                         ? gf_default_country(cfg_.slots[(std::size_t)h].side)
+                                         : cfg_.slots[(std::size_t)h].country)
+                                  : std::string("Computer");
+            const std::string lbl = camp::csf_text(dir_, "Name:" + who);
+            s.rows[(std::size_t)h].name = lbl.rfind("Name:", 0) == 0 ? who : lbl;
+        }
+        auto killer_house = [&](int ui) {
+            return (ui >= 0 && ui < (int)world_.units().size()) ? world_.units()[(std::size_t)ui].house : -1;
+        };
+        for (const ra2engine::Unit& u : world_.units()) {
+            if (u.deployed_away || u.house < 0 || u.house >= n) continue;
+            ++s.rows[(std::size_t)u.house].built;
+            if (u.alive && u.die_time < 0.0) continue;
+            ++s.rows[(std::size_t)u.house].losses;
+            const int k = killer_house(u.vet.killed_by);
+            if (k >= 0 && k < n && k != u.house) ++s.rows[(std::size_t)k].kills;
+        }
+        for (const ra2engine::Building& b : world_.buildings()) {
+            if (b.house < 0 || b.house >= n) continue;
+            ++s.rows[(std::size_t)b.house].built;
+            if ((b.alive && b.state != ra2engine::Building::State::Dead) || b.sold) continue;
+            ++s.rows[(std::size_t)b.house].losses;
+            const int k = killer_house(b.killed_by);
+            if (k >= 0 && k < n && k != b.house) ++s.rows[(std::size_t)k].kills;
+        }
         return s;
     }
 

@@ -236,33 +236,54 @@ public:
             name_ = mi.ui_name.empty() ? cfg_.campaign_map : camp::csf_text(dir, mi.ui_name);
         } catch (const std::exception&) {}
     }
+    // W2-UI-20: a shell page -- header GUI:CampaignResults, the CSF
+    // TXT_SCENARIO_WON / TXT_SCENARIO_LOST line, the mission name and time;
+    // Continue (row 0, next mission), Restart (row 1), Main Menu (row 5).
+    // [RE-FALLBACK: the 0xBC7 graph well / First-Second Place panel is not
+    // drawn (no per-house score data in a campaign); Restart / Main Menu are
+    // the clone's way out of a lost mission.]
     void handle(const ra2engine::InputEvent& ev) override {
-        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown) {
+        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown ||
+            ev.kind == ra2engine::InputEvent::PointerUp) {
             mx_ = ev.x;
             my_ = ev.y;
         }
+        if (ev.button == ra2engine::InputEvent::Left && ev.kind == ra2engine::InputEvent::PointerUp) down_ = false;
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left) return;
-        if (cont_btn().enabled && cont_btn().r.contains(ev.x, ev.y)) choice_ = 1;
-        if (retry_btn().r.contains(ev.x, ev.y)) choice_ = 2;
-        if (menu_btn().r.contains(ev.x, ev.y)) choice_ = 3;
+        down_ = true;
+        if (cont_enabled() && ui_dev(shell_row(0)).contains(ev.x, ev.y)) choice_ = 1;
+        if (ui_dev(shell_row(1)).contains(ev.x, ev.y)) choice_ = 2;
+        if (ui_dev(shell_row(5)).contains(ev.x, ev.y)) choice_ = 3;
     }
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
-        (void)tc;
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-        SDL_SetRenderDrawColor(ren, 8, 10, 16, 255);
-        SDL_RenderClear(ren);
-        const char* head = outcome_ == 1 ? (next_.empty() && end_of_game_ ? "CAMPAIGN COMPLETE"
-                                                                            : "MISSION ACCOMPLISHED")
-                                         : "MISSION FAILED";
-        const int w = static_cast<int>(std::strlen(head)) * 24;
-        draw_text(ren, head, (1280 - w) / 2, 200, 4, 255, 220, 90);
-        draw_text(ren, camp::up(name_), (1280 - (int)name_.size() * 12) / 2, 260, 2, 220, 220, 220);
-        char b[64];
-        std::snprintf(b, sizeof b, "TIME %02ld:%02ld", frames_ / 15 / 60, (frames_ / 15) % 60);
-        draw_text(ren, b, (1280 - (int)std::strlen(b) * 12) / 2, 300, 2, 200, 200, 200);
-        draw_camp_button(ren, cont_btn(), cont_btn().r.contains(mx_, my_));
-        draw_camp_button(ren, retry_btn(), retry_btn().r.contains(mx_, my_));
-        draw_camp_button(ren, menu_btn(), menu_btn().r.contains(mx_, my_));
+        const MenuArt& art = shell_art();
+        const ShellXform xf = ui_xform();
+        const ShellPainter p{ren, tc, art, xf};
+        const std::vector<ShellButton> b{
+            ShellButton{shell_row(0), gf_csf("GUI:Continue", "Continue"), cont_enabled(), ACT_NONE, PAGE_MAIN},
+            ShellButton{shell_row(1), gf_csf("GUI:Restart", "Restart"), true, ACT_NONE, PAGE_MAIN},
+            ShellButton{shell_row(5), gf_csf("GUI:MainMenu", "Main Menu"), true, ACT_NONE, PAGE_MAIN}};
+        int lx = 0, ly = 0;
+        ui_to_logical(mx_, my_, lx, ly);
+        int hov = -1;
+        for (int i = 0; i < 3; ++i)
+            if (b[(std::size_t)i].enabled && b[(std::size_t)i].rect.contains(lx, ly)) hov = i;
+        draw_shell(ren, tc, art, xf, b, hov, (hov >= 0 && down_) ? hov : -1,
+                   gf_csf("GUI:CampaignResults", "Campaign Results"), "", 0);
+        const std::string head = outcome_ == 1 ? gf_csf("TXT_SCENARIO_WON", "Mission Accomplished")
+                                               : gf_csf("TXT_SCENARIO_LOST", "Mission Failed");
+        p.header(head, 24, 60, 423, 30, 1);
+        p.label(name_, 24, 100, 423, 20, 1);
+        char t[64];
+        std::snprintf(t, sizeof t, "%s %02ld:%02ld:%02ld", gf_csf("GUI:Time", "Time").c_str(), frames_ / 15 / 3600,
+                      (frames_ / 15 / 60) % 60, (frames_ / 15) % 60);
+        p.label(t, 24, 124, 423, 20, 1);
+        std::string st;
+        if (hov == 0) st = gf_csf("STT:MPCampScoreContinue", "");
+        if (hov == 1) st = gf_csf("STT:ConfirmExitButtonRestart", "");
+        if (hov == 2) st = gf_csf("STT:MPCampScoreQuit", "");
+        shell_status_line(p, st);
     }
     Scene* next() override {
         const int c = choice_;
@@ -285,18 +306,17 @@ public:
         p.set_s("map", cfg_.campaign_map);
         p.set_s("next_map", next_);
         p.set("result_frames", static_cast<double>(frames_));
-        const CampButton c = cont_btn(), r = retry_btn(), m = menu_btn();
-        if (c.enabled) p.targets["continue"] = ra2play::Rect{c.r.x, c.r.y, c.r.w, c.r.h};
-        p.targets["retry"] = ra2play::Rect{r.r.x, r.r.y, r.r.w, r.r.h};
-        p.targets["menu"] = ra2play::Rect{m.r.x, m.r.y, m.r.w, m.r.h};
+        auto put = [&](const char* k, int row) {
+            const ra2engine::SbRect r = ui_dev(shell_row(row));
+            p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
+        };
+        if (cont_enabled()) put("continue", 0);
+        put("retry", 1);
+        put("menu", 5);
     }
 
 private:
-    CampButton cont_btn() const {
-        return {{460, 420, 360, 46}, "CONTINUE", outcome_ == 1 && !next_.empty()};
-    }
-    static CampButton retry_btn() { return {{460, 480, 360, 46}, "RETRY MISSION", true}; }
-    static CampButton menu_btn() { return {{460, 540, 360, 46}, "MAIN MENU", true}; }
+    bool cont_enabled() const { return outcome_ == 1 && !next_.empty(); }
     bool no_audio_;
     ra2engine::SkirmishConfig cfg_;
     int outcome_;
@@ -304,7 +324,7 @@ private:
     std::string next_, name_;
     bool end_of_game_ = false;
     int choice_ = 0;
-    bool quit_ = false;
+    bool quit_ = false, down_ = false;
     int mx_ = 0, my_ = 0;
 };
 
