@@ -1,0 +1,14 @@
+# R-171: ALL03 opening logic-rate probe (59 Russian units + the White House
+# hordes, the heaviest campaign opening). Run with --fps to get [perf] lines
+# (fps = logic frames per wall second here: one fixed 1/15 s tick per frame):
+#   ra2engine --play scripts/play/probe-perf-all03.play --out <dir> --fps
+set render_every 900
+set on_quit continue
+set campaign ALL03U.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+wait 1800
+assert scene == game
+end

@@ -61,11 +61,17 @@ public:
         last_click_ms_ = 0;
         last_click_row_ = -1;
         if (m == Save) {
-            // W2-AR-15: the IME keeps the description edit (and SAVE/BACK under it) in view.
+            // W2-AR-15 / R-152: the IME keeps the description edit AND the SAVE
+            // button (shell row 0, ABOVE the edit) in view: the text-input rect
+            // spans from the button's top to the edit's bottom, so Android's
+            // adjustPan no longer pushes SAVE off the top while typing.
             const ra2engine::SbRect e = edit_rect_l();
-            const SDL_Rect d = ui_xform().dev(e.x, e.y, e.w, e.h + 60);
+            const ra2engine::SbRect a = shell_row(0);
+            const int top = std::min(a.y, e.y);
+            const SDL_Rect d = ui_xform().dev(e.x, top, std::max(e.x + e.w, a.x + a.w) - e.x, e.y + e.h - top);
             set_text_input_rect_logical(d.x, d.y, d.w, d.h);
             SDL_StartTextInput();
+            replace_ = !desc_.empty();   // R-152: the prefilled text is selected
         }
     }
     void close() {
@@ -103,11 +109,16 @@ public:
             return None;
         }
         if (ev.kind == ra2engine::InputEvent::Text && mode_ == Save) {
+            if (replace_) desc_.clear();   // R-152: typing replaces the selected default
+            replace_ = false;
             desc_ = ra2engine::save::clean_description(desc_ + ev.text);
             return None;
         }
         if (ev.kind == ra2engine::InputEvent::Key) {
-            if (ev.key == ra2engine::kKeyBackspace && mode_ == Save && !desc_.empty()) {
+            if (ev.key == ra2engine::kKeyBackspace && mode_ == Save && replace_) {
+                desc_.clear();   // R-152: Backspace deletes the whole selection
+                replace_ = false;
+            } else if (ev.key == ra2engine::kKeyBackspace && mode_ == Save && !desc_.empty()) {
                 desc_.pop_back();
                 while (!desc_.empty() && (static_cast<unsigned char>(desc_.back()) & 0xC0) == 0x80)
                     desc_.pop_back();   // whole UTF-8 sequence
@@ -139,7 +150,10 @@ public:
             sel_ = row;
             last_click_row_ = row;
             last_click_ms_ = ev.t_ms;
-            if (mode_ == Save && row > 0) desc_ = slots_[static_cast<size_t>(row - 1)].header.description;
+            if (mode_ == Save && row > 0) {
+                desc_ = slots_[static_cast<size_t>(row - 1)].header.description;
+                replace_ = !desc_.empty();   // R-152: a picked slot's text is selected too
+            }
             message_.clear();
             return dbl ? commit(false) : None;   // LBN_DBLCLK == the action button
         }
@@ -187,7 +201,16 @@ public:
             p.frame(p.dev(strip_down()), true);
         }
         p.frame(p.dev(lr), true);
-        if (mode_ == Save) p.edit(edit_rect_l(), desc_, true, (now_ms / 400) % 2 == 0);
+        if (mode_ == Save) {
+            if (replace_ && !desc_.empty()) {   // R-152: the selection highlight
+                const ra2engine::SbRect e = edit_rect_l();
+                const SDL_Rect hl = p.dev(e.x + 2, e.y + 3, std::min(e.w - 4, 7 * static_cast<int>(desc_.size()) + 4), e.h - 6);
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(ren, 60, 90, 170, 0xB0);
+                SDL_RenderFillRect(ren, &hl);
+            }
+            p.edit(edit_rect_l(), desc_, true, !replace_ && (now_ms / 400) % 2 == 0);
+        }
         // Status line: the dialog message (errors), else the STT help.
         std::string st = message_;
         if (st.empty()) {
@@ -327,6 +350,7 @@ private:
     std::vector<ra2engine::save::SlotEntry> slots_;
     int sel_ = -1, top_ = 0;
     std::string desc_, message_, path_, confirm_text_;
+    bool replace_ = false;   // R-152: the description is selected (the next key replaces it)
     bool confirm_ = false;
     Uint32 last_click_ms_ = 0;
     int last_click_row_ = -1;

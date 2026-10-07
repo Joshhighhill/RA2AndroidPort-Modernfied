@@ -108,7 +108,7 @@ void add_controls_selftest_steps(STest& t) {
     S.push_back(st_click("button:Single Player"));
     S.push_back(st_click("button:Skirmish"));
     S.push_back(st_wait_scene("lobby"));
-    S.push_back(st_click("button:Start"));
+    S.push_back(st_click("start"));   // R-183: the 0x102 page's Start Game (alias)
     S.push_back(st_wait_scene("game"));
     S.push_back(st_wait(5));
     S.push_back(st_shot("game_start.png"));
