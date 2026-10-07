@@ -103,7 +103,7 @@ public:
         for (const ra2engine::ProjectileEvent& e : pev)
             if (e.kind == ra2engine::ProjectileEvent::Detonate) {
                 const double fx = e.x / 256.0, fy = e.y / 256.0;
-                if (!w.visible_at(0, ra2engine::lepton_to_cell(e.x), ra2engine::lepton_to_cell(e.y))) continue;
+                if (!w.object_visible_at(0, ra2engine::lepton_to_cell(e.x), ra2engine::lepton_to_cell(e.y))) continue;
                 const ra2engine::Unit* a = (e.attacker >= 0 && e.attacker < static_cast<int>(w.units().size()))
                                                ? &w.units()[e.attacker] : nullptr;
                 if (a) impact(*a, e.damage, fx, fy, level_at(w, fx, fy), e.z * 36.74 / 256.0);
@@ -243,7 +243,7 @@ private:
         for (int i = static_cast<int>(us.size()) - 1; i >= 0; --i) {
             const ra2engine::Unit& u = us[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            if (u.house != 0 && !w.visible_at(0, u.cell_x, u.cell_y)) continue;
+            if (u.house != 0 && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
             const int gx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam_.x + 30;
             const int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
             const int hw = u.is_vehicle ? 22 : 10, up = u.is_vehicle ? 24 : 30;
@@ -602,7 +602,7 @@ public:
             const ra2engine::Building& b = bs[e.building];
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
             snd_.play(fx_.weapon_report(e.weapon), dist_of(fx, fy), "defense report");
-            if (b.house != 0 && !w.visible_at(0, b.cx, b.cy)) continue;
+            if (b.house != 0 && !w.object_visible_at(0, b.cx, b.cy)) continue;
             const std::vector<std::string> m = fx_.weapon_muzzle(e.weapon);
             if (!m.empty()) fx_.spawn(m.front(), fx, fy, 0, 20.0);   // [RE-FALLBACK: building FireFLH not applied]
         }
@@ -620,13 +620,13 @@ private:
             const UnitVoices& v = audio_->voices[u.image];
             if (u.fire_flash > prev_[i].first && u.cargo_of < 0) {
                 snd_.play(v.report, dist, "report");
-                if (u.house == 0 || w.visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
+                if (u.house == 0 || w.object_visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
             }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
                 snd_.play(v.die, dist, "die");
                 // Vehicle death: the Explosion= anim (drawn by draw_vehicle_unit)
                 // carries its own Report= sound.
-                if (u.is_vehicle && w.visible_at(0, u.cell_x, u.cell_y)) {
+                if (u.is_vehicle && w.object_visible_at(0, u.cell_x, u.cell_y)) {
                     const auto* ex = fx_.explosions(u.image);
                     if (ex && !ex->empty())
                         if (const FxAnimType* t = fx_.type(ex->front())) snd_.play(t->report, dist, "explosion");

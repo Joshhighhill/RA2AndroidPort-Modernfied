@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
+#include <unordered_map>
 #include <utility>
 
 #include "iso_project.hpp"
@@ -104,21 +106,26 @@ int house_draw_key(int house) {
     return 10 + g_color_world->house_color(house);
 }
 
-int draw_terrain(void* sdl_renderer, TextureCache& tc,
-                 const ra2assets::MapFile& map, Theater& theater,
-                 const ra2assets::Palette& pal, const Camera& cam, int view_w,
-                 int view_h, const World* vis) {
-    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+// --- W2-GA-P1: cached painter-ordered cell index + terrain draw list ---------
+// Terrain is static, so the painter order (x+y, then level, then x -- the
+// order the old per-frame std::sort produced), the per-cell screen point and
+// the (tile, subtile) texture are computed ONCE per map, and each frame only
+// walks the depth rows (x+y) that can reach the view. The original likewise
+// redraws from cached per-cell draw info rather than re-resolving tiles.
 
-    // Back-to-front painter order. Cells with a smaller (x+y) project higher
-    // on screen (smaller py) and are drawn first, so nearer cells overwrite
-    // farther ones where diamonds/cliffs overlap. Secondary key: cell.x, so a
-    // given depth row is drawn left-to-right (stable, avoids z-fighting for
-    // equal-depth raised tiles). We sort indices to avoid copying MapCell.
+const MapIndex& map_index(const ra2assets::MapFile& map) {
+    static MapIndex idx;
     const auto& cells = map.cells();
-    std::vector<uint32_t> order(cells.size());
-    for (uint32_t i = 0; i < cells.size(); ++i) order[i] = i;
-    std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
+    if (idx.map == &map && idx.ncells == cells.size() &&
+        (cells.empty() || idx.first_cell == &cells.front()))
+        return idx;
+    idx = MapIndex{};
+    idx.map = &map;
+    idx.ncells = cells.size();
+    idx.first_cell = cells.empty() ? nullptr : &cells.front();
+    idx.order.resize(cells.size());
+    for (uint32_t i = 0; i < cells.size(); ++i) idx.order[i] = i;
+    std::sort(idx.order.begin(), idx.order.end(), [&](uint32_t a, uint32_t b) {
         const auto& ca = cells[a];
         const auto& cb = cells[b];
         const int da = ca.x + ca.y;
@@ -127,112 +134,248 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
         if (ca.level != cb.level) return ca.level < cb.level;
         return ca.x < cb.x;
     });
-
-    int drawn = 0;
-    for (uint32_t idx : order) {
-        const ra2assets::MapCell& c = cells[idx];
-        const ra2assets::TmpFile* tmp = theater.tmp_for_tile(c.tile);
-        if (!tmp) continue;
-        if (c.subtile >= tmp->count()) continue;
-
-        const ScreenPt p =
-            cell_to_screen(c.x, c.y, static_cast<int>(c.level), kTileW, kTileH, kLevelPx);
-        SDL_Rect dst;
-        dst.x = p.x + cam.x;
-        dst.y = p.y + cam.y;
-        dst.w = tmp->tile_w();
-        dst.h = tmp->tile_h();
-
-        // Cull tiles fully off-screen.
-        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h)
-            continue;
-
-        // Shroud/Fog [RE: shroud.md §5]: consult house 0's visibility for this
-        // cell. SHROUDED (!explored) -> paint the cell black, skip the terrain
-        // blit. FOGGED (explored && !visible) -> draw the terrain, then dim it
-        // (below, after the extra-image blit). VISIBLE -> full-bright (default).
-        // vis == nullptr (shroud off / no world) -> treat as VISIBLE, so every
-        // existing render path is pixel-identical.
-        const bool explored = !vis || vis->explored_at(0, c.x, c.y);
-        const bool visible = !vis || vis->visible_at(0, c.x, c.y);
-        if (!explored) {
-            // Full-opaque black fill; no terrain blit for a shrouded cell.
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderFillRect(renderer, &dst);
-            continue;
-        }
-
-        // Key the texture cache by template file + subtile: identical pixels
-        // across every cell that references it. Decode only on a cache miss
-        // (a real map references the same few hundred tiles thousands of
-        // times, so this keeps steady-state frames allocation-free).
-        char key[80];
-        std::snprintf(key, sizeof key, "%s#%u", theater.filename_for_tile(c.tile).c_str(),
-                      static_cast<unsigned>(c.subtile));
-
-        SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
-        if (!tex) {
-            ra2assets::TileImage img = tmp->decode(c.subtile);
-            tex = static_cast<SDL_Texture*>(
-                tc.get(key, img.indices.data(), img.w, img.h, pal));
-        }
-        SDL_RenderCopy(renderer, tex, nullptr, &dst);
-        ++drawn;
-
-        // Composite the tile's EXTRA image (cliff/slope face) if present.
-        // Cliff/slope tiles store their above-ground geometry -- the wall that
-        // rises out of the diamond -- in a separate plain rectangle; without
-        // it those cells render as transparent holes (window clear color).
-        // Placement: the extra image's (x_extra, y_extra) and the base
-        // diamond's (x, y) are in the SAME cell-anchor space, so the extra's
-        // offset RELATIVE to the diamond we just drew (at `p`) is
-        // (x_extra - x, y_extra - y). This matters for multi-cell templates
-        // (ramps/double slopes) whose higher subtiles carry a non-zero base
-        // (x, y): the map already places each cell at its own screen position,
-        // so we must measure the extra from THIS subtile's diamond, not the
-        // template origin. Cross-checked against XCC Ctmp_ts_file::draw and
-        // OpenRA TmpTSLoader (extraX -= (u-v)*w/2 == x_extra - base x).
-        if (tmp->has_extra(c.subtile)) {
-            const int ex_off = tmp->extra_x(c.subtile) - tmp->tile_x(c.subtile);
-            const int ey_off = tmp->extra_y(c.subtile) - tmp->tile_y(c.subtile);
-
-            char ekey[96];
-            std::snprintf(ekey, sizeof ekey, "tmp_extra:%s#%u",
-                          theater.filename_for_tile(c.tile).c_str(),
-                          static_cast<unsigned>(c.subtile));
-
-            SDL_Rect edst;
-            edst.x = p.x + cam.x + ex_off;
-            edst.y = p.y + cam.y + ey_off;
-
-            SDL_Texture* etex = static_cast<SDL_Texture*>(tc.peek(ekey));
-            if (!etex) {
-                ra2assets::TileImage eimg = tmp->decode_extra(c.subtile);
-                edst.w = eimg.w;
-                edst.h = eimg.h;
-                etex = static_cast<SDL_Texture*>(
-                    tc.get(ekey, eimg.indices.data(), eimg.w, eimg.h, pal));
-            } else {
-                // Cached: recover the dimensions from the texture itself.
-                SDL_QueryTexture(etex, nullptr, nullptr, &edst.w, &edst.h);
-            }
-
-            if (!(edst.x + edst.w <= 0 || edst.y + edst.h <= 0 || edst.x >= view_w ||
-                  edst.y >= view_h))
-                SDL_RenderCopy(renderer, etex, nullptr, &edst);
-        }
-
-        // Shroud/Fog [RE-GATE APPLIED: shroud.md §5 -- fog dim alpha]: an
-        // explored-but-not-currently-visible cell gets a translucent-black
-        // overlay. 128/255 is a cosmetic, unhashed value approximating
-        // BlendedFog=yes. Never reached when vis == nullptr (visible == true).
-        if (!visible) {
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 128);
-            SDL_RenderFillRect(renderer, &dst);
-        }
+    if (cells.empty()) return idx;
+    idx.min_depth = cells[idx.order.front()].x + cells[idx.order.front()].y;
+    const int max_depth = cells[idx.order.back()].x + cells[idx.order.back()].y;
+    idx.row_start.assign(static_cast<size_t>(max_depth - idx.min_depth + 2), 0);
+    size_t k = 0;
+    for (int d = idx.min_depth; d <= max_depth + 1; ++d) {
+        while (k < idx.order.size() && cells[idx.order[k]].x + cells[idx.order[k]].y < d) ++k;
+        idx.row_start[static_cast<size_t>(d - idx.min_depth)] = static_cast<uint32_t>(k);
     }
+    for (const auto& c : cells) idx.max_level = std::max(idx.max_level, static_cast<int>(c.level));
+    return idx;
+}
+
+// Depth rows (x+y) whose cells can intersect [0, view_h): a cell of row d
+// projects at p.y = d*15 - level*15, and its drawn rect spans
+// [p.y + top_px, p.y + bottom_px].
+static void visible_rows(const MapIndex& idx, const Camera& cam, int view_h, int top_px,
+                         int bottom_px, int& r0, int& r1) {
+    const double half = kTileH / 2.0;
+    const int lo = static_cast<int>(std::floor((-cam.y - bottom_px) / half));
+    const int hi = static_cast<int>(std::ceil((view_h - cam.y - top_px + idx.max_level * kLevelPx) / half));
+    r0 = std::max(0, lo - idx.min_depth);
+    r1 = std::min(static_cast<int>(idx.row_start.size()) - 2, hi - idx.min_depth);
+}
+
+void for_each_visible_cell(const ra2assets::MapFile& map, const Camera& cam, int view_w,
+                           int view_h, int margin_px,
+                           const std::function<void(const ra2assets::MapCell&, int, int)>& fn) {
+    const MapIndex& idx = map_index(map);
+    if (idx.order.empty()) return;
+    const auto& cells = map.cells();
+    int r0 = 0, r1 = -1;
+    visible_rows(idx, cam, view_h, -margin_px, kTileH + margin_px, r0, r1);
+    for (int r = r0; r <= r1; ++r)
+        for (uint32_t k = idx.row_start[static_cast<size_t>(r)]; k < idx.row_start[static_cast<size_t>(r) + 1]; ++k) {
+            const ra2assets::MapCell& c = cells[idx.order[k]];
+            const ScreenPt p = cell_to_screen(c.x, c.y, static_cast<int>(c.level), kTileW, kTileH, kLevelPx);
+            const int sx = p.x + cam.x, sy = p.y + cam.y;
+            if (sx + kTileW + margin_px <= 0 || sy + kTileH + margin_px <= 0 || sx - margin_px >= view_w ||
+                sy - margin_px >= view_h)
+                continue;
+            fn(c, sx, sy);
+        }
+}
+
+namespace {
+
+// One drawable terrain item per map cell, in painter order (parallel to
+// MapIndex::order). Textures are resolved per unique (tile, subtile) once
+// and pinned in the TextureCache, so the cached pointer stays valid.
+struct TerrainItem {
+    int32_t px = 0, py = 0;        // camera-local projected point
+    uint16_t w = 0, h = 0;         // base tile rect
+    int16_t ex = 0, ey = 0;        // extra image offset from (px, py)
+    uint16_t ew = 0, eh = 0;       // extra image size (0 = none)
+    int32_t slot = -1;             // unique (tile,subtile) slot, -1 = undrawable
+    int16_t cx = 0, cy = 0;        // cell
+    uint8_t level = 0;
+};
+struct TerrainSlot {
+    uint32_t tile = 0;
+    uint8_t sub = 0;
+    SDL_Texture* tex = nullptr;
+    SDL_Texture* etex = nullptr;
+};
+struct TerrainDrawList {
+    const ra2assets::MapFile* map = nullptr;
+    size_t ncells = 0;
+    const ra2assets::MapCell* first_cell = nullptr;
+    const Theater* theater = nullptr;
+    uint64_t tc_id = 0;
+    uint64_t pal_sum = 0;
+    std::vector<TerrainItem> items;
+    std::vector<TerrainSlot> slots;
+    int top_px = 0, bottom_px = kTileH;   // union of item extents rel. to p.y
+};
+
+uint64_t g_terrain_builds = 0;
+
+uint64_t palette_sum(const ra2assets::Palette& pal) {
+    uint64_t h = 1469598103934665603ull;
+    for (int i = 0; i < 256; ++i) {
+        const ra2assets::Rgba c = pal[static_cast<uint8_t>(i)];
+        h = (h ^ (static_cast<uint64_t>(c.r) | (static_cast<uint64_t>(c.g) << 8) |
+                  (static_cast<uint64_t>(c.b) << 16))) * 1099511628211ull;
+    }
+    return h;
+}
+
+SDL_Texture* extra_texture(TextureCache& tc, Theater& theater, const ra2assets::Palette& pal,
+                           TerrainSlot& s) {
+    if (s.etex) return s.etex;
+    char ekey[96];
+    std::snprintf(ekey, sizeof ekey, "tmp_extra:%s#%u", theater.filename_for_tile(s.tile).c_str(),
+                  static_cast<unsigned>(s.sub));
+    s.etex = static_cast<SDL_Texture*>(tc.peek(ekey));
+    if (!s.etex) {
+        const ra2assets::TmpFile* tmp = theater.tmp_for_tile(s.tile);
+        if (!tmp) return nullptr;
+        ra2assets::TileImage eimg = tmp->decode_extra(s.sub);
+        if (eimg.w <= 0 || eimg.h <= 0) return nullptr;
+        s.etex = static_cast<SDL_Texture*>(tc.get(ekey, eimg.indices.data(), eimg.w, eimg.h, pal));
+    }
+    tc.pin(ekey);
+    return s.etex;
+}
+
+SDL_Texture* slot_texture(TextureCache& tc, Theater& theater, const ra2assets::Palette& pal,
+                          TerrainSlot& s) {
+    if (s.tex) return s.tex;
+    // Key by template file + subtile (shared with any other user of the cache).
+    char key[80];
+    std::snprintf(key, sizeof key, "%s#%u", theater.filename_for_tile(s.tile).c_str(),
+                  static_cast<unsigned>(s.sub));
+    s.tex = static_cast<SDL_Texture*>(tc.peek(key));
+    if (!s.tex) {
+        const ra2assets::TmpFile* tmp = theater.tmp_for_tile(s.tile);
+        if (!tmp) return nullptr;
+        ra2assets::TileImage img = tmp->decode(s.sub);
+        s.tex = static_cast<SDL_Texture*>(tc.get(key, img.indices.data(), img.w, img.h, pal));
+    }
+    tc.pin(key);
+    return s.tex;
+}
+
+TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, Theater& theater,
+                              const ra2assets::Palette& pal) {
+    static TerrainDrawList L;
+    const auto& cells = map.cells();
+    const uint64_t ps = palette_sum(pal);
+    if (L.map == &map && L.ncells == cells.size() &&
+        (cells.empty() || L.first_cell == &cells.front()) && L.theater == &theater &&
+        L.tc_id == tc.instance_id() && L.pal_sum == ps)
+        return L;
+    L = TerrainDrawList{};
+    ++g_terrain_builds;
+    L.map = &map;
+    L.ncells = cells.size();
+    L.first_cell = cells.empty() ? nullptr : &cells.front();
+    L.theater = &theater;
+    L.tc_id = tc.instance_id();
+    L.pal_sum = ps;
+    const MapIndex& idx = map_index(map);
+    std::unordered_map<uint64_t, int32_t> slot_of;
+    L.items.resize(idx.order.size());
+    for (size_t k = 0; k < idx.order.size(); ++k) {
+        const ra2assets::MapCell& c = cells[idx.order[k]];
+        TerrainItem& it = L.items[k];
+        it.cx = static_cast<int16_t>(c.x);
+        it.cy = static_cast<int16_t>(c.y);
+        it.level = c.level;
+        const ScreenPt p = cell_to_screen(c.x, c.y, static_cast<int>(c.level), kTileW, kTileH, kLevelPx);
+        it.px = p.x;
+        it.py = p.y;
+        const ra2assets::TmpFile* tmp = theater.tmp_for_tile(c.tile);
+        if (!tmp || c.subtile >= tmp->count()) continue;
+        it.w = static_cast<uint16_t>(tmp->tile_w());
+        it.h = static_cast<uint16_t>(tmp->tile_h());
+        const uint64_t key = (static_cast<uint64_t>(c.tile) << 8) | c.subtile;
+        auto f = slot_of.find(key);
+        if (f == slot_of.end()) {
+            f = slot_of.emplace(key, static_cast<int32_t>(L.slots.size())).first;
+            TerrainSlot s;
+            s.tile = c.tile;
+            s.sub = c.subtile;
+            L.slots.push_back(s);
+        }
+        it.slot = f->second;
+        if (tmp->has_extra(c.subtile)) {
+            // Same placement rule as before: the extra's offset relative to
+            // THIS subtile's diamond is (x_extra - x, y_extra - y).
+            it.ex = static_cast<int16_t>(tmp->extra_x(c.subtile) - tmp->tile_x(c.subtile));
+            it.ey = static_cast<int16_t>(tmp->extra_y(c.subtile) - tmp->tile_y(c.subtile));
+            if (SDL_Texture* et = extra_texture(tc, theater, pal, L.slots[static_cast<size_t>(it.slot)])) {
+                int ew = 0, eh = 0;
+                SDL_QueryTexture(et, nullptr, nullptr, &ew, &eh);
+                it.ew = static_cast<uint16_t>(ew);
+                it.eh = static_cast<uint16_t>(eh);
+            }
+        }
+        L.top_px = std::min(L.top_px, it.ew ? static_cast<int>(it.ey) : 0);
+        L.bottom_px = std::max(L.bottom_px, std::max(static_cast<int>(it.h), it.ew ? it.ey + static_cast<int>(it.eh) : 0));
+    }
+    return L;
+}
+
+}  // namespace
+
+void prewarm_terrain(TextureCache& tc, const ra2assets::MapFile& map, Theater& theater,
+                     const ra2assets::Palette& pal) {
+    TerrainDrawList& L = terrain_list(tc, map, theater, pal);
+    for (TerrainSlot& s : L.slots) slot_texture(tc, theater, pal, s);
+}
+
+int draw_terrain(void* sdl_renderer, TextureCache& tc,
+                 const ra2assets::MapFile& map, Theater& theater,
+                 const ra2assets::Palette& pal, const Camera& cam, int view_w,
+                 int view_h, const World* vis) {
+    SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
+    const uint64_t built_before = g_terrain_builds;
+    TerrainDrawList& L = terrain_list(tc, map, theater, pal);
+    // W2-GA-P4: a (re)built list uploads every tile the map uses right away,
+    // so scrolling into new terrain never pays a first-use decode later.
+    if (g_terrain_builds != built_before)
+        for (TerrainSlot& s : L.slots) slot_texture(tc, theater, pal, s);
+    const MapIndex& idx = map_index(map);
+    if (L.items.empty()) return 0;
+    // Shroud [RE: presentation.md §4, W2-GA-02]: with a World whose shroud is
+    // on, a cell house 0 has never explored is not drawn at all -- neither its
+    // diamond nor its cliff/slope extra -- so the black map hides the layout
+    // (the SHROUD.SHP post-pass then softens the edges). FogOfWar (W2-GA-03,
+    // off by default as in the original) dims explored-but-not-visible cells.
+    const bool shroud = vis && vis->shroud_enabled();
+    const bool fog = shroud && vis->fog_of_war();
+    int r0 = 0, r1 = -1;
+    visible_rows(idx, cam, view_h, L.top_px, L.bottom_px, r0, r1);
+    int drawn = 0;
+    for (int r = r0; r <= r1; ++r)
+        for (uint32_t k = idx.row_start[static_cast<size_t>(r)]; k < idx.row_start[static_cast<size_t>(r) + 1]; ++k) {
+            const TerrainItem& it = L.items[k];
+            if (it.slot < 0) continue;
+            SDL_Rect dst{it.px + cam.x, it.py + cam.y, it.w, it.h};
+            // Cull tiles fully off-screen (the base rect decides, as before).
+            if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h) continue;
+            if (shroud && !vis->explored_at(0, it.cx, it.cy)) continue;
+            TerrainSlot& s = L.slots[static_cast<size_t>(it.slot)];
+            SDL_Texture* tex = slot_texture(tc, theater, pal, s);
+            if (!tex) continue;
+            SDL_RenderCopy(renderer, tex, nullptr, &dst);
+            ++drawn;
+            if (it.ew) {
+                const SDL_Rect edst{it.px + cam.x + it.ex, it.py + cam.y + it.ey, it.ew, it.eh};
+                if (!(edst.x + edst.w <= 0 || edst.y + edst.h <= 0 || edst.x >= view_w || edst.y >= view_h))
+                    if (SDL_Texture* et = extra_texture(tc, theater, pal, s))
+                        SDL_RenderCopy(renderer, et, nullptr, &edst);
+            }
+            if (fog && !vis->visible_at(0, it.cx, it.cy)) {
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 128);
+                SDL_RenderFillRect(renderer, &dst);
+            }
+        }
     return drawn;
 }
 

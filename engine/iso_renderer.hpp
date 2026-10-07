@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -93,6 +94,33 @@ struct Camera {
 bool terrain_screen_bounds(const ra2assets::MapFile& map, int& min_x, int& min_y,
                            int& max_x, int& max_y);
 
+// W2-GA-P1: the map's cells in painter order (x+y, level, x), built once per
+// MapFile (rebuilt only when a different map / cell vector is passed) with a
+// row index by depth d = x+y, so per-frame passes touch only the rows that
+// can reach the view instead of sorting/looping the whole map.
+struct MapIndex {
+    const ra2assets::MapFile* map = nullptr;
+    size_t ncells = 0;
+    const ra2assets::MapCell* first_cell = nullptr;
+    std::vector<uint32_t> order;      // cells() indices, painter order
+    std::vector<uint32_t> row_start;  // order[] range of depth d: [rs[d-min], rs[d-min+1])
+    int min_depth = 0;
+    int max_level = 0;
+};
+const MapIndex& map_index(const ra2assets::MapFile& map);
+
+// Calls fn(cell, sx, sy) -- sx,sy = the cell's projected top-left + camera --
+// for every cell whose 60x30 diamond rect, grown by margin_px, meets the
+// view, in painter order.
+void for_each_visible_cell(const ra2assets::MapFile& map, const Camera& cam, int view_w,
+                           int view_h, int margin_px,
+                           const std::function<void(const ra2assets::MapCell&, int, int)>& fn);
+
+// W2-GA-P4: decode + upload every tile texture the map uses (the cached draw
+// list's slots) up front, so scrolling never hitches on first-use tiles.
+void prewarm_terrain(TextureCache& tc, const ra2assets::MapFile& map, Theater& theater,
+                     const ra2assets::Palette& pal);
+
 // Draw the map's terrain, back-to-front (painter's order: cells sorted by
 // cell.x+cell.y ascending == increasing screen py, so nearer/lower diamonds
 // overwrite farther ones). Each cell is projected with
@@ -101,12 +129,11 @@ bool terrain_screen_bounds(const ra2assets::MapFile& map, int& min_x, int& min_y
 // SDL_RenderCopy at (screen + camera, tile_w x tile_h). Cells whose rect is
 // fully outside [0,view_w) x [0,view_h) are skipped. Returns the number of
 // tiles actually drawn (for diagnostics).
-// Shroud/Fog overlay [RE: shroud.md §5]: if `vis` is non-null, each cell is
-// shaded per house 0's visibility -- SHROUDED (!explored) paints the cell
-// black and skips the terrain blit, FOGGED (explored && !visible) draws the
-// terrain then dims it, VISIBLE draws full-bright. `vis == nullptr` (shroud
-// off / no world) treats every cell as VISIBLE, so all existing callers and
-// the empty-grid path are pixel-identical.
+// Shroud/Fog [RE: presentation.md §4, W2-GA-02/03]: with a non-null `vis`
+// whose shroud is on, a cell house 0 never explored is skipped entirely (its
+// diamond AND its cliff/slope extra), and only with the FogOfWar flag is an
+// explored-but-not-visible cell dimmed. `vis == nullptr` draws every cell.
+// Uses the cached per-map draw list (W2-GA-P1).
 int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
                  const ra2assets::Palette& pal, const Camera& cam, int view_w,

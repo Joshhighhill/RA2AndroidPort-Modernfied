@@ -2745,9 +2745,10 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
               const ra2engine::World* vis = nullptr) {
     if (!oa.any) return;
     const ra2assets::Palette& ore_pal = oa.has_pal ? oa.pal : pal;
-    for (const ra2assets::MapCell& c : map.cells()) {
-        if (!ore.has_ore(c.x, c.y)) continue;
-        if (vis && !vis->explored_at(0, c.x, c.y)) continue;   // G-84: never under shroud
+    // W2-GA-P1: only the cells that can reach the view (cached painter rows).
+    ra2engine::for_each_visible_cell(map, cam, W, H, 48, [&](const ra2assets::MapCell& c, int, int) {
+        if (!ore.has_ore(c.x, c.y)) return;
+        if (vis && !vis->explored_at(0, c.x, c.y)) return;   // G-84: never under shroud
         const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
         int slot = ore.variant_at(c.x, c.y);
         if (slot < 0 || slot >= 20) slot = 0;
@@ -2755,10 +2756,10 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
         // to the set's base art (slot 0) when this exact variant is absent.
         if (!oa.present[kind][slot]) {
             slot = 0;
-            if (!oa.present[kind][slot]) continue;
+            if (!oa.present[kind][slot]) return;
         }
         const ra2assets::ShpFile& shp = oa.shp[kind][slot];
-        if (shp.count() <= 0) continue;
+        if (shp.count() <= 0) return;
         // Image frames = first half (second half shadows), like every TS SHP.
         const int image_frames = std::max(1, shp.count() / 2);
         int frame = ore.density_at(c.x, c.y);
@@ -2768,16 +2769,17 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
             ra2engine::cell_to_screen(c.x, c.y, static_cast<int>(c.level), 60, 30, 15);
         const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
         SDL_Rect dst{p.x + cam.x + f.x, p.y + cam.y + f.y, f.w, f.h};
-        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) continue;
+        if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= W || dst.y >= H) return;
         char key[48];
-        std::snprintf(key, sizeof key, "ore:%d:%d:%d", kind, slot, frame);
+        // Theater-tagged: each theater draws its ore with its own palette.
+        std::snprintf(key, sizeof key, "ore:%s:%d:%d:%d", art_chain().ext, kind, slot, frame);
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
         if (!tex) {
             std::vector<uint8_t> idx = shp.decode_indexed(frame);
             tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, ore_pal));
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
-    }
+    });
 }
 
 // --- P5 Veterancy + Crates art [RE: veterancy.md V13/C3] ---------------------
@@ -2951,7 +2953,7 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const ra2assets::MapCell* mc =
             map.at(ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y));
         // G-84: a shell over a cell house 0 cannot currently see is not drawn.
-        if (!world.visible_at(0, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
+        if (!world.object_visible_at(0, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
             continue;
         const int level = mc ? mc->level : 0;
         const int gx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
@@ -2986,10 +2988,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
     ra2engine::set_color_world(&world);   // G-16: house colours for every sprite draw
-    // G-84: terrain is drawn in full; shroud/fog are a post-pass over every
-    // object (draw_shroud_pass below) instead of per-tile black rectangles that
-    // overdrew the already-drawn neighbours.
-    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, nullptr);
+    tc.next_frame();                      // W2-GA-P5: LRU clock (evicts only over budget)
+    // W2-GA-02: never-explored cells are not drawn at all (their cliff/slope
+    // extras no longer leak through the shroud); the SHROUD.SHP post-pass
+    // (draw_shroud_pass below) softens the edges over every object.
+    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world);   // W2-GA-02
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
     // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
@@ -3024,11 +3027,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // down the whole frame.
     auto draw_one_unit = [&](int idx) {
         const ra2engine::Unit& u = us[idx];
-        // Shroud/Fog [RE: shroud.md §5]: hide mobile objects in cells not
-        // currently VISIBLE to the local player (house 0). Inert with shroud
+        // Shroud/Fog [RE: shroud.md §5, W2-GA-03]: hide mobile objects in cells
+        // house 0 cannot see (object_visible_at: explored, or visible with FogOfWar). Inert with shroud
         // off (visible_at returns true on empty grids) -> every existing render
         // is pixel-identical. Own units (u.house == 0) are always drawn.
-        if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) return;
+        if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) return;
         // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
         // SHP for its disguise type (draw_unit then blits it in the disguised
         // house's palette). When NOT disguised draw_image == u.image -> this is
@@ -3811,7 +3814,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
                         radar_rect.y + static_cast<int>(y * sy),
                         std::max(1, static_cast<int>(sx)), std::max(1, static_cast<int>(sy))};
             // terrain tint (dim if fogged, brighter if visible)
-            Uint8 g = world.visible_at(0, x, y) ? 120 : 60;
+            Uint8 g = (!world.fog_of_war() || world.visible_at(0, x, y)) ? 120 : 60;   // W2-GA-03
             SDL_SetRenderDrawColor(ren, 30, g, 30, 255);
             SDL_RenderFillRect(ren, &px);
         }
@@ -3822,7 +3825,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
     // the building/unit sprites use.
     for (const ra2engine::Unit& u : world.units()) {
         if (!u.alive) continue;
-        if (u.house != 0 && !world.visible_at(0, u.cell_x, u.cell_y)) continue;
+        if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) continue;
         SDL_Rect bp{radar_rect.x + static_cast<int>(u.cell_x * sx),
                     radar_rect.y + static_cast<int>(u.cell_y * sy), 2, 2};
         const ra2assets::Rgba col = world.house_palette(ba.unit_pal, u.house)[24];
@@ -11578,6 +11581,10 @@ DemoShroudResult simulate_shroud(Assets& a, UnitAssets& ua,
     DemoShroudResult r;
     ra2engine::World world = build_world(a, ua, 0);    // count=0 -> no pre-spawned units
     world.enable_shroud(true);
+    // W2-GA-03: this gate exercises the FogOfWar=yes mechanics (stage 4: a
+    // fogged enemy is not seen); fog is now an explicit scenario flag, off by
+    // default as in the original, so the gate opts in.
+    world.set_fog_of_war(true);
 
     const int gw = world.grid_w(), gh = world.grid_h();
     auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };

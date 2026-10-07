@@ -84,7 +84,7 @@ std::vector<MapCell> parse_cell_records(const uint8_t* data, size_t len) {
     return cells;
 }
 
-void fill_missing_diamond(std::vector<MapCell>& cells, int w, int h) {
+void fill_missing_diamond(std::vector<MapCell>& cells, int w, int h, uint8_t level) {
     if (w <= 0 || h <= 0) return;
     // The IsoMapPack5 cell enumeration (FinalAlert/XCC): for each row y and
     // column x in [0, 2w-2], dy = 2y + (x&1), rx = (x+dy)/2 + 1,
@@ -107,7 +107,7 @@ void fill_missing_diamond(std::vector<MapCell>& cells, int w, int h) {
             c.y = ry;
             c.tile = 0;
             c.subtile = 0;
-            c.level = 0;
+            c.level = level;
             cells.push_back(c);
         }
 }
@@ -142,7 +142,25 @@ MapFile MapFile::parse(const std::string& ini_text) {
     // pack omits is ordinary tile-0 ground, not a void [RE: maps.md, RE-Q5].
     // Materialise every absent in-diamond cell as tile 0 / level 0, appended
     // after the pack records (a complete pack -- every gate map -- adds none).
-    if (!map.cells_.empty()) detail::fill_missing_diamond(map.cells_, map.width_, map.height_);
+    // [RE: RE-Q5, FUN_004acd80] the pre-fill is the first Clear tile at
+    // height [Map] Level= (default 0). ([Map] Fill=Water -> random water
+    // tiles is not modelled: no RA2 MP map uses it.)
+    if (!map.cells_.empty())
+        detail::fill_missing_diamond(map.cells_, map.width_, map.height_,
+                                     (uint8_t)std::max(0, ini.get_int("Map", "Level", 0)));
+    // (x,y) -> first record index, for at(). Cells outside 0..511 keep the
+    // linear fallback semantics by disabling the index.
+    {
+        bool ok = true;
+        map.index_.assign((size_t)512 * 512, -1);
+        for (size_t i = 0; i < map.cells_.size(); ++i) {
+            const MapCell& c = map.cells_[i];
+            if (c.x < 0 || c.y < 0 || c.x >= 512 || c.y >= 512) { ok = false; break; }
+            int32_t& slot = map.index_[(size_t)c.y * 512 + (size_t)c.x];
+            if (slot < 0) slot = (int32_t)i;
+        }
+        if (!ok) map.index_.clear();
+    }
 
     // [OverlayPack]/[OverlayDataPack]: same collect-and-decode shape as
     // [IsoMapPack5] above, but the Format5 chunk BODY codec is LCW ("Format80"),
@@ -205,6 +223,13 @@ MapFile MapFile::parse(const std::string& ini_text) {
 }
 
 const MapCell* MapFile::at(int x, int y) const {
+    // W2-GA-P1: O(1) through the 512x512 index built at parse (render paths
+    // look a cell up per building/projectile per frame).
+    if (!index_.empty()) {
+        if (x < 0 || y < 0 || x >= 512 || y >= 512) return nullptr;
+        const int32_t i = index_[(size_t)y * 512 + (size_t)x];
+        return i < 0 ? nullptr : &cells_[(size_t)i];
+    }
     for (const auto& c : cells_) {
         if (c.x == x && c.y == y) return &c;
     }
