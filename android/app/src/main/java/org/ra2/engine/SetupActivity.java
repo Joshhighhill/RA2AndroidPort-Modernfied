@@ -264,8 +264,10 @@ public class SetupActivity extends Activity {
     }
 
     private void startGame() {
+        // NEW_TASK only: RA2Activity is singleInstance, so a running game
+        // (backgrounded with Home) is brought back as it was, not restarted.
         Intent i = new Intent(this, RA2Activity.class);
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(i);
         finish();
     }

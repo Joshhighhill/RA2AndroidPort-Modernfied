@@ -11,12 +11,12 @@
 //
 // The buttons call the SAME command handlers the KeyboardMD.ini hotkeys use
 // (game_scene_controls.inc hotkey()), so behaviour is identical. Buttons are
-// 52x56 logical px: >= 48 dp tall on a phone, where the touch canvas is ~480
+// 50x56 logical px: >= 48 dp tall on a phone, where the touch canvas is ~480
 // logical px high (game_logical_size()). Desktop with a mouse never shows it.
 // [Engine affordance, not original UI: the original is mouse + keyboard only.]
 struct TouchBtn { const char* label; int id; };
 enum : int { TB_TOGGLE = 1, TB_ADD, TB_FIRE, TB_MOVE, TB_STOP, TB_GUARD, TB_SCATTER, TB_DEPLOY, TB_GROUP1 };
-static constexpr int kTbW = 52, kTbH = 56, kTbGap = 2;
+static constexpr int kTbW = 50, kTbH = 56, kTbGap = 2;   // 13 x 52 fits the 685 px tactical view of an 854x480 canvas
 static const std::vector<TouchBtn>& touch_buttons() {
     static const std::vector<TouchBtn> b = {
         {"CMD", TB_TOGGLE}, {"+SEL", TB_ADD}, {"FIRE", TB_FIRE}, {"MOVE", TB_MOVE},
@@ -65,9 +65,6 @@ void touch_command(int id, bool long_press, uint32_t t_ms) {
 // keyboard). Returns true when the event was consumed.
 bool touch_bar_handle(ra2engine::InputEvent& ev) {
     if (ev.touch) touch_ui_ = true;
-#ifdef __ANDROID__
-    touch_ui_ = true;
-#endif
     const bool ptr = ev.kind == ra2engine::InputEvent::PointerDown || ev.kind == ra2engine::InputEvent::PointerUp;
     if (!ptr) return false;
     const int bi = touch_btn_at(ev.x, ev.y);
@@ -142,7 +139,11 @@ void draw_touch_bar(SDL_Renderer* ren) {
         draw_text(ren, label, r.x + (r.w - lw) / 2, r.y + (r.h - 7 * scale) / 2, scale, 235, 225, 200);
     }
 }
-bool touch_ui_ = false;
+#ifdef __ANDROID__
+bool touch_ui_ = true;    // a phone: the bar is there from the first frame
+#else
+bool touch_ui_ = false;   // desktop: appears after the first touch event
+#endif
 bool touch_bar_open_ = true;
 bool touch_add_ = false, touch_fire_ = false, touch_move_ = false;
 int touch_down_btn_ = -1;

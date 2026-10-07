@@ -16465,11 +16465,11 @@ int main(int argc, char** argv) {
         (void)argc;
         (void)argv;
         SDL_Log("Red Alert 2 engine %s", RA2_VERSION);
-        const int rc = run_menu(/*no_audio=*/false);
-        // W2-AR-17: SDL's README-android -- end the process with exit() so the
-        // next launch starts with fresh statics (g_art_chain, caches, ...)
-        // instead of re-entering main() in the same process.
-        std::exit(rc);
+        // W2-AR-17: return normally -- SDLActivity finishes the activity and
+        // RA2Activity.onDestroy() then ends the process, so the next launch
+        // starts with fresh statics (g_art_chain, caches, ...). (exit() from
+        // this thread raced the Java side's teardown: SIGSEGV on the emulator.)
+        return run_menu(/*no_audio=*/false);
 #else
         // W2-AR-22/-23: --version, --help, --data <dir> (any position).
         for (int i = 1; i < argc; ++i) {
@@ -16679,9 +16679,6 @@ int main(int argc, char** argv) {
             const std::string msg = describe_load_failure(ex.what());
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Red Alert 2 engine", msg.c_str(), nullptr);
         }
-#ifdef __ANDROID__
-        std::exit(1);
-#endif
         return 1;
     }
 }
