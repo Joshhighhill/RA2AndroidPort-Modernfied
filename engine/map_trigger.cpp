@@ -110,7 +110,7 @@ const char* action_label(int k) {
     case 107: return "ReinforcementByChrono"; case 112: return "CenterCamera";
     case 113: return "MakeHouseCheer"; case 114: return "SetTabTo";
     case 115: return "FlashCameo"; case 116: return "PlayMovieAndPause";
-    case 125: return "CreateBuilding"; case 108: return "CreateCrate"; case 101: return "ReshroudMapAtWaypoint"; case 9: return "FireSale"; case 131: return "FlashBuildingsOfType";
+    case 125: return "CreateBuilding"; case 60: return "SellBuilding"; case 111: return "EvictOccupiers"; case 108: return "CreateCrate"; case 101: return "ReshroudMapAtWaypoint"; case 9: return "FireSale"; case 131: return "FlashBuildingsOfType";
     default: return "?";
     }
 }
@@ -939,6 +939,7 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         effect(find_house(t, a.value, host));
         return;
     case 32: case 63:
+    case 60: case 111:   // W2-CA-13: SellBuilding / EvictOccupiers on the tagged objects
         if (!campaign_mode_) goto unhandled;
         effect(th);
         return;

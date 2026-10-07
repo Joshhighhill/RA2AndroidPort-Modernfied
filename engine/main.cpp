@@ -4323,6 +4323,8 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
 
 // P10 Campaign runtime (CampaignRuntime, camp::*) [RE: campaign.md].
 #include "campaign_runtime.inc"
+// W2-CA-03/04: campaign rules overlay + the player's rules-driven roster.
+#include "campaign_rules.inc"
 // gF: real skirmish start (MCV + recovered start force) and MCV wiring.
 #include "gf_start.inc"
 
@@ -4751,7 +4753,9 @@ public:
           // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
           // rules_ini_/art_ini_ are members constructed before rules_/art_ (mirrors
           // the old run_interactive's named-local Inis kept alive for the whole run).
-          rules_ini_(load_ini_from_ra2md(dir_, "rulesmd.ini")),
+          // W2-CA-04: a campaign mission's map overlays its rules sections.
+          rules_ini_(cfg.campaign_map.empty() ? load_ini_from_ra2md(dir_, "rulesmd.ini")
+                                              : camp::load_campaign_rules_ini(dir_, cfg.campaign_map)),
           rules_(Rules::load(rules_ini_)),
           art_ini_(load_ini_from_ra2md(dir_, "artmd.ini")),
           art_(Art::load(art_ini_)),

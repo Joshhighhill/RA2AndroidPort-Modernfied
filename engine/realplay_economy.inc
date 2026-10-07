@@ -109,7 +109,8 @@ ra2engine::QueueCat rp_unit_cat(const ra2engine::UnitTypeDef& d) {
 UnitRoster load_player_unit_roster(const std::string& dir, const ra2assets::MixFile& ra2,
                                    const UnitAssets& ua, const Rules& rules, const Art& art,
                                    const Ini& rules_ini, const std::string& country,
-                                   int lobby_tech, bool with_aircraft) {
+                                   int lobby_tech, bool with_aircraft,
+                                   const std::vector<std::string>* allowed_upper = nullptr) {
     std::vector<std::string> ids;
     std::vector<char> veh;
     std::vector<char> air;
@@ -127,6 +128,11 @@ UnitRoster load_player_unit_roster(const std::string& dir, const ra2assets::MixF
                 rp_flag(rules, id, "RequiresStolenThirdTech"))
                 continue;   // spy-infiltration unlocks: not modelled -> never buildable
             if (std::find(ids.begin(), ids.end(), id) != ids.end()) continue;
+            // W2-CA-03: a campaign offers only the types its game knows.
+            if (allowed_upper && !allowed_upper->empty() &&
+                std::find(allowed_upper->begin(), allowed_upper->end(), rp_upper(id)) ==
+                    allowed_upper->end())
+                continue;
             ids.push_back(id);
             veh.push_back(L.vehicle ? 1 : 0);
             air.push_back(L.aircraft ? 1 : 0);

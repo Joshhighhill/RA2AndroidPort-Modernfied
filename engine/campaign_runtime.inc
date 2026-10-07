@@ -1451,6 +1451,21 @@ private:
                 }
             return n > 0;
         }
+        case 60:      // W2-CA-13 SellBuilding: every tagged building of the trigger
+        case 111: {   // EvictOccupiers: its garrison steps out [map-triggers.md §5]
+            int n = 0;
+            for (std::size_t i = 0; i < btrack_.size(); ++i)
+                if (!btrack_[i].dead && btrack_[i].tag >= 0 &&
+                    sys_->tag_has_trigger(btrack_[i].tag, e.trigger_type) && live(w_.buildings()[i])) {
+                    if (e.action == 60) {
+                        if (w_.begin_sell((int)i, w_.buildings()[i].house)) ++n;
+                    } else if (!w_.buildings()[i].occupants.empty()) {
+                        w_.unload_occupants((int)i);
+                        ++n;
+                    }
+                }
+            return n > 0;
+        }
         case 108: {   // CreateCrate: Value = [Powerups] index; 20 = untyped (random)
             int x = 0, y = 0;
             if (!waypoint_cell(e.waypoint, x, y)) return false;
