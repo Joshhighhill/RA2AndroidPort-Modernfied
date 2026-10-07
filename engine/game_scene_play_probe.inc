@@ -413,6 +413,7 @@
         }
         p.set("ai_garrisons", static_cast<double>(world_.w5_state().ai_garrisons));
         p.set("ai_tech_captures", static_cast<double>(world_.w5_state().ai_tech_captures));
+        p.set("airstrikes", static_cast<double>(world_.w5_state().airstrikes));
         p.set("ifv_repairs", static_cast<double>(world_.w5_state().repairs));
         p.set("defusals", static_cast<double>(world_.w5_state().defusals));
         p.set("passenger_shots", static_cast<double>(world_.w5_state().passenger_shots));

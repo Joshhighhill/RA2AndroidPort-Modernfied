@@ -1238,7 +1238,19 @@ void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, co
             p.open_topped = rules.section_flag(id, "OpenTopped", false);
             if (rules.section_double(id, "Passengers", 0.0) > 0.0)
                 p.deploy_frames = (int)(rules.section_double(id, "DeployTime", 0.0) * 900.0);
-            if (p.assault || p.open_topped || p.deploy_frames > 0) prof[rules.image(id)] = p;
+            p.airstrike_team = (int)rules.section_double(id, "AirstrikeTeam", 0.0);
+            if (p.airstrike_team > 0) {
+                p.elite_airstrike_team = (int)rules.section_double(id, "EliteAirstrikeTeam", p.airstrike_team);
+                p.airstrike_type = rules.section_string(id, "AirstrikeTeamType", "");
+                p.airstrike_recharge = (int)rules.section_double(id, "AirstrikeRechargeTime", 0.0);
+                p.elite_airstrike_recharge =
+                    (int)rules.section_double(id, "EliteAirstrikeRechargeTime", p.airstrike_recharge);
+                const std::string fl = ra2engine::type_weapon_id(rules, id, 1, false);
+                p.flare_range = fl.empty() ? 12.0 : rules.weapon_range(fl);
+                if (p.airstrike_type.empty()) p.airstrike_team = 0;
+            }
+            if (p.assault || p.open_topped || p.deploy_frames > 0 || p.airstrike_team > 0)
+                prof[rules.image(id)] = p;
         }
     }
     w5_arm_building_art(ba, art_ini);

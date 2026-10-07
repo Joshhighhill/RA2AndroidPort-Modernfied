@@ -8,6 +8,7 @@
 
 #include "combat.hpp"   // deliver_hit_from, rearm_secs
 #include "group_move.hpp"   // nearest_free_cells
+#include "veterancy.hpp"    // has_ability (SCATTER)
 #include "world.hpp"
 
 namespace ra2engine {
@@ -171,6 +172,23 @@ void World::step_w5(double dt) {
         b.w5.overpowered = n >= 3 || (n >= 1 && !house_low_power(b.house));
     }
 
+    // (3b) SCATTER (veteran ability; Allied/Soviet infantry and light vehicles
+    // gain it at rank 1 in this rulesmd) [RE-FALLBACK: the original scatters
+    // the unit from incoming fire through its threat response; here a ranked
+    // unit standing idle that loses HP steps aside (order_scatter)].
+    if (vet_any_)
+        for (int i = 0; i < nu; ++i) {
+            Unit& u = units_[(std::size_t)i];
+            const int prev = u.w5.last_hp;
+            u.w5.last_hp = u.hp;
+            if (!live(u) || prev < 0 || u.hp >= prev || u.moving() || u.attack_order || u.target >= 0 ||
+                u.target_building >= 0)
+                continue;
+            if (!has_ability(u.vet.veterancy, u.vet.vet_abilities, u.vet.elite_abilities, Ability::Scatter)) continue;
+            order_scatter(i);
+            ++w5_.scatters;
+        }
+    w5_step_airstrike();   // (R-046) Boris calls MiG airstrikes
     w5_step_defuse();   // (R-046) engineers disarming Ivan bombs
     w5_step_repair_ifv(dt);   // (R-048) the Engineer IFV repairs friendly vehicles
 
@@ -473,6 +491,70 @@ void World::w5_ai_pass() {
                 ++w5_.ai_tech_captures;
                 break;
             }
+    }
+}
+
+// Boris airstrike (R-046) [RE: abilities-w5.md §10 -- AirstrikeClass
+// (ctor FUN_0041D3B0 copies TechnoType +0x61C AirstrikeTeam, +0x620
+// EliteAirstrikeTeam, +0x62C/+0x630 the team types, +0x624/+0x628 the
+// recharge frames; FUN_0041D800 = "may strike": not busy and
+// Frame >= last + recharge (elite recharge for an elite designator))].
+// [RE-FALLBACK: the planes' entry point (here the map edge nearest the target
+// along x, like the paradrop plane) and their exit after the drop.]
+void World::w5_step_airstrike() {
+    const int nu = (int)units_.size();
+    const std::int64_t F = (std::int64_t)w5_.frame;
+    for (int i = 0; i < nu; ++i) {
+        Unit& b = units_[(std::size_t)i];
+        if (b.w5.p.airstrike_team <= 0 || !live(b)) continue;
+        const int tb = b.target_building;
+        if (tb < 0 || tb >= (int)buildings_.size() || !live_bld(buildings_[(std::size_t)tb])) continue;
+        if (!is_enemy(b.house, buildings_[(std::size_t)tb].house)) continue;
+        if (F < b.w5.airstrike_ready) continue;
+        bool busy = false;
+        for (const Unit& p : units_) busy |= p.alive && p.w5.strike_of == i;
+        if (busy) continue;
+        const Building& tgt = buildings_[(std::size_t)tb];
+        const double nx = std::max<double>(tgt.cx, std::min<double>(b.fx, tgt.cx + tgt.fw - 1));
+        const double ny = std::max<double>(tgt.cy, std::min<double>(b.fy, tgt.cy + tgt.fh - 1));
+        if (std::hypot(nx - b.fx, ny - b.fy) > b.w5.p.flare_range) continue;
+        const bool elite = is_elite(b.vet.veterancy);
+        const int n = elite ? b.w5.p.elite_airstrike_team : b.w5.p.airstrike_team;
+        const int tcy = tgt.cy + tgt.fh / 2;
+        const bool from_left = tgt.cx + tgt.fw / 2 < grid_w_ / 2;
+        int spawned = 0;
+        for (int k = 0; k < n; ++k) {
+            const int pi = an_spawn(b.w5.p.airstrike_type, b.house, from_left ? 0 : grid_w_ - 1,
+                                    std::max(0, std::min(grid_h_ - 1, tcy - n / 2 + k)));
+            if (pi < 0) break;
+            Unit& p = units_[(std::size_t)pi];
+            p.fx = from_left ? 0.0 : grid_w_ - 1.0;
+            p.altitude = an_.sw.flight_level;
+            p.flight_state = FlightState::Cruising;
+            p.an.owner = -1;
+            p.an.attack_building = tb;
+            p.an.attack_unit = -1;
+            p.an.ammo = p.an.t.ammo > 0 ? p.an.t.ammo : 1;
+            p.an.sortie = 1;   // kOutbound
+            p.w5.strike_of = i;
+            p.w5.strike_bld = tb;
+            ++spawned;
+        }
+        if (spawned > 0) {
+            b.w5.airstrike_ready = F + (elite ? b.w5.p.elite_airstrike_recharge : b.w5.p.airstrike_recharge);
+            ++w5_.airstrikes;
+            fire_events_.push_back({i, -1, -1, tb, 1, "Flare"});
+        }
+    }
+    // Spent planes leave across the map (the paradrop plane's exit run).
+    for (int i = 0; i < nu; ++i) {
+        Unit& p = units_[(std::size_t)i];
+        if (p.w5.strike_of < 0 || !p.alive || p.die_time >= 0.0) continue;
+        if (p.an.sortie != 3) continue;   // kReturn: spent or target gone
+        p.an.sortie = 5;                  // kParadrop with nothing aboard = fly out
+        p.an.drop_left = 0;
+        p.an.exit_x = p.fx < grid_w_ / 2.0 ? grid_w_ - 1 : 0;
+        p.an.exit_y = p.cell_y;
     }
 }
 

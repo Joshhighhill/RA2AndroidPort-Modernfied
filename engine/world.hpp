@@ -2153,6 +2153,7 @@ private:
     void w5_step_defuse();
     void w5_step_repair_ifv(double dt);
     void w5_ai_pass();
+    void w5_step_airstrike();
     bool w5_prism_fire(int bi, int target_unit, int slot);   // building_combat.cpp
     // --- G16 world depth (world_depth.cpp) ---
     DepthRules depth_rules_;

@@ -264,6 +264,13 @@ void World::step_garrison_combat(double dt) {
             apply_spread_damage(units_, occ_, shooter, units_[b.garrison_target]);
         else
             deliver_hit_from(units_, occ_, shooter, -1, bi, b.garrison_target);
+        {   // Wave-5 (item 8): the firing occupant earns the kill (garrisoned
+            // infantry gain rank in the original) [RE-FALLBACK: the credit
+            // routing through BuildingClass::Fire was not traced].
+            Unit& v = units_[b.garrison_target];
+            const int fo = b.occupants[static_cast<std::size_t>(b.firing_occupant) % b.occupants.size()];
+            if (v.die_time >= 0.0 && v.vet.killed_by < 0) v.vet.killed_by = fo;
+        }
         // FiringOccupantIndex = (index + 1) % OccupantCount after every shot
         // (TechnoClass::Fire @0x6FE525).
         b.firing_occupant = (b.firing_occupant + 1) % static_cast<int>(b.occupants.size());

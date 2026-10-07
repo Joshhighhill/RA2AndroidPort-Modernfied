@@ -68,6 +68,12 @@ struct UnitProfileW5 {
     int assault_rof = 25;        // that weapon's ROF (AssaultBolt 25)
     bool open_topped = false;    // OpenTopped=yes (Battle Fortress)
     int deploy_frames = 0;       // transport DeployTime= (minutes) * 900, ftol (.022 -> 19)
+    // Boris (R-046): AirstrikeTeam= / EliteAirstrikeTeam= planes of
+    // AirstrikeTeamType= every AirstrikeRechargeTime= frames.
+    int airstrike_team = 0, elite_airstrike_team = 0;
+    std::string airstrike_type;
+    int airstrike_recharge = 0, elite_airstrike_recharge = 0;
+    double flare_range = 0.0;    // the designating weapon's Range (Flare 12)
 };
 
 // Per unit OBJECT.
@@ -84,6 +90,12 @@ struct UnitW5 {
     // Mirage Tank (R-047): the TerrainType it poses as while disguised
     // (DefaultMirageDisguises pick); the presentation draws it for enemies.
     std::string mirage_tree;
+    double base_flight_speed = -1.0;   // aircraft FASTER: unscaled speeds
+    double base_fly_cps = -1.0;
+    int last_hp = -1;                  // SCATTER: HP at the previous pass
+    std::int64_t airstrike_ready = 0;  // Boris: next frame an airstrike may be called
+    int strike_of = -1;                // an airstrike plane: the designator (Boris)
+    int strike_bld = -1;               // ... and its target building
 };
 
 // Recovered globals.
@@ -113,6 +125,8 @@ struct WorldW5 {
     long long repairs = 0;                   // IFV RepairBullet heals
     long long ai_garrisons = 0;              // AI garrison orders (R-081)
     long long ai_tech_captures = 0;          // AI engineer tech-capture orders
+    long long scatters = 0;                  // SCATTER ability dodges
+    long long airstrikes = 0;                // Boris airstrikes called
 };
 
 }  // namespace ra2engine
