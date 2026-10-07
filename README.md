@@ -2460,13 +2460,15 @@ opened once per run; cold start dropped from ~79 s to ~0.87 s on the host
 (measured via `Measure-Command { ra2engine --screenshot }`). The same sources
 build into the Android APK via `cmake/ra2_sources.cmake` — no jni changes.
 
-Interactive controls: left-click a unit to select it (green marker); left-drag
-a box to select many; Shift+left-click to add/remove one; double-click a unit
-to select all of its type on screen; right-click ground to move the selection
-(units fan out to distinct cells and route around each other); **right-click a
-hostile Conscript to attack it** — units move into weapon range, hold, and
-fire; idle units auto-acquire hostiles in range and return fire; pan with the
-arrow keys or by pushing the pointer to a screen edge; Esc/close quits.
+Interactive controls (the ORIGINAL scheme, see "Real-play controls" and
+`docs/INSTALL.md` section 4): left-click a unit to select it; left-drag a box
+to select many; Shift+left-click to add/remove one; double-click a unit to
+select all of its type on screen; with a selection, LEFT-click ground to move
+(units fan out to distinct cells and route around each other) and LEFT-click
+an enemy to attack it; right-click deselects or cancels one armed mode;
+right-drag, the arrow keys or the screen edge scroll. Esc opens the options
+menu (it never quits; close the window or use Exit Game). Touch: see
+`docs/INSTALL.md`. Ctrl+Shift+F (or `--fps`) shows the perf overlay.
 
 Headless/verification CLI modes (render one or more frames and exit):
 - `ra2engine.exe --screenshot <out.png>` — render one frame of the map+unit to a PNG.
@@ -2707,8 +2709,8 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These twenty headless demos (the table below plus `--demo-maps`, described in
-its own section, and `--demo-repair`) are byte-identity regression gates: any change to
+These headless demos (the table below plus `--demo-maps`, described in its
+own section; 31 `--demo-*` gates as of wave 4) are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
@@ -2721,6 +2723,14 @@ CB-5 Battle Lab `GATECH`) — with the gated hash unaffected each time. The firs
 SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 `--demo-roster` is the Broaden Unit/Building Roster gate and `--demo-roster2`
 the P6 Roster Breadth gate.
+
+**Current verification policy (since wave 4).** Gates are slow (up to ~2-3 min
+and ~3 GB each), so they are NOT run on every commit: a step runs only its
+scoped unit tests (`ra2assets_tests --test-case="<module>*"`); a branch runs
+the full suite, every `--play` script (one at a time) and every gate ONCE at
+the end, before merging. A gate may move only where the change says so (and
+is then re-pinned in this table with the reason); every other gate must print
+its pin.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -2874,8 +2884,11 @@ the engine-wide min-1 damage clamp (`abilities.md` section H). Distances are
 
 This proves the library is portable: the same sources in `src/` build for
 Android via the NDK's own CMake toolchain file, with no source changes.
-There is no app and no on-device run here — artifact inspection only
-(confirming `libra2assets.so` is a real AArch64 ELF shared object).
+This section is the library-only cross-compile check (confirming
+`libra2assets.so` is a real AArch64 ELF shared object). The playable app is
+the APK: see "Android app (APK)" below; it runs on the `ra2x86` emulator and
+on phones (`docs/INSTALL.md` section 5 explains how to report real-phone
+frame rates).
 
 Prerequisites: Android NDK r27c for Windows
 (https://dl.google.com/android/repository/android-ndk-r27c-windows.zip),

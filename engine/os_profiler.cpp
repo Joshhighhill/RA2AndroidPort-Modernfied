@@ -20,7 +20,9 @@
 #include <windows.h>
 #include <mmsystem.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <cstdio>
 #include <map>
 #include <set>
@@ -40,31 +42,56 @@ struct Prof {
 };
 Prof* g_prof = nullptr;
 
+// While the main thread is suspended NOTHING here may allocate or take a
+// user-mode lock (it may hold the heap / loader lock): only the registers
+// and a raw copy of the top of its stack are taken. The unwind then runs on
+// the copy (Rsp / Rbp rebased into it) after the thread was resumed.
+constexpr std::size_t kStackCopy = 64 * 1024;
+alignas(16) unsigned char g_stack[kStackCopy];
+
 void sample_once(Prof& P) {
     if (SuspendThread(P.target) == static_cast<DWORD>(-1)) return;
     CONTEXT ctx{};
     ctx.ContextFlags = CONTEXT_FULL;
-    if (GetThreadContext(P.target, &ctx)) {
-        ++P.samples;
-        std::set<DWORD64> seen;
-        for (int depth = 0; depth < 48 && ctx.Rip; ++depth) {
-            const DWORD64 pc = ctx.Rip;
-            if (depth == 0) ++P.self[pc];
-            if (seen.insert(pc).second) ++P.incl[pc];
-            DWORD64 image = 0;
-            PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(pc, &image, nullptr);
-            if (!fn) {   // a leaf with no unwind data: return address at [rsp]
-                if (!ctx.Rsp) break;
-                ctx.Rip = *reinterpret_cast<DWORD64*>(ctx.Rsp);
-                ctx.Rsp += 8;
-                continue;
-            }
-            void* handler_data = nullptr;
-            DWORD64 frame = 0;
-            RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, pc, fn, &ctx, &handler_data, &frame, nullptr);
+    std::size_t n = 0;
+    DWORD64 lo = 0;
+    const bool ok = GetThreadContext(P.target, &ctx) != 0;
+    if (ok) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        lo = ctx.Rsp;
+        if (VirtualQuery(reinterpret_cast<void*>(lo), &mbi, sizeof mbi)) {
+            const DWORD64 hi = reinterpret_cast<DWORD64>(mbi.BaseAddress) + mbi.RegionSize;
+            n = static_cast<std::size_t>(std::min<DWORD64>(hi - lo, kStackCopy));
+            std::memcpy(g_stack, reinterpret_cast<void*>(lo), n);
         }
     }
     ResumeThread(P.target);
+    if (!ok) return;
+    ++P.samples;
+    const DWORD64 off = reinterpret_cast<DWORD64>(g_stack) - lo;
+    auto in_copy = [&](DWORD64 a) { return a >= lo && a + 8 <= lo + n; };
+    ctx.Rsp += off;
+    if (in_copy(ctx.Rbp)) ctx.Rbp += off;
+    const DWORD64 clo = lo + off, chi = lo + off + n;
+    std::set<DWORD64> seen;
+    for (int depth = 0; depth < 48 && ctx.Rip; ++depth) {
+        if (ctx.Rsp < clo || ctx.Rsp + 8 > chi) break;   // walked off the copy
+        const DWORD64 pc = ctx.Rip;
+        if (depth == 0) ++P.self[pc];
+        if (seen.insert(pc).second) ++P.incl[pc];
+        DWORD64 image = 0;
+        PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(pc, &image, nullptr);
+        if (!fn) {   // a leaf with no unwind data: return address at [rsp]
+            ctx.Rip = *reinterpret_cast<DWORD64*>(ctx.Rsp);
+            ctx.Rsp += 8;
+            continue;
+        }
+        void* handler_data = nullptr;
+        DWORD64 frame = 0;
+        RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, pc, fn, &ctx, &handler_data, &frame, nullptr);
+        // a frame register restored from the copy still points at the real stack
+        if (ctx.Rbp >= lo && ctx.Rbp + 8 <= lo + n) ctx.Rbp += off;
+    }
 }
 }  // namespace
 
