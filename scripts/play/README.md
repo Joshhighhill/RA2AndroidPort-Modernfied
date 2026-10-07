@@ -195,6 +195,10 @@ Keys reserved for later phases (scripts already assert them and report
 | `anim-infantry.play` | W3-B infantry machine: idle fidgets, prone under fire, InfDeath deaths + corpses, civilian Panic, Guardian GI deploy, Cheer |
 | `anim-vehicles.play` | W3-B vehicles: Night Hawk rotor HVA frames, random Explosion=, harvester UnloadingClass (`live_*`) |
 | `anim-terrain.play` | W3-B ALL07 waterfalls (theater tile anims) |
+| `all01-opening.play` | W4: ALL01 from the menu, 4 min no input -- the Dreadnoughts shell the Statue, the Liberty Island Patriots shoot DMISLs down, the Statue stands, RUNNING |
+| `all01-v3-statue.play` | W4: the scripted V3 still one-shots the Statue (V3WH 50000%); DestroyAnim/rubble in liburb.pal |
+| `missiles.play` | W4: skirmish weapon flights to READ -- Rhino shell, IFV homing missile + trail, Kirov voxel bombs, V3 tilt/climb/arc, Grand Cannon, tusks |
+| `missiles-intercept.play` | W4: ALL01, an enemy Patriot site shoots a player V3 rocket down (homing RedEye2, DontScore) |
 | `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
 
 The expected results on each tree are kept in `docs/gap/PLAYTEST-STATUS.md`.

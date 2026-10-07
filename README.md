@@ -3819,3 +3819,42 @@ the anchor differs per object kind (shared helpers in `engine/iso_project.*`):
   `cheat view_key PREFIX [n]` centres on a `terr:`/`civ:`/`ovl:`/`smudge:` map
   object. Scripts: `pos-all01`, `pos-all03`, `pos-all08`, `pos-all12`,
   `pos-sov05` (screenshots to read against `docs/gap/wave4/01-evidence/ref`).
+
+## Missiles, rockets and the ALL01 opening (wave-4 W4-FIX-PROJ)
+
+Details and evidence: `docs/gap/wave4/03-all01-opening.md` and
+`docs/gap/wave4/04-projectiles.md` (each opens with a fix-status table),
+`docs/re/projectile.md` §6.4 (homing, now CONFIRMED and implemented). Save
+format v15.
+
+- **Per-rocket-type warheads** (`engine/rocket.{hpp,cpp}`, FUN_00662A70): V3,
+  DMisl and CMisl each explode with their own `[CombatDamage]` *Warhead*
+  (elite *EliteWarhead* + EliteDamage when the launcher was elite). A
+  Dreadnought missile now does the original's 300 x 2% = 6 to ALL01's Statue
+  instead of V3WH's 150000, so the **ALL01 opening shelling hold is lifted**:
+  the four Dreadnoughts shell the Statue from t=0 and the Liberty Island
+  Patriots shoot the missiles down.
+- **RocketLocomotion** (FUN_00661D00): PauseFrames on the launcher, TiltFrames
+  PitchInitial->PitchFinal, climb with +Acceleration to the block Altitude (the
+  map's `[General] DMislAltitude=1550` in ALL01), LazyCurve=yes arc (V3) or
+  TurnRate level-off and dive (DMisl), BodyLength nose-contact detonation. A
+  rocket on its launcher is not a target; a rocket shot down dies the
+  Explodes=no death (its Explosion= anim in the air, no warhead damage). The
+  hull draws at its pitch, `NoShadow=yes` is honoured, spent rockets are
+  DontScore (not in `units_lost`).
+- **Homing projectiles fly** (`ProjKind::Homing`, `integrate_homing`): the
+  Patriot, IFV, Harrier / Black Eagle Maverick, Apocalypse tusks, Aegis,
+  Typhoon torpedo (Level), Hornet / Osprey bombs -- the recovered steering
+  (MissileROTVar weave, terrain-following cruise, course lock, give-up,
+  MissileSafetyAltitude), `Acceleration` default 3.
+- **Projectile art** comes from the weapon that fired (unit slot or base
+  defence): art `Rotates`, `Voxel=yes` bullets (ZBOMB, SUBT) as voxels, the
+  unit palette unless `AnimPalette=yes` (tank shells are visible again),
+  `Shadow=yes` blob, line trails/Trailers on real flights.
+- The Statue's DestroyAnim ruin draws in its art `Palette=lib`; no crater or
+  scorch smudge on water. The projectile pass reads a per-frame cell index
+  instead of scanning every unit per projectile.
+- Scripts: `all01-opening` (gate: 4 min no input), `all01-v3-statue`,
+  `missiles`, `missiles-intercept`. Probe keys `rockets_launched/shot/hit(h)`,
+  `rockets_live(h)`, `rocket_alt(h)`, `rocket_phase(h)`, `homing_live`,
+  `homing_top`, `homing_near`, `homing_speed`, `bhp(h,ID)`.

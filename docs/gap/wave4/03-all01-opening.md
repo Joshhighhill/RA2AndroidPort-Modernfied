@@ -14,6 +14,21 @@ Read-only audit of `master` 4647b17, made on 2026-10-07. Nothing is committed an
 The sibling report `04-projectiles.md` pins the RocketLocomotion and homing-bullet flight models in depth. This report
 uses those findings for ALL01 and adds the mission-specific causes.
 
+## Fix status (wave-4 fix agent 3, branch `w4fix-proj`)
+
+| ID | Status | Where / evidence |
+|---|---|---|
+| A1-01 opening shelling held | **FIXED** | `tag_guards_loss` skip removed (`campaign_runtime.inc`); `scripts/play/all01-opening.play` (real menu, 4 min, no input): DMISL launched (137), shot down by the Liberty Island Patriots (129), Statue alive (5102/5117), fleet intact, `RUNNING` |
+| A1-02 DMISL explodes with V3WH | **FIXED** | `engine/rocket.cpp` per-type block + warhead (FUN_00662A70); `tests/test_rocket.cpp` pins DMISL vs CANEWY04 = 6, V3 = 100000 |
+| A1-03 rocket flight model | **FIXED** | `rocket_step` ports FUN_00661D00 (pause, tilt, climb to the map's 1550, LazyCurve arc / level-off + dive, nose contact); hull drawn pitched |
+| A1-04 Patriot missiles do not fly | **FIXED** | `ProjKind::Homing` (`integrate_homing`); RedEye2 flies with the DRAGON line trail and hits the rockets |
+| A1-05 Statue DestroyAnim/rubble palette | **FIXED** | the ruin anim carries the building art `own_pal` (`spawn_hold`); `all01-v3-statue.play` shots `v3_destroy_anim` / `v3_rubble` |
+| A1-06 "Break Bridges" | not this agent (mission-sequence agent) | – |
+| A1-07 Lock/UnlockInput | not this agent (control agent) | – |
+| A1-08 Elite damage / warhead | **FIXED** | `rocket_elite` from the launcher's rank at launch; EliteDamage + *EliteWarhead |
+| A1-09 rocket kill shows no explosion | **FIXED** | a shot-down rocket plays its `Explosion=` anim at its height (Explodes=no: no warhead damage) |
+| scripted V3 on the Statue | **kept working** | `scripts/play/all01-v3-statue.play` |
+
 ## 0. Headline: why no rockets fly
 
 Three separate causes stack up. The first one alone explains the user report.
