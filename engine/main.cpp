@@ -154,6 +154,9 @@ const ra2assets::TheaterChain* g_art_chain = nullptr;
 // (Soviet), chosen by GameScene from the player's side before the art loads.
 const char* g_sidebar_mix = "sidec01.mix";
 void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
+// W2-UI-06: per-tab "has buildables" published by GameScene before the
+// sidebar draws (-1 = unknown: headless renders treat every tab as stocked).
+int g_tab_has[4] = {-1, -1, -1, -1};
 // W2-UI-11 (hud_pips.inc): PIPBRD/PIPS art + the selected-unit pip draw.
 struct PipArt;
 extern const PipArt* g_pips;
@@ -3932,11 +3935,14 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         blit_shp(ren, tc, sell_on ? "sb:sell1" : "sb:sell", ba.sb_sell, sell_on ? 1 : 0,
                  ba.sb_pal, lay.sell_btn.x, lay.sell_btn.y);
     }
-    // Four tab buttons (frame 0); the ACTIVE tab full-bright, the others shaded.
+    // Four tab buttons, tab0N.shp 5 frames (W2-UI-06): 0 normal, 1 lit (the
+    // active tab), 2 blank (nothing to build on it). [ANCHORED: the TS-lineage
+    // ShapeButtonClass frame order normal / on / disabled; frames 3/4 (the
+    // new-cameo flash) are not played -- RE-OPEN Q2.]
     for (int i = 0; i < 4; ++i) {
-        blit_shp(ren, tc, "sb:tab" + std::to_string(i), ba.sb_tabs[i], 0, ba.sb_pal, lay.tabs[i].x,
-                 lay.tabs[i].y);
-        if (i != active_tab) shade_rect(ren, lay.tabs[i], 110);
+        const int fr = (g_tab_has[i] == 0) ? 2 : (i == active_tab ? 1 : 0);
+        blit_shp(ren, tc, "sb:tab" + std::to_string(i) + ":" + std::to_string(fr), ba.sb_tabs[i], fr, ba.sb_pal,
+                 lay.tabs[i].x, lay.tabs[i].y);
     }
     // Cameo strip: side2 tiled once per visible row (sockets are baked into
     // the art), side3 bottom cap, addon tail (clips at the window bottom),
@@ -5369,6 +5375,7 @@ public:
                                   input_.placement_active() ? &pchk : nullptr);
         }
         if (ba_.ok && ba_.sidebar_ok) {
+            for (int t = 0; t < 4; ++t) g_tab_has[t] = tab_buildable(t).empty() ? 0 : 1;   // W2-UI-06
             const ra2engine::QueueCat vis_cat =
                 (active_tab_ == 1) ? ra2engine::QueueCat::Defense
                 : (active_tab_ >= 2) ? rp_vis_unit_cat()   // gap owner A: veh/naval/air
