@@ -3414,7 +3414,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     draw_projectiles(ren, world, a.map, cam, W, H, &tc);
     if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
     // W2-GA-05: the map's ambient light over every world sprite (GameScene only).
-    if (g_light) g_light->pass(ren, W, H);
+    if (g_light) g_light->pass(ren, W, H, cam);   // W3-FIX-A: + light sources
     // G-84: fog + shroud over every object, under the HUD bars.
     draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
@@ -5761,6 +5761,7 @@ public:
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
+        update_light_sources();   // W3-FIX-A
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
         if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
@@ -6288,6 +6289,7 @@ private:
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     PresLight light_;   // W2-GA-05
+#include "light_sources.inc"   // W3-FIX-A building light sources
     PresTurrets turrets_;   // W2-GA-13
     // W2-GA-P4: every roster vehicle x every house colour rasterised on a
     // worker thread at game start instead of in the first frame each colour's
