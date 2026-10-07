@@ -1,0 +1,78 @@
+# anim-vehicles -- W3-B vehicle rendering anims.
+# Conventions as anim-buildings.play (`set align 2`, tick-gated input, shots
+# <prefix>_<tick>.png; anim_check.py pairs / --cross 60 vs 30 Hz). The
+# console [veh] lines list the multi-frame HVA models, TurretOffset types and
+# UnloadingClass bodies loaded.
+#   heli_*   Night Hawk flying: rotor HVA frames (walk stage % HVA frames)
+#   (the Kirov's zep.hva has ONE frame in the RA2 data: nothing to cycle)
+#   boom_*   three Rhinos destroyed: a random Explosion= entry each
+#   live_dump_*  the Chrono Miner / ore truck dumping at the refinery
+#            draws its UnloadingClass (HARV -> HORV); real input, not
+#            cross-compared
+set hz 60
+set align 2
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 400 scene == game
+until 4000 anim_tick >= 20
+click unit 0:AMCV
+key d
+until 4000 anim_tick >= 200
+assert built(0,GACNST) == 1
+cheat credits 60000
+cheat spawn SHAD 0 building 0:GACNST +5 +5
+until 4000 anim_tick >= 210
+click unit 0:SHAD
+until 4000 anim_tick >= 212
+click building:0:GACNST
+until 4000 anim_tick >= 240
+view unit 0:SHAD
+shot heli_{tick}
+shot heli_{tick}
+until 4000 anim_tick >= 246
+shot heli_{tick}
+shot heli_{tick}
+# --- destroyed tanks: random Explosion= ---------------------------------------
+until 4000 anim_tick >= 400
+cheat spawn HTNK 1 building 0:GACNST +1 +6
+cheat spawn HTNK 1 building 0:GACNST +3 +6
+cheat spawn HTNK 1 building 0:GACNST +5 +6
+until 4000 anim_tick >= 410
+view building 0:GACNST
+cheat w2 kill 1:HTNK
+cheat w2 kill 1:HTNK
+cheat w2 kill 1:HTNK
+until 4000 anim_tick >= 414
+assert veh_explosions >= 3
+shot boom_{tick}
+shot boom_{tick}
+until 4000 anim_tick >= 420
+shot boom_{tick}
+shot boom_{tick}
+# --- live: harvester unloading body (UnloadingClass) --------------------------
+until 4000 anim_tick >= 500
+click tab:0
+until 4000 anim_tick >= 502
+click cameo:GAPOWR
+until 6000 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 6000 anim_tick >= 1200
+click tab:0
+until 6000 anim_tick >= 1202
+click cameo:GAREFN
+until 6000 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 600 built(0,GAREFN) == 1
+view building 0:GAREFN
+until 12000 harv(0,Unloading) >= 1
+shot live_dump_{tick}
+shot live_dump_{tick}
+shot live_dump_{tick}
+shot live_dump_{tick}
+end

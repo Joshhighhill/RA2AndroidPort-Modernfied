@@ -398,3 +398,38 @@ bool pres_building_leaves_rubble(const ra2engine::Building& b, const BuildingAss
     return pres_building_rubble_frame(ba.roster[static_cast<std::size_t>(b.type)].id,
                                       ba.art[static_cast<std::size_t>(b.type)].shp.count()) >= 0;
 }
+
+// W3-B [RE: FootClass::AI FUN_004da440]: each unit's WalkedFramesSoFar
+// (+0x538) -- +1 every WalkRate frames (TechnoType +0x294, default 1) while
+// its locomotor moves, every IdleRate frames (+0x298, default 0 = never)
+// standing. Drives SHP-vehicle walk frames and voxel HVA frames.
+std::vector<int> g_walk_stage;
+std::map<std::string, std::pair<int, int>> g_walk_rates;   // image -> {WalkRate, IdleRate}
+const Ini* g_walk_rules = nullptr;
+const std::pair<int, int>& pres_walk_rates(const std::string& image) {
+    auto it = g_walk_rates.find(image);
+    if (it != g_walk_rates.end()) return it->second;
+    int walk = 1, idle = 0;
+    if (g_walk_rules) {
+        const std::string w = pres_clean(g_walk_rules->get(image, "WalkRate"));
+        const std::string i = pres_clean(g_walk_rules->get(image, "IdleRate"));
+        if (!w.empty()) walk = std::max(1, std::atoi(w.c_str()));
+        if (!i.empty()) idle = std::max(0, std::atoi(i.c_str()));
+    }
+    return g_walk_rates.emplace(image, std::make_pair(walk, idle)).first->second;
+}
+int pres_idle_rate(const std::string& image) { return pres_walk_rates(image).second; }
+int pres_walk_stage(int idx) {
+    return idx >= 0 && idx < static_cast<int>(g_walk_stage.size()) ? g_walk_stage[static_cast<std::size_t>(idx)] : 0;
+}
+void pres_walk_tick(const ra2engine::World& w, long now) {
+    const auto& us = w.units();
+    if (g_walk_stage.size() < us.size()) g_walk_stage.resize(us.size(), 0);
+    for (std::size_t i = 0; i < us.size(); ++i) {
+        const ra2engine::Unit& u = us[i];
+        if (!u.alive || !(u.is_vehicle || u.is_aircraft || u.is_naval) || u.die_time >= 0.0) continue;
+        const std::pair<int, int>& r = pres_walk_rates(u.image);
+        const bool moving = u.moving() || (u.is_aircraft && u.altitude > 0.0);
+        if (moving ? (now % r.first == 0) : (r.second > 0 && now % r.second == 0)) ++g_walk_stage[i];
+    }
+}

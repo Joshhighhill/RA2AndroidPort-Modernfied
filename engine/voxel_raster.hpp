@@ -42,7 +42,7 @@ double index_to_yaw(int i, int n);
 // pal_for_house-remapped palette for house colors). Deterministic; pure.
 VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
                             double yaw_rad, const ra2assets::Vpl& vpl,
-                            const ra2assets::Palette& pal);
+                            const ra2assets::Palette& pal, int hva_frame = 0);   // W3-B HVA frame
 
 // W2-GA-12 [RE: voxel-render.md fn table, FUN_00755680 -- the VoxLib shadow
 // renderer plots every projected column in colour 1 (shadow) at GROUND

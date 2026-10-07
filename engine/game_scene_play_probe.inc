@@ -31,6 +31,8 @@
             }
             p.set("corpses", pres_.corpses_);
             p.set("death_anims", pres_.death_anims_);
+            p.set("veh_explosions", pres_.explosions_);
+            p.set("unloading_drawn", static_cast<double>(g_unloading_class.size()));
         }
         const int houses = world_.house_count();
         p.set("houses", houses);

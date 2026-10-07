@@ -177,6 +177,8 @@ public:
                            [&](int h) { return h == 0 ? player_credits : w.house_credits(h); });
         building_anim_events(w, ba);   // W2-GA-14 SW charge edges, per tick
         building_events(w, ba);        // damage EVA, death explosion + DestroyAnim, per tick (W3-B)
+        g_walk_rules = rules_ini_;
+        pres_walk_tick(w, g_pres_tick); // W3-B walk stage (SHP vehicle frames, HVA frames)
     }
     std::size_t fire_seen_ = 0, bld_seen_ = 0;   // W3-B
     void projectile_fx(const ra2engine::World& w, const std::vector<ra2engine::ProjectileEvent>& pev) {
@@ -533,6 +535,11 @@ private:
             std::string name = wp->muzzle.front();
             double ox = 0, lift = 0;
             if (u.is_vehicle) {
+                // W3-B: 8 facing-ordered muzzle anims (N, NE .. NW, clockwise)
+                // pick by the turret facing [RE-FALLBACK: the 8-way rounding of
+                // the u16 facing as the SHP/voxel facing rule].
+                if (wp->muzzle.size() >= 8)
+                    name = wp->muzzle[static_cast<std::size_t>((((static_cast<int>(u.turret_facing) & 0xFFFF) >> 12) + 1 >> 1) & 7)];
                 // FLH muzzle point, the projection draw_vehicle_unit uses
                 // (voxel-render.md §6).
                 const double yaw = ra2engine::index_to_yaw(
@@ -828,7 +835,7 @@ private:
     std::vector<char> alive_prev_;
     uint32_t corpse_rng_ = 0xC0FFEEu;
 public:
-    int corpses_ = 0, death_anims_ = 0;   // W3-B --play probe counters
+    int corpses_ = 0, death_anims_ = 0, explosions_ = 0;   // W3-B --play probe counters
 private:
     void infantry_death_fx(const ra2engine::World& w, const ra2engine::Unit& u, bool was_living, bool was_alive) {
         if (!u.ia.armed || u.is_vehicle || u.is_aircraft || u.cargo_of >= 0) return;
@@ -898,10 +905,20 @@ private:
                 }
                 // Vehicle death: the Explosion= anim (drawn by draw_vehicle_unit)
                 // carries its own Report= sound.
-                if (u.is_vehicle && w.object_visible_at(0, u.cell_x, u.cell_y)) {
+                // W3-B [RE: presentation.md §5 FUN_007376c0]: a uniformly
+                // random Explosion= entry, spawned here on the death tick.
+                if (u.is_vehicle && !u.an.crashing && !u.an.sinking &&
+                    w.object_visible_at(0, u.cell_x, u.cell_y)) {
                     const auto* ex = fx_.explosions(u.image);
-                    if (ex && !ex->empty())
-                        if (const FxAnimType* t = fx_.type(ex->front())) snd_.play_at(t->report, u.fx, u.fy, "explosion");
+                    if (ex && !ex->empty()) {
+                        const uint32_t h = (static_cast<uint32_t>(i) * 2654435761u) ^
+                                           (static_cast<uint32_t>(g_pres_tick) * 40503u);
+                        const std::string& name = (*ex)[(h >> 7) % ex->size()];
+                        if (const FxAnimType* t = fx_.spawn(name, u.fx, u.fy, u.level, 0.0)) {
+                            snd_.play_at(t->report, u.fx, u.fy, "explosion");
+                            ++explosions_;
+                        }
+                    }
                 }
                 if (u.house == 0 && radar_event(7, u.fx, u.fy)) snd_.eva("EVA_UnitLost");
             }

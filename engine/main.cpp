@@ -393,6 +393,8 @@ struct VehicleAssets {
     bool has_turret = false, has_barrel = false;
     ra2engine::UnitCombat combat;
     int flh[3] = {0, 0, 0};                        // PrimaryFireFLH F,L,H (leptons, turret space)
+    int turret_offset = 0;                         // W3-B art TurretOffset= (leptons along the hull)
+    int hva_frames = 1;                            // W3-B max HVA frames (rotors / propellers)
     std::string explosion_image;                   // Explosion= first entry (e.g. "TWLT070")
     std::unique_ptr<ra2assets::ShpFile> explosion;  // death anim SHP; null if unavailable
     ra2assets::Palette explosion_pal;              // anim.pal (or unit pal fallback)
@@ -414,6 +416,9 @@ struct VehicleAssets {
 // background prewarm thread; this lock guards the map (the built sets are
 // immutable once published, so returned references stay valid).
 std::mutex g_vxl_mu;
+// W3-B: harvester image -> its UnloadingClass assets (GameScene fills it).
+std::map<std::string, const VehicleAssets*> g_unloading_class;
+int g_draw_unit_idx = -1;   // the unit render_world is drawing (walk stage lookup)
 
 // All SHP + palette assets for one building type, resolved through the
 // NewTheater candidate list [RE: building-render.md §1] over the already-open
@@ -1436,6 +1441,14 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         ra2assets::Vpl vpl = ra2assets::Vpl::load(vpl_raw.data(), vpl_raw.size());
 
         art.fire_flh(image, va.flh);  // leaves {0,0,0} if absent/malformed
+        // W3-B [art TurretOffset=, HARV 50, HTK -80 ...]: the turret sits that
+        // many leptons forward of the hull centre along the body facing.
+        va.turret_offset = std::atoi(art_ini.get(image, "TurretOffset", "0").c_str());
+        va.hva_frames = static_cast<int>(std::max<std::size_t>(
+            hull_h.frames.size(), std::max(tur_h.frames.size(), barl_h.frames.size())));
+        if (va.hva_frames > 1 || va.turret_offset != 0)
+            std::cerr << "[veh] " << image << " hva_frames=" << va.hva_frames << " turret_offset=" << va.turret_offset
+                      << std::endl;
         // P2: the muzzle offset is also the projectile launch point (projectile.md
         // §4 step 1 -- FLH resolved before the bullet exists).
         for (int k = 0; k < 3; ++k) {
@@ -2945,12 +2958,33 @@ const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi) {
     if (bi < 0 || bi >= static_cast<int>(va.shadow->size())) return nullptr;
     return &(*va.shadow)[static_cast<std::size_t>(bi)];
 }
+// W3-B: one part at facing `fi`, HVA frame `hf` > 0, in the house colours
+// (rasterised on first use; only multi-frame models ever ask).
+const ra2engine::VoxelSprite& vxl_frame_sprite(const VehicleAssets& va, int part, int house, int fi, int hf) {
+    static std::map<std::string, ra2engine::VoxelSprite> cache;
+    static const ra2engine::VoxelSprite empty;
+    if (!va.vsrc) return empty;
+    const std::string key = va.combat.image + ":" + std::to_string(part) + ":" +
+                            std::to_string(ra2engine::house_draw_key(house)) + ":" + std::to_string(fi) + ":" +
+                            std::to_string(hf);
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
+    auto it = cache.find(key);
+    if (it != cache.end()) return it->second;
+    const VehicleAssets::VoxelSrc& s = *va.vsrc;
+    const ra2assets::VxlModel& m = part == 0 ? s.hull : part == 1 ? s.tur : s.barl;
+    const ra2assets::HvaModel& h = part == 0 ? s.hull_h : part == 1 ? s.tur_h : s.barl_h;
+    const ra2assets::Palette hp = ra2engine::house_draw_palette(s.pal, house);
+    return cache.emplace(key, ra2engine::rasterize_model(m, h, ra2engine::index_to_yaw(fi, ra2engine::kVehicleFacings),
+                                                         s.vpl, hp, hf)).first->second;
+}
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
     // W2-AN-07/25: a crashing flier keeps its hull until impact; a sinking
     // ship (ShipSinkingWeight) slides under instead of exploding.
     if (u.die_time >= 0.0 && !u.an.crashing && !u.an.sinking) {
-        if (va.explosion && va.explosion->count() > 0) {
+        // W3-B: in the live game the FX layer plays a RANDOM Explosion= entry
+        // (Presentation::unit_fx_tick) [RE: presentation.md §5 FUN_007376c0].
+        if (va.explosion && va.explosion->count() > 0 && !g_fx) {
             int frame = static_cast<int>(u.die_time * 15.0);
             if (frame >= va.explosion->count()) frame = va.explosion->count() - 1;
             if (frame < 0) frame = 0;
@@ -2984,18 +3018,35 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         ra2engine::draw_voxel_sprite(ren, tc, "vxlsh:" + img + ":" + std::to_string(bi), *sh, u.fx, u.fy,
                                      u.level, cam, W, H, 0);   // W2-GA-12 ground shadow
 
+    // W3-B: a multi-frame HVA (Night Hawk / Spy Plane rotors, Kirov
+    // propellers) shows frame WalkedFramesSoFar % frames [RE: voxel draw
+    // FUN_0073a3a0 reads the walk stage +0x538 modulo the HVA frame count].
+    const int hf = va.hva_frames > 1 ? pres_walk_stage(g_draw_unit_idx) % va.hva_frames : 0;
+    auto part_sprite = [&](int part, int fi) -> const ra2engine::VoxelSprite& {
+        if (hf == 0) return vxl_set(va, part, u.house).sprites[fi];
+        return vxl_frame_sprite(va, part, u.house, fi, hf);
+    };
+    const std::string fkey = hf ? ":f" + std::to_string(hf) : std::string();
     ra2engine::draw_voxel_sprite(
-        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi),
-        vxl_set(va, 0, u.house).sprites[bi], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi) + fkey,
+        part_sprite(0, bi), u.fx, u.fy, u.level, cam, W, H, extra_dy);
     if (va.has_turret) {
         const int ti = ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings);
+        // W3-B TurretOffset: forward along the BODY facing (FLH axes, §6).
+        double tfx = u.fx, tfy = u.fy;
+        if (va.turret_offset != 0) {
+            const double yaw = ra2engine::index_to_yaw(bi, ra2engine::kVehicleFacings);
+            const double f = va.turret_offset / 256.0;
+            tfx += f * std::cos(yaw);
+            tfy -= f * std::sin(yaw);
+        }
         ra2engine::draw_voxel_sprite(
-            ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
-            vxl_set(va, 1, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+            ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+            part_sprite(1, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
         if (va.has_barrel)
             ra2engine::draw_voxel_sprite(
-                ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti),
-                vxl_set(va, 2, u.house).sprites[ti], u.fx, u.fy, u.level, cam, W, H, extra_dy);
+                ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+                part_sprite(2, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
@@ -3322,11 +3373,16 @@ int shp_vehicle_frame(const ShpVehicleArt& s, const ra2engine::Unit& u, int coun
         }
     }
     const long t = g_pres_tick;
+    // W3-B [RE: UnitClass SHP draw FUN_0073b520 + FootClass::AI walk stage
+    // FUN_004da440]: walk frames step with the unit's WalkedFramesSoFar --
+    // +1 every WalkRate frames while moving, every IdleRate frames standing
+    // (IdleRate 0: the standing frames).
+    const int stage = pres_walk_stage(g_draw_unit_idx);
     int f;
     if (u.fire_flash > 0 && s.fire > 0)
         f = s.fire * fg + s.start_fire + static_cast<int>((t / 2) % s.fire);
-    else if (u.moving())
-        f = static_cast<int>(t % std::max(1, s.walk)) + s.walk * fg + s.start_walk;
+    else if (u.moving() || pres_idle_rate(u.image) > 0)
+        f = stage % std::max(1, s.walk) + s.walk * fg + s.start_walk;
     else if (s.stand)
         f = s.stand * fg + s.start_stand;
     else
@@ -3397,6 +3453,13 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // byte-identical to the pre-Task-7 lookup.
         const std::string& draw_image = u.disguised ? u.disguised_as_type : u.image;
         if (const VehicleAssets* va = va_for_image(vlist, draw_image)) {
+            g_draw_unit_idx = idx;   // W3-B: walk stage (HVA frame)
+            // W3-B [RE: FUN_0073c1cc, Harvester=yes + unloading -> UnloadingClass]:
+            // a harvester dumping at the refinery draws its UnloadingClass.
+            if (u.is_harvester && u.harv == ra2engine::HarvState::Unloading) {
+                auto ul = g_unloading_class.find(draw_image);
+                if (ul != g_unloading_class.end() && ul->second) va = ul->second;
+            }
             draw_vehicle_unit(ren, tc, u, *va, cam, W, H);
             return;
         }
@@ -3422,6 +3485,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         auto sv = g_shp_vehicles.find(draw_image);
         if (sv != g_shp_vehicles.end() && u.die_time < 0.0) {   // W2-GA-11
             ra2engine::Unit tmp = u;
+            g_draw_unit_idx = idx;   // W3-B walk stage (WalkRate / IdleRate)
             tmp.frame = shp_vehicle_frame(sv->second, u, it->second.count());
             ra2engine::draw_unit(ren, tc, tmp, it->second, ua.pal, cam, W, H);
             return;
@@ -5276,6 +5340,7 @@ public:
         for (const VehicleAssets& v : ur_.vehicles) vlist_.push_back(&v);
         for (const VehicleAssets& v : ur_ai_.vehicles) vlist_.push_back(&v);
         if (transport_.ok) vlist_.push_back(&transport_.va);
+        load_unloading_classes();   // W3-B (HARV -> HORV ...)
         // gF: MCV + real-start force render assets.
         if (cfg.campaign_map.empty()) {
             gf_load_assets(g_gf_spawned);
@@ -6413,6 +6478,25 @@ private:
     std::vector<std::pair<double, double>> prev_audio_state_;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
+    std::deque<VehicleAssets> unload_va_;   // W3-B UnloadingClass voxels (pointer-stable)
+    // W3-B [rules UnloadingClass=, HARV -> HORV, CMIN -> CMON]: the harvester
+    // body shown while it dumps at a refinery.
+    void load_unloading_classes() {
+        const std::vector<const VehicleAssets*> cur = vlist_;
+        for (const VehicleAssets* v : cur) {
+            if (!v || !v->ok) continue;
+            const std::string img = v->combat.image;
+            if (g_unloading_class.count(img)) continue;
+            std::string uc = rules_ini_.get(img, "UnloadingClass", "");
+            const std::size_t sc = uc.find(';');
+            if (sc != std::string::npos) uc = uc.substr(0, sc);
+            while (!uc.empty() && std::isspace(static_cast<unsigned char>(uc.back()))) uc.pop_back();
+            if (uc.empty()) continue;
+            unload_va_.push_back(load_vehicle_assets(dir_, ra2_, ua_.pal, uc));
+            g_unloading_class[img] = unload_va_.back().ok ? &unload_va_.back() : nullptr;
+            std::cerr << "[veh] " << img << " UnloadingClass=" << uc << " ok=" << unload_va_.back().ok << std::endl;
+        }
+    }
     std::vector<int>     bstates_;
     int                  mx_ = kWinW / 2, my_ = kWinH / 2;   // last pointer (events)
     bool                 mouse_present_ = false;   // a real mouse moved over the window
@@ -6457,6 +6541,7 @@ private:
                                                       rules_, art_, rules_ini_);
         campaign_->set_ai_roster(&ur_ai_);   // W2-CA-07: map AI teams
         for (const VehicleAssets* v : campaign_->vehicle_assets()) vlist_.push_back(v);
+        load_unloading_classes();   // W3-B
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
         player_credits_ = campaign_->player_credits();
         queues_.set_credits(player_credits_);
