@@ -2747,6 +2747,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
+#include "w5_combat_arm.inc"  // W5-B: sub-cells / land speed / crush arming of the real World
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
@@ -3288,8 +3289,9 @@ void draw_p5_chevrons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2e
                                                    : (u.veteran_rank > 0 ? 1 : 0);
         if (rank <= 0) continue;
         const int frame = rank >= 2 ? 15 : 14;
-        const int sx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
-        const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15;
+        const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B sub-cell
+        const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
+        const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - u.level * 15)) + cam.y + 15;
         const int ox = u.is_vehicle ? 10 : 5, oy = u.is_vehicle ? 6 : 2;
         draw_shp_centered(ren, tc, g_p5_art->pips, frame, pal, "pips", sx + ox, sy + oy, W, H);
     }
@@ -3642,8 +3644,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (input && g_pips) {   // W2-UI-11: PIPBRD + PIPS on the selected units only
             if (u.selected) {
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
-                const int sx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
-                const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15 - up;
+                const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B
+                const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
+                const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - u.level * 15)) + cam.y + 15 - up;
                 draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red);
             }
         } else if (u.selected || u.hp < u.max_hp)
@@ -5402,6 +5405,7 @@ public:
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
+        w5_arm_combat(world_, rules_);     // W5-B: sub-cells, land speed, crush
 
         // --- vehicle render list (voxel hulls for launched MTNK/FV/etc.) ---
         vlist_ = {&va_, &miners_.harv, &miners_.cmin};
@@ -6202,6 +6206,7 @@ private:
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
+        w5_arm_combat(world_, rules_);     // W5-B: sub-cells, land speed, crush
             wire_abilities(world_, rules_, rules_ini_);
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
             init_map_dressing();   // G-87: the fresh world gets its map dressing again
@@ -16500,6 +16505,7 @@ ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
     ra2engine::World w = launch_skirmish(e.cfg, e.a, e.ua, e.ba, e.rules);
     wire_economy(w, e.ba, e.rules);
     w.enable_projectiles(ra2engine::resolve_projectile_rules(e.rules));
+    w5_arm_combat(w, e.rules);   // W5-B: the real game's movement/combat rules
     {
         std::vector<int> bcost;
         for (const ra2engine::BuildingTypeDef& t : e.ba.roster) bcost.push_back(t.cost);

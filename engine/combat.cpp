@@ -411,8 +411,8 @@ int modify_damage(int damage, const std::vector<int>& verses, int armor_ix, doub
     return r;
 }
 
-int unit_lept_x(const Unit& u) { return ftol_i(u.fx * 256.0); }
-int unit_lept_y(const Unit& u) { return ftol_i(u.fy * 256.0); }
+int unit_lept_x(const Unit& u) { return ftol_i(u.fx * 256.0 + u.sub_x); }   // + W5-B sub-cell offset
+int unit_lept_y(const Unit& u) { return ftol_i(u.fy * 256.0 + u.sub_y); }
 int unit_lept_z(const Unit& u) {
     return u.level * kLevelLept + (unit_airborne(u) ? ftol_i(u.altitude) : 0);
 }

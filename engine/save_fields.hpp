@@ -26,6 +26,8 @@ struct SaveAccess {
         save::io(ar, o.w_);
         save::io(ar, o.h_);
         save::io(ar, o.owner_);
+        save::io(ar, o.spots_);   // v16: W5-B infantry sub-cell spots
+        save::io(ar, o.inf_);
     }
     template <class Ar> static void ore_field(Ar& ar, OreField& f) {
         save::io(ar, f.w_);
@@ -465,6 +467,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
+    io(ar, v.affects_allies);   // v16: W5-B
     io(ar, v.proj);
     io(ar, v.aa);
     io(ar, v.ag);
@@ -512,6 +515,7 @@ template <class Ar> void fields(Ar& ar, VeterancyRules& v) {
 template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.damage); io(ar, v.rof); io(ar, v.range); io(ar, v.verses);
     io(ar, v.cell_spread); io(ar, v.percent_at_max);
+    io(ar, v.affects_allies);   // v16: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
@@ -651,6 +655,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
+    io(ar, v.affects_allies);   // v16: W5-B
     io(ar, v.proj);
     io(ar, v.rot);
     io(ar, v.turret);
@@ -783,6 +788,10 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w_verses);
     io(ar, v.w_cell_spread);
     io(ar, v.w_percent_at_max);
+    io(ar, v.w_affects_allies);   // v16: W5-B
+    io(ar, v.spot);
+    io(ar, v.sub_x);
+    io(ar, v.sub_y);
     io(ar, v.w_proj);
     io(ar, v.target);
     io(ar, v.target_building);

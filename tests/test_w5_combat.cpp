@@ -121,3 +121,75 @@ TEST_CASE("w5 damage_area: AffectsAllies=no spares own and allied units (Receive
     CHECK(w.units()[1].hp == 900);
     CHECK(w.units()[2].hp == 1000);
 }
+
+// ---- R-061 infantry sub-cells ------------------------------------------------
+TEST_CASE("w5 occupancy: three infantry share a cell, a vehicle needs it empty (FUN_00481090)") {
+    Occupancy occ(8, 8);
+    occ.enable_subcells();
+    for (int u = 0; u < 4; ++u) occ.mark_infantry(u, true);
+    occ.mark_infantry(9, false);   // a vehicle
+    CHECK(occ.can_enter(3, 3, 0));
+    occ.set_spot(3, 3, 0, occ.free_spot(3, 3, 2));
+    occ.set_spot(3, 3, 1, occ.free_spot(3, 3, 2));   // 2 taken -> row 2: 4
+    occ.set_spot(3, 3, 2, occ.free_spot(3, 3, 2));   // -> 3
+    CHECK(occ.spot_of(3, 3, 0) == 2);
+    CHECK(occ.spot_of(3, 3, 1) == 4);
+    CHECK(occ.spot_of(3, 3, 2) == 3);
+    CHECK(occ.infantry_count(3, 3) == 3);
+    CHECK_FALSE(occ.can_enter(3, 3, 3));   // full
+    CHECK_FALSE(occ.can_enter(3, 3, 9));   // a vehicle may not drive into infantry
+    occ.set(5, 5, 9);
+    CHECK_FALSE(occ.can_enter(5, 5, 0));   // infantry may not enter a vehicle's cell
+    CHECK(occ.free_spot(5, 5, 2) == -1);
+    occ.release(3, 3, 1);
+    CHECK(occ.can_enter(3, 3, 3));
+    CHECK(occ.free_spot(3, 3, 3) == 4);    // left taken -> row 3: 4 first
+    // spot offsets from the cell centre (DAT_0089D960 minus 128,128).
+    int dx, dy;
+    spot_offset(2, dx, dy);
+    CHECK((dx == 64 && dy == -64));
+    spot_offset(3, dx, dy);
+    CHECK((dx == -64 && dy == 64));
+    spot_offset(4, dx, dy);
+    CHECK((dx == 64 && dy == 64));
+    CHECK(spot_quadrant(0, 0) == 0);
+    CHECK(spot_quadrant(90, -90) == 2);
+    CHECK(spot_quadrant(-90, 90) == 3);
+    CHECK(spot_quadrant(90, 90) == 4);
+    CHECK(spot_quadrant(-90, -90) == 0);
+}
+
+namespace {
+const AnimTable kNoAnims{};
+Unit mover(int x, int y, Cellxy goal, const std::vector<uint8_t>& p, int w, int h, Occupancy& occ,
+           int idx) {
+    Unit u;
+    u.cell_x = x;
+    u.cell_y = y;
+    u.fx = x;
+    u.fy = y;
+    u.path = find_path(p, w, h, {x, y}, goal);
+    u.path_idx = u.path.size() > 1 ? 1 : 0;
+    occ.mark_infantry(idx, true);
+    occ.set(x, y, idx);
+    return u;
+}
+}  // namespace
+
+TEST_CASE("w5 step_units: three infantry walk into ONE cell; a fourth is held out") {
+    const int w = 8, h = 3;
+    std::vector<uint8_t> p(static_cast<std::size_t>(w) * h, 1);
+    Occupancy occ(w, h);
+    occ.enable_subcells();
+    std::vector<Unit> us;
+    for (int k = 0; k < 4; ++k) us.push_back(mover(0, k % 3, {6, 1}, p, w, h, occ, k));
+    us[3].cell_x = us[3].cell_y = 0;   // (unit 3 shares unit 0's start cell)
+    for (int f = 0; f < 15 * 12; ++f) step_units(us, p, p, w, h, occ, 1.0 / 15.0, 4.0, kNoAnims);
+    CHECK(occ.infantry_count(6, 1) == 3);
+    int in_goal = 0;
+    for (int k = 0; k < 4; ++k) in_goal += (us[k].cell_x == 6 && us[k].cell_y == 1);
+    CHECK(in_goal == 3);
+    // The three hold three distinct spots.
+    CHECK(occ.spot_unit(6, 1, 2) != occ.spot_unit(6, 1, 3));
+    CHECK(occ.spot_unit(6, 1, 3) != occ.spot_unit(6, 1, 4));
+}

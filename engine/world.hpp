@@ -117,6 +117,14 @@ struct Unit {
     double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
     double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
     bool w_affects_allies = true;  // W5-B R-060: warhead AffectsAllies= (default yes)
+    // W5-B R-061 infantry sub-cells [RE: FindInfantrySubposition FUN_00481090,
+    // spot coords DAT_0089D960]: the spot (2 right, 3 left, 4 down; 0 centre =
+    // vehicles / sub-cells off) the unit holds in its cell, and its lepton
+    // offset from the cell centre -- interpolated between the old and the
+    // reserved spot while walking. Derived from the Occupancy every step
+    // (World::update_sub_offsets); render / damage use fx*256 + sub_x.
+    int spot = 0;
+    double sub_x = 0.0, sub_y = 0.0;
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // (default kind=Instant = the pre-P2 instant-hit path). Read ONLY when the
     // World's projectiles_enabled_ firewall is open; NOT read by world_hash.
@@ -642,6 +650,16 @@ public:
     // W5-B: terrain height level of a cell (0 off-map) -- the Z of 3-D
     // distances (level * 104 leptons, Unsorted::LevelHeight).
     int cell_level(int x, int y) const;
+    // W5-B R-061: up to three infantry per cell (sub-cell spots). Called by
+    // the real game (GameScene, w5_arm_combat); off = one unit per cell.
+    void enable_subcells();
+    bool subcells_enabled() const { return occ_.subcells(); }
+    // Re-register unit idx's occupancy as infantry (spot) or whole-cell.
+    void subcell_register(int idx);
+    // Derive Unit::spot / sub_x / sub_y from the occupancy and the walk.
+    void update_sub_offsets();
+    // Put infantry idx into spot `spot` (2..4) of its current cell.
+    void place_in_spot(int idx, int spot);
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }

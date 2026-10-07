@@ -940,10 +940,19 @@ private:
         return false;
     }
     int place_unit(const std::string& type, int eh, int x, int y, int health, const std::string& tag,
-                   const std::string& mission, bool far = false, int goal_x = -1, int goal_y = -1) {
+                   const std::string& mission, bool far = false, int goal_x = -1, int goal_y = -1,
+                   int subcell = -1) {
         const camp::UnitType* ut = types_.unit(type);
         if (!ut) return -1;
         int cx = 0, cy = 0;
+        // W5-B R-061 [RE: map [Infantry] SubCell indexes the spot table
+        // DAT_0089D960 directly, FUN_0051F810]: a map infantry goes into its
+        // own spot of its own cell -- up to three share a cell.
+        const bool inf = !ut->combat.is_vehicle && !ut->combat.is_aircraft && !ut->combat.is_naval;
+        int spot = -1;
+        if (inf && subcell >= 0 && w_.subcells_enabled() && w_.walkable(x, y) &&
+            w_.building_at_cell(x, y) < 0)
+            spot = w_.occupancy().free_spot(x, y, subcell);
         // gF G-73: a ship is placed on the nearest free WATER cell (naval.md
         // §1 water grid); a ground unit whose waypoint lies at sea goes to the
         // nearest free shore cell within 12 [RE-FALLBACK §9.3: the original
@@ -971,12 +980,16 @@ private:
             if (!free_water_near(x, y, cx, cy, 12) &&
                 !(far && far_cell(x, y, /*water=*/true, -1, -1, cx, cy)))
                 return -1;
+        } else if (spot >= 0) {
+            cx = x;
+            cy = y;
         } else if (!free_cell_near(x, y, cx, cy) && !free_cell_near(x, y, cx, cy, 12) &&
                    !(far && far_cell(x, y, /*water=*/false, goal_x, goal_y, cx, cy))) {
             return -1;
         }
         w_.add_combat_unit(cx, cy, eh, ut->combat);
         const int idx = (int)w_.units().size() - 1;
+        if (spot >= 0) w_.place_in_spot(idx, spot);   // W5-B R-061
         ra2engine::Unit& u = w_.units()[(std::size_t)idx];
         if (health > 0) u.hp = ra2engine::campaign_strength(u.max_hp, health, false);
         if (ua_anims_has(u.image)) {}
@@ -1046,7 +1059,8 @@ private:
                 else ++skipped_;
             } else {
                 if (!w_.walkable(o.x, o.y) && !types_.unit(o.type)) { ++skipped_; continue; }
-                if (place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission) >= 0) ++placed_u_;
+                if (place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission, false, -1, -1,
+                               o.kind == 2 ? o.subcell : -1) >= 0) ++placed_u_;   // W5-B SubCell
                 else ++skipped_;
             }
         }

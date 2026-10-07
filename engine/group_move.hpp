@@ -26,4 +26,17 @@ std::vector<Cellxy> assign_formation(Cellxy goal, const std::vector<Cellxy>& mov
                                      const std::vector<uint8_t>& passable, int w, int h,
                                      const Occupancy& occ);
 
+// W5-B R-061: the infantry form of assign_formation under sub-cells -- a
+// destination cell takes as many movers as it has free infantry spots (three
+// in an empty cell), so a squad packs three to a cell around the goal the way
+// the original's FindInfantrySubposition fills a cell before NearByLocation
+// spills to the next. `mover_ids` (same order as mover_cells) are released
+// from a scratch copy of `occ` first; `blocked_cells` (e.g. the vehicles' own
+// formation targets) are treated as taken. Returns mover_cells.size() targets.
+std::vector<Cellxy> assign_infantry_formation(Cellxy goal, const std::vector<Cellxy>& mover_cells,
+                                              const std::vector<int>& mover_ids,
+                                              const std::vector<uint8_t>& passable, int w, int h,
+                                              const Occupancy& occ,
+                                              const std::vector<Cellxy>& blocked_cells);
+
 }  // namespace ra2engine

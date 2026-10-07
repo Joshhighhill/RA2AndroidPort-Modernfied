@@ -566,6 +566,74 @@ int World::cell_level(int x, int y) const {
     return mc ? mc->level : 0;
 }
 
+void World::enable_subcells() {
+    if (occ_.subcells()) return;
+    occ_.enable_subcells();
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) subcell_register(i);
+    update_sub_offsets();
+}
+
+void World::subcell_register(int idx) {
+    if (!occ_.subcells() || idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    const Unit& u = units_[static_cast<std::size_t>(idx)];
+    const bool inf = !u.is_vehicle && !u.is_aircraft && !u.is_naval;
+    const bool held = occ_.at(u.cell_x, u.cell_y) == idx || occ_.spot_of(u.cell_x, u.cell_y, idx) >= 0;
+    if (held) occ_.release(u.cell_x, u.cell_y, idx);
+    occ_.mark_infantry(idx, inf);
+    if (held) occ_.set(u.cell_x, u.cell_y, idx);
+}
+
+void World::place_in_spot(int idx, int spot) {
+    if (!occ_.subcells() || idx < 0 || idx >= static_cast<int>(units_.size()) || !occ_.is_infantry(idx))
+        return;
+    const Unit& u = units_[static_cast<std::size_t>(idx)];
+    if (occ_.spot_unit(u.cell_x, u.cell_y, spot) != Occupancy::kEmpty &&
+        occ_.spot_unit(u.cell_x, u.cell_y, spot) != idx)
+        return;
+    occ_.set_spot(u.cell_x, u.cell_y, idx, spot);
+    update_sub_offsets();
+}
+
+void World::update_sub_offsets() {
+    if (!occ_.subcells()) return;
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        Unit& u = units_[static_cast<std::size_t>(i)];
+        if (!occ_.is_infantry(i)) {
+            u.spot = 0;
+            u.sub_x = u.sub_y = 0.0;
+            continue;
+        }
+        int s = occ_.spot_of(u.cell_x, u.cell_y, i);
+        if (s < 0) s = 0;
+        u.spot = s;
+        int ax, ay;
+        spot_offset(s, ax, ay);
+        double ox = ax, oy = ay;
+        // Mid-segment toward a reserved spot of the next path cell: blend.
+        if (u.moving() && (u.fx != u.cell_x || u.fy != u.cell_y)) {
+            std::size_t pi = u.path_idx;
+            while (pi < u.path.size() && u.path[pi].x == u.cell_x && u.path[pi].y == u.cell_y) ++pi;
+            if (pi < u.path.size()) {
+                const Cellxy t = u.path[pi];
+                const int ns = occ_.spot_of(t.x, t.y, i);
+                if (ns >= 0) {
+                    const double seg = std::hypot(t.x - u.cell_x, t.y - u.cell_y);
+                    const double rem = std::hypot(t.x - u.fx, t.y - u.fy);
+                    double f = seg > 0.0 ? 1.0 - rem / seg : 1.0;
+                    if (f < 0.0) f = 0.0;
+                    if (f > 1.0) f = 1.0;
+                    int bx, by;
+                    spot_offset(ns, bx, by);
+                    ox = ax + (bx - ax) * f;
+                    oy = ay + (by - ay) * f;
+                }
+            }
+        }
+        u.sub_x = ox;
+        u.sub_y = oy;
+    }
+}
+
 bool World::walkable(int x, int y) const {
     if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
     return passable_[static_cast<size_t>(y) * grid_w_ + x] != 0;
@@ -614,6 +682,7 @@ Unit& World::add_unit(int cell_x, int cell_y, const std::string& image, int fram
     if (const ra2assets::MapCell* mc = map_->at(cell_x, cell_y)) u.level = mc->level;
     units_.push_back(std::move(u));
     const int idx = static_cast<int>(units_.size()) - 1;
+    occ_.mark_infantry(idx, true);   // W5-B: re-registered by add_combat_unit once typed
     occ_.set(cell_x, cell_y, idx);
     return units_.back();
 }
@@ -746,6 +815,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // very first shot is already intercepted. A strict no-op unless
     // abilities_any_ (no pre-P4 gate registers a profile).
     if (abilities_any_) ability_bind_unit(u);
+    subcell_register(static_cast<int>(&u - units_.data()));   // W5-B R-061
     return u;
 }
 
@@ -997,6 +1067,27 @@ void World::order_move_selected(int goal_x, int goal_y) {
             else if (dom == 3) {
                 air_grid.assign(static_cast<std::size_t>(grid_w_) * grid_h_, 1);
                 g = &air_grid;
+            }
+            if (dom == 0 && occ_.subcells() && !g->empty()) {
+                // W5-B R-061: vehicles take whole cells first; the infantry then
+                // pack three to a cell around the goal (sub-cell spots).
+                std::vector<std::size_t> vk, ik;
+                std::vector<Cellxy> vcur, icur;
+                std::vector<int> iid;
+                for (std::size_t j = 0; j < ks.size(); ++j) {
+                    const int ui = sel[ks[j]];
+                    if (occ_.is_infantry(ui)) { ik.push_back(ks[j]); icur.push_back(dcur[j]); iid.push_back(ui); }
+                    else { vk.push_back(ks[j]); vcur.push_back(dcur[j]); }
+                }
+                std::vector<Cellxy> vt;
+                if (!vk.empty()) vt = assign_formation({goal_x, goal_y}, vcur, *g, grid_w_, grid_h_, occ_);
+                for (std::size_t j = 0; j < vk.size(); ++j) targets[vk[j]] = vt[j];
+                if (!ik.empty()) {
+                    const std::vector<Cellxy> it =
+                        assign_infantry_formation({goal_x, goal_y}, icur, iid, *g, grid_w_, grid_h_, occ_, vt);
+                    for (std::size_t j = 0; j < ik.size(); ++j) targets[ik[j]] = it[j];
+                }
+                continue;
             }
             const std::vector<Cellxy> t =
                 (g->empty()) ? dcur : assign_formation({goal_x, goal_y}, dcur, *g, grid_w_, grid_h_, occ_);
@@ -4480,6 +4571,7 @@ void World::step(double dt) {
     // is the only cost every pre-P4 demo pays -- none registers a profile.
     step_abilities(dt);
     step_victory();
+    update_sub_offsets();   // W5-B R-061: derive the infantry sub-cell offsets
 }
 
 std::vector<int> unit_draw_order(const std::vector<Unit>& units) {
@@ -4507,8 +4599,9 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
     std::vector<std::uint8_t> out = passable;
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
-            const int o = occ.at(x, y);
-            if (o != Occupancy::kEmpty && o != self)
+            // W5-B R-061: "can this unit enter" -- an infantry may share a
+            // cell that still has a free sub-cell spot (whole-cell otherwise).
+            if (!occ.can_enter(x, y, self))
                 out[static_cast<std::size_t>(y) * w + x] = 0;
         }
     if (start_x >= 0 && start_y >= 0 && start_x < w && start_y < h)
@@ -4594,9 +4687,15 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             // the Drive locomotor not unwound -- RE-W6 open]: a Crusher vehicle
             // driving into a cell held by enemy Crushable infantry squashes it
             // (the infantry dies, the cell frees) instead of waiting for it.
+            // W5-B R-061: with sub-cells, every crushable enemy infantry in the
+            // cell's three spots is squashed.
             if (u.crusher && u.is_vehicle) {
-                const int o = occ.at(tgt.x, tgt.y);
-                if (o >= 0 && o != self && o < static_cast<int>(units.size())) {
+                int victims[4] = {occ.at(tgt.x, tgt.y), -1, -1, -1};
+                if (occ.subcells())
+                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
+                        victims[s - 1] = occ.spot_unit(tgt.x, tgt.y, s);
+                for (int o : victims) {
+                    if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
                     Unit& v = units[o];
                     if (v.crushable && !v.is_vehicle && v.house != u.house && v.alive &&
                         v.die_time < 0.0 && v.cargo_of < 0) {
@@ -4612,7 +4711,22 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 }
             }
             // Reserve the next cell before stepping into it.
-            if (occ.at(tgt.x, tgt.y) != self) {
+            if (occ.is_infantry(self)) {
+                // W5-B R-061 [RE: FindInfantrySubposition FUN_00481090]: an
+                // infantry reserves a SPOT in the next cell -- the quadrant of
+                // its current in-cell position (it keeps its lane), else the
+                // spot preference row; no free spot (or a vehicle there) blocks.
+                if (occ.spot_of(tgt.x, tgt.y, self) < 0) {
+                    int cur = occ.spot_of(u.cell_x, u.cell_y, self);
+                    if (cur < 0) cur = 0;
+                    const int sp = occ.free_spot(tgt.x, tgt.y, cur, self & 3);
+                    if (sp < 0) {
+                        blocked = true;
+                        break;
+                    }
+                    occ.set_spot(tgt.x, tgt.y, self, sp);
+                }
+            } else if (occ.at(tgt.x, tgt.y) != self || !occ.can_enter(tgt.x, tgt.y, self)) {
                 if (occ.can_enter(tgt.x, tgt.y, self)) {
                     occ.set(tgt.x, tgt.y, self);  // reserve (now owns current + next)
                 } else {
