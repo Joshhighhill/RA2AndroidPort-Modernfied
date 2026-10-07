@@ -337,6 +337,8 @@ private:
 // ============================================================================
 // 0xB5 / 0xBBB / 0xB8 / 0xB6: the in-game options pages.
 // ============================================================================
+#include "keyboard_page.inc"   // W5-E: dialog 0xA3 (R-140)
+
 class InGameMenu {
 public:
     enum Choice { None, Resume, Load, Save, Delete, Abort, Restart, Settings, Committed, MusicPlay, MusicStop };
@@ -360,7 +362,8 @@ public:
         drag_ = -1;
         set_ = g_user_settings ? *g_user_settings : set_;
     }
-    void close() { open_ = false; page_ = P_OPTIONS; drag_ = -1; }
+    void close() { open_ = false; page_ = P_OPTIONS; drag_ = -1; kb_.open_ = false; }
+    KeyboardPage& keyboard() { return kb_; }
     Page page() const { return page_; }
     const ra2engine::Settings& settings() const { return set_; }
     int music_track() const { return tracks_.sel; }
@@ -368,6 +371,10 @@ public:
     Choice handle(const ra2engine::InputEvent& ev) {
         using IE = ra2engine::InputEvent;
         if (!open_) return None;
+        if (kb_.open_) {   // W5-E Keyboard page over Game Controls
+            kb_.handle(ev);
+            return None;
+        }
         if (ev.kind == IE::PointerMove || ev.kind == IE::PointerDown || ev.kind == IE::PointerUp) {
             mx_ = ev.x;
             my_ = ev.y;
@@ -425,6 +432,7 @@ public:
 
     void render(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         if (!open_) return;
+        if (kb_.open_) { kb_.render(ren, tc); return; }
         const MenuArt& art = shell_art();
         const ShellXform xf = ui_xform();
         const ShellPainter p{ren, tc, art, xf};
@@ -498,7 +506,8 @@ public:
     // "menu:<UPPER LABEL>" names (menu:LOAD GAME, menu:ABORT MISSION, ...).
     void play_probe(ra2play::Probe& p) const {
         p.set("menu_open", open_ ? 1 : 0);
-        if (!open_) return;
+        kb_.play_probe(p);
+        if (!open_ || kb_.open_) return;
         static const char* kPages[5] = {"options", "controls", "sound", "abort", "diplomacy"};
         p.set("diplomacy_rows", static_cast<int>(dip_.size()));
         p.set_s("menu_page", kPages[page_]);
@@ -576,7 +585,7 @@ private:
         switch (page_) {
             case P_CONTROLS:
                 return {b(0, gf_csf("GUI:Sound", "Sound"), true, A_SOUND),
-                        b(1, gf_csf("GUI:Keyboard", "Keyboard"), false, A_KEYBOARD),
+                        b(1, gf_csf("GUI:Keyboard", "Keyboard"), true, A_KEYBOARD),
                         b(5, gf_csf("GUI:Back", "Back"), true, A_BACK)};
             case P_SOUND:
                 return {b(5, gf_csf("GUI:Back", "Back"), true, A_BACK)};
@@ -623,6 +632,7 @@ private:
             case A_ABORTPAGE: page_ = P_ABORT; return None;
             case A_RESUME: close(); return Resume;
             case A_SOUND: page_ = P_SOUND; return None;
+            case A_KEYBOARD: kb_.open(); return None;
             case A_BACK: page_ = (page_ == P_SOUND) ? P_CONTROLS : P_OPTIONS; return Committed;
             case A_ABORT: close(); return Abort;
             case A_RESTART: close(); return Restart;
@@ -719,4 +729,5 @@ private:
     ShellList tracks_{{157, 157, 262, 160}, {}, {}, {}, 0, -1, 9, 17};
     int mx_ = -1, my_ = -1, drag_ = -1;
     bool down_ = false;
+    KeyboardPage kb_;   // W5-E
 };

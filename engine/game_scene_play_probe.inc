@@ -17,6 +17,9 @@
         // why(<trigger>), eva(NAME) started, evareq(NAME) requested.
         for (const char* f : {"snd", "why", "eva", "evareq"}) p.zero_families.insert(f);
         for (const auto& kv : g_pres_audio_counts) p.set(kv.first, static_cast<double>(kv.second));
+        p.set("follow_unit", follow_unit_);           // W5-E Follow hotkey
+        p.set_s("screencap", last_screencap_);        // W5-E ScreenCapture hotkey
+        p.set("hotkeys_version", hotkeys_ver_);
         p.set("credits", player_credits_);
         p.set("credits_shown", credits_shown_);
         p.set_s("tooltip", tooltip_now());   // W2-UI-07

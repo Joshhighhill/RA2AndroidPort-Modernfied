@@ -4781,6 +4781,46 @@ bool save_user_settings(const ra2engine::Settings& s) {
     return static_cast<bool>(f);
 }
 
+// W5-E: the writable pref dir (with a trailing separator; "" if none).
+std::string pref_dir_path() {
+    const std::string s = settings_file_path();
+    return s.size() >= 7 ? s.substr(0, s.size() - 7) : std::string();   // strip "RA2.INI"
+}
+
+// W5-E Keyboard page (0xA3) [RE: options.md §6 -- bindings persist in
+// Keyboard.ini [Hotkey] <Command>=<code>]: the shipped defaults, then the
+// install's Keyboard.ini (KeyboardMD.ini when absent), then the player's own
+// <pref dir>/Keyboard.ini written by the page (the install is read-only).
+ra2engine::HotkeyTable load_hotkey_table() {
+    ra2engine::HotkeyTable t = ra2engine::HotkeyTable::defaults();
+    for (const char* f : {"Keyboard.ini", "KeyboardMD.ini"}) {
+        try {
+            const std::vector<uint8_t> raw = ra2assets::read_file(env_install_dir() + f);
+            t.load_ini_text(std::string(raw.begin(), raw.end()));
+            break;
+        } catch (const std::exception&) { /* next / defaults */ }
+    }
+    const std::string own = pref_dir_path();
+    if (!own.empty()) {
+        std::ifstream in(own + "Keyboard.ini", std::ios::binary);
+        if (in) {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            t.load_ini_text(ss.str());
+        }
+    }
+    return t;
+}
+bool save_hotkey_table(const ra2engine::HotkeyTable& t) {
+    const std::string own = pref_dir_path();
+    if (own.empty()) return false;
+    std::ofstream f(own + "Keyboard.ini", std::ios::binary | std::ios::trunc);
+    if (!f) return false;
+    const std::string text = t.to_ini_text();
+    f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    return static_cast<bool>(f);
+}
+
 // options.md §5: SoundVolume -> SFX bus, VoiceVolume -> speech/EVA bus,
 // ScoreVolume -> music bus; linear gain.
 void apply_audio_settings(ra2engine::Mixer& m, const ra2engine::Settings& s) {
@@ -5095,7 +5135,8 @@ enum ShellPage {
 enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */,
                    ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */,
                    ACT_CAMPAIGN_LOAD /* W2-UI-18: 0x94 Load */,
-                   ACT_CREDITS /* W2-UI-26: View Credits */ };
+                   ACT_CREDITS /* W2-UI-26: View Credits */,
+                   ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */ };
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -5835,6 +5876,7 @@ public:
             credits_shown_ = static_cast<double>(shown + step);
             pres_.credit_tick(step > 0);
         }
+        follow_tick();   // W5-E Follow hotkey
         // Consume input actions ONCE per frame.
         const ra2engine::InputActions act = input_.take_actions();
         // [RE: repair-sell.md §C1/§D5] arming a mode requires >= 1 owned
@@ -6096,6 +6138,7 @@ public:
             SDL_ShowCursor(SDL_ENABLE);
             os_cursor_hidden_ = false;
         }
+        screencap_tick(ren);   // W5-E ScreenCapture hotkey
     }
 
 #include "gf_scene.inc"
@@ -7305,6 +7348,8 @@ public:
     void   play_probe(ra2play::Probe& p) override {
         p.scene = std::string("shell:") + header();
         p.set_s("page", header());
+        kb_.play_probe(p);   // W5-E
+        if (kb_.open_) return;
         for (const ShellButton& b : layout()) {
             const ra2engine::SbRect r = to_device(b.rect);
             p.targets["button:" + b.label] = ra2play::Rect{r.x, r.y, r.w, r.h};
@@ -7375,7 +7420,7 @@ private:
                 // 0xD7) are greyed: no remappable command table / no netcode
                 // yet (P8 deferrals). "Main Menu" (0x686) commits + saves.
                 return {
-                    btn(0, "Keyboard",  false, ACT_GOTO, PAGE_MAIN),
+                    btn(0, "Keyboard",  true,  ACT_KEYBOARD, PAGE_OPTIONS),
                     btn(1, "Network",   false, ACT_GOTO, PAGE_MAIN),
                     btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
@@ -7461,6 +7506,7 @@ private:
     int          mx_ = -1, my_ = -1;   // last pointer position (for hover state)
     bool         down_ = false;        // left button currently held (pressed state)
     SaveLoadDialog sld_;               // P7: "Load Saved Game" (Load mode)
+    KeyboardPage kb_;                  // W5-E: Options -> Keyboard (dialog 0xA3)
     GfConfirm gf_confirm_;             // gF G-14: Exit Game confirm (dialog 0x120)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
@@ -7649,6 +7695,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
         shell_status_line(sp, status_text());
     }
     sld_.render(ren, tc, SDL_GetTicks());   // P7 / W2-UI-16: the Load page over the shell
+    kb_.render(ren, tc);                // W5-E: the Keyboard page 0xA3 over Options
     gf_confirm_.render(ren, tc);        // gF G-14 / W2-UI-17: Exit confirm popup 0x120
 }
 
@@ -7744,6 +7791,11 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
         if (gf_confirm_.handle(ev) == 0) quit_ = true;
         return;
     }
+    // W5-E: the Keyboard page (when open) owns every event.
+    if (kb_.open_) {
+        kb_.handle(ev);
+        return;
+    }
     // P7: the Load dialog (when open) owns every event.
     if (sld_.is_open()) {
         if (sld_.handle(ev) == SaveLoadDialog::DoLoad) {
@@ -7822,6 +7874,7 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             case ACT_CAMPAIGN_ALLIED: next_ = make_campaign_start_scene(no_audio_, "ALL1", "GDI"); return;
             case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
             case ACT_CREDITS: next_ = new CreditsScene(rules_, no_audio_, art_); return;   // W2-UI-26
+            case ACT_KEYBOARD: kb_.open(); return;   // W5-E [RE: options.md §1/§6 0x5CE -> 0xA3]
             case ACT_CAMPAIGN_LOAD:   // W2-UI-18: 0x94 Load = the selected campaign
                 if (camp_.selected() >= 0 && camp_.selected() < CampaignPageState::kEntries) {
                     if (g_user_settings) save_user_settings(*g_user_settings);   // the slider's Difficulty
