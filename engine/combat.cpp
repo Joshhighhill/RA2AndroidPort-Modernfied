@@ -964,7 +964,12 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     for (int bj = 0; bj < static_cast<int>(buildings.size()); ++bj) {
                         const Building& b = buildings[bj];
                         if (!b.alive || b.state == Building::State::Dead) continue;
-                        if (b.type < 0 || b.type >= static_cast<int>(bt.size()) || !bt[b.type].armed)
+                        // W5-B R-064 [RE: Greatest_Threat FUN_006F8320 ->
+                        // Evaluate_Object FUN_006F71D0 @0x6F7ADB]: a HUMAN
+                        // house's unit skips a building with no weapon; a
+                        // computer house's unit may pick any enemy building.
+                        if (b.type < 0 || b.type >= static_cast<int>(bt.size()) ||
+                            (!bt[b.type].armed && !world.house_is_computer(u.house)))
                             continue;
                         if (!world.is_enemy(u.house, b.house)) continue;
                         if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
