@@ -255,7 +255,15 @@ void World::an_step_spawners(double dt) {
         const AnType& t = o.an.t;
         // SpawnRegenRate: a lost spawn is rebuilt; SpawnReloadRate: a returned
         // one is rearmed [rules [CARRIER]/[DRED]/[DEST]].
-        if (o.an.spawn_ready + o.an.spawn_out + o.an.spawn_pending < t.spawns_number) {
+        // W4 [PROBABLE: SpawnManagerClass, MissileSpawn nodes -- "missile
+        // spawn don't come back" (SpawnReloadRate=0)]: a launched rocket's
+        // node is spent at once, so SpawnRegenRate runs from the launch, not
+        // from its detonation (ALL01: each Dreadnought rebuilds a missile
+        // every 80 frames while the last ones are still in the air).
+        const auto st = an_.types.find(t.spawns);
+        const bool missile_spawns = st != an_.types.end() && st->second.an.missile;
+        const int out_held = missile_spawns ? 0 : o.an.spawn_out;
+        if (o.an.spawn_ready + out_held + o.an.spawn_pending < t.spawns_number) {
             if (++o.an.spawn_regen_timer >= std::max(1, t.spawn_regen_frames)) {
                 o.an.spawn_regen_timer = 0;
                 ++o.an.spawn_ready;
