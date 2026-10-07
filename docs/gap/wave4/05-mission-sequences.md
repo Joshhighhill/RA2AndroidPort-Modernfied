@@ -8,6 +8,58 @@ The question here is not "can the trigger chain reach Win" (wave 2 proved that w
 out the way the map's own triggers, teams and scripts intend": intro sequences, enemy waves, AI-vs-AI set pieces,
 reinforcement arrivals, objectives and end sequences.
 
+## W4-FIX-SEQ status (wave-4 fix agent 4, branch `w4fix-seq`)
+
+The same no-input runs (`scratch\play\sq-*.play`, 400 campaign seconds) were re-run on the fixed tree; real-order play
+scripts were added where the player must act (`scripts/play/m-sov02-real`, `m-sov02-mcv`, `m-all04-real`,
+`m-sov09-real`).
+
+| ID | Status | What changed / evidence |
+|---|---|---|
+| W4-SQ-01 transport cargo | **Fixed.** | [RE: FUN_0065d770] Full=yes reinforcements create the non-transport members INSIDE the last-created transport (no capacity test; transport = Passengers>0, a UnitClass, or an AircraftClass when the TaskForce has an aircraft transport type FUN_006EE9D0; Naval types only when the TaskForce has one, TechnoType +0xCCE). [RE: FUN_006EE670] script 8 Unload orders every member transport to unload and completes only when all are empty; its arg mode then decides who stays in the team: **0 everyone, 1 the transports (unloaded units leave), 2 the unloaded units (transports leave), 3 nobody**; TransportsReturnOnUnload sends the transports home. Script 14 Load (FUN_006EC760) and 43 WaitLoaded (@0x6E9192) implemented. Carried members are skipped by team coordination (IsOnMap). SOV02: the player keeps 20-22 units (was 0 at 180 s), only the empty SAPCs change house; the MCV chain works (`m-sov02-mcv`: SMCV unloaded with mode 0, `MCV ON the Beach` hands it over). ALL05: the 3 spies reach the Spies house at 13 s and stay (Reinforcement house losses 1, was 49 -- no loop; Tanya no longer shoots the heli, see the alliance row). ALL04: the LCRFs carry the AMCV / Grizzlies / GIs; `m-all04-real` drives the craft to the beach and unloads it with the Deploy key. |
+| W4-SQ-06 paradrops | **Fixed.** | [RE: FUN_0065d320 Droppod branch] a PDPLANE (name string @0x838700) enters flying at the TransportWaypoint (UseTransportOrigin) or on the house's Edge= (FUN_004AA350; RE-FALLBACK: the edge cell straight up/right/down/left of the drop point), carries the members and drops them one per frame on the free cells around the waypoint; they fall under the parachute at ParachuteMaxFallRate (5 leptons/frame) drawn with the art Paradrop sequence; the team script starts once all are down. ALL09 `Seals have Landed` at 9 s (was 119 s), SOV10 `Landed` at 30 s (was 120 s), ALL08's start force falls, SOV09's Yuris and drop groups fall. Plane exits are not counted as losses. |
+| W4-SQ-04 VeteranLevel | **Fixed.** | [RE: FUN_0065d770 -> FUN_0074EE80/EEB0/EED0] 2 = veteran, 3 = elite on every created member (0 = -0.25 "green", no stat effect). ALL09/ALL12 SEALs `urank=2`. |
+| W4-SQ-02 garrison script arg | **Fixed.** | [RE: FUN_006EE130] 46/47/58: type = arg & 0xFFFF (BuildingTypes position), selector = arg >> 16 (2 nearest, 3 farthest; 0/1 threat RE-FALLBACK by HP); candidates owned by a non-allied or MultiplayPassive house. An Occupier "attacking" an occupiable building it may enter goes inside (CanBeOccupiedBy FUN_00457CE0 now accepts MultiplayPassive owners). ALL04: 85 Conscripts in 9 buildings; ALL03: 28 in 4; SOV08: 24. Note: the all-infantry reinforcement branch of FUN_0065d320 is a door exit next to an adjacent building (KickOutUnit), not a garrison -- the clone's placement around the waypoint stands in for it. |
+| W4-SQ-05 Sleep/Harmless | **Fixed.** | Placed Mission=Sleep/Harmless objects never acquire or retaliate until 81 WakeupSelf / 82 WakeupAllSleepers / 83 WakeupAllHarmless. ALL12's guards and prisoners no longer fight (they are also mutual allies, see below). |
+| W4-SQ-03 / -08 aircraft leaving | **Fixed (no-dock case); ALL02 corrected.** | [RE: AircraftClass mission FUN_004176F0: AirportBound + no free dock -> the no-dock exit; empty team drop planes Retreat] a team-less computer fixed-wing aircraft with no live airfield flies off the nearest edge. **ALL02's intro Harriers have a dock**: the British GAAIRC at (58,86), the target of `Airplanes are US` -- they return and park there, which is the map's intent. |
+| W4-SQ-10 SOV01 bridge | **Fixed.** | [RE: FUN_006DFA00 calls FUN_00586BB0 on the waypoint cell up to 4 times; FUN_005766D0 concrete / FUN_00570FC0 wood] destructible high bridges: BRIDGE1/2 + BRIDGEB1/B2 deck cells carry ground units while intact (the clone blocked every high bridge before), a break takes the connected span and kills ground units on it, the deck stops drawing, the hut repairs it. SOV01 `Break Bridge`: `a63 -> ok [bridge cells broken=1/3]` at f0; ALL01's 10 `Break Bridges` actions break both bridges (wp79/wp80). RE-FALLBACK: whole span at once; ramp tiles keep their art. Unit test `test_high_bridges.cpp`. |
+| W4-MC-08 SOV09 early loss | **Fixed (cause found).** | Not a timer: the clone's 2-team alliance put the Russian drop groups (Allies=Alliance,Russians,Neutral) on the Americans' side, so their 35 hunting Conscripts killed the Yuris. Houses now see each other through their OWN Allies= list (HouseClass::IsAlliedWith, one-sided); the player's side (team 0) unchanged. Also: a player order releases the unit from its script team (W4-MC-06, RE-FALLBACK) and a mind controller holding a victim is not re-armed by its team's Attack (the CAR/IFV ping-pong). `m-sov09-real`: Yuris paradropped, pulled back by real clicks at battle control, alive past the 100 s loss arm, mission RUNNING at 147 s. |
+| W4-SQ-12 AI members for scripted teams | **Done [RE-FALLBACK]** (RE-W4-SQ-2 not traced). | A recruiting CreateTeam team of an AI-enabled computer house hands its missing TaskForce types to that house's AI-2 production (`World::set_ai_script_demand`); the recruit wait restarts on every recruit. |
+| W4-SQ-11 actions/events | **Partly.** | Done: 18 RevealZone (connected area, 64 cells; ALL07), 5 HouseDiscovered (SOV10 `Bad Guy 3 Startup`), 81/82/83. Open: 61/62 TurnOff/On (ALL10 Chronosphere), 35 PreferredTarget, events 23/34, SOV09 `Switch Power House` changed=0, ALL10 FireSale skipped. |
+| W4-SQ-07 late LZ beats | **Fixed** (falls out of 01/06). | |
+| W4-SQ-09 input lock | Owned and fixed by W4-FIX-CTL. | |
+
+### Real-play verdict, before -> after
+
+| Mission | Before | After | Why |
+|---|---|---|---|
+| ALL02 | YES | YES | unchanged; intro Harriers dock by design |
+| ALL03 | PROBABLE | PROBABLE | 4 Soviet garrisons now occupied (harder, as designed) |
+| ALL04 | PROBABLE | YES (probable) | craft carry the MCV; player beaches + unloads (`m-all04-real`); 85 Conscripts garrisoned as designed |
+| ALL05 | PROBABLE | YES (probable) | spies delivered once to the player's Spies house; spy objective possible |
+| ALL06 | YES | YES | landing craft carry the start force |
+| ALL07 | PROBABLE | PROBABLE | RevealZone done |
+| ALL08 | YES | YES | start force by plane |
+| ALL09 | PROBABLE | YES (probable) | elite SEALs land in 9 s; no-input run no longer LOST |
+| ALL10 | YES | YES | |
+| ALL11 | PROBABLE | PROBABLE | paradrops + invader cargo delivered |
+| ALL12 | PROBABLE | **DOUBTFUL** | no-input LOST at ~17 s: the 3 elite SEALs drop among 16 guard Conscripts + 8 dogs that (faithfully) no longer fight the prisoners; a real-order focus-fire trial also lost. Needs a combat-balance check of SEAL vs Conscript/dog in the clone |
+| SOV01 | YES | YES | bridges broken at f0, high bridges crossable, hut repair |
+| SOV02 | **NO** | **YES** | landing force kept, MCV chain proven (`m-sov02-real`, `m-sov02-mcv`) |
+| SOV03 | YES | YES | |
+| SOV04 | YES | YES | |
+| SOV05 | YES | YES | |
+| SOV06 | YES | YES | |
+| SOV07 | PROBABLE | PROBABLE | |
+| SOV08 | YES | YES | garrisons occupied |
+| SOV09 | DOUBTFUL | PROBABLE | the forced early loss is gone; Yuris survive under real orders (`m-sov09-real`); the President capture through the Prism compound was not reproduced by script clicks (wave-2 proved the capture itself) |
+| SOV10 | YES | YES | `Landed` at 30 s |
+| SOV11 | YES | YES | |
+| SOV12 | PROBABLE | PROBABLE | |
+
+Summary: before 12 YES / 9 PROBABLE / 1 DOUBTFUL / 1 NO; after 16 YES / 6 PROBABLE / 1 DOUBTFUL (ALL12) / 0 NO
+(SOV09 PROBABLE).
+
 ## How this was exercised
 
 | Tool | What it does | Where (all under `D:\ra2-wt\w4-seq\scratch\`) |

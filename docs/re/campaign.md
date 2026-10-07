@@ -213,20 +213,46 @@ briefing audio file in `mission.ini`.
    counters) stands in. [RE-FALLBACK]
 2. **Map-select screen** — the stage choice is forced on every RA2 stage
    (§3.5), so the next mission is taken directly (no globe/VQA screen).
-3. **TeamClass internals** — `CreateTeam` (`FUN_006eff20`) / `Reinforcement`
-   (`FUN_0065d320`) delivery paths (edge entry, transports, paradrop) are not
-   recovered; reinforcements appear at the team waypoint (P9 fallback) and then
-   run their script; `CreateTeam` recruits the house's idle units of the
-   TaskForce types. [RE-FALLBACK]
-4. **Script actions** beyond the move/attack/guard/jump/variable/win/lose/
-   change-house/scatter/delete core are logged and skipped (transport load/
-   unload, deploy, iron curtain, chrono, talk bubbles, flashes). [RE-FALLBACK]
+3. **TeamClass delivery** — W4-FIX-SEQ recovered `Reinforcement`
+   (`FUN_0065d320` -> `FUN_0065d770` create, `FUN_0065da50` place) [CONFIRMED]:
+   * the members are created and added to the team; VeteranLevel 0/2/3 sets
+     -0.25 / 1.0 / 2.0 veterancy (`FUN_0074ee80/eeb0/eed0`);
+   * `Full=yes` (TeamType +0xA5): every non-transport member goes INSIDE the
+     last-created transport (`FUN_004732d0`, no capacity test). A transport is
+     a member type with Passengers>0 (+0x5E0) that is a UnitClass, or an
+     AircraftClass when the TaskForce holds an AircraftType with Passengers
+     (`FUN_006ee9d0`); when any TaskForce type is Naval (+0xCCE) only Naval
+     types count;
+   * `Droppod=yes` (+0xB0): the AircraftType named at 0x838700 (PDPLANE) is
+     created for the house, unlimboed flying at the TransportWaypoint
+     (`UseTransportOrigin` +0xB1, `FUN_006f0e40`) or on the house Edge
+     (+0x1E0 -> `FUN_004aa350`), takes every member aboard and flies Mission
+     ParadropApproach (0x1A) to the reinforcement waypoint;
+   * otherwise the objects are unlimboed at the waypoint (8-neighbour retries);
+     an all-infantry group next to a building exits from it (KickOutUnit).
+   The clone follows this; RE-FALLBACKs: the edge cell (straight off the drop
+   point on screen instead of a random edge cell), one jump per frame onto the
+   free cells around the waypoint, ParachuteMaxFallRate fall.
+   `CreateTeam` recruits the house's idle on-map units of the TaskForce types;
+   a computer house's AI production also trains the missing ones
+   [RE-FALLBACK, RE-W4-SQ-2].
+4. **Script actions** — W4-FIX-SEQ: 8 Unload (`FUN_006ee670`) orders every
+   member transport to unload and completes when all are empty; its arg
+   decides who stays in the team (0 all, 1 transports, 2 unloaded units, 3
+   none; TransportsReturnOnUnload +0xF4 sends transports home); 14 Load
+   (`FUN_006ec760`) boards the members into the first non-full transport; 43
+   WaitLoaded (@0x6E9192) waits until every member's NumPassengers reaches its
+   Passengers; 46/47/58 use the BuildingTypes arg + selector
+   (`FUN_006ee130`). Iron curtain, chrono, talk bubbles stay skipped.
+   [CONFIRMED / RE-FALLBACK where noted in the code]
 5. **Unit stats** come from `rulesmd.ini` (the engine's single rules source);
    the RA2 `rules.ini` is used only for the trigger index spaces (§6).
    [DEVIATION]
 6. **Apply100Damage** (63) — five `C4Warhead` explosions of 100 around the
    waypoint (`FUN_006dfa00`): applied as 100 damage to every object on the
-   waypoint cell. [DEVIATION: no splash]
+   waypoint cell [DEVIATION: no splash]; then the bridge destroy dispatch
+   `FUN_00586bb0` on the waypoint cell up to 4 times (no roll) [CONFIRMED,
+   W4-FIX-SEQ: low section step or the whole high span].
 
 7. **Attack-waypoint bombardments** (script action 1) — Allied 1's
    dreadnoughts open on the Statue of Liberty (waypoint 0, `CANEWY04`, the
@@ -235,11 +261,14 @@ briefing audio file in `mission.ini`.
    in their path; the engine models no missile interception, and executing the
    order literally fails the mission ~15 s in. The team holds position instead.
    [DEVIATION]
-8. **Alliances** — RA2 `Allies=` lists are one-directional; the engine has
-   symmetric alliance teams. Team 0 = the player + houses *mutually* allied with
-   it; a civilian-side house the player lists as an ally is a neutral
-   non-combatant; every other house is the enemy team. MakeAlly/MakeEnemy move
-   the target house between the two. [DEVIATION]
+8. **Alliances** — RA2 `Allies=` lists are one-directional
+   (HouseClass::IsAlliedWith reads the house's own bits). Team 0 = the player +
+   PlayerControl houses + houses *mutually* allied with it (allied both ways);
+   a civilian-side house the player lists as an ally is a neutral
+   non-combatant. W4-FIX-SEQ: every other pair uses the house's OWN list
+   (one-sided matrix), so enemy houses that do not list each other fight
+   (SOV09's Russians vs Americans). MakeAlly/MakeEnemy set the pair both ways.
+   [PROBABLE]
 9. **House credits** — `[<House>] Credits=` × 100 (the C&C `HouseClass::Read_INI`
    lineage; not traced in this build). [PROBABLE]
 10. **Loading-screen palette** — `ra2.mix/load.mix/ldscrna.pal` (Allied) /
@@ -247,10 +276,10 @@ briefing audio file in `mission.ini`.
     `LDSCRN.PAL`; the selector was not traced. [PROBABLE]
 11. **Destroyed counters (events 15/16)** count the trigger house's own
     *losses*. [RE-FALLBACK]
-12. **Aircraft** in `[Aircraft]` are parsed but not placed (none in either
-    first mission); unit facings/sub-cells/veterancy/Sleep missions from the
-    object lines are not applied (units spawn facing south on a free cell near
-    their INI cell). [CUT]
+12. **Object lines** — facings/sub-cells/veterancy are not applied (units
+    spawn facing south on a free cell near their INI cell) [CUT];
+    Mission=Sleep/Harmless (W4-FIX-SEQ) keep the object from acquiring or
+    retaliating until a Wakeup action (81/82/83).
 
 ## §10 Confidence summary
 
