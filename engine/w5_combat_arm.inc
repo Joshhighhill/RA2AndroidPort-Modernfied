@@ -68,4 +68,12 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
     cr.crush_leptons = static_cast<int>(rules.section_double("CombatDamage", "Crush", 1.8) * 256.0);
     cr.player_auto_crush = rules.section_flag("CombatDamage", "PlayerAutoCrush", false);
     world.arm_crush(cr);
+    // --- R-063 3-D range: [ElevationModel] -----------------------------------
+    ra2engine::World::ElevationRules er;
+    er.armed = true;
+    er.increment = static_cast<int>(rules.section_double("ElevationModel", "ElevationIncrement", 4.0));
+    if (er.increment < 1) er.increment = 1;
+    er.bonus = rules.section_double("ElevationModel", "ElevationIncrementBonus", 2.0);
+    er.cap = rules.section_double("ElevationModel", "ElevationBonusCap", 2.0);
+    world.arm_elevation(er);
 }

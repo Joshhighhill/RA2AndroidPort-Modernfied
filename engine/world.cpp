@@ -4488,9 +4488,12 @@ void World::step(double dt) {
         if (u.target < 0 || !u.attack_order || u.target >= (int)units_.size()) continue;   // only explicit attackers hold at range
         const Unit& t = units_[u.target];
         if (!t.alive || t.die_time >= 0.0) continue;
-        const double dx = (t.fx - static_cast<double>(u.cell_x)) * 256.0;
-        const double dy = (t.fy - static_cast<double>(u.cell_y)) * 256.0;
-        if (std::sqrt(dx * dx + dy * dy) <= u.w_range * 256.0 && !u.path.empty()) {
+        // W5-B R-063: the same 3-D / elevation / cliff test step_combat fires
+        // on, measured from the committed cell (Finding-1 semantics above).
+        if (!u.path.empty() &&
+            weapon_in_range_from(*this, u, u.cell_x * 256 + static_cast<int>(u.sub_x),
+                                 u.cell_y * 256 + static_cast<int>(u.sub_y), unit_lept_z(u),
+                                 unit_lept_x(t), unit_lept_y(t), unit_lept_z(t))) {
             // In range with a live pursue-path -> stop and hold (snap onto the
             // committed cell so we don't strand mid-segment; Finding-1 semantics).
             u.path.clear();

@@ -237,6 +237,7 @@ struct SaveAccess {
         save::io(ar, w.level_grid_);
         save::io(ar, w.land_rules_);
         save::io(ar, w.crush_rules_);   // W5-B R-050 (v16)
+        save::io(ar, w.elev_rules_);    // W5-B R-063 (v16)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -434,6 +435,9 @@ template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
     io(ar, v.weapon_range);
     io(ar, v.flh);
     io(ar, v.level); io(ar, v.airburst); io(ar, v.very_high); io(ar, v.course_lock);   // W4 (v15)
+    io(ar, v.subject_to_cliffs);   // v16: W5-B
+    io(ar, v.subject_to_elevation);
+    io(ar, v.subject_to_walls);
 }
 template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.kind);
@@ -575,6 +579,9 @@ template <class Ar> void fields(Ar& ar, World::Crate& v) {
 template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
     io(ar, v.picked); io(ar, v.applied); io(ar, v.house); io(ar, v.unit);
     io(ar, v.x); io(ar, v.y); io(ar, v.amount); io(ar, v.affected);
+}
+template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v16)
+    io(ar, v.armed); io(ar, v.increment); io(ar, v.bonus); io(ar, v.cap);
 }
 template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v16)
     io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush);

@@ -425,6 +425,67 @@ void building_aim_lept(const Building& b, int level, int& x, int& y, int& z) {
     z = level * kLevelLept;
 }
 
+namespace {
+// FUN_004CC020 / FUN_004CC280 (cliff half): step max(|dcx|,|dcy|) times from
+// the shooter toward the target; a step whose cell is more than 3 levels above
+// the previous step's cell blocks the shot (the target's own cell is never
+// stepped into). Walls ([WallModel], SubjectToWalls) are not traced
+// [RE-FALLBACK: the clone has no wall overlay state on the combat path].
+bool cliff_blocks(const World& world, int ax, int ay, int az, int bx, int by, int bz) {
+    const int acx = lept_cell(ax), acy = lept_cell(ay);
+    const int n = std::max(std::abs(acx - lept_cell(bx)), std::abs(acy - lept_cell(by)));
+    if (n == 0) return false;
+    const int sx = (bx - ax) / n, sy = (by - ay) / n;
+    (void)az; (void)bz;
+    int pcx = acx, pcy = acy;
+    for (int k = 0; k < n; ++k) {
+        const int cx = lept_cell(ax + sx * k), cy = lept_cell(ay + sy * k);
+        if (world.cell_level(cx, cy) - world.cell_level(pcx, pcy) > 3) return true;
+        pcx = cx;
+        pcy = cy;
+    }
+    return false;
+}
+
+// FUN_006F6490: the shooter `diff` levels above the target ->
+// n = diff / ElevationIncrement, bonus = min(n * IncrementBonus, Cap) cells,
+// returned as sqrt((ftol(bonus) * 256)^2 + (104 * diff)^2) leptons.
+int elevation_bonus(const World& world, int diff) {
+    const World::ElevationRules& er = world.elevation_rules();
+    if (!er.armed || diff <= 0) return 0;
+    const int n = diff / er.increment;
+    double b = n * er.bonus;
+    if (b > er.cap) b = er.cap;
+    const double cells = ftol_i(b) * 256.0;
+    const double h = static_cast<double>(kLevelLept) * diff;
+    return ftol_i(std::sqrt(cells * cells + h * h));
+}
+}  // namespace
+
+bool weapon_in_range(const World& world, const Unit& u, int tx, int ty, int tz, int extra) {
+    return weapon_in_range_from(world, u, unit_lept_x(u), unit_lept_y(u), unit_lept_z(u), tx, ty, tz,
+                                extra);
+}
+
+bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
+                          int tz, int extra) {
+    int range = ftol_i(u.w_range * 256.0) + extra;
+    if (u.w_proj.subject_to_elevation)
+        range += elevation_bonus(world, world.cell_level(lept_cell(ux), lept_cell(uy)) -
+                                            world.cell_level(lept_cell(tx), lept_cell(ty)));
+    // An airborne shooter measures in the ground plane (FUN_006F6750's
+    // TechnoClass+0x29B branch: 2-D distance + the airburst lowering).
+    if (dist3_i(tx - ux, ty - uy, unit_airborne(u) ? 0 : tz - uz) > range) return false;
+    if (u.w_proj.subject_to_cliffs && world.elevation_rules().armed &&
+        cliff_blocks(world, ux, uy, uz, tx, ty, tz))
+        return false;
+    return true;
+}
+
+bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t) {
+    return weapon_in_range(world, u, unit_lept_x(t), unit_lept_y(t), unit_lept_z(t));
+}
+
 AreaResult damage_area(const World& world, std::vector<Unit>& units,
                        std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
                        int src_unit, int src_building, int ix, int iy, int iz) {
@@ -688,7 +749,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 // primary's. abil.c4 is false unless a P4 profile is bound.
                 const double range_leptons =
                     (u.abil.c4 ? u.abil.c4_range : u.w_range) * kLeptonsPerCell;
-                if (best_d <= range_leptons) {
+                // W5-B R-063 [RE: FUN_006F6750]: the original measures 3-D to the
+                // building's centre with the range widened by (w+h)*64 leptons.
+                int bax, bay, baz;
+                building_aim_lept(*b, world.cell_level(b->cx, b->cy), bax, bay, baz);
+                const bool b_in_range = u.abil.c4 ? best_d <= range_leptons
+                                                  : weapon_in_range(world, u, bax, bay, baz,
+                                                                    (b->fw + b->fh) * 64);
+                if (b_in_range) {
                     if (u.rof_cool <= 0.0) {
                         // Aim gate, mirroring the unit path exactly
                         // (combat.cpp ~L276-278): a vehicle holds fire until
@@ -773,8 +841,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         if (u.attack_cell_x >= 0) {
             const double d = dist_leptons(u.fx, u.fy, static_cast<double>(u.attack_cell_x),
                                           static_cast<double>(u.attack_cell_y));
-            const double range_leptons = u.w_range * kLeptonsPerCell;
-            if (d <= range_leptons) {
+            (void)d;
+            // W5-B R-063: 3-D range to the cell centre (+ elevation / cliffs).
+            if (weapon_in_range(world, u, u.attack_cell_x * 256, u.attack_cell_y * 256,
+                                world.cell_level(u.attack_cell_x, u.attack_cell_y) * 104)) {
                 if (u.rof_cool <= 0.0) {
                     if (u.is_vehicle && !u.omni_fire &&
                         !vehicle_aimed(u, facing_u16_from_delta(
@@ -959,7 +1029,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             u.crushing = false;
         }
 
-        if (d <= range_leptons) {
+        if (unit_in_weapon_range(world, u, v)) {   // W5-B R-063: 3-D + elevation + cliffs
             if (too_close) continue;
             if (u.rof_cool <= 0.0) {
                 // Aim gate (docs/re/voxel-render.md §5, FireError::FACING): a

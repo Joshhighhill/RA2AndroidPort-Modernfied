@@ -185,6 +185,19 @@ int unit_lept_z(const Unit& u);
 // Building aim point: the foundation centre (BuildingClass target coords).
 void building_aim_lept(const Building& b, int level, int& x, int& y, int& z);
 
+// W5-B R-063 [RE: FUN_006F6750 / FUN_006F6490 / FUN_004CC020]: is a target
+// point (clone leptons, z absolute) inside u's ACTIVE weapon range? 3-D
+// distance (ftol) <= ftol(Range*256) + `extra` leptons (+ the [ElevationModel]
+// bonus for a SubjectToElevation projectile when the shooter stands >= 4
+// levels above the target), and no upward cliff (> 3 levels) on the line for
+// a SubjectToCliffs projectile. The elevation bonus and the trace are inert
+// until World::arm_elevation (unit-test Worlds keep the plain 3-D check).
+bool weapon_in_range(const World& world, const Unit& u, int tx, int ty, int tz, int extra = 0);
+bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t);
+// The same test from an explicit shooter point.
+bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
+                          int tz, int extra = 0);
+
 // Gap fix C (G-50): RearmTimer in seconds = (ROF + Random(0,2)) / 15
 // [veterancy.md V7]; rng null -> no jitter.
 double rearm_secs(int rof_frames, ProjRng* rng);

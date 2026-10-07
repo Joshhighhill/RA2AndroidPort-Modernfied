@@ -702,6 +702,17 @@ public:
         bool player_auto_crush = false;
     };
     void arm_crush(const CrushRules& r) { crush_rules_ = r; }
+    // W5-B R-063 [RE: TechnoClass in-range FUN_006F6750, elevation bonus
+    // FUN_006F6490, cliff trace FUN_004CC020/FUN_004CC280]: 3-D weapon range,
+    // [ElevationModel] range bonus and the SubjectToCliffs line trace.
+    struct ElevationRules {
+        bool armed = false;
+        int increment = 4;        // ElevationIncrement (levels)
+        double bonus = 2.0;       // ElevationIncrementBonus (cells per increment)
+        double cap = 2.0;         // ElevationBonusCap (cells)
+    };
+    void arm_elevation(const ElevationRules& r) { elev_rules_ = r; }
+    const ElevationRules& elevation_rules() const { return elev_rules_; }
     const CrushRules& crush_rules() const { return crush_rules_; }
     // W5-B: true for a computer-controlled (AI) house.
     bool house_is_computer(int h) const { return ai_enabled(h); }
@@ -2112,6 +2123,7 @@ private:
     std::vector<std::int8_t> level_grid_;
     LandSpeedRules land_rules_;
     CrushRules crush_rules_;   // W5-B R-050
+    ElevationRules elev_rules_;   // W5-B R-063
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
     bool inf_anims_ = false;                       // W3-B
     int inf_human_ = 0;

@@ -385,6 +385,9 @@ ProjectileSpec resolve_projectile_spec(const ra2assets::Rules& rules, const std:
     spec.level = flag("Level");
     spec.airburst = flag("Airburst");
     spec.very_high = flag("VeryHigh");
+    spec.subject_to_cliffs = flag("SubjectToCliffs");         // W5-B
+    spec.subject_to_elevation = flag("SubjectToElevation");
+    spec.subject_to_walls = flag("SubjectToWalls");
     spec.course_lock = static_cast<int>(rules.section_double(proj, "CourseLockDuration", 0.0));
     spec.detonation_altitude =
         static_cast<int>(rules.section_double(proj, "DetonationAltitude", 0.0));
