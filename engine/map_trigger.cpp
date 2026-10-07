@@ -955,8 +955,35 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         if (!campaign_mode_) goto unhandled;
         effect(find_house(t, a.value, host));
         return;
+    // W3-FX [RE: Execute 0x2a -> FUN_006e1900 DoExplosionAt (WeaponTypes[Value]
+    // anim + DamageArea at the waypoint), 0x5a -> FUN_00539e70 LightningStrikeAt
+    // (a storm cloud + bolt at the waypoint), 0x66 -> LightningStorm::Start at
+    // the waypoint for the trigger house unless a storm is already active]:
+    // campaign mode only (they damage), resolved by the host.
+    case 42: case 90: case 102:
+        if (!campaign_mode_) goto unhandled;
+        effect(th);
+        return;
     default:
     unhandled:
+        if (campaign_mode_) {
+            switch (a.kind) {
+            case 41: case 48: case 55: case 88: case 104: case 112: case 113: case 114:
+            case 115: case 131: {
+                VisualRequest v;
+                v.action = a.kind;
+                v.value = a.value;
+                v.waypoint = a.waypoint;
+                v.text = a.text;
+                if (a.team >= 0 && a.team < (int)d_.team_ids.size()) v.team = d_.team_ids[(std::size_t)a.team];
+                if (a.kind == 113) v.house_type = find_house(t, a.value, host);
+                visuals_.push_back(v);
+                break;
+            }
+            default:
+                break;
+            }
+        }
         if (presentation_action(a.kind)) {
             logf("  a%d %s v=%d wp=%d %s (recorded)", a.kind, action_label(a.kind), a.value,
                  a.waypoint, a.text.empty() ? "-" : a.text.c_str());

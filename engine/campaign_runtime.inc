@@ -458,6 +458,39 @@ public:
     // W2-CA-12: trigger audio the scene plays through its presentation.
     struct AudioReq { int action; std::string name; int value; int waypoint; };
     std::vector<AudioReq> take_audio() { std::vector<AudioReq> o; o.swap(audio_); return o; }
+    // W3-FX: trigger presentation requests (the trigger system's typed queue
+    // plus the host's own DoExplosionAt anims). Presentation only.
+    std::vector<ra2engine::VisualRequest> take_visuals() {
+        std::vector<ra2engine::VisualRequest> o;
+        o.swap(visuals_);
+        if (sys_) {
+            std::vector<ra2engine::VisualRequest> s = sys_->take_visuals();
+            o.insert(o.end(), s.begin(), s.end());
+        }
+        return o;
+    }
+    // RA2 rules.ini lists the PlayAnimAt / ParticleAnim index spaces (see
+    // campaign_visuals.inc) need.
+    const Ini& ra2_rules() const { return ra2_rules_; }
+    // W3-FX DoExplosionAt Value -> WeaponType id. [RE-FALLBACK: the
+    // WeaponTypeClass array is find-or-allocated as each TechnoType's INI is
+    // read (FUN_00711510 Primary/Secondary/Elite*/Occupy/DeathWeapon); that
+    // object-read order was not recovered, so the RA2 rules.ini FILE order of
+    // those keys stands in.]
+    std::string ra2_weapon_by_index(int ix) {
+        if (ra2_weapons_.empty()) {
+            static const char* kKeys[] = {"Primary", "Secondary", "ElitePrimary", "EliteSecondary",
+                                          "OccupyWeapon", "EliteOccupyWeapon", "DeathWeapon"};
+            for (const std::string& sec : ra2_rules_.section_names())
+                for (const char* k : kKeys) {
+                    const std::string w = camp::up(camp::trim_comment(ra2_rules_.get(sec, k, "")));
+                    if (w.empty() || std::find(ra2_weapons_.begin(), ra2_weapons_.end(), w) != ra2_weapons_.end())
+                        continue;
+                    ra2_weapons_.push_back(w);
+                }
+        }
+        return ix >= 0 && ix < (int)ra2_weapons_.size() ? ra2_weapons_[(std::size_t)ix] : std::string();
+    }
     bool waypoint_xy(int wp, int& x, int& y) const { return waypoint_cell(wp, x, y); }
     std::string map_theme() const { return camp::trim_comment(map_.get("Basic", "Theme", "")); }
 
@@ -1812,6 +1845,33 @@ private:
                     ++n;
             return n > 0;
         }
+        case 90: case 102: {   // W3-FX LightningStrikeAt / LightningStorm (World)
+            int x = 0, y = 0;
+            if (!waypoint_cell(e.waypoint, x, y)) return false;
+            const int eh = std::max(0, engine_house(e.house_type));
+            return e.action == 90 ? w_.trigger_lightning_strike(eh, x, y)
+                                  : w_.trigger_lightning_storm(eh, x, y);
+        }
+        case 42: {   // W3-FX DoExplosionAt [RE: FUN_006e1900]
+            int x = 0, y = 0;
+            if (!waypoint_cell(e.waypoint, x, y)) return false;
+            const std::string wpn = ra2_weapon_by_index(e.value);
+            if (wpn.empty()) return false;
+            const int dmg = std::atoi(camp::trim_comment(ra2_rules_.get(wpn, "Damage", "0")).c_str());
+            // [DEVIATION, as 63: the waypoint cell's objects take the weapon's
+            // Damage; the warhead's CellSpread falloff is not applied.]
+            const int u = w_.unit_at_cell(x, y);
+            if (u >= 0 && dmg > 0) w_.campaign_damage_unit(u, dmg);
+            const int b = w_.building_at_cell(x, y);
+            if (b >= 0 && dmg > 0) w_.campaign_damage_building(b, dmg);
+            ra2engine::VisualRequest v;   // the warhead's impact anim (presentation)
+            v.action = 42;
+            v.value = dmg;
+            v.waypoint = e.waypoint;
+            v.text = camp::trim_comment(ra2_rules_.get(wpn, "Warhead", ""));
+            visuals_.push_back(v);
+            return true;
+        }
         case 63: {   // Apply100Damage [DEVIATION §9.6: the waypoint cell, no splash]
             int x = 0, y = 0;
             if (!waypoint_cell(e.waypoint, x, y)) return false;
@@ -1856,6 +1916,8 @@ private:
     std::map<std::string, bool> mc_type_;      // W2-CA-15 cache: type -> MindControl weapon
     std::vector<std::uint8_t> armed_;         // W2-CA-07 per house: 1 base, 2 map teams (derived)
     std::vector<AudioReq> audio_;   // W2-CA-12 (presentation only, not hashed/saved)
+    std::vector<ra2engine::VisualRequest> visuals_;   // W3-FX (presentation only, not hashed/saved)
+    std::vector<std::string> ra2_weapons_;            // W3-FX DoExplosionAt index space (lazy)
     std::string note_;
     std::size_t logged_ = 0;
     ra2engine::World::Side player_side_ = ra2engine::World::Side::Allied;

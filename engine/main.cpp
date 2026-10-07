@@ -2612,6 +2612,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_audio.inc"    // G-80..G-82 (helpers also used by the FX layer)
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
+#include "pres_effects.inc"  // W3-FX particles / debris / trails / wakes / twinkles
 #include "pres_map.inc"
 #include "pres_light.inc"    // W2-GA-05 map [Lighting]
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
@@ -3232,6 +3233,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
     if (g_map_dressing) g_map_dressing->draw_ground(ren, tc, world, g_map_pals, cam, W, H);
     if (g_fx && g_map_dressing) g_fx->draw_radiation(ren, world, a.map, cam, W, H);   // W2-GA-15
+    if (g_fx3) g_fx3->draw_ground(ren, tc, cam, W, H);   // W3-FX wakes / ore twinkles (ground layer)
     // P5 [RE: veterancy.md C3]: crate overlays (no-op unless g_p5_art + crates).
     draw_p5_crates(ren, tc, world, a.map, (ore_art && ore_art->has_pal) ? ore_art->pal : a.pal,
                    cam, W, H);
@@ -3375,6 +3377,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // no existing demo screenshot changes.
     draw_projectiles(ren, world, a.map, cam, W, H, &tc);
     if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
+    if (g_fx3) g_fx3->draw(ren, tc, cam, W, H);   // W3-FX particles / debris / line trails
     // W2-GA-05: the map's ambient light over every world sprite (GameScene only).
     if (g_light) g_light->pass(ren, W, H);
     // G-84: fog + shroud over every object, under the HUD bars.

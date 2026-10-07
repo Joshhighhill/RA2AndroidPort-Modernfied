@@ -54,6 +54,7 @@ struct FxWeapon {
     // from the muzzle to the target instead of only an impact.
     bool bolt = false, laser = false, laser_house = false;
     int laser_frames = 15;
+    bool conventional = false;   // W3-FX warhead Conventional= (water -> SplashList)
 };
 // W2-GA-15: smudge hook (craters / scorch marks left by Crater=/Scorch=
 // explosion anims), set by GameScene to its map dressing.
@@ -101,6 +102,10 @@ public:
             fw.muzzle = split(rget(w, "Anim"));
             const std::string wh = rget(w, "Warhead");
             if (!wh.empty()) fw.anim_list = split(rget(wh, "AnimList"));
+            if (!wh.empty()) {
+                const std::string c = pres_lower(rget(wh, "Conventional"));
+                fw.conventional = !c.empty() && (c[0] == 'y' || c[0] == 't' || c[0] == '1');
+            }
             const std::string pj = rget(w, "Projectile");
             if (!pj.empty()) {
                 const std::string img = rget(pj, "Image");
@@ -450,6 +455,14 @@ public:
     }
     const ra2assets::Palette& pal() const { return pal_; }
     std::size_t live() const { return anims_.size(); }
+    // W3-FX: art / rules keys for pres_effects.inc (Bouncer, Trailer, ...).
+    std::string art_value(const std::string& s, const std::string& k) const { return aget(s, k); }
+    std::string rules_value(const std::string& s, const std::string& k) const { return rget(s, k); }
+    // W3-FX: a warhead's Conventional= (SelectDamageAnimation's SplashList gate).
+    bool warhead_conventional(const std::string& image) const {
+        auto it = weapons_.find(image);
+        return it != weapons_.end() && it->second.conventional;
+    }
     // Base-defense shot (World::FireEvent with a weapon id): the weapon's
     // muzzle Anim= list and its first Report= sound, straight from rules.
     std::vector<std::string> weapon_muzzle(const std::string& wid) const { return split(rget(wid, "Anim")); }

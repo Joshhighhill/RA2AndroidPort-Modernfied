@@ -446,6 +446,35 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
     }
 }
 
+bool World::trigger_lightning_strike(int house, int cx, int cy) {
+    if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) return false;
+    SwStrike s;
+    s.kind = 2;
+    s.house = house;
+    s.x = cx;
+    s.y = cy;
+    an_storm_bolt(s, cx, cy);
+    an_.any = true;
+    return true;
+}
+
+bool World::trigger_lightning_storm(int house, int cx, int cy) {
+    if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) return false;
+    for (const SwStrike& s : an_.strikes)
+        if (s.kind == 2 && !s.done) return false;   // LightningStorm::IsActive
+    SwStrike s;
+    s.kind = 2;
+    s.house = house;
+    s.x = cx;
+    s.y = cy;
+    s.rng = 0x9E3779B9u ^ (static_cast<std::uint32_t>(cx) * 73856093u) ^
+            (static_cast<std::uint32_t>(cy) * 19349663u) ^ an_rand();
+    an_.strikes.push_back(s);
+    an_event(SwEvent::Activated, house, SuperweaponType::LightningStorm, cx, cy);
+    an_.any = true;
+    return true;
+}
+
 void World::an_storm_bolt(SwStrike& s, int x, int y) {
     std::array<int, 11> verses = an_.sw.storm_verses;
     bool any = false;

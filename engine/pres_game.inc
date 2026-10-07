@@ -18,6 +18,11 @@ public:
             for (const ra2engine::UnitTypeDef& d : *list) fx_.add_unit(d.id, d.combat.image);
         for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) fx_.add_unit(id, rules.image(id));
         g_fx = &fx_;
+        // W3-FX: particles, debris, trails, wakes, twinkles (pres_effects.inc).
+        effects_.init(fx_, rules_ini, ra2);
+        for (const auto* list : defs)
+            for (const ra2engine::UnitTypeDef& d : *list) effects_.note_unit_id(d.combat.image, d.id);
+        g_fx3 = &effects_;
         rules_ini_ = &rules_ini;
         snd_.open(dir, &audio, audio_on || g_pres_log_on);
         snd_.set_side(side_ix);
@@ -90,9 +95,24 @@ public:
         if (g_fog_shp == fog_.get()) g_fog_shp = nullptr;
         if (g_game_font == font_.get()) { g_game_font = nullptr; g_game_font_pal = nullptr; }
         if (g_fx == &fx_) g_fx = nullptr;
+        if (g_fx3 == &effects_) g_fx3 = nullptr;
     }
 
     PresAudio& sound() { return snd_; }
+    // W3-FX: the trigger visuals (campaign_visuals.inc) drive these.
+    PresFx& fx() { return fx_; }
+    PresEffects& effects() { return effects_; }
+    // Action 55 / any caller: a radar event at a cell (the minimap flash).
+    bool radar_ping(int type, double x, double y) {
+        return radar_event(std::clamp(type, 0, 16), x, y);
+    }
+    struct RadarPing { int type; double x, y; long born, until; };
+    // Live radar events for the minimap "zoom square" (pres_radar.inc).
+    std::vector<RadarPing> radar_pings() const {
+        std::vector<RadarPing> out;
+        for (const RadarEv& e : radar_) out.push_back(RadarPing{e.type, e.x, e.y, e.born, e.until});
+        return out;
+    }
 
     // Per-frame. `credits` = the player's wallet after this frame's production.
     void update(double dt, const ra2engine::World& w, const ra2engine::ProductionQueues& q,
@@ -104,6 +124,9 @@ public:
         g_pres_tick = frame_;
         world_ = &w;
         fx_.step(dt);
+        // W3-FX: particles / debris / trails / wakes on the game-frame clock.
+        if (ba.ok) effects_.set_unit_palette(&ba.unit_pal);
+        effects_.update(w, ba);
         snd_.set_view(cam.x, cam.y, view_w, view_h);   // W2-GA-23 positional audio
         snd_.update_voices();
         for (const ra2engine::ProjectileEvent& e : pev)
@@ -487,6 +510,20 @@ private:
                 double lift_px) {
         const FxWeapon* wp = fx_.weapon(shooter.image);
         if (!wp || wp->anim_list.empty()) return;
+        // W3-FX [RE: FUN_0048a400 SelectDamageAnimation]: a Conventional
+        // warhead landing low on a water cell shows SplashList[min(damage,
+        // n*35-1)/35] instead of its AnimList.
+        const std::vector<std::string>& splash = effects_.splash_list();
+        if (wp->conventional && !splash.empty() && on_water(fx, fy) && lift_px < 30.0) {
+            const int ns = static_cast<int>(splash.size());
+            const std::string& sname = splash[static_cast<std::size_t>(std::min(damage, ns * 35 - 1) / 35)];
+            if (const FxAnimType* st = fx_.spawn(sname, fx, fy, level, 0.0)) {
+                if (!impact_water_.empty()) snd_.play_at(impact_water_, fx, fy, "impact water");
+                else snd_.play_at(st->report, fx, fy, "splash");
+                pres_log(frame_, "fx splash " + sname);
+                return;
+            }
+        }
         const int n = static_cast<int>(wp->anim_list.size());
         const int ix = std::clamp(damage / 25, 0, n - 1);
         const FxAnimType* t = fx_.spawn(wp->anim_list[ix], fx, fy, level, lift_px);
@@ -726,8 +763,13 @@ private:
             if (dead && !p.dead && !b.sold) {
                 snd_.play_at(building_die_, cx, cy, "building die");
                 if (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()) &&
-                    pres_building_seen(w, b))
+                    pres_building_seen(w, b)) {
                     building_explode(w, b, ba.roster[b.type].id);
+                    // W3-FX: building debris (the same TechnoClass death path).
+                    const ra2assets::MapCell* mc = w.map().at(b.cx, b.cy);
+                    effects_.spawn_debris(ba.roster[b.type].id, (b.cx + b.fw / 2.0) * 256.0,
+                                          (b.cy + b.fh / 2.0) * 256.0, (mc ? mc->level : 0) * 104.0, false);
+                }
             }
             if (b.selling && !p.selling && b.house == 0) {
                 snd_.play_at(sell_sound_, cx, cy, "sell");
@@ -821,6 +863,12 @@ private:
                     const auto* ex = fx_.explosions(u.image);
                     if (ex && !ex->empty())
                         if (const FxAnimType* t = fx_.type(ex->front())) snd_.play_at(t->report, u.fx, u.fy, "explosion");
+                    // W3-FX [RE: FUN_00700da0 death]: Min/MaxDebris debris
+                    // (voxel DebrisTypes / DebrisAnims / MetallicDebris), none
+                    // when low over water.
+                    const double z = u.level * 104.0 + (u.is_aircraft ? u.altitude : 0.0);
+                    effects_.spawn_debris(effects_.unit_id(u.image), u.fx * 256.0, u.fy * 256.0, z,
+                                          on_water(u.fx, u.fy) && (!u.is_aircraft || u.altitude < 11.0));
                 }
                 if (u.house == 0 && radar_event(7, u.fx, u.fy)) snd_.eva("EVA_UnitLost");
             }
@@ -934,7 +982,7 @@ private:
     // false while a live event of the same type lies within its distance.
     // {dist cells, duration frames}; entries 0..5 are overridden by [General]
     // RadarEventSuppressionDistances / RadarEventDurations (read in init).
-    struct RadarEv { int type; double x, y; long until; };
+    struct RadarEv { int type; double x, y; long until; long born = 0; };
     double radar_dist_[17] = {8, 8, 8, 8, 8, 6, 2, 8, 2, 5, 8, 8, 8, 8, 8, 8, 8};
     int radar_dur_[17] = {400, 400, 400, 600, 400, 400, 200, 200, 400, 400, 100, 200, 400, 5, 200, 400, 600};
     bool radar_supp_[17] = {1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1};
@@ -950,7 +998,7 @@ private:
                     static_cast<int>(std::sqrt((e.x - x) * (e.x - x) + (e.y - y) * (e.y - y))) <
                         radar_dist_[type])
                     return false;
-        radar_.push_back(RadarEv{type, x, y, frame_ + radar_dur_[type]});
+        radar_.push_back(RadarEv{type, x, y, frame_ + radar_dur_[type], frame_});
         return true;
     }
     const std::vector<RadarEv>& radar_events() const { return radar_; }
@@ -959,6 +1007,7 @@ private:
 
     PresAudio snd_;
     PresFx fx_;
+    PresEffects effects_;   // W3-FX
     std::unique_ptr<ShpFile> shroud_, fog_;
     std::unique_ptr<ra2assets::Font> font_;
     ra2assets::Palette font_pal_;
