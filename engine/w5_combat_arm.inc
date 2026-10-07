@@ -28,7 +28,9 @@ inline int w5_land_of_terrain_type(int tt) {
 
 void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets::MapFile* map = nullptr,
                    ra2engine::Theater* theater = nullptr) {
-    world.enable_subcells();
+    const char* off_env = std::getenv("W5_OFF");   // diagnostics: "sub,land,crush,elev"
+    const std::string off = off_env ? off_env : "";
+    if (off.find("sub") == std::string::npos) world.enable_subcells();
     // --- R-062 land speed ---------------------------------------------------
     ra2engine::World::LandSpeedRules r;
     static const char* kLand[12] = {"Clear", "Road", "Water", "Rock", "Wall", "Tiberium",
@@ -60,14 +62,14 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
             ramp[i] = hdr[42];
         }
     }
-    world.arm_land_speed(land, ramp, r);
+    if (off.find("land") == std::string::npos) world.arm_land_speed(land, ramp, r);
     // --- R-050 crush steering ------------------------------------------------
     ra2engine::World::CrushRules cr;
     cr.armed = true;
     // [CombatDamage] Crush= cells -> leptons (FUN_00474550: ftol(cells*256)).
     cr.crush_leptons = static_cast<int>(rules.section_double("CombatDamage", "Crush", 1.8) * 256.0);
     cr.player_auto_crush = rules.section_flag("CombatDamage", "PlayerAutoCrush", false);
-    world.arm_crush(cr);
+    if (off.find("crush") == std::string::npos) world.arm_crush(cr);
     // --- R-063 3-D range: [ElevationModel] -----------------------------------
     ra2engine::World::ElevationRules er;
     er.armed = true;
@@ -75,5 +77,5 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
     if (er.increment < 1) er.increment = 1;
     er.bonus = rules.section_double("ElevationModel", "ElevationIncrementBonus", 2.0);
     er.cap = rules.section_double("ElevationModel", "ElevationBonusCap", 2.0);
-    world.arm_elevation(er);
+    if (off.find("elev") == std::string::npos) world.arm_elevation(er);
 }

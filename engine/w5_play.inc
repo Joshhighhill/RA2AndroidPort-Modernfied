@@ -11,7 +11,7 @@
 //                            n-th unit's current cells/s (W5-B R-062)
     void w5_play_probe(ra2play::Probe& p) const {
         for (const char* f : {"max_cell_inf", "cells3", "uhpn", "ucx", "ucy", "uspot", "ulx", "uly",
-                              "bhp", "bmaxhp", "uspeed"})
+                              "bhp", "bmaxhp", "uspeed", "utgt", "umov", "uwait"})
             p.zero_families.insert(f);
         p.set("subcells", world_.subcells_enabled() ? 1 : 0);
         std::map<std::pair<int, int>, int> per_cell[16];
@@ -31,6 +31,9 @@
             p.set("ulx(" + k + ")", u.fx * 256.0 + u.sub_x);
             p.set("uly(" + k + ")", u.fy * 256.0 + u.sub_y);
             p.set("uspeed(" + k + ")", world_.unit_speed_cps(i));
+            p.set("utgt(" + k + ")", u.target);
+            p.set("umov(" + k + ")", u.moving() ? 1 : 0);
+            p.set("uwait(" + k + ")", u.wait_time);
             if (!u.is_vehicle && !u.is_aircraft && !u.is_naval && u.house >= 0 && u.house < 16)
                 ++per_cell[u.house][{u.cell_x, u.cell_y}];
         }
