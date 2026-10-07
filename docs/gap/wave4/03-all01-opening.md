@@ -18,7 +18,7 @@ uses those findings for ALL01 and adds the mission-specific causes.
 
 | ID | Status | Where / evidence |
 |---|---|---|
-| A1-01 opening shelling held | **FIXED** | `tag_guards_loss` skip removed (`campaign_runtime.inc`); `scripts/play/all01-opening.play` (real menu, 4 min, no input): DMISL launched (137), shot down by the Liberty Island Patriots (129), Statue alive (5102/5117), fleet intact, `RUNNING` |
+| A1-01 opening shelling held | **FIXED** | `tag_guards_loss` skip removed (`campaign_runtime.inc`); `scripts/play/all01-opening.play` (real menu, 4 min, no input): DMISL launched (244), shot down by the Liberty Island Patriots (159), Statue alive (4742/5117), fleet intact, `RUNNING` |
 | A1-02 DMISL explodes with V3WH | **FIXED** | `engine/rocket.cpp` per-type block + warhead (FUN_00662A70); `tests/test_rocket.cpp` pins DMISL vs CANEWY04 = 6, V3 = 100000 |
 | A1-03 rocket flight model | **FIXED** | `rocket_step` ports FUN_00661D00 (pause, tilt, climb to the map's 1550, LazyCurve arc / level-off + dive, nose contact); hull drawn pitched |
 | A1-04 Patriot missiles do not fly | **FIXED** | `ProjKind::Homing` (`integrate_homing`); RedEye2 flies with the DRAGON line trail and hits the rockets |
