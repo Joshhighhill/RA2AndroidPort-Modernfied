@@ -154,6 +154,7 @@ public:
         if (ba.ok) unit_pal_ = &ba.unit_pal;
         if (ba.ok) fx_.set_unit_palette(&ba.unit_pal, &w);   // W3-B AltPalette base
         unit_audio(w, act);
+        w5_update(w, ba, act, credits);   // W5-E (pres_audio_events.inc)
         for (const auto& e : vet) {
             if (e.unit < 0 || e.unit >= static_cast<int>(w.units().size())) continue;
             const ra2engine::Unit& u = w.units()[e.unit];
@@ -217,6 +218,7 @@ public:
                            [&](int h) { return h == 0 ? player_credits : w.house_credits(h); });
         building_anim_events(w, ba);   // W2-GA-14 SW charge edges, per tick
         building_events(w, ba);        // damage EVA, death explosion + DestroyAnim, per tick (W3-B)
+        w5_tick(w, ba);                // W5-E sounds observed per logic tick (pres_audio_events.inc)
         g_walk_rules = rules_ini_;
         pres_walk_tick(w, g_pres_tick); // W3-B walk stage (SHP vehicle frames, HVA frames)
     }
@@ -762,6 +764,7 @@ private:
         // (TankCrush on crushers, InfantrySquish on crushable infantry).
         v.move_sound = pres_clean(rules_ini_->get(id, "MoveSound"));
         v.crush = pres_clean(rules_ini_->get(id, "CrushSound"));
+        add_w5_voices(id, v);   // W5-E (pres_audio_events.inc)
         audio_->voices[image] = v;
         for (const std::string& k : {v.select, v.move, v.attack, v.die, v.move_sound, v.crush}) snd_.ensure_sound(k);
         std::stringstream rs(v.report);
@@ -778,6 +781,7 @@ private:
         report_rng_ = report_rng_ * 1664525u + 1013904223u;
         return opts[(report_rng_ >> 8) % opts.size()];
     }
+#include "pres_audio_events.inc"   // W5-E: the remaining unit/world sounds and EVA lines
     std::uint32_t report_rng_ = 0x51A7u;
     std::vector<uint8_t> moving_prev_;
     std::vector<int> uhp_prev_;
@@ -912,7 +916,7 @@ private:
                 snd_.play_at(sell_sound_, cx, cy, "sell");
                 snd_.eva("EVA_StructureSold");
             }
-            if (b.house == 0 && p.house != 0 && !dead) snd_.eva("EVA_BuildingCaptured");
+            // (W5-E: capture lines moved to pres_audio_events.inc w5_tick.)
             p.hp = b.hp;
             p.house = b.house;
             p.dead = dead;
@@ -1098,8 +1102,7 @@ private:
             const auto& au = units[act.actor];
             const UnitVoices& av = audio_->voices[au.image];
             if (act.selected) snd_.play_at(av.select, au.fx, au.fy, "select");
-            else if (act.attack_ordered) snd_.play_at(av.attack, au.fx, au.fy, "attack order");
-            else if (act.move_ordered) snd_.play_at(av.move, au.fx, au.fy, "move order");
+            else if (act.attack_ordered || act.move_ordered) order_voice(act, au, av);   // W5-E ClickedMission
         }
         if (act.repair_clicked) snd_.eva("EVA_Repairing");
     }

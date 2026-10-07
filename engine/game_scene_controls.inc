@@ -124,8 +124,13 @@
             world_.buildings()[sb].house == 0 && !world_.buildings()[sb].occupants.empty())
             world_.unload_occupants(sb);
         world_.order_unload_selected();
+        int first = -1;
         for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
-            if (world_.units()[i].selected && world_.controllable(world_.units()[i].house)) world_.order_deploy(i);
+            if (world_.units()[i].selected && world_.controllable(world_.units()[i].house)) {
+                if (first < 0) first = i;
+                world_.order_deploy(i);
+            }
+        pres_.note_deploy_order(world_, first);   // W5-E Mission_Unload -> VoiceDeploy
     }
 
     // Next/PreviousObject [RE-FALLBACK: FUN_005362D0/536740 execs not
@@ -268,7 +273,11 @@
                     if (current) refund_cancel(cat);
                     return;
                 }
-                if (current && !held && !queues_.ready(cat)) { held_.insert(ci); return; }   // SUSPEND
+                if (current && !held && !queues_.ready(cat)) {   // SUSPEND
+                    held_.insert(ci);
+                    pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA692]
+                    return;
+                }
                 const auto last = std::find(bl.rbegin(), bl.rend(), type);
                 if (last != bl.rend()) { bl.erase(std::next(last).base()); return; }   // ABANDON a queued copy
                 if (current) refund_cancel(cat);                                         // ABANDON current
@@ -303,7 +312,11 @@
         const bool held = held_.count(bi) != 0;
         if (right) {
             if (!current) return;
-            if (!held && !bq.slot.ready) { held_.insert(bi); return; }   // SUSPEND
+            if (!held && !bq.slot.ready) {   // SUSPEND
+                held_.insert(bi);
+                pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA793]
+                return;
+            }
             refund_cancel(bcat);                                         // ABANDON
             return;
         }
@@ -314,6 +327,9 @@
         }
         if (current && held) { held_.erase(bi); return; }   // resume
         if (current) return;                                // running: no effect
+        // W5-E [RE: FUN_006AA390 @6AAA3C]: the building factory is busy with
+        // another type -> EVA_UnableToComply.
+        if (bq.slot.type >= 0) { pres_.note_eva("EVA_UnableToComply"); return; }
         if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(), 0, ba_.groups,
                                  conyard_alive(world_, ba_, 0))) {
             queues_.set_credits(player_credits_);

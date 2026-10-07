@@ -117,10 +117,11 @@ private:
             if (e.house != 0) continue;
             if (e.kind == ra2engine::World::DeployEvent::Kind::CannotDeploy) {
                 gf_eva("EVA_CannotDeployHere");
-            } else if (e.kind == ra2engine::World::DeployEvent::Kind::Deployed && !no_audio_ &&
-                       audio_.mixer) {
-                // [AMCV] DeploySound=PlaceBuilding (the building slam sound).
-                audio_.mixer->play("PlaceBuilding");
+            } else if (e.kind == ra2engine::World::DeployEvent::Kind::Deployed && e.unit >= 0 &&
+                       e.unit < static_cast<int>(world_.units().size())) {
+                // [AMCV] DeploySound=PlaceBuilding (the building slam sound) --
+                // W5-E: through the presentation (positional + [pres] log).
+                pres_.on_mcv_deployed(world_, world_.units()[static_cast<std::size_t>(e.unit)].image, e.building);
             }
         }
         if (campaign_) return;   // campaigns end through their triggers

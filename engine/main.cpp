@@ -556,7 +556,14 @@ Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
 // rulesmd.ini omits it -- looking that up in AudioSystem::voices and playing
 // it is then just a silent no-op (Mixer::play on an empty/unregistered key
 // returns false).
-struct UnitVoices { std::string select, move, attack, die, report, move_sound, crush; };   // W2-GA-25 move_sound/crush
+struct UnitVoices {
+    std::string select, move, attack, die, report, move_sound, crush;   // W2-GA-25 move_sound/crush
+    // W5-E (pres_audio_events.inc): the click-mission voices, the hurt voice,
+    // deploy/sink/crash sounds and the C4 flag (Sabotage voice).
+    std::string feedback, special, enter, capture, harvest, deploy_voice, deploy_snd, undeploy_snd,
+        sinking, crashing, voice_sinking, voice_crashing, turret_rotate;
+    bool c4 = false;
+};
 
 // Everything the audio wiring needs at runtime. `mixer` is a unique_ptr (not
 // a plain Mixer member) because Mixer stores its SoundBank BY REFERENCE (see
@@ -5770,7 +5777,10 @@ public:
             const std::vector<ra2engine::World::VetEvent> ve = world_.take_vet_events();
             pres_vet_.insert(pres_vet_.end(), ve.begin(), ve.end());
         }
-        (void)world_.take_crate_events();
+        {   // W5-E: crate pickups feed the presentation (Crate*Sound / EVA).
+            const std::vector<ra2engine::World::CrateEvent> ce = world_.take_crate_events();
+            pres_crates_.insert(pres_crates_.end(), ce.begin(), ce.end());
+        }
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
         hold_begin();   // G-07: held queues do not advance (game_scene_controls.inc)
@@ -5810,13 +5820,20 @@ public:
                 }
         }
         }   // G-13 fixed logic tick
-        // Rolling credits tally (display-only).
-        {
-            const double target = player_credits_;
-            const double rate = std::max(500.0, std::abs(target - credits_shown_) / 0.5);
-            const double step = rate * dt;
-            if (credits_shown_ < target) credits_shown_ = std::min(target, credits_shown_ + step);
-            else credits_shown_ = std::max(target, credits_shown_ - step);
+        // Rolling credits tally (display-only). W5-E [RE: CreditClass::AI
+        // FUN_004A2510]: per game frame the shown value moves |diff|>>3
+        // (clamped 1..143) toward the wallet, and a moving counter plays
+        // CreditTicks up/down (FUN_004A2280, volume 0.5). [RE-FALLBACK: one
+        // step per 15 Hz logic tick -- the original steps per game frame.]
+        for (int k = 0; k < logic_steps; ++k) {
+            const long target = static_cast<long>(std::floor(std::max(0.0, player_credits_)));
+            const long shown = static_cast<long>(std::llround(credits_shown_));
+            if (shown == target) { credits_shown_ = static_cast<double>(target); break; }
+            long step = std::labs(target - shown) >> 3;
+            step = std::max(1L, std::min(143L, step));
+            if (target < shown) step = -step;
+            credits_shown_ = static_cast<double>(shown + step);
+            pres_.credit_tick(step > 0);
         }
         // Consume input actions ONCE per frame.
         const ra2engine::InputActions act = input_.take_actions();
@@ -5871,8 +5888,10 @@ public:
         // W2-SK-14: the ability (rad ticks, drone ticks, blasts...) and
         // garrison event queues grew without bound in real play -- nothing
         // in GameScene ever took them. Drain both every frame.
-        (void)world_.take_ability_events();
-        (void)world_.take_garrison_events();
+        // W5-E: deploy / garrison / crate sounds and EVA (pres_audio_events.inc).
+        pres_.on_world_events(world_, ba_, pres_crates_, world_.take_ability_events(),
+                              world_.take_garrison_events());
+        pres_crates_.clear();
     }
     // G-87: the map's own dressing in the real game (trees, overlays, smudges,
     // neutral structures). Never in a gate (GameScene-only).
@@ -6540,6 +6559,7 @@ private:
     AudioSystem          audio_;
     Presentation         pres_;    // G-80..G-91 presentation driver
     std::vector<ra2engine::World::VetEvent> pres_vet_;   // promotions since the last frame
+    std::vector<ra2engine::World::CrateEvent> pres_crates_;   // W5-E crate pickups since the last frame
     PresMap              map_dressing_;               // G-87
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
