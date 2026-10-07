@@ -31,6 +31,8 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -60,6 +62,26 @@ struct MixerSound {
     double range = 10.0;          // cells
     int min_volume = 50;          // 0..100; GLOBAL-only floor
     AudioBus bus = AudioBus::Sound;   // [P8] volume bus (SFX by default)
+    // W2-GA-24 [RE: audio-playback.md §2/§4, FUN_004048b0 / FUN_004055c0]:
+    // pitch % = 100 + RandomRanged(fshift_lo, fshift_hi); volume % -=
+    // RandomRanged(0, vshift). Control ALL plays every body sample in order,
+    // ATTACK/DECAY reserve the first/last variant as a fixed intro/outro, LOOP
+    // repeats the body until stopped. Audio-local RNG (never the sim's).
+    int vshift = 0;
+    int fshift_lo = 0, fshift_hi = 0;
+    bool all = false;
+    bool attack = false, decay = false;
+    bool loop = false;
+};
+
+// W2-GA-22: a streamed stereo music source (22050 Hz interleaved L,R). The
+// mixer pulls from it on the audio thread; implementations must be
+// thread-safe. read() returns the frames written (the rest of `out` is left
+// untouched -- the mixer zero-fills).
+class MusicSource {
+public:
+    virtual ~MusicSource() = default;
+    virtual std::size_t read(int16_t* lr, std::size_t frames) = 0;
 };
 
 // AMENDED: real 5-level scale (docs/re/audio-playback.md, table @0x815018):
@@ -77,7 +99,11 @@ public:
     int count() const;
 
 private:
+    friend class Mixer;
     std::vector<std::vector<int16_t>> clips_;
+    // W2-GA-P4: clips may be added from the game thread while the audio
+    // thread renders; the mixer holds this lock for a whole render call.
+    std::unique_ptr<std::mutex> mu_ = std::make_unique<std::mutex>();
 };
 
 // The mixer proper: keyed sound registry, a bounded voice pool, a
@@ -115,6 +141,22 @@ public:
     // for which of these is a documented approximation of vanilla.
     bool play(const std::string& key, double dist_cells = 0.0);
 
+    // W2-GA-23 [RE: audio-playback.md §3, RE-Q11 FUN_0074f8e0]: like play()
+    // but positional -- `pan` 0..16384 (8192 centre) -- and returns a voice
+    // handle (0 = not started) the caller re-attenuates every frame with
+    // update_voice (the original re-evaluates live voices and STOPS one that
+    // leaves range).
+    std::uint32_t play_at(const std::string& key, double dist_cells, int pan);
+    // Re-evaluates a live voice's gain/pan; false (and the voice is stopped)
+    // once it is inaudible or already finished.
+    bool update_voice(std::uint32_t handle, double dist_cells, int pan);
+    void stop_voice(std::uint32_t handle);
+    bool voice_alive(std::uint32_t handle) const;
+
+    // W2-GA-22: the streamed score (Score bus), mixed by render_stereo (and
+    // downmixed by render). nullptr = none.
+    void set_music(std::shared_ptr<MusicSource> src);
+
     // Queues an EVA line by SoundBank clip id: full volume, no gain
     // scaling, one active at a time (FIFO behind it). A new call starts
     // playing immediately iff no EVA line is currently active.
@@ -132,6 +174,10 @@ public:
     // clamps to the int16 range, and advances all playback positions,
     // retiring any voice/EVA clip that finishes during this call.
     void render(int16_t* out, std::size_t frames);
+    // W2-GA-23: the stereo sink path -- interleaved L,R; per-voice pan (linear
+    // balance law around 8192), streamed music, and a soft limiter instead of
+    // a hard clamp (headroom over the original's hardware mixer saturation).
+    void render_stereo(int16_t* lr, std::size_t frames);
 
     int active_voices() const;          // non-EVA voices currently playing
     bool eva_active() const;
@@ -160,10 +206,25 @@ private:
         int priority;
         std::uint64_t age;
         Bus bus = Bus::Sound;   // [P8] latched from MixerSound::bus at play()
+        // W2-GA-23/24 (defaults keep the pre-W2 arithmetic exactly):
+        int volume = 100;            // after VShift
+        int pan = 8192;
+        std::uint32_t handle = 0;
+        std::uint32_t step = 65536;  // 16.16 playback rate (FShift)
+        std::uint32_t frac = 0;      // 16.16 fraction of pos
+        std::vector<int> seq;        // follow-on clips (ALL / DECAY), in order
+        std::size_t seq_ix = 0;
+        int loop_from = -1;          // LOOP: body clip to repeat
+        bool done = false;
     };
 
     std::uint32_t next_rand_();
+    int ranged_(int lo, int hi);
     void kill_oldest_with_key_(const std::string& key);
+    std::uint32_t start_(const std::string& key, double dist_cells, int pan);
+    // Advances one voice by one output frame; false once it has finished.
+    bool next_sample_(Voice& v, int& sample);
+    void retire_();
 
     const SoundBank& bank_;
     std::map<std::string, MixerSound> sounds_;
@@ -176,6 +237,12 @@ private:
     std::uint32_t rng_;
     std::uint64_t age_counter_ = 0;
     int bus_gain_[3] = {1000, 1000, 1000};   // [P8] Sound / Voice / Score permille
+    std::uint32_t next_handle_ = 1;
+    std::shared_ptr<MusicSource> music_;
+    std::vector<int16_t> music_buf_;
+    // W2-GA-P4: every public entry point locks this (the SDL audio thread
+    // renders while the game thread triggers sounds).
+    mutable std::recursive_mutex mu_;
 };
 
 }  // namespace ra2engine

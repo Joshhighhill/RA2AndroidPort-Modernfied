@@ -44,4 +44,13 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
                             double yaw_rad, const ra2assets::Vpl& vpl,
                             const ra2assets::Palette& pal);
 
+// W2-GA-12 [RE: voxel-render.md fn table, FUN_00755680 -- the VoxLib shadow
+// renderer plots every projected column in colour 1 (shadow) at GROUND
+// level]: the model's silhouette with each voxel's height flattened to z=0,
+// as a black alpha-`alpha` mask in the same anchor space as the hull sprite
+// of the same yaw. [RE-FALLBACK: RE-Q9 open -- no light-direction offset;
+// 50 % Darken like the SHP shadows.]
+VoxelSprite rasterize_shadow(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
+                             double yaw_rad, int alpha);
+
 }  // namespace ra2engine
