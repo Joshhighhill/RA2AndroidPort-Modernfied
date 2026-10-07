@@ -142,7 +142,7 @@
         using C = ra2engine::HotCmd;
         switch (b.cmd) {
             case C::None: return false;
-            case C::Options: menu_.open_ = true; return true;
+            case C::Options: menu_.open(); return true;
             case C::StopObject: input_.stop_selected(); return true;
             case C::GuardObject: input_.guard_selected(); return true;
             case C::ScatterObject: input_.scatter_selected(); return true;

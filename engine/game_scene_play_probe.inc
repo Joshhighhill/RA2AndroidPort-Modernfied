@@ -208,8 +208,8 @@
                              : bm == ra2engine::Input::BaseMode::Sell ? "sell" : "none");
         p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
         p.set("dialog_open", 0);
-        menu_.play_probe(p);
         gf_abort_.play_probe(p);   // gF G-14: Abort Mission confirm
+        menu_.play_probe(p);       // W2-UI-15: page 0xB6 publishes confirm_* too (after)
         sld_.play_probe(p);
         p.set_s("banner", newest_message());   // W2-UI-21 message list
         if (campaign_) {

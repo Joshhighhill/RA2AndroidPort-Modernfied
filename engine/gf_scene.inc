@@ -253,9 +253,9 @@ public:
         ev.kind = ra2engine::InputEvent::PointerUp;
         handle(ev);
     }
-    void gf_open_menu() { menu_.open_ = true; }
+    void gf_open_menu() { menu_.open(); }
     bool gf_menu_open() const { return menu_.open_; }
-    bool gf_abort_open() const { return gf_abort_.open(); }
+    bool gf_abort_open() const { return gf_abort_.open() || (menu_.open_ && menu_.page() == InGameMenu::P_ABORT); }   // W2-UI-15 page 0xB6
     std::vector<std::string> gf_buildable_ids(int tab) const {
         std::vector<std::string> out;
         for (int i : tab_buildable(tab))

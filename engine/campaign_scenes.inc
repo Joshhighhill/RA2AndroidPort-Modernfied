@@ -10,7 +10,7 @@
 // The menu's long-lived state, published by run_menu (like g_user_settings)
 // so a finished/aborted mission can return to the main menu.
 const Rules* g_menu_rules = nullptr;
-const MenuArt* g_menu_art = nullptr;
+// g_menu_art lives in shell_pages.inc (W2-UI-13: also the in-game pages' art).
 
 Scene* make_main_menu_scene(bool no_audio) {
     if (!g_menu_rules || !g_menu_art) return nullptr;
