@@ -354,10 +354,14 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
         }
     }
     if (damaged && !a.fire_offsets.empty()) {
-        // [RE-FALLBACK: RE-P6 open -- fire spawn code not read] one
-        // DamageFireTypes anim per DamageFireOffset while below ConditionYellow,
-        // offsets in pixels from the building's draw point (W4-FIX-POS: the
-        // origin-cell top vertex, like every other building attachment).
+        // [RE: W4-FIX-POS, RE-P6 resolved -- FUN_0043c050, called from the
+        // damage-state update FUN_0043faa0] one DamageFireTypes anim per
+        // DamageFireOffset (type +0x15D8, up to 8 points, list ends at the
+        // first unset one) while below ConditionYellow, created at the
+        // building's DRAW POINT (vtbl+0xAC, the origin-cell top vertex) +
+        // the offset converted pixel->lepton (FUN_006d15e0), flags 0x600.
+        // [RE-FALLBACK: the type pick -- the original starts at a random
+        // DamageFireTypes index and cycles; the clone cycles from 0.]
         static std::vector<std::string> fires = g_fx->damage_fires();
         if (fires.empty()) return;
         for (std::size_t i = 0; i < a.fire_offsets.size(); ++i) {
