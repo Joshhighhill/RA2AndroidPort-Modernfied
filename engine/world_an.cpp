@@ -438,18 +438,23 @@ void World::an_step_fixed_wing(double dt) {
                 // Attack pass: in weapon range -> fire one ammo point.
                 if (cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rof_cool <= 0.0 &&
                     u.altitude >= P.flight_level * 0.5) {
+                    // W4: a flying projectile (the Harrier / Black Eagle
+                    // Maverick, the Hornet / Osprey bombs: ROT>0 homing) is
+                    // launched behind the P2 firewall and hits at detonation.
                     if (tu >= 0) {
                         const int slot = unit_weapon_for_unit(u, units_[tu]);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
+                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, tu, -1);
+                            else if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
                             else deliver_unit_hit(units_, occ_, i, tu);
                         }
                     } else if (tb >= 0) {
                         const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
+                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
+                            else if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
                         }
                     }
                     u.rof_cool = std::max(1, u.w_rof) / 15.0;

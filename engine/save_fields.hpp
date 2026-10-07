@@ -118,6 +118,7 @@ struct SaveAccess {
         save::io(ar, w.proj_events_);
         save::io(ar, w.proj_accum_);
         save::io(ar, w.proj_frame_);
+        save::io(ar, w.proj_seq_);   // W4 (v15)
         // AI-1/2/3
         save::io(ar, w.ai_houses_);
         save::io(ar, w.ai_any_);
@@ -385,7 +386,10 @@ template <class Ar> void fields(Ar& ar, OreMine& v) {   // W2-SK-01 (v13)
     io(ar, v.spawned);
 }
 template <class Ar> void fields(Ar& ar, ProjRng& v) { io(ar, v.s); }
-template <class Ar> void fields(Ar& ar, ProjectileRules& v) { io(ar, v.gravity); io(ar, v.ballistic_scatter); }
+template <class Ar> void fields(Ar& ar, ProjectileRules& v) {
+    io(ar, v.gravity); io(ar, v.ballistic_scatter);
+    io(ar, v.rot_var); io(ar, v.safety_altitude);   // W4 (v15)
+}
 template <class Ar> void fields(Ar& ar, Superweapon& v) {
     io(ar, v.type); io(ar, v.recharge_secs); io(ar, v.timer); io(ar, v.ready);
 }
@@ -420,6 +424,7 @@ template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
     io(ar, v.detonation_altitude);
     io(ar, v.weapon_range);
     io(ar, v.flh);
+    io(ar, v.level); io(ar, v.airburst); io(ar, v.very_high); io(ar, v.course_lock);   // W4 (v15)
 }
 template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.kind);
@@ -440,6 +445,10 @@ template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.max_z);
     io(ar, v.weapon_slot);   // Gap fix C
     io(ar, v.attacker_building);
+    // W4 (v15): homing state
+    io(ar, v.uid); io(ar, v.rot); io(ar, v.speed); io(ar, v.level); io(ar, v.airburst);
+    io(ar, v.very_high); io(ar, v.course_lock); io(ar, v.lock_frames); io(ar, v.locked);
+    io(ar, v.giveup_n); io(ar, v.giveup_acc); io(ar, v.prev_dist); io(ar, v.lost); io(ar, v.target_air);
 }
 // Gap fix C: one shot event (World::FireEvent).
 template <class Ar> void fields(Ar& ar, World::FireEvent& v) {

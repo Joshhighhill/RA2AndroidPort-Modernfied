@@ -1236,6 +1236,11 @@ public:
     std::vector<ProjectileEvent> proj_events_;  // pending take_projectile_events
     double proj_accum_ = 0.0;                   // dt accumulator -> 15 Hz frames
     int proj_frame_ = 0;                        // logic-frame counter
+    int proj_seq_ = 0;                          // W4: bullet ID source (homing wobble phase)
+    // W4: fill a launched homing bullet's state (uid, ROT, keys, lock).
+    void init_homing(Projectile& p, const ProjectileSpec& spec, double launch_speed);
+    // W4: the homing target point this frame; false when the target is gone.
+    bool homing_target(Projectile& p, Vec3i& out) const;
     // Firewalled World::step pass (pure insertion before step_combat): advance
     // every projectile one logic frame per accumulated 1/15 s.
     void step_projectiles(double dt);

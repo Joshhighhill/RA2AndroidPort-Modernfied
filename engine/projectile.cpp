@@ -236,6 +236,115 @@ void integrate_vertical(Projectile& p) {
 }
 
 namespace {
+constexpr double kTwoPi = 2.0 * kPi;
+constexpr double kU16Rad = kTwoPi / 65536.0;   // one 16-bit facing unit
+// Turn `a` toward `want` (radians) by at most `lim` (FUN_005B23C0 snap within
+// the limit, else +-lim by the shorter way, FUN_005B2380).
+double turn_toward_rad(double a, double want, double lim) {
+    double d = std::remainder(want - a, kTwoPi);
+    if (std::fabs(d) <= lim) return want;
+    return a + (d > 0.0 ? lim : -lim);
+}
+}  // namespace
+
+int integrate_homing(Projectile& p, const Vec3i& tgt, int frame, const HomingRules& hr) {
+    // --- speed (0x466968..0x466AB5) ---
+    const double cap = static_cast<double>(p.speed_cap);
+    if (p.course_lock == 0) {
+        if (p.speed_cap > 0x27 || cap <= p.speed + 0.5) p.locked = false;   // 0x7E0738 = 0.5
+    } else if (p.lock_frames < p.course_lock && ++p.lock_frames >= p.course_lock) {
+        p.locked = false;
+    }
+    if (p.course_lock > 0 && p.lock_frames >= p.course_lock) p.locked = false;
+    int accel = p.acceleration;
+    if (p.locked && p.course_lock == 0) accel = (frame % 2 == 0) ? 1 : 0;
+    if (p.speed < cap) {
+        p.speed = std::min(cap, p.speed + accel);
+    } else if (p.speed > cap) {
+        p.speed -= accel / 2;
+        if (p.speed <= 0.0) p.speed = 0.0;
+    }
+    // --- turn rate with the MissileROTVar wobble (0x466B9F..0x466CF1) ---
+    const double ph = static_cast<double>((p.uid + frame) % 15) * (1.0 / 15.0) * kTwoPi;
+    int turn = ftol((hr.rot_var * std::sin(ph) + hr.rot_var + 1.0) * p.rot);
+    const double dx = static_cast<double>(tgt.x) - p.x, dy = static_cast<double>(tgt.y) - p.y;
+    const double dz = static_cast<double>(tgt.z) - p.z;
+    const double d3 = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (!p.lost && d3 < 256.0) turn = ftol(turn * 1.5);   // 0x7E38F0 inside one cell
+    if (p.locked) turn = 0;
+    const int lim16 = (turn & 0xFF) << 8;                 // MOV CH,AL
+    const double lim = lim16 * kU16Rad;
+    // --- FUN_005B1B20 steering ---
+    const double hv = std::sqrt(p.vx * p.vx + p.vy * p.vy);
+    double yaw = hv > 0.0 ? std::atan2(p.vy, p.vx) : std::atan2(dy, dx);
+    double pitch = std::atan2(p.vz, hv);
+    const double horiz = std::sqrt(dx * dx + dy * dy);
+    if (p.lost) {
+        if (!p.level) pitch = turn_toward_rad(pitch, kPi / 4.0, lim);   // toward climb 0x2000
+    } else {
+        if (horiz > 0.0) yaw = turn_toward_rad(yaw, std::atan2(dy, dx), lim);
+        const int far = (p.very_high ? 6 : 3) * 256;
+        if (p.level) {
+            // Level=yes: every pitch change is skipped (torpedoes).
+        } else if (!p.target_air && (lim16 >> 8) > 1 && (p.airburst || ftol(d3) > far)) {
+            // Cruise: follow the ground at min(d_cells, 5) levels (10 for
+            // Airburst/VeryHigh); floor = 0 on the flat combat plane.
+            int levels = ftol(d3) / 256;
+            if (p.airburst || p.very_high) levels = 10;
+            else if (levels > 4) levels = 5;
+            const int err = p.z - levels * kLevelHeight;
+            if (err < -20) p.z += 18;
+            else if (err > 20) p.z -= 18;
+            double want = 0.0;                                // level 0x4000
+            if (err < -kLevelHeight / 2) want = kPi / 4.0;    // climb 0x2000
+            else if (err > kLevelHeight / 2) want = -kPi / 16.0;   // dive 0x4800
+            pitch = turn_toward_rad(pitch, want, lim / 2.0);
+        } else {
+            // Direct: straight at the target (air targets / close in).
+            pitch = turn_toward_rad(pitch, std::atan2(dz, std::max(horiz, 1.0)), lim);
+        }
+    }
+    const double cp = std::cos(pitch);
+    p.vx = p.speed * cp * std::cos(yaw);
+    p.vy = p.speed * cp * std::sin(yaw);
+    p.vz = p.level ? 0.0 : p.speed * std::sin(pitch);
+    // The returned distance: z quartered (zeroed for Airburst).
+    const double qz = p.airburst ? 0.0 : dz / 4.0;
+    const int dist = ftol(std::sqrt(dx * dx + dy * dy + qz * qz));
+    int result = 0;
+    // [RE-FALLBACK: a Level bullet (torpedo) runs on the water line, z = 0 in
+    // the clone's flat plane, so the height < 1 test is skipped for it.]
+    if (!p.lost && (dist <= p.speed * 0.5 || (p.z < 1 && !p.level)))
+        result = ((p.z > 0 || p.level) && !p.airburst) ? 1 : 2;
+    if (p.lost && p.target_air && p.z >= hr.safety_altitude) result = 2;   // Rules+0x5A0
+    // Give-up: 60 frames of closing samples, then a decaying average
+    // (0x7E38E8 = 0.98333); not closing (0 <= avg < 60) -> detonate.
+    if (result == 0 && !p.locked && !p.lost && p.prev_dist >= 0) {
+        const int delta = p.prev_dist - dist;
+        if (p.giveup_n < 60) {
+            ++p.giveup_n;
+            p.giveup_acc += delta;
+        } else {
+            p.giveup_acc = p.giveup_acc * 0.98333333333333328 + delta;
+            if (p.giveup_acc >= 0.0 && p.giveup_acc < 60.0 && !p.airburst && !p.very_high) result = 2;
+        }
+    }
+    p.prev_dist = dist;
+    if (result == 1) {
+        p.x = tgt.x;
+        p.y = tgt.y;
+        p.z = tgt.z;
+    } else if (result == 0) {
+        p.x = ftol(static_cast<double>(p.x) + p.vx);
+        p.y = ftol(static_cast<double>(p.y) + p.vy);
+        p.z = ftol(static_cast<double>(p.z) + p.vz);
+        if (p.z < 0 && !p.level) result = 2;   // into the ground
+    }
+    p.max_z = std::max(p.max_z, p.z);
+    return result;
+}
+
+namespace {
 std::string strip_comment_trim(const std::string& raw) {
     std::string v = raw.substr(0, raw.find(';'));
     const auto b = v.find_first_not_of(" 	");
@@ -270,15 +379,23 @@ ProjectileSpec resolve_projectile_spec(const ra2assets::Rules& rules, const std:
     spec.floater = flag("Floater");
     const bool vertical = flag("Vertical");
     spec.rot = static_cast<int>(rules.section_double(proj, "ROT", 0.0));
-    spec.acceleration = static_cast<int>(rules.section_double(proj, "Acceleration", 0.0));
+    // W4: BulletTypeClass ctor default Acceleration = 3 (gamemd 0x46BB2D:
+    // mov eax,3 / mov [esi+2D0h],eax).
+    spec.acceleration = static_cast<int>(rules.section_double(proj, "Acceleration", 3.0));
+    spec.level = flag("Level");
+    spec.airburst = flag("Airburst");
+    spec.very_high = flag("VeryHigh");
+    spec.course_lock = static_cast<int>(rules.section_double(proj, "CourseLockDuration", 0.0));
     spec.detonation_altitude =
         static_cast<int>(rules.section_double(proj, "DetonationAltitude", 0.0));
     spec.speed_cap = weapon_speed_leptons(rules.weapon_speed(weapon));
     spec.weapon_range = ftol(rules.weapon_range(weapon) * 256.0);
-    if (spec.inviso || spec.rot > 0)
-        spec.kind = ProjKind::Instant;      // §11.3 Inviso / homing deferred
+    if (spec.inviso)
+        spec.kind = ProjKind::Instant;      // §11.3 Inviso
     else if (vertical)
         spec.kind = ProjKind::Vertical;     // §6.2
+    else if (spec.rot > 0)
+        spec.kind = ProjKind::Homing;       // W4: the homing branch (§1.1)
     else
         spec.kind = ProjKind::Ballistic;    // §6.1
     return spec;
@@ -290,6 +407,10 @@ ProjectileRules resolve_projectile_rules(const ra2assets::Rules& rules) {
     r.gravity = rules.section_double("AudioVisual", "Gravity", 6.0);
     // §2: [CombatDamage] BallisticScatter (cells) -> FUN_00474550 ftol(x*256.0).
     r.ballistic_scatter = ftol(rules.section_double("CombatDamage", "BallisticScatter", 1.0) * 256.0);
+    // W4: the homing wobble amplitude and the air-target safety climb
+    // (Rules+0x598 / +0x5A0, string-anchored at 0x66E66C / 0x66E68C).
+    r.rot_var = rules.general_double("MissileROTVar", 0.25);
+    r.safety_altitude = static_cast<int>(rules.general_double("MissileSafetyAltitude", 750.0));
     return r;
 }
 

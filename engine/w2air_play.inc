@@ -180,6 +180,20 @@
                 if (!p.n.count(kp) || p.n.at(kp) < u.an.rocket.phase) p.set(kp, u.an.rocket.phase);
             }
         }
+        {   // W4: homing projectiles in flight (count, top height, nearest miss distance)
+            int nh = 0, top = 0, near = -1, spd = 0;
+            for (const ra2engine::Projectile& q : world_.projectiles()) {
+                if (q.kind != ra2engine::ProjKind::Homing) continue;
+                ++nh;
+                top = std::max(top, q.z);
+                spd = std::max(spd, static_cast<int>(q.speed));
+                if (q.prev_dist >= 0 && (near < 0 || q.prev_dist < near)) near = q.prev_dist;
+            }
+            p.set("homing_live", nh);
+            p.set("homing_top", top);
+            p.set("homing_near", near);
+            p.set("homing_speed", spd);
+        }
         for (const ra2engine::Building& b : world_.buildings()) {   // W4: first live building's HP
             if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
             if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size())) continue;
