@@ -429,3 +429,17 @@ Full suite (Debug, after merging master 256908d): 792 test cases / 350313 assert
 `--demo-campaign` re-pinned `5d033b6aa019beaa`, `--demo-saveload`
 `c19113168b76bae7` (save v12), `--demo-triggers` unchanged `b8cd267e98f5e002`
 (causes in README).
+
+#### W2-SK re-verified after merging master 6f58adf (w2fix-campaign)
+
+Every script was run again one at a time. All PASS except `probe-bridge`,
+`probe-flow` and `robust-missing`, which fail as on master. One fix came out of
+this run: `m-all02` failed until the campaign and civilian building
+registrations also read `Capturable=`. ALL02's map sets `Capturable=true` on
+the chapel, CACOLO01. The campaign scripts on the merged tree:
+
+| Script | Result | play_hash |
+|---|---|---|
+| `m-all01` / `m-all02` / `m-all04` / `m-all08` | PASS | `c20bae0c7a692b2d` / `43252907804077f6` / `2a4bf61909f05e5d` / `e06d8723d56f98f7` |
+| `m-sov01` / `m-sov03` / `m-sov05` / `m-sov06` / `m-sov09` | PASS | `5dfd3c2c13a86964` / `e95b7fe72b0e8cb3` / `2d574c4c18372100` / `88821d86b889b077` / `2a7dbf06506e0f70` |
+| `m-lose` | PASS | `371500367c3e99c4` |

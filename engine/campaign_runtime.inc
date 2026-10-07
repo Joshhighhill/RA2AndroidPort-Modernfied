@@ -208,6 +208,10 @@ public:
         d.explosion = rules_.explosion_first(id);
         d.unsellable = rules_.section_flag(id, "Unsellable", false);
         d.click_repairable = rules_.section_flag(id, "ClickRepairable", true);
+        // W2-SK-12/19/20: the same Capturable/Spyable/UnitRepair flags as the roster.
+        d.capturable = rules_.section_flag(id, "Capturable", false);
+        d.spyable = rules_.section_flag(id, "Spyable", false);
+        d.unit_repair = rules_.section_flag(id, "UnitRepair", false);
         d.crewed = rules_.section_flag(id, "Crewed", false);
         BuildingArt slot;
         for (const auto& c : ra2assets::theater_candidates(art_id, 'T', "isotemp.mix",
