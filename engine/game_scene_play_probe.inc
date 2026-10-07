@@ -19,6 +19,24 @@
         p.set("playfield_w", playfield_w_);
         p.set("cam_x", cam_.x);
         p.set("cam_y", cam_.y);
+        // W3-FX effects counters (pres_effects.inc).
+        p.set("fx_systems", static_cast<double>(pres_.effects().system_count()));
+        p.set("fx_particles", static_cast<double>(pres_.effects().particle_count()));
+        p.set("fx_debris", static_cast<double>(pres_.effects().debris_count()));
+        p.set("fx_twinkles", static_cast<double>(pres_.effects().twinkle_count()));
+        p.set("fx_wakes", static_cast<double>(pres_.effects().wakes_spawned()));
+        p.set("fx_anims", static_cast<double>(pres_.fx().live()));
+        p.set("radar_pings", static_cast<double>(g_radar_pings.size()));
+        p.set("sw_strikes", static_cast<double>(world_.sw_strikes().size()));
+        {
+            int bolts = 0;
+            int bx = -1, by = -1;
+            for (const ra2engine::SwEvent& e : world_.sw_events())
+                if (e.kind == ra2engine::SwEvent::Bolt) { ++bolts; bx = e.x; by = e.y; }
+            p.set("sw_bolts", bolts);
+            p.set("sw_bolt_x", bx);
+            p.set("sw_bolt_y", by);
+        }
         const int houses = world_.house_count();
         p.set("houses", houses);
         for (int h = 0; h < houses; ++h) {
@@ -371,6 +389,10 @@
         };
         p.cheat = [this](const std::vector<std::string>& a) -> std::string {
             const std::string c = a.empty() ? "" : a[0];
+            if (c == "reveal") {   // W3-FX: RevealAllMap for the player (trigger action 16)
+                world_.reveal_all_house(0);
+                return "";
+            }
             if (c == "kill_house" && a.size() >= 2) {
                 const int h = std::atoi(a[1].c_str());
                 for (int i = 0; i < static_cast<int>(world_.units().size()); ++i) {

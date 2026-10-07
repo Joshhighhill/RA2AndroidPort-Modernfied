@@ -446,6 +446,12 @@ public:
         return true;
     }
 
+    // W3-FX play-script cheat: fire a map trigger by name now (camp_fire).
+    int force_trigger(const std::string& name) {
+        const int n = sys_->force_fire(name, host_);
+        drain_log();
+        return n;
+    }
     // W2-CA-19 play-script cheat: place a map/TaskForce type like a reinforcement.
     int spawn(const std::string& type, int house, int x, int y) {
         return place_unit(type, house, x, y, 256, std::string(), "Guard", /*far=*/true);

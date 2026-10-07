@@ -472,6 +472,7 @@ bool World::trigger_lightning_storm(int house, int cx, int cy) {
     an_.strikes.push_back(s);
     an_event(SwEvent::Activated, house, SuperweaponType::LightningStorm, cx, cy);
     an_.any = true;
+    sw_any_ = true;   // step_superweapon runs the strike list
     return true;
 }
 

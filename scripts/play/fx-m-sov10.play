@@ -1,0 +1,39 @@
+# fx-m-sov10 -- W3-FX trigger visuals, Soviet 10 (Weather Control Device):
+# "WCD_Attack_fake" runs action 102 (a lightning storm at waypoint CP) and
+# four action-90 lightning strikes (AG, Q, BI, CD). Before W3-FX both were
+# "unimplemented" in the trigger log. The trigger is forced (camp_fire) so the
+# script does not wait for the mission timer that normally fires it.
+set render_every 300
+set on_quit continue
+set campaign SOV10T.MAP Nod
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+wait 15
+cheat reveal
+view cell 148 117
+cheat camp_fire WCD_Attack_fake                     @W3-FX-90
+wait 1
+shot l01_strike_AG                                  @W3-FX-90
+wait 3
+shot l02_strike_AG_b
+view cell 113 88
+wait 1
+shot l03_strike_CD
+view cell 167 172
+assert sw_strikes == 1                              @W3-FX-102
+until 400 sw_bolts >= 5                             @W3-FX-102
+view cell 167 172
+shot l04_storm_CP                                   @W3-FX-102
+view cell 167 172
+wait 2
+shot l05_storm_CP_b
+view cell 167 172
+wait 2
+shot l06_storm_CP_c
+view cell 167 172
+wait 2
+shot l07_storm_CP_d
+assert scene == game
+end

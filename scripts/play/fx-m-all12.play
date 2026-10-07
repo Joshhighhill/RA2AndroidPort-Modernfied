@@ -1,0 +1,26 @@
+# fx-m-all12 -- W3-FX trigger visuals, Allied 12 (Chrono Storm, Moscow): the
+# "Chrono 1b".."Chrono 4b" triggers play PlayAnimAt 253 -- CHRONOTG, the
+# chrono-arrival flash, in the RA2 deduplicated [Animations] index space --
+# at waypoints U / S / T. Forced with camp_fire (they normally follow the
+# chrono reinforcements).
+set render_every 300
+set on_quit continue
+set campaign ALL12S.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+wait 15
+cheat reveal
+view cell 65 64
+cheat camp_fire "Chrono 1b"                         @W3-FX-41
+wait 2
+assert fx_anims >= 1                                @W3-FX-41
+shot c01_chrono_U                                   @W3-FX-41
+wait 6
+shot c02_chrono_U_b
+view cell 68 68
+cheat camp_fire "Chrono 2b"                         @W3-FX-41
+wait 4
+shot c03_chrono_S_T                                 @W3-FX-41
+end

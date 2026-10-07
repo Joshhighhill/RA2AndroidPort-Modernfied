@@ -41,6 +41,19 @@ private:
                     world_.campaign_kill_unit(i);
             return true;
         }
+        if (c == "camp_fire" && a.size() >= 2) {   // W3-FX: fire the map trigger NAME (spaces as '_' or quoted)
+            std::string name = a[1];
+            for (std::size_t k = 2; k < a.size(); ++k) name += " " + a[k];
+            if (campaign_->force_trigger(name) > 0) return true;
+            std::replace(name.begin(), name.end(), '_', ' ');
+            return campaign_->force_trigger(name) > 0;
+        }
+        if (c == "camp_log") {   // W3-FX: echo the trigger witness lines containing SUBSTR
+            const std::string sub = a.size() >= 2 ? a[1] : std::string();
+            for (const std::string& l : campaign_->witness())
+                if (sub.empty() || l.find(sub) != std::string::npos) std::cout << "[camp-log] " << l << "\n";
+            return true;
+        }
         if (c == "camp_killdef") {   // every armed enemy building (combat skip)
             for (int i = 0; i < (int)world_.buildings().size(); ++i) {
                 const ra2engine::Building& b = world_.buildings()[(std::size_t)i];

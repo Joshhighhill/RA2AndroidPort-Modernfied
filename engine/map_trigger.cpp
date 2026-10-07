@@ -792,6 +792,22 @@ void MapTriggerSystem::fire_actions(Tag* tag, int trig_slot, Trig& t, TriggerHos
     cur_trigger_ = saved;
 }
 
+int MapTriggerSystem::force_fire(const std::string& name, TriggerHost& host) {
+    int type = -1;
+    for (std::size_t i = 0; i < d_.triggers.size() && type < 0; ++i)
+        if (ieq(d_.triggers[i].name, name) || ieq(d_.triggers[i].id, name)) type = (int)i;
+    if (type < 0) return 0;
+    int n = 0;
+    for (Tag& tag : tags_)
+        for (std::size_t i = tag.trigs.size(); i-- > 0;)
+            if (tag.trigs[i].type == type && !tag.trigs[i].destroyed) {
+                tag.trigs[i].enabled = true;
+                fire_actions(nullptr, -1, tag.trigs[i], host);
+                ++n;
+            }
+    return n;
+}
+
 void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
     // FUN_006dce20 [RE §5].
     const int th = trigger_house(t, host);

@@ -284,6 +284,10 @@ public:
     bool trigger_enabled(int trigger_type) const;
     bool trigger_destroyed(int trigger_type) const;
     std::uint64_t state_hash() const;
+    // W3-FX --play dev hook (`cheat camp_fire NAME`): run every instance of
+    // the trigger type named `name` (or with that ID) now, enabling it first
+    // (ForceTrigger without the Enabled gate). Returns the instances fired.
+    int force_fire(const std::string& name, TriggerHost& host);
     // W3-FX: the presentation requests queued since the last call.
     std::vector<VisualRequest> take_visuals() {
         std::vector<VisualRequest> o;
