@@ -87,6 +87,7 @@ private:
     static UnitRoster rp_load_roster(const std::string& dir, const ra2assets::MixFile& ra2,
                                      const UnitAssets& ua, const Rules& rules, const Art& art,
                                      const Ini& rules_ini, const ra2engine::SkirmishConfig& cfg) {
+        load_progress("ROSTER");   // W2-AR-02 loading-screen checkpoint
         if (soviet_campaign(cfg)) return load_soviet_unit_roster(dir, ra2, ua, rules, art);
         if (!cfg.campaign_map.empty()) return load_unit_roster(dir, ra2, ua, rules, art);
         const ra2engine::SkirmishSlot s0 =
@@ -99,6 +100,7 @@ private:
     // Ctor tail (skirmish only): factories by rules Factory=, the building
     // country/tech mask, and the first sidebar list.
     void rp_setup() {
+        load_progress("SIDEBAR");   // W2-AR-02 loading-screen checkpoint
         if (!cfg_.campaign_map.empty()) {
             w2_setup(/*skirmish=*/false);   // W2-AN: SW/naval/air params (w2air_play.inc)
             return;

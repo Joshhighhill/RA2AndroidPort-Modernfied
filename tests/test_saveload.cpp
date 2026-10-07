@@ -480,6 +480,40 @@ TEST_CASE("saveload: container encodes header + sections; wrong version is flagg
     CHECK_FALSE(decode_save(junk, h));
 }
 
+// W2-AR-20: the v10 CRC-32 trailer refuses any flipped / truncated byte.
+TEST_CASE("saveload: CRC-32 trailer - every single-byte flip or truncation is refused") {
+    CHECK(crc32(reinterpret_cast<const std::uint8_t*>("123456789"), 9) == 0xCBF43926u);   // the IEEE check value
+    SaveFile f;
+    f.header.description = "crc";
+    f.header.frame = 77;
+    f.sections[kTagWorld] = std::vector<std::uint8_t>(300, 0x5A);
+    f.sections[kTagScene] = {9, 8, 7};
+    const std::vector<std::uint8_t> bytes = encode_save(f);
+    SaveFile g;
+    REQUIRE(decode_save(bytes, g));
+    CHECK(g.sections.size() == 2);
+    int refused = 0, total = 0;
+    for (std::size_t i = 12; i < bytes.size(); ++i) {   // past magic + version
+        for (std::uint8_t bit : {std::uint8_t(0x01), std::uint8_t(0x80)}) {
+            std::vector<std::uint8_t> b = bytes;
+            b[i] ^= bit;
+            ++total;
+            if (!decode_save(b, g)) ++refused;
+        }
+    }
+    CHECK(refused == total);
+    std::vector<std::uint8_t> cut(bytes.begin(), bytes.end() - 1);
+    CHECK_FALSE(decode_save(cut, g));
+    std::vector<std::uint8_t> extra = bytes;
+    extra.push_back(0);
+    CHECK_FALSE(decode_save(extra, g));
+    // The header stays readable for the Load list even when the body is bad.
+    std::vector<std::uint8_t> bad = bytes;
+    bad[bad.size() - 10] ^= 0xFF;
+    REQUIRE(decode_save(bad, g, /*header_only=*/true));
+    CHECK(g.header.description == "crc");
+}
+
 TEST_CASE("saveload: slots - SAVE%04X.SAV naming, newest-first listing, delete") {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "ra2_p7_saveload_test";
@@ -502,13 +536,21 @@ TEST_CASE("saveload: slots - SAVE%04X.SAV naming, newest-first listing, delete")
     { std::FILE* fp = std::fopen((dir / "JUNK.SAV").string().c_str(), "wb");
       if (fp) { std::fputs("nope", fp); std::fclose(fp); } }
 
-    std::vector<SlotEntry> s = list_saves(dir.string());
+    std::vector<SlotEntry> all = list_saves(dir.string());
+    // W2-AR-21: the junk *.SAV is listed, flagged damaged (never loadable).
+    std::vector<SlotEntry> s;
+    int damaged = 0;
+    for (const SlotEntry& e : all) {
+        if (e.damaged) { ++damaged; CHECK(e.file_name == "JUNK.SAV"); }
+        else s.push_back(e);
+    }
+    CHECK(damaged == 1);
     REQUIRE(s.size() == 2);
     CHECK(s[0].header.description == "second");   // newest first
     CHECK(s[1].header.description == "first");
     CHECK_FALSE(s[0].wrong_version);
     CHECK(delete_save(s[1].path));
-    CHECK(list_saves(dir.string()).size() == 1);
+    CHECK(list_saves(dir.string()).size() == 2);   // "second" + the damaged junk
     fs::remove_all(dir, ec);
     CHECK(clean_description("a\tb\x01" "c") == "abc");
 }

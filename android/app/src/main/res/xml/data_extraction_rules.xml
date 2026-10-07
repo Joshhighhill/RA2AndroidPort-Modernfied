@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- W2-AR-12: Android 12+ cloud backup / device transfer: settings + saves
+     only, never the user-supplied game files. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

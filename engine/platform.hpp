@@ -7,13 +7,18 @@ struct InputEvent {
     // the save description edit).
     // Pan (a touch pan gesture; dx/dy in window pixels) is produced only by the
     // touch gesture layer.
-    enum Kind { None, Quit, PointerDown, PointerUp, PointerMove, Key, Text, Pan } kind = None;
+    // W2-AR-09/-26 (appended): AppBackground (Android WILLENTERBACKGROUND /
+    // TERMINATING -- save now, the process may be killed), AppForeground,
+    // AppLowMemory (drop caches), RenderReset (GL context lost: textures gone).
+    enum Kind { None, Quit, PointerDown, PointerUp, PointerMove, Key, Text, Pan,
+                AppBackground, AppForeground, AppLowMemory, RenderReset } kind = None;
     int x = 0, y = 0;                       // pointer position (window pixels)
     enum Button { Left, Right } button = Left;  // valid on PointerDown/PointerUp
     bool shift = false;                     // Shift held at event time
     bool ctrl = false;                      // Ctrl held at event time
     bool alt = false;                       // Alt held at event time
     bool touch = false;                     // produced by a finger, not a mouse
+    bool system_back = false;               // W2-AR-14: Key from Android BACK (also Esc)
     uint32_t t_ms = 0;                      // event timestamp (ms) for double-click
     int key = 0;                            // Key: kKey* code (0 = vk-only key)
     // Key: the Windows virtual-key code of the pressed key -- the code space
@@ -55,6 +60,11 @@ public:
     // rendering stays at the logical size given to create().
     void set_window_size(int w, int h);
     void set_fullscreen(bool on);
+    // W2-AR-06: change the LOGICAL canvas (e.g. a wider game view on a 20:9
+    // phone); input is remapped to it. No-op when unchanged.
+    void set_logical_size(int w, int h);
+    // Physical output size in pixels (the window / phone panel).
+    void output_size(int& w, int& h) const;
 private:
     Platform() = default;
     struct Impl; Impl* p_ = nullptr;

@@ -25,11 +25,18 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
         throw std::runtime_error(SDL_GetError());
     }
 
+    Uint32 flags = hidden ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN;
+#ifdef __ANDROID__
+    // W2-AR-06: SDLActivity only goes immersive (status + navigation bars
+    // hidden, the whole panel) for a FULLSCREEN window; a plain SHOWN window
+    // got 1794x1017 of a 1920x1080 phone with both bars visible.
+    flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
     SDL_Window* window = SDL_CreateWindow(
         title,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         w, h,
-        hidden ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
+        flags);
     if (!window) {
         std::string err = SDL_GetError();
         SDL_Quit();
@@ -66,7 +73,7 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
     SDL_RenderSetLogicalSize(renderer, w, h);
 
     Platform p;
-    p.p_ = new Impl{window, renderer, w, h};
+    p.p_ = new Impl{window, renderer, w, h, TouchGestures{}};
     return p;
 }
 
@@ -81,6 +88,17 @@ void Platform::set_window_size(int w, int h) {
 void Platform::set_fullscreen(bool on) {
     if (!p_) return;
     SDL_SetWindowFullscreen(p_->window, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+}
+
+void Platform::set_logical_size(int w, int h) {
+    if (!p_ || w <= 0 || h <= 0 || (w == p_->w && h == p_->h)) return;
+    p_->w = w;
+    p_->h = h;
+    SDL_RenderSetLogicalSize(p_->renderer, w, h);
+}
+void Platform::output_size(int& w, int& h) const {
+    w = h = 0;
+    if (p_) SDL_GetRendererOutputSize(p_->renderer, &w, &h);
 }
 
 Platform::Platform(Platform&& other) noexcept : p_(other.p_) {
@@ -148,6 +166,7 @@ void key_event_from_sdl(int k, int mod, InputEvent& ev) {
     ev.alt = (mod & KMOD_ALT) != 0;
     ev.vk = vk_from_sdl(k);
     ev.key = 0;
+    ev.system_back = (k == SDLK_AC_BACK);
     // P7: the named keys the save/load UI + P10 briefing consume.
     // G-01: Escape is an ordinary key (KeyboardMD.ini [Hotkey] Options=27 --
     // the in-game options dialog; dialogs treat it as Back). Only the window
@@ -194,6 +213,24 @@ bool Platform::poll(InputEvent& ev) {
             // A held command key must not re-fire (D would toggle deployers
             // every repeat); only the editing keys (kKey*) auto-repeat.
             if (e.key.repeat && ev.key == 0) ev.kind = InputEvent::None;
+            break;
+        // W2-AR-09/-26: Android lifecycle. SDL 2.30 sends these from the game
+        // thread's PumpEvents and only blocks the thread AFTER the app has
+        // consumed DIDENTERBACKGROUND, so handling WILLENTERBACKGROUND here
+        // (autosave, pause) still runs before the process can be frozen.
+        case SDL_APP_WILLENTERBACKGROUND:
+        case SDL_APP_TERMINATING:
+            ev.kind = InputEvent::AppBackground;
+            break;
+        case SDL_APP_DIDENTERFOREGROUND:
+            ev.kind = InputEvent::AppForeground;
+            break;
+        case SDL_APP_LOWMEMORY:
+            ev.kind = InputEvent::AppLowMemory;
+            break;
+        case SDL_RENDER_DEVICE_RESET:
+        case SDL_RENDER_TARGETS_RESET:
+            ev.kind = InputEvent::RenderReset;
             break;
         case SDL_TEXTINPUT:
             ev.kind = InputEvent::Text;
@@ -242,8 +279,12 @@ bool Platform::poll(InputEvent& ev) {
             ev.kind = InputEvent::None;
             break;
         case SDL_FINGERUP:
-            p_->touch.finger_up(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
-                                static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            if (e.tfinger.pressure < 0.0f)   // W2-AR-18: SDLSurface marks ACTION_CANCEL
+                p_->touch.finger_cancel(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                        static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
+            else
+                p_->touch.finger_up(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
+                                    static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
             ev.kind = InputEvent::None;
             break;
         case SDL_FINGERMOTION:

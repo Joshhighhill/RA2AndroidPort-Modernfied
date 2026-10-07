@@ -286,7 +286,10 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                             // see the documentation of getPressure(i)
                             p = 1.0f;
                         }
-                        SDLActivity.onNativeTouch(touchDevId, pointerFingerId, MotionEvent.ACTION_UP, x, y, p);
+                        // RA2 engine (W2-AR-18): a CANCEL is not a lift -- pressure
+                        // -1 marks it so the gesture layer drops the touch
+                        // instead of turning it into a tap.
+                        SDLActivity.onNativeTouch(touchDevId, pointerFingerId, MotionEvent.ACTION_UP, x, y, -1.0f);
                     }
                     break;
 

@@ -89,3 +89,27 @@ TEST_CASE("touch: two-finger drag pans; a two-finger tap is a right click") {
     REQUIRE(v.size() == 3);
     CHECK(v[1].button == InputEvent::Right);
 }
+
+TEST_CASE("touch: a system-cancelled gesture never clicks (W2-AR-18)") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_cancel(1, 100, 100, 1050);   // back-swipe took the touch
+    g.tick(9000);
+    CHECK_FALSE(g.pending());
+
+    TouchGestures h;   // two-finger tap cancelled: no right click
+    h.finger_down(1, 100, 100, 1000);
+    h.finger_down(2, 150, 100, 1020);
+    h.finger_cancel(2, 150, 100, 1100);
+    h.finger_cancel(1, 100, 100, 1110);
+    CHECK_FALSE(h.pending());
+
+    TouchGestures d;   // a band box in progress is released, not left pressed
+    d.finger_down(1, 100, 100, 1000);
+    d.finger_move(1, 160, 140, 1050);
+    (void)drain(d);
+    d.finger_cancel(1, 160, 140, 1100);
+    auto v = drain(d);
+    REQUIRE(v.size() == 1);
+    CHECK(v[0].kind == InputEvent::PointerUp);
+}
