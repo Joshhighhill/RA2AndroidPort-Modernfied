@@ -121,6 +121,11 @@ void for_each_visible_cell(const ra2assets::MapFile& map, const Camera& cam, int
 void prewarm_terrain(TextureCache& tc, const ra2assets::MapFile& map, Theater& theater,
                      const ra2assets::Palette& pal);
 
+// W2-GA-05: per-height lit terrain palettes (index = cell level) from the
+// map's [Lighting]; nullptr (the default, every gate) draws with `pal`. The
+// vector must outlive its use (GameScene owns it and clears this on exit).
+void set_terrain_level_palettes(const std::vector<ra2assets::Palette>* pals);
+
 // Draw the map's terrain, back-to-front (painter's order: cells sorted by
 // cell.x+cell.y ascending == increasing screen py, so nearer/lower diamonds
 // overwrite farther ones). Each cell is projected with

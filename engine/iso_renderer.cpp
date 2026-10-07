@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <unordered_map>
 #include <utility>
@@ -196,6 +197,7 @@ struct TerrainItem {
 struct TerrainSlot {
     uint32_t tile = 0;
     uint8_t sub = 0;
+    int level = -1;   // W2-GA-05: lit palette level, -1 = the plain palette
     SDL_Texture* tex = nullptr;
     SDL_Texture* etex = nullptr;
 };
@@ -212,6 +214,10 @@ struct TerrainDrawList {
 };
 
 uint64_t g_terrain_builds = 0;
+// W2-GA-05: per-height lit terrain palettes (GameScene's map [Lighting]); null
+// in every gate. g_level_sum keys the cached draw list.
+const std::vector<ra2assets::Palette>* g_level_pals = nullptr;
+uint64_t g_level_sum = 0;
 
 uint64_t palette_sum(const ra2assets::Palette& pal) {
     uint64_t h = 1469598103934665603ull;
@@ -223,19 +229,30 @@ uint64_t palette_sum(const ra2assets::Palette& pal) {
     return h;
 }
 
+// W2-GA-05: the slot's lit palette (and a key suffix naming level + lighting
+// set, so a later map's lighting never reuses these textures).
+const ra2assets::Palette& lit_palette(const ra2assets::Palette& pal, const TerrainSlot& s, char* key,
+                                      std::size_t cap) {
+    if (s.level < 0 || !g_level_pals || s.level >= static_cast<int>(g_level_pals->size())) return pal;
+    const std::size_t n = std::strlen(key);
+    std::snprintf(key + n, cap - n, "@%d:%llx", s.level, static_cast<unsigned long long>(g_level_sum));
+    return (*g_level_pals)[static_cast<std::size_t>(s.level)];
+}
+
 SDL_Texture* extra_texture(TextureCache& tc, Theater& theater, const ra2assets::Palette& pal,
                            TerrainSlot& s) {
     if (s.etex) return s.etex;
-    char ekey[96];
+    char ekey[128];
     std::snprintf(ekey, sizeof ekey, "tmp_extra:%s#%u", theater.filename_for_tile(s.tile).c_str(),
                   static_cast<unsigned>(s.sub));
+    const ra2assets::Palette& p = lit_palette(pal, s, ekey, sizeof ekey);
     s.etex = static_cast<SDL_Texture*>(tc.peek(ekey));
     if (!s.etex) {
         const ra2assets::TmpFile* tmp = theater.tmp_for_tile(s.tile);
         if (!tmp) return nullptr;
         ra2assets::TileImage eimg = tmp->decode_extra(s.sub);
         if (eimg.w <= 0 || eimg.h <= 0) return nullptr;
-        s.etex = static_cast<SDL_Texture*>(tc.get(ekey, eimg.indices.data(), eimg.w, eimg.h, pal));
+        s.etex = static_cast<SDL_Texture*>(tc.get(ekey, eimg.indices.data(), eimg.w, eimg.h, p));
     }
     tc.pin(ekey);
     return s.etex;
@@ -245,15 +262,16 @@ SDL_Texture* slot_texture(TextureCache& tc, Theater& theater, const ra2assets::P
                           TerrainSlot& s) {
     if (s.tex) return s.tex;
     // Key by template file + subtile (shared with any other user of the cache).
-    char key[80];
+    char key[128];
     std::snprintf(key, sizeof key, "%s#%u", theater.filename_for_tile(s.tile).c_str(),
                   static_cast<unsigned>(s.sub));
+    const ra2assets::Palette& p = lit_palette(pal, s, key, sizeof key);
     s.tex = static_cast<SDL_Texture*>(tc.peek(key));
     if (!s.tex) {
         const ra2assets::TmpFile* tmp = theater.tmp_for_tile(s.tile);
         if (!tmp) return nullptr;
         ra2assets::TileImage img = tmp->decode(s.sub);
-        s.tex = static_cast<SDL_Texture*>(tc.get(key, img.indices.data(), img.w, img.h, pal));
+        s.tex = static_cast<SDL_Texture*>(tc.get(key, img.indices.data(), img.w, img.h, p));
     }
     tc.pin(key);
     return s.tex;
@@ -266,7 +284,7 @@ TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, T
     const uint64_t ps = palette_sum(pal);
     if (L.map == &map && L.ncells == cells.size() &&
         (cells.empty() || L.first_cell == &cells.front()) && L.theater == &theater &&
-        L.tc_id == tc.instance_id() && L.pal_sum == ps)
+        L.tc_id == tc.instance_id() && L.pal_sum == (ps ^ g_level_sum))
         return L;
     L = TerrainDrawList{};
     ++g_terrain_builds;
@@ -275,7 +293,7 @@ TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, T
     L.first_cell = cells.empty() ? nullptr : &cells.front();
     L.theater = &theater;
     L.tc_id = tc.instance_id();
-    L.pal_sum = ps;
+    L.pal_sum = ps ^ g_level_sum;
     const MapIndex& idx = map_index(map);
     std::unordered_map<uint64_t, int32_t> slot_of;
     L.items.resize(idx.order.size());
@@ -292,13 +310,16 @@ TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, T
         if (!tmp || c.subtile >= tmp->count()) continue;
         it.w = static_cast<uint16_t>(tmp->tile_w());
         it.h = static_cast<uint16_t>(tmp->tile_h());
-        const uint64_t key = (static_cast<uint64_t>(c.tile) << 8) | c.subtile;
+        const int lvl = g_level_pals ? std::min<int>(c.level, static_cast<int>(g_level_pals->size()) - 1) : -1;
+        const uint64_t key = (static_cast<uint64_t>(c.tile) << 16) | (static_cast<uint64_t>(c.subtile) << 8) |
+                             static_cast<uint64_t>(lvl + 1);
         auto f = slot_of.find(key);
         if (f == slot_of.end()) {
             f = slot_of.emplace(key, static_cast<int32_t>(L.slots.size())).first;
             TerrainSlot s;
             s.tile = c.tile;
             s.sub = c.subtile;
+            s.level = lvl;
             L.slots.push_back(s);
         }
         it.slot = f->second;
@@ -321,6 +342,13 @@ TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, T
 }
 
 }  // namespace
+
+void set_terrain_level_palettes(const std::vector<ra2assets::Palette>* pals) {
+    g_level_pals = (pals && !pals->empty()) ? pals : nullptr;
+    g_level_sum = 0;
+    if (g_level_pals)
+        for (const ra2assets::Palette& p : *g_level_pals) g_level_sum = g_level_sum * 31 + palette_sum(p);
+}
 
 void prewarm_terrain(TextureCache& tc, const ra2assets::MapFile& map, Theater& theater,
                      const ra2assets::Palette& pal) {

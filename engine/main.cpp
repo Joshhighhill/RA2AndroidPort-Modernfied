@@ -2494,6 +2494,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_shroud.inc"   // G-84 shroud/fog post-pass (draw_shroud_pass)
 #include "pres_fx.inc"       // G-83 muzzle/impact/death anims + projectile art
 #include "pres_map.inc"
+#include "pres_light.inc"    // W2-GA-05 map [Lighting]
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
@@ -3129,6 +3130,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // no existing demo screenshot changes.
     draw_projectiles(ren, world, a.map, cam, W, H, &tc);
     if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
+    // W2-GA-05: the map's ambient light over every world sprite (GameScene only).
+    if (g_light) g_light->pass(ren, W, H);
     // G-84: fog + shroud over every object, under the HUD bars.
     draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
@@ -4972,6 +4975,10 @@ public:
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
         if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
         if (g_radar == &radar_) g_radar = nullptr;
+        if (g_light == &light_) {
+            g_light = nullptr;
+            ra2engine::set_terrain_level_palettes(nullptr);
+        }
     }
 
     static ra2engine::SkirmishConfig config_of(const ra2engine::save::SaveFile& f) {
@@ -5256,6 +5263,10 @@ public:
             if (!me) return;
             const auto raw = maps.read(*me);
             const Ini map_ini = Ini::parse(std::string(raw.begin(), raw.end()));
+            // W2-GA-05: the map's [Lighting] (tiles baked per height + ambient).
+            light_.load(map_ini, a_.pal);
+            g_light = &light_;
+            ra2engine::set_terrain_level_palettes(light_.active ? &light_.level_pals : nullptr);
             map_dressing_.load(ra2_, map_ini, rules_ini_, art_ini_, a_.map);
             if (cfg_.campaign_map.empty()) {   // campaign: place_map_objects owns [Structures]
                 int neutral = -1;
@@ -5781,6 +5792,7 @@ private:
     PresMap              map_dressing_;               // G-87
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
+    PresLight light_;   // W2-GA-05
     std::vector<std::pair<double, double>> prev_audio_state_;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
