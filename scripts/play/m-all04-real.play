@@ -1,0 +1,29 @@
+# W4-SQ-01/02: ALL04 opening with real orders. The landing craft arrive
+# CARRYING the MCV and the tank/GI groups (TeamType Full=yes); Soviet garrison
+# teams occupy civilian buildings (script 46 type arg). The player unloads the
+# MCV craft with the Deploy key and deploys the MCV.
+set render_every 900
+set on_quit continue
+set campaign ALL04u.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 200 carried(0) >= 1
+assert carried(0) >= 1
+until 2000 in_garrison(1) >= 20
+assert garrisoned(1) >= 3
+until 2000 moving(0) == 0
+click unit 0:LCRF
+click cell 120 68
+until 1200 moving(0) == 0
+click unit 0:LCRF
+assert selected >= 1
+key d
+wait 5
+log after-d
+until 600 carried(0) == 0
+assert units(0,AMCV) >= 1
+assert carried(0) == 0
+shot landed
+dump
+end

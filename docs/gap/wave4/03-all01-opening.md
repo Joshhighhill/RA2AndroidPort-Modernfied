@@ -23,7 +23,7 @@ uses those findings for ALL01 and adds the mission-specific causes.
 | A1-03 rocket flight model | **FIXED** | `rocket_step` ports FUN_00661D00 (pause, tilt, climb to the map's 1550, LazyCurve arc / level-off + dive, nose contact); hull drawn pitched |
 | A1-04 Patriot missiles do not fly | **FIXED** | `ProjKind::Homing` (`integrate_homing`); RedEye2 flies with the DRAGON line trail and hits the rockets |
 | A1-05 Statue DestroyAnim/rubble palette | **FIXED** | the ruin anim carries the building art `own_pal` (`spawn_hold`); `all01-v3-statue.play` shots `v3_destroy_anim` / `v3_rubble` |
-| A1-06 "Break Bridges" | not this agent (mission-sequence agent) | – |
+| A1-06 "Break Bridges" | **Fixed in `w4fix-seq`**: Apply100Damage calls the bridge destroy dispatch FUN_00586BB0 on its waypoint (up to 4 tries, no roll); destructible high bridges -- both ALL01 spans (wp79, wp80) collapse at f0 | `campaign_runtime.inc`, `world_depth.cpp` |
 | A1-07 Lock/UnlockInput | not this agent (control agent) | – |
 | A1-08 Elite damage / warhead | **FIXED** | `rocket_elite` from the launcher's rank at launch; EliteDamage + *EliteWarhead |
 | A1-09 rocket kill shows no explosion | **FIXED** | a shot-down rocket plays its `Explosion=` anim at its height (Explodes=no: no warhead damage) |

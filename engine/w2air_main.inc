@@ -118,6 +118,7 @@ ra2engine::SwParams resolve_sw_params(const Rules& rules) {
     p.sov_para_inf = gs("SovParaDropInf", "E2");
     p.sov_para_num = static_cast<int>(gd("SovParaDropNum", 9.0));
     p.paradrop_radius = static_cast<int>(gd("ParadropRadius", 1024.0));
+    p.parachute_fall = std::max(1, static_cast<int>(std::lround(-gd("ParachuteMaxFallRate", -5.0))));
     p.cloak_delay_frames = std::max(1, static_cast<int>(gd("CloakDelay", 0.02) * 900.0));
     p.ship_sinking_weight = gd("ShipSinkingWeight", 3.0);
     p.reload_frames = std::max(1, static_cast<int>(gd("ReloadRate", 0.3) * 900.0));
