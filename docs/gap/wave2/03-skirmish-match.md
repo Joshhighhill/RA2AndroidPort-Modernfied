@@ -292,3 +292,68 @@ Costs, power and prerequisites are read straight from rulesmd. Two prerequisite 
 | RE-Q6 | Refinery dock geometry: GAREFN/NAREFN have no DockingOffset; is the dock cell inside the foundation (so a parked miner never blocks)? | `FUN_00740780` drive-to-dock (economy.md §2) |
 | RE-Q7 | ParasiteDog: is a bite an instant kill for every infantry, and is it immune vs vehicles? | Warhead `ParasiteDog` / InfantryClass bite |
 | RE-Q8 | `Spawner` (V3, Dreadnought, Boomer): spawn manager, rocket HP and interception. | Shared with the air/SW agent |
+
+---
+
+## 7. Fix status (branch `w2fix-skirmish`)
+
+The rows below were fixed on `w2fix-skirmish` (merged with master up to the
+w2fix-air merge). Save format **v11**. The evidence is real play: the new
+`scripts/play/economy-60min.play` and `scripts/play/unit-specials.play`, plus
+`--ai-soak` runs (the soak gained `--kill-ai-conyard-at MIN`, per-house
+unit/building/wallet/miner columns, ore/mine counters, special-infantry and
+tech-capture witnesses, and a team dump for every AI house).
+
+### 7.1 RE questions resolved
+
+| # | Answer | Evidence |
+|---|---|---|
+| RE-Q1 | **Pinned.** `TerrainClass::AI` (0x71B9D0): a mine that is not animating starts its animation when `abs(Random)%1000000 * 1e-6 < AnimationProbability` (0.003), advances one stage every `AnimationRate` (3) frames, and when the stage reaches half the SHP frame count stops and calls `CellClass` forced spread `FUN_00483690(cell, 1)`. That picks a random start direction 0..7 and gives the first of the 8 neighbours (DAT_0089E5F8 order) that can hold tiberium (`FUN_004837F0`: land allows it, no overlay, not a mine, no building) the mine cell's tiberium type (none → type 0) at OverlayData **3** (`FUN_004870A0(tib, 3)`). The regular growth/spread clocks were pinned at the same time: `FUN_00721EE0`/`FUN_007221A0` grow `abs(Random) % clamp(ftol(H*GrowthPercentage),5,50) + 1` cells every `Growth=` frames (2200; ×0.3 under a Rules flag that is off), `FUN_00721450`/`FUN_007216E0` spread `abs(Random) % clamp(ftol(H*SpreadPercentage),5,25) + 1` heap cells every `Spread=` frames, each seeding one neighbour at density 3 (`FUN_004835A0`: density > tiberium index / 2, no object on the cell). | Ghidra on gamemd (private copy `D:\ra2-re\w2-skirmish`, scripts `D:\ra2-re\scripts\w2fix_dec.py` / `w2fix_dis.py`); constants 0x7E4138 = 0.3, 0x7EE918 = 1e-6 read from the exe |
+| RE-Q2 | [RE-FALLBACK] RA1 `FootClass::Goto_Tiberium` / `Mission_Harvest`: short scan, then long scan, cells in the miner's movement zone with no other techno on them; nothing found + a load → return to the refinery. Implemented as a zone flood + occupant filter. | — |
+| RE-Q3 | [RE-FALLBACK] Idle units acquire within max(weapon range, Sight) and close in inside a Sight-based leash. The shroud test in the auto-acquire scan was kept (shroud.md §6, `--demo-shroud` witness); the acquisition radius never exceeds the unit's own Sight, so it is moot in practice. The gfx agent reads `FUN_006F71D0` as having no shroud test; that conflict with shroud.md §6 is left open. | perf_fight: 164 of 226 tanks die (was 77) |
+| RE-Q4 | **Answered from the data.** The MCVs need a Service Depot (`[AMCV]`/`[SMCV] Prerequisite=…,GADEPT/NADEPT`), and both depots are `AIBuildThis=no`. So the stock AI cannot rebuy an MCV unless it has captured a depot. The clone now rebuys and redeploys exactly when the prerequisites stand. | `--ai-soak --kill-ai-conyard-at 8`: no rebuy, as in the original |
+| RE-Q6 | [RE-FALLBACK] The dock stays south of the foundation. The deadlock is solved by the artmd `QueueingCell=4,1` queue (below). | — |
+| RE-Q7 | Confirmed by the existing P4 parasite code: `ParasiteDog` (Parasite=yes, Verses 0% vs vehicles) instant-kills any infantry. | unit-specials.play |
+| RE-Q5, RE-Q8 | Open (RE-Q5 needs an original-game capture; RE-Q8 is shared with the air agent). | — |
+
+### 7.2 Row status
+
+| ID | Status | What changed | Evidence |
+|---|---|---|---|
+| W2-SK-01 | **FIXED** | `OreField` ore mines (registered from the map `[Terrain]`, SHP frames/2), the original growth/spread clocks, save v11 | economy-60min.play (hillbtwn, 6 mines): `mine_spawned` 4 → 86 → 227 → 369 → 499 at min 0/15/30/45/60, ore never runs out (`ore_cells` 24 / 35 at min 30 / 60), AI refinery income 61.6k / 84.8k / 92.6k / 99.8k at min 15/30/45/60 |
+| W2-SK-02 | **FIXED** | `TiberiumLongScan=48` / `TiberiumShortScan=6` from rules | unit tests + soaks |
+| W2-SK-03 | **FIXED** | Returning miners queue at the QueueingCell while the pad is taken; an empty idle miner leaves the dock area | hillbtwn AI-vs-AI: before, 6 full miners stuck in ReturnToRef behind an empty miner on the pad (M5 pattern); after, no stuck queue in 40 min |
+| W2-SK-04 | **FIXED** | Zone- and occupant-filtered ore search, failed-cell skip, a part-loaded miner banks its load | test_harvest |
+| W2-SK-05 | **FIXED** | `find_path_nearest`: an impassable goal is relaxed to the nearest passable cell; an unreachable goal ends at the nearest reached cell (Land domain; ships keep the exact search) | test_pathfind |
+| W2-SK-06 | **FIXED** (RE-Q5 pacing still open) | Every idle factory category produces the type most owed by all Recruiting/Gathering teams; MultipleFactory for the AI; core-structure money hold; teams muster at the own base until filled or 60 s; gather radius scales with team size | Brutal Soviet vs passive (xmp31s2): before, ConYard 83/1000 alive at min 20 with 25 units built; after, **player defeated at min 15**, 45 units built, NATECH + Iron Curtain + Nuke built and fired by min 20. Allied Brutal: 19 → 69 units in 20 min |
+| W2-SK-07 | **FIXED** (data-faithful) | MCVs in the AI roster; with no ConYard and a war factory it builds and unfolds one when it can; dead plan nodes re-link | RE-Q4 |
+| W2-SK-08 | **FIXED** | `HouseAiRec::enemy_house` (nearest living enemy, re-picked on defeat) drives the threat view, trigger counts (plus the real neutral house for ct=7) and quarry picks | 1v3 Arena (below) |
+| W2-SK-09 | **FIXED** | ENGINEER / SENGINEER / SPY in the AI roster; engineers capture and spies infiltrate the 46/47 target; actions 14 / 43 / 8 (load, wait-loaded, unload) | `--ai-soak --map hillbtwn.map`: the AI captures 3 oil derricks by min 20 |
+| W2-SK-10 | **PARTIAL** | Action 9 deploy; base-defence response (idle un-teamed units engage enemies within 12 cells of the base). The AI still never garrisons | — |
+| W2-SK-11 | **FIXED** | One AttackQuarry target per team, picked from the lead member | — |
+| W2-SK-12 | **FIXED** | `Capturable=` honoured; the click on an enemy Capturable=false structure does nothing | unit-specials.play: NAPOWR captured; Gap Generator refused, engineer kept |
+| W2-SK-13 | **PARTIAL** | The V3 shot carries `V3RocketDamage=200` on `V3Warhead`. There is no interceptable 50-HP rocket and no MinimumRange | unit-specials.play: a Rhino killed in 229 frames (before: 1 damage per shot, alive after 1800 frames) |
+| W2-SK-14 | **FIXED** | GameScene drains the ability and garrison events every frame | — |
+| W2-SK-15 | **FIXED** (slots kept by design) | 8×8-cell buckets for auto-acquire (same tie rule: perf_fight `play_hash` unchanged by the bucketing alone); dead slots release their path/cargo storage. Indices stay stable because every target, team member, cargo slot, parasite and projectile owner stores a unit index | perf_fight 226 tanks: 101 s → 59 s wall (perf_base 61 s) before the pursuit fix; with pursuit (W2-SK-25), 63 s vs perf_base 41 s for 3.5× more combat |
+| W2-SK-16 | **FIXED** | Generation-stamped A* scratch (no per-call grid allocations); blocked re-path budget of 4000 expansions; nearest-search budget of 20000 | — |
+| W2-SK-17 | **FIXED** | DTRUCK (Suicide Demobomb + DeathWeapon) and APOC (Explodes) profiles | unit-specials.play |
+| W2-SK-18 | **FIXED** | DOG/ADOG profiles: one bite kills any infantry | unit-specials.play: E2 dead 14 frames after the order |
+| W2-SK-19 | **FIXED** | Service Depot: a stopped damaged vehicle beside an own UnitRepair depot heals RepairStep on the repair phase at repair_step_cost; a riding drone dies | unit-specials.play: 200 → 400 HP |
+| W2-SK-20 | **PARTIAL** | Theft from the real wallet of any house; blackout for any house; factory veterancy per factory category; Spyable=no refuses the spy. Battle Lab stolen tech is still not modelled (needs roster/sidebar plumbing) | unit-specials.play: player credits 10450 → 14564 |
+| W2-SK-21 | **FIXED** | Map tech buildings register their income; the real neutral house pays nobody; any capturing house gets the startup bonus | soak: AI-owned CAOILD count rises |
+| W2-SK-22 | **PARTIAL** | Prism Tank split (5 CometFragments); Mirage disguise-when-still (no enemy auto-acquire; it is still drawn as the tank); Spy disguise (player MakeupKit order, AI spies launch disguised). Still open: Prism Tower chain, Tesla charging, Gap Generator, Boris airstrike, swim, defuse | unit-specials.play |
+| W2-SK-23 | **FIXED** | AI walls take the perimeter ring of an own defence | — |
+| W2-SK-24 | **FIXED** | Skirmish teams dissolve unfilled after DissolveUnfilledTeamDelay (skirmish is a multiplayer-type session) | — |
+| W2-SK-25 | **FIXED** (RE-FALLBACK) | Guard-range acquisition and pursuit | perf_fight resolves |
+| W2-SK-26 | **PARTIAL** | The IFV passenger weapon survives promotion and crates. RepairBullet targeting and the AA/projectile swap are open | — |
+| W2-SK-27 | **FIXED** | The soak's base-HP baseline is re-based while the base grows | `first_human_damage_min` now reports (7.3–8.5) |
+| W2-SK-28 | Not mine | UI agent | — |
+
+### 7.3 Long-match results after the fix
+
+| Run | Before (§2) | After |
+|---|---|---|
+| AI-vs-AI Brutal, hillbtwn, 40 min | M6: AI-1 at 1 credit from min 10, no ore on screen | **Winner at ~min 22** (house 0 defeated); income all match |
+| AI-vs-AI, May Day (2 mines), 40 min | M1: no winner, credits frozen from min 17 | No winner: both bases are heavily walled and defended. Mines keep spawning (140 cells by min 40), but 2 mines cannot feed 16 miners |
+| 1v3 Brutal, Arena, scripted active player | M5: frozen from min 13 to 38; the player lost 6 units | The player is overrun and **LOST at ~min 14** |
+| Passive vs Brutal Soviet, xmp31s2, 20 min | M9: ConYard 83/1000 alive | Defeated at min 15 |

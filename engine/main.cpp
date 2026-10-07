@@ -16175,7 +16175,9 @@ SlResult sl_run_skirmish(SlSkirmishEnv& e, int N, int M) {
     for (int f = 0; f < N; ++f) sl_skirmish_frame(e, wa, sa, t);
     // Save with a shell IN FLIGHT: advance (deterministically) to the first
     // frame >= N that has one, bounded; the loaded run starts from that frame.
-    for (int k = 0; k < 120 && wa.projectiles().empty(); ++k, ++N) sl_skirmish_frame(e, wa, sa, t);
+    // W2-SK-25: guard-range pursuit changed the opening skirmish (the first
+    // shell now flies later) -- search up to 600 frames for one.
+    for (int k = 0; k < 600 && wa.projectiles().empty(); ++k, ++N) sl_skirmish_frame(e, wa, sa, t);
     const std::size_t shells_at_save = wa.projectiles().size();
     ra2engine::save::SaveFile sf;
     sf.header = sl_header(e.a.map, "Skirmish", e.cfg.map_file, N);
@@ -16335,7 +16337,7 @@ int run_demo_saveload() {
     env.build_speed = rules.general_double("BuildSpeed", 0.7);
     for (int i = 0; i < (int)ur.defs.size(); ++i)
         if (upper_ascii(ur.defs[i].id) == "E1") env.e1 = i;
-    const SlResult s1 = sl_run_skirmish(env, 90, 900);
+    const SlResult s1 = sl_run_skirmish(env, 10, 900);   // W2-SK-25: the opening fight closes in sooner
 
     // --- scenario 2: the P9 map triggers on sov07tmd.
     ra2assets::Ini map_ini = ra2assets::Ini::parse("");
