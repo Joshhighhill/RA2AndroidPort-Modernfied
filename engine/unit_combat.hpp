@@ -66,6 +66,10 @@ struct UnitCombat {
     double cell_spread = 0.0;      // warhead CellSpread (cells; radius = round(.))
     double percent_at_max = 1.0;   // warhead PercentAtMax (edge damage scale)
     bool affects_allies = true;    // W5-B R-060: warhead AffectsAllies=
+    // W5-B R-062: SpeedType= as a GroundType Cost column (0 Foot, 1 Track,
+    // 2 Wheel, 3 Hover, 4 Winged, 5 Float, 6 Amphibious, 7 FloatBeach); -1 =
+    // absent (World defaults: infantry Foot, vehicles Track).
+    int speed_type = -1;
     // --- Projectile phase (P2) [RE: projectile.md] --- the primary weapon's
     // projectile, resolved by main.cpp (resolve_projectile_spec + the art FLH).
     // Default kind=Instant is inert; consumed only behind World's

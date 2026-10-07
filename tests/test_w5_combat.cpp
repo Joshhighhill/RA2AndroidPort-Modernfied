@@ -193,3 +193,41 @@ TEST_CASE("w5 step_units: three infantry walk into ONE cell; a fourth is held ou
     CHECK(occ.spot_unit(6, 1, 2) != occ.spot_unit(6, 1, 3));
     CHECK(occ.spot_unit(6, 1, 3) != occ.spot_unit(6, 1, 4));
 }
+
+// ---- R-062 land speed --------------------------------------------------------
+TEST_CASE("w5 land_speed_mult: GroundType cost, slope, damage (DriveLocomotionClass FUN_004B2550)") {
+    MoveSpeedCtx c;
+    c.armed = true;
+    std::vector<std::uint8_t> land(4, 0);
+    std::vector<std::int8_t> level(4, 0);
+    land[1] = 5;    // Tiberium
+    land[2] = 1;    // Road
+    level[3] = 1;   // a raised cell
+    c.land = &land;
+    c.level = &level;
+    for (auto& row : c.cost)
+        for (float& v : row) v = 1.0f;
+    c.cost[5][1] = 0.7f;   // Tiberium Track=70%
+    c.cost[5][2] = 0.5f;   // Tiberium Wheel=50%
+    c.up[0] = 1.0;
+    c.down[0] = 1.2;
+    Unit tank;
+    tank.is_vehicle = true;
+    tank.speed_type = 1;
+    tank.hp = tank.max_hp = 100;
+    CHECK(land_speed_mult(c, tank, 4, 1, 0, 0) == doctest::Approx(1.0));
+    CHECK(land_speed_mult(c, tank, 4, 1, 1, 0) == doctest::Approx(0.7));
+    CHECK(land_speed_mult(c, tank, 4, 1, 2, 0) == doctest::Approx(1.0));   // Road = 100% (rulesmd)
+    tank.speed_type = 2;
+    CHECK(land_speed_mult(c, tank, 4, 1, 1, 0) == doctest::Approx(0.5));
+    tank.speed_type = 1;
+    tank.cell_x = 3;   // on the raised cell: driving down -> TrackedDownhill 1.2
+    CHECK(land_speed_mult(c, tank, 4, 1, 2, 0) == doctest::Approx(1.2));
+    tank.cell_x = 0;
+    tank.hp = 25;      // ConditionRed 25% -> x0.75
+    c.condition_red = 0.25;
+    CHECK(land_speed_mult(c, tank, 4, 1, 0, 0) == doctest::Approx(0.75));
+    Unit gi;           // the Walk locomotor does not read the table
+    gi.hp = gi.max_hp = 100;
+    CHECK(land_speed_mult(c, gi, 4, 1, 1, 0) == doctest::Approx(1.0));
+}

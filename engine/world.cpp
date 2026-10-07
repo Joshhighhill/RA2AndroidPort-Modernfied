@@ -594,6 +594,36 @@ void World::place_in_spot(int idx, int spot) {
     update_sub_offsets();
 }
 
+void World::arm_land_speed(const std::vector<std::uint8_t>& land, const std::vector<std::uint8_t>& ramp,
+                           const LandSpeedRules& r) {
+    const std::size_t n = static_cast<std::size_t>(grid_w_) * grid_h_;
+    speed_land_ = land;
+    speed_land_.resize(n, 0);
+    ramp_ = ramp;
+    ramp_.resize(n, 0);
+    level_grid_.assign(n, 0);
+    for (int y = 0; y < grid_h_; ++y)
+        for (int x = 0; x < grid_w_; ++x)
+            level_grid_[static_cast<std::size_t>(y) * grid_w_ + x] = static_cast<std::int8_t>(cell_level(x, y));
+    land_rules_ = r;
+    land_speed_armed_ = true;
+}
+
+int World::speed_land_at(int x, int y) const {
+    if (!land_speed_armed_ || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
+    const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+    // Ore on a flat cell is Tiberium land (FUN_0047D1C0: a Tiberium overlay with
+    // Land=Clear and ramp type < 5).
+    if (ore_.has_ore(x, y) && ramp_[i] < 5) return 5;
+    return speed_land_[i];
+}
+
+double World::unit_speed_cps(int i) const {
+    if (i < 0 || i >= static_cast<int>(units_.size())) return 0.0;
+    const Unit& u = units_[static_cast<std::size_t>(i)];
+    return (u.speed_cps > 0.0 ? u.speed_cps : move_cps_) * u.speed_mult;
+}
+
 void World::update_sub_offsets() {
     if (!occ_.subcells()) return;
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
@@ -715,6 +745,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_cell_spread = c.cell_spread;        // CB-2 [aircraft.md §4]: warhead splash
     u.w_percent_at_max = c.percent_at_max;  // radius + edge scale (0 = single-target)
     u.w_affects_allies = c.affects_allies;  // W5-B R-060
+    u.speed_type = c.speed_type;            // W5-B R-062
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // spec. Copied unconditionally but READ ONLY behind projectiles_enabled_
     // (the firewall) -- inert in every existing gate.
@@ -4180,8 +4211,24 @@ void World::step(double dt) {
         bool amph = false;
         for (const Unit& u : units_)
             if (u.movement_domain == MovementDomain::Amphibious && u.alive) { amph = true; break; }
+        // W5-B R-062: the land speed inputs (armed by w5_arm_combat only).
+        MoveSpeedCtx sc;
+        if (land_speed_armed_) {
+            sc.armed = true;
+            sc.land = &speed_land_;
+            sc.ramp = &ramp_;
+            sc.level = &level_grid_;
+            sc.ore = &ore_;
+            for (int a = 0; a < 12; ++a)
+                for (int b = 0; b < 8; ++b) sc.cost[a][b] = land_rules_.cost[a][b];
+            sc.up[0] = land_rules_.tracked_up;
+            sc.up[1] = land_rules_.wheeled_up;
+            sc.down[0] = land_rules_.tracked_down;
+            sc.down[1] = land_rules_.wheeled_down;
+            sc.condition_red = land_rules_.condition_red;
+        }
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
-                   amph ? &amphib_grid() : nullptr);
+                   amph ? &amphib_grid() : nullptr, land_speed_armed_ ? &sc : nullptr);
     }
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
@@ -4609,10 +4656,40 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
     return out;
 }
 
+double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny) {
+    // Only the Drive/Ship/Hover locomotors read the GroundType table for speed
+    // (FUN_004B2550 / FUN_006A1310); the Walk locomotor (infantry) does not.
+    if (!c.armed || !c.land || (!u.is_vehicle && !u.is_naval) || u.is_aircraft) return 1.0;
+    if (nx < 0 || ny < 0 || nx >= w || ny >= h) return 1.0;
+    const std::size_t i = static_cast<std::size_t>(ny) * w + nx;
+    if (i >= c.land->size()) return 1.0;
+    int land = (*c.land)[i];
+    if (c.ore && c.ramp && i < c.ramp->size() && c.ore->has_ore(nx, ny) && (*c.ramp)[i] < 5) land = 5;
+    if (land < 0 || land > 11) land = 0;
+    int st = u.speed_type;
+    if (st < 0 || st > 7) st = u.is_naval ? 5 : 1;   // default: Track (Drive), Float (ship)
+    double m = c.cost[land][st];
+    if (m > 1.0) m = 1.0;
+    // Slope (UnitClass only): the next cell higher -> *Uphill, lower -> *Downhill;
+    // SpeedType Track uses the Tracked pair, every other type the Wheeled pair.
+    if (c.level && !u.is_naval) {
+        const std::size_t ci = static_cast<std::size_t>(u.cell_y) * w + u.cell_x;
+        if (u.cell_x >= 0 && u.cell_y >= 0 && u.cell_x < w && u.cell_y < h && ci < c.level->size()) {
+            const int cur = (*c.level)[ci], nxt = (*c.level)[i];
+            const int k = st == 1 ? 0 : 1;
+            if (cur < nxt) m *= c.up[k];
+            else if (nxt < cur) m *= c.down[k];
+        }
+    }
+    if (m == 0.0) m = 0.5;
+    if (u.max_hp > 0 && static_cast<double>(u.hp) / u.max_hp <= c.condition_red) m *= 0.75;
+    return m;
+}
+
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable) {
+                const std::vector<std::uint8_t>* amphib_passable, const MoveSpeedCtx* speed) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
@@ -4663,7 +4740,9 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 
         // Per-unit speed: a vehicle rolls at its own speed_cps; infantry (and
         // any unit with speed_cps == 0) use the World-wide move_cps unchanged.
-        const double cps = u.speed_cps > 0.0 ? u.speed_cps : move_cps;
+        // W5-B R-062: x the land/slope/damage multiplier the locomotor set
+        // when it committed to the cell being entered (1.0 when unarmed).
+        const double cps = (u.speed_cps > 0.0 ? u.speed_cps : move_cps) * u.speed_mult;
         double budget = cps * dt;
         bool blocked = false;
         while (budget > 0.0 && u.path_idx < u.path.size()) {
@@ -4729,6 +4808,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             } else if (occ.at(tgt.x, tgt.y) != self || !occ.can_enter(tgt.x, tgt.y, self)) {
                 if (occ.can_enter(tgt.x, tgt.y, self)) {
                     occ.set(tgt.x, tgt.y, self);  // reserve (now owns current + next)
+                    if (speed) u.speed_mult = land_speed_mult(*speed, u, w, h, tgt.x, tgt.y);   // W5-B R-062
                 } else {
                     blocked = true;
                     break;

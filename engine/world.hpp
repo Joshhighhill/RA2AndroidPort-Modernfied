@@ -125,6 +125,12 @@ struct Unit {
     // (World::update_sub_offsets); render / damage use fx*256 + sub_x.
     int spot = 0;
     double sub_x = 0.0, sub_y = 0.0;
+    // W5-B R-062 [RE: DriveLocomotionClass FUN_004B2550 @0x4B3AE0..]: the
+    // GroundType Cost column (SpeedType) and the speed multiplier the
+    // locomotor set when it committed to the current/next cell (land cost of
+    // that cell capped at 1, 0 -> .5, x uphill/downhill, x .75 at ConditionRed).
+    int speed_type = -1;
+    double speed_mult = 1.0;
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // (default kind=Instant = the pre-P2 instant-hit path). Read ONLY when the
     // World's projectiles_enabled_ firewall is open; NOT read by world_hash.
@@ -499,10 +505,30 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 // (u.is_naval ? water_passable : passable). Every existing caller passes the
 // (empty in every existing demo) water grid and no existing (Land) unit reads
 // it, so ground re-pathing is byte-identical.
+// W5-B R-062 [RE: DriveLocomotionClass FUN_004B2550; GroundType table
+// DAT_0089D9B0 read by FUN_00673A40]: the per-cell land speed inputs. Null /
+// unarmed -> every unit keeps its flat speed (the pre-W5 behaviour).
+struct MoveSpeedCtx {
+    bool armed = false;
+    const std::vector<std::uint8_t>* land = nullptr;   // LandType per cell (tile + overlay)
+    const std::vector<std::int8_t>* level = nullptr;   // height level per cell
+    float cost[12][8] = {};                            // [LandType][SpeedType], capped at 1
+    double up[2] = {1.0, 1.0};                         // Tracked/Wheeled Uphill
+    double down[2] = {1.0, 1.0};                       // Tracked/Wheeled Downhill
+    double condition_red = 0.25;
+    // Ore on a flat cell turns its land Tiberium (FUN_0047D1C0); overlay
+    // lookup supplied by World (null = none).
+    const OreField* ore = nullptr;
+    const std::vector<std::uint8_t>* ramp = nullptr;   // TMP ramp type per cell
+};
+// The speed multiplier for unit u entering cell (nx, ny) from its cell.
+double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny);
+
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable = nullptr);
+                const std::vector<std::uint8_t>* amphib_passable = nullptr,
+                const MoveSpeedCtx* speed = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -660,6 +686,20 @@ public:
     void update_sub_offsets();
     // Put infantry idx into spot `spot` (2..4) of its current cell.
     void place_in_spot(int idx, int spot);
+    // W5-B R-062: arm per-cell land speed. `land` = LandType per cell from the
+    // TMP terrain-type byte (DAT_008278F4 table), `ramp` = TMP ramp type;
+    // `cost` = rulesmd [LandType] Foot..FloatBeach fractions (capped at 1).
+    struct LandSpeedRules {
+        float cost[12][8] = {};
+        double tracked_up = 1.0, tracked_down = 1.0, wheeled_up = 1.0, wheeled_down = 1.0;
+        double condition_red = 0.25;
+    };
+    void arm_land_speed(const std::vector<std::uint8_t>& land, const std::vector<std::uint8_t>& ramp,
+                        const LandSpeedRules& r);
+    bool land_speed_armed() const { return land_speed_armed_; }
+    int speed_land_at(int x, int y) const;   // effective LandType (ore -> Tiberium)
+    // Cells per second unit i moves at right now (flat speed x speed_mult).
+    double unit_speed_cps(int i) const;
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }
@@ -2047,6 +2087,11 @@ private:
     int grid_w_ = 0;
     int grid_h_ = 0;
     double move_cps_ = 3.0;
+    // W5-B R-062 land speed (arming state; rebuilt by w5_arm_combat, not saved).
+    bool land_speed_armed_ = false;
+    std::vector<std::uint8_t> speed_land_, ramp_;
+    std::vector<std::int8_t> level_grid_;
+    LandSpeedRules land_rules_;
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
     bool inf_anims_ = false;                       // W3-B
     int inf_human_ = 0;

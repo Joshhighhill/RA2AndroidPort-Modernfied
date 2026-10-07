@@ -230,6 +230,12 @@ struct SaveAccess {
         save::io(ar, w.bridge_tile_land_);
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
+        // W5-B R-062 land speed (save v16)
+        save::io(ar, w.land_speed_armed_);
+        save::io(ar, w.speed_land_);
+        save::io(ar, w.ramp_);
+        save::io(ar, w.level_grid_);
+        save::io(ar, w.land_rules_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -569,6 +575,12 @@ template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
     io(ar, v.picked); io(ar, v.applied); io(ar, v.house); io(ar, v.unit);
     io(ar, v.x); io(ar, v.y); io(ar, v.amount); io(ar, v.affected);
 }
+template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v16)
+    for (auto& row : v.cost)
+        for (float& c : row) io(ar, c);
+    io(ar, v.tracked_up); io(ar, v.tracked_down); io(ar, v.wheeled_up); io(ar, v.wheeled_down);
+    io(ar, v.condition_red);
+}
 template <class Ar> void fields(Ar& ar, World::VetEvent& v) {
     io(ar, v.unit); io(ar, v.old_rank); io(ar, v.new_rank);
 }
@@ -660,6 +672,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.rot);
     io(ar, v.turret);
     io(ar, v.speed_cps);
+    io(ar, v.speed_type);   // v16: W5-B
     io(ar, v.is_vehicle);
     io(ar, v.passengers);
     io(ar, v.size_limit);
@@ -792,6 +805,8 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.spot);
     io(ar, v.sub_x);
     io(ar, v.sub_y);
+    io(ar, v.speed_type);
+    io(ar, v.speed_mult);
     io(ar, v.w_proj);
     io(ar, v.target);
     io(ar, v.target_building);

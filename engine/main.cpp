@@ -782,6 +782,17 @@ inline std::string to_lower(std::string s) {
 // str=125).
 #include "w2air_main.inc"   // W2-AN: resolve_an_type / resolve_sw_params (wave-2 air/naval/SW)
 
+// W5-B R-062: SpeedType= -> GroundType Cost column (FUN_00673A40 read order).
+inline int w5_speed_type_index(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const std::size_t sc = s.find_first_of(" ;	");
+    if (sc != std::string::npos) s = s.substr(0, sc);
+    static const char* kNames[8] = {"foot", "track", "wheel", "hover", "winged", "float", "amphibious", "floatbeach"};
+    for (int i = 0; i < 8; ++i)
+        if (s == kNames[i]) return i;
+    return -1;
+}
+
 ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id) {
     ResolvedUnit r;
     r.combat.image = rules.image(unit_id);
@@ -790,6 +801,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // included -- they used to share World::move_cps).
     g_game_speed_bias = rules.general_double("GameSpeedBias", g_game_speed_bias);
     r.combat.speed_cps = speed_to_cps(r.speed);
+    r.combat.speed_type = w5_speed_type_index(rules.section_string(unit_id, "SpeedType", ""));   // W5-B R-062
     r.combat.strength = rules.strength(unit_id);
     r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
@@ -5405,7 +5417,7 @@ public:
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
-        w5_arm_combat(world_, rules_);     // W5-B: sub-cells, land speed, crush
+        w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
 
         // --- vehicle render list (voxel hulls for launched MTNK/FV/etc.) ---
         vlist_ = {&va_, &miners_.harv, &miners_.cmin};
@@ -6101,6 +6113,7 @@ public:
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
 #include "w2air_play.inc"   // wave-2 air/naval/SW --play keys, points, cheats
+#include "w5_play.inc"      // W5-B combat/movement --play keys
 
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
@@ -6206,7 +6219,7 @@ private:
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
-        w5_arm_combat(world_, rules_);     // W5-B: sub-cells, land speed, crush
+        w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
             wire_abilities(world_, rules_, rules_ini_);
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
             init_map_dressing();   // G-87: the fresh world gets its map dressing again
@@ -16505,7 +16518,7 @@ ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
     ra2engine::World w = launch_skirmish(e.cfg, e.a, e.ua, e.ba, e.rules);
     wire_economy(w, e.ba, e.rules);
     w.enable_projectiles(ra2engine::resolve_projectile_rules(e.rules));
-    w5_arm_combat(w, e.rules);   // W5-B: the real game's movement/combat rules
+    w5_arm_combat(w, e.rules, &e.a.map, &e.a.theater);   // W5-B: the real game's movement/combat rules
     {
         std::vector<int> bcost;
         for (const ra2engine::BuildingTypeDef& t : e.ba.roster) bcost.push_back(t.cost);

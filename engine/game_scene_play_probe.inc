@@ -428,6 +428,7 @@
             p.set("depth_armed", world_.depth_rules().armed ? 1 : 0);
         }
         w2_play_probe(p);   // wave-2 air/naval/SW keys (w2air_play.inc)
+        w5_play_probe(p);   // W5-B combat/movement keys (w5_play.inc)
         p.find_point = [this](const std::string& name, double& cx, double& cy) {
             return play_find_point(name, cx, cy);
         };
