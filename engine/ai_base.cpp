@@ -95,6 +95,7 @@ BuildDecision pick_node(const std::vector<PlannedNode>& plan, int i,
     if (type < 0 || type >= (int)roster.size()) return d;  // marker/gap: no-op
     if (v.credits < roster[type].cost * m.cost_mul + ai.credit_reserve) {
         d.wait = true;  // bank income [RE: ai-base.md §2 — CreditReserve]
+        d.wait_type = type;
         return d;
     }
     d.type = type;

@@ -108,6 +108,7 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
     acfg.team.trigger_side = s.side == ra2engine::World::Side::Soviet ? 2 : 1;  // [ai-trigger.md §5]
     acfg.team.house_name = country;
     fill_ai_building_maps(acfg.team, ba, rules, rules_ini);
+    acfg.multiple_factory = rules.general_double("MultipleFactory", 0.8);   // W2-SK-06
     {   // [G-68] HarvestersPerRefinery=2,2,1 ;h,m,e at house+0x184 = 2 - lobby
         const std::vector<std::string> v =
             aiside::csv_tokens(rules.section_string("General", "HarvestersPerRefinery", ""));

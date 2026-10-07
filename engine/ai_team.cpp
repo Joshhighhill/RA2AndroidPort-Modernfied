@@ -31,6 +31,11 @@ OpClass classify_op(int action) {
     }
 }
 
+Cellxy base_gather_cell(int bx, int by, std::uint32_t& rng) {
+    const int ox = (int)(ai_rand(rng) % 7u) - 3, oy = (int)(ai_rand(rng) % 7u) - 3;
+    return Cellxy{bx + ox, by + oy};
+}
+
 Cellxy gather_cell(int ex, int ey, std::uint32_t& rng) {
     // [RE-GATE APPLIED: ai-team.md §2] — a point on a circle of radius
     // kAiSafeDistance (AISafeDistance = 20 cells) around the ENEMY base centre
@@ -100,7 +105,11 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             // the dissolve timer [RE-GATE APPLIED: ai-team.md §2].
             if (complete || (!tt.full && alive > 0)) {
                 team.state = TeamState::Gathering;
-                const Cellxy g = gather_cell(view.enemy_x, view.enemy_y, rng);
+                // W2-SK-06: the pre-script muster is at the OWN base (the stock
+                // scripts open with 54 regroup-at-base then 53 gather-at-enemy;
+                // mustering on the enemy ring first marched every wave across
+                // the map and straight back home) [RE-FALLBACK].
+                const Cellxy g = base_gather_cell(view.base_x, view.base_y, rng);
                 team.gather_x = g.x;
                 team.gather_y = g.y;
                 team.move_issued = false;
@@ -140,7 +149,7 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             }
             // GATHERED = all live members within Rules.Stray (2.0 cells) of the
             // gather focus [RE-GATE APPLIED: ai-team.md §2].
-            if (all_within(view, team.gather_x, team.gather_y, kAiStrayCells)) {
+            if (all_within(view, team.gather_x, team.gather_y, team_reach_cells(kAiStrayCells, alive))) {
                 team.state = TeamState::Executing;
                 team.script_pc = 0;
                 team.script_timer = 0.0;
@@ -170,7 +179,7 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                     c.y = y;
                     team.move_issued = true;
                 } else if (all_within(view, team.gather_x, team.gather_y,
-                                      kAiCloseEnoughCells)) {
+                                      team_reach_cells(kAiCloseEnoughCells, alive))) {
                     advance();
                 }
             };

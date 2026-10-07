@@ -61,6 +61,7 @@ struct SaveAccess {
         save::io(ar, r.credits);
         save::io(ar, r.team_state);
         save::io(ar, r.trigger_state);
+        save::io(ar, r.enemy_house);   // W2-SK-08 (v9)
     }
     template <class Ar> static void house_sw(Ar& ar, World::HouseSuperweapon& s) {
         save::io(ar, s.has_sw);
@@ -993,6 +994,7 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.low_power_penalty);
     io(ar, v.start_credits);
     io(ar, v.team);
+    io(ar, v.multiple_factory);   // W2-SK-06 (v9)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---

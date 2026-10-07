@@ -62,7 +62,7 @@ void claim_full(TeamInstance& t) {          // 2 x type0 + 1 x type1
 constexpr double kDt = 1.0 / 15.0;
 }  // namespace
 
-TEST_CASE("ai_team: full=yes stays Recruiting under strength; gathers on a ring around the enemy base") {
+TEST_CASE("ai_team: full=yes stays Recruiting under strength; musters at the own base") {
     AimdData d = make_aimd(/*full=*/true);
     TeamInstance t = make_team();
     std::uint32_t rng = 0x2545F491u;
@@ -75,16 +75,15 @@ TEST_CASE("ai_team: full=yes stays Recruiting under strength; gathers on a ring 
     TeamCommand c = step_team(t, v, d, rng, kDt);
     CHECK(t.state == TeamState::Recruiting);
     CHECK(c.kind == TeamCommand::Kind::None);
-    // Full strength -> Gathering; the gather cell is on a circle of radius
-    // kAiSafeDistance around the ENEMY base centre (40,10) at a seeded angle
-    // [RE-GATE APPLIED: ai-team.md §2].
+    // Full strength -> Gathering. W2-SK-06: the pre-script muster is within
+    // +-3 cells of the OWN base centre (the scripts' own 53 line gathers on the
+    // AISafeDistance ring around the enemy, see gather_cell).
     claim_full(t);
     v = full_view(true);
     c = step_team(t, v, d, rng, kDt);
     CHECK(t.state == TeamState::Gathering);
-    const double dx = t.gather_x - v.enemy_x, dy = t.gather_y - v.enemy_y;
-    CHECK(std::sqrt(dx * dx + dy * dy) ==
-          doctest::Approx((double)kAiSafeDistance).epsilon(0.10));  // on the ring
+    CHECK(std::abs(t.gather_x - v.base_x) <= 3);
+    CHECK(std::abs(t.gather_y - v.base_y) <= 3);
 }
 
 TEST_CASE("ai_team: full=no launches immediately under strength; skirmish never dissolves, MP does") {

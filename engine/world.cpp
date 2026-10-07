@@ -2279,7 +2279,8 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
             // neutral house never pull the defense-facing centroid or the team
             // gather ring (is_enemy is a != b in an unconfigured gate World,
             // so the 2-house AI gates are unaffected).
-            tx += b.cx; ty += b.cy; ++tn;  // threat = enemy houses' centroid
+            // W2-SK-08: the threat centroid is the ONE current enemy's base.
+            if (rec.enemy_house < 0 || b.house == rec.enemy_house) { tx += b.cx; ty += b.cy; ++tn; }
             // rival_base_size = largest OTHER house's building count — the
             // BaseSizeAdd cap basis (AI base <= rival + 3) [RE: ai-base.md §2].
             if ((int)rival_counts.size() <= b.house) rival_counts.resize(b.house + 1, 0);
@@ -2415,6 +2416,7 @@ void World::step_ai_houses(double dt) {
 
         // 1) Income (the economy phase accumulates per-house unload income).
         rec.credits += take_income(h);
+        ai_pick_enemy_house(h, rec);   // W2-SK-08
 
         // 1b) [G-65] AI repair [RE: FUN_00450620, BuildingClass AI -- gated by
         //     Rules.IQ RepairSell (=1) <= house IQ (skirmish AI = MaxIQLevels
@@ -2477,8 +2479,21 @@ void World::step_ai_houses(double dt) {
             apply_blackout(power_totals(buildings_, cfg.roster, h), house_blacked_out(h));
         const double pmul = build_speed_multiplier(pt, cfg.low_power_penalty);
         rec.queues.set_credits(rec.credits);
-        const double sp[4] = {1.0, 1.0, 1.0, 1.0};  // one ConYard in AI-1 — no
-                                                    // MultipleFactory speedup
+        // W2-SK-06: MultipleFactory for the AI too (it was pinned to x1.0).
+        double sp[4] = {1.0, 1.0, 1.0, 1.0};
+        if (cfg.multiple_factory > 0.0 && cfg.multiple_factory < 1.0) {
+            int ncy = 0, ninf = 0, nveh = 0;
+            for (const Building& b : buildings_) {
+                if (!b.alive || b.state != Building::State::Idle || b.house != h || b.type < 0) continue;
+                if (b.type < (int)cfg.roster.size() && cfg.roster[b.type].conyard) ++ncy;
+                for (int t : cfg.team.inf_factory_types) if (t == b.type) { ++ninf; break; }
+                for (int t : cfg.team.veh_factory_types) if (t == b.type) { ++nveh; break; }
+            }
+            auto spd = [&](int n) { return n <= 1 ? 1.0 : std::pow(1.0 / cfg.multiple_factory, n - 1); };
+            sp[0] = sp[1] = spd(ncy);
+            sp[2] = spd(ninf);
+            sp[3] = spd(nveh);
+        }
         rec.queues.tick(dt, pmul, sp, cfg.roster);
         rec.credits = rec.queues.credits();
 
@@ -2590,6 +2605,51 @@ void World::step_ai_houses(double dt) {
         // [fix wave 1].
         rec.state.pending[q] = rec.state.plan[node_i].id;
     }
+}
+
+bool World::ai_house_alive(int house) const {
+    for (const Building& b : buildings_)
+        if (b.alive && b.house == house && b.state != Building::State::Dead) return true;
+    for (const Unit& u : units_)
+        if (u.alive && u.die_time < 0.0 && u.house == house) return true;
+    return false;
+}
+
+// W2-SK-08 [RE: ai-trigger.md deviations -- the original keeps ONE current
+// enemy per house (house+0x5600) that the trigger conditions, the threat view
+// and the team targeting read; RE-FALLBACK for the pick: the nearest living
+// enemy combatant by base centre (ConYard, else first building, else first
+// unit), re-picked only when it is defeated -- a 1v3 AI no longer averages
+// three bases into one meaningless centroid].
+void World::ai_pick_enemy_house(int house, HouseAiRec& rec) {
+    const int cur = rec.enemy_house;
+    if (cur >= 0 && cur < house_count() && is_enemy(house, cur) && house_combatant(cur) &&
+        ai_house_alive(cur))
+        return;
+    auto centre = [&](int hh, int& x, int& y) {
+        bool got = false;
+        for (const Building& b : buildings_) {
+            if (!b.alive || b.house != hh || b.state == Building::State::Dead) continue;
+            const bool cy = b.type >= 0 && b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard;
+            if (cy || !got) { x = b.cx; y = b.cy; got = true; if (cy) return true; }
+        }
+        if (got) return true;
+        for (const Unit& u : units_)
+            if (u.alive && u.die_time < 0.0 && u.house == hh) { x = u.cell_x; y = u.cell_y; return true; }
+        return false;
+    };
+    int ox = grid_w_ / 2, oy = grid_h_ / 2;
+    centre(house, ox, oy);
+    int best = -1;
+    long long bestd = 0;
+    for (int e = 0; e < house_count(); ++e) {
+        if (e == house || !is_enemy(house, e) || !house_combatant(e)) continue;
+        int ex = 0, ey = 0;
+        if (!centre(e, ex, ey)) continue;
+        const long long d = (long long)(ex - ox) * (ex - ox) + (long long)(ey - oy) * (ey - oy);
+        if (best < 0 || d < bestd) { best = e; bestd = d; }
+    }
+    rec.enemy_house = best;
 }
 
 void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
@@ -2745,7 +2805,11 @@ int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
         const long long dx = u.cell_x - nx, dy = u.cell_y - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);  // 0.90x .. 1.10x, x100
-        const long long score = (dx * dx + dy * dy) * value * jitter;
+        long long score = (dx * dx + dy * dy) * value * jitter;
+        // W2-SK-08: targets of the current enemy house always rank first.
+        if (ai_enabled(house) && ai_houses_[house].enemy_house >= 0 &&
+            u.house != ai_houses_[house].enemy_house)
+            score += 1000000000000LL;
         if (best < 0 || score < bestd) { best = i; bestd = score; }
     }
     return best;
@@ -2762,7 +2826,8 @@ int World::ai_pick_quarry_building(int house, const HouseAiRec& rec, int quarry,
         const long long dx = b.cx - nx, dy = b.cy - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);
-        const long long score = (dx * dx + dy * dy) * value * jitter;
+        long long score = (dx * dx + dy * dy) * value * jitter;
+        if (rec.enemy_house >= 0 && b.house != rec.enemy_house) score += 1000000000000LL;   // W2-SK-08
         if (best < 0 || score < bestd) { best = i; bestd = score; }
     }
     return best;
@@ -2956,6 +3021,36 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
             break;
         }
         case TeamCommand::Kind::AttackQuarry: {
+            // W2-SK-11 [RE: ai-team.md §5 -- one target from the team anchor]:
+            // pick ONCE from the lead (first live) member and give every idle
+            // member the same target, instead of each member's own nearest.
+            int lead = -1;
+            for (int m : team.members)
+                if (m >= 0 && m < (int)units_.size() && units_[m].alive && units_[m].die_time < 0.0) {
+                    lead = m;
+                    break;
+                }
+            int team_tu = -1, team_tb = -1;
+            if (lead >= 0) {
+                const Unit& lu = units_[lead];
+                if (c.building_arg >= 0) {
+                    team_tb = ai_find_typed_building(house, rec, c.building_arg, true, lu.cell_x, lu.cell_y);
+                } else {
+                    team_tu = ai_pick_quarry_unit(house, c.quarry, lu.cell_x, lu.cell_y,
+                                                  rec.team_state.rng, lu.w_aa);
+                    if (team_tu < 0)
+                        team_tb = ai_pick_quarry_building(house, rec, c.quarry, lu.cell_x, lu.cell_y,
+                                                          rec.team_state.rng);
+                }
+            }
+            for (int m : team.members) {
+                if (m < 0 || m >= (int)units_.size()) continue;
+                Unit& u = units_[m];
+                if (!u.alive || u.die_time >= 0.0) continue;
+                if (u.attack_order && (u.target >= 0 || u.target_building >= 0)) continue;
+                if (team_tu >= 0 && (!units_[team_tu].is_aircraft || u.w_aa)) { ai_order_attack(m, team_tu); continue; }
+                if (team_tb >= 0) { ai_order_attack_building(m, team_tb); continue; }
+            }
             for (int m : team.members) {
                 if (m < 0 || m >= (int)units_.size()) continue;
                 Unit& u = units_[m];
@@ -2997,6 +3092,19 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
     }
 }
 
+int World::ai_team_need(const TeamInstance& t, const AimdData& aimd, int ut) {
+    if (t.teamtype < 0 || t.teamtype >= (int)aimd.teams.size()) return 0;
+    const int tfi = aimd.teams[t.teamtype].taskforce;
+    if (tfi < 0 || tfi >= (int)aimd.taskforces.size()) return 0;
+    int want = 0;
+    for (const TaskForceMember& m : aimd.taskforces[tfi].members)
+        if (m.unit == ut) want += m.count;
+    int have = 0;
+    for (int mt : t.member_types)
+        if (mt == ut) ++have;
+    return want - have;
+}
+
 bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     // Exit handoff via the EXISTING primary_factory + launch_unit path (the
     // player's run_interactive twin) [RE: ai-team.md §6]. Returns true if the
@@ -3021,16 +3129,31 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
         rec.queues.placed(cat);
         return true;
     }
-    // Claim into the FIRST (oldest) Recruiting team owing this type —
-    // deterministic; an unclaimed unit stays idle and recruitable
-    // [RE: ai-team.md §2].
+    // Claim into the FIRST (oldest) team owing this type -- deterministic; an
+    // unclaimed unit stays idle and recruitable [RE: ai-team.md §2].
+    // W2-SK-06 [RE: ai-team.md §2 "an unfilled Full=no team keeps recruiting /
+    // producing toward strength" while it acts]: Gathering teams
+    // that are still under strength claim too; the recruit drives to the team.
     for (TeamInstance& t : rec.team_state.teams) {
-        if (t.state != TeamState::Recruiting) continue;
-        if (team_shortfall_type(t, tc.aimd) == uslot) {
-            t.members.push_back(uidx);
-            t.member_types.push_back(uslot);
-            break;
+        // Recruiting and Gathering only: an Executing team runs its script
+        // with what it has (a late recruit held its CloseEnough move line).
+        if (t.state != TeamState::Recruiting && t.state != TeamState::Gathering) continue;
+        if (ai_team_need(t, tc.aimd, uslot) <= 0) continue;
+        t.members.push_back(uidx);
+        t.member_types.push_back(uslot);
+        if (t.state != TeamState::Recruiting) {
+            int fx = t.gather_x, fy = t.gather_y;
+            if (t.state == TeamState::Executing) {
+                long long sx = 0, sy = 0, n = 0;
+                for (int m : t.members)
+                    if (m >= 0 && m < (int)units_.size() && m != uidx && units_[m].alive) {
+                        sx += units_[m].cell_x; sy += units_[m].cell_y; ++n;
+                    }
+                if (n) { fx = (int)(sx / n); fy = (int)(sy / n); }
+            }
+            order_unit_move(uidx, fx, fy);
         }
+        break;
     }
     rec.queues.placed(cat);
     return true;
@@ -3175,15 +3298,69 @@ void World::step_ai_teams(double dt) {
             if (t.state != TeamState::Recruiting) continue;
             recruit_idle(t, tc.aimd, ai_idle_units(h, rec));
         }
-        int want = next_produce_type(st.teams, tc.aimd, rec.credits,
-                                     rec.cfg.mods.cost_mul, tc.unit_roster,
-                                     tc.rules);
+        // W2-SK-06 [RE: ai-team.md §6 -- produce for every team shortfall in
+        // parallel factories]: one pick per IDLE factory category (infantry
+        // and vehicle start in the same tick), the type most owed across ALL
+        // under-strength live teams that this house can start and afford now
+        // (the old oldest-Recruiting-team-only pick wedged every factory
+        // behind one unbuildable or unaffordable slot).
+        int want = -1;
+        int want_inf = -1, want_veh = -1;
+        // W2-SK-06 base priority [RE-FALLBACK: the original AI keeps building
+        // its base while it trains; with every factory now producing, a unit
+        // start must not eat the money AI-1 is banking for its next structure
+        // (the base froze at 7 buildings / 1 refinery in the first soak)].
+        double base_hold = 0.0;
+        {
+            AiBaseState probe = rec.state;
+            const BaseView bv = make_ai_base_view(h, rec);
+            const BuildDecision bd = next_build(probe, bv, rec.cfg.catalog, rec.cfg.roster,
+                                                rec.cfg.ai, rec.cfg.mods);
+            const int ht = bd.type >= 0 ? bd.type : bd.wait_type;
+            const bool cy = std::any_of(buildings_.begin(), buildings_.end(), [&](const Building& b) {
+                return b.alive && b.house == h && b.state == Building::State::Idle && b.type >= 0 &&
+                       b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard;
+            });
+            if (cy && ht >= 0 && ht < (int)rec.cfg.roster.size() &&
+                rec.queues.producing(QueueCat::Structure) == -1)
+                base_hold = rec.cfg.roster[ht].cost * rec.cfg.mods.cost_mul;
+        }
+        {
+            std::vector<int> need(tc.unit_roster.size(), 0);
+            for (const TeamInstance& t : st.teams) {
+                if (t.state != TeamState::Recruiting && t.state != TeamState::Gathering) continue;
+                for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut)
+                    need[ut] += std::max(0, ai_team_need(t, tc.aimd, ut));
+            }
+            int best_inf = 0, best_veh = 0;
+            for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut) {
+                if (need[ut] <= 0) continue;
+                const UnitTypeDef& d = tc.unit_roster[ut];
+                const bool veh = d.is_vehicle;
+                const QueueCat cat = veh ? QueueCat::Vehicle : QueueCat::Infantry;
+                const bool free_inf = !veh && rec.credits > tc.rules.infantry_reserve;
+                if (!free_inf &&
+                    rec.credits < d.cost * rec.cfg.mods.cost_mul + tc.rules.credit_reserve + base_hold)
+                    continue;
+                const std::vector<int>& ft = veh ? tc.veh_factory_types : tc.inf_factory_types;
+                if (factory_category_lost(ft, h) ||
+                    !can_start_unit(rec.queues.state(cat), ut, tc.unit_roster, buildings_,
+                                    rec.cfg.roster, h, rec.cfg.groups, true))
+                    continue;
+                if (veh ? need[ut] > best_veh : need[ut] > best_inf) {
+                    (veh ? best_veh : best_inf) = need[ut];
+                    (veh ? want_veh : want_inf) = ut;
+                }
+            }
+        }
         // [G-68] IQ Harvester: miners below refineries x HarvestersPerRefinery
         // -> the miner comes first [RE: rulesmd [IQ] Harvester=2 "automatically
         // replace lost harvesters"; HarvestersPerRefinery "formerly
         // hardcoded"]. RE-FALLBACK: checked every frame the vehicle queue is
         // idle; affordability as any unit (cost + CreditReserve).
-        if (tc.harvesters_per_refinery > 0) {
+        for (int pass = 0; pass < 2; ++pass) {
+        want = pass == 0 ? want_inf : want_veh;
+        if (pass == 1 && tc.harvesters_per_refinery > 0) {
             int refineries = 0, miners = 0;
             for (const Building& b : buildings_)
                 if (b.alive && b.house == h && b.state == Building::State::Idle &&
@@ -3254,6 +3431,7 @@ void World::step_ai_teams(double dt) {
                 rec.credits = rec.queues.credits();
             }
         }
+        }   // W2-SK-06 per-category pass
 
         // 6) Step every team (pure brain) + execute its command (impure glue);
         //    Disbanding teams release survivors (they simply stop being members
@@ -3283,9 +3461,12 @@ void World::step_ai_teams(double dt) {
                     t.best_focus_d2 = -1;
                     t.no_progress_secs = 0.0;
                 } else {
-                    const double reach = (t.state == TeamState::Gathering)
-                                             ? kAiStrayCells
-                                             : kAiCloseEnoughCells;
+                    int n_alive = 0;
+                    for (int m : t.members)
+                        if (m >= 0 && m < (int)units_.size() && units_[m].alive &&
+                            units_[m].die_time < 0.0) ++n_alive;
+                    const double reach = team_reach_cells(
+                        t.state == TeamState::Gathering ? kAiStrayCells : kAiCloseEnoughCells, n_alive);
                     bool any_alive = false, any_moving = false, all_within = true;
                     long long sum_d2 = 0;
                     for (int m : t.members) {
@@ -3315,7 +3496,7 @@ void World::step_ai_teams(double dt) {
                         t.no_progress_secs = 0.0;
                         if (t.state == TeamState::Gathering) {
                             const Cellxy g =
-                                gather_cell(view.enemy_x, view.enemy_y, st.rng);
+                                base_gather_cell(view.base_x, view.base_y, st.rng);   // W2-SK-06
                             t.gather_x = g.x;
                             t.gather_y = g.y;
                             t.move_issued = false;
@@ -3401,19 +3582,32 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
     // deviations list].
     v.neutral_units.clear();
     v.neutral_buildings.clear();
+    // W2-SK-08/09: "enemy" = the ONE current enemy house when picked (the
+    // original's house+0x5600); the skirmish lobby appends a real neutral
+    // house, whose holdings feed ct=7 CivilianHouseOwns.
+    const int neutral = neutral_house();
+    if (neutral >= 0) {
+        v.neutral_units.assign(tc.unit_roster.size(), 0);
+        v.neutral_buildings.assign(rec.cfg.roster.size(), 0);
+    }
+    auto is_foe = [&](int hh) {
+        return rec.enemy_house >= 0 ? hh == rec.enemy_house : is_enemy(house, hh);
+    };
     for (const Unit& u : units_) {
         // Carried units are off-map/invisible to census [CB-1 off-map invariant].
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         const int t = ai_unit_type_of(rec, u);
         if (t < 0) continue;
         if (u.house == house) ++v.own_units[t];
-        else if (is_enemy(house, u.house)) ++v.enemy_units[t];   // [G-67] not allies/neutral
+        else if (neutral >= 0 && u.house == neutral) ++v.neutral_units[t];
+        else if (is_foe(u.house)) ++v.enemy_units[t];   // [G-67] not allies/neutral
     }
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead) continue;
         if (b.type < 0 || b.type >= (int)rec.cfg.roster.size()) continue;
         if (b.house == house) ++v.own_buildings[b.type];
-        else if (is_enemy(house, b.house)) ++v.enemy_buildings[b.type];   // [G-67]
+        else if (neutral >= 0 && b.house == neutral) ++v.neutral_buildings[b.type];
+        else if (is_foe(b.house)) ++v.enemy_buildings[b.type];   // [G-67]
     }
     v.credits = rec.credits;  // OWNER house credits — ct=4 HouseCredits reads
                               // the CALLING house's money scalar [RE-GATE

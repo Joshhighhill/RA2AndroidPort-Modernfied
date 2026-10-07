@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath>
 // Pure offensive-team brain [RE: docs/re/ai-team.md]. No SDL, no World —
 // consumes a read-only TeamView the caller (World) fills, plus per-house
 // AiTeamState. doctest-testable. EVERY numeric constant below is a HUNT
@@ -48,6 +49,15 @@ constexpr int kAiGatherRadius = 3;
 // when all live members are within Rules.CloseEnough (+0x1718 = 2.25 cells).
 constexpr double kAiStrayCells = 2.0;
 constexpr double kAiCloseEnoughCells = 2.25;
+// W2-SK-06 [RE-FALLBACK: the original packs up to 5 infantry per cell and
+// measures Stray/CloseEnough in leptons; this engine holds ONE unit per cell,
+// so a big team could never fit inside a 2-cell disc and its gather / move
+// line never completed]. The radius grows with the live member count so the
+// disc holds twice that many cells (room for obstacles): max(base, sqrt(2n / pi) + 1).
+inline double team_reach_cells(double base, int alive) {
+    const double r = alive > 0 ? std::sqrt(2.0 * (double)alive / 3.14159265358979) + 1.0 : 0.0;
+    return r > base ? r : base;
+}
 // Timed-guard argument unit [RE: c14.log idx 5 -- the handler stores arg x 15
 // into the team's frame timer; ai-team.md §3 amended (the old x90 "tenths of a
 // minute" reading was the RA1 lineage, not this binary)].
@@ -197,6 +207,8 @@ struct AiTeamRules {
 // `rng` (ai_base's ai_rand, substituting the lockstep RNG). The caller snaps the
 // returned ideal ring cell to the nearest free cell via the existing move/path
 // machinery (the original's FUN_0056d750 snap; [DEVIATION: engine snap]).
+// W2-SK-06: the pre-script muster cell near the OWN base centre (+-3 jitter).
+Cellxy base_gather_cell(int bx, int by, std::uint32_t& rng);
 Cellxy gather_cell(int ex, int ey, std::uint32_t& rng);
 
 // Advance `team` ONE tick [RE: ai-team.md §2/§3]: lifecycle transitions +

@@ -603,6 +603,10 @@ struct AiHouseConfig {
                                          // this is the lobby/MPlayer money,
                                          // passed through unmodified]
     AiTeamConfig team;  // AI-2 [RE: ai-team.md]; enabled=false = no team brain
+    // W2-SK-06 [RE: production.md §1.2 -- MultipleFactory applies to every
+    // house]: each extra same-class factory multiplies build time by this.
+    // 1.0 = off (the synthetic gate configs); real play passes rules 0.8.
+    double multiple_factory = 1.0;
 };
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
@@ -1556,10 +1560,18 @@ private:
         double credits = 0.0;
         AiTeamState team_state;  // AI-2 [RE: ai-team.md]
         AiTriggerState trigger_state;  // AI-3 [RE: ai-trigger.md]
+        int enemy_house = -1;  // W2-SK-08: the ONE current enemy (house+0x5600), v9
     };
     std::vector<HouseAiRec> ai_houses_;  // index = house id (grown on demand)
     bool ai_any_ = false;                // the step() firewall bool
     void step_ai_houses(double dt);
+    void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08
+    bool ai_house_alive(int house) const;                   // W2-SK-08
+public:
+    int ai_enemy_house(int house) const {                   // W2-SK-08 (probe)
+        return ai_enabled(house) ? ai_houses_[house].enemy_house : -1;
+    }
+private:
     void ai_try_fire_superweapon(int house, HouseAiRec& rec);   // [G-66]
     BaseView make_ai_base_view(int house, const HouseAiRec& rec) const;
     bool ai_place_ready(int house, HouseAiRec& rec, QueueCat cat);
@@ -1590,6 +1602,8 @@ private:
     void ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
                                  const TeamCommand& c);
     bool ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat);
+    // W2-SK-06: how many more of unit type `ut` the team's TaskForce owes.
+    static int ai_team_need(const TeamInstance& t, const AimdData& aimd, int ut);
 
     // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
     void ai_fill_trigger_view(int house, const HouseAiRec& rec, TriggerView& v) const;
