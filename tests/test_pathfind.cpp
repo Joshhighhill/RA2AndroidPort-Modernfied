@@ -206,3 +206,26 @@ TEST_CASE("find_path returns empty on passable/dimension size mismatch") {
         CHECK(!path.empty());  // Proves the guard doesn't reject valid input
     }
 }
+
+// W2-SK-05/16: nearest-reachable relaxation and the expansion budget.
+TEST_CASE("pathfind: nearest walks to the closest reachable cell") {
+    const int W = 10, H = 10;
+    std::vector<uint8_t> p(W * H, 1);
+    for (int y = 0; y < H; ++y) p[y * W + 6] = 0;   // a full wall at x=6
+    // Impassable goal on the wall -> relaxed to a passable neighbour.
+    auto a = ra2engine::find_path_nearest(p, W, H, {1, 5}, {6, 5}, 0);
+    REQUIRE(!a.empty());
+    CHECK(a.back().x == 5);
+    CHECK(a.back().y == 5);
+    // Unreachable goal behind the wall -> ends at the wall face nearest it.
+    auto b = ra2engine::find_path_nearest(p, W, H, {1, 5}, {8, 5}, 0);
+    REQUIRE(!b.empty());
+    CHECK(b.back().x == 5);
+    CHECK(b.back().y == 5);
+    CHECK(ra2engine::find_path(p, W, H, {1, 5}, {8, 5}).empty());   // exact search unchanged
+    // Bounded: a tiny budget gives up; a big one matches find_path.
+    std::vector<uint8_t> q(W * H, 1);
+    CHECK(ra2engine::find_path_bounded(q, W, H, {0, 0}, {9, 9}, 2).empty());
+    CHECK(ra2engine::find_path_bounded(q, W, H, {0, 0}, {9, 9}, 1000).size() ==
+          ra2engine::find_path(q, W, H, {0, 0}, {9, 9}).size());
+}

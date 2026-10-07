@@ -21,6 +21,10 @@
 
 namespace ra2engine {
 
+// W2-SK-16 A* expansion budgets (closed nodes).
+constexpr int kNearestPathBudget = 20000;
+constexpr int kRepathBudget = 4000;
+
 // Per-image animation data (Task 2): calibrated against the ORIGINAL game's
 // artmd.ini GISequence/ConSequence data. docs/re/infantry-anim.md is the
 // calibration authority -- see it for the extracted values (§2), the
@@ -844,8 +848,14 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // naval unit uses the EXACT ground occupancy path above (release_all_of + set
     // + find_path); only the grid differs. naval_any_ is a diagnostics flag.
     if (u.is_naval) naval_any_ = true;
+    // W2-SK-05/16: a ground (Land-domain) unit ordered onto an impassable or
+    // unreachable cell walks to the nearest reachable one (budgeted search);
+    // ships keep the exact search (a land click is refused, naval.md).
     std::vector<Cellxy> path =
-        find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
+        u.movement_domain == MovementDomain::Land
+            ? find_path_nearest(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y},
+                                {gx, gy}, kNearestPathBudget)
+            : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
     if (path.size() <= 1) {
         // Assigned its own cell / unreachable: stay put, snap cleanly
         // (mirrors the single-unit Finding-1 cancel branch).
@@ -3706,6 +3716,17 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 }
 
 void World::step(double dt) {
+    // W2-SK-15: tombstoned units keep their slot (every target / team member /
+    // cargo / parasite / projectile owner is a stable unit INDEX, so slots are
+    // never erased or reused), but a dead slot releases its heap storage: the
+    // path and cargo vectors. Swept every 150 frames; nothing reads either
+    // field of a dead unit.
+    if ((repair_frame_ % 150u) == 0u)
+        for (Unit& u : units_)
+            if (!u.alive) {
+                if (u.path.capacity()) { std::vector<Cellxy>().swap(u.path); u.path_idx = 0; }
+                if (u.cargo.capacity() && u.cargo.empty()) std::vector<int>().swap(u.cargo);
+            }
     step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_);
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
@@ -4275,7 +4296,10 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                     u.movement_domain == MovementDomain::Water ? water_passable : passable;
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
-                std::vector<Cellxy> np = find_path(p2, w, h, {u.cell_x, u.cell_y}, goal);
+                // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used
+                // to flood the whole grid every 0.3 s per blocked unit).
+                std::vector<Cellxy> np =
+                    find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget);
                 if (np.size() > 1) {
                     u.path = std::move(np);
                     u.path_idx = 1;

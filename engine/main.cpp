@@ -5302,6 +5302,11 @@ public:
         // Drain gap fix C's fire events every frame (unbounded otherwise);
         // base-defense shots get their sound + muzzle flash here.
         pres_.defense_fire(world_, world_.take_fire_events());
+        // W2-SK-14: the ability (rad ticks, drone ticks, blasts...) and
+        // garrison event queues grew without bound in real play -- nothing
+        // in GameScene ever took them. Drain both every frame.
+        (void)world_.take_ability_events();
+        (void)world_.take_garrison_events();
     }
     // G-87: the map's own dressing in the real game (trees, overlays, smudges,
     // neutral structures). Never in a gate (GameScene-only).
