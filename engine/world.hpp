@@ -1076,6 +1076,13 @@ public:
     // false if b_idx is invalid, Dead, not owned by `by_house`, or already at
     // full HP. The caller consumes the engineer on true.
     bool repair_building(int b_idx, int by_house);
+    // W2-SK-12: may an engineer capture this building (BuildingType Capturable=)?
+    bool building_capturable(int b_idx) const {
+        if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
+        const int t = buildings_[(std::size_t)b_idx].type;
+        if (t < 0 || t >= (int)btypes().size()) return true;   // untyped test buildings
+        return btypes()[(std::size_t)t].capturable;
+    }
 
     // --- Projectile phase (P2) [RE: projectile.md] -------------------------
     // ALL inert by default. projectiles_enabled_ is opened ONLY by
@@ -1169,8 +1176,18 @@ public:
     bool house_repairing(int house) const {
         for (const Building& b : buildings_)
             if (b.alive && b.house == house && b.being_repaired) return true;
-        return false;
+        return depot_servicing(house);   // W2-SK-19: the depot charges the wallet too
     }
+    // W2-SK-19 Service Depot [RE: rulesmd GADEPT/NADEPT UnitRepair=yes;
+    // [General] URepairRate=.016 RepairStep=8 RepairPercent=15%]: the vehicle
+    // standing at an own depot (the lowest-index one beside its foundation,
+    // stopped) heals RepairStep HP on the shared repair phase for
+    // repair_step_cost(Cost, Strength) credits, and an attached Terror Drone is
+    // destroyed. [RE-FALLBACK: the pad is part of the foundation in the
+    // original; here the docked cell is any cell touching the footprint.]
+    int depot_client(int b_idx) const;
+    bool depot_servicing(int house) const;
+    void step_service_depots();
 
     // Consume a unit (the capture/repair gesture spends its engineer, and any
     // future "removed from map" consumer): tombstone it directly (no die anim --
@@ -1239,6 +1256,22 @@ public:
     // this house produces thereafter spawn at veteran_rank 1). Index 2 inert.
     bool produced_veteran(int house) const {
         return house >= 0 && house < house_count() && produced_veteran_[house];
+    }
+    // W2-SK-20: per factory category (BuildingTypeDef::factory_kind).
+    bool produced_veteran_kind(int house, int kind) const {
+        if (house < 0 || house >= house_count()) return false;
+        const std::uint8_t m = produced_veteran_[house];
+        return kind > 0 ? (m & (1u << kind)) != 0 : m != 0;
+    }
+    // W2-SK-20: the GameScene publishes the human wallet so a refinery spy
+    // steals the real balance (the World only sees the per-frame income pool).
+    void set_wallet_hint(int house, double credits) {
+        if (house < 0) return;
+        if ((int)wallet_hint_.size() <= house) wallet_hint_.resize((std::size_t)house + 1, 0.0);
+        wallet_hint_[(std::size_t)house] = credits;
+    }
+    double wallet_hint(int house) const {
+        return house >= 0 && house < (int)wallet_hint_.size() ? wallet_hint_[(std::size_t)house] : 0.0;
     }
 
     // --- Shroud/Fog phase [RE: shroud.md] ---------------------------------
@@ -1669,7 +1702,8 @@ private:
     // gate is byte-identical.
     // T3 [RE: multihouse.md §D2]: bool[3] -> std::vector<uint8_t> sized
     // house_count(). NOT hashed. Sized in ensure_houses_default/grow_house_arrays.
-    std::vector<std::uint8_t> produced_veteran_;
+    std::vector<std::uint8_t> produced_veteran_;   // W2-SK-20: bit (1 << factory_kind)
+    std::vector<double> wallet_hint_;              // W2-SK-20 (v9)
     // The single firewalled Capture per-frame pass: tech-structure income +
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.

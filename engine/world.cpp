@@ -1012,7 +1012,7 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
                                           });
         if (wx.x < 0) return -1;                    // boxed in: HOLD
         UnitCombat cv = c;
-        cv.veteran_rank = produced_veteran(f.house) ? 1 : 0;
+        cv.veteran_rank = produced_veteran_kind(f.house, factory_def.factory_kind) ? 1 : 0;
         const bool has_rally = f.has_rally;
         const int rx = f.rally_x, ry = f.rally_y;
         add_combat_unit(wx.x, wx.y, f.house, cv);
@@ -1040,7 +1040,7 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
     // spied, produced units spawn as veterans. produced_veteran_[house] is false
     // in every existing demo -> cv.veteran_rank stays 0 -> byte-identical.
     UnitCombat cv = c;
-    cv.veteran_rank = produced_veteran(house) ? 1 : 0;
+    cv.veteran_rank = produced_veteran_kind(house, factory_def.factory_kind) ? 1 : 0;
     add_combat_unit(ex.x, ex.y, house, cv);
     const int ui = static_cast<int>(units_.size()) - 1;
     int gx = rx, gy = ry;
@@ -1569,9 +1569,14 @@ bool World::capture_building(int b_idx, int new_house, int startup) {
 
     // (5) ProduceCashStartup -- only when captured FROM the neutral house
     //     [RE: capture.md §A3]. Grant to the NEW owner once.
-    if (grants_startup_from_neutral(old_house) && startup > 0 &&
-        new_house >= 0 && new_house < 2) {
-        house_credits_[new_house] += (double)startup;
+    // W2-SK-21: "neutral" is the real neutral house (the lobby appends it
+    // LAST; kNeutralHouse=2 is an AI in 3+ player games), and any capturing
+    // house is paid (an AI into its AI-1 purse).
+    const int nh = neutral_house();
+    const bool from_neutral = nh >= 0 ? old_house == nh : grants_startup_from_neutral(old_house);
+    if (from_neutral && startup > 0 && new_house >= 0 && new_house < house_count()) {
+        if (ai_enabled(new_house)) ai_houses_[(std::size_t)new_house].credits += (double)startup;
+        else house_credits_[new_house] += (double)startup;
     }
     return true;
 }
@@ -1586,27 +1591,43 @@ bool World::infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purp
     capture_any_ = true;
     switch (purpose) {
         case InfiltratePurpose::Refinery: {          // [RE: capture.md §B3 CONFIRMED]
-            if (victim >= 0 && victim < 2 && spy_house >= 0 && spy_house < 2) {
-                const int steal = cash_steal_amount(house_credits_[victim], steal_pct);
-                house_credits_[victim] -= (double)steal;
-                house_credits_[spy_house] += (double)steal;
+            // W2-SK-20: steal from the victim's REAL wallet, any house (an AI
+            // house's AI-1 purse; a human's GameScene wallet, published every
+            // frame through set_wallet_hint). The old code took half of the
+            // per-frame income pool -- ~0 -- and only for houses 0/1.
+            if (victim >= 0 && victim < house_count() && spy_house >= 0 && spy_house < house_count()) {
+                const double bal = ai_enabled(victim)
+                                       ? ai_houses_[(std::size_t)victim].credits
+                                       : house_credits_[(std::size_t)victim] + wallet_hint(victim);
+                const int steal = cash_steal_amount(std::max(0.0, bal), steal_pct);
+                if (ai_enabled(victim)) ai_houses_[(std::size_t)victim].credits -= (double)steal;
+                else house_credits_[(std::size_t)victim] -= (double)steal;
+                if (ai_enabled(spy_house)) ai_houses_[(std::size_t)spy_house].credits += (double)steal;
+                else house_credits_[(std::size_t)spy_house] += (double)steal;
             }
             break;
         }
         case InfiltratePurpose::PowerPlant:          // [RE: capture.md §B2 CONFIRMED]
-            if (victim >= 0 && victim < 3) blackout_frames_[victim] = blackout;
+            if (victim >= 0 && victim < house_count()) blackout_frames_[victim] = blackout;   // W2-SK-20: any house
             break;
         case InfiltratePurpose::Superweapon:         // [RE: capture.md §B4 CONFIRMED]
             reset_superweapon(victim);
             break;
-        case InfiltratePurpose::Factory:             // [RE: capture.md §B5] Task 6 wires the flag
-            if (spy_house >= 0 && spy_house < 3) produced_veteran_[spy_house] = true;
+        case InfiltratePurpose::Factory: {           // [RE: capture.md §B5] Task 6 wires the flag
+            // W2-SK-20: veterans only from THAT factory category (barracks ->
+            // infantry, war factory -> vehicles, yard -> ships, airfield ->
+            // aircraft), not every unit the house ever builds.
+            int kind = 0;
+            if (b.type >= 0 && b.type < (int)btypes().size()) kind = btypes()[(std::size_t)b.type].factory_kind;
+            if (spy_house >= 0 && spy_house < house_count())
+                produced_veteran_[spy_house] |= (std::uint8_t)(kind > 0 ? (1u << kind) : 0x1Eu);
             break;
+        }
         case InfiltratePurpose::RadarLab:            // [RE: shroud.md §7B] radar sabotage
             reshroud_house(victim);                  // no-op if shroud off or SpySat-latched
             break;
         case InfiltratePurpose::None:
-            break;
+            return false;   // W2-SK-20: a non-spyable building refuses the spy (not consumed)
     }
     return true;
 }
@@ -1839,6 +1860,56 @@ void World::step_repair_sell(double dt) {
     }
 }
 
+int World::depot_client(int b_idx) const {
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return -1;
+    const Building& b = buildings_[(std::size_t)b_idx];
+    if (!b.alive || b.state != Building::State::Idle || b.type < 0 ||
+        b.type >= (int)btypes().size() || !btypes()[(std::size_t)b.type].unit_repair)
+        return -1;
+    for (int i = 0; i < (int)units_.size(); ++i) {
+        const Unit& u = units_[(std::size_t)i];
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != b.house) continue;
+        if (!u.is_vehicle || u.is_aircraft || u.is_naval || u.moving()) continue;
+        if (u.hp >= u.max_hp && u.parasite_on_me < 0) continue;
+        const int dx = u.cell_x < b.cx ? b.cx - u.cell_x : (u.cell_x >= b.cx + b.fw ? u.cell_x - (b.cx + b.fw - 1) : 0);
+        const int dy = u.cell_y < b.cy ? b.cy - u.cell_y : (u.cell_y >= b.cy + b.fh ? u.cell_y - (b.cy + b.fh - 1) : 0);
+        if (std::max(dx, dy) <= 1) return i;
+    }
+    return -1;
+}
+
+bool World::depot_servicing(int house) const {
+    for (int bi = 0; bi < (int)buildings_.size(); ++bi)
+        if (buildings_[(std::size_t)bi].house == house && depot_client(bi) >= 0) return true;
+    return false;
+}
+
+void World::step_service_depots() {
+    const std::uint64_t frame = repair_frame_ > 0 ? repair_frame_ - 1 : 0;   // step_repair_sell's phase
+    const int interval = repair_interval_frames(repair_rules_.repair_rate);
+    const bool due = repair_due(frame, interval);
+    for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+        const int ui = depot_client(bi);
+        if (ui < 0) continue;
+        Unit& u = units_[(std::size_t)ui];
+        // A riding Terror Drone dies at the depot (every frame, not phased).
+        if (u.parasite_on_me >= 0 && u.parasite_on_me < (int)units_.size()) {
+            Unit& d = units_[(std::size_t)u.parasite_on_me];
+            if (d.alive && d.die_time < 0.0) ability_kill_unit(u.parasite_on_me);
+            u.parasite_on_me = -1;
+        }
+        if (!due || u.hp >= u.max_hp) continue;
+        const int h = buildings_[(std::size_t)bi].house;
+        if (h < 0 || h >= house_count()) continue;
+        const int cost = repair_step_cost(u.vet.cost > 0 ? u.vet.cost : u.max_hp, u.max_hp,
+                                          repair_rules_.repair_step, repair_rules_.repair_percent);
+        double& pool = ai_enabled(h) ? ai_houses_[(std::size_t)h].credits : house_credits_[(std::size_t)h];
+        if (pool < (double)cost) continue;   // broke: no partial step, no free repair
+        pool -= (double)cost;
+        u.hp = std::min(u.max_hp, u.hp + repair_rules_.repair_step);
+    }
+}
+
 void World::consume_unit(int idx) {
     if (idx < 0 || idx >= (int)units_.size()) return;
     Unit& u = units_[idx];
@@ -1971,6 +2042,11 @@ void World::step_capture(double dt) {
                     // the hut itself is never captured.
                     repair_bridge_near(bi);
                     consumed = true;
+                } else if (!are_allied(eng_house, b.house) && !building_capturable(bi)) {
+                    // W2-SK-12 [RE: capture.md §A3]: Capturable=false (pillbox,
+                    // tesla coil, prism tower, SAM, superweapons...) refuses the
+                    // engineer, who is NOT consumed.
+                    consumed = false;
                 } else if (!are_allied(eng_house, b.house)) {
                     // Capture ENEMY *and NEUTRAL* buildings (neutral is not an
                     // enemy but IS capturable -- the oil-derrick case); own/ally
@@ -2091,7 +2167,10 @@ void World::step_tech_structures(double dt) {
         if (t.building < 0 || t.building >= (int)buildings_.size()) continue;
         const Building& b = buildings_[t.building];
         if (!b.alive || b.state == Building::State::Dead) continue;
-        if (b.house < 0 || b.house >= 2) continue;    // neutral pays nobody
+        // W2-SK-21: the real neutral house pays nobody; every other house is
+        // paid (was: houses 0/1 only, so a 3rd/4th player's derrick paid 0).
+        const int nh = neutral_house();
+        if (b.house < 0 || b.house >= house_count() || (nh >= 0 ? b.house == nh : b.house >= 2)) continue;
         t.frames += frames;
         while (t.frames >= t.delay) {
             t.frames -= t.delay;
@@ -3653,6 +3732,7 @@ void World::step(double dt) {
     // beside step_cargo; `if (!capture_any_) return;` inside is the only cost
     // every existing demo pays (no demo issues a capture order) [spec §8].
     step_capture(dt);
+    step_service_depots();   // W2-SK-19
 
     // gF MCV deploy [RE: docs/re/mcv-deploy.md]: the turn-then-unfold mission.
     // `if (!deploy_any_) return;` inside -- no gate issues a deploy order.

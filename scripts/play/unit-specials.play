@@ -1,0 +1,79 @@
+# W2-SK-13/17/18/19 unit specials in real play: Service Depot repair, Attack
+# Dog one-bite kill, V3 rocket payload, Demolition Truck suicide blast.
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:speed=3
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# --- Service Depot (W2-SK-19): a damaged tank beside an own depot heals.
+cheat place GADEPT 0 building 0:GACNST +7 -2
+cheat spawn HTNK 0 building 0:GACNST +10 -1
+wait 2
+cheat damage_unit 0:HTNK 200
+wait 1
+let hp0 = uhp(0,HTNK)
+wait 300
+assert uhp(0,HTNK) > $hp0 @W2-SK-19
+# --- Engineer (W2-SK-12): an enemy power plant is captured; a
+# Capturable=false structure (the Soviet missile silo) refuses the engineer,
+# who is not consumed.
+cheat place NAPOWR 1 building 0:GACNST -12 +7
+cheat spawn ENGINEER 0 building 0:GACNST -9 +7
+wait 2
+click unit 0:ENGINEER
+click building 1:NAPOWR
+until 300 built(0,NAPOWR) == 1 @W2-SK-12
+cheat place NAMISL 1 building 0:GACNST -12 +11
+cheat spawn ENGINEER 0 building 0:GACNST -8 +11
+wait 2
+click unit 0:ENGINEER
+click building 1:NAMISL
+wait 200
+assert built(1,NAMISL) == 1 @W2-SK-12
+assert units(0,ENGINEER) == 1 @W2-SK-12
+# --- Spy (W2-SK-20): a refinery infiltration steals real money.
+cheat place NAREFN 1 building 0:GACNST +10 +6
+cheat spawn SPY 0 building 0:GACNST +8 +5
+wait 2
+let c0 = credits
+click unit 0:SPY
+click building 1:NAREFN
+until 300 credits > $c0+500 @W2-SK-20
+# --- Attack Dog (W2-SK-18): one bite kills a Conscript.
+cheat spawn ADOG 0 building 0:GACNST -4 +6
+cheat spawn E2 1 building 0:GACNST -4 +9
+wait 2
+let l1 = units_lost(1)
+click unit 0:ADOG
+click unit 1:E2
+until 200 units_lost(1) > $l1 @W2-SK-18
+assert units(0,ADOG) == 1 @W2-SK-18
+# --- V3 (W2-SK-13): the rocket payload kills a Rhino at range.
+cheat spawn V3 0 building 0:GACNST +3 +3
+cheat spawn HTNK 1 building 0:GACNST +3 +14
+wait 2
+let l2 = units_lost(1)
+click unit 0:V3
+click unit 1:HTNK
+until 1200 units_lost(1) > $l2 @W2-SK-13
+# --- Demolition Truck (W2-SK-17): suicide + Demobomb blast (300 x 150% vs
+# heavy armour maims an 800-HP Apocalypse, it does not kill it).
+cheat spawn DTRUCK 0 building 0:GACNST -8 -8
+cheat spawn APOC 1 building 0:GACNST -8 -14
+cheat spawn APOC 1 building 0:GACNST -7 -14
+wait 2
+let l3 = units_lost(1)
+click unit 0:DTRUCK
+click unit 1:APOC
+until 600 units(0,DTRUCK) == 0 @W2-SK-17
+assert uhp(1,APOC) < 800 @W2-SK-17
+end

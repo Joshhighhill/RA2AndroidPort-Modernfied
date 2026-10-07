@@ -68,6 +68,11 @@ struct BuildingTypeDef {
     // MCV turns to before it unfolds into this type.
     int  deploy_facing    = 0x80;
     bool ore_purifier     = false;  // OrePurifier=     gap owner A (G-27) [RE: economy.md §2]
+    // --- W2-SK-12/19/20 (save v9) ---
+    bool capturable       = false;  // Capturable=  (rulesmd: absent = no; walls/defences no)
+    bool spyable          = false;  // Spyable=     (absent = no)
+    bool unit_repair      = false;  // UnitRepair=  (GADEPT/NADEPT service depot)
+    int  factory_kind     = 0;      // Factory=: 0 none, 1 infantry, 2 vehicle, 3 naval, 4 aircraft
     int  soylent          = 0;      // Soylent=         [§B1] absolute refund override
                                     // [RE-GATE APPLIED §D0: GAREFN/NAREFN set Soylent=300,
                                     // so this override is load-bearing, not dead code.]

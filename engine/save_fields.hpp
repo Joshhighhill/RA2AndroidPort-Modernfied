@@ -109,6 +109,7 @@ struct SaveAccess {
         save::io(ar, w.tech_income_);
         save::io(ar, w.blackout_frames_);
         save::io(ar, w.produced_veteran_);
+        save::io(ar, w.wallet_hint_);   // W2-SK-20 (v9)
         // Shroud
         save::io(ar, w.explored_);
         save::io(ar, w.visible_);
@@ -618,6 +619,10 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.crewed);
     io(ar, v.deploy_facing);   // gF
     io(ar, v.ore_purifier);   // gap owner A (G-27)
+    io(ar, v.capturable);     // W2-SK-12 (v9)
+    io(ar, v.spyable);        // W2-SK-20 (v9)
+    io(ar, v.unit_repair);    // W2-SK-19 (v9)
+    io(ar, v.factory_kind);   // W2-SK-20 (v9)
     io(ar, v.soylent);
     // Gap fix C: defense weapons
     io(ar, v.weapon);

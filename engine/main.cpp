@@ -771,6 +771,24 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // other stat) but consumed ONLY behind World::projectiles_enabled_ -- which
     // no byte-identity gate opens. Not part of the [unit] log line below.
     r.combat.proj = ra2engine::resolve_projectile_spec(rules, primary);
+    // W2-SK-13 [RE: rulesmd [V3Launcher] Spawner=yes Damage=1 Warhead=Special;
+    // [V3] Spawns=V3ROCKET; [General] V3RocketType=V3ROCKET V3RocketDamage=200;
+    // [CombatDamage] V3Warhead=V3WH]: the launcher's 1-damage "Special" shot
+    // only releases the spawned missile -- the rocket's explosion is what
+    // hurts. Fold the rocket's payload into the shot (V3RocketDamage on
+    // V3Warhead). [PARTIAL: the rocket is not a separate 50-HP aircraft that
+    // flak can intercept, and MinimumRange=5 is not modelled.]
+    if (rules.section_flag(primary, "Spawner", false)) {
+        const std::string spawn = rules.section_string(unit_id, "Spawns", "");
+        if (!spawn.empty() && spawn == rules.section_string("General", "V3RocketType", "V3ROCKET") &&
+            rules.section_flag(spawn, "MissileSpawn", false)) {
+            r.combat.damage = (int)rules.general_double("V3RocketDamage", 200.0);
+            const std::string vwh = rules.section_string("CombatDamage", "V3Warhead", "V3WH");
+            r.combat.verses = rules.verses(vwh);
+            r.combat.cell_spread = rules.section_double(vwh, "CellSpread", 0.0);
+            r.combat.percent_at_max = rules.section_double(vwh, "PercentAtMax", 1.0);
+        }
+    }
 
     // CB-1 cargo stats [RE-GATE APPLIED: transport-cargo.md §1 -- absent-key
     // defaults CONFIRMED: Passengers/SizeLimit -> 0, Size -> 1. In the
@@ -1060,6 +1078,10 @@ ra2engine::AbilityRules resolve_ability_rules(const Rules& rules, const Ini& ini
 void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini) {
     world.set_ability_rules(resolve_ability_rules(rules, ini));
     std::vector<std::string> ids = {"DRON", "DESO", "CLEG", "TANY", "GHOST", "IVAN", "TERROR", "FV"};
+    // W2-SK-17/18: the Demolition Truck (Suicide Demobomb + DeathWeapon), the
+    // Apocalypse (Explodes=yes) and both attack dogs (ParasiteDog warhead,
+    // Parasite=yes: one bite kills any infantry, Verses 0% vs vehicles).
+    for (const char* extra : {"DTRUCK", "APOC", "DOG", "ADOG"}) ids.push_back(extra);
     for (const auto& kv : ini.section("InfantryTypes")) {
         const std::string& id = kv.second;   // RC-5: comment already cut by Ini
         if (!id.empty() && rules.section_double(id, "IFVMode", 0.0) != 0.0 &&
@@ -1761,6 +1783,7 @@ infiltrate_purposes_for(const BuildingAssets& ba, const Rules& rules) {
     for (std::size_t i = 0; i < ba.roster.size(); ++i) {
         const ra2engine::BuildingTypeDef& d = ba.roster[i];
         const std::string& id = d.id;
+        if (!d.spyable) continue;   // W2-SK-20: Spyable=no -> refused (None)
         if (!rules.free_unit(id).empty()) { out[i] = P::Refinery; continue; }  // GAREFN/NAREFN
         if (d.power > 0) { out[i] = P::PowerPlant; continue; }                 // GAPOWR/NAPOWR
         if (in(id, {"NAMISL", "GACHRO", "NAIRON", "GAWEAT", "GAWEATH", "GAAIRC",
@@ -2079,6 +2102,18 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.crewed           = rules.section_flag(id, "Crewed", false);
         d.soylent          = (int)rules.section_double(id, "Soylent", 0.0);
         d.ore_purifier     = rules.section_flag(id, "OrePurifier", false);   // G-27
+        // W2-SK-12/19/20: Capturable= / Spyable= / UnitRepair= (absent = no in
+        // rulesmd: GAPILL/TESLA/ATESLA/NAMISL/GACSPH/GAGAP say false, walls say
+        // nothing) and the factory category a spy's veterancy bonus follows.
+        d.capturable       = rules.section_flag(id, "Capturable", false);
+        d.spyable          = rules.section_flag(id, "Spyable", false);
+        d.unit_repair      = rules.section_flag(id, "UnitRepair", false);
+        {
+            const std::string f = rules.section_string(id, "Factory", "");
+            d.factory_kind = f == "InfantryType" ? 1
+                           : f == "UnitType" ? (rules.section_flag(id, "Naval", false) ? 3 : 2)
+                           : f == "AircraftType" ? 4 : 0;
+        }
         // gF [RE: docs/re/mcv-deploy.md]: DeployFacing= is a 0..7 direction read
         // as (default>>5) and stored <<5 (FUN_0045FE40 @0x460C5C); default 0x80.
         d.deploy_facing    = ((int)rules.section_double(id, "DeployFacing", 4.0) & 7) << 5;
@@ -5096,6 +5131,7 @@ public:
         // into the pool for the step and take it all back straight after, so
         // the tick sees (and charges) the real balance and the out-of-credits
         // stop (§A3) fires on the real balance. Inert otherwise.
+        world_.set_wallet_hint(0, player_credits_);   // W2-SK-20 spy cash theft
         const bool repair_bridge = world_.house_repairing(0);
         if (repair_bridge) {
             world_.deposit_credits(0, player_credits_);
@@ -5246,6 +5282,10 @@ public:
                                                         0.0, /*instant=*/true, d.sight, d.grants_map_reveal);
                     if (idx >= 0 && hp256 > 0 && hp256 < 256)
                         world_.buildings()[static_cast<std::size_t>(idx)].hp = std::max(1, d.strength * hp256 / 256);
+                    // W2-SK-21: a map tech building (CAOILD ProduceCashAmount=20 /
+                    // ProduceCashDelay=100) pays its owner once captured.
+                    if (idx >= 0 && d.produce_cash_amount > 0 && d.produce_cash_delay > 0)
+                        world_.register_tech_income(idx, d.produce_cash_amount, d.produce_cash_delay);
                     return idx >= 0;
                 });
                 world_.refresh_building_types(ba_.roster);   // G16: newly registered types

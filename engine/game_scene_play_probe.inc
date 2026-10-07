@@ -55,6 +55,11 @@
             p.add("units(" + hs + ")", 1);
             p.add("units(" + hs + "," + id + ")", 1);
             if (u.moving()) p.add("moving(" + hs + ")", 1);
+            if (!p.n.count("uhp(" + hs + "," + id + ")")) {   // W2-SK: first live unit's HP / rank
+                p.set("uhp(" + hs + "," + id + ")", u.hp);
+                p.set("urank(" + hs + "," + id + ")", u.veteran_rank);
+                p.set("udisguised(" + hs + "," + id + ")", u.disguised ? 1 : 0);
+            }
             if (!p.n.count("weapon_damage(" + id + ")")) {   // first live unit of the type
                 p.set("weapon_damage(" + id + ")", u.w_damage);
                 p.set("weapon_range(" + id + ")", u.w_range);
@@ -370,6 +375,34 @@
             if (c == "credits" && a.size() >= 2) {
                 player_credits_ += std::atof(a[1].c_str());
                 return "";
+            }
+            // W2-SK probes: damage_unit H:TYPE[:n] DMG ; place TYPE H building H:T +DX +DY
+            if (c == "damage_unit" && a.size() >= 3) {
+                int h = 0, n = 0;
+                std::string type;
+                if (!play_parse_spec(a[1], h, type, n)) return "bad spec " + a[1];
+                for (int i = 0; i < static_cast<int>(world_.units().size()); ++i) {
+                    ra2engine::Unit& u = world_.units()[i];
+                    if (!u.alive || u.die_time >= 0.0 || u.house != h) continue;
+                    if (type != "*" && play_unit_id(u) != type) continue;
+                    if (n-- > 0) continue;
+                    u.hp = std::max(1, u.hp - std::atoi(a[2].c_str()));
+                    return "";
+                }
+                return "no unit " + a[1];
+            }
+            if (c == "place" && a.size() >= 7 && a[3] == "building") {
+                const int t = roster_index(ba_, a[1]);
+                if (t < 0) return "no building type " + a[1];
+                const int bi = play_find_building(a[4]);
+                if (bi < 0) return "no building " + a[4];
+                const ra2engine::Building& ab = world_.buildings()[bi];
+                const ra2engine::BuildingTypeDef& d = ba_.roster[static_cast<std::size_t>(t)];
+                const int x = ab.cx + std::atoi(a[5].c_str()), y = ab.cy + std::atoi(a[6].c_str());
+                const int idx = world_.add_building(t, x, y, d.fw, d.fh, std::atoi(a[2].c_str()), d.strength,
+                                                    d.armor_ix, 0.0, /*instant=*/true, d.sight,
+                                                    d.grants_map_reveal);
+                return idx >= 0 ? "" : "place failed";
             }
             // spawn TYPE H (cell X Y | building H:T[:n] +DX +DY)
             if (c == "spawn" && a.size() >= 5) {
