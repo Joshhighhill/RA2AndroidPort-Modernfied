@@ -267,6 +267,11 @@ inline std::vector<std::string> g_gf_spawned;
 // Skirmish result screen (defined in gf_result.inc, after GameScene).
 struct GfSkirmishStats {
     int units_killed = 0, units_lost = 0, buildings_killed = 0, buildings_lost = 0;
+    // W2-UI-20 (score page 0xBC6): per house -- name, kills (dead objects whose
+    // killed_by stamp is this house's unit), losses, built (every object it
+    // ever owned [RE-FALLBACK: starting units included]).
+    struct Row { std::string name; int kills = 0, losses = 0, built = 0; bool listed = true; };
+    std::vector<Row> rows;
 };
 Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg, int outcome,
                                      long frames, const GfSkirmishStats& stats);
@@ -279,6 +284,11 @@ Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishCon
 // GUI:AskAbortMission with Abort / Restart (campaign, STT:ConfirmExitButton-
 // Restart) / Resume (STT:ConfirmExitButtonResume) for Abort Mission.
 // [ANCHORED: the label->button pairing is from the STT tooltips + templates.]
+// W2-UI-17: the 0x120 / 0x121 popup (shell_pages.inc paints it).
+void popup_render(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& text,
+                  const std::vector<std::string>& buttons, int hover, int pressed, bool soviet = false);
+ra2engine::SbRect popup_button_dev(int i, int n);
+
 class GfConfirm {
 public:
     bool open() const { return open_; }
@@ -286,62 +296,37 @@ public:
         open_ = true;
         text_ = text;
         buttons_ = std::move(buttons);
+        down_ = false;
     }
     void close() { open_ = false; }
     // -1 = nothing / still open, else the index of the clicked button. A Quit
     // (Esc) answers the LAST button (Cancel / Resume).
     int handle(const ra2engine::InputEvent& ev) {
         if (!open_) return -1;
-        if (ev.kind == ra2engine::InputEvent::Quit) { open_ = false; return (int)buttons_.size() - 1; }
+        if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown ||
+            ev.kind == ra2engine::InputEvent::PointerUp) {
+            mx_ = ev.x;
+            my_ = ev.y;
+        }
+        if (ev.kind == ra2engine::InputEvent::Quit ||
+            (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape)) {
+            open_ = false;
+            return (int)buttons_.size() - 1;
+        }
+        if (ev.button == ra2engine::InputEvent::Left && ev.kind == ra2engine::InputEvent::PointerUp) down_ = false;
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left)
             return -1;
+        down_ = true;
         for (int i = 0; i < (int)buttons_.size(); ++i)
             if (btn(i).contains(ev.x, ev.y)) { open_ = false; return i; }
         return -1;
     }
-    void render(SDL_Renderer* ren) const {
+    void render(SDL_Renderer* ren, ra2engine::TextureCache& tc, bool soviet = false) const {
         if (!open_) return;
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(ren, 0, 0, 0, 150);
-        SDL_Rect full{0, 0, 1280, 720};
-        SDL_RenderFillRect(ren, &full);
-        const SDL_Rect p = panel();
-        SDL_SetRenderDrawColor(ren, 18, 20, 26, 255);
-        SDL_RenderFillRect(ren, &p);
-        SDL_SetRenderDrawColor(ren, 200, 60, 50, 255);
-        SDL_RenderDrawRect(ren, &p);
-        // Word-wrap the message into the text box (40..260 DLU wide).
-        std::string line, word;
-        int y = p.y + 50;
-        const int maxc = (p.w - 80) / 12;
-        auto flush = [&]() {
-            if (line.empty()) return;
-            draw_text(ren, line, p.x + 40, y, 2, 235, 220, 150);
-            y += 24;
-            line.clear();
-        };
-        for (std::size_t i = 0; i <= text_.size(); ++i) {
-            const char ch = i < text_.size() ? text_[i] : ' ';
-            if (ch == ' ' || ch == '\n') {
-                if ((int)(line.size() + word.size() + 1) > maxc) flush();
-                if (!word.empty()) line += (line.empty() ? "" : " ") + word;
-                word.clear();
-                if (ch == '\n') flush();
-            } else {
-                word += ch;
-            }
-        }
-        flush();
-        for (int i = 0; i < (int)buttons_.size(); ++i) {
-            const ra2engine::SbRect r = btn(i);
-            SDL_Rect s{r.x, r.y, r.w, r.h};
-            SDL_SetRenderDrawColor(ren, 70, 26, 24, 255);
-            SDL_RenderFillRect(ren, &s);
-            SDL_SetRenderDrawColor(ren, 210, 70, 60, 255);
-            SDL_RenderDrawRect(ren, &s);
-            const int lw = (int)buttons_[(std::size_t)i].size() * 12;
-            draw_text(ren, buttons_[(std::size_t)i], r.x + (r.w - lw) / 2, r.y + 8, 2, 235, 235, 240);
-        }
+        int hover = -1;
+        for (int i = 0; i < (int)buttons_.size(); ++i)
+            if (btn(i).contains(mx_, my_)) hover = i;
+        popup_render(ren, tc, text_, buttons_, hover, down_ ? hover : -1, soviet);
     }
     // G0 --play: confirm_open + confirm:yes (first button) / confirm:no (last)
     // + confirm:<label> for every button.
@@ -357,16 +342,13 @@ public:
             if (i + 1 == (int)buttons_.size()) p.targets["confirm:no"] = pr;
         }
     }
-    ra2engine::SbRect btn(int i) const {
-        // Template DLU (207, 175 - 20*(n-1-i), 83, 15) on a 300x200 DLU box,
-        // scaled x2 (600x400 px) and centred on the 1280x720 window.
-        const SDL_Rect p = panel();
-        const int n = (int)buttons_.size();
-        return {p.x + 207 * 2, p.y + (175 - 20 * (n - 1 - i)) * 2, 83 * 2, 15 * 2};
-    }
+    // Popup 0x120 template: OK (310, 251) / Cancel (310, 284), 124x24, on the
+    // 451x326 box centred at (95, 77) of the 640x480 canvas [wave2/04 RE #6].
+    ra2engine::SbRect btn(int i) const { return popup_button_dev(i, (int)buttons_.size()); }
 private:
-    static SDL_Rect panel() { return {(1280 - 600) / 2, (720 - 400) / 2, 600, 400}; }
     bool open_ = false;
+    bool down_ = false;
+    int mx_ = -1, my_ = -1;
     std::string text_;
     std::vector<std::string> buttons_;
 };

@@ -1,0 +1,30 @@
+# W2-UI-22..26: shell labels (Main Menu bottom rows), STT status line,
+# staggered page power-on, View Credits scroller.
+set on_quit continue
+set render_every 300
+require scene == "shell:Main Menu"
+move button "Single Player"
+wait 1
+assert status == "Play a Story Campaign or Skirmish Game."
+shot s01_main_status
+click button "Single Player"
+assert scene == "shell:Single Player"
+shot s02_single_transition
+wait 8
+move button "Main Menu"
+wait 1
+assert status == "Return to the Main Menu."
+shot s03_single_settled
+click button "Main Menu"
+assert scene == "shell:Main Menu"
+click button "Movies & Credits"
+click button "View Credits"
+until 10 scene == credits
+assert credit_lines > 100
+wait 120
+shot s04_credits
+key esc
+until 10 scene == "shell:Movies & Credits"
+click button Back
+assert scene == "shell:Main Menu"
+end

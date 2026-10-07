@@ -117,6 +117,7 @@ public:
                 Theme t;
                 t.section = sec;
                 t.sound = pres_clean(th.get(sec, "Sound"));
+                t.name = pres_clean(th.get(sec, "Name"));   // W2-UI-14 jukebox label (CSF)
                 t.normal = pres_lower(pres_clean(th.get(sec, "Normal", "yes")))[0] != 'n';
                 t.repeat = pres_lower(pres_clean(th.get(sec, "Repeat", "no")))[0] == 'y';
                 if (!t.sound.empty()) themes_.push_back(t);
@@ -262,6 +263,14 @@ public:
     }
     void music_update(double now) {
         if (!music_on_) return;
+        if (jukebox_pending_ >= 0) {   // W2-UI-14 jukebox Play
+            const int ti = jukebox_pending_;
+            jukebox_pending_ = -1;
+            for (int k = 0; k < static_cast<int>(playlist_.size()); ++k)
+                if (playlist_[k] == ti) track_ix_ = k;
+            play_track(ti, now);
+            return;
+        }
         if (track_ix_ >= 0 && now < track_end_) return;
         if (track_ix_ >= 0 && themes_[playlist_[track_ix_]].repeat) {
             play_track(playlist_[track_ix_], now);
@@ -275,11 +284,27 @@ public:
         if (mixer_live() && !cur_music_key_.empty()) audio_->mixer->stop(cur_music_key_);
     }
     const std::string& current_track() const { return cur_track_; }
+    // W2-UI-14 (0xB8 jukebox): the score list (CSF Name labels, [Themes]
+    // order) and Play = start that theme now, then continue the playlist.
+    std::vector<std::string> theme_labels() const {
+        std::vector<std::string> v;
+        for (const Theme& t : themes_) v.push_back(t.name.empty() ? t.section : t.name);
+        return v;
+    }
+    void jukebox_play(const std::string& section) {
+        int ti = -1;
+        for (int i = 0; i < static_cast<int>(themes_.size()); ++i)
+            if (pres_lower(themes_[i].section) == pres_lower(section)) ti = i;
+        if (ti < 0) return;
+        if (playlist_.empty()) music_start();
+        music_on_ = true;
+        jukebox_pending_ = ti;
+    }
 
 private:
     struct Req { std::string name; int priority; int type; };
     struct Bag { ra2assets::AudioIdx idx; std::vector<uint8_t> bag; };
-    struct Theme { std::string section, sound; bool normal = true, repeat = false; };
+    struct Theme { std::string section, sound, name; bool normal = true, repeat = false; };
 
     // Decodes the side's clip for `r` (cached), logs, plays, and holds EVA busy
     // for the clip's real length.
@@ -383,6 +408,7 @@ private:
     std::vector<Theme> themes_;
     std::vector<int> playlist_;
     int track_ix_ = -1;
+    int jukebox_pending_ = -1;   // W2-UI-14
     bool music_on_ = false;
     double track_end_ = 0.0;
     std::string cur_track_, cur_music_key_;

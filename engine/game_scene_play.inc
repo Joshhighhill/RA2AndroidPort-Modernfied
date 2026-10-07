@@ -116,8 +116,13 @@
                 y = r->y + r->h / 2;
                 return true;
             }
+            if (a == "diplomacy") {   // W2-UI-29
+                x = lay_.diplo_btn.x + 8;
+                y = lay_.diplo_btn.y + 4;
+                return true;
+            }
             if (a == "options") {
-                x = lay_.bar.x + 11 + 8;
+                x = lay_.opt_btn.x + 8;
                 y = 20 + 4;
                 return true;
             }
