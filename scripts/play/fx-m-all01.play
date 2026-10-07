@@ -3,7 +3,7 @@
 # opening camera scroll ("Start Scroll": MoveCameraToWaypoint S at speed
 # Value 1 = 0.003 progress per frame). Note: the "Break Bridges" Apply100Damage
 # actions draw nothing themselves [RE: FUN_006dfa00 = five DamageArea(100,
-# C4Warhead) calls, no AnimClass]; see docs/re/effects.md §5.3.
+# C4Warhead) calls, no AnimClass]; see docs/re/effects.md §5.2.
 set render_every 300
 set on_quit continue
 set campaign ALL01T.MAP GDI

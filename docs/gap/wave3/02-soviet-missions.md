@@ -456,3 +456,15 @@ theater twins ship, so the clone's name-pattern munge is probably right).
 | R11 1.006 patch archives | FIXED | AssetFS opens `expand01`/`ecache01` ahead of `conquer.mix` |
 | R3/R4/R5 animations, R6 trigger visuals | fix agents B / C | — |
 | R8 movies, R9 LocalSize | not in scope | — |
+
+## W3-FIX-C status (branch `w3fix-fx`)
+
+RE: `docs/re/effects.md`. Scripts `scripts/play/fx-*.play`.
+
+| Item | Status | Evidence |
+|---|---|---|
+| R6 41 PlayAnimAt | FIXED. Correction: with the RA2 deduplicated index the SOV01 entries are ARRWSE objective arrows (479) and FLAMEGUY (238, not DEATH_E), and **SOV12's 8 entries are CHRONOTG chrono flashes (253), not WAKE1 ship wakes** | `fx-m-sov01`, `fx-m-all12` (same anim) |
+| R6 88 particle smoke (SOV01/03) | FIXED (index 2 BigGreySmokeSys, 12 BigRedSmokeSys from the RA2 list) | `fx-m-sov01` s02-s04 |
+| R6 90/102 lightning (SOV10/03) | FIXED: 90 = a storm bolt at the waypoint (damage), 102 = a lightning storm for the trigger house unless one is active | `fx-m-sov10` l01-l07 |
+| R6 48/112 camera, 55 radar events, 104/131 flashes, 113 cheer, 114 tab | FIXED (115 FlashCameo OPEN; cheer animation = agent B's sequence) | `fx-m-all01`, `fx-particles` p09/p10 |
+| Ship wakes (moving ships) | FIXED (`Wake=` every 8 frames) | `fx-naval` |

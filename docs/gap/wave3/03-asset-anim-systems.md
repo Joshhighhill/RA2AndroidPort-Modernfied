@@ -305,3 +305,18 @@ Remainder and cause: `CASIN01E/S/W` ×5 (sov03u/sov09u) ABSENT_EVERYWHERE (no fi
 install, the original draws nothing either); `NAPSIS` ×1 (temperate lobby map) name munge not gated
 on `NewTheater` (clone `ngpsis`, original `napsis`); `SCHP` ×3 (YR Siege Chopper on lobby maps,
 voxel parts absent under the clone's name scheme).
+
+## W3-FIX-C status (branch `w3fix-fx`)
+
+RE: `docs/re/effects.md` (all functions cited there). Scripts `fx-particles`, `fx-naval`, `fx-m-*`.
+
+| Row | Status |
+|---|---|
+| §3.2 Damage smoke (DamageParticleSystems) | FIXED (Smoke-behaving entries, ReceiveDamage edge rule; Spark entries are DamageSparks-only in the original) |
+| §3.4 Debris | FIXED (MetallicDebris / DebrisAnims Bouncers, DebrisTypes voxels); debris impact damage cosmetic [RE-FALLBACK] |
+| §3.4 Ship wakes, splashes | FIXED |
+| §3.5 Ore twinkle | FIXED |
+| §3.6 Bouncer, Elasticity, Trailer, TrailerSeperation | FIXED for debris anims and projectiles (`Trailer=`/SpawnDelay, `UseLineTrail`), V3/DMISL rocket trails |
+| §3.7 ParticleSystems | FIXED (Smoke, Spark, Railgun; Gas/Fire drawn like smoke, no damage) |
+| §3.7 AmbientSound | FIXED (units, buildings, map terrain) |
+| §3.6 Spawns/IsMeteor/MakeInfantry, RandomRate (non-debris), StartSound | OPEN |
