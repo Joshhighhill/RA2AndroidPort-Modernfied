@@ -1,0 +1,101 @@
+# W2-UI-13..17: the in-game options flow as full-screen shell pages
+# (0xB5 Game Options, 0xBBB Game Controls, 0xB8 Sound, 0xB6 Abort,
+# 0x2B4 Save / 0xB7 Load / 0x2B5 Delete) and the 0x120 Exit popup.
+set on_quit continue
+set render_every 300
+require scene == "shell:Main Menu"
+click button "Exit Game"
+wait 2
+assert confirm_open == 1
+shot p01_exit_popup
+click confirm:no
+wait 2
+assert confirm_open == 0
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+wait 5
+key f10
+wait 2
+require menu_open == 1
+assert menu_page == "options"
+shot p02_game_options
+click "menu:GAME CONTROLS"
+wait 2
+assert menu_page == "controls"
+let s0 = game_speed
+click "menu:slider:speed=6"
+wait 2
+assert menu_game_speed == 0
+assert game_speed == 0
+click "menu:check:tooltips"
+wait 1
+assert menu_tooltips == 0
+click "menu:check:tooltips"
+wait 1
+assert menu_tooltips == 1
+shot p03_game_controls
+click "menu:SOUND"
+wait 2
+assert menu_page == "sound"
+assert menu_tracks > 0
+click "menu:track:1"
+wait 1
+assert menu_track_sel == 1
+shot p04_sound
+click "menu:BACK"
+wait 2
+assert menu_page == "controls"
+click "menu:BACK"
+wait 2
+assert menu_page == "options"
+click "menu:SAVE GAME"
+wait 2
+assert dialog_open == 1 and dialog_mode == 2
+shot p05_save_page
+click dialog:action
+wait 2
+assert dialog_open == 0
+assert banner == "Mission Saved"
+key f10
+wait 2
+click "menu:LOAD GAME"
+wait 2
+assert dialog_open == 1 and dialog_mode == 1 and dialog_rows >= 1
+shot p06_load_page
+click dialog:back
+wait 2
+assert menu_open == 1
+click "menu:DELETE GAME"
+wait 2
+assert dialog_mode == 3
+click dialog:row0
+click dialog:action
+wait 2
+assert dialog_confirm == 1
+shot p07_delete_confirm
+click dialog:no
+wait 2
+key esc
+wait 2
+click "menu:ABORT MISSION"
+wait 2
+assert confirm_open == 1
+assert menu_page == "abort"
+shot p08_abort_page
+click confirm:no
+wait 2
+assert menu_open == 0
+# W2-UI-29: the sidebar Diplomacy button -> dialog 0x73
+click button:diplomacy
+wait 2
+assert menu_page == "diplomacy"
+assert diplomacy_rows >= 2
+shot p09_diplomacy
+key esc
+wait 2
+assert menu_open == 0
+end

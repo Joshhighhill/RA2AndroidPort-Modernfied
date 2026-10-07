@@ -3328,3 +3328,73 @@ and verified in the real game by `scripts/play/world-depth.play` (PASS).
 * Dev modes: `--depth-survey` (bridges / huts / garrisonable structures per MP
   map), `--depth-dump <map> x0 y0 x1 y1` (runtime overlay indices).
 
+
+## In-game HUD and shell pages (wave-2 W2-UI fixes)
+
+These fixes close the UI rows of `docs/gap/wave2/04-ui-shell.md`. That doc has
+the row statuses, the RE answers and the screenshot paths. RE came from
+`game.exe` 1.006, with the scripts in `D:\ra2-re\scripts\w2fix_*.py` and the
+output in `D:\ra2-re\w2fix-uiout\`.
+
+* **Sidebar.**
+  * The chrome draws under its own mix's `sidebar.pal` (`sidec01.mix` or
+    `sidec02.mix`). Cameos keep `cameo.pal`.
+  * The build clock is the translucent `GCLOCK2` frame. A cameo you cannot
+    build is darkened by `DARKEN.SHP`.
+  * "Ready" and "On Hold" (CSF), and the queue count, are drawn in `game.fnt`
+    in the UI colour over a 0xAF black box.
+  * Tabs show lit / normal / blank frames.
+  * The Soviet sidebar uses its own constant set.
+  * The radar boots at a 4-tick frame timer and folds back when it loses power.
+    The minimap sits in the 140x108 viewport at (16, 49).
+* **Tooltips.** Hovering a cameo shows "UIName $Cost" with every space turned
+  into a newline. Sidebar buttons show their CSF tips. The `[Options]
+  ToolTips` setting applies.
+* **One HUD font.**
+  * `ra2assets::UFont` decodes the "fonT" `local.mix/game.fnt`.
+  * The UI colour is RGB(164,210,255) for Allied and (255,255,0) for Soviet.
+  * Messages go to a top-left list with a timeout: "Mission Saved", "... has
+    been defeated!", "Low Power - Production Slowed" and objectives. The timer,
+    the end banners and the F1 briefing use the same font.
+* **Selection.**
+  * A selected unit shows the `PIPBRD` board and up to 17 `PIPS` (8 for
+    infantry), green / yellow / red.
+  * A selected building shows the diagonal `PIPS` line along the top-left edge
+    of its foundation.
+* **In-game options are full-screen shell pages.** Esc or F10 opens them.
+  * Game Options (0xB5).
+  * Game Controls (0xBBB): Game Speed applies live, plus Scroll Rate and the
+    check boxes.
+  * Sound (0xB8): volumes, a jukebox over RA2 `theme.ini`, Play / Stop and
+    Shuffle.
+  * Abort (0xB6): Restart appears in a campaign only.
+  * Load, Save and Delete (0xB7 / 0x2B4 / 0x2B5).
+  * Diplomacy (0x73), opened by the sidebar button.
+  * Confirm boxes are the 0x120 popup, using `pudlgbga` for Allied and
+    `pudlgbgs` for Soviet.
+* **Campaign.**
+  * Page 0x94 shows the Allied, Boot Camp and Soviet emblems as wells, the
+    campaign list, the difficulty slider and Load.
+  * The loading screen fills the window, uses `game.fnt` and starts the mission
+    by itself.
+  * The result pages are shell pages: the skirmish score page and Campaign
+    Results.
+* **Shell.**
+  * The bottom row of Single Player and of Movies & Credits is "Main Menu"
+    (`button:Back` still works in scripts).
+  * The status line shows the STT help text. Every button press plays
+    `MenuClick`.
+  * Pages power on with a staggered `SDBTNANM` animation.
+  * No button is lit until the pointer is over it.
+  * View Credits scrolls `credits.txt`.
+  * Hotkeys come from RA2 `Keyboard.ini`. `KeyboardMD.ini` is used only if
+    `Keyboard.ini` is missing.
+* **New play scripts:** `ui-hud`, `ui-pages`, `ui-campaign`, `ui-result`,
+  `ui-shell`.
+* **Still open:**
+  * the in-game Keyboard page;
+  * the 800x600 "L" shell assets;
+  * the rally-point art;
+  * the credits tally colour and roll rate;
+  * the tab flash on a new cameo;
+  * the score formula.

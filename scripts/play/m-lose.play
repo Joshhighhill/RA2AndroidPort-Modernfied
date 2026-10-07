@@ -6,7 +6,8 @@ set render_every 300
 set on_quit continue
 click button "Single Player"
 click button "New Campaign"
-click button "Allied Campaign"
+click well:allied
+click button Load
 until 30 scene == campaign-load
 click start
 until 300 scene == game

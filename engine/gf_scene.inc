@@ -147,7 +147,7 @@ private:
                                   : cfg_.slots[(std::size_t)h].country;
                     const std::size_t ps = t.find("%s");
                     if (ps != std::string::npos) t.replace(ps, 2, who);
-                    show_banner(camp::up(t));
+                    show_banner(t);   // W2-UI-21 mixed-case CSF line
                 }
             }
         if (gf_outcome_ == 0) {
@@ -161,7 +161,7 @@ private:
                     rules_.general_double("SavourDelay", 0.1));
                 // EVA_YouAreVictorious / EVA_YouHaveLost: spoken by E's
                 // presentation pass (pres_game.inc), not repeated here.
-                gf_end_text_ = camp::up(camp::csf_text(dir_, outcome > 0 ? "TXT_VICTORIOUS" : "TXT_LOST"));
+                gf_end_text_ = camp::csf_text(dir_, outcome > 0 ? "TXT_VICTORIOUS" : "TXT_LOST");   // W2-UI-20 mixed case
             }
             return;
         }
@@ -185,17 +185,47 @@ private:
             if (b.sold) continue;
             if (b.house == 0) ++s.buildings_lost; else ++s.buildings_killed;
         }
+        // W2-UI-20: the per-house score rows.
+        // Only the lobby's players (the neutral / civilian houses are not listed).
+        const int n = cfg_.slots.empty() ? world_.house_count()
+                                         : std::min(world_.house_count(), (int)cfg_.slots.size());
+        s.rows.assign((std::size_t)std::max(0, n), GfSkirmishStats::Row{});
+        for (int h = 0; h < n; ++h) {
+            std::string who = h < (int)cfg_.slots.size()
+                                  ? (cfg_.slots[(std::size_t)h].country.empty()
+                                         ? gf_default_country(cfg_.slots[(std::size_t)h].side)
+                                         : cfg_.slots[(std::size_t)h].country)
+                                  : std::string("Computer");
+            const std::string lbl = camp::csf_text(dir_, "Name:" + who);
+            s.rows[(std::size_t)h].name = lbl.rfind("Name:", 0) == 0 ? who : lbl;
+            // Only the lobby's playing slots are listed (not the neutral house).
+            s.rows[(std::size_t)h].listed = cfg_.slots.empty() || cfg_.slots[(std::size_t)h].combatant;
+        }
+        auto killer_house = [&](int ui) {
+            return (ui >= 0 && ui < (int)world_.units().size()) ? world_.units()[(std::size_t)ui].house : -1;
+        };
+        for (const ra2engine::Unit& u : world_.units()) {
+            if (u.deployed_away || u.house < 0 || u.house >= n) continue;
+            ++s.rows[(std::size_t)u.house].built;
+            if (u.alive && u.die_time < 0.0) continue;
+            ++s.rows[(std::size_t)u.house].losses;
+            const int k = killer_house(u.vet.killed_by);
+            if (k >= 0 && k < n && k != u.house) ++s.rows[(std::size_t)k].kills;
+        }
+        for (const ra2engine::Building& b : world_.buildings()) {
+            if (b.house < 0 || b.house >= n) continue;
+            ++s.rows[(std::size_t)b.house].built;
+            if ((b.alive && b.state != ra2engine::Building::State::Dead) || b.sold) continue;
+            ++s.rows[(std::size_t)b.house].losses;
+            const int k = killer_house(b.killed_by);
+            if (k >= 0 && k < n && k != b.house) ++s.rows[(std::size_t)k].kills;
+        }
         return s;
     }
 
-    void gf_render(SDL_Renderer* ren) {
+    void gf_render(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         if (gf_outcome_ == 0 || gf_end_text_.empty()) return;
-        const int w = static_cast<int>(gf_end_text_.size()) * 24;
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
-        SDL_Rect b{(playfield_w_ - w) / 2 - 20, kWinH / 2 - 40, w + 40, 64};
-        SDL_RenderFillRect(ren, &b);
-        draw_text(ren, gf_end_text_, (playfield_w_ - w) / 2, kWinH / 2 - 24, 4, 255, 220, 90);
+        draw_end_banner(ren, tc, gf_end_text_);   // W2-UI-20: game font, mixed case
     }
 public:
     // Put cell (x, y) at the centre of the playfield.
@@ -258,9 +288,9 @@ public:
         ev.kind = ra2engine::InputEvent::PointerUp;
         handle(ev);
     }
-    void gf_open_menu() { menu_.open_ = true; }
+    void gf_open_menu() { menu_.open(); }
     bool gf_menu_open() const { return menu_.open_; }
-    bool gf_abort_open() const { return gf_abort_.open(); }
+    bool gf_abort_open() const { return gf_abort_.open() || (menu_.open_ && menu_.page() == InGameMenu::P_ABORT); }   // W2-UI-15 page 0xB6
     std::vector<std::string> gf_buildable_ids(int tab) const {
         std::vector<std::string> out;
         for (int i : tab_buildable(tab))

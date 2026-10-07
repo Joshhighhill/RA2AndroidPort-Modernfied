@@ -142,6 +142,7 @@ public:
                 g_radar_online_since = frame_;
                 snd_.play(radar_on_, 0.0, "radar on");
             } else if (!online && radar_online_) {
+                g_radar_offline_since = frame_;   // W2-UI-09 power-down animation
                 snd_.play(radar_off_, 0.0, "radar off");
             }
             radar_online_ = online;

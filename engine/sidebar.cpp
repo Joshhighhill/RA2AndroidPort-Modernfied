@@ -4,9 +4,15 @@
 
 namespace ra2engine {
 
+namespace { int g_sidebar_style = 0; }
+void set_sidebar_style(int style) { g_sidebar_style = style == 1 ? 1 : 0; }
+int sidebar_style() { return g_sidebar_style; }
+
 SidebarLayout SidebarLayout::compute(int view_w, int view_h,
                                      const std::vector<int>& types, int top_row) {
     SidebarLayout lay;
+    const bool sov = g_sidebar_style == 1;   // W2-UI-08 constant set
+    const int side3_h = sov ? 18 : kSide3H;
 
     // Whole sidebar column on the right edge, full window height
     // [RE: construction.md §11a — x0 = screen_w − 168, y0 = 0].
@@ -21,29 +27,31 @@ SidebarLayout SidebarLayout::compute(int view_w, int view_h,
     lay.side1 = {x0, kSide1Y, kSidebarW, kSide1H};
     // Repair / Sell buttons sit ON the side1 band [RE: construction.md §11a --
     // repair at bar-relative 20, sell at 84, both y 166, 64x31].
-    lay.repair_btn = {x0 + kRepairBtnX, kSideBtnY, kSideBtnW, kSideBtnH};
-    lay.sell_btn = {x0 + kSellBtnX, kSideBtnY, kSideBtnW, kSideBtnH};
+    lay.repair_btn = {x0 + (sov ? 33 : kRepairBtnX), sov ? 165 : kSideBtnY, kSideBtnW, kSideBtnH};
+    lay.sell_btn = {x0 + (sov ? 85 : kSellBtnX), sov ? 165 : kSideBtnY, kSideBtnW, kSideBtnH};
+    lay.opt_btn = {x0 + (sov ? 14 : 11), sov ? 21 : 20, 72, 18};
+    lay.diplo_btn = {x0 + (sov ? 86 : 83), sov ? 21 : 20, 72, 18};
 
     // Tab row: four separate 28x27 buttons at x = 26 + 29*i, y = 197
     // [RE: §11a — pitch 29, NOT bar.w/4].
     for (int i = 0; i < 4; ++i)
-        lay.tabs[i] = {x0 + kTabX0 + kTabPitch * i, kTabY, kTabW, kTabH};
+        lay.tabs[i] = {x0 + (sov ? 20 + 32 * i : kTabX0 + kTabPitch * i), kTabY, kTabW, kTabH};
 
     // Visible cameo rows: N = floor((view_h - 234 - side3_h)/50), min 1
     // [RE: §11a] — 6 at 600 px, 9 at 720 px. side2 tiles once per row.
-    lay.side2_rows = std::max(1, (view_h - 234 - kSide3H) / kCameoRowPitch);
+    lay.side2_rows = std::max(1, (view_h - 234 - side3_h) / kCameoRowPitch);
     const int strip_h = lay.side2_rows * kSide2H;
 
     // Power pip column hugs the strip's left edge from the strip top;
     // capacity = (strip_h + 3)/3 pips at 3 px pitch [RE: §11a/§8].
     lay.power_pips = (strip_h + kPowerPitch) / kPowerPitch;
-    lay.power = {x0 + kPowerX, kStripTop, kPowerPipW, lay.power_pips * kPowerPitch};
+    lay.power = {x0 + (sov ? 0 : kPowerX), kStripTop, kPowerPipW, lay.power_pips * kPowerPitch};
 
     // Strip scroll buttons: r-dn left, r-up right, on the row 7 px below the
     // strip (inert this phase; rects reserved for hit-test completeness).
     const int scroll_y = kStripTop + strip_h + 7;
     lay.scroll_dn = {x0 + kScrollX, scroll_y, kScrollW, kScrollH};
-    lay.scroll_up = {x0 + kScrollX + kScrollW, scroll_y, kScrollW, kScrollH};
+    lay.scroll_up = {x0 + kScrollX + (sov ? 45 : kScrollW), scroll_y, kScrollW, kScrollH};
 
     // Cameo grid: origin (22, strip_top + 1), column pitch 63, row pitch 50,
     // 2 columns row-major — these land the 60x48 cameos INSIDE the socket

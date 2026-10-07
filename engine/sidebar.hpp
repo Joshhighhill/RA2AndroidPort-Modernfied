@@ -53,6 +53,15 @@ constexpr int kSideBtnW = 64, kSideBtnH = 31;
 
 enum class CameoState { Available, Disabled, Building, Ready };
 
+// W2-UI-08 [RE: construction.md §11a, FUN_006A4720 / FUN_006A47C0 -- side
+// style session+0x34B8: 0 = Allied (sidec01), 1 = Soviet (sidec02; Yuri
+// shares it)]. The Soviet set: repair x 33 / sell x 85 at y 165, tabs at
+// 20 + 32*i, power pips at x 0, scroll-up at 39+45, side3 18 px tall,
+// options (14, 21) / diplomacy (86, 21). Default 0, so every gate / test
+// layout is the Allied one; GameScene sets it from the player's side.
+void set_sidebar_style(int style);
+int sidebar_style();
+
 // One sidebar cameo cell: which building type it shows + its rect.
 struct CameoCell { int type = -1; SbRect rect; };
 
@@ -68,6 +77,7 @@ struct SidebarLayout {
     // Repair / Sell buttons [RE: construction.md §11a; behaviour
     // repair-sell.md §C1 -- both TOGGLE mutually-exclusive cursor modes].
     SbRect repair_btn, sell_btn;
+    SbRect opt_btn, diplo_btn;   // W2-UI-08: options / diplomacy over the top cap
     int strip_top = kStripTop;
     int side2_rows = 0;      // N: side2 tiles / visible cameo rows
     int power_pips = 0;      // capacity = (50*N + 3) / 3

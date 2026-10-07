@@ -284,16 +284,18 @@ int run_gf_play(const std::string& scenario, const std::string& out_dir) {
         c.check(menu->wants_quit(), "OK quits");
         std::unique_ptr<GameScene> g(start_from_lobby(c, rules, store.art));
         if (!g) return 1;
-        const ra2engine::SbRect abort_btn{640 - 130, 360 - 120 + 3 * 58, 260, 42};
+        // W2-UI-13/15: 0xB5 row 4 Abort Mission -> page 0xB6 (row 0 Abort, row 5 Resume).
+        auto row = [](int k) { return ShellXform::make(1280, 720).hit(ra2engine::SbRect{484, 199 + 42 * k, 156, 42}); };
+        const ra2engine::SbRect abort_btn = row(4);
         g->gf_open_menu();
         click(*g, abort_btn);
         c.check(g->gf_abort_open() && !g->gf_peek_next(), "Abort Mission asks first");
         c.shot(*g, "gf_abort_confirm.png");
-        click(*g, two.btn(1));   // skirmish: Abort / Resume Mission
+        click(*g, row(5));   // skirmish: Abort / Resume Mission
         c.check(!g->gf_abort_open() && !g->gf_menu_open() && !g->gf_peek_next(), "Resume Mission returns to the game");
         g->gf_open_menu();
         click(*g, abort_btn);
-        click(*g, two.btn(0));
+        click(*g, row(0));
         c.check(g->gf_peek_next() != nullptr && dynamic_cast<ShellScene*>(g->gf_peek_next()) != nullptr,
                 "Abort returns to the main menu");
     } else if (scenario.rfind("campaign:", 0) == 0) {
