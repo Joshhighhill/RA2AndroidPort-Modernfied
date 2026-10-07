@@ -57,6 +57,12 @@ inline bool pres_unit_tint(const ra2engine::World& w, int idx, ra2engine::ObjTin
     const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(idx)];
     int b = 1000;
     bool any = false;
+    // W5-PRES R-104: the object's own height light (cell height, +4 levels on
+    // a bridge deck) relative to the ground-level light pass.
+    if (g_light) {
+        const double rel = g_light->object_rel(u.level + pres_unit_lift_levels(w, u));
+        if (std::abs(rel - 1.0) > 1e-3) { b = static_cast<int>(std::lround(b * rel)); any = true; }
+    }
     if (u.an.iron_left > 0.0) {   // [RE: 0x70D7B0] brightness * f / 256
         const long L = std::lround(u.an.iron_left * 15.0);
         const long t = std::max(0L, static_cast<long>(g_iron_frames) - L);
@@ -82,10 +88,15 @@ inline bool pres_building_tint(const ra2engine::World& w, const ra2engine::Build
     if (!g_state_world || &w != g_state_world) return false;
     int br = 1000;
     bool any = false;
+    if (g_light && g_map_dressing && g_map_dressing->map()) {   // W5-PRES R-104 height light
+        const ra2assets::MapCell* mc = g_map_dressing->map()->at(b.cx, b.cy);
+        const double rel = g_light->object_rel(mc ? mc->level : 0);
+        if (std::abs(rel - 1.0) > 1e-3) { br = static_cast<int>(std::lround(br * rel)); any = true; }
+    }
     if (b.iron_left > 0.0) {
         const long L = std::lround(b.iron_left * 15.0);
         const long t = std::max(0L, static_cast<long>(g_iron_frames) - L);
-        br = std::min(2000, 1000 * pres_iron_f256(t, L) / 256);
+        br = std::min(2000, br * pres_iron_f256(t, L) / 256);
         any = true;
     }
     // [RE: building flash 0x456F80]: +-500 while (counter & 2) (trigger 131).
