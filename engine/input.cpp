@@ -590,8 +590,12 @@ void Input::issue_order(int px, int py) {
                 const int eng_house = world_.units()[eng].house;
                 // W2-SK-12: an enemy Capturable=false structure shows the
                 // no-entry cursor in the original -- the click does nothing.
+                // W4-SQ-10: a BridgeRepairHut always takes the engineer (repair,
+                // never a capture) [RE: world-depth.md B4, FUN_00519449].
+                const bool hut = tb.type >= 0 && tb.type < static_cast<int>(world_.btypes().size()) &&
+                                 world_.btypes()[static_cast<std::size_t>(tb.type)].bridge_repair_hut;
                 if (tb.house != eng_house && !world_.are_allied(eng_house, tb.house) &&
-                    !world_.building_capturable(b_hit))
+                    !world_.building_capturable(b_hit) && !hut)
                     return;
                 const bool is_target =
                     (tb.house != eng_house) ||   // enemy/neutral -> capture

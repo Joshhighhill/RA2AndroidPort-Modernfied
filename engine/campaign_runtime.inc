@@ -2389,7 +2389,17 @@ private:
             if (u >= 0) w_.campaign_damage_unit(u, 100);
             const int b = w_.building_at_cell(x, y);
             if (b >= 0) w_.campaign_damage_building(b, 100);
-            return u >= 0 || b >= 0;
+            // W4-SQ-10 [RE: FUN_006DFA00 then calls FUN_00586BB0 (the bridge
+            // destroy dispatch) on the waypoint cell, up to 4 times until one
+            // succeeds -- no BridgeStrength roll, no DestroyableBridges gate].
+            int broke = 0;
+            for (int k = 0; k < 4 && broke == 0; ++k) broke = w_.force_bridge_break(x, y);
+            if (broke > 0) {
+                char nb[80];
+                std::snprintf(nb, sizeof nb, "[bridge cells broken=%d]", broke);
+                note_ = nb;
+            }
+            return u >= 0 || b >= 0 || broke > 0;
         }
         default:
             return false;
