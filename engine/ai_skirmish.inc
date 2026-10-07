@@ -32,6 +32,12 @@ UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixF
         {"SNIPE", false, "GAPILE"},{"TANY", false, "GAPILE"}, {"CLEG", false, "GAPILE"},
         {"GHOST", false, "GAPILE"},{"MTNK", true, "GAWEAP"},  {"FV", true, "GAWEAP"},
         {"SREF", true, "GAWEAP"},  {"MGTK", true, "GAWEAP"},  {"TNKD", true, "GAWEAP"},
+        // W2-AN-16: the navies and jumpjets the stock aimd TaskForces name
+        // (ships start only once a Naval Yard stands: Prerequisite=NAYARD/GAYARD)
+        {"SUB", true, "NAYARD"},   {"DRED", true, "NAYARD"},  {"HYD", true, "NAYARD"},
+        {"SQD", true, "NAYARD"},   {"DEST", true, "GAYARD"},  {"AEGIS", true, "GAYARD"},
+        {"CARRIER", true, "GAYARD"}, {"DLPH", true, "GAYARD"},
+        {"ZEP", true, "NAWEAP"},   {"SHAD", true, "GAWEAP"},  {"JUMPJET", false, "GAPILE"},
         // [G-68] the miners (IQ Harvester replacement)
         {"HARV", true, "NAWEAP"},  {"CMIN", true, "GAWEAP"},
     };
@@ -105,6 +111,16 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
     };
     acfg.team.inf_factory_types = factory_types_for(ba, id_of(acfg.catalog.barracks));
     acfg.team.veh_factory_types = factory_types_for(ba, id_of(acfg.catalog.war_factory));
+    // W2-AN-16 [rules [AI] BuildNavalYard=, [General] AINavalYardAdjacency=]:
+    // real play only (the AI gates keep their historical plan).
+    acfg.catalog.naval_yard =
+        aiside::pick_from_list(rules, "AI", "BuildNavalYard", s.side, country, [&](const char* id) {
+            const int t = roster_index(ba, id);
+            return (t >= 0 && ba.art[t].ok) ? t : -1;
+        });
+    acfg.catalog.naval_yard_adjacency =
+        static_cast<int>(rules.general_double("AINavalYardAdjacency", 20.0));
+    acfg.team.nav_factory_types = factory_types_for(ba, id_of(acfg.catalog.naval_yard));
     acfg.team.trigger_side = s.side == ra2engine::World::Side::Soviet ? 2 : 1;  // [ai-trigger.md §5]
     acfg.team.house_name = country;
     fill_ai_building_maps(acfg.team, ba, rules, rules_ini);

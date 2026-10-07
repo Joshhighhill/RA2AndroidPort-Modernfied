@@ -94,13 +94,13 @@ private:
             const camp::PlayerRules pr =
                 camp::campaign_player_rules(dir, ra2, cfg.campaign_map, cfg.campaign_side);
             return load_player_unit_roster(dir, ra2, ua, rules, art, rules_ini, pr.country,
-                                           pr.tech_level, /*with_aircraft=*/false, &pr.allowed);
+                                           pr.tech_level, /*with_aircraft=*/true, &pr.allowed);
         }
         const ra2engine::SkirmishSlot s0 =
             cfg.slots.empty() ? ra2engine::SkirmishSlot{} : cfg.slots.front();
         return load_player_unit_roster(dir, ra2, ua, rules, art, rules_ini,
                                        rp_player_country(rules, s0), cfg.tech_level,
-                                       /*with_aircraft=*/false);
+                                       /*with_aircraft=*/true);   // W2-AN-01: fixed-wing in World
     }
 
     // Ctor tail (skirmish only): factories by rules Factory=, the building
@@ -136,10 +136,15 @@ private:
         input_.set_unit_factory_types(unit_ft);
         input_.set_infantry_factory_types(inf_ft_);
         input_.set_vehicle_factory_types(any_veh);
-        if (sw) {
-            rp_sw_table_ = rp_superweapon_table(ba_, rules_);
-            rp_nuke_ = resolve_superweapon(rules_);
-        }
+        // W2-AN-04/18: every classic SW building grants its SW; the lobby
+        // checkbox removes only the DisableableFromShell=yes ones (AmerParaDrop
+        // stays with superweapons off). W2-CA-03: a campaign keeps them all.
+        rp_sw_table_ = rp_superweapon_table(ba_, rules_);
+        if (!sw)
+            for (RpSwGrant& g : rp_sw_table_)
+                if (g.disableable) g = RpSwGrant{};
+        rp_nuke_ = resolve_superweapon(rules_);
+        w2_setup(/*skirmish=*/true);   // campaigns run the rules-driven path too (W2-CA-03)
         rp_base_normal_.assign(ba_.roster.size(), 1);
         for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
             const std::string v = rules_.section_string(ba_.roster[i].id, "BaseNormal", "");

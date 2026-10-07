@@ -1,0 +1,97 @@
+# sw.play -- W2-AN superweapons v2 acceptance (wave-2 fix): human Americans
+# vs a Soviet AI. Every classic SW building stands at once (set-up shortcut
+# `cheat w2 build`, the auditor's instant-building approach); each SW then
+# CHARGES in real time, is armed from ITS OWN sidebar slot, targeted with a
+# real map click, and has its effect.
+set render_every 3000
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+assert side(0) == ALLIED
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAREFN
+cheat w2 build AMRADR
+cheat w2 build GACSPH
+cheat w2 build GAWEAT
+cheat w2 build NAMISL
+cheat w2 build NAIRON
+wait 5
+# one record + one sidebar slot per type (W2-AN-04/23)
+assert sw_count(0) == 5                                   @W2-AN-04
+assert sw_has(0,AmerParaDrop) == 1                        @W2-AN-17
+assert sw_has(0,ChronoSphere) == 1                        @W2-AN-04
+assert sw_has(0,LightningStorm) == 1                      @W2-AN-04
+assert sw_has(0,Nuke) == 1                                @W2-AN-04
+assert sw_has(0,IronCurtain) == 1                         @W2-AN-04
+assert sw_ready_t(0,Nuke) == 0
+view building 0:GACNST
+shot sw_slots
+
+# --- American paratroopers (4 min): 8 GIs out of a PDPLANE (W2-AN-17) ---------
+until 2000 sw_ready_t(0,AmerParaDrop) == 1                @W2-AN-17
+let gis = units(0,E1)
+click sw:AmerParaDrop                                     @W2-AN-17
+assert sw_armed == 7                                      @W2-AN-17
+click building 0:GACNST +6 +6                             @W2-AN-17
+until 600 sw_ev_dropped >= 8                              @W2-AN-17
+assert units(0,E1) >= $gis+8                              @W2-AN-17
+shot paradrop
+
+# --- Iron Curtain (5 min): a 3x3 of vehicles invulnerable, infantry killed ---
+cheat spawn MTNK 0 building 0:GACNST +8 -2
+cheat spawn MTNK 0 building 0:GACNST +9 -2
+until 2000 sw_ready_t(0,IronCurtain) == 1                 @W2-AN-04
+click sw:IronCurtain                                      @W2-AN-04
+click unit 0:MTNK:4                                       @W2-AN-04
+until 5 iron_units(0) >= 2                                @W2-AN-04
+shot iron_curtain
+until 400 iron_units(0) == 0                              @W2-AN-04 # IronCurtainDuration=750 frames
+
+# --- Chronosphere (7 min): source pick, destination pick, 3x3 teleport; the
+#     GI in the source area is chrono-killed (Organic, not Teleporter) --------
+cheat spawn E1 0 building 0:GACNST +10 -2
+until 2500 sw_ready_t(0,ChronoSphere) == 1                @W2-AN-04
+let lost = units_lost(0)
+click sw:ChronoSphere                                     @W2-AN-04
+click unit 0:MTNK:5                                       @W2-AN-04
+assert sw_armed_phase == 1                                @W2-AN-04
+click building 0:GACNST -8 +8                             @W2-AN-04
+until 5 chrono_units(0) >= 1                              @W2-AN-04
+until 60 units_lost(0) > $lost                            @W2-AN-04
+shot chrono
+
+# --- Nuke (10 min): launch, ~400 frames of flight, then the blast + fallout ---
+until 3000 sw_ready_t(0,Nuke) == 1                        @W2-AN-05
+let hp1 = hp_lost(1)
+let bl1 = buildings_lost(1)
+click sw:Nuke                                             @W2-AN-05
+click building 1:*                                        @W2-AN-05
+assert sw_ev_launched >= 1                                @W2-AN-05
+assert sw_strikes == 1                                    @W2-AN-05
+wait 10
+assert sw_ev_detonated == 0                               @W2-AN-05 # still in flight
+until 400 sw_ev_detonated >= 1                            @W2-AN-05
+assert hp_lost(1) > $hp1 or buildings_lost(1) > $bl1      @W2-AN-06
+assert rad_total > 0                                      @W2-AN-06
+view building 1:*
+shot nuke
+
+# --- Lightning Storm (10 min): bolts over the target for the storm duration ---
+until 600 sw_ready_t(0,LightningStorm) == 1               @W2-AN-04
+click sw:LightningStorm                                   @W2-AN-04
+click building 1:*                                        @W2-AN-04
+until 400 sw_ev_bolts >= 5                                @W2-AN-04
+shot storm
+until 400 sw_strikes == 0                                 @W2-AN-04
+end

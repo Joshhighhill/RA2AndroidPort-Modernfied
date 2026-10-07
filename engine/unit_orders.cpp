@@ -20,8 +20,15 @@ void World::order_stop(int idx) {
     if (!orderable(u)) return;
     u.attack_cell_x = u.attack_cell_y = -1;   // G16: Stop ends a ground fire order
     u.occupy_target = -1;
-    if (u.is_aircraft) {   // [RE-FALLBACK: aircraft Stop = hover; not modelled]
+    if (u.is_aircraft) {
+        // W2-AN-07: Stop halts a hovering jumpjet where it is (the cruise goal
+        // is dropped; a landable Night Hawk then descends); a fixed-wing
+        // aircraft abandons its sortie and returns to its airfield.
         u.target = -1; u.target_building = -1; u.attack_order = false;
+        u.has_flight_goal = false;
+        u.an.attack_unit = u.an.attack_building = -1;
+        u.an.attack_x = u.an.attack_y = -1;
+        if (u.an.t.fixed_wing && u.an.sortie != 0) u.an.sortie = 3;   // RTB
         return;
     }
     // A unit standing on its cell stops right there; one between cells finishes

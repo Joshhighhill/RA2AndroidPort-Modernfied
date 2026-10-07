@@ -215,6 +215,7 @@ void World::ability_erase_unit(int idx) {
 void World::ability_damage_unit(int victim, int dmg) {
     Unit& v = units_[victim];
     if (!v.alive || v.die_time >= 0.0) return;
+    if (v.an.iron_left > 0.0) return;   // W2-AN-04 Iron Curtain
     v.hp -= dmg;
     if (v.hp <= 0) ability_kill_unit(victim);
 }
@@ -222,6 +223,7 @@ void World::ability_damage_unit(int victim, int dmg) {
 void World::ability_damage_building(int b_idx, int dmg) {
     Building& b = buildings_[b_idx];
     if (!b.alive || b.state == Building::State::Dead) return;
+    if (b.iron_left > 0.0) return;   // W2-AN-04 Iron Curtain
     b.hp -= dmg;
     if (b.hp <= 0) kill_building(b);
 }

@@ -347,6 +347,7 @@ struct Unit {
     int occupy_target = -1;          // pending "enter garrison" order -> building
     int attack_cell_x = -1, attack_cell_y = -1;   // force-fire ground target (-1 none)
     bool cell_shot = false;          // fired at attack_cell this step (World resolves it)
+    AnUnit an;                       // W2-AN: naval/air/SW runtime state (air_naval.hpp)
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -476,7 +477,8 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 // it, so ground re-pathing is byte-identical.
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
-                Occupancy& occ, double dt, double move_cps, const AnimTable& anims);
+                Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
+                const std::vector<std::uint8_t>* amphib_passable = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -555,6 +557,7 @@ struct AiTeamConfig {
     std::vector<UnitTypeDef> unit_roster; // producible/recruitable combat types
     std::vector<int> inf_factory_types;   // BUILDING roster indices (barracks)
     std::vector<int> veh_factory_types;   // BUILDING roster indices (war factory)
+    std::vector<int> nav_factory_types;   // W2-AN-16: BUILDING roster indices (naval yard)
     std::vector<Cellxy> waypoints;        // waypoint index -> cell (main.cpp table)
     std::string house_name;               // aimd House= token (e.g. "Russians")
     // [G-61] rulesmd [BuildingTypes] index -> building-roster index (-1 = not
@@ -666,8 +669,18 @@ public:
     // returns the new water_passable_ grid. Structural byte-identity: a
     // default-Land unit resolves to the identical grid object (spec §8).
     const std::vector<std::uint8_t>& grid_for(MovementDomain d) const {
+        if (d == MovementDomain::Amphibious) return amphib_grid();
         return d == MovementDomain::Water ? water_passable_ : passable_;
     }
+    // W2-AN-10: Land OR Water, rebuilt on every call into a cached buffer
+    // (derived state, never saved; both source grids mutate in many places).
+    const std::vector<std::uint8_t>& amphib_grid() const;
+    // W2-AN-09: can unit `idx` stand on cell (x, y) by its movement domain
+    // (aircraft: any in-bounds cell)?
+    bool unit_can_enter_cell(const Unit& u, int x, int y) const;
+    // W2-AN-09: is (x, y) enterable by ANY selected live house-`house` unit?
+    // No selection -> the Land grid (the pre-fix answer).
+    bool selection_can_enter(int house, int x, int y) const;
     // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§2]: build the WATER grid from a
     // per-cell LandType array (main.cpp's resolve_land_types, indexed y*grid_w+x),
     // intersected with the Land grid passable_ (a ship never paths on a non-
@@ -951,18 +964,70 @@ public:
     // charge under low power; construction.md §8 -- low power = output <
     // drain]. revoke drops the grant (building lost); set_superweapon_powered
     // records the SW type's IsPowered flag.
+    // W2-AN-04: a house holds ONE record per granted SW type (sw_houses_[h]
+    // is a list). The single-SW calls above/below act on the house's FIRST
+    // record (the historical one-SW behaviour every gate/test uses); the
+    // typed calls further below address one type.
     void revoke_superweapon(int house) {
-        if (house >= 0 && house < static_cast<int>(sw_houses_.size()))
-            sw_houses_[house] = HouseSuperweapon{};
+        if (house >= 0 && house < static_cast<int>(sw_houses_.size())) sw_houses_[house].clear();
     }
     void set_superweapon_powered(int house, bool is_powered) {
-        if (house >= 0 && house < static_cast<int>(sw_houses_.size()))
-            sw_houses_[house].is_powered = is_powered;
+        if (house >= 0 && house < static_cast<int>(sw_houses_.size()) && !sw_houses_[house].empty())
+            sw_houses_[house].front().is_powered = is_powered;
     }
     // Low power for `house`: Idle buildings' output (after a spy blackout) <
     // their drain, over btypes(). The query every low-power consumer shares
     // (SW charge here; radar, Powered=yes defences).
     bool house_low_power(int house) const;
+
+    // ===== Wave-2 W2-AN: superweapons v2 (world_sw.cpp) =====================
+    // Grant `house` a SW of `type` (a fresh full charge) unless it already
+    // holds one; Nuke records carry the [NukePayload]/[NUKE] params given.
+    void grant_superweapon_type(int house, SuperweaponType type, double recharge_secs,
+                                bool is_powered, int dmg = 0, double cell_spread = 0.0,
+                                double pmax = 1.0, const std::array<int, 11>& verses = {});
+    void revoke_superweapon_type(int house, SuperweaponType type);
+    const Superweapon* sw_state(int house, SuperweaponType type) const;
+    bool sw_ready(int house, SuperweaponType type) const;
+    double sw_charge_fraction(int house, SuperweaponType type) const;
+    // The SW types `house` holds, in grant order (the sidebar slot order).
+    std::vector<SuperweaponType> sw_types(int house) const;
+    // Fire `house`'s `type` at (cx, cy) [Chronosphere: (cx,cy) = source,
+    // (cx2,cy2) = destination]. Refused (false) unless that SW is READY.
+    // Nuke: a timed two-leg flight (SwStrike) then the blast; Iron Curtain:
+    // 3x3 invulnerability; Chronosphere: 3x3 teleport; Lightning Storm: a
+    // storm (SwStrike); (Amer)ParaDrop: a paradrop plane.
+    bool fire_superweapon_at(int house, SuperweaponType type, int cx, int cy, int cx2 = -1,
+                             int cy2 = -1);
+    void set_sw_params(const SwParams& p) { an_.sw = p; }
+    // Building roster index -> the SuperweaponType (int) it grants (0 none):
+    // finds the Nuke's silo for the launch point.
+    void set_sw_building_types(const std::vector<int>& t) { an_.sw_btype = t; }
+    // UnitRepair=yes (Naval Yard) and Helipad=yes (Airforce Command) flags per
+    // building roster index.
+    void set_an_building_flags(const std::vector<int>& repair, const std::vector<int>& airfield) {
+        an_.repair_btype = repair;
+        an_.airfield_btype = airfield;
+    }
+    const SwParams& sw_params() const { return an_.sw; }
+    const std::vector<SwStrike>& sw_strikes() const { return an_.strikes; }
+    // The presentation feed (append-only, capped; read by sequence number).
+    const std::vector<SwEvent>& sw_events() const { return an_.events; }
+    // Paradrop / spawner / missile unit types (rules id -> resolved combat),
+    // registered by the scene from the roster's Spawns= / the SW params.
+    void register_an_type(const std::string& id, const UnitCombat& c) { an_.types[id] = c; }
+    bool has_an_type(const std::string& id) const { return an_.types.count(id) != 0; }
+    // ===== Wave-2 W2-AN: naval / aircraft (world_an.cpp) =====================
+    // A cloaked (submerged) enemy sub that `house` has no sonar contact on.
+    bool unit_hidden_from(int house, const Unit& v) const {
+        return v.an.submerged && house >= 0 && house < 8 && v.house != house &&
+               !(v.an.detected_mask & (1u << house));
+    }
+    // Dock pads of an airfield building (cells), GAAIRC DockingOffset0..3.
+    void set_dock_offsets(const std::vector<std::pair<int, int>>& offs) { an_.dock_offsets = offs; }
+    // A fixed-wing/landing aircraft order: strike unit/building/cell, or fly to
+    // a cell. Returns false when `idx` is not a fixed-wing aircraft.
+    bool order_fixed_wing(int idx, int unit_target, int building_target, int gx, int gy);
 
     // --- Multi-house / Alliances phase [RE: multihouse.md §1/§2, D1] ---------
     // On-screen sides (the [Sides] legacy GDI=Allied / Nod=Soviet / ThirdSide=Yuri
@@ -1597,6 +1662,12 @@ private:
     void ai_try_fire_superweapon(int house, HouseAiRec& rec);   // [G-66]
     BaseView make_ai_base_view(int house, const HouseAiRec& rec) const;
     bool ai_place_ready(int house, HouseAiRec& rec, QueueCat cat);
+    // W2-AN-16: an AI Naval Yard spot -- every foundation cell water, free, no
+    // building, within AINavalYardAdjacency of the house's Construction Yard
+    // (world_an.cpp); and the full scan used when the base-ring scan finds none.
+    bool ai_naval_spot_ok(int house, const HouseAiRec& rec, const BuildingTypeDef& t, int cx,
+                          int cy) const;
+    Cellxy ai_naval_spot_scan(int house, const HouseAiRec& rec, const BuildingTypeDef& t) const;
 
     // --- AI-2 offensive-teams phase [RE: ai-team.md] ---
     void step_ai_teams(double dt);
@@ -1643,7 +1714,49 @@ private:
         std::array<int, 11> eff_verses{};   // [NUKE] Verses (armor percents)
         bool is_powered = false;            // SW type IsPowered= (gap owner A, G-29)
     };
-    std::vector<HouseSuperweapon> sw_houses_;  // index = house id (grown on demand)
+    // index = house id (grown on demand); W2-AN-04: one record per granted SW type.
+    std::vector<std::vector<HouseSuperweapon>> sw_houses_;
+    HouseSuperweapon* sw_rec(int house, SuperweaponType type);
+    const HouseSuperweapon* sw_rec(int house, SuperweaponType type) const;
+    // --- W2-AN state (world_an.cpp / world_sw.cpp) ---
+    struct AnWorld {
+        bool any = false;                        // step_air_naval firewall
+        SwParams sw;
+        std::vector<SwStrike> strikes;
+        std::vector<SwEvent> events;
+        int event_seq = 0;
+        std::map<std::string, UnitCombat> types; // spawned / paradrop types
+        std::vector<std::pair<int, int>> dock_offsets;   // GAAIRC pads (leptons x,y)
+        std::uint32_t rng = 0x2545F491u;
+        int frame = 0;
+        std::vector<int> sw_btype;               // building roster idx -> SuperweaponType (int)
+        std::vector<int> repair_btype;           // building roster idx -> UnitRepair=yes (1/0)
+        std::vector<int> airfield_btype;         // building roster idx -> Helipad=yes airfield
+        bool nuke_set = false;                   // the last Nuke grant's blast params
+        int nuke_damage = 600;
+        double nuke_spread = 10.0;
+        double nuke_pmax = 0.02;
+        std::array<int, 11> nuke_verses{};
+    };
+    AnWorld an_;
+    void an_event(int kind, int house, SuperweaponType type, int x, int y, int x2 = -1, int y2 = -1);
+    std::uint32_t an_rand();
+    void step_air_naval(double dt);
+    void an_step_naval(double dt);
+    void an_step_spawners(double dt);
+    void an_step_fixed_wing(double dt);
+    void an_step_deaths(double dt);
+    void an_step_strikes(double dt);
+    void an_nuke_detonate(const SwStrike& s);
+    void an_storm_bolt(SwStrike& s, int x, int y);
+    void an_paradrop(int house, SuperweaponType type, int cx, int cy);
+    void an_chrono(int house, int sx, int sy, int dx, int dy);
+    void an_iron_curtain(int house, int cx, int cy);
+    int an_spawn(const std::string& id, int house, int x, int y);
+    void an_damage_unit(int idx, int dmg, int attacker);
+    void an_damage_building(int b, int dmg);
+    void an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
+                        const std::array<int, 11>& verses, bool hit_air, bool spare_house);
     bool sw_any_ = false;                      // the step() firewall bool
     void step_superweapon(double dt);          // firewalled World::step pass (§3)
 
@@ -1775,6 +1888,7 @@ private:
     // first naval order (naval movement reuses step_units -- no separate step to
     // firewall, unlike flight's step_flight).
     std::vector<std::uint8_t> water_passable_;
+    mutable std::vector<std::uint8_t> amphib_passable_;   // W2-AN-10 scratch (amphib_grid)
     bool naval_any_ = false;
     Occupancy occ_;
     int grid_w_ = 0;

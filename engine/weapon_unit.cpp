@@ -26,7 +26,8 @@ const WeaponSlot& secondary_view(const Unit& u) {
     return u.w2;
 }
 
-int unit_weapon_for_unit(const Unit& u, const Unit& v) {
+namespace {
+int unit_weapon_for_unit_base(const Unit& u, const Unit& v) {
     if (u.deploy_fire && u.deployed) return u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
     if (!u.w2.valid) {
         // No secondary: the primary alone, gated like GetFireError.
@@ -34,11 +35,25 @@ int unit_weapon_for_unit(const Unit& u, const Unit& v) {
     }
     return choose_weapon(primary_view(u), secondary_view(u), unit_airborne(v), v.armor_ix);
 }
+}  // namespace
+
+int unit_weapon_for_unit(const Unit& u, const Unit& v) {
+    const int want = unit_weapon_for_unit_base(u, v);
+    // W2-AN-14 [rules NavalTargeting/LandTargeting, defaults 0]: the water /
+    // land / underwater split. A unit with all-default keys attacking a land
+    // or surfaced target is unchanged (the rule returns `want`).
+    return an_naval_slot(u.an.t, want, u.w2.valid, v.an.in_water, v.an.submerged,
+                         v.an.t.organic || (!v.is_vehicle && !v.is_aircraft && !v.is_naval),
+                         unit_airborne(v), false);
+}
 
 int unit_weapon_for_building(const Unit& u, int armor_ix) {
-    if (u.deploy_fire && u.deployed) return u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
-    if (!u.w2.valid) return slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;
-    return choose_weapon(primary_view(u), secondary_view(u), false, armor_ix);
+    int want;
+    if (u.deploy_fire && u.deployed) want = u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
+    else if (!u.w2.valid) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;
+    else want = choose_weapon(primary_view(u), secondary_view(u), false, armor_ix);
+    // W2-AN-14: LandTargeting=1 / UnderwaterOnly cannot hit a structure.
+    return an_naval_slot(u.an.t, want, u.w2.valid, false, false, false, false, true);
 }
 
 void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {

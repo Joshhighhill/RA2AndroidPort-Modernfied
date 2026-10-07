@@ -1,0 +1,155 @@
+# naval.play -- W2-AN naval acceptance (wave-2 fix): Allied human on Bay of
+# Pigs (water map). Naval Yard on water through the real sidebar, a Destroyer
+# that sails where it is clicked, a landing craft that loads GIs on the shore,
+# sails, beaches and unloads, and a submarine that hides until sonar finds it.
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xbayopigs.map
+click button "Use Map"
+wait 2
+click start
+until 120 scene == game
+require scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+click tab:0
+click cameo:GAPOWR
+until 1500 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) == 1
+click cameo:GAREFN
+until 2000 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 600 built(0,GAREFN) == 1
+click cameo:GAYARD
+until 2000 queue_ready(structure) == 1
+click cameo:GAYARD
+place auto
+until 600 built(0,GAYARD) == 1                 @W2-AN-09
+view building 0:GAYARD
+shot yard
+
+# --- 1. a Destroyer sails where it is clicked (W2-AN-09) ---------------------
+click tab:3
+click cameo:DEST
+until 2000 units(0,DEST) == 1                  @W2-AN-09
+wait 30
+view unit 0:DEST
+click unit 0:DEST
+let x0 = sel_cx
+let y0 = sel_cy
+move point water_near_sel
+assert cursor_name == move                     @W2-AN-09
+click point water_near_sel
+until 300 sel_cx != $x0 or sel_cy != $y0       @W2-AN-09
+wait 120
+assert sel_on_water == 1                       @W2-AN-09
+shot dest_sailed
+
+# --- 2. a Typhoon sub hides submerged until sonar finds it (W2-AN-13/14) ------
+# (an enemy SUB is spawned beside the Destroyer: the AI on this map is Allied)
+cheat spawn SUB 1 point water_near_sel +0 +0
+wait 2
+assert submerged(1) >= 1                       @W2-AN-13
+until 200 sub_detected_by0(1) >= 1             @W2-AN-13
+let sub_hp = unit_hp(1,SUB)
+until 900 unit_hp(1,SUB) < $sub_hp or units(1,SUB) == 0   @W2-AN-12
+assert spawned_out(0) >= 1 or units(1,SUB) == 0 or unit_hp(1,SUB) < $sub_hp   @W2-AN-12
+shot sub_fight
+
+# --- 3. amphibious landing: an Amphibious Transport loads GIs on the shore,
+#        crosses the water and unloads on a beach (W2-AN-10) --------------------
+# (move the Destroyer clear of the yard so the craft is clickable on its own)
+click unit 0:DEST
+click point water_near_sel
+wait 60
+click tab:3
+click cameo:LCRF                                @W2-AN-10
+until 2000 units(0,LCRF) == 1                   @W2-AN-10
+wait 20
+# right-click drops the Destroyer selection (else a click on the transport = Enter)
+click unit 0:LCRF right
+click unit 0:LCRF
+assert sel_on_water == 1                        @W2-AN-10
+# beach it on the nearest shore cell
+click point shore_near_sel                      @W2-AN-10
+until 400 sel_on_water == 0 and sel_moving == 0  @W2-AN-10
+let lx = sel_cx
+let ly = sel_cy
+shot lcrf_beached
+# two GIs board it
+click unit 0:LCRF right
+click unit 0:E1
+click unit 0:LCRF +0 +0
+wait 1
+click unit 0:E1:1 shift
+click unit 0:LCRF
+until 600 cargo_total(0) >= 1                   @W2-AN-10
+# sail out onto the water, then beach elsewhere and unload
+click unit 0:LCRF right
+click unit 0:LCRF
+click point water_near_sel                      @W2-AN-10
+until 400 amphib_on_water(0) >= 1               @W2-AN-10
+wait 60
+shot lcrf_at_sea
+key d
+wait 30
+assert cargo_total(0) >= 1                      @W2-AN-10 # no unload at sea
+click point shore_near_sel                      @W2-AN-10
+until 600 amphib_on_water(0) == 0 and sel_moving == 0  @W2-AN-10
+key d
+until 300 cargo_total(0) == 0                   @W2-AN-10
+shot lcrf_unloaded
+
+# --- 4. the Naval Yard repairs a damaged ship docked beside it (W2-AN-11) ----
+cheat w2 damage 0:DEST 400
+click unit 0:LCRF right
+click unit 0:DEST
+let dhp = unit_hp(0,DEST)
+click point yard_dock                           @W2-AN-11
+until 600 unit_hp(0,DEST) > $dhp                @W2-AN-11
+until 1500 unit_hp(0,DEST) >= 600               @W2-AN-11
+view unit 0:DEST
+shot dest_repaired
+
+# --- 5. Aircraft Carrier Hornets + Dreadnought missiles; ships sink (W2-AN-12/25)
+cheat spawn CARRIER 0 point water_near_sel +0 +0
+cheat spawn DEST 1 point water_near_sel +4 +4
+wait 2
+click unit 0:DEST right
+click unit 0:CARRIER
+let ehp = unit_hp(1,DEST)
+click unit 1:DEST                               @W2-AN-12
+until 300 spawned_out(0) >= 1                   @W2-AN-12
+until 1500 unit_hp(1,DEST) < $ehp or units(1,DEST) == 0   @W2-AN-12
+shot hornets
+until 3000 units(1,DEST) == 0                   @W2-AN-12
+assert sunk(1) >= 1                             @W2-AN-25
+# Dreadnought: V3-style missiles, MinimumRange=8, at a target 10+ cells off
+cheat spawn DRED 0 point water_near_sel +0 +0
+click unit 0:CARRIER right
+click unit 0:DRED
+cheat spawn HTNK 1 point shore_far_sel +0 +0
+wait 2
+let thp = unit_hp(1,HTNK)
+click unit 1:HTNK                               @W2-AN-12
+until 600 spawned_out(0) >= 1                   @W2-AN-12
+until 1500 unit_hp(1,HTNK) < $thp or units(1,HTNK) == 0   @W2-AN-12
+shot dread_missiles
+
+# --- 6. the Dolphin is an SHP ship (artmd Voxel=no) and draws (W2-AN-15) ------
+cheat spawn DLPH 0 point water_near_sel +0 +0
+wait 5
+assert units(0,DLPH) == 1                       @W2-AN-15
+assert submerged(0) >= 1                        @W2-AN-13 # Underwater+Cloakable
+view unit 0:DLPH
+shot dolphin
+end
