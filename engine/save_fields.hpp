@@ -993,6 +993,8 @@ template <class Ar> void fields(Ar& ar, SkirmishConfig& v) {
     io(ar, v.campaign_map);          // P10: campaign mission identity ("" = skirmish)
     io(ar, v.campaign_side);
     io(ar, v.campaign_difficulty);
+    io(ar, v.game_speed);            // skirmish page: lobby Game Speed (-1 = unset)
+    io(ar, v.mcv_redeploys);         // skirmish page: MCV Repacks (-1 = unset)
 }
 
 // --- P10 campaign runtime state (the 'HOST' section of a campaign save) ---
