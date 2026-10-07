@@ -98,7 +98,10 @@ android {
         debug {
             externalNativeBuild {
                 cmake {
-                    arguments "-DCMAKE_BUILD_TYPE=RelWithDebInfo", "-DSDL_ASSERTIONS=enabled"
+                    // -Pra2.nativeBuildType=Debug gives the old -O0 native code
+                    // back (native debugging; the W2-AR-02 "before" timing).
+                    arguments "-DCMAKE_BUILD_TYPE=" + (project.findProperty('ra2.nativeBuildType') ?: 'RelWithDebInfo'),
+                              "-DSDL_ASSERTIONS=enabled"
                 }
             }
         }
