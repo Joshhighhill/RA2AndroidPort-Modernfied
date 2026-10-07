@@ -446,6 +446,12 @@ public:
         return true;
     }
 
+    // W2-CA-12: trigger audio the scene plays through its presentation.
+    struct AudioReq { int action; std::string name; int value; int waypoint; };
+    std::vector<AudioReq> take_audio() { std::vector<AudioReq> o; o.swap(audio_); return o; }
+    bool waypoint_xy(int wp, int& x, int& y) const { return waypoint_cell(wp, x, y); }
+    std::string map_theme() const { return camp::trim_comment(map_.get("Basic", "Theme", "")); }
+
     std::uint64_t hash() const {
         std::uint64_t h = sys_->state_hash();
         auto mix = [&](std::uint64_t v) {
@@ -1348,12 +1354,21 @@ private:
         witness_.emplace_back(b);
     }
 
-    // Trigger log -> witness; TextTrigger labels -> objectives.
+    // Trigger log -> witness; TextTrigger labels -> objectives; W2-CA-12
+    // speech/sound/theme actions -> audio requests for the scene.
     void drain_log() {
         const std::vector<std::string>& lg = sys_->log();
         for (; logged_ < lg.size(); ++logged_) {
             const std::string& l = lg[logged_];
             witness_.push_back(l);
+            {
+                int k = 0, v = 0, wp = -1;
+                char name[128] = {0};
+                if (std::sscanf(l.c_str(), "  a%d %*s v=%d wp=%d %127s", &k, &v, &wp, name) == 4 &&
+                    (k == 19 || k == 20 || k == 21 || k == 99) &&
+                    l.find("(recorded)") != std::string::npos)
+                    audio_.push_back({k, name[0] == '-' && name[1] == 0 ? std::string() : std::string(name), v, wp});
+            }
             if (l.rfind("  a11 ", 0) == 0) {
                 // "  a11 TextTrigger v=.. wp=.. LABEL (recorded)"
                 const std::size_t e = l.rfind(" (recorded)");
@@ -1662,6 +1677,7 @@ private:
     std::vector<Team> teams_;
     std::vector<Objective> objectives_;
     std::vector<std::string> witness_;
+    std::vector<AudioReq> audio_;   // W2-CA-12 (presentation only, not hashed/saved)
     std::string note_;
     std::size_t logged_ = 0;
     ra2engine::World::Side player_side_ = ra2engine::World::Side::Allied;

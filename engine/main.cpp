@@ -4978,6 +4978,7 @@ public:
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
         rp_setup();   // gap owner A: side-correct factories + sidebar (skirmish)
         init_presentation();   // G-80..G-91 (pres_game.inc)
+        campaign_audio_init();   // W2-CA-12 (campaign only)
     }
     // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
     // the save's skirmish config, then overwrite the World and the scene
@@ -5155,6 +5156,7 @@ public:
             player_credits_ = 0.0;
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
+        campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         world_.step(dt);
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
@@ -5439,6 +5441,7 @@ public:
 #include "game_scene_controls.inc"
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
+#include "campaign_audio.inc"  // W2-CA-12 mission speech / sound / music
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
 
