@@ -33,6 +33,9 @@
 #include <iostream>
 #include <deque>
 #include <map>
+#include <mutex>
+#include <thread>
+#include <atomic>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -405,7 +408,13 @@ struct VehicleAssets {
     };
     std::shared_ptr<const VoxelSrc> vsrc;
     mutable std::map<int, std::shared_ptr<std::array<ra2engine::FacingSet, 3>>> color_sets;
+    // W2-GA-12: hull ground-shadow masks per facing (colour-independent).
+    mutable std::shared_ptr<std::vector<ra2engine::VoxelSprite>> shadow;
 };
+// W2-GA-P4: color_sets is filled by the draw path AND by GameScene's
+// background prewarm thread; this lock guards the map (the built sets are
+// immutable once published, so returned references stay valid).
+std::mutex g_vxl_mu;
 
 // All SHP + palette assets for one building type, resolved through the
 // NewTheater candidate list [RE: building-render.md §1] over the already-open
@@ -2654,24 +2663,55 @@ inline int vxl_house(int h) { return h == 0 ? 0 : 1; }
 // G-16 (render): the facing set for part (0 hull, 1 turret, 2 barrel) in house
 // h's colour. Unconfigured worlds (every gate) keep the pre-built blue/red sets;
 // a configured skirmish rasterizes each MP colour once, on first draw.
+std::shared_ptr<std::array<ra2engine::FacingSet, 3>> vxl_build_color(const VehicleAssets& va, int key) {
+    auto set = std::make_shared<std::array<ra2engine::FacingSet, 3>>();
+    const VehicleAssets::VoxelSrc& s = *va.vsrc;
+    const ra2assets::Palette hp = ra2engine::pal_for_color(s.pal, key - 10);
+    (*set)[0] = ra2engine::build_facing_set(s.hull, s.hull_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    if (va.has_turret)
+        (*set)[1] = ra2engine::build_facing_set(s.tur, s.tur_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    if (va.has_barrel)
+        (*set)[2] = ra2engine::build_facing_set(s.barl, s.barl_h, ra2engine::kVehicleFacings, s.vpl, hp);
+    return set;
+}
 const ra2engine::FacingSet& vxl_set(const VehicleAssets& va, int part, int house) {
     const int key = ra2engine::house_draw_key(house);
     if (key < 10 || !va.vsrc) {
         const int hi = vxl_house(house);
         return part == 0 ? va.hull[hi] : part == 1 ? va.turret[hi] : va.barrel[hi];
     }
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
     auto& slot = va.color_sets[key];
-    if (!slot) {
-        slot = std::make_shared<std::array<ra2engine::FacingSet, 3>>();
-        const VehicleAssets::VoxelSrc& s = *va.vsrc;
-        const ra2assets::Palette hp = ra2engine::pal_for_color(s.pal, key - 10);
-        (*slot)[0] = ra2engine::build_facing_set(s.hull, s.hull_h, ra2engine::kVehicleFacings, s.vpl, hp);
-        if (va.has_turret)
-            (*slot)[1] = ra2engine::build_facing_set(s.tur, s.tur_h, ra2engine::kVehicleFacings, s.vpl, hp);
-        if (va.has_barrel)
-            (*slot)[2] = ra2engine::build_facing_set(s.barl, s.barl_h, ra2engine::kVehicleFacings, s.vpl, hp);
-    }
+    if (!slot) slot = vxl_build_color(va, key);   // not prewarmed yet: build now
     return (*slot)[part];
+}
+// W2-GA-P4: rasterise a (vehicle, colour) set off the draw path; a no-op when
+// the draw path got there first.
+void vxl_prewarm(const VehicleAssets& va, int key) {
+    if (key < 10 || !va.vsrc) return;
+    {
+        std::lock_guard<std::mutex> lk(g_vxl_mu);
+        auto it = va.color_sets.find(key);
+        if (it != va.color_sets.end() && it->second) return;
+    }
+    auto built = vxl_build_color(va, key);   // outside the lock
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
+    auto& slot = va.color_sets[key];
+    if (!slot) slot = std::move(built);
+}
+// W2-GA-12: the hull's ground shadow at facing bi (built once per type).
+const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi) {
+    if (!va.vsrc) return nullptr;
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
+    if (!va.shadow) {
+        auto v = std::make_shared<std::vector<ra2engine::VoxelSprite>>();
+        for (int i = 0; i < ra2engine::kVehicleFacings; ++i)
+            v->push_back(ra2engine::rasterize_shadow(va.vsrc->hull, va.vsrc->hull_h,
+                                                     ra2engine::index_to_yaw(i, ra2engine::kVehicleFacings), 128));
+        va.shadow = v;
+    }
+    if (bi < 0 || bi >= static_cast<int>(va.shadow->size())) return nullptr;
+    return &(*va.shadow)[static_cast<std::size_t>(bi)];
 }
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
@@ -2704,6 +2744,9 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
                                       vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
+    else if (const ra2engine::VoxelSprite* sh = vxl_shadow(va, bi))
+        ra2engine::draw_voxel_sprite(ren, tc, "vxlsh:" + img + ":" + std::to_string(bi), *sh, u.fx, u.fy,
+                                     u.level, cam, W, H, 0);   // W2-GA-12 ground shadow
 
     ra2engine::draw_voxel_sprite(
         ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi),
@@ -4840,6 +4883,7 @@ public:
             lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
         }
         g_gf_spawned.clear();
+        start_vxl_prewarm();   // W2-GA-P4
         // gF G-23: clicking the selected MCV deploys it (ACTION_SELF, B's hook).
         input_.set_deploy_check([](const ra2engine::Unit& u) { return u.deploys_into >= 0; });
 
@@ -4972,6 +5016,8 @@ public:
         apply_loaded(f);
     }
     ~GameScene() override {
+        prewarm_stop_ = true;
+        if (prewarm_.joinable()) prewarm_.join();
         if (g_p5_art == &p5_art_) g_p5_art = nullptr;
         if (g_map_dressing == &map_dressing_) g_map_dressing = nullptr;
         if (g_radar == &radar_) g_radar = nullptr;
@@ -5793,6 +5839,32 @@ private:
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     PresLight light_;   // W2-GA-05
+    // W2-GA-P4: every roster vehicle x every house colour rasterised on a
+    // worker thread at game start instead of in the first frame each colour's
+    // tank appears (51-69 ms per set at -O0, 9-20 ms at -O2).
+    std::thread prewarm_;
+    std::atomic<bool> prewarm_stop_{false};
+    void start_vxl_prewarm() {
+        if (!world_.houses_configured()) return;
+        std::vector<int> keys;
+        for (int h = 0; h < world_.house_count(); ++h) {
+            const int k = 10 + world_.house_color(h);
+            if (std::find(keys.begin(), keys.end(), k) == keys.end()) keys.push_back(k);
+        }
+        const std::vector<const VehicleAssets*> list = vlist_;
+        prewarm_ = std::thread([this, keys, list]() {
+            const auto t0 = std::chrono::steady_clock::now();
+            int n = 0;
+            for (int k : keys)
+                for (const VehicleAssets* va : list) {
+                    if (prewarm_stop_) return;
+                    if (va) { vxl_prewarm(*va, k); ++n; }
+                }
+            std::cerr << "[vxl-prewarm] " << n << " sets in "
+                      << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()
+                      << " ms (worker thread)\n";
+        });
+    }
     std::vector<std::pair<double, double>> prev_audio_state_;
     // --- render helpers + FreeUnit tracker + frame-transient state ---
     std::vector<const VehicleAssets*> vlist_;
