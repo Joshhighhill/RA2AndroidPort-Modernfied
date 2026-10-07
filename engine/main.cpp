@@ -3883,8 +3883,8 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     blit_shp(ren, tc, "sb:top", ba.sb_top, 0, ba.sb_pal, lay.top_cap.x, lay.top_cap.y);
     // Options / diplomacy buttons over the cap (frame 0, inert).
     if (ba.has_optbtns) {
-        blit_shp(ren, tc, "sb:optb", ba.sb_optbtn, 0, ba.sb_pal, lay.bar.x + 11, 20);
-        blit_shp(ren, tc, "sb:dipb", ba.sb_diplobtn, 0, ba.sb_pal, lay.bar.x + 83, 20);
+        blit_shp(ren, tc, "sb:optb", ba.sb_optbtn, 0, ba.sb_pal, lay.opt_btn.x, lay.opt_btn.y);     // W2-UI-08
+        blit_shp(ren, tc, "sb:dipb", ba.sb_diplobtn, 0, ba.sb_pal, lay.diplo_btn.x, lay.diplo_btn.y);
     }
     // Radar area: a minimap when house 0 owns an operational radar (Shroud/Fog
     // [RE: shroud.md §5]); else radar.shp frame 0 = the pre-radar side logo
@@ -3898,18 +3898,25 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         if (boot > 0) {
             blit_shp(ren, tc, "sb:radar:" + std::to_string(boot), ba.sb_radar, boot, ba.sb_pal, lay.radar.x, lay.radar.y);
         } else {
-            // The open frame is opaque; the map draws into its dark screen area
-            // (columns 1..153 x rows 0..109, measured on sidec01 radar.shp frame 32).
+            // The open frame is opaque; the map draws into the radar gadget's
+            // viewport 140x108 at bar (16, 49) (W2-UI-09 [RE: construction.md
+            // §11a radar gadget 223]) -- draw and click share it (cell_at).
             ra2engine::SbRect screen = lay.radar;
             if (g_radar && ba.has_radar && ba.sb_radar.count() > 1) {
                 blit_shp(ren, tc, "sb:radar:open", ba.sb_radar, ba.sb_radar.count() - 1, ba.sb_pal,
                          lay.radar.x, lay.radar.y);
-                screen = ra2engine::SbRect{lay.radar.x + 1, lay.radar.y, 153, lay.radar.h};
+                screen = ra2engine::SbRect{lay.bar.x + 16, 49, 140, 108};
             }
             draw_radar_minimap(ren, screen, world, ba);
         }
     } else if (ba.has_radar) {
-        blit_shp(ren, tc, "sb:radar", ba.sb_radar, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
+        // W2-UI-09: a radar that just went offline folds back (reverse boot).
+        const int close = g_radar ? g_radar->close_frame(ba.sb_radar.count()) : 0;
+        if (close > 0)
+            blit_shp(ren, tc, "sb:radar:" + std::to_string(close), ba.sb_radar, close, ba.sb_pal, lay.radar.x,
+                     lay.radar.y);
+        else
+            blit_shp(ren, tc, "sb:radar", ba.sb_radar, 0, ba.sb_pal, lay.radar.x, lay.radar.y);
     }
     // side1 band (carries the repair/sell socket art), then the buttons.
     blit_shp(ren, tc, "sb:side1", ba.sb_side1, 0, ba.sb_pal, lay.side1.x, lay.side1.y);
@@ -4785,6 +4792,7 @@ public:
                g_sidebar_mix = (soviet_campaign(cfg) || (cfg.campaign_map.empty() && !cfg.slots.empty() &&
                                                          cfg.slots[0].side == ra2engine::World::Side::Soviet))
                                    ? "sidec02.mix" : "sidec01.mix",
+               ra2engine::set_sidebar_style(std::string(g_sidebar_mix) == "sidec02.mix" ? 1 : 0),   // W2-UI-08
                load_unit_assets(dir_, ra2_))),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
           language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
@@ -5553,7 +5561,7 @@ private:
         if (!sidebar_up_ || !ba_.has_optbtns) return false;
         const int w = ba_.sb_optbtn.width() > 0 ? ba_.sb_optbtn.width() : 70;
         const int h = ba_.sb_optbtn.height() > 0 ? ba_.sb_optbtn.height() : 16;
-        return x >= lay_.bar.x + 11 && x < lay_.bar.x + 11 + w && y >= 20 && y < 20 + h;
+        return x >= lay_.opt_btn.x && x < lay_.opt_btn.x + w && y >= lay_.opt_btn.y && y < lay_.opt_btn.y + h;
     }
     bool ui_handle(const ra2engine::InputEvent& ev) {
         if (gf_abort_.open()) { gf_abort_answer(gf_abort_.handle(ev)); return true; }   // gF G-14

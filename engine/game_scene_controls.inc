@@ -60,15 +60,19 @@
         SDL_RenderFillRect(ren, &fill);
     }
 
-    // --- G-04: KeyboardMD.ini hotkeys ---------------------------------------
-    // The install's KeyboardMD.ini (the original's binding file) overrides the
-    // shipped defaults; a missing file leaves the defaults.
+    // --- G-04 / W2-UI-27: Keyboard.ini hotkeys --------------------------------
+    // RA2 game.exe reads KEYBOARD.INI (FUN_00519240, string 0x7DD718) -- the
+    // install's Keyboard.ini overrides the shipped defaults. KeyboardMD.ini is
+    // the YR file; it is only a fallback when Keyboard.ini is absent.
     static ra2engine::HotkeyTable load_hotkeys() {
         ra2engine::HotkeyTable t = ra2engine::HotkeyTable::defaults();
-        try {
-            const std::vector<uint8_t> raw = ra2assets::read_file(env_install_dir() + "KeyboardMD.ini");
-            t.load_ini_text(std::string(raw.begin(), raw.end()));
-        } catch (const std::exception&) { /* defaults */ }
+        for (const char* f : {"Keyboard.ini", "KeyboardMD.ini"}) {
+            try {
+                const std::vector<uint8_t> raw = ra2assets::read_file(env_install_dir() + f);
+                t.load_ini_text(std::string(raw.begin(), raw.end()));
+                break;
+            } catch (const std::exception&) { /* next / defaults */ }
+        }
         return t;
     }
     ra2engine::HotkeyTable hotkeys_ = load_hotkeys();

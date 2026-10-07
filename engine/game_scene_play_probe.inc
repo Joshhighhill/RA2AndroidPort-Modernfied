@@ -170,7 +170,7 @@
         if (sidebar_up_ && ba_.has_optbtns) {
             const int w = ba_.sb_optbtn.width() > 0 ? ba_.sb_optbtn.width() : 70;
             const int h = ba_.sb_optbtn.height() > 0 ? ba_.sb_optbtn.height() : 16;
-            p.targets["options"] = ra2play::Rect{lay_.bar.x + 11, 20, w, h};
+            p.targets["options"] = ra2play::Rect{lay_.opt_btn.x, lay_.opt_btn.y, w, h};
         }
         for (std::size_t i = 0; i < lay_.cameos.size() && i < buildable_.size(); ++i)
             p.targets["cameo:" + play_entry_id(active_tab_, buildable_[i])] = rect(lay_.cameos[i].rect);

@@ -66,8 +66,8 @@
         if (ba_.has_scroll && lay_.scroll_up.contains(x, y)) return tt_csf("TIP:SCROLLUP", "Up Scroll Arrow");
         if (ba_.has_scroll && lay_.scroll_dn.contains(x, y)) return tt_csf("TIP:SCROLLDOWN", "Down Scroll Arrow");
         if (ba_.has_optbtns) {
-            const ra2engine::SbRect ob{lay_.bar.x + 11, 20, ba_.sb_optbtn.width(), ba_.sb_optbtn.height()};
-            const ra2engine::SbRect db{lay_.bar.x + 83, 20, ba_.sb_diplobtn.width(), ba_.sb_diplobtn.height()};
+            const ra2engine::SbRect ob{lay_.opt_btn.x, lay_.opt_btn.y, ba_.sb_optbtn.width(), ba_.sb_optbtn.height()};
+            const ra2engine::SbRect db{lay_.diplo_btn.x, lay_.diplo_btn.y, ba_.sb_diplobtn.width(), ba_.sb_diplobtn.height()};
             if (ob.contains(x, y)) return tt_csf("TIP:OPTIONSBUTTON", "Options Button");
             if (db.contains(x, y)) return tt_csf("TIP:DIPLOMACYBUTTON", "Diplomacy Button");
         }

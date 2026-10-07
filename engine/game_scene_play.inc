@@ -117,7 +117,7 @@
                 return true;
             }
             if (a == "options") {
-                x = lay_.bar.x + 11 + 8;
+                x = lay_.opt_btn.x + 8;
                 y = 20 + 4;
                 return true;
             }
