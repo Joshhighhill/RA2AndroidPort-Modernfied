@@ -1,0 +1,30 @@
+# W4 fix: ALL01's scripted V3 strike on the Statue still works with the
+# per-type warheads (V3WH: the map's special_1 = 50000% -> 200 x 500 = 100000,
+# one hit). The original arms it when Tanya reaches Liberty Island ("Initial
+# Paratroopers 1" -> 7 s later "Enable - Enable V3 - Liberty", which also
+# disables the Statue's loss trigger); the cheat fires that trigger directly.
+set render_every 300
+set on_quit continue
+set campaign ALL01T.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+cheat reveal
+require buildings(5,CANEWY04) == 1
+cheat camp_fire "Enable - Enable V3 - Liberty"
+view cell 68 70
+until 60 units(1,V3ROCKET) >= 1
+shot v3_launch
+wait 45
+shot v3_climb
+wait 30
+shot v3_arc
+until 900 buildings(5,CANEWY04) == 0
+shot v3_statue_down
+wait 30
+shot v3_destroy_anim
+wait 120
+shot v3_rubble
+assert rockets_hit(1) >= 1
+end expect RUNNING

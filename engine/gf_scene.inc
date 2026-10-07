@@ -176,6 +176,7 @@ private:
         GfSkirmishStats s;
         for (const ra2engine::Unit& u : world_.units()) {
             if (u.deployed_away) continue;
+            if (u.vet.dont_score) continue;   // W4: DontScore=yes (spent V3/DMisl rockets)
             const bool dead = !u.alive || u.die_time >= 0.0;
             if (!dead) continue;
             if (u.house == 0) ++s.units_lost; else ++s.units_killed;

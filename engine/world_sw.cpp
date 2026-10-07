@@ -293,7 +293,8 @@ void World::an_damage_building(int b, int dmg) {
 // firing house included; spare_house keeps the CB-4 enemies-only rule for
 // callers that want it.]
 void World::an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
-                           const std::array<int, 11>& verses, bool hit_air, bool spare_house) {
+                           const std::array<int, 11>& verses, bool hit_air, bool spare_house,
+                           double z) {
     const double radius = std::max(0.5, std::round(spread)) * kLept;
     const std::vector<int> vv(verses.begin(), verses.end());
     for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
@@ -301,7 +302,11 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0) continue;
         if (!hit_air && w.is_aircraft && w.altitude > 0.0) continue;
         if (spare_house && w.house == house) continue;
-        const double d = std::hypot((w.fx - cx) * kLept, (w.fy - cy) * kLept);
+        double d = std::hypot((w.fx - cx) * kLept, (w.fy - cy) * kLept);
+        // W4: an explosion above the ground (a rocket shot down in flight) is
+        // measured in 3-D [FUN_00489190 distance], so ground objects far below
+        // take nothing. z = 0 (every other caller) is the old 2-D test.
+        if (z > 0.0) d = std::hypot(d, z - ((w.is_aircraft && w.altitude > 0.0) ? w.altitude : 0.0));
         if (d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int dmg = damage_vs(static_cast<int>(damage * scale), vv, w.armor_ix);
@@ -316,6 +321,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
             const double dc = std::hypot((c.x - cx) * kLept, (c.y - cy) * kLept);
             if (d < 0.0 || dc < d) d = dc;
         }
+        if (z > 0.0 && d >= 0.0) d = std::hypot(d, z);   // W4: 3-D (see above)
         if (d < 0.0 || d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         an_damage_building(bi, damage_vs(static_cast<int>(damage * scale), vv, b.armor_ix));

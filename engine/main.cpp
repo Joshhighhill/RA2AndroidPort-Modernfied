@@ -3047,7 +3047,9 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude)
         : (u.an.sinking && u.die_time >= 0.0) ? -static_cast<int>(u.die_time * 24.0)   // W2-AN-25
         : 0;
-    if (extra_dy > 0)
+    if (u.an.t.no_shadow) {
+        // W4: NoShadow=yes (V3ROCKET / DMISL) -- no ground shadow at all.
+    } else if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
                                       vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
     else if (const ra2engine::VoxelSprite* sh = vxl_shadow(va, bi))
@@ -3063,6 +3065,24 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         return vxl_frame_sprite(va, part, u.house, fi, hf);
     };
     const std::string fkey = hf ? ":f" + std::to_string(hf) : std::string();
+    // W4: a RocketLocomotion rocket draws its hull at its pitch (the tilt on
+    // the launcher, the climb, the arc, the dive) [FUN_00661D00 +0x50].
+    if (u.an.t.missile && va.vsrc && std::fabs(u.an.rocket.pitch) > 1e-3) {
+        const int pq = static_cast<int>(std::lround(u.an.rocket.pitch * 180.0 / 3.14159265358979 / 5.0));
+        const std::string key = "vxlp:" + img + ":" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" +
+                                std::to_string(bi) + ":" + std::to_string(pq);
+        static std::map<std::string, ra2engine::VoxelSprite> pitched;
+        auto it = pitched.find(key);
+        if (it == pitched.end()) {
+            const VehicleAssets::VoxelSrc& s = *va.vsrc;
+            it = pitched.emplace(key, ra2engine::rasterize_model(
+                                          s.hull, s.hull_h, ra2engine::index_to_yaw(bi, ra2engine::kVehicleFacings),
+                                          s.vpl, ra2engine::house_draw_palette(s.pal, u.house), 0,
+                                          pq * 5.0 * 3.14159265358979 / 180.0)).first;
+        }
+        ra2engine::draw_voxel_sprite(ren, tc, key, it->second, u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        return;
+    }
     ra2engine::draw_voxel_sprite(
         ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi) + fkey,
         part_sprite(0, bi), u.fx, u.fy, u.level, cam, W, H, extra_dy);
@@ -3349,6 +3369,8 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const int gy = static_cast<int>(std::lround((x + y) * 15.0 - level * 15)) + cam.y + 15;
         const int sy = gy - static_cast<int>(std::lround((p.z / 256.0) * 36.74));
         if (gx < -8 || gx > W + 8 || sy > H + 8 || gy < -8) continue;
+        // W4: the FIRING weapon's art (slot / base defence / voxel bullet).
+        if (tc && g_fx3 && g_fx3->draw_projectile(ren, *tc, world, p, gx, sy, gy, W, H)) continue;
         // G-83: the projectile's Image= art when the live game's FX layer has it.
         if (tc && pres_draw_projectile(ren, *tc, world, p, gx, sy, W, H)) continue;
         SDL_Rect shadow{gx - 2, gy - 1, 4, 2};
@@ -5912,7 +5934,19 @@ public:
             map_pals_[2] = &ba_.unit_pal;
             for (int i = 0; i < 3; ++i) g_map_pals[i] = map_pals_[i];
             g_map_dressing = &map_dressing_;
-            g_smudge_hook = [this](bool crater, double fx, double fy) { map_dressing_.add_smudge(crater, fx, fy); };
+            g_smudge_hook = [this](bool crater, double fx, double fy) {
+                // W4: no crater / scorch smudge on a water cell (the shot-down
+                // ALL01 missiles left crater rings on the harbour). [RE-FALLBACK:
+                // the original's SmudgeType placement test was not traced; its
+                // smudges never appear on water.]
+                const int x = static_cast<int>(std::lround(fx)), y = static_cast<int>(std::lround(fy));
+                const std::vector<std::uint8_t>& wg = world_.grid_for(ra2engine::MovementDomain::Water);
+                if (x >= 0 && y >= 0 && x < world_.grid_w() && y < world_.grid_h() &&
+                    static_cast<std::size_t>(y) * world_.grid_w() + x < wg.size() &&
+                    wg[static_cast<std::size_t>(y) * world_.grid_w() + x])
+                    return;
+                map_dressing_.add_smudge(crater, fx, fy);
+            };
         } catch (const std::exception& ex) {
             std::cerr << "[map-dressing] unavailable: " << ex.what() << "\n";
         }

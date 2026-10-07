@@ -28,6 +28,13 @@ V3 yaw_rotate(const V3& p, double c, double s) {
     return {p.x * c - p.y * s, p.x * s + p.y * c, p.z};
 }
 
+// W4: nose-up pitch about the model's +Y axis (the nose is +X), applied
+// before the yaw. cp = 1, sp = 0 is the identity (every unpitched caller).
+V3 pitch_rotate(const V3& p, double cp, double sp) {
+    if (sp == 0.0) return p;
+    return {p.x * cp - p.z * sp, p.y, p.x * sp + p.z * cp};
+}
+
 void project(const V3& w, double& sx, double& sy, double& depth) {
     // voxel-render.md §1: basis Rx(-60)*Rz(-45); depth = third row.
     sx = (w.x + w.y) * kIsoX;
@@ -70,8 +77,10 @@ double index_to_yaw(int i, int n) {
 
 VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
                             double yaw_rad, const ra2assets::Vpl& vpl,
-                            const ra2assets::Palette& pal, int hva_frame) {
+                            const ra2assets::Palette& pal, int hva_frame, double pitch_rad) {
     const double c = std::cos(yaw_rad), s = std::sin(yaw_rad);
+    const double cp = pitch_rad == 0.0 ? 1.0 : std::cos(pitch_rad);
+    const double sp = pitch_rad == 0.0 ? 0.0 : std::sin(pitch_rad);
 
     VoxelSprite out;
     if (m.sections.empty() || hva.frames.empty() || hva.frames[0].empty()) return out;
@@ -90,7 +99,7 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
             const V3 p = {(corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y,
                           (corner & 4) ? hi.z : lo.z};
             double sx, sy, d;
-            project(yaw_rotate(apply_xform(xf.transform, sec.scale, p), c, s), sx, sy, d);
+            project(yaw_rotate(pitch_rotate(apply_xform(xf.transform, sec.scale, p), cp, sp), c, s), sx, sy, d);
             mnx = std::min(mnx, sx); mxx = std::max(mxx, sx);
             mny = std::min(mny, sy); mxy = std::max(mxy, sy);
         }
@@ -132,7 +141,7 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
                                       sec.min_bounds[1] + y * stepy,
                                       sec.min_bounds[2] + z * stepz};
                     double sx, sy, depth;
-                    project(yaw_rotate(apply_xform(xf.transform, sec.scale, local), c, s),
+                    project(yaw_rotate(pitch_rotate(apply_xform(xf.transform, sec.scale, local), cp, sp), c, s),
                             sx, sy, depth);
                     const int px = static_cast<int>(std::round(sx)) + out.anchor_x;
                     const int py = static_cast<int>(std::round(sy)) + out.anchor_y;
