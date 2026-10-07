@@ -161,6 +161,40 @@ public:
                     ua_.anims.emplace(img, anim_from_art(art_, img));
                 }
                 t.ok = true;
+            } else if (index_of(vehicles_, id) >= 0 && !art_.voxel(rules_.image(id))) {
+                // W3-FIX-A: Voxel=no SHP vehicles (Terror Drone, Dolphin, Giant
+                // Squid) were sent to the voxel loader, which threw -- they never
+                // existed in a mission, as map units or TaskForce members. Same
+                // registration as skirmish: a land SHP vehicle rides the
+                // infantry path (W2-GA-11), an SHP ship is a vehicle (W2-AN-15).
+                const ResolvedUnit ru = resolve_combat_unit(rules_, id);
+                t.combat = ru.combat;
+                t.combat.speed_cps = speed_to_cps(ru.speed);
+                const bool ship = t.combat.is_naval;
+                t.combat.is_vehicle = ship;
+                t.vehicle = ship;
+                const std::string img = t.combat.image;
+                if (!ua_.shps.count(img)) {
+                    MixFile conquer = ra2_.open_nested("conquer.mix");
+                    ua_.shps.emplace(img, load_unit_shp(conquer, img));
+                }
+                if (!ua_.anims.count(img)) {
+                    if (ship) {
+                        auto sv = g_shp_vehicles.find(img);
+                        const int walk = sv != g_shp_vehicles.end() ? std::max(1, sv->second.walk) : 1;
+                        const int fire = sv != g_shp_vehicles.end() ? std::max(1, sv->second.fire) : 1;
+                        ra2engine::UnitAnimSeq a;   // the w2_setup SHP-ship layout
+                        a.stand = {0, 1, walk};
+                        a.walk = {0, walk, walk};
+                        a.fire = {walk * 8, fire, fire};
+                        a.die = {0, 1, 0};
+                        ua_.anims.emplace(img, a);
+                    } else {
+                        ua_.anims.emplace(img, anim_from_art(art_, img));
+                    }
+                }
+                t.ok = true;
+                std::cerr << "[campaign] SHP vehicle " << id << " image=" << img << (ship ? " ship" : " land") << "\n";
             } else if (index_of(vehicles_, id) >= 0 || index_of(aircraft_, id) >= 0) {
                 // W2-CA-16: aircraft resolve through the same voxel loader
                 // (resolve_an_type sets the fixed-wing / jumpjet flight model).
@@ -213,18 +247,13 @@ public:
         d.spyable = rules_.section_flag(id, "Spyable", false);
         d.unit_repair = rules_.section_flag(id, "UnitRepair", false);
         d.crewed = rules_.section_flag(id, "Crewed", false);
+        // W3-FIX-A: the MAP's theater (was hard-coded TEMPERATE -- snow missions
+        // drew summer art) over the global MIX search list (isogen.mix holds
+        // the landmarks, <ext>.mix the ammo crates) [RE: asset-search.md §1].
         BuildingArt slot;
-        for (const auto& c : ra2assets::theater_candidates(art_id, 'T', "isotemp.mix",
-                                                           "temperat.mix", ".shp")) {
-            try {
-                MixFile m = ra2_.open_nested(c.mix);
-                if (const MixEntry* e = m.find(c.file)) {
-                    slot.shp = ShpFile::load(m.read(*e));
-                    slot.ok = true;
-                    break;
-                }
-            } catch (const std::exception&) {}
-        }
+        slot.ok = asset_building_shp(art_id, slot.shp);
+        if (slot.ok) building_art_extras(slot, art_, rules_, id, art_id);
+        else std::cerr << "[campaign] building " << id << " image " << art_id << " has no art\n";
         ra2engine::fill_building_weapons(rules_, id, d);   // Gap fix C (G-40)
         ba.roster.push_back(d);
         ba.art.push_back(std::move(slot));
@@ -232,7 +261,8 @@ public:
         // Keep the P6 per-type vectors index-aligned (inert flags).
         ba.wall.push_back(0);
         ba.naval.push_back(0);
-        ba.water_bound.push_back(0);
+        // W3-FIX-A: WaterBound=yes (Naval Yards) places on the water grid.
+        ba.water_bound.push_back(rules_.section_flag(id, "WaterBound", false) ? 1 : 0);
         ba.factory_kind.push_back(rules_.section_string(id, "Factory", ""));
         ba.wall_fill_range.push_back(0);
         ba.dock_offsets.emplace_back();
@@ -952,6 +982,16 @@ private:
         ra2engine::Unit& u = w_.units()[(std::size_t)idx];
         if (health > 0) u.hp = ra2engine::campaign_strength(u.max_hp, health, false);
         if (ua_anims_has(u.image)) {}
+        // W3-FIX-A (R7): a BalloonHover jumpjet (the Kirov) never lands, so a
+        // map-placed or reinforcing one starts at its hover height instead of
+        // parked on the ground. order_unit_move releases its ground cell and
+        // opens the flight step (the factory-exit lift-off path, W2-AN-07).
+        if (u.is_aircraft && u.balloon_hover) {
+            w_.order_unit_move(idx, cx, cy);
+            ra2engine::Unit& a = w_.units()[(std::size_t)idx];
+            a.altitude = a.cruise_altitude > 0.0 ? a.cruise_altitude : a.altitude;
+            if (a.altitude > 0.0) a.flight_state = ra2engine::FlightState::Cruising;
+        }
         placing_ = true;
         sync_tracks();
         placing_ = false;
@@ -975,13 +1015,25 @@ private:
                 const int bt = types_.building(ba_, o.type);
                 if (bt < 0) { ++skipped_; continue; }
                 const ra2engine::BuildingTypeDef& d = ba_.roster[(std::size_t)bt];
+                // W3-FIX-A: a WaterBound type (Naval Yard) is legal on WATER, as
+                // the player's placement already checks (realplay_scene.inc);
+                // the land grid refused every map-placed yard (ALL04/07/11).
+                const bool water = (std::size_t)bt < ba_.water_bound.size() && ba_.water_bound[(std::size_t)bt] &&
+                                   !w_.grid_for(ra2engine::MovementDomain::Water).empty();
                 const ra2engine::PlacementCheck chk = ra2engine::placement_check(
-                    o.x, o.y, d.fw, d.fh, eh, d.adjacent, w_.passable(), w_.grid_w(), w_.grid_h(),
-                    w_.occupancy(), w_.buildings(), /*bypass=*/true);
-                if (!chk.ok) { ++skipped_; continue; }   // Unlimbo failed -> deleted [RE §4]
+                    o.x, o.y, d.fw, d.fh, eh, d.adjacent,
+                    water ? w_.grid_for(ra2engine::MovementDomain::Water) : w_.passable(), w_.grid_w(),
+                    w_.grid_h(), w_.occupancy(), w_.buildings(), /*bypass=*/true);
+                if (!chk.ok) {   // Unlimbo failed -> deleted [RE §4]
+                    std::cerr << "[campaign] structure " << o.type << " at " << o.x << "," << o.y
+                              << " refused (" << (water ? "water" : "land") << ")\n";
+                    ++skipped_;
+                    continue;
+                }
                 const int idx = w_.add_building(bt, o.x, o.y, d.fw, d.fh, eh, d.strength, d.armor_ix,
                                                 0.0, /*instant=*/true, d.sight, d.grants_map_reveal);
                 if (idx < 0) { ++skipped_; continue; }
+                if (water) w_.block_water_footprint(o.x, o.y, d.fw, d.fh);   // ships path around it
                 ra2engine::Building& b = w_.buildings()[(std::size_t)idx];
                 b.hp = ra2engine::campaign_strength(d.strength, o.health, true);
                 placing_ = true;

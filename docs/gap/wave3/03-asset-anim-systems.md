@@ -271,3 +271,37 @@ count only), Translucent (50 %), Report, Crater/Scorch. Usage counts below are R
 - Shots: `scratch\play\wh.play` (all03u White House lot), `scratch\play\snow.play` (all02s temperate houses on snow),
   `--scene-shot scratch\out\hb --map hillbtwn.map --peek civ --reveal` (empty lots on the default map).
 - Ghidra scripts: `D:\ra2-re\w3-assets\scripts\{strx,disp,fnat}.py`, runner `run.sh`.
+
+## W3-FIX-A status (branch `w3fix-assets`)
+
+Fix agent A (art and asset loading). Animation systems (§3) belong to fix agent B and trigger
+visuals / particles to fix agent C. RE note: `docs/re/asset-search.md`.
+
+| Item | Status | Where | Evidence |
+|---|---|---|---|
+| §2 MIX set: one ordered list per theater, every art loader | FIXED | `src/asset_fs.cpp`, `engine/asset_search.inc` (buildings, campaign/garrison extras, dressing, anims, unit SHPs, voxels) | RA2 `game.exe` order pinned (`FUN_00515c90/00515af0/00515e70/00519e70`, list `FUN_005952f0`/`FUN_00595aa0`); `tests/test_asset_fs.cpp` |
+| §1.2 A landmarks in `isogen.mix`, AMMOCRAT in `sno.mix` | FIXED | AssetFS | `art-all01/03/04/06/08/10/12`, `art-sov05/08` shots |
+| §1.2 B campaign buildings hard-coded TEMPERATE | FIXED | `campaign_runtime.inc` `Types::building` uses the map theater | `art-all02` (snow houses), `art-all12`, `art-sov11` (snow Kremlin) |
+| §1.2 C campaign SHP units (DRON/DLPH/SQD) | FIXED | `Types::unit` SHP-vehicle branch (skirmish parity) | `art-all11` (`img.DLPH>=4`, `img.SQD>=4`), `art-all12` (`img.DRON>=2`) |
+| §1.2 D YR-only lobby civilians (hillbtwn) | FIXED | AssetFS YR tail [RE-FALLBACK] | `art-sk-hillbtwn` (`art.dressing_missing==0`) |
+| §1.2 E building/`[Animations]` anims (isogen, `Theater=yes`, conqmd-first) | FIXED | `PresFx::load_shp/theater_shp/type` | census `ANIM/*` rows |
+| §1.2 G patch caches (`expand01`, `ecache01`) | FIXED | AssetFS head | `tests/test_asset_fs.cpp` |
+| Art `Palette=` | FIXED | `asset_art_palette`, `BuildingArt::own_pal`, dressing `Obj::own_pal` | `art-all01` statue shot (green, `liburb.pal`) |
+| Light posts (`InvisibleInGame`) + light sources | FIXED | `draw_building`, `PresMap::place_structures`, `engine/light_sources.inc`, `PresLight::pass(…, cam)` | `art-all03` (ALL03 night), `art-sov07`; formula `FUN_00479440` |
+| Map-placed water structures / BalloonHover aircraft | FIXED | `place_objects` water grid; `place_unit` hover start | `art-all07`, `art-all11`, `art-sov11` (`img.ZEP.air>=2`) |
+| Name munge gated on `NewTheater` (RC-1c / RE-W3-1) | OPEN | — | 1 lobby object (NAPSIS on a temperate map) |
+| Image chain / RA2 `art.ini` instead of `artmd.ini` | OPEN (out of scope) | — | — |
+
+**Census after the fix** (`tools/art_census.cpp`, now built on the engine's real AssetFS resolver,
+`ninja art_census`): placed objects resolving to the original's file —
+
+| Context | Before (audit) | After |
+|---|---|---|
+| Campaign, 26 RA2 maps | 26,345 / 28,399 (92.8 %) | **28,394 / 28,399 (99.98 %)** |
+| Lobby maps, RA2 theaters | 91,877 / 91,963 | **91,959 / 91,963 (99.996 %)** |
+| Lobby maps, YR theaters (DESERT/NEWURBAN) | — | 1,680 / 17,660 (drawn with TEMPERATE art by design; W2-GA-09: these maps should not be offered) |
+
+Remainder and cause: `CASIN01E/S/W` ×5 (sov03u/sov09u) ABSENT_EVERYWHERE (no file on the
+install, the original draws nothing either); `NAPSIS` ×1 (temperate lobby map) name munge not gated
+on `NewTheater` (clone `ngpsis`, original `napsis`); `SCHP` ×3 (YR Siege Chopper on lobby maps,
+voxel parts absent under the clone's name scheme).

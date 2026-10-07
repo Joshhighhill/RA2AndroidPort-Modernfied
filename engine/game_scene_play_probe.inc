@@ -402,10 +402,6 @@
         };
         p.cheat = [this](const std::vector<std::string>& a) -> std::string {
             const std::string c = a.empty() ? "" : a[0];
-            if (c == "reveal") {   // W3-FX: RevealAllMap for the player (trigger action 16)
-                world_.reveal_all_house(0);
-                return "";
-            }
             if (c == "kill_house" && a.size() >= 2) {
                 const int h = std::atoi(a[1].c_str());
                 for (int i = 0; i < static_cast<int>(world_.units().size()); ++i) {

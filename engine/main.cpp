@@ -88,6 +88,7 @@
 #include "world.hpp"
 
 #include "ra2assets/art.hpp"
+#include "ra2assets/asset_fs.hpp"   // W3-FIX-A (asset_search.inc)
 #include "ra2assets/audio_bag.hpp"
 #include "ra2assets/bink.hpp"      // from-scratch Bink decoder (menu CRT movie) [Task 5]
 #include "ra2assets/fileio.hpp"
@@ -156,6 +157,7 @@ inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
 }
+#include "asset_search.inc"   // W3-FIX-A: one MIX search list per theater
 
 // Which map load_assets should read [RE: maps.md §7 rule 2]. The DEFAULT
 // reproduces today's hardcoded selection EXACTLY -- mapsmd03.mix entry
@@ -423,7 +425,18 @@ struct BuildingArt {
     ra2assets::ShpFile cameo;    // 60x48 icon (may be absent for ConYards)
     double buildup_total = 0.0;  // seconds the buildup anim lasts [RE: building-render.md §5]
     bool has_buildup = false, has_cameo = false, ok = false;
+    // W3-FIX-A [RE: asset-search.md §2/§3]: art Palette= (drawn through this
+    // palette, no house remap) and InvisibleInGame=yes (never drawn/picked).
+    std::shared_ptr<ra2assets::Palette> own_pal;
+    bool invisible = false;
 };
+
+// W3-FIX-A: the per-type art extras every building loader fills the same way.
+inline void building_art_extras(BuildingArt& slot, const Art& art, const Rules& rules, const std::string& id,
+                                const std::string& art_id) {
+    slot.own_pal = asset_art_palette(art.palette(art_id));
+    slot.invisible = rules.section_flag(id, "InvisibleInGame", false);
+}
 
 // Everything the buildings + sidebar draw/interaction needs, loaded once.
 struct BuildingAssets {
@@ -1157,6 +1170,20 @@ ra2engine::UnitAnimSeq anim_from_art(const ra2assets::Art& art, const std::strin
 // lowercase, e.g. "gi.shp"/"cons.shp"; try as-is first in case a mod/layout
 // differs).
 ShpFile load_unit_shp(const MixFile& conquer, const std::string& image) {
+    // W3-FIX-A: the global per-theater MIX search list first (the original's
+    // single lookup: patch caches, conquer.mix, ..., YR conqmd.mix last).
+    {
+        std::string lname = image + ".shp";
+        for (char& c : lname) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const MixFile* m = nullptr;
+        std::string where;
+        if (const MixEntry* ge = asset_fs().find(lname, &m, &where)) {
+            ShpFile shp = ShpFile::load(m->read(*ge));
+            std::cerr << "[shp] image=" << image << " file=" << where << "/" << lname << " frames=" << shp.count()
+                      << " canvas=" << shp.width() << "x" << shp.height() << "\n";
+            return shp;
+        }
+    }
     std::string shp_name = image + ".shp";
     const MixEntry* se = conquer.find(shp_name);
     if (!se) {
@@ -1298,6 +1325,16 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         };
         auto load_part = [&](const std::string& part_base, ra2assets::VxlModel& m,
                              ra2assets::HvaModel& h) -> bool {
+            // W3-FIX-A: the global per-theater MIX search list (patch caches
+            // first, YR localmd.mix last) [RE: asset-search.md §1].
+            {
+                std::vector<uint8_t> vr, hr;
+                if (asset_read(part_base + ".vxl", vr) && asset_read(part_base + ".hva", hr)) {
+                    m = ra2assets::load_vxl(vr.data(), vr.size());
+                    h = ra2assets::load_hva(hr.data(), hr.size());
+                    return true;
+                }
+            }
             MixFile* src = &local;
             const MixEntry* ve = local.find(part_base + ".vxl");
             const MixEntry* he = local.find(part_base + ".hva");
@@ -2100,16 +2137,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     };
     // Resolve an image name to a decoded SHP over the theater candidate walk
     // (first hit wins); throws if no candidate hits.
+    // W3-FIX-A: over the theater's global MIX search list (asset_search.inc).
     auto resolve_shp = [&](const std::string& image) -> ShpFile {
-        for (const auto& c : ra2assets::theater_candidates(image, art_chain().letter,
-                                                           art_chain().iso_mix,
-                                                           art_chain().art_mix, ".shp")) {
-            MixFile* m = get_mix(c.mix);
-            if (!m) continue;
-            if (const MixEntry* e = m->find(c.file)) return ShpFile::load(m->read(*e));
-        }
+        ShpFile shp;
+        if (asset_building_shp(image, shp, /*ra2_only=*/true)) return shp;
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
+    (void)get_mix;
 
     ba.roster.reserve(39);
     ba.art.reserve(39);
@@ -2189,6 +2223,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         try {
             slot.shp = resolve_shp(art_id);
             slot.ok = true;
+            building_art_extras(slot, art, rules, id, art_id);
             ++ok_n;
             if (!d.buildup.empty()) {
                 try {
@@ -2633,6 +2668,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     if (b.type < 0 || b.type >= static_cast<int>(ba.art.size())) return;
     const BuildingArt& art = ba.art[b.type];
     if (!art.ok) return;
+    if (art.invisible) return;   // W3-FIX-A InvisibleInGame=yes [RE: asset-search.md §3]
     const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
     g_overlay_bld = &b;   // W2-GA-14: per-building anim state for the overlay pass
 
@@ -2736,7 +2772,9 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
         if (!tex) {
             std::vector<uint8_t> idx = shp.decode_indexed(frame);
-            const ra2assets::Palette hp = ra2engine::house_draw_palette(ba.unit_pal, b.house);   // G-16
+            // W3-FIX-A: art Palette= draws through that palette, unremapped.
+            const ra2assets::Palette hp =
+                art.own_pal ? *art.own_pal : ra2engine::house_draw_palette(ba.unit_pal, b.house);   // G-16
             tex = static_cast<SDL_Texture*>(tc.get(key, idx.data(), f.w, f.h, hp));
         }
         SDL_RenderCopy(ren, tex, nullptr, &dst);
@@ -3379,7 +3417,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     if (g_fx) g_fx->draw(ren, tc, cam, W, H);   // G-83 muzzle / impact / death anims
     if (g_fx3) g_fx3->draw(ren, tc, cam, W, H);   // W3-FX particles / debris / line trails
     // W2-GA-05: the map's ambient light over every world sprite (GameScene only).
-    if (g_light) g_light->pass(ren, W, H);
+    if (g_light) g_light->pass(ren, W, H, cam);   // W3-FIX-A: + light sources
     // G-84: fog + shroud over every object, under the HUD bars.
     draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
@@ -5727,6 +5765,7 @@ public:
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
+        update_light_sources();   // W3-FIX-A
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
         if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
@@ -6255,6 +6294,7 @@ private:
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
     PresLight light_;   // W2-GA-05
+#include "light_sources.inc"   // W3-FIX-A building light sources
     PresTurrets turrets_;   // W2-GA-13
     // W2-GA-P4: every roster vehicle x every house colour rasterised on a
     // worker thread at game start instead of in the first frame each colour's

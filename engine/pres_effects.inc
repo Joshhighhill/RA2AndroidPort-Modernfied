@@ -158,15 +158,15 @@ public:
         twinkle_chance_ = std::max(1, std::atoi(gen("OreTwinkleChance").c_str()));
         metallic_ = split(gen("MetallicDebris"));
         splash_ = split(gen("SplashList"));
-        try { local_ = std::make_unique<ra2assets::MixFile>(ra2.open_nested("local.mix")); } catch (...) {}
-        if (local_)
-            if (const ra2assets::MixEntry* pe = local_->find(std::string("voxels.vpl"))) {
+        {   // voxels.vpl through the shared search list (W3-FIX-A AssetFS)
+            std::vector<uint8_t> raw;
+            if (asset_read("voxels.vpl", raw)) {
                 try {
-                    auto raw = local_->read(*pe);
                     vpl_ = ra2assets::Vpl::load(raw.data(), raw.size());
                     has_vpl_ = true;
                 } catch (...) {}
             }
+        }
     }
     void set_unit_palette(const ra2assets::Palette* p) { unit_pal_ = p; }
     const std::vector<std::string>& splash_list() const { return splash_; }
@@ -1056,16 +1056,13 @@ private:
         auto it = vox_defs_.find(key);
         if (it != vox_defs_.end()) return it->second.get();
         std::unique_ptr<VoxelDef> d;
-        if (local_) {
+        {
             const std::string base = pres_lower(key);
-            const ra2assets::MixEntry* ve = local_->find(base + ".vxl");
-            const ra2assets::MixEntry* he = local_->find(base + ".hva");
-            if (ve && he) {
+            std::vector<uint8_t> vr, hr;
+            if (asset_read(base + ".vxl", vr) && asset_read(base + ".hva", hr)) {
                 try {
                     d = std::make_unique<VoxelDef>();
                     d->name = key;
-                    auto vr = local_->read(*ve);
-                    auto hr = local_->read(*he);
                     d->vxl = ra2assets::load_vxl(vr.data(), vr.size());
                     d->hva = ra2assets::load_hva(hr.data(), hr.size());
                     d->elasticity = dbl(key, "Elasticity", 0.0);
@@ -1192,7 +1189,6 @@ private:
     const Ini* rules_ = nullptr;
     Ini ra2_rules_ = Ini::parse("");
     const ra2assets::MixFile* ra2_ = nullptr;
-    std::unique_ptr<ra2assets::MixFile> local_;
     ra2assets::Vpl vpl_;
     bool has_vpl_ = false;
     const ra2assets::Palette* unit_pal_ = nullptr;
