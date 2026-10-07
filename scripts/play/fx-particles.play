@@ -3,7 +3,7 @@
 # DamageSmokeOffset), a damaged Rhino trailing smoke, debris from destroyed
 # tanks / a harvester (MetallicDebris Bouncer anims + AXLE voxel debris), an
 # IFV's missile line trail (DRAGON UseLineTrail) and the ore twinkles
-# (OreTwinkle). Rocket trails, wakes and splashes: fx-naval.play.
+# (OreTwinkle), object AmbientSound loops (ore mines). Rocket trails, wakes and splashes: fx-naval.play.
 set render_every 300
 set on_quit continue
 click button "Single Player"
@@ -20,6 +20,7 @@ click unit 0:AMCV
 key d
 until 450 built(0,GACNST) == 1
 assert fx_twinkles > 0                              @W3-FX-twinkle
+assert ambient_live >= 1                            @W3-FX-ambient
 cheat reveal
 # --- 1. damaged building smoke ---------------------------------------------------
 cheat damage_building 0:GACNST 700                  @W3-FX-smoke
@@ -75,4 +76,14 @@ shot p07_ifv_trail                                  @W3-FX-trail
 wait 2
 view building 0:GACNST +3 +11
 shot p08_ifv_trail_b
+# --- 4. radar event zoom square on the minimap (BaseAttacked) ---------------------
+cheat w2 build GAPOWR
+cheat w2 build GAAIRC
+wait 200
+cheat damage_building 0:GAPOWR 50                   @W3-FX-radar
+wait 2
+assert radar_pings >= 1                             @W3-FX-radar
+shot p09_radar_ping                                 @W3-FX-radar
+wait 20
+shot p10_radar_ping_b                               @W3-FX-radar
 end

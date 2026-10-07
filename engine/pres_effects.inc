@@ -578,6 +578,8 @@ public:
         lines_[--instant_key_] = lt;
     }
     std::string unit_weapon(const std::string& image, int slot) { return weapon_of(unit_id(image), slot); }
+    // A rules key with the effects' RA2-first section lookup (AmbientSound, ...).
+    std::string rules_key(const std::string& s, const std::string& k) const { return rget(s, k); }
     long wakes_spawned() const { return wakes_; }
     long v3_puffs() const { return v3_puffs_; }
     void note_splash() { ++splashes_; }

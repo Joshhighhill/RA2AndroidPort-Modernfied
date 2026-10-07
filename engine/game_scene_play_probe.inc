@@ -28,6 +28,7 @@
         p.set("fx_lines", static_cast<double>(pres_.effects().line_count()));
         p.set("fx_v3_puffs", static_cast<double>(pres_.effects().v3_puffs()));
         p.set("fx_splashes", static_cast<double>(pres_.effects().splashes()));
+        p.set("ambient_live", static_cast<double>(pres_.ambient_live()));
         p.set("projectiles", static_cast<double>(world_.projectiles().size()));
         {   // W3-FX: who fired the newest projectile (trail checks)
             std::string who;

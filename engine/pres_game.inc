@@ -138,6 +138,7 @@ public:
         // W3-FX: particles / debris / trails / wakes on the game-frame clock.
         if (ba.ok) effects_.set_unit_palette(&ba.unit_pal);
         effects_.update(w, ba);
+        ambient_sounds(w, ba);   // W3-FX AmbientSound loops
         snd_.set_view(cam.x, cam.y, view_w, view_h);   // W2-GA-23 positional audio
         snd_.update_voices();
         for (const ra2engine::ProjectileEvent& e : pev)
@@ -996,6 +997,70 @@ private:
             prev = st;
         }
     }
+    // W3-FX AmbientSound: one looping positional voice per live object whose
+    // type has AmbientSound= (units, buildings, map terrain objects such as
+    // the ore mines' OreMineExtract), restarted when it ends, stopped when the
+    // object dies. Keyed by kind + index ("u", "b", "t").
+    struct Amb { std::string key; std::uint32_t h = 0; double x = 0, y = 0; bool seen = false; };
+    std::map<std::string, Amb> amb_;
+    std::map<std::string, std::string> amb_type_;   // type id -> AmbientSound ("" none)
+    long amb_started_ = 0;
+    const std::string& ambient_of(const std::string& id) {
+        auto it = amb_type_.find(id);
+        if (it != amb_type_.end()) return it->second;
+        return amb_type_.emplace(id, effects_.rules_key(id, "AmbientSound")).first->second;
+    }
+    void ambient_sounds(const ra2engine::World& w, const BuildingAssets& ba) {
+        for (auto& kv : amb_) kv.second.seen = false;
+        auto keep = [&](const std::string& k, const std::string& snd, double x, double y) {
+            if (snd.empty()) return;
+            Amb& a = amb_[k];
+            a.seen = true;
+            a.x = x;
+            a.y = y;
+            if (a.key.empty()) {
+                a.key = snd;
+                a.h = snd_.loop_at(snd, x, y);
+                ++amb_started_;
+                pres_log(frame_, "sound " + snd + " (ambient " + k + ")");
+            } else if (a.h && !snd_.update_loop(a.h, x, y)) {
+                a.h = snd_.loop_at(snd, x, y);   // the controller keeps it going
+            }
+        };
+        const auto& us = w.units();
+        for (std::size_t i = 0; i < us.size(); ++i) {
+            const ra2engine::Unit& u = us[i];
+            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+            keep("u" + std::to_string(i), ambient_of(effects_.unit_id(u.image)), u.fx, u.fy);
+        }
+        const auto& bs = w.buildings();
+        for (std::size_t i = 0; i < bs.size(); ++i) {
+            const ra2engine::Building& b = bs[i];
+            if (!b.alive || b.state == ra2engine::Building::State::Dead || b.type < 0 ||
+                b.type >= static_cast<int>(ba.roster.size()))
+                continue;
+            keep("b" + std::to_string(i), ambient_of(ba.roster[static_cast<std::size_t>(b.type)].id),
+                 b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0);
+        }
+        if (g_map_dressing) {
+            const auto& os = g_map_dressing->objects();
+            for (std::size_t i = 0; i < os.size(); ++i)
+                if (os[i].key.rfind("terr:", 0) == 0)
+                    keep("t" + std::to_string(i), ambient_of(os[i].key.substr(5)), os[i].x, os[i].y);
+        }
+        for (auto it = amb_.begin(); it != amb_.end();) {
+            if (!it->second.seen) {
+                snd_.stop_loop(it->second.h);
+                it = amb_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+public:
+    long ambient_started() const { return amb_started_; }
+    std::size_t ambient_live() const { return amb_.size(); }
+private:
     std::size_t units_seen_ = 0;
     std::vector<int> sw_anim_prev_;
     struct SwSeen { ra2engine::SuperweaponType type = ra2engine::SuperweaponType::None; bool ready = false; };
