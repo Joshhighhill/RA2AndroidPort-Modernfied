@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "combat.hpp"   // deliver_hit_from, rearm_secs
+#include "group_move.hpp"   // nearest_free_cells
 #include "world.hpp"
 
 namespace ra2engine {
@@ -169,6 +170,9 @@ void World::step_w5(double dt) {
         b.w5.overpowered = n >= 3 || (n >= 1 && !house_low_power(b.house));
     }
 
+    w5_step_defuse();   // (R-046) engineers disarming Ivan bombs
+    w5_step_repair_ifv(dt);   // (R-048) the Engineer IFV repairs friendly vehicles
+
     // (4) OpenTopped transports: passengers fire out [RE: abilities-w5.md §6].
     {
         const RulesW5& R = w5_.rules;
@@ -290,6 +294,115 @@ void World::w5_gap_pass(int phase) {
                 explored_[(std::size_t)h][c] = 0;
                 visible_[(std::size_t)h][c] = 0;
             }
+    }
+}
+
+bool World::order_defuse(int eng, int unit_target, int b_target) {
+    if (eng < 0 || eng >= (int)units_.size()) return false;
+    Unit& e = units_[(std::size_t)eng];
+    if (!live(e)) return false;
+    if (unit_target >= 0 && (unit_target >= (int)units_.size() || units_[(std::size_t)unit_target].bomb_frame < 0))
+        return false;
+    if (b_target >= 0 && (b_target >= (int)buildings_.size() || buildings_[(std::size_t)b_target].bomb_frame < 0))
+        return false;
+    if (unit_target < 0 && b_target < 0) return false;
+    e.w5.defuse_unit = unit_target;
+    e.w5.defuse_bld = b_target;
+    e.target = -1;
+    e.target_building = -1;
+    e.attack_order = false;
+    e.capture_target = -1;
+    return true;
+}
+
+// Engineer bomb defusal [RE: abilities-w5.md §8, BulletClass::Detonate
+// BombDisarm branch (WarheadType +0x16E) -> FUN_00438930 on a target whose
+// AttachedBomb (+0x38) is set]: the DefuseKit (Range 1.5, FireOnce) removes
+// the Ivan bomb; the engineer is not consumed.
+void World::w5_step_defuse() {
+    const int nu = (int)units_.size();
+    for (int i = 0; i < nu; ++i) {
+        Unit& e = units_[(std::size_t)i];
+        if (e.w5.defuse_unit < 0 && e.w5.defuse_bld < 0) continue;
+        if (!live(e)) { e.w5.defuse_unit = e.w5.defuse_bld = -1; continue; }
+        double tx, ty, reach = 1.5;
+        if (e.w5.defuse_unit >= 0) {
+            const Unit& v = units_[(std::size_t)e.w5.defuse_unit];
+            if (!v.alive || v.die_time >= 0.0 || v.bomb_frame < 0) { e.w5.defuse_unit = -1; continue; }
+            tx = v.fx; ty = v.fy;
+        } else {
+            const Building& b = buildings_[(std::size_t)e.w5.defuse_bld];
+            if (!live_bld(b) || b.bomb_frame < 0) { e.w5.defuse_bld = -1; continue; }
+            // nearest foundation cell
+            tx = std::max<double>(b.cx, std::min<double>(e.fx, b.cx + b.fw - 1));
+            ty = std::max<double>(b.cy, std::min<double>(e.fy, b.cy + b.fh - 1));
+        }
+        if (std::hypot(e.fx - tx, e.fy - ty) <= reach + 1e-9) {
+            if (e.w5.defuse_unit >= 0) units_[(std::size_t)e.w5.defuse_unit].bomb_frame = -1;
+            else buildings_[(std::size_t)e.w5.defuse_bld].bomb_frame = -1;
+            fire_events_.push_back({i, -1, e.w5.defuse_unit, e.w5.defuse_bld, 0, "DefuseKit"});
+            ++w5_.defusals;
+            e.w5.defuse_unit = e.w5.defuse_bld = -1;
+            continue;
+        }
+        if (!e.moving()) {
+            const std::vector<Cellxy> g = nearest_free_cells({(int)std::lround(tx), (int)std::lround(ty)}, 1,
+                                                             passable_, grid_w_, grid_h_, occ_);
+            if (!g.empty()) order_unit_move(i, g[0].x, g[0].y);
+        }
+    }
+}
+
+// IFV + Engineer (RepairBullet Damage=-50, Range 1.8, Mechanical warhead:
+// vehicles 100%, infantry 0%) [RE-FALLBACK: the original routes a negative
+// weapon through the friendly-target acquisition (TechnoClass target scan with
+// the "repair" threat type); here the nearest damaged allied vehicle within
+// Sight is chosen, approached and healed every ROF].
+void World::w5_step_repair_ifv(double dt) {
+    const int nu = (int)units_.size();
+    for (int i = 0; i < nu; ++i) {
+        Unit& u = units_[(std::size_t)i];
+        if (!u.w5.healer) continue;
+        if (!live(u)) { u.w5.heal_target = -1; continue; }
+        if (u.target >= 0 || u.target_building >= 0) {   // never "attack" with a repair gun
+            u.target = -1;
+            u.target_building = -1;
+            u.attack_order = false;
+        }
+        auto ok = [&](int j) {
+            if (j < 0 || j >= nu || j == i) return false;
+            const Unit& v = units_[(std::size_t)j];
+            return live(v) && v.is_vehicle && !v.is_aircraft && are_allied(u.house, v.house) && v.hp < v.max_hp &&
+                   damage_vs(-u.w_damage, u.w_verses, v.armor_ix) > 0;
+        };
+        int t = ok(u.w5.heal_target) ? u.w5.heal_target : -1;
+        if (t < 0 && !u.moving()) {
+            double best = 0.0;
+            const double reach = std::max(u.w_range, (double)u.sight);
+            for (int j = 0; j < nu; ++j) {
+                if (!ok(j)) continue;
+                const double d = std::hypot(units_[(std::size_t)j].fx - u.fx, units_[(std::size_t)j].fy - u.fy);
+                if (d > reach || (t >= 0 && d >= best)) continue;
+                t = j;
+                best = d;
+            }
+        }
+        u.w5.heal_target = t;
+        u.rof_cool = std::max(0.0, u.rof_cool - dt);
+        if (t < 0) continue;
+        Unit& v = units_[(std::size_t)t];
+        if (std::hypot(v.fx - u.fx, v.fy - u.fy) <= u.w_range + 1e-9) {
+            if (u.rof_cool > 0.0) continue;
+            const int heal = damage_vs(-u.w_damage, u.w_verses, v.armor_ix);
+            v.hp += std::min(heal, v.max_hp - v.hp);
+            u.rof_cool = rearm_secs(u.w_rof, &combat_rng_);
+            u.fire_flash = 0.4;
+            fire_events_.push_back({i, -1, t, -1, 0, "RepairBullet"});
+            ++w5_.repairs;
+        } else if (!u.moving()) {
+            const std::vector<Cellxy> g = nearest_free_cells({v.cell_x, v.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
+            if (!g.empty()) order_unit_move(i, g[0].x, g[0].y);
+        }
     }
 }
 

@@ -1088,6 +1088,13 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     else if (ability_flag(ini, wh, "Parasite", false)) s.kind = ra2engine::AbilityKind::Parasite;
     else if (ability_flag(ini, wh, "Temporal", false)) s.kind = ra2engine::AbilityKind::Temporal;
     else if (ability_flag(ini, wh, "IvanBomb", false)) s.kind = ra2engine::AbilityKind::IvanBomb;
+    {   // wave-5 R-048: projectile AA/AG + flight, the same resolver units use
+        const ra2engine::WeaponSlot ws = ra2engine::resolve_weapon_slot(rules, w);
+        s.slot_set = ws.valid;
+        s.aa = ws.aa;
+        s.ag = ws.ag;
+        s.proj = ws.proj;
+    }
     return s;
 }
 
@@ -1201,6 +1208,18 @@ void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, co
     r.self_heal_unit_amount = (int)rules.general_double("SelfHealUnitAmount", 5.0);
     r.open_topped_range_bonus = rules.section_double("CombatDamage", "OpenToppedRangeBonus", 2.0);
     r.open_topped_damage_mult = rules.section_double("CombatDamage", "OpenToppedDamageMultiplier", 1.2);
+    {   // [General] DefaultMirageDisguises=TREE01,TREE02,TREE03,TREE04
+        std::string cur;
+        for (char c : rules.general_string("DefaultMirageDisguises", "") + ",") {
+            if (c == ',') {
+                while (!cur.empty() && std::isspace((unsigned char)cur.back())) cur.pop_back();
+                std::size_t a = 0;
+                while (a < cur.size() && std::isspace((unsigned char)cur[a])) ++a;
+                if (a < cur.size()) r.mirage_trees.push_back(cur.substr(a));
+                cur.clear();
+            } else cur += c;
+        }
+    }
     std::map<std::string, ra2engine::UnitProfileW5> prof;
     for (const char* list : {"InfantryTypes", "VehicleTypes", "AircraftTypes"}) {
         if (!ini.has(list)) continue;
@@ -1217,7 +1236,9 @@ void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, co
                 }
             }
             p.open_topped = rules.section_flag(id, "OpenTopped", false);
-            if (p.assault || p.open_topped) prof[rules.image(id)] = p;
+            if (rules.section_double(id, "Passengers", 0.0) > 0.0)
+                p.deploy_frames = (int)(rules.section_double(id, "DeployTime", 0.0) * 900.0);
+            if (p.assault || p.open_topped || p.deploy_frames > 0) prof[rules.image(id)] = p;
         }
     }
     w5_arm_building_art(ba, art_ini);

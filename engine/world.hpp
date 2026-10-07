@@ -1761,6 +1761,9 @@ public:
     const WorldW5& w5_state() const { return w5_; }
     // IsPowerOnline with the Tesla overpower exception.
     bool w5_power_online(int b_idx) const;
+    // Engineer bomb defusal (R-046): walk next to the bombed unit/building and
+    // disarm it (DefuseKit, BombDisarm warhead). false when nothing to defuse.
+    bool order_defuse(int eng, int unit_target, int b_target);
     // Cells an enemy gap currently keeps black for house h (probe witness).
     int w5_gap_hidden(int h) const;
 
@@ -2147,6 +2150,8 @@ private:
     WorldW5 w5_;
     std::vector<std::uint8_t> w5_hide_, w5_own_;   // gap scratch (per frame, not saved)
     void w5_gap_pass(int phase);
+    void w5_step_defuse();
+    void w5_step_repair_ifv(double dt);
     bool w5_prism_fire(int bi, int target_unit, int slot);   // building_combat.cpp
     // --- G16 world depth (world_depth.cpp) ---
     DepthRules depth_rules_;

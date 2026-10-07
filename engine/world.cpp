@@ -1447,6 +1447,15 @@ void World::step_cargo(double /*dt*/) {
             t.unload_pending = false;
             continue;
         }
+        // Wave-5 (R-051) [RE: abilities-w5.md §7, FUN_004A5150 armed from the
+        // transport's TechnoType DeployTime (+0x3C8, minutes x 900)]: the
+        // doors open DeployTime frames after the unload starts; passengers
+        // leave once they are open.
+        if (t.w5.p.deploy_frames > 0 && w5_.armed) {
+            const std::int64_t now = static_cast<std::int64_t>(w5_.frame);
+            if (t.w5.door_until < 0) t.w5.door_until = now + t.w5.p.deploy_frames;
+            if (now < t.w5.door_until) continue;
+        }
         const int p = next_eject(t);           // LIFO -- the LAST-boarded leaves
                                                // first [RE-GATE APPLIED:
                                                // transport-cargo.md §6 -- CONFIRMED]
@@ -1497,6 +1506,7 @@ void World::step_cargo(double /*dt*/) {
         cargo_events_.push_back({CargoEvent::Kind::Eject, p, static_cast<int>(ti),
                                  cell.x, cell.y});
         if (t.cargo.empty()) t.unload_pending = false;
+        if (!t.unload_pending) t.w5.door_until = -1;   // wave-5: doors shut
     }
 }
 
@@ -2028,6 +2038,17 @@ void World::step_disguises() {
             // Drawn as itself (the tree art is terrain, not a unit SHP).
             u.disguised_as_type = u.image;
             u.disguised_as_house = u.house;
+            // Wave-5 (R-047) [RE: abilities-w5.md §9, UnitClass::UpdateDisguise
+            // FUN_007456F0 0x745870]: DisguisedAsType = DefaultMirageDisguises
+            // [Random(0, n-1)] (a TerrainType), DisguisedAsHouse = none. The
+            // presentation (agent D) draws the tree for enemies.
+            if (w5_.armed && !w5_.rules.mirage_trees.empty()) {
+                const int n = (int)w5_.rules.mirage_trees.size();
+                const int k = std::min(n - 1, static_cast<int>(combat_rng_.next() % (std::uint32_t)n));
+                // Exposed in Unit::w5.mirage_tree (disguised_as_type keeps the
+                // tank image so today's draw path still finds an SHP).
+                u.w5.mirage_tree = w5_.rules.mirage_trees[(std::size_t)k];
+            }
             capture_any_ = true;   // arm the DetectDisguise pass
         }
     }

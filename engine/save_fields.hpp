@@ -581,6 +581,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.percent_at_max);
     io(ar, v.rad_level);
     io(ar, v.kind);
+    io(ar, v.slot_set); io(ar, v.aa); io(ar, v.ag); io(ar, v.proj);   // wave-5 R-048
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);
@@ -654,20 +655,21 @@ template <class Ar> void fields(Ar& ar, BldW5& v) {
     io(ar, v.overpowerers); io(ar, v.overpowered); io(ar, v.gap_on);
 }
 template <class Ar> void fields(Ar& ar, UnitProfileW5& v) {
-    io(ar, v.assault); io(ar, v.assault_rof); io(ar, v.open_topped);
+    io(ar, v.assault); io(ar, v.assault_rof); io(ar, v.open_topped); io(ar, v.deploy_frames);
 }
 template <class Ar> void fields(Ar& ar, UnitW5& v) {
-    io(ar, v.bound); io(ar, v.p); io(ar, v.charging); io(ar, v.next_assault);
+    io(ar, v.bound); io(ar, v.p); io(ar, v.charging); io(ar, v.next_assault); io(ar, v.door_until);
+    io(ar, v.defuse_unit); io(ar, v.defuse_bld); io(ar, v.healer); io(ar, v.heal_target); io(ar, v.mirage_tree);
 }
 template <class Ar> void fields(Ar& ar, RulesW5& v) {
     io(ar, v.prism_support_modifier); io(ar, v.prism_support_max); io(ar, v.prism_support_delay);
     io(ar, v.prism_support_duration); io(ar, v.self_heal_inf_frames); io(ar, v.self_heal_inf_amount);
     io(ar, v.self_heal_unit_frames); io(ar, v.self_heal_unit_amount);
-    io(ar, v.open_topped_range_bonus); io(ar, v.open_topped_damage_mult);
+    io(ar, v.open_topped_range_bonus); io(ar, v.open_topped_damage_mult); io(ar, v.mirage_trees);
 }
 template <class Ar> void fields(Ar& ar, WorldW5& v) {
     io(ar, v.stolen_tech); io(ar, v.armed); io(ar, v.rules); io(ar, v.profiles); io(ar, v.frame);
-    io(ar, v.gap_created); io(ar, v.passenger_shots); io(ar, v.prism_supports);
+    io(ar, v.gap_created); io(ar, v.passenger_shots); io(ar, v.prism_supports); io(ar, v.defusals); io(ar, v.repairs);
 }
 
 // --- unit / building types ---

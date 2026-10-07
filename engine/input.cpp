@@ -502,6 +502,16 @@ void Input::issue_order(int px, int py) {
         // stays default (noted divergence, no new UI systems).
         // Wave-5 (R-052): an allied house's transport takes the player's
         // infantry too (the original's IsAlliedWith enter test).
+        // Wave-5 (R-046): a single selected engineer right-clicking a unit
+        // that carries an Ivan bomb walks over and disarms it (DefuseKit).
+        if (idx >= 0 && world_.units()[idx].bomb_frame >= 0) {
+            const int eng = sel_engineer_idx(world_);
+            if (eng >= 0 && world_.order_defuse(eng, idx, -1)) {
+                actions_.move_ordered = true;
+                actions_.actor = eng;
+                return;
+            }
+        }
         if (idx >= 0 && (world_.controllable(world_.units()[idx].house) ||
                          world_.are_allied(0, world_.units()[idx].house)) &&
             world_.units()[idx].passengers_max > 0) {
@@ -602,6 +612,13 @@ void Input::issue_order(int px, int py) {
             if (b_hit >= 0) {
                 const Building& tb = world_.buildings()[b_hit];
                 const int eng_house = world_.units()[eng].house;
+                // Wave-5 (R-046): a bombed own/allied building -> defuse.
+                if (tb.bomb_frame >= 0 && world_.are_allied(eng_house, tb.house) &&
+                    world_.order_defuse(eng, -1, b_hit)) {
+                    actions_.move_ordered = true;
+                    actions_.actor = eng;
+                    return;
+                }
                 // W2-SK-12: an enemy Capturable=false structure shows the
                 // no-entry cursor in the original -- the click does nothing.
                 if (tb.house != eng_house && !world_.are_allied(eng_house, tb.house) &&

@@ -397,6 +397,14 @@
         p.set("garrison_shots", static_cast<double>(world_.garrison_shots()));
         // Wave-5 (agent C) witnesses.
         p.set("prism_supports", static_cast<double>(world_.w5_state().prism_supports));
+        {
+            int bombs = 0;
+            for (const ra2engine::Unit& u : world_.units()) bombs += u.alive && u.house == 0 && u.bomb_frame >= 0;
+            for (const ra2engine::Building& b : world_.buildings()) bombs += b.alive && b.house == 0 && b.bomb_frame >= 0;
+            p.set("bombs", static_cast<double>(bombs));
+        }
+        p.set("ifv_repairs", static_cast<double>(world_.w5_state().repairs));
+        p.set("defusals", static_cast<double>(world_.w5_state().defusals));
         p.set("passenger_shots", static_cast<double>(world_.w5_state().passenger_shots));
         p.set("stolen_tech", static_cast<double>(world_.stolen_tech(0)));
         p.set("gap_hidden", static_cast<double>(world_.w5_gap_hidden(0)));

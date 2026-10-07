@@ -67,6 +67,7 @@ struct UnitProfileW5 {
     bool assault = false;        // Secondary warhead ElectricAssault=yes (Tesla Trooper)
     int assault_rof = 25;        // that weapon's ROF (AssaultBolt 25)
     bool open_topped = false;    // OpenTopped=yes (Battle Fortress)
+    int deploy_frames = 0;       // transport DeployTime= (minutes) * 900, ftol (.022 -> 19)
 };
 
 // Per unit OBJECT.
@@ -75,6 +76,14 @@ struct UnitW5 {
     UnitProfileW5 p;
     int charging = -1;           // building index this trooper is overpowering
     std::int64_t next_assault = 0;
+    std::int64_t door_until = -1;   // transport: unload doors open at this frame
+    int defuse_unit = -1;        // engineer: bombed unit to disarm (BombDisarm)
+    int defuse_bld = -1;         // ... or bombed building
+    bool healer = false;         // current weapon heals (IFV + Engineer RepairBullet)
+    int heal_target = -1;        // damaged friendly vehicle being repaired
+    // Mirage Tank (R-047): the TerrainType it poses as while disguised
+    // (DefaultMirageDisguises pick); the presentation draws it for enemies.
+    std::string mirage_tree;
 };
 
 // Recovered globals.
@@ -87,6 +96,7 @@ struct RulesW5 {
     int self_heal_unit_frames = 75, self_heal_unit_amount = 5;
     double open_topped_range_bonus = 2.0;
     double open_topped_damage_mult = 1.2;
+    std::vector<std::string> mirage_trees;   // [General] DefaultMirageDisguises (TREE01..04)
 };
 
 // World-wide state.
@@ -99,6 +109,8 @@ struct WorldW5 {
     bool gap_created = false;                // a gap switched on this frame
     long long passenger_shots = 0;           // OpenTopped shots fired (probe witness)
     long long prism_supports = 0;            // support beams fired (probe witness)
+    long long defusals = 0;                  // Ivan bombs disarmed by engineers
+    long long repairs = 0;                   // IFV RepairBullet heals
 };
 
 }  // namespace ra2engine
