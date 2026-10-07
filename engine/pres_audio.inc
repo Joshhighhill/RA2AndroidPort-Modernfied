@@ -130,7 +130,7 @@ public:
                                                              {"language.mix", "audio.mix"}};
         for (const auto& [top, nested] : chain) {
             try {
-                MixFile t = MixFile::open(ra2assets::read_file(dir + top));
+                MixFile t = MixFile::open_path(dir + top);
                 auto m = std::make_unique<MixFile>(t.open_nested(nested));
                 Bag b;
                 if (const MixEntry* ie = m->find("audio.idx")) {
@@ -147,7 +147,7 @@ public:
         }
         try {
             theme_mix_ = std::make_unique<MixFile>(
-                MixFile::open(ra2assets::read_file(dir + "thememd.mix")));
+                MixFile::open_path(dir + "thememd.mix"));
         } catch (const std::exception&) {}
         std::cerr << "[pres-audio] eva=" << eva_.size() << " themes=" << themes_.size()
                   << " bags=" << bags_.size() << "\n";

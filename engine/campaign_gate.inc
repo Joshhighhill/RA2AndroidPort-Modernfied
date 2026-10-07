@@ -26,13 +26,13 @@ DemoCampaignResult simulate_campaign(const std::string& map, const std::string& 
                                      const std::string& kill_prefix = "") {
     DemoCampaignResult r;
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     MapSelection sel;
     sel.mix = camp::mix_for_map(map);
     sel.name = camp::lower(map);
     Assets a = load_assets(dir, ra2, sel);
     UnitAssets ua = load_unit_assets(dir, ra2);
-    ra2assets::MixFile language = ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    ra2assets::MixFile language = ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -149,13 +149,13 @@ constexpr long kCampSaveFrame = 300;
 std::vector<std::string> campaign_saveload_segment(bool& ok) {
     std::vector<std::string> out;
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     MapSelection sel;
     sel.mix = camp::mix_for_map("ALL01t.MAP");
     sel.name = "all01t.map";
     Assets a = load_assets(dir, ra2, sel);
     UnitAssets ua = load_unit_assets(dir, ra2);
-    ra2assets::MixFile language = ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+    ra2assets::MixFile language = ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -273,7 +273,7 @@ int run_demo_campaign() {
 constexpr long kSurveyFrames = 450;
 int run_campaign_survey() {
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     const ra2engine::CampaignTables t = camp::load_tables(ra2);
     int ok_n = 0, total = 0;
     for (const char* side : {"GDI", "Nod"}) {
@@ -294,7 +294,7 @@ int run_campaign_survey() {
                 Assets a = load_assets(dir, ra2, sel);
                 UnitAssets ua = load_unit_assets(dir, ra2);
                 ra2assets::MixFile language =
-                    ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+                    ra2assets::MixFile::open_path(dir + "language.mix");
                 Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
                 Rules rules = Rules::load(rules_ini);
                 Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");

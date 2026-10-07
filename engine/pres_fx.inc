@@ -68,7 +68,7 @@ public:
         art_ = &art_ini;
         try { conquer_ = std::make_unique<MixFile>(ra2.open_nested("conquer.mix")); } catch (...) {}
         try {
-            MixFile md = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
+            MixFile md = MixFile::open_path(dir + "ra2md.mix");
             conqmd_ = std::make_unique<MixFile>(md.open_nested("conqmd.mix"));
         } catch (...) {}
         try {

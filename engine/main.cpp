@@ -201,7 +201,7 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
                    const MapSelection& sel = MapSelection{}) {
     // Map: read the selected map INI. The default selection is byte-for-byte
     // the old hardcoded one (mapsmd03.mix / 0x133a0cb2).
-    MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+    MixFile maps = MixFile::open_path(dir + sel.mix);
     const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
     if (!me) throw std::runtime_error("map entry not found in " + sel.mix + ": " +
                                       (sel.name.empty() ? "id 0x133a0cb2" : sel.name));
@@ -231,7 +231,7 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
     // default TEMPERATE path never touches it (maps.md §7 rule 5).
     std::unique_ptr<MixFile> yr;
     if (chain->yr_only || ini_is_md)
-        yr.reset(new MixFile(MixFile::open(ra2assets::read_file(dir + "ra2md.mix"))));
+        yr.reset(new MixFile(MixFile::open_path(dir + "ra2md.mix")));
     const MixFile& parent = chain->yr_only ? *yr : ra2;
 
     // Palette: the iso TILE palette.
@@ -479,7 +479,7 @@ struct BuildingAssets {
 // their Ini by reference -- see rules.hpp/art.hpp) -- callers keep both as
 // locals in the same function scope.
 Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
-    MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
+    MixFile top = MixFile::open_path(dir + "ra2md.mix");
 
     std::vector<uint8_t> ini_bytes;
     if (const MixEntry* e = top.find(mix_id(name))) {
@@ -614,7 +614,7 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
     ra2assets::Sounds sounds = ra2assets::Sounds::load(snd_ini);
 
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     ra2assets::MixFile audio_mix = language.open_nested("audio.mix");
     const ra2assets::MixEntry* ie = audio_mix.find("audio.idx");
     if (!ie) throw std::runtime_error("audio.idx not found in language.mix/audio.mix");
@@ -1103,8 +1103,22 @@ ShpFile load_unit_shp(const MixFile& conquer, const std::string& image) {
         se = conquer.find(lower);
         shp_name = lower;
     }
-    if (!se)
+    if (!se) {
+        // W2-GA-10: a few RA2-roster SHPs ship only in ra2md.mix/conqmd.mix on
+        // a combined install (GGI, the Guardian GI) -- the same conquer ->
+        // conqmd pair PresFx::load_shp searches.
+        try {
+            static const MixFile conqmd =
+                MixFile::open_path(env_install_dir() + "ra2md.mix").open_nested("conqmd.mix");
+            if (const MixEntry* me = conqmd.find(shp_name)) {
+                ShpFile shp = ShpFile::load(conqmd.read(*me));
+                std::cerr << "[shp] image=" << image << " file=conqmd.mix/" << shp_name
+                          << " frames=" << shp.count() << "\n";
+                return shp;
+            }
+        } catch (const std::exception&) {}
         throw std::runtime_error("unit SHP not found in ra2.mix/conquer.mix: " + image + ".shp");
+    }
     ShpFile shp = ShpFile::load(conquer.read(*se));
     std::cerr << "[shp] image=" << image << " file=" << shp_name << " frames=" << shp.count()
               << " canvas=" << shp.width() << "x" << shp.height() << "\n";
@@ -1212,7 +1226,7 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
                 md_tried = true;
                 try {
                     md_top = std::make_unique<MixFile>(
-                        MixFile::open(ra2assets::read_file(dir + "ra2md.mix")));
+                        MixFile::open_path(dir + "ra2md.mix"));
                     md_local = std::make_unique<MixFile>(md_top->open_nested("localmd.mix"));
                 } catch (const std::exception&) { md_local.reset(); }
             }
@@ -1512,7 +1526,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
     // leaves every unit cameo absent (defs still gate on the cameo NAME string).
     std::unique_ptr<MixFile> cameo_mix;
     try {
-        MixFile language = MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        MixFile language = MixFile::open_path(dir + "language.mix");
         cameo_mix = std::make_unique<MixFile>(language.open_nested("cameo.mix"));
     } catch (const std::exception&) { cameo_mix.reset(); }
 
@@ -2804,7 +2818,7 @@ const P5Art* g_p5_art = nullptr;
 P5Art load_p5_art(const std::string& dir, const ra2assets::MixFile& ra2) {
     P5Art art;
     try {
-        MixFile top = MixFile::open(ra2assets::read_file(dir + "ra2md.mix"));
+        MixFile top = MixFile::open_path(dir + "ra2md.mix");
         MixFile conqmd = top.open_nested("conqmd.mix");
         if (const MixEntry* e = conqmd.find(std::string("pips.shp"))) {
             art.pips = ShpFile::load(conqmd.read(*e));
@@ -3173,12 +3187,12 @@ int run_screenshot(const std::string& out_path) {
     // ra2.mix opened ONCE and shared by both loaders; the buffer stays
     // resident for the run (accepted tradeoff, see the load_assets comment).
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -4751,7 +4765,7 @@ public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
         : no_audio_(no_audio),
           dir_(env_install_dir()),
-          ra2_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "ra2.mix"))),
+          ra2_(ra2assets::MixFile::open_path(dir_ + "ra2.mix")),
           // [RE: maps.md §2/§7 rule 2] Load the config's chosen multiplayer map
           // when one is set; an EMPTY map_file keeps the engine's historical
           // default selection, so nothing that does not pick a map changes.
@@ -4768,7 +4782,7 @@ public:
                                    ? "sidec02.mix" : "sidec01.mix",
                load_unit_assets(dir_, ra2_))),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
-          language_(ra2assets::MixFile::open(ra2assets::read_file(dir_ + "language.mix"))),
+          language_(ra2assets::MixFile::open_path(dir_ + "language.mix")),
           // Rules/Art wrap their Ini BY REFERENCE -- the Ini must outlive them, so
           // rules_ini_/art_ini_ are members constructed before rules_/art_ (mirrors
           // the old run_interactive's named-local Inis kept alive for the whole run).
@@ -5233,7 +5247,7 @@ public:
                 !cfg_.campaign_map.empty()
                     ? MapSelection{camp::mix_for_map(cfg_.campaign_map), 0u, camp::lower(cfg_.campaign_map)}
                     : cfg_.map_file.empty() ? MapSelection{} : MapSelection{"multimd.mix", 0u, cfg_.map_file};
-            MixFile maps = MixFile::open(ra2assets::read_file(dir_ + sel.mix));
+            MixFile maps = MixFile::open_path(dir_ + sel.mix);
             const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
             if (!me) return;
             const auto raw = maps.read(*me);
@@ -6036,7 +6050,7 @@ struct MenuArtStore {
 std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
     auto ma = std::make_unique<MenuAudio>();
     try {
-        MixFile theme = MixFile::open(read_file(dir + "theme.mix"));
+        MixFile theme = MixFile::open_path(dir + "theme.mix");
         const MixEntry* e = theme.find("grinder.wav");
         if (!e) { std::cerr << "[menu-music] grinder.wav not in theme.mix\n"; return ma; }
         std::vector<uint8_t> bytes = theme.read(*e);
@@ -6060,7 +6074,7 @@ std::unique_ptr<MenuAudio> load_menu_music(const std::string& dir) {
         try {
             Ini snd_ini = load_ini_from_ra2md(dir, "soundmd.ini");
             ra2assets::Sounds sounds = ra2assets::Sounds::load(snd_ini);
-            MixFile language = MixFile::open(read_file(dir + "language.mix"));
+            MixFile language = MixFile::open_path(dir + "language.mix");
             MixFile audio_mix = language.open_nested("audio.mix");
             const MixEntry* ie = audio_mix.find("audio.idx");
             const MixEntry* be = audio_mix.find("audio.bag");
@@ -6130,7 +6144,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
         }
     };
     try {
-        MixFile ra2 = MixFile::open(read_file(dir + "ra2.mix"));
+        MixFile ra2 = MixFile::open_path(dir + "ra2.mix");
         try { MixFile neutral = ra2.open_nested("neutral.mix");
               store.bg = try_shp(neutral, "mnscrnl.shp");
               // [Task 1] True-design shell chrome (loaded, not yet composited).
@@ -6220,7 +6234,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     // parse error) leaves bink_dec null -> draw_shell falls back to the static
     // mnscrns radar map (partial-install safe, never crashes).
     try {
-        MixFile language = MixFile::open(read_file(dir + "language.mix"));
+        MixFile language = MixFile::open_path(dir + "language.mix");
         if (const MixEntry* be = language.find(std::string("ra2ts_s.bik"))) {
             store.bink_file = std::make_unique<ra2assets::BinkFile>(
                 ra2assets::BinkFile::parse(language.read(*be)));
@@ -7216,7 +7230,7 @@ int run_demo_move(int goal_x, int goal_y) {
     const std::string end_png = scratch + "task12_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 1);
@@ -7310,7 +7324,7 @@ int run_demo_move(int goal_x, int goal_y) {
 // stranded. Prints the numbers; exits 0 only if both checks hold.
 int run_demo_retarget(int x1, int y1, int x2, int y2) {
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, 1);
@@ -7390,7 +7404,7 @@ int run_demo_group(int n, int gx, int gy) {
     const std::string end_png = scratch + "demo_group_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, n);
@@ -7793,7 +7807,7 @@ int run_demo_tank() {
     const std::string end_png = scratch + "demo_tank_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
@@ -7885,7 +7899,7 @@ int run_demo_combat(int seed) {
     const std::string end_png = scratch + "demo_combat_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
 
@@ -8212,11 +8226,11 @@ int run_demo_base() {
     const std::string end_png = scratch + "demo_base_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -8560,11 +8574,11 @@ int run_demo_econ() {
     const std::string end_png = scratch + "demo_econ_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -8865,11 +8879,11 @@ int run_demo_prod() {
     const std::string end_png = scratch + "demo_prod_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -9159,11 +9173,11 @@ int run_demo_techtree() {
     const std::string end_png = scratch + "demo_techtree_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -9367,11 +9381,11 @@ int run_demo_ai_base() {
     const std::string end_png = scratch + "demo_ai_base_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -9661,11 +9675,11 @@ int run_demo_ai_team() {
     const std::string end_png = scratch + "demo_ai_team_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -10015,11 +10029,11 @@ int run_demo_ai_trigger() {
     const std::string end_png = scratch + "demo_ai_trigger_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -10323,7 +10337,7 @@ int run_demo_transport() {
     const std::string end_png = scratch + "demo_transport_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     TransportAssets ta = load_transport_assets(dir, ra2, ua.pal);
@@ -10604,7 +10618,7 @@ int run_demo_aircraft() {
     const std::string end_png = scratch + "demo_aircraft_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     AircraftAssets aa = load_aircraft_assets(dir, ra2, ua.pal);
@@ -10910,7 +10924,7 @@ int run_demo_naval() {
     const std::string end_png = scratch + "demo_naval_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     NavalAssets na = load_naval_assets(dir, ra2, ua.pal);
@@ -11176,7 +11190,7 @@ int run_demo_superweapon() {
     const std::string end_png = scratch + "demo_superweapon_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;           // no voxel units in this gate
@@ -11510,7 +11524,7 @@ int run_demo_capture() {
     const std::string end_png = scratch + "demo_capture_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
@@ -11791,7 +11805,7 @@ int run_demo_shroud() {
     const std::string end_png = scratch + "demo_shroud_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
@@ -12182,7 +12196,7 @@ int run_demo_multihouse() {
     const std::string end_png = scratch + "demo_multihouse_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     std::vector<const VehicleAssets*> vlist;            // no voxel units in this gate
@@ -12385,11 +12399,11 @@ int run_demo_skirmish() {
     const std::string end_png = scratch + "demo_skirmish_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -12863,7 +12877,7 @@ int run_demo_maps() {
     const std::string end_png   = scratch + "demo_maps_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
 
     // The catalog (multimd.mix + langmd.mix) -- opened HERE, in the gate, never
     // inside load_assets (maps.md §7 rule 5).
@@ -12879,7 +12893,7 @@ int run_demo_maps() {
     Assets a = load_assets(dir, ra2, MapSelection{"multimd.mix", 0u, kDemoMapsFile});
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -13399,14 +13413,14 @@ int run_demo_triggers() {
     const std::string end_png = scratch + "demo_triggers_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);   // DEFAULT selection: sov07tmd.map
     // The same map entry, re-read as INI for its trigger sections (gate-local;
     // load_assets/MapFile are untouched).
     ra2assets::Ini map_ini = ra2assets::Ini::parse("");
     {
         const MapSelection sel;
-        MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+        MixFile maps = MixFile::open_path(dir + sel.mix);
         const MixEntry* me = maps.find(sel.id);
         if (!me) {
             std::cerr << "[demo-triggers] FAILED: gate map entry not found\n";
@@ -13417,7 +13431,7 @@ int run_demo_triggers() {
     }
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -13486,11 +13500,11 @@ int run_demo_roster() {
     const std::string end_png = scratch + "demo_roster_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -13888,11 +13902,11 @@ int run_demo_roster2() {
     const std::string end_png = scratch + "demo_roster2_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -14347,11 +14361,11 @@ int run_demo_repair() {
     const std::string end_png = scratch + "demo_repair_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -14677,7 +14691,7 @@ int run_demo_projectile() {
     const std::string end_png = scratch + "demo_projectile_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     VehicleAssets rhino = load_vehicle_assets(dir, ra2, ua.pal, "HTNK");
@@ -15173,11 +15187,11 @@ int run_demo_abilities() {
     const std::string end_png = scratch + "demo_abilities_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -15641,7 +15655,7 @@ int run_demo_veterancy() {
     const std::string end_png = scratch + "demo_veterancy_end.png";
 
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -16017,11 +16031,11 @@ SlResult sl_run_triggers(Assets& a, UnitAssets& ua, const TriggerDemoTables& t,
 
 int run_demo_saveload() {
     const std::string dir = env_install_dir();
-    ra2assets::MixFile ra2 = ra2assets::MixFile::open(ra2assets::read_file(dir + "ra2.mix"));
+    ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
     Assets a = load_assets(dir, ra2);   // DEFAULT selection: sov07tmd.map
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2assets::MixFile language =
-        ra2assets::MixFile::open(ra2assets::read_file(dir + "language.mix"));
+        ra2assets::MixFile::open_path(dir + "language.mix");
     Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
     Rules rules = Rules::load(rules_ini);
     Ini art_ini = load_ini_from_ra2md(dir, "artmd.ini");
@@ -16052,7 +16066,7 @@ int run_demo_saveload() {
     ra2assets::Ini map_ini = ra2assets::Ini::parse("");
     {
         const MapSelection sel;
-        MixFile maps = MixFile::open(ra2assets::read_file(dir + sel.mix));
+        MixFile maps = MixFile::open_path(dir + sel.mix);
         const MixEntry* me = maps.find(sel.id);
         if (!me) {
             std::cerr << "[demo-saveload] FAILED: gate map entry not found\n";
