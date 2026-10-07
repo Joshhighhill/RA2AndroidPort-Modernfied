@@ -3068,11 +3068,26 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             if (bs[i].alive && pres_building_seen(world, bs[i])) A.push_back({bkey(i), 0, i});
         std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         // G-87: map [Terrain] objects / civilian buildings sort with the buildings.
+        // W2-GA-P1: they are static, so their order is built once per dressing
+        // set and merged (buildings first on ties, as the stable sort gave).
         if (g_map_dressing) {
+            static const PresMap* s_for = nullptr;
+            static std::size_t s_n = 0;
+            static std::vector<DrawItem> s_objs;
             const auto& objs = g_map_dressing->objects();
-            for (int i = 0; i < static_cast<int>(objs.size()); ++i)
-                A.push_back({(objs[i].x + (objs[i].fw - 1) / 2.0) + (objs[i].y + (objs[i].fh - 1) / 2.0), 2, i});
-            std::sort(A.begin(), A.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+            if (s_for != g_map_dressing || s_n != objs.size()) {
+                s_for = g_map_dressing;
+                s_n = objs.size();
+                s_objs.clear();
+                for (int i = 0; i < static_cast<int>(objs.size()); ++i)
+                    s_objs.push_back({(objs[i].x + (objs[i].fw - 1) / 2.0) + (objs[i].y + (objs[i].fh - 1) / 2.0), 2, i});
+                std::stable_sort(s_objs.begin(), s_objs.end(),
+                                 [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+            }
+            std::vector<DrawItem> AB(A.size() + s_objs.size());
+            std::merge(A.begin(), A.end(), s_objs.begin(), s_objs.end(), AB.begin(),
+                       [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
+            A.swap(AB);
         }
         for (int i : uorder) B.push_back({us[i].fx + us[i].fy, 1, i});
         merged.resize(A.size() + B.size());

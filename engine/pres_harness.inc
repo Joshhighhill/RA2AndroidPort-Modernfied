@@ -6,7 +6,7 @@
 // music / effects) so audio triggers can be proven through the real update()
 // path without an audio device.
 //
-//   ra2engine --scene-shot <stem> [--map xmp31s2.map] [--secs 2,30,60]
+//   ra2engine --scene-shot <stem> [--map xmp31s2.map] [--secs 2,30,60] [--view X,Y] [--reveal]
 //             [--ai N] [--script none|fight|build] [--side allied|soviet]
 //             [--color N] [--audio]
 //
@@ -20,6 +20,8 @@ struct PresHarness {
         std::vector<double> secs = {2.0};
         int ai = -1, color = -1, mouse_x = -1, mouse_y = -1;
         bool select_all = false;
+        int view_x = -1, view_y = -1;
+        bool reveal_all = false;
         std::string peek;
         std::vector<std::string> give;   // --give ID: instant house-0 building near the yard   // terrain | overlay | civ: centre + reveal on the first such map object
         bool audio = false;
@@ -34,6 +36,12 @@ struct PresHarness {
             else if (a == "--audio") audio = true;
             else if (a == "--select") select_all = true;
             else if (a == "--peek") peek = next();
+            else if (a == "--view") {   // --view X,Y: centre on + reveal that cell
+                const std::string v = next();
+                view_x = std::atoi(v.c_str());
+                view_y = std::atoi(v.substr(v.find(',') + 1).c_str());
+            }
+            else if (a == "--reveal") reveal_all = true;
             else if (a == "--give") give.push_back(next());
             else if (a == "--mouse") {
                 const std::string v = next();
@@ -104,6 +112,12 @@ struct PresHarness {
                         gs.cam_.y = static_cast<int>(GameScene::kWinH / 2.0 - (o.x + o.y) * 15.0);
                         break;
                     }
+            }
+            if (reveal_all) gs.world_.reveal_all_house(0);
+            if (view_x >= 0) {
+                gs.world_.reveal_source(0, view_x, view_y, 10);
+                gs.cam_.x = static_cast<int>(gs.playfield_w_ / 2.0 - (view_x - view_y) * 30.0);
+                gs.cam_.y = static_cast<int>(GameScene::kWinH / 2.0 - (view_x + view_y) * 15.0);
             }
             if (select_all)
                 for (auto& u : gs.world_.units()) u.selected = (u.house == 0 && u.alive);
