@@ -4,6 +4,7 @@
 // Calibration: docs/re/economy.md (§ refs inline). No SDL/OS.
 #include <cstdint>
 #include <vector>
+#include "occupancy.hpp"
 #include "ra2assets/map.hpp"
 
 namespace ra2engine {
@@ -37,6 +38,40 @@ struct OreRng {
     std::uint32_t s = 0x0EC0417Au;   // fixed seed: demo determinism
     std::uint32_t next();            // xorshift32; never returns with s==0
     int below(int n);                // uniform [0, n), n >= 1
+};
+
+// W2-SK-01 [RE: gamemd TerrainClass::AI 0x71B9D0 + CellClass forced spread
+// FUN_00483690 / place FUN_004870A0, pinned by the wave-2 skirmish fix]:
+// an ore mine (TerrainType SpawnsTiberium=yes, TIBTRE01-03) is an animated
+// terrain object. Every logic frame a mine that is NOT animating starts its
+// animation with probability AnimationProbability (abs(Random)%1000000 *
+// 1e-6 < p); an animating mine advances one stage every AnimationRate frames;
+// when the stage reaches half the SHP's frame count (the second half is the
+// shadow set) the animation stops and the mine spawns ore ONCE: a random start
+// direction 0..7, then the first of the 8 neighbours (DAT_0089E5F8 order) that
+// can hold tiberium (FUN_004837F0: land allows tiberium, no overlay, not
+// another mine, no building) receives the mine cell's tiberium type (none ->
+// type 0 = Riparius ore) at OverlayData 3. A mine never raises existing ore;
+// once its ring is full it only feeds the field through normal growth/spread.
+struct OreMine {
+    int x = 0, y = 0;            // the mine's own (impassable) cell
+    int half_frames = 1;         // SHP frame count / 2 (spawn stage)
+    int anim_rate = 3;           // AnimationRate= (frames per stage)
+    double anim_prob = 0.003;    // AnimationProbability= (per frame)
+    int stage = 0;               // current animation stage
+    int rate = 0;                // 0 = not animating (TerrainClass+0xC0)
+    int timer = 0;               // frames left in the current stage
+    int spawned = 0;             // cells spawned so far (diagnostics)
+};
+constexpr int kMineSpawnDensity = 3;   // FUN_00483690 -> FUN_004870A0(tib, 3)
+
+constexpr int kOreScanRadius = 32;       // harvester scan, Chebyshev cells: the binary DEFAULT only
+// W2-SK-02 [RE: rulesmd [General] TiberiumLongScan=48 / TiberiumShortScan=6,
+// Rules+0x177C/+0x1778 loaded by FUN_0066CF70; 0x2000 leptons = 32 cells is
+// only FUN_00665090's default]. The World hands the rules values in.
+struct HarvestScan {
+    int long_scan = kOreScanRadius;
+    int short_scan = 6;
 };
 
 class OreField {
@@ -78,13 +113,47 @@ public:
     //   Gems (GrowthPercentage=0 in rulesmd) never grow or spread.
     // `passable` is the World passability grid (same w/h).
     void step(double dt, double interval_secs, double growth_pct, double spread_pct,
-              const std::vector<std::uint8_t>& passable, OreRng& rng);
+              const std::vector<std::uint8_t>& passable, OreRng& rng,
+              const Occupancy* occ = nullptr);
+
+    // W2-SK-01 regrowth [RE: gamemd TiberiumClass growth FUN_00721EE0 ->
+    // FUN_007221A0 and spread FUN_00721450 -> FUN_007216E0, pinned by the
+    // wave-2 skirmish fix]. When set (frames > 0) step() runs the original
+    // per-type model instead of the GrowthRate fallback above:
+    //   growth, every Growth= frames (Riparius 2200; x0.3 under a Rules flag
+    //     that is off in skirmish): n = abs(Random) % clamp(ftol(H x
+    //     GrowthPercentage), 5, 50) + 1 cells of the growth heap (H = cells
+    //     below the top density) gain one density step (FUN_00483620 ->
+    //     FUN_004870A0(tib, 1));
+    //   spread, every Spread= frames: n = abs(Random) % clamp(ftol(H x
+    //     SpreadPercentage), 5, 25) + 1 cells of the spread heap (H = cells
+    //     whose density > tiberium index / 2 -- FUN_004835A0 -- with no
+    //     object on them and an empty neighbour) each seed ONE neighbour at
+    //     OverlayData 3 (FUN_00483690 non-forced -> FUN_004870A0(tib, 3)).
+    //   The heaps are keyed by Random%50 + frame; [RE-FALLBACK] the pick is a
+    //   uniform random draw without replacement from the candidate set.
+    void set_original_timing(int growth_frames, int spread_frames) {
+        growth_frames_ = growth_frames;
+        spread_frames_ = spread_frames;
+    }
 
     double timer() const;                          // accumulated seconds (tests)
+
+    // W2-SK-01 ore mines (see OreMine). `frames` logic frames elapse (the
+    // World steps one 1/15 s frame at a time). Returns the cells spawned.
+    void add_mine(int x, int y, int half_frames, int anim_rate, double anim_prob);
+    const std::vector<OreMine>& mines() const { return mines_; }
+    bool is_mine(int x, int y) const;
+    int step_mines(int frames, const std::vector<std::uint8_t>& passable, OreRng& rng);
 private:
     int w_ = 0, h_ = 0;
     std::vector<std::uint8_t> kind_, density_, variant_;
     double timer_ = 0.0;
+    std::vector<OreMine> mines_;   // W2-SK-01 (save v13)
+    int growth_frames_ = 0, spread_frames_ = 0;   // W2-SK-01 original timing (0 = fallback)
+    double spread_timer_ = 0.0;                    // W2-SK-01 spread clock (s)
+    void step_original(double dt, double growth_pct, double spread_pct,
+                       const std::vector<std::uint8_t>& passable, OreRng& rng, const Occupancy* occ);
 };
 
 }  // namespace ra2engine

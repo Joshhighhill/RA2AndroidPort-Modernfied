@@ -41,6 +41,10 @@ UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixF
         {"ZEP", true, "NAWEAP"},   {"SHAD", true, "GAWEAP"},  {"JUMPJET", false, "GAPILE"},
         // [G-68] the miners (IQ Harvester replacement)
         {"HARV", true, "NAWEAP"},  {"CMIN", true, "GAWEAP"},
+        // W2-SK-09: engineers and the spy (their TaskForces were dropped)
+        {"ENGINEER", false, "GAPILE"}, {"SENGINEER", false, "NAHAND"}, {"SPY", false, "GAPILE"},
+        // W2-SK-07: the MCVs (a ConYard-less AI rebuys and redeploys one)
+        {"AMCV", true, "GAWEAP"},  {"SMCV", true, "NAWEAP"},
     };
     UnitRoster ur = load_unit_roster_table(dir, ra2, ua, rules, art, kAiUnits,
                                            sizeof(kAiUnits) / sizeof(kAiUnits[0]), /*full_parse=*/true);
@@ -125,6 +129,12 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
     acfg.team.trigger_side = s.side == ra2engine::World::Side::Soviet ? 2 : 1;  // [ai-trigger.md §5]
     acfg.team.house_name = country;
     fill_ai_building_maps(acfg.team, ba, rules, rules_ini);
+    acfg.multiple_factory = rules.general_double("MultipleFactory", 0.8);   // W2-SK-06
+    // W2-SK-24 [RE: rulesmd DissolveUnfilledTeamDelay=5000 "multiplay only";
+    // RE-FALLBACK: a skirmish session is a non-campaign (multiplayer-type)
+    // session, so unfilled teams dissolve -- they piled up at 15+ empty
+    // Recruiting teams in 40-minute soaks].
+    acfg.team.rules.multiplay = true;
     {   // [G-68] HarvestersPerRefinery=2,2,1 ;h,m,e at house+0x184 = 2 - lobby
         const std::vector<std::string> v =
             aiside::csv_tokens(rules.section_string("General", "HarvestersPerRefinery", ""));

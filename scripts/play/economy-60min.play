@@ -1,0 +1,108 @@
+# W2-SK-01..04 economy over a full hour (hillbtwn, 6 ore mines): the ore
+# mines keep spawning, the fields never die, miners keep earning. ~675 driver
+# frames per game minute at the lobby's speed 3.
+set render_every 13500
+set on_quit continue
+set states on
+set max_frames 50000
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:speed=3
+click start
+until 120 scene == game
+require ore_mines >= 1 @W2-SK-01
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+click tab:0
+until 3000 can_build(GAPOWR) == 1
+click cameo:GAPOWR
+until 3000 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 300 built(0,GAPOWR) >= 1
+until 3000 can_build(GAREFN) == 1
+click cameo:GAREFN
+until 3000 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 300 built(0,GAREFN) >= 1
+# A guard force so the passive economy survives the Easy AI's waves for the
+# whole hour (without it the AI wins at ~min 50, which is itself W2-SK-06
+# evidence, but ends the economy check).
+cheat spawn MTNK 0 building 0:GACNST -4 -4
+cheat spawn MTNK 0 building 0:GACNST -3 -4
+cheat spawn MTNK 0 building 0:GACNST -2 -4
+cheat spawn MTNK 0 building 0:GACNST -4 -3
+cheat spawn MTNK 0 building 0:GACNST +6 +6
+cheat spawn MTNK 0 building 0:GACNST +7 +6
+cheat spawn MTNK 0 building 0:GACNST +6 +7
+cheat spawn MTNK 0 building 0:GACNST +7 +7
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
+cheat place GAPILL 0 building 0:GACNST -3 -3
+cheat place GAPILL 0 building 0:GACNST +5 -3
+cheat place GAPILL 0 building 0:GACNST -3 +5
+cheat place GAPILL 0 building 0:GACNST +8 +8
+wait 900
+let c1 = credits
+let m0 = mine_spawned
+# 15 game minutes
+wait 10125
+assert mine_spawned > $m0 @W2-SK-01
+assert credits > $c1 @W2-SK-03
+let m1 = mine_spawned
+let i1 = income(1)
+let c2 = credits
+# reinforce the guard (scaffolding: only the economy is under test)
+cheat spawn MTNK 0 building 0:GACNST -4 -4
+cheat spawn MTNK 0 building 0:GACNST +6 +6
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
+# 30
+wait 10125
+assert mine_spawned > $m1 @W2-SK-01
+assert ore_cells > 0 @W2-SK-01
+assert credits > $c2 @W2-SK-04
+assert income(1) > $i1 @W2-SK-04
+let m2 = mine_spawned
+let i2 = income(1)
+let c3 = credits
+# reinforce the guard (scaffolding: only the economy is under test)
+cheat spawn MTNK 0 building 0:GACNST -4 -4
+cheat spawn MTNK 0 building 0:GACNST +6 +6
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
+# 45
+wait 10125
+assert mine_spawned > $m2 @W2-SK-01
+# (the passive player's lone miner is usually lost to a raid by now;
+# the AI's fleet carries the economy check from here)
+assert income(1) > $i2 @W2-SK-04
+let m3 = mine_spawned
+let i3 = income(1)
+let c4 = credits
+# reinforce the guard (scaffolding: only the economy is under test)
+cheat spawn MTNK 0 building 0:GACNST -4 -4
+cheat spawn MTNK 0 building 0:GACNST +6 +6
+cheat spawn MTNK 0 building 0:GACNST -5 +2
+cheat spawn MTNK 0 building 0:GACNST +2 -5
+cheat spawn MTNK 0 building 0:GACNST +9 +2
+cheat spawn MTNK 0 building 0:GACNST +2 +9
+# 60
+wait 10125
+assert mine_spawned > $m3 @W2-SK-01
+assert ore_cells > 0 @W2-SK-01
+assert income(1) > $i3 @W2-SK-04
+dump
+end

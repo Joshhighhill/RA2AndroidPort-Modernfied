@@ -27,8 +27,17 @@ OpClass classify_op(int action) {
         case kSaScatter:              return OpClass::Scatter;
         case kSaJump:                 return OpClass::Jump;
         case kSaSuccess:              return OpClass::Success;
+        case kSaLoad:                 return OpClass::Load;         // W2-SK-09
+        case kSaWaitLoaded:           return OpClass::WaitLoaded;   // W2-SK-09
+        case kSaUnload:               return OpClass::Unload;       // W2-SK-09
+        case kSaDeploy:               return OpClass::Deploy;       // W2-SK-10
         default:                      return OpClass::Inert;
     }
+}
+
+Cellxy base_gather_cell(int bx, int by, std::uint32_t& rng) {
+    const int ox = (int)(ai_rand(rng) % 7u) - 3, oy = (int)(ai_rand(rng) % 7u) - 3;
+    return Cellxy{bx + ox, by + oy};
 }
 
 Cellxy gather_cell(int ex, int ey, std::uint32_t& rng) {
@@ -100,7 +109,12 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             // the dissolve timer [RE-GATE APPLIED: ai-team.md §2].
             if (complete || (!tt.full && alive > 0)) {
                 team.state = TeamState::Gathering;
-                const Cellxy g = gather_cell(view.enemy_x, view.enemy_y, rng);
+                team.recruit_timer = 0.0;   // W2-SK-06: the muster clock
+                // W2-SK-06: the pre-script muster is at the OWN base (the stock
+                // scripts open with 54 regroup-at-base then 53 gather-at-enemy;
+                // mustering on the enemy ring first marched every wave across
+                // the map and straight back home) [RE-FALLBACK].
+                const Cellxy g = base_gather_cell(view.base_x, view.base_y, rng);
                 team.gather_x = g.x;
                 team.gather_y = g.y;
                 team.move_issued = false;
@@ -140,7 +154,14 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
             }
             // GATHERED = all live members within Rules.Stray (2.0 cells) of the
             // gather focus [RE-GATE APPLIED: ai-team.md §2].
-            if (all_within(view, team.gather_x, team.gather_y, kAiStrayCells)) {
+            // W2-SK-06 [RE-FALLBACK]: an under-strength Full=no team keeps
+            // recruiting while it musters (its new units join it) and leaves
+            // when complete or after kAiMusterSecs -- a lone first recruit no
+            // longer marches off as a 1-unit "wave".
+            team.recruit_timer += dt;
+            const bool filled = team_shortfall_type(team, aimd) < 0;
+            if ((filled || team.recruit_timer >= kAiMusterSecs) &&
+                all_within(view, team.gather_x, team.gather_y, team_reach_cells(kAiStrayCells, alive))) {
                 team.state = TeamState::Executing;
                 team.script_pc = 0;
                 team.script_timer = 0.0;
@@ -170,7 +191,7 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                     c.y = y;
                     team.move_issued = true;
                 } else if (all_within(view, team.gather_x, team.gather_y,
-                                      kAiCloseEnoughCells)) {
+                                      team_reach_cells(kAiCloseEnoughCells, alive))) {
                     advance();
                 }
             };
@@ -282,6 +303,27 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                     advance();
                     return c;
                 }
+                // W2-SK-09/10 [RE: script_actions.hpp 14 FUN_006EC760 load,
+                // 43 wait-until-loaded, 8 FUN_006EE670 unload, 9 FUN_006ECA30
+                // deploy]: the caller fans the order out; 43 holds the line
+                // until everyone is aboard [RE-FALLBACK: 60 s cap].
+                case OpClass::Load:
+                    c.kind = TeamCommand::Kind::Load;
+                    advance();
+                    return c;
+                case OpClass::Unload:
+                    c.kind = TeamCommand::Kind::Unload;
+                    advance();
+                    return c;
+                case OpClass::Deploy:
+                    c.kind = TeamCommand::Kind::Deploy;
+                    advance();
+                    return c;
+                case OpClass::WaitLoaded:
+                    team.script_timer += dt * 15.0;
+                    if (view.all_loaded || team.script_timer >= 900.0) advance();
+                    else c.kind = TeamCommand::Kind::Wait;
+                    return c;
                 case OpClass::Inert:
                 default: {
                     // Valid-but-unimplemented action: logged skip, pc++.

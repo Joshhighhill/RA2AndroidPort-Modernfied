@@ -135,6 +135,27 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         // EXISTING single-target delivery -- UNCHANGED (byte-identical path).
         deliver_unit_hit(units, occ, attacker_idx, victim_idx);
     }
+    // W2-SK-22 Prism split [RE: [Comet] ShrapnelWeapon/ShrapnelCount;
+    // RE-FALLBACK: the fragments go to the ShrapnelCount nearest other
+    // hostiles within the fragment weapon's Range of the impact, ascending
+    // distance then index]. No-op for every weapon without shrapnel.
+    if (u.shrapnel_count > 0 && u.shrapnel_damage > 0) {
+        std::vector<std::pair<double, int>> near;
+        const double r2 = u.shrapnel_range * u.shrapnel_range;
+        for (int j = 0; j < static_cast<int>(units.size()); ++j) {
+            if (j == victim_idx || j == attacker_idx) continue;
+            const Unit& w = units[j];
+            if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0 || w.house == u.house || w.is_aircraft) continue;
+            const double dx = w.fx - v.fx, dy = w.fy - v.fy;
+            if (dx * dx + dy * dy <= r2) near.push_back({dx * dx + dy * dy, j});
+        }
+        std::sort(near.begin(), near.end());
+        Unit frag = u;
+        frag.w_damage = u.shrapnel_damage;
+        frag.w_verses = u.shrapnel_verses;
+        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k)
+            deliver_hit_from(units, occ, frag, attacker_idx, -1, near[static_cast<std::size_t>(k)].second);
+    }
 }
 
 }  // namespace
@@ -313,6 +334,24 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                      std::vector<ProjectileLaunch>* launches, ProjRng* rof_rng) {
     std::vector<MoveRequest> requests;
     const int n = static_cast<int>(units.size());
+
+    // W2-SK-15: spatial buckets for the auto-acquire scan (was O(U^2): every
+    // idle unit walked every unit). kBucket x kBucket cells, filled in
+    // ascending index; the scan below breaks distance ties by the lower index,
+    // exactly the old ascending-loop result, so every gate stays identical.
+    constexpr int kBucket = 8;
+    const int bgw = std::max(1, (world.grid_w() + kBucket - 1) / kBucket);
+    const int bgh = std::max(1, (world.grid_h() + kBucket - 1) / kBucket);
+    std::vector<std::vector<int>> buckets(static_cast<std::size_t>(bgw) * bgh);
+    auto bucket_of = [&](double c, int lim) {
+        const int b = static_cast<int>(std::floor(c)) / kBucket;
+        return std::max(0, std::min(lim - 1, b));
+    };
+    for (int j = 0; j < n; ++j) {
+        const Unit& v = units[j];
+        if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) continue;
+        buckets[static_cast<std::size_t>(bucket_of(v.fy, bgh)) * bgw + bucket_of(v.fx, bgw)].push_back(j);
+    }
 
     for (int i = 0; i < n; ++i) {
         Unit& u = units[i];
@@ -533,7 +572,16 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             else {
                 int best = -1;
                 double best_d = 0.0;
-                for (int j = 0; j < n; ++j) {
+                // W2-SK-25 [RE-FALLBACK, RE-Q3 open: an idle original unit in
+                // Guard engages what enters its Sight, chases within a leash and
+                // returns]: acquisition radius = max(weapon range, Sight).
+                const double sight = static_cast<double>(u.sight);
+                const double rmax = std::max(std::max(slot_range(u, 0), slot_range(u, 1)), sight) + 1.0;
+                const int bx0 = bucket_of(u.fx - rmax, bgw), bx1 = bucket_of(u.fx + rmax, bgw);
+                const int by0 = bucket_of(u.fy - rmax, bgh), by1 = bucket_of(u.fy + rmax, bgh);
+                for (int by = by0; by <= by1; ++by)
+                for (int bx = bx0; bx <= bx1; ++bx)
+                for (int j : buckets[static_cast<std::size_t>(by) * bgw + bx]) {
                     // Engineer/Spy Capture [RE: capture.md §Design 6]: a still-
                     // disguised unit is treated as FRIENDLY -- never auto-
                     // acquired (a disguised spy walks through enemy territory
@@ -562,8 +610,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     const Unit& v = units[j];
                     const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
                     // Gap fix C: in range of the weapon that WOULD engage v.
-                    const double rng = slot_range(u, unit_weapon_for_unit(u, v));
-                    if (d <= rng * kLeptonsPerCell && (best == -1 || d < best_d)) {
+                    const double rng = std::max(slot_range(u, unit_weapon_for_unit(u, v)),
+                                                (u.is_aircraft || (u.deploy_fire && u.deployed)) ? 0.0 : sight);
+                    if (d <= rng * kLeptonsPerCell &&
+                        (best == -1 || d < best_d || (d == best_d && j < best))) {
                         best = j;
                         best_d = d;
                     }
@@ -664,7 +714,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             // strayed past weapon range + kGuardStray from that anchor (§7,
             // ModEnc fallback, Low), then ask to return home if not already
             // there.
-            const double stray = range_leptons + kGuardStray * kLeptonsPerCell;
+            const double leash = std::max(range_leptons, static_cast<double>(u.sight) * kLeptonsPerCell);
+            const double stray = leash + kGuardStray * kLeptonsPerCell;
             const double d_self = dist_leptons(u.fx, u.fy, static_cast<double>(u.guard_x),
                                                 static_cast<double>(u.guard_y));
             const double d_target = dist_leptons(v.fx, v.fy, static_cast<double>(u.guard_x),
@@ -676,6 +727,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         u.path.back().y != u.guard_y)
                         requests.push_back({i, u.guard_x, u.guard_y});
                 }
+            } else if (!u.moving() && !u.is_aircraft && !(u.deploy_fire && u.deployed) &&
+                       !u.is_harvester && u.w_damage > 0) {
+                // W2-SK-25: close in on a sighted target inside the leash (the
+                // back ranks of a big fight used to stand idle out of range).
+                requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/true});
             }
         }
     }

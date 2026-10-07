@@ -21,6 +21,10 @@
 
 namespace ra2engine {
 
+// W2-SK-16 A* expansion budgets (closed nodes).
+constexpr int kNearestPathBudget = 20000;
+constexpr int kRepathBudget = 4000;
+
 // Per-image animation data (Task 2): calibrated against the ORIGINAL game's
 // artmd.ini GISequence/ConSequence data. docs/re/infantry-anim.md is the
 // calibration authority -- see it for the extracted values (§2), the
@@ -687,6 +691,11 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.occupier = c.occupier;
     u.occupy_w = c.occupy_weapon;
     u.occupy_w_elite = c.elite_occupy_weapon;
+    u.shrapnel_count = c.shrapnel_count;          // W2-SK-22
+    u.shrapnel_damage = c.shrapnel_damage;
+    u.shrapnel_range = c.shrapnel_range;
+    u.shrapnel_verses = c.shrapnel_verses;
+    u.disguise_when_still = c.disguise_when_still;
     // --- P5 Veterancy + Crates [RE: veterancy.md] --- copy the type data and
     // snapshot the base stats ALWAYS (inert copies: nothing reads Unit::vet
     // past this point unless vet_any_). Only a vet-enabled World arms the
@@ -907,8 +916,14 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // naval unit uses the EXACT ground occupancy path above (release_all_of + set
     // + find_path); only the grid differs. naval_any_ is a diagnostics flag.
     if (u.is_naval) naval_any_ = true;
+    // W2-SK-05/16: a ground (Land-domain) unit ordered onto an impassable or
+    // unreachable cell walks to the nearest reachable one (budgeted search);
+    // ships keep the exact search (a land click is refused, naval.md).
     std::vector<Cellxy> path =
-        find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
+        u.movement_domain == MovementDomain::Land
+            ? find_path_nearest(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y},
+                                {gx, gy}, kNearestPathBudget)
+            : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
     if (path.size() <= 1) {
         // Assigned its own cell / unreachable: stay put, snap cleanly
         // (mirrors the single-unit Finding-1 cancel branch).
@@ -1013,6 +1028,13 @@ void World::order_attack(int target_idx) {
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        // W2-SK-22 Spy disguise [RE: capture.md §C; [SPY] Primary=MakeupKit
+        // "virtual weapon that picks disguise"]: a spy "attacking" an enemy
+        // infantry takes on its look instead.
+        if (u.image == "SPY") {
+            if (!tgt.is_vehicle && !tgt.is_aircraft) set_disguise(static_cast<int>(i), tgt.image, tgt.house);
+            continue;
+        }
         u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above (selected + house 0); the shared mutation
         // tail (target/attack_order + occupancy re-assert + path clear) is
@@ -1105,7 +1127,7 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
                                           });
         if (wx.x < 0) return -1;                    // boxed in: HOLD
         UnitCombat cv = c;
-        cv.veteran_rank = produced_veteran(f.house) ? 1 : 0;
+        cv.veteran_rank = produced_veteran_kind(f.house, factory_def.factory_kind) ? 1 : 0;
         const bool has_rally = f.has_rally;
         const int rx = f.rally_x, ry = f.rally_y;
         add_combat_unit(wx.x, wx.y, f.house, cv);
@@ -1162,7 +1184,7 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
     // spied, produced units spawn as veterans. produced_veteran_[house] is false
     // in every existing demo -> cv.veteran_rank stays 0 -> byte-identical.
     UnitCombat cv = c;
-    cv.veteran_rank = produced_veteran(house) ? 1 : 0;
+    cv.veteran_rank = produced_veteran_kind(house, factory_def.factory_kind) ? 1 : 0;
     add_combat_unit(ex.x, ex.y, house, cv);
     const int ui = static_cast<int>(units_.size()) - 1;
     // W2-AN-07: a jumpjet (Kirov, Rocketeer, Night Hawk) lifts off as it
@@ -1606,9 +1628,14 @@ bool World::capture_building(int b_idx, int new_house, int startup) {
 
     // (5) ProduceCashStartup -- only when captured FROM the neutral house
     //     [RE: capture.md §A3]. Grant to the NEW owner once.
-    if (grants_startup_from_neutral(old_house) && startup > 0 &&
-        new_house >= 0 && new_house < 2) {
-        house_credits_[new_house] += (double)startup;
+    // W2-SK-21: "neutral" is the real neutral house (the lobby appends it
+    // LAST; kNeutralHouse=2 is an AI in 3+ player games), and any capturing
+    // house is paid (an AI into its AI-1 purse).
+    const int nh = neutral_house();
+    const bool from_neutral = nh >= 0 ? old_house == nh : grants_startup_from_neutral(old_house);
+    if (from_neutral && startup > 0 && new_house >= 0 && new_house < house_count()) {
+        if (ai_enabled(new_house)) ai_houses_[(std::size_t)new_house].credits += (double)startup;
+        else house_credits_[new_house] += (double)startup;
     }
     return true;
 }
@@ -1623,27 +1650,43 @@ bool World::infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purp
     capture_any_ = true;
     switch (purpose) {
         case InfiltratePurpose::Refinery: {          // [RE: capture.md §B3 CONFIRMED]
-            if (victim >= 0 && victim < 2 && spy_house >= 0 && spy_house < 2) {
-                const int steal = cash_steal_amount(house_credits_[victim], steal_pct);
-                house_credits_[victim] -= (double)steal;
-                house_credits_[spy_house] += (double)steal;
+            // W2-SK-20: steal from the victim's REAL wallet, any house (an AI
+            // house's AI-1 purse; a human's GameScene wallet, published every
+            // frame through set_wallet_hint). The old code took half of the
+            // per-frame income pool -- ~0 -- and only for houses 0/1.
+            if (victim >= 0 && victim < house_count() && spy_house >= 0 && spy_house < house_count()) {
+                const double bal = ai_enabled(victim)
+                                       ? ai_houses_[(std::size_t)victim].credits
+                                       : house_credits_[(std::size_t)victim] + wallet_hint(victim);
+                const int steal = cash_steal_amount(std::max(0.0, bal), steal_pct);
+                if (ai_enabled(victim)) ai_houses_[(std::size_t)victim].credits -= (double)steal;
+                else house_credits_[(std::size_t)victim] -= (double)steal;
+                if (ai_enabled(spy_house)) ai_houses_[(std::size_t)spy_house].credits += (double)steal;
+                else house_credits_[(std::size_t)spy_house] += (double)steal;
             }
             break;
         }
         case InfiltratePurpose::PowerPlant:          // [RE: capture.md §B2 CONFIRMED]
-            if (victim >= 0 && victim < 3) blackout_frames_[victim] = blackout;
+            if (victim >= 0 && victim < house_count()) blackout_frames_[victim] = blackout;   // W2-SK-20: any house
             break;
         case InfiltratePurpose::Superweapon:         // [RE: capture.md §B4 CONFIRMED]
             reset_superweapon(victim);
             break;
-        case InfiltratePurpose::Factory:             // [RE: capture.md §B5] Task 6 wires the flag
-            if (spy_house >= 0 && spy_house < 3) produced_veteran_[spy_house] = true;
+        case InfiltratePurpose::Factory: {           // [RE: capture.md §B5] Task 6 wires the flag
+            // W2-SK-20: veterans only from THAT factory category (barracks ->
+            // infantry, war factory -> vehicles, yard -> ships, airfield ->
+            // aircraft), not every unit the house ever builds.
+            int kind = 0;
+            if (b.type >= 0 && b.type < (int)btypes().size()) kind = btypes()[(std::size_t)b.type].factory_kind;
+            if (spy_house >= 0 && spy_house < house_count())
+                produced_veteran_[spy_house] |= (std::uint8_t)(kind > 0 ? (1u << kind) : 0x1Eu);
             break;
+        }
         case InfiltratePurpose::RadarLab:            // [RE: shroud.md §7B] radar sabotage
             reshroud_house(victim);                  // no-op if shroud off or SpySat-latched
             break;
         case InfiltratePurpose::None:
-            break;
+            return false;   // W2-SK-20: a non-spyable building refuses the spy (not consumed)
     }
     return true;
 }
@@ -1876,6 +1919,81 @@ void World::step_repair_sell(double dt) {
     }
 }
 
+int World::depot_client(int b_idx) const {
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return -1;
+    const Building& b = buildings_[(std::size_t)b_idx];
+    if (!b.alive || b.state != Building::State::Idle || b.type < 0 ||
+        b.type >= (int)btypes().size() || !btypes()[(std::size_t)b.type].unit_repair)
+        return -1;
+    for (int i = 0; i < (int)units_.size(); ++i) {
+        const Unit& u = units_[(std::size_t)i];
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != b.house) continue;
+        if (!u.is_vehicle || u.is_aircraft || u.is_naval || u.moving()) continue;
+        if (u.hp >= u.max_hp && u.parasite_on_me < 0) continue;
+        const int dx = u.cell_x < b.cx ? b.cx - u.cell_x : (u.cell_x >= b.cx + b.fw ? u.cell_x - (b.cx + b.fw - 1) : 0);
+        const int dy = u.cell_y < b.cy ? b.cy - u.cell_y : (u.cell_y >= b.cy + b.fh ? u.cell_y - (b.cy + b.fh - 1) : 0);
+        if (std::max(dx, dy) <= 1) return i;
+    }
+    return -1;
+}
+
+bool World::depot_servicing(int house) const {
+    for (int bi = 0; bi < (int)buildings_.size(); ++bi)
+        if (buildings_[(std::size_t)bi].house == house && depot_client(bi) >= 0) return true;
+    return false;
+}
+
+void World::step_service_depots() {
+    const std::uint64_t frame = repair_frame_ > 0 ? repair_frame_ - 1 : 0;   // step_repair_sell's phase
+    const int interval = repair_interval_frames(repair_rules_.repair_rate);
+    const bool due = repair_due(frame, interval);
+    for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+        const int ui = depot_client(bi);
+        if (ui < 0) continue;
+        Unit& u = units_[(std::size_t)ui];
+        // A riding Terror Drone dies at the depot (every frame, not phased).
+        if (u.parasite_on_me >= 0 && u.parasite_on_me < (int)units_.size()) {
+            Unit& d = units_[(std::size_t)u.parasite_on_me];
+            if (d.alive && d.die_time < 0.0) ability_kill_unit(u.parasite_on_me);
+            u.parasite_on_me = -1;
+        }
+        if (!due || u.hp >= u.max_hp) continue;
+        const int h = buildings_[(std::size_t)bi].house;
+        if (h < 0 || h >= house_count()) continue;
+        const int cost = repair_step_cost(u.vet.cost > 0 ? u.vet.cost : u.max_hp, u.max_hp,
+                                          repair_rules_.repair_step, repair_rules_.repair_percent);
+        double& pool = ai_enabled(h) ? ai_houses_[(std::size_t)h].credits : house_credits_[(std::size_t)h];
+        if (pool < (double)cost) continue;   // broke: no partial step, no free repair
+        pool -= (double)cost;
+        u.hp = std::min(u.max_hp, u.hp + repair_rules_.repair_step);
+    }
+}
+
+// W2-SK-22 Mirage Tank [RE: rulesmd [MGTK] CanDisguise=yes DisguiseWhenStill=yes;
+// [General] DefaultMirageDisguises=TREE01..]: a Mirage that has stood still
+// and not fired for a moment turns into a tree -- enemies do not auto-acquire
+// it (the disguise skip in step_combat) -- and drops the disguise the moment
+// it moves or fires. [RE-FALLBACK: 15 frames still. PARTIAL: it is still
+// drawn as the tank -- the tree is terrain art the unit renderer cannot
+// draw.] Dogs (DetectDisguise) still reveal it.
+void World::step_disguises() {
+    for (Unit& u : units_) {
+        if (!u.disguise_when_still || !u.alive || u.die_time >= 0.0) continue;
+        if (u.moving() || u.fire_flash > 0.0 || u.cargo_of >= 0) {
+            u.still_frames = 0;
+            if (u.disguised) u.disguised = false;
+            continue;
+        }
+        if (++u.still_frames >= 15 && !u.disguised) {
+            u.disguised = true;
+            // Drawn as itself (the tree art is terrain, not a unit SHP).
+            u.disguised_as_type = u.image;
+            u.disguised_as_house = u.house;
+            capture_any_ = true;   // arm the DetectDisguise pass
+        }
+    }
+}
+
 void World::consume_unit(int idx) {
     if (idx < 0 || idx >= (int)units_.size()) return;
     Unit& u = units_[idx];
@@ -2009,6 +2127,11 @@ void World::step_capture(double dt) {
                     repair_bridge_near(bi);
                     consumed = true;
                     note_entered(EnteredEvent::BridgeHut, (int)i, bi, eng_house, true);
+                } else if (!are_allied(eng_house, b.house) && !building_capturable(bi)) {
+                    // W2-SK-12 [RE: capture.md §A3]: Capturable=false (pillbox,
+                    // tesla coil, prism tower, SAM, superweapons...) refuses the
+                    // engineer, who is NOT consumed.
+                    consumed = false;
                 } else if (!are_allied(eng_house, b.house)) {
                     // Capture ENEMY *and NEUTRAL* buildings (neutral is not an
                     // enemy but IS capturable -- the oil-derrick case); own/ally
@@ -2118,7 +2241,10 @@ void World::step_tech_structures(double dt) {
         if (t.building < 0 || t.building >= (int)buildings_.size()) continue;
         const Building& b = buildings_[t.building];
         if (!b.alive || b.state == Building::State::Dead) continue;
-        if (b.house < 0 || b.house >= 2) continue;    // neutral pays nobody
+        // W2-SK-21: the real neutral house pays nobody; every other house is
+        // paid (was: houses 0/1 only, so a 3rd/4th player's derrick paid 0).
+        const int nh = neutral_house();
+        if (b.house < 0 || b.house >= house_count() || (nh >= 0 ? b.house == nh : b.house >= 2)) continue;
         t.frames += frames;
         while (t.frames >= t.delay) {
             t.frames -= t.delay;
@@ -2307,7 +2433,8 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
             // neutral house never pull the defense-facing centroid or the team
             // gather ring (is_enemy is a != b in an unconfigured gate World,
             // so the 2-house AI gates are unaffected).
-            tx += b.cx; ty += b.cy; ++tn;  // threat = enemy houses' centroid
+            // W2-SK-08: the threat centroid is the ONE current enemy's base.
+            if (rec.enemy_house < 0 || b.house == rec.enemy_house) { tx += b.cx; ty += b.cy; ++tn; }
             // rival_base_size = largest OTHER house's building count — the
             // BaseSizeAdd cap basis (AI base <= rival + 3) [RE: ai-base.md §2].
             if ((int)rival_counts.size() <= b.house) rival_counts.resize(b.house + 1, 0);
@@ -2445,6 +2572,34 @@ void World::step_ai_houses(double dt) {
 
         // 1) Income (the economy phase accumulates per-house unload income).
         rec.credits += take_income(h);
+        ai_pick_enemy_house(h, rec);   // W2-SK-08
+        // W2-SK-10 base defence [RE-FALLBACK: the IsBaseDefense teams and
+        // [AI] ComputerBaseDefenseResponse were not decoded]: every ~7 s, idle
+        // un-teamed combat units engage enemies inside 12 cells of the base.
+        if ((repair_frame_ + (std::uint64_t)h) % 105u == 0u) {
+            const BaseView bv = make_ai_base_view(h, rec);
+            std::vector<int> intruders;
+            for (int i = 0; i < (int)units_.size(); ++i) {
+                const Unit& e = units_[(std::size_t)i];
+                if (!e.alive || e.die_time >= 0.0 || e.cargo_of >= 0 || e.is_aircraft || !is_enemy(h, e.house)) continue;
+                const int dx = e.cell_x - bv.center_x, dy = e.cell_y - bv.center_y;
+                if (dx * dx + dy * dy <= 144) intruders.push_back(i);
+            }
+            if (!intruders.empty())
+                for (const IdleUnitView& iv : ai_idle_units(h, rec)) {
+                    const Unit& u = units_[(std::size_t)iv.unit];
+                    if (u.w_damage <= 0 || u.deploys_into >= 0 || u.image == "ENGINEER" || u.image == "SPY")
+                        continue;
+                    int best = -1;
+                    long long bd = 0;
+                    for (int e : intruders) {
+                        const long long dx = units_[(std::size_t)e].cell_x - u.cell_x,
+                                        dy = units_[(std::size_t)e].cell_y - u.cell_y;
+                        if (best < 0 || dx * dx + dy * dy < bd) { best = e; bd = dx * dx + dy * dy; }
+                    }
+                    if (best >= 0) ai_order_attack(iv.unit, best);
+                }
+        }
 
         // 1b) [G-65] AI repair [RE: FUN_00450620, BuildingClass AI -- gated by
         //     Rules.IQ RepairSell (=1) <= house IQ (skirmish AI = MaxIQLevels
@@ -2473,6 +2628,26 @@ void World::step_ai_houses(double dt) {
             if (!b.alive || b.state == Building::State::Dead) {
                 n.building = -1;
                 n.dead = true;
+            }
+        }
+        // 2b) W2-SK-07: a DEAD node whose type stands again without going
+        //     through the queue (a redeployed MCV's ConYard, a captured
+        //     building) is re-linked, so the head of the plan is satisfied and
+        //     the base build-out resumes instead of retrying the dead node.
+        for (PlannedNode& n : rec.state.plan) {
+            if (!n.dead || n.type < 0) continue;
+            for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+                const Building& b = buildings_[(std::size_t)bi];
+                if (!b.alive || b.state == Building::State::Dead || b.house != h || b.type != n.type) continue;
+                bool linked = false;
+                for (const PlannedNode& o : rec.state.plan)
+                    if (o.building == bi) { linked = true; break; }
+                if (linked) continue;
+                n.building = bi;
+                n.cx = b.cx;
+                n.cy = b.cy;
+                n.dead = false;
+                break;
             }
         }
 
@@ -2507,8 +2682,21 @@ void World::step_ai_houses(double dt) {
             apply_blackout(power_totals(buildings_, cfg.roster, h), house_blacked_out(h));
         const double pmul = build_speed_multiplier(pt, cfg.low_power_penalty);
         rec.queues.set_credits(rec.credits);
-        const double sp[4] = {1.0, 1.0, 1.0, 1.0};  // one ConYard in AI-1 — no
-                                                    // MultipleFactory speedup
+        // W2-SK-06: MultipleFactory for the AI too (it was pinned to x1.0).
+        double sp[4] = {1.0, 1.0, 1.0, 1.0};
+        if (cfg.multiple_factory > 0.0 && cfg.multiple_factory < 1.0) {
+            int ncy = 0, ninf = 0, nveh = 0;
+            for (const Building& b : buildings_) {
+                if (!b.alive || b.state != Building::State::Idle || b.house != h || b.type < 0) continue;
+                if (b.type < (int)cfg.roster.size() && cfg.roster[b.type].conyard) ++ncy;
+                for (int t : cfg.team.inf_factory_types) if (t == b.type) { ++ninf; break; }
+                for (int t : cfg.team.veh_factory_types) if (t == b.type) { ++nveh; break; }
+            }
+            auto spd = [&](int n) { return n <= 1 ? 1.0 : std::pow(1.0 / cfg.multiple_factory, n - 1); };
+            sp[0] = sp[1] = spd(ncy);
+            sp[2] = spd(ninf);
+            sp[3] = spd(nveh);
+        }
         rec.queues.tick(dt, pmul, sp, cfg.roster);
         rec.credits = rec.queues.credits();
 
@@ -2596,7 +2784,29 @@ void World::step_ai_houses(double dt) {
                                        grid_w_, grid_h_, occ_, buildings_,
                                        /*bypass_adjacency=*/true).ok;
             };
-            Cellxy loc = find_build_location(view, is_def, can_place);
+            Cellxy loc{-1, -1};
+            // W2-SK-23 [RE: ai-base.md §3 FUN_0050C160 rings each defence's
+            // perimeter with wall]: a wall node takes the first free cell on
+            // the ring around an own base defence (no AIBaseSpacing gap), and
+            // only falls back to the generic scan when every ring is closed.
+            if (d.type == cfg.catalog.wall) {
+                for (const Building& db : buildings_) {
+                    if (loc.x >= 0) break;
+                    if (!db.alive || db.house != h || db.state == Building::State::Dead) continue;
+                    if (std::find(cfg.catalog.defenses.begin(), cfg.catalog.defenses.end(), db.type) ==
+                        cfg.catalog.defenses.end())
+                        continue;
+                    for (int y = db.cy - 1; y <= db.cy + db.fh && loc.x < 0; ++y)
+                        for (int x = db.cx - 1; x <= db.cx + db.fw && loc.x < 0; ++x) {
+                            const bool edge = y == db.cy - 1 || y == db.cy + db.fh || x == db.cx - 1 || x == db.cx + db.fw;
+                            if (!edge) continue;
+                            if (placement_check(x, y, t.fw, t.fh, h, t.adjacent, passable_, grid_w_, grid_h_,
+                                                occ_, buildings_, /*bypass_adjacency=*/true).ok)
+                                loc = Cellxy{x, y};
+                        }
+                }
+            }
+            if (loc.x < 0) loc = find_build_location(view, is_def, can_place);
             if (loc.x < 0 && d.type == cfg.catalog.naval_yard) loc = ai_naval_spot_scan(h, rec, t);
             if (loc.x < 0 && d.type == cfg.catalog.naval_yard) {
                 // W2-AN-16: no water within AINavalYardAdjacency -- drop the
@@ -2628,6 +2838,51 @@ void World::step_ai_houses(double dt) {
         // [fix wave 1].
         rec.state.pending[q] = rec.state.plan[node_i].id;
     }
+}
+
+bool World::ai_house_alive(int house) const {
+    for (const Building& b : buildings_)
+        if (b.alive && b.house == house && b.state != Building::State::Dead) return true;
+    for (const Unit& u : units_)
+        if (u.alive && u.die_time < 0.0 && u.house == house) return true;
+    return false;
+}
+
+// W2-SK-08 [RE: ai-trigger.md deviations -- the original keeps ONE current
+// enemy per house (house+0x5600) that the trigger conditions, the threat view
+// and the team targeting read; RE-FALLBACK for the pick: the nearest living
+// enemy combatant by base centre (ConYard, else first building, else first
+// unit), re-picked only when it is defeated -- a 1v3 AI no longer averages
+// three bases into one meaningless centroid].
+void World::ai_pick_enemy_house(int house, HouseAiRec& rec) {
+    const int cur = rec.enemy_house;
+    if (cur >= 0 && cur < house_count() && is_enemy(house, cur) && house_combatant(cur) &&
+        ai_house_alive(cur))
+        return;
+    auto centre = [&](int hh, int& x, int& y) {
+        bool got = false;
+        for (const Building& b : buildings_) {
+            if (!b.alive || b.house != hh || b.state == Building::State::Dead) continue;
+            const bool cy = b.type >= 0 && b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard;
+            if (cy || !got) { x = b.cx; y = b.cy; got = true; if (cy) return true; }
+        }
+        if (got) return true;
+        for (const Unit& u : units_)
+            if (u.alive && u.die_time < 0.0 && u.house == hh) { x = u.cell_x; y = u.cell_y; return true; }
+        return false;
+    };
+    int ox = grid_w_ / 2, oy = grid_h_ / 2;
+    centre(house, ox, oy);
+    int best = -1;
+    long long bestd = 0;
+    for (int e = 0; e < house_count(); ++e) {
+        if (e == house || !is_enemy(house, e) || !house_combatant(e)) continue;
+        int ex = 0, ey = 0;
+        if (!centre(e, ex, ey)) continue;
+        const long long d = (long long)(ex - ox) * (ex - ox) + (long long)(ey - oy) * (ey - oy);
+        if (best < 0 || d < bestd) { best = e; bestd = d; }
+    }
+    rec.enemy_house = best;
 }
 
 void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
@@ -2826,7 +3081,11 @@ int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
         const long long dx = u.cell_x - nx, dy = u.cell_y - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);  // 0.90x .. 1.10x, x100
-        const long long score = (dx * dx + dy * dy) * value * jitter;
+        long long score = (dx * dx + dy * dy) * value * jitter;
+        // W2-SK-08: targets of the current enemy house always rank first.
+        if (ai_enabled(house) && ai_houses_[house].enemy_house >= 0 &&
+            u.house != ai_houses_[house].enemy_house)
+            score += 1000000000000LL;
         if (best < 0 || score < bestd) { best = i; bestd = score; }
     }
     return best;
@@ -2843,7 +3102,8 @@ int World::ai_pick_quarry_building(int house, const HouseAiRec& rec, int quarry,
         const long long dx = b.cx - nx, dy = b.cy - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);
-        const long long score = (dx * dx + dy * dy) * value * jitter;
+        long long score = (dx * dx + dy * dy) * value * jitter;
+        if (rec.enemy_house >= 0 && b.house != rec.enemy_house) score += 1000000000000LL;   // W2-SK-08
         if (best < 0 || score < bestd) { best = i; bestd = score; }
     }
     return best;
@@ -2868,7 +3128,11 @@ int World::ai_find_typed_building(int house, const HouseAiRec& rec, int arg, boo
     for (int i = 0; i < (int)buildings_.size(); ++i) {
         const Building& b = buildings_[i];
         if (!b.alive || b.state == Building::State::Dead || b.type != type) continue;
-        if (enemy ? !is_enemy(house, b.house) : b.house != house) continue;
+        // W2-SK-09: the neutral (civilian) house's tech buildings are fair
+        // game for 46/47 (the stock 'Tech Oil Capture' scripts target CAOILD).
+        if (enemy ? (!is_enemy(house, b.house) && !(b.house != house && b.house == neutral_house()))
+                  : b.house != house)
+            continue;
         const long long dx = b.cx - nx, dy = b.cy - ny;
         const long long d = dx * dx + dy * dy;
         if (best < 0 || (far ? d > bestd : d < bestd)) { best = i; bestd = d; }
@@ -2940,12 +3204,28 @@ void World::ai_fill_team_view(int house, const HouseAiRec& rec,
             mv.alive = u.alive && u.die_time < 0.0;
             mv.cx = u.cell_x;
             mv.cy = u.cell_y;
+            // W2-SK-09: a member riding the team's transport is where it is.
+            if (u.cargo_of >= 0 && u.cargo_of < (int)units_.size()) {
+                mv.cx = units_[(std::size_t)u.cargo_of].cell_x;
+                mv.cy = units_[(std::size_t)u.cargo_of].cell_y;
+            }
             mv.idle = !u.moving() &&
                       !(u.attack_order && (u.target >= 0 || u.target_building >= 0));
         }
         v.members.push_back(mv);
     }
     v.waypoints = rec.cfg.team.waypoints;
+    {   // W2-SK-09: is everybody aboard the team's transport?
+        const int tr = ai_team_transport(team);
+        v.all_loaded = true;
+        if (tr >= 0)
+            for (int m : team.members) {
+                if (m == tr || m < 0 || m >= (int)units_.size()) continue;
+                const Unit& u = units_[(std::size_t)m];
+                if (!u.alive || u.die_time >= 0.0) continue;
+                if (u.cargo_of != tr && can_load(units_, tr, m)) { v.all_loaded = false; break; }
+            }
+    }
     // Base center + enemy centroid reuse the AI-1 view (ConYard-first center,
     // rival-buildings threat centroid) — ONE source of truth.
     const BaseView bv = make_ai_base_view(house, rec);
@@ -3032,11 +3312,59 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 if (m < 0 || m >= (int)units_.size()) continue;
                 const Unit& u = units_[m];
                 if (!u.alive || u.die_time >= 0.0) continue;
+                if (u.cargo_of >= 0) continue;   // W2-SK-09: rides the transport
                 order_unit_move(m, gx + dx[k % 9] * spread, gy + dy[k % 9] * spread);
             }
             break;
         }
         case TeamCommand::Kind::AttackQuarry: {
+            // W2-SK-11 [RE: ai-team.md §5 -- one target from the team anchor]:
+            // pick ONCE from the lead (first live) member and give every idle
+            // member the same target, instead of each member's own nearest.
+            int lead = -1;
+            for (int m : team.members)
+                if (m >= 0 && m < (int)units_.size() && units_[m].alive && units_[m].die_time < 0.0) {
+                    lead = m;
+                    break;
+                }
+            int team_tu = -1, team_tb = -1;
+            if (lead >= 0) {
+                const Unit& lu = units_[lead];
+                if (c.building_arg >= 0) {
+                    team_tb = ai_find_typed_building(house, rec, c.building_arg, true, lu.cell_x, lu.cell_y);
+                } else {
+                    team_tu = ai_pick_quarry_unit(house, c.quarry, lu.cell_x, lu.cell_y,
+                                                  rec.team_state.rng, lu.w_aa);
+                    if (team_tu < 0)
+                        team_tb = ai_pick_quarry_building(house, rec, c.quarry, lu.cell_x, lu.cell_y,
+                                                          rec.team_state.rng);
+                }
+            }
+            for (int m : team.members) {
+                if (m < 0 || m >= (int)units_.size()) continue;
+                Unit& u = units_[m];
+                if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+                // W2-SK-09: an engineer captures / a spy infiltrates the team's
+                // building target instead of "attacking" it (stock scripts
+                // 'Tech Oil Capture', 'Spy vs Power', 'Engineer vs Ally').
+                if (u.image == "ENGINEER" || u.image == "SPY") {
+                    if (u.capture_target >= 0 || u.infiltrate_target >= 0) continue;
+                    int tb = team_tb;
+                    if (tb < 0)
+                        tb = ai_find_typed_building(house, rec, c.building_arg >= 0 ? c.building_arg : -1,
+                                                    true, u.cell_x, u.cell_y);
+                    if (tb < 0) continue;
+                    if (u.image == "ENGINEER") {
+                        if (building_capturable(tb)) order_engineer_capture(m, tb);
+                    } else {
+                        order_spy_infiltrate(m, tb, ai_infiltrate_purpose(tb), 0.5, 1000);
+                    }
+                    continue;
+                }
+                if (u.attack_order && (u.target >= 0 || u.target_building >= 0)) continue;
+                if (team_tu >= 0 && (!units_[team_tu].is_aircraft || u.w_aa)) { ai_order_attack(m, team_tu); continue; }
+                if (team_tb >= 0) { ai_order_attack_building(m, team_tb); continue; }
+            }
             for (int m : team.members) {
                 if (m < 0 || m >= (int)units_.size()) continue;
                 Unit& u = units_[m];
@@ -3070,12 +3398,82 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
             }
             break;
         }
+        case TeamCommand::Kind::Load: {   // W2-SK-09: board the team's transport
+            const int tr = ai_team_transport(team);
+            if (tr < 0) break;
+            const Unit& t = units_[(std::size_t)tr];
+            for (int m : team.members) {
+                if (m == tr || m < 0 || m >= (int)units_.size()) continue;
+                Unit& u = units_[(std::size_t)m];
+                if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+                if (!can_load(units_, tr, m)) continue;
+                cargo_any_ = true;
+                u.target = -1;
+                u.target_building = -1;
+                u.attack_order = false;
+                u.unload_pending = false;
+                u.enter_target = tr;
+                order_unit_move(m, t.cell_x, t.cell_y);
+            }
+            break;
+        }
+        case TeamCommand::Kind::Unload: {   // W2-SK-09
+            const int tr = ai_team_transport(team);
+            if (tr >= 0 && !units_[(std::size_t)tr].cargo.empty()) {
+                units_[(std::size_t)tr].unload_pending = true;
+                cargo_any_ = true;
+            }
+            break;
+        }
+        case TeamCommand::Kind::Deploy:   // W2-SK-10: GI sandbags, Desolator rad
+            for (int m : team.members)
+                if (m >= 0 && m < (int)units_.size() && units_[(std::size_t)m].alive &&
+                    units_[(std::size_t)m].cargo_of < 0 && !is_mcv(m))
+                    order_deploy(m);
+            break;
         case TeamCommand::Kind::Inert:  // logged skip — pc already advanced
         case TeamCommand::Kind::Wait:
         case TeamCommand::Kind::None:
         default:
             break;
     }
+}
+
+int World::ai_team_transport(const TeamInstance& t) const {
+    for (int m : t.members)
+        if (m >= 0 && m < (int)units_.size() && units_[(std::size_t)m].alive &&
+            units_[(std::size_t)m].die_time < 0.0 && units_[(std::size_t)m].passengers_max > 0)
+            return m;
+    return -1;
+}
+
+// The gesture layer's purpose table (main.cpp infiltrate_purposes_for),
+// derived from the type data the World holds.
+World::InfiltratePurpose World::ai_infiltrate_purpose(int b_idx) const {
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return InfiltratePurpose::None;
+    const int t = buildings_[(std::size_t)b_idx].type;
+    if (t < 0 || t >= (int)btypes().size()) return InfiltratePurpose::None;
+    const BuildingTypeDef& d = btypes()[(std::size_t)t];
+    if (!d.spyable) return InfiltratePurpose::None;
+    if (std::find(refinery_types_.begin(), refinery_types_.end(), t) != refinery_types_.end())
+        return InfiltratePurpose::Refinery;
+    if (d.power > 0) return InfiltratePurpose::PowerPlant;
+    if (buildings_[(std::size_t)b_idx].grants_superweapon) return InfiltratePurpose::Superweapon;
+    if (d.factory_kind > 0) return InfiltratePurpose::Factory;
+    return InfiltratePurpose::RadarLab;
+}
+
+int World::ai_team_need(const TeamInstance& t, const AimdData& aimd, int ut) {
+    if (t.teamtype < 0 || t.teamtype >= (int)aimd.teams.size()) return 0;
+    const int tfi = aimd.teams[t.teamtype].taskforce;
+    if (tfi < 0 || tfi >= (int)aimd.taskforces.size()) return 0;
+    int want = 0;
+    for (const TaskForceMember& m : aimd.taskforces[tfi].members)
+        if (m.unit == ut) want += m.count;
+    int have = 0;
+    for (int mt : t.member_types)
+        if (mt == ut) ++have;
+    return want - have;
 }
 
 bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
@@ -3102,22 +3500,51 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     const BuildingTypeDef& fdef = rec.cfg.roster[buildings_[fi].type];
     const int uidx = launch_unit(fi, fdef, tc.unit_roster[uslot].combat);
     if (uidx < 0) return false;  // exit blocked -> HOLD ready (retry next frame)
+    if (units_[(std::size_t)uidx].image == "SPY") {   // W2-SK-22: AI spies go out disguised
+        const int foe = rec.enemy_house;
+        std::string look;
+        int look_house = foe;
+        for (const Unit& e : units_)
+            if (e.alive && e.die_time < 0.0 && e.house == foe && !e.is_vehicle && !e.is_aircraft &&
+                e.image != "SPY") { look = e.image; break; }
+        if (!look.empty()) set_disguise(uidx, look, look_house);
+    }
+    if (!tc.unit_roster[uslot].combat.deploys_into.empty()) {   // W2-SK-07: unfold it
+        order_deploy_mcv(uidx);
+        rec.queues.placed(cat);
+        return true;
+    }
     if (tc.unit_roster[uslot].harvester) {   // [G-68] a bought miner goes to work
         const UnitTypeDef& d = tc.unit_roster[uslot];
         make_harvester(uidx, d.chrono_miner, d.storage > 0 ? d.storage : 20);
         rec.queues.placed(cat);
         return true;
     }
-    // Claim into the FIRST (oldest) Recruiting team owing this type —
-    // deterministic; an unclaimed unit stays idle and recruitable
-    // [RE: ai-team.md §2].
+    // Claim into the FIRST (oldest) team owing this type -- deterministic; an
+    // unclaimed unit stays idle and recruitable [RE: ai-team.md §2].
+    // W2-SK-06 [RE: ai-team.md §2 "an unfilled Full=no team keeps recruiting /
+    // producing toward strength" while it acts]: Gathering teams
+    // that are still under strength claim too; the recruit drives to the team.
     for (TeamInstance& t : rec.team_state.teams) {
-        if (t.state != TeamState::Recruiting) continue;
-        if (team_shortfall_type(t, tc.aimd) == uslot) {
-            t.members.push_back(uidx);
-            t.member_types.push_back(uslot);
-            break;
+        // Recruiting and Gathering only: an Executing team runs its script
+        // with what it has (a late recruit held its CloseEnough move line).
+        if (t.state != TeamState::Recruiting && t.state != TeamState::Gathering) continue;
+        if (ai_team_need(t, tc.aimd, uslot) <= 0) continue;
+        t.members.push_back(uidx);
+        t.member_types.push_back(uslot);
+        if (t.state != TeamState::Recruiting) {
+            int fx = t.gather_x, fy = t.gather_y;
+            if (t.state == TeamState::Executing) {
+                long long sx = 0, sy = 0, n = 0;
+                for (int m : t.members)
+                    if (m >= 0 && m < (int)units_.size() && m != uidx && units_[m].alive) {
+                        sx += units_[m].cell_x; sy += units_[m].cell_y; ++n;
+                    }
+                if (n) { fx = (int)(sx / n); fy = (int)(sy / n); }
+            }
+            order_unit_move(uidx, fx, fy);
         }
+        break;
     }
     rec.queues.placed(cat);
     return true;
@@ -3262,15 +3689,102 @@ void World::step_ai_teams(double dt) {
             if (t.state != TeamState::Recruiting) continue;
             recruit_idle(t, tc.aimd, ai_idle_units(h, rec));
         }
-        int want = next_produce_type(st.teams, tc.aimd, rec.credits,
-                                     rec.cfg.mods.cost_mul, tc.unit_roster,
-                                     tc.rules);
+        // W2-SK-06 [RE: ai-team.md §6 -- produce for every team shortfall in
+        // parallel factories]: one pick per IDLE factory category (infantry
+        // and vehicle start in the same tick), the type most owed across ALL
+        // under-strength live teams that this house can start and afford now
+        // (the old oldest-Recruiting-team-only pick wedged every factory
+        // behind one unbuildable or unaffordable slot).
+        int want = -1;
+        int want_inf = -1, want_veh = -1;
+        // W2-SK-06 base priority [RE-FALLBACK: the original AI keeps building
+        // its base while it trains; with every factory now producing, a unit
+        // start must not eat the money AI-1 is banking for its next structure
+        // (the base froze at 7 buildings / 1 refinery in the first soak)].
+        double base_hold = 0.0;
+        {
+            AiBaseState probe = rec.state;
+            const BaseView bv = make_ai_base_view(h, rec);
+            const BuildDecision bd = next_build(probe, bv, rec.cfg.catalog, rec.cfg.roster,
+                                                rec.cfg.ai, rec.cfg.mods);
+            const int ht = bd.type >= 0 ? bd.type : bd.wait_type;
+            const bool cy = std::any_of(buildings_.begin(), buildings_.end(), [&](const Building& b) {
+                return b.alive && b.house == h && b.state == Building::State::Idle && b.type >= 0 &&
+                       b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard;
+            });
+            // Core economy structures only (power / refinery / barracks / war
+            // factory / radar): banking for a 5000-credit superweapon or the
+            // tech centre would starve the army for minutes.
+            const AiCatalog& ct = rec.cfg.catalog;
+            const bool core = ht == ct.power || ht == ct.refinery || ht == ct.barracks ||
+                              ht == ct.war_factory || ht == ct.radar;
+            if (cy && core && ht >= 0 && ht < (int)rec.cfg.roster.size() &&
+                rec.queues.producing(QueueCat::Structure) == -1)
+                base_hold = rec.cfg.roster[ht].cost * rec.cfg.mods.cost_mul;
+        }
+        {
+            std::vector<int> need(tc.unit_roster.size(), 0);
+            for (const TeamInstance& t : st.teams) {
+                if (t.state != TeamState::Recruiting && t.state != TeamState::Gathering) continue;
+                for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut)
+                    need[ut] += std::max(0, ai_team_need(t, tc.aimd, ut));
+            }
+            int best_inf = 0, best_veh = 0;
+            for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut) {
+                if (need[ut] <= 0) continue;
+                const UnitTypeDef& d = tc.unit_roster[ut];
+                const bool veh = d.is_vehicle;
+                const QueueCat cat = veh ? QueueCat::Vehicle : QueueCat::Infantry;
+                const bool free_inf = !veh && rec.credits > tc.rules.infantry_reserve;
+                if (!free_inf &&
+                    rec.credits < d.cost * rec.cfg.mods.cost_mul + tc.rules.credit_reserve + base_hold)
+                    continue;
+                const std::vector<int>& ft = veh ? tc.veh_factory_types : tc.inf_factory_types;
+                if (factory_category_lost(ft, h) ||
+                    !can_start_unit(rec.queues.state(cat), ut, tc.unit_roster, buildings_,
+                                    rec.cfg.roster, h, rec.cfg.groups, true))
+                    continue;
+                if (veh ? need[ut] > best_veh : need[ut] > best_inf) {
+                    (veh ? best_veh : best_inf) = need[ut];
+                    (veh ? want_veh : want_inf) = ut;
+                }
+            }
+        }
         // [G-68] IQ Harvester: miners below refineries x HarvestersPerRefinery
         // -> the miner comes first [RE: rulesmd [IQ] Harvester=2 "automatically
         // replace lost harvesters"; HarvestersPerRefinery "formerly
         // hardcoded"]. RE-FALLBACK: checked every frame the vehicle queue is
         // idle; affordability as any unit (cost + CreditReserve).
-        if (tc.harvesters_per_refinery > 0) {
+        // W2-SK-07 [RE-FALLBACK, RE-Q4 open: the original skirmish AI rebuys
+        // an MCV when it has no Construction Yard and redeploys it]: with no
+        // ConYard, no MCV standing or in production, and a war factory, the
+        // vehicle factory builds the side's MCV ahead of everything else.
+        {
+            bool cy = false, mcv = false;
+            for (const Building& b : buildings_)
+                if (b.alive && b.house == h && b.state == Building::State::Idle && b.type >= 0 &&
+                    b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard) { cy = true; break; }
+            for (const Unit& u : units_)
+                if (u.alive && u.die_time < 0.0 && u.house == h && u.deploys_into >= 0) { mcv = true; break; }
+            const int vp = rec.queues.producing(QueueCat::Vehicle);
+            if (vp >= 0 && vp < (int)tc.unit_roster.size() && !tc.unit_roster[vp].combat.deploys_into.empty())
+                mcv = true;
+            if (!cy && !mcv && !factory_category_lost(tc.veh_factory_types, h))
+                for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut) {
+                    const UnitTypeDef& d = tc.unit_roster[ut];
+                    if (d.combat.deploys_into.empty()) continue;
+                    if (rec.credits < d.cost * rec.cfg.mods.cost_mul + tc.rules.credit_reserve) break;
+                    if (!can_start_unit(rec.queues.state(QueueCat::Vehicle), ut, tc.unit_roster, buildings_,
+                                        rec.cfg.roster, h, rec.cfg.groups, true))
+                        continue;
+                    want_veh = ut;
+                    break;
+                }
+        }
+        for (int pass = 0; pass < 2; ++pass) {
+        want = pass == 0 ? want_inf : want_veh;
+        if (pass == 1 && tc.harvesters_per_refinery > 0 &&
+            !(want >= 0 && !tc.unit_roster[want].combat.deploys_into.empty())) {
             int refineries = 0, miners = 0;
             for (const Building& b : buildings_)
                 if (b.alive && b.house == h && b.state == Building::State::Idle &&
@@ -3341,6 +3855,7 @@ void World::step_ai_teams(double dt) {
                 rec.credits = rec.queues.credits();
             }
         }
+        }   // W2-SK-06 per-category pass
 
         // 6) Step every team (pure brain) + execute its command (impure glue);
         //    Disbanding teams release survivors (they simply stop being members
@@ -3370,9 +3885,12 @@ void World::step_ai_teams(double dt) {
                     t.best_focus_d2 = -1;
                     t.no_progress_secs = 0.0;
                 } else {
-                    const double reach = (t.state == TeamState::Gathering)
-                                             ? kAiStrayCells
-                                             : kAiCloseEnoughCells;
+                    int n_alive = 0;
+                    for (int m : t.members)
+                        if (m >= 0 && m < (int)units_.size() && units_[m].alive &&
+                            units_[m].die_time < 0.0) ++n_alive;
+                    const double reach = team_reach_cells(
+                        t.state == TeamState::Gathering ? kAiStrayCells : kAiCloseEnoughCells, n_alive);
                     bool any_alive = false, any_moving = false, all_within = true;
                     long long sum_d2 = 0;
                     for (int m : t.members) {
@@ -3402,7 +3920,7 @@ void World::step_ai_teams(double dt) {
                         t.no_progress_secs = 0.0;
                         if (t.state == TeamState::Gathering) {
                             const Cellxy g =
-                                gather_cell(view.enemy_x, view.enemy_y, st.rng);
+                                base_gather_cell(view.base_x, view.base_y, st.rng);   // W2-SK-06
                             t.gather_x = g.x;
                             t.gather_y = g.y;
                             t.move_issued = false;
@@ -3488,19 +4006,32 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
     // deviations list].
     v.neutral_units.clear();
     v.neutral_buildings.clear();
+    // W2-SK-08/09: "enemy" = the ONE current enemy house when picked (the
+    // original's house+0x5600); the skirmish lobby appends a real neutral
+    // house, whose holdings feed ct=7 CivilianHouseOwns.
+    const int neutral = neutral_house();
+    if (neutral >= 0) {
+        v.neutral_units.assign(tc.unit_roster.size(), 0);
+        v.neutral_buildings.assign(rec.cfg.roster.size(), 0);
+    }
+    auto is_foe = [&](int hh) {
+        return rec.enemy_house >= 0 ? hh == rec.enemy_house : is_enemy(house, hh);
+    };
     for (const Unit& u : units_) {
         // Carried units are off-map/invisible to census [CB-1 off-map invariant].
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         const int t = ai_unit_type_of(rec, u);
         if (t < 0) continue;
         if (u.house == house) ++v.own_units[t];
-        else if (is_enemy(house, u.house)) ++v.enemy_units[t];   // [G-67] not allies/neutral
+        else if (neutral >= 0 && u.house == neutral) ++v.neutral_units[t];
+        else if (is_foe(u.house)) ++v.enemy_units[t];   // [G-67] not allies/neutral
     }
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead) continue;
         if (b.type < 0 || b.type >= (int)rec.cfg.roster.size()) continue;
         if (b.house == house) ++v.own_buildings[b.type];
-        else if (is_enemy(house, b.house)) ++v.enemy_buildings[b.type];   // [G-67]
+        else if (neutral >= 0 && b.house == neutral) ++v.neutral_buildings[b.type];
+        else if (is_foe(b.house)) ++v.enemy_buildings[b.type];   // [G-67]
     }
     v.credits = rec.credits;  // OWNER house credits — ct=4 HouseCredits reads
                               // the CALLING house's money scalar [RE-GATE
@@ -3520,6 +4051,17 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 }
 
 void World::step(double dt) {
+    // W2-SK-15: tombstoned units keep their slot (every target / team member /
+    // cargo / parasite / projectile owner is a stable unit INDEX, so slots are
+    // never erased or reused), but a dead slot releases its heap storage: the
+    // path and cargo vectors. Swept every 150 frames; nothing reads either
+    // field of a dead unit.
+    if ((repair_frame_ % 150u) == 0u)
+        for (Unit& u : units_)
+            if (!u.alive) {
+                if (u.path.capacity()) { std::vector<Cellxy>().swap(u.path); u.path_idx = 0; }
+                if (u.cargo.capacity() && u.cargo.empty()) std::vector<int>().swap(u.cargo);
+            }
     {
         // W2-AN-10: an amphibious unit re-paths over Land OR Water.
         bool amph = false;
@@ -3553,6 +4095,8 @@ void World::step(double dt) {
     // beside step_cargo; `if (!capture_any_) return;` inside is the only cost
     // every existing demo pays (no demo issues a capture order) [spec §8].
     step_capture(dt);
+    step_service_depots();   // W2-SK-19
+    step_disguises();        // W2-SK-22
 
     // gF MCV deploy [RE: docs/re/mcv-deploy.md]: the turn-then-unfold mission.
     // `if (!deploy_any_) return;` inside -- no gate issues a deploy order.
@@ -3708,7 +4252,10 @@ void World::step(double dt) {
     // task-6-brief.md) steps with zero ore/harvest activity: ore_.step is
     // also gated (not just step_harvest), so ore().timer() stays exactly 0.
     if (!types_.empty()) {
-        ore_.step(dt, growth_interval_, growth_pct_, spread_pct_, passable_, ore_rng_);
+        ore_.step(dt, growth_interval_, growth_pct_, spread_pct_, passable_, ore_rng_, &occ_);
+        // W2-SK-01: ore mines (TerrainClass::AI per logic frame).
+        if (!ore_.mines().empty())
+            ore_.step_mines(std::max(1, (int)std::llround(dt * 15.0)), passable_, ore_rng_);
         std::vector<HarvestMove> h_moves;
         std::vector<HarvestEvent> h_events;
         // Gap owner A (G-27): own operational Ore Purifiers per house.
@@ -3721,11 +4268,15 @@ void World::step(double dt) {
                 ++purifiers[b.house];
                 any_purifier = true;
             }
+        const std::vector<double> before_harvest = house_credits_;   // W2-SK income witness
         step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
                     grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
                     house_credits_.data(), h_moves, h_events,
                     static_cast<int>(house_credits_.size()),
-                    any_purifier ? purifiers.data() : nullptr, purifier_bonus_);
+                    any_purifier ? purifiers.data() : nullptr, purifier_bonus_, harvest_scan_);
+        if (harvest_income_.size() < house_credits_.size()) harvest_income_.resize(house_credits_.size(), 0.0);
+        for (std::size_t h = 0; h < house_credits_.size() && h < before_harvest.size(); ++h)
+            harvest_income_[h] += house_credits_[h] - before_harvest[h];
         // Path each requested move the same way step_combat's MoveRequests
         // are executed above (order_unit_move mirrors that pattern).
         for (const HarvestMove& m : h_moves) order_unit_move(m.unit, m.gx, m.gy);
@@ -4097,7 +4648,10 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                         ? *amphib_passable : passable;
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
-                std::vector<Cellxy> np = find_path(p2, w, h, {u.cell_x, u.cell_y}, goal);
+                // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used
+                // to flood the whole grid every 0.3 s per blocked unit).
+                std::vector<Cellxy> np =
+                    find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget);
                 if (np.size() > 1) {
                     u.path = std::move(np);
                     u.path_idx = 1;

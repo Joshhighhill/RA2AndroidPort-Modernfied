@@ -587,6 +587,11 @@ void Input::issue_order(int px, int py) {
             if (b_hit >= 0) {
                 const Building& tb = world_.buildings()[b_hit];
                 const int eng_house = world_.units()[eng].house;
+                // W2-SK-12: an enemy Capturable=false structure shows the
+                // no-entry cursor in the original -- the click does nothing.
+                if (tb.house != eng_house && !world_.are_allied(eng_house, tb.house) &&
+                    !world_.building_capturable(b_hit))
+                    return;
                 const bool is_target =
                     (tb.house != eng_house) ||   // enemy/neutral -> capture
                     (tb.hp < tb.max_hp);         // own damaged -> repair

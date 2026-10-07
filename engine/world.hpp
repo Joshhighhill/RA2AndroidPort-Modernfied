@@ -162,6 +162,7 @@ struct Unit {
                                      // or CMIN post-unload warp in transit)
     double harv_timer = 0.0;         // gulp/unload/rescan/warp accumulator
     bool manual_hold = false;        // player move order: pause auto-resume until arrival
+    int harv_skip_x = -1, harv_skip_y = -1;   // W2-SK-04: ore cell the last move failed to reach
 
     // --- CB-1 Transports/Cargo [RE: transport-cargo.md] ---------------------
     // ALL defaults INERT (spec §8): no existing demo issues a load/unload
@@ -347,6 +348,13 @@ struct Unit {
     int occupy_target = -1;          // pending "enter garrison" order -> building
     int attack_cell_x = -1, attack_cell_y = -1;   // force-fire ground target (-1 none)
     bool cell_shot = false;          // fired at attack_cell this step (World resolves it)
+    // --- W2-SK-22 (save v13) ---
+    int shrapnel_count = 0;
+    int shrapnel_damage = 0;
+    double shrapnel_range = 0.0;
+    std::vector<int> shrapnel_verses;
+    bool disguise_when_still = false;
+    int still_frames = 0;            // Mirage: frames stopped and not firing
     AnUnit an;                       // W2-AN: naval/air/SW runtime state (air_naval.hpp)
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
@@ -605,6 +613,10 @@ struct AiHouseConfig {
                                          // this is the lobby/MPlayer money,
                                          // passed through unmodified]
     AiTeamConfig team;  // AI-2 [RE: ai-team.md]; enabled=false = no team brain
+    // W2-SK-06 [RE: production.md §1.2 -- MultipleFactory applies to every
+    // house]: each extra same-class factory multiplies build time by this.
+    // 1.0 = off (the synthetic gate configs); real play passes rules 0.8.
+    double multiple_factory = 1.0;
 };
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
@@ -742,6 +754,20 @@ public:
     }
     // Gap owner A (G-27) [RE: economy.md §2]: rulesmd [General] PurifierBonus.
     void set_purifier_bonus(double b) { purifier_bonus_ = b; }
+    // W2-SK-02: rules [General] TiberiumLongScan / TiberiumShortScan (cells).
+    void set_harvest_scan(int long_scan, int short_scan) {
+        harvest_scan_.long_scan = long_scan > 0 ? long_scan : kOreScanRadius;
+        harvest_scan_.short_scan = short_scan > 0 ? short_scan : 6;
+    }
+    const HarvestScan& harvest_scan() const { return harvest_scan_; }
+    // W2-SK: total refinery unload income a house has earned (probe/soak).
+    double harvest_income(int house) const {
+        return house >= 0 && house < (int)harvest_income_.size() ? harvest_income_[(std::size_t)house] : 0.0;
+    }
+    // W2-SK-01: register a map ore mine (TerrainType SpawnsTiberium=yes).
+    void add_ore_mine(int x, int y, int half_frames, int anim_rate, double anim_prob) {
+        ore_.add_mine(x, y, half_frames, anim_rate, anim_prob);
+    }
 
     // The type roster for non-economy consumers (repair/sell). set_economy's
     // roster wins when present so gate worlds behave exactly as before.
@@ -1143,6 +1169,14 @@ public:
     // false if b_idx is invalid, Dead, not owned by `by_house`, or already at
     // full HP. The caller consumes the engineer on true.
     bool repair_building(int b_idx, int by_house);
+    // W2-SK-12: may an engineer capture this building (BuildingType Capturable=)?
+    bool building_capturable(int b_idx) const {
+        if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
+        const int t = buildings_[(std::size_t)b_idx].type;
+        if (t < 0 || t >= (int)btypes().size()) return true;   // untyped test buildings
+        // A bridge repair hut is "entered", not captured (world-depth.md §B4).
+        return btypes()[(std::size_t)t].capturable || btypes()[(std::size_t)t].bridge_repair_hut;
+    }
 
     // --- Projectile phase (P2) [RE: projectile.md] -------------------------
     // ALL inert by default. projectiles_enabled_ is opened ONLY by
@@ -1236,8 +1270,19 @@ public:
     bool house_repairing(int house) const {
         for (const Building& b : buildings_)
             if (b.alive && b.house == house && b.being_repaired) return true;
-        return false;
+        return depot_servicing(house);   // W2-SK-19: the depot charges the wallet too
     }
+    // W2-SK-19 Service Depot [RE: rulesmd GADEPT/NADEPT UnitRepair=yes;
+    // [General] URepairRate=.016 RepairStep=8 RepairPercent=15%]: the vehicle
+    // standing at an own depot (the lowest-index one beside its foundation,
+    // stopped) heals RepairStep HP on the shared repair phase for
+    // repair_step_cost(Cost, Strength) credits, and an attached Terror Drone is
+    // destroyed. [RE-FALLBACK: the pad is part of the foundation in the
+    // original; here the docked cell is any cell touching the footprint.]
+    int depot_client(int b_idx) const;
+    bool depot_servicing(int house) const;
+    void step_service_depots();
+    void step_disguises();   // W2-SK-22 Mirage disguise-when-still
 
     // Consume a unit (the capture/repair gesture spends its engineer, and any
     // future "removed from map" consumer): tombstone it directly (no die anim --
@@ -1306,6 +1351,22 @@ public:
     // this house produces thereafter spawn at veteran_rank 1). Index 2 inert.
     bool produced_veteran(int house) const {
         return house >= 0 && house < house_count() && produced_veteran_[house];
+    }
+    // W2-SK-20: per factory category (BuildingTypeDef::factory_kind).
+    bool produced_veteran_kind(int house, int kind) const {
+        if (house < 0 || house >= house_count()) return false;
+        const std::uint8_t m = produced_veteran_[house];
+        return kind > 0 ? (m & (1u << kind)) != 0 : m != 0;
+    }
+    // W2-SK-20: the GameScene publishes the human wallet so a refinery spy
+    // steals the real balance (the World only sees the per-frame income pool).
+    void set_wallet_hint(int house, double credits) {
+        if (house < 0) return;
+        if ((int)wallet_hint_.size() <= house) wallet_hint_.resize((std::size_t)house + 1, 0.0);
+        wallet_hint_[(std::size_t)house] = credits;
+    }
+    double wallet_hint(int house) const {
+        return house >= 0 && house < (int)wallet_hint_.size() ? wallet_hint_[(std::size_t)house] : 0.0;
     }
 
     // --- Shroud/Fog phase [RE: shroud.md] ---------------------------------
@@ -1655,10 +1716,18 @@ private:
         double credits = 0.0;
         AiTeamState team_state;  // AI-2 [RE: ai-team.md]
         AiTriggerState trigger_state;  // AI-3 [RE: ai-trigger.md]
+        int enemy_house = -1;  // W2-SK-08: the ONE current enemy (house+0x5600), v9
     };
     std::vector<HouseAiRec> ai_houses_;  // index = house id (grown on demand)
     bool ai_any_ = false;                // the step() firewall bool
     void step_ai_houses(double dt);
+    void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08
+    bool ai_house_alive(int house) const;                   // W2-SK-08
+public:
+    int ai_enemy_house(int house) const {                   // W2-SK-08 (probe)
+        return ai_enabled(house) ? ai_houses_[house].enemy_house : -1;
+    }
+private:
     void ai_try_fire_superweapon(int house, HouseAiRec& rec);   // [G-66]
     BaseView make_ai_base_view(int house, const HouseAiRec& rec) const;
     bool ai_place_ready(int house, HouseAiRec& rec, QueueCat cat);
@@ -1695,6 +1764,10 @@ private:
     void ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
                                  const TeamCommand& c);
     bool ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat);
+    // W2-SK-06: how many more of unit type `ut` the team's TaskForce owes.
+    static int ai_team_need(const TeamInstance& t, const AimdData& aimd, int ut);
+    int ai_team_transport(const TeamInstance& t) const;        // W2-SK-09
+    InfiltratePurpose ai_infiltrate_purpose(int b_idx) const;  // W2-SK-09
 
     // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
     void ai_fill_trigger_view(int house, const HouseAiRec& rec, TriggerView& v) const;
@@ -1802,7 +1875,8 @@ private:
     // gate is byte-identical.
     // T3 [RE: multihouse.md §D2]: bool[3] -> std::vector<uint8_t> sized
     // house_count(). NOT hashed. Sized in ensure_houses_default/grow_house_arrays.
-    std::vector<std::uint8_t> produced_veteran_;
+    std::vector<std::uint8_t> produced_veteran_;   // W2-SK-20: bit (1 << factory_kind)
+    std::vector<double> wallet_hint_;              // W2-SK-20 (v13)
     // The single firewalled Capture per-frame pass: tech-structure income +
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.
@@ -1915,6 +1989,8 @@ private:
     double growth_pct_ = 0.0;
     double spread_pct_ = 0.0;
     double purifier_bonus_ = 0.0;   // rules [General] PurifierBonus (gap owner A, G-27)
+    HarvestScan harvest_scan_;      // W2-SK-02 (save v13)
+    std::vector<double> harvest_income_;   // W2-SK: cumulative unload income per house (v13)
     // T3 [RE: multihouse.md §D2]: double[3] -> std::vector sized house_count().
     // per-house income; index 2 (kNeutralHouse) inert -- neutral holds no credits
     // [RE: capture.md §D1]. NOT hashed. Sized in ensure_houses_default/

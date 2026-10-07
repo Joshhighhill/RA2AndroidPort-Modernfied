@@ -143,6 +143,12 @@ struct UnitCombat {
     bool occupier = false;            // Occupier= (may garrison CanBeOccupied buildings, G-48)
     WeaponSlot occupy_weapon;         // OccupyWeapon= (fired from inside a garrison)
     WeaponSlot elite_occupy_weapon;   // EliteOccupyWeapon=
+    // --- W2-SK-22 (save v13) ---
+    int shrapnel_count = 0;           // primary ShrapnelCount= (Prism Tank Comet: 5)
+    int shrapnel_damage = 0;          // ShrapnelWeapon= Damage (CometFragment 30)
+    double shrapnel_range = 0.0;      // ShrapnelWeapon= Range (cells)
+    std::vector<int> shrapnel_verses; // ShrapnelWeapon= warhead Verses
+    bool disguise_when_still = false; // CanDisguise= + DisguiseWhenStill= (Mirage Tank)
     AnType an;                        // W2-AN: naval/air/SW type data (air_naval.hpp)
 };
 

@@ -31,4 +31,18 @@ struct Cellxy { int x, y; };
 std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, int height,
                               Cellxy start, Cellxy goal);
 
+// W2-SK-16: find_path with an expansion budget (> 0): empty when the goal is
+// not reached within `max_expand` closed nodes (same path otherwise).
+std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int width, int height,
+                                      Cellxy start, Cellxy goal, int max_expand);
+
+// W2-SK-05/16 [RE-FALLBACK: the original walks a unit ordered onto an
+// impassable or unreachable cell to the nearest place it can reach]: an
+// impassable goal is first relaxed to the nearest passable cell (<= 16 rings);
+// if that is still not reached (unreachable, or `max_expand` > 0 runs out) the
+// path ends at the expanded cell nearest the goal. Empty only for bad input or
+// an impassable start; a single-cell path means "already as close as it gets".
+std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int width, int height,
+                                      Cellxy start, Cellxy goal, int max_expand);
+
 }  // namespace ra2engine

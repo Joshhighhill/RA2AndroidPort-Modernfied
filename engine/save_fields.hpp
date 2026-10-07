@@ -34,6 +34,10 @@ struct SaveAccess {
         save::io(ar, f.density_);
         save::io(ar, f.variant_);
         save::io(ar, f.timer_);
+        save::io(ar, f.mines_);   // W2-SK-01 ore mines (v13)
+        save::io(ar, f.growth_frames_);
+        save::io(ar, f.spread_frames_);
+        save::io(ar, f.spread_timer_);
     }
     template <class Ar> static void queues(Ar& ar, ProductionQueues& q) { save::io(ar, q.q_); }
     template <class Ar> static void rad_field(Ar& ar, RadField& f) {   // P4 radiation
@@ -57,6 +61,7 @@ struct SaveAccess {
         save::io(ar, r.credits);
         save::io(ar, r.team_state);
         save::io(ar, r.trigger_state);
+        save::io(ar, r.enemy_house);   // W2-SK-08 (v13)
     }
     template <class Ar> static void house_sw(Ar& ar, World::HouseSuperweapon& s) {
         save::io(ar, s.has_sw);
@@ -127,6 +132,7 @@ struct SaveAccess {
         save::io(ar, w.tech_income_);
         save::io(ar, w.blackout_frames_);
         save::io(ar, w.produced_veteran_);
+        save::io(ar, w.wallet_hint_);   // W2-SK-20 (v13)
         // Shroud
         save::io(ar, w.explored_);
         save::io(ar, w.visible_);
@@ -168,6 +174,8 @@ struct SaveAccess {
         save::io(ar, w.growth_pct_);
         save::io(ar, w.spread_pct_);
         save::io(ar, w.purifier_bonus_);   // gap owner A (G-27)
+        save::io(ar, w.harvest_scan_);     // W2-SK-02 (v13)
+        save::io(ar, w.harvest_income_);   // W2-SK income witness (v13)
         save::io(ar, w.house_credits_);
         save::io(ar, w.harvest_events_);
         // Repair & Sell
@@ -342,6 +350,21 @@ template <class Ar> void fields(Ar& ar, UnitAnimSeq& v) {
     io(ar, v.stand); io(ar, v.walk); io(ar, v.fire); io(ar, v.die);
 }
 template <class Ar> void fields(Ar& ar, OreRng& v) { io(ar, v.s); }
+template <class Ar> void fields(Ar& ar, HarvestScan& v) {   // W2-SK-02 (v13)
+    io(ar, v.long_scan);
+    io(ar, v.short_scan);
+}
+template <class Ar> void fields(Ar& ar, OreMine& v) {   // W2-SK-01 (v13)
+    io(ar, v.x);
+    io(ar, v.y);
+    io(ar, v.half_frames);
+    io(ar, v.anim_rate);
+    io(ar, v.anim_prob);
+    io(ar, v.stage);
+    io(ar, v.rate);
+    io(ar, v.timer);
+    io(ar, v.spawned);
+}
 template <class Ar> void fields(Ar& ar, ProjRng& v) { io(ar, v.s); }
 template <class Ar> void fields(Ar& ar, ProjectileRules& v) { io(ar, v.gravity); io(ar, v.ballistic_scatter); }
 template <class Ar> void fields(Ar& ar, Superweapon& v) {
@@ -630,6 +653,11 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.occupier);
     io(ar, v.occupy_weapon);
     io(ar, v.elite_occupy_weapon);
+    io(ar, v.shrapnel_count);        // W2-SK-22 (v13)
+    io(ar, v.shrapnel_damage);
+    io(ar, v.shrapnel_range);
+    io(ar, v.shrapnel_verses);
+    io(ar, v.disguise_when_still);
     io(ar, v.an);   // W2-AN (save v9)
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
@@ -672,6 +700,10 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.crewed);
     io(ar, v.deploy_facing);   // gF
     io(ar, v.ore_purifier);   // gap owner A (G-27)
+    io(ar, v.capturable);     // W2-SK-12 (v13)
+    io(ar, v.spyable);        // W2-SK-20 (v13)
+    io(ar, v.unit_repair);    // W2-SK-19 (v13)
+    io(ar, v.factory_kind);   // W2-SK-20 (v13)
     io(ar, v.soylent);
     // Gap fix C: defense weapons
     io(ar, v.weapon);
@@ -732,6 +764,8 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.dock_refinery);
     io(ar, v.harv_timer);
     io(ar, v.manual_hold);
+    io(ar, v.harv_skip_x);   // W2-SK-04 (v13)
+    io(ar, v.harv_skip_y);
     // cargo
     io(ar, v.passengers_max);
     io(ar, v.size_limit);
@@ -821,6 +855,12 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.occupy_target);
     io(ar, v.attack_cell_x); io(ar, v.attack_cell_y);
     io(ar, v.cell_shot);
+    io(ar, v.shrapnel_count);        // W2-SK-22 (v13)
+    io(ar, v.shrapnel_damage);
+    io(ar, v.shrapnel_range);
+    io(ar, v.shrapnel_verses);
+    io(ar, v.disguise_when_still);
+    io(ar, v.still_frames);
     io(ar, v.an);   // W2-AN (save v9)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
@@ -1050,6 +1090,7 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.low_power_penalty);
     io(ar, v.start_credits);
     io(ar, v.team);
+    io(ar, v.multiple_factory);   // W2-SK-06 (v13)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---

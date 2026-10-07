@@ -82,6 +82,10 @@ int depth_register_building(BuildingAssets& ba, const ra2assets::MixFile& ra2, c
     d.explosion = rules.explosion_first(id);
     d.unsellable = rules.section_flag(id, "Unsellable", false);
     d.click_repairable = rules.section_flag(id, "ClickRepairable", true);
+    // W2-SK-12/19/20: the same Capturable/Spyable/UnitRepair flags as the roster.
+    d.capturable = rules.section_flag(id, "Capturable", false);
+    d.spyable = rules.section_flag(id, "Spyable", false);
+    d.unit_repair = rules.section_flag(id, "UnitRepair", false);
     BuildingArt slot;
     for (const auto& c : ra2assets::theater_candidates(art_id, art_chain().letter, art_chain().iso_mix,
                                                        art_chain().art_mix, ".shp")) {

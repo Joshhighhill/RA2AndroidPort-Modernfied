@@ -36,34 +36,43 @@ struct OpenNodeGreater {
     }
 };
 
-}  // namespace
-
-std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, int height,
-                              Cellxy start, Cellxy goal) {
-    if (width <= 0 || height <= 0) return {};
-    if (passable.size() != static_cast<size_t>(width) * static_cast<size_t>(height)) return {};
-
-    auto in_range = [&](int x, int y) {
-        return x >= 0 && x < width && y >= 0 && y < height;
-    };
-    if (!in_range(start.x, start.y) || !in_range(goal.x, goal.y)) return {};
-
-    auto index_of = [&](int x, int y) { return y * width + x; };
-
-    if (passable[index_of(start.x, start.y)] == 0) return {};
-    if (passable[index_of(goal.x, goal.y)] == 0) return {};
-
-    if (start.x == goal.x && start.y == goal.y) {
-        return { start };
+// W2-SK-16: per-thread scratch reused across calls with a generation stamp
+// (was three full-grid allocations per call). A cell whose stamp != gen reads
+// as g = inf, came_from = -1, open (not closed) -- identical semantics.
+struct Scratch {
+    std::vector<int> g, came;
+    std::vector<std::uint32_t> stamp;
+    std::vector<std::uint8_t> closed;
+    std::uint32_t gen = 0;
+    void prepare(int n) {
+        if ((int)stamp.size() != n) {
+            g.assign((size_t)n, 0);
+            came.assign((size_t)n, -1);
+            stamp.assign((size_t)n, 0);
+            closed.assign((size_t)n, 0);
+            gen = 0;
+        }
+        if (++gen == 0) {   // wrapped: reset every stamp once
+            std::fill(stamp.begin(), stamp.end(), 0u);
+            gen = 1;
+        }
     }
+};
+thread_local Scratch t_scratch;
 
+enum class Mode { Exact, Nearest };
+
+// The one A* body. Exact: the historical find_path (empty when unreachable, or
+// when a budget > 0 runs out). Nearest: when the goal is not reached, the path
+// to the closed cell nearest the goal (lowest h, then lowest g, then index).
+std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int height,
+                          Cellxy start, Cellxy goal, int max_expand, Mode mode) {
     const int n = width * height;
+    auto index_of = [&](int x, int y) { return y * width + x; };
+    auto in_range = [&](int x, int y) { return x >= 0 && x < width && y >= 0 && y < height; };
     const int start_idx = index_of(start.x, start.y);
     const int goal_idx = index_of(goal.x, goal.y);
     const int kInf = std::numeric_limits<int>::max();
-
-    // Octile heuristic to `goal`, scaled to match the integer step costs
-    // above: D*(dx+dy) + (D2-2*D)*min(dx,dy) with D=10, D2=14.
     auto octile_h = [&](int x, int y) {
         int dx = std::abs(x - goal.x);
         int dy = std::abs(y - goal.y);
@@ -71,67 +80,136 @@ std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, i
         int mx = std::max(dx, dy);
         return kDiagonal * mn + kCardinal * (mx - mn);
     };
-
-    std::vector<int> g(static_cast<size_t>(n), kInf);
-    std::vector<int> came_from(static_cast<size_t>(n), -1);
-    std::vector<uint8_t> closed(static_cast<size_t>(n), 0);
+    Scratch& S = t_scratch;
+    S.prepare(n);
+    const std::uint32_t gen = S.gen;
+    auto touch = [&](int c) {
+        if (S.stamp[(size_t)c] != gen) {
+            S.stamp[(size_t)c] = gen;
+            S.g[(size_t)c] = kInf;
+            S.came[(size_t)c] = -1;
+            S.closed[(size_t)c] = 0;
+        }
+    };
+    auto gval = [&](int c) { return S.stamp[(size_t)c] == gen ? S.g[(size_t)c] : kInf; };
+    auto is_closed = [&](int c) { return S.stamp[(size_t)c] == gen && S.closed[(size_t)c] != 0; };
 
     std::priority_queue<OpenNode, std::vector<OpenNode>, OpenNodeGreater> open;
-
-    g[start_idx] = 0;
-    {
-        int h0 = octile_h(start.x, start.y);
-        open.push(OpenNode{ h0, h0, start_idx });
-    }
-
+    touch(start_idx);
+    S.g[(size_t)start_idx] = 0;
+    const int h_start = octile_h(start.x, start.y);
+    open.push(OpenNode{ h_start, h_start, start_idx });
+    int best_cell = start_idx, best_h = h_start, best_g = 0;
+    int expanded = 0;
+    bool reached = false;
     while (!open.empty()) {
         OpenNode cur = open.top();
         open.pop();
-
-        // Stale entry (a cheaper one for this cell was already processed).
-        if (closed[cur.cell]) continue;
-
-        if (cur.cell == goal_idx) break;  // consistent heuristic -> optimal
-        closed[cur.cell] = 1;
-
+        if (is_closed(cur.cell)) continue;   // stale entry
+        if (cur.cell == goal_idx) { reached = true; break; }   // consistent heuristic -> optimal
+        S.closed[(size_t)cur.cell] = 1;
+        if (mode == Mode::Nearest) {
+            const int gc = S.g[(size_t)cur.cell];
+            if (cur.h < best_h ||
+                (cur.h == best_h && (gc < best_g || (gc == best_g && cur.cell < best_cell)))) {
+                best_h = cur.h;
+                best_g = gc;
+                best_cell = cur.cell;
+            }
+        }
+        if (max_expand > 0 && ++expanded >= max_expand) break;
         const int cx = cur.cell % width;
         const int cy = cur.cell / width;
-
         for (int dir = 0; dir < 8; ++dir) {
             const int nx = cx + kDx[dir];
             const int ny = cy + kDy[dir];
             if (!in_range(nx, ny)) continue;
-
             const int ncell = index_of(nx, ny);
-            if (!passable[ncell]) continue;
-            if (closed[ncell]) continue;
-
+            if (!passable[(size_t)ncell]) continue;
+            if (is_closed(ncell)) continue;
             // Block diagonal corner-cutting: both orthogonal "corner" cells
             // must be passable for a diagonal move to be allowed.
             if (kDx[dir] != 0 && kDy[dir] != 0) {
-                if (!passable[index_of(cx + kDx[dir], cy)]) continue;
-                if (!passable[index_of(cx, cy + kDy[dir])]) continue;
+                if (!passable[(size_t)index_of(cx + kDx[dir], cy)]) continue;
+                if (!passable[(size_t)index_of(cx, cy + kDy[dir])]) continue;
             }
-
-            const int tentative_g = g[cur.cell] + kCost[dir];
-            if (tentative_g < g[ncell]) {
-                g[ncell] = tentative_g;
-                came_from[ncell] = cur.cell;
+            const int tentative_g = S.g[(size_t)cur.cell] + kCost[dir];
+            if (tentative_g < gval(ncell)) {
+                touch(ncell);
+                S.g[(size_t)ncell] = tentative_g;
+                S.came[(size_t)ncell] = cur.cell;
                 const int h = octile_h(nx, ny);
                 open.push(OpenNode{ tentative_g + h, h, ncell });
             }
         }
     }
-
-    if (g[goal_idx] == kInf) return {};  // unreachable
-
+    int end_cell;
+    if (reached) end_cell = goal_idx;
+    else if (mode == Mode::Exact) return {};
+    else end_cell = best_cell;
     std::vector<Cellxy> path;
-    for (int cell = goal_idx; ; cell = came_from[cell]) {
+    for (int cell = end_cell; cell >= 0; cell = S.came[(size_t)cell]) {
         path.push_back(Cellxy{ cell % width, cell / width });
         if (cell == start_idx) break;
     }
     std::reverse(path.begin(), path.end());
     return path;
+}
+
+bool basic_checks(const std::vector<uint8_t>& passable, int width, int height, Cellxy start,
+                  Cellxy goal) {
+    if (width <= 0 || height <= 0) return false;
+    if (passable.size() != static_cast<size_t>(width) * static_cast<size_t>(height)) return false;
+    auto in_range = [&](int x, int y) { return x >= 0 && x < width && y >= 0 && y < height; };
+    return in_range(start.x, start.y) && in_range(goal.x, goal.y);
+}
+
+}  // namespace
+
+std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, int height,
+                              Cellxy start, Cellxy goal) {
+    if (!basic_checks(passable, width, height, start, goal)) return {};
+    if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
+    if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
+    if (start.x == goal.x && start.y == goal.y) return { start };
+    return astar(passable, width, height, start, goal, 0, Mode::Exact);
+}
+
+std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int width, int height,
+                                      Cellxy start, Cellxy goal, int max_expand) {
+    if (!basic_checks(passable, width, height, start, goal)) return {};
+    if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
+    if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
+    if (start.x == goal.x && start.y == goal.y) return { start };
+    return astar(passable, width, height, start, goal, max_expand, Mode::Exact);
+}
+
+std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int width, int height,
+                                      Cellxy start, Cellxy goal, int max_expand) {
+    if (!basic_checks(passable, width, height, start, goal)) return {};
+    if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
+    // Goal relaxation: an impassable goal becomes the nearest passable cell
+    // (Chebyshev rings out to 16, Euclid-nearest per ring, scan order ties).
+    if (passable[(size_t)(goal.y * width + goal.x)] == 0) {
+        bool found = false;
+        for (int r = 1; r <= 16 && !found; ++r) {
+            int best = -1;
+            long long bd = 0;
+            for (int y = goal.y - r; y <= goal.y + r; ++y)
+                for (int x = goal.x - r; x <= goal.x + r; ++x) {
+                    if (std::max(std::abs(x - goal.x), std::abs(y - goal.y)) != r) continue;
+                    if (x < 0 || y < 0 || x >= width || y >= height) continue;
+                    if (!passable[(size_t)(y * width + x)]) continue;
+                    const long long d = (long long)(x - goal.x) * (x - goal.x) +
+                                        (long long)(y - goal.y) * (y - goal.y);
+                    if (best < 0 || d < bd) { best = y * width + x; bd = d; }
+                }
+            if (best >= 0) { goal = Cellxy{ best % width, best / width }; found = true; }
+        }
+        if (!found) return { start };
+    }
+    if (start.x == goal.x && start.y == goal.y) return { start };
+    return astar(passable, width, height, start, goal, max_expand, Mode::Nearest);
 }
 
 }  // namespace ra2engine

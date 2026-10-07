@@ -85,6 +85,12 @@ void World::refresh_vet_stats(int idx) {
     // [V9] dead with VeteranSight=0.0, kept faithful.
     u.sight = sight_value(v.base_sight, has(Ability::Sight), vet_rules_.sight);
     v.vet_armor = vet_rules_.armor;
+    // W2-SK-26 [RE: abilities.md §G]: a promotion / crate must not revert an
+    // IFV gunner to its empty-hold weapon -- re-apply the passenger's mode.
+    if (u.abil.gunner && u.ifv_current > 0 &&
+        u.ifv_current < static_cast<int>(u.abil.ifv_weapons.size()) &&
+        u.abil.ifv_weapons[static_cast<std::size_t>(u.ifv_current)].valid)
+        ability_apply_weapon_fields(u, u.abil.ifv_weapons[static_cast<std::size_t>(u.ifv_current)]);
 }
 
 std::vector<World::VetEvent> World::take_vet_events() {

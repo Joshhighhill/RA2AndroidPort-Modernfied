@@ -251,6 +251,7 @@ struct BuildDecision {
     int type = -1;
     int node = -1;   // plan index this start fills (>= 0 whenever type >= 0)
     bool wait = false;
+    int wait_type = -1;   // W2-SK-06: the head type being banked for (wait == true)
 };
 
 // Build the PRECOMPUTED ORDERED base-node plan [RE-GATE APPLIED: ai-base.md

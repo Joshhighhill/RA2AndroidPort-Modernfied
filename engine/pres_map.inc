@@ -211,6 +211,18 @@ public:
         smudges_.push_back(o);
     }
     const std::vector<std::pair<int, int>>& blocked() const { return block_; }
+    // W2-SK-01: the map's ore mines ([Terrain] types with SpawnsTiberium=yes)
+    // with their animation data, for World::add_ore_mine.
+    template <class F> void for_each_ore_mine(F f) const {
+        for (const Obj& o : objects_) {
+            if (o.key.rfind("terr:", 0) != 0 || !o.shp) continue;
+            const std::string type = o.key.substr(5);
+            if (pres_lower(rget(type, "SpawnsTiberium")).rfind("y", 0) != 0) continue;
+            const std::string rate = rget(type, "AnimationRate"), prob = rget(type, "AnimationProbability");
+            f(o.x, o.y, std::max(1, o.shp->count() / 2), rate.empty() ? 3 : std::atoi(rate.c_str()),
+              prob.empty() ? 0.003 : std::atof(prob.c_str()));
+        }
+    }
     const std::vector<Obj>& objects() const { return objects_; }
     const std::vector<Obj>& overlays() const { return overlays_; }
 

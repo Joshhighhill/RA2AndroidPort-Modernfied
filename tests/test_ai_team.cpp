@@ -62,7 +62,7 @@ void claim_full(TeamInstance& t) {          // 2 x type0 + 1 x type1
 constexpr double kDt = 1.0 / 15.0;
 }  // namespace
 
-TEST_CASE("ai_team: full=yes stays Recruiting under strength; gathers on a ring around the enemy base") {
+TEST_CASE("ai_team: full=yes stays Recruiting under strength; musters at the own base") {
     AimdData d = make_aimd(/*full=*/true);
     TeamInstance t = make_team();
     std::uint32_t rng = 0x2545F491u;
@@ -75,16 +75,15 @@ TEST_CASE("ai_team: full=yes stays Recruiting under strength; gathers on a ring 
     TeamCommand c = step_team(t, v, d, rng, kDt);
     CHECK(t.state == TeamState::Recruiting);
     CHECK(c.kind == TeamCommand::Kind::None);
-    // Full strength -> Gathering; the gather cell is on a circle of radius
-    // kAiSafeDistance around the ENEMY base centre (40,10) at a seeded angle
-    // [RE-GATE APPLIED: ai-team.md §2].
+    // Full strength -> Gathering. W2-SK-06: the pre-script muster is within
+    // +-3 cells of the OWN base centre (the scripts' own 53 line gathers on the
+    // AISafeDistance ring around the enemy, see gather_cell).
     claim_full(t);
     v = full_view(true);
     c = step_team(t, v, d, rng, kDt);
     CHECK(t.state == TeamState::Gathering);
-    const double dx = t.gather_x - v.enemy_x, dy = t.gather_y - v.enemy_y;
-    CHECK(std::sqrt(dx * dx + dy * dy) ==
-          doctest::Approx((double)kAiSafeDistance).epsilon(0.10));  // on the ring
+    CHECK(std::abs(t.gather_x - v.base_x) <= 3);
+    CHECK(std::abs(t.gather_y - v.base_y) <= 3);
 }
 
 TEST_CASE("ai_team: full=no launches immediately under strength; skirmish never dissolves, MP does") {
@@ -281,17 +280,16 @@ TEST_CASE("ai_team: timed-guard holds for arg x 15 frames then advances") {
     CHECK(t.script_pc == 3);
 }
 
-TEST_CASE("ai_team: inert opcode is a logged skip that advances the pc") {
+TEST_CASE("ai_team: load opcode emits Load and advances the pc (W2-SK-09)") {
     AimdData d = make_aimd();
     TeamInstance t = make_team();
     std::uint32_t rng = 1u;
     claim_full(t);
     t.state = TeamState::Executing;
-    t.script_pc = 3;                             // action 14 (load onto transport) -> Inert
+    t.script_pc = 3;                             // action 14 (load onto transport)
     TeamView v = full_view(true);
     const TeamCommand c = step_team(t, v, d, rng, kDt);
-    CHECK(c.kind == TeamCommand::Kind::Inert);
-    CHECK(c.opcode == kSaLoad);                  // [RE: ai-team.md §3; script_actions.hpp]
+    CHECK(c.kind == TeamCommand::Kind::Load);    // W2-SK-09: no longer inert
     CHECK(t.script_pc == 4);
 }
 
@@ -697,8 +695,13 @@ TEST_CASE("ai_team: classify_op follows the 0x6E94E4 executor table") {
     CHECK(classify_op(53) == OpClass::GatherEnemy);
     CHECK(classify_op(54) == OpClass::RegroupBase);
     CHECK(classify_op(58) == OpClass::MoveFriendlyBuilding);
-    // Transport / superweapon / berserk / removal / out-of-table -> Inert.
-    for (int op : {2, 8, 9, 12, 14, 43, 55, 57, 60, 63, 64, 65, 0x90})
+    // W2-SK-09/10: transport load / wait / unload and deploy are live.
+    CHECK(classify_op(14) == OpClass::Load);
+    CHECK(classify_op(43) == OpClass::WaitLoaded);
+    CHECK(classify_op(8) == OpClass::Unload);
+    CHECK(classify_op(9) == OpClass::Deploy);
+    // Superweapon / berserk / removal / out-of-table -> Inert.
+    for (int op : {2, 12, 55, 57, 60, 63, 64, 65, 0x90})
         CHECK(classify_op(op) == OpClass::Inert);
     // Quarry enum is YRpp QuarryType (1-based "Anything").
     CHECK(kQuarryAnything == 1);

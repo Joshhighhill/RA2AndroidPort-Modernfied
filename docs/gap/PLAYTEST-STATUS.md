@@ -356,6 +356,45 @@ Gates: `--demo-saveload` `8291b85b9957b34a`, `--demo-skirmish`
 `fde3f587e747f765` and `--demo-campaign` `760c46ae2eed28b4` all match the
 master pins (`--demo-combat` deterministic=yes). The full suite passes:
 788/788.
+
+### Wave-2 W2-SK (full skirmish matches) -- branch `w2fix-skirmish` over master 256908d
+
+Every script was run on its own on the merged tree. The two new scripts were
+run twice with identical `play_hash`.
+
+Script changes (each is commented in the script):
+- `air`: the Night Hawk boards a freshly spawned passenger beside it. The
+  start-force GI now engages enemies inside its Sight (W2-SK-25) and can be off
+  fighting.
+- `sk-a`: the opponent is now Easy. The Medium AI's full waves (W2-SK-06) now
+  reach the base (W2-SK-05) and razed this mostly-scripted player's ConYard
+  and war factory by minute 6. The script also waits for the vehicle queue to
+  be idle before the Chrono Miner click.
+- `world-depth` needed an engine fix, not a script change: bridge repair huts
+  are exempt from the new Capturable= test.
+
+| Script | Result | play_hash |
+|---|---|---|
+| **new** `economy-60min` (W2-SK-01..04: an hour on hillbtwn) | PASS | `c24a1f6e097efaa7` |
+| **new** `unit-specials` (W2-SK-12/13/17/18/19/20/22) | PASS | `d7ad77f0b9947fc0` |
+| `air` | PASS | `054ae714745cee30` |
+| `naval` / `sw` | PASS | `a348500191a84c56` / `6e21e228e078ac0c` |
+| `sk-a` | PASS | `19a094e09833e5ec` |
+| `sk-s` | PASS | `b99fe238610d3aaa` |
+| `sk-end` / `sk-a-lose` / `sk-lobby` | PASS | `139d8361f8440476` / `f3e93487c7eeff50` / `4daf570e159f13e0` |
+| `m-all01` / `m-sov01` / `m-lose` | PASS | `3bc4b3c04f753474` / `7bda1b37b0978da5` / `b37cfe38e1bfddd0` |
+| `shell-smoke` / `controls` | PASS | `20f92011158c0342` / `2fdb47eb9fd14836` |
+| `world-depth` | PASS | `652891811c3c761c` |
+| `gfx-vis` / `gfx-fx` | PASS | `7e2a9a9f3c898f8d` / `20b0a76c06e1668d` |
+| `ui-hud` / `ui-pages` / `ui-campaign` / `ui-result` / `ui-shell` | PASS | `bfc942e08f438e3c` / `5bf31fc81d77330b` / `eca8308ade5b4663` / `88481a429a4024fa` / `e948779eb0ab3bb3` |
+| `probe-game` / `probe-garrison` / `probe-perf` / `probe-shell` / `probe-soviet-econ` | PASS | — |
+| `probe-bridge` / `probe-flow` | FAIL, as on master (stale `map:+` target; expects a ConYard at start) | — |
+| `robust-missing` | FAIL by design on a full install (it needs an install copy without Maps01.mix) | — |
+
+W2-SK rows closed by play evidence: W2-SK-01..04 (`economy-60min`) and
+W2-SK-12/13/17/18/19/20/22 (`unit-specials`). The AI rows were closed by
+`--ai-soak` runs; see `docs/gap/wave2/03-skirmish-match.md` §7.
+
 ### Wave-2 W2-CA (campaign) -- branch `w2fix-campaign` over master 256908d
 
 Every script run one at a time (Release build of the merged tree). All campaign
@@ -390,3 +429,17 @@ Full suite (Debug, after merging master 256908d): 792 test cases / 350313 assert
 `--demo-campaign` re-pinned `5d033b6aa019beaa`, `--demo-saveload`
 `c19113168b76bae7` (save v12), `--demo-triggers` unchanged `b8cd267e98f5e002`
 (causes in README).
+
+#### W2-SK re-verified after merging master 6f58adf (w2fix-campaign)
+
+Every script was run again one at a time. All PASS except `probe-bridge`,
+`probe-flow` and `robust-missing`, which fail as on master. One fix came out of
+this run: `m-all02` failed until the campaign and civilian building
+registrations also read `Capturable=`. ALL02's map sets `Capturable=true` on
+the chapel, CACOLO01. The campaign scripts on the merged tree:
+
+| Script | Result | play_hash |
+|---|---|---|
+| `m-all01` / `m-all02` / `m-all04` / `m-all08` | PASS | `c20bae0c7a692b2d` / `43252907804077f6` / `2a4bf61909f05e5d` / `e06d8723d56f98f7` |
+| `m-sov01` / `m-sov03` / `m-sov05` / `m-sov06` / `m-sov09` | PASS | `5dfd3c2c13a86964` / `e95b7fe72b0e8cb3` / `2d574c4c18372100` / `88821d86b889b077` / `2a7dbf06506e0f70` |
+| `m-lose` | PASS | `371500367c3e99c4` |
