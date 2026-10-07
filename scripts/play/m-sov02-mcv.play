@@ -1,0 +1,17 @@
+# W4-SQ-01: SOV02's MCV chain. The beach pillbox whose death is 'Land the
+# MCV' is removed with a cheat (the beach assault stand-in); the Africans'
+# transport arrives CARRYING the SMCV, unloads with Unload mode 0 (both stay
+# in the team), 'Destroy MCV Team' frees the SMCV and 'MCV ON the Beach'
+# hands it to the player.
+set render_every 900
+set on_quit continue
+set campaign sov02t.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 60 carried(0) >= 6
+until 1500 carried(0) == 0
+cheat camp_killb 1 GAPILL
+until 3000 units(0,SMCV) >= 1
+assert units(0,SMCV) >= 1
+end

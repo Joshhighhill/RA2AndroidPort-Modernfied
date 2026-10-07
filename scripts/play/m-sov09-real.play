@@ -1,0 +1,27 @@
+# W4-SQ: SOV09 played with real orders only (no cheats). The Yuris arrive by
+# paradrop plane (Droppod), the player takes them at battle control (65 s),
+# pulls them back out of the patrols' way so 'Yuri's are Dead' (armed at
+# 100 s) never fires.
+set render_every 900
+set on_quit continue
+set campaign sov09u.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 600 airborne(6) >= 1
+until 2000 campaign_frame >= 980
+assert units(6,YURI) >= 2
+click unit 6:YURI:0
+click cell 36 74
+click unit 6:YURI:1
+click cell 37 74
+until 1500 campaign_frame >= 1600
+assert units(6,YURI) >= 1
+assert outcome == RUNNING
+shot alive
+until 1000 campaign_frame >= 2200
+assert units(6,YURI) >= 1
+assert outcome == RUNNING
+dump
+cheat camp_log
+end

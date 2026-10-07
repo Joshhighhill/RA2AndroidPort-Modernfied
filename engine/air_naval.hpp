@@ -114,6 +114,9 @@ struct AnUnit {
     bool rocket_elite = false;        // locomotor +0x4D: the launcher was elite at launch
     int rocket_end = 0;               // 0 flying, 1 detonated (FUN_00662A70), 2 shot down (Strength 0)
     RocketFlight rocket;              // W4: the RocketLocomotion state (FUN_00661D00)
+    // W4-SQ-06 (save v16): a paratrooper's height while it falls under its
+    // parachute (cargo_of == kParachuteCargo); 0 on the ground.
+    double para_alt = 0.0;
 };
 
 // --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------
@@ -154,6 +157,9 @@ struct SwParams {
     std::string sov_para_inf = "E2";
     int sov_para_num = 9;
     int paradrop_radius = 1024;
+    // W4-SQ-06 [rules [General] ParachuteMaxFallRate=-5]: a paratrooper under
+    // its parachute sinks this many leptons per game frame (save v16).
+    int parachute_fall = 5;
     // Naval / aircraft [General].
     int cloak_delay_frames = 18;      // CloakDelay=.02 min x 900
     double ship_sinking_weight = 3.0; // ShipSinkingWeight=

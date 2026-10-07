@@ -34,6 +34,24 @@ void depth_set_terrain(ra2engine::World& world, Assets& a) {
         }
     world.set_land_terrain(lt);
     if (any) world.set_bridges(std::move(ovl), tile);
+    // W4-SQ-10: high-bridge decks (BRIDGE1/2 = runtime 0x18/0x19, BRIDGEB1/B2
+    // = 0xED/0xEE) carry ground units over the river; the cells under them keep
+    // their water for ships [RE: world-depth.md B1 anchors].
+    if (a.map.has_overlay()) {
+        std::vector<std::uint8_t> hb(static_cast<std::size_t>(gw) * gh, 0);
+        bool any_high = false;
+        for (const ra2assets::MapCell& c : a.map.cells()) {
+            if (c.x < 0 || c.y < 0 || c.x >= gw || c.y >= gh) continue;
+            const int id = a.map.overlay_at(c.x, c.y);
+            if (id != 0x18 && id != 0x19 && id != 0xED && id != 0xEE) continue;
+            const std::size_t i = static_cast<std::size_t>(c.y) * gw + c.x;
+            const ra2assets::LandType t = tile[i];
+            hb[i] = (t == ra2assets::LandType::Water || t == ra2assets::LandType::Rock ||
+                     t == ra2assets::LandType::Wall) ? 1 : 2;
+            any_high = true;
+        }
+        if (any_high) world.set_high_bridges(std::move(hb));
+    }
 }
 
 // The real game's garrison / bridge rules (GameScene ctor; never a gate).

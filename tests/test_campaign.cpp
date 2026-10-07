@@ -202,16 +202,67 @@ TEST_CASE("campaign: map team script interpreter (RE §7 numbering)") {
     CHECK(step_map_team(st, s, v, 20).kind == MapTeamCommand::Kind::Done);
 }
 
-TEST_CASE("campaign: W2-CA-17 interpreter unload/deploy/scatter are one-shot commands") {
+TEST_CASE("campaign: W2-CA-17 interpreter deploy/scatter are one-shot commands") {
     MapScript s;
-    s.actions = {{8, 1}, {9, 0}, {21, 0}};
+    s.actions = {{9, 0}, {21, 0}};
     MapTeamState st;
     MapTeamView v;
     v.live_members = 1;
-    CHECK(step_map_team(st, s, v, 0).kind == MapTeamCommand::Kind::Unload);
-    CHECK(step_map_team(st, s, v, 1).kind == MapTeamCommand::Kind::Deploy);
-    CHECK(step_map_team(st, s, v, 2).kind == MapTeamCommand::Kind::Scatter);
-    CHECK(step_map_team(st, s, v, 3).kind == MapTeamCommand::Kind::Done);
+    CHECK(step_map_team(st, s, v, 0).kind == MapTeamCommand::Kind::Deploy);
+    CHECK(step_map_team(st, s, v, 1).kind == MapTeamCommand::Kind::Scatter);
+    CHECK(step_map_team(st, s, v, 2).kind == MapTeamCommand::Kind::Done);
+}
+
+TEST_CASE("campaign: W4-SQ-01 Unload waits for empty transports, then reports its mode") {
+    MapScript s;
+    s.actions = {{8, 1}, {39, 2}};
+    MapTeamState st;
+    MapTeamView v;
+    v.live_members = 3;
+    v.unloaded = false;
+    MapTeamCommand c = step_map_team(st, s, v, 0);
+    CHECK(c.kind == MapTeamCommand::Kind::Unload);
+    CHECK(c.fresh);
+    c = step_map_team(st, s, v, 1);
+    CHECK(c.kind == MapTeamCommand::Kind::Unload);
+    CHECK_FALSE(c.fresh);
+    v.unloaded = true;
+    c = step_map_team(st, s, v, 2);
+    CHECK(c.kind == MapTeamCommand::Kind::UnloadDone);
+    CHECK(c.arg == 1);
+    CHECK(step_map_team(st, s, v, 3).kind == MapTeamCommand::Kind::SetLocal);
+}
+
+TEST_CASE("campaign: W4-SQ-01 Load (14) and WaitLoaded (43)") {
+    MapScript s;
+    s.actions = {{14, 0}, {43, 0}, {3, 7}};
+    MapTeamState st;
+    MapTeamView v;
+    v.live_members = 4;
+    v.loaded = false;
+    v.full = false;
+    CHECK(step_map_team(st, s, v, 0).kind == MapTeamCommand::Kind::Load);
+    CHECK(step_map_team(st, s, v, 1).kind == MapTeamCommand::Kind::Load);
+    v.loaded = true;
+    // Loaded -> WaitLoaded holds while a transport is not full.
+    CHECK(step_map_team(st, s, v, 2).kind == MapTeamCommand::Kind::None);
+    CHECK(st.pc == 1);
+    v.full = true;
+    CHECK(step_map_team(st, s, v, 3).kind == MapTeamCommand::Kind::MoveWaypoint);
+}
+
+TEST_CASE("campaign: W4-SQ-01/06 TeamType delivery keys") {
+    const ra2assets::Ini map = ra2assets::Ini::parse(
+        "[TeamTypes]\n0=T1\n[T1]\nName=x\nDroppod=yes\nUseTransportOrigin=yes\n"
+        "TransportWaypoint=J\nTransportsReturnOnUnload=yes\nVeteranLevel=3\nFull=yes\n");
+    const MapTeamData d = parse_map_teams(map);
+    REQUIRE(d.teams.size() == 1);
+    CHECK(d.teams[0].droppod);
+    CHECK(d.teams[0].use_transport_origin);
+    CHECK(d.teams[0].transports_return);
+    CHECK(d.teams[0].transport_waypoint == 9);
+    CHECK(d.teams[0].veteran_level == 3);
+    CHECK(d.teams[0].full);
 }
 
 TEST_CASE("campaign: interpreter win/lose/unknown actions") {
