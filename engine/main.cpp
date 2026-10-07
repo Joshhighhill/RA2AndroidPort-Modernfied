@@ -2545,6 +2545,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     const BuildingArt& art = ba.art[b.type];
     if (!art.ok) return;
     const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
+    g_overlay_bld = &b;   // W2-GA-14: per-building anim state for the overlay pass
 
     // Foundation screen bbox = union of the fw*fh cell diamonds (60x30 rects).
     int minx = INT_MAX, miny = INT_MAX, maxx = INT_MIN, maxy = INT_MIN;

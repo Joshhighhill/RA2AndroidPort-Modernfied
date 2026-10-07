@@ -127,6 +127,13 @@ public:
     struct BldAnims {
         struct Slot { const FxAnimType* t = nullptr; const FxAnimType* dmg = nullptr; int x = 0, y = 0; bool powered = true; };
         std::vector<Slot> slots;
+        // W2-GA-14 event slots [RE: presentation.md §6, the 21 BuildingType
+        // anim slots; RE-Q13 open -> RE-FALLBACK ModEnc order]: the factory
+        // door set (DeployingAnim over, UnderDoorAnim under, played once when a
+        // unit leaves) and the superweapon charge states SuperAnim (opening
+        // on READY) -> SuperAnimTwo (loop while ready) -> SuperAnimThree
+        // (closing on FIRE) -> SuperAnimFour (loop while charging).
+        Slot door, under_door, super_[4];
         std::shared_ptr<ra2assets::ShpFile> bib;
         std::vector<std::pair<int, int>> fire_offsets;
     };
@@ -147,6 +154,18 @@ public:
             sl.powered = pw.empty() || pw[0] == 'y' || pw[0] == 't';
             if (sl.t) a.slots.push_back(sl);
         }
+        auto event_slot = [&](const std::string& s) {
+            BldAnims::Slot sl;
+            sl.t = theater_type(aget(image, s));
+            sl.dmg = theater_type(aget(image, s + "Damaged"));
+            sl.x = std::atoi(aget(image, s + "X").c_str());
+            sl.y = std::atoi(aget(image, s + "Y").c_str());
+            return sl;
+        };
+        a.door = event_slot("DeployingAnim");
+        a.under_door = event_slot("UnderDoorAnim");
+        static const char* kSuper[4] = {"SuperAnim", "SuperAnimTwo", "SuperAnimThree", "SuperAnimFour"};
+        for (int i = 0; i < 4; ++i) a.super_[i] = event_slot(kSuper[i]);
         const std::string bib = aget(image, "BibShape");
         if (!bib.empty()) a.bib = theater_shp(bib);
         for (int i = 0; i < 8; ++i) {
@@ -384,6 +403,26 @@ bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
 }
 
 long g_pres_tick = 0;          // presentation game-frame clock (Presentation::update)
+// W2-GA-14: the building draw_building is drawing (its overlay pass reads the
+// per-building event state below) and that state, keyed by the building's
+// identity (origin cell + type, stable for its life).
+const ra2engine::Building* g_overlay_bld = nullptr;
+struct BldEventState {
+    long door_start = -1;          // tick a unit left the factory
+    long super_start = -1;         // tick of the last SW state change
+    int super_phase = -1;          // -1 none, 0 opening (ready), 2 closing (fired)
+};
+std::map<long long, BldEventState> g_bld_events;
+inline long long bld_event_key(const ra2engine::Building& b) {
+    return (static_cast<long long>(b.cx) << 32) ^ (static_cast<long long>(b.cy) << 16) ^ b.type;
+}
+// Frame of a one-shot anim started at `start`; -1 once it has run out.
+inline int oneshot_frame(const FxAnimType& t, long start, long now) {
+    if (start < 0) return -1;
+    const long step = t.delay <= 0 ? 0 : (now - start) / t.delay;
+    const long f = t.start + step;
+    return f >= t.end ? -1 : static_cast<int>(f);
+}
 bool g_pres_low_power = false;  // house 0 drain > output (Presentation::power_eva)
 
 // G-85: building overlays, called by draw_building. pass 0 = BibShape (under
@@ -395,11 +434,45 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
     if (!g_fx) return;
     const PresFx::BldAnims& a = g_fx->building(pres_upper(image));
     const std::string ck = ":c" + std::to_string(ckey);
+    const BldEventState* ev = nullptr;
+    if (g_overlay_bld) {
+        auto e = g_bld_events.find(bld_event_key(*g_overlay_bld));
+        if (e != g_bld_events.end()) ev = &e->second;
+    }
+    auto slot_t = [&](const PresFx::BldAnims::Slot& s) { return (damaged && s.dmg) ? s.dmg : s.t; };
     if (pass == 0) {
         if (a.bib && a.bib->count() > 0)
             g_fx->blit(ren, tc, *a.bib, "bib:" + image + ck, damaged && a.bib->count() > 1 ? 1 : 0, fcx,
                        fcy, false, W, H, &pal);
+        // W2-GA-14: the dark interior behind an opening factory door.
+        if (ev && ev->door_start >= 0)
+            if (const FxAnimType* d = slot_t(a.door))
+                if (oneshot_frame(*d, ev->door_start, g_pres_tick) >= 0)
+                    if (const FxAnimType* u = slot_t(a.under_door))
+                        g_fx->blit(ren, tc, *u->shp, "banim:" + u->name + ck, PresFx::loop_frame(*u, g_pres_tick),
+                                   fcx + a.under_door.x, fcy + a.under_door.y, u->translucent, W, H, &pal);
         return;
+    }
+    // W2-GA-14: factory door (one shot per exiting unit) and SW charge states.
+    if (ev && ev->door_start >= 0)
+        if (const FxAnimType* d = slot_t(a.door)) {
+            const int fr = oneshot_frame(*d, ev->door_start, g_pres_tick);
+            if (fr >= 0)
+                g_fx->blit(ren, tc, *d->shp, "banim:" + d->name + ck, fr, fcx + a.door.x, fcy + a.door.y,
+                           d->translucent, W, H, &pal);
+        }
+    if (ev && ev->super_phase >= 0) {
+        const int open = ev->super_phase;          // 0 (ready) or 2 (fired)
+        const PresFx::BldAnims::Slot& s1 = a.super_[open];
+        const PresFx::BldAnims::Slot& s2 = a.super_[open + 1];
+        const FxAnimType* t1 = slot_t(s1);
+        const int fr = t1 ? oneshot_frame(*t1, ev->super_start, g_pres_tick) : -1;
+        if (t1 && fr >= 0)
+            g_fx->blit(ren, tc, *t1->shp, "banim:" + t1->name + ck, fr, fcx + s1.x, fcy + s1.y, t1->translucent,
+                       W, H, &pal);
+        else if (const FxAnimType* t2 = slot_t(s2))
+            g_fx->blit(ren, tc, *t2->shp, "banim:" + t2->name + ck, PresFx::loop_frame(*t2, g_pres_tick),
+                       fcx + s2.x, fcy + s2.y, t2->translucent, W, H, &pal);
     }
     for (const PresFx::BldAnims::Slot& s : a.slots) {
         const FxAnimType* t = (damaged && s.dmg) ? s.dmg : s.t;
