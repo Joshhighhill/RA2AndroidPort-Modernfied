@@ -43,6 +43,15 @@ struct PresLight {
     SDL_Texture* lmap_ = nullptr;      // the light map (freed with its renderer)
     SDL_Renderer* lmap_ren_ = nullptr;
     int lmap_w_ = 0, lmap_h_ = 0;
+    // W5-F (phone perf): the light map is redrawn only when what it shows
+    // changes (camera, canvas, base colour, lit set) -- every redraw is two
+    // render-target switches, a synchronous GL round-trip in SDL's GLES2
+    // backend (62% of an emulator frame) and a framebuffer resolve on tiled
+    // phone GPUs. Same pixels by construction; a periodic refresh guards a
+    // lost target texture.
+    unsigned lit_gen_ = 0, lmap_gen_ = ~0u;
+    int lmap_cx_ = 0, lmap_cy_ = 0, lmap_age_ = 0;
+    Uint8 lmap_base_[3] = {0, 0, 0};
 
     // Intensity (per mille, after normalisation) at height h.
     double intensity(int h) const {
@@ -128,6 +137,7 @@ struct PresLight {
             out[k] = static_cast<Uint8>(std::clamp(i / 1000.0 * t[k] / 1000.0 * 255.0, 0.0, 255.0));
     }
     void rebuild(const ra2assets::MapFile& map) {
+        ++lit_gen_;
         lit_.clear();
         if (srcs_.empty()) return;
         struct Acc { double i = 0, r = 0, g = 0, b = 0; };
@@ -172,13 +182,30 @@ struct PresLight {
         if (lit_.empty()) { pass(ren, W, H); return; }
         Uint8 base[3];
         cell_colour(0, 0, 0, 0, base);
+        bool fresh = false;
         if (!lmap_ || lmap_ren_ != ren || lmap_w_ != W || lmap_h_ != H) {
             lmap_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, W, H);
             lmap_ren_ = ren;
             lmap_w_ = W;
             lmap_h_ = H;
+            fresh = true;
         }
         if (!lmap_) { pass(ren, W, H); return; }
+        const bool same = !fresh && lmap_gen_ == lit_gen_ && lmap_cx_ == cam.x && lmap_cy_ == cam.y &&
+                          lmap_base_[0] == base[0] && lmap_base_[1] == base[1] && lmap_base_[2] == base[2] &&
+                          ++lmap_age_ < 120;
+        if (same) {   // the map is unchanged: just multiply it over the playfield
+            SDL_SetTextureBlendMode(lmap_, SDL_BLENDMODE_MOD);
+            const SDL_Rect all{0, 0, W, H};
+            SDL_RenderCopy(ren, lmap_, nullptr, &all);
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            return;
+        }
+        lmap_gen_ = lit_gen_;
+        lmap_cx_ = cam.x;
+        lmap_cy_ = cam.y;
+        lmap_age_ = 0;
+        for (int k = 0; k < 3; ++k) lmap_base_[k] = base[k];
         SDL_Texture* prev = SDL_GetRenderTarget(ren);
         SDL_SetRenderTarget(ren, lmap_);
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
