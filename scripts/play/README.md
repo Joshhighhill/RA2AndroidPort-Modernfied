@@ -155,7 +155,8 @@ Battle), `status` (tooltip line), `confirm_open` / `confirm_text`.
 nearest hostile ground unit / dog), `utgtb(h,ID,n)` (building target index), `ucell(h,ID,n)` (`x*1000+y`);
 `bc4n(h,ID)` (buildings with C4 ticking); per house `blackout(h)` (spy power-plant blackout left); campaign
 `view_resized` (ResizeView count). Target `unit H:TYPE:near` / `unit e:TYPE:near`: the unit of house H (e = any
-house hostile to the first selected unit) nearest that unit, within 9 cells.
+house hostile to the first selected unit) nearest that unit, within 9 cells; `building H:TYPE:near` (TYPE or `*`):
+that house's building nearest the first selected unit.
 
 **W2-AN keys** (engine/w2air_play.inc): `cursor_name` (Input action name),
 `sel_on_water`, `sel_hp`, `sel_max_hp`, `sel_cargo`, `sel_altitude`, `sel_flight_state`,
