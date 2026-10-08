@@ -194,6 +194,9 @@ public:
     // Destroyed-object counters (events 15/16). Untracked -> 0.
     virtual int house_destroyed_buildings(int ht) const { (void)ht; return 0; }
     virtual int house_destroyed_units(int ht) const { (void)ht; return 0; }
+    // W4-SQ-11 event 5 HouseDiscovered: the player has seen an object of the
+    // house [RE-FALLBACK: polled each frame instead of sprung on discovery].
+    virtual bool house_discovered(int ht) const { (void)ht; return false; }
     // Last-built type index per category 0 building, 1 vehicle, 2 infantry,
     // 3 aircraft (events 19-22). Untracked -> -1 (never equals a Value >= 0).
     virtual int house_last_built(int ht, int category) const { (void)ht; (void)category; return -1; }
