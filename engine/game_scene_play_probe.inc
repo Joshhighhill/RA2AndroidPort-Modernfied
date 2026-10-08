@@ -382,9 +382,14 @@
             int h = 0, n = 0;
             std::string type;
             if (!play_parse_spec(spec, h, type, n)) return false;
+            // P1: TYPE ending in '~' = only a transport with no passenger aboard
+            // (`unit 0:FV~:0` = the first empty IFV -- a free seat).
+            const bool empty_only = !type.empty() && type.back() == '~';
+            if (empty_only) type.pop_back();
             for (const ra2engine::Unit& u : world_.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;
                 if (type != "*" && play_unit_id(u) != type && u.image != type) continue;
+                if (empty_only && !u.cargo.empty()) continue;
                 if (n-- > 0) continue;
                 cx = u.fx + u.sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
                 cy = u.fy + u.sub_y / 256.0;
