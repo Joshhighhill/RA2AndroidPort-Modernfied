@@ -147,10 +147,18 @@ until 1800 units(0,CMIN) > $cmin0 or units_lost(0) > $lost0   @G-22:A
 until 1800 units(0,CMIN) >= 1                 @G-22:A
 
 # --- 8. the AI plays: trains, attacks ----------------------------------------------
+# W5-B: with three infantry per cell (R-061) the Easy AI's conscript squads
+# arrive packed and raze the passive scripted player's refinery and barracks
+# before this section's later steps need them; two Grizzlies stand guard by
+# the refinery (a player would defend), and "the AI trains" also counts units
+# it fielded and lost (our defenders now win the fights it starts).
+cheat spawn MTNK 0 building 0:GAREFN +0 +3
+cheat spawn MTNK 0 building 0:GAPILE +2 +2
 let u1 = units(1)
+let l1 = units_lost(1)
 let ul0 = units_lost(0)
 let hl0 = hp_lost(0)
-until 3000 units(1) > $u1                     @G-60:D
+until 3000 units(1) > $u1 or units_lost(1) > $l1 @G-60:D
 until 6000 units_lost(0) > $ul0 or hp_lost(0) > $hl0 @G-60:D
 shot ai
 
