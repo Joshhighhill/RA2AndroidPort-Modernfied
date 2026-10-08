@@ -3986,3 +3986,61 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   scripts pass (one at a time; `probe-bridge`, `probe-flow`, `robust-missing` included);
   all 27 `--demo-*` hash gates print their pins (no re-pin; `--demo-saveload` does not hash
   the format version or the new optional section).
+
+## Combat and movement core (wave-5 W5-B, branch `w5-combat`)
+
+Every rule below was recovered from `gamemd.exe` first (private Ghidra copy
+`D:\ra2-re\w5-combat`; notes in `docs/re/combat.md` §8-§10) and is armed for
+the real game by `engine/w5_combat_arm.inc` (`w5_arm_combat`, GameScene ctor /
+load path and the save-load gate World). Unit-test Worlds keep the old model
+unless a test opts in. `W5_OFF=sub,land,crush,elev,threat` disables single
+parts for diagnosis.
+
+- **Splash, falloff, friendly fire (R-060).** One applicator, `damage_area`
+  (DamageArea `FUN_00489190`), serves instant hits (detonating at the victim's
+  coordinates), every projectile detonation and base-defense shots. Cells
+  scanned = the original ring table (`DAT_007EC3D0` counts, 369 offsets
+  emulated out of the initializer at 0x561540), radius `ftol(CellSpread*256)`,
+  3-D distance, aircraft in the air at half distance. Buildings take one hit
+  per foundation cell in range (distance 0 in the impact cell, else from the
+  cell centre). All houses are hit; `AffectsAllies=no` spares the firer's own
+  and allied houses (TechnoClass::ReceiveDamage). Falloff is Modify_Damage
+  `FUN_00489090`, disassembled: linear in float to `PercentAtMax` at the edge,
+  then `ftol(dmg*Verses)`, `MaxDamage=10000`; only buildings are floored at 1.
+- **Three infantry per cell (R-061).** `Occupancy` holds the spots 2 (right),
+  3 (left), 4 (down) per cell (`FindInfantrySubposition FUN_00481090`, spot
+  coordinates `DAT_0089D960`, preference rows `DAT_0081BC94/BCA8`). Infantry
+  reserve a spot in each cell they step into (keeping their lane), squads pack
+  three to a cell (`assign_infantry_formation`), map `[Infantry]` SubCell
+  places on its own spot, an infantry cannot enter a vehicle's cell and a
+  vehicle cannot enter a cell with infantry. `Unit::spot` and the lepton offset
+  `Unit::sub_x/sub_y` (interpolated while walking) are exposed for render:
+  `iso_renderer` draw/selection/health bars and the main.cpp pips/chevrons use
+  them, aim and splash use them.
+- **Land speed (R-062).** GroundType table (`FUN_00673A40`) from rulesmd
+  `[LandType]` Foot..FloatBeach, TMP terrain-type byte -> LandType
+  (`DAT_008278F4`), ore cells = Tiberium; the Drive/Ship locomotor multiplier
+  (`FUN_004B2550`): cost capped at 1, 0 -> .5, Tracked/Wheeled Uphill/Downhill,
+  x.75 at ConditionRed. Infantry (Walk locomotor) do not read the table.
+- **Crush (R-050).** `ShouldCrush FUN_00742720` / `Mission_Attack
+  FUN_007402F0`: a Crusher within `[CombatDamage] Crush=1.8` cells of a
+  crushable target drives onto it instead of firing -- computer houses always,
+  the player with `PlayerAutoCrush=yes` or an `AutoCrush=yes` type. Every
+  crushable enemy infantry in the cell is squashed; idle friendly infantry
+  blocking a vehicle scatter.
+- **3-D range (R-063).** `FUN_006F6750`: 3-D distance, [ElevationModel] bonus
+  (`FUN_006F6490`), buildings measured to the centre + (w+h)*64, the
+  SubjectToCliffs line trace (`FUN_004CC020/280`); flying shooters 2-D.
+- **Idle threat (R-064, partial).** Evaluate_Object `FUN_006F71D0`: computer
+  units may auto-target unarmed buildings; the player's only armed ones.
+- **Prerequisites (R-065).** Counted from placement (`Unlimbo FUN_006F61D0 ->
+  RegisterGain FUN_005028A0`), build-up included.
+- **Flak and shells (R-057, partial).** FlakProj impact scatter
+  (projectile.md §5.3) on the instant path; the shell "close enough" re-aim
+  onto an in-cell target (`BulletClass::Update` tail). Walls are not traced.
+  Sight from height: the original has no radius bonus (`FUN_0070A240`).
+
+Play scripts: `w5-subcell`, `w5-splash`, `w5-crush`, `w5-terrain` (all PASS);
+probe keys in `engine/w5_play.inc` (`max_cell_inf`, `cells3`, `uhpn/ucx/ucy/
+uspot/ulx/uly/uspeed/uland/utgt/umov/uwait`, `bhp/bmaxhp`; points `ore_near`,
+`clear_near`). Save format v18.
