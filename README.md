@@ -3986,3 +3986,57 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   scripts pass (one at a time; `probe-bridge`, `probe-flow`, `robust-missing` included);
   all 27 `--demo-*` hash gates print their pins (no re-pin; `--demo-saveload` does not hash
   the format version or the new optional section).
+
+## Audio and shell UI (wave-5 W5-E, branch `w5-audio`)
+
+RE on `gamemd.exe` with the private Ghidra copy `D:\ra2-re\w5-audio` (jobs j1..j50);
+details in `engine/pres_audio_events.inc`, `keyboard_page.inc`, `movie_player.inc`,
+`skirmish_load.inc` and the comments at each call site.
+
+- **Unit / world sounds (R-130).** The click voice follows the original's
+  `ClickedMission` (`FUN_006FF0A0`): VoiceHarvest, VoiceEnter (dock, transport, garrison),
+  VoiceCapture (engineer), VoiceDeploy (D), VoiceSpecialAttack (C4 on a building), each with
+  the original fallback chain. VoiceFeedback on the NowYellow damage state, 30 %
+  (`FUN_00700DA0`). Sinking / Crashing voices and sounds (`FUN_004DA440`), TurretRotateSound
+  while a turret turns (Grand Cannon, `FUN_006F9380`), Deploy / UndeploySound (GI, MCV),
+  BuildingGarrisonedSound, BuildingRepairedSound (engineer), Crate*Sound / HealCrateSound,
+  CheerSound (AllToCheer), RepairBridgeSound, and CreditTicks: the credit counter now rolls
+  `|diff|>>3` (1..143) per tick and ticks up / down (`CreditClass` `FUN_004A2510`).
+- **EVA (R-131).** PrimaryBuildingSelected, NewRallyPointEstablished, OnHold, UnableToComply,
+  SelectTarget, StructureGarrisoned / Abandoned (RadarEvent 15), UnitRepaired (RadarEvent 8),
+  BridgeRepaired (RadarEvent 14), TechBuildingLost + the type's `CaptureEvaEvent` /
+  BuildingCaptured (RadarEvent 10, `FUN_004481AB`), crate Unit{Armor,Speed,FirePower}Upgraded,
+  BuildingOffLine / OnLine (hook only: the power-toggle mode is not modelled).
+- **sound.ini (R-132).** PREDELAY / AMBIENT predelay from `Delay=` (lo = 33 ms for AMBIENT,
+  re-drawn on every loop pass), Type=LOCAL and Type=SHROUD (silent over unrevealed cells), the
+  0.05 audibility floor, and the corrected attenuation: a source anywhere on screen is at full
+  volume, the linear falloff starts at the screen edge (`FUN_0074F8E0`).
+- **Keyboard page (R-140, R-150).** Options 0x5CE -> dialog 0xA3 from the main menu and the
+  in-game Game Controls page: categories / command names / descriptions from the CommandClass
+  vtables, capture a key, Assign (moves a used key), Reset All, Back saves
+  `<settings>/Keyboard.ini` and the running game reloads it. New hotkeys: CombatantSelect,
+  HealthNav (RA2 `Keyboard.ini`), VeterancyNav, Follow, AllToCheer, CenterOnRadarEvent,
+  ScreenCapture. PlaceBeacon / ToggleAlliance / PageUser / taunts are network-only in the
+  original; PlanningMode is not modelled.
+- **Score pages (R-141).** The Score column is the original's (`MPScore.cpp` `FUN_005C92C0`:
+  victim cost x (1 + rank) per kill, nothing for allied / DontScore victims, the survivor's
+  bonus), rows sorted by it. The Campaign Results page draws the 0xBC7 graph well (player vs
+  the strongest opponent: Kills / Losses / Built / Score) and First / Second Place.
+- **Briefing and movies (R-034, U-5 ready).** The briefing is a modal shell page (Restate
+  dialog 0x10C, `FUN_0065EF60`) on F1 and on the sidebar's second tab in a campaign; the game is
+  paused while it is open. The map's Intro / Brief movies play before a mission, Win / Lose
+  before its result, trigger actions 10 / 100 / 116 in the mission -- through the Bink decoder
+  when a `.bik` exists (`docs/INSTALL.md` "Movies"); the install's stubs are skipped.
+- **Options (R-146).** Visual Details drives the anim `DetailLevel=` filter (low detail drops
+  wakes, twinkles, power-plant lights); the non-volume sliders tick, Sound / Voice play a
+  preview; the resolution combobox works on desktop (window + RA2.INI `[Video]`).
+  "See Hidden Objects" is saved but still has no effect (it needs the occlusion draw path).
+- **Shell (R-173 part).** Skirmish loading screen `ls800<country>.shp` + `MPLS<country>.PAL`
+  (YR `loadmd.mix`, `FUN_005529F0`) with the player list; the menu CRT movie keeps its place
+  across shell pages and pauses when the window loses focus.
+- **Saving.** A "Saving game..." frame before the write, a free-space check ("NOT ENOUGH DISK
+  SPACE"), and the music state in a new `AUDI` section (**save format v18**).
+- **Evidence.** `--play` now writes `<out>/pres.log` and exposes `snd(KEY)`, `why(<trigger>)`,
+  `eva(NAME)`, `evareq(NAME)` probe counters. New scripts: `audio-events`, `keyboard`,
+  `score-pages`, `briefing-movies`, `options-w5`, `save-w5`; shots in `docs/gap/wave5/E-evidence/`.
+

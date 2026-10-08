@@ -207,7 +207,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | R-031 | Events 3, 18, 35, 45/46 and 53/54 are hard-coded false. Event 31 AllBridgesDestroyed is never raised; it is used ×7 in ALL03/04/06/10/11 (G-74, W2-CA-14 part) | Campaign | MINOR | OPEN | `engine/map_trigger.cpp:77-84`; `engine/map_trigger.hpp:35` (enum only) | M | Y |
 | R-032 | The ALL01 GI hand-over fires only on a 4-cell strip (61..64,84). Tanya ordered to the west dock swims around it (observed on w4fix-ctl) | Campaign | MINOR | OPEN | `docs/gap/wave4/02-mission-control.md` (w4fix-ctl copy) | S | Y |
 | R-033 | Placed map objects ignore facing and per-object veterancy (G-77 part) | Campaign | MINOR | OPEN | `engine/campaign_runtime.inc:940` (`place_unit` has no facing/vet) | S | N |
-| R-034 | There is no pre-mission briefing page, only the in-game F1 text overlay. There is no campaign movie path either: Bink is used only by the main menu (wave3/03 §4) | UI/Shell | MINOR | PARTIAL | `engine/campaign_scenes.inc:31-42`; `engine/main.cpp:5009-5016` | M | N |
+| R-034 | There is no pre-mission briefing page, only the in-game F1 text overlay. There is no campaign movie path either: Bink is used only by the main menu (wave3/03 §4) | UI/Shell | MINOR | FIXED (w5-audio a8b2068): Restate page 0x10C + Intro/Brief/Win/Lose/trigger movie path (skips stubs) | `engine/campaign_scenes.inc:31-42`; `engine/main.cpp:5009-5016` | M | N |
 | R-035 | The ALL04 `Image=BeInvisibleHack` civilian has no SHP, so the unit is dropped and its tag is lost (wave3/01 §2) | Campaign | MINOR | OPEN | `engine/campaign_runtime.inc:151-163` | S | N |
 | R-036 | Mind control is guessed: capacity and release rules (W2-CA-15, RE-W2-5) | Campaign | MINOR | RE-FALLBACK | `engine/campaign_runtime.inc:1148-1175` | M | Y |
 | R-037 | Guessed trigger plumbing: the SpiedBy raise site (raised alongside EnteredBy), damage-threshold event ratios (38-43), which map-INI rules sections are merged, and the AttackedByHouse attacker (RE-W2-2/3/4) | Campaign | MINOR | RE-FALLBACK | `engine/campaign_runtime.inc:1071,1107,1135`; `engine/campaign_rules.inc:38` | S | Y |
@@ -304,12 +304,12 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-130 | Many unit and world sounds are never played (W2-GA-25, G-81 part): | Audio | MAJOR | PARTIAL | grep counts in `docs/gap/wave2/05-gfx-audio-perf.md`; `engine/gf_scene.inc:122` | M | Y |
+| R-130 | Many unit and world sounds are never played (W2-GA-25, G-81 part): | Audio | MAJOR | FIXED (w5-audio 29c08e0): RE-traced triggers for every listed sound; `audio-events.play` | grep counts in `docs/gap/wave2/05-gfx-audio-perf.md`; `engine/gf_scene.inc:122` | M | Y |
 |  | Voices: VoiceFeedback, VoiceEnter, VoiceCapture, VoiceHarvest, VoiceSpecialAttack | | | | | | |
 |  | Unit and building sounds: Undeploy, DeploySound (only the AMCV has one), Sinking, Crashing, TurretRotate, BuildingRepaired, BuildingGarrisoned | | | | | | |
 |  | Other: Crate* pickups, CreditTicks | | | | | | |
-| R-131 | About 12 EVA lines never fire: PrimaryBuildingSelected, NewRallyPointEstablished, BuildingOffLine/OnLine, UnitRepaired, TechBuildingCaptured/Lost, BridgeRepaired, UnableToComply, the Armor/Firepower/Speed upgrades and BuildingInfiltrated* (W2-GA-26, G-80 part) | Audio | MINOR | PARTIAL | the 35-name EVA set contains none of them | S | N |
-| R-132 | Sound Control `Delay`/PREDELAY, `AMBIENT` and `Type=SHROUD/LOCAL` are not implemented (W2-GA-24) | Audio | MINOR | PARTIAL | `engine/audio_mixer.*`, `engine/pres_audio.inc` | M | N |
+| R-131 | About 12 EVA lines never fire: PrimaryBuildingSelected, NewRallyPointEstablished, BuildingOffLine/OnLine, UnitRepaired, TechBuildingCaptured/Lost, BridgeRepaired, UnableToComply, the Armor/Firepower/Speed upgrades and BuildingInfiltrated* (W2-GA-26, G-80 part) | Audio | MINOR | FIXED (w5-audio 29c08e0) except BuildingOffLine/OnLine (no power-toggle mode) and BuildingInfiltrated* | the 35-name EVA set contains none of them | S | N |
+| R-132 | Sound Control `Delay`/PREDELAY, `AMBIENT` and `Type=SHROUD/LOCAL` are not implemented (W2-GA-24) | Audio | MINOR | FIXED (w5-audio 29c08e0): Delay/PREDELAY/AMBIENT, Type LOCAL/SHROUD, on-screen dead zone | `engine/audio_mixer.*`, `engine/pres_audio.inc` | M | N |
 | R-133 | The (frame, sound) tail of infantry sequences is not parsed (wave3 §3.3) | Audio | MINOR | OPEN | `engine/inf_anim.cpp` (no sound handling) | S | N |
 | R-134 | Stereo IMA-ADPCM BAG entries are unsupported (only uslide1/2 are affected). Bink audio tracks are not parsed (the menu CRT is silent) | Audio | COSMETIC | OPEN | `src/audio_bag.cpp:137`; README:1647 | S | N |
 
@@ -317,8 +317,8 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-140 | No hotkey remap page (Options 0xA3). The Keyboard button is greyed on the shell and in-game pages; the bindings themselves are live from KeyboardMD.ini (W2-UI-27, 06#16/#34) | UI/Shell | MINOR | OPEN | `engine/main.cpp:7283-7288`; `engine/ingame_pages.inc:24-25` | M | N |
-| R-141 | Score page: the Score formula is untraced, and the campaign Results page (0xBC7) has no graph well and no first/second place panel (W2-UI-20, G-02, RE-I8) | UI/Shell | MINOR | PARTIAL | `engine/gf_result.inc:5-11`; `engine/campaign_scenes.inc:223-228` | M | Y |
+| R-140 | No hotkey remap page (Options 0xA3). The Keyboard button is greyed on the shell and in-game pages; the bindings themselves are live from KeyboardMD.ini (W2-UI-27, 06#16/#34) | UI/Shell | MINOR | FIXED (w5-audio 43e3fe9): Keyboard page 0xA3, `keyboard.play` | `engine/main.cpp:7283-7288`; `engine/ingame_pages.inc:24-25` | M | N |
+| R-141 | Score page: the Score formula is untraced, and the campaign Results page (0xBC7) has no graph well and no first/second place panel (W2-UI-20, G-02, RE-I8) | UI/Shell | MINOR | FIXED (w5-audio 339c780): original Score + 0xBC7 graph [RE-FALLBACK: graph art], `score-pages.play` | `engine/gf_result.inc:5-11`; `engine/campaign_scenes.inc:223-228` | M | Y |
 | R-142 | Sidebar polish is missing or guessed (W2-UI-05/06/10, 01#14, 02#9): | UI/Shell | COSMETIC | PARTIAL | `engine/main.cpp:4365-4372,4427-4460,5786-5792` | S | Y |
 |  | No DARKEN flash on a new cameo, and no tab flash (`tab0N` frames 3/4) | | | | | | |
 |  | The credits counter colour, roll rate and tick sound are guesses | | | | | | |
@@ -328,7 +328,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 |  | HUD: tooltip delay and box art, building pip-line lift | | | | | | |
 |  | Campaign page: emblem hover art | | | | | | |
 |  | Lobby: dropdown art drawn as primitives, no slider tick sound, preview scaling, ScenIndex mapping | | | | | | |
-| R-146 | DetailLevel is saved but nothing uses it, and the resolution combobox is inert (06#16) | UI/Shell | MINOR | OPEN | `engine/settings.cpp:240`; `engine/main.cpp:7147` | S | N |
+| R-146 | DetailLevel is saved but nothing uses it, and the resolution combobox is inert (06#16) | UI/Shell | MINOR | PARTIAL (w5-audio): DetailLevel + resolution combobox done; See Hidden Objects still no effect | `engine/settings.cpp:240`; `engine/main.cpp:7147` | S | N |
 | R-147 | Enemy units cannot be selected for info (HP); the original behaviour is not confirmed (01#6) | UI/Shell | COSMETIC | OPEN | `engine/input.cpp:295` | S | Y |
 | R-148 | A disguised object's real owner: the Spy and Mirage detect radius is guessed | UI/Shell | COSMETIC | RE-FALLBACK | `engine/capture.hpp:62` | S | Y |
 
@@ -336,7 +336,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-150 | Hotkeys that are parsed but do nothing: CombatantSelect, Follow, VeterancyNav, PlaceBeacon, AllToCheer and PlanningMode. The PowerToggle, Planning and Beacon modes are not modelled; the beacon, alliance and taunt keys are swallowed (W2-SK-28) | Controls/Touch | MINOR | OPEN | `engine/hotkeys.cpp:14-22`; `engine/input.cpp:225-227` | M | N |
+| R-150 | Hotkeys that are parsed but do nothing: CombatantSelect, Follow, VeterancyNav, PlaceBeacon, AllToCheer and PlanningMode. The PowerToggle, Planning and Beacon modes are not modelled; the beacon, alliance and taunt keys are swallowed (W2-SK-28) | Controls/Touch | MINOR | PARTIAL (w5-audio 43e3fe9): Follow/CombatantSelect/Health+VeterancyNav/AllToCheer/CenterOnRadarEvent/ScreenCapture done; PlanningMode + PowerToggle mode open; beacons/alliances/taunts network-only (RE) | `engine/hotkeys.cpp:14-22`; `engine/input.cpp:225-227` | M | N |
 | R-151 | Touch targets on phone: shell campaign and load list rows are about 14 dp, and the sidebar tabs about 21 dp (an art limit). View bookmarks have no touch path (W4-AM-08 rest, W2-AR-07 part) | Controls/Touch | MINOR | PARTIAL (w5-android: campaign list snaps a finger to the nearest row; sidebar near-miss snap from w4fix-ctl; save/load list rows and the ~21 dp tab width remain) | `engine/sidebar.hpp:31,40` | S | N |
 | R-152 | IME: the SAVE button sits above the visible area while typing, and prefilled text is not selected on focus (W2-AR-15) | Controls/Touch | MINOR | FIXED (w5-android: IME rect spans SAVE..edit, SAVE stays above the keyboard on the emulator; prefilled text selected, typing/Backspace replace it) | `engine/app_robust.inc:177-188`; `engine/ingame_pages.inc:67` | S | N |
 | R-153 | SDL clamps touches in the shell's pillarbox bars to the viewport edge (harmless today) | Controls/Touch | COSMETIC | OPEN | SDL `SDL_render.c:825-830` | S | N |
@@ -357,7 +357,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | R-170 | Phone performance is unknown: there are no real arm64 fps or load-time numbers. The emulator floor is 15.4 fps on ALL01 at 1080p and 19.6 fps on SOV01, with RSS 405 MB and about 6 s per mission load (W2-AR-29/Q2, W4-AM perf) | Performance | MAJOR | PARTIAL (w5-android: perf overlay (3-finger tap / Ctrl+Shift+F / debug.ra2.perf) + [perf] log + INSTALL.md section 5 "how to measure"; emulator ALL01 14.0 -> ~17 fps; still no real arm64 phone numbers) | `docs/gap/wave4/06-android-missions.md:139-142,195` | S | N |
 | R-171 | The ALL03 opening runs at about 8.6 logic frames/s (many idle infantry) and has never been profiled (W4-SQ-14) | Performance | MAJOR | FIXED (w5-android: profiled with RA2_PROFILE -- 86 % in A* for unreachable approach re-requests; content-validated path memo: ALL03 ~11 -> ~100 logic frames/s headless, play_hash identical) | `docs/gap/wave4/05-mission-sequences.md:94` | M | N |
 | R-172 | 15 Hz fixed logic with no render interpolation. 8-player desktop logic runs 290-400 frames/s headless (W2-GA-P3) | Performance | MINOR | RE-FALLBACK (w5-android: not interpolated -- the original renders once per logic frame (gamespeed.md); render cost cut instead: light map cached, 62 % of an emulator frame) | `engine/main.cpp:5702-5710` | M | N |
-| R-173 | Bink decodes on the main thread, does not pause on focus loss, and does not restart the CRT per page (README:1647) | Performance | COSMETIC | OPEN | `src/bink.cpp` | M | N |
+| R-173 | Bink decodes on the main thread, does not pause on focus loss, and does not restart the CRT per page (README:1647) | Performance | COSMETIC | PARTIAL (w5-audio 3021f9e): pauses on focus loss, continues across pages; still decodes on the main thread | `src/bink.cpp` | M | N |
 
 ### Robustness / Release
 
