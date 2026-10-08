@@ -207,9 +207,9 @@ houses, and that works (wave-2 W2-CA-02 fix).
 | W4-MC-03 opening view | **Fixed, CONFIRMED** (RE-W4-MC-1 answered): `[Basic] HomeCell` (FUN_00689890) → `Waypoint[HomeCell]` centred by FUN_004acd80/FUN_006d55e0; map centre when missing. ALL01 opens on wp98 (58,72). | `campaign.cpp`, `main.cpp` `campaign_view_setup` |
 | W4-MC-04 LocalSize | **Fixed (campaign).** IsWithinUsableArea FUN_00577e90 and the tactical clamp FUN_006d7bb0 decompiled (`docs/re/mission-view.md`); camera clamped, off-board placement refused, probe counts exclude off-board/shrouded units. Skirmish keeps the old free camera (open). | `campaign.cpp`, `input_original.cpp` `set_view_limits`, `realplay_scene.inc` |
 | W4-MC-05 pan vs scroll | **Fixed** [RE-FALLBACK]: a trigger pan ends once anything else moved the camera after the unlock (SOV01). | `campaign_visuals.inc` |
-| W4-MC-06 player order vs team | Open (RE-W4-MC-2 not traced; mostly hidden by the lock). | — |
+| W4-MC-06 player order vs team | **Fixed in `w4fix-seq`** [RE-FALLBACK, RE-W4-MC-2 not traced]: Input marks the ordered selection (`World::mark_player_order`) and the campaign releases those units from their script teams. | `input.cpp`, `input_original.cpp`, `campaign_runtime.inc` |
 | W4-MC-07 control-level scripts | **Done.** `ctl-all01` (real clicks, `onscreen`, arrow-key scrolling), `ctl-touch-all01` (real gestures), `ctl-all02`, `ctl-sov01`, `ctl-sides`; `m-all01`/`m-sov01` follow the original opening. New `--play` flag `onscreen`, `touch` commands, keys `ctl_units`, `ctl_on_screen`, `input_locked`, `view_cx/cy`. | `scripts/play/ctl-*.play`, `play_driver.inc` |
-| W4-MC-08 SOV09 early loss | Owned by the mission-sequence fix agent. | — |
+| W4-MC-08 SOV09 early loss | **Fixed in `w4fix-seq`**: the Russian drop groups were on the Americans' alliance team and hunted the Yuris; houses now use their own Allies= lists (see 05 W4-FIX-SEQ status). | `campaign_runtime.inc` |
 | W4-MC-09 raw input replay | Open. | — |
 
 Open observation: ALL01's GI hand-over fires only through the 4-cell strip (61..64,84). On the emulator Tanya

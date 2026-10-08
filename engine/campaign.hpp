@@ -177,6 +177,12 @@ struct MapTeamType {
     bool full = false;
     bool recruitable = false;   // AreTeamMembersRecruitable= (W2-CA-09)
     int veteran_level = 0;
+    // W4-SQ-01/06 [RE: TeamType writer FUN_006f0ab0 -- +0xB0 Droppod, +0xB1
+    // UseTransportOrigin, +0xF4 TransportsReturnOnUnload; TransportWaypoint=].
+    bool droppod = false;
+    bool use_transport_origin = false;
+    bool transports_return = false;
+    int transport_waypoint = -1;
 };
 struct MapTeamData {
     std::vector<MapScript> scripts;
@@ -198,6 +204,10 @@ struct MapTeamView {
     bool waypoint_ok = true;       // the current action's waypoint exists
     bool target_exists = true;     // an attack target for the current action exists
     bool members_idle = false;     // all live members idle (attack finished)
+    // W4-SQ-01 [RE: FUN_006ee670 / FUN_006ec760 / case 43 @0x6E9192]:
+    bool unloaded = true;          // every member transport's cargo is empty
+    bool loaded = true;            // Load (14): no member is left on the map to board
+    bool full = true;              // WaitLoaded (43): every member transport is full
 };
 // The single command for this tick.
 struct MapTeamCommand {
@@ -205,7 +215,9 @@ struct MapTeamCommand {
         None, MoveWaypoint, MoveCell, Attack, AttackWaypoint, Guard, Win, Lose, SetGlobal,
         ClearGlobal, SetLocal, ClearLocal, ChangeHouse, Scatter, DeleteMembers, Mission,
         AttackBuilding, Skip, Done,
-        Deploy, Unload   // W2-CA-17
+        Deploy, Unload,  // W2-CA-17
+        UnloadDone,      // W4-SQ-01: the transports are empty -> team membership per arg mode
+        Load             // W4-SQ-01: script 14, members board the team's transport
     };
     Kind kind = Kind::None;
     int arg = 0;
@@ -238,6 +250,7 @@ struct CampaignHostSave {
     std::vector<std::string> u_type;
     std::vector<std::uint8_t> u_flags;   // dead|discovered<<1|selected<<2|hunt<<3|initial<<4|dmg<<5
     std::vector<int> u_mc_victim, u_mc_orig;   // W2-CA-15 mind control (save v12)
+    std::vector<std::uint8_t> u_mission;       // W4-SQ-05: 1 Sleep, 2 Harmless (save v16)
     std::vector<int> b_tag, b_hp;
     std::vector<std::string> b_type;
     std::vector<std::uint8_t> b_flags;

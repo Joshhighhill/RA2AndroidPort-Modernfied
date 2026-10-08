@@ -238,11 +238,13 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                 const int idx = unit_under(px, py);
                 const int actor = lowest_selected();
                 if (idx >= 0 && !world_.units()[idx].selected) {
+                    world_.mark_player_order();   // W4-SQ
                     world_.order_attack(idx);
                 } else {
                     int cx = 0, cy = 0;
                     resolve_ground_cell(px, py, cx, cy);
                     const int b = world_.building_at_cell(cx, cy);
+                    world_.mark_player_order();   // W4-SQ
                     if (b >= 0) world_.order_attack_building(b);
                     else world_.order_attack_cell_selected(cx, cy);   // G16: ground
                 }
@@ -261,6 +263,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                 int cx = 0, cy = 0;
                 resolve_ground_cell(px, py, cx, cy);
                 const int actor = lowest_selected();
+                world_.mark_player_order();   // W4-SQ
                 world_.order_move_selected(cx, cy);
                 actions_.move_ordered = true;
                 actions_.actor = actor;
@@ -400,17 +403,20 @@ void Input::handle_original(const InputEvent& ev) {
 
 void Input::stop_selected() {
     // Gap fix C: the World owns Stop/Guard/Scatter (engine/unit_orders.cpp).
+    world_.mark_player_order();   // W4-SQ
     world_.order_stop_selected();
 }
 
 void Input::guard_selected() {
     // Area_Guard anchored on the unit itself [RE: FUN_0072FE30]; World side.
+    world_.mark_player_order();   // W4-SQ
     world_.order_guard_selected();
 }
 
 void Input::scatter_selected() {
     // World side (unit_orders.cpp): a free 8-ring neighbour drawn from the
     // sync RNG [the original randomises TechnoClass::Scatter's cell].
+    world_.mark_player_order();   // W4-SQ
     world_.order_scatter_selected();
 }
 
