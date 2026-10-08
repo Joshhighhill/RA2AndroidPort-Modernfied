@@ -213,6 +213,7 @@ TEST_CASE("w5 land_speed_mult: GroundType cost, slope, damage (DriveLocomotionCl
     c.down[0] = 1.2;
     Unit tank;
     tank.is_vehicle = true;
+    tank.land_speed_loco = true;   // Drive locomotor
     tank.speed_type = 1;
     tank.hp = tank.max_hp = 100;
     CHECK(land_speed_mult(c, tank, 4, 1, 0, 0) == doctest::Approx(1.0));

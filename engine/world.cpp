@@ -806,6 +806,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.crusher = c.crusher;
     u.auto_crush = c.auto_crush;   // W5-B R-050
     u.is_infantry = c.is_infantry; // W5-B R-061
+    u.land_speed_loco = c.land_speed_loco;   // W5-B R-062
     u.crushable = c.crushable;
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= -> roster index (inert -1
     // for every unit type without the key, i.e. everything but AMCV/SMCV).
@@ -4730,7 +4731,8 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
 double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny) {
     // Only the Drive/Ship/Hover locomotors read the GroundType table for speed
     // (FUN_004B2550 / FUN_006A1310); the Walk locomotor (infantry) does not.
-    if (!c.armed || !c.land || (!u.is_vehicle && !u.is_naval) || u.is_aircraft) return 1.0;
+    if (!c.armed || !c.land || (!u.is_vehicle && !u.is_naval) || u.is_aircraft || !u.land_speed_loco)
+        return 1.0;
     if (nx < 0 || ny < 0 || nx >= w || ny >= h) return 1.0;
     const std::size_t i = static_cast<std::size_t>(ny) * w + nx;
     if (i >= c.land->size()) return 1.0;

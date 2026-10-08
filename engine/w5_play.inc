@@ -14,7 +14,7 @@
 //         from the selected unit, same row band).
     void w5_play_probe(ra2play::Probe& p) const {
         for (const char* f : {"max_cell_inf", "cells3", "uhpn", "ucx", "ucy", "uspot", "ulx", "uly",
-                              "bhp", "bmaxhp", "uspeed", "uland", "utgt", "umov", "uwait"})
+                              "bhp", "bmaxhp", "uspeed", "uland", "utgt", "umov", "uwait", "ucargo", "upath"})
             p.zero_families.insert(f);
         p.set("subcells", world_.subcells_enabled() ? 1 : 0);
         std::map<std::pair<int, int>, int> per_cell[16];
@@ -38,6 +38,8 @@
             p.set("utgt(" + k + ")", u.target);
             p.set("umov(" + k + ")", u.moving() ? 1 : 0);
             p.set("uwait(" + k + ")", u.wait_time);
+            p.set("ucargo(" + k + ")", static_cast<double>(u.cargo.size()));
+            p.set("upath(" + k + ")", u.path.empty() ? -1.0 : static_cast<double>(u.path.back().x * 1000 + u.path.back().y));
             if (!u.is_vehicle && !u.is_aircraft && !u.is_naval && u.house >= 0 && u.house < 16)
                 ++per_cell[u.house][{u.cell_x, u.cell_y}];
         }
