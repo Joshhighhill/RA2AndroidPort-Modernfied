@@ -542,9 +542,33 @@ void World::step_abilities(double dt) {
         Unit& d = units_[i];
         if (!d.alive || d.cargo_of < 0 || d.abil.fire_kind != AbilityKind::Parasite) continue;
         const int h = d.cargo_of;
-        if (h < 0 || h >= n || units_[h].parasite_on_me != i) continue;
+        if (h < 0 || h >= n || units_[h].parasite_on_me != i || !units_[h].alive) {
+            // P3: the host left the world by a path that bypassed the death
+            // pass above (tombstoned with a transport, deleted by a script...)
+            // -- the rider is let go as at the host's death [§B3]: out on a free
+            // cell beside the host's last cell, else destroyed with it. Before,
+            // it stayed "carried" forever and kept its house alive for the
+            // Destroyed*All events (ALL06: a BadGuy1 dog).
+            const Unit* hp = (h >= 0 && h < n) ? &units_[h] : nullptr;
+            if (hp && hp->parasite_on_me == i) units_[h].parasite_on_me = -1;
+            const int hx = hp ? hp->cell_x : d.cell_x, hy = hp ? hp->cell_y : d.cell_y;
+            const std::vector<Cellxy> g = nearest_free_cells({hx, hy}, 1, passable_, grid_w_, grid_h_, occ_);
+            d.cargo_of = -1;
+            if (!g.empty()) {
+                d.cell_x = g[0].x; d.cell_y = g[0].y; d.fx = g[0].x; d.fy = g[0].y;
+                d.guard_x = g[0].x; d.guard_y = g[0].y;
+                occ_.set(g[0].x, g[0].y, i);
+                ability_events_.push_back({Ev::Kind::DroneExit, i, h, g[0].x, g[0].y, false});
+            } else {
+                d.alive = false;
+                d.hp = 0;
+                d.death_done = true;
+                ability_events_.push_back({Ev::Kind::DroneLost, i, h, 0, 0, false});
+            }
+            continue;
+        }
         Unit& host = units_[h];
-        if (!host.alive || host.die_time >= 0.0) continue;       // the death pass ejects
+        if (host.die_time >= 0.0) continue;       // the death pass ejects
         // Suppression: the host's external HP loss since the last pass.
         if (host.last_hp >= 0) {
             const int ext = host.last_hp - host.hp;
