@@ -3,9 +3,13 @@
 # Maps01.mix (the Allied campaign maps): starting the Allied campaign shows
 # the error page naming the file, and MAIN MENU returns to the shell.
 #   $env:RA2_INSTALL_DIR = "<install copy without Maps01.mix>\"
+# R-183: on a FULL install (no optional file missing) the scenario cannot be
+# reproduced, so the script logs SKIPPED and passes without checking.
 set render_every 300
 set on_quit continue
 
+if data_missing_optional == 0 then log SKIPPED: full install (point RA2_INSTALL_DIR at a copy without Maps01.mix)
+if data_missing_optional == 0 then end
 click button "Single Player"
 click button "New Campaign"
 require scene == "shell:Campaign"

@@ -17,6 +17,8 @@
 //                                  units (W4-AM-07).
 //   two-finger drag             -> Pan
 //   two-finger tap              -> right click (cancel a mode, else deselect)
+//   three-finger tap            -> Key kKeyPerfToggle (R-170: the FPS / perf
+//                                  overlay; the scene driver eats it)
 // Every emitted event has touch = true (GameScene then never edge-scrolls).
 // hold_feedback() reports the hold progress so the scene can draw a ring at
 // the finger before the hold fires.
@@ -34,6 +36,7 @@ public:
         int slop_px = 12;
         uint32_t two_finger_tap_ms = 300;
         uint32_t feedback_delay_ms = 150;   // the hold ring appears after this
+        uint32_t three_finger_tap_ms = 500;
     };
     TouchGestures() = default;
     explicit TouchGestures(Config c) : cfg_(c) {}
@@ -76,6 +79,8 @@ private:
     int mid_x_ = 0, mid_y_ = 0;               // two-finger centroid (last emitted)
     int travel_ = 0;                          // two-finger centroid travel (px)
     uint32_t t2_ = 0;                         // two-finger start time
+    bool three_ = false;                      // R-170: a third finger joined
+    int up_left_ = 0;                         // fingers still down after a 3-finger lift
     std::deque<InputEvent> out_;
 };
 
