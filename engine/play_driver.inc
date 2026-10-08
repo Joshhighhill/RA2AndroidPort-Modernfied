@@ -253,6 +253,10 @@ public:
           << " frames=" << f_ << " failures=" << fails_.size() << " unreached=" << unreached;
         emit(o.str(), true);
         emit(std::string("play_hash=") + hb, true);
+        {   // W5-E: the presentation (sound / EVA) event log of the run.
+            std::ofstream pl(out_ + "/pres.log", std::ios::trunc);
+            for (const std::string& l : g_pres_log) pl << l << '\n';
+        }
         // result.txt: one line per failure, machine-friendly for PLAYTEST-STATUS.md.
         std::ofstream r(out_ + "/result.txt", std::ios::trunc);
         r << o.str() << "\nplay_hash=" << hb << "\n";
@@ -873,6 +877,9 @@ int run_play(const std::string& script_path, const std::string& out_dir_in) {
     setenv("RA2_PREF_DIR", pref_abs.c_str(), 1);
 #endif
 
+    g_pres_play_log = true;   // W5-E: <out>/pres.log + the snd()/eva() probe counters
+    g_pres_log.clear();
+    g_pres_audio_counts.clear();
     ra2play_drv::Runner r(std::move(s), out_dir);
     int rc = 0;
     try {

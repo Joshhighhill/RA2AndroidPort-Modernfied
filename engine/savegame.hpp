@@ -36,7 +36,7 @@ namespace save {
 // Bump on ANY change to what is serialized (a field added to a visitor, a
 // section's layout). A save with a different version is listed but refused
 // on load -- the original's FileEntryClass::IsWrongVersion.
-constexpr std::uint32_t kFormatVersion = 19;   // 19: W5-B infantry sub-cell spots (Occupancy spots_/inf_) + Unit spot/sub offset/speed/crush/is_infantry/land-speed loco + land speed/crush/elevation rules + AffectsAllies + projectile SubjectTo*; 18: wave-5 abilities (stolen tech, prism/tesla/gap, tech heal, OpenTopped, DeployTime, defuse, IFV swap, Boris, squid, ship C4, vet abilities; BldTypeW5/UnitTypeW5/BldW5/UnitW5/WorldW5 + WeaponSpec projectile); 17: W5-F build-queue backlog/hold section QBKL + load_world index range checks; 16: W4-SQ paradrop fall (AnUnit para_alt, SwParams parachute_fall) + team airdrop flag + player-order queue + passive houses; 15: W4 per-type rocket blocks/warheads + RocketLocomotion flight + homing projectiles; 14: W3-B infantry sequence/fear state + warhead InfDeath/ProneDamage; 13: W2-SK ore mines + harvester/AI/spy/depot/unit-special state; 12: w2fix-campaign PlayerControl/pair alliances/entered events/mind control; 11: W2-AR-20 CRC-32 trailer over the whole file; 10: W2-AN air/naval/SW state; 9: W2-GA-03 FogOfWar flag; 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state; 8: skirmish-page game_speed/mcv_redeploys in the config
+constexpr std::uint32_t kFormatVersion = 20;   // 20: W5-B infantry sub-cell spots (Occupancy spots_/inf_) + Unit spot/sub offset/speed/crush/is_infantry/land-speed loco + land speed/crush/elevation rules + AffectsAllies + projectile SubjectTo*; 19: W5-E audio section AUDI (music track / on); 18: wave-5 abilities (stolen tech, prism/tesla/gap, tech heal, OpenTopped, DeployTime, defuse, IFV swap, Boris, squid, ship C4, vet abilities; BldTypeW5/UnitTypeW5/BldW5/UnitW5/WorldW5 + WeaponSpec projectile); 17: W5-F build-queue backlog/hold section QBKL + load_world index range checks; 16: W4-SQ paradrop fall (AnUnit para_alt, SwParams parachute_fall) + team airdrop flag + player-order queue + passive houses; 15: W4 per-type rocket blocks/warheads + RocketLocomotion flight + homing projectiles; 14: W3-B infantry sequence/fear state + warhead InfDeath/ProneDamage; 13: W2-SK ore mines + harvester/AI/spy/depot/unit-special state; 12: w2fix-campaign PlayerControl/pair alliances/entered events/mind control; 11: W2-AR-20 CRC-32 trailer over the whole file; 10: W2-AN air/naval/SW state; 9: W2-GA-03 FogOfWar flag; 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state; 8: skirmish-page game_speed/mcv_redeploys in the config
 
 // --- archives ---------------------------------------------------------------
 class Writer {
@@ -256,6 +256,8 @@ constexpr std::uint32_t kTagHost = tag('H', 'O', 'S', 'T');
 // R-180 (v16): the sidebar's waiting unit copies + the queues on hold
 // (save_fields.hpp QueueBacklogSave). Optional: absent = nothing waiting.
 constexpr std::uint32_t kTagBacklog = tag('Q', 'B', 'K', 'L');
+// W5-E: the presentation audio state -- "<theme section>\n<1|0 music on>\n".
+constexpr std::uint32_t kTagAudio = tag('A', 'U', 'D', 'I');
 
 struct SaveFile {
     SaveHeader header;

@@ -204,10 +204,10 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 6656);   // W5-B sub-cells/land speed/crush/elevation rules (+600), save v19; wave-5 abilities: w5_ (stolen tech, rules, unit profiles, witnesses) + gap scratch (+344), save v17; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
+    CHECK(sizeof(World) == 6656);   // W5-B sub-cells/land speed/crush/elevation rules (+600), save v20; wave-5 abilities: w5_ (stolen tech, rules, unit profiles, witnesses) + gap scratch (+344), save v17; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
     CHECK(sizeof(MapTriggerSystem) == 368);   // P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 128);   // W2-SK-01 +mines_ (v10)
-    CHECK(sizeof(Occupancy) == 80);   // W5-B +spots_ +inf_ (v19)
+    CHECK(sizeof(Occupancy) == 80);   // W5-B +spots_ +inf_ (v20)
     CHECK(sizeof(ProductionQueues) == 336);
     CHECK(sizeof(GameRandom) == 1008);
     CHECK(sizeof(RadField) == 56);

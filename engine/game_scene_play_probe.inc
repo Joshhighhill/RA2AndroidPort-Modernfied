@@ -14,6 +14,18 @@
         p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
                            "harv_bales", "can_build", "cameo", "cameo_tab", "moving"};
         p.set_s("mode", campaign_ ? "campaign" : "skirmish");
+        // W5-E: sound / EVA evidence (pres_audio.inc counters): snd(KEY),
+        // why(<trigger>), eva(NAME) started, evareq(NAME) requested.
+        for (const char* f : {"snd", "why", "eva", "evareq"}) p.zero_families.insert(f);
+        for (const auto& kv : g_pres_audio_counts) p.set(kv.first, static_cast<double>(kv.second));
+        p.set("follow_unit", follow_unit_);           // W5-E Follow hotkey
+        p.set_s("load_art", SkirmishLoadArt::g_skirmish_load_art_drawn);   // W5-E skirmish loading art
+        p.set_s("screencap", last_screencap_);        // W5-E ScreenCapture hotkey
+        p.set("hotkeys_version", hotkeys_ver_);
+        p.set("saves_indicated", saves_indicated_);          // W5-E saving indicator
+        p.set_s("music_track", pres_.sound().current_track());
+        p.set_s("loaded_track", loaded_track_);
+        p.set("loaded_audio", loaded_audio_ ? 1 : 0);
         p.set("credits", player_credits_);
         p.set("credits_shown", credits_shown_);
         p.set_s("tooltip", tooltip_now());   // W2-UI-07
@@ -244,6 +256,11 @@
         p.set("sw_allowed", cfg_.superweapons ? 1 : 0);
         p.set("short_game", cfg_.short_game ? 1 : 0);
         p.set("crates_on", cfg_.crates ? 1 : 0);
+        {   // W5-E: live crates on the map
+            int n = 0;
+            for (const auto& c : world_.crates()) n += c.x >= 0;
+            p.set("crates_live", n);
+        }
         p.set("unit_count_cfg", cfg_.unit_count);
         p.set("start_cash", cfg_.starting_cash);
         // Power (house 0).

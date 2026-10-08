@@ -52,6 +52,14 @@ private:
                 else pres_.sound().play(r.name, 0.0, "trigger sound");
                 break;
             }
+            case 10: case 100: case 116:   // W5-E: PlayMovie / PlayIngameMovie / PlayMovieAndPause
+                // [RE: map-triggers.md -- the movie name is the action's text
+                // parameter]; skipped when the file does not exist.
+                if (!r.name.empty()) {
+                    pres_log(pres_.frame(), "movie-request " + r.name + " (action " + std::to_string(r.action) + ")");
+                    ingame_movie_.start(r.name);
+                }
+                break;
             case 20: {   // PlayMusicTheme
                 const std::string t = r.name.empty() ? campaign_theme_by_index(r.value) : r.name;
                 if (!t.empty()) pres_.sound().jukebox_play(t);

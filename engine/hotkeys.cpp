@@ -23,7 +23,7 @@ const Named kSimple[] = {
     {"ScreenCapture", HotCmd::ScreenCapture}, {"StructureTab", HotCmd::StructureTab},
     {"DefenseTab", HotCmd::DefenseTab}, {"InfantryTab", HotCmd::InfantryTab},
     {"UnitTab", HotCmd::UnitTab}, {"SidebarUp", HotCmd::SidebarUp},
-    {"SidebarDown", HotCmd::SidebarDown},
+    {"SidebarDown", HotCmd::SidebarDown}, {"HealthNav", HotCmd::HealthNav},
 };
 struct Indexed { const char* prefix; HotCmd cmd; int lo, hi; };
 const Indexed kIndexed[] = {
@@ -86,6 +86,12 @@ void HotkeyTable::bind(const HotBinding& b, int code) {
     const auto key = std::make_pair(static_cast<int>(b.cmd), b.arg);
     const auto old = code_by_cmd_.find(key);
     if (old != code_by_cmd_.end()) by_code_.erase(old->second);   // rebinding moves it
+    // W5-E: a code can drive one command only -- the previous owner loses it.
+    if (code > 0) {
+        const auto prev = by_code_.find(code);
+        if (prev != by_code_.end() && !(prev->second.cmd == b.cmd && prev->second.arg == b.arg))
+            code_by_cmd_[std::make_pair(static_cast<int>(prev->second.cmd), prev->second.arg)] = 0;
+    }
     code_by_cmd_[key] = code;
     if (code > 0) by_code_[code] = b;
 }
@@ -133,6 +139,122 @@ HotBinding HotkeyTable::lookup(int vk, bool shift, bool ctrl, bool alt) const {
 int HotkeyTable::code_of(HotCmd c, int arg) const {
     const auto it = code_by_cmd_.find(std::make_pair(static_cast<int>(c), arg));
     return it == code_by_cmd_.end() ? -1 : it->second;
+}
+
+std::string HotkeyTable::to_ini_text() const {
+    std::string out = "[Hotkey]\n";
+    for (const HotCommandInfo& c : hot_command_list()) {
+        const int code = code_of(c.binding.cmd, c.binding.arg);
+        out += c.name + "=" + std::to_string(code < 0 ? 0 : code) + "\n";
+    }
+    return out;
+}
+
+const std::vector<HotCommandInfo>& hot_command_list() {
+    static const std::vector<HotCommandInfo> list = [] {
+        std::vector<HotCommandInfo> v;
+        auto add = [&](const std::string& name, const std::string& ui, const std::string& cat,
+                       const std::string& desc, const std::string& fb) {
+            HotCommandInfo c{name, ui, cat, desc, fb, {}};
+            HotkeyTable::parse_name(name, c.binding);
+            v.push_back(c);
+        };
+        const char* I = "TXT_INTERFACE";
+        const char* S = "TXT_SELECTION";
+        const char* K = "TXT_CONTROL";
+        add("StructureTab", "TXT_STRUCTURE_TAB", I, "TXT_STRUCTURE_TAB_DESC", "Structures Tab");
+        add("DefenseTab", "TXT_DEFENSE_TAB", I, "TXT_DEFENSE_TAB_DESC", "Defenses Tab");
+        add("InfantryTab", "TXT_INFANTRY_TAB", I, "TXT_INFANTRY_TAB_DESC", "Infantry Tab");
+        add("UnitTab", "TXT_UNIT_TAB", I, "TXT_UNIT_TAB_DESC", "Units Tab");
+        // [RE-FALLBACK: the team / taunt commands' category label was not read
+        // from their shared %d-formatted vtables; TXT_TEAM / TXT_TAUNT.]
+        for (int i = 1; i <= 10; ++i)
+            add("TeamSelect_" + std::to_string(i), "TXT_SELECT_TEAM", "TXT_TEAM", "TXT_SELECT_TEAM_DESC",
+                "Select Team " + std::to_string(i));
+        for (int i = 1; i <= 10; ++i)
+            add("TeamAddSelect_" + std::to_string(i), "TXT_ADD_SELECT_TEAM", "TXT_TEAM", "TXT_ADD_SELECT_TEAM_DESC",
+                "Add To Team " + std::to_string(i));
+        for (int i = 1; i <= 10; ++i)
+            add("TeamCenter_" + std::to_string(i), "TXT_CENTER_TEAM", "TXT_TEAM", "TXT_CENTER_TEAM_DESC",
+                "Center Team " + std::to_string(i));
+        for (int i = 1; i <= 10; ++i)
+            add("TeamCreate_" + std::to_string(i), "TXT_CREATE_TEAM", "TXT_TEAM", "TXT_CREATE_TEAM_DESC",
+                "Create Team " + std::to_string(i));
+        for (int i = 1; i <= 8; ++i)
+            add("Taunt_" + std::to_string(i), "TXT_TAUNT_NUMBER", "TXT_TAUNT", "TXT_TAUNT_DESC",
+                "Taunt " + std::to_string(i));
+        add("NextObject", "TXT_NEXT_OBJECT", S, "TXT_NEXT_OBJECT_DESC", "Next Unit");
+        add("PlanningMode", "Cmnd:PlanningMode", K, "Cmnd:PlanningModeDesc", "Planning Mode");
+        add("CombatantSelect", "Cmnd:CombatantSelect", S, "Cmnd:CombatantSelectDesc", "Select Combatants");
+        add("TypeSelect", "Cmnd:TypeSelect", S, "Cmnd:TypeSelectDesc", "Select Same Type");
+        add("HealthNav", "Cmnd:HealthNavigation", S, "Cmnd:HealthNavigationDesc", "Health Navigation");
+        add("VeterancyNav", "Cmnd:VetNavigation", S, "Cmnd:VetNavigationDesc", "Veterancy Navigation");
+        add("PreviousObject", "TXT_PREV_OBJECT", S, "TXT_PREV_OBJECT_DESC", "Previous Unit");
+        add("StopObject", "TXT_STOP_OBJECT", K, "TXT_STOP_OBJECT_DESC", "Stop");
+        add("AllToCheer", "Cmnd:AllCheer", K, "Cmnd:AllCheerDesc", "All To Cheer");
+        add("DeployObject", "TXT_DEPLOY_OBJECT", K, "TXT_DEPLOY_OBJECT_DESC", "Deploy");
+        add("GuardObject", "TXT_GUARD", K, "TXT_GUARD_DESC", "Guard");
+        add("ScatterObject", "TXT_SCATTER", K, "TXT_SCATTER_DESC", "Scatter");
+        add("CenterView", "TXT_CENTER_VIEW", S, "TXT_CENTER_VIEW_DESC", "Center View");
+        add("CenterBase", "TXT_CENTER_BASE", S, "TXT_CENTER_BASE_DESC", "Center Base");
+        add("ToggleAlliance", "TXT_ALLIANCE", K, "TXT_ALLIANCE_DESC", "Alliance");
+        add("ToggleRepair", "TXT_REPAIR_MODE", I, "TXT_REPAIR_MODE_DESC", "Repair Mode");
+        add("ToggleSell", "TXT_SELL_MODE", I, "TXT_SELL_MODE_DESC", "Sell Mode");
+        add("PlaceBeacon", "TXT_PLACE_BEACON", I, "TXT_PLACE_BEACON_DESC", "Place Beacon");
+        add("CenterOnRadarEvent", "TXT_RADAR_EVENT", I, "TXT_RADAR_EVENT_DESC", "Center On Radar Event");
+        add("SidebarUp", "TXT_SIDEBAR_UP", I, "TXT_SIDEBAR_UP_DESC", "Sidebar Up");
+        add("SidebarDown", "TXT_SIDEBAR_DOWN", I, "TXT_SIDEBAR_DOWN_DESC", "Sidebar Down");
+        add("Options", "TXT_OPTIONS", I, "TXT_OPTIONS_DESC", "Options");
+        for (int i = 1; i <= 4; ++i)
+            add("View" + std::to_string(i), "TXT_VIEW_BOOKMARK" + std::to_string(i), I,
+                "TXT_VIEW_BOOKMARK" + std::to_string(i) + "_DESC", "View Bookmark " + std::to_string(i));
+        for (int i = 1; i <= 4; ++i)
+            add("SetView" + std::to_string(i), "TXT_SET_BOOKMARK" + std::to_string(i), I,
+                "TXT_SET_BOOKMARK" + std::to_string(i) + "_DESC", "Set Bookmark " + std::to_string(i));
+        add("Follow", "TXT_FOLLOW", I, "TXT_FOLLOW_DESC", "Follow");
+        add("ScreenCapture", "TXT_SCRNCAP", I, "TXT_SCRNCAP_DESC", "Screen Capture");
+        add("PageUser", "TXT_PAGEUSER", I, "TXT_PAGEUSER_DESC", "Page User");
+        add("Delete", "Cmnd:Delete", I, "Cmnd:DeleteDesc", "Delete");
+        return v;
+    }();
+    return list;
+}
+
+std::string hotkey_label(int code) {
+    if (code <= 0) return std::string();
+    std::string s;
+    if (code & 512) s += "Ctrl+";
+    if (code & 1024) s += "Alt+";
+    if (code & 256) s += "Shift+";
+    const int vk = code & 255;
+    if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9')) {
+        s += static_cast<char>(vk);
+    } else if (vk >= 112 && vk <= 123) {
+        s += "F" + std::to_string(vk - 111);
+    } else if (vk >= 96 && vk <= 105) {
+        s += "Num" + std::to_string(vk - 96);
+    } else {
+        switch (vk) {
+            case 8: s += "Backspace"; break;
+            case 9: s += "Tab"; break;
+            case 12: s += "Clear"; break;
+            case 13: s += "Enter"; break;
+            case 27: s += "Esc"; break;
+            case 32: s += "Space"; break;
+            case 33: s += "PgUp"; break;
+            case 34: s += "PgDn"; break;
+            case 35: s += "End"; break;
+            case 36: s += "Home"; break;
+            case 37: s += "Left"; break;
+            case 38: s += "Up"; break;
+            case 39: s += "Right"; break;
+            case 40: s += "Down"; break;
+            case 45: s += "Insert"; break;
+            case 46: s += "Delete"; break;
+            default: s += "#" + std::to_string(vk); break;
+        }
+    }
+    return s;
 }
 
 }  // namespace ra2engine

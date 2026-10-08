@@ -1,0 +1,88 @@
+# keyboard -- W5-E acceptance (R-140 / R-150): the Options Keyboard page
+# (dialog 0xA3) remaps a command and saves it to <pref>/Keyboard.ini; the
+# game then obeys the new key; the formerly-dead hotkeys work
+# (CombatantSelect, Health/VeterancyNav, Follow, AllToCheer,
+# CenterOnRadarEvent, ScreenCapture). RE: keyboard_page.inc, hotkeys.cpp,
+# game_scene_controls.inc (hotkey_* bodies).
+set render_every 300
+set on_quit continue
+
+click button Options
+require scene == "shell:Options"
+assert button_enabled(Keyboard) == 1                     @R-140:E
+click button Keyboard
+until 5 kb_open == 1                                     @R-140:E
+shot kb01_page
+assert kb_rows >= 60                                     @R-140:E
+# Category combobox -> "Control"
+click kb:cat
+click kb:cat:5
+assert kb_category == 5                                  @R-140:E
+shot kb02_category
+click kb:cmd:StopObject
+assert kb_cmd == StopObject                              @R-140:E
+assert kb_code == 83                                     @R-140:E
+click kb:edit
+assert kb_capture == 1                                   @R-140:E
+key j
+assert kb_code == 74                                     @R-140:E
+click kb:assign
+assert kb_bind(StopObject) == 74                         @R-140:E
+shot kb03_assigned
+click kb:back
+until 5 kb_open == 0
+# Re-open: the remap was saved (Keyboard.ini in the pref dir).
+click button Keyboard
+until 5 kb_open == 1
+assert kb_bind(StopObject) == 74                         @R-140:E
+click kb:back
+click button "Main Menu"
+
+# --- in game: the new key + the formerly-dead hotkeys ---------------------------
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+require scene == game
+click unit 0:E1
+click unit 0:E1 +6 +2
+wait 2
+assert moving(0) >= 1
+key j
+wait 2
+assert sel_moving == 0                                   @R-140:E
+# CombatantSelect (P): every armed own unit on screen
+key p
+assert selected >= 4                                     @R-150:E
+# HealthNav (U, RA2 Keyboard.ini) / VeterancyNav (Y)
+key u
+assert selected >= 1                                     @R-150:E
+key y
+assert selected >= 1                                     @R-150:E
+# Follow (F) on the selection, again (F) to stop
+click unit 0:GTNK
+key f
+assert follow_unit >= 0                                  @R-150:E
+let cx0 = cam_x
+click unit 0:GTNK +8 +4
+until 300 cam_x != $cx0                                  @R-150:E
+key f
+assert follow_unit == -1                                 @R-150:E
+# AllToCheer (C): the infantry cheer + CheerSound
+key c
+wait 2
+assert why(cheer) >= 1                                   @R-150:E
+assert iseq(Cheer) >= 1                                  @R-150:E
+# ScreenCapture (Ctrl+C in Keyboard.ini: 579)
+key c ctrl
+shot kb05_screencap_frame
+wait 3
+assert screencap != ""                                   @R-150:E
+# Keyboard page from the in-game Game Controls page
+key esc
+click "menu:GAME CONTROLS"
+click "menu:KEYBOARD"
+until 5 kb_open == 1                                     @R-140:E
+shot kb04_ingame
+click kb:back
+end

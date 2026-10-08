@@ -72,6 +72,19 @@ struct MixerSound {
     bool all = false;
     bool attack = false, decay = false;
     bool loop = false;
+    // W5-E [RE: FUN_004055c0 voice start, audio-playback.md §4]: Control
+    // PREDELAY (0x8) or AMBIENT (0x80) waits RandomRanged(lo, Delay max) ms
+    // before the voice sounds -- lo = 33 for AMBIENT, else Delay min -- and
+    // only when the draw is >= 33 ms. A LOOP voice re-draws it before every
+    // pass (the start state is re-entered) [Medium: the re-entry edge].
+    bool predelay = false;
+    bool ambient = false;
+    int delay_lo_ms = 0, delay_hi_ms = 0;
+    // W5-E [RE: FUN_0074f8e0]: Type=LOCAL measures from the view centre
+    // (no on-screen dead zone); Type=SHROUD is silent unless the source cell
+    // is revealed (the caller passes the shroud state).
+    bool local = false;
+    bool shroud = false;
 };
 
 // W2-GA-22: a streamed stereo music source (22050 Hz interleaved L,R). The
@@ -140,6 +153,12 @@ public:
     // Limit-driven steal to make room -- see the class doc comment above
     // for which of these is a documented approximation of vanilla.
     bool play(const std::string& key, double dist_cells = 0.0);
+    // W5-E: a non-positional play scaled by `volume` (0..1) -- the original's
+    // FUN_0074F740(snd, volume) (e.g. the credit ticks at 0.5).
+    bool play_scaled(const std::string& key, double volume);
+    // W5-E: the registered event (nullptr if unknown) -- the presentation
+    // reads Type=LOCAL/SHROUD from it.
+    const MixerSound* sound(const std::string& key) const;
 
     // W2-GA-23 [RE: audio-playback.md §3, RE-Q11 FUN_0074f8e0]: like play()
     // but positional -- `pan` 0..16384 (8192 centre) -- and returns a voice
@@ -216,12 +235,16 @@ private:
         std::size_t seq_ix = 0;
         int loop_from = -1;          // LOOP: body clip to repeat
         bool done = false;
+        std::size_t delay = 0;       // W5-E predelay samples still to wait
+        bool predelay = false, ambient = false;
+        int delay_lo = 0, delay_hi = 0;
     };
 
     std::uint32_t next_rand_();
     int ranged_(int lo, int hi);
     void kill_oldest_with_key_(const std::string& key);
-    std::uint32_t start_(const std::string& key, double dist_cells, int pan);
+    std::uint32_t start_(const std::string& key, double dist_cells, int pan, double scale = 1.0);
+    std::size_t draw_delay_(bool ambient, int lo, int hi);
     // Advances one voice by one output frame; false once it has finished.
     bool next_sample_(Voice& v, int& sample);
     void retire_();

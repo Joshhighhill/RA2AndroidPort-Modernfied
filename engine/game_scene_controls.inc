@@ -64,18 +64,11 @@
     // RA2 game.exe reads KEYBOARD.INI (FUN_00519240, string 0x7DD718) -- the
     // install's Keyboard.ini overrides the shipped defaults. KeyboardMD.ini is
     // the YR file; it is only a fallback when Keyboard.ini is absent.
-    static ra2engine::HotkeyTable load_hotkeys() {
-        ra2engine::HotkeyTable t = ra2engine::HotkeyTable::defaults();
-        for (const char* f : {"Keyboard.ini", "KeyboardMD.ini"}) {
-            try {
-                const std::vector<uint8_t> raw = ra2assets::read_file(env_install_dir() + f);
-                t.load_ini_text(std::string(raw.begin(), raw.end()));
-                break;
-            } catch (const std::exception&) { /* next / defaults */ }
-        }
-        return t;
-    }
+    // W5-E: the Keyboard page (0xA3) writes the player's remap to
+    // <pref dir>/Keyboard.ini, which overrides the install's file.
+    static ra2engine::HotkeyTable load_hotkeys() { return load_hotkey_table(); }
     ra2engine::HotkeyTable hotkeys_ = load_hotkeys();
+    int hotkeys_ver_ = g_hotkeys_version;
     int view_cam_[4][2] = {};          // View1..4 bookmarks (SetView = Ctrl+F1..F4)
     bool view_set_[4] = {false, false, false, false};
 
@@ -124,8 +117,13 @@
             world_.buildings()[sb].house == 0 && !world_.buildings()[sb].occupants.empty())
             world_.unload_occupants(sb);
         world_.order_unload_selected();
+        int first = -1;
         for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
-            if (world_.units()[i].selected && world_.controllable(world_.units()[i].house)) world_.order_deploy(i);
+            if (world_.units()[i].selected && world_.controllable(world_.units()[i].house)) {
+                if (first < 0) first = i;
+                world_.order_deploy(i);
+            }
+        pres_.note_deploy_order(world_, first);   // W5-E Mission_Unload -> VoiceDeploy
     }
 
     // Next/PreviousObject [RE-FALLBACK: FUN_005362D0/536740 execs not
@@ -151,6 +149,10 @@
     // Returns true when the key was a bound command (consumed).
     bool hotkey(const ra2engine::InputEvent& ev) {
         if (ev.kind != ra2engine::InputEvent::Key || ev.vk == 0) return false;
+        if (hotkeys_ver_ != g_hotkeys_version) {   // W5-E: the Keyboard page saved a remap
+            hotkeys_ = load_hotkeys();
+            hotkeys_ver_ = g_hotkeys_version;
+        }
         const ra2engine::HotBinding b = hotkeys_.lookup(ev.vk, ev.shift, ev.ctrl, ev.alt);
         using C = ra2engine::HotCmd;
         switch (b.cmd) {
@@ -188,12 +190,146 @@
                 return true;
             case C::SidebarUp: strip_scroll(-1); return true;
             case C::SidebarDown: strip_scroll(+1); return true;
+            // W5-E [RE: the CommandClass execs, see hotkey_follow & co. below].
+            case C::Follow: hotkey_follow(); return true;
+            case C::CombatantSelect: hotkey_combatant_select(); return true;
+            case C::HealthNav: hotkey_nav(false); return true;
+            case C::VeterancyNav: hotkey_nav(true); return true;
+            case C::AllToCheer: hotkey_cheer(); return true;
+            case C::CenterOnRadarEvent: hotkey_radar_event(ev.t_ms); return true;
+            case C::ScreenCapture: screencap_pending_ = true; return true;
             default:
-                // Bound in KeyboardMD.ini but with no feature behind it in this
-                // engine (beacons, planning mode, alliances, taunts, cheer,
-                // follow, combatant select, veterancy nav, page user, delete,
-                // screen capture, radar events): consumed, no effect.
+                // W5-E [RE]: PlaceBeacon FUN_00536DD0 and ToggleAlliance /
+                // PageUser FUN_00537B80 / Taunts act only in a network game
+                // (GameMode != 0 && != 5 skirmish); Delete FUN_00730AE0
+                // deletes a planning path / beacon; PlanningMode FUN_00730B20
+                // [not implemented: the waypoint planning mode]. In a
+                // campaign or skirmish they are consumed with no effect.
                 return true;
+        }
+    }
+
+    // --- W5-E hotkey bodies ---------------------------------------------------
+    // Follow [RE: FUN_00537740 -> FUN_004AEA40]: with a selection and no
+    // follow running, the tactical view follows the first selected object;
+    // otherwise following stops.
+    int follow_unit_ = -1;
+    void hotkey_follow() {
+        if (follow_unit_ >= 0) { follow_unit_ = -1; return; }
+        for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
+            if (world_.units()[static_cast<std::size_t>(i)].selected) { follow_unit_ = i; return; }
+    }
+    void follow_tick() {
+        if (follow_unit_ < 0) return;
+        if (follow_unit_ >= static_cast<int>(world_.units().size())) { follow_unit_ = -1; return; }
+        const ra2engine::Unit& u = world_.units()[static_cast<std::size_t>(follow_unit_)];
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) { follow_unit_ = -1; return; }
+        input_.center_on_cell(u.fx, u.fy);
+    }
+    bool unit_on_screen(const ra2engine::Unit& u) const {
+        const double sx = (u.fx - u.fy) * 30.0 + cam_.x + 30.0;
+        const double sy = (u.fx + u.fy) * 15.0 + cam_.y + 15.0 - u.level * 15.0;
+        return sx >= 0 && sx < playfield_w_ && sy >= 0 && sy < kWinH;
+    }
+    bool own_live(const ra2engine::Unit& u) const {
+        return world_.controllable(u.house) && u.alive && u.die_time < 0.0 && u.cargo_of < 0;
+    }
+    // CombatantSelect [RE: FUN_00731350]: every own armed (combatant) unit on
+    // screen; a second press when they are all already selected widens to the
+    // whole map (DAT_00B0EDC4).
+    void hotkey_combatant_select() {
+        auto combatant = [&](const ra2engine::Unit& u) {
+            return own_live(u) && u.w_damage > 0 && !u.is_harvester;
+        };
+        bool all_sel = true, any = false;
+        for (const ra2engine::Unit& u : world_.units())
+            if (combatant(u) && unit_on_screen(u)) { any = true; if (!u.selected) all_sel = false; }
+        const bool whole_map = any && all_sel;
+        world_.clear_selection();
+        for (ra2engine::Unit& u : world_.units())
+            if (combatant(u) && (whole_map || unit_on_screen(u))) u.selected = true;
+        last_nav_ = 0;
+    }
+    // HealthNav / VeterancyNav [RE: FUN_00732450 / FUN_00732790]: repeated
+    // presses step through the categories (health green / yellow / red;
+    // rookie / veteran / elite) and select the own objects on screen in that
+    // category (the whole map when none are on screen). Any other command
+    // restarts at the first category.
+    int last_nav_ = 0, nav_step_ = -1;   // 1 health, 2 veterancy
+    void hotkey_nav(bool vet) {
+        const int kind = vet ? 2 : 1;
+        if (last_nav_ != kind) nav_step_ = -1;
+        last_nav_ = kind;
+        auto cat_of = [&](const ra2engine::Unit& u) {
+            if (vet) return std::min(2, std::max(0, u.veteran_rank));
+            const double r = u.max_hp > 0 ? static_cast<double>(u.hp) / u.max_hp : 1.0;
+            return r > ba_.condition_yellow ? 0 : (r > ba_.condition_yellow * 0.5 ? 1 : 2);
+        };
+        for (int tries = 0; tries < 3; ++tries) {
+            nav_step_ = (nav_step_ + 1) % 3;
+            bool on_screen = false;
+            for (const ra2engine::Unit& u : world_.units())
+                if (own_live(u) && cat_of(u) == nav_step_ && unit_on_screen(u)) on_screen = true;
+            bool found = false;
+            for (const ra2engine::Unit& u : world_.units())
+                if (own_live(u) && cat_of(u) == nav_step_ && (!on_screen || unit_on_screen(u))) found = true;
+            if (!found) continue;
+            world_.clear_selection();
+            for (ra2engine::Unit& u : world_.units())
+                if (own_live(u) && cat_of(u) == nav_step_ && (!on_screen || unit_on_screen(u))) u.selected = true;
+            return;
+        }
+    }
+    // AllToCheer [RE: FUN_00730000 queues event 0x2D, throttled by Rules
+    // +0x580 frames; handler FUN_0050C6E0]: every own infantry cheers, then
+    // CheerSound. [RE-FALLBACK: the +0x580 throttle value -- 30 frames.]
+    long cheer_next_ = 0;
+    void hotkey_cheer() {
+        last_nav_ = 0;
+        const long now = static_cast<long>(g_pres_tick);
+        if (now < cheer_next_) return;
+        cheer_next_ = now + 30;
+        world_.make_house_cheer(0);
+        pres_.note_cheer();
+    }
+    // CenterOnRadarEvent [RE: FUN_007331F0]: a press within 1600 ms of the
+    // previous one steps to the next older live radar event, otherwise the
+    // newest; the view centres on its cell.
+    std::uint32_t radar_ev_ms_ = 0;
+    int radar_ev_ix_ = -1;
+    void hotkey_radar_event(std::uint32_t t_ms) {
+        last_nav_ = 0;
+        const auto ev = pres_.radar_pings();
+        if (ev.empty()) return;
+        const bool next = radar_ev_ix_ >= 0 && t_ms - radar_ev_ms_ < 1600u;
+        radar_ev_ms_ = t_ms;
+        radar_ev_ix_ = next ? radar_ev_ix_ + 1 : 0;
+        if (radar_ev_ix_ >= static_cast<int>(ev.size())) radar_ev_ix_ = 0;
+        const auto& e = ev[ev.size() - 1 - static_cast<std::size_t>(radar_ev_ix_)];
+        input_.center_on_cell(e.x, e.y);
+    }
+    // ScreenCapture [RE: FUN_005378F0 writes SCRN%04d.pcx, the first free
+    // number]: the frame after the key, as <pref dir>/SCRN%04d.png
+    // [deviation: PNG, in the writable pref dir].
+    bool screencap_pending_ = false;
+    std::string last_screencap_;
+    void screencap_tick(SDL_Renderer* ren) {
+        if (!screencap_pending_) return;
+        screencap_pending_ = false;
+        const std::string dir = pref_dir_path();
+        if (dir.empty()) return;
+        int w = 0, h = 0;
+        SDL_GetRendererOutputSize(ren, &w, &h);
+        std::vector<unsigned char> px(static_cast<std::size_t>(w) * h * 4);
+        if (SDL_RenderReadPixels(ren, nullptr, SDL_PIXELFORMAT_RGBA32, px.data(), w * 4) != 0) return;
+        for (int n = 0; n < 10000; ++n) {
+            char b[32];
+            std::snprintf(b, sizeof b, "SCRN%04d.png", n);
+            const std::string p = dir + b;
+            std::error_code ec;
+            if (std::filesystem::exists(p, ec)) continue;
+            if (stbi_write_png(p.c_str(), w, h, 4, px.data(), w * 4)) last_screencap_ = p;
+            return;
         }
     }
 
@@ -268,7 +404,11 @@
                     if (current) refund_cancel(cat);
                     return;
                 }
-                if (current && !held && !queues_.ready(cat)) { held_.insert(ci); return; }   // SUSPEND
+                if (current && !held && !queues_.ready(cat)) {   // SUSPEND
+                    held_.insert(ci);
+                    pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA692]
+                    return;
+                }
                 const auto last = std::find(bl.rbegin(), bl.rend(), type);
                 if (last != bl.rend()) { bl.erase(std::next(last).base()); return; }   // ABANDON a queued copy
                 if (current) refund_cancel(cat);                                         // ABANDON current
@@ -303,7 +443,11 @@
         const bool held = held_.count(bi) != 0;
         if (right) {
             if (!current) return;
-            if (!held && !bq.slot.ready) { held_.insert(bi); return; }   // SUSPEND
+            if (!held && !bq.slot.ready) {   // SUSPEND
+                held_.insert(bi);
+                pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA793]
+                return;
+            }
             refund_cancel(bcat);                                         // ABANDON
             return;
         }
@@ -314,6 +458,9 @@
         }
         if (current && held) { held_.erase(bi); return; }   // resume
         if (current) return;                                // running: no effect
+        // W5-E [RE: FUN_006AA390 @6AAA3C]: the building factory is busy with
+        // another type -> EVA_UnableToComply.
+        if (bq.slot.type >= 0) { pres_.note_eva("EVA_UnableToComply"); return; }
         if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(), 0, ba_.groups,
                                  conyard_alive(world_, ba_, 0))) {
             queues_.set_credits(player_credits_);
