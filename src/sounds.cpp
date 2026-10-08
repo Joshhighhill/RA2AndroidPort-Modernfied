@@ -66,6 +66,11 @@ SoundEntry Sounds::entry(const std::string& name) const {
         e.fshift_lo = std::atoi(fs[0].c_str());
         e.fshift_hi = std::atoi(fs[1].c_str());
     }
+    const std::vector<std::string> dl = split_ws(ini_->get(name, "Delay", ""));
+    if (!dl.empty()) {
+        e.delay_lo = std::atoi(dl[0].c_str());
+        e.delay_hi = dl.size() >= 2 ? std::atoi(dl[1].c_str()) : e.delay_lo;
+    }
     for (const std::string& t : split_ws(ini_->get(name, "Control", "")))
         e.control.push_back(lower(t));
     const std::string ty = ini_->get(name, "Type", "");

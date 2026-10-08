@@ -1,0 +1,44 @@
+# Wave-5 R-043: Prism Tower forwarding. A lone tower's first shot does the
+# PrismShot Damage=120; with three idle own towers in its Secondary range they
+# each fire a support beam and the master's shot carries DamageMultiplier
+# (150*3+100)*256/100 = 1408 -> 120*1408>>8 = 660 [RE: abilities-w5.md §2].
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat place GAPOWR 0 building 0:GACNST -5 -4
+cheat place GAPOWR 0 building 0:GACNST -5 -1
+cheat place GAPOWR 0 building 0:GACNST -5 +2
+# --- 1) a lone Prism Tower.
+cheat place ATESLA 0 building 0:GACNST -16 -8
+wait 2
+cheat spawn HARV 1 building 0:ATESLA -5 +1
+wait 1
+let h0 = uhp(1,HARV)
+until 200 uhp(1,HARV) < $h0 @R-043:C
+assert uhp(1,HARV) >= $h0-130 @R-043:C
+assert uhp(1,HARV) <= $h0-110 @R-043:C
+until 1500 units(1,HARV) == 0
+wait 60
+# --- 2) the same tower with three supporters.
+cheat place ATESLA 0 building 0:ATESLA +2 +0
+cheat place ATESLA 0 building 0:ATESLA +0 +2
+cheat place ATESLA 0 building 0:ATESLA +2 +2
+wait 70
+cheat spawn HARV 1 building 0:ATESLA -5 +1
+wait 1
+let s0 = uhp(1,HARV)
+let n0 = prism_supports
+until 200 uhp(1,HARV) < $s0 @R-043:C
+assert prism_supports >= $n0+3 @R-043:C
+assert uhp(1,HARV) <= $s0-600 @R-043:C
+shot prism_chain
+end

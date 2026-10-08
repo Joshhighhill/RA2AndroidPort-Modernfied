@@ -5,10 +5,10 @@
 // [RE: rulesmd BuildingTypes Turret=yes, TurretAnim=<vxl>, TurretAnimIsVoxel,
 // TurretAnimX/Y (screen px from the building's draw point = origin-cell top vertex), TurretAnimZAdjust
 // (depth only)]: the turret voxel (+ optional <name>barl) is rasterised per
-// facing in each house colour and drawn over the building, facing the
-// defence's current target (Building::def_target) and holding its last
-// facing when idle. [RE-FALLBACK: turret ROT not modelled -- it snaps to the
-// target direction; TurretRotateSound open.]
+// facing in each house colour and drawn over the building,
+// facing the sim's slewed turret (Building::def_turret_facing, ROT per
+// step_building_combat) [W5-PRES R-121; the idle behaviour: docs/re/
+// w5-presentation.md §5].
 
 class PresTurrets {
 public:
@@ -76,13 +76,10 @@ public:
         auto it = types_.find(id);
         if (it == types_.end() || b.state != ra2engine::Building::State::Idle) return;
         const Type& t = it->second;
-        // Facing toward the current target, else the last one (initially SE).
-        double& f = facing_[&b - w.buildings().data()];
-        const double cx = b.cx + (b.fw - 1) / 2.0, cy = b.cy + (b.fh - 1) / 2.0;
-        if (b.def_target >= 0 && b.def_target < static_cast<int>(w.units().size())) {
-            const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(b.def_target)];
-            if (u.fx != cx || u.fy != cy) f = ra2engine::facing_u16_from_delta(u.fx - cx, u.fy - cy);
-        }
+        // W5-PRES R-121: the SIM's turret facing (Building::def_turret_facing,
+        // slewed at the type's ROT by step_building_combat, voxel-render.md §5)
+        // instead of snapping to the target direction.
+        const double f = b.def_turret_facing;
         const int key = ra2engine::house_draw_key(b.house);
         auto& slot = t.sets[key];
         if (!slot) {
@@ -115,7 +112,6 @@ public:
 
 private:
     std::map<std::string, Type> types_;
-    mutable std::map<std::ptrdiff_t, double> facing_;   // building index -> facing (u16)
 };
 
 const PresTurrets* g_turrets = nullptr;   // GameScene only

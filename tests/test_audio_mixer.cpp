@@ -373,3 +373,51 @@ TEST_CASE("mixer: MusicStream marks a zero-filled entry failed (the thememd.mix 
     CHECK(ms.failed());
     CHECK(ms.finished());
 }
+
+// W5-E [RE: FUN_004055c0]: PREDELAY / AMBIENT wait RandomRanged(lo, max) ms
+// (lo = 33 for AMBIENT) before the voice sounds; the voice holds its slot.
+TEST_CASE("mixer: PREDELAY delays the start by Delay ms (22050 Hz samples)") {
+    SoundBank bank;
+    int c = bank.add({5000, 5000});
+    Mixer m(bank, 1);
+    MixerSound s = plain(c);
+    s.predelay = true;
+    s.delay_lo_ms = 100;
+    s.delay_hi_ms = 100;   // fixed 100 ms = 2205 samples
+    m.register_sound("D", s);
+    REQUIRE(m.play("D"));
+    std::vector<int16_t> out(2210, 0);
+    m.render(out.data(), out.size());
+    CHECK(out[0] == 0);
+    CHECK(out[2204] == 0);
+    CHECK(out[2205] == 5000);
+    CHECK(out[2206] == 5000);
+    // A draw under 33 ms starts at once.
+    MixerSound z = plain(c);
+    z.predelay = true;
+    z.delay_lo_ms = 0;
+    z.delay_hi_ms = 20;
+    m.register_sound("Z", z);
+    REQUIRE(m.play("Z"));
+    int16_t o2[1] = {};
+    m.render(o2, 1);
+    CHECK(o2[0] == 5000);
+}
+
+TEST_CASE("mixer: play_scaled scales the gain; volume under 0.05 is inaudible") {
+    SoundBank bank;
+    int c = bank.add({10000});
+    Mixer m(bank, 1);
+    m.register_sound("S", plain(c));
+    REQUIRE(m.play_scaled("S", 0.5));
+    int16_t out[1] = {};
+    m.render(out, 1);
+    CHECK(out[0] == 5000);
+    // [RE: FUN_0074f8e0 constant 0.05]
+    MixerSound r = plain(c);
+    r.range = 10.0;
+    CHECK(Mixer::gain_permille(r, 9.6) == 0);   // 0.04
+    CHECK(Mixer::gain_permille(r, 8.0) >= 199);   // 0.2 (float truncation)
+    CHECK(m.sound("S") != nullptr);
+    CHECK(m.sound("nope") == nullptr);
+}

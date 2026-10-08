@@ -1,0 +1,21 @@
+# PRES-BRIDGE-ON -- W5-PRES R-100: units ON a high-bridge deck over water
+# draw BridgeHeight (4 levels) up, over the deck; a ship under it is covered.
+set render_every 600
+set on_quit continue
+set campaign ALL01T.MAP GDI
+until 60 scene == campaign-load
+click start
+until 400 scene == game
+require scene == game
+wait 30
+cheat reveal
+cheat deck_spawn DEST 0 1
+cheat deck_spawn MTNK 0 2
+cheat deck_spawn E1 0 0
+wait 3
+shot on-deck
+cheat deck_layers off
+wait 2
+shot on-deck-flat
+cheat deck_layers on
+end

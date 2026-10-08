@@ -58,6 +58,21 @@ struct InputActions {
     // ACTION_SELF: a left click on the (already) selected own deployable unit
     // -- main.cpp runs the DeployObject command (unload / deploy).
     bool deploy_clicked = false;
+
+    // W5-E [RE: TechnoClass::ClickedMission FUN_006FF0A0]: the mission the
+    // order click gave picks the acknowledgement voice -- Harvest(10) ->
+    // VoiceHarvest, Enter(7) -> VoiceEnter, Capture(8) -> VoiceCapture,
+    // Unload(16) -> VoiceDeploy, any other non-Attack/Move mission (Sabotage)
+    // -> VoiceSpecialAttack. A type without the key falls back (Capture ->
+    // Enter -> Move, Harvest/Enter -> Move). Presentation-only.
+    enum class Order { Move, Enter, Capture, Harvest, Special, Deploy };
+    Order order = Order::Move;
+    // W5-E [RE: presentation.md §1.3 @448171 / FUN_004437D0 @4439D4]: a player
+    // click made a factory primary / set its rally point.
+    bool primary_set = false;
+    bool rally_set = false;
+    int factory = -1;
+    int target_building = -1;   // attack order on a building
 };
 
 // Translates pointer InputEvents (Task 0 Platform) into actions on a World +

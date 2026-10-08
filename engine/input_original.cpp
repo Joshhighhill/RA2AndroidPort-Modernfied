@@ -139,6 +139,19 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     if (alt) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;   // force-move
     if (idx >= 0) {
         const Unit& u = us[idx];
+        // Wave-5 (R-046): a lone engineer on a bombed unit -> disarm.
+        if (u.bomb_frame >= 0 && !u.selected && lone_selected_with_image(world_, "ENGINEER") >= 0 &&
+            !world_.is_enemy(0, u.house))
+            return Action::Capture;
+        // Wave-5 (R-052): an ALLIED transport takes the selected infantry.
+        if (!world_.controllable(u.house) && world_.are_allied(0, u.house) && u.passengers_max > 0) {
+            for (std::size_t si = 0; si < us.size(); ++si) {
+                const Unit& su = us[si];
+                if (su.selected && world_.controllable(su.house) && su.alive && su.die_time < 0.0 &&
+                    su.passengers_max <= 0)
+                    return Action::Enter;
+            }
+        }
         if (world_.controllable(u.house)) {
             if (shift) return Action::ToggleSelect;
             // ACTION_SELF: clicking the selected unit itself deploys / unloads it.
@@ -177,6 +190,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
             if (us[si].selected && world_.controllable(us[si].house) && world_.can_occupy(si, b)) return Action::Enter;
         if (lone_selected_with_image(world_, "SPY") >= 0 && B.house != 0) return Action::Infiltrate;
         if (lone_selected_with_image(world_, "ENGINEER") >= 0) {
+            if (B.bomb_frame >= 0 && world_.are_allied(0, B.house)) return Action::Capture;   // wave-5 R-046
             if (B.house != 0) return Action::Capture;
             if (B.hp < B.max_hp) return Action::EngineerRepair;
         }

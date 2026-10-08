@@ -25,6 +25,10 @@ struct SoundEntry {
     std::vector<std::string> type;     // lower-cased tokens ("normal","screen",...)
     int vshift = 0;
     int fshift_lo = 0, fshift_hi = 0;
+    // W5-E [RE: FUN_0074f260 per-event parser / FUN_004055c0 predelay]:
+    // Delay= min max in milliseconds (one value = both), read for PREDELAY /
+    // AMBIENT events.
+    int delay_lo = 0, delay_hi = 0;
 };
 
 // Thin, minimal reader for soundmd.ini's sound-event sections (Task 2 of the

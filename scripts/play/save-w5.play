@@ -1,0 +1,32 @@
+# save-w5 -- W5-E acceptance: the save shows a "Saving game..." frame, the
+# music state is saved (section AUDI, save v19) and restored on load, and a
+# full disk refuses the save (run with RA2_TEST_FREE_BYTES=1000 to see the
+# "NOT ENOUGH DISK SPACE" message -- the default run checks the success path).
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+require scene == game
+wait 30
+let trk = music_track
+key f10
+wait 2
+click "menu:SAVE GAME"
+wait 2
+click dialog:action
+wait 2
+if dialog_open == 1 then log disk-full path: dialog_message
+assert saves_indicated >= 1                              @W5-E:save
+assert banner == "Mission Saved"                         @W5-E:save
+key f10
+wait 2
+click "menu:LOAD GAME"
+wait 2
+click dialog:row0
+click dialog:action
+until 300 scene == game and sf > 5
+assert loaded_audio == 1                                 @W5-E:save
+assert loaded_track == $trk                              @W5-E:save
+end

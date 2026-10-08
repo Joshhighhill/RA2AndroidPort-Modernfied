@@ -109,3 +109,35 @@ TEST_CASE("maplist: mode filter keeps only the requested tag") {
     CHECK(build_map_catalog(pkt, maps, nullptr, "meatgrind").size() == 1);
     CHECK(build_map_catalog(pkt, maps, nullptr, "").size() == 2);   // "" keeps all
 }
+
+// --- W5-PRES R-105: lobby theater filter ---------------------------------
+TEST_CASE("maplist: map_theater_of reads [Map] Theater= only") {
+    CHECK(ra2engine::map_theater_of("[Basic]\nTheater=SNOW\n[Map]\r\n Theater = newurban ; c\r\nSize=0,0\n") == "NEWURBAN");
+    CHECK(ra2engine::map_theater_of("[Basic]\nName=x\n").empty());
+    CHECK(ra2engine::lobby_theater_supported("TEMPERATE"));
+    CHECK(ra2engine::lobby_theater_supported("SNOW"));
+    CHECK(ra2engine::lobby_theater_supported("URBAN"));
+    CHECK(ra2engine::lobby_theater_supported(""));          // unreadable -> kept
+    CHECK_FALSE(ra2engine::lobby_theater_supported("DESERT"));
+    CHECK_FALSE(ra2engine::lobby_theater_supported("NEWURBAN"));
+    CHECK_FALSE(ra2engine::lobby_theater_supported("LUNAR"));
+}
+
+TEST_CASE("maplist: the lobby hides the YR-only DESERT/NEWURBAN maps (real asset)") {
+    const std::string dir = install_dir();
+    if (slurp_ml(dir + "multimd.mix").empty()) { MESSAGE("skipped: no multimd.mix"); return; }
+    ra2engine::MapCatalog cat = load_yr_map_catalog(dir, "standard");
+    const std::size_t before = cat.entries.size();
+    const int hidden = ra2engine::filter_lobby_theaters(cat);
+    MESSAGE("hidden=" << hidden << " kept=" << cat.entries.size() << " first="
+                      << (cat.entries.empty() ? std::string("-") : cat.entries[0].file_name));
+    CHECK(hidden > 0);
+    CHECK(cat.entries.size() + static_cast<std::size_t>(hidden) == before);
+    bool mayday = false;
+    for (const MapEntry& m : cat.entries) {
+        CHECK(ra2engine::lobby_theater_supported(m.theater));
+        CHECK_FALSE(m.theater.empty());
+        if (m.file_name == "xmp31s2.map") mayday = true;
+    }
+    CHECK(mayday);   // a TEMPERATE map the play scripts use stays listed
+}

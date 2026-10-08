@@ -8,11 +8,24 @@
     // only a script can call them). Keys are documented in
     // scripts/play/README.md; a field that a later phase renames or removes
     // makes scripts report missing-probe:<key> instead of crashing.
+    mutable int w5_peak_sorties_ = 0;   // wave-5: peak AI fixed-wing sorties seen
     void play_probe(ra2play::Probe& p) override {
         p.scene = "game";
         p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
                            "harv_bales", "can_build", "cameo", "cameo_tab", "moving"};
         p.set_s("mode", campaign_ ? "campaign" : "skirmish");
+        // W5-E: sound / EVA evidence (pres_audio.inc counters): snd(KEY),
+        // why(<trigger>), eva(NAME) started, evareq(NAME) requested.
+        for (const char* f : {"snd", "why", "eva", "evareq"}) p.zero_families.insert(f);
+        for (const auto& kv : g_pres_audio_counts) p.set(kv.first, static_cast<double>(kv.second));
+        p.set("follow_unit", follow_unit_);           // W5-E Follow hotkey
+        p.set_s("load_art", SkirmishLoadArt::g_skirmish_load_art_drawn);   // W5-E skirmish loading art
+        p.set_s("screencap", last_screencap_);        // W5-E ScreenCapture hotkey
+        p.set("hotkeys_version", hotkeys_ver_);
+        p.set("saves_indicated", saves_indicated_);          // W5-E saving indicator
+        p.set_s("music_track", pres_.sound().current_track());
+        p.set_s("loaded_track", loaded_track_);
+        p.set("loaded_audio", loaded_audio_ ? 1 : 0);
         p.set("credits", player_credits_);
         p.set("credits_shown", credits_shown_);
         p.set_s("tooltip", tooltip_now());   // W2-UI-07
@@ -243,6 +256,11 @@
         p.set("sw_allowed", cfg_.superweapons ? 1 : 0);
         p.set("short_game", cfg_.short_game ? 1 : 0);
         p.set("crates_on", cfg_.crates ? 1 : 0);
+        {   // W5-E: live crates on the map
+            int n = 0;
+            for (const auto& c : world_.crates()) n += c.x >= 0;
+            p.set("crates_live", n);
+        }
         p.set("unit_count_cfg", cfg_.unit_count);
         p.set("start_cash", cfg_.starting_cash);
         // Power (house 0).
@@ -397,6 +415,51 @@
         }
         p.set("garrisonable", garrisonable);
         p.set("garrison_shots", static_cast<double>(world_.garrison_shots()));
+        // Wave-5 (agent C) witnesses.
+        p.set("prism_supports", static_cast<double>(world_.w5_state().prism_supports));
+        {
+            int bombs = 0;
+            for (const ra2engine::Unit& u : world_.units()) bombs += u.alive && u.house == 0 && u.bomb_frame >= 0;
+            for (const ra2engine::Building& b : world_.buildings()) bombs += b.alive && b.house == 0 && b.bomb_frame >= 0;
+            p.set("bombs", static_cast<double>(bombs));
+        }
+        {
+            int air = 0;
+            for (const ra2engine::Unit& u : world_.units())
+                air += u.alive && u.house == 1 && u.an.t.fixed_wing && !u.an.t.spawned && u.an.sortie != 0;
+            if (air > w5_peak_sorties_) w5_peak_sorties_ = air;
+            p.set("ai_air_sorties", static_cast<double>(w5_peak_sorties_));
+        }
+        p.set("ai_garrisons", static_cast<double>(world_.w5_state().ai_garrisons));
+        p.set("ai_tech_captures", static_cast<double>(world_.w5_state().ai_tech_captures));
+        p.set("ship_c4", static_cast<double>(world_.w5_state().ship_c4));
+        p.set("culls", static_cast<double>(world_.w5_state().culls));
+        {
+            int grabbed = 0;
+            for (const ra2engine::Unit& u : world_.units()) grabbed += u.alive && u.parasite_on_me >= 0;
+            p.set("parasited", static_cast<double>(grabbed));
+        }
+        p.set("airstrikes", static_cast<double>(world_.w5_state().airstrikes));
+        p.set("ifv_repairs", static_cast<double>(world_.w5_state().repairs));
+        p.set("defusals", static_cast<double>(world_.w5_state().defusals));
+        p.set("passenger_shots", static_cast<double>(world_.w5_state().passenger_shots));
+        p.set("stolen_tech", static_cast<double>(world_.stolen_tech(0)));
+        p.set("gap_hidden", static_cast<double>(world_.w5_gap_hidden(0)));
+        {
+            int carried = 0;
+            for (const ra2engine::Unit& u : world_.units())
+                carried += u.alive && u.house == 0 && u.cargo_of >= 0 && u.cargo_of != ra2engine::kGarrisonCargo;
+            p.set("in_cargo", static_cast<double>(carried));
+        }
+        {
+            int ov = 0, opw = 0;
+            for (const ra2engine::Building& b : world_.buildings()) {
+                ov += b.alive && b.house == 0 && b.w5.overpowered;
+                opw += b.alive && b.house == 0 ? (int)b.w5.overpowerers.size() : 0;
+            }
+            p.set("overpowered", static_cast<double>(ov));
+            p.set("overpowerers", static_cast<double>(opw));
+        }
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.alive || u.die_time >= 0.0) continue;
             if (u.garrison_of >= 0) p.add("in_garrison(" + std::to_string(u.house) + ")", 1);
@@ -527,7 +590,11 @@
                 return "no unit " + a[1];
             }
             if (c == "place" && a.size() >= 7 && a[3] == "building") {
-                const int t = roster_index(ba_, a[1]);
+                int t = roster_index(ba_, a[1]);
+                if (t < 0 && depth_world_building(rules_, a[1])) {   // wave-5: tech/civilian types
+                    t = depth_register_building(ba_, ra2_, rules_, art_, a[1]);
+                    world_.refresh_building_types(ba_.roster);
+                }
                 if (t < 0) return "no building type " + a[1];
                 const int bi = play_find_building(a[4]);
                 if (bi < 0) return "no building " + a[4];

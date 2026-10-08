@@ -17,9 +17,44 @@ const ra2assets::Palette* g_game_font_pal = nullptr;
 
 // ---- presentation event log (harness evidence; never read by a gate) -------
 bool g_pres_log_on = false;
+// W5-E [RE: options.md §2 -- DetailLevel = slider ? 2 : 0; AnimTypeClass
+// DetailLevel= (artmd: wakes, twinkles, power-plant / tech-building lights)]:
+// an anim whose DetailLevel exceeds the player's setting is not created.
+// Published by GameScene from RA2.INI [Options] DetailLevel; 2 = everything.
+int g_detail_level = 2;
+// W5-E: --play records the same log (written to <out>/pres.log) without the
+// scene-shot clip decoding g_pres_log_on implies; capped so a 60-minute run
+// stays bounded (the counters below keep counting).
+bool g_pres_play_log = false;
 std::vector<std::string> g_pres_log;
+// W5-E --play evidence: per sound key / EVA line / trigger counts
+// ("snd(KEY)", "why(<why>)", "eva(NAME)" = lines started, "evareq(NAME)").
+std::map<std::string, long> g_pres_audio_counts;
+inline void pres_count(const std::string& k) { ++g_pres_audio_counts[k]; }
 inline void pres_log(long frame, const std::string& what) {
-    if (!g_pres_log_on) return;
+    if (what.rfind("sound ", 0) == 0) {   // "sound KEY (why)"
+        const std::size_t sp = what.find(' ', 6);
+        pres_count("snd(" + what.substr(6, sp == std::string::npos ? std::string::npos : sp - 6) + ")");
+        const std::size_t lp = what.find('('), rp = what.rfind(')');
+        if (lp != std::string::npos && rp != std::string::npos && rp > lp) {
+            // "credits up" -> why(credits_up); per-object suffixes ("ambient
+            // t223") collapse to the trigger name (why(ambient_t)).
+            std::string w;
+            for (char c : what.substr(lp + 1, rp - lp - 1)) {
+                if (std::isdigit(static_cast<unsigned char>(c))) continue;
+                w += c == ' ' ? '_' : c;
+            }
+            pres_count("why(" + w + ")");
+        }
+    } else if (what.rfind("eva-play ", 0) == 0) {
+        const std::size_t sp = what.find(' ', 9);
+        pres_count("eva(" + what.substr(9, sp == std::string::npos ? std::string::npos : sp - 9) + ")");
+    } else if (what.rfind("eva-request ", 0) == 0) {
+        const std::size_t sp = what.find(' ', 12);
+        pres_count("evareq(" + what.substr(12, sp == std::string::npos ? std::string::npos : sp - 12) + ")");
+    }
+    if (!g_pres_log_on && !g_pres_play_log) return;
+    if (g_pres_play_log && !g_pres_log_on && g_pres_log.size() >= 200000) return;
     g_pres_log.push_back("[pres] f=" + std::to_string(frame) + " " + what);
 }
 
@@ -235,6 +270,16 @@ public:
         ms.attack = has_token(e.control, "attack");
         ms.decay = has_token(e.control, "decay");
         ms.loop = has_token(e.control, "loop");
+        // W5-E [RE: audio-playback.md Control table @0x8150C0, FUN_004055c0;
+        // Type table @0x815048, FUN_0074f8e0]: PREDELAY/AMBIENT predelay from
+        // Delay=, Type LOCAL (no on-screen dead zone) and SHROUD (silent
+        // while the source cell is not revealed).
+        ms.predelay = has_token(e.control, "predelay");
+        ms.ambient = has_token(e.control, "ambient");
+        ms.delay_lo_ms = e.delay_lo;
+        ms.delay_hi_ms = e.delay_hi;
+        ms.local = has_token(e.type, "local");
+        ms.shroud = has_token(e.type, "shroud");
         audio_->mixer->register_sound(key, ms);
     }
     // Plays a non-positional (screen-centred) sound event; logged even
@@ -271,16 +316,38 @@ public:
     void set_view(int cam_x, int cam_y, int view_w, int view_h) {
         cam_x_ = cam_x; cam_y_ = cam_y; view_w_ = view_w; view_h_ = view_h;
     }
-    // Chebyshev max(dx, 2|dy|) px from the view centre / 60 -> cells, and the
+    // [RE: FUN_0074f8e0, W5-E re-read] |dx|, |dy| px from the view centre;
+    // unless Type=LOCAL each is reduced by half the view (clamped at 0), so a
+    // source anywhere on screen plays at full volume and the linear falloff
+    // starts at the screen edge; then dist = max(dx, 2*dy) / 60 -> cells. The
     // pan: relX = screen x - halfW clamped to +-W, pan = relX*8192/W + 8192.
-    void locate(double fx, double fy, double& dist_cells, int& pan) const {
+    void locate(double fx, double fy, double& dist_cells, int& pan, bool local = false) const {
         const double sx = (fx - fy) * 30.0 + cam_x_ + 30.0;
         const double sy = (fx + fy) * 15.0 + cam_y_ + 15.0;
         const double hw = view_w_ / 2.0, hh = view_h_ / 2.0;
-        dist_cells = std::max(std::abs(sx - hw), 2.0 * std::abs(sy - hh)) / 60.0;
+        double dx = std::abs(sx - hw), dy = std::abs(sy - hh);
+        if (!local) {
+            dx = std::max(0.0, dx - hw);
+            dy = std::max(0.0, dy - hh);
+        }
+        dist_cells = std::max(dx, 2.0 * dy) / 60.0;
         const double w = std::max(1.0, 2.0 * hw);
         const double rel = std::clamp(sx - hw, -w, w);
         pan = static_cast<int>(rel * 8192.0 / w + 8192.0);
+    }
+    // W5-E: the shroud query for Type=SHROUD events (cell revealed to the
+    // local player); unset = everything revealed.
+    void set_reveal_fn(std::function<bool(int, int)> f) { revealed_ = std::move(f); }
+    // Distance + pan for `key` at (fx, fy) honouring its Type: LOCAL drops the
+    // on-screen dead zone, SHROUD reports "inaudible" (false) while the cell
+    // is not revealed [RE: FUN_0074f8e0].
+    bool place(const std::string& key, double fx, double fy, double& d, int& pan) const {
+        const ra2engine::MixerSound* ms = audio_->mixer->sound(key);
+        if (ms && ms->shroud && revealed_ &&
+            !revealed_(static_cast<int>(std::lround(fx)), static_cast<int>(std::lround(fy))))
+            return false;
+        locate(fx, fy, d, pan, ms && ms->local);
+        return true;
     }
     // A positional event at world (fx, fy): panned, and re-attenuated every
     // frame while it plays (stopped once it leaves range), as the original
@@ -292,8 +359,17 @@ public:
         ensure_sound(key);
         double d = 0.0;
         int pan = 8192;
-        locate(fx, fy, d, pan);
-        if (const std::uint32_t h = audio_->mixer->play_at(key, d, pan)) live_.push_back({h, fx, fy});
+        if (!place(key, fx, fy, d, pan)) return;
+        if (const std::uint32_t h = audio_->mixer->play_at(key, d, pan)) live_.push_back({h, fx, fy, key});
+    }
+    // W5-E: a non-positional event at a fixed volume scale (FUN_0074F740(snd,
+    // vol)), logged like play().
+    void play_scaled(const std::string& key, double vol, const char* why) {
+        if (key.empty()) return;
+        pres_log(frame_, std::string("sound ") + key + " (" + why + ")");
+        if (!mixer_live()) return;
+        ensure_sound(key);
+        audio_->mixer->play_scaled(key, vol);
     }
     // W3-FX object AmbientSound [RE: ObjectClass::AI FUN_005f3680 -- while
     // not in limbo, an object whose type has AmbientSound (+0x1F4) keeps it
@@ -304,19 +380,30 @@ public:
         ensure_sound(key);
         double d = 0.0;
         int pan = 8192;
-        locate(fx, fy, d, pan);
-        return audio_->mixer->play_at(key, d, pan);
+        if (!place(key, fx, fy, d, pan)) return 0;   // SHROUD: not started while shrouded
+        const std::uint32_t h = audio_->mixer->play_at(key, d, pan);
+        if (h) loop_keys_[h] = key;
+        return h;
     }
     // Re-attenuates a loop voice; false once it has ended (the caller restarts it).
     bool update_loop(std::uint32_t h, double fx, double fy) {
         if (!h || !mixer_live()) return false;
         double d = 0.0;
         int pan = 8192;
-        locate(fx, fy, d, pan);
-        return audio_->mixer->update_voice(h, d, pan);
+        auto it = loop_keys_.find(h);
+        if (it != loop_keys_.end() && !place(it->second, fx, fy, d, pan)) {
+            audio_->mixer->stop_voice(h);
+            loop_keys_.erase(it);
+            return false;
+        }
+        if (it == loop_keys_.end()) locate(fx, fy, d, pan);
+        const bool alive = audio_->mixer->update_voice(h, d, pan);
+        if (!alive && it != loop_keys_.end()) loop_keys_.erase(it);
+        return alive;
     }
     void stop_loop(std::uint32_t h) {
         if (h && mixer_live()) audio_->mixer->stop_voice(h);
+        loop_keys_.erase(h);
     }
     // Per frame: follow the camera for every live positional voice.
     void update_voices() {
@@ -325,7 +412,7 @@ public:
         for (const LiveVoice& v : live_) {
             double d = 0.0;
             int pan = 8192;
-            locate(v.fx, v.fy, d, pan);
+            if (!place(v.key, v.fx, v.fy, d, pan)) { audio_->mixer->stop_voice(v.handle); continue; }
             if (audio_->mixer->update_voice(v.handle, d, pan)) live_[k++] = v;
         }
         live_.resize(k);
@@ -424,6 +511,7 @@ public:
         stream_.reset();
     }
     const std::string& current_track() const { return cur_track_; }
+    bool music_on() const { return music_on_; }   // W5-E save state
     // W2-UI-14 (0xB8 jukebox): the score list (CSF Name labels, [Themes]
     // order) and Play = start that theme now, then continue the playlist.
     std::vector<std::string> theme_labels() const {
@@ -449,7 +537,7 @@ private:
         int scenario = 0;
         int avail = -1;   // -1 unknown, 0 missing/zero-filled, 1 playable
     };
-    struct LiveVoice { std::uint32_t handle; double fx, fy; };
+    struct LiveVoice { std::uint32_t handle; double fx, fy; std::string key; };
 
     // IsAvailable (FUN_0071fa90): the <Sound>.wav entry exists in a theme
     // archive and is a real RIFF WAVE (the thememd.mix placeholders are
@@ -604,6 +692,8 @@ private:
     std::shared_ptr<ra2engine::MusicStream> stream_;
     std::uint32_t theme_rng_ = 0x7E3A11u;
     std::vector<LiveVoice> live_;
+    std::map<std::uint32_t, std::string> loop_keys_;   // W5-E loop handle -> event
+    std::function<bool(int, int)> revealed_;           // W5-E Type=SHROUD gate
     int cam_x_ = 0, cam_y_ = 0, view_w_ = 1, view_h_ = 1;
     std::set<std::string> registered_;
     std::map<std::string, EvaDef> eva_;

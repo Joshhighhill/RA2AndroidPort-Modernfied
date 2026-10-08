@@ -213,6 +213,7 @@
     bool cheat(const std::vector<std::string>& args) override {
         if (campaign_cheat(args)) return true;   // W2-CA-19 (campaign_play.inc)
 #include "play_art_cheats.inc"   // W3-FIX-A art acceptance verbs (--play only)
+#include "pres_play_cheats.inc"  // W5-PRES presentation acceptance verbs (--play only)
         if (args.size() == 1 && args[0] == "center_own") {   // camera on the first own unit
             for (const ra2engine::Unit& u : world_.units())
                 if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
@@ -238,6 +239,30 @@
         }
         if (args.size() == 2 && args[0] == "credits") {
             player_credits_ = std::atof(args[1].c_str());
+            return true;
+        }
+        // W5-E: `crate NAME DX DY` -- a typed crate (FUN_0056B9F0 PlaceCrate)
+        // at the lowest selected unit's cell + (DX, DY); needs the lobby's
+        // Crates option (the World crate system).
+        if (args.size() == 4 && args[0] == "crate") {
+            int p = -1;
+            for (int i = 0; i < ra2engine::kPowerupCount; ++i)
+                if (args[1] == ra2engine::powerup_name(i)) p = i;
+            int sel = -1;
+            for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
+                if (world_.units()[static_cast<std::size_t>(i)].selected) { sel = i; break; }
+            if (p < 0 || sel < 0 || !world_.crates_enabled()) return false;
+            const ra2engine::Unit& u = world_.units()[static_cast<std::size_t>(sel)];
+            const std::vector<ra2engine::World::Crate> before = world_.crates();
+            if (!world_.place_crate(u.cell_x + std::atoi(args[2].c_str()), u.cell_y + std::atoi(args[3].c_str()), p))
+                return false;
+            // ...and the selection walks onto it (the player's move order).
+            const auto& after = world_.crates();
+            for (std::size_t i = 0; i < after.size(); ++i)
+                if (after[i].x >= 0 && (i >= before.size() || before[i].x < 0)) {
+                    world_.order_move_selected(after[i].x, after[i].y);
+                    break;
+                }
             return true;
         }
         return false;

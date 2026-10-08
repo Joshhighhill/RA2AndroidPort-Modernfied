@@ -31,7 +31,7 @@ enum class HotCmd {
     ToggleAlliance, PlaceBeacon, AllToCheer, DeployObject, Follow, GuardObject,
     CenterBase, ToggleRepair, ToggleSell, PreviousObject, NextObject,
     CombatantSelect, StopObject, TypeSelect, PageUser, ScatterObject,
-    VeterancyNav, PlanningMode, Delete, ScreenCapture,
+    VeterancyNav, PlanningMode, Delete, ScreenCapture, HealthNav,
     StructureTab, DefenseTab, InfantryTab, UnitTab, SidebarUp, SidebarDown,
     View, SetView,   // arg = 1..4
     Taunt,           // arg = 1..8
@@ -41,6 +41,23 @@ struct HotBinding {
     HotCmd cmd = HotCmd::None;
     int arg = 0;
 };
+
+// W5-E [RE: the CommandClass vtables @0x7EA8F0.. -- slot 1 INI name, slot 2
+// UI name, slot 3 category, slot 4 description, all CSF labels (strings
+// @0x825FD8..0x826700); categories TXT_INTERFACE / TXT_SELECTION /
+// TXT_CONTROL read from slot 3 of each command]: one row of the Keyboard
+// page (0xA3) command list, in the binary's string-table order.
+struct HotCommandInfo {
+    std::string name;       // INI key ("StopObject", "TeamSelect_3")
+    std::string ui_csf;     // "TXT_STOP_OBJECT"
+    std::string cat_csf;    // "TXT_CONTROL"
+    std::string desc_csf;   // "TXT_STOP_OBJECT_DESC"
+    std::string fallback;   // English label when the CSF lacks it
+    HotBinding binding;
+};
+const std::vector<HotCommandInfo>& hot_command_list();
+// "Ctrl+Shift+F1" style label for a KeyboardMD.ini code (0 = "").
+std::string hotkey_label(int code);
 
 // Encode a key press the way KeyboardMD.ini does.
 inline int hotkey_code(int vk, bool shift, bool ctrl, bool alt) {
@@ -61,6 +78,15 @@ public:
     // Name -> binding, e.g. "TeamSelect_3" -> {TeamSelect, 3}. False if unknown.
     static bool parse_name(const std::string& name, HotBinding& out);
     std::size_t size() const { return by_code_.size(); }
+    // W5-E Keyboard page: assign `code` to `b` (a code already used by another
+    // command is taken from it), the command a code is bound to, and the
+    // [Hotkey] text the page writes (Keyboard.ini).
+    void assign(const HotBinding& b, int code) { bind(b, code); }
+    HotBinding command_at(int code) const {
+        const auto it = by_code_.find(code);
+        return it == by_code_.end() ? HotBinding{} : it->second;
+    }
+    std::string to_ini_text() const;
 
 private:
     void bind(const HotBinding& b, int code);

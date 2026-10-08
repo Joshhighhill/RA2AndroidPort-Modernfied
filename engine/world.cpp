@@ -343,39 +343,51 @@ ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_i
 
 // W3-B: the same remap from an explicit RA2 HSV triple (rules [Colors]), e.g.
 // ColorSchemes[0] LightGold=25,255,255 for AltPalette anims with no owner.
+// W5-PRES R-103 [RE: ColorScheme 0x68C110 -> ramp 0x68BDB0, docs/re/
+// w5-presentation.md §4]: indices 16..31 are REPLACED (the source ramp is not
+// read): shade i takes S' = trunc(SIN(50deg + i*40/15deg) * S) and
+// V' = trunc(COS(20deg + i*70/15deg) * V) (i == 0: COS(pi/16)) through the
+// integer HSV2RGB 0x517260; SIN/COS are the game's 8192-step float table
+// (0x84E004, index (n>>1)+(n&1), n = trunc(x * 16384/2pi)).
+namespace {
+float rmp_table(int k) { return std::sin(static_cast<float>(k) * 6.2831855f / 8192.0f); }
+int rmp_index(float x) {
+    const int n = static_cast<int>(x * 2607.594482421875f);
+    int idx = n >> 1;
+    if ((n & 1) && idx < 0x1FFF) ++idx;
+    return idx & 0x1FFF;
+}
+float rmp_sin(float x) { return rmp_table(rmp_index(x)); }
+float rmp_cos(float x) { return rmp_table(rmp_index(x) + 0x800); }
+ra2assets::Rgba rmp_hsv2rgb(unsigned h, unsigned s, unsigned v, std::uint8_t a) {
+    const unsigned f = (h * 6) % 255, sec = h * 6 / 255;
+    const unsigned p = (255 - s) * v / 255;
+    const unsigned q = (255 - f * s / 255) * v / 255;
+    const unsigned t = (255 - (255 - f) * s / 255) * v / 255;
+    unsigned r = v, g = t, b = p;
+    switch (sec) {
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t; g = p; b = v; break;
+        case 5: r = v; g = p; b = q; break;
+        default: break;   // 0 and 6
+    }
+    return ra2assets::Rgba{static_cast<std::uint8_t>(std::min(255u, r)), static_cast<std::uint8_t>(std::min(255u, g)),
+                           static_cast<std::uint8_t>(std::min(255u, b)), a};
+}
+}  // namespace
+
 ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s, int v) {
     ra2assets::Palette out = unit_pal;
-    const double hue  = h / 255.0;   // 0..1
-    const double sat  = s / 255.0;   // 0..1
-    const double vtop = v / 255.0;   // color's nominal ceiling
-    auto clamp_u8 = [](double v) -> std::uint8_t {
-        const int i = static_cast<int>(v + 0.5);
-        if (i < 0) return 0;
-        if (i > 255) return 255;
-        return static_cast<std::uint8_t>(i);
-    };
-    for (int i = 16; i <= 31; ++i) {
-        const ra2assets::Rgba src = unit_pal[i];
-        const int b = (static_cast<int>(src.r) + src.g + src.b) / 3;   // brightness
-        const double val = (b / 255.0) * vtop;   // Value spread by source brightness
-        // Standard HSV(h,s,v in 0..1) -> RGB.
-        const double h6 = hue * 6.0;
-        const int    seg = static_cast<int>(h6) % 6;
-        const double ff = h6 - std::floor(h6);
-        const double p = val * (1.0 - sat);
-        const double q = val * (1.0 - sat * ff);
-        const double t = val * (1.0 - sat * (1.0 - ff));
-        double r = 0.0, g = 0.0, bl = 0.0;
-        switch (seg) {
-            case 0: r = val; g = t;   bl = p;   break;
-            case 1: r = q;   g = val; bl = p;   break;
-            case 2: r = p;   g = val; bl = t;   break;
-            case 3: r = p;   g = q;   bl = val; break;
-            case 4: r = t;   g = p;   bl = val; break;
-            default: r = val; g = p;  bl = q;   break;   // case 5
-        }
-        out[i] = ra2assets::Rgba{clamp_u8(r * 255.0), clamp_u8(g * 255.0),
-                                 clamp_u8(bl * 255.0), src.a};
+    for (int i = 0; i < 16; ++i) {
+        double ang_a = i * 0.08144869842640204 + 0.3490658503988659;
+        if (i == 0) ang_a = 0.19634954084936207;
+        const double ang_b = i * 0.046542113386515455 + 0.8726646259971648;
+        const int s2 = static_cast<int>(rmp_sin(static_cast<float>(ang_b)) * static_cast<float>(s));
+        const int v2 = static_cast<int>(rmp_cos(static_cast<float>(ang_a)) * static_cast<float>(v));
+        out[16 + i] = rmp_hsv2rgb(static_cast<unsigned>(std::clamp(h, 0, 255)), static_cast<unsigned>(std::clamp(s2, 0, 255)),
+                                  static_cast<unsigned>(std::clamp(v2, 0, 255)), unit_pal[16 + i].a);
     }
     return out;
 }
@@ -1244,7 +1256,9 @@ bool World::factory_category_lost(const std::vector<int>& factory_types, int hou
 void World::order_enter_transport(int t_idx) {
     if (t_idx < 0 || t_idx >= static_cast<int>(units_.size())) return;
     const Unit& t = units_[t_idx];
-    if (!t.alive || t.die_time >= 0.0 || t.house != 0 || t.passengers_max <= 0) return;
+    // Wave-5 (R-052): an ALLIED transport admits the player's infantry too.
+    if (!t.alive || t.die_time >= 0.0 || !are_allied(0, t.house) || t.passengers_max <= 0) return;
+    const auto allied = [this](int a, int b) { return are_allied(a, b); };
     // Gather eligible movers: selected house-0, alive, non-dying, not the
     // transport itself, passing can_load NOW (capacity re-checked at
     // boarding -- orders may oversubscribe) [spec §3].
@@ -1254,7 +1268,7 @@ void World::order_enter_transport(int t_idx) {
         const Unit& u = units_[i];
         if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
         if (static_cast<int>(i) == t_idx) continue;
-        if (!can_load(units_, t_idx, static_cast<int>(i))) continue;
+        if (!can_load(units_, t_idx, static_cast<int>(i), allied)) continue;
         movers.push_back(static_cast<int>(i));
         cur.push_back({units_[i].cell_x, units_[i].cell_y});
     }
@@ -1424,7 +1438,8 @@ void World::step_cargo(double /*dt*/) {
             // one-unit-per-cell grid has no walk-onto-occupied notion, so
             // adjacency <= 1 is the adjudicated stand-in (same reachable
             // set, deterministic)].
-            if (can_load(units_, ti, static_cast<int>(i))) {
+            if (can_load(units_, ti, static_cast<int>(i),
+                         [this](int a, int b) { return are_allied(a, b); })) {   // wave-5 R-052
                 // Remove-from-map: release ALL occupancy (current cell AND
                 // any mid-hop reservation -- keep-cell (-1,-1) matches
                 // nothing), clear path/selection/targets, THEN link [spec §3].
@@ -1492,6 +1507,15 @@ void World::step_cargo(double /*dt*/) {
             t.unload_pending = false;
             continue;
         }
+        // Wave-5 (R-051) [RE: abilities-w5.md §7, FUN_004A5150 armed from the
+        // transport's TechnoType DeployTime (+0x3C8, minutes x 900)]: the
+        // doors open DeployTime frames after the unload starts; passengers
+        // leave once they are open.
+        if (t.w5.p.deploy_frames > 0 && w5_.armed) {
+            const std::int64_t now = static_cast<std::int64_t>(w5_.frame);
+            if (t.w5.door_until < 0) t.w5.door_until = now + t.w5.p.deploy_frames;
+            if (now < t.w5.door_until) continue;
+        }
         const int p = next_eject(t);           // LIFO -- the LAST-boarded leaves
                                                // first [RE-GATE APPLIED:
                                                // transport-cargo.md §6 -- CONFIRMED]
@@ -1542,6 +1566,7 @@ void World::step_cargo(double /*dt*/) {
         cargo_events_.push_back({CargoEvent::Kind::Eject, p, static_cast<int>(ti),
                                  cell.x, cell.y});
         if (t.cargo.empty()) t.unload_pending = false;
+        if (!t.unload_pending) t.w5.door_until = -1;   // wave-5: doors shut
     }
 }
 
@@ -1731,22 +1756,44 @@ bool World::infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purp
         case InfiltratePurpose::PowerPlant:          // [RE: capture.md §B2 CONFIRMED]
             if (victim >= 0 && victim < house_count()) blackout_frames_[victim] = blackout;   // W2-SK-20: any house
             break;
-        case InfiltratePurpose::Superweapon:         // [RE: capture.md §B4 CONFIRMED]
-            reset_superweapon(victim);
+        case InfiltratePurpose::Superweapon: {       // [RE: capture.md §B4 CONFIRMED]
+            // Wave-5: FUN_006CD620 resets the SuperClass of THIS building's
+            // SuperWeapon= type, not every superweapon the victim holds.
+            const int swt = (b.type >= 0 && b.type < (int)an_.sw_btype.size()) ? an_.sw_btype[(std::size_t)b.type] : 0;
+            HouseSuperweapon* r = swt > 0 ? sw_rec(victim, static_cast<SuperweaponType>(swt)) : nullptr;
+            if (r) r->sw.on_fired();
+            else reset_superweapon(victim);
             break;
+        }
         case InfiltratePurpose::Factory: {           // [RE: capture.md §B5] Task 6 wires the flag
             // W2-SK-20: veterans only from THAT factory category (barracks ->
             // infantry, war factory -> vehicles, yard -> ships, airfield ->
             // aircraft), not every unit the house ever builds.
             int kind = 0;
             if (b.type >= 0 && b.type < (int)btypes().size()) kind = btypes()[(std::size_t)b.type].factory_kind;
+            // Wave-5 [RE: abilities-w5.md §1, FUN_004571E0]: the branch keys on
+            // BuildingType Factory= (+0xEB8): InfantryType (0x10) sets
+            // BarracksInfiltrated (+0x2BF), UnitType (0x28) WarFactoryInfiltrated
+            // (+0x2C0) -- a Naval Yard is Factory=UnitType too, so a war
+            // factory and a yard set the same flag (vehicles AND ships).
+            std::uint8_t bits = 0;
+            if (kind == 1) bits = 1u << 1;
+            else if (kind == 2 || kind == 3) bits = (1u << 2) | (1u << 3);
+            else bits = (std::uint8_t)(kind > 0 ? (1u << kind) : 0x1Eu);
             if (spy_house >= 0 && spy_house < house_count())
-                produced_veteran_[spy_house] |= (std::uint8_t)(kind > 0 ? (1u << kind) : 0x1Eu);
+                produced_veteran_[spy_house] |= bits;
             break;
         }
         case InfiltratePurpose::RadarLab:            // [RE: shroud.md §7B] radar sabotage
             reshroud_house(victim);                  // no-op if shroud off or SpySat-latched
             break;
+        // Wave-5 (R-042) [RE: abilities-w5.md §1, FUN_004571E0 0x4572B4..]: a
+        // type listed in Rules [AI] BuildTech (+0x920/+0x92C) sets the spy
+        // house's Side<AIBasePlanningSide>TechInfiltrated -> the
+        // RequiresStolen*Tech units become buildable for it.
+        case InfiltratePurpose::StolenAllied: grant_stolen_tech(spy_house, kStolenAllied); break;
+        case InfiltratePurpose::StolenSoviet: grant_stolen_tech(spy_house, kStolenSoviet); break;
+        case InfiltratePurpose::StolenThird: grant_stolen_tech(spy_house, kStolenThird); break;
         case InfiltratePurpose::None:
             return false;   // W2-SK-20: a non-spyable building refuses the spy (not consumed)
     }
@@ -2051,6 +2098,18 @@ void World::step_disguises() {
             // Drawn as itself (the tree art is terrain, not a unit SHP).
             u.disguised_as_type = u.image;
             u.disguised_as_house = u.house;
+            // Wave-5 (R-047) [RE: abilities-w5.md §9, UnitClass::UpdateDisguise
+            // FUN_007456F0 0x745870]: DisguisedAsType = DefaultMirageDisguises
+            // [Random(0, n-1)] (a TerrainType), DisguisedAsHouse = none. The
+            // presentation (agent D) draws the tree for enemies.
+            if (w5_.armed && !w5_.rules.mirage_trees.empty()) {
+                const int n = (int)w5_.rules.mirage_trees.size();
+                // [RE-FALLBACK: a per-unit hash stands in for the scenario Random draw.]
+                const int k = std::min(n - 1, static_cast<int>(((std::uint32_t)(&u - units_.data()) * 2654435761u) % (std::uint32_t)n));
+                // Exposed in Unit::w5.mirage_tree (disguised_as_type keeps the
+                // tank image so today's draw path still finds an SHP).
+                u.w5.mirage_tree = w5_.rules.mirage_trees[(std::size_t)k];
+            }
             capture_any_ = true;   // arm the DetectDisguise pass
         }
     }
@@ -2384,7 +2443,15 @@ void World::step_visibility() {
     for (int h = 0; h < house_count(); ++h) map_reveal_[h] = false;
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead) continue;
-        if (b.house >= 0 && b.house < house_count() && b.grants_map_reveal) map_reveal_[b.house] = true;
+        if (b.house < 0 || b.house >= house_count() || !b.grants_map_reveal) continue;
+        // Wave-5 (GASPYSAT, Powered=true): the uplink works once built and
+        // only while its house has the power for it (Powered= buildings go
+        // offline at low power -- the defenses.md §2 predicate).
+        if (b.state != Building::State::Idle) continue;
+        if (b.type >= 0 && b.type < (int)btypes().size() && btypes()[(std::size_t)b.type].powered &&
+            house_low_power(b.house))
+            continue;
+        map_reveal_[b.house] = true;
     }
     // 1) Clear visible_ (explored_ is sticky -- fog no-regrow §4).
     for (int h = 0; h < house_count(); ++h)
@@ -2402,6 +2469,8 @@ void World::step_visibility() {
             for (int fx = 0; fx < b.fw; ++fx)
                 reveal_source(b.house, b.cx + fx, b.cy + fy, b.sight);
     }
+    // Wave-5 (R-044): enemy Gap Generators shroud their radius (world_w5.cpp).
+    w5_gap_pass(0);
     // 4) Stamp each unit's seen_by_mask: bit h set iff h can see an object in its
     //    cell (object_visible_at: explored with FogOfWar off, visible with it on).
     for (Unit& u : units_) {
@@ -2416,6 +2485,7 @@ void World::step_visibility() {
     // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
     for (int h = 0; h < house_count(); ++h)
         if (map_reveal_[h]) reveal_all_house(h);
+    w5_gap_pass(1);   // wave-5: a SpySat does not lift an enemy gap
     // AllyReveal [RE: multihouse.md §3, D4]: OR-merge allied houses' explored_/
     // visible_ (shroud sharing) AFTER per-house sight + seen_by_mask are computed,
     // so targeting still uses each house's OWN sight (seen_by_mask), while
@@ -3116,8 +3186,11 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
     for (int i = 0; i < (int)units_.size(); ++i) {
         const Unit& u = units_[i];
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house ||
-            u.is_harvester || u.an.t.fixed_wing || u.an.t.missile)  // W2-AN-16: jumpjets recruit
+            u.is_harvester || u.an.t.missile)  // W2-AN-16: jumpjets recruit
             continue;
+        // Wave-5 (R-080): a docked, armed fixed-wing aircraft is recruitable;
+        // spawned ones (Hornets) and planes on a sortie are not.
+        if (u.an.t.fixed_wing && (u.an.t.spawned || u.an.sortie != 0 || u.an.ammo <= 0)) continue;
         if (u.moving() || u.attack_order) continue;
         const int t = ai_unit_type_of(rec, u);
         if (t < 0) continue;
@@ -3538,6 +3611,7 @@ World::InfiltratePurpose World::ai_infiltrate_purpose(int b_idx) const {
     if (t < 0 || t >= (int)btypes().size()) return InfiltratePurpose::None;
     const BuildingTypeDef& d = btypes()[(std::size_t)t];
     if (!d.spyable) return InfiltratePurpose::None;
+    if (d.w5.spy_purpose >= 0) return static_cast<InfiltratePurpose>(d.w5.spy_purpose);   // wave-5
     if (std::find(refinery_types_.begin(), refinery_types_.end(), t) != refinery_types_.end())
         return InfiltratePurpose::Refinery;
     if (d.power > 0) return InfiltratePurpose::PowerPlant;
@@ -3571,7 +3645,16 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
                             pslot < (int)tc.unit_roster.size() &&
                             (tc.unit_roster[pslot].combat.is_naval ||
                              tc.unit_roster[pslot].combat.movement_domain == MovementDomain::Amphibious);
-    const std::vector<int>& ft = naval_unit ? tc.nav_factory_types
+    // Wave-5 (R-080): a fixed-wing aircraft is built onto an own airfield pad
+    // (any Helipad=yes AircraftType factory the World knows of).
+    const bool air_unit = cat == QueueCat::Vehicle && pslot >= 0 && pslot < (int)tc.unit_roster.size() &&
+                          tc.unit_roster[pslot].combat.an.fixed_wing;
+    std::vector<int> air_ft;
+    if (air_unit)
+        for (int bt = 0; bt < (int)an_.airfield_btype.size(); ++bt)
+            if (an_.airfield_btype[(std::size_t)bt]) air_ft.push_back(bt);
+    const std::vector<int>& ft = air_unit ? air_ft
+                                 : naval_unit ? tc.nav_factory_types
                                  : cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
     const int fi = primary_factory(buildings_, ft, house);
     if (fi < 0) return false;  // no factory: the lost-check cancels the queue
@@ -4274,6 +4357,9 @@ void World::step(double dt) {
     // G16 world depth (agent G): garrisons + ground shots / bridges. Inert
     // unless a garrison order was given or a unit has a ground target.
     step_depth(dt);
+    // Wave-5 abilities (agent C, world_w5.cpp): stolen tech, prism/tesla/gap,
+    // tech buildings, transports. Inert without wave-5 type data.
+    step_w5(dt);
     // P5 Veterancy [RE: veterancy.md V2/V3/V11/V12]: kill credit for every unit/
     // building that died this step, rank-change detection + stat refresh, and
     // the 14-frame self-heal. A pure INSERTION right after step_combat; the

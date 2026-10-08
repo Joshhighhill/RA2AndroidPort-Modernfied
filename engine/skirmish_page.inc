@@ -193,6 +193,10 @@ public:
         try {
             catalog_ = std::make_unique<ra2engine::MapCatalog>(
                 ra2engine::load_yr_map_catalog(env_install_dir(), "standard"));
+            // W5-PRES R-105: hide the YR-only DESERT/NEWURBAN maps (drawn with
+            // temperate art) -- a presentation choice, see maplist.hpp.
+            const int hidden = ra2engine::filter_lobby_theaters(*catalog_);
+            std::cerr << "[lobby] theater filter hid " << hidden << " YR-only maps" << std::endl;
         } catch (const std::exception&) { catalog_.reset(); }
         // Session restore (0x683FC0): RA2.INI when the real game published
         // its settings (never under --menu-shot / gates), else first run.

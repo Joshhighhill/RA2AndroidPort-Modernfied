@@ -394,6 +394,7 @@ public:
     const ra2engine::MapTriggerSystem& triggers() const { return *sys_; }
     int teams_created() const { return teams_created_; }
     int house_index(const std::string& name) const { return engine_house_of_name(name); }
+    const std::vector<std::string>& house_names() const { return house_names_; }   // W5-E score page
     int raises() const { return raises_; }
 
     // --- P7 save/load (HOST section; the triggers go in TRIG) -----------------
@@ -2422,7 +2423,7 @@ private:
                 int k = 0, v = 0, wp = -1;
                 char name[128] = {0};
                 if (std::sscanf(l.c_str(), "  a%d %*s v=%d wp=%d %127s", &k, &v, &wp, name) == 4 &&
-                    (k == 19 || k == 20 || k == 21 || k == 99) &&
+                    (k == 19 || k == 20 || k == 21 || k == 99 || k == 10 || k == 100 || k == 116) &&   // W5-E movies
                     l.find("(recorded)") != std::string::npos)
                     audio_.push_back({k, name[0] == '-' && name[1] == 0 ? std::string() : std::string(name), v, wp});
             }
@@ -2884,7 +2885,7 @@ private:
     int teams_created_ = 0, raises_ = 0;
     bool placing_ = false;
     int place_vet_ = 0;      // W4-SQ-04: rank given to the members being created
-    // W5-A (saved, v18): house quarries (35), FireSale houses (9), TeamTypes
+    // W5-A (saved, v20): house quarries (35), FireSale houses (9), TeamTypes
     // that left the map (23), the ResizeView usable area (40).
     std::vector<int> quarry_;
     std::vector<std::uint8_t> fire_sale_;

@@ -280,7 +280,12 @@ bool Input::commit_factory_click(int px, int py) {
                 for (int x : veh_factory_types_)
                     if (x == t) { cat = veh_factory_types_; break; }
             if (cat.empty()) cat = {t};
+            const bool was_primary = world_.buildings()[b].primary;
             world_.set_primary(b, cat);
+            if (!was_primary) {   // W5-E EVA_PrimaryBuildingSelected
+                actions_.primary_set = true;
+                actions_.factory = b;
+            }
         } else {
             selected_building_ = b;
             world_.clear_selection();  // factory selection clears the unit selection
@@ -372,6 +377,8 @@ void Input::commit_double(int px, int py) {
 void Input::issue_order(int px, int py) {
     world_.mark_player_order();   // W4-SQ: a player order leaves the script team
     InputEvent ev;   // the body below reads ev.x / ev.y
+    actions_.order = InputActions::Order::Move;   // W5-E: per-order voice kind
+    actions_.target_building = -1;
     ev.x = px;
     ev.y = py;
     // Rally-point set [RE: production.md §1.4]: with an own unit
@@ -391,6 +398,8 @@ void Input::issue_order(int px, int py) {
             int rcx = 0, rcy = 0;
             resolve_ground_cell(ev.x, ev.y, rcx, rcy);
             world_.set_rally(selected_building_, rcx, rcy);
+            actions_.rally_set = true;   // W5-E EVA_NewRallyPointEstablished
+            actions_.factory = selected_building_;
             return;
         }
     }
@@ -482,12 +491,24 @@ void Input::issue_order(int px, int py) {
                     actions_.actor = actor;
                 }
             }
+            // W5-E: the miners' Mission_Harvest acknowledgement (VoiceHarvest).
+            if (!harv_idx.empty()) {
+                actions_.move_ordered = true;
+                actions_.actor = static_cast<int>(harv_idx.front());
+                actions_.order = InputActions::Order::Harvest;
+            }
             return;  // handled: no attack for this right-click
         }
         if (harv_selected && here_b >= 0 && world_.buildings()[here_b].house == 0 &&
             world_.buildings()[here_b].alive &&
             is_refinery_type(world_.buildings()[here_b].type)) {
+            const int actor = lowest_selected();
             world_.order_return();
+            if (actor >= 0) {   // W5-E: dock = Mission_Enter (VoiceEnter)
+                actions_.move_ordered = true;
+                actions_.actor = actor;
+                actions_.order = InputActions::Order::Enter;
+            }
             return;  // handled
         }
         // CB-1 enter-transport gesture [RE: transport-cargo.md
@@ -501,7 +522,20 @@ void Input::issue_order(int px, int py) {
         // refinery win for miners) and BEFORE attack-building/
         // move. The original's "enter" cursor is cosmetic; ours
         // stays default (noted divergence, no new UI systems).
-        if (idx >= 0 && world_.controllable(world_.units()[idx].house) &&
+        // Wave-5 (R-052): an allied house's transport takes the player's
+        // infantry too (the original's IsAlliedWith enter test).
+        // Wave-5 (R-046): a single selected engineer right-clicking a unit
+        // that carries an Ivan bomb walks over and disarms it (DefuseKit).
+        if (idx >= 0 && world_.units()[idx].bomb_frame >= 0) {
+            const int eng = sel_engineer_idx(world_);
+            if (eng >= 0 && world_.order_defuse(eng, idx, -1)) {
+                actions_.move_ordered = true;
+                actions_.actor = eng;
+                return;
+            }
+        }
+        if (idx >= 0 && (world_.controllable(world_.units()[idx].house) ||
+                         world_.are_allied(0, world_.units()[idx].house)) &&
             world_.units()[idx].passengers_max > 0) {
             bool eligible = false;
             for (std::size_t si = 0; si < world_.units().size(); ++si) {
@@ -518,6 +552,7 @@ void Input::issue_order(int px, int py) {
                 world_.order_enter_transport(idx);
                 actions_.move_ordered = true;   // move-ack voice
                 actions_.actor = actor;
+                actions_.order = InputActions::Order::Enter;   // W5-E VoiceEnter
                 return;  // handled: no attack/move for this click
             }
         }
@@ -549,6 +584,7 @@ void Input::issue_order(int px, int py) {
                 if (world_.order_occupy_selected(gb) > 0) {
                     actions_.move_ordered = true;
                     actions_.actor = actor;
+                    actions_.order = InputActions::Order::Enter;   // W5-E VoiceEnter
                     return;
                 }
             }
@@ -567,6 +603,7 @@ void Input::issue_order(int px, int py) {
                                                 spy_blackout_frames_);
                     actions_.move_ordered = true;   // move-ack voice
                     actions_.actor = spy;
+                    actions_.order = InputActions::Order::Enter;   // W5-E [RE-FALLBACK: spy mission]
                     return;                          // handled: no attack/move
                 }
                 // own building -> not a spy target; fall through below.
@@ -600,6 +637,13 @@ void Input::issue_order(int px, int py) {
             if (b_hit >= 0) {
                 const Building& tb = world_.buildings()[b_hit];
                 const int eng_house = world_.units()[eng].house;
+                // Wave-5 (R-046): a bombed own/allied building -> defuse.
+                if (tb.bomb_frame >= 0 && world_.are_allied(eng_house, tb.house) &&
+                    world_.order_defuse(eng, -1, b_hit)) {
+                    actions_.move_ordered = true;
+                    actions_.actor = eng;
+                    return;
+                }
                 // W2-SK-12: an enemy Capturable=false structure shows the
                 // no-entry cursor in the original -- the click does nothing.
                 // W4-SQ-10: a BridgeRepairHut always takes the engineer (repair,
@@ -616,6 +660,7 @@ void Input::issue_order(int px, int py) {
                     world_.order_engineer_capture(eng, b_hit);
                     actions_.move_ordered = true;   // move-ack voice
                     actions_.actor = eng;
+                    actions_.order = InputActions::Order::Capture;   // W5-E VoiceCapture
                     return;                          // handled: no attack/move
                 }
                 // own & undamaged -> not a target; fall through below.
@@ -639,6 +684,7 @@ void Input::issue_order(int px, int py) {
             world_.order_attack_building(b_idx);
             actions_.attack_ordered = true;
             actions_.actor = actor;
+            actions_.target_building = b_idx;   // W5-E: C4 carriers -> Sabotage voice
         } else {
             // Group-move to the clicked ground cell (issued on
             // down). Capture actor BEFORE the order mutates state;

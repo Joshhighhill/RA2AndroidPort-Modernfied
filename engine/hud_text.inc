@@ -220,3 +220,34 @@ std::string cameo_tooltip_text(const std::string& ui_name, int cost) {
         if (c == ' ') c = '\n';
     return s;
 }
+
+// W5-PRES: game-font text in one RGB colour (every non-zero glyph pixel white,
+// tinted by a texture colour mod) -- the credits tally's side colour.
+inline int hud_text_rgb(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::Font& font,
+                        const std::string& s, int x, int y, Uint8 r, Uint8 g, Uint8 b) {
+    static ra2assets::Palette white{};
+    static bool ok = false;
+    if (!ok) {
+        for (int i = 1; i < 256; ++i) white[i] = ra2assets::Rgba{255, 255, 255, 255};
+        white[0] = ra2assets::Rgba{0, 0, 0, 0};
+        ok = true;
+    }
+    int cx = x;
+    for (unsigned char ch : s) {
+        const int w = font.width(ch);
+        if (ch != ' ' && ch >= font.first() && ch <= font.last() && w > 0) {
+            const ra2assets::FntGlyph& gl = font.glyph(ch);
+            if (gl.w > 0 && gl.h > 0) {
+                const std::string key = "fntw:" + std::to_string((int)ch);
+                SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
+                if (!tex) tex = static_cast<SDL_Texture*>(tc.get(key, gl.pixels.data(), gl.w, gl.h, white));
+                const SDL_Rect dst{cx, y, gl.w, gl.h};
+                SDL_SetTextureColorMod(tex, r, g, b);
+                SDL_RenderCopy(ren, tex, nullptr, &dst);
+                SDL_SetTextureColorMod(tex, 255, 255, 255);
+            }
+        }
+        cx += w > 0 ? w : font.height() / 2;
+    }
+    return cx - x;
+}
