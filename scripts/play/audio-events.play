@@ -14,6 +14,7 @@ assert check(crates) == 1
 click start
 until 90 scene == game
 require scene == game
+assert load_art == "ls800ustates.shp"                   @W5-E:loadscreen
 
 # --- MCV deploy: DeploySound=PlaceBuilding at the new ConYard ------------------
 click unit 0:AMCV

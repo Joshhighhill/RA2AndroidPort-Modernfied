@@ -5437,6 +5437,7 @@ Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg);
 Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
 
 #include "movie_player.inc"   // W5-E campaign movies (Bink)
+#include "skirmish_load.inc"   // W5-E: the ls800<country>.shp loading screen
 
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
@@ -7732,14 +7733,29 @@ private:
     SDL_Texture*  bink_tex_     = nullptr;   // reused streaming texture (bink_w x bink_h)
     int           bink_tex_frame_ = -1;      // frame index currently uploaded to bink_tex_
     // Advance the Bink clock and decode the current frame (called from update()).
+    // W5-E (R-173): the CRT movie is ONE clock across the shell pages (a page
+    // change continues it -- the shared decoder already holds that frame) and
+    // it pauses while the window is minimised / has lost focus.
+    static inline int g_menu_bink_frame = -1;
+    static bool menu_window_paused() {
+        if (g_pres_play_log) return false;   // --play: a hidden window never has focus
+        SDL_Window* w = SDL_GetKeyboardFocus();
+        return !w || (SDL_GetWindowFlags(w) & SDL_WINDOW_MINIMIZED) != 0;
+    }
     void bink_advance(double dt) {
         if (!art_.bink_dec || art_.bink_frames <= 0) return;
         if (!bink_started_) {                 // first tick: decode the keyframe (frame 0)
+            bink_started_ = true;
+            if (g_menu_bink_frame >= 0 && g_menu_bink_frame < art_.bink_frames) {
+                bink_frame_ = g_menu_bink_frame;   // W5-E: continue across pages
+                return;
+            }
             art_.bink_dec->decode_frame(0);
             bink_frame_ = 0;
-            bink_started_ = true;
+            g_menu_bink_frame = 0;
             return;                           // show frame 0 for its full 1/15s
         }
+        if (menu_window_paused()) return;   // W5-E: paused on focus loss
         bink_accum_ += dt;
         while (bink_accum_ >= kBinkFrameDt) {
             bink_accum_ -= kBinkFrameDt;
@@ -7747,6 +7763,7 @@ private:
             if (next >= art_.bink_frames) next = 0;   // seamless loop back to keyframe
             art_.bink_dec->decode_frame(next);        // sequential; rewinds to 0 if next==0
             bink_frame_ = next;
+            g_menu_bink_frame = next;
         }
     }
     // Upload the current decoded frame to the reused streaming texture when it
@@ -7953,10 +7970,16 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
 
 Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg) {
     auto c = std::make_shared<ra2engine::SkirmishConfig>(std::move(cfg));
+    std::function<void(SDL_Renderer*, ra2engine::TextureCache&, double)> backdrop;
+    if (c->campaign_map.empty()) {   // W5-E: skirmish -> the country loading art
+        auto art = std::make_shared<SkirmishLoadArt>();
+        art->load(*c);
+        backdrop = [art](SDL_Renderer* ren, ra2engine::TextureCache& tc, double frac) { art->draw(ren, tc, frac); };
+    }
     return defer_scene("LOADING", [no_audio, c]() -> Scene* {
         { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }   // W2-AR-06
         return new GameScene(no_audio, *c);
-    });
+    }, backdrop);
 }
 Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
     auto sf = std::make_shared<ra2engine::save::SaveFile>(std::move(f));
