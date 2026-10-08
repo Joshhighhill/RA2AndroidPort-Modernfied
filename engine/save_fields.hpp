@@ -22,6 +22,12 @@ namespace ra2engine {
 // The single friend every class with private save-state names. Static members
 // only; visitors for private members and private nested types live here.
 struct SaveAccess {
+    // R-181: after a load, every cross-reference index (unit -> unit /
+    // building, building -> type, house numbers) and every grid size must be
+    // in range. The CRC-32 trailer catches random corruption; this catches a
+    // well-formed file whose numbers would index out of bounds (a hand-edited
+    // or mismatched save). Defined in savegame.cpp.
+    static bool valid_world(const World& w, std::string* why = nullptr);
     template <class Ar> static void occupancy(Ar& ar, Occupancy& o) {
         save::io(ar, o.w_);
         save::io(ar, o.h_);
@@ -1209,6 +1215,17 @@ template <class Ar> void fields(Ar& ar, SceneSave& v) {
     io(ar, v.credits_shown);
     io(ar, v.place_cat);
     io(ar, v.bstates);
+}
+
+// R-180: GameScene's build-queue backlog (QueueCat -> unit types waiting
+// behind the slot, FIFO) and the categories on hold (G-07).
+struct QueueBacklogSave {
+    std::map<int, std::vector<int>> backlog;
+    std::vector<int> held;
+};
+template <class Ar> void fields(Ar& ar, QueueBacklogSave& v) {
+    io(ar, v.backlog);
+    io(ar, v.held);
 }
 
 // --- header ---

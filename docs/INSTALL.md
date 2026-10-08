@@ -47,8 +47,14 @@ The engine currently reads the **Yuri's Revenge** data set (`rulesmd.ini`,
 3. If the files are not found, the **GAME FILES NEEDED** page lets you choose
    the folder with **BROWSE**. The choice is saved to `RA2.INI` `[Engine] DataDir`.
 
-Other options: `--no-audio`, `--version`, `--help`. Settings (`RA2.INI`) and
-saved games live in `%APPDATA%\ra2engine\RA2\`.
+Other options: `--no-audio`, `--fps` (the perf overlay, section 5),
+`--record <file>` / `--replay <file>` (section 6), `--version`, `--help`.
+Settings (`RA2.INI`) and saved games live in `%APPDATA%\ra2engine\RA2\`.
+
+`ra2game.exe` is the same engine built as a Windows GUI program: a
+double-click opens no console window, and its log goes to
+`%APPDATA%\ra2engine\RA2\ra2engine.log`. `ra2engine.exe` is the console
+build (the log prints in the terminal).
 
 ## 3. Android (5.0 and later; tested on an Android 11 emulator)
 
@@ -126,12 +132,60 @@ If the app is closed in the background (low memory), the game was saved to
 - The engine build (for example `ENGINE 0.9.0+g1a2b3c4`) is shown in the
   bottom-left corner of the main menu and as the app's version name.
 
-## 5. Troubleshooting
+## 5. Measuring performance (please report real-phone numbers)
+
+The engine has a built-in **frame-rate / perf overlay**. It shows, averaged
+over the last second, the rendered frames per second (FPS), the logic rate
+(LOGIC: 15/s is full speed at the default game speed; lower means the
+simulation runs slow) and the milliseconds per frame spent updating (UPD),
+drawing (REN) and presenting (PRES), plus the worst frame (MAX).
+
+Turn it on:
+- **In a game**: tap the screen with **three fingers** at once (phone), or
+  press **Ctrl+Shift+F** (keyboard). Do the same again to turn it off.
+- **Desktop**: start with `--fps`, or set `RA2_PERF=1`, or put
+  `ShowFPS=yes` under `[Engine]` in `RA2.INI`.
+- **Android, from a PC**: `adb shell setprop debug.ra2.perf 1`, then start
+  the app (the setting lasts until the phone restarts).
+
+While it is on, the same numbers are written to the log every 5 seconds.
+
+How to measure on a real phone and send the numbers:
+1. Enable USB debugging on the phone (Settings > About phone > tap Build
+   number 7 times; then Developer options > USB debugging) and connect it.
+2. On the PC: `adb shell setprop debug.ra2.perf 1`
+3. Start the game and play the scene you want to measure (for example the
+   first minute of the Allied mission 1, and a busy skirmish).
+4. Capture the log: `adb logcat -s SDL/APP | Select-String perf,load`
+   (PowerShell) or `adb logcat -s SDL/APP | grep -E "perf|load"`.
+   Lines look like
+   `[perf] fps=58.9 logic=15.0/s input=0.05ms update=3.10ms render=6.40ms present=6.80ms worst=21.4ms canvas=1172x548`
+   and `[load] LOADING done in 5928 ms`.
+5. Send the `[perf]` and `[load]` lines with the phone model.
+
+A screenshot with the overlay on (three-finger tap) is just as good.
+
+Optional system-side numbers: `adb shell dumpsys gfxinfo org.ra2.engine`
+(frame times) and `adb shell dumpsys meminfo org.ra2.engine` (memory).
+
+## 6. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | **GAME FILES NEEDED** page | Copy or import the listed files. File names are case-sensitive on Android; the importer fixes the case for you. |
 | "COULD NOT START THE GAME: THE GAME FILE X IS MISSING" | An optional file needed by that mode (for example a campaign's maps) is missing. Add it and try again. |
-| A save shows "Damaged" | The file failed its checksum (format v10). It cannot be loaded. |
+| A save shows "Damaged" | The file failed its checksum. It cannot be loaded. |
 | A save shows "Wrong version" | It was written by another engine version. |
 | Android: logs | `adb logcat -s SDL SDL/APP RA2Setup` shows the asset folder, `[load]` timings and `[lifecycle]` events. |
+| Windows: logs of `ra2game.exe` | `%APPDATA%\ra2engine\RA2\ra2engine.log` (rewritten on each start). |
+| "COULD NOT LOAD THAT SAVED GAME" / "Error loading game" | The save is from another engine version, or its contents point outside the game (the loader range-checks every unit and building reference). |
+
+**Reporting a bug with a recording (desktop).** Start the game with
+`ra2engine.exe --record bug.rec`, play until the problem shows, then quit.
+`bug.rec` is a small text file with every click, key and frame time of the
+session. Send it with the engine version (`ra2engine --version`).
+`ra2engine.exe --replay bug.rec` plays the session back (`--hidden` runs it
+without a window); it needs the same game files and the same `RA2.INI`
+settings (game speed, difficulty). Both runs print a
+`[replay] end ... probe_hash=` line; equal hashes mean the replay reproduced
+the session.

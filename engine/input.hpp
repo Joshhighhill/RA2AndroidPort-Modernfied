@@ -193,6 +193,10 @@ public:
     // larger than the rectangle is centred on it (TacticalClass clamp
     // FUN_006d7bb0 bounds the view centre the same way).
     void set_view_limits(int min_x, int min_y, int max_x, int max_y);
+    // R-162: the tactical view changed size (window resize, foldable, split
+    // screen): recompute the default camera clamp for the new viewport.
+    // set_view_limits (a campaign's LocalSize) must be re-applied after it.
+    void set_viewport(int view_w, int view_h);
     // W4-MC-02: drop a half-done gesture (band box / right-drag) without
     // acting on it (LockInput's FUN_0054f3b0).
     void cancel_gesture() { l_down_ = dragging_ = false; r_down_ = r_drag_ = false; }

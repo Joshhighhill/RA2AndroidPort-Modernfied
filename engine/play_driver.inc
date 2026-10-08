@@ -759,7 +759,13 @@ private:
         p.set("quit_seen", quit_seen_ ? 1 : 0);
         p.set("quits", quits_);
         p.set("transitions", transitions_);
+        // R-183: how many optional data files this install lacks (robust-missing
+        // only applies to a stripped install and ends early on a full one).
+        if (data_missing_optional_ < 0)
+            data_missing_optional_ = static_cast<int>(preflight_data_files(env_install_dir()).missing_optional.size());
+        p.set("data_missing_optional", data_missing_optional_);
     }
+    int data_missing_optional_ = -1;
     void trace(const Cmd& c) {
         if ((c.op == "until" && until_active_) || (c.op == "cycle" && cycle_n_ > 0)) return;
         emit("PLAY step L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " " + c.raw, trace_console_);

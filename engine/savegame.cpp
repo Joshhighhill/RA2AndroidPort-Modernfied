@@ -30,7 +30,13 @@ std::vector<std::uint8_t> save_world(const World& w) {
 bool load_world(World& w, const std::vector<std::uint8_t>& bytes) {
     Reader r(bytes);
     SaveAccess::world(r, w);
-    return r.ok() && r.at_end();
+    if (!r.ok() || !r.at_end()) return false;
+    std::string why;
+    if (!SaveAccess::valid_world(w, &why)) {
+        std::fprintf(stderr, "[saveload] load_world: index out of range: %s\n", why.c_str());
+        return false;
+    }
+    return true;
 }
 
 std::vector<std::uint8_t> save_triggers(const MapTriggerSystem& s) {
@@ -254,4 +260,54 @@ std::string clean_description(const std::string& s) {
 }
 
 }  // namespace save
+
+// R-181: index range checks after a load (see save_fields.hpp).
+bool SaveAccess::valid_world(const World& w, std::string* why) {
+    auto bad = [&](const std::string& m) {
+        if (why) *why = m;
+        return false;
+    };
+    // [RE-FALLBACK: generous engine limits, not original ones] 64 houses
+    // (the original's HouseClass array holds 20 + the specials), maps up to
+    // 512x512 cells, building foundations up to 8x8.
+    constexpr int kMaxHouses = 64, kMaxGrid = 512, kMaxFoundation = 8;
+    const int gw = w.grid_w_, gh = w.grid_h_;
+    if (gw < 0 || gh < 0 || gw > kMaxGrid || gh > kMaxGrid) return bad("grid size");
+    const std::size_t cells = static_cast<std::size_t>(gw) * static_cast<std::size_t>(gh);
+    if (!w.passable_.empty() && w.passable_.size() != cells) return bad("passable grid");
+    if (!w.water_passable_.empty() && w.water_passable_.size() != cells) return bad("water grid");
+    if (w.houses_.size() > static_cast<std::size_t>(kMaxHouses)) return bad("house table");
+    const int nu = static_cast<int>(w.units_.size());
+    const int nb = static_cast<int>(w.buildings_.size());
+    const int nt = static_cast<int>(w.types_.empty() ? w.lookup_types_.size() : w.types_.size());
+    auto unit_ix = [&](int i) { return i >= -1 && i < nu; };
+    auto bld_ix = [&](int i) { return i >= -1 && i < nb; };
+    auto house_ix = [&](int h) { return h >= 0 && h < kMaxHouses; };
+    for (int i = 0; i < nu; ++i) {
+        const Unit& u = w.units_[static_cast<std::size_t>(i)];
+        const std::string at = "unit " + std::to_string(i) + " ";
+        if (!house_ix(u.house)) return bad(at + "house");
+        if (!unit_ix(u.target) || !unit_ix(u.cargo_of) || !unit_ix(u.enter_target) ||
+            !unit_ix(u.parasite_on_me) || !unit_ix(u.temporal_target) || !unit_ix(u.bomb_owner) ||
+            !unit_ix(u.ability_fired_unit))
+            return bad(at + "unit reference");
+        if (!bld_ix(u.target_building) || !bld_ix(u.dock_refinery) || !bld_ix(u.capture_target) ||
+            !bld_ix(u.infiltrate_target) || !bld_ix(u.garrison_of) || !bld_ix(u.occupy_target) ||
+            !bld_ix(u.temporal_target_building) || !bld_ix(u.ability_fired_building))
+            return bad(at + "building reference");
+        if (u.bomb_house < -1 || u.bomb_house >= kMaxHouses) return bad(at + "bomb house");
+    }
+    for (int i = 0; i < nb; ++i) {
+        const Building& b = w.buildings_[static_cast<std::size_t>(i)];
+        const std::string at = "building " + std::to_string(i) + " ";
+        if (!house_ix(b.house)) return bad(at + "house");
+        if (b.type < -1 || (nt > 0 && b.type >= nt)) return bad(at + "type");
+        if (b.fw < 1 || b.fh < 1 || b.fw > kMaxFoundation || b.fh > kMaxFoundation) return bad(at + "foundation");
+        if (gw > 0 && gh > 0 && (b.cx < 0 || b.cy < 0 || b.cx >= gw || b.cy >= gh)) return bad(at + "cell");
+        if (!unit_ix(b.killed_by) || !unit_ix(b.c4_by) || !unit_ix(b.bomb_owner) || !unit_ix(b.def_target))
+            return bad(at + "unit reference");
+        if (b.bomb_house < -1 || b.bomb_house >= kMaxHouses) return bad(at + "bomb house");
+    }
+    return true;
+}
 }  // namespace ra2engine
