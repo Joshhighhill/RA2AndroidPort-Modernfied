@@ -67,6 +67,10 @@ def main(out):
     p.train("APOC", 3, 3, guard=True)
     p.build("TESLA", tab=1, cat="defense").build("NAPOWR").build("TESLA", tab=1, cat="defense").build("NAPOWR")
     p.build("TESLA", tab=1, cat="defense").build("TESLA", tab=1, cat="defense").build("NAREFN")
+    # Two more plants: since P4's `place` retries a refused placement on the
+    # next candidate, every Tesla Coil gets placed and four coils outdraw the
+    # plants (drain 485 > 450 at f=10856: low power, coils offline -> LOST).
+    p.build("NAPOWR").build("NAPOWR")
     p.add("dump")
     army = ["APOC", "HTNK"]
     g = "outcome == RUNNING"
