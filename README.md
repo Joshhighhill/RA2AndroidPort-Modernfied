@@ -3986,3 +3986,49 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   scripts pass (one at a time; `probe-bridge`, `probe-flow`, `robust-missing` included);
   all 27 `--demo-*` hash gates print their pins (no re-pin; `--demo-saveload` does not hash
   the format version or the new optional section).
+
+## Presentation: layers, base-building chrome, state effects, lighting (wave-5 W5-PRES, branch `w5-pres`)
+
+RE notes: `docs/re/w5-presentation.md` (gamemd.exe addresses, confidence per item). All of it
+is render-only (`g_fx` / `g_map_dressing` / `g_light` exist only in GameScene), so no gate
+hash moves.
+
+- **Layers (R-100/R-101).** The original draws high-bridge decks in the terrain pass with a
+  Z-buffer; the clone has none, so decks (`BRIDGE1/2`, `BRIDGEB1/B2`) join the ground depth
+  sort at `x+y+0.99`: a ship or a unit under an overpass is covered, a ground unit on a deck
+  over water draws BridgeHeight (4 levels) up and sorts after its deck. Airborne aircraft and
+  jumpjets draw after the whole ground layer (the original's Air/Top layers).
+  `pres_compat.inc` picks up `World::high_bridge_destroyed` (broken decks vanish), the
+  paratrooper state and agent B's sub-cell offset by SFINAE.
+- **Base-building chrome (R-102/R-144/R-039).** Opaque `PLACE.SHP` cells (frame 0 valid,
+  frame 2+ramp blocked, PALETTE.PAL green/red; no building ghost in vanilla); the selected
+  primary factory shows the CSF `TXT_PRIMARY` box in its house colour; the rally point is the
+  original's marching-ants dashed line in the house colour; trigger FlashCameo flashes a cameo.
+- **Turrets (R-121).** Defence turrets draw the sim's ROT-slewed facing (no snapping; a building
+  turret keeps its aim, as the original).
+- **State effects (R-120).** Per-object `ObjTint` (colour mod + additive re-draw + alpha) in
+  the unit / voxel / building blits: the Iron Curtain brightness envelope (flash, dim pulses,
+  flash out -- IronCurtainColor=0 means no red), the elite promotion and FlashTeam flash
+  (2-frame 2.0x blinks), chrono warp (50 % translucent, WARPOUT at both ends, CHRONOSK).
+- **Parachute (R-122).** PARACH over falling paratroopers: opening, glide loop, collapse.
+- **Lighting (R-104).** Light above 1.0 brightens up to 2.0x (MUL pass) instead of clamping;
+  units, buildings and turrets take their own height light (and +4 levels on a bridge deck).
+  The W5-F light-map cache key includes the excess colours.
+- **Remap (R-103).** Indices 16..31 come from the original ColorScheme generator (sin/cos
+  table, integer HSV), not the brightness-scaled HSV heuristic.
+- **Anims (R-123).** PingPong, Reverse, Normalized, RandomRate clamp (a fixed 900/b, as the
+  original), IsMeteor bounce, Spawns/SpawnCount on impact. Ore art: cell-hash variant and the
+  TIB slope images on ramps.
+- **Sidebar (R-142).** Credits roll `clamp(|d|>>3,1,143)` per logic frame in the side colour
+  (Allied light blue, Soviet yellow); tabs 0/1 flash (frames 3/4) while a building is ready.
+- **Air.** Airborne voxels cast their own silhouette on the ground; jumpjet wobble per
+  `JumpjetWobbles/Deviation/NoWobbles` (every RA2 jumpjet but SHAD sets NoWobbles).
+- **Mirage (R-047).** An enemy's still Mirage draws as its `DefaultMirageDisguises` tree from
+  agent C's `Unit::w5.mirage_tree` (SFINAE; `RA2_PRES_MIRAGE=<tree>` exercises it before).
+- **Lobby (R-105).** The skirmish lobby hides the 11 YR-only DESERT/NEWURBAN/LUNAR maps.
+- Scripts: `pres-bridge`, `pres-bridge-on`, `pres-place`, `pres-state`, `pres-light`,
+  `pres-para`, `pres-air`, `pres-mirage` (cheats in `engine/pres_play_cheats.inc`).
+- Open: aircraft bank/pitch (only a few Fly aircraft), the jump-weapon projectile draw (R-054,
+  needs the sim to limbo the firer), the SOV05 Paris Tower visual (R-041), building-anim
+  YSort as separate sort items, TIB2/TIB3 art (the OreField keeps no tiberium type), broken
+  high-bridge ramp art.
