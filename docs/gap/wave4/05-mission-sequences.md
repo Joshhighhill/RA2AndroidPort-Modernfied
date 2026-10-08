@@ -190,6 +190,26 @@ Observed, not investigated: in failed ALL05 attempts Tanya died and the mission 
 Gates: no demo gate re-pinned (none run; the C4, counting and parasite changes only act on C4 sappers,
 campaign Destroyed*All events and orphaned parasites). Save format unchanged (v22).
 
+## P2b status (branch `p2b-missions`)
+
+- **R-205 fixed / re-diagnosed.** The capture test in `poll_mind_control` now uses the same 3-D fire-range rule as
+  combat (`unit_in_weapon_range`, FUN_006F6750): in `gamemd.exe` the capture is done by the controller's shot --
+  CaptureManager `FUN_00471C80` has a single caller, the bullet detonation @0x4692C0. The reported "Yuri does nothing at
+  8.5 cells" was not the range split: the script had re-clicked the already-selected Yuri, which DEPLOYS him (deploy
+  cursor), and a deployed DeployFire unit holds its post. Play test `scripts/play/mc-range.play` (PASS).
+- **SOV08 -- not won (tactics).** Best attempt generator: `scripts/play/gen/mk_sov08_attempt.py` (~16 iterations).
+  What works: MCV to (59,97) before deploying; two Sentry Guns before the refinery stop Vlad1's paradrops; the base
+  then survives the whole game (Tesla Coils, barracks rebuilds). What fails: production tops out at ~16 Apocalypse
+  tanks by campaign ~53000; the push reaches the White House gate and takes it to ~800/1000 before dying to the four
+  Tesla Coils, two sentry guns and Vlad2's infantry (5 Shock Troopers alone killed a 20-tank army with no
+  anti-infantry). A V3 siege of Vlad2's west power plants failed (rockets die in flight near the flak; V3s ordered past
+  their range wander into the base). Engineers walking behind the Apocalypse ball died before the gate. No engine
+  blocker identified.
+- **SOV09 -- retried, still blocked (tactics).** The R-205 fix does not change the picture. Best: north plant by the
+  MC'd SEAL's C4 (1000 -> 800), then the IFV by a southern route damages the (68,66) plant from (67,73) (-> **742**)
+  before a base defence kills it. The Prisms need < 575; the remaining plants are only reachable inside the Prism
+  compound, and the roaming SEALs kill every infantry escort. No engine blocker identified.
+
 ## How this was exercised
 
 | Tool | What it does | Where (all under `D:\ra2-wt\w4-seq\scratch\`) |
