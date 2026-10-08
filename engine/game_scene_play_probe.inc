@@ -374,6 +374,11 @@
             p.set("triggers_fired", campaign_->triggers().fired_count());
             p.set("campaign_outcome", campaign_->outcome());
             p.set("briefing_open", show_briefing_ ? 1 : 0);
+            {   // P4: the newest trigger that fired ("f=N fire ID \"Name\" k=K"), for proof debugging
+                const std::vector<std::string>& wl = campaign_->witness();
+                for (auto it = wl.rbegin(); it != wl.rend(); ++it)
+                    if (it->find(" fire ") != std::string::npos) { p.set_s("last_fired", *it); break; }
+            }
         } else {
             p.set_s("map", cfg_.map_file);
         }
@@ -414,6 +419,13 @@
             const ra2engine::Building& b = world_.buildings()[bi];
             cx = b.cx + b.fw / 2;
             cy = b.cy + b.fh / 2;
+            return true;
+        };
+        p.find_building_rect = [this](const std::string& spec, int& ox, int& oy, int& fw, int& fh) {
+            const int bi = play_find_building(spec);
+            if (bi < 0) return false;
+            const ra2engine::Building& b = world_.buildings()[bi];
+            ox = b.cx; oy = b.cy; fw = b.fw; fh = b.fh;
             return true;
         };
         // ---- G16 world depth (agent G): garrisons + bridges ----

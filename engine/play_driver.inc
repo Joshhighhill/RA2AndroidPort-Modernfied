@@ -452,7 +452,13 @@ private:
                 tab_tries_ = 0;
             }
             ++pc_;
-            if (!point_of(c, p, 0, x, y)) return kConsume;
+            // P4: `soft` -- a target that cannot be resolved / brought on screen
+            // is skipped (logged), not a failure (a player who cannot see it
+            // simply does not click it).
+            soft_ = has_word(c, "soft");
+            const bool found = point_of(c, p, 0, x, y);
+            soft_ = false;
+            if (!found) return kConsume;
             const bool right = has_word(c, "right");
             const int mods = mods_of(c, 1);
             press_mods(mods);
@@ -638,7 +644,8 @@ private:
     // labels, B's form), "cameo ID" -> "cameo:ID", else args[i] itself.
     static bool is_flag(const std::string& a) {
         const std::string l = lower(a);
-        return l == "right" || l == "shift" || l == "ctrl" || l == "alt" || l == "nopark" || l == "onscreen";
+        return l == "right" || l == "shift" || l == "ctrl" || l == "alt" || l == "nopark" || l == "onscreen" ||
+               l == "soft";
     }
     static std::string target_name(const Cmd& c, std::size_t i) {
         std::string name = c.args[i];
@@ -677,7 +684,27 @@ private:
                 if (!p.cell_to_screen(cx, cy, x, y)) { fail(c, "target off-screen (no centring with onscreen)"); return false; }
                 return true;
             }
-            if (!cell_point(p, cx, cy, x, y)) { fail(c, "cell off-screen and cannot centre"); return false; }
+            if (!cell_point(p, cx, cy, x, y)) {
+                // P4: a building whose centre stays outside the playfield margin
+                // when the camera is clamped at the map edge (e.g. behind the
+                // sidebar) -- a player clicks the part they can see: try its
+                // other foundation cells, nearest the centre first.
+                int ox = 0, oy = 0, fw = 0, fh = 0;
+                if (k == "building" && p.find_building_rect && c.args.size() > i + 1 &&
+                    p.find_building_rect(c.args[i + 1], ox, oy, fw, fh)) {
+                    std::vector<std::pair<int, int>> cells;
+                    for (int yy = oy; yy < oy + fh; ++yy)
+                        for (int xx = ox; xx < ox + fw; ++xx) cells.emplace_back(xx, yy);
+                    std::stable_sort(cells.begin(), cells.end(), [&](const auto& a, const auto& b) {
+                        return std::abs(a.first - cx) + std::abs(a.second - cy) <
+                               std::abs(b.first - cx) + std::abs(b.second - cy);
+                    });
+                    for (const auto& cl : cells)
+                        if (p.cell_to_screen(cl.first, cl.second, x, y)) return true;
+                }
+                fail(c, "cell off-screen and cannot centre");
+                return false;
+            }
             return true;
         }
         const std::string name = target_name(c, i);
@@ -819,6 +846,10 @@ private:
              true);
     }
     void fail(const Cmd& c, const std::string& d) {
+        if (soft_) {
+            emit("PLAY skip L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " soft: " + d, trace_console_);
+            return;
+        }
         fails_.push_back({c.line, f_, c.raw, d, c.tags, false});
         emit("PLAY FAIL L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " " + c.raw + "  [" + d +
                  "] " + join_tags(c.tags),
@@ -852,6 +883,7 @@ private:
     int wait_left_ = 0;
     int cycle_n_ = 0;
     int place_n_ = 0, place_x_ = 0, place_y_ = 0;   // P4: multi-frame `place`
+    bool soft_ = false;                              // P4: `click ... soft`
     int cycle_max_ = 8;
     bool until_active_ = false;
     int until_left_ = 0;
