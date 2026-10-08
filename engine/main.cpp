@@ -58,6 +58,7 @@
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
+#include "bink_async.hpp"     // W5-E2 R-173: Bink decoding off the main thread
 #include "touch_gestures.hpp" // G-70 (controls self-test drives the real gesture layer)
 #include <set>                // G-07 held queues (game_scene_controls.inc)
 #include "play_script.hpp"   // G0 harness: unit selector parsing (game_scene_play.inc)
@@ -5383,6 +5384,7 @@ struct MenuArt {
     // to the pointer, not the pointee). Null on a partial install (language.mix or
     // ra2ts_s.bik absent / parse failure) -> the static mnscrns backdrop shows.
     ra2assets::BinkVideoDecoder* bink_dec = nullptr;
+    ra2engine::BinkAsync* bink_async = nullptr;   // W5-E2: the worker that owns bink_dec
     int bink_frames = 0;                      // ra2ts_s.bik frame count (431)
     int bink_w = 0, bink_h = 0;               // native movie dims (472x450)
     // [P8 / options.md §4] Options-page control skins (local.mix PCX, own
@@ -7315,6 +7317,7 @@ struct MenuArtStore {
     // address even if the store moves, keeping the decoder's reference valid.
     std::unique_ptr<ra2assets::BinkFile> bink_file;
     std::unique_ptr<ra2assets::BinkVideoDecoder> bink_dec;
+    std::unique_ptr<ra2engine::BinkAsync> bink_async;   // W5-E2 (destroyed first: joins before bink_dec dies)
     MenuArt art;
 };
 
@@ -7587,6 +7590,9 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.mainbttn_pal_ok = store.mainbttn_pal_ok;
     // [Task 5] Wire the Bink CRT movie (non-owning view into store).
     store.art.bink_dec    = store.bink_dec.get();
+    if (store.bink_dec && store.bink_file)   // W5-E2 R-173
+        store.bink_async = std::make_unique<ra2engine::BinkAsync>(store.bink_dec.get(), store.bink_file->num_frames);
+    store.art.bink_async  = store.bink_async.get();
     store.art.bink_frames = store.bink_file ? store.bink_file->num_frames : 0;
     store.art.bink_w      = store.bink_file ? store.bink_file->width : 0;
     store.art.bink_h      = store.bink_file ? store.bink_file->height : 0;
@@ -8080,34 +8086,36 @@ private:
         SDL_Window* w = SDL_GetKeyboardFocus();
         return !w || (SDL_GetWindowFlags(w) & SDL_WINDOW_MINIMIZED) != 0;
     }
+    // W5-E2 (R-173): only the clock runs here; the decoding happens on the
+    // BinkAsync worker (blocking under --play so shots stay deterministic).
     void bink_advance(double dt) {
-        if (!art_.bink_dec || art_.bink_frames <= 0) return;
-        if (!bink_started_) {                 // first tick: decode the keyframe (frame 0)
+        if (!art_.bink_async || art_.bink_frames <= 0) return;
+        art_.bink_async->set_blocking(g_pres_play_log);
+        if (!bink_started_) {                 // first tick: frame 0 (or where the menu was)
             bink_started_ = true;
-            if (g_menu_bink_frame >= 0 && g_menu_bink_frame < art_.bink_frames) {
-                bink_frame_ = g_menu_bink_frame;   // W5-E: continue across pages
-                return;
-            }
-            art_.bink_dec->decode_frame(0);
-            bink_frame_ = 0;
-            g_menu_bink_frame = 0;
-            return;                           // show frame 0 for its full 1/15s
+            bink_frame_ = (g_menu_bink_frame >= 0 && g_menu_bink_frame < art_.bink_frames) ? g_menu_bink_frame : 0;
+            g_menu_bink_frame = bink_frame_;
+            art_.bink_async->want(bink_frame_);
+            return;                           // show it for its full 1/15s
         }
         if (menu_window_paused()) return;   // W5-E: paused on focus loss
         bink_accum_ += dt;
+        bool moved = false;
         while (bink_accum_ >= kBinkFrameDt) {
             bink_accum_ -= kBinkFrameDt;
             int next = bink_frame_ + 1;
             if (next >= art_.bink_frames) next = 0;   // seamless loop back to keyframe
-            art_.bink_dec->decode_frame(next);        // sequential; rewinds to 0 if next==0
             bink_frame_ = next;
             g_menu_bink_frame = next;
+            moved = true;
         }
+        if (moved) art_.bink_async->want(bink_frame_);
     }
-    // Upload the current decoded frame to the reused streaming texture when it
-    // changed; return it for draw_shell (or null if no movie / not yet decoded).
+    // Upload the newest decoded frame to the reused streaming texture when it
+    // changed; return it for draw_shell (or null if no movie / nothing yet).
+    std::vector<uint8_t> bink_px_;
     SDL_Texture* bink_texture(SDL_Renderer* ren) {
-        if (!art_.bink_dec || art_.bink_frames <= 0 || bink_frame_ < 0) return nullptr;
+        if (!art_.bink_async || art_.bink_frames <= 0 || bink_frame_ < 0) return nullptr;
         const int w = art_.bink_w, h = art_.bink_h;
         if (w <= 0 || h <= 0) return nullptr;
         if (!bink_tex_) {
@@ -8117,11 +8125,12 @@ private:
             SDL_SetTextureBlendMode(bink_tex_, SDL_BLENDMODE_NONE);
             bink_tex_frame_ = -1;
         }
-        if (bink_tex_frame_ != bink_frame_) {
-            const std::vector<uint8_t> rgba = art_.bink_dec->rgba();
-            if (static_cast<int>(rgba.size()) == w * h * 4)
-                SDL_UpdateTexture(bink_tex_, nullptr, rgba.data(), w * 4);
-            bink_tex_frame_ = bink_frame_;
+        const int got = art_.bink_async->take(bink_tex_frame_, bink_px_);
+        if (got < 0) return nullptr;
+        if (got != bink_tex_frame_) {
+            if (static_cast<int>(bink_px_.size()) == w * h * 4)
+                SDL_UpdateTexture(bink_tex_, nullptr, bink_px_.data(), w * 4);
+            bink_tex_frame_ = got;
         }
         return bink_tex_;
     }

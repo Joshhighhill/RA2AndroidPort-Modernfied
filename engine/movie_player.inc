@@ -132,6 +132,7 @@ inline std::vector<int16_t> movie_audio_22k_stereo(const ra2assets::BinkFile& bf
 class MoviePlayer {
 public:
     bool start(const std::string& name) {
+        async_.reset();   // joins the worker before its decoder goes
         mv_ = MovieFile{};
         frame_ = -1;
         acc_ = 0.0;
@@ -152,6 +153,11 @@ public:
             return false;
         }
         frame_ = 0;
+        // W5-E2 (R-173): the rest decodes on a worker; --play waits for each
+        // frame so captures stay deterministic.
+        async_ = std::make_unique<ra2engine::BinkAsync>(mv_.dec.get(), mv_.file->num_frames);
+        async_->set_blocking(g_pres_play_log);
+        async_->want(0);
         pres_log(0, "movie " + name + " playing from " + mv_.source);
         {   // W5-E2: the audio track
             std::vector<int16_t> lr = movie_audio_22k_stereo(*mv_.file);
@@ -177,17 +183,17 @@ public:
     void skip() { frame_ = mv_.file ? mv_.file->num_frames : -1; stop_audio(); }
     void update(double dt) {
         if (!active()) { stop_audio(); return; }
+        if (async_ && async_->failed()) { frame_ = mv_.file->num_frames; stop_audio(); return; }   // damaged frame
         acc_ += dt;
+        bool moved = false;
         while (acc_ >= dt_ && active()) {
             acc_ -= dt_;
             if (frame_ + 1 >= mv_.file->num_frames) { frame_ = mv_.file->num_frames; break; }
-            try {
-                mv_.dec->decode_frame(++frame_);
-            } catch (const std::exception&) {   // damaged frame: end the movie
-                frame_ = mv_.file->num_frames;
-                break;
-            }
+            ++frame_;
+            moved = true;
         }
+        if (moved && active() && async_) async_->want(frame_);
+        if (async_ && async_->failed()) frame_ = mv_.file->num_frames;
     }
     void render(SDL_Renderer* ren) {
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
@@ -196,10 +202,12 @@ public:
         const int w = mv_.file->width, h = mv_.file->height;
         if (!tex_) tex_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, w, h);
         if (!tex_) return;
-        if (tex_frame_ != frame_) {
-            const std::vector<uint8_t> px = mv_.dec->rgba();
-            if (static_cast<int>(px.size()) == w * h * 4) SDL_UpdateTexture(tex_, nullptr, px.data(), w * 4);
-            tex_frame_ = frame_;
+        if (async_) {
+            const int got = async_->take(tex_frame_, px_);
+            if (got >= 0 && got != tex_frame_) {
+                if (static_cast<int>(px_.size()) == w * h * 4) SDL_UpdateTexture(tex_, nullptr, px_.data(), w * 4);
+                tex_frame_ = got;
+            }
         }
         int ow = 0, oh = 0;
         SDL_GetRendererOutputSize(ren, &ow, &oh);
@@ -212,6 +220,7 @@ public:
     }
     ~MoviePlayer() {
         stop_audio();
+        async_.reset();
         if (tex_) SDL_DestroyTexture(tex_);
     }
     MoviePlayer() = default;
@@ -220,6 +229,8 @@ public:
 
 private:
     MovieFile mv_;
+    std::unique_ptr<ra2engine::BinkAsync> async_;   // after mv_: destroyed first
+    std::vector<uint8_t> px_;
     int frame_ = -1, tex_frame_ = -1;
     double acc_ = 0.0, dt_ = 1.0 / 15.0;
     SDL_Texture* tex_ = nullptr;
