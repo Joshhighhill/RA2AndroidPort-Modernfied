@@ -1900,6 +1900,10 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 d.combat = ru.combat;
                 d.combat.is_vehicle = true;
                 d.combat.speed_cps = speed_to_cps(ru.speed);
+                // W5-B: the SHP ship needs its ROT too -- with rot 0 its aim
+                // facing never slewed onto a target, so the vehicle aim gate
+                // (FireError::FACING) held the Giant Squid's / Dolphin's fire forever.
+                d.combat.rot = rules.rot(e.id);
             } else if (e.vehicle) {
                 VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, e.id);
                 if (!va.ok) continue;                 // assets missing -> drop

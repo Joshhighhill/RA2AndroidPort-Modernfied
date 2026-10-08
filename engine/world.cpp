@@ -4539,7 +4539,17 @@ void World::step(double dt) {
         // auto-acquires both land and naval targets by the ordinary Verses>0 rule
         // (no valid_target change -- a naval unit IS a valid target).
         if (u.is_naval) {
-            order_unit_move(r.unit, r.goal_x, r.goal_y);
+            // W5-B: an approach request names the TARGET's (occupied) cell;
+            // a ship heads for the nearest free cell of its own domain grid
+            // beside it (the exact water A* to the target's cell itself could
+            // fail and left the Giant Squid parked out of its 1.5-cell range).
+            int gx = r.goal_x, gy = r.goal_y;
+            if (r.approach) {
+                const std::vector<Cellxy> g =
+                    nearest_free_cells({r.goal_x, r.goal_y}, 1, grid_for(u.movement_domain), grid_w_, grid_h_, occ_);
+                if (!g.empty()) { gx = g[0].x; gy = g[0].y; }
+            }
+            order_unit_move(r.unit, gx, gy);
             continue;
         }
         if (r.approach)
