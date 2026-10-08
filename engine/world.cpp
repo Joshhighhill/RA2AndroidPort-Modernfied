@@ -2667,19 +2667,24 @@ void World::step_visibility() {
     // so targeting still uses each house's OWN sight (seen_by_mask), while
     // rendering/reveal reflects shared sight. Firewalled: OFF unless alliances are
     // configured AND AllyReveal is on. Snapshot-then-merge = order-independent.
+    // P5 [RE: FUN_00566fd0, the per-object sight reveal]: a source object of
+    // house S reveals for the viewer V only when S == V, or S's own Allies view
+    // holds V (FUN_004f9870 = S->IsAlliedWith(V)) with AllyReveal on. It is ONE
+    // hop from the object's own sight this frame: an ally's ACCUMULATED explored
+    // map (which already holds ITS allies' sight) is not passed on, so sight no
+    // longer chains Civilian -> Other1 -> Player (SOV10 discovered BadGuy3's
+    // harbour at f3 and started 'Bad Guy 3 Startup' through such a chain).
     if (houses_configured_ && ally_reveal_) {
         const int n = house_count();
-        const std::vector<std::vector<std::uint8_t>> exp_src = explored_;   // snapshot
-        const std::vector<std::vector<std::uint8_t>> vis_src = visible_;
+        const std::vector<std::vector<std::uint8_t>> vis_src = visible_;   // own sight, this frame
         for (int a = 0; a < n; ++a) {
             if (a >= (int)explored_.size() || explored_[a].empty()) continue;
             for (int b = 0; b < n; ++b) {
-                if (a == b || !are_allied(a, b)) continue;
-                if (b >= (int)exp_src.size() || exp_src[b].size() != explored_[a].size()) continue;
+                if (a == b || !are_allied(b, a)) continue;
+                if (b >= (int)vis_src.size() || vis_src[b].size() != explored_[a].size()) continue;
                 for (size_t i = 0; i < explored_[a].size(); ++i) {
-                    explored_[a][i] |= exp_src[b][i];
-                    if (!visible_[a].empty() && vis_src[b].size() == visible_[a].size())
-                        visible_[a][i] |= vis_src[b][i];
+                    explored_[a][i] |= vis_src[b][i];
+                    if (!visible_[a].empty()) visible_[a][i] |= vis_src[b][i];
                 }
             }
         }

@@ -67,6 +67,29 @@ if ((args.size() == 2 || args.size() == 3) && args[0] == "view_dressing") {
     return false;
 }
 
+// P2: `cheat map_ascii PATH` writes the cell grid as text for route planning
+// (debug only): '.' walkable, '#' blocked (water/cliff/wall), a building's house
+// number (0-9, then A-Z) on its foundation, '*' a live unit. Row y, column x.
+if (args.size() == 2 && args[0] == "map_ascii") {
+    const int gw = world_.grid_w(), gh = world_.grid_h();
+    std::vector<std::string> g(static_cast<std::size_t>(gh), std::string(static_cast<std::size_t>(gw), '#'));
+    for (int y = 0; y < gh; ++y)
+        for (int x = 0; x < gw; ++x)
+            g[(std::size_t)y][(std::size_t)x] = world_.walkable(x, y) ? '.' : '#';
+    const char* hc = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (const ra2engine::Building& b : world_.buildings()) {
+        if (!b.alive) continue;
+        for (int y = b.cy; y < b.cy + b.fh; ++y)
+            for (int x = b.cx; x < b.cx + b.fw; ++x)
+                if (x >= 0 && y >= 0 && x < gw && y < gh) g[(std::size_t)y][(std::size_t)x] = hc[std::min(b.house, 35)];
+    }
+    for (const ra2engine::Unit& u : world_.units())
+        if (u.alive && u.cell_x >= 0 && u.cell_y >= 0 && u.cell_x < gw && u.cell_y < gh)
+            g[(std::size_t)u.cell_y][(std::size_t)u.cell_x] = '*';
+    std::ofstream f(args[1]);
+    for (int y = 0; y < gh; ++y) f << g[(std::size_t)y] << "\n";
+    return true;
+}
 if ((args.size() == 2 || args.size() == 3) && args[0] == "view_key") {
     int want = args.size() == 3 ? std::atoi(args[2].c_str()) : 0;
     for (const std::vector<PresMap::Obj>* v : {&map_dressing_.objects(), &map_dressing_.overlays(), &map_dressing_.smudges()})

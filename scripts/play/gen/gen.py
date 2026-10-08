@@ -10,14 +10,21 @@ class P:
             self.l.append(x)
         return self
 
-    def build(self, bid, tab=0, wait=2400, cat="structure", count_key=None, near=None, lenient=False):
-        """Queue one structure, wait for it, place it, wait until it exists."""
+    def build(self, bid, tab=0, wait=2400, cat="structure", count_key=None, near=None, lenient=False,
+              robust=False):
+        """Queue one structure, wait for it, place it, wait until it exists.
+        robust: re-click the cameo until the queue holds it (P5: a cameo that
+        shifts on the frame a new prerequisite unlocks swallows one click)."""
         ck = count_key or f"buildings(0,{bid})"
         pl = f"place near {near[0]} {near[1]}" if near else "place auto"
         self.add(f"let n_{bid} = built(0,{bid})",
                  f"until 900 can_build({bid}) == 1",
-                 f"click tab:{tab}",
-                 f"click cameo:{bid}",
+                 f"click tab:{tab}")
+        if robust:
+            self.add("wait 2", f"cycle cameo:{bid} queue({cat}) == {bid}")
+        else:
+            self.add(f"click cameo:{bid}")
+        self.add(
                  f"until {wait} queue_ready({cat}) == 1",
                  f"click cameo:{bid}",
                  pl)
