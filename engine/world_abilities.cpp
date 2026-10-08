@@ -266,6 +266,18 @@ void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w) {
     u.w_cell_spread = w.cell_spread;
     u.w_percent_at_max = w.percent_at_max;
     u.abil.fire_kind = w.kind;
+    // Wave-5 (R-048) [RE: abilities.md §G -- SetCurrentWeapon selects the
+    // whole weapon]: the projectile's AA/AG and flight follow the swap.
+    if (w.slot_set) {
+        u.w_aa = u.p_aa = w.aa;
+        u.w_ag = u.p_ag = w.ag;
+        u.w_proj = w.proj;
+    }
+    // A healing weapon (RepairBullet Damage=-50) never auto-acquires enemies;
+    // World::w5_step_repair_ifv aims it at damaged friendly vehicles.
+    u.w5.healer = w.damage < 0;
+    u.abil.no_passive_acquire = u.w5.healer;
+    if (u.w5.healer) { u.target = -1; u.target_building = -1; u.attack_order = false; }
 }
 
 // One intercepted combat shot (combat.cpp try_fire / the building branch).

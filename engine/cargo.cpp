@@ -12,7 +12,8 @@ int cargo_total_size(const std::vector<Unit>& units, const Unit& transport) {
     return total;
 }
 
-bool can_load(const std::vector<Unit>& units, int transport_idx, int passenger_idx) {
+bool can_load(const std::vector<Unit>& units, int transport_idx, int passenger_idx,
+              const std::function<bool(int, int)>& allied) {
     // [RE-GATE APPLIED: transport-cargo.md §2 -- recovered boolean chain;
     // see the header comment for the numbered members.]
     const int n = static_cast<int>(units.size());
@@ -24,12 +25,11 @@ bool can_load(const std::vector<Unit>& units, int transport_idx, int passenger_i
     if (t.passengers_max <= 0) return false;                       // not a transport
     if (!t.alive || t.die_time >= 0.0) return false;               // transport live
     if (!p.alive || p.die_time >= 0.0) return false;               // passenger live
-    if (t.house != p.house) return false;      // same house only [RE-GATE APPLIED:
-                                               // transport-cargo.md §2 -- documented
-                                               // deviation: the original gate is
-                                               // IsAlliedWith (FUN_004F98B0); allies
-                                               // are unmodeled in CB-1 -- allied
-                                               // loading would attach HERE]
+    // Clause 4 [RE-GATE APPLIED: transport-cargo.md §2 -- the original gate is
+    // IsAlliedWith (FUN_004F98B0)]. Wave-5 (R-052): with the caller's alliance
+    // predicate an allied house's passenger is admitted; without it (pure
+    // tests) the gate stays same-house.
+    if (t.house != p.house && !(allied && allied(t.house, p.house))) return false;
     if (p.cargo_of >= 0) return false;                             // already carried
     if (!p.cargo.empty()) return false;        // no nested loaded transports
                                                // [spec Out-of-scope]

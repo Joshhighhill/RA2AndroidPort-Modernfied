@@ -1,0 +1,27 @@
+# Wave-5 item 5: OpenTopped=yes (Battle Fortress) passengers fire out of the
+# transport with their own weapons, OpenToppedRangeBonus=2 and
+# OpenToppedDamageMultiplier=1.2 [RE: abilities-w5.md §6].
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn BFRT 0 building 0:GACNST +6 +4
+cheat spawn E1 0 building 0:GACNST +3 +4
+wait 2
+click unit 0:E1
+click unit 0:BFRT
+until 300 in_cargo == 1 @W5-OT:C
+assert passenger_shots == 0 @W5-OT:C
+cheat spawn E2 1 building 0:GACNST +6 +9
+until 300 passenger_shots >= 1 @W5-OT:C
+until 600 units(1,E2) == 0 @W5-OT:C
+shot opentopped_fire
+end
