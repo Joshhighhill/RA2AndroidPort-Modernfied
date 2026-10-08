@@ -253,6 +253,9 @@ struct SaveAccess {
         save::io(ar, w.crush_rules_);   // W5-B R-050 (v20)
         save::io(ar, w.elev_rules_);    // W5-B R-063 (v20)
         save::io(ar, w.wall_leak_);   // W5-A diagonal wall gaps (save v21)
+        save::io(ar, w.crush_wall_);  // P4 crushable / crushed walls (save v23)
+        save::io(ar, w.crush_grid_);  // P4 derived scratch (the amphib_passable_ precedent)
+        save::io(ar, w.crush_leak_);
         save::io(ar, w.sw_quarry_);   // W5-A AI SW PreferredTarget (save v21)
     }
 

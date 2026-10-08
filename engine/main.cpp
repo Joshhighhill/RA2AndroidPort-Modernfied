@@ -6357,6 +6357,7 @@ public:
             for (const auto& [x, y] : map_dressing_.blocked()) {
                 if (map_dressing_.is_wall(x, y)) world_.block_wall_cell(x, y);   // W5-A diagonal gaps
                 else world_.block_cell(x, y);
+                if (map_dressing_.is_crushable_wall(x, y)) world_.mark_crushable_wall(x, y);   // P4
             }
             // W2-SK-01: ore mines spawn ore (TerrainClass::AI, see ore.hpp).
             map_dressing_.for_each_ore_mine([&](int x, int y, int half, int rate, double prob) {
@@ -6677,6 +6678,7 @@ private:
             for (const auto& [bx, by] : map_dressing_.blocked()) {
                 if (map_dressing_.is_wall(bx, by)) world_.block_wall_cell(bx, by);
                 else world_.block_cell(bx, by);
+                if (map_dressing_.is_crushable_wall(bx, by)) world_.mark_crushable_wall(bx, by);   // P4
             }
             apply_save(sc);
             // R-180: the backlog / hold state (absent in a file without it).

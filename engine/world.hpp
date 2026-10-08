@@ -540,7 +540,9 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
                 const std::vector<std::uint8_t>* amphib_passable = nullptr,
                 const MoveSpeedCtx* speed = nullptr,
-                const std::vector<std::uint8_t>* wall_leak = nullptr);
+                const std::vector<std::uint8_t>* wall_leak = nullptr,
+                const std::vector<std::uint8_t>* crush_passable = nullptr,
+                const std::vector<std::uint8_t>* crush_leak = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -816,6 +818,7 @@ public:
     // leave a gap units walk through). Derived from the map, never saved.
     void block_wall_cell(int x, int y) {
         if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || passable_.empty()) return;
+        if (wall_crushed(x, y)) return;   // P4: crushed by a tank (a reload re-blocks the dressing)
         block_cell(x, y);
         if (wall_leak_.size() != passable_.size()) wall_leak_.assign(passable_.size(), 0);
         wall_leak_[static_cast<std::size_t>(y) * grid_w_ + x] = 1;
@@ -823,6 +826,27 @@ public:
     const std::vector<std::uint8_t>* wall_leak() const {
         return wall_leak_.size() == passable_.size() && !wall_leak_.empty() ? &wall_leak_ : nullptr;
     }
+    // P4 crushable walls [RE-FALLBACK: RA1 UnitClass::Can_Enter_Cell (a
+    // Crusher entering a cell whose overlay is Crushable= gets MOVE_OK) and the
+    // per-cell crush of that overlay; the data is RA2's OverlayType
+    // Crushable=yes (GASAND sandbags, CAFNCP/CAFNCB/CAFNCW fences, ...)]: a
+    // Crusher land vehicle paths through a standing crushable wall cell and
+    // flattens it when it drives in. 0 none / 1 standing / 2 crushed (saved).
+    void mark_crushable_wall(int x, int y) {
+        if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || passable_.empty()) return;
+        if (crush_wall_.size() != passable_.size()) crush_wall_.assign(passable_.size(), 0);
+        std::uint8_t& c = crush_wall_[static_cast<std::size_t>(y) * grid_w_ + x];
+        if (c == 0) c = 1;
+    }
+    bool wall_crushed(int x, int y) const {
+        if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || crush_wall_.size() != passable_.size()) return false;
+        return crush_wall_[static_cast<std::size_t>(y) * grid_w_ + x] == 2;
+    }
+    bool crush_paths(const Unit& u) const {
+        return !crush_wall_.empty() && u.crusher && u.is_vehicle && u.movement_domain == MovementDomain::Land;
+    }
+    const std::vector<std::uint8_t>& crush_grid() const;           // passable_ + standing crushable walls
+    const std::vector<std::uint8_t>* crush_leak() const;           // wall_leak_ minus them
     // CB-3 Naval [RE: naval.md §1]: the passability grid for a movement domain.
     // Land (the DEFAULT -- every existing unit) returns the SAME passable_
     // object every existing A* site already reads (byte-identical); Water
@@ -2259,6 +2283,9 @@ private:
     std::vector<std::uint8_t> passable_;
     std::vector<int> sw_quarry_;            // W5-A set_sw_quarry (transient)
     std::vector<std::uint8_t> wall_leak_;   // W5-A: block_wall_cell cells (pathfind leak mask)
+    std::vector<std::uint8_t> crush_wall_;  // P4: crushable wall cells 0/1 standing/2 crushed (save v23)
+    mutable std::vector<std::uint8_t> crush_grid_, crush_leak_;   // P4: derived per call (never saved)
+    void step_wall_crush();                 // P4: crushers flatten the crushable wall they drive into
     // CB-3 Naval [RE: naval.md §1]: the WATER passability grid, empty by default
     // (built only by set_water_terrain -- the naval demo). Same grid_w_*grid_h_
     // shape as passable_. naval_any_ is a diagnostics/guard flag opened by the

@@ -690,6 +690,45 @@ bool World::walkable(int x, int y) const {
     return passable_[static_cast<size_t>(y) * grid_w_ + x] != 0;
 }
 
+const std::vector<std::uint8_t>& World::crush_grid() const {
+    crush_grid_ = passable_;
+    const std::size_t n = std::min(crush_grid_.size(), crush_wall_.size());
+    for (std::size_t i = 0; i < n; ++i)
+        if (crush_wall_[i] == 1) crush_grid_[i] = 1;
+    return crush_grid_;
+}
+
+const std::vector<std::uint8_t>* World::crush_leak() const {
+    const std::vector<std::uint8_t>* l = wall_leak();
+    if (!l) return nullptr;
+    crush_leak_ = *l;
+    const std::size_t n = std::min(crush_leak_.size(), crush_wall_.size());
+    for (std::size_t i = 0; i < n; ++i)
+        if (crush_wall_[i] == 1) crush_leak_[i] = 0;
+    return &crush_leak_;
+}
+
+// P4: a Crusher land vehicle about to drive into a standing crushable wall
+// cell (its next path cell, adjacent) flattens it: the cell opens for every
+// unit and leaves the leak mask; the renderer stops drawing the overlay.
+void World::step_wall_crush() {
+    if (crush_wall_.size() != passable_.size()) return;
+    for (const Unit& u : units_) {
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || !crush_paths(u)) continue;
+        std::size_t pi = u.path_idx;
+        while (pi < u.path.size() && u.path[pi].x == u.cell_x && u.path[pi].y == u.cell_y) ++pi;
+        if (pi >= u.path.size()) continue;
+        const Cellxy n = u.path[pi];
+        if (std::abs(n.x - u.cell_x) > 1 || std::abs(n.y - u.cell_y) > 1) continue;
+        if (n.x < 0 || n.y < 0 || n.x >= grid_w_ || n.y >= grid_h_) continue;
+        const std::size_t i = static_cast<std::size_t>(n.y) * grid_w_ + n.x;
+        if (crush_wall_[i] != 1) continue;
+        crush_wall_[i] = 2;
+        passable_[i] = 1;
+        if (i < wall_leak_.size()) wall_leak_[i] = 0;
+    }
+}
+
 const std::vector<std::uint8_t>& World::amphib_grid() const {
     amphib_passable_ = passable_;
     const std::size_t n = std::min(amphib_passable_.size(), water_passable_.size());
@@ -1063,10 +1102,12 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // W2-SK-05/16: a ground (Land-domain) unit ordered onto an impassable or
     // unreachable cell walks to the nearest reachable one (budgeted search);
     // ships keep the exact search (a land click is refused, naval.md).
+    const bool crush = crush_paths(u);   // P4: a crusher routes over crushable walls
     std::vector<Cellxy> path =
         u.movement_domain == MovementDomain::Land
-            ? find_path_nearest(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y},
-                                {gx, gy}, kNearestPathBudget, wall_leak())
+            ? find_path_nearest(crush ? crush_grid() : grid_for(u.movement_domain), grid_w_, grid_h_,
+                                {u.cell_x, u.cell_y}, {gx, gy}, kNearestPathBudget,
+                                crush ? crush_leak() : wall_leak())
             : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy},
                         u.movement_domain == MovementDomain::Water ? nullptr : wall_leak());
     if (path.size() <= 1) {
@@ -4397,8 +4438,11 @@ void World::step(double dt) {
             sc.scatter_out = &scatter;
             if (!land_speed_armed_) sc.armed = false;
         }
+        step_wall_crush();   // P4 (no-op without crushable walls)
+        const bool crush = !crush_wall_.empty();
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
-                   amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr, wall_leak());
+                   amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr, wall_leak(),
+                   crush ? &crush_grid() : nullptr, crush ? crush_leak() : nullptr);
         std::sort(scatter.begin(), scatter.end());
         scatter.erase(std::unique(scatter.begin(), scatter.end()), scatter.end());
         for (int s : scatter) order_scatter(s);
@@ -4881,7 +4925,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
                 const std::vector<std::uint8_t>* amphib_passable, const MoveSpeedCtx* speed,
-                const std::vector<std::uint8_t>* wall_leak) {
+                const std::vector<std::uint8_t>* wall_leak, const std::vector<std::uint8_t>* crush_passable,
+                const std::vector<std::uint8_t>* crush_leak) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
@@ -5099,17 +5144,20 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 // re-path, and the combat-approach naval branch) select on the
                 // SAME field; inert today (is_naval == Water-domain). CONFIRMED:
                 // one occ_ cell + shared FootClass repath (§1/§3).
+                const bool crush = crush_passable && u.crusher && u.is_vehicle &&
+                                   u.movement_domain == MovementDomain::Land;   // P4
                 const std::vector<std::uint8_t>& g =
                     u.movement_domain == MovementDomain::Water ? water_passable
                     : (u.movement_domain == MovementDomain::Amphibious && amphib_passable)
-                        ? *amphib_passable : passable;
+                        ? *amphib_passable : crush ? *crush_passable : passable;
                 std::vector<std::uint8_t> p2 =
                     passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
                 // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used
                 // to flood the whole grid every 0.3 s per blocked unit).
                 std::vector<Cellxy> np =
                     find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget,
-                                      u.movement_domain == MovementDomain::Water ? nullptr : wall_leak);
+                                      u.movement_domain == MovementDomain::Water ? nullptr
+                                      : crush ? crush_leak : wall_leak);
                 if (np.size() > 1) {
                     u.path = std::move(np);
                     u.path_idx = 1;
