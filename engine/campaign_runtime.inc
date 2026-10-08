@@ -1609,6 +1609,10 @@ private:
             if (t.team >= 0 && !member_recruitable(t.team, &tm)) continue;
             const ra2engine::Unit& u = w_.units()[i];
             if (!live(u) || u.house != tm.house || u.cargo_of >= 0) continue;   // W4-SQ-01: on the map only
+            // W5-A [RE: Can_Add FUN_006E9B80 returns `techno+0x2E4 == 0`, read as
+            // the carried-passenger count -- PROBABLE]: a loaded transport is
+            // never recruited (SOV02's MCV boat keeps its MCV).
+            if (!u.cargo.empty()) continue;
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (need[k] > 0 && t.type == types[k]) {
                     --need[k];
@@ -1629,7 +1633,15 @@ private:
         const Team& o = teams_[(std::size_t)team_ix];
         if (&o == self) return false;
         if (o.st.done) return true;
-        return o.type >= 0 && teams_data_.teams[(std::size_t)o.type].recruitable;
+        // W5-A [RE: TeamClass::Can_Add FUN_006E9B80 -- a member of a live team
+        // may be taken only by a team whose TeamType Priority (+0xB4) is
+        // strictly higher, and only if its own team's TeamType set
+        // AreTeamMembersRecruitable (+0xF5, copied to techno +0x422 on Add,
+        // FUN_006E9A70)]. SOV02: 'Transports Off' must not take the MCV boat
+        // of the higher-priority 'Land the MCV' team.
+        if (o.type < 0 || !teams_data_.teams[(std::size_t)o.type].recruitable) return false;
+        if (!self || self->type < 0) return true;
+        return teams_data_.teams[(std::size_t)o.type].priority < teams_data_.teams[(std::size_t)self->type].priority;
     }
     // W2-CA-09: a finished team lets its members go.
     void release_team(Team& tm, int team_idx) {
