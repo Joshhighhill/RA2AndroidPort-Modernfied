@@ -805,13 +805,10 @@ private:
             const ra2engine::World::Side side = w_.house_side((int)i);
             if (side == ra2engine::World::Side::Neutral) continue;
             const unsigned fl = sys_->house_flags(house_type((int)i));
-            // W5-A R-028 [RE: HouseClass::ReadINI FUN_00500960 -- IQ= (default
-            // 0; above [IQ] MaxIQLevels it becomes 1) -> house+0x24C; the RA1
-            // lineage runs AI production only at IQ >= [IQ] Production]: a
-            // computer house below the Production IQ builds no base and trains
-            // nothing; its map teams recruit the units it already has.
-            const bool producer = house_iq((int)i) >= iq_rule("Production", 5);
-            const bool want_base = producer && (fl & 1u) && i < base_nodes_.size() && !base_nodes_[i].empty();
+            // W5-A R-028: base building is NOT IQ-gated -- SOV03's Other3 (IQ=0)
+            // must build its NAPSYB node after ProductionBegins (the beacon the
+            // player is handed; without it 'Beacon Destroyed' loses the mission).
+            const bool want_base = (fl & 1u) && i < base_nodes_.size() && !base_nodes_[i].empty();
             const bool want_teams = (fl & 4u) && ai_roster_ && map_.has("AITriggerTypes");
             if (armed_.size() < house_names_.size()) armed_.resize(house_names_.size(), 0);
             // A loaded game's AI houses come back armed with the saved config.
@@ -827,10 +824,6 @@ private:
             const bool base = want_base || has_base;
             if (!base) cfg.catalog = ra2engine::AiCatalog{};   // trains, never plans a base
             if (want_teams || has_teams) arm_map_teams(cfg, (int)i, side, country, rules);
-            if (!producer) {   // W5-A: below the Production IQ -> no training
-                cfg.team.inf_factory_types.clear();
-                cfg.team.veh_factory_types.clear();
-            }
             cfg.fire_superweapons = house_iq((int)i) >= iq_rule("SuperWeapons", 4);
             armed_[i] = (std::uint8_t)((base ? 1 : 0) | ((want_teams || has_teams) ? 2 : 0) | 4);
             w_.enable_ai_house((int)i, std::move(cfg));
@@ -1914,7 +1907,6 @@ private:
         for (const Team& tm : teams_) {
             if (tm.st.done || !tm.recruiting || tm.house <= 0 || tm.house >= (int)want.size()) continue;
             if (w_.controllable(tm.house) || !w_.ai_enabled(tm.house)) continue;
-            if (house_iq(tm.house) < iq_rule("Production", 5)) continue;   // W5-A R-028: no production
             std::vector<std::string> types;
             std::vector<int> need = taskforce_counts(tm, types);
             for (int m : tm.members)
