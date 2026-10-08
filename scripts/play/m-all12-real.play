@@ -1,0 +1,34 @@
+# W5-A: ALL12 (Moscow) opening with real orders only (no cheats).
+# The 3 elite ParaSEALS drop at the corner of the BadGuy2 Tesla Reactor's fence
+# ring, the ring's only opening (two fence pieces touch only at a corner: the
+# W5-A wall diagonal gap). Ordered onto the reactor they walk in and plant C4;
+# its 15 Tesla Coils go dark, 'Generators Destroyed' starts the Chrono
+# reinforcements: the Chrono MCV (deployed here), 8 IFVs, then 8 Grizzlies.
+# Before W5-A the mission was lost at ~17 s / the reactor was unreachable.
+set render_every 3000
+set on_quit continue
+set campaign all12s.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 600 carried(0) == 0 and units(0,GHOST) >= 3
+assert outcome == RUNNING
+click unit 0:GHOST:0
+click unit 0:GHOST:1 shift
+click unit 0:GHOST:2 shift
+assert selected == 3
+click building 2:NAPOWR
+until 600 buildings(2,NAPOWR) == 0
+assert units(0,GHOST) == 3
+until 1200 units(0,AMCV) >= 1
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+until 600 units(0,FV) >= 8
+assert outcome == RUNNING
+until 4500 units(0,MTNK) >= 8
+assert units(0,GHOST) >= 2
+assert buildings(0,GACNST) >= 1
+assert outcome == RUNNING
+shot chrono
+end

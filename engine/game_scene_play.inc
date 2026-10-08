@@ -75,7 +75,7 @@
             int k = 0;
             for (const ra2engine::Building& b : world_.buildings()) {
                 if (!b.alive || b.state == ra2engine::Building::State::Dead || b.house != h) continue;
-                if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) || ba_.roster[b.type].id != id) continue;
+                if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) || (id != "*" && ba_.roster[b.type].id != id)) continue;   // W5-A: * = any type
                 if (k++ != n) continue;
                 cell_to_window(b.cx + b.fw / 2, b.cy + b.fh / 2, x, y);
                 return true;

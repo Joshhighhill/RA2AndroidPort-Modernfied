@@ -5307,6 +5307,14 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     // ScenarioClass::Random is seeded per game in the original; the clone uses
     // the wall clock (the interactive game is not a gate).
     cc.seed = static_cast<std::uint32_t>(SDL_GetTicks()) ^ 0x52413252u;
+    // W5-A: a campaign seeds its crate RNG from the mission name, so a mission
+    // replays identically (the --play proofs) [RE-FALLBACK: the original's
+    // per-game ScenarioClass::Random seed is not modelled for campaigns].
+    if (campaign) {
+        std::uint32_t h = 2166136261u;
+        for (char ch : cfg.campaign_map) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
+        cc.seed = h;
+    }
     int humans = 0;
     for (const ra2engine::SkirmishSlot& sl : cfg.slots)
         if (sl.combatant && !sl.is_ai) ++humans;
@@ -6124,6 +6132,12 @@ public:
             player_credits_ = 0.0;
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
+        // W5-A: map action 40 ResizeView (or a load) changed the usable area.
+        if (campaign_ && campaign_->local_version() != local_seen_) {
+            local_seen_ = campaign_->local_version();
+            local_ = campaign_->local_size();
+            apply_local_limits();
+        }
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
@@ -6317,7 +6331,10 @@ public:
                 });
                 world_.refresh_building_types(ba_.roster);   // G16: newly registered types
             }
-            for (const auto& [x, y] : map_dressing_.blocked()) world_.block_cell(x, y);
+            for (const auto& [x, y] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(x, y)) world_.block_wall_cell(x, y);   // W5-A diagonal gaps
+                else world_.block_cell(x, y);
+            }
             // W2-SK-01: ore mines spawn ore (TerrainClass::AI, see ore.hpp).
             map_dressing_.for_each_ore_mine([&](int x, int y, int half, int rate, double prob) {
                 world_.add_ore_mine(x, y, half, rate, prob);
@@ -6634,7 +6651,10 @@ private:
         if (ok) {
             // G-87: the saved World carries the neutral structures; re-block the
             // dressing's cells (passability is rebuilt from the map on load).
-            for (const auto& [bx, by] : map_dressing_.blocked()) world_.block_cell(bx, by);
+            for (const auto& [bx, by] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(bx, by)) world_.block_wall_cell(bx, by);
+                else world_.block_cell(bx, by);
+            }
             apply_save(sc);
             // R-180: the backlog / hold state (absent in a file without it).
             backlog_.clear();
@@ -7189,18 +7209,8 @@ private:
     // original first sets the waypoint there).
     void campaign_view_setup() {
         local_ = campaign_->local_size();
-        if (local_.valid) {
-            // [RE: TacticalClass clamp FUN_006d7bb0 (CONFIRMED), in the
-            // original's pixel space (cell centre x = 30*(cx-cy), y =
-            // 15*(cx+cy)+15; this engine's world x is +30)]: view edges
-            // left 30*(2Lx-W), right 30*(2(Lx+Lw)-W), top 15*(W-5+2Ly),
-            // bottom = top + 30*Lh + 135.
-            const int W = local_.size_w;
-            const int top = 15 * (W - 5 + 2 * local_.y);
-            input_.set_view_limits(30 * (2 * local_.x - W) + 30, top,
-                                   30 * (2 * (local_.x + local_.w) - W) + 30,
-                                   top + 30 * local_.h + 135);
-        }
+        local_seen_ = campaign_->local_version();
+        apply_local_limits();
         int hx = 0, hy = 0;
         const int home = campaign_->basic().home_cell;
         if (campaign_->waypoint_xy(home, hx, hy)) {
@@ -7213,6 +7223,22 @@ private:
             input_.center_on_cell((s + d) / 2.0, (s - d) / 2.0);
         }
     }
+    void apply_local_limits() {
+        if (local_.valid) {
+            // [RE: TacticalClass clamp FUN_006d7bb0 (CONFIRMED), in the
+            // original's pixel space (cell centre x = 30*(cx-cy), y =
+            // 15*(cx+cy)+15; this engine's world x is +30)]: view edges
+            // left 30*(2Lx-W), right 30*(2(Lx+Lw)-W), top 15*(W-5+2Ly),
+            // bottom = top + 30*Lh + 135.
+            const int W = local_.size_w;
+            const int top = 15 * (W - 5 + 2 * local_.y);
+            input_.set_view_limits(30 * (2 * local_.x - W) + 30, top,
+                                   30 * (2 * (local_.x + local_.w) - W) + 30,
+                                   top + 30 * local_.h + 135);
+            input_.pan(0, 0);   // clamp to the new limits
+        }
+    }
+    int local_seen_ = 0;   // W5-A: CampaignRuntime::local_version() last applied
     // W4-MC-04: an object is on the board (inside the usable area).
     bool on_board(int cx, int cy) const {
         if (!local_.valid) return true;

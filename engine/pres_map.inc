@@ -247,6 +247,7 @@ public:
         smudges_.push_back(o);
     }
     const std::vector<std::pair<int, int>>& blocked() const { return block_; }
+    bool is_wall(int x, int y) const { return wall_ids_.count(y * 1000 + x) != 0; }   // W5-A
     // W2-SK-01: the map's ore mines ([Terrain] types with SpawnsTiberium=yes)
     // with their animation data, for World::add_ore_mine.
     template <class F> void for_each_ore_mine(F f) const {

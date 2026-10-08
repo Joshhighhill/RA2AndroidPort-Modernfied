@@ -539,7 +539,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
                 const std::vector<std::uint8_t>* amphib_passable = nullptr,
-                const MoveSpeedCtx* speed = nullptr);
+                const MoveSpeedCtx* speed = nullptr,
+                const std::vector<std::uint8_t>* wall_leak = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -670,6 +671,11 @@ struct AiHouseConfig {
     // house]: each extra same-class factory multiplies build time by this.
     // 1.0 = off (the synthetic gate configs); real play passes rules 0.8.
     double multiple_factory = 1.0;
+    // W5-A R-028 [RE: HouseClass AI FUN_004FD320 -- the superweapon pass
+    // FUN_00509710 runs only when Rules [IQ] SuperWeapons <= house IQ
+    // (+0x24C, the map's [<House>] IQ=); skirmish AI houses get MaxIQLevels]:
+    // false = this house never fires its superweapons by itself.
+    bool fire_superweapons = true;
 };
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
@@ -804,6 +810,18 @@ public:
     void block_cell(int x, int y) {
         if (x >= 0 && y >= 0 && x < grid_w_ && y < grid_h_ && !passable_.empty())
             passable_[static_cast<std::size_t>(y) * grid_w_ + x] = 0;
+    }
+    // W5-A: a wall overlay cell -- blocked like block_cell, and flagged in the
+    // diagonal leak mask (pathfind.hpp: two walls touching only at a corner
+    // leave a gap units walk through). Derived from the map, never saved.
+    void block_wall_cell(int x, int y) {
+        if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || passable_.empty()) return;
+        block_cell(x, y);
+        if (wall_leak_.size() != passable_.size()) wall_leak_.assign(passable_.size(), 0);
+        wall_leak_[static_cast<std::size_t>(y) * grid_w_ + x] = 1;
+    }
+    const std::vector<std::uint8_t>* wall_leak() const {
+        return wall_leak_.size() == passable_.size() && !wall_leak_.empty() ? &wall_leak_ : nullptr;
     }
     // CB-3 Naval [RE: naval.md §1]: the passability grid for a movement domain.
     // Land (the DEFAULT -- every existing unit) returns the SAME passable_
@@ -1164,6 +1182,14 @@ public:
     double sw_charge_fraction(int house, SuperweaponType type) const;
     // The SW types `house` holds, in grant order (the sidebar slot order).
     std::vector<SuperweaponType> sw_types(int house) const;
+    // W5-A: the house's AI superweapon quarry (map action 35 PreferredTarget,
+    // YRpp QuarryType; 1 Anything = the default scoring). Derived state the
+    // campaign runtime re-pushes every frame (it saves it), never saved here.
+    void set_sw_quarry(int house, int quarry) {
+        if (house < 0) return;
+        if ((int)sw_quarry_.size() <= house) sw_quarry_.resize((std::size_t)house + 1, 1);
+        sw_quarry_[(std::size_t)house] = quarry;
+    }
     // Fire `house`'s `type` at (cx, cy) [Chronosphere: (cx,cy) = source,
     // (cx2,cy2) = destination]. Refused (false) unless that SW is READY.
     // Nuke: a timed two-leg flight (SwStrike) then the blast; Iron Curtain:
@@ -2231,6 +2257,8 @@ private:
     std::vector<Unit> units_;
     std::vector<Building> buildings_;
     std::vector<std::uint8_t> passable_;
+    std::vector<int> sw_quarry_;            // W5-A set_sw_quarry (transient)
+    std::vector<std::uint8_t> wall_leak_;   // W5-A: block_wall_cell cells (pathfind leak mask)
     // CB-3 Naval [RE: naval.md §1]: the WATER passability grid, empty by default
     // (built only by set_water_terrain -- the naval demo). Same grid_w_*grid_h_
     // shape as passable_. naval_any_ is a diagnostics/guard flag opened by the

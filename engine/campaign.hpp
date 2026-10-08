@@ -177,6 +177,7 @@ struct MapTeamType {
     bool full = false;
     bool recruitable = false;   // AreTeamMembersRecruitable= (W2-CA-09)
     int veteran_level = 0;
+    int priority = 0;           // W5-A: Priority= (+0xB4), the recruit rule
     // W4-SQ-01/06 [RE: TeamType writer FUN_006f0ab0 -- +0xB0 Droppod, +0xB1
     // UseTransportOrigin, +0xF4 TransportsReturnOnUnload; TransportWaypoint=].
     bool droppod = false;
@@ -208,6 +209,10 @@ struct MapTeamView {
     bool unloaded = true;          // every member transport's cargo is empty
     bool loaded = true;            // Load (14): no member is left on the map to board
     bool full = true;              // WaitLoaded (43): every member transport is full
+    // W5-A 55 IronCurtainMe [RE: FUN_006EF1D0]: 0 the house holds no ready-able
+    // Iron Curtain (line completes), 1 one is ready (fire at the team, line
+    // completes), 2 it is charging past AIMinorSuperReadyPercent (wait).
+    int iron_state = 0;
 };
 // The single command for this tick.
 struct MapTeamCommand {
@@ -217,7 +222,15 @@ struct MapTeamCommand {
         AttackBuilding, Skip, Done,
         Deploy, Unload,  // W2-CA-17
         UnloadDone,      // W4-SQ-01: the transports are empty -> team membership per arg mode
-        Load             // W4-SQ-01: script 14, members board the team's transport
+        Load,            // W4-SQ-01: script 14, members board the team's transport
+        // W5-A R-027 [RE: the 0x6E94E4 handlers]:
+        ForceFacing,     // 42 FUN_006ED200: every member turns to (arg & 7) << 13
+        IronCurtain,     // 55 FUN_006EF1D0: the house's Iron Curtain on the team
+        Panic,           // 19: every member vtbl +0x518 (InfantryClass::Panic)
+        Unpanic,         // 41: every member vtbl +0x51C
+        Follow,          // 10 FUN_006ED0B0: never completes
+        Flash,           // 50: every member's flash counter (+0xF0) = arg
+        ChangeTeam       // 18: the members move into a new team of TeamType[arg]
     };
     Kind kind = Kind::None;
     int arg = 0;
@@ -271,6 +284,13 @@ struct CampaignHostSave {
     std::uint64_t logged = 0;
     int teams_created = 0;
     int raises = 0;
+    // W5-A (save v22): 61/62 building power switch, 35 house quarries, 9 FireSale
+    // houses, 23 TeamTypes that left the map, 40 ResizeView area (valid,x,y,w,h).
+    std::vector<std::uint8_t> b_off;
+    std::vector<int> house_quarry;
+    std::vector<std::uint8_t> house_fire_sale;
+    std::vector<std::string> left_teams;
+    std::vector<int> local_override;
 };
 
 }  // namespace ra2engine

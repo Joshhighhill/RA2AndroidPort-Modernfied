@@ -149,6 +149,7 @@ struct TriggerEffect {
     std::string text;            // TechnoID / label
     std::string trigger_id;      // the firing trigger
     int trigger_type = -1;       // P10: the firing trigger's MapTriggerData index
+    int p[4] = {0, 0, 0, 0};     // W5-A: the action's P2..P5 (+0x34..+0x40), e.g. 40 ResizeView's rect
 };
 
 // W3-FX [RE: FUN_006dce20 cases 41 PlayAnimAt (FUN_006e1800), 48 MoveCamera
@@ -204,6 +205,12 @@ public:
     // unknown to the game (events 60/61 then evaluate false, RE §4). An EMPTY
     // id asks for the total live techno count (event 60's empty-world rule).
     virtual int techno_count(const std::string& id) const = 0;
+    // W5-A events: 23 TeamLeavesMap (a team of this TeamType id left the map
+    // with no members), 34 ComesNearWaypoint (the waypoint's cell), 54
+    // SpyAsInfantry (the RA2 [InfantryTypes] id at this index).
+    virtual bool team_left_map(const std::string& team_id) const { (void)team_id; return false; }
+    virtual bool waypoint_cell(int wp, int& x, int& y) const { (void)wp; (void)x; (void)y; return false; }
+    virtual std::string infantry_type_id(int idx) const { (void)idx; return std::string(); }
     // Execute a host-level action. Returns the action's success (logged).
     virtual bool apply(const TriggerEffect& e) = 0;
     // Optional detail about the last apply(), appended to its log line.
@@ -217,6 +224,12 @@ struct RaiseContext {
     bool has_object = false;
     int object_house_type = -1;   // owner of the raising object
     int source_house_type = -1;   // attacker (event 44); -1 = no source
+    // W5-A: the raising object's cell (34 ComesNearWaypoint) and disguise
+    // (53 SpyAsHouse: the house type it poses as; 54 SpyAsInfantry: the
+    // infantry type id it poses as).
+    int obj_x = -1, obj_y = -1;
+    int disguise_house_type = -1;
+    std::string disguise_infantry;
 };
 
 // ---------------------------------------------------------------------------
@@ -238,6 +251,9 @@ public:
     // Object/cell raises [RE §3.2/§3.4]. raise_cell uses [CellTags].
     bool raise_tag(int tag_type, int kind, const RaiseContext& ctx, TriggerHost& host);
     bool raise_cell(int x, int y, int kind, const RaiseContext& ctx, TriggerHost& host);
+    // W5-A: raise `kind` on every tag of the Logic list (23 TeamLeavesMap, a
+    // Logic-flag kind with no object of its own).
+    bool raise_logic(int kind, const RaiseContext& ctx, TriggerHost& host);
 
     // --- P10 campaign mode [RE: campaign.md §4, map-triggers.md §3.4/§5] ------
     // OFF by default: with it off every action/raise behaves (and logs) exactly
@@ -261,6 +277,11 @@ public:
     ObjectRaise raise_object(int tag_type, int kind, const RaiseContext& ctx, TriggerHost& host);
     // True if trigger `trigger_type` is in tag type `tag_type`'s chain.
     bool tag_has_trigger(int tag_type, int trigger_type) const;
+    // W5-A: true if a trigger in tag type `tag_type`'s chain has an event of
+    // `kind` (the clone's own raise sites for 31/34/53/54 only raise on such
+    // tags, so they never re-evaluate unrelated timer / variable events).
+    bool tag_waits_on(int tag_type, int kind) const;
+    bool cell_waits_on(int x, int y, int kind) const;
     // The data this system runs (for hosts that need the tables).
     const MapTriggerData& data() const { return d_; }
 

@@ -325,6 +325,13 @@ public:
         for (const auto& tf : teams_data_.taskforces)
             for (const ra2engine::MapTaskMember& m : tf.second) types_.unit(m.type);
         resolve_base_nodes();   // [G-69] before the roster is handed to the World
+        // W5-A: ARM THE ECONOMY. The campaign World (build_campaign_world) never
+        // went through launch_skirmish's real_play_arm_economy, so types_ stayed
+        // empty: no ore growth, no harvester FSM, no refinery income for the
+        // player or any computer house in any mission (ALL03's Chrono Miner sat
+        // in SeekOre forever). The water grid is already built by
+        // depth_set_terrain, so only the economy wiring is needed here.
+        wire_economy(w_, ba_, rules);
         w_.refresh_building_types(ba_.roster);   // G16: btypes() must see mission types
         w_.set_repair_sell_rules(ba_.repair_sell);
         place_objects(objs);
@@ -352,13 +359,23 @@ public:
     // hunters, mission-end bookkeeping. The caller steps the World afterwards.
     void frame() {
         if (finished()) return;
+        // W5-A: a capture / infiltration raises EnteredBy synchronously in the
+        // original (the infantry's Enter code calls TagClass::RaiseEvent before
+        // any later house AI pass), so the World's entered events of the last
+        // step are raised BEFORE this frame's trigger loops. Raised after them,
+        // an engineer capturing ALL02's chapel on a house-loop frame let
+        // 'Chapel Destroyed' (BuildingDoesNotExist for the old owner) fire first.
+        sync_tracks();
+        poll_entered();
         sys_->tick(host_);
         drain_log();
         arm_production_houses();   // [G-69]
         poll_objects();
+        poll_bridges();       // W5-A event 31
         step_teams();
         push_script_demand();
         step_hunters();
+        step_house_states();  // W5-A 9 FireSale state + 35 PreferredTarget
         if (sys_->outcome() != 0) flag_end(sys_->outcome());
         ++frame_;
     }
@@ -380,7 +397,10 @@ public:
     const camp::Launch& launch() const { return launch_; }
     const ra2engine::ScenarioBasic& basic() const { return basic_; }
     // W4-MC-04: the map's [Map] Size / LocalSize (the usable area).
-    ra2engine::MapLocalSize local_size() const { return ra2engine::parse_map_local_size(map_); }
+    ra2engine::MapLocalSize local_size() const {
+        return local_overridden_ ? local_override_ : ra2engine::parse_map_local_size(map_);
+    }
+    int local_version() const { return local_version_; }   // W5-A: bumped by 40 ResizeView
     const std::vector<Objective>& objectives() const { return objectives_; }
     const std::vector<std::string>& witness() const { return witness_; }
     std::vector<const VehicleAssets*> vehicle_assets() const { return types_.vehicle_assets(); }
@@ -428,6 +448,12 @@ public:
         h.logged = logged_;
         h.teams_created = teams_created_;
         h.raises = raises_;
+        for (const Track& t : btrack_) h.b_off.push_back(t.off ? 1 : 0);
+        h.house_quarry = quarry_;
+        h.house_fire_sale = fire_sale_;
+        h.left_teams = left_teams_;
+        if (local_overridden_)
+            h.local_override = {1, local_override_.x, local_override_.y, local_override_.w, local_override_.h};
         return h;
     }
     bool restore(const ra2engine::CampaignHostSave& h) {
@@ -480,6 +506,18 @@ public:
         logged_ = (std::size_t)h.logged;
         teams_created_ = h.teams_created;
         raises_ = h.raises;
+        for (std::size_t i = 0; i < btrack_.size() && i < h.b_off.size(); ++i) btrack_[i].off = h.b_off[i] != 0;
+        quarry_ = h.house_quarry;
+        fire_sale_ = h.house_fire_sale;
+        left_teams_ = h.left_teams;
+        local_overridden_ = h.local_override.size() == 5 && h.local_override[0] == 1;
+        if (local_overridden_) {
+            local_override_ = ra2engine::parse_map_local_size(map_);
+            local_override_.x = h.local_override[1]; local_override_.y = h.local_override[2];
+            local_override_.w = h.local_override[3]; local_override_.h = h.local_override[4];
+        }
+        ++local_version_;
+        bridge_seen_.clear();   // rebuilt from the loaded World
         return true;
     }
 
@@ -584,6 +622,7 @@ private:
         int mc_victim = -1;         // W2-CA-15: unit this controller holds
         int mc_orig = -1;           // W2-CA-15: house before it was mind-controlled
         std::uint8_t mission = 0;   // W4-SQ-05: 1 Sleep, 2 Harmless (placed Mission=)
+        bool off = false;           // W5-A 61/62 TurnOff/TurnOn (buildings)
     };
     struct Team {
         int type = -1;              // teams_data_.teams index
@@ -677,7 +716,17 @@ private:
             }
             // [X House] Credits= is in hundreds (RA1 HouseClass::Read_INI
             // lineage, PROBABLE).
-            const double credits = 100.0 * map_.get_int(hn, "Credits", 0);
+            double credits = 100.0 * map_.get_int(hn, "Credits", 0);
+            {   // W5-A [RE: FUN_00500960 -- a PlayerControl house on Easy / Hard
+                // gets [General] CampaignMoneyDeltaEasy / Hard added (0 in the
+                // YR rulesmd), floored at 0]
+                const std::string pc = camp::up(camp::trim_comment(map_.get(hn, "PlayerControl", "no")));
+                if (!pc.empty() && (pc[0] == 'Y' || pc[0] == 'T' || pc[0] == '1') && launch_.difficulty != 1) {
+                    const char* key = launch_.difficulty == 0 ? "CampaignMoneyDeltaEasy" : "CampaignMoneyDeltaHard";
+                    credits += std::atof(camp::trim_comment(rules_ini_.get("General", key, "0")).c_str());
+                    if (credits < 0.0) credits = 0.0;
+                }
+            }
             if (i == 0) player_credits_ = credits;
             else w_.grant_credits_for_test((int)i, credits);
         }
@@ -759,6 +808,9 @@ private:
             const ra2engine::World::Side side = w_.house_side((int)i);
             if (side == ra2engine::World::Side::Neutral) continue;
             const unsigned fl = sys_->house_flags(house_type((int)i));
+            // W5-A R-028: base building is NOT IQ-gated -- SOV03's Other3 (IQ=0)
+            // must build its NAPSYB node after ProductionBegins (the beacon the
+            // player is handed; without it 'Beacon Destroyed' loses the mission).
             const bool want_base = (fl & 1u) && i < base_nodes_.size() && !base_nodes_[i].empty();
             const bool want_teams = (fl & 4u) && ai_roster_ && map_.has("AITriggerTypes");
             if (armed_.size() < house_names_.size()) armed_.resize(house_names_.size(), 0);
@@ -775,6 +827,7 @@ private:
             const bool base = want_base || has_base;
             if (!base) cfg.catalog = ra2engine::AiCatalog{};   // trains, never plans a base
             if (want_teams || has_teams) arm_map_teams(cfg, (int)i, side, country, rules);
+            cfg.fire_superweapons = house_iq((int)i) >= iq_rule("SuperWeapons", 4);
             armed_[i] = (std::uint8_t)((base ? 1 : 0) | ((want_teams || has_teams) ? 2 : 0) | 4);
             w_.enable_ai_house((int)i, std::move(cfg));
             if (base) w_.set_ai_base_nodes((int)i, base_nodes_[i]);
@@ -796,7 +849,15 @@ private:
         int ax = w_.grid_w() / 2, ay = w_.grid_h() / 2;
         for (const ra2engine::Unit& u : w_.units())
             if (live(u) && u.house == 0) { ax = u.cell_x; ay = u.cell_y; break; }
-        cfg.team = make_ai_team_config(ba_, mine, rules, map_, cfg.difficulty, ax, ay,
+        // W5-A R-028 [RE: AITriggerTypeClass filter FUN_0041E740 -- a global
+        // (aimd.ini) trigger (+0x9C == 1) is rejected only when Scenario+0x34B4
+        // ([Basic] IgnoreGlobalAITriggers) is set; the map's own lists load on
+        // top (find-or-create by ID, map-definition wins)]: 19 stock missions
+        // set it (map triggers only), ALL05/09/12 and SOV04/12 keep aimd.ini.
+        const std::string ig = camp::up(camp::trim_comment(map_.get("Basic", "IgnoreGlobalAITriggers", "no")));
+        const bool ignore_global = !ig.empty() && (ig[0] == 'Y' || ig[0] == 'T' || ig[0] == '1');
+        const Ini merged = ignore_global ? Ini::parse("") : merged_ai_ini();
+        cfg.team = make_ai_team_config(ba_, mine, rules, ignore_global ? map_ : merged, cfg.difficulty, ax, ay,
                                        /*enable_triggers=*/true, &w_.map());
         for (ra2engine::AITriggerType& t : cfg.team.aimd.triggers) t.is_for_skirmish = true;
         auto id_of = [&](int t) -> const char* {
@@ -809,6 +870,51 @@ private:
         cfg.team.trigger_tech_level = map_.get_int(house_names_[(std::size_t)h], "TechLevel", 10);
         cfg.team.house_name = country;
         fill_ai_building_maps(cfg.team, ba_, rules, rules_ini_);
+    }
+    // W5-A R-028: aimd.ini (global) + the map's AI lists, the map's entries
+    // overriding same-ID ones and its index entries appended after aimd.ini's.
+    Ini merged_ai_ini() const {
+        Ini aimd = Ini::parse("");
+        try { aimd = load_ini_from_ra2md(dir_, "aimd.ini"); } catch (const std::exception&) {}
+        static const char* kIndex[] = {"TaskForces", "ScriptTypes", "TeamTypes"};
+        std::string out;
+        std::vector<std::string> ids;   // every entity section id written
+        for (const char* ix : kIndex) {
+            out += std::string("[") + ix + "]\n";
+            std::vector<std::string> list;
+            for (const Ini* src : std::initializer_list<const Ini*>{&aimd, &map_})
+                for (const auto& kv : src->section(ix)) {
+                    const std::string id = camp::trim_comment(kv.second);
+                    if (id.empty() || std::find(list.begin(), list.end(), camp::up(id)) != list.end()) continue;
+                    list.push_back(camp::up(id));
+                    out += std::to_string(list.size() - 1) + "=" + id + "\n";
+                }
+            for (const std::string& id : list) {
+                const Ini& src = map_.has(id) ? map_ : aimd;
+                out += "[" + id + "]\n";
+                for (const auto& kv : src.section(id)) out += kv.first + "=" + kv.second + "\n";
+            }
+        }
+        for (const char* flat : {"AITriggerTypes", "AITriggerTypesEnable"}) {
+            out += std::string("[") + flat + "]\n";
+            std::vector<std::string> keys;
+            for (const auto& kv : map_.section(flat)) keys.push_back(camp::up(kv.first));
+            for (const auto& kv : aimd.section(flat))
+                if (std::find(keys.begin(), keys.end(), camp::up(kv.first)) == keys.end())
+                    out += kv.first + "=" + kv.second + "\n";
+            for (const auto& kv : map_.section(flat)) out += kv.first + "=" + kv.second + "\n";
+        }
+        return Ini::parse(out);
+    }
+    // W5-A R-028: the map house's IQ (FUN_00500960) and a Rules [IQ] threshold.
+    int house_iq(int eh) const {
+        if (eh < 0 || eh >= (int)house_names_.size()) return 0;
+        int iq = map_.get_int(house_names_[(std::size_t)eh], "IQ", 0);
+        if (iq > iq_rule("MaxIQLevels", 5)) iq = 1;
+        return iq;
+    }
+    int iq_rule(const char* key, int def) const {
+        return std::atoi(camp::trim_comment(rules_ini_.get("IQ", key, std::to_string(def))).c_str());
     }
 public:
     // W2-CA-07: the GameScene's AI roster (unit defs the map teams can field).
@@ -1060,6 +1166,10 @@ private:
         }
         return idx;
     }
+    // W5-A R-033: a map object's Facing byte as the unit's facing. Vehicles
+    // (and aircraft) keep the original's 16-bit space (facing << 8 = body and
+    // turret); infantry get the 8-block index of that direction.
+    void apply_map_facing(int idx, int facing) { set_facing_u16(idx, (double)((facing & 0xFF) << 8)); }
     static bool ua_anims_has(const std::string&) { return true; }
     void set_dormant(int idx, bool on) {
         ra2engine::Unit& u = w_.units()[(std::size_t)idx];
@@ -1129,14 +1239,19 @@ private:
                 t.tag = o.tag.empty() ? -1 : data_.find_tag(o.tag);
                 t.hp = b.hp;
                 ++placed_b_;
-            } else if (o.kind == 3) {   // W2-CA-16: [Aircraft] objects
-                if (place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission) >= 0) ++placed_u_;
-                else ++skipped_;
             } else {
-                if (!w_.walkable(o.x, o.y) && !types_.unit(o.type)) { ++skipped_; continue; }
-                if (place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission, false, -1, -1,
-                               o.kind == 2 ? o.subcell : -1) >= 0) ++placed_u_;   // W5-B SubCell
-                else ++skipped_;
+                if (o.kind != 3 && !w_.walkable(o.x, o.y) && !types_.unit(o.type)) { ++skipped_; continue; }
+                // W5-A R-033 [RE: campaign.md §4 field order; the object reader
+                // feeds Veterancy (0..200, 100 = veteran, 200 = elite: the
+                // VeterancyStruct value x100) and Facing (0..255 = DirStruct >> 8)
+                // to the new techno]: per-object rank and facing.
+                place_vet_ = o.veterancy >= 200 ? 2 : o.veterancy >= 100 ? 1 : 0;
+                const int idx = place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission, false, -1, -1,
+                                           o.kind == 2 ? o.subcell : -1);   // W5-B SubCell
+                place_vet_ = 0;
+                if (idx < 0) { ++skipped_; continue; }
+                ++placed_u_;
+                apply_map_facing(idx, o.facing);
             }
         }
     }
@@ -1154,6 +1269,72 @@ private:
             sys_->raise_object(t.tag, kind, ctx_for(house), host_);
         ++raises_;
         if (r.detached || r.tag_gone) t.tag = -1;
+    }
+    void raise_obj_ctx(Track& t, int kind, const ra2engine::RaiseContext& c) {
+        if (t.tag < 0) return;
+        const ra2engine::MapTriggerSystem::ObjectRaise r = sys_->raise_object(t.tag, kind, c, host_);
+        ++raises_;
+        if (r.detached || r.tag_gone) t.tag = -1;
+    }
+    // W5-A event 31 AllBridgesDestroyed [RE: map-triggers.md §3.1 -- a Cell
+    // kind; the stock maps tag a bridge cell, e.g. ALL03 (98,115)]: when a
+    // bridge breaks, every [CellTags] cell that is a now-broken bridge cell
+    // raises 31 [RE-FALLBACK: the raise site inside the bridge-destruction
+    // code (FUN_005766D0 / FUN_00570FC0) was not traced; the edge is taken
+    // per tagged cell].
+    bool bridge_cell_broken(int x, int y) const {
+        if (w_.high_bridge_cell(x, y)) return w_.high_bridge_destroyed(x, y);
+        const int ov = w_.bridges_enabled() ? w_.bridge_overlay_at(x, y) : -1;
+        return ov >= 0 && ra2engine::is_low_bridge_overlay(ov) && ra2engine::low_bridge_destroyed(ov);
+    }
+    void poll_bridges() {
+        const std::uint32_t v = w_.bridge_version();
+        if (bridge_seen_.size() != data_.cell_tags.size()) {
+            bridge_seen_.assign(data_.cell_tags.size(), 0);
+            for (std::size_t i = 0; i < data_.cell_tags.size(); ++i)
+                bridge_seen_[i] = bridge_cell_broken(data_.cell_tags[i].x, data_.cell_tags[i].y) ? 1 : 0;
+            bridge_ver_ = v;
+            return;
+        }
+        if (v == bridge_ver_) return;
+        bridge_ver_ = v;
+        for (std::size_t i = 0; i < data_.cell_tags.size(); ++i) {
+            const ra2engine::MapCellTag& ct = data_.cell_tags[i];
+            const std::uint8_t now = bridge_cell_broken(ct.x, ct.y) ? 1 : 0;
+            if (now && !bridge_seen_[i] && sys_->tag_waits_on(ct.tag, ra2engine::kEvAllBridgesDestroyed)) {
+                ra2engine::RaiseContext c;
+                if (sys_->raise_cell(ct.x, ct.y, ra2engine::kEvAllBridgesDestroyed, c, host_)) ++raises_;
+                char b[96];
+                std::snprintf(b, sizeof b, "[camp] f%ld bridge broken under cell tag (%d,%d) -> event 31", frame_,
+                              ct.x, ct.y);
+                witness_.emplace_back(b);
+            }
+            bridge_seen_[i] = now;
+        }
+    }
+    // W5-A 9 FireSale [RE: Execute case 9 sets house +0x250 = 4; HouseClass AI
+    // FUN_004FD320 then runs, every AI pass, vtbl +0x34 / +0x38 on the house
+    // (the RA1-lineage Fire_Sale + Do_All_To_Hunt)]: every building of the
+    // house is sold and every unit hunts, for as long as the house lives.
+    // 35 PreferredTarget: the house quarry goes to the World's AI SW picker.
+    void step_house_states() {
+        for (std::size_t h = 0; h < quarry_.size(); ++h)
+            if (quarry_[h] != 1) w_.set_sw_quarry((int)h, quarry_[h]);
+        if (frame_ % 15 != 0) return;
+        for (std::size_t h = 0; h < fire_sale_.size(); ++h)
+            if (fire_sale_[h]) fire_sale_pass((int)h);
+    }
+    void fire_sale_pass(int h) {
+        for (int i = 0; i < (int)w_.buildings().size(); ++i)
+            if (live(w_.buildings()[(std::size_t)i]) && w_.buildings()[(std::size_t)i].house == h &&
+                !w_.buildings()[(std::size_t)i].selling)
+                w_.begin_sell(i, h);
+        for (std::size_t i = 0; i < w_.units().size() && i < utrack_.size(); ++i)
+            if (live(w_.units()[i]) && w_.units()[i].house == h) utrack_[i].hunt = true;
+    }
+    bool team_left(const std::string& id) const {
+        for (const std::string& t : left_teams_) if (camp::up(t) == camp::up(id)) return true;
+        return false;
     }
     // gF G-74 [RE: docs/re/mcv-deploy.md §7]: event 44 AttackedByHouse is
     // raised by ReceiveDamage right after 6 with the ATTACKER's house
@@ -1268,6 +1449,17 @@ private:
             if (t.mc_victim >= 0 && (!live(u))) { mc_release(t); continue; }
             if (t.dead || !live(u) || u.target < 0 || u.target >= (int)w_.units().size()) continue;
             if (!mind_controller(t.type)) continue;
+            // W5-A R-036 [RE-FALLBACK: the YR CaptureManager capacity (1 for the
+            // Yuri, MindControl=yes without MultipleControl) -- a controller
+            // whose slot is full does not pick a new victim by itself; only an
+            // explicit attack order trades the held victim for a new one].
+            // Before, two Yuris near two civilians traded them back and forth
+            // every frame and never obeyed a move order (SOV09).
+            if (t.mc_victim >= 0 && t.mc_victim < (int)w_.units().size() &&
+                live(w_.units()[(std::size_t)t.mc_victim]) && !u.attack_order) {
+                if (u.target != t.mc_victim) u.target = -1;
+                continue;
+            }
             ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
             if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
             const double dx = v.fx - u.fx, dy = v.fy - u.fy;
@@ -1306,6 +1498,21 @@ private:
                 if (t.tag >= 0) { sys_->detach_tag(t.tag); t.tag = -1; }
                 continue;
             }
+            if (!live(u) && !u.alive && u.die_time < 0.0 && t.team >= 0 && t.team < (int)teams_.size()) {
+                // W5-A event 23: a team member flew off the map edge
+                // (World::order_leave_map); once its team has nobody left the
+                // TeamType "left the map" [RE: FUN_0071DBE0 case 0x17 -- a team
+                // of the event's type with no members and its left-map flag].
+                Team& lt = teams_[(std::size_t)t.team];
+                lt.members.erase(std::remove(lt.members.begin(), lt.members.end(), (int)i), lt.members.end());
+                if (lt.members.empty()) {
+                    const std::string& id = teams_data_.teams[(std::size_t)lt.type].id;
+                    if (!team_left(id)) left_teams_.push_back(id);
+                    ra2engine::RaiseContext lc;
+                    if (sys_->raise_logic(23, lc, host_)) ++raises_;
+                }
+                t.team = -1;
+            }
             if (!live(u)) {
                 t.dead = true;
                 if (std::getenv("RA2_CAMP_DEBUG"))
@@ -1325,10 +1532,26 @@ private:
             if (u.cell_x != t.cx || u.cell_y != t.cy) {
                 t.cx = u.cell_x;
                 t.cy = u.cell_y;
-                const ra2engine::RaiseContext c = ctx_for(u.house);
+                ra2engine::RaiseContext c = ctx_for(u.house);
+                c.obj_x = t.cx;
+                c.obj_y = t.cy;
                 if (sys_->raise_cell(t.cx, t.cy, ra2engine::kEvEnteredBy, c, host_)) ++raises_;
                 sys_->raise_cell(t.cx, t.cy, ra2engine::kEvEnteredOrOverflownBy, c, host_);
                 gf_raise_lines(t.cx, t.cy, c);
+                // W5-A 53/54 SpyAsHouse / SpyAsInfantry (Cell kinds): a
+                // disguised unit entering a tagged cell [RE: FUN_0071DBE0 cases
+                // 0x35/0x36 read the object's disguise house / type].
+                if (u.disguised) {
+                    ra2engine::RaiseContext dc = c;
+                    dc.disguise_house_type = house_type(u.disguised_as_house);
+                    dc.disguise_infantry = camp::up(u.disguised_as_type);
+                    if (sys_->cell_waits_on(t.cx, t.cy, 53)) sys_->raise_cell(t.cx, t.cy, 53, dc, host_);
+                    if (sys_->cell_waits_on(t.cx, t.cy, 54)) sys_->raise_cell(t.cx, t.cy, 54, dc, host_);
+                }
+                // W5-A 34 ComesNearWaypoint (an Object kind) on the unit's own tag
+                // [RE-FALLBACK: the original's raise site is untraced; raised on
+                // each cell change, only on a tag that waits for 34].
+                if (t.tag >= 0 && sys_->tag_waits_on(t.tag, 34)) raise_obj_ctx(t, 34, c);
             }
             if (u.hp < t.hp) raise_attacked(t, u.house, gf_attacker_house((int)i, -1, u.house));
             if (u.hp < t.hp) raise_damage_stages(t, u.hp, u.max_hp, u.house);
@@ -1393,6 +1616,10 @@ private:
             if (t.team >= 0 && !member_recruitable(t.team, &tm)) continue;
             const ra2engine::Unit& u = w_.units()[i];
             if (!live(u) || u.house != tm.house || u.cargo_of >= 0) continue;   // W4-SQ-01: on the map only
+            // W5-A [RE: Can_Add FUN_006E9B80 returns `techno+0x2E4 == 0`, read as
+            // the carried-passenger count -- PROBABLE]: a loaded transport is
+            // never recruited (SOV02's MCV boat keeps its MCV).
+            if (!u.cargo.empty()) continue;
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (need[k] > 0 && t.type == types[k]) {
                     --need[k];
@@ -1413,7 +1640,15 @@ private:
         const Team& o = teams_[(std::size_t)team_ix];
         if (&o == self) return false;
         if (o.st.done) return true;
-        return o.type >= 0 && teams_data_.teams[(std::size_t)o.type].recruitable;
+        // W5-A [RE: TeamClass::Can_Add FUN_006E9B80 -- a member of a live team
+        // may be taken only by a team whose TeamType Priority (+0xB4) is
+        // strictly higher, and only if its own team's TeamType set
+        // AreTeamMembersRecruitable (+0xF5, copied to techno +0x422 on Add,
+        // FUN_006E9A70)]. SOV02: 'Transports Off' must not take the MCV boat
+        // of the higher-priority 'Land the MCV' team.
+        if (o.type < 0 || !teams_data_.teams[(std::size_t)o.type].recruitable) return false;
+        if (!self || self->type < 0) return true;
+        return teams_data_.teams[(std::size_t)o.type].priority < teams_data_.teams[(std::size_t)self->type].priority;
     }
     // W2-CA-09: a finished team lets its members go.
     void release_team(Team& tm, int team_idx) {
@@ -1850,6 +2085,9 @@ private:
                     if (w_.units()[(std::size_t)m].cargo_of != ra2engine::kGarrisonCargo) garrisoned = false;
                 if (garrisoned) { v.target_exists = false; v.arrived = true; }
             }
+            if (tm.st.pc >= 0 && tm.st.pc < (int)sc.actions.size() &&
+                sc.actions[(std::size_t)tm.st.pc].action == ra2engine::kSaIronCurtainMe)
+                v.iron_state = iron_curtain_state(tm.house);
             const ra2engine::MapTeamCommand c = ra2engine::step_map_team(tm.st, sc, v, frame_);
             execute_team(tm, (int)ti, c, all_idle, lead);
         }
@@ -1879,6 +2117,31 @@ private:
             if (best < 0 || k < key) { best = (int)i; key = k; }
         }
         return best;
+    }
+    // W5-A 55 IronCurtainMe [RE: FUN_006EF1D0]: 1 = the house's Iron Curtain is
+    // charged and the house has full power (fire), 2 = still charging but past
+    // [General] AIMinorSuperReadyPercent (the line waits), 0 = otherwise (the
+    // line completes without firing).
+    int iron_curtain_state(int house) const {
+        const ra2engine::Superweapon* sw = w_.sw_state(house, ra2engine::SuperweaponType::IronCurtain);
+        if (!sw) return 0;
+        if (sw->is_ready()) return w_.house_low_power(house) ? 0 : 1;
+        const double pct = std::atof(camp::trim_comment(rules_ini_.get("General", "AIMinorSuperReadyPercent", ".7")).c_str());
+        return sw->charge_fraction() >= pct ? 2 : 0;
+    }
+    // A 16-bit DirStruct facing on a unit: vehicles keep it as body (and
+    // turret) facing, infantry get the matching 8-block index.
+    void set_facing_u16(int idx, double f16) {
+        ra2engine::Unit& u = w_.units()[(std::size_t)idx];
+        if (u.is_vehicle || u.is_aircraft || u.is_naval) {
+            u.body_facing = f16;
+            u.turret_facing = f16;
+            return;
+        }
+        constexpr double kPi = 3.14159265358979323846;
+        const double th = f16 * (2.0 * kPi / 65536.0);
+        const int b = ra2engine::facing_from_delta(std::sin(th), -std::cos(th));   // inverse of facing_u16_from_delta
+        if (b >= 0) u.facing = b;
     }
     void execute_team(Team& tm, int team_idx, const ra2engine::MapTeamCommand& c, bool all_idle, int lead) {
         using K = ra2engine::MapTeamCommand::Kind;
@@ -2056,6 +2319,90 @@ private:
             for (int m : tm.members) w_.campaign_erase_unit(m);
             tm.members.clear();
             return;
+        // W5-A R-027 [RE: FUN_006ED200]: every member's body facing becomes
+        // (arg & 7) << 13 (the 8 compass points of the 16-bit DirStruct).
+        case K::ForceFacing:
+            for (int m : tm.members)
+                if (on_map(m)) set_facing_u16(m, (double)((c.arg & 7) << 13));
+            return;
+        // [RE: FUN_006EF1D0]: the team house's charged Iron Curtain is fired at
+        // the team (the leader's cell) [RE-FALLBACK: the original's leader is
+        // the member with the highest Leadership-like +0x5FC rating; the clone
+        // uses the first member on the map].
+        case K::IronCurtain:
+            if (lead >= 0 && iron_curtain_state(tm.house) == 1) {
+                const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
+                const bool ok = w_.fire_superweapon_at(tm.house, ra2engine::SuperweaponType::IronCurtain,
+                                                       lu.cell_x, lu.cell_y);
+                char b[120];
+                std::snprintf(b, sizeof b, "[camp] f%ld team %s IronCurtainMe at %d,%d -> %s", frame_,
+                              teams_data_.teams[(std::size_t)tm.type].name.c_str(), lu.cell_x, lu.cell_y,
+                              ok ? "fired" : "refused");
+                witness_.emplace_back(b);
+            }
+            return;
+        // 19 Panic / 41 Unpanic [RE: per member vtbl +0x518 / +0x51C,
+        // InfantryClass only; RE-FALLBACK: Panic = the fear ceiling (the walk
+        // turns into the Panic run), Unpanic = fear 0].
+        case K::Panic:
+        case K::Unpanic:
+            for (int m : tm.members) {
+                ra2engine::Unit& u = w_.units()[(std::size_t)m];
+                if (!on_map(m) || u.is_vehicle || u.is_aircraft || u.is_naval || u.ia.fearless) continue;
+                u.ia.fear = c.kind == K::Panic ? 300 : 0;
+            }
+            return;
+        // 10 Follow [RE: FUN_006ED0B0, the line never completes; RE-FALLBACK:
+        // the followed object is the nearest live unit of the team's own side
+        // outside the team, re-targeted every 2 s].
+        case K::Follow: {
+            if (lead < 0 || (!c.fresh && frame_ - tm.issued_frame < 30)) return;
+            tm.issued_frame = frame_;
+            const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
+            int best = -1;
+            long bd = 0;
+            for (std::size_t i = 0; i < w_.units().size(); ++i) {
+                const ra2engine::Unit& o = w_.units()[i];
+                if (!live(o) || o.cargo_of >= 0 || !w_.are_allied(tm.house, o.house)) continue;
+                if (i < utrack_.size() && utrack_[i].team == team_idx) continue;
+                const long d = (long)(o.cell_x - lu.cell_x) * (o.cell_x - lu.cell_x) +
+                               (long)(o.cell_y - lu.cell_y) * (o.cell_y - lu.cell_y);
+                if (best < 0 || d < bd) { best = (int)i; bd = d; }
+            }
+            if (best < 0 || bd <= 4) return;
+            const ra2engine::Unit& t = w_.units()[(std::size_t)best];
+            for (int m : tm.members)
+                if (on_map(m) && !w_.units()[(std::size_t)m].moving()) w_.order_unit_move(m, t.cell_x, t.cell_y);
+            return;
+        }
+        // 50 Flash [RE: every member's flash counter +0xF0 = arg]: the
+        // FlashTeam presentation (action 104) on this team.
+        case K::Flash: {
+            ra2engine::VisualRequest vr;
+            vr.action = 104;
+            vr.value = c.arg;
+            vr.team = teams_data_.teams[(std::size_t)tm.type].id;
+            host_.present(vr);
+            return;
+        }
+        // 18 ChangeTeam [RE: handler @0x6E8C2D: new TeamClass(TeamTypes[arg],
+        // house) (FUN_006E8000) and every member moves into it].
+        case K::ChangeTeam: {
+            if (c.arg < 0 || c.arg >= (int)teams_data_.teams.size()) return;
+            const ra2engine::MapTeamType& nt = teams_data_.teams[(std::size_t)c.arg];
+            Team t2;
+            t2.type = c.arg;
+            t2.script = teams_data_.find_script(nt.script);
+            t2.house = tm.house;
+            t2.created = frame_;
+            t2.members = tm.members;
+            tm.members.clear();
+            tm.st.done = true;
+            teams_.push_back(t2);
+            adopt(teams_.back(), (int)teams_.size() - 1);
+            ++teams_created_;
+            return;
+        }
         default:
             return;
         }
@@ -2245,6 +2592,12 @@ private:
             n.swap(rt.note_);
             return n;
         }
+        bool team_left_map(const std::string& id) const override { return rt.team_left(id); }
+        bool waypoint_cell(int wp, int& x, int& y) const override { return rt.waypoint_cell(wp, x, y); }
+        std::string infantry_type_id(int idx) const override {
+            const std::vector<std::string> v = camp::list_values(rt.ra2_rules_, "InfantryTypes");
+            return idx >= 0 && idx < (int)v.size() ? camp::up(v[(std::size_t)idx]) : std::string();
+        }
         bool apply(const ra2engine::TriggerEffect& e) override { return rt.apply(e); }
         void present(const ra2engine::VisualRequest& v) override { rt.visuals_.push_back(v); }   // W3-FX
     };
@@ -2393,18 +2746,62 @@ private:
             w_.reshroud_area(0, x, y, reveal_radius_);
             return true;
         }
-        case 9: {   // FireSale [RE-FALLBACK: the original flips the house's AI state
-                    // to 4 (+0x250) and its AI sells; the clone sells every building
-                    // of the house at once through the real Sell mission]
+        case 9: {   // FireSale -> house AI state 4 (see step_house_states)
             const int eh = engine_house(e.house_type);
             if (eh < 0) return false;
+            if ((int)fire_sale_.size() <= eh) fire_sale_.resize((std::size_t)eh + 1, 0);
+            fire_sale_[(std::size_t)eh] = 1;
+            fire_sale_pass(eh);   // the first AI pass now
+            return true;
+        }
+        case 35: {   // PreferredTarget: trigger house quarry (+0x54EC)
+            const int eh = engine_house(e.house_type);
+            if (eh < 0) return false;
+            if ((int)quarry_.size() <= eh) quarry_.resize((std::size_t)eh + 1, 1);
+            quarry_[(std::size_t)eh] = e.value;
+            w_.set_sw_quarry(eh, e.value);
+            return true;
+        }
+        case 40: {   // ResizeView: [Map] LocalSize = (P2, P3, P4, P5) [RE: FUN_006E1750]
+            ra2engine::MapLocalSize m = ra2engine::parse_map_local_size(map_);
+            if (!m.valid) return false;
+            m.x = e.p[0]; m.y = e.p[1]; m.w = e.p[2]; m.h = e.p[3];
+            local_override_ = m;
+            local_overridden_ = true;
+            ++local_version_;
+            char b[64];
+            std::snprintf(b, sizeof b, "[local %d,%d,%d,%d]", m.x, m.y, m.w, m.h);
+            note_ = b;
+            return true;
+        }
+        case 44: {   // IonStorm (YR: LightningStorm::Start unless one rages) [RE: case @0x6DE28C;
+                     // RE-FALLBACK: the original's "no cell" storm is centred on the usable area]
+            const ra2engine::MapLocalSize m = local_size();
+            const int x = m.valid ? m.x + m.w / 2 : w_.grid_w() / 2;
+            const int y = m.valid ? m.y + m.h / 2 : w_.grid_h() / 2;
+            return w_.trigger_lightning_storm(0, x, y);
+        }
+        case 51:     // Reshroud [RE: FUN_005777C0]: the player's map back under shroud
+            w_.reshroud_house(0);
+            return true;
+        case 61: case 62: {   // TurnOff / TurnOn the tagged buildings [RE: FUN_00452350 / FUN_00452250]
+            // The World's GoOffline/GoOnline (set_building_power, W5-E2) does the
+            // power switch; the flag is kept for the save / witness.
             int n = 0;
-            for (int i = 0; i < (int)w_.buildings().size(); ++i)
-                if (live(w_.buildings()[(std::size_t)i]) && w_.buildings()[(std::size_t)i].house == eh &&
-                    w_.begin_sell(i, eh))
+            for (std::size_t i = 0; i < btrack_.size(); ++i)
+                if (!btrack_[i].dead && btrack_[i].tag >= 0 && sys_->tag_has_trigger(btrack_[i].tag, e.trigger_type)) {
+                    btrack_[i].off = e.action == 61;
+                    w_.set_building_power((int)i, e.action == 61 ? 0 : 1);
                     ++n;
+                }
+            char b[48];
+            std::snprintf(b, sizeof b, "[buildings=%d]", n);
+            note_ = b;
             return n > 0;
         }
+        case 77: case 78:   // AI air / infantry ratio (+0x5660 / +0x5664): no consumer in the AI
+            note_ = "[ratio recorded; AI-2 has no ratio input]";
+            return true;
         case 90: case 102: {   // W3-FX LightningStrikeAt / LightningStorm (World)
             int x = 0, y = 0;
             if (!waypoint_cell(e.waypoint, x, y)) return false;
@@ -2526,6 +2923,16 @@ private:
     int teams_created_ = 0, raises_ = 0;
     bool placing_ = false;
     int place_vet_ = 0;      // W4-SQ-04: rank given to the members being created
+    // W5-A (saved, v22): house quarries (35), FireSale houses (9), TeamTypes
+    // that left the map (23), the ResizeView usable area (40).
+    std::vector<int> quarry_;
+    std::vector<std::uint8_t> fire_sale_;
+    std::vector<std::string> left_teams_;
+    ra2engine::MapLocalSize local_override_;
+    bool local_overridden_ = false;
+    int local_version_ = 0;
+    std::vector<std::uint8_t> bridge_seen_;   // derived (event 31 edge), rebuilt after a load
+    std::uint32_t bridge_ver_ = 0;
     int unresolved_ = 0;     // TaskForce objects whose type did not resolve
 };
 

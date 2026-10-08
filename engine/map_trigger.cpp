@@ -76,8 +76,12 @@ bool state_b(int k) {   // FUN_0071ec60
 // model) -> false + counted [spec §2].
 bool unimplemented_event(int k) {
     switch (k) {
-    case 3: case 18: case 23: case 34: case 35: case 45: case 46:
-    case 53: case 54:
+    // W5-A [RE: HasOccurred FUN_0071DBE0]: 3 ThievedBy (house +0x244), 18
+    // CiviliansEvacuated (house +0x1F9), 35 EnemyInSpotlight (spotlights) and
+    // 45/46 AmbientLightBelow/Above (scenario +0x352C, raised only on an
+    // ambient change, actions 71-73) have no modelled state -- none of the 24
+    // missions or Boot Camp uses them.
+    case 3: case 18: case 35: case 45: case 46:
         return true;
     default:
         return false;
@@ -111,6 +115,10 @@ const char* action_label(int k) {
     case 113: return "MakeHouseCheer"; case 114: return "SetTabTo";
     case 115: return "FlashCameo"; case 116: return "PlayMovieAndPause";
     case 125: return "CreateBuilding"; case 60: return "SellBuilding"; case 111: return "EvictOccupiers"; case 108: return "CreateCrate"; case 101: return "ReshroudMapAtWaypoint"; case 9: return "FireSale"; case 131: return "FlashBuildingsOfType";
+    case 35: return "PreferredTarget"; case 40: return "ResizeView"; case 44: return "IonStorm";
+    case 51: return "Reshroud"; case 61: return "TurnOff"; case 62: return "TurnOn";
+    case 70: return "DestroyTag"; case 77: return "RatioAir"; case 78: return "RatioInfantry";
+    case 89: return "RemoveParticleAnim"; case 117: return "PlayIngameMoviePause";
     default: return "?";
     }
 }
@@ -118,8 +126,8 @@ const char* action_label(int k) {
 bool presentation_action(int k) {
     switch (k) {
     case 10: case 11: case 19: case 20: case 21: case 41: case 46: case 47:
-    case 48: case 55: case 99: case 100: case 103: case 104: case 112:
-    case 113: case 114: case 115: case 116: case 131:
+    case 48: case 55: case 89: case 99: case 100: case 103: case 104: case 112:
+    case 113: case 114: case 115: case 116: case 117: case 131:
         return true;
     default:
         return false;
@@ -668,6 +676,26 @@ bool MapTriggerSystem::has_occurred(int type, int ev_idx, int kind, int trig_hou
         ev_house_[(std::size_t)(ev_base_[(std::size_t)type] + ev_idx)] = ctx.object_house_type;
         return true;
     }
+    // W5-A [RE: FUN_0071DBE0 cases 0x17/0x22/0x35/0x36]:
+    if (e.kind == 23) {   // TeamLeavesMap: a team of the event's TeamType left with no members
+        if (!host.team_left_map(e.str)) return false;
+        persistent = true;
+        return true;
+    }
+    if (e.kind == 34) {   // ComesNearWaypoint: the object within 0x500 leptons (5 cells) of waypoint Value
+        int wx = 0, wy = 0;
+        if (!ctx.has_object || ctx.obj_x < 0 || !host.waypoint_cell(e.value, wx, wy)) return false;
+        const long dx = (long)(ctx.obj_x - wx) * 256, dy = (long)(ctx.obj_y - wy) * 256;
+        return dx * dx + dy * dy <= 0x500L * 0x500L;
+    }
+    if (e.kind == 53) {   // SpyAsHouse: the object poses as house Value
+        if (e.value == -1 || !host.house_exists(e.value)) return false;
+        return ctx.disguise_house_type >= 0 && ctx.disguise_house_type == e.value;
+    }
+    if (e.kind == 54) {   // SpyAsInfantry: the object poses as InfantryTypes[Value]
+        if (e.value == -1 || ctx.disguise_infantry.empty()) return false;
+        return ieq(host.infantry_type_id(e.value), ctx.disguise_infantry);
+    }
     if (e.kind == kEvAttackedByHouse) {
         if (ctx.source_house_type < 0) return false;
         if (e.value != ctx.source_house_type) return false;
@@ -833,6 +861,7 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         e.waypoint = (a.kind == 17 || a.kind == 18 || (campaign_mode_ && a.kind == 63)) ? a.value : a.waypoint;
         e.value = a.value;
         e.text = a.text;
+        for (int k = 0; k < 4; ++k) e.p[k] = a.p[k];
         e.trigger_id = cur_trigger_;
         e.trigger_type = t.type;
         const bool ok = host.apply(e);
@@ -985,6 +1014,28 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
         if (!campaign_mode_) goto unhandled;
         effect(th);
         return;
+    // W5-A R-029/R-021 [RE: Execute FUN_006DCE20, table 0x6DF35C[kind-1]]:
+    // 35 PreferredTarget: trigger house +0x54EC = Value (the AI superweapon
+    //    quarry, FUN_00509710 -> FUN_0050CF90 when != 1);
+    // 40 ResizeView: Map LocalSize = (P2, P3, P4, P5) (FUN_006E1750);
+    // 44 IonStorm (YR: LightningStorm::Start(Value duration) unless active);
+    // 51 Reshroud: the whole map back under shroud (FUN_005777C0);
+    // 61 / 62 TurnOff / TurnOn: every building carrying the trigger's tag
+    //    loses / regains power (FUN_00452350 / FUN_00452250);
+    // 77 / 78: trigger house +0x5660 / +0x5664 = Value (AI air / infantry ratio).
+    case 35: case 40: case 44: case 51: case 61: case 62: case 77: case 78:
+        if (!campaign_mode_) goto unhandled;
+        effect(a.kind == 51 ? player : th);
+        return;
+    // 70 DestroyTag [RE: case @0x6DE604]: every live tag whose type is P1
+    // is destroyed (vtbl +0x20).
+    case 70: {
+        int n = 0;
+        for (std::size_t i = 0; i < tags_.size(); ++i)
+            if (tags_[i].type == a.tag && !tags_[i].destroyed) { tags_[i].destroyed = true; ++n; }
+        logf("  a70 DestroyTag n=%d", n);
+        return;
+    }
     default:
     unhandled:
         if (campaign_mode_) {
@@ -1084,6 +1135,42 @@ bool MapTriggerSystem::raise_cell(int x, int y, int kind, const RaiseContext& ct
             return raise(idx, kind, ctx, host);
         }
     return false;
+}
+
+bool MapTriggerSystem::tag_waits_on(int tag_type, int kind) const {
+    if (tag_type < 0 || tag_type >= (int)d_.tags.size()) return false;
+    std::vector<int> seen;
+    for (int t = d_.tags[(std::size_t)tag_type].first_trigger; t >= 0 && t < (int)d_.triggers.size();
+         t = d_.triggers[(std::size_t)t].linked) {
+        if (std::find(seen.begin(), seen.end(), t) != seen.end()) break;   // a cyclic chain
+        seen.push_back(t);
+        for (const MapEvent& e : d_.triggers[(std::size_t)t].events)
+            if (e.kind == kind) return true;
+    }
+    return false;
+}
+
+bool MapTriggerSystem::cell_waits_on(int x, int y, int kind) const {
+    for (const MapCellTag& c : d_.cell_tags)
+        if (c.x == x && c.y == y) return tag_waits_on(c.tag, kind);
+    return false;
+}
+
+bool MapTriggerSystem::raise_logic(int kind, const RaiseContext& ctx, TriggerHost& host) {
+    // Only the tags whose chain waits on `kind` [RE-FALLBACK: the original's
+    // raise site for 23 was not traced; raising it on every logic tag would
+    // also re-evaluate unrelated timer / variable triggers].
+    bool any = false;
+    const std::vector<int> list = logic_list_;   // a raise may destroy tags
+    for (int ti : list) {
+        if (ti < 0 || ti >= (int)tags_.size()) continue;
+        bool wants = false;
+        for (const Trig& t : tags_[(std::size_t)ti].trigs)
+            for (const MapEvent& e : d_.triggers[(std::size_t)t.type].events)
+                if (e.kind == kind) wants = true;
+        if (wants && raise(ti, kind, ctx, host)) any = true;
+    }
+    return any;
 }
 
 bool MapTriggerSystem::attach_tag(int tag_type) {

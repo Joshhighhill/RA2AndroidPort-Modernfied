@@ -60,6 +60,42 @@ scripts were added where the player must act (`scripts/play/m-sov02-real`, `m-so
 Summary: before 12 YES / 9 PROBABLE / 1 DOUBTFUL / 1 NO; after 16 YES / 6 PROBABLE / 1 DOUBTFUL (ALL12) / 0 NO
 (SOV09 PROBABLE).
 
+## W5-A status (wave-5 fix agent A, branch `w5-camp`)
+
+Real-order proofs added: `m-sov01-real` (SOV01 **WON**), `m-all03-real` (ALL03 **WON**), `m-all12-real` (ALL12 opening:
+the SEALs reach the reactor through the fence's corner gap, C4 it, the Chrono MCV / IFVs / Grizzlies arrive),
+`m-sov02-mcv` now cheat-free. Root causes fixed on the way: no campaign economy (no harvesting in any mission),
+wall corner gaps sealed by the pathfinder (ALL12), PlayerControl houses unable to take attack orders and Yuri
+mind-control ping-pong (SOV09), EnteredBy raised after the trigger loops (ALL02 lost on a race), recruit priority
+(SOV02 MCV boat), wall-clock crate seed (non-deterministic proofs).
+
+| Mission | W4 after | W5-A | Evidence / what blocks |
+|---|---|---|---|
+| ALL01 | YES | YES | hand-over cells = the map's own CellTags (61..64,84) |
+| ALL02 | YES | YES | `m-all02` (engineer capture) |
+| ALL03 | PROBABLE | **YES** | `m-all03-real` WON by real orders (needed the campaign economy) |
+| ALL04 | YES (probable) | YES (probable) | `m-all04-real` opening |
+| ALL05 | YES (probable) | YES (probable) | not re-run |
+| ALL06 | YES | YES (probable) | not re-run with real orders (Destroy BG1+BG2) |
+| ALL07 | PROBABLE | PROBABLE | not attempted |
+| ALL08 | YES | YES | `m-all08` |
+| ALL09 | YES (probable) | YES (probable) | not attempted |
+| ALL10 | YES | YES (probable) | FireSale/TurnOff now modelled; not attempted |
+| ALL11 | PROBABLE | PROBABLE | PreferredTarget now modelled; not attempted |
+| ALL12 | DOUBTFUL | **PROBABLE** | `m-all12-real` opening proven; a direct Grizzly/IFV/Prism assault (29 units) died to BadGuy1's base; the nuke (IQ 5) hits the ConYard at ~10.5 min. Needs a SW/Chrono strategy |
+| SOV01 | YES | **YES (proven)** | `m-sov01-real` WON |
+| SOV02 | YES | YES | `m-sov02-real`, `m-sov02-mcv` (cheat-free) |
+| SOV03 | YES | YES | `m-sov03` |
+| SOV04 | YES (probable) | YES (probable) | not attempted |
+| SOV05 | YES | YES | `m-sov05` |
+| SOV06 | YES | YES | `m-sov06` |
+| SOV07 | PROBABLE | PROBABLE | two defence scripts lost by ~10-15 min (spy/waves; Tesla needs NARADR); needs a tuned build |
+| SOV08 | YES | YES | not re-run |
+| SOV09 | PROBABLE | PROBABLE | Yuris now obey (attack order + MC fixes); MC'd British engineer captures the Alliance barracks; blocked by **captured-factory owner rule** (HouseClass +0x2C4..+0x2D0 bits in CanBuild FUN_004F7780 not modelled -> no Allied spies for the power-plant blackout) |
+| SOV10 | YES (probable) | YES (probable) | not attempted |
+| SOV11 | YES (probable) | YES (probable) | not attempted |
+| SOV12 | PROBABLE | PROBABLE | not attempted |
+
 ## How this was exercised
 
 | Tool | What it does | Where (all under `D:\ra2-wt\w4-seq\scratch\`) |

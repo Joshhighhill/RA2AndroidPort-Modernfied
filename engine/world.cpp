@@ -1066,8 +1066,9 @@ void World::order_unit_move(int idx, int gx, int gy) {
     std::vector<Cellxy> path =
         u.movement_domain == MovementDomain::Land
             ? find_path_nearest(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y},
-                                {gx, gy}, kNearestPathBudget)
-            : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
+                                {gx, gy}, kNearestPathBudget, wall_leak())
+            : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy},
+                        u.movement_domain == MovementDomain::Water ? nullptr : wall_leak());
     if (path.size() <= 1) {
         // Assigned its own cell / unreachable: stay put, snap cleanly
         // (mirrors the single-unit Finding-1 cancel branch).
@@ -1188,11 +1189,11 @@ void World::order_attack(int target_idx) {
     // Can't order an attack on a dead/dying target, or on a house-0 unit
     // (order_attack is issued for the player's house-0 units against
     // hostiles -- a house-0 target would mean "attack a friendly").
-    if (!tgt.alive || tgt.die_time >= 0.0 || tgt.house == 0) return;
+    if (!tgt.alive || tgt.die_time >= 0.0 || controllable(tgt.house)) return;   // W5-A: any player-commanded house
 
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         // W2-SK-22 Spy disguise [RE: capture.md §C; [SPY] Primary=MakeupKit
         // "virtual weapon that picks disguise"]: a spy "attacking" an enemy
         // infantry takes on its look instead.
@@ -1250,11 +1251,11 @@ void World::order_attack_building(int b_idx) {
     const Building& tgt = buildings_[b_idx];
     // Can't order an attack on a dead/Dead-state/house-0 (friendly) building
     // -- mirrors order_attack's own guard against a house-0 target.
-    if (!tgt.alive || tgt.state == Building::State::Dead || tgt.house == 0) return;
+    if (!tgt.alive || tgt.state == Building::State::Dead || controllable(tgt.house)) return;   // W5-A
 
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above; shared mutation tail via commit_attack_target
         // [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
@@ -1400,7 +1401,7 @@ void World::order_enter_transport(int t_idx) {
     std::vector<Cellxy> cur;
     for (std::size_t i = 0; i < units_.size(); ++i) {
         const Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         if (static_cast<int>(i) == t_idx) continue;
         if (!can_load(units_, t_idx, static_cast<int>(i), allied)) continue;
         movers.push_back(static_cast<int>(i));
@@ -3003,7 +3004,7 @@ void World::step_ai_houses(double dt) {
         }
         // 6c) [G-66] superweapon autofire on the house AI tick (FUN_004fd320 ->
         //     FUN_00509710, IQ-gated; always on for skirmish AI).
-        ai_try_fire_superweapon(h, rec);
+        if (cfg.fire_superweapons) ai_try_fire_superweapon(h, rec);   // W5-A IQ gate
         if (!conyard) continue;  // no factory: nothing can start
 
         // 7) Decide.
@@ -3151,6 +3152,11 @@ void World::ai_pick_enemy_house(int house, HouseAiRec& rec) {
     rec.enemy_house = best;
 }
 
+namespace {
+bool quarry_unit_match(int quarry, const Unit& u);
+bool quarry_building_match(int quarry, const Building& b, const AiTeamConfig& tc);
+}  // namespace
+
 void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
     // [G-66; RE: FUN_00509710 (per charged SW, by type) -> for the nuke
     // FUN_0050ca10: walk every object of the house's ENEMY, score it from the
@@ -3178,6 +3184,13 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
     std::vector<Cellxy> ties;
     Cellxy best_bld{-1, -1};
     int best_bld_v = -1;
+    // W5-A R-021 [RE: FUN_00509710 -- a house PreferredTarget (+0x54EC, map
+    // action 35) other than 1 Anything aims through FUN_0050CF90 (the threat
+    // of that QuarryType); RE-FALLBACK: the highest-valued enemy object of
+    // that quarry stands in for Greatest_Threat].
+    const int quarry = (house >= 0 && house < (int)sw_quarry_.size()) ? sw_quarry_[house] : 1;
+    int qbest = -1;
+    std::vector<Cellxy> qties;
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
         int v = ai.sw_value_building;
@@ -3195,6 +3208,10 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
         const Cellxy c{b.cx + b.fw / 2, b.cy + b.fh / 2};
         if (v > best) { best = v; ties.clear(); }
         if (v == best) ties.push_back(c);
+        if (quarry != 1 && quarry_building_match(quarry, b, tc)) {
+            if (v > qbest) { qbest = v; qties.clear(); }
+            if (v == qbest) qties.push_back(c);
+        }
         if (v > best_bld_v) { best_bld_v = v; best_bld = Cellxy{b.cx + b.fw, b.cy + b.fh}; }
     }
     for (const Unit& u : units_) {
@@ -3203,7 +3220,12 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
         const int v = u.is_harvester ? ai.sw_value_harvester : ai.sw_value_unit;
         if (v > best) { best = v; ties.clear(); }
         if (v == best) ties.push_back(Cellxy{u.cell_x, u.cell_y});
+        if (quarry != 1 && quarry_unit_match(quarry, u)) {
+            if (v > qbest) { qbest = v; qties.clear(); }
+            if (v == qbest) qties.push_back(Cellxy{u.cell_x, u.cell_y});
+        }
     }
+    if (!qties.empty()) ties = qties;
     if (fire_t == SuperweaponType::IronCurtain || fire_t == SuperweaponType::ChronoSphere ||
         fire_t == SuperweaponType::ChronoWarp) {
         // Own vehicle cluster: the unit whose 3x3 holds the most own vehicles
@@ -4376,7 +4398,7 @@ void World::step(double dt) {
             if (!land_speed_armed_) sc.armed = false;
         }
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
-                   amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr);
+                   amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr, wall_leak());
         std::sort(scatter.begin(), scatter.end());
         scatter.erase(std::unique(scatter.begin(), scatter.end()), scatter.end());
         for (int s : scatter) order_scatter(s);
@@ -4858,7 +4880,8 @@ double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int n
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable, const MoveSpeedCtx* speed) {
+                const std::vector<std::uint8_t>* amphib_passable, const MoveSpeedCtx* speed,
+                const std::vector<std::uint8_t>* wall_leak) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
@@ -5085,7 +5108,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used
                 // to flood the whole grid every 0.3 s per blocked unit).
                 std::vector<Cellxy> np =
-                    find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget);
+                    find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget,
+                                      u.movement_domain == MovementDomain::Water ? nullptr : wall_leak);
                 if (np.size() > 1) {
                     u.path = std::move(np);
                     u.path_idx = 1;
