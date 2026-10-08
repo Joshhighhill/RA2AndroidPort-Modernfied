@@ -199,7 +199,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-026 | 9 missions are only PROBABLE: ALL03/04/05/07/09/11/12 and SOV07/12. Their trigger chains were proven with cheat moves, and no real-order play-through exists. Boot Camp (TUT1/TRN) was never verified in play (wave4/05 survey, W2-CA missions, G-78) | Campaign | MAJOR | PARTIAL (w5-camp: SOV01/ALL03 WON by real orders, ALL12 opening; p2-missions 8dfb918: SOV07 WON by real orders (`m-sov07-real`); rest split to new agents; p5-missions: SOV11 + SOV12 WON by real orders (`m-sov11-real`, `m-sov12-real`), SOV10 not won -- tactical blocker, see wave4/05 "P5 status") | `docs/gap/wave4/05-mission-sequences.md:74`; `engine/campaign_gate.inc:284` | L | N |
+| R-026 | 9 missions are only PROBABLE: ALL03/04/05/07/09/11/12 and SOV07/12. Their trigger chains were proven with cheat moves, and no real-order play-through exists. Boot Camp (TUT1/TRN) was never verified in play (wave4/05 survey, W2-CA missions, G-78) | Campaign | MAJOR | PARTIAL (w5-camp: SOV01/ALL03 WON by real orders, ALL12 opening; p2-missions 8dfb918: SOV07 WON by real orders (`m-sov07-real`); rest split to new agents; p5-missions: SOV11 + SOV12 WON by real orders (`m-sov11-real`, `m-sov12-real`), SOV10 not won -- tactical blocker, see wave4/05 "P5 status"; p4-missions: SOV04 + ALL10 WON by real orders (`m-sov04-real`, `m-all10-real`), ALL09 not won -- tactical, engine side now complete (barrel chains, crushable walls, Harmless wake, Insignificant counts), see wave4/05 "P4 status") | `docs/gap/wave4/05-mission-sequences.md:74`; `engine/campaign_gate.inc:284` | L | N |
 | R-027 | Map-team script actions are still skipped: 55 IronCurtainMe (ALL12, SOV11 ×14), 42 ForceFacing (×42), 10 follow, 19/41 panic, 50, 56/57 and 59. Patrol is a plain move, so patrols do not loop (W2-CA-17 rest, G-76, 04#19) | Campaign | MAJOR | DONE (w5-camp: 10/18/19/41/42/50/55; 56/57/59-64 unused by the 24 maps) | `engine/campaign.cpp:446` `default: Skip`; `engine/ai_team.cpp:18` `[RE-FALLBACK: patrol = move]` | M | Y |
 | R-028 | Campaign computer houses: the difficulty binding, map AITriggers versus aimd precedence and the enable semantics are all guessed (G-69, RE-A5, W2-CA-07) | AI | MAJOR | PARTIAL (w5-camp: IQ SW gate, aimd merge per IgnoreGlobalAITriggers, difficulty binding confirmed) | `engine/campaign_runtime.inc:690,723` | L | Y |
 | R-029 | Trigger actions still unimplemented: 40, 44, 51 (ALL08), 77/78 and 117 (W2-CA-13 rest, G-75 rest) | Campaign | MINOR | DONE (w5-camp: 40/44/51/70/77/78/89/117) | `engine/map_trigger.cpp:1007` | S | Y |
@@ -433,3 +433,18 @@ Agents are split by code area so their diffs do not overlap:
 **Not in any agent:**
 - The pure `[RE-FALLBACK]` refinements R-083, R-090, R-107, R-108, R-110, R-124, R-145, R-190, R-192, R-194, R-195 and R-196. They are cosmetic or small timing differences; batch them into a later RE-calibration wave, using the hunt → spec → fix cycle.
 - U-1 to U-5, which wait on the owner. U-1 should be decided before R-193 or R-106 are touched.
+
+## P4 additions (mission-proof agent P4, branch `p4-missions`)
+
+Fixed on the way to the ALL09/ALL10/SOV04 proofs (details and RE citations: `docs/gap/wave4/05-mission-sequences.md`
+"P4 status"):
+
+| ID | Item | Status |
+|---|---|---|
+| P4-1 | Buildings with Explodes=yes never fired their DeathWeapon; DelayKill (CausesDelayKill / EligibleForDelayKill) missing -- barrel and ammo-crate chains did not happen (ALL10 villages, ALL09 base) | FIXED (`2a3d27f`, save v23) |
+| P4-2 | DestroyedAll/DestroyedBuildingsAll/DestroyedUnitsAll counted Insignificant= and DontScore= objects (lamps, barrels, civilian props, spent rockets) | FIXED (`fe23895`) |
+| P4-3 | A Sleep/Harmless object stayed dormant after the player (or its team) ordered it | FIXED (`81b6570`, RE-FALLBACK) |
+| P4-4 | Crushable= wall overlays (sandbags, prison fences) could not be crushed by Crusher vehicles | FIXED (`629b1e3`, RE-FALLBACK, save v23) |
+| P4-5 | Wall=yes warheads do not damage wall overlays (force-firing a wall does nothing); only crushing removes one | OPEN (not needed by the P4 proofs) |
+| P4-6 | ALL09 not won by real orders: the pyramid approach is held by BadGuy1's flak tracks/Tesla troopers; needs a finer micro script | OPEN (tactical) |
+

@@ -156,6 +156,47 @@ stays **v22**).
 Harness additions (`f152dc8`): `power_out(h)` / `power_drain(h)` / `low_power(h)` probe keys for every AI house, and
 `cheat map_ascii PATH` (debug only) for route planning; `RA2_CAMP_DEBUG` death lines name the killer unit.
 
+## P4 status (mission-proof agent P4, branch `p4-missions`)
+
+Missions ALL09, ALL10 and SOV04 from the real campaign start (the loading screen's default difficulty) with real
+player orders only (no `camp_*`, kill, reveal or spawn cheats). Generators: `scripts/play/gen/mk_sov04.py`,
+`mk_all10.py`.
+
+| Mission | W5-A | P4 | Evidence / what blocks |
+|---|---|---|---|
+| SOV04 | YES (probable) | **YES (proven)** | `m-sov04-real` WON (f=13875): the base grows by the northern gem field (`place auto` anchors on the map's lamp post, BaseNormal like the original), ~35 Rhinos trained during the 10-minute timer and staged at (108,48); when the Allied MCV lands the type-selected Rhinos kill it and every BadGuy1 object in turn, four Typhoons hunt the destroyers; `Win Timer` (DestroyedAll BadGuy1). |
+| ALL10 | YES (probable) | **YES (proven)** | `m-all10-real` WON (f=15074 after the master merge): GIs/Rocketeers guard Einstein's lab (barrels beside it), refineries + a 2nd war factory, Grizzlies/IFVs while the invasion breaks on the base; the army (Grizzlies, IFVs, Mirages) clears BadGuy3, BadGuy1, BadGuy2 one house at a time (ConYards first), regrouping before each. Needed the barrel-chain fix below: before it the mission was **won with no input at 7 min** (see engine fixes). |
+| ALL09 | YES (probable) | **NOT WON (tactical; engine now complete for it)** | Proven by real orders up to: SEALs clear the village, both camps freed (the Grizzlies crush out through the sandbags and open the POW fence -- needed two engine fixes below), the Hack engineers land, the village holds against the POW-check teams and the flak patrol, the Tech Airport is captured (player gets ParaDrop), the north conscript group dies, Reactor 2 is captured. The pyramid-1 engineer then dies to the base's flak tracks/Tesla troopers: 2 Grizzlies + 10 GIs + 5 SEALs cannot hold the pyramid approach against BadGuy1's 6 HTK/6 HTNK/13 SHK in a scripted (non-reactive) script. Not an engine blocker any more; needs a finer micro script (lure-and-kill the HTKs at the village, paradrop GIs every 4 min) -- left open. |
+
+Engine fixes (each a separate commit; shared systems flagged):
+
+- **Building death weapons + DelayKill** (`2a3d27f`, `engine/world_abilities.cpp`, `main.cpp`) [RE: FUN_00700DA0 death
+  path -> FireDeathWeapon FUN_0070CAC0 for every TechnoClass; delay kill @0x701327..0x701403; expiry in BuildingClass::AI
+  0x440152..0x4402A0]: Explodes=yes buildings (barrels CAMISC01/02, AMMOCRAT) fire DeathWeapon (BarrelExplosion,
+  OilExplosionWH CellSpread 4); a lethal CausesDelayKill hit on an EligibleForDelayKill building sets the C4 timer slot
+  (+0x6DF/+0x528/+0x530) to ftol(F + (F*AtMax - F) * dist / (ftol(CellSpread)*256)) frames (a running shorter timer is
+  kept), Strength = 1, then dies by C4Warhead. Before: ALL10's `German Explode` blew 3 barrels per village and nothing
+  chained, the German houses lived ~100 s longer, every Soviet MCV landed after `Kill BGn Local Guy` had destroyed its
+  volatile tag (and `BGn Production Start` with it), FireSale state 4 made them hunt, and ALL10 was won with no input.
+  Interactive only (GameScene), save v23.
+- **House counters skip Insignificant / DontScore** (`fe23895`, `engine/campaign_runtime.inc`) [RE: RegisterGain
+  FUN_004FF520 @0x4FF53B..0x4FF55B; keys verified at 0x5F8D0B (Insignificant +0x232) and 0x7132F8 (DontScore +0xC9F)]:
+  lamp posts, barrels, ammo crates, civilian props, gates and spent V3 rockets no longer keep a house alive for events
+  9/10/11/55/56 (map overrides apply: ALL09 `MAYAN Insignificant=no`). **Shared system**: it changes the win/lose
+  counts of ALL01/02/06/07/08/09/10 and SOV04 (merged with P5's flying-unit class on the master merge).
+- **An ordered Sleep/Harmless unit wakes** (`81b6570`, `engine/campaign_runtime.inc`) [RE-FALLBACK: TS/RA1
+  Assign_Mission replaces Mission_Sleep/Harmless]: a dormant unit that is moving or has an attack order (player or team
+  script) leaves the mission. ALL09's freed POW GIs and Grizzlies never fired. **Shared system** (W4-SQ-05 dormancy).
+- **Crushable walls** (`629b1e3`, `engine/world.cpp`, `pres_map.inc`) [RE-FALLBACK: RA1 UnitClass::Can_Enter_Cell -- a
+  Crusher on a Crushable overlay gets MOVE_OK and crushes it; data OverlayType Crushable=yes]: Crusher land vehicles path
+  over standing GASAND / CAFNC* walls and flatten them (cell opens, leaves the leak mask, overlay no longer drawn).
+  ALL09's freed Grizzlies and POWs were walled in for good. Save v23 (`crush_wall_`). **Shared system** (pathing).
+
+Harness (no sim change): `place near X Y` and placement retries that watch the hovered origin (`5a94fa1`); building
+clicks fall back to a visible foundation cell, `click ... soft`, probe key `last_fired` (`ad521b0`); `H:TYPE:near`
+targets and `sel_near(h,ID)` (`84f71bf`). Gates: `--demo-saveload` re-pinned to `ea91172edde017b6` (save v23 format
+only); `--demo-campaign` and `--demo-abilities` re-run unchanged.
+
 ## How this was exercised
 
 | Tool | What it does | Where (all under `D:\ra2-wt\w4-seq\scratch\`) |
