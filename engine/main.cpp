@@ -5305,6 +5305,14 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     // ScenarioClass::Random is seeded per game in the original; the clone uses
     // the wall clock (the interactive game is not a gate).
     cc.seed = static_cast<std::uint32_t>(SDL_GetTicks()) ^ 0x52413252u;
+    // W5-A: a campaign seeds its crate RNG from the mission name, so a mission
+    // replays identically (the --play proofs) [RE-FALLBACK: the original's
+    // per-game ScenarioClass::Random seed is not modelled for campaigns].
+    if (campaign) {
+        std::uint32_t h = 2166136261u;
+        for (char ch : cfg.campaign_map) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
+        cc.seed = h;
+    }
     int humans = 0;
     for (const ra2engine::SkirmishSlot& sl : cfg.slots)
         if (sl.combatant && !sl.is_ai) ++humans;
