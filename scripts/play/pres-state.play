@@ -1,0 +1,42 @@
+# PRES-STATE -- W5-PRES R-120 acceptance: object state effects.
+#   iron-flash   an Iron-Curtained Grizzly in the opening 2.0x flash
+#   iron-dim     the same tank in the dim (0.2x..0.5x) pulse phase
+#   elite-flash  an elite promotion: 2-frame on/off 2.0x flash (frames f, f+2)
+#   chrono       a Chrono Legionnaire just teleported: 50 % translucent,
+#                WARPOUT at both ends
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn MTNK 0 building 0:GACNST +4 +0
+cheat spawn MTNK 0 building 0:GACNST +4 +1
+cheat spawn E1 0 building 0:GACNST +4 +3
+cheat spawn E1 0 building 0:GACNST +5 +3
+view building 0:GACNST +3 +1
+wait 2
+cheat pres_iron 0:MTNK:0
+wait 1
+shot iron-flash
+wait 8
+shot iron-dim
+cheat pres_vet 0:E1:1 2.0
+wait 2
+shot elite-a
+wait 2
+shot elite-b
+wait 1
+shot elite-c
+cheat spawn CLEG 0 building 0:GACNST +4 +4
+wait 2
+click unit 0:CLEG
+click building 0:GACNST +9 +4
+wait 3
+shot chrono
+end

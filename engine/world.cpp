@@ -343,39 +343,51 @@ ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_i
 
 // W3-B: the same remap from an explicit RA2 HSV triple (rules [Colors]), e.g.
 // ColorSchemes[0] LightGold=25,255,255 for AltPalette anims with no owner.
+// W5-PRES R-103 [RE: ColorScheme 0x68C110 -> ramp 0x68BDB0, docs/re/
+// w5-presentation.md §4]: indices 16..31 are REPLACED (the source ramp is not
+// read): shade i takes S' = trunc(SIN(50deg + i*40/15deg) * S) and
+// V' = trunc(COS(20deg + i*70/15deg) * V) (i == 0: COS(pi/16)) through the
+// integer HSV2RGB 0x517260; SIN/COS are the game's 8192-step float table
+// (0x84E004, index (n>>1)+(n&1), n = trunc(x * 16384/2pi)).
+namespace {
+float rmp_table(int k) { return std::sin(static_cast<float>(k) * 6.2831855f / 8192.0f); }
+int rmp_index(float x) {
+    const int n = static_cast<int>(x * 2607.594482421875f);
+    int idx = n >> 1;
+    if ((n & 1) && idx < 0x1FFF) ++idx;
+    return idx & 0x1FFF;
+}
+float rmp_sin(float x) { return rmp_table(rmp_index(x)); }
+float rmp_cos(float x) { return rmp_table(rmp_index(x) + 0x800); }
+ra2assets::Rgba rmp_hsv2rgb(unsigned h, unsigned s, unsigned v, std::uint8_t a) {
+    const unsigned f = (h * 6) % 255, sec = h * 6 / 255;
+    const unsigned p = (255 - s) * v / 255;
+    const unsigned q = (255 - f * s / 255) * v / 255;
+    const unsigned t = (255 - (255 - f) * s / 255) * v / 255;
+    unsigned r = v, g = t, b = p;
+    switch (sec) {
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t; g = p; b = v; break;
+        case 5: r = v; g = p; b = q; break;
+        default: break;   // 0 and 6
+    }
+    return ra2assets::Rgba{static_cast<std::uint8_t>(std::min(255u, r)), static_cast<std::uint8_t>(std::min(255u, g)),
+                           static_cast<std::uint8_t>(std::min(255u, b)), a};
+}
+}  // namespace
+
 ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s, int v) {
     ra2assets::Palette out = unit_pal;
-    const double hue  = h / 255.0;   // 0..1
-    const double sat  = s / 255.0;   // 0..1
-    const double vtop = v / 255.0;   // color's nominal ceiling
-    auto clamp_u8 = [](double v) -> std::uint8_t {
-        const int i = static_cast<int>(v + 0.5);
-        if (i < 0) return 0;
-        if (i > 255) return 255;
-        return static_cast<std::uint8_t>(i);
-    };
-    for (int i = 16; i <= 31; ++i) {
-        const ra2assets::Rgba src = unit_pal[i];
-        const int b = (static_cast<int>(src.r) + src.g + src.b) / 3;   // brightness
-        const double val = (b / 255.0) * vtop;   // Value spread by source brightness
-        // Standard HSV(h,s,v in 0..1) -> RGB.
-        const double h6 = hue * 6.0;
-        const int    seg = static_cast<int>(h6) % 6;
-        const double ff = h6 - std::floor(h6);
-        const double p = val * (1.0 - sat);
-        const double q = val * (1.0 - sat * ff);
-        const double t = val * (1.0 - sat * (1.0 - ff));
-        double r = 0.0, g = 0.0, bl = 0.0;
-        switch (seg) {
-            case 0: r = val; g = t;   bl = p;   break;
-            case 1: r = q;   g = val; bl = p;   break;
-            case 2: r = p;   g = val; bl = t;   break;
-            case 3: r = p;   g = q;   bl = val; break;
-            case 4: r = t;   g = p;   bl = val; break;
-            default: r = val; g = p;  bl = q;   break;   // case 5
-        }
-        out[i] = ra2assets::Rgba{clamp_u8(r * 255.0), clamp_u8(g * 255.0),
-                                 clamp_u8(bl * 255.0), src.a};
+    for (int i = 0; i < 16; ++i) {
+        double ang_a = i * 0.08144869842640204 + 0.3490658503988659;
+        if (i == 0) ang_a = 0.19634954084936207;
+        const double ang_b = i * 0.046542113386515455 + 0.8726646259971648;
+        const int s2 = static_cast<int>(rmp_sin(static_cast<float>(ang_b)) * static_cast<float>(s));
+        const int v2 = static_cast<int>(rmp_cos(static_cast<float>(ang_a)) * static_cast<float>(v));
+        out[16 + i] = rmp_hsv2rgb(static_cast<unsigned>(std::clamp(h, 0, 255)), static_cast<unsigned>(std::clamp(s2, 0, 255)),
+                                  static_cast<unsigned>(std::clamp(v2, 0, 255)), unit_pal[16 + i].a);
     }
     return out;
 }

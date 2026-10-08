@@ -7,10 +7,9 @@ click button "Single Player"
 click button Skirmish
 require scene == lobby
 # R-183: the map is picked on Customize Battle (the old `map:+` cycle target
-# is gone); xmp31s2 is in view after 3 scroll-strip clicks (as world-depth).
+# is gone); xmp31s2 is in view after 2 scroll-strip clicks (as world-depth).
 click button "Customize Battle"
 require page == "Customize Battle"
-click list:down
 click list:down
 click list:down
 click map:xmp31s2.map
