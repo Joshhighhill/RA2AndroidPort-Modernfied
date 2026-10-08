@@ -4,6 +4,8 @@
 #include <utility>
 #include <vector>
 
+#include "ra2assets/bink_audio.hpp"
+
 namespace ra2assets {
 
 // A parsed Bink 1 ("BIKi") video container: the 44-byte little-endian header
@@ -21,13 +23,19 @@ struct BinkFile {
     int fps_num = 0, fps_den = 0;
     std::vector<uint32_t> frame_offsets;   // size num_frames+1, raw (bit0 = keyframe)
     std::vector<uint8_t> data;             // the whole file, verbatim
+    // W5-E2 (R-134): the audio track headers (none in the RA2 files) --
+    // per track u32 max packet size, u16 sample rate + u16 flags, u32 id.
+    std::vector<BinkAudioTrack> audio;
+    // The audio packet of track t in frame f (its u32 sample count, then the
+    // blocks), or {nullptr, 0} when the frame has none for that track.
+    std::pair<const uint8_t*, std::size_t> audio_packet(int f, int t) const;
 
     // True iff frame f's index entry has bit 0 set (keyframe). In the RA2 files
     // only frame 0 is a keyframe.
     bool is_keyframe(int f) const;
 
-    // Frame f's video packet byte range: [offset[f] & ~1, offset[f+1] & ~1),
-    // pointing into `data`. Throws std::out_of_range if f is not in [0,num_frames).
+    // Frame f's video packet byte range: [offset[f] & ~1, offset[f+1] & ~1)
+    // after the frame's audio packets (W5-E2), pointing into `data`. Throws std::out_of_range if f is not in [0,num_frames).
     std::pair<const uint8_t*, std::size_t> frame(int f) const;
 
     // Parse a Bink container from a whole-file byte buffer. Throws

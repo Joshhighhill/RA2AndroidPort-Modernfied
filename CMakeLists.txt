@@ -86,6 +86,9 @@ target_sources(ra2assets_tests PRIVATE tests/test_csf.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_fnt.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_ufnt.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_bink.cpp)
+# W5-E2 (R-134): Bink Audio vs ffmpeg (tests/data fixtures)
+target_sources(ra2assets_tests PRIVATE tests/test_bink_audio.cpp)
+target_compile_definitions(ra2assets_tests PRIVATE RA2_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 target_sources(ra2assets_tests PRIVATE tests/test_fileio.cpp)
 # iso_project.cpp is pure C++17 (no SDL) and lives under engine/ so it can be
 # compiled into BOTH this test binary and the ra2engine executable below

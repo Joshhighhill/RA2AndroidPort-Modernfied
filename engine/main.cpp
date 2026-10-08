@@ -6023,6 +6023,7 @@ public:
         // runs them as a modal loop; the scenario does not advance meanwhile).
         if (ingame_movie_.active()) {   // W5-E: a trigger movie pauses the scenario
             ingame_movie_.update(dt);
+            if (audio_.enabled && audio_.mixer) audio_.out.pump(*audio_.mixer);   // W5-E2 movie sound
             now_ = SDL_GetTicks();
             return;
         }
@@ -7567,6 +7568,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.fsscrn_pal = store.fsscrn_pal.get();
     store.art.dialog_pal = store.dialog_pal.get();
     store.art.audio    = store.audio.get();
+    g_movie_audio = store.audio ? &store.audio->sys : nullptr;   // W5-E2 movie sound between scenes
     // [Task 1] Wire true-design chrome + palettes (non-owning views into store).
     store.art.bg_s          = store.bg_s.get();
     store.art.lwscrn        = store.lwscrn.get();
