@@ -325,6 +325,13 @@ public:
         for (const auto& tf : teams_data_.taskforces)
             for (const ra2engine::MapTaskMember& m : tf.second) types_.unit(m.type);
         resolve_base_nodes();   // [G-69] before the roster is handed to the World
+        // W5-A: ARM THE ECONOMY. The campaign World (build_campaign_world) never
+        // went through launch_skirmish's real_play_arm_economy, so types_ stayed
+        // empty: no ore growth, no harvester FSM, no refinery income for the
+        // player or any computer house in any mission (ALL03's Chrono Miner sat
+        // in SeekOre forever). The water grid is already built by
+        // depth_set_terrain, so only the economy wiring is needed here.
+        wire_economy(w_, ba_, rules);
         w_.refresh_building_types(ba_.roster);   // G16: btypes() must see mission types
         w_.set_repair_sell_rules(ba_.repair_sell);
         place_objects(objs);
