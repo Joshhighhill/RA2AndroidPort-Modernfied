@@ -4143,7 +4143,7 @@ Everything is armed by `wire_w5` in the real `GameScene` only.
   roster growth: one more placed structure), `--demo-saveload` (format v18) and `--demo-campaign`
   (wave-5 type data in the campaign worlds), re-pinned above; `--demo-base`/`--demo-techtree`
   witness `roster=40` (hash unaffected).
-- **Verification** (merged with master `53fd609`): unit suite PENDING; **PENDING** `--play` scripts pass (one at a time); all 27 `--demo-*` gates print their pins (no re-pin: `--demo-saveload` stays `3a946fb75996d946`, it does not hash the format version or the new optional `AUDI` section).
+- **Verification (W5-E)** (merged with master `92112e4`): unit suite 839/839; **106/106** `--play` scripts pass (one at a time; 6 new); all 27 `--demo-*` gates print their current pins (no re-pin: `--demo-saveload` stays `420ac604a50be366` -- it does not hash the format version or the optional `AUDI` section). Save format **v19**. Also fixed: `load_world`'s range check rejected a garrisoned unit's `cargo_of` sentinel, so a skirmish saved after the AI garrisoned a building could not be loaded (`save-w5`).
 
 - **Verification** (merged with master `53fd609`): unit suite 835/835; **100/100** `--play`
   scripts pass one at a time (the 8 new `pres-*` included; `probe-bridge` / `world-depth` now
