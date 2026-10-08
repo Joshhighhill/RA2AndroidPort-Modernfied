@@ -19,6 +19,7 @@
         for (const char* f : {"snd", "why", "eva", "evareq"}) p.zero_families.insert(f);
         for (const auto& kv : g_pres_audio_counts) p.set(kv.first, static_cast<double>(kv.second));
         p.set("follow_unit", follow_unit_);           // W5-E Follow hotkey
+        p.set("hidden_marked", static_cast<double>(hidden_.marked));   // W5-E2 occluded objects (last frame)
         p.set_s("load_art", SkirmishLoadArt::g_skirmish_load_art_drawn);   // W5-E skirmish loading art
         p.set_s("screencap", last_screencap_);        // W5-E ScreenCapture hotkey
         p.set("hotkeys_version", hotkeys_ver_);

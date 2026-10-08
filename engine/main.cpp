@@ -5673,6 +5673,7 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
 
 #include "movie_player.inc"   // W5-E campaign movies (Bink)
 #include "skirmish_load.inc"   // W5-E: the ls800<country>.shp loading screen
+#include "pres_hidden.inc"     // W5-E2: See Hidden Objects (Behind= anim)
 
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
@@ -6376,6 +6377,8 @@ public:
         update_light_sources();   // W3-FIX-A
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
+        hidden_.rules = &rules_ini_;   // W5-E2 R-146: the Behind= marker over occluded objects
+        hidden_.draw(ren, tc, world_, ba_, cam_, playfield_w_, kWinH, g_user_settings && g_user_settings->show_hidden);
         if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
             int pcx = 0, pcy = 0;
             input_.placement_cell(pcx, pcy);
@@ -7111,6 +7114,7 @@ private:
     bool                 show_briefing_ = false;  // F1 toggles the mission briefing
     RestatePage          restate_;                // W5-E: the briefing as dialog 0x10C
     MoviePlayer          ingame_movie_;           // W5-E: trigger actions 10 / 100 / 116
+    HiddenMarkers        hidden_;                 // W5-E2: See Hidden Objects
     int                  brief_mx_ = -1, brief_my_ = -1;
     static bool soviet_campaign(const ra2engine::SkirmishConfig& c) {
         return !c.campaign_map.empty() && camp::up(c.campaign_side) == "NOD";
