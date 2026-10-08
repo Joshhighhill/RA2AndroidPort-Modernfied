@@ -38,3 +38,18 @@ auto pres_subcell_impl(const U& u, double& dx, double& dy, int) -> decltype(void
 template <class U>
 void pres_subcell_impl(const U&, double& dx, double& dy, long) { dx = dy = 0.0; }
 inline void pres_subcell_offset(const ra2engine::Unit& u, double& dx, double& dy) { pres_subcell_impl(u, dx, dy, 0); }
+
+// Agent C (R-047): a still Mirage's disguise tree, u.w5.mirage_tree (a
+// TerrainType id; "" none). [hook: inert until w5-abil merges]
+template <class U>
+auto pres_mirage_impl(const U& u, int) -> decltype(std::string(u.w5.mirage_tree)) { return u.w5.mirage_tree; }
+template <class U>
+std::string pres_mirage_impl(const U&, long) { return std::string(); }
+inline std::string pres_mirage_tree(const ra2engine::Unit& u) {
+    if (!u.disguised) return std::string();
+    std::string t = pres_mirage_impl(u, 0);
+    // --play diagnostic before agent C's state lands: RA2_PRES_MIRAGE=<tree>.
+    if (t.empty() && u.disguise_when_still)
+        if (const char* e = std::getenv("RA2_PRES_MIRAGE")) t = e;
+    return t;
+}

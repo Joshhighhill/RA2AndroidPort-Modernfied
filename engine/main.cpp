@@ -3547,6 +3547,14 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
         if (world.unit_hidden_from(0, u)) return;
         if (u.ia.vanish) return;   // W3-B: a death anim replaced the body
+        // W5-PRES R-047 [RE: abilities-w5.md §9]: the enemy sees a still Mirage
+        // as its DefaultMirageDisguises tree; its owner sees the tank.
+        if (u.house != 0 && g_map_dressing) {
+            const std::string tree = pres_mirage_tree(u);
+            if (!tree.empty() && g_map_dressing->draw_tree_at(ren, tc, world, tree, u.cell_x, u.cell_y, u.level,
+                                                             g_map_pals, cam, W, H))
+                return;
+        }
         // Engineer/Spy Capture [RE: capture.md §C1]: a disguised unit selects the
         // SHP for its disguise type (draw_unit then blits it in the disguised
         // house's palette). When NOT disguised draw_image == u.image -> this is

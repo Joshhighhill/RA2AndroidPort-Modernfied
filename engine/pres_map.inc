@@ -284,6 +284,30 @@ public:
     // objects (render_world, kind 3) so a ship under a deck is covered by it and
     // a unit on the deck draws over it. `layer_decks_` false = the old ground
     // pass (diagnostic).
+    // W5-PRES R-047: a disguised Mirage drawn as its DefaultMirageDisguises
+    // tree (a [Terrain] object at the unit's cell, shadow half included).
+    bool draw_tree_at(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
+                      const std::string& type, int x, int y, int lvl, const ra2assets::Palette* pals[3],
+                      const ra2engine::Camera& cam, int W, int H) {
+        auto it = trees_.find(type);
+        if (it == trees_.end()) {
+            Obj o;
+            o.shp = art_shp(pres_upper(type));
+            o.key = "terr:" + pres_upper(type);
+            o.shadow = true;
+            it = trees_.emplace(type, o).first;
+        }
+        if (!it->second.shp) return false;
+        Obj o = it->second;
+        o.x = x;
+        o.y = y;
+        o.level = lvl;
+        o.tex.clear();
+        o.stex.clear();
+        o.tex_tc = 0;
+        draw(ren, tc, w, o, pals, cam, W, H);
+        return true;
+    }
     const std::vector<int>& decks() const { return decks_; }
     const ra2assets::MapFile* map() const { return map_; }
     bool deck_cell(int x, int y) const { return deck_cells_.count(y * 1000 + x) != 0; }
@@ -493,6 +517,7 @@ private:
     std::map<std::string, std::shared_ptr<ra2assets::ShpFile>> cache_;
     std::vector<Obj> objects_, smudges_, overlays_;
     std::vector<int> decks_;               // W5-PRES R-100: overlays_ indices of high decks
+    std::map<std::string, Obj> trees_;     // W5-PRES R-047: Mirage disguise art
     std::set<int> deck_cells_;             // 1000*y + x
     bool layer_decks_ = true;
     std::vector<std::string> names_;   // [OverlayTypes] by runtime index
