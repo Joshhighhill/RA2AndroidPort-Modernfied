@@ -87,6 +87,7 @@
 #include "weapon_resolve.hpp"  // Gap fix C: TechnoType weapon slots
 #include "gamespeed.hpp"       // Gap fix C: RE-T1 logic rate per GameSpeed
 #include "world.hpp"
+#include "abil_w5_rules.hpp"   // wave-5 (agent C): requires_stolen_bits
 
 #include "ra2assets/art.hpp"
 #include "ra2assets/asset_fs.hpp"   // W3-FIX-A (asset_search.inc)
@@ -1095,6 +1096,13 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     else if (ability_flag(ini, wh, "Parasite", false)) s.kind = ra2engine::AbilityKind::Parasite;
     else if (ability_flag(ini, wh, "Temporal", false)) s.kind = ra2engine::AbilityKind::Temporal;
     else if (ability_flag(ini, wh, "IvanBomb", false)) s.kind = ra2engine::AbilityKind::IvanBomb;
+    {   // wave-5 R-048: projectile AA/AG + flight, the same resolver units use
+        const ra2engine::WeaponSlot ws = ra2engine::resolve_weapon_slot(rules, w);
+        s.slot_set = ws.valid;
+        s.aa = ws.aa;
+        s.ag = ws.ag;
+        s.proj = ws.proj;
+    }
     return s;
 }
 
@@ -1170,6 +1178,9 @@ void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini)
     // Apocalypse (Explodes=yes) and both attack dogs (ParasiteDog warhead,
     // Parasite=yes: one bite kills any infantry, Verses 0% vs vehicles).
     for (const char* extra : {"DTRUCK", "APOC", "DOG", "ADOG"}) ids.push_back(extra);
+    // Wave-5 (R-049): the Giant Squid's SquidGrab warhead ParasitePlus is
+    // Parasite=yes -- the P4 parasite rides the ship it grabs.
+    ids.push_back("SQD");
     for (const auto& kv : ini.section("InfantryTypes")) {
         const std::string& id = kv.second;   // RC-5: comment already cut by Ini
         if (!id.empty() && rules.section_double(id, "IFVMode", 0.0) != 0.0 &&
@@ -1180,6 +1191,91 @@ void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini)
         if (!ini.has(id)) continue;
         world.register_ability_profile(rules.image(id), resolve_ability_profile(rules, ini, id));
     }
+}
+
+// Wave-5 (agent C) [RE: docs/re/abilities-w5.md]: the real-play-only wave-5
+// mechanics -- recovered globals, per-image unit profiles (Tesla Trooper
+// ElectricAssault, OpenTopped) and the art-side DelayedFireDelay of every
+// roster building. Called by GameScene only (never a gate), after the
+// roster may have grown (map tech buildings) too.
+void w5_arm_building_art(BuildingAssets& ba, const Ini& art_ini) {
+    for (ra2engine::BuildingTypeDef& d : ba.roster) {
+        const std::string img = d.image.empty() ? d.id : d.image;
+        const std::string v = art_ini.get(img, "IsAnimDelayedFire", "");
+        const bool on = !v.empty() && (v[0] == 'y' || v[0] == 'Y' || v[0] == 't' || v[0] == 'T' || v[0] == '1');
+        d.w5.delayed_fire_delay = on ? std::max(0, std::atoi(art_ini.get(img, "DelayedFireDelay", "0").c_str())) : 0;
+    }
+}
+void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, const Ini& ini,
+             const Ini& art_ini) {
+    ra2engine::RulesW5 r;
+    r.prism_support_modifier = (int)std::lround(rules.general_double("PrismSupportModifier", 150.0));
+    r.prism_support_max = (int)rules.general_double("PrismSupportMax", 8.0);
+    r.prism_support_delay = (int)rules.general_double("PrismSupportDelay", 45.0);
+    r.prism_support_duration = (int)rules.general_double("PrismSupportDuration", 15.0);
+    r.self_heal_inf_frames = (int)rules.general_double("SelfHealInfantryFrames", 50.0);
+    r.self_heal_inf_amount = (int)rules.general_double("SelfHealInfantryAmount", 20.0);
+    r.self_heal_unit_frames = (int)rules.general_double("SelfHealUnitFrames", 75.0);
+    r.self_heal_unit_amount = (int)rules.general_double("SelfHealUnitAmount", 5.0);
+    r.open_topped_range_bonus = rules.section_double("CombatDamage", "OpenToppedRangeBonus", 2.0);
+    r.open_topped_damage_mult = rules.section_double("CombatDamage", "OpenToppedDamageMultiplier", 1.2);
+    {   // [General] DefaultMirageDisguises=TREE01,TREE02,TREE03,TREE04
+        std::string cur;
+        for (char c : rules.general_string("DefaultMirageDisguises", "") + ",") {
+            if (c == ',') {
+                while (!cur.empty() && std::isspace((unsigned char)cur.back())) cur.pop_back();
+                std::size_t a = 0;
+                while (a < cur.size() && std::isspace((unsigned char)cur[a])) ++a;
+                if (a < cur.size()) r.mirage_trees.push_back(cur.substr(a));
+                cur.clear();
+            } else cur += c;
+        }
+    }
+    std::map<std::string, ra2engine::UnitProfileW5> prof;
+    for (const char* list : {"InfantryTypes", "VehicleTypes", "AircraftTypes"}) {
+        if (!ini.has(list)) continue;
+        for (const auto& kv : ini.section(list)) {
+            const std::string& id = kv.second;
+            if (id.empty() || !ini.has(id)) continue;
+            ra2engine::UnitProfileW5 p;
+            const std::string sec = ra2engine::type_weapon_id(rules, id, 1, false);
+            if (!sec.empty()) {
+                const std::string wh = rules.section_string(sec, "Warhead", "");
+                if (!wh.empty() && rules.section_flag(wh, "ElectricAssault", false)) {
+                    p.assault = true;
+                    p.assault_rof = (int)rules.section_double(sec, "ROF", 25.0);
+                }
+            }
+            p.open_topped = rules.section_flag(id, "OpenTopped", false);
+            if (rules.section_double(id, "Passengers", 0.0) > 0.0)
+                p.deploy_frames = (int)(rules.section_double(id, "DeployTime", 0.0) * 900.0);
+            p.airstrike_team = (int)rules.section_double(id, "AirstrikeTeam", 0.0);
+            if (p.airstrike_team > 0) {
+                p.elite_airstrike_team = (int)rules.section_double(id, "EliteAirstrikeTeam", p.airstrike_team);
+                p.airstrike_type = rules.section_string(id, "AirstrikeTeamType", "");
+                p.airstrike_recharge = (int)rules.section_double(id, "AirstrikeRechargeTime", 0.0);
+                p.elite_airstrike_recharge =
+                    (int)rules.section_double(id, "EliteAirstrikeRechargeTime", p.airstrike_recharge);
+                const std::string fl = ra2engine::type_weapon_id(rules, id, 1, false);
+                p.flare_range = fl.empty() ? 12.0 : rules.weapon_range(fl);
+                if (p.airstrike_type.empty()) p.airstrike_team = 0;
+            }
+            {
+                const std::string pw = ra2engine::type_weapon_id(rules, id, 0, false);
+                const std::string wh = pw.empty() ? std::string() : rules.section_string(pw, "Warhead", "");
+                if (!wh.empty() && rules.section_flag(wh, "Parasite", false)) {
+                    p.paralyzes = rules.section_double(wh, "Paralyzes", 0.0) > 0.0;
+                    p.culling = rules.section_flag(wh, "Culling", false);
+                }
+            }
+            if (p.assault || p.open_topped || p.deploy_frames > 0 || p.airstrike_team > 0 || p.paralyzes ||
+                p.culling)
+                prof[rules.image(id)] = p;
+        }
+    }
+    w5_arm_building_art(ba, art_ini);
+    world.refresh_building_types(ba.roster);
+    world.arm_w5(r, prof);
 }
 
 // Logs the fire/die entries (mirrors resolve_combat_unit's [unit] log line)
@@ -1973,6 +2069,15 @@ std::vector<int> refinery_type_indices(const BuildingAssets& ba, const Rules& ru
     return v;
 }
 
+// Wave-5 (R-042) [RE: abilities-w5.md §1]: a RequiresStolen*Tech type keeps its
+// rules TechLevel in w5.base_tech_level and starts unbuildable (TechLevel 0);
+// World::apply_stolen_tech_gate restores it once the house stole the tech.
+void rp_arm_stolen_tech(const Rules& rules, ra2engine::UnitTypeDef& d) {
+    d.w5.requires_stolen = ra2engine::requires_stolen_bits(rules, d.id);
+    d.w5.base_tech_level = d.tech_level;
+    if (d.w5.requires_stolen) d.tech_level = 0;
+}
+
 // Engineer/Spy Capture [RE: capture.md §B]: map every roster building TYPE to its
 // spy-infiltration purpose (the interactive spy right-click gesture; input.cpp).
 // Resolved ONCE from the id + power field, priority Refinery > PowerPlant >
@@ -1992,6 +2097,10 @@ infiltrate_purposes_for(const BuildingAssets& ba, const Rules& rules) {
         const ra2engine::BuildingTypeDef& d = ba.roster[i];
         const std::string& id = d.id;
         if (!d.spyable) continue;   // W2-SK-20: Spyable=no -> refused (None)
+        // Wave-5: the binary's own dispatch order, resolved from rules by
+        // fill_building_abilities (abil_w5_rules.cpp) -- fixes the old id
+        // list's GACHRO (the Chronosphere is GACSPH) and Battle Lab = radar.
+        if (d.w5.spy_purpose >= 0) { out[i] = static_cast<P>(d.w5.spy_purpose); continue; }
         if (!rules.free_unit(id).empty()) { out[i] = P::Refinery; continue; }  // GAREFN/NAREFN
         if (d.power > 0) { out[i] = P::PowerPlant; continue; }                 // GAPOWR/NAPOWR
         if (in(id, {"NAMISL", "GACHRO", "NAIRON", "GAWEAT", "GAWEATH", "GAAIRC",
@@ -2150,7 +2259,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
     // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
     // placeholder (buildings are never dropped on art failure).
-    static const char* kRoster[39] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    static const char* kRoster[40] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
@@ -2177,7 +2286,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                        // (kept, art.ok=false, never placed).
                                        "GAYARD", "NAYARD", "GAWALL", "GADEPT", "NADEPT",
                                        "NATECH", "NAIRON", "NAMISL", "GACSPH", "GAGAP",
-                                       "GAOREP", "GTGCAN", "AMRADR", "GAWEAT", "NAINDP"};
+                                       "GAOREP", "GTGCAN", "AMRADR", "GAWEAT", "NAINDP",
+                                       // Wave-5 (agent C, item 4) APPEND-ONLY at index
+                                       // 39: the Allied Spy Satellite Uplink (GASPYSAT
+                                       // SpySat=yes -> grants_map_reveal, the shroud.md
+                                       // §7A latch that had no rostered owner). Only
+                                       // the roster= WITNESS grows 39 -> 40.
+                                       "GASPYSAT"};
     constexpr int kRoster2First = 24;   // first P6-appended index
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
@@ -2246,8 +2361,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     };
     (void)get_mix;
 
-    ba.roster.reserve(39);
-    ba.art.reserve(39);
+    ba.roster.reserve(40);
+    ba.art.reserve(40);
     int ok_n = 0;
     for (const char* id_c : kRoster) {
         const std::string id = id_c;
@@ -5597,6 +5712,7 @@ public:
         // Deliberately NOT in launch_skirmish -- the skirmish/maps gates call
         // that, and must keep the abilities firewall closed.
         wire_abilities(world_, rules_, rules_ini_);
+        wire_w5(world_, ba_, rules_, rules_ini_, art_ini_);   // wave-5 (agent C)
 
         // Survivor crews [RE: repair-sell.md §B3/§D1]: World is asset-free, so
         // each side's crew infantry is resolved HERE from [General]
@@ -5862,6 +5978,7 @@ public:
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
+        world_.apply_stolen_tech_gate(ur_.defs, 0);   // wave-5 (R-042): spy-stolen tech unlocks
         pres_.logic_tick(world_, ba_, player_credits_, world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
@@ -6401,6 +6518,7 @@ private:
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
             wire_abilities(world_, rules_, rules_ini_);
+            wire_w5(world_, ba_, rules_, rules_ini_, art_ini_);   // wave-5 (agent C)
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
             init_map_dressing();   // G-87: the fresh world gets its map dressing again
             show_banner(camp::csf_text(dir_, "TXT_ERROR_LOADING_GAME"));
@@ -14733,7 +14851,7 @@ DemoRoster2Result simulate_roster2(Assets& a, UnitAssets& ua, BuildingAssets& ba
 
     // ---- (1) content -------------------------------------------------------
     int bld_n = 0, bld_art = 0;
-    for (int i = 24; i < static_cast<int>(ba.roster.size()); ++i) {
+    for (int i = 24; i < std::min(39, static_cast<int>(ba.roster.size())); ++i) {
         const ra2engine::BuildingTypeDef& d = ba.roster[i];
         ++bld_n;
         if (ba.art[i].ok) ++bld_art;

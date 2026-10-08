@@ -220,21 +220,21 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-042 | Spying on a Battle Lab gives no stolen tech, so the Chrono Commando, Psi-Corps Trooper and Chrono Ivan can never be built (W2-SK-20 part) | Units & abilities | MAJOR | OPEN | `engine/realplay_economy.inc:146-149`; `engine/world.hpp:1210` (no TechLab infiltrate purpose) | M | N |
-| R-043 | Prism Tower chaining (PrismSupport, PrismForwarding) is not modelled (W2-SK-22) | Units & abilities | MAJOR | OPEN | `git grep PrismSupport engine` returns 0 | M | Y |
-| R-044 | The Gap Generator does nothing: no shroud field (G-27, W2-SK-22) | Units & abilities | MAJOR | OPEN | `git grep GapGenerator engine` returns 0 | M | Y |
-| R-045 | Tesla Troopers cannot charge Tesla Coils (Overpowerable) (W2-SK-22) | Units & abilities | MINOR | OPEN | `git grep Overpowerable engine` returns 0 | M | N |
-| R-046 | No Boris airstrike (AirstrikeTeam), and Engineers cannot defuse Ivan bombs (W2-SK-22) | Units & abilities | MINOR | OPEN | `git grep AirstrikeTeam engine` and `git grep BombDisarm engine` both return 0 | M | Y |
-| R-047 | A disguised Mirage is still drawn as the tank, not as a tree (W2-SK-22) | Units & abilities | MINOR | PARTIAL | `engine/world.cpp:1983-2000` | M | N |
-| R-048 | The IFV passenger swap changes only damage, ROF, range and Verses; the projectile and AA/AG flags stay. The Engineer IFV RepairBullet still targets enemies (W2-SK-26 part) | Units & abilities | MINOR | PARTIAL | `engine/world_abilities.cpp:261-269` | S | N |
-| R-049 | The Giant Squid grab (ParasitePlus) is not modelled (W2-AN-15 part) | Units & abilities | MINOR | PARTIAL | `docs/gap/wave2/02-air-naval-sw.md` §5 row 15 | M | Y |
+| R-042 | Spying on a Battle Lab gives no stolen tech, so the Chrono Commando, Psi-Corps Trooper and Chrono Ivan can never be built (W2-SK-20 part) | Units & abilities | MAJOR | FIXED (w5-abil 06e4827; RE FUN_004571E0; play abil-stolen-tech) | `engine/realplay_economy.inc:146-149`; `engine/world.hpp:1210` (no TechLab infiltrate purpose) | M | N |
+| R-043 | Prism Tower chaining (PrismSupport, PrismForwarding) is not modelled (W2-SK-22) | Units & abilities | MAJOR | FIXED (w5-abil faad5ac; RE Mission_Attack/PrismUpdate; play abil-prism-chain) | `git grep PrismSupport engine` returns 0 | M | Y |
+| R-044 | The Gap Generator does nothing: no shroud field (G-27, W2-SK-22) | Units & abilities | MAJOR | FIXED (w5-abil faad5ac; RE CreateGap + 120-frame re-shroud; play abil-gap) | `git grep GapGenerator engine` returns 0 | M | Y |
+| R-045 | Tesla Troopers cannot charge Tesla Coils (Overpowerable) (W2-SK-22) | Units & abilities | MINOR | FIXED (w5-abil faad5ac; RE Overpower/IsPowerOnline; play abil-tesla-charge) | `git grep Overpowerable engine` returns 0 | M | N |
+| R-046 | No Boris airstrike (AirstrikeTeam), and Engineers cannot defuse Ivan bombs (W2-SK-22) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4 defuse, a4ac30c Boris; plays abil-defuse, abil-boris; plane path RE-FALLBACK) | `git grep AirstrikeTeam engine` and `git grep BombDisarm engine` both return 0 | M | Y |
+| R-047 | A disguised Mirage is still drawn as the tank, not as a tree (W2-SK-22) | Units & abilities | MINOR | PARTIAL (w5-abil 53e50e4: sim picks DefaultMirageDisguises tree into Unit::w5.mirage_tree; draw = agent D) | `engine/world.cpp:1983-2000` | M | N |
+| R-048 | The IFV passenger swap changes only damage, ROF, range and Verses; the projectile and AA/AG flags stay. The Engineer IFV RepairBullet still targets enemies (W2-SK-26 part) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4: AA/AG/projectile follow the swap; RepairBullet heals allies; play abil-ifv-repair) | `engine/world_abilities.cpp:261-269` | S | N |
+| R-049 | The Giant Squid grab (ParasitePlus) is not modelled (W2-AN-15 part) | Units & abilities | MINOR | PARTIAL (w5-abil 9aefae3: ParasitePlus paralysis/culling on the P4 parasite; the squid never fires at a ship in play -- combat.cpp aim gate, agent B) | `docs/gap/wave2/02-air-naval-sw.md` §5 row 15 | M | Y |
 | R-050 | `Crush=1.8`, AutoCrush and PlayerAutoCrush steering are missing; vehicles crush only what they drive into (G-47 part, RE-W6) | Units & abilities | MINOR | PARTIAL | no AutoCrush reader; `engine/world.cpp:4582` | M | Y |
-| R-051 | Transport `DeployTime` delay not modelled (03 transports) | Units & abilities | MINOR | OPEN | `engine/world.cpp:1423` | S | N |
-| R-052 | Allies cannot board each other's transports | Units & abilities | MINOR | OPEN | `engine/cargo.cpp:31`, `engine/cargo.hpp:36` | S | N |
+| R-051 | Transport `DeployTime` delay not modelled (03 transports) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4; RE FUN_004A5150 DeployTime*900) | `engine/world.cpp:1423` | S | N |
+| R-052 | Allies cannot board each other's transports | Units & abilities | MINOR | FIXED (w5-abil 06e4827; can_load takes IsAlliedWith; both control schemes) | `engine/cargo.cpp:31`, `engine/cargo.hpp:36` | S | N |
 | R-053 | Garrison combat: Assaulter clearing of garrisons and DistributedFire are missing. Garrison shots are instant hits (README:3385) | Units & abilities | MINOR | OPEN | README:3385; `engine/world_depth.cpp:262` `[RE-FALLBACK]` | S | Y |
 | R-054 | Jump projectiles are not drawn (Terror Drone, dog, Squid leap); they stay scripted abilities (W4-PJ-14) | Units & abilities | MINOR | OPEN | `engine/projectile.hpp:35` (no jump kind) | M | N |
 | R-055 | V3 single-shot: the root cause (spawn slot not freed) is only "probable". 1edba43 also changed spawn regen (W4-PJ-12) | Units & abilities | MINOR | PARTIAL | `docs/gap/wave4/04-projectiles.md` status table | S | N |
-| R-056 | The Tech Airport (CAAIRP) paradrop is missing. The generic ParaDrop effect and the American paradrop work (W2-AN-17) | Units & abilities | MINOR | PARTIAL | `git grep CAAIRP engine` returns 0 | S | N |
+| R-056 | The Tech Airport (CAAIRP) paradrop is missing. The generic ParaDrop effect and the American paradrop work (W2-AN-17) | Units & abilities | MINOR | FIXED (w5-abil faad5ac; Capturable+NeedsEngineer map structures are World buildings; play abil-tech-buildings) | `git grep CAAIRP engine` returns 0 | S | N |
 | R-057 | FlakProj impact scatter and the Inviso cliff/wall trace are not modelled (no SubjectToCliffs/Walls). Flak MinimumRange is also missing (W4-PJ-15) | Units & abilities | MINOR | OPEN | `engine/projectile.cpp:150,376-394`; `engine/main.cpp:837` | S | Y |
 
 ### Gameplay / simulation
@@ -255,9 +255,9 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-080 | The AI never fields fixed-wing aircraft (Harrier, Black Eagle) (W2-AN still-open, 04#17) | AI | MINOR | OPEN | `engine/world.cpp:3047` skips `fixed_wing`; `engine/ai_skirmish.inc:32` | M | N |
-| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | PARTIAL | no AI caller of `order_occupy` | M | N |
-| R-082 | Difficulty pacing is not calibrated against an original capture. The Armor and Groundspeed handicaps are not applied, so Brutal units are not tougher or faster (RE-Q5, G-63 part) | AI | MINOR | RE-FALLBACK | `engine/ai_base.hpp:101-105` | M | Y |
+| R-080 | The AI never fields fixed-wing aircraft (Harrier, Black Eagle) (W2-AN still-open, 04#17) | AI | MINOR | FIXED (w5-abil 7818961; ORCA/BEAG in the AI roster, built onto airfield pads; play abil-ai-air) | `engine/world.cpp:3047` skips `fixed_wing`; `engine/ai_skirmish.inc:32` | M | N |
+| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | FIXED (w5-abil 7818961, RE-FALLBACK choice rule; play abil-ai-air) | no AI caller of `order_occupy` | M | N |
+| R-082 | Difficulty pacing is not calibrated against an original capture. The Armor and Groundspeed handicaps are not applied, so Brutal units are not tougher or faster (RE-Q5, G-63 part) | AI | MINOR | RE-FALLBACK (w5-abil: AssignHandicap FUN_004F6DD0 traced; ReceiveDamage divides by the COUNTRY armor mult, no reader of house Armor/Groundspeed found -- left unapplied, docs/re/abilities-w5.md §12) | `engine/ai_base.hpp:101-105` | M | Y |
 | R-083 | AI behaviour fallbacks (about 55 markers): xorshift RNG instead of the lockstep RNG, wall ring and placement scan, team tie-break, base-defence triggers dropped, target picker proxy, moves abandoned after 10 s, 60 s boarding cap (RE-A4 and others) | AI | MINOR | RE-FALLBACK | `engine/ai_base.cpp:9,48,176`; `engine/ai_team.cpp:157,309,385`; `engine/ai_trigger.cpp:113`; `engine/world.cpp:2587,3093,3919` | L | Y |
 | R-084 | On May Day (2 ore mines) AI-vs-AI ends with no winner after 40 min. This may be faithful | AI | MINOR | OPEN | `docs/gap/wave2/03-skirmish-match.md` §7.3 | S | Y |
 

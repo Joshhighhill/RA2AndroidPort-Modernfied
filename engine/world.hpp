@@ -363,6 +363,7 @@ struct Unit {
     bool disguise_when_still = false;
     int still_frames = 0;            // Mirage: frames stopped and not firing
     AnUnit an;                       // W2-AN: naval/air/SW runtime state (air_naval.hpp)
+    UnitW5 w5;                       // wave-5 abilities (abil_w5.hpp)
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -1253,7 +1254,10 @@ public:
     // the building (self-spy) or b_idx is invalid/Dead. Opens capture_any_. The
     // caller consumes the spy on true. steal_pct = SpyMoneyStealPercent (0.5),
     // blackout = SpyPowerBlackout (1000).
-    enum class InfiltratePurpose { None, Refinery, PowerPlant, Superweapon, Factory, RadarLab };
+    // Wave-5 (agent C) [RE: abilities-w5.md §1]: StolenAllied/Soviet/Third =
+    // a [AI] BuildTech type (GATECH/NATECH/YATECH) by its AIBasePlanningSide.
+    enum class InfiltratePurpose { None, Refinery, PowerPlant, Superweapon, Factory, RadarLab,
+                                   StolenAllied, StolenSoviet, StolenThird };
     bool infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purpose,
                              double steal_pct, int blackout);
     // Engineer repair [RE-GATE APPLIED: capture.md §A5]: heal building b_idx to
@@ -1811,6 +1815,33 @@ public:
     // The per-frame G16 pass (called from step()).
     void step_depth(double dt);
 
+    // ===== Wave-5 unit and building abilities (world_w5.cpp, agent C) =====
+    // [RE: docs/re/abilities-w5.md]. All state lives in w5_ / Unit::w5 /
+    // Building::w5 / BuildingTypeDef::w5; inert until a roster fills the type
+    // data or a spy steals tech (w5_.any firewall).
+    // Stolen tech (HouseClass Side0/1/2TechInfiltrated): kStolen* bits.
+    std::uint8_t stolen_tech(int house) const {
+        return house >= 0 && house < (int)w5_.stolen_tech.size() ? w5_.stolen_tech[(std::size_t)house] : 0;
+    }
+    void grant_stolen_tech(int house, std::uint8_t bits);
+    // HouseClass::HasAllStolenTech: a RequiresStolen* type keeps TechLevel 0
+    // (never buildable) until `house` holds every bit it needs.
+    void apply_stolen_tech_gate(std::vector<UnitTypeDef>& defs, int house) const;
+    // The per-frame wave-5 pass (called from step()).
+    void step_w5(double dt);
+    // Arm the real-play wave-5 mechanics (recovered globals + per-image unit
+    // profiles). Never called by a gate.
+    void arm_w5(const RulesW5& rules, const std::map<std::string, UnitProfileW5>& profiles);
+    bool w5_armed() const { return w5_.armed; }
+    const WorldW5& w5_state() const { return w5_; }
+    // IsPowerOnline with the Tesla overpower exception.
+    bool w5_power_online(int b_idx) const;
+    // Engineer bomb defusal (R-046): walk next to the bombed unit/building and
+    // disarm it (DefuseKit, BombDisarm warhead). false when nothing to defuse.
+    bool order_defuse(int eng, int unit_target, int b_target);
+    // Cells an enemy gap currently keeps black for house h (probe witness).
+    int w5_gap_hidden(int h) const;
+
 private:
     // --- P5 Veterancy + Crates [RE: veterancy.md] (all inert until enabled) ---
     bool vet_any_ = false;                    // the veterancy firewall
@@ -2196,6 +2227,15 @@ private:
     bool try_undeploy(int b_idx);              // called by complete_sell
     void finish_deploy(int idx);
 
+    // --- Wave-5 abilities (world_w5.cpp) ---
+    WorldW5 w5_;
+    std::vector<std::uint8_t> w5_hide_, w5_own_;   // gap scratch (per frame, not saved)
+    void w5_gap_pass(int phase);
+    void w5_step_defuse();
+    void w5_step_repair_ifv(double dt);
+    void w5_ai_pass();
+    void w5_step_airstrike();
+    bool w5_prism_fire(int bi, int target_unit, int slot);   // building_combat.cpp
     // --- G16 world depth (world_depth.cpp) ---
     DepthRules depth_rules_;
     bool garrison_any_ = false;                    // an occupy order was ever given

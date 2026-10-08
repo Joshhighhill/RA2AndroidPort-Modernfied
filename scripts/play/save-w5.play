@@ -1,5 +1,5 @@
 # save-w5 -- W5-E acceptance: the save shows a "Saving game..." frame, the
-# music state is saved (section AUDI, save v18) and restored on load, and a
+# music state is saved (section AUDI, save v19) and restored on load, and a
 # full disk refuses the save (run with RA2_TEST_FREE_BYTES=1000 to see the
 # "NOT ENOUGH DISK SPACE" message -- the default run checks the success path).
 set render_every 300

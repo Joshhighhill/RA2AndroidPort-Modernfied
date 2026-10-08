@@ -1,0 +1,28 @@
+# Wave-5 R-046: an Engineer disarms an Ivan bomb (DefuseKit, BombDisarm
+# warhead -> the AttachedBomb is removed; the engineer survives)
+# [RE: abilities-w5.md §8].
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# An enemy Crazy Ivan bombs a player's Grizzly.
+cheat spawn SREF 0 building 0:GACNST -14 -6
+cheat spawn IVAN 1 building 0:GACNST -14 -4
+until 200 bombs >= 1 @R-046:C
+cheat spawn ENGINEER 0 building 0:GACNST -12 -7
+wait 2
+click unit 0:ENGINEER
+click unit 0:SREF
+until 150 defusals >= 1 @R-046:C
+assert bombs == 0 @R-046:C
+assert units(0,ENGINEER) == 1 @R-046:C
+shot defused
+end

@@ -1,0 +1,29 @@
+# Wave-5 R-048: an IFV carrying an Engineer swaps to RepairBullet (Damage=-50)
+# and repairs damaged friendly vehicles instead of shooting enemies; an IFV
+# with a GI swaps to CRM60, whose InvisibleLow projectile cannot hit aircraft.
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn FV 0 building 0:GACNST -14 -6
+cheat spawn ENGINEER 0 building 0:GACNST -12 -6
+cheat spawn SREF 0 building 0:GACNST -14 -9
+wait 2
+cheat damage_unit 0:SREF 150
+wait 1
+let m0 = uhp(0,SREF)
+click unit 0:ENGINEER
+click unit 0:FV
+until 300 in_cargo == 1 @R-048:C
+until 400 ifv_repairs >= 1 @R-048:C
+assert uhp(0,SREF) > $m0 @R-048:C
+shot ifv_repair
+end

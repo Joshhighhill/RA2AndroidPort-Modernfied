@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "unit_combat.hpp"   // UnitCombat
+#include "abil_w5.hpp"       // wave-5 stolen tech (UnitTypeW5)
 
 namespace ra2engine {
 
@@ -25,6 +26,7 @@ struct UnitTypeDef {
     bool aircraft = false;                  // [AircraftTypes]  -> Airfield / Aircraft queue
     bool harvester = false;                 // rules Harvester=yes -> launched as a miner
     int storage = 0;                        // rules Storage= (bales) for a harvester
+    UnitTypeW5 w5;                          // wave-5: RequiresStolen*Tech gate
 };
 
 }  // namespace ra2engine

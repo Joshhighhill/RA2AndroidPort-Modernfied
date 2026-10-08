@@ -250,7 +250,8 @@
         std::vector<std::string> ids = {"PDPLANE", sp.amer_para_inf, sp.ally_para_inf, sp.sov_para_inf,
                                         rules_.section_string("General", "DMislType", "DMISL"),
                                         rules_.section_string("General", "V3RocketType", "V3ROCKET"),
-                                        "HORNET", "ASW"};   // any side's spawns (captured / cheat units)
+                                        "HORNET", "ASW",   // any side's spawns (captured / cheat units)
+                                        "BPLN"};           // wave-5 R-046: the AirstrikeTeamType
         for (const UnitRoster* r : {&ur_, &ur_ai_})
             for (const ra2engine::UnitTypeDef& d : r->defs)
                 if (!d.combat.an.spawns.empty()) ids.push_back(d.combat.an.spawns);
