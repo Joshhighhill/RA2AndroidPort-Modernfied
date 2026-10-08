@@ -29,6 +29,11 @@ public:
     bool ok() const { return dev_ != 0; }
     // W2-AR-09/-19: pause the shared device while the app is in the background.
     static void set_paused(bool paused);
+    // R-163: Android audio focus. 1 = full volume, a duck gain (0.2) while
+    // another app may duck us (navigation prompt), 0 = silent (a call, or
+    // another media app took focus). Applied in the callback after mixing.
+    static void set_focus_gain(float gain);
+    static float focus_gain();
     // Diagnostics: SDL devices open (0 or 1) and live handles.
     static int open_device_count();
     static int handle_count();

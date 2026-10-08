@@ -6,7 +6,15 @@ set cycle_max 100
 click button "Single Player"
 click button Skirmish
 require scene == lobby
-cycle map:+ map == "xmp31s2.map"
+# R-183: the map is picked on Customize Battle (the old `map:+` cycle target
+# is gone); xmp31s2 is in view after 3 scroll-strip clicks (as world-depth).
+click button "Customize Battle"
+require page == "Customize Battle"
+click list:down
+click list:down
+click list:down
+click map:xmp31s2.map
+click button "Use Map"
 require map == "xmp31s2.map"
 click start
 until 90 scene == game

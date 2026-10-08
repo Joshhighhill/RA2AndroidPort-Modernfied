@@ -67,6 +67,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/main.cpp
     ${RA2_ROOT}/engine/platform.cpp
     ${RA2_ROOT}/engine/platform_os.cpp
+    ${RA2_ROOT}/engine/os_profiler.cpp
     ${RA2_ROOT}/engine/texture_cache.cpp
     ${RA2_ROOT}/engine/iso_project.cpp
     ${RA2_ROOT}/engine/iso_renderer.cpp

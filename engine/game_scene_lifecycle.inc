@@ -34,6 +34,9 @@ bool lifecycle_event(const ra2engine::InputEvent& ev) {
         case ra2engine::InputEvent::AppLowMemory:
         case ra2engine::InputEvent::RenderReset:
             return true;   // the driver already trimmed / cleared the texture cache
+        case ra2engine::InputEvent::Resize:
+            relayout_canvas();
+            return true;
         default:
             return false;
     }
@@ -51,3 +54,29 @@ void lifecycle_teardown() {
     }
 }
 bool autosaved_ = false;
+
+// R-162: the panel changed size mid-game (a foldable opened, split screen, a
+// resized desktop window). Recompute the canvas exactly as a new game would
+// (game_logical_size), re-lay the sidebar and the tactical view, and keep the
+// world point at the centre of the view where it was. [Engine affordance:
+// the original runs at a fixed ScreenWidth x ScreenHeight.]
+void relayout_canvas() {
+    int gw = kWinW, gh = kWinH;
+    game_logical_size(gw, gh);
+    if (gw == kWinW && gh == kWinH) return;
+    const int cx = -cam_.x + playfield_w_ / 2, cy = -cam_.y + kWinH / 2;   // world centre
+    SDL_Log("[lifecycle] resize: canvas %dx%d -> %dx%d", kWinW, kWinH, gw, gh);
+    set_canvas_size(gw, gh);
+    lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
+    playfield_w_ = kWinW - (sidebar_up_ ? lay_.bar.w : 0);
+    input_.set_viewport(playfield_w_, kWinH);
+    if (campaign_ && local_.valid) {   // the LocalSize clamp (campaign_view_setup)
+        const int W = local_.size_w;
+        const int top = 15 * (W - 5 + 2 * local_.y);
+        input_.set_view_limits(30 * (2 * local_.x - W) + 30, top, 30 * (2 * (local_.x + local_.w) - W) + 30,
+                               top + 30 * local_.h + 135);
+    }
+    cam_.x = playfield_w_ / 2 - cx;
+    cam_.y = kWinH / 2 - cy;
+    input_.pan(0, 0);   // clamp
+}

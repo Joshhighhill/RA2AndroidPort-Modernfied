@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <queue>
+#include <unordered_map>
 
 namespace ra2engine {
 
@@ -165,6 +168,85 @@ std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int h
     return path;
 }
 
+// R-171 (W5-F): a result memo for astar. astar is a PURE function of (the
+// grid's bytes, width, height, start, goal, budget, mode) -- the scratch is
+// internal -- so returning a remembered path for an identical query is
+// byte-identical by construction. It matters for units whose goal is
+// unreachable: step_combat re-requests their approach every logic frame and
+// each request expanded the full 20000-node budget (the ALL03 opening spent
+// 86% of its CPU here). Each memo is validated against a byte copy of the
+// grid it was built on (memcmp per call, ~1 us), so any passability change
+// (a building placed or destroyed, a bridge) drops the stale results.
+struct MemoKey {
+    int sx, sy, gx, gy, budget, mode;
+    const void* leak;   // W5-A: the wall leak mask in use (derived per map, fixed for a World)
+    bool operator==(const MemoKey& o) const {
+        return sx == o.sx && sy == o.sy && gx == o.gx && gy == o.gy && budget == o.budget && mode == o.mode &&
+               leak == o.leak;
+    }
+};
+struct MemoKeyHash {
+    std::size_t operator()(const MemoKey& k) const {
+        std::uint64_t h = 1469598103934665603ull;
+        for (int v : {k.sx, k.sy, k.gx, k.gy, k.budget, k.mode}) {
+            h ^= static_cast<std::uint32_t>(v);
+            h *= 1099511628211ull;
+        }
+        h ^= static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(k.leak));
+        h *= 1099511628211ull;
+        return static_cast<std::size_t>(h);
+    }
+};
+struct PathMemo {
+    const void* owner = nullptr;   // the grid vector last seen (a hint only)
+    int width = 0, height = 0;
+    std::vector<uint8_t> grid;
+    std::unordered_map<MemoKey, std::vector<Cellxy>, MemoKeyHash> paths;
+};
+constexpr std::size_t kMemos = 4;          // land + water grids of up to two Worlds
+constexpr std::size_t kMemoPaths = 8192;   // entries per grid before a flush
+thread_local PathMemo t_memo[kMemos];
+thread_local std::size_t t_memo_next = 0;
+
+PathMemo& memo_for(const std::vector<uint8_t>& passable, int width, int height) {
+    auto same = [&](const PathMemo& m) {
+        return m.width == width && m.height == height && m.grid.size() == passable.size() &&
+               (passable.empty() || std::memcmp(m.grid.data(), passable.data(), passable.size()) == 0);
+    };
+    for (PathMemo& m : t_memo)
+        if (m.owner == &passable) {
+            if (!same(m)) {   // this grid changed: start over on its new bytes
+                m.width = width;
+                m.height = height;
+                m.grid = passable;
+                m.paths.clear();
+            }
+            return m;
+        }
+    for (PathMemo& m : t_memo)
+        if (m.owner && same(m)) { m.owner = &passable; return m; }
+    PathMemo& m = t_memo[t_memo_next++ % kMemos];
+    m.owner = &passable;
+    m.width = width;
+    m.height = height;
+    m.grid = passable;
+    m.paths.clear();
+    return m;
+}
+
+std::vector<Cellxy> astar_memo(const std::vector<uint8_t>& passable, int width, int height, Cellxy start,
+                               Cellxy goal, int max_expand, Mode mode, const std::vector<uint8_t>* leak) {
+    if (leak && leak->size() != passable.size()) leak = nullptr;
+    PathMemo& m = memo_for(passable, width, height);
+    const MemoKey k{start.x, start.y, goal.x, goal.y, max_expand, mode == Mode::Nearest ? 1 : 0, leak};
+    const auto it = m.paths.find(k);
+    if (it != m.paths.end()) return it->second;
+    std::vector<Cellxy> r = astar(passable, width, height, start, goal, max_expand, mode, leak);
+    if (m.paths.size() >= kMemoPaths) m.paths.clear();
+    m.paths.emplace(k, r);
+    return r;
+}
+
 bool basic_checks(const std::vector<uint8_t>& passable, int width, int height, Cellxy start,
                   Cellxy goal) {
     if (width <= 0 || height <= 0) return false;
@@ -181,7 +263,7 @@ std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, i
     if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
     if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar(passable, width, height, start, goal, 0, Mode::Exact, leak);
+    return astar_memo(passable, width, height, start, goal, 0, Mode::Exact, leak);
 }
 
 std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int width, int height,
@@ -191,7 +273,7 @@ std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int 
     if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
     if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar(passable, width, height, start, goal, max_expand, Mode::Exact, leak);
+    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Exact, leak);
 }
 
 std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int width, int height,
@@ -220,7 +302,7 @@ std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int 
         if (!found) return { start };
     }
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar(passable, width, height, start, goal, max_expand, Mode::Nearest, leak);
+    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Nearest, leak);
 }
 
 }  // namespace ra2engine

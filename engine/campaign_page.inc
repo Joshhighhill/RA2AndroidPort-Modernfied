@@ -75,7 +75,18 @@ struct CampaignPageState {
         if (kSlider.contains(lx, ly)) { set_diff(); drag = true; consumed = true; return false; }
         if (list.scrolls() && list.strip_up().contains(lx, ly)) { list.scroll(-1); consumed = true; return false; }
         if (list.scrolls() && list.strip_down().contains(lx, ly)) { list.scroll(1); consumed = true; return false; }
-        const int hit = list.hit(lx, ly);
+        int hit = list.hit(lx, ly);
+        // R-151: the rows are 17 px of an 800x600 page (~14 dp on a phone);
+        // a finger anywhere in the list box picks the nearest row.
+        if (hit < 0 && ev.touch && list.r.contains(lx, ly) && !list.items.empty()) {
+            int best = 1 << 30;
+            const int last = std::min(static_cast<int>(list.items.size()), list.top + list.rows());
+            for (int i = list.top; i < last; ++i) {
+                const ra2engine::SbRect r = list.item_rect(i);
+                const int d = std::abs(ly - (r.y + r.h / 2));
+                if (d < best) { best = d; hit = i; }
+            }
+        }
         if (hit >= 0) { list.sel = hit; consumed = true; return false; }
         for (int w = 0; w < 3; ++w) {
             if (!well(w).contains(lx, ly)) continue;

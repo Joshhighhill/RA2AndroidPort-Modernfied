@@ -2460,13 +2460,15 @@ opened once per run; cold start dropped from ~79 s to ~0.87 s on the host
 (measured via `Measure-Command { ra2engine --screenshot }`). The same sources
 build into the Android APK via `cmake/ra2_sources.cmake` — no jni changes.
 
-Interactive controls: left-click a unit to select it (green marker); left-drag
-a box to select many; Shift+left-click to add/remove one; double-click a unit
-to select all of its type on screen; right-click ground to move the selection
-(units fan out to distinct cells and route around each other); **right-click a
-hostile Conscript to attack it** — units move into weapon range, hold, and
-fire; idle units auto-acquire hostiles in range and return fire; pan with the
-arrow keys or by pushing the pointer to a screen edge; Esc/close quits.
+Interactive controls (the ORIGINAL scheme, see "Real-play controls" and
+`docs/INSTALL.md` section 4): left-click a unit to select it; left-drag a box
+to select many; Shift+left-click to add/remove one; double-click a unit to
+select all of its type on screen; with a selection, LEFT-click ground to move
+(units fan out to distinct cells and route around each other) and LEFT-click
+an enemy to attack it; right-click deselects or cancels one armed mode;
+right-drag, the arrow keys or the screen edge scroll. Esc opens the options
+menu (it never quits; close the window or use Exit Game). Touch: see
+`docs/INSTALL.md`. Ctrl+Shift+F (or `--fps`) shows the perf overlay.
 
 Headless/verification CLI modes (render one or more frames and exit):
 - `ra2engine.exe --screenshot <out.png>` — render one frame of the map+unit to a PNG.
@@ -2707,8 +2709,8 @@ at all) alongside the interactive run.
 
 ### Determinism gates (permanent)
 
-These twenty headless demos (the table below plus `--demo-maps`, described in
-its own section, and `--demo-repair`) are byte-identity regression gates: any change to
+These headless demos (the table below plus `--demo-maps`, described in its
+own section; 31 `--demo-*` gates as of wave 4) are byte-identity regression gates: any change to
 their printed output signals a defect in whatever change caused it, not an
 intentional update (content changes that legitimately alter output, e.g. a
 new roster entry, must be called out explicitly — see the Economy divergences
@@ -2721,6 +2723,14 @@ CB-5 Battle Lab `GATECH`) — with the gated hash unaffected each time. The firs
 SEVENTEEN are the legacy gates re-verified unchanged by every subsequent phase;
 `--demo-roster` is the Broaden Unit/Building Roster gate and `--demo-roster2`
 the P6 Roster Breadth gate.
+
+**Current verification policy (since wave 4).** Gates are slow (up to ~2-3 min
+and ~3 GB each), so they are NOT run on every commit: a step runs only its
+scoped unit tests (`ra2assets_tests --test-case="<module>*"`); a branch runs
+the full suite, every `--play` script (one at a time) and every gate ONCE at
+the end, before merging. A gate may move only where the change says so (and
+is then re-pinned in this table with the reason); every other gate must print
+its pin.
 
 | Demo | Gate | Key witnesses |
 |------|------|----------------|
@@ -2874,8 +2884,11 @@ the engine-wide min-1 damage clamp (`abilities.md` section H). Distances are
 
 This proves the library is portable: the same sources in `src/` build for
 Android via the NDK's own CMake toolchain file, with no source changes.
-There is no app and no on-device run here — artifact inspection only
-(confirming `libra2assets.so` is a real AArch64 ELF shared object).
+This section is the library-only cross-compile check (confirming
+`libra2assets.so` is a real AArch64 ELF shared object). The playable app is
+the APK: see "Android app (APK)" below; it runs on the `ra2x86` emulator and
+on phones (`docs/INSTALL.md` section 5 explains how to report real-phone
+frame rates).
 
 Prerequisites: Android NDK r27c for Windows
 (https://dl.google.com/android/repository/android-ndk-r27c-windows.zip),
@@ -3174,10 +3187,10 @@ nuke flight (damage is instant, G-25), music shuffle setting.
 ## Real-play controls (agent B, G-01/04/05/06/07/08/09/10/12/13/70/71)
 
 Recovered from `gamemd.exe` (hunt "fixB", scripts `D:\ra2-re\scripts\fixB_*.py`)
-and verified in the REAL scene tree by `ra2engine --controls-selftest <outdir>`
-(MainMenu -> Skirmish lobby -> GameScene with scripted InputEvents at a fixed
-1/15 s tick in a hidden window; prints `selftest PASS` + a deterministic
-`probe_hash` and writes screenshots). Not a gate.
+and verified in the REAL scene tree by the `--play` scripts `controls.play` and
+`ctl-*.play` (MainMenu -> Skirmish lobby -> GameScene with scripted input). The
+older `--controls-selftest` was retired in wave 5 (R-183: written for the pre-MCV
+start, and it wrote the user's own RA2.INI). Not a gate.
 
 - **Mouse (G-05)**: the original's tactical WndProc `FUN_00692AB0` dispatches
   WM_LBUTTONUP to Left_Up `FUN_004AB8C0`: with a selection a LEFT click issues
@@ -3935,3 +3948,41 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   the first sweep `m-all04` / `m-sov09` failed and were updated for the loaded craft / paradropped
   Yuris); `probe-bridge`, `probe-flow`, `robust-missing` fail as on master. Gates: every
   `--demo-*` gate prints its pin except `--demo-campaign` and `--demo-saveload`, re-pinned above.
+
+## Android, performance and robustness (wave-5 W5-F, branch `w5-android`)
+
+- **Perf overlay and log (R-170).** Three-finger tap, Ctrl+Shift+F, `--fps`, `RA2_PERF=1`,
+  RA2.INI `[Engine] ShowFPS=yes` or `adb shell setprop debug.ra2.perf 1`: FPS, logic ticks/s
+  and ms per frame (update / render / present / worst) at the bottom-left, plus a `[perf]` log
+  line every 5 s. `docs/INSTALL.md` section 5 is the "how to measure on a real phone" recipe.
+- **ALL03 opening (R-171).** Profiled with the new dev sampler (`RA2_PROFILE=<file>`,
+  `tools/profile_report.py`): 86 % of the time was A* (`find_path_nearest`, 20000-node budget)
+  re-run every logic frame for attackers whose approach cell is unreachable. `pathfind.cpp` now
+  memoises A* results per grid, validated against a byte copy of the grid (a pure function, so
+  the result is identical by construction). `probe-perf-all03` (1800 frames): ~11 -> ~100
+  logic frames/s headless, `play_hash` unchanged.
+- **Phone render cost.** The light map (`pres_light.inc`) is redrawn only when the camera,
+  canvas, base colour or lit set changes. Each redraw cost two render-target switches (62 % of
+  an emulator frame in `glCheckFramebufferStatus`). Lit shots are pixel-identical.
+  Emulator (`ra2x86`, SwiftShader, ALL01 opening 1080p): **14.0 -> ~17 fps**; the engine's
+  render is now ~2 ms and the rest is the host GL pipe. No interpolation (R-172): the original
+  draws once per logic frame (`docs/re/gamespeed.md`).
+- **Android.** Audio focus (R-163: a call mutes, "may duck" ducks to 20 %, regaining restores);
+  the importer opens at `Download/RA2`, explains the sub-folder rule, also accepts the parent
+  folder, disables Exit/Back during the copy and cleans `*.part` files (R-160/161); a mid-game
+  panel resize re-lays the canvas (R-162); the soft keyboard keeps SAVE visible and the default
+  description is selected (R-152); campaign list rows snap to the nearest row on touch (R-151).
+  `docs/PHONE-README.txt` replaces the stale package README (one-finger drag now scrolls).
+- **Robustness.** `load_world` range-checks every cross-reference (R-181); the sidebar
+  backlog / hold state is saved (`QBKL` section, **save format v17**, R-180); `ra2game.exe` is
+  a WIN32 build of the same objects (no console, log in `%APPDATA%\ra2engine\RA2\ra2engine.log`,
+  R-182); `--record <f>` / `--replay <f> [--hidden]` (or `RA2_RECORD`) reproduce a session
+  (R-184; a recorded `ctl-sov01` replays to the same probe hash).
+- **Scripts (R-183).** `probe-bridge` and `probe-flow` updated; `robust-missing` skips on a
+  full install (`if data_missing_optional == 0 then end`, `if ... then end` is now allowed);
+  `--controls-selftest` retired (pre-MCV flow, wrote the user's RA2.INI).
+- Evidence: `docs/gap/wave5/06-evidence/`.
+- **Verification** (merged with master `f0fbd7b`): unit suite 829/829; **82/82** `--play`
+  scripts pass (one at a time; `probe-bridge`, `probe-flow`, `robust-missing` included);
+  all 27 `--demo-*` hash gates print their pins (no re-pin; `--demo-saveload` does not hash
+  the format version or the new optional section).
