@@ -157,7 +157,8 @@ nearest hostile ground unit / dog), `utgtb(h,ID,n)` (building target index), `uc
 `bc4n(h,ID)` (buildings with C4 ticking); per house `blackout(h)` (spy power-plant blackout left); campaign
 `view_resized` (ResizeView count). Target `unit H:TYPE:near` / `unit e:TYPE:near`: the unit of house H (e = any
 house hostile to the first selected unit) nearest that unit, within 9 cells; `building H:TYPE:near` (TYPE or `*`):
-that house's building nearest the first selected unit.
+that house's building nearest the first selected unit (TYPE `*` skips Insignificant decorations), clicked at a
+footprint point no unit covers. P3 real-order wins: `m-all05-real`, `m-all06-real`, `m-all07-real` (gen/mk_all05.py, mk_all06.py).
 
 **W2-AN keys** (engine/w2air_play.inc): `cursor_name` (Input action name),
 `sel_on_water`, `sel_hp`, `sel_max_hp`, `sel_cargo`, `sel_altitude`, `sel_flight_state`,

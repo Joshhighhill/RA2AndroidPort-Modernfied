@@ -7020,6 +7020,10 @@ private:
                 if (type != "*" && (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) ||
                                     ba_.roster[b.type].id != type))
                     continue;
+                // a sweep skips decorations (Insignificant: flags, lamps, gates)
+                if (type == "*" && b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()) &&
+                    rules_.section_flag(ba_.roster[b.type].id, "Insignificant", false))
+                    continue;
                 const double dx = b.cx + b.fw / 2.0 - me->fx, dy = b.cy + b.fh / 2.0 - me->fy;
                 if (best < 0 || dx * dx + dy * dy < bd) { best = i; bd = dx * dx + dy * dy; }
             }
