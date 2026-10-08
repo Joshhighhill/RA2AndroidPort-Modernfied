@@ -4090,3 +4090,7 @@ Everything is armed by `wire_w5` in the real `GameScene` only.
   (wave-5 type data in the campaign worlds), re-pinned above; `--demo-base`/`--demo-techtree`
   witness `roster=40` (hash unaffected).
 >>>>>>> master
+- **Verification** (merged with master `53fd609`): unit suite 835/835; **100/100** `--play`
+  scripts pass one at a time (the 8 new `pres-*` included; `probe-bridge` / `world-depth` now
+  scroll 2 rows to xmp31s2 in the 80-map lobby); `--demo-combat` / `--demo-projectile` /
+  `--demo-veterancy` print their pins -- no gate moved (every change is render-only).
