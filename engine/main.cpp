@@ -156,6 +156,7 @@ void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
 // W2-UI-06: per-tab "has buildables" published by GameScene before the
 // sidebar draws (-1 = unknown: headless renders treat every tab as stocked).
 int g_tab_has[4] = {-1, -1, -1, -1};
+int g_tab_flash[4] = {0, 0, 0, 0};   // W5-PRES R-142: a building ready to place on tab 0/1
 // W2-UI-11 (hud_pips.inc): PIPBRD/PIPS art + the selected-unit pip draw.
 struct PipArt;
 extern const PipArt* g_pips;
@@ -4425,8 +4426,11 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     blit_shp(ren, tc, "sb:credits", ba.sb_credits, 0, ba.sb_pal, lay.credits.x, lay.credits.y);
     if (g_game_font && g_game_font_pal) {   // G-88: the game font in the live game
         const std::string cs = std::to_string(credits_shown);
-        draw_fnt_text(ren, tc, *g_game_font, *g_game_font_pal, cs,
-                      lay.credits.x + 84 - fnt_text_width(*g_game_font, cs) / 2, lay.credits.y + 1, "hudf:", 1);
+        // W5-PRES R-142 [RE: credits draw 0x4A2280, colour 0xB0E98C by side
+        // FUN_0072E520]: Allied RGB(164,210,255), Soviet/other RGB(255,255,0).
+        const bool allied = std::string(g_sidebar_mix) == "sidec01.mix";
+        hud_text_rgb(ren, tc, *g_game_font, cs, lay.credits.x + 84 - fnt_text_width(*g_game_font, cs) / 2,
+                     lay.credits.y + 1, allied ? 164 : 255, allied ? 210 : 255, allied ? 255 : 0);
     } else {
         draw_number_centered(ren, credits_shown, lay.credits.x + 84, lay.credits.y + 2, 2);
     }
@@ -4487,8 +4491,13 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     // active tab), 2 blank (nothing to build on it). [ANCHORED: the TS-lineage
     // ShapeButtonClass frame order normal / on / disabled; frames 3/4 (the
     // new-cameo flash) are not played -- RE-OPEN Q2.]
+    // W5-PRES R-142 [RE: StripClass::AI 0x6A81C0, tab tick 0x69D6A0, button
+    // draw 0x69D540]: tabs 0/1 flash while a building there is ready to place,
+    // toggling every 10 frames (on when (Frame/10) is odd): frame 3, or 4 on
+    // the active tab.
     for (int i = 0; i < 4; ++i) {
-        const int fr = (g_tab_has[i] == 0) ? 2 : (i == active_tab ? 1 : 0);
+        const bool flash_on = g_tab_flash[i] && ((g_pres_tick / 10) & 1) && ba.sb_tabs[i].count() >= 5;
+        const int fr = (g_tab_has[i] == 0) ? 2 : flash_on ? (i == active_tab ? 4 : 3) : (i == active_tab ? 1 : 0);
         blit_shp(ren, tc, "sb:tab" + std::to_string(i) + ":" + std::to_string(fr), ba.sb_tabs[i], fr, ba.sb_pal,
                  lay.tabs[i].x, lay.tabs[i].y);
     }
@@ -5886,12 +5895,15 @@ public:
         }
         }   // G-13 fixed logic tick
         // Rolling credits tally (display-only).
-        {
-            const double target = player_credits_;
-            const double rate = std::max(500.0, std::abs(target - credits_shown_) / 0.5);
-            const double step = rate * dt;
-            if (credits_shown_ < target) credits_shown_ = std::min(target, credits_shown_ + step);
-            else credits_shown_ = std::max(target, credits_shown_ - step);
+        // W5-PRES R-142 [RE: CreditClass::AI 0x4A2510]: per logic frame the
+        // shown value moves clamp(|d| >> 3, 1, 143) toward the wallet.
+        for (int k = 0; k < logic_steps; ++k) {
+            const long long target = std::max(0LL, static_cast<long long>(std::floor(player_credits_)));
+            const long long cur = std::llround(credits_shown_);
+            if (cur == target) break;
+            const long long d = target - cur;
+            const long long step = std::clamp<long long>((d < 0 ? -d : d) >> 3, 1, 143);
+            credits_shown_ = static_cast<double>(cur + (d > 0 ? step : -step));
         }
         // Consume input actions ONCE per frame.
         const ra2engine::InputActions act = input_.take_actions();
@@ -6096,6 +6108,8 @@ public:
         }
         if (ba_.ok && ba_.sidebar_ok) {
             for (int t = 0; t < 4; ++t) g_tab_has[t] = tab_buildable(t).empty() ? 0 : 1;   // W2-UI-06
+            g_tab_flash[0] = queues_.state(ra2engine::QueueCat::Structure).slot.ready ? 1 : 0;   // W5-PRES R-142
+            g_tab_flash[1] = queues_.state(ra2engine::QueueCat::Defense).slot.ready ? 1 : 0;
             const ra2engine::QueueCat vis_cat =
                 (active_tab_ == 1) ? ra2engine::QueueCat::Defense
                 : (active_tab_ >= 2) ? rp_vis_unit_cat()   // gap owner A: veh/naval/air
