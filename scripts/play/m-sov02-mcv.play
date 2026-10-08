@@ -1,5 +1,6 @@
-# W4-SQ-01: SOV02's MCV chain. The beach pillbox whose death is 'Land the
-# MCV' is removed with a cheat (the beach assault stand-in); the Africans'
+# W4-SQ-01 / W5-A: SOV02's MCV chain with real orders only. The landed Rhinos
+# are type-selected (T, T) and sent at the beach pillbox (72,53) whose death is
+# 'Land the MCV' (a real attack click); the Africans'
 # transport arrives CARRYING the SMCV, unloads with Unload mode 0 (both stay
 # in the team), 'Destroy MCV Team' frees the SMCV and 'MCV ON the Beach'
 # hands it to the player.
@@ -11,7 +12,16 @@ click start
 until 300 scene == game
 until 60 carried(0) >= 6
 until 1500 carried(0) == 0
-cheat camp_killb 1 GAPILL
+wait 200
+click unit 0:HTNK:0
+key t
+key t
+assert selected >= 6
+click cell 72 53
 until 3000 units(0,SMCV) >= 1
 assert units(0,SMCV) >= 1
+click unit 0:SMCV
+key d
+until 900 buildings(0,NACNST) >= 1
+assert outcome == RUNNING
 end
