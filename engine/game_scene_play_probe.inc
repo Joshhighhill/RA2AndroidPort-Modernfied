@@ -432,7 +432,28 @@
             // P3: a ":near" sweep clicks the building's back (origin) cell -- the
             // centre is often under the player's own tanks crowding its front,
             // and a click there selects a tank instead of ordering the attack.
-            if (spec.size() > 5 && spec.compare(spec.size() - 5, 5, ":near") == 0) { cx = b.cx; cy = b.cy; }
+            if (spec.size() > 5 && spec.compare(spec.size() - 5, 5, ":near") == 0) {
+                cx = b.cx; cy = b.cy;
+                // the first foundation cell (back rows first) whose pixel is
+                // the building and no unit -- what a player's click lands on
+                for (int s = 0; s <= b.fw + b.fh - 2; ++s)
+                    for (int dx = 0; dx < b.fw; ++dx) {
+                        const int dy = s - dx;
+                        if (dy < 0 || dy >= b.fh) continue;
+                        int px0 = 0, py0 = 0;
+                        cell_to_window(b.cx + dx, b.cy + dy, px0, py0);
+                        // a 5x5 grid of window points over the cell's diamond
+                        for (int oy = -12; oy <= 12; oy += 6)
+                            for (int ox = -24; ox <= 24; ox += 12) {
+                                const int px = px0 + ox, py = py0 + oy;
+                                if (input_.pick_unit_at(px, py) >= 0 || input_.building_under(px, py) != bi) continue;
+                                const double fx = ox / 30.0, fy = oy / 15.0;
+                                cx = b.cx + dx + (fx + fy) / 2.0;
+                                cy = b.cy + dy + (fy - fx) / 2.0;
+                                return true;
+                            }
+                    }
+            }
             return true;
         };
         // ---- G16 world depth (agent G): garrisons + bridges ----
