@@ -26,14 +26,15 @@ inline double pres_para_alt(const ra2engine::Unit& u) {
     return u.cargo_of == kPresParachuteCargo ? pres_para_alt_impl(u, 0) : 0.0;
 }
 
-// Agent B (R-061, 3 infantry per cell): the sub-cell position. When B's units
-// carry their sub-cell spot in fx/fy the renderer needs nothing; if B exposes
-// a separate lepton offset (u.subcell_dx / u.subcell_dy, leptons) it is added
-// to the draw position here. [hook: inert until B lands]
+// Agent B (R-061, 3 infantry per cell): the sub-cell position. B landed it as
+// Unit::sub_x / sub_y (leptons from the cell centre, interpolated while
+// walking). iso_renderer's draw_unit, tile_center_screen overlays, input
+// picking and the main.cpp pips/chevrons already add it -- use this only for
+// a draw path that projects u.fx/u.fy itself.
 template <class U>
-auto pres_subcell_impl(const U& u, double& dx, double& dy, int) -> decltype(void(u.subcell_dx), void(u.subcell_dy)) {
-    dx = u.subcell_dx / 256.0;
-    dy = u.subcell_dy / 256.0;
+auto pres_subcell_impl(const U& u, double& dx, double& dy, int) -> decltype(void(u.sub_x), void(u.sub_y)) {
+    dx = u.sub_x / 256.0;
+    dy = u.sub_y / 256.0;
 }
 template <class U>
 void pres_subcell_impl(const U&, double& dx, double& dy, long) { dx = dy = 0.0; }
