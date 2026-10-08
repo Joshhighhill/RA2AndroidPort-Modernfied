@@ -155,7 +155,9 @@ shot dread_missiles
 cheat spawn DLPH 0 point water_near_sel +0 +0
 wait 5
 assert units(0,DLPH) == 1                       @W2-AN-15
-assert submerged(0) >= 1                        @W2-AN-13 # Underwater+Cloakable
+# W5-B: SHP ships now carry their ROT, so the Dolphin turns to its first
+# target and fires (surfacing) before it dives again -- wait for the dive.
+until 300 submerged(0) >= 1                     @W2-AN-13 # Underwater+Cloakable
 view unit 0:DLPH
 shot dolphin
 end
