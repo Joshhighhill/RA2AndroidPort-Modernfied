@@ -3986,3 +3986,54 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   scripts pass (one at a time; `probe-bridge`, `probe-flow`, `robust-missing` included);
   all 27 `--demo-*` hash gates print their pins (no re-pin; `--demo-saveload` does not hash
   the format version or the new optional section).
+
+## Unit and building abilities (wave-5 W5-FIX-C, branch `w5-abil`)
+
+Calibration: `docs/re/abilities-w5.md` (Ghidra on YR 1.001 `gamemd.exe`). Code:
+`engine/abil_w5.hpp` (all new state: `BldTypeW5`, `UnitTypeW5`, `BldW5`, `UnitW5`, `WorldW5`),
+`engine/abil_w5_rules.cpp` (rulesmd -> type data, hooked at the end of `fill_building_weapons`),
+`engine/world_w5.cpp` (the `step_w5` pass, gap shroud, AI pass), plus `building_combat.cpp`
+(prism / tesla), `cargo.*`, `world_veterancy.cpp`, `world_depth.*`, `realplay_economy.inc`.
+Everything is armed by `wire_w5` in the real `GameScene` only.
+
+- **Stolen tech (R-042).** `BuildingClass::Infiltrate` (`FUN_004571E0`) order: Radar -> Power ->
+  [AI] BuildTech by AIBasePlanningSide -> SuperWeapon -> Storage -> Factory. A spy in an enemy
+  Battle Lab unlocks the `RequiresStolen*Tech` infantry (CIVAN / CCOMAND) for player and AI; the
+  `GACHRO` typo is gone (rules-driven purposes); a SW spy resets only that building's SW; a Naval
+  Yard spy gives veteran vehicles and ships (both `Factory=UnitType`).
+- **Prism forwarding (R-043).** One idle own prism recruited per frame within the master's
+  Secondary range (max 8), DelayedFireDelay 28, damage `(Damage*((150N+100)*256/100))>>8`, supporter
+  reload 45. **Tesla charging (R-045).** Idle Tesla Troopers next to an own coil charge it: 2 keep it
+  online without power, 3 (or 1 at full power) switch it to OPCoilBolt. **Gap Generator (R-044).**
+  An enemy powered gap shrouds a radius-10 circle for human houses, re-applied every 120 frames,
+  not lifted by a SpySat; own units still see.
+- **Tech buildings (R-056).** `Capturable=yes NeedsEngineer=yes` map structures are real neutral
+  World buildings: CAAIRP grants ParaDrop, CAPOWR +200 power, CATHOSP / CAMACH heal owned
+  infantry 20 HP / 50 frames and vehicles 5 HP / 75 frames (per building). GASPYSAT is in the
+  roster (index 39) and reveals the map while built and powered.
+- **Transports.** OpenTopped (Battle Fortress) passengers fire out (+2 range, x1.2 damage); allies
+  board each other's transports (R-052); unloading waits DeployTime x 900 frames (R-051).
+- **Specials.** Engineers defuse Ivan bombs (R-046); Boris calls a 2-MiG (elite 4) BPLN airstrike
+  on a building he designates within 12 cells (R-046); the IFV swap carries the projectile's
+  AA/AG and flight, and an Engineer IFV repairs damaged allied vehicles (R-048); the Mirage picks a
+  `DefaultMirageDisguises` tree (`Unit::w5.mirage_tree`, drawn by the presentation, R-047);
+  ParasitePlus paralysis / culling on the P4 parasite for the Giant Squid (R-049, see open);
+  Tanya / SEAL C4 on ships.
+- **Veterancy / crates.** SCATTER (a ranked idle unit hit steps aside), CRUSHER / EXPLODES / C4
+  switches, aircraft FASTER, kill credit for spawner-launched aircraft/missiles and for the firing
+  garrison occupant, the forced-MCV crate (veterancy.md §3.3 rule 1).
+- **AI.** Builds ORCA / BEAG onto its airfield pads and recruits docked planes for its Harrier /
+  Black Eagle TaskForces (R-080); garrisons a nearby empty civilian building and sends idle
+  engineers at neutral tech buildings (R-081, RE-FALLBACK choice rule); spies into Battle Labs
+  unlock CCOMAND / CIVAN for its teams.
+- **Save format v18** (`WorldW5`, `UnitW5`, `BldW5`, type data, WeaponSpec projectile fields).
+- **Play scripts:** `abil-stolen-tech`, `abil-prism-chain`, `abil-tesla-charge`, `abil-gap`,
+  `abil-tech-buildings`, `abil-opentopped`, `abil-defuse`, `abil-ifv-repair`, `abil-boris`,
+  `abil-ai-air`. Unit test `tests/test_abil_w5.cpp`.
+- **Open:** the Giant Squid never fires at a ship in play (the vehicle aim gate in `combat.cpp`,
+  agent B); C4-on-ships has no play acceptance (no reliable enemy-ship spawn cell in a script);
+  the Armor/Groundspeed difficulty handicaps stay unapplied (AssignHandicap traced, no runtime
+  reader found, R-082); AI superweapon defence and AI trigger condition types 2/3/5/6 were not
+  re-hunted (the helper RE agents were stopped); NACLON / NAPSIS are Yuri-only under the YR rules
+  (prereqs YATECH/YACNST), so they stay out of the Allied/Soviet roster; the Soviet Spy Plane is
+  YR-only (not classic).
