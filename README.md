@@ -4064,6 +4064,9 @@ Off' team (CreateTeam) fires one frame after 'Land the MCV' and recruits that
 team's MCV boat (its TeamType is AreTeamMembersRecruitable); the clone's
 `recruit()` ignores team priority, so the boat is stolen and sent away with
 the MCV aboard. Campaign team recruiting is agent A's area.
+- **Verification (W5-B)** (merged with master `72b2da3`): unit suite 843/843;
+  110/111 `--play` scripts pass one at a time (5 new `w5-*`); the one failure
+  is `m-sov02-mcv` (above). Gates as listed; save format v20.
 ## Audio and shell UI (wave-5 W5-E, branch `w5-audio`)
 
 RE on `gamemd.exe` with the private Ghidra copy `D:\ra2-re\w5-audio` (jobs j1..j50);
