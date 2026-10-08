@@ -24,6 +24,7 @@
         p.set("saves_indicated", saves_indicated_);          // W5-E saving indicator
         p.set_s("music_track", pres_.sound().current_track());
         p.set_s("loaded_track", loaded_track_);
+        p.set("loaded_audio", loaded_audio_ ? 1 : 0);
         p.set("credits", player_credits_);
         p.set("credits_shown", credits_shown_);
         p.set_s("tooltip", tooltip_now());   // W2-UI-07

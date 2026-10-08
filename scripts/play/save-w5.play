@@ -27,5 +27,6 @@ wait 2
 click dialog:row0
 click dialog:action
 until 300 scene == game and sf > 5
+assert loaded_audio == 1                                 @W5-E:save
 assert loaded_track == $trk                              @W5-E:save
 end

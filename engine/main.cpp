@@ -6340,6 +6340,7 @@ public:
     }
     int saves_indicated_ = 0;
     std::string loaded_track_;
+    bool loaded_audio_ = false;   // the AUDI section was read back
 private:
     void show_banner(const std::string& s) {
         post_message(s);   // W2-UI-21: banners are message-list lines
@@ -6385,6 +6386,7 @@ private:
                 if (!on) pres_.sound().music_stop();
                 else if (!track.empty()) pres_.sound().jukebox_play(track);
                 loaded_track_ = track;
+                loaded_audio_ = true;
             }
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {
