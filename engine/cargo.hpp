@@ -47,7 +47,10 @@ int cargo_total_size(const std::vector<Unit>& units, const Unit& transport);
 //      [RE-GATE APPLIED: transport-cargo.md §1 -- NumPassengers < Passengers
 //      (FUN_004190B0 case 0xF/0xE); each body is ONE slot regardless of
 //      Size -- the pre-hunt size-sum is DELETED].
-bool can_load(const std::vector<Unit>& units, int transport_idx, int passenger_idx);
+// Wave-5 (R-052): `allied` (optional) widens clause 4 to the original
+// IsAlliedWith (FUN_004F98B0) -- an ally's infantry may board the transport.
+bool can_load(const std::vector<Unit>& units, int transport_idx, int passenger_idx,
+              const std::function<bool(int, int)>& allied = {});
 
 // The next passenger to eject: the LAST cargo entry (LIFO -- the original
 // container is a head-pushed singly-linked stack and unload pops the head,

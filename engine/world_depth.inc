@@ -70,7 +70,12 @@ void depth_arm_rules(ra2engine::World& world, const Rules& rules) {
 // Is `id` a building the World must own for G16 (garrisonable or a bridge
 // repair hut) although it is not in the playable roster?
 bool depth_world_building(const Rules& rules, const std::string& id) {
-    return rules.section_flag(id, "CanBeOccupied", false) || rules.section_flag(id, "BridgeRepairHut", false);
+    return rules.section_flag(id, "CanBeOccupied", false) || rules.section_flag(id, "BridgeRepairHut", false) ||
+           // Wave-5 (R-056 / item 3): an engineer-capturable tech structure
+           // (Capturable=yes NeedsEngineer=yes: Tech Airport, Hospital,
+           // Machine Shop, Power Plant, Outpost, Secret Lab...) is a real
+           // neutral World building, not map dressing.
+           (rules.section_flag(id, "Capturable", false) && rules.section_flag(id, "NeedsEngineer", false));
 }
 
 // Roster index of building `id`, appending it (def + art) when absent -- the

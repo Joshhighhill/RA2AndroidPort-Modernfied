@@ -143,10 +143,9 @@ UnitRoster load_player_unit_roster(const std::string& dir, const ra2assets::MixF
             const int tl = rules.tech_level(id);
             if (tl <= 0 || tl > lobby_tech) continue;              // [RE: skirmish.md §1 Tech Level]
             if (!rp_country_allows(rules, id, country)) continue;   // side + country units
-            if (rp_flag(rules, id, "RequiresStolenAlliedTech") ||
-                rp_flag(rules, id, "RequiresStolenSovietTech") ||
-                rp_flag(rules, id, "RequiresStolenThirdTech"))
-                continue;   // spy-infiltration unlocks: not modelled -> never buildable
+            // Wave-5 (R-042): RequiresStolen*Tech types stay in the roster;
+            // World::apply_stolen_tech_gate keeps them unbuildable (TechLevel
+            // 0) until a spy infiltrates the matching Battle Lab.
             if (std::find(ids.begin(), ids.end(), id) != ids.end()) continue;
             // W2-CA-03: a campaign offers only the types its game knows.
             if (allowed_upper && !allowed_upper->empty() &&
@@ -173,6 +172,7 @@ UnitRoster load_player_unit_roster(const std::string& dir, const ra2assets::MixF
             d.storage = rules.storage(d.id);
             d.chrono_miner = rp_upper(d.id) == "CMIN";   // [RE: economy.md §3] Teleporter miner
         }
+        rp_arm_stolen_tech(rules, d);   // wave-5 (R-042)
     }
     std::cerr << "[realplay-roster] country=" << country << " tech<=" << lobby_tech
               << " producible=" << ur.defs.size() << "\n";

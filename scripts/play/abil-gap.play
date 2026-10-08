@@ -1,0 +1,30 @@
+# Wave-5 R-044: an enemy Gap Generator (GapGenerator=yes GapRadiusInCells=10)
+# shrouds a circle of radius 10 for the player -- even under the player's
+# own Spy Satellite (the gap raised the cells' ShroudCounter) -- except
+# where the player's own units look [RE: abilities-w5.md §4].
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# The player's Spy Satellite reveals the whole map (GASPYSAT SpySat=yes).
+cheat place GAPOWR 0 building 0:GACNST -5 -4
+cheat place GASPYSAT 0 building 0:GACNST -5 +0
+wait 5
+assert gap_hidden == 0 @R-044:C
+# An enemy gap generator with its own power, 16 cells away.
+cheat place GAPOWR 1 building 0:GACNST +16 -4
+cheat place GAGAP 1 building 0:GACNST +16 +0
+wait 3
+assert gap_hidden >= 250 @R-044:C
+view building 1:GAGAP
+wait 1
+shot gap_shrouded
+end

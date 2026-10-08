@@ -1,0 +1,36 @@
+# Wave-5 R-045: Tesla Troopers charge a Tesla Coil (Overpowerable=yes).
+# [RE: abilities-w5.md §3] With the base short of power the coil is offline;
+# two adjacent troopers keep it online (IsPowerOnline needs >= 2 overpowerers),
+# three overpower it (IsOverpowered: n >= 3 at low power -> OPCoilBolt).
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# A coil with no power plant: the house is low on power.
+cheat place TESLA 0 building 0:GACNST -16 -8
+wait 2
+assert power_drain > power_out @R-045:C
+cheat spawn E2 1 building 0:TESLA -6 +0
+wait 150
+assert uhp(1,E2) == 125 @R-045:C
+assert overpowerers == 0 @R-045:C
+# Two troopers beside the coil charge it: online without base power.
+cheat spawn SHK 0 building 0:TESLA +1 +0
+cheat spawn SHK 0 building 0:TESLA +1 +1
+until 60 overpowerers >= 2 @R-045:C
+until 300 units(1,E2) == 0 @R-045:C
+assert overpowered == 0 @R-045:C
+# A third trooper overpowers it (OPCoilBolt).
+cheat spawn SHK 0 building 0:TESLA +0 +1
+until 60 overpowerers >= 3 @R-045:C
+assert overpowered == 1 @R-045:C
+shot tesla_charged
+end

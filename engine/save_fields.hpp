@@ -239,6 +239,9 @@ struct SaveAccess {
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
         save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
+        save::io(ar, w.w5_);   // wave-5 abilities (agent C)
+        save::io(ar, w.w5_hide_);   // wave-5 gap scratch (the amphib_passable_ precedent)
+        save::io(ar, w.w5_own_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -593,6 +596,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.percent_at_max);
     io(ar, v.rad_level);
     io(ar, v.kind);
+    io(ar, v.slot_set); io(ar, v.aa); io(ar, v.ag); io(ar, v.proj);   // wave-5 R-048
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);
@@ -650,6 +654,44 @@ template <class Ar> void fields(Ar& ar, World::DeployEvent& v) {   // gF
 }
 template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
     io(ar, v.kind); io(ar, v.a); io(ar, v.b); io(ar, v.x); io(ar, v.y); io(ar, v.building);
+}
+
+// --- wave-5 abilities (agent C, abil_w5.hpp) ---
+template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
+    io(ar, v.spy_purpose); io(ar, v.radar); io(ar, v.prism); io(ar, v.overpowerable);
+    io(ar, v.gap_radius); io(ar, v.inf_self_heal); io(ar, v.unit_self_heal); io(ar, v.cloning);
+    io(ar, v.psychic_radius); io(ar, v.sensors_sight); io(ar, v.delayed_fire_delay);
+}
+template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
+    io(ar, v.requires_stolen); io(ar, v.base_tech_level);
+}
+template <class Ar> void fields(Ar& ar, BldW5& v) {
+    io(ar, v.prism_stage); io(ar, v.delay); io(ar, v.supporting); io(ar, v.master);
+    io(ar, v.overpowerers); io(ar, v.overpowered); io(ar, v.gap_on);
+}
+template <class Ar> void fields(Ar& ar, UnitProfileW5& v) {
+    io(ar, v.assault); io(ar, v.assault_rof); io(ar, v.open_topped); io(ar, v.deploy_frames);
+    io(ar, v.airstrike_team); io(ar, v.elite_airstrike_team); io(ar, v.airstrike_type);
+    io(ar, v.airstrike_recharge); io(ar, v.elite_airstrike_recharge); io(ar, v.flare_range);
+    io(ar, v.paralyzes); io(ar, v.culling);
+}
+template <class Ar> void fields(Ar& ar, UnitW5& v) {
+    io(ar, v.bound); io(ar, v.p); io(ar, v.charging); io(ar, v.next_assault); io(ar, v.door_until);
+    io(ar, v.defuse_unit); io(ar, v.defuse_bld); io(ar, v.healer); io(ar, v.heal_target); io(ar, v.mirage_tree);
+    io(ar, v.base_flight_speed); io(ar, v.base_fly_cps); io(ar, v.last_hp);
+    io(ar, v.airstrike_ready); io(ar, v.strike_of); io(ar, v.strike_bld);
+    io(ar, v.c4_frame); io(ar, v.c4_by);
+}
+template <class Ar> void fields(Ar& ar, RulesW5& v) {
+    io(ar, v.prism_support_modifier); io(ar, v.prism_support_max); io(ar, v.prism_support_delay);
+    io(ar, v.prism_support_duration); io(ar, v.self_heal_inf_frames); io(ar, v.self_heal_inf_amount);
+    io(ar, v.self_heal_unit_frames); io(ar, v.self_heal_unit_amount);
+    io(ar, v.open_topped_range_bonus); io(ar, v.open_topped_damage_mult); io(ar, v.mirage_trees);
+}
+template <class Ar> void fields(Ar& ar, WorldW5& v) {
+    io(ar, v.stolen_tech); io(ar, v.armed); io(ar, v.rules); io(ar, v.profiles); io(ar, v.frame);
+    io(ar, v.gap_created); io(ar, v.passenger_shots); io(ar, v.prism_supports); io(ar, v.defusals); io(ar, v.repairs);
+    io(ar, v.ai_garrisons); io(ar, v.ai_tech_captures); io(ar, v.scatters); io(ar, v.airstrikes); io(ar, v.culls); io(ar, v.ship_c4);
 }
 
 // --- unit / building types ---
@@ -731,6 +773,7 @@ template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.aircraft);
     io(ar, v.harvester);
     io(ar, v.storage);
+    io(ar, v.w5);   // wave-5 stolen tech (agent C)
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.id);
@@ -774,6 +817,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.can_occupy_fire);
     io(ar, v.max_occupants);
     io(ar, v.bridge_repair_hut);
+    io(ar, v.w5);   // wave-5 abilities (agent C)
 }
 
 // --- the live objects ---
@@ -921,6 +965,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.disguise_when_still);
     io(ar, v.still_frames);
     io(ar, v.an);   // W2-AN (save v9)
+    io(ar, v.w5);   // wave-5 abilities (agent C)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -972,6 +1017,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.garrison_rof_cool);
     io(ar, v.garrison_target);
     io(ar, v.iron_left);   // W2-AN-04 (save v9)
+    io(ar, v.w5);          // wave-5 abilities (agent C)
 }
 
 // --- production ---

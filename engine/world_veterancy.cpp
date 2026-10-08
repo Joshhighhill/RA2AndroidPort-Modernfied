@@ -72,6 +72,25 @@ void World::refresh_vet_stats(int idx) {
     // [V8] speed in the integer Speed= domain, mapped back through the unit's
     // own existing conversion (vehicles: speed_cps; infantry: World move_cps).
     // Aircraft FASTER is out of scope (spec §Scope).
+    // Wave-5 (item 8): the remaining switch abilities a rank can grant
+    // (no Allied/Soviet type of this install's rulesmd grants them; kept so
+    // map/mod data that does behaves): CRUSHER -> Crusher, EXPLODES ->
+    // Explodes (the P4 death weapon), C4 -> C4 (the P4 plant).
+    if (has(Ability::Crusher)) u.crusher = true;
+    if (has(Ability::Explodes)) u.abil.explodes = true;
+    if (has(Ability::C4)) u.abil.c4 = true;
+    // Wave-5 (item 8): aircraft FASTER -- the flight speeds scale by
+    // VeteranSpeed like a ground unit's Speed= [RE-FALLBACK: same
+    // multiplier, applied to the cruise speeds instead of Speed=].
+    if (u.is_aircraft) {
+        if (u.w5.base_flight_speed < 0.0) {
+            u.w5.base_flight_speed = u.flight_speed;
+            u.w5.base_fly_cps = u.an.t.fly_speed_cps;
+        }
+        const double m = has(Ability::Faster) ? vet_rules_.speed : 1.0;
+        u.flight_speed = u.w5.base_flight_speed * m;
+        u.an.t.fly_speed_cps = u.w5.base_fly_cps * m;
+    }
     if (v.rules_speed > 0 && !u.is_aircraft) {
         const int s = speed_value(v.rules_speed, v.speed_mult, has(Ability::Faster), vet_rules_.speed);
         if (s == v.rules_speed) {
@@ -104,6 +123,15 @@ void World::credit_kill(int killer, int victim_house, int victim_cost, float vic
     // [V3] FUN_007021D0.
     if (dont_score) return;
     if (killer < 0 || killer >= static_cast<int>(units_.size())) return;
+    // Wave-5 (item 8) [RE-FALLBACK: the original's spawn-manager kill credit
+    // was not traced; in play the Carrier / V3 launcher is what gains rank]:
+    // a spawned aircraft or a missile credits its spawner.
+    {
+        const Unit& s = units_[killer];
+        if ((s.an.t.spawned || s.an.t.missile) && s.an.owner >= 0 &&
+            s.an.owner < static_cast<int>(units_.size()))
+            killer = s.an.owner;
+    }
     Unit& k = units_[killer];
     if (!k.alive) return;
     const bool allied = !is_enemy(k.house, victim_house);
@@ -281,8 +309,30 @@ void World::collect_crate(int slot, int unit_idx) {
             if (o.alive && o.die_time < 0.0 && o.house == h && (!infantry_only || !o.is_vehicle)) ++c;
         return c;
     };
-    // §3.3 conversion rules (rule 1, the forced MCV, is CUT -- no deploy).
-    switch (static_cast<Powerup>(p)) {
+    // §3.3 conversion rules. Wave-5 (item 8): rule 1, the forced MCV [RE:
+    // veterancy.md §3.3 rule 1, FUN_00481910]: a house with no buildings, more
+    // than 1500 credits, no MCV and the MCV-redeploy option on gets the Unit
+    // crate as its side's MCV (the UndeploysInto unit of its ConYard type).
+    int forced_mcv = -1;   // index into undeploy_units_
+    if (mcv_redeploys_ && h >= 0 && h < house_count()) {
+        bool any_bld = false;
+        for (const Building& b : buildings_) any_bld |= b.alive && b.state != Building::State::Dead && b.house == h;
+        bool any_mcv = false;
+        for (int i = 0; i < static_cast<int>(units_.size()); ++i)
+            any_mcv |= units_[i].alive && units_[i].die_time < 0.0 && units_[i].house == h && is_mcv(i);
+        const double cash = ai_enabled(h) ? ai_houses_[h].credits : house_credits_[h] + wallet_hint(h);
+        if (!any_bld && !any_mcv && cash > 1500.0) {
+            const bool soviet = house_side(h) == Side::Soviet;
+            for (int k = 0; k < static_cast<int>(undeploy_units_.size()) && forced_mcv < 0; ++k) {
+                const int bt = k < static_cast<int>(undeploy_types_.size()) ? undeploy_types_[k] : -1;
+                if (bt < 0 || bt >= static_cast<int>(btypes().size())) continue;
+                const std::string& id = btypes()[bt].id;
+                if ((id.rfind("NA", 0) == 0) == soviet) forced_mcv = k;
+            }
+            if (forced_mcv >= 0) p = static_cast<int>(Powerup::Unit);
+        }
+    }
+    if (forced_mcv < 0) switch (static_cast<Powerup>(p)) {
         case Powerup::Unit:
             if (house_units(false) > 50 || water) p = static_cast<int>(Powerup::Money);
             break;
@@ -339,7 +389,7 @@ void World::collect_crate(int slot, int unit_idx) {
 
     switch (static_cast<Powerup>(p)) {
         case Powerup::Unit: {
-            if (crate_pool_.empty()) {
+            if (crate_pool_.empty() && forced_mcv < 0) {
                 // [RE-FALLBACK] no CrateGoodie type loadable -> Money.
                 p = static_cast<int>(Powerup::Money);
                 const int base = ftol(pw[p].arg);
@@ -348,7 +398,7 @@ void World::collect_crate(int slot, int unit_idx) {
                 ev.amount = amt;
                 break;
             }
-            const int k = crate_rng_.ranged(0, static_cast<int>(crate_pool_.size()) - 1);
+            const int k = forced_mcv >= 0 ? -1 : crate_rng_.ranged(0, static_cast<int>(crate_pool_.size()) - 1);
             // Unlimbo at the crate cell, else the nearest free walkable cell.
             int sx = -1, sy = -1;
             for (int r = 0; r <= 8 && sx < 0; ++r)
@@ -362,7 +412,7 @@ void World::collect_crate(int slot, int unit_idx) {
                         }
                     }
             if (sx >= 0) {
-                add_combat_unit(sx, sy, h, crate_pool_[k]);
+                add_combat_unit(sx, sy, h, forced_mcv >= 0 ? undeploy_units_[forced_mcv] : crate_pool_[k]);
                 ev.amount = static_cast<int>(units_.size()) - 1;
                 ev.affected = 1;
             }
