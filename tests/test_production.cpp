@@ -54,6 +54,19 @@ TEST_CASE("power_totals + build_speed_multiplier [RE-GATE: construction.md §8]"
     CHECK(power_totals(enemy, t, 0).output == 0);
 }
 
+TEST_CASE("power_totals: output scales with health, drain does not [RE: FUN_0044E7B0]") {
+    auto t = roster();
+    std::vector<Building> bs = {live(1), live(2)};       // +200 (hp 100/100), -10
+    bs[0].hp = 50;
+    CHECK(power_totals(bs, t, 0).output == 100);         // ftol(50/100*200)
+    bs[0].hp = 33;
+    CHECK(power_totals(bs, t, 0).output == 66);          // ftol(66.0) -- truncation
+    bs[0].hp = 1;
+    CHECK(power_totals(bs, t, 0).output == 2);
+    bs[1].hp = 1;
+    CHECK(power_totals(bs, t, 0).drain == 10);           // FUN_0044E880: no scaling
+}
+
 TEST_CASE("prerequisites_met: plain ids, groups, Buildup counts (placement, W5-B R-065)") {
     auto t = roster();
     std::vector<Building> bs = {live(0)};                // ConYard only
