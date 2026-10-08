@@ -156,7 +156,8 @@ void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
 // W2-UI-06: per-tab "has buildables" published by GameScene before the
 // sidebar draws (-1 = unknown: headless renders treat every tab as stocked).
 int g_tab_has[4] = {-1, -1, -1, -1};
-int g_tab_flash[4] = {0, 0, 0, 0};   // W5-PRES R-142: a building ready to place on tab 0/1
+int g_tab_flash[4] = {0, 0, 0, 0};
+std::map<std::string, long> g_cameo_flash;   // W5-PRES R-039: building id -> logic tick the flash ends   // W5-PRES R-142: a building ready to place on tab 0/1
 // W2-UI-11 (hud_pips.inc): PIPBRD/PIPS art + the selected-unit pip draw.
 struct PipArt;
 extern const PipArt* g_pips;
@@ -4612,6 +4613,14 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         } else if (!can) {
             if (ba.has_darken) blit_shp_darken(ren, tc, "sb:darken", ba.sb_darken, 0, c.rect.x, c.rect.y);
             else shade_rect(ren, c.rect, 128);
+        }
+        // W5-PRES R-039 [RE: strip draw 0x6A8BD0, SidebarClass::FlashCameo
+        // 0x6ABC80]: a flashed cameo shows DARKEN 50 % translucent (0x404)
+        // while Frame < FlashEndFrame and Frame % 16 > 8.
+        if (!unit_tab && ba.has_darken && !g_cameo_flash.empty()) {
+            auto fl = g_cameo_flash.find(ba.roster[type].id);
+            if (fl != g_cameo_flash.end() && g_pres_tick < fl->second && g_pres_tick % 16 > 8)
+                blit_shp_alpha(ren, tc, "sb:darkf", ba.sb_darken, 0, ba.sb_pal, c.rect.x, c.rect.y, 128);
         }
     }
     // CB-4 Superweapons [spec §6]: the SW cameo + recharge clock in an unused

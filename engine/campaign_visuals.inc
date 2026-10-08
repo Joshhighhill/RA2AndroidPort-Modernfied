@@ -165,7 +165,15 @@ private:
                     buildable_ = tab_buildable(active_tab_);
                 }
                 break;
-            default:   // 115 FlashCameo: [open -- the sidebar cameo flash is not drawn]
+            case 115: {   // FlashCameo [RE: 0x6E36C0 -> FlashCameo 0x6ABC80]: the
+                          // named BuildingType's cameo, Value frames (W5-PRES R-039)
+                std::string id = r.text;
+                for (char& ch : id) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                if (id.empty()) id = campaign_->building_type_id(r.value);
+                if (!id.empty()) g_cameo_flash[id] = g_pres_tick + std::max(1, r.value);
+                break;
+            }
+            default:
                 break;
             }
         }
