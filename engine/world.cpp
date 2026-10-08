@@ -2947,6 +2947,11 @@ void World::ai_pick_enemy_house(int house, HouseAiRec& rec) {
     rec.enemy_house = best;
 }
 
+namespace {
+bool quarry_unit_match(int quarry, const Unit& u);
+bool quarry_building_match(int quarry, const Building& b, const AiTeamConfig& tc);
+}  // namespace
+
 void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
     // [G-66; RE: FUN_00509710 (per charged SW, by type) -> for the nuke
     // FUN_0050ca10: walk every object of the house's ENEMY, score it from the
@@ -2974,6 +2979,13 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
     std::vector<Cellxy> ties;
     Cellxy best_bld{-1, -1};
     int best_bld_v = -1;
+    // W5-A R-021 [RE: FUN_00509710 -- a house PreferredTarget (+0x54EC, map
+    // action 35) other than 1 Anything aims through FUN_0050CF90 (the threat
+    // of that QuarryType); RE-FALLBACK: the highest-valued enemy object of
+    // that quarry stands in for Greatest_Threat].
+    const int quarry = (house >= 0 && house < (int)sw_quarry_.size()) ? sw_quarry_[house] : 1;
+    int qbest = -1;
+    std::vector<Cellxy> qties;
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
         int v = ai.sw_value_building;
@@ -2991,6 +3003,10 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
         const Cellxy c{b.cx + b.fw / 2, b.cy + b.fh / 2};
         if (v > best) { best = v; ties.clear(); }
         if (v == best) ties.push_back(c);
+        if (quarry != 1 && quarry_building_match(quarry, b, tc)) {
+            if (v > qbest) { qbest = v; qties.clear(); }
+            if (v == qbest) qties.push_back(c);
+        }
         if (v > best_bld_v) { best_bld_v = v; best_bld = Cellxy{b.cx + b.fw, b.cy + b.fh}; }
     }
     for (const Unit& u : units_) {
@@ -2999,7 +3015,12 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
         const int v = u.is_harvester ? ai.sw_value_harvester : ai.sw_value_unit;
         if (v > best) { best = v; ties.clear(); }
         if (v == best) ties.push_back(Cellxy{u.cell_x, u.cell_y});
+        if (quarry != 1 && quarry_unit_match(quarry, u)) {
+            if (v > qbest) { qbest = v; qties.clear(); }
+            if (v == qbest) qties.push_back(Cellxy{u.cell_x, u.cell_y});
+        }
     }
+    if (!qties.empty()) ties = qties;
     if (fire_t == SuperweaponType::IronCurtain || fire_t == SuperweaponType::ChronoSphere ||
         fire_t == SuperweaponType::ChronoWarp) {
         // Own vehicle cluster: the unit whose 3x3 holds the most own vehicles

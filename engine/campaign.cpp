@@ -515,6 +515,25 @@ MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const Ma
         // W2-CA-17 [campaign.md §7, FUN_006eca30]: one-shot.
         case kSaDeploy: c.kind = MapTeamCommand::Kind::Deploy; advance(); return c;
         case kSaDeleteMembers: c.kind = MapTeamCommand::Kind::DeleteMembers; advance(); return c;
+        // W5-A R-027 [RE: the script executor's table @0x6E94E4, each handler
+        // disassembled; docs/re/campaign.md §7]. 42 ForceFacing completes once
+        // every member stopped turning -- the clone's facing set is instant.
+        case kSaForceFacing: c.kind = MapTeamCommand::Kind::ForceFacing; advance(); return c;
+        case kSaIronCurtainMe:
+            if (view.iron_state == 2) { c.kind = MapTeamCommand::Kind::None; return c; }   // wait
+            c.kind = MapTeamCommand::Kind::IronCurtain;
+            advance();
+            return c;
+        case kSaPanic: c.kind = MapTeamCommand::Kind::Panic; advance(); return c;
+        case kSaUnpanic: c.kind = MapTeamCommand::Kind::Unpanic; advance(); return c;
+        // 10 Follow never sets the line-complete flag (+0x80): the team keeps
+        // following until something else (a trigger) ends it.
+        case kSaFollow:
+            c.kind = MapTeamCommand::Kind::Follow;
+            st.issued = true;
+            return c;
+        case kSaFlash: c.kind = MapTeamCommand::Kind::Flash; advance(); return c;
+        case kSaChangeTeam: c.kind = MapTeamCommand::Kind::ChangeTeam; advance(); return c;
         default:
             c.kind = MapTeamCommand::Kind::Skip;
             advance();

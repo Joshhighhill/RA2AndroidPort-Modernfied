@@ -827,3 +827,76 @@ TEST_CASE("map_trigger: W3-FX presentation actions queue typed requests in campa
     CHECK(h.effects[0].action == 90);
     CHECK(h.effects[0].waypoint == map_waypoint_letters("AG"));
 }
+
+TEST_CASE("map_trigger: W5-A events 23/34/53/54 and actions 35/40/61/70") {
+    struct Host2 : FakeHost {
+        std::vector<std::string> left;
+        bool team_left_map(const std::string& id) const override {
+            for (const std::string& t : left) if (t == id) return true;
+            return false;
+        }
+        bool waypoint_cell(int wp, int& x, int& y) const override {
+            if (wp != 4) return false;
+            x = 50; y = 60;
+            return true;
+        }
+        std::string infantry_type_id(int idx) const override { return idx == 7 ? "E1" : "E2"; }
+    };
+    const std::string text = std::string(kHead) +
+        "[TeamTypes]\n0=TEAMAAAA\n[TEAMAAAA]\nName=x\n"
+        "[Triggers]\n"
+        "TRGLEF01=Player,<none>,left,0,1,1,1,0\nTRGNEA01=Player,<none>,near,0,1,1,1,0\n"
+        "TRGSPY01=Player,<none>,spyh,0,1,1,1,0\nTRGSPY02=Player,<none>,spyi,0,1,1,1,0\n"
+        "TRGACT01=Player,<none>,acts,0,1,1,1,0\n"
+        "[Events]\nTRGLEF01=1,23,1,TEAMAAAA\nTRGNEA01=1,34,0,4\nTRGSPY01=1,53,0,2\nTRGSPY02=1,54,0,7\n"
+        "TRGACT01=1,13,0,0\n"
+        "[Actions]\nTRGLEF01=1,56,0,1,0,0,0,0,A\nTRGNEA01=1,56,0,2,0,0,0,0,A\n"
+        "TRGSPY01=1,56,0,3,0,0,0,0,A\nTRGSPY02=1,56,0,4,0,0,0,0,A\n"
+        "TRGACT01=4,35,0,7,0,0,0,0,A,40,0,0,2,4,45,120,A,61,0,0,0,0,0,0,A,70,3,TAGNEA01,0,0,0,0,A\n"
+        "[Tags]\nTAGLEF01=2,a,TRGLEF01\nTAGNEA01=2,b,TRGNEA01\nTAGSPY01=2,c,TRGSPY01\n"
+        "TAGSPY02=2,d,TRGSPY02\nTAGACT01=0,e,TRGACT01\n"
+        "[CellTags]\n30105=TAGSPY01\n30106=TAGSPY02\n";
+    MapTriggerData d = parse(text);
+    MapTriggerSystem s(d, 1, 1);
+    s.set_campaign_mode(true);
+    Host2 h;
+    s.start(h);
+    // 23 TeamLeavesMap: raised on the logic list, true once the TeamType left.
+    RaiseContext none;
+    CHECK_FALSE(s.raise_logic(23, none, h));
+    h.left.push_back("TEAMAAAA");
+    CHECK(s.raise_logic(23, none, h));
+    CHECK(s.local(1));
+    // 34 ComesNearWaypoint: within 5 cells (0x500 leptons) of waypoint 4 (50,60).
+    RaiseContext near;
+    near.has_object = true;
+    near.object_house_type = 3;
+    near.obj_x = 56; near.obj_y = 60;
+    CHECK_FALSE(s.raise_tag(d.find_tag("TAGNEA01"), 34, near, h));
+    near.obj_x = 54; near.obj_y = 63;
+    CHECK(s.raise_tag(d.find_tag("TAGNEA01"), 34, near, h));
+    CHECK(s.local(2));
+    // 53 SpyAsHouse (Russians = 2) / 54 SpyAsInfantry (InfantryTypes[7] = E1).
+    RaiseContext spy = near;
+    spy.disguise_house_type = 3;
+    CHECK_FALSE(s.raise_cell(105, 30, 53, spy, h));
+    spy.disguise_house_type = 2;
+    CHECK(s.raise_cell(105, 30, 53, spy, h));
+    spy.disguise_infantry = "E2";
+    CHECK_FALSE(s.raise_cell(106, 30, 54, spy, h));
+    spy.disguise_infantry = "E1";
+    CHECK(s.raise_cell(106, 30, 54, spy, h));
+    CHECK(s.local(3));
+    CHECK(s.local(4));
+    // 35 / 40 / 61 go to the host with their parameters; 70 destroys a tag.
+    s.tick(h);
+    REQUIRE(h.effects.size() == 3);
+    CHECK(h.effects[0].action == 35);
+    CHECK(h.effects[0].value == 7);
+    CHECK(h.effects[0].house_type == 3);
+    CHECK(h.effects[1].action == 40);
+    CHECK(h.effects[1].p[0] == 2);
+    CHECK(h.effects[1].p[3] == 120);
+    CHECK(h.effects[2].action == 61);
+    CHECK_FALSE(s.tag_alive(d.find_tag("TAGNEA01")));   // DestroyTag 70
+}

@@ -1078,6 +1078,14 @@ public:
     double sw_charge_fraction(int house, SuperweaponType type) const;
     // The SW types `house` holds, in grant order (the sidebar slot order).
     std::vector<SuperweaponType> sw_types(int house) const;
+    // W5-A: the house's AI superweapon quarry (map action 35 PreferredTarget,
+    // YRpp QuarryType; 1 Anything = the default scoring). Derived state the
+    // campaign runtime re-pushes every frame (it saves it), never saved here.
+    void set_sw_quarry(int house, int quarry) {
+        if (house < 0) return;
+        if ((int)sw_quarry_.size() <= house) sw_quarry_.resize((std::size_t)house + 1, 1);
+        sw_quarry_[(std::size_t)house] = quarry;
+    }
     // Fire `house`'s `type` at (cx, cy) [Chronosphere: (cx,cy) = source,
     // (cx2,cy2) = destination]. Refused (false) unless that SW is READY.
     // Nuke: a timed two-leg flight (SwStrike) then the blast; Iron Curtain:
@@ -2107,6 +2115,7 @@ private:
     std::vector<Unit> units_;
     std::vector<Building> buildings_;
     std::vector<std::uint8_t> passable_;
+    std::vector<int> sw_quarry_;            // W5-A set_sw_quarry (transient)
     std::vector<std::uint8_t> wall_leak_;   // W5-A: block_wall_cell cells (pathfind leak mask)
     // CB-3 Naval [RE: naval.md §1]: the WATER passability grid, empty by default
     // (built only by set_water_terrain -- the naval demo). Same grid_w_*grid_h_

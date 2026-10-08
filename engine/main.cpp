@@ -5803,6 +5803,12 @@ public:
             player_credits_ = 0.0;
         }
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
+        // W5-A: map action 40 ResizeView (or a load) changed the usable area.
+        if (campaign_ && campaign_->local_version() != local_seen_) {
+            local_seen_ = campaign_->local_version();
+            local_ = campaign_->local_size();
+            apply_local_limits();
+        }
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
@@ -6748,18 +6754,8 @@ private:
     // original first sets the waypoint there).
     void campaign_view_setup() {
         local_ = campaign_->local_size();
-        if (local_.valid) {
-            // [RE: TacticalClass clamp FUN_006d7bb0 (CONFIRMED), in the
-            // original's pixel space (cell centre x = 30*(cx-cy), y =
-            // 15*(cx+cy)+15; this engine's world x is +30)]: view edges
-            // left 30*(2Lx-W), right 30*(2(Lx+Lw)-W), top 15*(W-5+2Ly),
-            // bottom = top + 30*Lh + 135.
-            const int W = local_.size_w;
-            const int top = 15 * (W - 5 + 2 * local_.y);
-            input_.set_view_limits(30 * (2 * local_.x - W) + 30, top,
-                                   30 * (2 * (local_.x + local_.w) - W) + 30,
-                                   top + 30 * local_.h + 135);
-        }
+        local_seen_ = campaign_->local_version();
+        apply_local_limits();
         int hx = 0, hy = 0;
         const int home = campaign_->basic().home_cell;
         if (campaign_->waypoint_xy(home, hx, hy)) {
@@ -6772,6 +6768,22 @@ private:
             input_.center_on_cell((s + d) / 2.0, (s - d) / 2.0);
         }
     }
+    void apply_local_limits() {
+        if (local_.valid) {
+            // [RE: TacticalClass clamp FUN_006d7bb0 (CONFIRMED), in the
+            // original's pixel space (cell centre x = 30*(cx-cy), y =
+            // 15*(cx+cy)+15; this engine's world x is +30)]: view edges
+            // left 30*(2Lx-W), right 30*(2(Lx+Lw)-W), top 15*(W-5+2Ly),
+            // bottom = top + 30*Lh + 135.
+            const int W = local_.size_w;
+            const int top = 15 * (W - 5 + 2 * local_.y);
+            input_.set_view_limits(30 * (2 * local_.x - W) + 30, top,
+                                   30 * (2 * (local_.x + local_.w) - W) + 30,
+                                   top + 30 * local_.h + 135);
+            input_.pan(0, 0);   // clamp to the new limits
+        }
+    }
+    int local_seen_ = 0;   // W5-A: CampaignRuntime::local_version() last applied
     // W4-MC-04: an object is on the board (inside the usable area).
     bool on_board(int cx, int cy) const {
         if (!local_.valid) return true;

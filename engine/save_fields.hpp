@@ -239,6 +239,8 @@ struct SaveAccess {
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
         save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
+        save::io(ar, w.wall_leak_);   // W5-A diagonal wall gaps (save v18)
+        save::io(ar, w.sw_quarry_);   // W5-A AI SW PreferredTarget (save v18)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -1190,6 +1192,8 @@ template <class Ar> void fields(Ar& ar, CampaignHostSave& v) {
     io(ar, v.obj_frames); io(ar, v.obj_texts);
     io(ar, v.end_outcome); io(ar, v.end_flagged_at); io(ar, v.frame); io(ar, v.accum);
     io(ar, v.logged); io(ar, v.teams_created); io(ar, v.raises);
+    io(ar, v.b_off); io(ar, v.house_quarry); io(ar, v.house_fire_sale);   // W5-A (save v18)
+    io(ar, v.left_teams); io(ar, v.local_override);
 }
 
 // --- GameScene / UI state (the 'SCNE' section) ---------------------------
