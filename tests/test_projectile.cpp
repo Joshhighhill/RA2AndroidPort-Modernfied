@@ -368,6 +368,10 @@ ra2engine::UnitCombat cannon_stats() {
     c.rof = 65;
     c.range = 5.75;
     c.verses = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+    // W5-B R-060: every hit now goes through DamageArea (FUN_00489190); the
+    // Rhino's real AP warhead is CellSpread=.3 (76 leptons), which catches a
+    // shell landing just short of / past its target.
+    c.cell_spread = 0.3;
     c.proj.kind = ProjKind::Ballistic;
     c.proj.arcing = true;
     c.proj.weapon_range = 1472;

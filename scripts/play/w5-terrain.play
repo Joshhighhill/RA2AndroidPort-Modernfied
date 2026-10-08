@@ -1,0 +1,35 @@
+# W5-B R-062: land speed (GroundType [LandType] Foot/Track/Wheel... FUN_00673A40,
+# DriveLocomotionClass FUN_004B2550). A Grizzly (SpeedType=Track) driving
+# through the ore field runs at Tiberium Track=70%; on clear ground / road it
+# is back to 100%. (rulesmd gives Track/Wheel 100% on Clear, Road AND Rough --
+# the difference the original shows is ore, ice, weeds and railroad cells.)
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:speed=3
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn MTNK 0 building 0:GACNST +4 -2
+wait 2
+click unit 0:MTNK
+let v0 = uspeed(0,MTNK,0)
+click point ore_near
+until 600 uland(0,MTNK,0) == 5
+wait 3
+assert uspeed(0,MTNK,0) < $v0                    @R-062:B
+let vore = uspeed(0,MTNK,0)
+shot on_ore
+click point clear_near
+until 900 uland(0,MTNK,0) == 0 and moving(0) == 1
+wait 3
+assert uspeed(0,MTNK,0) > $vore                  @R-062:B
+shot off_ore
+end

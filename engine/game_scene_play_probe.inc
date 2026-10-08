@@ -386,8 +386,8 @@
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;
                 if (type != "*" && play_unit_id(u) != type && u.image != type) continue;
                 if (n-- > 0) continue;
-                cx = u.fx;
-                cy = u.fy;
+                cx = u.fx + u.sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
+                cy = u.fy + u.sub_y / 256.0;
                 return true;
             }
             return false;
@@ -500,6 +500,7 @@
             p.set("depth_armed", world_.depth_rules().armed ? 1 : 0);
         }
         w2_play_probe(p);   // wave-2 air/naval/SW keys (w2air_play.inc)
+        w5_play_probe(p);   // W5-B combat/movement keys (w5_play.inc)
         p.find_point = [this](const std::string& name, double& cx, double& cy) {
             return play_find_point(name, cx, cy);
         };

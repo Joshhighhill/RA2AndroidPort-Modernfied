@@ -100,9 +100,9 @@ const VeterancyRules* vet_rules_of(const World& world) {
 // deliver_unit_hit / apply_spread_damage. With `launches == nullptr` (every
 // byte-identity gate) this is the pre-P2 body verbatim: the extracted
 // deliver_unit_hit is the old else-branch statement-for-statement.
-void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
-              int victim_idx, Occupancy& occ, std::vector<ProjectileLaunch>* launches,
-              ProjRng* rng) {
+void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
+              Unit& u, Unit& v, int attacker_idx, int victim_idx, Occupancy& occ,
+              std::vector<ProjectileLaunch>* launches, ProjRng* rng) {
     u.rof_cool = rearm_secs(u.w_rof, rng);
     u.fire_flash = kFireFlashSecs;
     // W2-AN-12 [rules Spawner=yes: HornetLauncher/ASWLauncher/DredLauncher/
@@ -126,15 +126,27 @@ void try_fire(std::vector<Unit>& units, Unit& u, Unit& v, int attacker_idx,
         launches->push_back({attacker_idx, victim_idx, -1});
         return;
     }
-    if (u.w_cell_spread >= 1.0) {
-        // CB-2 [RE-GATE APPLIED: aircraft.md §4]: the BlimpHE 2-cell splash.
-        // Reached ONLY by CellSpread>=1 warheads (the Kirov); every existing
-        // weapon (tank AP=.3, infantry) has CellSpread<1 -> the else branch.
-        apply_spread_damage(units, occ, u, v);
-    } else {
-        // EXISTING single-target delivery -- UNCHANGED (byte-identical path).
-        deliver_unit_hit(units, occ, attacker_idx, victim_idx);
+    // W5-B R-060 [RE: DamageArea FUN_00489190]: an instant shot detonates at
+    // the victim's coordinates; every warhead goes through the area applicator
+    // (a CellSpread .3 AP shell reaches only what is within 76 leptons).
+    int ix = unit_lept_x(v), iy = unit_lept_y(v);
+    // W5-B R-057 [RE: projectile.md §5.3, BulletClass::MoveTo @0x4687B0]: a
+    // FlakScatter + Inviso shell ([FlakProj], the AA flak) bursts at an impact
+    // point thrown Random(0, 2*BallisticScatter) * dist / WeaponRange leptons
+    // in a random direction (sync RNG). Only with the projectile layer on (the
+    // real game); instant-hit gates keep the exact point.
+    if (u.w_proj.flak_scatter && u.w_proj.inviso && rng && world.projectiles_enabled()) {
+        const int dist = static_cast<int>(std::sqrt(double(ix - unit_lept_x(u)) * (ix - unit_lept_x(u)) +
+                                          double(iy - unit_lept_y(u)) * (iy - unit_lept_y(u)) +
+                                          double(unit_lept_z(v) - unit_lept_z(u)) *
+                                              (unit_lept_z(v) - unit_lept_z(u))));
+        const int wr = std::max(1, static_cast<int>(u.w_range * 256.0));
+        const int r = rng->random(0, 2 * world.projectile_rules().ballistic_scatter) * dist / wr;
+        const double th = rng->angle();
+        ix += static_cast<int>(std::cos(th) * r);
+        iy += static_cast<int>(std::sin(th) * r);
     }
+    damage_area(world, units, buildings, occ, u, attacker_idx, -1, ix, iy, unit_lept_z(v));
     // W2-SK-22 Prism split [RE: [Comet] ShrapnelWeapon/ShrapnelCount;
     // RE-FALLBACK: the fragments go to the ShrapnelCount nearest other
     // hostiles within the fragment weapon's Range of the impact, ascending
@@ -312,6 +324,309 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
     }
 }
 
+// ============================================================================
+// W5-B R-060: the original's damage pipeline -- DamageArea (FUN_00489190) ->
+// TechnoClass::ReceiveDamage (0x700DA0) -> ObjectClass::ReceiveDamage
+// (FUN_005F4BA0) -> Modify_Damage (FUN_00489090). docs/re/combat.md §8.
+// ============================================================================
+namespace {
+// DAT_007EC3D0: cumulative cell count of the ring set for ftol(CellSpread).
+constexpr int kRingCount[12] = {1, 9, 21, 37, 61, 89, 121, 161, 205, 253, 309, 369};
+// DAT_00ABC408: the 369 (dx, dy) cell offsets, nearest ring first (read out of
+// the static initializer @0x561540 by emulating its stores).
+constexpr signed char kRingOffsets[369][2] = {
+    {0,0}, {1,-1}, {0,-1}, {-1,-1}, {-1,0}, {1,0}, {-1,1}, {0,1}, {1,1}, {-1,-2}, {0,-2}, {1,-2},
+    {-2,-1}, {2,-1}, {-2,0}, {2,0}, {-2,1}, {2,1}, {-1,2}, {0,2}, {1,2}, {-1,-3}, {0,-3}, {1,-3},
+    {-2,-2}, {2,-2}, {-3,-1}, {3,-1}, {-3,0}, {3,0}, {-3,1}, {3,1}, {-2,2}, {2,2}, {-1,3}, {0,3},
+    {1,3}, {-1,-4}, {0,-4}, {1,-4}, {-3,-3}, {-2,-3}, {2,-3}, {3,-3}, {-3,-2}, {3,-2}, {-4,-1}, {4,-1},
+    {-4,0}, {4,0}, {-4,1}, {4,1}, {-3,2}, {3,2}, {-3,3}, {-2,3}, {2,3}, {3,3}, {-1,4}, {0,4},
+    {1,4}, {-1,-5}, {0,-5}, {1,-5}, {-3,-4}, {-2,-4}, {2,-4}, {3,-4}, {-4,-3}, {4,-3}, {-4,-2}, {4,-2},
+    {-5,-1}, {5,-1}, {-5,0}, {5,0}, {-5,1}, {5,1}, {-4,2}, {4,2}, {-4,3}, {4,3}, {-3,4}, {-2,4},
+    {2,4}, {3,4}, {-1,5}, {0,5}, {1,5}, {-1,-6}, {0,-6}, {1,-6}, {-3,-5}, {-2,-5}, {2,-5}, {3,-5},
+    {-4,-4}, {4,-4}, {-5,-3}, {5,-3}, {-5,-2}, {5,-2}, {-6,-1}, {6,-1}, {-6,0}, {6,0}, {-6,1}, {6,1},
+    {-5,2}, {5,2}, {-5,3}, {5,3}, {-4,4}, {4,4}, {-3,5}, {-2,5}, {2,5}, {3,5}, {-1,6}, {0,6},
+    {1,6}, {-1,-7}, {0,-7}, {1,-7}, {-3,-6}, {-2,-6}, {2,-6}, {3,-6}, {-5,-5}, {-4,-5}, {4,-5}, {5,-5},
+    {-5,-4}, {5,-4}, {-6,-3}, {6,-3}, {-6,-2}, {6,-2}, {-7,-1}, {7,-1}, {-7,0}, {7,0}, {-7,1}, {7,1},
+    {-6,2}, {6,2}, {-6,3}, {6,3}, {-5,4}, {5,4}, {-5,5}, {-4,5}, {4,5}, {5,5}, {-3,6}, {-2,6},
+    {2,6}, {3,6}, {-1,7}, {0,7}, {1,7}, {-1,-8}, {0,-8}, {1,-8}, {-3,-7}, {-2,-7}, {2,-7}, {3,-7},
+    {-5,-6}, {-4,-6}, {4,-6}, {5,-6}, {-6,-5}, {6,-5}, {-6,-4}, {6,-4}, {-7,-3}, {7,-3}, {-7,-2}, {7,-2},
+    {-8,-1}, {8,-1}, {-8,0}, {8,0}, {-8,1}, {8,1}, {-7,2}, {7,2}, {-7,3}, {7,3}, {-6,4}, {6,4},
+    {-6,5}, {6,5}, {-5,6}, {-4,6}, {4,6}, {5,6}, {-3,7}, {-2,7}, {2,7}, {3,7}, {-1,8}, {0,8},
+    {1,8}, {-1,-9}, {0,-9}, {1,-9}, {-3,-8}, {-2,-8}, {2,-8}, {3,-8}, {-5,-7}, {-4,-7}, {4,-7}, {5,-7},
+    {-6,-6}, {6,-6}, {-7,-5}, {7,-5}, {-7,-4}, {7,-4}, {-8,-3}, {8,-3}, {-8,-2}, {8,-2}, {-9,-1}, {9,-1},
+    {-9,0}, {9,0}, {-9,1}, {9,1}, {-8,2}, {8,2}, {-8,3}, {8,3}, {-7,4}, {7,4}, {-7,5}, {7,5},
+    {-6,6}, {6,6}, {-5,7}, {-4,7}, {4,7}, {5,7}, {-3,8}, {-2,8}, {2,8}, {3,8}, {-1,9}, {0,9},
+    {1,9}, {-1,-10}, {0,-10}, {1,-10}, {-3,-9}, {-2,-9}, {2,-9}, {3,-9}, {-5,-8}, {-4,-8}, {4,-8}, {5,-8},
+    {-7,-7}, {-6,-7}, {6,-7}, {7,-7}, {-7,-6}, {7,-6}, {-8,-5}, {8,-5}, {-8,-4}, {8,-4}, {-9,-3}, {9,-3},
+    {-9,-2}, {9,-2}, {-10,-1}, {10,-1}, {-10,0}, {10,0}, {-10,1}, {10,1}, {-9,2}, {9,2}, {-9,3}, {9,3},
+    {-8,4}, {8,4}, {-8,5}, {8,5}, {-7,6}, {7,6}, {-7,7}, {-6,7}, {6,7}, {7,7}, {-5,8}, {-4,8},
+    {4,8}, {5,8}, {-3,9}, {-2,9}, {2,9}, {3,9}, {-1,10}, {0,10}, {1,10}, {0,11}, {0,-11}, {-1,11},
+    {1,11}, {-1,-11}, {1,-11}, {-2,11}, {2,11}, {-2,-11}, {2,-11}, {-3,11}, {3,11}, {-3,-11}, {-3,11}, {-4,9},
+    {4,9}, {-4,-9}, {4,-9}, {-5,9}, {5,9}, {-5,-9}, {5,-9}, {-6,8}, {6,8}, {-6,-8}, {6,-8}, {-7,8},
+    {7,8}, {-7,-8}, {7,-8}, {-8,7}, {8,7}, {-8,-7}, {8,-7}, {-8,6}, {8,6}, {-8,-6}, {8,-6}, {-9,5},
+    {9,5}, {-9,-5}, {9,-5}, {-9,4}, {9,4}, {-9,-4}, {9,-4}, {-10,3}, {10,3}, {-10,-3}, {10,-3}, {-10,2},
+    {10,2}, {-10,-2}, {10,-2}, {-11,1}, {11,1}, {-11,-1}, {11,-1}, {11,0}, {-11,0},
+};
+constexpr int kLevelLept = 104;     // Unsorted::LevelHeight (DAT_0089D7E0)
+constexpr int kMaxDamage = 10000;   // rulesmd [CombatDamage] MaxDamage=10000 (Rules+0x16C8)
+
+int ftol_i(double v) { return static_cast<int>(v); }   // _ftol: truncate toward zero
+
+int dist3_i(int dx, int dy, int dz) {
+    return ftol_i(std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy +
+                            static_cast<double>(dz) * dz));
+}
+
+int lept_cell(int l) { return static_cast<int>(std::floor((l + 128.0) / 256.0)); }
+
+// Kill bookkeeping for a unit whose hp reached 0 (the deliver_hit_from tail).
+void start_unit_death(std::vector<Unit>& units, Occupancy& occ, int j, const Unit& shooter,
+                      int src_unit) {
+    Unit& w = units[static_cast<std::size_t>(j)];
+    w.die_time = 0.0;
+    w.ia.death = shooter.w_inf_death;   // W3-B: the killing warhead's InfDeath
+    w.vet.killed_by = src_unit;         // P5 [V3]
+    occ.release_all_of(j, -1, -1);
+    w.target = -1;
+    w.target_building = -1;
+    w.path.clear();
+    w.path_idx = 0;
+}
+}  // namespace
+
+int spread_ring_count(int r) {
+    if (r < 0) r = 0;
+    if (r > 11) r = 11;
+    return kRingCount[r];
+}
+
+void spread_ring_offset(int k, int& dx, int& dy) {
+    dx = kRingOffsets[k][0];
+    dy = kRingOffsets[k][1];
+}
+
+int modify_damage(int damage, const std::vector<int>& verses, int armor_ix, double cell_spread,
+                  double percent_at_max, int distance) {
+    if (damage == 0) return 0;
+    if (damage < 0) return distance < 8 ? damage : 0;   // healing: point-blank only
+    const float fd = static_cast<float>(damage);
+    const float atmax = fd * static_cast<float>(percent_at_max);   // FMUL [wh+0x12C]
+    const int spread = ftol_i(static_cast<float>(cell_spread) * 256.0f);   // [wh+0x124]*256
+    int d = damage;
+    if (atmax != fd && spread != 0)
+        d = ftol_i((static_cast<double>(fd) - atmax) * (spread - distance) / spread + atmax);
+    if (d <= 0) d = 0;
+    double v = 1.0;
+    if (!verses.empty()) {
+        int idx = armor_ix;
+        if (idx < 0 || idx >= static_cast<int>(verses.size())) idx = 0;
+        v = verses[static_cast<std::size_t>(idx)] / 100.0;
+    }
+    int r = ftol_i(d * v);
+    if (r >= kMaxDamage) r = kMaxDamage;
+    return r;
+}
+
+int unit_lept_x(const Unit& u) { return ftol_i(u.fx * 256.0 + u.sub_x); }   // + W5-B sub-cell offset
+int unit_lept_y(const Unit& u) { return ftol_i(u.fy * 256.0 + u.sub_y); }
+int unit_lept_z(const Unit& u) {
+    return u.level * kLevelLept + (unit_airborne(u) ? ftol_i(u.altitude) : 0);
+}
+
+void building_aim_lept(const Building& b, int level, int& x, int& y, int& z) {
+    // Original: cell origin*256 + foundation*128; the clone's lepton origin is
+    // the cell centre (cell*256), hence the -128.
+    x = b.cx * 256 + b.fw * 128 - 128;
+    y = b.cy * 256 + b.fh * 128 - 128;
+    z = level * kLevelLept;
+}
+
+namespace {
+// FUN_004CC020 / FUN_004CC280 (cliff half): step max(|dcx|,|dcy|) times from
+// the shooter toward the target; a step whose cell is more than 3 levels above
+// the previous step's cell blocks the shot (the target's own cell is never
+// stepped into). Walls ([WallModel], SubjectToWalls) are not traced
+// [RE-FALLBACK: the clone has no wall overlay state on the combat path].
+bool cliff_blocks(const World& world, int ax, int ay, int az, int bx, int by, int bz) {
+    const int acx = lept_cell(ax), acy = lept_cell(ay);
+    const int n = std::max(std::abs(acx - lept_cell(bx)), std::abs(acy - lept_cell(by)));
+    if (n == 0) return false;
+    const int sx = (bx - ax) / n, sy = (by - ay) / n;
+    (void)az; (void)bz;
+    int pcx = acx, pcy = acy;
+    for (int k = 0; k < n; ++k) {
+        const int cx = lept_cell(ax + sx * k), cy = lept_cell(ay + sy * k);
+        if (world.cell_level(cx, cy) - world.cell_level(pcx, pcy) > 3) return true;
+        pcx = cx;
+        pcy = cy;
+    }
+    return false;
+}
+
+// FUN_006F6490: the shooter `diff` levels above the target ->
+// n = diff / ElevationIncrement, bonus = min(n * IncrementBonus, Cap) cells,
+// returned as sqrt((ftol(bonus) * 256)^2 + (104 * diff)^2) leptons.
+int elevation_bonus(const World& world, int diff) {
+    const World::ElevationRules& er = world.elevation_rules();
+    if (!er.armed || diff <= 0) return 0;
+    const int n = diff / er.increment;
+    double b = n * er.bonus;
+    if (b > er.cap) b = er.cap;
+    const double cells = ftol_i(b) * 256.0;
+    const double h = static_cast<double>(kLevelLept) * diff;
+    return ftol_i(std::sqrt(cells * cells + h * h));
+}
+}  // namespace
+
+bool weapon_in_range(const World& world, const Unit& u, int tx, int ty, int tz, int extra) {
+    return weapon_in_range_from(world, u, unit_lept_x(u), unit_lept_y(u), unit_lept_z(u), tx, ty, tz,
+                                extra);
+}
+
+bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
+                          int tz, int extra) {
+    int range = ftol_i(u.w_range * 256.0) + extra;
+    if (u.w_proj.subject_to_elevation)
+        range += elevation_bonus(world, world.cell_level(lept_cell(ux), lept_cell(uy)) -
+                                            world.cell_level(lept_cell(tx), lept_cell(ty)));
+    // An airborne shooter measures in the ground plane (FUN_006F6750's
+    // TechnoClass+0x29B branch: 2-D distance + the airburst lowering).
+    if (dist3_i(tx - ux, ty - uy, unit_airborne(u) ? 0 : tz - uz) > range) return false;
+    if (u.w_proj.subject_to_cliffs && world.elevation_rules().armed &&
+        cliff_blocks(world, ux, uy, uz, tx, ty, tz))
+        return false;
+    return true;
+}
+
+bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t) {
+    return weapon_in_range(world, u, unit_lept_x(t), unit_lept_y(t), unit_lept_z(t));
+}
+
+AreaResult damage_area(const World& world, std::vector<Unit>& units,
+                       std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
+                       int src_unit, int src_building, int ix, int iy, int iz) {
+    AreaResult res;
+    if (shooter.w_damage == 0) return res;
+    const int radius = ftol_i(static_cast<float>(shooter.w_cell_spread) * 256.0f);   // local_80
+    const int rings = spread_ring_count(ftol_i(shooter.w_cell_spread));
+    const int icx = lept_cell(ix), icy = lept_cell(iy);
+    const int ground_z = world.cell_level(icx, icy) * kLevelLept;
+    // Ring membership of a cell offset: its index in the scan order, else -1.
+    auto ring_index = [&](int dx, int dy) {
+        if (dx < -11 || dx > 11 || dy < -11 || dy > 11) return -1;
+        for (int k = 0; k < rings; ++k)
+            if (kRingOffsets[k][0] == dx && kRingOffsets[k][1] == dy) return k;
+        return -1;
+    };
+    // AffectsAllies=no: the firer's house allied (or equal) to the victim's -> 0.
+    auto spared = [&](int victim_house) {
+        if (shooter.w_affects_allies) return false;
+        if (src_unit < 0 && src_building < 0) return false;   // ReceiveDamage needs a source
+        return shooter.house == victim_house || world.are_allied(shooter.house, victim_house);
+    };
+
+    // --- units: (ring index, unit index) order = the cell-chain scan order.
+    struct Hit { int ring; int idx; int dist; };
+    std::vector<Hit> hits;
+    for (int j = 0; j < static_cast<int>(units.size()); ++j) {
+        const Unit& w = units[static_cast<std::size_t>(j)];
+        if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0) continue;
+        if (j == src_unit) continue;                                 // the source itself
+        const bool air = unit_airborne(w);
+        if (air && iz <= ground_z) continue;     // ground burst: the air layer is not scanned
+        const int wx = unit_lept_x(w), wy = unit_lept_y(w), wz = unit_lept_z(w);
+        int k = 0;
+        if (!air) {
+            k = ring_index(lept_cell(wx) - icx, lept_cell(wy) - icy);
+            if (k < 0) continue;
+        }
+        int d = dist3_i(wx - ix, wy - iy, wz - iz);
+        if (d > radius) continue;
+        if (air) d /= 2;                         // an aircraft in the air: distance halved
+        hits.push_back({k, j, d});
+    }
+    std::stable_sort(hits.begin(), hits.end(),
+                     [](const Hit& a, const Hit& b) { return a.ring < b.ring; });
+    for (const Hit& h : hits) {
+        Unit& w = units[static_cast<std::size_t>(h.idx)];
+        if (!w.alive || w.die_time >= 0.0) continue;
+        if (spared(w.house)) continue;
+        if (w.an.iron_left > 0.0) continue;                          // W2-AN-04 Iron Curtain
+        // TechnoClass::ReceiveDamage: the house/veterancy armour multipliers on
+        // the raw damage, floor 1 (P5 vet_receive; W3-B ProneDamage first).
+        int raw = shooter.w_damage;
+        if (w.vet.recv) raw = vet_receive(raw, w.vet);
+        raw = inf_prone_damage(w.ia, raw, shooter.w_prone_damage);
+        if (raw < 1) raw = 1;
+        const int dmg = modify_damage(raw, shooter.w_verses, w.armor_ix, shooter.w_cell_spread,
+                                      shooter.w_percent_at_max, h.dist);
+        if (dmg <= 0) continue;
+        w.hp -= dmg;
+        res.damage += dmg;
+        if (res.first_unit < 0 || h.idx < res.first_unit) res.first_unit = h.idx;
+        inf_on_hit(w.ia, src_unit >= 0 || src_building >= 0,   // W3-B fear
+                   w.max_hp > 0 ? static_cast<double>(w.hp) / w.max_hp : 0.0);
+        // Idle retaliation (combat.md §7) -- only against an enemy firer: a
+        // unit caught in friendly splash does not turn on its own side.
+        if (w.target == -1 && !w.moving() && !shooter.disguised && !w.abil.no_retaliate &&
+            world.is_enemy(w.house, shooter.house)) {
+            if (src_unit >= 0) {
+                w.target = src_unit;
+                w.guard_x = w.cell_x;
+                w.guard_y = w.cell_y;
+            } else if (src_building >= 0 && w.target_building == -1) {
+                w.target_building = src_building;
+                w.guard_x = w.cell_x;
+                w.guard_y = w.cell_y;
+            }
+        }
+        if (w.hp <= 0) start_unit_death(units, occ, h.idx, shooter, src_unit);
+    }
+
+    // --- buildings: once per foundation cell inside the ring set (the
+    // building sits in every foundation cell's object chain, AddContent
+    // FUN_0047E7B0, and the victim list is not de-duplicated).
+    for (int bi = 0; bi < static_cast<int>(buildings.size()); ++bi) {
+        Building& b = buildings[static_cast<std::size_t>(bi)];
+        if (bi == src_building) continue;
+        for (int cy = b.cy; cy < b.cy + b.fh; ++cy)
+            for (int cx = b.cx; cx < b.cx + b.fw; ++cx) {
+                if (!b.alive || b.state == Building::State::Dead) continue;
+                if (ring_index(cx - icx, cy - icy) < 0) continue;
+                const int cz = world.cell_level(cx, cy) * kLevelLept;
+                int d;
+                if (cx == icx && cy == icy) {
+                    d = 0;
+                    if (iz - cz > 2 * kLevelLept)
+                        d = dist3_i(cx * 256 - ix, cy * 256 - iy, cz - iz) - 2 * kLevelLept;
+                } else {
+                    d = dist3_i(cx * 256 - ix, cy * 256 - iy, cz - iz);
+                }
+                if (d > radius) continue;
+                if (spared(b.house)) continue;
+                if (b.iron_left > 0.0) continue;                     // W2-AN-04
+                int raw = shooter.w_damage;
+                if (b.vet_recv) raw = receive_damage(raw, b.armor_mult, false, 1.0);
+                if (raw < 1) raw = 1;
+                int dmg = modify_damage(raw, shooter.w_verses, b.armor_ix, shooter.w_cell_spread,
+                                        shooter.w_percent_at_max, d);
+                if (dmg < 1) dmg = 1;                    // FUN_005F4BA0: buildings floor at 1
+                b.hp -= dmg;
+                res.damage += dmg;
+                if (b.hp <= 0) {
+                    b.killed_by = src_unit;              // P5 [V3]
+                    kill_building(b);
+                    for (Unit& other : units)
+                        if (other.target_building == bi) {
+                            other.target_building = -1;
+                            other.attack_order = false;
+                        }
+                }
+            }
+    }
+    return res;
+}
+
 int armor_index(const std::string& armor) {
     const std::string lower = to_lower(armor);
     const auto& names = armor_names();
@@ -450,7 +765,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 // primary's. abil.c4 is false unless a P4 profile is bound.
                 const double range_leptons =
                     (u.abil.c4 ? u.abil.c4_range : u.w_range) * kLeptonsPerCell;
-                if (best_d <= range_leptons) {
+                // W5-B R-063 [RE: FUN_006F6750]: the original measures 3-D to the
+                // building's centre with the range widened by (w+h)*64 leptons.
+                int bax, bay, baz;
+                building_aim_lept(*b, world.cell_level(b->cx, b->cy), bax, bay, baz);
+                const bool b_in_range = u.abil.c4 ? best_d <= range_leptons
+                                                  : weapon_in_range(world, u, bax, bay, baz,
+                                                                    (b->fw + b->fh) * 64);
+                if (b_in_range) {
                     if (u.rof_cool <= 0.0) {
                         // Aim gate, mirroring the unit path exactly
                         // (combat.cpp ~L276-278): a vehicle holds fire until
@@ -483,8 +805,18 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // World::step_projectiles; otherwise the pre-P2 tail.
                         if (launches && u.w_proj.flies())
                             launches->push_back({i, -1, b_idx});
-                        else
-                            deliver_building_hit(units, buildings, i, b_idx);
+                        else {
+                            // W5-B R-060: the shot detonates at the building's
+                            // centre through the area applicator.
+                            int ax, ay, az;
+                            building_aim_lept(*b, world.cell_level(b->cx, b->cy), ax, ay, az);
+                            damage_area(world, units, buildings, occ, u, i, -1, ax, ay, az);
+                            if (u.target_building == b_idx &&
+                                (!b->alive || b->state == Building::State::Dead)) {
+                                u.target_building = -1;
+                                u.attack_order = false;
+                            }
+                        }
                     }
                 } else if (u.attack_order && !(u.deploy_fire && u.deployed)) {
                     // Dedup mirrors the unit-pursuit branch below (f): only
@@ -525,8 +857,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         if (u.attack_cell_x >= 0) {
             const double d = dist_leptons(u.fx, u.fy, static_cast<double>(u.attack_cell_x),
                                           static_cast<double>(u.attack_cell_y));
-            const double range_leptons = u.w_range * kLeptonsPerCell;
-            if (d <= range_leptons) {
+            (void)d;
+            // W5-B R-063: 3-D range to the cell centre (+ elevation / cliffs).
+            if (weapon_in_range(world, u, u.attack_cell_x * 256, u.attack_cell_y * 256,
+                                world.cell_level(u.attack_cell_x, u.attack_cell_y) * 104)) {
                 if (u.rof_cool <= 0.0) {
                     if (u.is_vehicle && !u.omni_fire &&
                         !vehicle_aimed(u, facing_u16_from_delta(
@@ -646,7 +980,12 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     for (int bj = 0; bj < static_cast<int>(buildings.size()); ++bj) {
                         const Building& b = buildings[bj];
                         if (!b.alive || b.state == Building::State::Dead) continue;
-                        if (b.type < 0 || b.type >= static_cast<int>(bt.size()) || !bt[b.type].armed)
+                        // W5-B R-064 [RE: Greatest_Threat FUN_006F8320 ->
+                        // Evaluate_Object FUN_006F71D0 @0x6F7ADB]: a HUMAN
+                        // house's unit skips a building with no weapon; a
+                        // computer house's unit may pick any enemy building.
+                        if (b.type < 0 || b.type >= static_cast<int>(bt.size()) ||
+                            (!bt[b.type].armed && !(world.house_is_computer(u.house) && world.ai_threat_any_building())))
                             continue;
                         if (!world.is_enemy(u.house, b.house)) continue;
                         if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
@@ -671,7 +1010,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             }
         }
 
-        if (u.target == -1) continue;  // nothing to engage this call
+        if (u.target == -1) {   // nothing to engage this call
+            u.crushing = false;
+            continue;
+        }
 
         // (f) Engage.
         Unit& v = units[u.target];
@@ -686,7 +1028,29 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         const bool too_close = u.w_active == 0 && u.an.t.min_range > 0.0 &&
                                d < u.an.t.min_range * kLeptonsPerCell;
 
-        if (d <= range_leptons) {
+        // W5-B R-050 [RE: UnitClass ShouldCrush FUN_00742720 / Mission_Attack
+        // FUN_007402F0]: a Crusher with a crushable enemy target inside
+        // [CombatDamage] Crush (3-D, 1.8 cells) drives onto it instead of
+        // firing -- computer houses always, the player only with
+        // PlayerAutoCrush=yes or an AutoCrush=yes type.
+        {
+            const World::CrushRules& cr = world.crush_rules();
+            const bool may = cr.armed && u.crusher && u.is_vehicle && !u.is_aircraft &&
+                             v.crushable && !v.is_vehicle && !v.is_aircraft && !unit_airborne(v) &&
+                             (world.house_is_computer(u.house) || cr.player_auto_crush || u.auto_crush);
+            const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
+                      dz = unit_lept_z(v) - unit_lept_z(u);
+            if (may && std::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
+                if (!u.crushing || u.path.empty() || u.path.back().x != v.cell_x ||
+                    u.path.back().y != v.cell_y)
+                    requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/false});
+                u.crushing = true;
+                continue;   // no shot: the tracks do the work
+            }
+            u.crushing = false;
+        }
+
+        if (unit_in_weapon_range(world, u, v)) {   // W5-B R-063: 3-D + elevation + cliffs
             if (too_close) continue;
             if (u.rof_cool <= 0.0) {
                 // Aim gate (docs/re/voxel-render.md §5, FireError::FACING): a
@@ -698,7 +1062,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 if (u.is_vehicle && !u.omni_fire &&
                     !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
                     continue;  // hold fire this frame; rof_cool untouched
-                try_fire(units, u, v, i, u.target, occ, launches, rof_rng);
+                try_fire(world, units, buildings, u, v, i, u.target, occ, launches, rof_rng);
             }
         } else if (u.attack_order && !(u.deploy_fire && u.deployed)) {
             // (Gap fix C, G-45: a deployed GI holds its post -- no approach.)

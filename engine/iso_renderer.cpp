@@ -470,10 +470,13 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
     // fx/fy == cell_x/cell_y, so this is identical to the integer path.
     const double hw = kTileW / 2.0;
     const double hh = kTileH / 2.0;
+    // W5-B R-061: + the infantry sub-cell spot offset (leptons, 0 for vehicles).
+    const double ufx = unit.fx + unit.sub_x / 256.0;
+    const double ufy = unit.fy + unit.sub_y / 256.0;
     const int tile_screen_x =
-        static_cast<int>(std::lround((unit.fx - unit.fy) * hw)) + cam.x;
+        static_cast<int>(std::lround((ufx - ufy) * hw)) + cam.x;
     const int tile_screen_y =
-        static_cast<int>(std::lround((unit.fx + unit.fy) * hh - unit.level * kLevelPx)) +
+        static_cast<int>(std::lround((ufx + ufy) * hh - unit.level * kLevelPx)) +
         cam.y;
 
     const ra2assets::ShpFile::Frame f = shp.frame_info(unit.frame);
@@ -604,7 +607,7 @@ void draw_selection(void* sdl_renderer, const Unit& unit, const Camera& cam, int
                     int view_h, int width_px) {
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
     int cx, cy;
-    tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
+    tile_center_screen(unit.fx + unit.sub_x / 256.0, unit.fy + unit.sub_y / 256.0, unit.level, cam, cx, cy);   // W5-B sub-cell
 
     // Diamond size: default one-cell footprint (60x30, 2:1), or scaled to
     // `width_px` for wide voxel sprites (keeping the 2:1 iso ratio).
@@ -701,7 +704,7 @@ void draw_hp_bar(void* sdl_renderer, const Unit& unit, const Camera& cam, int vi
     const int bar_w = width_px > 0 ? width_px : kHpBarW;
 
     int cx, cy;
-    tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
+    tile_center_screen(unit.fx + unit.sub_x / 256.0, unit.fy + unit.sub_y / 256.0, unit.level, cam, cx, cy);   // W5-B sub-cell
     const int bar_cy = cy - kHpBarUp - kHpBarGap;
 
     SDL_Rect bg{cx - bar_w / 2, bar_cy - kHpBarH / 2, bar_w, kHpBarH};
@@ -733,7 +736,7 @@ void draw_cargo_pips(void* sdl_renderer, const Unit& unit, int pips_filled, int 
     if (pips_max <= 0) return;
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
     int cx, cy;
-    tile_center_screen(unit.fx, unit.fy, unit.level, cam, cx, cy);
+    tile_center_screen(unit.fx + unit.sub_x / 256.0, unit.fy + unit.sub_y / 256.0, unit.level, cam, cx, cy);   // W5-B sub-cell
     // One row directly UNDER the HP bar (same anchor math as draw_hp_bar).
     const int row_y = cy - kHpBarUp - kHpBarGap + kHpBarH + 2;
     const int pip_w = 4, pip_h = 3, gap = 2;

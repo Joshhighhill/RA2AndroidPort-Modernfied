@@ -32,6 +32,8 @@ struct SaveAccess {
         save::io(ar, o.w_);
         save::io(ar, o.h_);
         save::io(ar, o.owner_);
+        save::io(ar, o.spots_);   // v20: W5-B infantry sub-cell spots
+        save::io(ar, o.inf_);
     }
     template <class Ar> static void ore_field(Ar& ar, OreField& f) {
         save::io(ar, f.w_);
@@ -242,6 +244,14 @@ struct SaveAccess {
         save::io(ar, w.w5_);   // wave-5 abilities (agent C)
         save::io(ar, w.w5_hide_);   // wave-5 gap scratch (the amphib_passable_ precedent)
         save::io(ar, w.w5_own_);
+        // W5-B R-062 land speed (save v20)
+        save::io(ar, w.land_speed_armed_);
+        save::io(ar, w.speed_land_);
+        save::io(ar, w.ramp_);
+        save::io(ar, w.level_grid_);
+        save::io(ar, w.land_rules_);
+        save::io(ar, w.crush_rules_);   // W5-B R-050 (v20)
+        save::io(ar, w.elev_rules_);    // W5-B R-063 (v20)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -441,6 +451,9 @@ template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
     io(ar, v.weapon_range);
     io(ar, v.flh);
     io(ar, v.level); io(ar, v.airburst); io(ar, v.very_high); io(ar, v.course_lock);   // W4 (v15)
+    io(ar, v.subject_to_cliffs);   // v20: W5-B
+    io(ar, v.subject_to_elevation);
+    io(ar, v.subject_to_walls);
 }
 template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.kind);
@@ -481,6 +494,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
+    io(ar, v.affects_allies);   // v20: W5-B
     io(ar, v.proj);
     io(ar, v.aa);
     io(ar, v.ag);
@@ -528,6 +542,7 @@ template <class Ar> void fields(Ar& ar, VeterancyRules& v) {
 template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.damage); io(ar, v.rof); io(ar, v.range); io(ar, v.verses);
     io(ar, v.cell_spread); io(ar, v.percent_at_max);
+    io(ar, v.affects_allies);   // v20: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
@@ -580,6 +595,18 @@ template <class Ar> void fields(Ar& ar, World::Crate& v) {
 template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
     io(ar, v.picked); io(ar, v.applied); io(ar, v.house); io(ar, v.unit);
     io(ar, v.x); io(ar, v.y); io(ar, v.amount); io(ar, v.affected);
+}
+template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v20)
+    io(ar, v.armed); io(ar, v.increment); io(ar, v.bonus); io(ar, v.cap);
+}
+template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v20)
+    io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush); io(ar, v.ai_any_building);
+}
+template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v20)
+    for (auto& row : v.cost)
+        for (float& c : row) io(ar, c);
+    io(ar, v.tracked_up); io(ar, v.tracked_down); io(ar, v.wheeled_up); io(ar, v.wheeled_down);
+    io(ar, v.condition_red);
 }
 template <class Ar> void fields(Ar& ar, World::VetEvent& v) {
     io(ar, v.unit); io(ar, v.old_rank); io(ar, v.new_rank);
@@ -706,10 +733,15 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
+    io(ar, v.affects_allies);   // v20: W5-B
     io(ar, v.proj);
     io(ar, v.rot);
     io(ar, v.turret);
     io(ar, v.speed_cps);
+    io(ar, v.speed_type);   // v20: W5-B
+    io(ar, v.auto_crush);
+    io(ar, v.is_infantry);
+    io(ar, v.land_speed_loco);
     io(ar, v.is_vehicle);
     io(ar, v.passengers);
     io(ar, v.size_limit);
@@ -840,6 +872,16 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w_verses);
     io(ar, v.w_cell_spread);
     io(ar, v.w_percent_at_max);
+    io(ar, v.w_affects_allies);   // v20: W5-B
+    io(ar, v.spot);
+    io(ar, v.sub_x);
+    io(ar, v.sub_y);
+    io(ar, v.speed_type);
+    io(ar, v.speed_mult);
+    io(ar, v.auto_crush);   // W5-B R-050
+    io(ar, v.crushing);
+    io(ar, v.is_infantry);
+    io(ar, v.land_speed_loco);
     io(ar, v.w_proj);
     io(ar, v.target);
     io(ar, v.target_building);
@@ -1018,7 +1060,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.garrison_target);
     io(ar, v.iron_left);   // W2-AN-04 (save v9)
     io(ar, v.w5);          // wave-5 abilities (agent C)
-    io(ar, v.power_off);   // W5-E2 power-down (save v20)
+    io(ar, v.power_off);   // W5-E2 power-down (save v21)
 }
 
 // --- production ---

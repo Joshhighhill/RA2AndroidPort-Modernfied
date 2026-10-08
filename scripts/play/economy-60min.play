@@ -74,6 +74,13 @@ cheat spawn MTNK 0 building 0:GACNST -3 -5
 cheat spawn MTNK 0 building 0:GACNST +7 +5
 cheat spawn MTNK 0 building 0:GACNST -5 +3
 cheat spawn MTNK 0 building 0:GACNST +3 -5
+# W5-B: with three infantry per cell (R-061) the AI's conscript squads arrive
+# packed and hit harder; four more scaffolding guards per reinforcement keep
+# the passive base alive for the hour.
+cheat spawn MTNK 0 building 0:GACNST -4 +4
+cheat spawn MTNK 0 building 0:GACNST +4 -4
+cheat spawn MTNK 0 building 0:GACNST -6 -1
+cheat spawn MTNK 0 building 0:GACNST -1 -6
 # 30
 wait 10125
 assert mine_spawned > $m1 @W2-SK-01
@@ -90,6 +97,10 @@ cheat spawn MTNK 0 building 0:GACNST -5 +2
 cheat spawn MTNK 0 building 0:GACNST +2 -5
 cheat spawn MTNK 0 building 0:GACNST +9 +2
 cheat spawn MTNK 0 building 0:GACNST +2 +9
+cheat spawn MTNK 0 building 0:GACNST -4 +4
+cheat spawn MTNK 0 building 0:GACNST +4 -4
+cheat spawn MTNK 0 building 0:GACNST -6 -1
+cheat spawn MTNK 0 building 0:GACNST -1 -6
 # 45
 wait 10125
 assert mine_spawned > $m2 @W2-SK-01
@@ -106,6 +117,10 @@ cheat spawn MTNK 0 building 0:GACNST -5 +2
 cheat spawn MTNK 0 building 0:GACNST +2 -5
 cheat spawn MTNK 0 building 0:GACNST +9 +2
 cheat spawn MTNK 0 building 0:GACNST +2 +9
+cheat spawn MTNK 0 building 0:GACNST -4 +4
+cheat spawn MTNK 0 building 0:GACNST +4 -4
+cheat spawn MTNK 0 building 0:GACNST -6 -1
+cheat spawn MTNK 0 building 0:GACNST -1 -6
 # 60
 wait 10125
 assert mine_spawned > $m3 @W2-SK-01

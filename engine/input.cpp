@@ -99,8 +99,10 @@ void Input::pan(int dx, int dy) {
 void Input::unit_ground_px(const Unit& u, int& gx, int& gy) const {
     const double hw = kTileW / 2.0;
     const double hh = kTileH / 2.0;
-    gx = static_cast<int>(std::lround((u.fx - u.fy) * hw)) + kTileW / 2 + cam_.x;
-    gy = static_cast<int>(std::lround((u.fx + u.fy) * hh - u.level * kLevelPx)) + kTileH / 2 +
+    // W5-B R-061: the infantry sub-cell spot offset (as draw_unit).
+    const double fx = u.fx + u.sub_x / 256.0, fy = u.fy + u.sub_y / 256.0;
+    gx = static_cast<int>(std::lround((fx - fy) * hw)) + kTileW / 2 + cam_.x;
+    gy = static_cast<int>(std::lround((fx + fy) * hh - u.level * kLevelPx)) + kTileH / 2 +
          cam_.y;
 }
 

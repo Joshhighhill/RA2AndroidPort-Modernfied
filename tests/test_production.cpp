@@ -54,14 +54,18 @@ TEST_CASE("power_totals + build_speed_multiplier [RE-GATE: construction.md §8]"
     CHECK(power_totals(enemy, t, 0).output == 0);
 }
 
-TEST_CASE("prerequisites_met: plain ids, groups, Buildup doesn't count") {
+TEST_CASE("prerequisites_met: plain ids, groups, Buildup counts (placement, W5-B R-065)") {
     auto t = roster();
     std::vector<Building> bs = {live(0)};                // ConYard only
     CHECK(prerequisites_met({"GACNST"}, bs, t, 0, kGroups));
     CHECK_FALSE(prerequisites_met({"POWER", "GACNST"}, bs, t, 0, kGroups));
     bs.push_back(live(1));                               // + power plant
     CHECK(prerequisites_met({"POWER", "GACNST"}, bs, t, 0, kGroups));
+    // W5-B R-065: counted from placement (Unlimbo -> RegisterGain), so a
+    // power plant still in build-up already satisfies POWER; a dead one not.
     bs[1].state = Building::State::Buildup;              // not finished
+    CHECK(prerequisites_met({"POWER"}, bs, t, 0, kGroups));
+    bs[1].state = Building::State::Dead;
     CHECK_FALSE(prerequisites_met({"POWER"}, bs, t, 0, kGroups));
     CHECK_FALSE(prerequisites_met({"PROC"}, bs, t, 0, kGroups));   // unknown group
 }
@@ -392,7 +396,7 @@ TEST_CASE("prerequisites_met: unit multi-token prereq incl. a TECH group token "
     std::vector<Building> weap_tech = {livet(0), livet(1)};    // + GATECH idle
     CHECK(prerequisites_met(sref, weap_tech, bt, 0, groups));         // TECH satisfied
     weap_tech[1].state = Building::State::Buildup;             // GATECH not finished
-    CHECK_FALSE(prerequisites_met(sref, weap_tech, bt, 0, groups));   // Buildup doesn't count
+    CHECK(prerequisites_met(sref, weap_tech, bt, 0, groups));   // W5-B R-065: Buildup counts
 }
 
 TEST_CASE("can_start_unit: TECH-gated advanced unit + plain-token unit unchanged "

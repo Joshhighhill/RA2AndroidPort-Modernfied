@@ -116,6 +116,21 @@ struct Unit {
     std::vector<int> w_verses;     // warhead Verses percents (11 entries)
     double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
     double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
+    bool w_affects_allies = true;  // W5-B R-060: warhead AffectsAllies= (default yes)
+    // W5-B R-061 infantry sub-cells [RE: FindInfantrySubposition FUN_00481090,
+    // spot coords DAT_0089D960]: the spot (2 right, 3 left, 4 down; 0 centre =
+    // vehicles / sub-cells off) the unit holds in its cell, and its lepton
+    // offset from the cell centre -- interpolated between the old and the
+    // reserved spot while walking. Derived from the Occupancy every step
+    // (World::update_sub_offsets); render / damage use fx*256 + sub_x.
+    int spot = 0;
+    double sub_x = 0.0, sub_y = 0.0;
+    // W5-B R-062 [RE: DriveLocomotionClass FUN_004B2550 @0x4B3AE0..]: the
+    // GroundType Cost column (SpeedType) and the speed multiplier the
+    // locomotor set when it committed to the current/next cell (land cost of
+    // that cell capped at 1, 0 -> .5, x uphill/downhill, x .75 at ConditionRed).
+    int speed_type = -1;
+    double speed_mult = 1.0;
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // (default kind=Instant = the pre-P2 instant-hit path). Read ONLY when the
     // World's projectiles_enabled_ firewall is open; NOT read by world_hash.
@@ -337,6 +352,10 @@ struct Unit {
     // Original behaviour switches (G-50 / G-42 / G-47): set per World by
     // World::enable_original_combat; see combat.cpp.
     bool crusher = false;            // Crusher=yes (vehicles)
+    bool auto_crush = false;         // W5-B R-050: AutoCrush=yes (the player's harvesters)
+    bool is_infantry = false;        // W5-B R-061: InfantryTypes type -> sub-cell spots
+    bool land_speed_loco = false;    // W5-B R-062: Drive/Ship locomotor
+    bool crushing = false;           // W5-B R-050: driving onto its crushable target
     bool crushable = false;          // Crushable=yes (infantry)
     // --- gF MCV deploy [RE: docs/re/mcv-deploy.md] --- inert defaults.
     int deploys_into = -1;           // DeploysInto= building roster index (-1 none)
@@ -494,10 +513,33 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 // (u.is_naval ? water_passable : passable). Every existing caller passes the
 // (empty in every existing demo) water grid and no existing (Land) unit reads
 // it, so ground re-pathing is byte-identical.
+// W5-B R-062 [RE: DriveLocomotionClass FUN_004B2550; GroundType table
+// DAT_0089D9B0 read by FUN_00673A40]: the per-cell land speed inputs. Null /
+// unarmed -> every unit keeps its flat speed (the pre-W5 behaviour).
+struct MoveSpeedCtx {
+    bool armed = false;
+    const std::vector<std::uint8_t>* land = nullptr;   // LandType per cell (tile + overlay)
+    const std::vector<std::int8_t>* level = nullptr;   // height level per cell
+    float cost[12][8] = {};                            // [LandType][SpeedType], capped at 1
+    double up[2] = {1.0, 1.0};                         // Tracked/Wheeled Uphill
+    double down[2] = {1.0, 1.0};                       // Tracked/Wheeled Downhill
+    double condition_red = 0.25;
+    // Ore on a flat cell turns its land Tiberium (FUN_0047D1C0); overlay
+    // lookup supplied by World (null = none).
+    const OreField* ore = nullptr;
+    const std::vector<std::uint8_t>* ramp = nullptr;   // TMP ramp type per cell
+    // W5-B R-050 [RE-FALLBACK: CellClass::Incoming scatter not unwound]: idle
+    // friendly infantry blocking a vehicle's next cell, asked to step aside.
+    std::vector<int>* scatter_out = nullptr;
+};
+// The speed multiplier for unit u entering cell (nx, ny) from its cell.
+double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny);
+
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable = nullptr);
+                const std::vector<std::uint8_t>* amphib_passable = nullptr,
+                const MoveSpeedCtx* speed = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -642,6 +684,62 @@ public:
     explicit World(const ra2assets::MapFile& map);
 
     const ra2assets::MapFile& map() const { return *map_; }
+    // W5-B: terrain height level of a cell (0 off-map) -- the Z of 3-D
+    // distances (level * 104 leptons, Unsorted::LevelHeight).
+    int cell_level(int x, int y) const;
+    // W5-B R-061: up to three infantry per cell (sub-cell spots). Called by
+    // the real game (GameScene, w5_arm_combat); off = one unit per cell.
+    void enable_subcells();
+    bool subcells_enabled() const { return occ_.subcells(); }
+    // Re-register unit idx's occupancy as infantry (spot) or whole-cell.
+    void subcell_register(int idx);
+    // Derive Unit::spot / sub_x / sub_y from the occupancy and the walk.
+    void update_sub_offsets();
+    // Put infantry idx into spot `spot` (2..4) of its current cell.
+    void place_in_spot(int idx, int spot);
+    // W5-B R-050 [RE: UnitClass ShouldCrush FUN_00742720, Mission_Attack
+    // FUN_007402F0]: a Crusher whose crushable enemy target is within
+    // [CombatDamage] Crush (1.8 cells = 460 leptons, 3-D) drives onto it
+    // instead of firing -- the computer always (house IQ >= [IQ] AutoCrush),
+    // the player only with PlayerAutoCrush=yes or an AutoCrush=yes type.
+    struct CrushRules {
+        bool armed = false;
+        int crush_leptons = 460;
+        bool player_auto_crush = false;
+        bool ai_any_building = false;   // R-064 (kept here to share the save block)
+    };
+    void arm_crush(const CrushRules& r) { crush_rules_ = r; }
+    // W5-B R-063 [RE: TechnoClass in-range FUN_006F6750, elevation bonus
+    // FUN_006F6490, cliff trace FUN_004CC020/FUN_004CC280]: 3-D weapon range,
+    // [ElevationModel] range bonus and the SubjectToCliffs line trace.
+    struct ElevationRules {
+        bool armed = false;
+        int increment = 4;        // ElevationIncrement (levels)
+        double bonus = 2.0;       // ElevationIncrementBonus (cells per increment)
+        double cap = 2.0;         // ElevationBonusCap (cells)
+    };
+    void arm_elevation(const ElevationRules& r) { elev_rules_ = r; }
+    const ElevationRules& elevation_rules() const { return elev_rules_; }
+    const CrushRules& crush_rules() const { return crush_rules_; }
+    // W5-B: true for a computer-controlled (AI) house.
+    bool house_is_computer(int h) const { return ai_enabled(h); }
+    // W5-B R-064 switch (armed by w5_arm_combat): computer units' idle threat
+    // scan includes unarmed buildings.
+    bool ai_threat_any_building() const { return crush_rules_.ai_any_building; }
+    // W5-B R-062: arm per-cell land speed. `land` = LandType per cell from the
+    // TMP terrain-type byte (DAT_008278F4 table), `ramp` = TMP ramp type;
+    // `cost` = rulesmd [LandType] Foot..FloatBeach fractions (capped at 1).
+    struct LandSpeedRules {
+        float cost[12][8] = {};
+        double tracked_up = 1.0, tracked_down = 1.0, wheeled_up = 1.0, wheeled_down = 1.0;
+        double condition_red = 0.25;
+    };
+    void arm_land_speed(const std::vector<std::uint8_t>& land, const std::vector<std::uint8_t>& ramp,
+                        const LandSpeedRules& r);
+    bool land_speed_armed() const { return land_speed_armed_; }
+    int speed_land_at(int x, int y) const;   // effective LandType (ore -> Tiberium)
+    // Cells per second unit i moves at right now (flat speed x speed_mult).
+    double unit_speed_cps(int i) const;
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }
@@ -1506,6 +1604,7 @@ public:
     // interactive game (GameScene) and --demo-projectile; no byte-identity gate
     // calls it, so every existing gate keeps the instant path bit-for-bit.
     void enable_projectiles(const ProjectileRules& rules);
+    const ProjectileRules& projectile_rules() const { return proj_rules_; }   // W5-B R-057
     bool projectiles_enabled() const { return projectiles_enabled_; }
     const std::vector<Projectile>& projectiles() const { return projectiles_; }
     int projectile_frame() const { return proj_frame_; }
@@ -2144,6 +2243,13 @@ private:
     int grid_w_ = 0;
     int grid_h_ = 0;
     double move_cps_ = 3.0;
+    // W5-B R-062 land speed (arming state; rebuilt by w5_arm_combat, not saved).
+    bool land_speed_armed_ = false;
+    std::vector<std::uint8_t> speed_land_, ramp_;
+    std::vector<std::int8_t> level_grid_;
+    LandSpeedRules land_rules_;
+    CrushRules crush_rules_;   // W5-B R-050
+    ElevationRules elev_rules_;   // W5-B R-063
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
     bool inf_anims_ = false;                       // W3-B
     int inf_human_ = 0;
