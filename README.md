@@ -3948,3 +3948,37 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   the first sweep `m-all04` / `m-sov09` failed and were updated for the loaded craft / paradropped
   Yuris); `probe-bridge`, `probe-flow`, `robust-missing` fail as on master. Gates: every
   `--demo-*` gate prints its pin except `--demo-campaign` and `--demo-saveload`, re-pinned above.
+
+## Android, performance and robustness (wave-5 W5-F, branch `w5-android`)
+
+- **Perf overlay and log (R-170).** Three-finger tap, Ctrl+Shift+F, `--fps`, `RA2_PERF=1`,
+  RA2.INI `[Engine] ShowFPS=yes` or `adb shell setprop debug.ra2.perf 1`: FPS, logic ticks/s
+  and ms per frame (update / render / present / worst) at the bottom-left, plus a `[perf]` log
+  line every 5 s. `docs/INSTALL.md` section 5 is the "how to measure on a real phone" recipe.
+- **ALL03 opening (R-171).** Profiled with the new dev sampler (`RA2_PROFILE=<file>`,
+  `tools/profile_report.py`): 86 % of the time was A* (`find_path_nearest`, 20000-node budget)
+  re-run every logic frame for attackers whose approach cell is unreachable. `pathfind.cpp` now
+  memoises A* results per grid, validated against a byte copy of the grid (a pure function, so
+  the result is identical by construction). `probe-perf-all03` (1800 frames): ~11 -> ~100
+  logic frames/s headless, `play_hash` unchanged.
+- **Phone render cost.** The light map (`pres_light.inc`) is redrawn only when the camera,
+  canvas, base colour or lit set changes. Each redraw cost two render-target switches (62 % of
+  an emulator frame in `glCheckFramebufferStatus`). Lit shots are pixel-identical.
+  Emulator (`ra2x86`, SwiftShader, ALL01 opening 1080p): **14.0 -> ~17 fps**; the engine's
+  render is now ~2 ms and the rest is the host GL pipe. No interpolation (R-172): the original
+  draws once per logic frame (`docs/re/gamespeed.md`).
+- **Android.** Audio focus (R-163: a call mutes, "may duck" ducks to 20 %, regaining restores);
+  the importer opens at `Download/RA2`, explains the sub-folder rule, also accepts the parent
+  folder, disables Exit/Back during the copy and cleans `*.part` files (R-160/161); a mid-game
+  panel resize re-lays the canvas (R-162); the soft keyboard keeps SAVE visible and the default
+  description is selected (R-152); campaign list rows snap to the nearest row on touch (R-151).
+  `docs/PHONE-README.txt` replaces the stale package README (one-finger drag now scrolls).
+- **Robustness.** `load_world` range-checks every cross-reference (R-181); the sidebar
+  backlog / hold state is saved (`QBKL` section, **save format v17**, R-180); `ra2game.exe` is
+  a WIN32 build of the same objects (no console, log in `%APPDATA%\ra2engine\RA2\ra2engine.log`,
+  R-182); `--record <f>` / `--replay <f> [--hidden]` (or `RA2_RECORD`) reproduce a session
+  (R-184; a recorded `ctl-sov01` replays to the same probe hash).
+- **Scripts (R-183).** `probe-bridge` and `probe-flow` updated; `robust-missing` skips on a
+  full install (`if data_missing_optional == 0 then end`, `if ... then end` is now allowed);
+  `--controls-selftest` retired (pre-MCV flow, wrote the user's RA2.INI).
+- Evidence: `docs/gap/wave5/06-evidence/`.
