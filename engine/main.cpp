@@ -14479,7 +14479,7 @@ DemoRoster2Result simulate_roster2(Assets& a, UnitAssets& ua, BuildingAssets& ba
 
     // ---- (1) content -------------------------------------------------------
     int bld_n = 0, bld_art = 0;
-    for (int i = 24; i < static_cast<int>(ba.roster.size()); ++i) {
+    for (int i = 24; i < std::min(39, static_cast<int>(ba.roster.size())); ++i) {
         const ra2engine::BuildingTypeDef& d = ba.roster[i];
         ++bld_n;
         if (ba.art[i].ok) ++bld_art;

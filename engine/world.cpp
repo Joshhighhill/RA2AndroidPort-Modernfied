@@ -2091,7 +2091,8 @@ void World::step_disguises() {
             // presentation (agent D) draws the tree for enemies.
             if (w5_.armed && !w5_.rules.mirage_trees.empty()) {
                 const int n = (int)w5_.rules.mirage_trees.size();
-                const int k = std::min(n - 1, static_cast<int>(combat_rng_.next() % (std::uint32_t)n));
+                // [RE-FALLBACK: a per-unit hash stands in for the scenario Random draw.]
+                const int k = std::min(n - 1, static_cast<int>(((std::uint32_t)(&u - units_.data()) * 2654435761u) % (std::uint32_t)n));
                 // Exposed in Unit::w5.mirage_tree (disguised_as_type keeps the
                 // tank image so today's draw path still finds an SHP).
                 u.w5.mirage_tree = w5_.rules.mirage_trees[(std::size_t)k];
