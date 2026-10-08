@@ -3168,6 +3168,14 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
         const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
         int slot = ore.variant_at(c.x, c.y);
         if (slot < 0 || slot >= 20) slot = 0;
+        // W5-PRES [RE: CellClass draw overlay 0x47F5B0]: the art variant is the
+        // cell hash (X*Y) % 12 on flat ground; ramps 1..4 use the slope images
+        // 12 + (ramp-1)*2 + (X*Y) % 2 (gems have none). Live game only.
+        if (g_map_dressing) {
+            const int ramp = g_pres_assets ? pres_cell_ramp(*g_pres_assets, c.x, c.y) : 0;
+            const int h = (c.x * c.y) & 0x7fffffff;
+            slot = (ramp >= 1 && ramp <= 4 && kind == 0) ? 12 + (ramp - 1) * 2 + h % 2 : h % 12;
+        }
         // Variant picks the SHP; density picks the frame within it. Fall back
         // to the set's base art (slot 0) when this exact variant is absent.
         if (!oa.present[kind][slot]) {
@@ -3472,6 +3480,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
     ra2engine::set_color_world(&world);   // G-16: house colours for every sprite draw
+    g_pres_assets = &a;                   // W5-PRES: ramp lookups (ore slopes)
     tc.next_frame();                      // W2-GA-P5: LRU clock (evicts only over budget)
     // W2-GA-02: never-explored cells are not drawn at all (their cliff/slope
     // extras no longer leak through the shroud); the SHROUD.SHP post-pass

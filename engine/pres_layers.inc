@@ -124,3 +124,15 @@ inline int pres_jumpjet_wobble_px(int idx, const ra2engine::Unit& u) {
     const double lep = std::sin(phase) * w.dev;
     return static_cast<int>(std::lround(lep / 256.0 * 36.74));
 }
+
+// The cell's TMP ramp type (image header byte 42, XCC t_tmp_image_header
+// ramp_type), 0 = flat. W5-PRES: PLACE.SHP blocked frames, ore slope art.
+Assets* g_pres_assets = nullptr;   // render_world's assets (live game + gates)
+inline int pres_cell_ramp(const Assets& a, int x, int y) {
+    const ra2assets::MapCell* mc = a.map.at(x, y);
+    if (!mc) return 0;
+    const ra2assets::TmpFile* tmp = const_cast<Assets&>(a).theater.tmp_for_tile(mc->tile);
+    if (!tmp || mc->subtile >= tmp->count()) return 0;
+    const uint8_t* h = tmp->image_header(mc->subtile);
+    return h ? h[42] : 0;
+}

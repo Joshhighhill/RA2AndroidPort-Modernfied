@@ -5,17 +5,6 @@
 
 namespace camp { std::string csf_text(const std::string& dir, const std::string& label); }
 
-// The cell's TMP ramp type (image header byte 42, XCC t_tmp_image_header
-// ramp_type), 0 = flat.
-inline int pres_cell_ramp(const Assets& a, int x, int y) {
-    const ra2assets::MapCell* mc = a.map.at(x, y);
-    if (!mc) return 0;
-    const ra2assets::TmpFile* tmp = const_cast<Assets&>(a).theater.tmp_for_tile(mc->tile);
-    if (!tmp || mc->subtile >= tmp->count()) return 0;
-    const uint8_t* h = tmp->image_header(mc->subtile);
-    return h ? h[42] : 0;
-}
-
 // [RE: CellClass::DrawPlacement 0x47EBA0, docs/re/w5-presentation.md §2]:
 // PLACE.SHP centred at (cell.x + 30, cell.y - 15*height - 1) -- the cell's
 // diamond centre -- opaque; a valid foundation cell (adjacency AND clear to
