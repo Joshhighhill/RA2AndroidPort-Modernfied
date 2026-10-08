@@ -1054,11 +1054,11 @@ void World::order_attack(int target_idx) {
     // Can't order an attack on a dead/dying target, or on a house-0 unit
     // (order_attack is issued for the player's house-0 units against
     // hostiles -- a house-0 target would mean "attack a friendly").
-    if (!tgt.alive || tgt.die_time >= 0.0 || tgt.house == 0) return;
+    if (!tgt.alive || tgt.die_time >= 0.0 || controllable(tgt.house)) return;   // W5-A: any player-commanded house
 
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         // W2-SK-22 Spy disguise [RE: capture.md §C; [SPY] Primary=MakeupKit
         // "virtual weapon that picks disguise"]: a spy "attacking" an enemy
         // infantry takes on its look instead.
@@ -1116,11 +1116,11 @@ void World::order_attack_building(int b_idx) {
     const Building& tgt = buildings_[b_idx];
     // Can't order an attack on a dead/Dead-state/house-0 (friendly) building
     // -- mirrors order_attack's own guard against a house-0 target.
-    if (!tgt.alive || tgt.state == Building::State::Dead || tgt.house == 0) return;
+    if (!tgt.alive || tgt.state == Building::State::Dead || controllable(tgt.house)) return;   // W5-A
 
     for (std::size_t i = 0; i < units_.size(); ++i) {
         Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above; shared mutation tail via commit_attack_target
         // [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
@@ -1266,7 +1266,7 @@ void World::order_enter_transport(int t_idx) {
     std::vector<Cellxy> cur;
     for (std::size_t i = 0; i < units_.size(); ++i) {
         const Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || !u.alive || u.die_time >= 0.0) continue;
+        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         if (static_cast<int>(i) == t_idx) continue;
         if (!can_load(units_, t_idx, static_cast<int>(i), allied)) continue;
         movers.push_back(static_cast<int>(i));

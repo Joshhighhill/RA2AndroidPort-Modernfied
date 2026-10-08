@@ -1433,6 +1433,17 @@ private:
             if (t.mc_victim >= 0 && (!live(u))) { mc_release(t); continue; }
             if (t.dead || !live(u) || u.target < 0 || u.target >= (int)w_.units().size()) continue;
             if (!mind_controller(t.type)) continue;
+            // W5-A R-036 [RE-FALLBACK: the YR CaptureManager capacity (1 for the
+            // Yuri, MindControl=yes without MultipleControl) -- a controller
+            // whose slot is full does not pick a new victim by itself; only an
+            // explicit attack order trades the held victim for a new one].
+            // Before, two Yuris near two civilians traded them back and forth
+            // every frame and never obeyed a move order (SOV09).
+            if (t.mc_victim >= 0 && t.mc_victim < (int)w_.units().size() &&
+                live(w_.units()[(std::size_t)t.mc_victim]) && !u.attack_order) {
+                if (u.target != t.mc_victim) u.target = -1;
+                continue;
+            }
             ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
             if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
             const double dx = v.fx - u.fx, dy = v.fy - u.fy;
