@@ -3987,7 +3987,6 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   all 27 `--demo-*` hash gates print their pins (no re-pin; `--demo-saveload` does not hash
   the format version or the new optional section).
 
-<<<<<<< HEAD
 ## Audio and shell UI (wave-5 W5-E, branch `w5-audio`)
 
 RE on `gamemd.exe` with the private Ghidra copy `D:\ra2-re\w5-audio` (jobs j1..j50);
@@ -4041,7 +4040,7 @@ details in `engine/pres_audio_events.inc`, `keyboard_page.inc`, `movie_player.in
   `eva(NAME)`, `evareq(NAME)` probe counters. New scripts: `audio-events`, `keyboard`,
   `score-pages`, `briefing-movies`, `options-w5`, `save-w5`; shots in `docs/gap/wave5/E-evidence/`.
 
-=======
+
 ## Unit and building abilities (wave-5 W5-FIX-C, branch `w5-abil`)
 
 Calibration: `docs/re/abilities-w5.md` (Ghidra on YR 1.001 `gamemd.exe`). Code:
@@ -4097,5 +4096,4 @@ Everything is armed by `wire_w5` in the real `GameScene` only.
   roster growth: one more placed structure), `--demo-saveload` (format v18) and `--demo-campaign`
   (wave-5 type data in the campaign worlds), re-pinned above; `--demo-base`/`--demo-techtree`
   witness `roster=40` (hash unaffected).
->>>>>>> master
 - **Verification** (merged with master `53fd609`): unit suite PENDING; **PENDING** `--play` scripts pass (one at a time); all 27 `--demo-*` gates print their pins (no re-pin: `--demo-saveload` stays `3a946fb75996d946`, it does not hash the format version or the new optional `AUDI` section).
