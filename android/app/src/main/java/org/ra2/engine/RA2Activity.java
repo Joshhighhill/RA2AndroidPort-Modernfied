@@ -1,6 +1,12 @@
 package org.ra2.engine;
 
+import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
+import android.os.Build;
+import android.util.Log;
 
 import org.libsdl.app.SDLActivity;
 
@@ -13,16 +19,109 @@ import org.libsdl.app.SDLActivity;
  *
  * The launcher is SetupActivity, which checks for the user's game files and
  * offers the in-app import before starting this activity (W2-AR-03/-04).
+ *
+ * R-163: the game holds AUDIOFOCUS_GAIN while it is in the foreground. A call
+ * or another media app taking focus silences the engine's mixer (gain 0); a
+ * "may duck" loss (a navigation prompt) ducks it to 20 %; regaining focus
+ * restores full volume. The gain is applied in the SDL audio callback
+ * (engine/audio_sdl.cpp), so it also covers music and EVA.
  */
-public class RA2Activity extends SDLActivity {
+public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocusChangeListener {
+    private static final String TAG = "RA2Activity";
+    private AudioManager audio;
+    private AudioFocusRequest focusRequest;   // API 26+
+    private boolean haveFocus = false;
+
+    /** engine/audio_sdl.cpp: 1 = full, 0.2 = ducked, 0 = silent. */
+    private static native void nativeAudioFocusGain(float gain);
+
+    private static void setGain(float g) {
+        try {
+            nativeAudioFocusGain(g);
+        } catch (UnsatisfiedLinkError e) {
+            // libmain.so not loaded (SDL's own error dialog is up): nothing to do.
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        requestFocus();
+    }
+
     @Override
     protected void onDestroy() {
+        abandonFocus();
         super.onDestroy();   // SDLActivity joins the SDL (engine) thread here
         // W2-AR-17: the engine keeps process-wide state in C++ statics; once
         // the player has quit, end the process so the next launch re-enters
         // main() with fresh statics instead of reusing this process. Done
         // after SDL's own teardown (an exit() from the SDL thread crashed).
         if (isFinishing()) android.os.Process.killProcess(android.os.Process.myPid());
+    }
+
+    private void requestFocus() {
+        if (haveFocus) return;
+        if (audio == null) audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audio == null) return;
+        int r;
+        if (Build.VERSION.SDK_INT >= 26) {
+            if (focusRequest == null) {
+                AudioAttributes attrs = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(attrs)
+                        .setWillPauseWhenDucked(false)
+                        .setOnAudioFocusChangeListener(this)
+                        .build();
+            }
+            r = audio.requestAudioFocus(focusRequest);
+        } else {
+            r = requestFocusLegacy();
+        }
+        haveFocus = r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        Log.i(TAG, "audio focus request: " + (haveFocus ? "granted" : "refused (" + r + ")"));
+        if (haveFocus) setGain(1.0f);
+    }
+
+    @SuppressWarnings("deprecation")
+    private int requestFocusLegacy() {
+        return audio.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void abandonFocus() {
+        if (audio == null || !haveFocus) return;
+        if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) audio.abandonAudioFocusRequest(focusRequest);
+        else audio.abandonAudioFocus(this);
+        haveFocus = false;
+    }
+
+    @Override
+    public void onAudioFocusChange(int change) {
+        Log.i(TAG, "audio focus change " + change);
+        switch (change) {
+            case AudioManager.AUDIOFOCUS_GAIN:
+                haveFocus = true;
+                setGain(1.0f);
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                setGain(0.2f);
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                setGain(0.0f);
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS:
+                // Permanent loss (another media app): stay silent until the
+                // game is resumed, which requests focus again.
+                haveFocus = false;
+                setGain(0.0f);
+                break;
+            default:
+                break;
+        }
     }
 
     /**

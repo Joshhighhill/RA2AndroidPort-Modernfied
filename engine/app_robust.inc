@@ -435,3 +435,6 @@ bool ensure_data_files(ra2engine::Platform& plat) {
         reset_data_dir();
     }
 }
+
+// W5-F: perf overlay / perf log (R-170..172) and input record / replay (R-184).
+#include "app_perf.inc"

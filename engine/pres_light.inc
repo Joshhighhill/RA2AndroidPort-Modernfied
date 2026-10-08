@@ -42,6 +42,16 @@ struct PresLight {
     uint64_t src_sig_ = 0;
     SDL_Texture* lmap_ = nullptr;      // the light map (freed with its renderer)
     SDL_Texture* xmap_ = nullptr;      // W5-PRES: the > 1.0 excess map (MUL)
+    // W5-F (phone perf): the light maps are redrawn only when what they show
+    // changes (camera, canvas, base colours, lit set) -- every redraw is
+    // render-target switches, a synchronous GL round-trip in SDL's GLES2
+    // backend and a framebuffer resolve on tiled phone GPUs. Same pixels by
+    // construction; a periodic refresh guards a lost target texture.
+    // W5-PRES: the excess (> 1.0) map and its base colour are in the key too.
+    unsigned lit_gen_ = 0, lmap_gen_ = ~0u;
+    int lmap_cx_ = 0, lmap_cy_ = 0, lmap_age_ = 0;
+    Uint8 lmap_base_[6] = {0, 0, 0, 0, 0, 0};
+    bool lmap_excess_ = false;
     SDL_Renderer* lmap_ren_ = nullptr;
     int lmap_w_ = 0, lmap_h_ = 0;
 
@@ -137,6 +147,7 @@ struct PresLight {
     }
     void rebuild(const ra2assets::MapFile& map) {
         lit_.clear();
+        ++lit_gen_;
         if (srcs_.empty()) return;
         struct Acc { double i = 0, r = 0, g = 0, b = 0; };
         std::map<long, Acc> acc;
@@ -182,16 +193,38 @@ struct PresLight {
         if (lit_.empty()) { pass(ren, W, H); return; }
         Uint8 base[3], bex[3];
         cell_colour(0, 0, 0, 0, base, bex);
+        bool fresh = false;
         if (!lmap_ || lmap_ren_ != ren || lmap_w_ != W || lmap_h_ != H) {
             lmap_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, W, H);
             xmap_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, W, H);
             lmap_ren_ = ren;
             lmap_w_ = W;
             lmap_h_ = H;
+            fresh = true;
         }
         if (!lmap_ || !xmap_) { pass(ren, W, H); return; }
+        const Uint8 key[6] = {base[0], base[1], base[2], bex[0], bex[1], bex[2]};
+        const bool same = !fresh && lmap_gen_ == lit_gen_ && lmap_cx_ == cam.x && lmap_cy_ == cam.y &&
+                          std::equal(key, key + 6, lmap_base_) && ++lmap_age_ < 120;
+        const SDL_Rect all{0, 0, W, H};
+        if (same) {   // the maps are unchanged: just apply them over the playfield
+            SDL_SetTextureBlendMode(lmap_, SDL_BLENDMODE_MOD);
+            SDL_RenderCopy(ren, lmap_, nullptr, &all);
+            if (lmap_excess_) {
+                SDL_SetTextureBlendMode(xmap_, SDL_BLENDMODE_MUL);
+                SDL_RenderCopy(ren, xmap_, nullptr, &all);
+            }
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            return;
+        }
+        lmap_gen_ = lit_gen_;
+        lmap_cx_ = cam.x;
+        lmap_cy_ = cam.y;
+        lmap_age_ = 0;
+        std::copy(key, key + 6, lmap_base_);
         bool any_excess = bex[0] || bex[1] || bex[2];
         for (const LitCell& c : lit_) any_excess = any_excess || c.e[0] || c.e[1] || c.e[2];
+        lmap_excess_ = any_excess;
         SDL_Texture* prev = SDL_GetRenderTarget(ren);
         for (int m = 0; m < (any_excess ? 2 : 1); ++m) {
             SDL_SetRenderTarget(ren, m == 0 ? lmap_ : xmap_);
@@ -219,7 +252,6 @@ struct PresLight {
                                    static_cast<int>(idx.size()));
         }
         SDL_SetRenderTarget(ren, prev);
-        const SDL_Rect all{0, 0, W, H};
         SDL_SetTextureBlendMode(lmap_, SDL_BLENDMODE_MOD);
         SDL_RenderCopy(ren, lmap_, nullptr, &all);
         if (any_excess) {

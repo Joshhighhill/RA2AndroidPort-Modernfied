@@ -333,24 +333,32 @@ if (RA2_BUILD_ENGINE)
   FetchContent_MakeAvailable(SDL2)
   # Engine source list comes from cmake/ra2_sources.cmake (shared with the
   # Android jni build so the two cannot drift).
-  add_executable(ra2engine ${RA2_ENGINE_SOURCES})
+  # R-182: the engine is compiled ONCE into an object library and linked
+  # twice: ra2engine (console subsystem -- the developer / CI binary every
+  # --play, --demo-* and gate run uses) and, on Windows, ra2game (WIN32
+  # subsystem: a double-click opens no console window; the log goes to
+  # %APPDATA%\ra2engine\RA2\ra2engine.log). Same objects, same behaviour.
+  add_library(ra2engine_obj OBJECT ${RA2_ENGINE_SOURCES})
   # audio_sdl.cpp is main.cpp's SDL audio-sink companion (Task 6 of the Audio
   # Playback phase, task-6-brief.md Step 1/Files). Added directly to this
   # target (and to android/app/jni/CMakeLists.txt) rather than into the
   # shared RA2_ENGINE_SOURCES list in cmake/ra2_sources.cmake, per the task
   # brief -- it is not part of ra2assets_tests either way.
-  target_sources(ra2engine PRIVATE engine/audio_sdl.cpp)
+  target_sources(ra2engine_obj PRIVATE engine/audio_sdl.cpp)
   # W2-AR-23 version string; Q3: no FMA contraction, so float paths match
   # the Android (clang, arm64) build bit-for-bit.
-  target_compile_definitions(ra2engine PRIVATE RA2_VERSION="${RA2_VERSION}")
-  target_compile_options(ra2engine PRIVATE -ffp-contract=off)
+  target_compile_definitions(ra2engine_obj PRIVATE RA2_VERSION="${RA2_VERSION}")
+  target_compile_options(ra2engine_obj PRIVATE -ffp-contract=off)
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
-  target_include_directories(ra2engine PRIVATE include engine)
+  target_include_directories(ra2engine_obj PRIVATE include engine)
   # W2-AR-25: warnings on for the engine; vendored headers are SYSTEM so
   # their own warnings (stb) stay out of the count.
-  target_include_directories(ra2engine SYSTEM PRIVATE third_party)
-  target_compile_options(ra2engine PRIVATE -Wall -Wextra)
+  target_include_directories(ra2engine_obj SYSTEM PRIVATE third_party)
+  target_compile_options(ra2engine_obj PRIVATE -Wall -Wextra)
+  # Usage requirements (include dirs, defines) of ra2assets + SDL2 for the objects.
+  target_link_libraries(ra2engine_obj PRIVATE ra2assets SDL2::SDL2)
+  add_executable(ra2engine $<TARGET_OBJECTS:ra2engine_obj>)
   # NOTE: link order deviates from the brief's literal listing (SDL2 then
   # SDL2main) to (SDL2main then SDL2). Under MinGW/GNU ld, static archives
   # are resolved in a single left-to-right pass: SDL2main.a's WinMain is
@@ -368,7 +376,10 @@ if (RA2_BUILD_ENGINE)
   if (WIN32)
     # W2-AR-22: registry install-path lookup + the BROWSE folder picker
     # (engine/platform_os.cpp).
-    target_link_libraries(ra2engine PRIVATE advapi32 shell32 ole32)
+    target_link_libraries(ra2engine PRIVATE advapi32 shell32 ole32 winmm)
+    # R-182: the player's double-click binary (no console window).
+    add_executable(ra2game WIN32 $<TARGET_OBJECTS:ra2engine_obj>)
+    target_link_libraries(ra2game PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2 advapi32 shell32 ole32 winmm)
   endif()
   # SDL_SHARED=ON builds SDL2.dll; copy it next to ra2engine.exe post-build
   # so the exe can find it at runtime (Windows has no rpath).

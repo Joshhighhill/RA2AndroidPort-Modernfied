@@ -2,7 +2,11 @@
 click button "Single Player"
 click button Skirmish
 click start
-until 30 scene == game
+until 90 scene == game
+# R-183: a skirmish starts with an MCV (G-23), not a ConYard: deploy it first.
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
 view building 0:GACNST
 shot base
 click unit 0:E1

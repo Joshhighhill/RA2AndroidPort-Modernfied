@@ -44,6 +44,8 @@ void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
     switch (st_) {
         case State::Idle:
             st_ = State::Pending;
+            up_left_ = 0;
+            three_ = false;
             id0_ = id;
             x0_ = cx_ = px_ = x;
             y0_ = cy_ = py_ = y;
@@ -61,6 +63,10 @@ void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
             mid_y_ = (cy_ + y1_) / 2;
             travel_ = 0;
             t2_ = t;
+            three_ = false;
+            return;
+        case State::TwoFinger:
+            three_ = true;   // R-170: a third finger -> maybe a three-finger tap
             return;
         default:
             return;   // extra fingers during a band box / hold are ignored
@@ -112,7 +118,13 @@ void TouchGestures::finger_cancel(int64_t id, int x, int y, uint32_t t) {
         case State::Pending:
         case State::Panning:
         case State::Held:
+            if (id == id0_) st_ = State::Idle;
+            return;
         case State::WaitUp:
+            if (up_left_ > 0) {
+                if (--up_left_ == 0) st_ = State::Idle;
+                return;
+            }
             if (id == id0_) st_ = State::Idle;
             return;
         case State::BandDrag:
@@ -121,6 +133,7 @@ void TouchGestures::finger_cancel(int64_t id, int x, int y, uint32_t t) {
             st_ = State::Idle;
             return;
         case State::TwoFinger:
+            if (three_) { three_ = false; st_ = State::WaitUp; up_left_ = 2; return; }
             if (id != id0_ && id != id1_) return;
             st_ = State::WaitUp;   // wait for the other finger, no click
             id0_ = (id == id0_) ? id1_ : id0_;
@@ -138,7 +151,13 @@ void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
             st_ = State::Idle;
             return;
         case State::Panning:
+            if (id == id0_) st_ = State::Idle;
+            return;
         case State::WaitUp:
+            if (up_left_ > 0) {   // after a three-finger lift: any two lifts
+                if (--up_left_ == 0) st_ = State::Idle;
+                return;
+            }
             if (id == id0_) st_ = State::Idle;
             return;
         case State::Held:
@@ -152,6 +171,22 @@ void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
             st_ = State::Idle;
             return;
         case State::TwoFinger: {
+            if (three_) {
+                // R-170: the first lift of a three-finger gesture decides it;
+                // the other two fingers' lifts are swallowed (WaitUp x2).
+                if (travel_ <= cfg_.slop_px * 2 && t - t2_ <= cfg_.three_finger_tap_ms) {
+                    InputEvent e;
+                    e.kind = InputEvent::Key;
+                    e.key = kKeyPerfToggle;
+                    e.t_ms = t;
+                    e.touch = true;
+                    out_.push_back(e);
+                }
+                three_ = false;
+                st_ = State::WaitUp;
+                up_left_ = 2;
+                return;
+            }
             if (id != id0_ && id != id1_) return;
             // Two-finger TAP (short, no pan) = right click at the first finger.
             if (travel_ <= cfg_.slop_px && t - t2_ <= cfg_.two_finger_tap_ms)

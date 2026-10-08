@@ -77,8 +77,20 @@ void os_attach_parent_console() {
         freopen_s(&f, "CONOUT$", "w", stderr);
     }
 }
+bool os_log_to_file_if_no_console(const std::string& path) {
+    if (GetConsoleWindow()) return false;   // a console process (ra2engine.exe)
+    const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+    if (h != nullptr && h != INVALID_HANDLE_VALUE && GetFileType(h) != FILE_TYPE_UNKNOWN)
+        return false;   // stderr already goes somewhere (a pipe / file)
+    FILE* f = nullptr;
+    if (freopen_s(&f, path.c_str(), "w", stderr) != 0) return false;
+    freopen_s(&f, path.c_str(), "a", stdout);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    return true;
+}
 bool os_android_open_importer() { return false; }
 #else
+bool os_log_to_file_if_no_console(const std::string&) { return false; }
 std::string win_registry_install_dir() { return {}; }
 std::string os_browse_folder(const char*) { return {}; }
 void os_attach_parent_console() {}
