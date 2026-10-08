@@ -69,6 +69,7 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
     // [CombatDamage] Crush= cells -> leptons (FUN_00474550: ftol(cells*256)).
     cr.crush_leptons = static_cast<int>(rules.section_double("CombatDamage", "Crush", 1.8) * 256.0);
     cr.player_auto_crush = rules.section_flag("CombatDamage", "PlayerAutoCrush", false);
+    cr.ai_any_building = off.find("threat") == std::string::npos;   // R-064
     if (off.find("crush") == std::string::npos) world.arm_crush(cr);
     // --- R-063 3-D range: [ElevationModel] -----------------------------------
     ra2engine::World::ElevationRules er;

@@ -129,8 +129,24 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
     // W5-B R-060 [RE: DamageArea FUN_00489190]: an instant shot detonates at
     // the victim's coordinates; every warhead goes through the area applicator
     // (a CellSpread .3 AP shell reaches only what is within 76 leptons).
-    damage_area(world, units, buildings, occ, u, attacker_idx, -1, unit_lept_x(v), unit_lept_y(v),
-                unit_lept_z(v));
+    int ix = unit_lept_x(v), iy = unit_lept_y(v);
+    // W5-B R-057 [RE: projectile.md §5.3, BulletClass::MoveTo @0x4687B0]: a
+    // FlakScatter + Inviso shell ([FlakProj], the AA flak) bursts at an impact
+    // point thrown Random(0, 2*BallisticScatter) * dist / WeaponRange leptons
+    // in a random direction (sync RNG). Only with the projectile layer on (the
+    // real game); instant-hit gates keep the exact point.
+    if (u.w_proj.flak_scatter && u.w_proj.inviso && rng && world.projectiles_enabled()) {
+        const int dist = static_cast<int>(std::sqrt(double(ix - unit_lept_x(u)) * (ix - unit_lept_x(u)) +
+                                          double(iy - unit_lept_y(u)) * (iy - unit_lept_y(u)) +
+                                          double(unit_lept_z(v) - unit_lept_z(u)) *
+                                              (unit_lept_z(v) - unit_lept_z(u))));
+        const int wr = std::max(1, static_cast<int>(u.w_range * 256.0));
+        const int r = rng->random(0, 2 * world.projectile_rules().ballistic_scatter) * dist / wr;
+        const double th = rng->angle();
+        ix += static_cast<int>(std::cos(th) * r);
+        iy += static_cast<int>(std::sin(th) * r);
+    }
+    damage_area(world, units, buildings, occ, u, attacker_idx, -1, ix, iy, unit_lept_z(v));
     // W2-SK-22 Prism split [RE: [Comet] ShrapnelWeapon/ShrapnelCount;
     // RE-FALLBACK: the fragments go to the ShrapnelCount nearest other
     // hostiles within the fragment weapon's Range of the impact, ascending
@@ -969,7 +985,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // house's unit skips a building with no weapon; a
                         // computer house's unit may pick any enemy building.
                         if (b.type < 0 || b.type >= static_cast<int>(bt.size()) ||
-                            (!bt[b.type].armed && !world.house_is_computer(u.house)))
+                            (!bt[b.type].armed && !(world.house_is_computer(u.house) && world.ai_threat_any_building())))
                             continue;
                         if (!world.is_enemy(u.house, b.house)) continue;
                         if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;

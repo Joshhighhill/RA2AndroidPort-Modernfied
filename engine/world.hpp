@@ -703,6 +703,7 @@ public:
         bool armed = false;
         int crush_leptons = 460;
         bool player_auto_crush = false;
+        bool ai_any_building = false;   // R-064 (kept here to share the save block)
     };
     void arm_crush(const CrushRules& r) { crush_rules_ = r; }
     // W5-B R-063 [RE: TechnoClass in-range FUN_006F6750, elevation bonus
@@ -719,6 +720,9 @@ public:
     const CrushRules& crush_rules() const { return crush_rules_; }
     // W5-B: true for a computer-controlled (AI) house.
     bool house_is_computer(int h) const { return ai_enabled(h); }
+    // W5-B R-064 switch (armed by w5_arm_combat): computer units' idle threat
+    // scan includes unarmed buildings.
+    bool ai_threat_any_building() const { return crush_rules_.ai_any_building; }
     // W5-B R-062: arm per-cell land speed. `land` = LandType per cell from the
     // TMP terrain-type byte (DAT_008278F4 table), `ramp` = TMP ramp type;
     // `cost` = rulesmd [LandType] Foot..FloatBeach fractions (capped at 1).
@@ -1587,6 +1591,7 @@ public:
     // interactive game (GameScene) and --demo-projectile; no byte-identity gate
     // calls it, so every existing gate keeps the instant path bit-for-bit.
     void enable_projectiles(const ProjectileRules& rules);
+    const ProjectileRules& projectile_rules() const { return proj_rules_; }   // W5-B R-057
     bool projectiles_enabled() const { return projectiles_enabled_; }
     const std::vector<Projectile>& projectiles() const { return projectiles_; }
     int projectile_frame() const { return proj_frame_; }

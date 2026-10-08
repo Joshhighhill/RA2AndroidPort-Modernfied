@@ -5359,6 +5359,20 @@ void World::detonate_projectile(Projectile& p, int victim) {
             dist3(ix, iy, iz, unit_lx(t), unit_ly(t), unit_lz(t)) <= kSnapRadius) {
             ix = unit_lx(t); iy = unit_ly(t); iz = unit_lz(t);
         }
+        // W5-B [RE: BulletClass::Update tail @0x467D60..0x467E3E -- the
+        // "close enough" re-aim]: a non-Inaccurate, non-Airburst shell whose
+        // cell holds its target re-aims onto it when dist/3 <= max(2*|V|, 128)
+        // (FUN_004666D0, DAT_007E1808 = 128.0). With infantry on sub-cell
+        // spots this is what lets a tank shell that bursts on entering the
+        // cell still land on the soldier.
+        else if (!p.airburst && t.alive && t.die_time < 0.0 &&
+                 lepton_to_cell(unit_lx(t)) == lepton_to_cell(ix) &&
+                 lepton_to_cell(unit_ly(t)) == lepton_to_cell(iy)) {
+            const double lim = std::max(2.0 * p.speed, 128.0);
+            if (dist3(ix, iy, iz, unit_lx(t), unit_ly(t), unit_lz(t)) / 3 <= lim) {
+                ix = unit_lx(t); iy = unit_ly(t); iz = unit_lz(t);
+            }
+        }
     }
     const int icx = lepton_to_cell(ix), icy = lepton_to_cell(iy);
 

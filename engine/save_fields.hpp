@@ -591,7 +591,7 @@ template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v
     io(ar, v.armed); io(ar, v.increment); io(ar, v.bonus); io(ar, v.cap);
 }
 template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v17)
-    io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush);
+    io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush); io(ar, v.ai_any_building);
 }
 template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v17)
     for (auto& row : v.cost)
