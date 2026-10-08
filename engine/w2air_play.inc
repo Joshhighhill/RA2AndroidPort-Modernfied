@@ -168,6 +168,14 @@
         p.set("sw_ev_bolts", bolts);
         p.set("sw_ev_dropped", dropped);
         p.set("sw_ev_seq", world_.sw_events().empty() ? 0 : world_.sw_events().back().seq);
+        // P1: where the last nuke was launched at (house, target cell).
+        for (auto it = world_.sw_events().rbegin(); it != world_.sw_events().rend(); ++it)
+            if (it->kind == ra2engine::SwEvent::Launched) {
+                p.set("sw_last_nuke_house", it->house);
+                p.set("sw_last_nuke_x", it->x);
+                p.set("sw_last_nuke_y", it->y);
+                break;
+            }
         // Naval / aircraft per house.
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.alive || u.die_time >= 0.0) continue;
