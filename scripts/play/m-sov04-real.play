@@ -1,0 +1,1965 @@
+# P4: SOV04 (Korea) won with real orders only (no cheats). The SMCV deploys; the
+# base grows from the sidebar (`place auto` anchors on the player's first map
+# building -- the lamp post by the northern gem field, which, BaseNormal=yes like
+# the original, extends the base there): refineries, power, barracks, three war
+# factories, flak. Four Typhoons and ~50 Rhinos are trained while the 10-minute
+# timer runs; the feints and paradrops die to the Rhinos guarding the base. When
+# the Allied MCV lands, the type-selected Rhinos attack it, then every BadGuy1
+# unit / building in turn (the garrisoned farm first) and the Typhoons hunt the
+# destroyers; 'Win Timer' (DestroyedAll BadGuy1) -> VICTORY.
+set render_every 3000
+set on_quit continue
+set campaign sov04s.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+wait 30
+click unit 0:SMCV
+key d
+until 900 built(0,NACNST) >= 1
+let n_NAREFN = built(0,NAREFN)
+until 900 can_build(NAREFN) == 1
+click tab:0
+click cameo:NAREFN
+until 2400 queue_ready(structure) == 1
+click cameo:NAREFN
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAREFN) > $n_NAREFN
+let n_NAPOWR = built(0,NAPOWR)
+until 900 can_build(NAPOWR) == 1
+click tab:0
+click cameo:NAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAPOWR) > $n_NAPOWR
+let n_NAHAND = built(0,NAHAND)
+until 900 can_build(NAHAND) == 1
+click tab:0
+click cameo:NAHAND
+until 2400 queue_ready(structure) == 1
+click cameo:NAHAND
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAHAND) > $n_NAHAND
+let n_NAWEAP = built(0,NAWEAP)
+until 900 can_build(NAWEAP) == 1
+click tab:0
+click cameo:NAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:NAWEAP
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAWEAP) > $n_NAWEAP
+until 900 cameo(HTNK) == 1
+click tab:3
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+let n_NAREFN = built(0,NAREFN)
+until 900 can_build(NAREFN) == 1
+click tab:0
+click cameo:NAREFN
+until 2400 queue_ready(structure) == 1
+click cameo:NAREFN
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAREFN) > $n_NAREFN
+let n_NAPOWR = built(0,NAPOWR)
+until 900 can_build(NAPOWR) == 1
+click tab:0
+click cameo:NAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAPOWR) > $n_NAPOWR
+until 900 cameo(HTNK) == 1
+click tab:3
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+let n_NAWEAP = built(0,NAWEAP)
+until 900 can_build(NAWEAP) == 1
+click tab:0
+click cameo:NAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:NAWEAP
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAWEAP) > $n_NAWEAP
+let n_NAFLAK = built(0,NAFLAK)
+until 900 can_build(NAFLAK) == 1
+click tab:1
+click cameo:NAFLAK
+until 2400 queue_ready(defense) == 1
+click cameo:NAFLAK
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAFLAK) > $n_NAFLAK
+let n_NAPOWR = built(0,NAPOWR)
+until 900 can_build(NAPOWR) == 1
+click tab:0
+click cameo:NAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,NAPOWR) > $n_NAPOWR
+dump
+until 900 cameo(HTNK) == 1
+click tab:3
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+wait 600
+dump
+until 900 cameo(HTNK) == 1
+click tab:3
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+wait 600
+dump
+until 900 cameo(HTNK) == 1
+click tab:3
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+wait 600
+dump
+until 900 cameo(HTNK) == 1
+click tab:3
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+click cameo:HTNK
+wait 600
+dump
+until 9000 campaign_frame >= 11400
+dump
+if units(0,HTNK) > 0 then click unit 0:HTNK:0
+key t
+key t
+click cell 108 48
+dump
+if outcome == RUNNING and cameo(HTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+until 3000 units(1,AMCV) >= 1 or buildings(1,GACNST) >= 1
+dump
+if outcome == RUNNING and cameo(SUB) == 1 then click tab:3
+if outcome == RUNNING and cameo(SUB) == 1 then click cameo:SUB
+if outcome == RUNNING and cameo(SUB) == 1 then click cameo:SUB
+if outcome == RUNNING and cameo(SUB) == 1 then click cameo:SUB
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(HTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(HTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(HTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) and units(0,HTNK) > 0 then click unit 1:AMCV:0
+if outcome == RUNNING and units(1,AMCV) > occupants(1) and units(1,AMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) and units(0,HTNK) > 0 then click unit 1:MTNK:0
+if outcome == RUNNING and units(1,MTNK) > occupants(1) and units(1,MTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) and units(0,HTNK) > 0 then click unit 1:E1:0
+if outcome == RUNNING and units(1,E1) > occupants(1) and units(1,E1) > carried(1) then wait 150
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) and units(0,HTNK) > 0 then click unit 1:GGI:0
+if outcome == RUNNING and units(1,GGI) > occupants(1) and units(1,GGI) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) and units(0,HTNK) > 0 then click unit 1:FV:0
+if outcome == RUNNING and units(1,FV) > occupants(1) and units(1,FV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) and units(0,HTNK) > 0 then click unit 1:CMIN:0
+if outcome == RUNNING and units(1,CMIN) > occupants(1) and units(1,CMIN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:SENGINEER:0
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) and units(0,HTNK) > 0 then click unit 1:ENGINEER:0
+if outcome == RUNNING and units(1,ENGINEER) > occupants(1) and units(1,ENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) and units(0,HTNK) > 0 then click unit 1:JUMPJET:0
+if outcome == RUNNING and units(1,JUMPJET) > occupants(1) and units(1,JUMPJET) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) and units(0,HTNK) > 0 then click unit 1:ASW:0
+if outcome == RUNNING and units(1,ASW) > occupants(1) and units(1,ASW) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 and units(0,HTNK) > 0 then click building 1:CAFARM06:0
+if outcome == RUNNING and buildings(1,CAFARM06) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 and units(0,HTNK) > 0 then click building 1:GACNST:0
+if outcome == RUNNING and buildings(1,GACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILL) > 0 and units(0,HTNK) > 0 then click building 1:GAPILL:0
+if outcome == RUNNING and buildings(1,GAPILL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 and units(0,HTNK) > 0 then click building 1:GAPOWR:0
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 and units(0,HTNK) > 0 then click building 1:GAREFN:0
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 and units(0,HTNK) > 0 then click building 1:GAWEAP:0
+if outcome == RUNNING and buildings(1,GAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 and units(0,HTNK) > 0 then click building 1:GAPILE:0
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 and units(0,HTNK) > 0 then click building 1:GAAIRC:0
+if outcome == RUNNING and buildings(1,GAAIRC) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GADEPT) > 0 and units(0,HTNK) > 0 then click building 1:GADEPT:0
+if outcome == RUNNING and buildings(1,GADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then key t
+if outcome == RUNNING and buildings(1,GAYARD) > 0 and units(0,HTNK) > 0 then click building 1:GAYARD:0
+if outcome == RUNNING and buildings(1,GAYARD) > 0 then wait 150
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 0:SUB:0
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then key t
+if outcome == RUNNING and units(1,DEST) > 0 and units(0,SUB) > 0 then click unit 1:DEST:0
+if outcome == RUNNING and units(1,DEST) > 0 then wait 150
+if outcome == RUNNING then wait 50
+if outcome == RUNNING then dump
+until 3000 outcome == WON
+end expect WON
