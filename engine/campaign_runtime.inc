@@ -2514,11 +2514,29 @@ private:
             for (const ra2engine::Building& b : rt.w_.buildings()) if (live(b) && b.house == eh) ++n;
             return n;
         }
+        // P5 [RE: FUN_0071dbe0 case 9/0xB]: the DestroyedUnits/DestroyedAll
+        // counts are the house's OwnedUnitTypes (+0x5564) and OwnedInfantryTypes
+        // (+0x5578) totals -- the RULES lists, not the locomotor. A flying
+        // [VehicleTypes] object (the Kirov ZEP) is a UnitClass and counts as a
+        // vehicle, a jumpjet [InfantryTypes] one (the Rocketeer) as infantry;
+        // only [AircraftTypes] objects stay out. (SOV12: a player whose base has
+        // fallen but whose Kirovs still fly has not lost.)
+        // 0 = not counted (aircraft), 1 = vehicle, 2 = infantry.
+        int flying_class(std::size_t i) const {
+            const ra2engine::Unit& u = rt.w_.units()[i];
+            const std::string& t = i < rt.utrack_.size() ? rt.utrack_[i].type : u.image;
+            if (camp::index_of(rt.ra2_vehicles_, t) >= 0 || camp::index_of(rt.ra2_vehicles_, camp::up(u.image)) >= 0) return 1;
+            if (camp::index_of(rt.ra2_infantry_, t) >= 0 || camp::index_of(rt.ra2_infantry_, camp::up(u.image)) >= 0) return 2;
+            return 0;
+        }
         int house_vehicles(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Unit& u : rt.w_.units())
-                if (live(u) && u.house == eh && (u.is_vehicle || u.is_naval) && !u.is_aircraft) ++n;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!live(u) || u.house != eh) continue;
+                if (u.is_aircraft ? flying_class(i) == 1 : (u.is_vehicle || u.is_naval)) ++n;
+            }
             return n;
         }
         int house_naval_units(int ht) const override {
@@ -2531,8 +2549,11 @@ private:
         int house_infantry(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Unit& u : rt.w_.units())
-                if (live(u) && u.house == eh && !u.is_vehicle && !u.is_naval && !u.is_aircraft) ++n;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!live(u) || u.house != eh) continue;
+                if (u.is_aircraft ? flying_class(i) == 2 : (!u.is_vehicle && !u.is_naval)) ++n;
+            }
             return n;
         }
         int house_building_type_count(int ht, int bt) const override {

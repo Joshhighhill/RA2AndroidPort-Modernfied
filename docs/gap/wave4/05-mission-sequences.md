@@ -96,6 +96,28 @@ mind-control ping-pong (SOV09), EnteredBy raised after the trigger loops (ALL02 
 | SOV11 | YES (probable) | YES (probable) | not attempted |
 | SOV12 | PROBABLE | PROBABLE | not attempted |
 
+## P5 status (mission-proof agent P5, branch `p5-missions`)
+
+Real-order proofs for SOV10-SOV12 (no `camp_*`/kill/reveal/spawn cheats; generators in `scripts/play/gen/`).
+All three were played at the loading screen's default difficulty.
+
+| Mission | W5-A | P5 | Evidence / what blocks |
+|---|---|---|---|
+| SOV10 | YES (probable) | **NO (tactical blocker)** | The WCD (`GAWEAT`, 200-HP wood in this map, the `WCD Destroyed` win) stands outside `[Map] LocalSize` (x-y = -78, the view's left edge is -66): it cannot be clicked or nuked until `BL Captured` runs `ResizeView`. The Battle Lab sits on BadGuy1's cliff-ringed island; the only ground access is the east beach (182,117) and up through the base (7 Prism towers, 8 pillboxes). A landing craft sent at the lab is killed on that beach (probe, with and without BadGuy1's fleet). Needs a landed assault (2 SAPC x 2 Apocalypse + an engineer wave) plus a Nuclear Silo charged for the WCD -- not achieved. Also observed: with the player's base alive past ~14 min, BadGuy2's Harriers (`Harassment Team_5`) sometimes bomb the WCD and win the mission for the player -- `Other3` is hostile to BadGuy2 by its own `Allies=` list, so the original may do the same (not RE-verified; open). `mk_sov10.py` (WIP) builds to a charged nuke. |
+| SOV11 | YES (probable) | **YES (proven)** | `m-sov11-real` WON (8289 frames): base to battle lab, two Kirovs built, all four flown by move orders along the least-flak line (BadGuy1's SW corner, the west map edge) onto the Kremlin. Notes: a nuke is useless here (`[NUKE]` Verses concrete 8%); BadGuy3's Kirov counter-attack comes only after a Nuclear Silo is built. |
+| SOV12 | PROBABLE | **YES (proven)** | `m-sov12-real` WON (8381 frames): two Kirovs fly the patriot-free north coast to the civilian airfield, `Kirovs Gained` gives the three captured ones, the five bomb the Chronosphere (750, concrete). The island base falls to the chrono raids meanwhile -- won only after the DestroyedAll fix below. A click on the shrouded Chronosphere is a move; the attack order is re-clicked until the airships see it. |
+
+Engine fixes (each a separate commit, calibrated in gamemd.exe):
+
+- **AllyReveal one hop** (`a8e9403`, `engine/world.cpp`) [RE: FUN_00566fd0 per-object reveal; FUN_004f9870
+  IsAlliedWith]: an object reveals for a viewer only if its house is the viewer or counts the viewer as an ally (the
+  source's own view). The clone OR-merged each ally's accumulated explored map every frame, so sight chained
+  Civilian -> Other1 -> Player: SOV10's player "discovered" BadGuy3 at f3 and `Bad Guy 3 Startup` (HouseDiscovered)
+  ran at f8. Shared system (shroud). Gates unchanged.
+- **DestroyedAll counts flying vehicles** (`694a0cc`, `engine/campaign_runtime.inc`) [RE: FUN_0071dbe0 case 9/0xB:
+  buildings +0x2F0, OwnedUnitTypes +0x5564, OwnedInfantryTypes +0x5578]: membership by rules list, so a Kirov (ZEP is a
+  `[VehicleTypes]` UnitClass) keeps the house alive. Shared system (campaign events 9/11). Gates unchanged.
+
 ## P2 status (mission-proof agent P2, branch `p2-missions`)
 
 Missions SOV07, SOV08 and SOV09 from the real campaign start with real player orders only (no `camp_*`, kill, reveal
