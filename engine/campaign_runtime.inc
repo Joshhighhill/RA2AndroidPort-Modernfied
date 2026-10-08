@@ -944,6 +944,30 @@ private:
     static bool live(const ra2engine::Building& b) {
         return b.alive && b.state != ra2engine::Building::State::Dead;
     }
+    // [RE: HouseClass RegisterGain FUN_004FF520 / RegisterLoss FUN_004FF370 --
+    // a techno whose type has Insignificant (+0x232, ObjectType INI read at
+    // 0x5F8D0B) or DontScore (+0xC9F, 0x7132F8) set is never added to the
+    // house's building/unit/infantry counters (+0x2F0/+0x2E8/...), which the
+    // Destroyed*All events (9/10/11/55/56) read.] Flags, lamps, gates, guard
+    // shacks therefore do not keep a house "alive" (ALL06: BadGuy1's flags).
+    bool untracked_type(const std::string& id) const {
+        auto it = untracked_.find(id);
+        if (it != untracked_.end()) return it->second;
+        auto yes = [&](const char* k) {
+            const std::string v = rules_ini_.get(id, k, "");
+            const char c = v.empty() ? 'n' : (char)std::tolower((unsigned char)v[0]);
+            return c == 'y' || c == 't' || c == '1';
+        };
+        const bool r = yes("Insignificant") || yes("DontScore");
+        untracked_[id] = r;
+        return r;
+    }
+    bool tracked(const ra2engine::Building& b) const {
+        return live(b) && !(b.type >= 0 && b.type < (int)ba_.roster.size() && untracked_type(ba_.roster[(std::size_t)b.type].id));
+    }
+    bool tracked(const ra2engine::Unit& u) const {
+        return live(u) && !u.vet.dont_score && !untracked_type(u.image);
+    }
     bool free_cell_near(int x, int y, int& ox, int& oy, int maxr = 6) const {
         for (int r = 0; r <= maxr; ++r)
             for (int dy = -r; dy <= r; ++dy)
@@ -1479,8 +1503,13 @@ private:
             }
             ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
             if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
-            const double dx = v.fx - u.fx, dy = v.fy - u.fy;
-            if (std::sqrt(dx * dx + dy * dy) > std::max(1.0, u.w_range) + 0.5) continue;
+            // R-205 [RE: the capture rides the controller's shot -- CaptureManager
+            // FUN_00471C80 is called only from the bullet detonation @0x4692C0, and
+            // the shot leaves only through the fire-range test FUN_006F6750]: use the
+            // SAME 3-D range rule as combat's fire path. A separate 2-D test let the
+            // two disagree near the edge (~8.5 cells): combat thought the Yuri in
+            // range (no approach), the capture thought not, and the order died.
+            if (!ra2engine::unit_in_weapon_range(w_, u, v)) continue;
             const int vi = u.target;
             if (t.mc_victim >= 0 && t.mc_victim != vi) mc_release(t);
             Track& vt = utrack_[(std::size_t)vi];
@@ -2525,23 +2554,13 @@ private:
         bool house_exists(int ht) const override { return ht >= 0 && rt.engine_house(ht) >= 0; }
         std::vector<int> house_instances() const override { return rt.houses_order_ht_; }
         int player_house_type() const override { return rt.house_type(0); }
-        // P4 [RE: HouseClass RegisterGain FUN_004FF520 @0x4FF53B..0x4FF55B]: the
-        // house's unit / building / infantry counters (+0x2E8/+0x2EC/+0x2F0/
-        // +0x2F4) that 9/10/11/55/56 read skip every techno whose type is
-        // Insignificant= (+0x232) or DontScore= (+0xC9F) -- lamp posts,
-        // barrels, civilians, spent V3 rockets (map overrides apply, e.g.
-        // ALL09's MAYAN Insignificant=no).
-        bool scores_b(std::size_t i) const {
-            return i >= rt.btrack_.size() || rt.btrack_[i].type.empty() || rt.scores(rt.btrack_[i].type);
-        }
-        bool scores_u(std::size_t i) const {
-            return i >= rt.utrack_.size() || rt.utrack_[i].type.empty() || rt.scores(rt.utrack_[i].type);
-        }
+        // P3 + P4 [RE: HouseClass RegisterGain FUN_004FF520 @0x4FF53B..0x4FF55B]:
+        // the counters skip Insignificant= (+0x232) / DontScore= (+0xC9F) types
+        // (CampaignRuntime::tracked).
         int house_buildings(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            const std::vector<ra2engine::Building>& bs = rt.w_.buildings();
-            for (std::size_t i = 0; i < bs.size(); ++i) if (live(bs[i]) && bs[i].house == eh && scores_b(i)) ++n;
+            for (const ra2engine::Building& b : rt.w_.buildings()) if (rt.tracked(b) && b.house == eh) ++n;
             return n;
         }
         // P5 [RE: FUN_0071dbe0 case 9/0xB]: the DestroyedUnits/DestroyedAll
@@ -2562,10 +2581,9 @@ private:
         int house_vehicles(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            const std::vector<ra2engine::Unit>& us = rt.w_.units();
-            for (std::size_t i = 0; i < us.size(); ++i) {
-                const ra2engine::Unit& u = us[i];
-                if (!live(u) || u.house != eh || !scores_u(i)) continue;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
                 if (u.is_aircraft ? flying_class(i) == 1 : (u.is_vehicle || u.is_naval)) ++n;
             }
             return n;
@@ -2573,20 +2591,16 @@ private:
         int house_naval_units(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            const std::vector<ra2engine::Unit>& us = rt.w_.units();
-            for (std::size_t i = 0; i < us.size(); ++i) {
-                const ra2engine::Unit& u = us[i];
-                if (live(u) && u.house == eh && u.is_naval && !u.is_aircraft && scores_u(i)) ++n;
-            }
+            for (const ra2engine::Unit& u : rt.w_.units())
+                if (rt.tracked(u) && u.house == eh && u.is_naval && !u.is_aircraft) ++n;
             return n;
         }
         int house_infantry(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            const std::vector<ra2engine::Unit>& us = rt.w_.units();
-            for (std::size_t i = 0; i < us.size(); ++i) {
-                const ra2engine::Unit& u = us[i];
-                if (!live(u) || u.house != eh || !scores_u(i)) continue;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
                 if (u.is_aircraft ? flying_class(i) == 2 : (!u.is_vehicle && !u.is_naval)) ++n;
             }
             return n;
@@ -2976,24 +2990,12 @@ private:
     std::vector<int> destroyed_units_, destroyed_buildings_;
     std::vector<std::array<int, 4>> last_built_;
     std::vector<Track> utrack_, btrack_;
-    // P4: Insignificant= / DontScore= per type id (merged rules), cached.
-    mutable std::map<std::string, bool> scores_cache_;
-    bool scores(const std::string& id) const {
-        const auto it = scores_cache_.find(id);
-        if (it != scores_cache_.end()) return it->second;
-        auto flag = [this, &id](const char* k) {
-            const std::string v = rules_ini_.get(id, k, "");
-            return !v.empty() && (v[0] == 'y' || v[0] == 'Y' || v[0] == 't' || v[0] == 'T' || v[0] == '1');
-        };
-        const bool s = !flag("Insignificant") && !flag("DontScore");
-        scores_cache_[id] = s;
-        return s;
-    }
     std::vector<Team> teams_;
     std::vector<Objective> objectives_;
     std::vector<std::string> witness_;
     const UnitRoster* ai_roster_ = nullptr;   // W2-CA-07 (GameScene's ur_ai_)
     std::map<std::string, bool> mc_type_;      // W2-CA-15 cache: type -> MindControl weapon
+    mutable std::map<std::string, bool> untracked_;   // P3 cache: type -> Insignificant/DontScore (derived)
     std::vector<std::uint8_t> armed_;         // W2-CA-07 per house: 1 base, 2 map teams (derived)
     std::vector<AudioReq> audio_;   // W2-CA-12 (presentation only, not hashed/saved)
     std::vector<ra2engine::VisualRequest> visuals_;   // W3-FX (presentation only, not hashed/saved)

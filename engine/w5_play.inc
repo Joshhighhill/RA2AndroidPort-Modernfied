@@ -14,7 +14,7 @@
 //         from the selected unit, same row band).
     void w5_play_probe(ra2play::Probe& p) const {
         for (const char* f : {"max_cell_inf", "cells3", "uhpn", "ucx", "ucy", "uspot", "ulx", "uly",
-                              "bhp", "bmaxhp", "uspeed", "uland", "utgt", "umov", "uwait", "ucargo", "upath"})
+                              "bhp", "bmaxhp", "uspeed", "uland", "utgt", "umov", "uwait", "ucargo", "upath", "nenemy", "ndog", "utgtb", "ucell", "bc4n"})
             p.zero_families.insert(f);
         p.set("subcells", world_.subcells_enabled() ? 1 : 0);
         std::map<std::pair<int, int>, int> per_cell[16];
@@ -36,10 +36,23 @@
             p.set("uspeed(" + k + ")", world_.unit_speed_cps(i));
             p.set("uland(" + k + ")", world_.speed_land_at(u.cell_x, u.cell_y));
             p.set("utgt(" + k + ")", u.target);
+            p.set("utgtb(" + k + ")", u.target_building);   // P3
+            p.set("ucell(" + k + ")", u.cell_x * 1000 + u.cell_y);   // P3
             p.set("umov(" + k + ")", u.moving() ? 1 : 0);
             p.set("uwait(" + k + ")", u.wait_time);
             p.set("ucargo(" + k + ")", static_cast<double>(u.cargo.size()));
             p.set("upath(" + k + ")", u.path.empty() ? -1.0 : static_cast<double>(u.path.back().x * 1000 + u.path.back().y));
+            if (world_.controllable(u.house)) {   // P3: nearest hostile ground unit (cells, cap 99)
+                double best = 99.0 * 99.0, bdog = best;
+                for (const ra2engine::Unit& e : us) {
+                    if (!e.alive || e.die_time >= 0.0 || e.cargo_of >= 0 || e.is_aircraft || !world_.is_enemy(u.house, e.house)) continue;
+                    const double dx = e.fx - u.fx, dy = e.fy - u.fy;
+                    best = std::min(best, dx * dx + dy * dy);
+                    if (e.image == "DOG") bdog = std::min(bdog, dx * dx + dy * dy);
+                }
+                p.set("nenemy(" + k + ")", std::sqrt(best));
+                p.set("ndog(" + k + ")", std::sqrt(bdog));
+            }
             if (!u.is_vehicle && !u.is_aircraft && !u.is_naval && u.house >= 0 && u.house < 16)
                 ++per_cell[u.house][{u.cell_x, u.cell_y}];
         }
@@ -57,6 +70,7 @@
             if (!b.alive || b.state == ra2engine::Building::State::Dead) continue;
             if (b.type < 0 || b.type >= (int)world_.btypes().size()) continue;
             const std::string k = std::to_string(b.house) + "," + world_.btypes()[(std::size_t)b.type].id;
+            if (b.c4_applied) p.add("bc4n(" + k + ")", 1);   // P3: C4 planted, ticking
             if (p.n.count("bhp(" + k + ")")) continue;
             p.set("bhp(" + k + ")", b.hp);
             p.set("bmaxhp(" + k + ")", b.max_hp);

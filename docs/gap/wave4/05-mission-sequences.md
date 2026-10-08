@@ -183,7 +183,8 @@ Engine fixes (each a separate commit; shared systems flagged):
   FUN_004FF520 @0x4FF53B..0x4FF55B; keys verified at 0x5F8D0B (Insignificant +0x232) and 0x7132F8 (DontScore +0xC9F)]:
   lamp posts, barrels, ammo crates, civilian props, gates and spent V3 rockets no longer keep a house alive for events
   9/10/11/55/56 (map overrides apply: ALL09 `MAYAN Insignificant=no`). **Shared system**: it changes the win/lose
-  counts of ALL01/02/06/07/08/09/10 and SOV04 (merged with P5's flying-unit class on the master merge).
+  counts of ALL01/02/06/07/08/09/10 and SOV04. P3 fixed the same in parallel; the master merge keeps P3's
+  `CampaignRuntime::tracked()` implementation (plus P5's flying-unit class).
 - **An ordered Sleep/Harmless unit wakes** (`81b6570`, `engine/campaign_runtime.inc`) [RE-FALLBACK: TS/RA1
   Assign_Mission replaces Mission_Sleep/Harmless]: a dormant unit that is moving or has an attack order (player or team
   script) leaves the mission. ALL09's freed POW GIs and Grizzlies never fired. **Shared system** (W4-SQ-05 dormancy).
@@ -196,6 +197,59 @@ Harness (no sim change): `place near X Y` and placement retries that watch the h
 clicks fall back to a visible foundation cell, `click ... soft`, probe key `last_fired` (`ad521b0`); `H:TYPE:near`
 targets and `sel_near(h,ID)` (`84f71bf`). Gates: `--demo-saveload` re-pinned to `ea91172edde017b6` (save v23 format
 only); `--demo-campaign` and `--demo-abilities` re-run unchanged.
+## P3 status (mission-proof agent P3, branch `p3-missions`)
+
+Real-order proofs (no `camp_*`/kill/reveal/spawn cheats; the only harness help is choosing which visible unit or
+building to click):
+
+| Mission | Before | P3 | Evidence / what blocks |
+|---|---|---|---|
+| ALL05 | YES (probable) | **YES (proven)** | `m-all05-real` WON (5558 frames, gen `gen/mk_all05.py`): spies disguise, black out the RedTeam base and infiltrate the Battle Lab (map enlarges); Tanya C4s the three red Tesla Power Plants (red reactor -> neutral, coils dark); the re-supplied spies black out YellowTeam, then OrangeTeam twice, while Tanya C4s both wall-ringed silos -> `Victory 1`. Needed the C4 range/approach fix below |
+| ALL06 | YES (probable) | **YES (proven)** | `m-all06-real` WON (frame 40380 on the merged tree, gen `gen/mk_all06.py`; the sweep skips Insignificant decorations): the landed AMCV deploys; power, 3 refineries, barracks, 3 war factories; Grizzlies massed to 55 and staged, sweep BadGuy2 (Tesla Coils first, then the nearest building), regroup to 70 and sweep BadGuy1 while the factories top the army up, then hunt the last units. Needed two engine fixes: Insignificant/DontScore objects no longer count for `_Win Occurs` (BadGuy1's flags, guard shack and gate kept it alive), and an orphaned dog "riding" a vanished host is let go |
+| ALL07 | PROBABLE | **YES (proven)** | `m-all07-real` WON (~3:20 game time): `_Win Occurred` is DestroyedBuildingsAll(BadGuy1) and BadGuy1's only building before Niihau falls is the Sentry Gun outpost at (92,206); the type-selected Pearl fleet is ordered onto it and the Carrier Hornets kill it. (Event 10 semantics are CONFIRMED RE, map-triggers.md; a full Niihau-base kill was not needed) |
+
+Engine fixes (each a separate commit):
+
+1. `combat: C4 sappers ...`: a C4=yes infantry measured its plant range to the NEAREST foundation
+cell (<= 1.5) and approached a free cell next to the foundation cell nearest itself. FUN_006F6750 (combat.md §9)
+measures any weapon vs a building to its centre with the range widened by (w+h)*64, and [Sapper]/[Sapper2] have
+CellRangefinding=yes (from the sapper's cell). With the old rule ALL05's Tesla Reactors (fenced on three sides) left
+Tanya standing still forever and the wall-ringed silos were unreachable. Now the sapper heads for the walkable cell
+nearest it from which the plant is in range (cell choice RE-FALLBACK, infantry-anim.md §7).
+2. `campaign: Insignificant/DontScore objects do not count ...` [RE: HouseClass RegisterGain FUN_004FF520 /
+   RegisterLoss FUN_004FF370 skip types with Insignificant (+0x232, INI read 0x5F8D0B) or DontScore (+0xC9F); the
+   events 9/10/11/55/56 read those counters]. Merged with P5's flying-class rule.
+3. `abilities: a parasite whose host left the world by another path is let go` [abilities.md §B3]: a dog left
+   `cargo_of` a vanished host stayed invisible, unkillable and counted for BadGuy1 forever.
+
+Harness (no sim change): `repeat N`/`endrepeat`, `waituntil`, `unit H:TYPE:near` / `unit e:TYPE:near` / `building H:TYPE:near`,
+probe keys `nenemy ndog utgtb ucell bc4n blackout(h) view_resized` (scripts/play/README.md).
+
+Observed, not investigated: in failed ALL05 attempts Tanya died and the mission stayed RUNNING (the original loses via
+`Tanya Dies` -> `Mission Failed`); check the tag hand-over when the team re-creates her (`Change Tanya House`).
+
+Gates: no demo gate re-pinned (none run; the C4, counting and parasite changes only act on C4 sappers,
+campaign Destroyed*All events and orphaned parasites). Save format unchanged (v22).
+
+## P2b status (branch `p2b-missions`)
+
+- **R-205 fixed / re-diagnosed.** The capture test in `poll_mind_control` now uses the same 3-D fire-range rule as
+  combat (`unit_in_weapon_range`, FUN_006F6750): in `gamemd.exe` the capture is done by the controller's shot --
+  CaptureManager `FUN_00471C80` has a single caller, the bullet detonation @0x4692C0. The reported "Yuri does nothing at
+  8.5 cells" was not the range split: the script had re-clicked the already-selected Yuri, which DEPLOYS him (deploy
+  cursor), and a deployed DeployFire unit holds its post. Play test `scripts/play/mc-range.play` (PASS).
+- **SOV08 -- not won (tactics).** Best attempt generator: `scripts/play/gen/mk_sov08_attempt.py` (~16 iterations).
+  What works: MCV to (59,97) before deploying; two Sentry Guns before the refinery stop Vlad1's paradrops; the base
+  then survives the whole game (Tesla Coils, barracks rebuilds). What fails: production tops out at ~16 Apocalypse
+  tanks by campaign ~53000; the push reaches the White House gate and takes it to ~800/1000 before dying to the four
+  Tesla Coils, two sentry guns and Vlad2's infantry (5 Shock Troopers alone killed a 20-tank army with no
+  anti-infantry). A V3 siege of Vlad2's west power plants failed (rockets die in flight near the flak; V3s ordered past
+  their range wander into the base). Engineers walking behind the Apocalypse ball died before the gate. No engine
+  blocker identified.
+- **SOV09 -- retried, still blocked (tactics).** The R-205 fix does not change the picture. Best: north plant by the
+  MC'd SEAL's C4 (1000 -> 800), then the IFV by a southern route damages the (68,66) plant from (67,73) (-> **742**)
+  before a base defence kills it. The Prisms need < 575; the remaining plants are only reachable inside the Prism
+  compound, and the roaming SEALs kill every infantry escort. No engine blocker identified.
 
 ## How this was exercised
 

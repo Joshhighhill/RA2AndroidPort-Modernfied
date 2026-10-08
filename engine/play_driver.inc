@@ -121,6 +121,12 @@ public:
                     ++pc_;
                     continue;
                 }
+                if (e == Eval::False && until_left_ <= 0 && c.op == "waituntil") {   // P3: soft
+                    emit("PLAY timeout L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " " + c.raw, trace_console_);
+                    until_active_ = false;
+                    ++pc_;
+                    continue;
+                }
                 if (e == Eval::Missing || e == Eval::Error || until_left_ <= 0) {
                     fail(c, d + (e == Eval::False ? " (timeout " + std::to_string(c.n) + " frames)" : ""));
                     until_active_ = false;
@@ -299,7 +305,7 @@ private:
             return kNext;
         }
         if (op == "wait") { wait_left_ = c.n; ++pc_; return kNext; }
-        if (op == "until") { until_active_ = true; until_left_ = c.n; return kNext; }
+        if (op == "until" || op == "waituntil") { until_active_ = true; until_left_ = c.n; return kNext; }
         if (op == "assert" || op == "require") {
             std::string d;
             const Eval e = eval_expr(c.expr, p, vars_, d);
@@ -837,7 +843,9 @@ private:
     }
     int data_missing_optional_ = -1;
     void trace(const Cmd& c) {
-        if ((c.op == "until" && until_active_) || (c.op == "cycle" && cycle_n_ > 0) || (c.op == "place" && place_n_ > 0)) return;
+        if (((c.op == "until" || c.op == "waituntil") && until_active_) || (c.op == "cycle" && cycle_n_ > 0) ||
+            (c.op == "place" && place_n_ > 0))
+            return;
         emit("PLAY step L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " " + c.raw, trace_console_);
     }
     void say(const char* what, const Cmd& c, const std::string& d) {

@@ -7043,6 +7043,31 @@ private:
     int play_find_building(const std::string& spec) const {
         int h = 0, n = 0;
         std::string type;
+        // P3: "H:TYPE:near" = that house's building (TYPE or *) nearest the
+        // first selected unit -- a player sweeping a base from where the army is.
+        if (spec.size() > 5 && spec.compare(spec.size() - 5, 5, ":near") == 0) {
+            if (!play_parse_spec(spec.substr(0, spec.size() - 5), h, type, n)) return -1;
+            const ra2engine::Unit* me = nullptr;
+            for (const ra2engine::Unit& u : world_.units())
+                if (u.alive && u.die_time < 0.0 && u.selected) { me = &u; break; }
+            if (!me) return -1;
+            int best = -1;
+            double bd = 0.0;
+            for (int i = 0; i < static_cast<int>(world_.buildings().size()); ++i) {
+                const ra2engine::Building& b = world_.buildings()[i];
+                if (!b.alive || b.house != h || b.state == ra2engine::Building::State::Dead) continue;
+                if (type != "*" && (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) ||
+                                    ba_.roster[b.type].id != type))
+                    continue;
+                // a sweep skips decorations (Insignificant: flags, lamps, gates)
+                if (type == "*" && b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()) &&
+                    rules_.section_flag(ba_.roster[b.type].id, "Insignificant", false))
+                    continue;
+                const double dx = b.cx + b.fw / 2.0 - me->fx, dy = b.cy + b.fh / 2.0 - me->fy;
+                if (best < 0 || dx * dx + dy * dy < bd) { best = i; bd = dx * dx + dy * dy; }
+            }
+            return best;
+        }
         if (!play_parse_spec(spec, h, type, n)) return -1;
         double nx = 0, ny = 0;
         const bool near = n < 0 && play_sel_centre(nx, ny);
