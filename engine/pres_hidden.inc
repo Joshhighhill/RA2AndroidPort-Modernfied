@@ -51,8 +51,10 @@ struct HiddenMarkers {
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft) continue;
             if (!can_be_hidden(u.image)) continue;
             if (u.house != 0 && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
-            const int sx = static_cast<int>((u.fx - u.fy) * 30.0) + cam.x + 30;
-            const int sy = static_cast<int>((u.fx + u.fy) * 15.0) + cam.y + 15 - u.level * 15;
+            // W5-B: infantry stand at sub-cell offsets (fx*256 + sub_x leptons).
+            const double ux = u.fx + u.sub_x / 256.0, uy = u.fy + u.sub_y / 256.0;
+            const int sx = static_cast<int>((ux - uy) * 30.0) + cam.x + 30;
+            const int sy = static_cast<int>((ux + uy) * 15.0) + cam.y + 15 - u.level * 15;
             if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
             const int depth = u.cell_x + u.cell_y;
             bool hidden = false;

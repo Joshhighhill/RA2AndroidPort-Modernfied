@@ -7821,6 +7821,12 @@ public:
                 p.targets[k] = ra2play::Rect{d.x, d.y, d.w, d.h};
             };
             put("opt:res", 255, 73, 180, 21);
+            static const char* kCk[OptionsPageState::C_COUNT] = {"tooltips", "targetlines", "hidden"};
+            for (int i = 0; i < OptionsPageState::C_COUNT; ++i) {
+                const ra2engine::SbRect r = OptionsPageState::check_rect(i);
+                put(std::string("opt:check:") + kCk[i], r.x, r.y, 18, r.h);
+                p.set(std::string("opt_check(") + kCk[i] + ")", opt_.chk[i] ? 1 : 0);
+            }
             if (opt_.res_open)
                 for (int i = 0; i < static_cast<int>(OptionsPageState::modes().size()); ++i)
                     put("opt:res:" + std::to_string(i), 255, 96 + i * 18, 180, 18);
