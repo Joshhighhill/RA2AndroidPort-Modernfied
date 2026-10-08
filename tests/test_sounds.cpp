@@ -114,3 +114,18 @@ TEST_CASE("sounds: real soundmd.ini pins") {
     CHECK(gis.sounds.size() == 6);
     CHECK(gis.volume == 85);
 }
+
+// W5-E: Delay= min max (ms); one value = both.
+TEST_CASE("sounds: Delay parses min/max milliseconds") {
+    Ini ini = Ini::parse("[SoundList]\n0=A\n1=B\n[A]\nSounds=x\nDelay= 500 3000\nControl=predelay\n"
+                         "[B]\nSounds=y\nDelay=1500\nControl=loop ambient\nType=local\n");
+    Sounds snd = Sounds::load(ini);
+    const SoundEntry a = snd.entry("A");
+    CHECK(a.delay_lo == 500);
+    CHECK(a.delay_hi == 3000);
+    const SoundEntry b = snd.entry("B");
+    CHECK(b.delay_lo == 1500);
+    CHECK(b.delay_hi == 1500);
+    REQUIRE(b.type.size() == 1);
+    CHECK(b.type[0] == "local");
+}

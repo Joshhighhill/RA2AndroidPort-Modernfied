@@ -1,0 +1,27 @@
+# briefing-movies -- W5-E acceptance (R-034): the mission briefing as a modal
+# shell page (Restate dialog 0x10C; F1 or the sidebar's second tab), and the
+# campaign movie path: the map's Intro/Brief movies play through the Bink
+# decoder when the files exist, and are skipped when not (this install's
+# MOVIES0x.MIX are 4-byte stubs). Run with RA2_MOVIE_DIR pointing at a folder
+# holding a test .bik to see playback; without it the movies are skipped.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button "New Campaign"
+click well:allied
+click button Load
+until 30 scene == campaign-load
+click start
+until 900 scene == game
+require scene == game
+key f1
+wait 2
+assert briefing_open == 1                                @R-034:E
+shot bm01_briefing_page
+let f0 = campaign_frame
+wait 30
+assert campaign_frame == $f0                             @R-034:E
+key esc
+wait 2
+assert briefing_open == 0                                @R-034:E
+end

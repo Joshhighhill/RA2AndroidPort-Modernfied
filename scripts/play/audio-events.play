@@ -1,0 +1,141 @@
+# audio-events -- W5-E acceptance (REMAINING R-130 / R-131): every newly wired
+# unit / world sound and EVA line fires at its original trigger through the
+# REAL shell -> lobby -> GameScene. Evidence: the snd()/why()/eva()/evareq()
+# probe counters (pres_audio.inc) and <out>/pres.log ("[pres] f=N sound KEY
+# (why)" / "eva-request NAME" / "eva-play NAME"). RE: pres_audio_events.inc.
+set render_every 300
+set on_quit continue
+set cycle_max 100
+
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+assert check(crates) == 1
+click start
+until 90 scene == game
+require scene == game
+assert load_art == "ls800ustates.shp"                   @W5-E:loadscreen
+
+# --- MCV deploy: DeploySound=PlaceBuilding at the new ConYard ------------------
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+assert why(deploy) >= 1                                  @R-130:E
+assert snd(PlaceBuilding) >= 1                           @R-130:E
+
+# --- CreditTicks: the counter rolls toward the wallet, ticking up / down ------
+cheat credits 14000
+until 120 why(credits_up) >= 1                           @R-130:E
+until 300 credits_shown == credits                        @R-142:E
+
+# --- base for the rest -------------------------------------------------------
+cheat w2 build GADEPT
+cheat w2 build GAPILE
+cheat w2 build GAPILE
+wait 5
+
+# --- Service depot: a damaged Grizzly repaired -> EVA_UnitRepaired --------------
+cheat spawn MTNK 0 building 0:GADEPT +4 +0
+wait 2
+cheat w2 damage 0:MTNK 120
+click unit 0:MTNK
+click building 0:GADEPT -1 +1
+until 1800 evareq(EVA_UnitRepaired) >= 1                 @R-131:E
+
+# --- Primary building + rally point (player clicks on a factory) --------------
+click building 0:GAPILE:1
+click building 0:GAPILE:1
+until 30 evareq(EVA_PrimaryBuildingSelected) >= 1        @R-131:E
+click building 0:GAPILE:1 +5 +5
+until 30 evareq(EVA_NewRallyPointEstablished) >= 1       @R-131:E
+
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAREFN
+cheat w2 build GAWEAP
+cheat w2 build GTGCAN
+wait 30
+view building 0:GACNST
+
+# --- GI deploy / undeploy: DeploySound / UndeploySound -------------------------
+cheat spawn E1 0 building 0:GACNST +4 +4
+wait 2
+click unit 0:E1
+key d
+until 60 why(deploy) >= 2                                @R-130:E
+assert snd(GIDeploy) >= 1                                @R-130:E
+key d
+until 60 why(undeploy) >= 1                              @R-130:E
+
+# --- VoiceFeedback: player infantry dropping into yellow (30% each) ------------
+cheat spawn E1 0 building 0:GACNST +5 +3
+cheat spawn E1 0 building 0:GACNST +5 +4
+cheat spawn E1 0 building 0:GACNST +5 +5
+cheat spawn E1 0 building 0:GACNST +6 +3
+cheat spawn E1 0 building 0:GACNST +6 +4
+cheat spawn E1 0 building 0:GACNST +6 +5
+cheat spawn E1 0 building 0:GACNST +7 +3
+cheat spawn E1 0 building 0:GACNST +7 +4
+wait 2
+cheat w2 damage 0:E1:1 70
+cheat w2 damage 0:E1:2 70
+cheat w2 damage 0:E1:3 70
+cheat w2 damage 0:E1:4 70
+cheat w2 damage 0:E1:5 70
+cheat w2 damage 0:E1:6 70
+cheat w2 damage 0:E1:7 70
+cheat w2 damage 0:E1:8 70
+wait 3
+assert why(feedback) >= 1                                @R-130:E
+assert snd(GIFear) >= 1                                  @R-130:E
+
+# --- Engineer: VoiceCapture on the order, BuildingRepairedSound on arrival ------
+cheat damage_building 0:GACNST 600
+cheat spawn ENGINEER 0 building 0:GACNST -2 +1
+wait 2
+view building 0:GACNST
+click unit 0:ENGINEER
+click building 0:GACNST
+assert why(capture_order) >= 1                           @R-130:E
+until 450 why(building_repaired) >= 1                    @R-130:E
+
+# --- Crate: Armor crate -> CrateArmourSound + EVA_UnitArmorUpgraded -------------
+click unit 0:E1:3
+cheat crate Armor 2 0
+until 200 why(crate_armor) >= 1                          @R-130:E
+until 30 evareq(EVA_UnitArmorUpgraded) >= 1              @R-131:E
+
+# --- Sidebar: On Hold / Unable To Comply ----------------------------------------
+click cameo:E1
+wait 2
+click cameo:E1 right
+until 30 evareq(EVA_OnHold) >= 1                         @R-131:E
+click cameo:GAPOWR
+wait 2
+click cameo:GAREFN
+until 30 evareq(EVA_UnableToComply) >= 1                 @R-131:E
+# the Power Plant being built drains the wallet: the counter ticks down
+until 300 why(credits_down) >= 1                         @R-130:E
+
+# --- Grand Cannon: TurretRotateSound while the turret turns ----------------------
+cheat spawn HTNK 1 building 0:GTGCAN +7 +2
+until 300 why(turret_rotate) >= 1                        @R-130:E
+
+# --- Garrison: StructureGarrisoned + BuildingGarrisonedSound; evict -> Abandoned --
+view point garrison
+cheat spawn E1 0 point garrison +2 +2
+wait 2
+click unit 0:E1 nopark
+key t
+click point garrison
+until 900 garrisoned(0) == 1                             @R-130:E
+assert why(enter_order) >= 1                             @R-130:E
+until 30 evareq(EVA_StructureGarrisoned) >= 1            @R-131:E
+assert why(garrisoned) >= 1                              @R-130:E
+click xy 600 300 right
+click point garrisoned
+assert selected_building >= 0
+key d
+until 60 evareq(EVA_StructureAbandoned) >= 1             @R-131:E
+shot audio_events_end
+end

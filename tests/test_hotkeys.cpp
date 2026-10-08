@@ -57,3 +57,23 @@ TEST_CASE("hotkeys: parse_name ranges") {
     CHECK(b.cmd == HotCmd::SetView);
     CHECK_FALSE(HotkeyTable::parse_name("View5", b));
 }
+
+// W5-E Keyboard page: assigning a used code takes it from its owner, and the
+// written [Hotkey] text round-trips.
+TEST_CASE("hotkeys: Keyboard page assign / to_ini_text round trip") {
+    HotkeyTable t = HotkeyTable::defaults();
+    t.assign(HotBinding{HotCmd::StopObject, 0}, 'G');   // G was GuardObject
+    CHECK(t.lookup('G', false, false, false).cmd == HotCmd::StopObject);
+    CHECK(t.code_of(HotCmd::GuardObject) == 0);
+    CHECK(t.code_of(HotCmd::StopObject) == 'G');
+    HotkeyTable u = HotkeyTable::defaults();
+    u.load_ini_text(t.to_ini_text());
+    CHECK(u.lookup('G', false, false, false).cmd == HotCmd::StopObject);
+    CHECK(u.code_of(HotCmd::GuardObject) <= 0);
+    CHECK(hotkey_label(579) == "Ctrl+C");
+    CHECK(hotkey_label(1072) == "Alt+0");
+    CHECK(hot_command_list().size() > 60);
+    HotBinding hn;
+    CHECK(HotkeyTable::parse_name("HealthNav", hn));
+    CHECK(hn.cmd == HotCmd::HealthNav);
+}

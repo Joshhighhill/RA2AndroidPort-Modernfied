@@ -44,7 +44,9 @@ int Mixer::gain_permille(const MixerSound& s, double dist_cells) {
         g = f <= 0.0 ? 0 : (f >= 1.0 ? 1000 : static_cast<int>(f * 1000.0));
     }
     if (s.global) g = std::max(g, s.min_volume * 10);
-    return g;
+    // W5-E [RE: FUN_0074f8e0 tail, constant @0x7E7AE8 = 0.05]: a volume under
+    // 0.05 is inaudible (the voice is not started / is stopped).
+    return g < 50 ? 0 : g;
 }
 
 Mixer::Mixer(const SoundBank& bank, uint32_t seed)
@@ -87,16 +89,36 @@ bool Mixer::play(const std::string& key, double dist_cells) {
     return start_(key, dist_cells, 8192) != 0;
 }
 
+bool Mixer::play_scaled(const std::string& key, double volume) {
+    std::lock_guard<std::recursive_mutex> lk(mu_);
+    return start_(key, 0.0, 8192, volume) != 0;
+}
+
+const MixerSound* Mixer::sound(const std::string& key) const {
+    std::lock_guard<std::recursive_mutex> lk(mu_);
+    auto it = sounds_.find(key);
+    return it == sounds_.end() ? nullptr : &it->second;
+}
+
+// [RE: FUN_004055c0] RandomRanged(AMBIENT ? 33 : Delay min, Delay max) ms; a
+// draw under 33 ms starts at once. Audio-local RNG.
+std::size_t Mixer::draw_delay_(bool ambient, int lo, int hi) {
+    const int ms = ranged_(ambient ? 33 : lo, hi);
+    if (ms < 33) return 0;
+    return static_cast<std::size_t>(ms) * 22050u / 1000u;
+}
+
 std::uint32_t Mixer::play_at(const std::string& key, double dist_cells, int pan) {
     std::lock_guard<std::recursive_mutex> lk(mu_);
     return start_(key, dist_cells, pan);
 }
 
-std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan) {
+std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan, double scale) {
     auto it = sounds_.find(key);
     if (it == sounds_.end() || it->second.variants.empty()) return 0;
     const MixerSound& s = it->second;
-    const int gain = gain_permille(s, dist_cells);
+    int gain = gain_permille(s, dist_cells);
+    if (scale != 1.0) gain = static_cast<int>(gain * std::max(0.0, std::min(1.0, scale)));
     if (gain <= 0) return 0;  // inaudible: don't burn a voice on silence
 
     int same = 0;
@@ -138,7 +160,7 @@ std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan) 
     if (d) seq.push_back(s.variants[static_cast<std::size_t>(count - 1)]);
 
     Voice v{key, seq.front(), 0, 0, s.priority, age_counter_++, s.bus,
-            100, 8192, 0, 65536, 0, {}, 0, -1, false};   // the member defaults, spelled out (-Wextra)
+            100, 8192, 0, 65536, 0, {}, 0, -1, false, 0, false, false, 0, 0};   // the member defaults, spelled out (-Wextra)
     // [RE: FUN_004055c0] VShift volume drop + FShift pitch.
     v.volume = s.vshift > 0 ? std::max(0, s.volume - s.volume * ranged_(0, std::min(100, s.vshift)) / 100)
                             : s.volume;
@@ -153,6 +175,13 @@ std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan) 
     v.seq = seq;
     v.seq_ix = 1;
     v.loop_from = !s.loop ? -1 : (s.all ? -2 : (body >= 0 ? body : seq.front()));
+    if (s.predelay || s.ambient) {   // W5-E predelay
+        v.predelay = s.predelay;
+        v.ambient = s.ambient;
+        v.delay_lo = s.delay_lo_ms;
+        v.delay_hi = s.delay_hi_ms;
+        v.delay = draw_delay_(s.ambient, s.delay_lo_ms, s.delay_hi_ms);
+    }
     v.handle = next_handle_++;
     if (next_handle_ == 0) next_handle_ = 1;
     voices_.push_back(std::move(v));
@@ -251,6 +280,11 @@ std::size_t Mixer::eva_queued() const {
 // One output frame of one voice: the current sample, then advance (at the
 // FShift rate) through the clip, its follow-on sequence, and LOOP.
 bool Mixer::next_sample_(Voice& v, int& sample) {
+    if (v.delay > 0 && !v.done) {   // W5-E: predelay silence (the voice holds its slot)
+        --v.delay;
+        sample = 0;
+        return true;
+    }
     for (int guard = 0; guard < 4; ++guard) {
         if (v.done) return false;
         const std::vector<int16_t>& pcm = bank_.pcm(v.clip);
@@ -273,9 +307,17 @@ bool Mixer::next_sample_(Voice& v, int& sample) {
             v.clip = v.seq[v.seq_ix++];
         } else if (v.loop_from >= 0) {
             v.clip = v.loop_from;
+            if (v.predelay || v.ambient) {   // W5-E: each pass waits its own predelay
+                v.delay = draw_delay_(v.ambient, v.delay_lo, v.delay_hi);
+                if (v.delay > 0) { --v.delay; sample = 0; return true; }
+            }
         } else if (v.loop_from == -2 && !v.seq.empty()) {
             v.seq_ix = 0;
             v.clip = v.seq[v.seq_ix++];
+            if (v.predelay || v.ambient) {
+                v.delay = draw_delay_(v.ambient, v.delay_lo, v.delay_hi);
+                if (v.delay > 0) { --v.delay; sample = 0; return true; }
+            }
         } else {
             v.done = true;
             return false;

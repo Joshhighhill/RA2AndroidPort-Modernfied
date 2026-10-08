@@ -560,7 +560,14 @@ Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
 // rulesmd.ini omits it -- looking that up in AudioSystem::voices and playing
 // it is then just a silent no-op (Mixer::play on an empty/unregistered key
 // returns false).
-struct UnitVoices { std::string select, move, attack, die, report, move_sound, crush; };   // W2-GA-25 move_sound/crush
+struct UnitVoices {
+    std::string select, move, attack, die, report, move_sound, crush;   // W2-GA-25 move_sound/crush
+    // W5-E (pres_audio_events.inc): the click-mission voices, the hurt voice,
+    // deploy/sink/crash sounds and the C4 flag (Sabotage voice).
+    std::string feedback, special, enter, capture, harvest, deploy_voice, deploy_snd, undeploy_snd,
+        sinking, crashing, voice_sinking, voice_crashing, turret_rotate;
+    bool c4 = false;
+};
 
 // Everything the audio wiring needs at runtime. `mixer` is a unique_ptr (not
 // a plain Mixer member) because Mixer stores its SoundBank BY REFERENCE (see
@@ -5022,6 +5029,46 @@ bool save_user_settings(const ra2engine::Settings& s) {
     return static_cast<bool>(f);
 }
 
+// W5-E: the writable pref dir (with a trailing separator; "" if none).
+std::string pref_dir_path() {
+    const std::string s = settings_file_path();
+    return s.size() >= 7 ? s.substr(0, s.size() - 7) : std::string();   // strip "RA2.INI"
+}
+
+// W5-E Keyboard page (0xA3) [RE: options.md §6 -- bindings persist in
+// Keyboard.ini [Hotkey] <Command>=<code>]: the shipped defaults, then the
+// install's Keyboard.ini (KeyboardMD.ini when absent), then the player's own
+// <pref dir>/Keyboard.ini written by the page (the install is read-only).
+ra2engine::HotkeyTable load_hotkey_table() {
+    ra2engine::HotkeyTable t = ra2engine::HotkeyTable::defaults();
+    for (const char* f : {"Keyboard.ini", "KeyboardMD.ini"}) {
+        try {
+            const std::vector<uint8_t> raw = ra2assets::read_file(env_install_dir() + f);
+            t.load_ini_text(std::string(raw.begin(), raw.end()));
+            break;
+        } catch (const std::exception&) { /* next / defaults */ }
+    }
+    const std::string own = pref_dir_path();
+    if (!own.empty()) {
+        std::ifstream in(own + "Keyboard.ini", std::ios::binary);
+        if (in) {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            t.load_ini_text(ss.str());
+        }
+    }
+    return t;
+}
+bool save_hotkey_table(const ra2engine::HotkeyTable& t) {
+    const std::string own = pref_dir_path();
+    if (own.empty()) return false;
+    std::ofstream f(own + "Keyboard.ini", std::ios::binary | std::ios::trunc);
+    if (!f) return false;
+    const std::string text = t.to_ini_text();
+    f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    return static_cast<bool>(f);
+}
+
 // options.md §5: SoundVolume -> SFX bus, VoiceVolume -> speech/EVA bus,
 // ScoreVolume -> music bus; linear gain.
 void apply_audio_settings(ra2engine::Mixer& m, const ra2engine::Settings& s) {
@@ -5373,7 +5420,8 @@ enum ShellPage {
 enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME /* P7 */,
                    ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */,
                    ACT_CAMPAIGN_LOAD /* W2-UI-18: 0x94 Load */,
-                   ACT_CREDITS /* W2-UI-26: View Credits */ };
+                   ACT_CREDITS /* W2-UI-26: View Credits */,
+                   ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */ };
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -5621,6 +5669,9 @@ inline void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, c
 // the loading screen. Defined after GameScene.
 Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg);
 Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
+
+#include "movie_player.inc"   // W5-E campaign movies (Bink)
+#include "skirmish_load.inc"   // W5-E: the ls800<country>.shp loading screen
 
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
@@ -5946,7 +5997,12 @@ public:
         touch_hint_tick(dt);  // W4-AM-01: the gesture hint
         // P7: the options menu / save-load dialog pause the game (the original
         // runs them as a modal loop; the scenario does not advance meanwhile).
-        if (menu_.open_ || sld_.is_open()) {
+        if (ingame_movie_.active()) {   // W5-E: a trigger movie pauses the scenario
+            ingame_movie_.update(dt);
+            now_ = SDL_GetTicks();
+            return;
+        }
+        if (menu_.open_ || sld_.is_open() || show_briefing_) {   // W5-E: the briefing is modal too
             now_ = SDL_GetTicks();
             return;
         }
@@ -6049,8 +6105,16 @@ public:
         // P10: the mission ended (BorrowedTime ran out) -> the result screen.
         if (campaign_ && campaign_->finished() && !campaign_done_ && !next_scene_) {
             campaign_done_ = true;
+            g_campaign_last_stats = gf_stats();   // W5-E: 0xBC7 graph / places
             next_scene_ = make_campaign_result_scene(no_audio_, cfg_, campaign_->outcome(),
                                                      campaign_->frame_count());
+            // W5-E [RE: campaign.md §3.4/§8]: the map's Win= / Lose= movie
+            // first, when the file exists (stubbed on this install -> skipped).
+            const std::string mv = campaign_->outcome() == 1 ? campaign_->basic().win : campaign_->basic().lose;
+            if (any_movie({mv})) {
+                Scene* res = next_scene_;
+                next_scene_ = new MovieScene({mv}, [res]() { return res; });
+            }
         }
         // P5: drain the promotion / crate events (the EVA/sound hook is a
         // carry-forward -- veterancy.md §5); draining keeps the queues bounded.
@@ -6058,7 +6122,10 @@ public:
             const std::vector<ra2engine::World::VetEvent> ve = world_.take_vet_events();
             pres_vet_.insert(pres_vet_.end(), ve.begin(), ve.end());
         }
-        (void)world_.take_crate_events();
+        {   // W5-E: crate pickups feed the presentation (Crate*Sound / EVA).
+            const std::vector<ra2engine::World::CrateEvent> ce = world_.take_crate_events();
+            pres_crates_.insert(pres_crates_.end(), ce.begin(), ce.end());
+        }
         // Advance all four queues from the shared pool, then read the pool back.
         queues_.set_credits(player_credits_);
         hold_begin();   // G-07: held queues do not advance (game_scene_controls.inc)
@@ -6108,7 +6175,9 @@ public:
             const long long d = target - cur;
             const long long step = std::clamp<long long>((d < 0 ? -d : d) >> 3, 1, 143);
             credits_shown_ = static_cast<double>(cur + (d > 0 ? step : -step));
+            pres_.credit_tick(d > 0);   // W5-E CreditTicks up / down (FUN_004A2280)
         }
+        follow_tick();   // W5-E Follow hotkey
         // Consume input actions ONCE per frame.
         const ra2engine::InputActions act = input_.take_actions();
         // [RE: repair-sell.md §C1/§D5] arming a mode requires >= 1 owned
@@ -6162,8 +6231,10 @@ public:
         // W2-SK-14: the ability (rad ticks, drone ticks, blasts...) and
         // garrison event queues grew without bound in real play -- nothing
         // in GameScene ever took them. Drain both every frame.
-        (void)world_.take_ability_events();
-        (void)world_.take_garrison_events();
+        // W5-E: deploy / garrison / crate sounds and EVA (pres_audio_events.inc).
+        pres_.on_world_events(world_, ba_, pres_crates_, world_.take_ability_events(),
+                              world_.take_garrison_events());
+        pres_crates_.clear();
     }
     // G-87: the map's own dressing in the real game (trees, overlays, smudges,
     // neutral structures). Never in a gate (GameScene-only).
@@ -6244,6 +6315,7 @@ public:
     }
     void init_presentation() {
         load_progress("PRESENTATION");   // W2-AR-02 loading-screen checkpoint
+        g_detail_level = g_user_settings ? g_user_settings->detail_level : 2;   // W5-E Visual Details
         init_map_dressing();
         pips_load(ra2_);   // W2-UI-11
         {
@@ -6363,6 +6435,7 @@ public:
         // W2-UI-13..17: the in-game options / save-load pages are full-screen
         // shell pages (they clear the frame); popups draw over them.
         const bool soviet_ui = std::string(g_sidebar_mix) == "sidec02.mix";
+        if (ingame_movie_.active()) ingame_movie_.render(ren);   // W5-E trigger movie (full screen)
         menu_.render(ren, tc);
         gf_abort_.render(ren, tc, soviet_ui);   // gF G-14
         sld_.render(ren, tc, SDL_GetTicks(), soviet_ui);
@@ -6370,6 +6443,7 @@ public:
             SDL_ShowCursor(SDL_ENABLE);
             os_cursor_hidden_ = false;
         }
+        screencap_tick(ren);   // W5-E ScreenCapture hotkey
     }
 
 #include "gf_scene.inc"
@@ -6452,6 +6526,11 @@ public:
             q.held.assign(held_.begin(), held_.end());
             f.sections[ra2engine::save::kTagBacklog] = ra2engine::save::to_bytes(q);
         }
+        {   // W5-E: the music state (the playing theme resumes after a load)
+            PresAudio& pa = const_cast<Presentation&>(pres_).sound();
+            const std::string a = pa.current_track() + "\n" + (pa.music_on() ? "1" : "0") + "\n";
+            f.sections[ra2engine::save::kTagAudio] = std::vector<uint8_t>(a.begin(), a.end());
+        }
         if (campaign_) {   // P10: the trigger runtime + the campaign host state
             f.sections[ra2engine::save::kTagTriggers] =
                 ra2engine::save::save_triggers(campaign_->trigger_system());
@@ -6461,6 +6540,42 @@ public:
         return ra2engine::save::write_file(path, ra2engine::save::encode_save(f));
     }
 
+    // W5-E: free space for a save at `path` (the file's estimated size + 2 MB).
+    // RA2_TEST_FREE_BYTES overrides the measurement (--play).
+    bool save_space_ok(const std::string& path) const {
+        std::uintmax_t need = 2u * 1024u * 1024u + static_cast<std::uintmax_t>(state_bytes().size());
+        std::uintmax_t avail = 0;
+        if (const char* t = std::getenv("RA2_TEST_FREE_BYTES")) {
+            avail = static_cast<std::uintmax_t>(std::strtoull(t, nullptr, 10));
+        } else {
+            std::error_code ec;
+            const std::filesystem::path dir = std::filesystem::path(path).parent_path();
+            const std::filesystem::space_info si = std::filesystem::space(dir.empty() ? "." : dir, ec);
+            if (ec) return true;   // cannot tell: try the write (it reports its own failure)
+            avail = si.available;
+        }
+        return avail >= need;
+    }
+    // W5-E: the "Saving game..." frame drawn (and presented) before the
+    // synchronous write, so a slow device shows it is busy.
+    void draw_saving_indicator() {
+        ++saves_indicated_;
+        pres_log(pres_.frame(), "saving indicator");
+        if (!g_platform) return;
+        SDL_Renderer* ren = static_cast<SDL_Renderer*>(g_platform->renderer());
+        if (!ren) return;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 200);
+        const SDL_Rect box{kWinW / 2 - 180, kWinH / 2 - 30, 360, 60};
+        SDL_RenderFillRect(ren, &box);
+        SDL_SetRenderDrawColor(ren, 255, 0, 0, 255);
+        SDL_RenderDrawRect(ren, &box);
+        draw_text(ren, "SAVING GAME...", box.x + (box.w - 14 * 12) / 2, box.y + 22, 2, 255, 255, 0);
+        SDL_RenderPresent(ren);
+    }
+    int saves_indicated_ = 0;
+    std::string loaded_track_;
+    bool loaded_audio_ = false;   // the AUDI section was read back
 private:
     void show_banner(const std::string& s) {
         post_message(s);   // W2-UI-21: banners are message-list lines
@@ -6498,6 +6613,16 @@ private:
                     for (int c : q.held)
                         if (c >= 0 && c < ra2engine::kQueueCats) held_.insert(c);
                 }
+            if (const std::vector<uint8_t>* au = f.section(ra2engine::save::kTagAudio)) {   // W5-E
+                const std::string a(au->begin(), au->end());
+                const std::size_t nl = a.find('\n');
+                const std::string track = a.substr(0, nl);
+                const bool on = nl != std::string::npos && a.compare(nl + 1, 1, "1") == 0;
+                if (!on) pres_.sound().music_stop();
+                else if (!track.empty()) pres_.sound().jukebox_play(track);
+                loaded_track_ = track;
+                loaded_audio_ = true;
+            }
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {
             // Never run a half-loaded World: start the same scenario fresh.
@@ -6544,6 +6669,18 @@ private:
         if (sld_.is_open()) {
             switch (sld_.handle(ev)) {
                 case SaveLoadDialog::DoSave:
+                    // W5-E [RE: saveload.md -- the original checks the free space
+                    // before writing and shows "Saving game..." while it writes]:
+                    // refuse when the drive is (nearly) full, draw the progress
+                    // frame, then write. [RE-FALLBACK: 2 MB margin over the
+                    // expected file size.]
+                    if (!save_space_ok(sld_.path())) {
+                        sld_.open(SaveLoadDialog::Save, sld_.description());
+                        sld_.set_message("NOT ENOUGH DISK SPACE");   // TXT_DISK_FULL
+                        pres_log(pres_.frame(), "save refused: disk full");
+                        break;
+                    }
+                    draw_saving_indicator();
                     if (save_game(sld_.path(), sld_.description())) {
                         show_banner(camp::csf_text(dir_, "TXT_GAME_WAS_SAVED"));   // TXT_GAME_WAS_SAVED, back to the game
                     } else {
@@ -6586,6 +6723,25 @@ private:
             show_briefing_ = !show_briefing_;   // P10: the mission briefing (Brief:<map>)
             return true;
         }
+        if (ingame_movie_.active()) {   // W5-E: a key / click skips the trigger movie
+            if (ev.kind == ra2engine::InputEvent::Key ||
+                (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left))
+                ingame_movie_.skip();
+            return ev.kind != ra2engine::InputEvent::Quit;
+        }
+        // W5-E: the briefing page (Restate dialog 0x10C) is modal -- Return or
+        // Esc closes it, every other input is swallowed.
+        if (show_briefing_) {
+            if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown) {
+                brief_mx_ = ev.x;
+                brief_my_ = ev.y;
+            }
+            if ((ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) ||
+                (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left &&
+                 (restate_.return_hit(ev.x, ev.y) || ev.touch)))   // W4-AM-11: a tap closes it on touch
+                show_briefing_ = false;
+            return ev.kind != ra2engine::InputEvent::Quit;
+        }
         // G-01: Esc = [Hotkey] Options=27 (exec FUN_00646AE0 -> options dialog).
         const bool open_key = ev.kind == ra2engine::InputEvent::Key &&
                               (ev.key == ra2engine::kKeyF10 || ev.key == ra2engine::kKeyEscape);
@@ -6595,10 +6751,13 @@ private:
             menu_.open();
             return true;
         }
-        // W2-UI-29: the sidebar Diplomacy button opens dialog 0x73.
+        // W2-UI-29: the sidebar Diplomacy button opens dialog 0x73; W5-E: in a
+        // campaign the same second tab (0x80F3) is the briefing (FUN_00653290
+        // -> special dialog 1 -> Restate_Mission).
         if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left &&
             sidebar_up_ && ba_.has_optbtns && lay_.diplo_btn.contains(ev.x, ev.y)) {
-            open_diplomacy();
+            if (campaign_) show_briefing_ = true;
+            else open_diplomacy();
             return true;
         }
         return false;
@@ -6608,16 +6767,20 @@ private:
     // came from the lobby), volumes go to the mixer buses.
     std::vector<std::string> jukebox_sections_;   // W2-UI-14 0xB8 list -> theme section
     void open_diplomacy() {   // W2-UI-29: rows = the lobby houses (score-page tallies)
-        const GfSkirmishStats st = gf_stats();
+        GfSkirmishStats st = gf_stats();
+        // W5-E: gf_stats sorts by score; the diplomacy rows stay in house order.
+        std::stable_sort(st.rows.begin(), st.rows.end(),
+                         [](const GfSkirmishStats::Row& a, const GfSkirmishStats::Row& b) { return a.house < b.house; });
         std::vector<InGameMenu::DipRow> rows;
-        for (std::size_t h = 0; h < st.rows.size(); ++h) {
-            if (!st.rows[h].listed) continue;
+        for (std::size_t i = 0; i < st.rows.size(); ++i) {
+            if (!st.rows[i].listed) continue;
+            const int h = st.rows[i].house;
             InGameMenu::DipRow r;
-            r.name = st.rows[h].name;
-            r.kills = st.rows[h].kills;
+            r.name = st.rows[i].name;
+            r.kills = st.rows[i].kills;
             r.self = h == 0;
-            r.ally = world_.house_team((int)h) == world_.house_team(0);
-            const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, (int)h)[24];
+            r.ally = world_.house_team(h) == world_.house_team(0);
+            const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, h)[24];
             r.color = SDL_Color{c.r, c.g, c.b, 255};
             rows.push_back(r);
         }
@@ -6626,6 +6789,7 @@ private:
     }
     void menu_apply_settings() {
         const ra2engine::Settings& st = menu_.settings();
+        g_detail_level = st.detail_level;   // W5-E
         if (cfg_.game_speed >= 0) cfg_.game_speed = st.game_speed;
         if (audio_.mixer) apply_audio_settings(*audio_.mixer, st);
     }
@@ -6851,6 +7015,7 @@ private:
     AudioSystem          audio_;
     Presentation         pres_;    // G-80..G-91 presentation driver
     std::vector<ra2engine::World::VetEvent> pres_vet_;   // promotions since the last frame
+    std::vector<ra2engine::World::CrateEvent> pres_crates_;   // W5-E crate pickups since the last frame
     PresMap              map_dressing_;               // G-87
     PresRadar            radar_;                      // G-09 (render half)
     const ra2assets::Palette* map_pals_[3] = {nullptr, nullptr, nullptr};
@@ -6942,6 +7107,9 @@ private:
     std::string          mission_name_ = "Mission";
     std::string          briefing_;
     bool                 show_briefing_ = false;  // F1 toggles the mission briefing
+    RestatePage          restate_;                // W5-E: the briefing as dialog 0x10C
+    MoviePlayer          ingame_movie_;           // W5-E: trigger actions 10 / 100 / 116
+    int                  brief_mx_ = -1, brief_my_ = -1;
     static bool soviet_campaign(const ra2engine::SkirmishConfig& c) {
         return !c.campaign_map.empty() && camp::up(c.campaign_side) == "NOD";
     }
@@ -7060,15 +7228,7 @@ private:
         if (campaign_->outcome() != 0)
             draw_end_banner(ren, tc, camp::csf_text(dir_, campaign_->outcome() == 1 ? "TXT_SCENARIO_WON"
                                                                                    : "TXT_SCENARIO_LOST"));
-        if (show_briefing_) {
-            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 210);
-            SDL_Rect bg{60, 80, playfield_w_ - 120, 440};
-            SDL_RenderFillRect(ren, &bg);
-            hud_text(ren, tc, mission_name_, 80, 96, col, kHudLeft, false, true, 2.0);
-            hud_text(ren, tc, hud_wrap(briefing_, (playfield_w_ - 180) / 2), 80, 140, col, kHudLeft, false, true,
-                     2.0);
-        }
+        if (show_briefing_) restate_.render(ren, tc, mission_name_, briefing_, brief_mx_, brief_my_);   // W5-E
     }
 };
 
@@ -7473,6 +7633,24 @@ struct OptionsPageState {
     int  pos[S_COUNT] = {};
     bool chk[C_COUNT] = {};
     int  drag = -1;        // slider being dragged (-1 none)
+    // W5-E resolution combobox [RE: options.md §2 -- FUN_004962A0 lists the
+    // modes, "%d x %d x 16"; without AllowHiResModes only 640x480 / 800x600 /
+    // 1024x768] [RE-FALLBACK: the clone always offers its 1280x720 base and
+    // common wide modes too, since the port is windowed]. Desktop only.
+    bool res_open = false;
+    int  res_pick = -1;    // picked mode index (applied by the scene)
+    static const std::vector<std::pair<int, int>>& modes() {
+        static const std::vector<std::pair<int, int>> m = {
+            {640, 480}, {800, 600}, {1024, 768}, {1280, 720}, {1600, 900}, {1920, 1080}};
+        return m;
+    }
+    static bool res_supported() {
+#ifdef __ANDROID__
+        return false;
+#else
+        return true;
+#endif
+    }
 
     void load(const ra2engine::Settings& s) {
         pos[S_VISUAL]     = ra2engine::detail_to_slider(s.detail_level);
@@ -7526,9 +7704,17 @@ void draw_options_page(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Men
     p.label("Sound Volume", 183, 381, 127, 16, 1, audio_enabled);
     p.label("Voice Volume", 330, 381, 127, 16, 1, audio_enabled);
 
-    // Resolution combobox 0x6ED (closed face; inert in this fixed-window port).
-    p.frame(p.dev(255, 73, 180, 21), true);
-    p.label(resolution, 259, 73, 172, 21, 0);
+    // Resolution combobox 0x6ED (W5-E: live on desktop).
+    p.combo({255, 73, 180, 21}, resolution, OptionsPageState::res_supported());
+    if (st.res_open) {
+        const auto& ms = OptionsPageState::modes();
+        const SDL_Rect box = p.dev(255, 95, 180, static_cast<int>(ms.size()) * 18 + 2);
+        p.fill(box, 0, 0, 0);
+        p.frame(box, true);
+        for (std::size_t i = 0; i < ms.size(); ++i)
+            p.label(std::to_string(ms[i].first) + " x " + std::to_string(ms[i].second) + " x 16", 259,
+                    96 + static_cast<int>(i) * 18, 172, 18, 0);
+    }
 
     // Trackbars (skin proc 0x5FB270).
     for (int i = 0; i < OptionsPageState::S_COUNT; ++i) {
@@ -7596,6 +7782,31 @@ public:
     void   play_probe(ra2play::Probe& p) override {
         p.scene = std::string("shell:") + header();
         p.set_s("page", header());
+        kb_.play_probe(p);   // W5-E
+        if (kb_.open_) return;
+        if (page_ == PAGE_OPTIONS) {   // W5-E: options controls (opt:res, opt:res:<i>, opt:slider:<name>=<v>)
+            auto put = [&](const std::string& k, int x, int y, int w, int h) {
+                const ra2engine::SbRect d = to_device({x, y, w, h});
+                p.targets[k] = ra2play::Rect{d.x, d.y, d.w, d.h};
+            };
+            put("opt:res", 255, 73, 180, 21);
+            if (opt_.res_open)
+                for (int i = 0; i < static_cast<int>(OptionsPageState::modes().size()); ++i)
+                    put("opt:res:" + std::to_string(i), 255, 96 + i * 18, 180, 18);
+            static const char* kSl[OptionsPageState::S_COUNT] = {"visual", "difficulty", "scroll", "music", "sound", "voice"};
+            for (int i = 0; i < OptionsPageState::S_COUNT; ++i) {
+                const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
+                const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
+                for (int v = 0; v <= d.range; ++v)
+                    put(std::string("opt:slider:") + kSl[i] + "=" + std::to_string(v),
+                        d.r.x + shell_trackbar_x_for(v, d.range, d.r.w, ro), d.r.y + d.r.h / 2, 1, 1);
+                p.set(std::string("opt_pos(") + kSl[i] + ")", opt_.pos[i]);
+            }
+            p.set_s("opt_res", res_label_);
+            p.set("opt_res_open", opt_.res_open ? 1 : 0);
+            for (const auto& kv : g_pres_audio_counts) p.set(kv.first, static_cast<double>(kv.second));
+            for (const char* f : {"snd", "why"}) p.zero_families.insert(f);
+        }
         for (const ShellButton& b : layout()) {
             const ra2engine::SbRect r = to_device(b.rect);
             p.targets["button:" + b.label] = ra2play::Rect{r.x, r.y, r.w, r.h};
@@ -7666,7 +7877,7 @@ private:
                 // 0xD7) are greyed: no remappable command table / no netcode
                 // yet (P8 deferrals). "Main Menu" (0x686) commits + saves.
                 return {
-                    btn(0, "Keyboard",  false, ACT_GOTO, PAGE_MAIN),
+                    btn(0, "Keyboard",  true,  ACT_KEYBOARD, PAGE_OPTIONS),
                     btn(1, "Network",   false, ACT_GOTO, PAGE_MAIN),
                     btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
@@ -7740,6 +7951,29 @@ private:
     bool options_handle(const ra2engine::InputEvent& ev);
     // A volume slider moved: apply it live to the menu mixer bus (the original
     // calls the volume setter on TB_THUMBTRACK, options.md §2).
+    // W5-E [RE: options.md §2/§4 -- trackbar proc 0x5FB270 plays a tick on
+    // every position change unless muted by 0x4AE (the three volume sliders
+    // are); the Sound / Voice setters play a preview at the new volume]
+    // [RE-FALLBACK: the tick / preview sample identity was not traced -- the
+    // shell click (MenuClick) on the matching bus].
+    void options_slider_sound(int slider) {
+        const bool vol = OptionsPageState::is_volume(slider);
+        if (vol && slider == OptionsPageState::S_MUSIC) return;   // music: the score itself is the preview
+        pres_log(0, std::string("sound MenuClick (") + (vol ? "volume preview" : "slider tick") + ")");
+        if (!audio_live()) return;
+        ra2engine::Mixer& m = *art_.audio->sys.mixer;
+        if (slider == OptionsPageState::S_VOICE) {
+            if (!m.sound("menu:click:voice"))
+                if (const ra2engine::MixerSound* c = m.sound("menu:click")) {
+                    ra2engine::MixerSound v = *c;
+                    v.bus = ra2engine::AudioBus::Voice;
+                    m.register_sound("menu:click:voice", v);
+                }
+            m.play("menu:click:voice");
+        } else {
+            m.play("menu:click");
+        }
+    }
     void options_live_volume(int slider) {
         if (!audio_live() || !OptionsPageState::is_volume(slider)) return;
         const ra2engine::AudioBus bus =
@@ -7752,6 +7986,8 @@ private:
     int          mx_ = -1, my_ = -1;   // last pointer position (for hover state)
     bool         down_ = false;        // left button currently held (pressed state)
     SaveLoadDialog sld_;               // P7: "Load Saved Game" (Load mode)
+    KeyboardPage kb_;                  // W5-E: Options -> Keyboard (dialog 0xA3)
+    std::string  res_label_;           // W5-E: the resolution combobox face after a pick
     GfConfirm gf_confirm_;             // gF G-14: Exit Game confirm (dialog 0x120)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
@@ -7796,14 +8032,29 @@ private:
     SDL_Texture*  bink_tex_     = nullptr;   // reused streaming texture (bink_w x bink_h)
     int           bink_tex_frame_ = -1;      // frame index currently uploaded to bink_tex_
     // Advance the Bink clock and decode the current frame (called from update()).
+    // W5-E (R-173): the CRT movie is ONE clock across the shell pages (a page
+    // change continues it -- the shared decoder already holds that frame) and
+    // it pauses while the window is minimised / has lost focus.
+    static inline int g_menu_bink_frame = -1;
+    static bool menu_window_paused() {
+        if (g_pres_play_log) return false;   // --play: a hidden window never has focus
+        SDL_Window* w = SDL_GetKeyboardFocus();
+        return !w || (SDL_GetWindowFlags(w) & SDL_WINDOW_MINIMIZED) != 0;
+    }
     void bink_advance(double dt) {
         if (!art_.bink_dec || art_.bink_frames <= 0) return;
         if (!bink_started_) {                 // first tick: decode the keyframe (frame 0)
+            bink_started_ = true;
+            if (g_menu_bink_frame >= 0 && g_menu_bink_frame < art_.bink_frames) {
+                bink_frame_ = g_menu_bink_frame;   // W5-E: continue across pages
+                return;
+            }
             art_.bink_dec->decode_frame(0);
             bink_frame_ = 0;
-            bink_started_ = true;
+            g_menu_bink_frame = 0;
             return;                           // show frame 0 for its full 1/15s
         }
+        if (menu_window_paused()) return;   // W5-E: paused on focus loss
         bink_accum_ += dt;
         while (bink_accum_ >= kBinkFrameDt) {
             bink_accum_ -= kBinkFrameDt;
@@ -7811,6 +8062,7 @@ private:
             if (next >= art_.bink_frames) next = 0;   // seamless loop back to keyframe
             art_.bink_dec->decode_frame(next);        // sequential; rewinds to 0 if next==0
             bink_frame_ = next;
+            g_menu_bink_frame = next;
         }
     }
     // Upload the current decoded frame to the reused streaming texture when it
@@ -7926,8 +8178,14 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     }
     // [P8 / options.md §1/§4] The 0xD5 controls over the static MNSCRNS screen.
     if (page_ == PAGE_OPTIONS) {
-        const std::string res = std::to_string(plat.width()) + " x " +
-                                std::to_string(plat.height()) + " x 16";
+        if (opt_.res_pick >= 0) {   // W5-E: resize the window to the picked mode
+            const auto mode = OptionsPageState::modes()[static_cast<std::size_t>(opt_.res_pick)];
+            opt_.res_pick = -1;
+            if (SDL_Window* win = SDL_RenderGetWindow(ren))
+                if (!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP)) SDL_SetWindowSize(win, mode.first, mode.second);
+        }
+        const std::string res = !res_label_.empty() ? res_label_
+                                : std::to_string(plat.width()) + " x " + std::to_string(plat.height()) + " x 16";
         draw_options_page(ren, tc, art_, xform(), opt_, audio_live(), res);
     }
     if (page_ == PAGE_CAMPAIGN) {   // W2-UI-18: FSBKGD wells + list + difficulty
@@ -7940,6 +8198,7 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
         shell_status_line(sp, status_text());
     }
     sld_.render(ren, tc, SDL_GetTicks());   // P7 / W2-UI-16: the Load page over the shell
+    kb_.render(ren, tc);                // W5-E: the Keyboard page 0xA3 over Options
     gf_confirm_.render(ren, tc);        // gF G-14 / W2-UI-17: Exit confirm popup 0x120
 }
 
@@ -7952,7 +8211,11 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
         const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
         const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
         const int p = ra2engine::trackbar_pos_from_x(lx - d.r.x, d.range, d.r.w, ro);
-        if (p != opt_.pos[i]) { opt_.pos[i] = p; options_live_volume(i); }
+        if (p != opt_.pos[i]) {
+            opt_.pos[i] = p;
+            options_live_volume(i);
+            options_slider_sound(i);   // W5-E tick / volume preview
+        }
     };
     if (ev.kind == InputEvent::PointerMove && opt_.drag >= 0) { set_pos(opt_.drag); return true; }
     if (ev.kind == InputEvent::PointerUp && ev.button == InputEvent::Left && opt_.drag >= 0) {
@@ -7979,15 +8242,43 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
             return true;
         }
     }
+    // W5-E: the resolution combobox 0x6ED (desktop) -- a click opens the
+    // mode list, a pick applies it (window size + RA2.INI [Video]).
+    if (opt_.res_open) {
+        const int k = (ly - 95) / 18;
+        if (lx >= 255 && lx < 435 && ly >= 95 && k >= 0 && k < static_cast<int>(OptionsPageState::modes().size())) {
+            opt_.res_pick = k;   // the window resize happens in render (needs the renderer)
+            const auto mode = OptionsPageState::modes()[static_cast<std::size_t>(k)];
+            if (g_user_settings) {   // RA2.INI [Video] ScreenWidth / ScreenHeight
+                g_user_settings->screen_width = mode.first;
+                g_user_settings->screen_height = mode.second;
+                save_user_settings(*g_user_settings);
+            }
+            res_label_ = std::to_string(mode.first) + " x " + std::to_string(mode.second) + " x 16";
+        }
+        opt_.res_open = false;
+        return true;
+    }
+    if (OptionsPageState::res_supported() && lx >= 255 && lx < 435 && ly >= 73 && ly < 94) {
+        opt_.res_open = true;
+        play_click();
+        return true;
+    }
     return false;
 }
 
 Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg) {
     auto c = std::make_shared<ra2engine::SkirmishConfig>(std::move(cfg));
+    std::function<void(SDL_Renderer*, ra2engine::TextureCache&, double)> backdrop;
+    if (c->campaign_map.empty()) {   // W5-E: skirmish -> the country loading art
+        auto art = std::make_shared<SkirmishLoadArt>();
+        art->load(*c);
+        backdrop = [art](SDL_Renderer* ren, ra2engine::TextureCache& tc, double frac) { art->draw(ren, tc, frac); };
+    }
     return defer_scene("LOADING", [no_audio, c]() -> Scene* {
         { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }   // W2-AR-06
         return new GameScene(no_audio, *c);
-    });
+    }, backdrop);
 }
 Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
     auto sf = std::make_shared<ra2engine::save::SaveFile>(std::move(f));
@@ -8033,6 +8324,11 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     // gF G-14: the Exit confirm (when open) owns every event; OK quits.
     if (gf_confirm_.open()) {
         if (gf_confirm_.handle(ev) == 0) quit_ = true;
+        return;
+    }
+    // W5-E: the Keyboard page (when open) owns every event.
+    if (kb_.open_) {
+        kb_.handle(ev);
         return;
     }
     // P7: the Load dialog (when open) owns every event.
@@ -8113,6 +8409,7 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             case ACT_CAMPAIGN_ALLIED: next_ = make_campaign_start_scene(no_audio_, "ALL1", "GDI"); return;
             case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
             case ACT_CREDITS: next_ = new CreditsScene(rules_, no_audio_, art_); return;   // W2-UI-26
+            case ACT_KEYBOARD: kb_.open(); return;   // W5-E [RE: options.md §1/§6 0x5CE -> 0xA3]
             case ACT_CAMPAIGN_LOAD:   // W2-UI-18: 0x94 Load = the selected campaign
                 if (camp_.selected() >= 0 && camp_.selected() < CampaignPageState::kEntries) {
                     if (g_user_settings) save_user_settings(*g_user_settings);   // the slider's Difficulty

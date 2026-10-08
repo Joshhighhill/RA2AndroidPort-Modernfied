@@ -309,6 +309,7 @@
         w2_armed_ = static_cast<int>(t);
         w2_chrono_x_ = w2_chrono_y_ = -1;
         input_.arm_superweapon(w2_armed_, 0);
+        pres_.note_eva("EVA_SelectTarget");   // W5-E [RE: FUN_006AA390 @6AA632]
     }
     // A committed SW target cell. The Chronosphere takes two picks [rules
     // [ChronoSphereSpecial] PreClick=yes, [ChronoWarpSpecial] PostClick=yes]:

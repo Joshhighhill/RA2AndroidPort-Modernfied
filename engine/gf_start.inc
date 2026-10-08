@@ -270,11 +270,21 @@ struct GfSkirmishStats {
     // W2-UI-20 (score page 0xBC6): per house -- name, kills (dead objects whose
     // killed_by stamp is this house's unit), losses, built (every object it
     // ever owned [RE-FALLBACK: starting units included]).
-    struct Row { std::string name; int kills = 0, losses = 0, built = 0; bool listed = true; };
+    // W5-E [RE: MPScore.cpp FUN_005C92C0]: score = HouseClass +0x54E8, the
+    // kill credit (FUN_007021D0: victim cost x 1/2/3 for a rookie/veteran/
+    // elite victim, nothing for an allied victim or a DontScore type) plus the
+    // cost of every captured object (FUN_00700940); a house still standing at
+    // the end gets score += score/2 + Random(score/2, score). The rows are
+    // shown sorted by score, highest first (qsort, comparator FUN_005C9500).
+    struct Row { std::string name; int kills = 0, losses = 0, built = 0; long score = 0; bool listed = true;
+                 bool winner = false; int house = -1; };
     std::vector<Row> rows;
 };
 Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg, int outcome,
                                      long frames, const GfSkirmishStats& stats);
+// W5-E: the finished mission's tallies for the Campaign Results page 0xBC7
+// (GameScene fills it right before make_campaign_result_scene).
+GfSkirmishStats g_campaign_last_stats;
 
 // gF G-14: the shell's yes/no message boxes [RE: mainmenu_true.md §3 -- Exit
 // Game goes through FUN_005B46B0 with dialogs 0x120 (two buttons) / 0x121

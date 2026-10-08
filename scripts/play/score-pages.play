@@ -1,0 +1,44 @@
+# score-pages -- W5-E acceptance (R-141): the skirmish score page 0xBC6 shows
+# the original Score (MPScore.cpp FUN_005C92C0: kill credit = victim cost x
+# (1 + rank), the survivor's bonus) sorted highest first, and the campaign
+# Campaign Results page 0xBC7 draws its graph well + First / Second Place.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# Enemy infantry walks into our start force: real kills (cost x rank credit).
+cheat spawn E2 1 building 0:GACNST +3 +3
+cheat spawn E2 1 building 0:GACNST +3 +4
+cheat spawn E2 1 building 0:GACNST +4 +3
+until 600 units_lost(1) >= 3                             @R-141:E
+cheat kill_house 1
+until 60 world_outcome == WON
+until 300 scene == result
+require scene == result
+assert score(0) >= 300                                   @R-141:E
+assert score_top_house == 0                              @R-141:E
+shot sp01_skirmish_score
+click continue
+until 30 scene == "shell:Main Menu"
+# Campaign: ALL01 lost -> Campaign Results with the graph.
+click button "Single Player"
+click button "New Campaign"
+click well:allied
+click button Load
+until 30 scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+wait 30
+cheat kill_house 0
+until 900 outcome == LOST
+until 300 scene == result
+assert graph_rows == 4                                   @R-141:E
+shot sp02_campaign_results
+end

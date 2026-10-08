@@ -91,8 +91,21 @@ If the app is closed in the background (low memory), the game was saved to
 - Right-click deselects or cancels.
 - Drag to box-select.
 - Ctrl forces fire. Alt forces a move. Shift adds to the selection.
-- Hotkeys come from `KeyboardMD.ini`: S stop, G guard, X scatter, D deploy,
-  Ctrl+1..0 create a team, 1..0 select a team, Esc options.
+- Hotkeys come from the install's `Keyboard.ini` (`KeyboardMD.ini` when it is
+  missing): S stop, G guard, X scatter, D deploy, Ctrl+1..0 create a team,
+  1..0 select a team, P select every combatant on screen, U / Y step through
+  the health / veterancy groups, F follow the selected unit, C all infantry
+  cheer, Space jump to the latest radar event, Ctrl+C screenshot
+  (`SCRN0000.png` in the settings folder), Esc options.
+- **Changing the keys.** Options -> **Keyboard** (main menu), or in a game
+  Esc -> Game Controls -> **Keyboard**. Pick a category, a command, click the
+  "Current Hotkey" box, press the new key (with Ctrl / Alt / Shift if you
+  want), then **Assign**. A key that another command used moves to the new
+  command ("Currently assigned to" shows which). **Reset All** restores the
+  original keys. **Back** saves to `Keyboard.ini` in the settings folder
+  (`%APPDATA%\ra2engine\RA2\` on Windows); the install folder is never
+  written. Beacons, alliances, taunts and Page User only work in a network
+  game in the original, so they do nothing here.
 
 **Touch** (the original is a mouse game; this is the engine's touch scheme):
 
@@ -131,6 +144,23 @@ If the app is closed in the background (low memory), the game was saved to
   exit on the main menu.
 - The engine build (for example `ENGINE 0.9.0+g1a2b3c4`) is shown in the
   bottom-left corner of the main menu and as the app's version name.
+
+### Movies
+
+The campaign movies (each mission's intro, briefing, win and lose movies, and
+the in-mission ones) play when the movie files exist. On most installs
+`MOVIES01.MIX` / `MOVIES02.MIX` / `MOVMD03.MIX` are tiny placeholder files, so
+the movies are skipped and the game goes straight on. To add your own copies,
+put the Bink files (`A01_f00e.bik`, ...) in any of:
+
+- a folder named by the environment variable `RA2_MOVIE_DIR`;
+- the game folder, or a `Movies` folder inside it;
+- `Movies` inside the settings folder (`%APPDATA%\ra2engine\RA2\Movies\`,
+  or the app's files folder on Android);
+- or replace the placeholder `MOVIES0x.MIX` / `MOVMD03.MIX` with real ones.
+
+A key or a click skips a movie. Movies play without sound (the Bink audio
+track is not decoded yet).
 
 ## 5. Measuring performance (please report real-phone numbers)
 

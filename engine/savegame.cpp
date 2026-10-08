@@ -287,7 +287,8 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
         const Unit& u = w.units_[static_cast<std::size_t>(i)];
         const std::string at = "unit " + std::to_string(i) + " ";
         if (!house_ix(u.house)) return bad(at + "house");
-        if (!unit_ix(u.target) || !unit_ix(u.cargo_of) || !unit_ix(u.enter_target) ||
+        if (!unit_ix(u.target) || !(unit_ix(u.cargo_of) || u.cargo_of == kGarrisonCargo) ||   // W5-E: a garrisoned unit's sentinel
+            !unit_ix(u.enter_target) ||
             !unit_ix(u.parasite_on_me) || !unit_ix(u.temporal_target) || !unit_ix(u.bomb_owner) ||
             !unit_ix(u.ability_fired_unit))
             return bad(at + "unit reference");
