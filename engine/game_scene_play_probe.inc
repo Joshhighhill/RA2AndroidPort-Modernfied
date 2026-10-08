@@ -268,6 +268,14 @@
         const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, 0);
         p.set("power_out", pt.output);
         p.set("power_drain", pt.drain);
+        // P2: every house's power (campaign proofs that black out an AI base).
+        for (int h = 1; h < world_.house_count() && h < 16; ++h) {
+            const ra2engine::PowerTotals ph = ra2engine::power_totals(world_.buildings(), ba_.roster, h);
+            if (ph.output == 0 && ph.drain == 0) continue;
+            p.set("power_out(" + std::to_string(h) + ")", ph.output);
+            p.set("power_drain(" + std::to_string(h) + ")", ph.drain);
+            p.set("low_power(" + std::to_string(h) + ")", world_.house_low_power(h) ? 1 : 0);
+        }
         // Sidebar: active tab, its cameos (click targets), every tab's roster
         // and whether a click would start each entry now.
         p.set("tab", active_tab_);
