@@ -367,6 +367,9 @@ struct Unit {
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
+// W4-SQ-06: the cargo_of sentinel of a paratrooper still under its parachute
+// (off the map for every system; AnUnit::para_alt holds its height).
+constexpr int kParachuteCargo = 0x3FFFFFFE;
 
 // One cargo event (board / capacity-refusal / eject), drained by callers per
 // frame via World::take_cargo_events -- the take_harvest_events pattern:
@@ -945,6 +948,22 @@ public:
     // W2-CA-17: the same unload order for one transport of any house (team
     // script action 8). No-op unless it is alive with cargo.
     void order_unload(int idx);
+    // W4-SQ-01 [RE: FUN_0065d770 -> FUN_004732d0 AddPassenger]: a campaign
+    // reinforcement created INSIDE its transport. The passenger never touches
+    // the map (no occupancy) and the original adds it without a capacity
+    // test. Returns the new unit index, -1 when the transport is not alive.
+    int add_unit_in_transport(int t_idx, int house, const UnitCombat& c);
+    // W4-SQ-01 [RE: FUN_006ec760 team Load]: one unit of ANY house walks to
+    // and boards transport t_idx (can_load re-checked on arrival).
+    bool order_board(int p_idx, int t_idx);
+    // W4-SQ-06 [RE: FUN_0065d320 Droppod branch]: a paradrop plane (an AN
+    // type registered as `plane_id`) enters at (sx,sy) flying, drops its CARGO
+    // over (dx,dy) and leaves over (ex,ey). -1 when the plane type is unknown.
+    // W4-SQ-03: a fixed-wing aircraft with no dock leaves over the nearest
+    // map edge and is removed (not a loss: deployed_away).
+    bool order_leave_map(int idx);
+    int spawn_drop_plane(const std::string& plane_id, int house, int sx, int sy, int dx, int dy,
+                         int ex, int ey);
     // Drain the board/refuse/eject events accumulated by step_cargo since
     // the last call (the take_harvest_events pattern). Empty if no cargo
     // activity ever happened.
@@ -1160,6 +1179,33 @@ public:
     // allying house b with house a never drags b's other relations along.
     // Inert (empty matrix) until a campaign trigger calls it.
     void set_pair_alliance(int a, int b, bool allied);
+    // W4-SQ: one house's OWN view of another (HouseClass::IsAlliedWith reads
+    // the house's own Allies= bits, so the relation can be one-sided); only
+    // [a][b] changes. Same lazily-built matrix as set_pair_alliance.
+    void set_ally_view(int a, int b, bool allied);
+    // W4-SQ / W4-MC-06: the player just ordered the current selection (Input
+    // calls this beside every selected-unit order). The campaign runtime
+    // drains it and releases those units from their script teams. Transient
+    // (not saved, not hashed).
+    // W4-SQ-12 [RE-FALLBACK, RE-W4-SQ-2 not traced: the TS-lineage
+    // HouseClass::AI_Unit trains what its under-strength teams still miss]:
+    // the campaign hands each computer house the members its scripted
+    // (CreateTeam) teams still need; step_ai_teams adds them to the AI-2 team
+    // shortfall it trains for. Recomputed by the campaign every frame.
+    void set_ai_script_demand(int house, std::vector<std::string> ids, std::vector<int> counts) {
+        if (house < 0) return;
+        if ((int)ai_demand_ids_.size() <= house) {
+            ai_demand_ids_.resize((std::size_t)house + 1);
+            ai_demand_counts_.resize((std::size_t)house + 1);
+        }
+        ai_demand_ids_[(std::size_t)house] = std::move(ids);
+        ai_demand_counts_[(std::size_t)house] = std::move(counts);
+    }
+    void mark_player_order() {
+        for (int i = 0; i < static_cast<int>(units_.size()); ++i)
+            if (units_[i].selected && units_[i].alive) player_orders_.push_back(i);
+    }
+    std::vector<int> take_player_orders() { std::vector<int> o; o.swap(player_orders_); return o; }
 
     // AllyReveal [RE: multihouse.md §3, D4]: allied houses share revealed shroud.
     // Firewalled behind houses_configured_ + shroud_any_ -> OFF in every gate.
@@ -1705,6 +1751,23 @@ public:
     void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
     int order_occupy_selected(int b_idx);                    // house-0 selection; returns #ordered
     void unload_occupants(int b_idx);                        // BuildingClass::UnloadOccupants
+    // W4-SQ-02: a campaign reinforcement / garrison team member enters a
+    // building at once (FUN_0065d320 all-infantry branch; the script 46
+    // arrival). campaign_can_occupy: the type CanBeOccupied, live, idle,
+    // not full (no unit test).
+    bool campaign_can_occupy(int b_idx) const;
+    // W4-SQ-02 [RE: FUN_00457CE0 tests the owner's HouseType MultiplayPassive
+    // (+0x1A6)]: a campaign house whose country is passive (the civilian
+    // houses) lends its occupiable buildings to anyone's Occupier.
+    void set_passive_house(int h, bool on) {
+        if (h < 0) return;
+        if ((int)passive_houses_.size() <= h) passive_houses_.resize((std::size_t)h + 1, 0);
+        passive_houses_[(std::size_t)h] = on ? 1 : 0;
+    }
+    bool passive_house(int h) const {
+        return h >= 0 && h < (int)passive_houses_.size() && passive_houses_[(std::size_t)h] != 0;
+    }
+    bool campaign_occupy_now(int unit_idx, int b_idx);
     bool garrison_firing(int b_idx) const;                   // CanOccupyFire && occupants
     double garrison_range(int b_idx) const;                  // cells
     struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind; int building; int house; };
@@ -1731,6 +1794,18 @@ public:
     int bridge_overlay_at(int x, int y) const;               // current runtime index, -1 none
     int bridge_explosion(int cx, int cy, int damage, bool wall_warhead);   // FUN_00489190 bridge part
     int repair_bridge_near(int b_idx);                       // engineer entered a BridgeRepairHut
+    // W4-SQ-10 high bridges [RE: FUN_00586BB0 dispatch -> FUN_005766D0
+    // (BRIDGE1/2 concrete) / FUN_00570FC0 (BRIDGEB1/B2 wood)]. `cells`: per
+    // cell 0 none, 1 deck over water/cliff (passable only while intact), 2
+    // deck over land (always passable).
+    void set_high_bridges(std::vector<std::uint8_t> cells);
+    bool high_bridge_cell(int x, int y) const;               // any high-bridge cell (the CellFlags stand-in)
+    bool high_bridge_destroyed(int x, int y) const;
+    int break_high_bridge(int x, int y);                     // the whole span through (x,y) (or a neighbour)
+    int repair_high_bridge_near(int b_idx);                  // hut repair (FUN_0056FB80)
+    // Trigger Apply100Damage bridge call (FUN_006DFA00 -> FUN_00586BB0, up to
+    // 4 tries): breaks the low section / high span at (x,y) with no roll.
+    int force_bridge_break(int x, int y);
     std::uint32_t bridge_version() const { return bridge_version_; }
     long long garrison_shots() const { return garrison_shots_; }
     int bridge_cells_destroyed() const;
@@ -1907,6 +1982,8 @@ private:
     void an_nuke_detonate(const SwStrike& s);
     void an_storm_bolt(SwStrike& s, int x, int y);
     void an_paradrop(int house, SuperweaponType type, int cx, int cy);
+    bool an_drop_passenger(int plane);   // W4-SQ-06: one carried paratrooper out
+    void an_step_parachutes(double dt);  // W4-SQ-06: falling paratroopers
     void an_chrono(int house, int sx, int sy, int dx, int dy);
     void an_iron_curtain(int house, int cx, int cy);
     int an_spawn(const std::string& id, int house, int x, int y);
@@ -2024,6 +2101,10 @@ private:
     // cargo_any_ (the firewall: false until the first enter/unload order).
     void step_cargo(double dt);
     bool cargo_any_ = false;
+    std::vector<int> player_orders_;   // W4-SQ: transient, see mark_player_order
+    std::vector<std::uint8_t> passive_houses_;   // W4-SQ-02 (save v16)
+    std::vector<std::vector<std::string>> ai_demand_ids_;   // W4-SQ-12 (save v16)
+    std::vector<std::vector<int>> ai_demand_counts_;
     std::vector<CargoEvent> cargo_events_;
 
     // CB-2 Aircraft [RE: aircraft.md §3/§6]: the airborne movement pass --
@@ -2168,6 +2249,7 @@ private:
     std::vector<std::int16_t> bridge_ovl_;         // current runtime overlay per cell (-1)
     std::vector<std::uint8_t> bridge_tile_land_;   // the tile's LandType under each cell
     std::uint32_t bridge_version_ = 0;
+    std::vector<std::uint8_t> hbridge_;   // W4-SQ-10: 1/2 per set_high_bridges, +4 destroyed (save v16)
     ProjRng bridge_rng_{0x42524447u};              // Random(1, BridgeStrength) stand-in
     void occupy_now(int unit_idx, int b_idx);      // InfantryClass::Occupy (FUN_00522640)
     void sync_garrison_owner(int b_idx);           // FUN_004581F0

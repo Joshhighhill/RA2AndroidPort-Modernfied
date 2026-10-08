@@ -151,6 +151,10 @@ struct SaveAccess {
         // Cargo / flight
         save::io(ar, w.cargo_any_);
         save::io(ar, w.cargo_events_);
+        save::io(ar, w.player_orders_);   // W4-SQ (save v16)
+        save::io(ar, w.passive_houses_);  // W4-SQ-02 (save v16)
+        save::io(ar, w.ai_demand_ids_);   // W4-SQ-12 (save v16)
+        save::io(ar, w.ai_demand_counts_);
         save::io(ar, w.aircraft_any_);
         // Core
         save::io(ar, w.units_);
@@ -228,6 +232,7 @@ struct SaveAccess {
         save::io(ar, w.bridge_tile_land_);
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
+        save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
         save::io(ar, w.w5_);   // wave-5 abilities (agent C)
     }
 
@@ -318,6 +323,7 @@ template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
     io(ar, v.reload_frames); io(ar, v.flight_level); io(ar, v.rockets);   // W4 (v15)
     io(ar, v.repair_step);
     io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
+    io(ar, v.parachute_fall);   // W4-SQ-06 (save v16)
 }
 template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
     io(ar, v.kind); io(ar, v.house); io(ar, v.x); io(ar, v.y); io(ar, v.ox); io(ar, v.oy);
@@ -349,6 +355,7 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.owner); io(ar, v.landing); io(ar, v.drop_left); io(ar, v.drop_type);
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
     io(ar, v.rocket_elite); io(ar, v.rocket_end); io(ar, v.rocket);   // W4 (v15)
+    io(ar, v.para_alt);   // W4-SQ-06 (save v16)
 }
 template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
     io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
@@ -1212,6 +1219,7 @@ template <class Ar> void fields(Ar& ar, CampaignHostSave& v) {
     io(ar, v.u_tag); io(ar, v.u_cx); io(ar, v.u_cy); io(ar, v.u_hp); io(ar, v.u_team);
     io(ar, v.u_type); io(ar, v.u_flags);
     io(ar, v.u_mc_victim); io(ar, v.u_mc_orig);   // W2-CA-15
+    io(ar, v.u_mission);                          // W4-SQ-05 (save v16)
     io(ar, v.b_tag); io(ar, v.b_hp); io(ar, v.b_type); io(ar, v.b_flags);
     io(ar, v.t_type); io(ar, v.t_script); io(ar, v.t_house); io(ar, v.t_pc);
     io(ar, v.t_goal_x); io(ar, v.t_goal_y); io(ar, v.t_members);

@@ -397,6 +397,11 @@ MapTeamData parse_map_teams(const ra2assets::Ini& map) {
         t.full = yes(map.get(id, "Full", "no"));
         t.recruitable = yes(map.get(id, "AreTeamMembersRecruitable", "no"));
         t.veteran_level = map.get_int(id, "VeteranLevel", 0);
+        t.droppod = yes(map.get(id, "Droppod", "no"));
+        t.use_transport_origin = yes(map.get(id, "UseTransportOrigin", "no"));
+        t.transports_return = yes(map.get(id, "TransportsReturnOnUnload", "no"));
+        const std::string twp = strip(map.get(id, "TransportWaypoint", ""));
+        t.transport_waypoint = twp.empty() ? -1 : map_waypoint_letters(twp);
         d.teams.push_back(t);
     }
     return d;
@@ -436,6 +441,7 @@ MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const Ma
         case kSaGatherEnemy:
         case kSaGatherBase:
         case kSaMoveEnemyBuilding:
+        case kSaMoveFriendlyBuilding:   // W4-SQ-11: 58, the 47 encoding on own buildings
             if (!view.waypoint_ok && st.issued) { advance(); continue; }
             if (st.issued && view.arrived) { advance(); continue; }
             c.kind = a.action == kSaMoveCell ? MapTeamCommand::Kind::MoveCell
@@ -481,8 +487,32 @@ MapTeamCommand step_map_team(MapTeamState& st, const MapScript& script, const Ma
         case kSaClearLocal: c.kind = MapTeamCommand::Kind::ClearLocal; advance(); return c;
         case kSaChangeHouse: c.kind = MapTeamCommand::Kind::ChangeHouse; advance(); return c;
         case kSaScatter: c.kind = MapTeamCommand::Kind::Scatter; advance(); return c;
-        // W2-CA-17 [campaign.md §7, FUN_006ee670 / FUN_006eca30]: one-shot.
-        case kSaUnload: c.kind = MapTeamCommand::Kind::Unload; advance(); return c;
+        // W4-SQ-01 [RE: FUN_006ee670]: Unload orders every member transport
+        // to unload and the line completes only once all of them are empty;
+        // the completion tick carries the arg mode (who leaves the team).
+        case kSaUnload:
+            if (st.issued && view.unloaded) {
+                c.kind = MapTeamCommand::Kind::UnloadDone;
+                advance();
+                return c;
+            }
+            c.kind = MapTeamCommand::Kind::Unload;
+            st.issued = true;
+            return c;
+        // W4-SQ-01 [RE: FUN_006ec760]: members board the team's transport; the
+        // line completes when nobody is left on the map to board.
+        case kSaLoad:
+            if (st.issued && view.loaded) { advance(); continue; }
+            c.kind = MapTeamCommand::Kind::Load;
+            st.issued = true;
+            return c;
+        // W4-SQ-01 [RE: case 43 @0x6E9192]: wait until every member's
+        // NumPassengers reaches its type's Passengers.
+        case kSaWaitLoaded:
+            if (view.full) { advance(); continue; }
+            c.kind = MapTeamCommand::Kind::None;
+            return c;
+        // W2-CA-17 [campaign.md §7, FUN_006eca30]: one-shot.
         case kSaDeploy: c.kind = MapTeamCommand::Kind::Deploy; advance(); return c;
         case kSaDeleteMembers: c.kind = MapTeamCommand::Kind::DeleteMembers; advance(); return c;
         default:

@@ -264,7 +264,13 @@ public:
                      const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
         step_anims();
         for (const Obj& o : smudges_) draw(ren, tc, w, o, pals, cam, W, H);
-        for (const Obj& o : overlays_) draw(ren, tc, w, o, pals, cam, W, H);
+        for (const Obj& o : overlays_) {
+            // W4-SQ-10: a broken high bridge deck is gone.
+            if ((o.ovl_id == 0x18 || o.ovl_id == 0x19 || o.ovl_id == 0xED || o.ovl_id == 0xEE) &&
+                w.high_bridge_destroyed(o.x, o.y))
+                continue;
+            draw(ren, tc, w, o, pals, cam, W, H);
+        }
         draw_tile_anims(ren, tc, w, pals, cam, W, H);   // W3-B
     }
     // W3-B [RE-Q6]: theater tile anims (ALL07's waterfalls). One anim per

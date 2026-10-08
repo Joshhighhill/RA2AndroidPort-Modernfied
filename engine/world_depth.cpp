@@ -52,8 +52,24 @@ bool World::can_occupy(int ui, int bi) const {
     if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) return false;
     const BuildingTypeDef& t = btypes()[b.type];
     if (!t.can_be_occupied) return false;
-    const bool owner_ok = b.house == u.house || !house_combatant(b.house);
+    const bool owner_ok = b.house == u.house || !house_combatant(b.house) || passive_house(b.house);
     return owner_ok && static_cast<int>(b.occupants.size()) != t.max_occupants;
+}
+
+bool World::campaign_can_occupy(int bi) const {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
+    const Building& b = buildings_[bi];
+    if (!b.alive || b.state != Building::State::Idle || b.selling) return false;
+    if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) return false;
+    const BuildingTypeDef& t = btypes()[b.type];
+    return t.can_be_occupied && static_cast<int>(b.occupants.size()) < t.max_occupants;
+}
+
+bool World::campaign_occupy_now(int ui, int bi) {
+    if (!can_occupy(ui, bi)) return false;
+    garrison_any_ = true;
+    occupy_now(ui, bi);
+    return true;
 }
 
 void World::order_occupy(int ui, int bi) {
@@ -300,6 +316,8 @@ int World::bridge_cells_destroyed() const {
     int n = 0;
     for (int v : bridge_ovl_)
         if (v >= 0 && low_bridge_destroyed(v)) ++n;
+    for (std::uint8_t v : hbridge_)
+        if ((v & 3) && (v & 4)) ++n;   // W4-SQ-10: broken high-bridge cells
     return n;
 }
 
@@ -333,11 +351,17 @@ void World::set_bridge_cell(int x, int y, int idx) {
 // section rewrite is FUN_0057B720 / FUN_0057BCE0 over the 3-cell
 // cross-section FUN_0057B4D0 centres. BridgeDestruction=no disables it.
 int World::bridge_explosion(int cx, int cy, int damage, bool wall_warhead) {
-    if (bridge_ovl_.empty() || !wall_warhead || !depth_rules_.armed ||
+    if ((bridge_ovl_.empty() && hbridge_.empty()) || !wall_warhead || !depth_rules_.armed ||
         !depth_rules_.bridge_destruction)
         return 0;
     const int idx = bridge_overlay_at(cx, cy);
-    if (!is_low_bridge_overlay(idx) || low_bridge_destroyed(idx)) return 0;
+    if (!is_low_bridge_overlay(idx) || low_bridge_destroyed(idx)) {
+        // W4-SQ-10 [RE-FALLBACK: the same Wall= warhead + Random(1, BridgeStrength)
+        // < damage roll as a low section]: a deck hit breaks the high span.
+        if (!high_bridge_cell(cx, cy) || high_bridge_destroyed(cx, cy)) return 0;
+        if (!(bridge_rng_.random(1, std::max(1, depth_rules_.bridge_strength)) < damage)) return 0;
+        return break_high_bridge(cx, cy);
+    }
     if (!(bridge_rng_.random(1, std::max(1, depth_rules_.bridge_strength)) < damage)) return 0;
     auto at = [&](int x, int y) { return bridge_overlay_at(x, y); };
     int sx = cx, sy = cy;
@@ -366,7 +390,8 @@ int World::bridge_explosion(int cx, int cy, int damage, bool wall_warhead) {
 // intact piece (low_bridge_repaired) [RE-FALLBACK: the per-section restore
 // walk of FUN_0057EE70 is not traced]. Returns the number of cells restored.
 int World::repair_bridge_near(int bi) {
-    if (bridge_ovl_.empty() || bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
+    if (bridge_ovl_.empty()) return repair_high_bridge_near(bi);   // W4-SQ-10
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
     const Building& b = buildings_[bi];
     std::vector<Cellxy> stack;
     std::vector<std::uint8_t> seen(bridge_ovl_.size(), 0);
@@ -391,7 +416,122 @@ int World::repair_bridge_near(int bi) {
                 if ((dx || dy) && is_low_bridge_overlay(bridge_overlay_at(x, y))) stack.push_back({x, y});
             }
     }
+    if (restored == 0) restored = repair_high_bridge_near(bi);   // W4-SQ-10
     return restored;
+}
+
+// ------------------------------------------------------------- high bridges
+// W4-SQ-10. A high bridge is its deck overlays (BRIDGE1/2, BRIDGEB1/B2) over
+// the river plus the Ovrps/Ovrpsb ramp tiles at its ends (temperat.ini
+// BridgeSet 19 / WoodBridgeSet 80). The destroy functions (FUN_005766D0
+// concrete, FUN_00570FC0 wood) walk the span both ways, swap the ramp tiles
+// for broken ends, take the deck away and kill what stands on it
+// (FUN_0047DC80 on each section). [RE-FALLBACK: the clone takes the whole
+// connected deck at once; the ramp tiles keep their art; the deck overlays
+// stop drawing.]
+void World::set_high_bridges(std::vector<std::uint8_t> cells) {
+    hbridge_ = std::move(cells);
+    hbridge_.resize(static_cast<std::size_t>(grid_w_) * grid_h_, 0);
+    for (std::size_t i = 0; i < hbridge_.size() && i < passable_.size(); ++i)
+        if ((hbridge_[i] & 3) == 1) passable_[i] = 1;   // the deck carries ground units (water grid kept)
+    ++bridge_version_;
+}
+
+bool World::high_bridge_cell(int x, int y) const {
+    if (hbridge_.empty() || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
+    return (hbridge_[static_cast<std::size_t>(y) * grid_w_ + x] & 3) != 0;
+}
+
+bool World::high_bridge_destroyed(int x, int y) const {
+    if (!high_bridge_cell(x, y)) return false;
+    return (hbridge_[static_cast<std::size_t>(y) * grid_w_ + x] & 4) != 0;
+}
+
+int World::break_high_bridge(int x, int y) {
+    if (hbridge_.empty()) return 0;
+    int sx = -1, sy = -1;
+    for (int r = 0; r <= 1 && sx < 0; ++r)
+        for (int dy = -r; dy <= r && sx < 0; ++dy)
+            for (int dx = -r; dx <= r && sx < 0; ++dx)
+                if (high_bridge_cell(x + dx, y + dy) && !high_bridge_destroyed(x + dx, y + dy)) {
+                    sx = x + dx;
+                    sy = y + dy;
+                }
+    if (sx < 0) return 0;
+    std::vector<Cellxy> stack{{sx, sy}};
+    int n = 0;
+    while (!stack.empty()) {
+        const Cellxy c = stack.back();
+        stack.pop_back();
+        const std::size_t i = static_cast<std::size_t>(c.y) * grid_w_ + c.x;
+        if (hbridge_[i] & 4) continue;
+        hbridge_[i] |= 4;
+        ++n;
+        if ((hbridge_[i] & 3) == 1) {
+            passable_[i] = 0;
+            const int ou = occ_.at(c.x, c.y);
+            if (ou >= 0 && ou < static_cast<int>(units_.size())) {
+                const Unit& u = units_[ou];
+                if (u.alive && u.die_time < 0.0 && !u.is_naval && !u.is_aircraft) ability_kill_unit(ou);
+            }
+        }
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+                if ((dx || dy) && high_bridge_cell(c.x + dx, c.y + dy) && !high_bridge_destroyed(c.x + dx, c.y + dy))
+                    stack.push_back({c.x + dx, c.y + dy});
+    }
+    ++bridge_version_;
+    return n;
+}
+
+int World::repair_high_bridge_near(int bi) {
+    if (hbridge_.empty() || bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
+    const Building& b = buildings_[bi];
+    std::vector<Cellxy> stack;
+    // [RE: FUN_00519449 scans +-2 around the hut for the bridge kind; a high
+    // deck starts past the ramp tiles, so the clone looks 4 cells out]
+    for (int y = b.cy - 4; y < b.cy + b.fh + 4; ++y)
+        for (int x = b.cx - 4; x < b.cx + b.fw + 4; ++x)
+            if (high_bridge_destroyed(x, y)) stack.push_back({x, y});
+    int n = 0;
+    while (!stack.empty()) {
+        const Cellxy c = stack.back();
+        stack.pop_back();
+        const std::size_t i = static_cast<std::size_t>(c.y) * grid_w_ + c.x;
+        if (!(hbridge_[i] & 4)) continue;
+        hbridge_[i] = static_cast<std::uint8_t>(hbridge_[i] & 3);
+        ++n;
+        if ((hbridge_[i] & 3) == 1) passable_[i] = 1;
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+                if ((dx || dy) && high_bridge_destroyed(c.x + dx, c.y + dy)) stack.push_back({c.x + dx, c.y + dy});
+    }
+    if (n) ++bridge_version_;
+    return n;
+}
+
+int World::force_bridge_break(int x, int y) {
+    const int idx = bridge_overlay_at(x, y);
+    if (is_low_bridge_overlay(idx) && !low_bridge_destroyed(idx)) {
+        auto at = [&](int ax, int ay) { return bridge_overlay_at(ax, ay); };
+        int sx = x, sy = y;
+        low_bridge_section_centre(x, y, at, sx, sy);
+        const LowAxis ax = low_bridge_axis(bridge_overlay_at(sx, sy));
+        if (ax == LowAxis::None) return 0;
+        int xs[3], ys[3];
+        low_bridge_section_cells(sx, sy, ax, xs, ys);
+        int changed = 0;
+        for (int k = 0; k < 3; ++k) {
+            const int o = bridge_overlay_at(xs[k], ys[k]);
+            if (!is_low_bridge_overlay(o)) continue;
+            const int nx = low_bridge_next_stage(o);
+            if (nx == o) continue;
+            set_bridge_cell(xs[k], ys[k], nx);
+            ++changed;
+        }
+        return changed;
+    }
+    return break_high_bridge(x, y);
 }
 
 void World::order_attack_cell(int ui, int cx, int cy) {
