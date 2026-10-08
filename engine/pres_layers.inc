@@ -41,3 +41,54 @@ inline double pres_unit_key(const ra2engine::World& w, const ra2engine::Unit& u)
 inline int pres_unit_lift_levels(const ra2engine::World& w, const ra2engine::Unit& u) {
     return pres_on_high_deck(w, u) ? kPresBridgeLevels : 0;
 }
+
+// W5-PRES R-122 [RE: ObjectClass::SpawnParachuted 0x5F5150, SetOwnerObject
+// 0x424AD0, fall 0x5F3680; docs/re/w5-presentation.md §11]: PARACH is created
+// at the paratrooper's coords + 75 leptons Z (~11 px up) and follows it; it
+// plays its opening frames (Start..LoopStart) then loops LoopStart..LoopEnd
+// while falling; on touchdown the loop is released and the tail frames
+// (LoopEnd..End) play out on the ground. AltPalette = the owner's remap.
+struct PresChute { long start = -1; long landed = -1; double fx = 0, fy = 0; int level = 0, house = 0; };
+std::map<int, PresChute> g_chutes;
+inline void pres_chute_blit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const FxAnimType& t, int fr, double fx,
+                            double fy, int level, int house, const ra2engine::Camera& cam, int W, int H) {
+    const int cx = static_cast<int>(std::lround((fx - fy) * 30.0)) + cam.x + 30;
+    const int cy = static_cast<int>(std::lround((fx + fy) * 15.0 - level * 15)) + cam.y + 15 - 11 + t.ydraw;
+    g_fx->draw_anim_frame(ren, tc, t, fr, cx, cy, W, H, t.altpal ? g_fx->alt_palette(house) : nullptr,
+                          t.altpal ? ":h" + std::to_string(house) : std::string());
+}
+inline void pres_draw_parachute(SDL_Renderer* ren, ra2engine::TextureCache& tc, int idx, const ra2engine::Unit& at,
+                                const ra2engine::Camera& cam, int W, int H) {
+    if (!g_fx) return;
+    const FxAnimType* t = g_fx->type("PARACH");
+    if (!t) return;
+    PresChute& c = g_chutes[idx];
+    if (c.start < 0 || c.landed >= 0) c = PresChute{g_pres_tick, -1};
+    c.fx = at.fx; c.fy = at.fy; c.level = at.level; c.house = at.house;
+    const long step = (g_pres_tick - c.start) / std::max(1, t->delay);
+    const int open = t->loop_start - t->start, span = std::max(1, t->loop_end - t->loop_start);
+    const int fr = step < open ? static_cast<int>(t->start + step)
+                               : static_cast<int>(t->loop_start + (step - open) % span);
+    pres_chute_blit(ren, tc, *t, fr, at.fx, at.fy, at.level, at.house, cam, W, H);
+}
+// After the falling pass: chutes whose paratrooper landed play their tail.
+inline void pres_draw_landed_chutes(const ra2engine::World& w, SDL_Renderer* ren, ra2engine::TextureCache& tc,
+                                    const ra2engine::Camera& cam, int W, int H) {
+    if (!g_fx || g_chutes.empty()) return;
+    const FxAnimType* t = g_fx->type("PARACH");
+    for (auto it = g_chutes.begin(); it != g_chutes.end();) {
+        PresChute& c = it->second;
+        const bool falling = it->first < static_cast<int>(w.units().size()) && pres_para_alt(w.units()[it->first]) > 0.0;
+        if (falling) { ++it; continue; }
+        if (c.landed < 0) {
+            c.landed = g_pres_tick;
+            const ra2engine::Unit& u = w.units()[it->first];
+            if (u.alive) { c.fx = u.fx; c.fy = u.fy; c.level = u.level; }
+        }
+        const long step = (g_pres_tick - c.landed) / std::max(1, t ? t->delay : 1);
+        const int fr = t ? static_cast<int>(t->loop_end + step) : 0;
+        if (!t || fr >= t->end) { it = g_chutes.erase(it); continue; }
+        pres_chute_blit(ren, tc, *t, fr, c.fx, c.fy, c.level, c.house, cam, W, H);
+        ++it;
+    }
+}

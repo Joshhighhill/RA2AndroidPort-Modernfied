@@ -110,6 +110,7 @@ public:
         if (g_fx3 == &effects_) g_fx3 = nullptr;
         g_state_world = nullptr;      // W5-PRES R-120
         g_state_fx = PresStateFx{};
+        g_chutes.clear();             // W5-PRES R-122
     }
 
     PresAudio& sound() { return snd_; }

@@ -132,12 +132,32 @@ art by the ini number and drew every overlay after #0 with the wrong art; fixed.
 * A ground unit left on a collapsed section dies [PROBABLE: `FUN_00654C00`
   runs on the three cells only in the destroy branch].
 
-### B3 High bridges — not modelled
+### B3 High bridges — destruction modelled (W4-FIX-SEQ), on/under layer not
 
-High bridges are tile-based (bridge tile sets + `BRIDGE1/2` head overlays,
-cell flags 0x100/0x400, units `OnBridge` at `BridgeHeight` = 416). Their
-destruction (`FUN_005766D0`/`FUN_00570FC0`) and the on/under layer are left for
-a later pass; their cells keep the tile land type.
+High bridges are the deck overlays `BRIDGE1/2` (0x18/0x19, concrete) and
+`BRIDGEB1/B2` (0xED/0xEE, wood), one per deck cell over the river, plus the
+ramp tiles at both ends (temperat.ini `BridgeSet=19` "Ovrps",
+`WoodBridgeSet=80` "Ovrpsb"); cell flags 0x100/0x80 mark bridge cells, units
+cross `OnBridge` at `BridgeHeight` = 416.
+* Destroy dispatch `FUN_00586BB0` (cell): low wood `0x49 < ovl < 100` ->
+  `FUN_0057B4D0`, low concrete `0xCC < ovl < 0xE7` -> `FUN_0057C720`; a bridge
+  cell (+0x140 & 0x100) whose owner cell holds 0x18/0x19 -> `FUN_005766D0`
+  (concrete); BridgeSet/WoodBridgeSet ramp tiles or a 0xED/0xEE owner ->
+  `FUN_00570FC0` (wood). The high functions walk the span both ways
+  (`FUN_00571D60/00571E60/00571F70/00572310`), place broken ramp tiles
+  (`FUN_0056E6B0`), kill the objects on the deck (`FUN_0047DC80`) [CONFIRMED
+  structure; the per-section walk is RE-FALLBACK in the clone].
+* Trigger 63 Apply100Damage (`FUN_006DFA00`) calls `FUN_00586BB0` on its
+  waypoint cell up to 4 times (no BridgeStrength roll, no DestroyableBridges
+  gate) [CONFIRMED].
+* Clone (`World::set_high_bridges / break_high_bridge / repair_high_bridge_near
+  / force_bridge_break`): deck cells over water are ground-passable while
+  intact (they were blocked before -- no unit could cross a high bridge), a
+  break takes the whole connected deck at once, kills ground units on it and
+  hides the deck overlays; the ramps keep their art and stay passable; a
+  BridgeRepairHut within 4 cells restores the span; weapon hits on a deck use
+  the low-bridge Wall=/Random(1,BridgeStrength) roll [RE-FALLBACK]. Units on a
+  deck are drawn at ground level (no OnBridge layer).
 
 ### B4 Repair — CONFIRMED (entry) / [RE-FALLBACK] (walk)
 

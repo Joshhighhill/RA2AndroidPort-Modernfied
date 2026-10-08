@@ -271,8 +271,12 @@ public:
                      const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
         step_anims();
         for (const Obj& o : smudges_) draw(ren, tc, w, o, pals, cam, W, H);
-        for (const Obj& o : overlays_)
-            if (!(o.high_deck && layer_decks_)) draw(ren, tc, w, o, pals, cam, W, H);
+        for (const Obj& o : overlays_) {
+            if (o.high_deck && layer_decks_) continue;   // W5-PRES R-100: sorted with the objects
+            // W4-SQ-10: a broken high bridge deck is gone.
+            if (o.high_deck && w.high_bridge_destroyed(o.x, o.y)) continue;
+            draw(ren, tc, w, o, pals, cam, W, H);
+        }
         draw_tile_anims(ren, tc, w, pals, cam, W, H);   // W3-B
     }
     // W5-PRES R-100 [RE-FALLBACK pending: docs/re/w5-presentation.md §1]: the

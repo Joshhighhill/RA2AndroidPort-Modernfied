@@ -15,7 +15,7 @@ click start
 until 300 scene == game
 require scene == game
 assert mode == campaign
-until 3000 units(6,YURI) >= 2
+until 3000 units(6,YURI) >= 2 and carried(6) == 0   # W4-SQ-06: the Yuris arrive by paradrop
 wait 120
 cheat camp_killu 1 *
 cheat camp_killu 2 *

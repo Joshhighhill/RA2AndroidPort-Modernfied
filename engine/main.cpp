@@ -3663,6 +3663,21 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         std::stable_sort(air.begin(), air.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         for (const DrawItem& d : air) draw_one_unit(d.idx);
     }
+    // W4-SQ-06: paratroopers under their parachutes (off the map until they
+    // land: cargo_of == kParachuteCargo), raised by their height.
+    for (int i = 0; i < static_cast<int>(us.size()); ++i) {
+        const ra2engine::Unit& u = us[i];
+        if (u.cargo_of != ra2engine::kParachuteCargo || !u.alive || u.an.para_alt <= 0.0) continue;
+        auto it = ua.shps.find(u.image);
+        if (it == ua.shps.end()) continue;
+        ra2engine::Unit tmp = u;
+        const double lift = ra2engine::altitude_to_screen_dy(u.an.para_alt) / 30.0;
+        tmp.fx -= lift;
+        tmp.fy -= lift;
+        ra2engine::draw_unit(ren, tc, tmp, it->second, ua.pal, cam, W, H);
+        pres_draw_parachute(ren, tc, i, tmp, cam, W, H);   // W5-PRES R-122
+    }
+    pres_draw_landed_chutes(world, ren, tc, cam, W, H);   // W5-PRES R-122 chute collapse
     // Projectile phase (P2): shells/bombs in flight, over the objects. EMPTY
     // unless enable_projectiles was called (the game + --demo-projectile), so
     // no existing demo screenshot changes.

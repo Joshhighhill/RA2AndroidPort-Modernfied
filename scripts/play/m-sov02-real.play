@@ -1,0 +1,29 @@
+# W4-SQ-01: SOV02 beach landing with real orders. The amphibious transports
+# arrive CARRYING the Rhinos and Conscripts (TeamType Full=yes), unload on the
+# beach (Unload mode 1: the cargo leaves the team), and only the empty
+# transports change house. The player keeps the landing force, sends the
+# Rhinos at the beach pillboxes (the MCV chain itself: m-sov02-mcv.play).
+set render_every 900
+set on_quit continue
+set campaign sov02t.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 60 carried(0) >= 6
+until 1500 carried(0) == 0
+assert units(0,HTNK) >= 6
+assert units(0,E2) >= 12
+wait 300
+assert units(0,HTNK) >= 6
+# The player's real orders: the Rhinos assault the beach pillboxes.
+click unit 0:HTNK:0
+click unit 0:HTNK:1 shift
+click unit 0:HTNK:2 shift
+click unit 0:HTNK:3 shift
+assert selected >= 4
+click building 1:GAPILL:0
+wait 300
+assert units(0,HTNK) >= 4
+assert outcome == RUNNING
+shot assault
+end
