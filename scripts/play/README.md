@@ -74,6 +74,7 @@ A `"double quoted"` run is one argument.
 | `log <text>` | Note in the log. | 0 |
 | `expect quit` | The next Quit is the expected end of the run. | 0 |
 | `end [expect WON\|LOST\|RUNNING]` | Stop; optionally check `outcome`. | - |
+| `waituntil <n> <expr>` | P3: `until` without the timeout failure (logs `PLAY timeout`). | <= n |
 | `repeat N` ... `endrepeat` | P3: the body (nestable) is expanded N times before parsing -- exactly as if written out. | body x N |
 
 **Targets.** `point NAME [+dx +dy]` (G16 named map points relative to the

@@ -199,7 +199,7 @@ const std::set<std::string>& known_ops() {
     static const std::set<std::string> k = {
         "set",  "wait", "click", "drag",   "move",    "key",   "hold", "type", "view",
         "place", "shot", "assert", "until", "require", "let",  "cheat", "log", "end",
-        "expect", "dump", "cycle", "if", "touch"};
+        "expect", "dump", "cycle", "if", "touch", "waituntil"};
     return k;
 }
 
@@ -311,7 +311,7 @@ bool parse_script(const std::string& text_in, Script& out, std::string& err) {
                 if (err.empty()) err = "line " + std::to_string(ln) + ": wait N";
                 return false;
             }
-        } else if (c.op == "until") {
+        } else if (c.op == "until" || c.op == "waituntil") {
             if (!need(2) || !to_int(c.args[0], c.n) || c.n < 0) {
                 if (err.empty()) err = "line " + std::to_string(ln) + ": until N EXPR";
                 return false;
@@ -339,7 +339,7 @@ bool parse_script(const std::string& text_in, Script& out, std::string& err) {
             const std::string& so = one.cmds[0].op;
             // R-183: `if EXPR then end` is allowed (a script that does not
             // apply to this install ends early, e.g. robust-missing).
-            if (so == "until" || so == "cycle" || so == "if") {
+            if (so == "until" || so == "waituntil" || so == "cycle" || so == "if") {
                 err = "line " + std::to_string(ln) + ": 'if' cannot guard '" + so + "'";
                 return false;
             }
