@@ -1497,6 +1497,18 @@ private:
             v.house = u.house;
             v.target = -1;
             v.target_building = -1;
+            // [RE: FootClass::SetOwningHouse FUN_004DBDE0 -- after the owner
+            // change (TechnoClass FUN_00700940), a foot whose NEW owner is a
+            // human-controlled house (+0x1EC) leaves its team (FUN_006E9DD0)]:
+            // a unit the player's Yuri takes stops running its old script
+            // (SOV09: the x=37 IFV patrol kept driving into the GIs).
+            if (!w_.house_is_computer(u.house) && vt.team >= 0 && vt.team < (int)teams_.size()) {
+                std::vector<int>& mm = teams_[(std::size_t)vt.team].members;
+                mm.erase(std::remove(mm.begin(), mm.end(), vi), mm.end());
+                vt.team = -1;
+                vt.hunt = false;
+                w_.order_stop(vi);
+            }
             u.target = -1;
             u.attack_order = false;
             t.mc_victim = vi;
@@ -1542,7 +1554,12 @@ private:
                 if (std::getenv("RA2_CAMP_DEBUG"))
                     std::cerr << "[camp-debug] f" << frame_ << " unit " << i << " " << t.type << " house " << u.house
                               << " died at " << u.cell_x << "," << u.cell_y << " by house "
-                              << gf_attacker_house((int)i, -1, u.house) << "\n";
+                              << gf_attacker_house((int)i, -1, u.house) << " killer=" << u.vet.killed_by
+                              << (u.vet.killed_by >= 0 && u.vet.killed_by < (int)w_.units().size()
+                                      ? " " + w_.units()[(std::size_t)u.vet.killed_by].image + "/h" +
+                                            std::to_string(w_.units()[(std::size_t)u.vet.killed_by].house)
+                                      : std::string())
+                              << "\n";
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
                 // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
@@ -2521,11 +2538,29 @@ private:
             for (const ra2engine::Building& b : rt.w_.buildings()) if (rt.tracked(b) && b.house == eh) ++n;
             return n;
         }
+        // P5 [RE: FUN_0071dbe0 case 9/0xB]: the DestroyedUnits/DestroyedAll
+        // counts are the house's OwnedUnitTypes (+0x5564) and OwnedInfantryTypes
+        // (+0x5578) totals -- the RULES lists, not the locomotor. A flying
+        // [VehicleTypes] object (the Kirov ZEP) is a UnitClass and counts as a
+        // vehicle, a jumpjet [InfantryTypes] one (the Rocketeer) as infantry;
+        // only [AircraftTypes] objects stay out. (SOV12: a player whose base has
+        // fallen but whose Kirovs still fly has not lost.)
+        // 0 = not counted (aircraft), 1 = vehicle, 2 = infantry.
+        int flying_class(std::size_t i) const {
+            const ra2engine::Unit& u = rt.w_.units()[i];
+            const std::string& t = i < rt.utrack_.size() ? rt.utrack_[i].type : u.image;
+            if (camp::index_of(rt.ra2_vehicles_, t) >= 0 || camp::index_of(rt.ra2_vehicles_, camp::up(u.image)) >= 0) return 1;
+            if (camp::index_of(rt.ra2_infantry_, t) >= 0 || camp::index_of(rt.ra2_infantry_, camp::up(u.image)) >= 0) return 2;
+            return 0;
+        }
         int house_vehicles(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Unit& u : rt.w_.units())
-                if (rt.tracked(u) && u.house == eh && (u.is_vehicle || u.is_naval) && !u.is_aircraft) ++n;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
+                if (u.is_aircraft ? flying_class(i) == 1 : (u.is_vehicle || u.is_naval)) ++n;
+            }
             return n;
         }
         int house_naval_units(int ht) const override {
@@ -2538,8 +2573,11 @@ private:
         int house_infantry(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Unit& u : rt.w_.units())
-                if (rt.tracked(u) && u.house == eh && !u.is_vehicle && !u.is_naval && !u.is_aircraft) ++n;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
+                if (u.is_aircraft ? flying_class(i) == 2 : (!u.is_vehicle && !u.is_naval)) ++n;
+            }
             return n;
         }
         int house_building_type_count(int ht, int bt) const override {

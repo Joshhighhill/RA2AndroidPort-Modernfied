@@ -19,7 +19,14 @@ PowerTotals power_totals(const std::vector<Building>& buildings,
         if (!b.alive || b.house != house || b.state != Building::State::Idle) continue;
         if (b.type < 0 || b.type >= (int)types.size()) continue;
         int pw = types[b.type].power;
-        if (pw >= 0) p.output += pw;
+        // [RE: BuildingClass::Power_Output FUN_0044E7B0 @0x44E85F-0x44E86A,
+        // construction.md §8] a positive PowerBonus is scaled by the health
+        // ratio -- ftol(Health / Type.Strength * PowerBonus) -- so a damaged
+        // power plant delivers less (drain does not scale, FUN_0044E880).
+        // Building::max_hp carries Type.Strength (the map's health % lowers hp).
+        const int st = b.max_hp;
+        if (pw > 0 && st > 0) p.output += (int)((double)b.hp / (double)st * (double)pw);
+        else if (pw >= 0) p.output += pw;
         else if (!b.power_off) p.drain -= pw;   // W5-E2: a powered-down building draws nothing
     }
     return p;

@@ -1,0 +1,298 @@
+# P5: SOV12 (the Allied Chronosphere) won with real orders only (no
+# cheats). 'Win Condition_Timer' (the Chronosphere's tag) is the win. The
+# sidebar builds power / refinery / war factory / battle lab and Kirov
+# airships; the first flies the patriot-free line along the north coast to the
+# civilian airfield, where the player discovers the three captured Kirovs
+# ('Kirovs Gained' hands them over); the rest follow while the Allied chrono
+# raids level the island base. The gathered airships are then flown down the
+# western edge of the mainland onto the Chronosphere and ordered to attack it;
+# their bombs (BlimpHE, 50% vs concrete) bring the 750-HP Chronosphere down.
+set render_every 3000
+set on_quit continue
+set campaign sov12s.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+wait 30
+dump
+let n_NAPOWR = built(0,NAPOWR)
+until 900 can_build(NAPOWR) == 1
+click tab:0
+wait 2
+cycle cameo:NAPOWR queue(structure) == NAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+until 600 built(0,NAPOWR) > $n_NAPOWR
+let n_NAREFN = built(0,NAREFN)
+until 900 can_build(NAREFN) == 1
+click tab:0
+wait 2
+cycle cameo:NAREFN queue(structure) == NAREFN
+until 2400 queue_ready(structure) == 1
+click cameo:NAREFN
+place auto
+until 600 built(0,NAREFN) > $n_NAREFN
+let n_NAWEAP = built(0,NAWEAP)
+until 900 can_build(NAWEAP) == 1
+click tab:0
+wait 2
+cycle cameo:NAWEAP queue(structure) == NAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:NAWEAP
+place auto
+until 600 built(0,NAWEAP) > $n_NAWEAP
+let n_NAPOWR = built(0,NAPOWR)
+until 900 can_build(NAPOWR) == 1
+click tab:0
+wait 2
+cycle cameo:NAPOWR queue(structure) == NAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+until 600 built(0,NAPOWR) > $n_NAPOWR
+let n_NATECH = built(0,NATECH)
+until 900 can_build(NATECH) == 1
+click tab:0
+wait 2
+cycle cameo:NATECH queue(structure) == NATECH
+until 2400 queue_ready(structure) == 1
+click cameo:NATECH
+place auto
+until 600 built(0,NATECH) > $n_NATECH
+click tab:3
+until 900 cameo(ZEP) == 1 and tab == 3
+wait 2
+cycle cameo:ZEP queue(vehicle) == ZEP
+click cameo:ZEP
+until 4000 units(0,ZEP) >= 1
+until 2400 units(0,ZEP) >= 2 or buildings(0,NAWEAP) == 0
+wait 60
+click unit 0:ZEP:0
+if selected_type(ZEP) == 0 then click unit 0:ZEP:0 -2 -2
+if selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+assert selected_type(ZEP) >= 1
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 161 102
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 157 and pos_x(0,ZEP) <= 165 and pos_y(0,ZEP) >= 98 and pos_y(0,ZEP) <= 106
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 140 81
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 136 and pos_x(0,ZEP) <= 144 and pos_y(0,ZEP) >= 77 and pos_y(0,ZEP) <= 85
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 119 61
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 115 and pos_x(0,ZEP) <= 123 and pos_y(0,ZEP) >= 57 and pos_y(0,ZEP) <= 65
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 100 47
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 96 and pos_x(0,ZEP) <= 104 and pos_y(0,ZEP) >= 43 and pos_y(0,ZEP) <= 51
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 76 39
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 72 and pos_x(0,ZEP) <= 80 and pos_y(0,ZEP) >= 35 and pos_y(0,ZEP) <= 43
+until 600 units(0,ZEP) >= 4
+assert units(0,ZEP) >= 4
+dump
+click xy 300 300 right
+click unit 0:ZEP:0 -4 -4
+key t
+key t
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 70 64
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 66 and pos_x(0,ZEP) <= 74 and pos_y(0,ZEP) >= 60 and pos_y(0,ZEP) <= 68
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 57 82
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 53 and pos_x(0,ZEP) <= 61 and pos_y(0,ZEP) >= 78 and pos_y(0,ZEP) <= 86
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 43 96
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 39 and pos_x(0,ZEP) <= 47 and pos_y(0,ZEP) >= 92 and pos_y(0,ZEP) <= 100
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+click cell 40 108
+wait 30
+until 3000 units(0,ZEP) == 0 or pos_x(0,ZEP) >= 36 and pos_x(0,ZEP) <= 44 and pos_y(0,ZEP) >= 104 and pos_y(0,ZEP) <= 112
+if units(0,ZEP) > 0 and selected_type(ZEP) == 0 then click unit 0:ZEP:0 -4 -4
+key t
+key t
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+wait 20
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 300 outcome != RUNNING
+if outcome == RUNNING and units(0,ZEP) > 0 and selected == 0 then click unit 0:ZEP:0 -4 -4
+if outcome == RUNNING and buildings(3,GACSPH) > 0 and selected_type(ZEP) > 0 then click building 3:GACSPH
+until 3000 outcome == WON
+end expect WON

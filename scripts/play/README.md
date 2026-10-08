@@ -179,6 +179,8 @@ should prefer real input): `kill_house H`, `damage_building H:TYPE[:n] DMG`,
 (TYPE from the player or AI roster, else resolved from rules),
 `spawn TYPE H point NAME +DX +DY`, `bridge_hit X Y DMG` (one bridge roll).
 `set cycle_max N` raises `cycle`'s click limit (default 8).
+P2: `power_out(h)` / `power_drain(h)` / `low_power(h)` for every AI house with power, and
+`cheat map_ascii PATH` (debug only: walkable `.`, blocked `#`, building house digit, unit `*`).
 
 Keys reserved for later phases (scripts already assert them and report
 `missing-probe` until a phase adds them): `confirm_open` + targets
@@ -225,4 +227,6 @@ reinforcement), `camp_move UTYPE|* X Y`, `camp_capture UTYPE BH BTYPE`,
 `camp_occupy ...`, `camp_attackb BH BTYPE [UTYPE]`, `camp_attacku UTYPE TH TTYPE`,
 `camp_deploy` (first controllable MCV: unfold, or drive to a legal spot).
 Scripts: `m-all02`, `m-all04`, `m-all08`, `m-sov03`, `m-sov05`, `m-sov06`,
-`m-sov09` (one per fixed W2-CA blocker class).
+`m-sov09` (one per fixed W2-CA blocker class). Real-order (cheat-free) proofs include
+`m-sov01-real`, `m-all03-real`, `m-sov07-real` (WON, about 3 min) and `m-sov09-real` (opening + the
+first power-plant blackout); their generators live in `scripts/play/gen/` (edit those, not the `.play`).
