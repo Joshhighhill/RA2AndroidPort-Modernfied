@@ -6042,6 +6042,7 @@ public:
     }
     void init_presentation() {
         load_progress("PRESENTATION");   // W2-AR-02 loading-screen checkpoint
+        g_detail_level = g_user_settings ? g_user_settings->detail_level : 2;   // W5-E Visual Details
         init_map_dressing();
         pips_load(ra2_);   // W2-UI-11
         {
@@ -6432,6 +6433,7 @@ private:
     }
     void menu_apply_settings() {
         const ra2engine::Settings& st = menu_.settings();
+        g_detail_level = st.detail_level;   // W5-E
         if (cfg_.game_speed >= 0) cfg_.game_speed = st.game_speed;
         if (audio_.mixer) apply_audio_settings(*audio_.mixer, st);
     }
@@ -7275,6 +7277,24 @@ struct OptionsPageState {
     int  pos[S_COUNT] = {};
     bool chk[C_COUNT] = {};
     int  drag = -1;        // slider being dragged (-1 none)
+    // W5-E resolution combobox [RE: options.md §2 -- FUN_004962A0 lists the
+    // modes, "%d x %d x 16"; without AllowHiResModes only 640x480 / 800x600 /
+    // 1024x768] [RE-FALLBACK: the clone always offers its 1280x720 base and
+    // common wide modes too, since the port is windowed]. Desktop only.
+    bool res_open = false;
+    int  res_pick = -1;    // picked mode index (applied by the scene)
+    static const std::vector<std::pair<int, int>>& modes() {
+        static const std::vector<std::pair<int, int>> m = {
+            {640, 480}, {800, 600}, {1024, 768}, {1280, 720}, {1600, 900}, {1920, 1080}};
+        return m;
+    }
+    static bool res_supported() {
+#ifdef __ANDROID__
+        return false;
+#else
+        return true;
+#endif
+    }
 
     void load(const ra2engine::Settings& s) {
         pos[S_VISUAL]     = ra2engine::detail_to_slider(s.detail_level);
@@ -7328,9 +7348,17 @@ void draw_options_page(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Men
     p.label("Sound Volume", 183, 381, 127, 16, 1, audio_enabled);
     p.label("Voice Volume", 330, 381, 127, 16, 1, audio_enabled);
 
-    // Resolution combobox 0x6ED (closed face; inert in this fixed-window port).
-    p.frame(p.dev(255, 73, 180, 21), true);
-    p.label(resolution, 259, 73, 172, 21, 0);
+    // Resolution combobox 0x6ED (W5-E: live on desktop).
+    p.combo({255, 73, 180, 21}, resolution, OptionsPageState::res_supported());
+    if (st.res_open) {
+        const auto& ms = OptionsPageState::modes();
+        const SDL_Rect box = p.dev(255, 95, 180, static_cast<int>(ms.size()) * 18 + 2);
+        p.fill(box, 0, 0, 0);
+        p.frame(box, true);
+        for (std::size_t i = 0; i < ms.size(); ++i)
+            p.label(std::to_string(ms[i].first) + " x " + std::to_string(ms[i].second) + " x 16", 259,
+                    96 + static_cast<int>(i) * 18, 172, 18, 0);
+    }
 
     // Trackbars (skin proc 0x5FB270).
     for (int i = 0; i < OptionsPageState::S_COUNT; ++i) {
@@ -7400,6 +7428,29 @@ public:
         p.set_s("page", header());
         kb_.play_probe(p);   // W5-E
         if (kb_.open_) return;
+        if (page_ == PAGE_OPTIONS) {   // W5-E: options controls (opt:res, opt:res:<i>, opt:slider:<name>=<v>)
+            auto put = [&](const std::string& k, int x, int y, int w, int h) {
+                const ra2engine::SbRect d = to_device({x, y, w, h});
+                p.targets[k] = ra2play::Rect{d.x, d.y, d.w, d.h};
+            };
+            put("opt:res", 255, 73, 180, 21);
+            if (opt_.res_open)
+                for (int i = 0; i < static_cast<int>(OptionsPageState::modes().size()); ++i)
+                    put("opt:res:" + std::to_string(i), 255, 96 + i * 18, 180, 18);
+            static const char* kSl[OptionsPageState::S_COUNT] = {"visual", "difficulty", "scroll", "music", "sound", "voice"};
+            for (int i = 0; i < OptionsPageState::S_COUNT; ++i) {
+                const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
+                const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
+                for (int v = 0; v <= d.range; ++v)
+                    put(std::string("opt:slider:") + kSl[i] + "=" + std::to_string(v),
+                        d.r.x + shell_trackbar_x_for(v, d.range, d.r.w, ro), d.r.y + d.r.h / 2, 1, 1);
+                p.set(std::string("opt_pos(") + kSl[i] + ")", opt_.pos[i]);
+            }
+            p.set_s("opt_res", res_label_);
+            p.set("opt_res_open", opt_.res_open ? 1 : 0);
+            for (const auto& kv : g_pres_audio_counts) p.set(kv.first, static_cast<double>(kv.second));
+            for (const char* f : {"snd", "why"}) p.zero_families.insert(f);
+        }
         for (const ShellButton& b : layout()) {
             const ra2engine::SbRect r = to_device(b.rect);
             p.targets["button:" + b.label] = ra2play::Rect{r.x, r.y, r.w, r.h};
@@ -7544,6 +7595,29 @@ private:
     bool options_handle(const ra2engine::InputEvent& ev);
     // A volume slider moved: apply it live to the menu mixer bus (the original
     // calls the volume setter on TB_THUMBTRACK, options.md §2).
+    // W5-E [RE: options.md §2/§4 -- trackbar proc 0x5FB270 plays a tick on
+    // every position change unless muted by 0x4AE (the three volume sliders
+    // are); the Sound / Voice setters play a preview at the new volume]
+    // [RE-FALLBACK: the tick / preview sample identity was not traced -- the
+    // shell click (MenuClick) on the matching bus].
+    void options_slider_sound(int slider) {
+        const bool vol = OptionsPageState::is_volume(slider);
+        if (vol && slider == OptionsPageState::S_MUSIC) return;   // music: the score itself is the preview
+        pres_log(0, std::string("sound MenuClick (") + (vol ? "volume preview" : "slider tick") + ")");
+        if (!audio_live()) return;
+        ra2engine::Mixer& m = *art_.audio->sys.mixer;
+        if (slider == OptionsPageState::S_VOICE) {
+            if (!m.sound("menu:click:voice"))
+                if (const ra2engine::MixerSound* c = m.sound("menu:click")) {
+                    ra2engine::MixerSound v = *c;
+                    v.bus = ra2engine::AudioBus::Voice;
+                    m.register_sound("menu:click:voice", v);
+                }
+            m.play("menu:click:voice");
+        } else {
+            m.play("menu:click");
+        }
+    }
     void options_live_volume(int slider) {
         if (!audio_live() || !OptionsPageState::is_volume(slider)) return;
         const ra2engine::AudioBus bus =
@@ -7557,6 +7631,7 @@ private:
     bool         down_ = false;        // left button currently held (pressed state)
     SaveLoadDialog sld_;               // P7: "Load Saved Game" (Load mode)
     KeyboardPage kb_;                  // W5-E: Options -> Keyboard (dialog 0xA3)
+    std::string  res_label_;           // W5-E: the resolution combobox face after a pick
     GfConfirm gf_confirm_;             // gF G-14: Exit Game confirm (dialog 0x120)
     Scene*       next_ = nullptr;
     bool         quit_ = false;
@@ -7731,8 +7806,14 @@ void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& t
     }
     // [P8 / options.md §1/§4] The 0xD5 controls over the static MNSCRNS screen.
     if (page_ == PAGE_OPTIONS) {
-        const std::string res = std::to_string(plat.width()) + " x " +
-                                std::to_string(plat.height()) + " x 16";
+        if (opt_.res_pick >= 0) {   // W5-E: resize the window to the picked mode
+            const auto mode = OptionsPageState::modes()[static_cast<std::size_t>(opt_.res_pick)];
+            opt_.res_pick = -1;
+            if (SDL_Window* win = SDL_RenderGetWindow(ren))
+                if (!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP)) SDL_SetWindowSize(win, mode.first, mode.second);
+        }
+        const std::string res = !res_label_.empty() ? res_label_
+                                : std::to_string(plat.width()) + " x " + std::to_string(plat.height()) + " x 16";
         draw_options_page(ren, tc, art_, xform(), opt_, audio_live(), res);
     }
     if (page_ == PAGE_CAMPAIGN) {   // W2-UI-18: FSBKGD wells + list + difficulty
@@ -7758,7 +7839,11 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
         const OptionsPageState::SliderDef& d = OptionsPageState::slider(i);
         const int ro = d.readout ? ra2engine::kTrackbarReadoutW : 0;
         const int p = ra2engine::trackbar_pos_from_x(lx - d.r.x, d.range, d.r.w, ro);
-        if (p != opt_.pos[i]) { opt_.pos[i] = p; options_live_volume(i); }
+        if (p != opt_.pos[i]) {
+            opt_.pos[i] = p;
+            options_live_volume(i);
+            options_slider_sound(i);   // W5-E tick / volume preview
+        }
     };
     if (ev.kind == InputEvent::PointerMove && opt_.drag >= 0) { set_pos(opt_.drag); return true; }
     if (ev.kind == InputEvent::PointerUp && ev.button == InputEvent::Left && opt_.drag >= 0) {
@@ -7784,6 +7869,28 @@ bool ShellScene::options_handle(const ra2engine::InputEvent& ev) {
             opt_.chk[i] = !opt_.chk[i];   // BS_AUTOCHECKBOX
             return true;
         }
+    }
+    // W5-E: the resolution combobox 0x6ED (desktop) -- a click opens the
+    // mode list, a pick applies it (window size + RA2.INI [Video]).
+    if (opt_.res_open) {
+        const int k = (ly - 95) / 18;
+        if (lx >= 255 && lx < 435 && ly >= 95 && k >= 0 && k < static_cast<int>(OptionsPageState::modes().size())) {
+            opt_.res_pick = k;   // the window resize happens in render (needs the renderer)
+            const auto mode = OptionsPageState::modes()[static_cast<std::size_t>(k)];
+            if (g_user_settings) {   // RA2.INI [Video] ScreenWidth / ScreenHeight
+                g_user_settings->screen_width = mode.first;
+                g_user_settings->screen_height = mode.second;
+                save_user_settings(*g_user_settings);
+            }
+            res_label_ = std::to_string(mode.first) + " x " + std::to_string(mode.second) + " x 16";
+        }
+        opt_.res_open = false;
+        return true;
+    }
+    if (OptionsPageState::res_supported() && lx >= 255 && lx < 435 && ly >= 73 && ly < 94) {
+        opt_.res_open = true;
+        play_click();
+        return true;
     }
     return false;
 }

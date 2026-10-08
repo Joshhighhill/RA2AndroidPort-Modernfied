@@ -34,6 +34,7 @@ struct FxAnimType {
     // FUN_00422cc0 point.y += it]: YDrawOffset= px (art; FSGRND -20, BIGBLUE -50).
     // Every AnimClass draw adds it -- FX, building slot anims, fires.
     int ydraw = 0;
+    int detail = 0;            // W5-E DetailLevel= (shown only at that setting or higher)
     // [RE: presentation.md §5] Rate= stores 900/Rate game frames per anim
     // frame (no Rate -> 1); Start/End (End defaults to the image frames),
     // LoopStart/LoopEnd (LoopEnd defaults to End), LoopCount (0/1 = once,
@@ -464,6 +465,7 @@ public:
         t.altpal = yes("AltPalette");
         t.report = aget(key, "StartSound");
         if (t.report.empty()) t.report = aget(key, "Report");
+        t.detail = std::atoi(aget(key, "DetailLevel").c_str());   // W5-E
         {   // RandomRate=a,b [RE: presentation.md §5]: each 900/x, min <= max.
             const std::string rr = aget(key, "RandomRate");
             const std::size_t c = rr.find(',');
@@ -504,6 +506,7 @@ public:
                             double ox_px = 0.0, int house = -1) {
         const FxAnimType* t = type(name);
         if (!t || t->frames <= 0) return nullptr;
+        if (t->detail > g_detail_level) return nullptr;   // W5-E Visual Details
         anims_.push_back(Anim{t, fx, fy, level, lift_px, 0, ox_px, house, instance_delay(*t, fx, fy)});
         if ((t->crater || t->scorch) && g_smudge_hook && lift_px < 30.0) g_smudge_hook(t->crater, fx, fy);
         return t;

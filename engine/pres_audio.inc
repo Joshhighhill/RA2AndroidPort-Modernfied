@@ -17,6 +17,11 @@ const ra2assets::Palette* g_game_font_pal = nullptr;
 
 // ---- presentation event log (harness evidence; never read by a gate) -------
 bool g_pres_log_on = false;
+// W5-E [RE: options.md §2 -- DetailLevel = slider ? 2 : 0; AnimTypeClass
+// DetailLevel= (artmd: wakes, twinkles, power-plant / tech-building lights)]:
+// an anim whose DetailLevel exceeds the player's setting is not created.
+// Published by GameScene from RA2.INI [Options] DetailLevel; 2 = everything.
+int g_detail_level = 2;
 // W5-E: --play records the same log (written to <out>/pres.log) without the
 // scene-shot clip decoding g_pres_log_on implies; capped so a 60-minute run
 // stays bounded (the counters below keep counting).
