@@ -527,6 +527,13 @@
                         if (!on_board(ox - 2, oy - 2) || !on_board(ox + d.fw + 1, oy + d.fh + 1)) continue;
                         cx = ox + d.fw / 2;
                         cy = oy + d.fh / 2;
+                        // P1: the click must resolve back to this cell (the
+                        // level-aware resolver can land one cell off on raised
+                        // ground, putting a 4x4 Chronosphere on the factory).
+                        int wx = 0, wy = 0, rx = -1, ry = -1;
+                        cell_to_window(cx, cy, wx, wy);
+                        input_.resolve_ground_cell(wx, wy, rx, ry);
+                        if (rx != cx || ry != cy) continue;
                         return true;
                     }
             return false;

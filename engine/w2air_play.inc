@@ -16,7 +16,29 @@
         return g[static_cast<std::size_t>(y) * world_.grid_w() + x] != 0;
     }
 
+    // P1: the centre cell whose 3x3 (the Chronosphere's source area) holds the
+    // most selected live house-0 ground units -- where a player clicks "the
+    // middle of the group" as the Chronoshift source. n = units in that 3x3.
+    void w2_sel_pack(double& cx, double& cy, int& n) const {
+        n = 0;
+        std::vector<std::pair<int, int>> cells;
+        for (const ra2engine::Unit& u : world_.units())
+            if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
+                !(u.is_aircraft && u.altitude > 0.0))
+                cells.push_back({u.cell_x, u.cell_y});
+        for (const auto& c0 : cells)
+            for (int oy = -1; oy <= 1; ++oy)
+                for (int ox = -1; ox <= 1; ++ox) {
+                    const int x = c0.first + ox, y = c0.second + oy;
+                    int k = 0;
+                    for (const auto& c : cells)
+                        if (std::abs(c.first - x) <= 1 && std::abs(c.second - y) <= 1) ++k;
+                    if (k > n) { n = k; cx = x; cy = y; }
+                }
+    }
+
     // Named points (`point NAME` / `click point NAME`):
+    //   sel_pack        (P1) see w2_sel_pack
     //   water_near_sel  a free water cell 4..8 cells from the first selected unit
     //                   that the selection can enter
     //   shore_near_sel  the nearest LAND cell (walkable, free) that touches water,
@@ -29,6 +51,11 @@
         const ra2engine::Unit& s = world_.units()[si];
         const int gw = world_.grid_w(), gh = world_.grid_h();
         auto free_at = [&](int x, int y) { return world_.occupancy().is_free(x, y) && world_.building_at_cell(x, y) < 0; };
+        if (name == "sel_pack") {   // P1: the 3x3 holding the most selected units
+            int n = 0;
+            w2_sel_pack(cx, cy, n);
+            return n > 0;
+        }
         if (name == "water_near_sel") {
             for (int r = 6; r <= 12; ++r)
                 for (int dy = -r; dy <= r; ++dy)
@@ -106,6 +133,12 @@
             p.zero_families.insert(f);
         p.set("sw_armed", input_.sw_targeting() ? input_.sw_armed_type() : 0);
         p.set("sw_armed_phase", input_.sw_armed_phase());
+        {   // P1: selected units inside the best 3x3 (named point sel_pack)
+            double px = 0, py = 0;
+            int n = 0;
+            w2_sel_pack(px, py, n);
+            p.set("sel_pack_n", n);
+        }
         // Superweapons v2: per house and type (TYPE = Nuke IronCurtain
         // LightningStorm ChronoSphere ParaDrop AmerParaDrop).
         for (int h = 0; h < world_.house_count(); ++h) {
