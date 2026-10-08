@@ -237,6 +237,10 @@
             input_.pan(std::atoi(args[1].c_str()), std::atoi(args[2].c_str()));
             return true;
         }
+        if (args.size() == 1 && args[0] == "power_mode") {   // W5-E2: arm PowerToggleMode (no UI in YR)
+            input_.set_power_mode(1);
+            return input_.base_mode() == ra2engine::Input::BaseMode::PowerToggle;
+        }
         if (args.size() == 2 && args[0] == "credits") {
             player_credits_ = std::atof(args[1].c_str());
             return true;

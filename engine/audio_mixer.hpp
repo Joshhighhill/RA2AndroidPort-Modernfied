@@ -175,6 +175,7 @@ public:
     // W2-GA-22: the streamed score (Score bus), mixed by render_stereo (and
     // downmixed by render). nullptr = none.
     void set_music(std::shared_ptr<MusicSource> src);
+    std::shared_ptr<MusicSource> music() const;   // W5-E2: the movie player restores it
 
     // Queues an EVA line by SoundBank clip id: full volume, no gain
     // scaling, one active at a time (FIFO behind it). A new call starts

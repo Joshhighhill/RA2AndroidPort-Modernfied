@@ -2785,14 +2785,13 @@ private:
             w_.reshroud_house(0);
             return true;
         case 61: case 62: {   // TurnOff / TurnOn the tagged buildings [RE: FUN_00452350 / FUN_00452250]
-            // [RE-FALLBACK: the World keeps no per-building power switch (owner
-            // C); the state is recorded and saved. The only stock use, ALL10's
-            // Einstein Chronosphere, belongs to a non-AI house whose SW never
-            // fires, so the switch has no further gameplay effect there.]
+            // The World's GoOffline/GoOnline (set_building_power, W5-E2) does the
+            // power switch; the flag is kept for the save / witness.
             int n = 0;
             for (std::size_t i = 0; i < btrack_.size(); ++i)
                 if (!btrack_[i].dead && btrack_[i].tag >= 0 && sys_->tag_has_trigger(btrack_[i].tag, e.trigger_type)) {
                     btrack_[i].off = e.action == 61;
+                    w_.set_building_power((int)i, e.action == 61 ? 0 : 1);
                     ++n;
                 }
             char b[48];
@@ -2924,7 +2923,7 @@ private:
     int teams_created_ = 0, raises_ = 0;
     bool placing_ = false;
     int place_vet_ = 0;      // W4-SQ-04: rank given to the members being created
-    // W5-A (saved, v21): house quarries (35), FireSale houses (9), TeamTypes
+    // W5-A (saved, v22): house quarries (35), FireSale houses (9), TeamTypes
     // that left the map (23), the ResizeView usable area (40).
     std::vector<int> quarry_;
     std::vector<std::uint8_t> fire_sale_;

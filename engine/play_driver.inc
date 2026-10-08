@@ -286,6 +286,7 @@ private:
             const std::string v = c.args.size() > 1 ? c.args[1] : "";
             if (k == "dt" || k == "hz") {}   // W3-B: applied before the run (Runner ctor)
             else if (k == "align") align_ = std::max(0, std::atoi(v.c_str()));   // W3-B
+            else if (k == "leave_band") g_play_leave_band = std::atoi(v.c_str()) != 0;   // W5-E2 (R-143)
             else if (k == "render_every") render_every_ = std::max(1, std::atoi(v.c_str()));
             else if (k == "max_frames") max_frames_ = std::atol(v.c_str());
             else if (k == "park" && c.args.size() > 2) { park_x_ = std::atoi(v.c_str()); park_y_ = std::atoi(c.args[2].c_str()); }

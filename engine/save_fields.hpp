@@ -1062,6 +1062,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.garrison_target);
     io(ar, v.iron_left);   // W2-AN-04 (save v9)
     io(ar, v.w5);          // wave-5 abilities (agent C)
+    io(ar, v.power_off);   // W5-E2 power-down (save v21)
 }
 
 // --- production ---
@@ -1240,7 +1241,7 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.start_credits);
     io(ar, v.team);
     io(ar, v.multiple_factory);   // W2-SK-06 (v13)
-    io(ar, v.fire_superweapons);  // W5-A IQ gate (v21)
+    io(ar, v.fire_superweapons);  // W5-A IQ gate (v22)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---
@@ -1281,7 +1282,7 @@ template <class Ar> void fields(Ar& ar, CampaignHostSave& v) {
     io(ar, v.obj_frames); io(ar, v.obj_texts);
     io(ar, v.end_outcome); io(ar, v.end_flagged_at); io(ar, v.frame); io(ar, v.accum);
     io(ar, v.logged); io(ar, v.teams_created); io(ar, v.raises);
-    io(ar, v.b_off); io(ar, v.house_quarry); io(ar, v.house_fire_sale);   // W5-A (save v21)
+    io(ar, v.b_off); io(ar, v.house_quarry); io(ar, v.house_fire_sale);   // W5-A (save v22)
     io(ar, v.left_teams); io(ar, v.local_override);
 }
 

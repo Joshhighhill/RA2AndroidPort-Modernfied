@@ -5569,4 +5569,17 @@ void World::detonate_projectile(Projectile& p, int victim) {
     proj_events_.push_back(ev);
 }
 
+bool World::set_building_power(int b_idx, int control) {
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return false;
+    Building& b = buildings_[static_cast<std::size_t>(b_idx)];
+    if (!b.alive || b.state == Building::State::Dead) return false;
+    const auto& ts = btypes();
+    if (b.type < 0 || b.type >= static_cast<int>(ts.size()) || ts[static_cast<std::size_t>(b.type)].power >= 0)
+        return false;   // only consumers (PowerDrain > 0) can be powered down
+    const bool off = control < 0 ? !b.power_off : control == 0;
+    if (off == b.power_off) return false;
+    b.power_off = off;
+    return true;
+}
+
 }  // namespace ra2engine

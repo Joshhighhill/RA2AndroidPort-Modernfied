@@ -159,8 +159,11 @@ put the Bink files (`A01_f00e.bik`, ...) in any of:
   or the app's files folder on Android);
 - or replace the placeholder `MOVIES0x.MIX` / `MOVMD03.MIX` with real ones.
 
-A key or a click skips a movie. Movies play without sound (the Bink audio
-track is not decoded yet).
+A movie's sound plays with it when the file carries a Bink Audio track (RDFT or
+DCT, mono or stereo). The music pauses for the movie and resumes after it. The
+menu's own CRT movie has no sound track, so it is silent.
+
+A key or a click skips a movie.
 
 ## 5. Measuring performance (please report real-phone numbers)
 

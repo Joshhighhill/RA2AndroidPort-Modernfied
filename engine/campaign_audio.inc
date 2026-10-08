@@ -57,6 +57,7 @@ private:
                 // parameter]; skipped when the file does not exist.
                 if (!r.name.empty()) {
                     pres_log(pres_.frame(), "movie-request " + r.name + " (action " + std::to_string(r.action) + ")");
+                    g_movie_mixer = audio_.enabled ? audio_.mixer.get() : nullptr;   // W5-E2
                     ingame_movie_.start(r.name);
                 }
                 break;

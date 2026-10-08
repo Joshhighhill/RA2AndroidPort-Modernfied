@@ -215,6 +215,11 @@ bool Mixer::voice_alive(std::uint32_t handle) const {
     return false;
 }
 
+std::shared_ptr<MusicSource> Mixer::music() const {
+    std::lock_guard<std::recursive_mutex> lk(mu_);
+    return music_;
+}
+
 void Mixer::set_music(std::shared_ptr<MusicSource> src) {
     std::lock_guard<std::recursive_mutex> lk(mu_);
     music_ = std::move(src);

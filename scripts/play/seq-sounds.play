@@ -1,0 +1,20 @@
+# seq-sounds -- W5-E2 (R-133): the art "<Seq>Sounds= frame sound" tail
+# [RE: FUN_00523A30 / FUN_00520810]. No Allied/Soviet soldier uses it; the
+# YR T-Rex (DNOA, TrexSequence WalkSounds= 2 TrexFoot) does.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn DNOA 0 building 0:GACNST +4 +4
+wait 2
+require units(0,DNOA) == 1
+click unit 0:DNOA
+click unit 0:DNOA +6 +2
+until 200 why(sequence_sound) >= 1                       @R-133:E
+assert snd(TrexFoot) >= 1                                @R-133:E
+end

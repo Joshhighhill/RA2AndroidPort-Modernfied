@@ -81,11 +81,58 @@ inline bool find_movie(const std::string& name_in, MovieFile& out) {
     return false;
 }
 
+// W5-E2 (R-134): the movie's first Bink Audio track, decoded whole when the
+// movie starts and streamed to the mixer's music slot as 22050 Hz stereo
+// (the theme is paused for the movie and restored after).
+class PcmMusic : public ra2engine::MusicSource {
+public:
+    explicit PcmMusic(std::vector<int16_t> lr) : lr_(std::move(lr)) {}
+    std::size_t read(int16_t* out, std::size_t frames) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        const std::size_t avail = (lr_.size() - pos_) / 2;
+        const std::size_t n = std::min(frames, avail);
+        std::copy(lr_.begin() + static_cast<std::ptrdiff_t>(pos_), lr_.begin() + static_cast<std::ptrdiff_t>(pos_ + 2 * n), out);
+        pos_ += 2 * n;
+        return n;
+    }
+
+private:
+    std::vector<int16_t> lr_;
+    std::size_t pos_ = 0;
+    std::mutex mu_;
+};
+// The mixer movies play their sound through (set by run_menu / GameScene).
+ra2engine::Mixer* g_movie_mixer = nullptr;
+AudioSystem* g_movie_audio = nullptr;   // pumped by MovieScene (the shell's audio)
+inline std::vector<int16_t> movie_audio_22k_stereo(const ra2assets::BinkFile& bf) {
+    std::vector<int16_t> pcm;
+    if (bf.audio.empty()) return pcm;
+    const ra2assets::BinkAudioTrack& t = bf.audio[0];
+    if (t.sample_rate <= 0) return pcm;
+    ra2assets::BinkAudioDecoder dec(t.sample_rate, t.channels(), t.dct(), bf.data.size() > 3 && bf.data[3] == 'b');
+    for (int f = 0; f < bf.num_frames; ++f) {
+        const auto pk = bf.audio_packet(f, 0);
+        if (pk.first) dec.decode_packet(pk.first, pk.second, pcm);
+    }
+    const int ch = dec.channels();
+    const std::size_t frames = pcm.size() / static_cast<std::size_t>(ch);
+    const double step = static_cast<double>(t.sample_rate) / 22050.0;
+    const std::size_t n = static_cast<std::size_t>(frames / step);
+    std::vector<int16_t> lr(2 * n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::size_t k = std::min(frames - 1, static_cast<std::size_t>(i * step));
+        lr[2 * i] = pcm[k * ch];
+        lr[2 * i + 1] = pcm[k * ch + (ch > 1 ? 1 : 0)];
+    }
+    return lr;
+}
+
 // A full-screen movie, letterboxed into the window, at the file's frame rate;
 // any key / click skips it.
 class MoviePlayer {
 public:
     bool start(const std::string& name) {
+        async_.reset();   // joins the worker before its decoder goes
         mv_ = MovieFile{};
         frame_ = -1;
         acc_ = 0.0;
@@ -98,21 +145,55 @@ public:
         const double num = mv_.file->fps_num > 0 ? mv_.file->fps_num : 15.0;
         const double den = mv_.file->fps_den > 0 ? mv_.file->fps_den : 1.0;
         dt_ = den / num;
-        mv_.dec->decode_frame(0);
+        try {
+            mv_.dec->decode_frame(0);
+        } catch (const std::exception& ex) {   // a damaged file: skip it, never crash
+            pres_log(0, "movie " + name + " undecodable (" + ex.what() + ")");
+            mv_ = MovieFile{};
+            return false;
+        }
         frame_ = 0;
+        // W5-E2 (R-173): the rest decodes on a worker; --play waits for each
+        // frame so captures stay deterministic.
+        async_ = std::make_unique<ra2engine::BinkAsync>(mv_.dec.get(), mv_.file->num_frames);
+        async_->set_blocking(g_pres_play_log);
+        async_->want(0);
         pres_log(0, "movie " + name + " playing from " + mv_.source);
+        {   // W5-E2: the audio track
+            std::vector<int16_t> lr = movie_audio_22k_stereo(*mv_.file);
+            audio_frames_ = lr.size() / 2;
+            if (!lr.empty()) {
+                pres_log(0, "movie " + name + " audio frames=" + std::to_string(audio_frames_));
+                if (g_movie_mixer) {
+                    saved_music_ = g_movie_mixer->music();
+                    g_movie_mixer->set_music(std::make_shared<PcmMusic>(std::move(lr)));
+                    music_set_ = true;
+                }
+            }
+        }
         return true;
     }
+    std::size_t audio_frames() const { return audio_frames_; }
+    void stop_audio() {
+        if (music_set_ && g_movie_mixer) g_movie_mixer->set_music(saved_music_);
+        music_set_ = false;
+        saved_music_.reset();
+    }
     bool active() const { return mv_.dec && frame_ >= 0 && frame_ < mv_.file->num_frames; }
-    void skip() { frame_ = mv_.file ? mv_.file->num_frames : -1; }
+    void skip() { frame_ = mv_.file ? mv_.file->num_frames : -1; stop_audio(); }
     void update(double dt) {
-        if (!active()) return;
+        if (!active()) { stop_audio(); return; }
+        if (async_ && async_->failed()) { frame_ = mv_.file->num_frames; stop_audio(); return; }   // damaged frame
         acc_ += dt;
+        bool moved = false;
         while (acc_ >= dt_ && active()) {
             acc_ -= dt_;
             if (frame_ + 1 >= mv_.file->num_frames) { frame_ = mv_.file->num_frames; break; }
-            mv_.dec->decode_frame(++frame_);
+            ++frame_;
+            moved = true;
         }
+        if (moved && active() && async_) async_->want(frame_);
+        if (async_ && async_->failed()) frame_ = mv_.file->num_frames;
     }
     void render(SDL_Renderer* ren) {
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
@@ -121,10 +202,12 @@ public:
         const int w = mv_.file->width, h = mv_.file->height;
         if (!tex_) tex_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, w, h);
         if (!tex_) return;
-        if (tex_frame_ != frame_) {
-            const std::vector<uint8_t> px = mv_.dec->rgba();
-            if (static_cast<int>(px.size()) == w * h * 4) SDL_UpdateTexture(tex_, nullptr, px.data(), w * 4);
-            tex_frame_ = frame_;
+        if (async_) {
+            const int got = async_->take(tex_frame_, px_);
+            if (got >= 0 && got != tex_frame_) {
+                if (static_cast<int>(px_.size()) == w * h * 4) SDL_UpdateTexture(tex_, nullptr, px_.data(), w * 4);
+                tex_frame_ = got;
+            }
         }
         int ow = 0, oh = 0;
         SDL_GetRendererOutputSize(ren, &ow, &oh);
@@ -135,16 +218,25 @@ public:
                          static_cast<int>(w * sc), static_cast<int>(h * sc)};
         SDL_RenderCopy(ren, tex_, nullptr, &d);
     }
-    ~MoviePlayer() { if (tex_) SDL_DestroyTexture(tex_); }
+    ~MoviePlayer() {
+        stop_audio();
+        async_.reset();
+        if (tex_) SDL_DestroyTexture(tex_);
+    }
     MoviePlayer() = default;
     MoviePlayer(const MoviePlayer&) = delete;
     MoviePlayer& operator=(const MoviePlayer&) = delete;
 
 private:
     MovieFile mv_;
+    std::unique_ptr<ra2engine::BinkAsync> async_;   // after mv_: destroyed first
+    std::vector<uint8_t> px_;
     int frame_ = -1, tex_frame_ = -1;
     double acc_ = 0.0, dt_ = 1.0 / 15.0;
     SDL_Texture* tex_ = nullptr;
+    std::size_t audio_frames_ = 0;
+    std::shared_ptr<ra2engine::MusicSource> saved_music_;
+    bool music_set_ = false;
 };
 
 // A scene that plays a list of movies (missing ones skipped) and then hands
@@ -162,6 +254,8 @@ public:
     }
     void update(double dt) override {
         player_.update(dt);
+        if (g_movie_audio && g_movie_audio->enabled && g_movie_audio->mixer)   // W5-E2: feed the sink
+            g_movie_audio->out.pump(*g_movie_audio->mixer);
         if (!player_.active()) advance();
     }
     void render(ra2engine::Platform& plat, ra2engine::TextureCache&) override {
@@ -180,6 +274,7 @@ public:
 
 private:
     void advance() {
+        if (g_movie_audio && g_movie_audio->enabled) g_movie_mixer = g_movie_audio->mixer.get();
         while (ix_ < names_.size()) {
             if (player_.start(names_[ix_++])) { ++played_; return; }
         }

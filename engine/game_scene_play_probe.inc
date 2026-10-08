@@ -19,6 +19,7 @@
         for (const char* f : {"snd", "why", "eva", "evareq"}) p.zero_families.insert(f);
         for (const auto& kv : g_pres_audio_counts) p.set(kv.first, static_cast<double>(kv.second));
         p.set("follow_unit", follow_unit_);           // W5-E Follow hotkey
+        p.set("hidden_marked", static_cast<double>(hidden_.marked));   // W5-E2 occluded objects (last frame)
         p.set_s("load_art", SkirmishLoadArt::g_skirmish_load_art_drawn);   // W5-E skirmish loading art
         p.set_s("screencap", last_screencap_);        // W5-E ScreenCapture hotkey
         p.set("hotkeys_version", hotkeys_ver_);
@@ -337,7 +338,13 @@
                                     ? ba_.roster[input_.placement_type()].id : "");
         const ra2engine::Input::BaseMode bm = input_.base_mode();
         p.set_s("base_mode", bm == ra2engine::Input::BaseMode::Repair ? "repair"
-                             : bm == ra2engine::Input::BaseMode::Sell ? "sell" : "none");
+                             : bm == ra2engine::Input::BaseMode::Sell ? "sell"
+                             : bm == ra2engine::Input::BaseMode::PowerToggle ? "power" : "none");
+        {   // W5-E2: the player's powered-down buildings
+            int off = 0;
+            for (const ra2engine::Building& b : world_.buildings()) off += (b.alive && b.house == 0 && b.power_off);
+            p.set("powered_down(0)", off);
+        }
         p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
         p.set("dialog_open", 0);
         gf_abort_.play_probe(p);   // gF G-14: Abort Mission confirm

@@ -1,4 +1,5 @@
 #pragma once
+#include <stdexcept>
 // INTERNAL entropy-layer primitives for the from-scratch Bink 1 ("BIKi" rev-'i')
 // video decoder. This header is NOT part of the public ra2assets API: it exposes
 // the bit reader, Huffman-tree machinery, and per-plane "bundle" decode
@@ -172,6 +173,9 @@ struct BinkContext {
     // caller's concern (X_OFF/Y_OFF -> int8, DC -> int16).
     int get_value(int id) {
         Bundle& bundle = b[id];
+        // W5-E2: a damaged / foreign file must throw, never read past the bundle.
+        if (bundle.consumed < 0 || static_cast<std::size_t>(bundle.consumed) >= bundle.data.size())
+            throw std::runtime_error("bink: bundle exhausted (damaged frame)");
         return bundle.data[static_cast<std::size_t>(bundle.consumed++)];
     }
 };

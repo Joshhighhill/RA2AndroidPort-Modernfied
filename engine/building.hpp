@@ -177,6 +177,11 @@ struct Building {
     int garrison_target = -1;
     // W2-AN-04: Iron Curtain invulnerability left (seconds); 0 = none.
     double iron_left = 0.0;
+    // W5-E2 [RE: BuildingClass +0x660 HasPower; GoOffline FUN_00452350 /
+    // GoOnline FUN_00452250]: powered down by the owner (TS-era power-toggle
+    // mode, trigger TurnOff/TurnOn). A powered-down building draws no power
+    // and does not work (defences go offline). Inert default (false).
+    bool power_off = false;
     BldW5 w5;                        // wave-5 abilities (abil_w5.hpp)
 };
 

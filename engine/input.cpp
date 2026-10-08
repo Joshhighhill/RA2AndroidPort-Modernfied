@@ -189,6 +189,7 @@ Input::BaseMode next_mode(Input::BaseMode cur, Input::BaseMode want, int control
 
 void Input::set_repair_mode(int control) { set_mode_(BaseMode::Repair, control); }
 void Input::set_sell_mode(int control) { set_mode_(BaseMode::Sell, control); }
+void Input::set_power_mode(int control) { set_mode_(BaseMode::PowerToggle, control); }
 
 void Input::set_mode_(BaseMode want, int control) {
     const BaseMode next = next_mode(mode_, want, control);
@@ -224,7 +225,7 @@ bool Input::cancel_one_mode() {
     }
     if (mode_ == BaseMode::Repair) { mode_ = BaseMode::None; return true; }
     if (mode_ == BaseMode::Sell) { mode_ = BaseMode::None; return true; }
-    // (PowerToggleMode would sit here -- not modeled.)
+    if (mode_ == BaseMode::PowerToggle) { mode_ = BaseMode::None; return true; }   // W5-E2
     if (sw_targeting_) { sw_targeting_ = false; return true; }
     // (PlanningMode, PlaceBeaconMode would sit here -- not modeled.)
     return false;
@@ -840,6 +841,9 @@ void Input::handle(const InputEvent& ev) {
                         if (mode_ == BaseMode::Repair) {
                             actions_.repair_clicked = true;
                             actions_.repair_building = bi;
+                        } else if (mode_ == BaseMode::PowerToggle) {   // W5-E2
+                            actions_.power_clicked = true;
+                            actions_.power_building = bi;
                         } else {
                             actions_.sell_clicked = true;
                             actions_.sell_building = bi;
