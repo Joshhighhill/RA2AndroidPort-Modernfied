@@ -256,6 +256,29 @@ private:
             const ra2engine::Unit& u = us[i];
             W5U& p = w5_u_[i];
             const UnitVoices& v = audio_->voices[u.image];
+            // W5-E2 [RE: spy infiltration FUN_004571E0]: a spy consumed on the
+            // tick after it had an infiltrate order -> the victim's and the
+            // spy owner's lines by purpose (Medium: the per-branch guards).
+            if (p.seen && p.inf_target >= 0 && !u.alive && u.die_time < 0.0 && p.alive)
+                w5_infiltrated(w, p.inf_target, u.house, p.inf_purpose);
+            // W5-E2 (R-133) [RE: InfantryType sequence reader FUN_00523A30 reads
+            // "<Seq>Sounds= frame sound [frame sound]" (strtok, at most 2 pairs)
+            // from the art Sequence section; the DoType machine FUN_00520810
+            // plays a sound when stage % count == its frame].
+            if (u.ia.armed && u.alive && u.ia.seq >= 0 && (u.ia.seq != p.seq || u.ia.stage != p.stage)) {
+                const std::vector<SeqSound>& ss = w5_seq_sounds(u.image, u.ia.seq);
+                if (!ss.empty()) {
+                    const ra2engine::InfTable* it = w.inf_table(u.image);
+                    const int cnt = it ? std::max(1, it->e[static_cast<std::size_t>(u.ia.seq)].count) : 1;
+                    for (const SeqSound& q : ss)
+                        if (u.ia.stage % cnt == q.frame) snd_.play_at(q.sound, u.fx, u.fy, "sequence sound");
+                }
+            }
+            p.seq = u.ia.seq;
+            p.stage = u.ia.stage;
+            p.alive = u.alive;
+            p.inf_target = u.infiltrate_target;
+            p.inf_purpose = u.infiltrate_purpose;
             if (!p.seen) {
                 p.seen = true;
                 p.hp = u.hp;
@@ -316,9 +339,13 @@ private:
                 (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size())) ? &ba.roster[static_cast<std::size_t>(b.type)]
                                                                                        : nullptr;
             if (!p.seen) {
-                p = W5B{true, b.hp, b.house, b.def_turret_facing, b.being_repaired, 0};
+                p = W5B{true, b.hp, b.house, b.def_turret_facing, b.being_repaired, 0, b.power_off};
                 continue;
             }
+            // W5-E2 [RE: FUN_00452350 / FUN_00452250 -- IsPlayerControl(owner)]:
+            // the player's building powered down / up (toggle mode or trigger).
+            if (!dead && b.house == 0 && b.power_off != p.power_off) note_power_toggle(!b.power_off);
+            p.power_off = b.power_off;
             if (t) {
                 const std::string& trs = w5_bld_key(t->id, "TurretRotateSound");
                 if (!trs.empty())
@@ -425,13 +452,58 @@ private:
         bool sinking = false, crashing = false;
         double turret = 0.0;
         std::uint32_t loop = 0, turret_loop = 0;
+        bool alive = true;
+        int inf_target = -1, inf_purpose = 0;
+        int seq = -1, stage = -1;
     };
+    struct SeqSound { int frame; std::string sound; };
+    const Ini* w5_art_ini_ = nullptr;
+    std::map<std::string, std::vector<SeqSound>> w5_seq_sounds_;
+    const std::vector<SeqSound>& w5_seq_sounds(const std::string& image, int seq) {
+        const std::string key = image + "#" + std::to_string(seq);
+        auto it = w5_seq_sounds_.find(key);
+        if (it != w5_seq_sounds_.end()) return it->second;
+        std::vector<SeqSound> v;
+        if (w5_art_ini_) {
+            const std::string sec = pres_clean(w5_art_ini_->get(image, "Sequence"));
+            if (!sec.empty()) {
+                std::stringstream ss(pres_clean(w5_art_ini_->get(sec, std::string(ra2engine::inf_seq_name(seq)) + "Sounds")));
+                std::string f, snd;
+                while (v.size() < 2 && ss >> f >> snd) {   // at most 2 pairs (the 0x24-byte entry)
+                    v.push_back(SeqSound{std::atoi(f.c_str()), snd});
+                    snd_.ensure_sound(snd);
+                }
+            }
+        }
+        return w5_seq_sounds_.emplace(key, std::move(v)).first->second;
+    }
+    void w5_infiltrated(const ra2engine::World& w, int bi, int spy_house, int purpose) {
+        if (bi < 0 || bi >= static_cast<int>(w.buildings().size())) return;
+        const int victim = w.buildings()[static_cast<std::size_t>(bi)].house;
+        using P = ra2engine::World::InfiltratePurpose;
+        const char* vline = nullptr;   // the infiltrated player
+        std::vector<const char*> sline;   // the spy's owner
+        switch (static_cast<P>(purpose)) {
+            case P::RadarLab: vline = "EVA_RadarSabotaged"; sline = {"EVA_BuildingInfRadarSabotaged"}; break;
+            case P::PowerPlant: vline = "EVA_PowerSabotaged"; sline = {"EVA_BuildingInfiltrated", "EVA_EnemyBasePoweredDown"}; break;
+            case P::Refinery: vline = "EVA_CashStolen"; sline = {"EVA_BuildingInfCashStolen"}; break;
+            case P::StolenAllied: case P::StolenSoviet: case P::StolenThird:
+                vline = "EVA_TechnologyStolen"; sline = {"EVA_BuildingInfiltrated", "EVA_NewTechnologyAcquired"}; break;
+            case P::Factory: vline = "EVA_TechnologyStolen"; sline = {"EVA_BuildingInfiltrated"}; break;
+            default: sline = {"EVA_BuildingInfiltrated"}; break;
+        }
+        pres_log(frame_, "infiltrated b" + std::to_string(bi) + " purpose=" + std::to_string(purpose));
+        if (victim == 0 && vline) snd_.eva(vline);
+        if (spy_house == 0)
+            for (const char* l : sline) snd_.eva(l);
+    }
     struct W5B {
         bool seen = false;
         int hp = 0, house = -1;
         double turret = 0.0;
         bool wrench = false;
         std::uint32_t turret_loop = 0;
+        bool power_off = false;
     };
     std::vector<W5U> w5_u_;
     std::vector<W5B> w5_b_;

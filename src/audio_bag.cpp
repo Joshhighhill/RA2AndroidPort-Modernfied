@@ -132,10 +132,44 @@ std::vector<int16_t> decode_bag_clip(const uint8_t* bag_data, size_t bag_len,
         throw std::runtime_error("bag: clip '" + clip.name +
             "' has unsupported flags " + std::to_string(clip.flags) +
             " (neither PCM bit 1 nor ADPCM bit 3)");
-    if (out_info.channels != 1)
-        throw std::runtime_error("bag: clip '" + clip.name +
-            "' is stereo IMA-ADPCM -- unimplemented (only uslide1/uslide2 in "
-            "the real install; see docs/re/audio.md)");
+    if (out_info.channels == 2) {
+        // W5-E2 (R-134) [RE: docs/re/audio.md -- chunk decoder 0x0040aa70
+        // generalises to N channels: one 4-byte header per channel back to
+        // back (L then R), then 4-byte / 8-nibble sub-blocks cycling L, R,
+        // L, R into an interleaved 16-bit output; headers are validated].
+        // Only uslide1 / uslide2 use it in the install.
+        if (clip.chunk_size < 8)
+            throw std::runtime_error("bag: stereo ADPCM clip '" + clip.name + "' bad chunk_size");
+        std::vector<int16_t> out;
+        size_t remaining = clip.size;
+        const uint8_t* p = src;
+        while (remaining > 0) {
+            const size_t chunk = remaining < clip.chunk_size ? remaining : clip.chunk_size;
+            if (chunk < 8)
+                throw std::runtime_error("bag: stereo ADPCM clip '" + clip.name + "' trailing bytes");
+            int sl = (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8)), il = p[2];
+            int sr = (int16_t)((uint16_t)p[4] | ((uint16_t)p[5] << 8)), ir = p[6];
+            if (il > 88 || ir > 88)
+                throw std::runtime_error("bag: stereo ADPCM clip '" + clip.name + "' step index > 88");
+            out.push_back((int16_t)sl);
+            out.push_back((int16_t)sr);
+            for (size_t w = 8; w + 8 <= chunk; w += 8) {
+                const uint8_t* wl = p + w;
+                const uint8_t* wr = p + w + 4;
+                for (int i = 0; i < 4; ++i) {
+                    const int l0 = ima::decode_nibble(wl[i] & 0xf, sl, il);
+                    const int l1 = ima::decode_nibble(wl[i] >> 4, sl, il);
+                    const int r0 = ima::decode_nibble(wr[i] & 0xf, sr, ir);
+                    const int r1 = ima::decode_nibble(wr[i] >> 4, sr, ir);
+                    out.push_back((int16_t)l0); out.push_back((int16_t)r0);
+                    out.push_back((int16_t)l1); out.push_back((int16_t)r1);
+                }
+            }
+            p += chunk;
+            remaining -= chunk;
+        }
+        return out;
+    }
     if (clip.chunk_size < 4)
         throw std::runtime_error("bag: ADPCM clip '" + clip.name +
             "' bad chunk_size " + std::to_string(clip.chunk_size) +

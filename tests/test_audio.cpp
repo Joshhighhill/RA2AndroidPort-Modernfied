@@ -251,10 +251,10 @@ TEST_CASE("bag decode: errors") {
     CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
                                     clip_of(0, 8, 12, 0), info),
                     std::runtime_error);
-    // Stereo IMA-ADPCM (flags 13): unimplemented-with-throw (only
-    // uslide1/uslide2 in the real install -- docs/re/audio.md).
+    // W5-E2: stereo IMA-ADPCM (flags 13) decodes now; a chunk too small for
+    // the two 4-byte channel headers still throws.
     CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
-                                    clip_of(0, 16, 13, 1024), info),
+                                    clip_of(0, 16, 13, 4), info),
                     std::runtime_error);
     // Neither PCM (bit 1) nor ADPCM (bit 3) flagged.
     CHECK_THROWS_AS(decode_bag_clip(bag.data(), bag.size(),
@@ -387,4 +387,21 @@ TEST_CASE("audio: WavImaStream blocks concatenate to load_wav_ima (theme.mix gri
     CHECK(acc.size() == whole.size());
     CHECK(acc == whole);
     CHECK(st.total_frames() * static_cast<std::size_t>(info.channels) == whole.size());
+}
+
+// W5-E2 (R-134) [RE: docs/re/audio.md chunk decoder 0x0040aa70, N-channel
+// shape]: two back-to-back channel headers, then 4-byte L / R sub-blocks into
+// an interleaved output (the header predictors first).
+TEST_CASE("bag decode: stereo IMA-ADPCM (flags 13)") {
+    std::vector<uint8_t> bag = {0x10, 0x00, 0, 0,   0x20, 0x00, 0, 0,   // L pred 16, R pred 32
+                                0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00};   // 8 zero codes each
+    AudioClipInfo info;
+    auto pcm = decode_bag_clip(bag.data(), bag.size(), clip_of(0, 16, 13, 16), info);
+    CHECK(info.channels == 2);
+    REQUIRE(pcm.size() == 2 + 16);
+    CHECK(pcm[0] == 16);
+    CHECK(pcm[1] == 32);
+    // code 0 at step 7: delta 7>>3 = 0 -> the predictor holds.
+    CHECK(pcm[2] == 16);
+    CHECK(pcm[3] == 32);
 }

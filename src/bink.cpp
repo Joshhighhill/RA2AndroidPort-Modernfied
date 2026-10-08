@@ -40,6 +40,14 @@ BinkFile BinkFile::parse(std::vector<uint8_t> bytes) {
         index_start > bytes.size())
         throw std::runtime_error("bink: truncated frame index");
 
+    for (uint32_t t = 0; t < num_tracks; ++t) {   // W5-E2: three arrays of num_tracks
+        BinkAudioTrack tr;
+        const uint8_t* rf = d + 0x2C + 4u * num_tracks + 4u * t;
+        tr.sample_rate = static_cast<int>(rf[0] | (rf[1] << 8));
+        tr.flags = static_cast<int>(rf[2] | (rf[3] << 8));
+        tr.id = rd32(d + 0x2C + 8u * num_tracks + 4u * t);
+        bf.audio.push_back(tr);
+    }
     bf.frame_offsets.resize(count);
     for (std::size_t i = 0; i < count; ++i)
         bf.frame_offsets[i] = rd32(d + index_start + i * 4u);
@@ -57,11 +65,34 @@ bool BinkFile::is_keyframe(int f) const {
 std::pair<const uint8_t*, std::size_t> BinkFile::frame(int f) const {
     if (f < 0 || f >= num_frames)
         throw std::out_of_range("bink: frame index out of range");
-    const uint32_t off = frame_offsets[static_cast<std::size_t>(f)] & ~1u;
+    uint32_t off = frame_offsets[static_cast<std::size_t>(f)] & ~1u;
     const uint32_t end = frame_offsets[static_cast<std::size_t>(f) + 1u] & ~1u;
     if (end < off || end > data.size())
         throw std::runtime_error("bink: frame range outside file");
+    // W5-E2: skip the frame's audio packets (u32 length + payload per track).
+    for (std::size_t t = 0; t < audio.size(); ++t) {
+        if (off + 4u > end) throw std::runtime_error("bink: audio packet outside frame");
+        const uint32_t len = rd32(data.data() + off);
+        if (len > end - off - 4u) throw std::runtime_error("bink: audio packet outside frame");
+        off += 4u + len;
+    }
     return {data.data() + off, static_cast<std::size_t>(end - off)};
+}
+
+std::pair<const uint8_t*, std::size_t> BinkFile::audio_packet(int f, int t) const {
+    if (f < 0 || f >= num_frames || t < 0 || t >= static_cast<int>(audio.size())) return {nullptr, 0};
+    uint32_t off = frame_offsets[static_cast<std::size_t>(f)] & ~1u;
+    const uint32_t end = frame_offsets[static_cast<std::size_t>(f) + 1u] & ~1u;
+    if (end < off || end > data.size()) return {nullptr, 0};
+    for (int k = 0; k <= t; ++k) {
+        if (off + 4u > end) return {nullptr, 0};
+        const uint32_t len = rd32(data.data() + off);
+        if (len > end - off - 4u) return {nullptr, 0};
+        if (k == t) return len ? std::make_pair(data.data() + off + 4u, static_cast<std::size_t>(len))
+                               : std::make_pair(static_cast<const uint8_t*>(nullptr), std::size_t{0});
+        off += 4u + len;
+    }
+    return {nullptr, 0};
 }
 
 // ===========================================================================

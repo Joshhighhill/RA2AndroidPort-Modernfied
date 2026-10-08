@@ -58,6 +58,7 @@
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
+#include "bink_async.hpp"     // W5-E2 R-173: Bink decoding off the main thread
 #include "touch_gestures.hpp" // G-70 (controls self-test drives the real gesture layer)
 #include <set>                // G-07 held queues (game_scene_controls.inc)
 #include "play_script.hpp"   // G0 harness: unit selector parsing (game_scene_play.inc)
@@ -4874,7 +4875,8 @@ bool draw_mode_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Mode
                       const ra2engine::World& world, const BuildingAssets& ba,
                       const ra2engine::Input& input, int mx, int my, std::uint64_t game_frame) {
     const ra2engine::Input::BaseMode mode = input.base_mode();
-    if (!mc.ok || mode == ra2engine::Input::BaseMode::None) return false;
+    if (!mc.ok || mode == ra2engine::Input::BaseMode::None || mode == ra2engine::Input::BaseMode::PowerToggle)
+        return false;   // W5-E2: no power-toggle cursor art in YR [RE-FALLBACK: the normal cursor]
     const bool repair = (mode == ra2engine::Input::BaseMode::Repair);
     const int bi = input.building_under(mx, my);
     // 0 = armed over nothing, 1 = valid target, 2 = refused target.
@@ -5382,6 +5384,7 @@ struct MenuArt {
     // to the pointer, not the pointee). Null on a partial install (language.mix or
     // ra2ts_s.bik absent / parse failure) -> the static mnscrns backdrop shows.
     ra2assets::BinkVideoDecoder* bink_dec = nullptr;
+    ra2engine::BinkAsync* bink_async = nullptr;   // W5-E2: the worker that owns bink_dec
     int bink_frames = 0;                      // ra2ts_s.bik frame count (431)
     int bink_w = 0, bink_h = 0;               // native movie dims (472x450)
     // [P8 / options.md §4] Options-page control skins (local.mix PCX, own
@@ -5564,7 +5567,10 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
         const int ry = 199 + 42 * r;
         blit_layer("shell:sdbtnbkgd", art.sdbtnbkgd, 0, shell2_pal, 472, ry, 168, 42);
         if (!row_used[r] && art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 10) {
-            SDL_Texture* et = shp_frame_tex(tc, "shell:sdbtn10", *art.sdbtnanm, 10, *sdbtn_pal);
+            // W5-E2: an empty row plays the 11..16 plate band while leaving.
+            int ef = 10;
+            if (row_frames && row_frames[r] >= 0 && row_frames[r] < art.sdbtnanm->count()) ef = row_frames[r];
+            SDL_Texture* et = shp_frame_tex(tc, "shell:sdbtn" + std::to_string(ef), *art.sdbtnanm, ef, *sdbtn_pal);
             if (et) {
                 SDL_SetTextureColorMod(et, 255, 255, 255);
                 SDL_Rect ed = dev(484, ry, 156, 42);
@@ -5693,6 +5699,7 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
 
 #include "movie_player.inc"   // W5-E campaign movies (Bink)
 #include "skirmish_load.inc"   // W5-E: the ls800<country>.shp loading screen
+#include "pres_hidden.inc"     // W5-E2: See Hidden Objects (Behind= anim)
 
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
@@ -6021,6 +6028,7 @@ public:
         // runs them as a modal loop; the scenario does not advance meanwhile).
         if (ingame_movie_.active()) {   // W5-E: a trigger movie pauses the scenario
             ingame_movie_.update(dt);
+            if (audio_.enabled && audio_.mixer) audio_.out.pump(*audio_.mixer);   // W5-E2 movie sound
             now_ = SDL_GetTicks();
             return;
         }
@@ -6219,6 +6227,7 @@ public:
         // armed (it is not one-shot), so the player can work through a base.
         if (act.deploy_clicked) deploy_selected();   // ACTION_SELF (click the selected unit)
         if (act.repair_clicked) world_.toggle_repair(act.repair_building, 0);
+        if (act.power_clicked) world_.set_building_power(act.power_building, -1);   // W5-E2 (EVA: pres edge)
         if (act.sell_clicked) world_.begin_sell(act.sell_building, 0);
         // Placement confirm.
         if (act.place_confirmed && input_.placement_active()) {
@@ -6396,6 +6405,8 @@ public:
         update_light_sources();   // W3-FIX-A
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
+        hidden_.rules = &rules_ini_;   // W5-E2 R-146: the Behind= marker over occluded objects
+        hidden_.draw(ren, tc, world_, ba_, cam_, playfield_w_, kWinH, g_user_settings && g_user_settings->show_hidden);
         if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
             int pcx = 0, pcy = 0;
             input_.placement_cell(pcx, pcy);
@@ -7134,6 +7145,7 @@ private:
     bool                 show_briefing_ = false;  // F1 toggles the mission briefing
     RestatePage          restate_;                // W5-E: the briefing as dialog 0x10C
     MoviePlayer          ingame_movie_;           // W5-E: trigger actions 10 / 100 / 116
+    HiddenMarkers        hidden_;                 // W5-E2: See Hidden Objects
     int                  brief_mx_ = -1, brief_my_ = -1;
     static bool soviet_campaign(const ra2engine::SkirmishConfig& c) {
         return !c.campaign_map.empty() && camp::up(c.campaign_side) == "NOD";
@@ -7308,6 +7320,7 @@ struct MenuArtStore {
     // address even if the store moves, keeping the decoder's reference valid.
     std::unique_ptr<ra2assets::BinkFile> bink_file;
     std::unique_ptr<ra2assets::BinkVideoDecoder> bink_dec;
+    std::unique_ptr<ra2engine::BinkAsync> bink_async;   // W5-E2 (destroyed first: joins before bink_dec dies)
     MenuArt art;
 };
 
@@ -7561,6 +7574,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.fsscrn_pal = store.fsscrn_pal.get();
     store.art.dialog_pal = store.dialog_pal.get();
     store.art.audio    = store.audio.get();
+    g_movie_audio = store.audio ? &store.audio->sys : nullptr;   // W5-E2 movie sound between scenes
     // [Task 1] Wire true-design chrome + palettes (non-owning views into store).
     store.art.bg_s          = store.bg_s.get();
     store.art.lwscrn        = store.lwscrn.get();
@@ -7579,6 +7593,9 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.mainbttn_pal_ok = store.mainbttn_pal_ok;
     // [Task 5] Wire the Bink CRT movie (non-owning view into store).
     store.art.bink_dec    = store.bink_dec.get();
+    if (store.bink_dec && store.bink_file)   // W5-E2 R-173
+        store.bink_async = std::make_unique<ra2engine::BinkAsync>(store.bink_dec.get(), store.bink_file->num_frames);
+    store.art.bink_async  = store.bink_async.get();
     store.art.bink_frames = store.bink_file ? store.bink_file->num_frames : 0;
     store.art.bink_w      = store.bink_file ? store.bink_file->width : 0;
     store.art.bink_h      = store.bink_file ? store.bink_file->height : 0;
@@ -7771,6 +7788,8 @@ class SkirmishSetupScene;
 // Exit quits. All pages share the SINGLE layout()+ShellXform transform, so the
 // click==draw invariant holds on every page. Back is just a nav button to the
 // parent page. `MainMenuScene` is an alias for the PAGE_MAIN entry (below).
+// W5-E2 (R-143): `set leave_band 1` in a --play script (see ShellScene).
+bool g_play_leave_band = false;
 class ShellScene : public Scene {
 public:
     ShellScene(const Rules& rules, bool no_audio, const MenuArt& art,
@@ -7807,6 +7826,7 @@ public:
     void   play_probe(ra2play::Probe& p) override {
         p.scene = std::string("shell:") + header();
         p.set_s("page", header());
+        p.n["shell_leaving"] = leave_t_ >= 0.0 ? 1 : 0;   // W5-E2: the leave band is playing
         kb_.play_probe(p);   // W5-E
         if (kb_.open_) return;
         if (page_ == PAGE_OPTIONS) {   // W5-E: options controls (opt:res, opt:res:<i>, opt:slider:<name>=<v>)
@@ -7815,6 +7835,12 @@ public:
                 p.targets[k] = ra2play::Rect{d.x, d.y, d.w, d.h};
             };
             put("opt:res", 255, 73, 180, 21);
+            static const char* kCk[OptionsPageState::C_COUNT] = {"tooltips", "targetlines", "hidden"};
+            for (int i = 0; i < OptionsPageState::C_COUNT; ++i) {
+                const ra2engine::SbRect r = OptionsPageState::check_rect(i);
+                put(std::string("opt:check:") + kCk[i], r.x, r.y, 18, r.h);
+                p.set(std::string("opt_check(") + kCk[i] + ")", opt_.chk[i] ? 1 : 0);
+            }
             if (opt_.res_open)
                 for (int i = 0; i < static_cast<int>(OptionsPageState::modes().size()); ++i)
                     put("opt:res:" + std::to_string(i), 255, 96 + i * 18, 180, 18);
@@ -8025,16 +8051,43 @@ private:
     // W2-UI-24 [RE: FUN_005E5150, mainmenu_true.md §7.2]: page enter =
     // staggered top-to-bottom power-on, one SDBTNANM step per 30 ms tick, row
     // k starting k ticks late. [RE-FALLBACK: the enter band plays 10 -> 5 (the
-    // button face sliding in over the empty socket); the 11..16 leave band is
-    // not played (page switches stay immediate so scripted clicks land).]
+    // button face sliding in over the empty socket) on button rows only.]
+    // W5-E2 (R-143) [RE: gamemd FUN_00606980, the page animator -- leave flag
+    // off: Sleep(0x1E) per tick, row i (top to bottom, the bottom-anchored
+    // button included) starts i+1 ticks late, the loop runs max-stagger + 6
+    // ticks; a live button row plays 5 + step (the face sliding out into the
+    // socket, ending on 10), a row without a button plays 11 + step (the plate
+    // band, ending on 10); then WM 0x4ED switches the page]. The page switch
+    // waits for it; input is ignored meanwhile.
+    // [RE-FALLBACK: a row that has not started keeps its settled look -- the
+    // original redraws the live face as frame 1 / the empty row as frame 0.]
     double       enter_t_ = 0.0;
+    // --play: the band is skipped (an immediate switch keeps every existing
+    // script frame-identical -- several skirmish scripts are sensitive to the
+    // frame the game starts on) unless the script says `set leave_band 1`.
+    static constexpr int kLeaveTicks = 15;   // 6 rows + 3 (the array's sentinels) + 6
+    double       leave_t_ = -1.0;            // >= 0 while the leave band plays
+    Scene*       leave_next_ = nullptr;      // the page to switch to when it ends
     bool transition_frames(int out[6]) const {
+        bool row_used[6] = {false, false, false, false, false, false};
+        for (const ShellButton& b : layout()) {
+            const int r = (b.rect.y - 199) / 42;
+            if (r >= 0 && r < 6) row_used[r] = true;
+        }
+        if (leave_t_ >= 0.0) {   // W5-E2: the leave band
+            const int tick = static_cast<int>(leave_t_ / 0.030);
+            for (int r = 0; r < 6; ++r) {
+                const int step = tick - (r + 1);
+                out[r] = step < 0 ? -1 : step < 6 ? (row_used[r] ? 5 : 11) + step : 10;
+            }
+            return true;
+        }
         if (enter_t_ <= 0.0) return false;   // a never-updated page (--menu-shot) draws settled
         const int tick = static_cast<int>(enter_t_ / 0.030);
         bool any = false;
         for (int r = 0; r < 6; ++r) {
             const int step = tick - r;
-            out[r] = step < 0 ? 10 : step < 6 ? 10 - step : -1;
+            out[r] = !row_used[r] ? -1 : step < 0 ? 10 : step < 6 ? 10 - step : -1;
             any = any || out[r] >= 0;
         }
         return any;
@@ -8066,34 +8119,36 @@ private:
         SDL_Window* w = SDL_GetKeyboardFocus();
         return !w || (SDL_GetWindowFlags(w) & SDL_WINDOW_MINIMIZED) != 0;
     }
+    // W5-E2 (R-173): only the clock runs here; the decoding happens on the
+    // BinkAsync worker (blocking under --play so shots stay deterministic).
     void bink_advance(double dt) {
-        if (!art_.bink_dec || art_.bink_frames <= 0) return;
-        if (!bink_started_) {                 // first tick: decode the keyframe (frame 0)
+        if (!art_.bink_async || art_.bink_frames <= 0) return;
+        art_.bink_async->set_blocking(g_pres_play_log);
+        if (!bink_started_) {                 // first tick: frame 0 (or where the menu was)
             bink_started_ = true;
-            if (g_menu_bink_frame >= 0 && g_menu_bink_frame < art_.bink_frames) {
-                bink_frame_ = g_menu_bink_frame;   // W5-E: continue across pages
-                return;
-            }
-            art_.bink_dec->decode_frame(0);
-            bink_frame_ = 0;
-            g_menu_bink_frame = 0;
-            return;                           // show frame 0 for its full 1/15s
+            bink_frame_ = (g_menu_bink_frame >= 0 && g_menu_bink_frame < art_.bink_frames) ? g_menu_bink_frame : 0;
+            g_menu_bink_frame = bink_frame_;
+            art_.bink_async->want(bink_frame_);
+            return;                           // show it for its full 1/15s
         }
         if (menu_window_paused()) return;   // W5-E: paused on focus loss
         bink_accum_ += dt;
+        bool moved = false;
         while (bink_accum_ >= kBinkFrameDt) {
             bink_accum_ -= kBinkFrameDt;
             int next = bink_frame_ + 1;
             if (next >= art_.bink_frames) next = 0;   // seamless loop back to keyframe
-            art_.bink_dec->decode_frame(next);        // sequential; rewinds to 0 if next==0
             bink_frame_ = next;
             g_menu_bink_frame = next;
+            moved = true;
         }
+        if (moved) art_.bink_async->want(bink_frame_);
     }
-    // Upload the current decoded frame to the reused streaming texture when it
-    // changed; return it for draw_shell (or null if no movie / not yet decoded).
+    // Upload the newest decoded frame to the reused streaming texture when it
+    // changed; return it for draw_shell (or null if no movie / nothing yet).
+    std::vector<uint8_t> bink_px_;
     SDL_Texture* bink_texture(SDL_Renderer* ren) {
-        if (!art_.bink_dec || art_.bink_frames <= 0 || bink_frame_ < 0) return nullptr;
+        if (!art_.bink_async || art_.bink_frames <= 0 || bink_frame_ < 0) return nullptr;
         const int w = art_.bink_w, h = art_.bink_h;
         if (w <= 0 || h <= 0) return nullptr;
         if (!bink_tex_) {
@@ -8103,17 +8158,21 @@ private:
             SDL_SetTextureBlendMode(bink_tex_, SDL_BLENDMODE_NONE);
             bink_tex_frame_ = -1;
         }
-        if (bink_tex_frame_ != bink_frame_) {
-            const std::vector<uint8_t> rgba = art_.bink_dec->rgba();
-            if (static_cast<int>(rgba.size()) == w * h * 4)
-                SDL_UpdateTexture(bink_tex_, nullptr, rgba.data(), w * 4);
-            bink_tex_frame_ = bink_frame_;
+        const int got = art_.bink_async->take(bink_tex_frame_, bink_px_);
+        if (got < 0) return nullptr;
+        if (got != bink_tex_frame_) {
+            if (static_cast<int>(bink_px_.size()) == w * h * 4)
+                SDL_UpdateTexture(bink_tex_, nullptr, bink_px_.data(), w * 4);
+            bink_tex_frame_ = got;
         }
         return bink_tex_;
     }
 
 public:
-    ~ShellScene() override { if (bink_tex_) SDL_DestroyTexture(bink_tex_); }
+    ~ShellScene() override {
+        if (bink_tex_) SDL_DestroyTexture(bink_tex_);
+        delete leave_next_;   // W5-E2: a page switch still waiting on its leave band
+    }
 };
 
 // The main-menu entry is just a ShellScene on PAGE_MAIN. Existing call sites
@@ -8130,6 +8189,13 @@ void MainMenuScene::update(double dt) {
     // (the scene driver calls update()+render() per frame, so it loops live).
     mon_accum_ += dt;
     enter_t_ += dt;   // W2-UI-24
+    if (leave_t_ >= 0.0) {   // W5-E2 (R-143): the leave band, then the page switch
+        leave_t_ += dt;
+        if (leave_t_ >= kLeaveTicks * 0.030 && leave_next_) {   // the last frame keeps the emptied sockets
+            next_ = leave_next_;
+            leave_next_ = nullptr;
+        }
+    }
     // [Task 5 / §9] Advance the Bink CRT movie at 15 fps (decode one frame/step).
     // [P8] Dialog 0xD5 has no CRT movie control (options.md §1) -> no movie.
     if (page_ != PAGE_OPTIONS) bink_advance(dt);
@@ -8336,6 +8402,7 @@ int run_campaign_direct(const std::string& map, bool no_audio) {
 // out-of-line handles (both scene types now complete; GameScene defined above) ---
 
 void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
+    if (leave_t_ >= 0.0) return;   // W5-E2: the leave band plays; the page is going
     // Track pointer position + button state for the 3-state button rendering.
     if (ev.kind == ra2engine::InputEvent::PointerMove ||
         ev.kind == ra2engine::InputEvent::PointerDown ||
@@ -8452,7 +8519,13 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
                     save_user_settings(*g_user_settings);
                     if (audio_live()) apply_audio_settings(*art_.audio->sys.mixer, *g_user_settings);
                 }
-                next_ = new ShellScene(rules_, no_audio_, art_, b.target);
+                // W5-E2 (R-143): play the leave band first (FUN_00606980).
+                if (g_pres_play_log && !g_play_leave_band) {
+                    next_ = new ShellScene(rules_, no_audio_, art_, b.target);
+                    return;
+                }
+                leave_next_ = new ShellScene(rules_, no_audio_, art_, b.target);
+                leave_t_ = 0.0;
                 return;
             default:           return;
         }

@@ -58,6 +58,9 @@ struct InputActions {
     // ACTION_SELF: a left click on the (already) selected own deployable unit
     // -- main.cpp runs the DeployObject command (unload / deploy).
     bool deploy_clicked = false;
+    // W5-E2: a click in PowerToggleMode on an own building.
+    bool power_clicked = false;
+    int power_building = -1;
 
     // W5-E [RE: TechnoClass::ClickedMission FUN_006FF0A0]: the mission the
     // order click gave picks the acknowledgement voice -- Harvest(10) ->
@@ -248,7 +251,7 @@ public:
     // (no per-building power toggle, no waypoint planning, no beacons), so they
     // are recorded but not modeled: the exclusion set here is
     // {pending placement, sw_targeting, Repair, Sell}.
-    enum class BaseMode { None, Repair, Sell };
+    enum class BaseMode { None, Repair, Sell, PowerToggle };   // W5-E2 PowerToggleMode (+0x11B2)
 
     // SetRepairMode / SetSellMode (FUN_004AC7D0 / FUN_004AC570), transcribed:
     //   1. control -1 toggle / 0 off / 1 on; no-op if the value is unchanged;
@@ -261,6 +264,13 @@ public:
     // buildings can be repaired/sold in a row.
     void set_repair_mode(int control);
     void set_sell_mode(int control);
+    // W5-E2 [RE: DisplayClass::SetPowerToggleMode FUN_004AC730, same shape as
+    // the two above]. In gamemd.exe 1.001 nothing ARMS it (every caller passes
+    // 0: the group hotkeys, Next/PrevObject, the cancel chain) -- the TS-era
+    // sidebar power button is gone (SidebarClass::Action FUN_006A6E10 only
+    // knows 0x8065 repair / 0x8066 sell). The clone keeps the mode reachable
+    // through the touch command column / a cheat [deviation].
+    void set_power_mode(int control);
     BaseMode base_mode() const { return mode_; }
 
     // The ESC / right-click chain (FUN_004AAC40): cancels EXACTLY ONE thing per

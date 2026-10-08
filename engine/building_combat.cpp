@@ -155,6 +155,11 @@ void World::step_building_combat(double dt) {
         }
         // [defenses.md §2] Powered=yes: offline while the house is short of power.
         b.def_offline = false;
+        if (b.power_off) {   // W5-E2: powered down by its owner -- no fire at all
+            b.def_offline = true;
+            b.def_target = -1;
+            continue;
+        }
         if (w5_.armed && t.powered) {
             // Wave-5 (R-045): IsPowerOnline with the overpower exception
             // (two Tesla troopers keep a coil firing without base power).

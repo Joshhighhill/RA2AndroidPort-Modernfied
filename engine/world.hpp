@@ -1420,6 +1420,13 @@ public:
     // live building (it is off-ramp 1/2/5 -- see step_repair_sell for 3/4).
     bool set_repair(int b_idx, int by_house, int control);
     bool toggle_repair(int b_idx, int by_house) { return set_repair(b_idx, by_house, -1); }
+    // W5-E2 [RE: FUN_00452350 GoOffline / FUN_00452250 GoOnline, guarded by
+    // type PowerDrain > 0 (+0xEE4); the EventClass POWERON(1) / POWEROFF(2)
+    // cases (FUN_004C6BD0) and trigger actions TurnOn / TurnOff
+    // (FUN_006DCE20) reach them]: `on` = power up. control -1 toggles.
+    // False when the building cannot be powered down (no drain) or nothing
+    // changed. NOT read by world_hash.
+    bool set_building_power(int b_idx, int control);
     bool building_repairing(int b_idx) const {
         return b_idx >= 0 && b_idx < static_cast<int>(buildings_.size()) &&
                buildings_[b_idx].being_repaired;

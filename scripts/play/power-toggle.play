@@ -1,0 +1,32 @@
+# power-toggle -- W5-E2 (R-150 / R-131): PowerToggleMode (DisplayClass +0x11B2;
+# unreachable from the YR 1.001 UI -- armed here with a cheat) powers a
+# building down and up; BuildingOffLine / OnLine EVA (FUN_00452350/250);
+# the drain leaves the house total while it is down.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+click start
+until 90 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat w2 build GAPOWR
+cheat w2 build GAPILE
+wait 5
+let d0 = power_drain
+cheat power_mode
+assert base_mode == power                                @R-150:E
+view building 0:GAPILE
+click building 0:GAPILE
+wait 2
+assert powered_down(0) == 1                              @R-150:E
+assert power_drain < $d0                                 @R-150:E
+until 30 evareq(EVA_BuildingOffLine) >= 1                @R-131:E
+click building 0:GAPILE
+wait 2
+assert powered_down(0) == 0                              @R-150:E
+until 30 evareq(EVA_BuildingOnLine) >= 1                 @R-131:E
+click building 0:GAPILE right
+assert base_mode == none                                 @R-150:E
+end
