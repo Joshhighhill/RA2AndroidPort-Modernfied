@@ -256,6 +256,14 @@ private:
             const ra2engine::Unit& u = us[i];
             W5U& p = w5_u_[i];
             const UnitVoices& v = audio_->voices[u.image];
+            // W5-E2 [RE: spy infiltration FUN_004571E0]: a spy consumed on the
+            // tick after it had an infiltrate order -> the victim's and the
+            // spy owner's lines by purpose (Medium: the per-branch guards).
+            if (p.seen && p.inf_target >= 0 && !u.alive && u.die_time < 0.0 && p.alive)
+                w5_infiltrated(w, p.inf_target, u.house, p.inf_purpose);
+            p.alive = u.alive;
+            p.inf_target = u.infiltrate_target;
+            p.inf_purpose = u.infiltrate_purpose;
             if (!p.seen) {
                 p.seen = true;
                 p.hp = u.hp;
@@ -429,7 +437,29 @@ private:
         bool sinking = false, crashing = false;
         double turret = 0.0;
         std::uint32_t loop = 0, turret_loop = 0;
+        bool alive = true;
+        int inf_target = -1, inf_purpose = 0;
     };
+    void w5_infiltrated(const ra2engine::World& w, int bi, int spy_house, int purpose) {
+        if (bi < 0 || bi >= static_cast<int>(w.buildings().size())) return;
+        const int victim = w.buildings()[static_cast<std::size_t>(bi)].house;
+        using P = ra2engine::World::InfiltratePurpose;
+        const char* vline = nullptr;   // the infiltrated player
+        std::vector<const char*> sline;   // the spy's owner
+        switch (static_cast<P>(purpose)) {
+            case P::RadarLab: vline = "EVA_RadarSabotaged"; sline = {"EVA_BuildingInfRadarSabotaged"}; break;
+            case P::PowerPlant: vline = "EVA_PowerSabotaged"; sline = {"EVA_BuildingInfiltrated", "EVA_EnemyBasePoweredDown"}; break;
+            case P::Refinery: vline = "EVA_CashStolen"; sline = {"EVA_BuildingInfCashStolen"}; break;
+            case P::StolenAllied: case P::StolenSoviet: case P::StolenThird:
+                vline = "EVA_TechnologyStolen"; sline = {"EVA_BuildingInfiltrated", "EVA_NewTechnologyAcquired"}; break;
+            case P::Factory: vline = "EVA_TechnologyStolen"; sline = {"EVA_BuildingInfiltrated"}; break;
+            default: sline = {"EVA_BuildingInfiltrated"}; break;
+        }
+        pres_log(frame_, "infiltrated b" + std::to_string(bi) + " purpose=" + std::to_string(purpose));
+        if (victim == 0 && vline) snd_.eva(vline);
+        if (spy_house == 0)
+            for (const char* l : sline) snd_.eva(l);
+    }
     struct W5B {
         bool seen = false;
         int hp = 0, house = -1;
