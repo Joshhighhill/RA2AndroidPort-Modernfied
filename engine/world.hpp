@@ -117,9 +117,11 @@ struct Unit {
     double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
     double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
     bool w_affects_allies = true;  // W5-B R-060: warhead AffectsAllies= (default yes)
-    // Campaign mind control [RE: the Controller warhead's shot ends in
-    // CaptureManager FUN_00471C80 from the bullet detonation @0x4692C0 -- the
-    // victim is taken, not damaged]: set every frame by CampaignRuntime
+    // Campaign mind control [RE: BulletClass::Detonate FUN_004690A0 -- a
+    // warhead with MindControl (+0x155) skips the whole DamageArea
+    // FUN_00489190 branch and only calls the owner's CaptureManager
+    // (+0x2BC) Capture FUN_00471C80 @0x4692C0: the victim is taken, never
+    // damaged]: set every frame by CampaignRuntime
     // (poll_mind_control, BEFORE World::step) on a live MindControl=yes
     // controller; try_fire then deals no damage and the runtime captures the
     // victim (same 3-D range rule). Derived, never saved (re-armed each frame).
