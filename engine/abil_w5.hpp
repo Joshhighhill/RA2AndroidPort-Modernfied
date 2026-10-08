@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "ability_types.hpp"   // WeaponSpec (P4 building death weapon)
+
 namespace ra2engine {
 
 // Spy purposes (World::InfiltratePurpose as int) beyond the legacy six.
@@ -37,6 +39,14 @@ struct BldTypeW5 {
     int psychic_radius = 0;      // PsychicDetectionRadius= (NAPSIS)
     int sensors_sight = 0;       // SensorArray=yes -> SensorsSight=
     int delayed_fire_delay = 0;  // art IsAnimDelayedFire=yes -> DelayedFireDelay= (GAPRIS 28)
+    // P4 [RE: FUN_00700DA0 death path -> FireDeathWeapon FUN_0070CAC0, shared by
+    // every TechnoClass]: Explodes=yes (+0xD15) buildings fire DeathWeapon
+    // (+0xD18) where they die (barrels CAMISC01/02, AMMOCRAT: BarrelExplosion);
+    // EligibleForDelayKill (BuildingType +0x1551) turns a lethal CausesDelayKill
+    // hit into a timed death. Armed by GameScene only (real play, wire_w5).
+    bool explodes = false;
+    bool delay_kill_eligible = false;
+    WeaponSpec death;
 };
 
 // Per UNIT TYPE in a producible roster.

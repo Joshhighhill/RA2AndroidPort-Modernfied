@@ -35,6 +35,11 @@ struct WeaponSpec {
     bool slot_set = false;             // aa/ag/proj below were resolved
     bool aa = false, ag = true;
     ProjectileSpec proj;
+    // P4 [RE: FUN_00700DA0 @0x701327..0x7013F5]: warhead CausesDelayKill
+    // (+0x130), DelayKillFrames (+0x134), DelayKillAtMax (+0x138).
+    bool delay_kill = false;
+    int delay_kill_frames = 0;
+    double delay_kill_at_max = 1.0;
 };
 
 // Per-type ability profile, resolved once from rules by the caller (World is

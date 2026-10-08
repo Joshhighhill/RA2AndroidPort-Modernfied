@@ -2342,6 +2342,11 @@ private:
     void ability_erase_unit(int idx);
     // DamageArea [§E/§F]: all houses, units + buildings, linear falloff.
     void ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage);
+    void ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_leptons);   // P4
+public:
+    // P4: arm the ability pass for building death weapons (GameScene, real play).
+    void arm_building_deaths() { abilities_any_ = true; }
+private:
     void ability_fire_event(int idx);
     void ability_death_pass();
     // Weapon application to a unit/building with verses (no splash).

@@ -1109,6 +1109,11 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
     s.rad_level = static_cast<int>(rules.section_double(w, "RadLevel", 0.0));
+    // P4 [RE: FUN_00700DA0 @0x701327]: warhead CausesDelayKill (+0x130),
+    // DelayKillFrames (+0x134), DelayKillAtMax (+0x138).
+    s.delay_kill = ability_flag(ini, wh, "CausesDelayKill", false);
+    s.delay_kill_frames = static_cast<int>(rules.section_double(wh, "DelayKillFrames", 0.0));
+    s.delay_kill_at_max = rules.section_double(wh, "DelayKillAtMax", 1.0);
     if (ability_flag(ini, w, "Suicide", false)) s.kind = ra2engine::AbilityKind::Suicide;
     else if (ability_flag(ini, wh, "Parasite", false)) s.kind = ra2engine::AbilityKind::Parasite;
     else if (ability_flag(ini, wh, "Temporal", false)) s.kind = ra2engine::AbilityKind::Temporal;
@@ -1223,6 +1228,22 @@ void w5_arm_building_art(BuildingAssets& ba, const Ini& art_ini) {
         d.w5.delayed_fire_delay = on ? std::max(0, std::atoi(art_ini.get(img, "DelayedFireDelay", "0").c_str())) : 0;
     }
 }
+// P4 [RE: FUN_00700DA0 -> FireDeathWeapon FUN_0070CAC0; delay kill @0x701327]:
+// every roster building's Explodes= / DeathWeapon= / EligibleForDelayKill=
+// (barrels CAMISC01/02 and AMMOCRAT chain-explode). Interactive only (GameScene
+// after wire_w5 and again after a campaign grew the roster) -- never a gate.
+void wire_building_deaths(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, const Ini& ini) {
+    bool any = false;
+    for (ra2engine::BuildingTypeDef& d : ba.roster) {
+        d.w5.explodes = ability_flag(ini, d.id, "Explodes", false);
+        d.w5.delay_kill_eligible = ability_flag(ini, d.id, "EligibleForDelayKill", false);
+        d.w5.death = d.w5.explodes ? resolve_weapon_spec(rules, ini, ability_ini_str(ini, d.id, "DeathWeapon"))
+                                   : ra2engine::WeaponSpec{};
+        any = any || (d.w5.explodes && d.w5.death.valid);
+    }
+    world.refresh_building_types(ba.roster);
+    if (any) world.arm_building_deaths();
+}
 void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, const Ini& ini,
              const Ini& art_ini) {
     ra2engine::RulesW5 r;
@@ -1293,6 +1314,7 @@ void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, co
     w5_arm_building_art(ba, art_ini);
     world.refresh_building_types(ba.roster);
     world.arm_w5(r, prof);
+    wire_building_deaths(world, ba, rules, ini);
 }
 
 // Logs the fire/die entries (mirrors resolve_combat_unit's [unit] log line)
@@ -5916,6 +5938,7 @@ public:
         // the mission's extra building types).
         if (!cfg.campaign_map.empty()) {
             setup_campaign(cfg);
+            wire_building_deaths(world_, ba_, rules_, rules_ini_);   // P4: the mission's barrels
             gf_arm_mcv(world_, ba_, rules_, /*skirmish_session=*/false);   // gF: MCVs deploy
             gf_load_assets({});
         }
