@@ -6291,6 +6291,11 @@ public:
             q.held.assign(held_.begin(), held_.end());
             f.sections[ra2engine::save::kTagBacklog] = ra2engine::save::to_bytes(q);
         }
+        {   // W5-E: the music state (the playing theme resumes after a load)
+            PresAudio& pa = const_cast<Presentation&>(pres_).sound();
+            const std::string a = pa.current_track() + "\n" + (pa.music_on() ? "1" : "0") + "\n";
+            f.sections[ra2engine::save::kTagAudio] = std::vector<uint8_t>(a.begin(), a.end());
+        }
         if (campaign_) {   // P10: the trigger runtime + the campaign host state
             f.sections[ra2engine::save::kTagTriggers] =
                 ra2engine::save::save_triggers(campaign_->trigger_system());
@@ -6300,6 +6305,41 @@ public:
         return ra2engine::save::write_file(path, ra2engine::save::encode_save(f));
     }
 
+    // W5-E: free space for a save at `path` (the file's estimated size + 2 MB).
+    // RA2_TEST_FREE_BYTES overrides the measurement (--play).
+    bool save_space_ok(const std::string& path) const {
+        std::uintmax_t need = 2u * 1024u * 1024u + static_cast<std::uintmax_t>(state_bytes().size());
+        std::uintmax_t avail = 0;
+        if (const char* t = std::getenv("RA2_TEST_FREE_BYTES")) {
+            avail = static_cast<std::uintmax_t>(std::strtoull(t, nullptr, 10));
+        } else {
+            std::error_code ec;
+            const std::filesystem::path dir = std::filesystem::path(path).parent_path();
+            const std::filesystem::space_info si = std::filesystem::space(dir.empty() ? "." : dir, ec);
+            if (ec) return true;   // cannot tell: try the write (it reports its own failure)
+            avail = si.available;
+        }
+        return avail >= need;
+    }
+    // W5-E: the "Saving game..." frame drawn (and presented) before the
+    // synchronous write, so a slow device shows it is busy.
+    void draw_saving_indicator() {
+        ++saves_indicated_;
+        pres_log(pres_.frame(), "saving indicator");
+        if (!g_platform) return;
+        SDL_Renderer* ren = static_cast<SDL_Renderer*>(g_platform->renderer());
+        if (!ren) return;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 200);
+        const SDL_Rect box{kWinW / 2 - 180, kWinH / 2 - 30, 360, 60};
+        SDL_RenderFillRect(ren, &box);
+        SDL_SetRenderDrawColor(ren, 255, 0, 0, 255);
+        SDL_RenderDrawRect(ren, &box);
+        draw_text(ren, "SAVING GAME...", box.x + (box.w - 14 * 12) / 2, box.y + 22, 2, 255, 255, 0);
+        SDL_RenderPresent(ren);
+    }
+    int saves_indicated_ = 0;
+    std::string loaded_track_;
 private:
     void show_banner(const std::string& s) {
         post_message(s);   // W2-UI-21: banners are message-list lines
@@ -6337,6 +6377,15 @@ private:
                     for (int c : q.held)
                         if (c >= 0 && c < ra2engine::kQueueCats) held_.insert(c);
                 }
+            if (const std::vector<uint8_t>* au = f.section(ra2engine::save::kTagAudio)) {   // W5-E
+                const std::string a(au->begin(), au->end());
+                const std::size_t nl = a.find('\n');
+                const std::string track = a.substr(0, nl);
+                const bool on = nl != std::string::npos && a.compare(nl + 1, 1, "1") == 0;
+                if (!on) pres_.sound().music_stop();
+                else if (!track.empty()) pres_.sound().jukebox_play(track);
+                loaded_track_ = track;
+            }
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {
             // Never run a half-loaded World: start the same scenario fresh.
@@ -6382,6 +6431,18 @@ private:
         if (sld_.is_open()) {
             switch (sld_.handle(ev)) {
                 case SaveLoadDialog::DoSave:
+                    // W5-E [RE: saveload.md -- the original checks the free space
+                    // before writing and shows "Saving game..." while it writes]:
+                    // refuse when the drive is (nearly) full, draw the progress
+                    // frame, then write. [RE-FALLBACK: 2 MB margin over the
+                    // expected file size.]
+                    if (!save_space_ok(sld_.path())) {
+                        sld_.open(SaveLoadDialog::Save, sld_.description());
+                        sld_.set_message("NOT ENOUGH DISK SPACE");   // TXT_DISK_FULL
+                        pres_log(pres_.frame(), "save refused: disk full");
+                        break;
+                    }
+                    draw_saving_indicator();
                     if (save_game(sld_.path(), sld_.description())) {
                         show_banner(camp::csf_text(dir_, "TXT_GAME_WAS_SAVED"));   // TXT_GAME_WAS_SAVED, back to the game
                     } else {

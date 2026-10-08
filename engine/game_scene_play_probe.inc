@@ -21,6 +21,9 @@
         p.set_s("load_art", SkirmishLoadArt::g_skirmish_load_art_drawn);   // W5-E skirmish loading art
         p.set_s("screencap", last_screencap_);        // W5-E ScreenCapture hotkey
         p.set("hotkeys_version", hotkeys_ver_);
+        p.set("saves_indicated", saves_indicated_);          // W5-E saving indicator
+        p.set_s("music_track", pres_.sound().current_track());
+        p.set_s("loaded_track", loaded_track_);
         p.set("credits", player_credits_);
         p.set("credits_shown", credits_shown_);
         p.set_s("tooltip", tooltip_now());   // W2-UI-07

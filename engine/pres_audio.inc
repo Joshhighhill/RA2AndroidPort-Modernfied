@@ -511,6 +511,7 @@ public:
         stream_.reset();
     }
     const std::string& current_track() const { return cur_track_; }
+    bool music_on() const { return music_on_; }   // W5-E save state
     // W2-UI-14 (0xB8 jukebox): the score list (CSF Name labels, [Themes]
     // order) and Play = start that theme now, then continue the playlist.
     std::vector<std::string> theme_labels() const {
