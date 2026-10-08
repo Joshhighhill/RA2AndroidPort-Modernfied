@@ -34,7 +34,7 @@ wait 1
 if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
-until 600 built(0,GAREFN) > $n_GAREFN
+until 600 placing == 0 and queue_ready(structure) == 0 or built(0,GAREFN) > $n_GAREFN
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
 click tab:0
@@ -50,7 +50,7 @@ wait 1
 if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
-until 600 built(0,GAPOWR) > $n_GAPOWR
+until 600 placing == 0 and queue_ready(structure) == 0 or built(0,GAPOWR) > $n_GAPOWR
 let n_GAREFN = built(0,GAREFN)
 until 900 can_build(GAREFN) == 1
 click tab:0
@@ -66,7 +66,7 @@ wait 1
 if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
-until 600 built(0,GAREFN) > $n_GAREFN
+until 600 placing == 0 and queue_ready(structure) == 0 or built(0,GAREFN) > $n_GAREFN
 until 900 cameo(MTNK) == 1
 click tab:3
 click cameo:MTNK
@@ -89,7 +89,7 @@ wait 1
 if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
-until 600 built(0,GAWEAP) > $n_GAWEAP
+until 600 placing == 0 and queue_ready(structure) == 0 or built(0,GAWEAP) > $n_GAWEAP
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
 click tab:0
@@ -105,9 +105,10 @@ wait 1
 if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
-until 600 built(0,GAPOWR) > $n_GAPOWR
+until 600 placing == 0 and queue_ready(structure) == 0 or built(0,GAPOWR) > $n_GAPOWR
 until 900 cameo(MTNK) == 1
 click tab:3
+click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
@@ -123,16 +124,6 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
-until 900 cameo(FV) == 1
-click tab:3
-click cameo:FV
-wait 500
-dump
-until 900 cameo(MTNK) == 1
-click tab:3
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
 click cameo:MTNK
 until 900 cameo(FV) == 1
 click tab:3
@@ -145,6 +136,7 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
+click cameo:MTNK
 until 900 cameo(FV) == 1
 click tab:3
 click cameo:FV
@@ -152,6 +144,31 @@ wait 500
 dump
 until 900 cameo(MTNK) == 1
 click tab:3
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+until 900 cameo(FV) == 1
+click tab:3
+click cameo:FV
+wait 500
+dump
+until 900 cameo(MTNK) == 1
+click tab:3
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+until 900 cameo(FV) == 1
+click tab:3
+click cameo:FV
+wait 500
+dump
+until 900 cameo(MTNK) == 1
+click tab:3
+click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
@@ -163,245 +180,14 @@ wait 500
 dump
 until 9000 campaign_frame >= 5400
 dump
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
-if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
-if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
-if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
-if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
-if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
-if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
-if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
-if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 300
-if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
-if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
-if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
-if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
-if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
-if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
-if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
-if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
-if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 300
-if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
-if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 300
-if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
-if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
-if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
-if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
-if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 300
-if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
-if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
-if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
-if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
-if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
-if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
-if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 300
-if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
-if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
-if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
-if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 300
-if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
-if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
-if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 300
-if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
-if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 300
-if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
-if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 300
-if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
-if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 300
-if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
-if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
-if outcome == RUNNING then dump
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
-if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
-if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
-if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
-if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
-if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
-if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
-if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
-if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 300
-if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
-if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
-if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
-if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
-if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
-if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
-if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
-if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
-if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 300
-if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
-if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 300
-if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
-if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
-if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
-if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
-if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 300
-if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
-if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
-if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
-if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
-if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
-if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
-if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 300
-if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
-if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
-if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
-if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 300
-if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
-if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
-if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 300
-if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
-if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 300
-if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
-if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 300
-if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
-if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 300
-if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
-if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
-if outcome == RUNNING then dump
 if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
-if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
-if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
-if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
-if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
-if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
-if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
-if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
-if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 300
-if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
-if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
-if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
-if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
-if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
-if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
-if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
-if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 300
-if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
-if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 300
-if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
-if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 300
-if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
-if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
-if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
-if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
-if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 300
-if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
-if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
-if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
-if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
-if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
-if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 300
-if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
-if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 300
-if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
-if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 300
-if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
-if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
-if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 300
-if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
-if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 300
-if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
-if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 300
-if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
-if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 300
-if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
-if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 300
-if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
-if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 300
-if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
-if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
-if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(6) > 0 then wait 900
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -484,6 +270,87 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
+if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
+if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
+if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 300
+if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
+if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
+if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 300
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 300
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 300
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 300
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 300
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 300
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 300
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 300
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 300
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
@@ -563,84 +430,182 @@ if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > c
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
-if outcome == RUNNING and buildings(1,NACNST) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:0 soft
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAREFN) > 0 then click building 1:NAREFN:0 soft
-if outcome == RUNNING and buildings(1,NAREFN) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:0 soft
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:0 soft
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:0 soft
-if outcome == RUNNING and buildings(1,NARADR) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:0 soft
-if outcome == RUNNING and buildings(1,NALASR) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAFLAK) > 0 then click building 1:NAFLAK:0 soft
-if outcome == RUNNING and buildings(1,NAFLAK) > 0 then wait 300
-if outcome == RUNNING and buildings(1,TESLA) > 0 then click building 1:TESLA:0 soft
-if outcome == RUNNING and buildings(1,TESLA) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAIRON) > 0 then click building 1:NAIRON:0 soft
-if outcome == RUNNING and buildings(1,NAIRON) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NANRCT) > 0 then click building 1:NANRCT:0 soft
-if outcome == RUNNING and buildings(1,NANRCT) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NATECH) > 0 then click building 1:NATECH:0 soft
-if outcome == RUNNING and buildings(1,NATECH) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAMISL) > 0 then click building 1:NAMISL:0 soft
-if outcome == RUNNING and buildings(1,NAMISL) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NADEPT) > 0 then click building 1:NADEPT:0 soft
-if outcome == RUNNING and buildings(1,NADEPT) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAYARD) > 0 then click building 1:NAYARD:0 soft
-if outcome == RUNNING and buildings(1,NAYARD) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NABNKR) > 0 then click building 1:NABNKR:0 soft
-if outcome == RUNNING and buildings(1,NABNKR) > 0 then wait 300
-if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then click unit 1:SMCV:0 soft
-if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then wait 300
-if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then click unit 1:APOC:0 soft
-if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then wait 300
-if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then click unit 1:HTNK:0 soft
-if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then click unit 1:HTK:0 soft
-if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then click unit 1:V3:0 soft
-if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then wait 300
-if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then click unit 1:FLAKT:0 soft
-if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then wait 300
-if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then click unit 1:SHK:0 soft
-if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then click unit 1:E2:0 soft
-if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then wait 300
-if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then click unit 1:DOG:0 soft
-if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then wait 300
-if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then click unit 1:DESO:0 soft
-if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then wait 300
-if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then click unit 1:DRON:0 soft
-if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then wait 300
-if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then click unit 1:TTNK:0 soft
-if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then click unit 1:HARV:0 soft
-if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then wait 300
-if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then click unit 1:SENGINEER:0 soft
-if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 300
-if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then click unit 1:IVAN:0 soft
-if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then wait 300
-if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then click unit 1:SAPC:0 soft
-if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then wait 300
-if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then click unit 1:ZEP:0 soft
-if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then wait 300
-if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then click unit 1:TERROR:0 soft
-if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then wait 300
-if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then click unit 1:CRAZYV:0 soft
-if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then wait 300
-if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then click cell 80 60 soft
-if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
+if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
+if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
+if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 300
+if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
+if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
+if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 300
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 300
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 300
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 300
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 300
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 300
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 300
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 300
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 300
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
+if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
+if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
+if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 300
+if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
+if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
+if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 300
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 300
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 300
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 300
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 300
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 300
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 300
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 300
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 300
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 300
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 300
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 300
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 300
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(1) > 0 then wait 900
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -723,85 +688,6 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
-if outcome == RUNNING and buildings(1,NACNST) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:0 soft
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAREFN) > 0 then click building 1:NAREFN:0 soft
-if outcome == RUNNING and buildings(1,NAREFN) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:0 soft
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:0 soft
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:0 soft
-if outcome == RUNNING and buildings(1,NARADR) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:0 soft
-if outcome == RUNNING and buildings(1,NALASR) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAFLAK) > 0 then click building 1:NAFLAK:0 soft
-if outcome == RUNNING and buildings(1,NAFLAK) > 0 then wait 300
-if outcome == RUNNING and buildings(1,TESLA) > 0 then click building 1:TESLA:0 soft
-if outcome == RUNNING and buildings(1,TESLA) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAIRON) > 0 then click building 1:NAIRON:0 soft
-if outcome == RUNNING and buildings(1,NAIRON) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NANRCT) > 0 then click building 1:NANRCT:0 soft
-if outcome == RUNNING and buildings(1,NANRCT) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NATECH) > 0 then click building 1:NATECH:0 soft
-if outcome == RUNNING and buildings(1,NATECH) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAMISL) > 0 then click building 1:NAMISL:0 soft
-if outcome == RUNNING and buildings(1,NAMISL) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NADEPT) > 0 then click building 1:NADEPT:0 soft
-if outcome == RUNNING and buildings(1,NADEPT) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NAYARD) > 0 then click building 1:NAYARD:0 soft
-if outcome == RUNNING and buildings(1,NAYARD) > 0 then wait 300
-if outcome == RUNNING and buildings(1,NABNKR) > 0 then click building 1:NABNKR:0 soft
-if outcome == RUNNING and buildings(1,NABNKR) > 0 then wait 300
-if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then click unit 1:SMCV:0 soft
-if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then wait 300
-if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then click unit 1:APOC:0 soft
-if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then wait 300
-if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then click unit 1:HTNK:0 soft
-if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then click unit 1:HTK:0 soft
-if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then click unit 1:V3:0 soft
-if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then wait 300
-if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then click unit 1:FLAKT:0 soft
-if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then wait 300
-if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then click unit 1:SHK:0 soft
-if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then click unit 1:E2:0 soft
-if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then wait 300
-if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then click unit 1:DOG:0 soft
-if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then wait 300
-if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then click unit 1:DESO:0 soft
-if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then wait 300
-if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then click unit 1:DRON:0 soft
-if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then wait 300
-if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then click unit 1:TTNK:0 soft
-if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then wait 300
-if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then click unit 1:HARV:0 soft
-if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then wait 300
-if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then click unit 1:SENGINEER:0 soft
-if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 300
-if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then click unit 1:IVAN:0 soft
-if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then wait 300
-if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then click unit 1:SAPC:0 soft
-if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then wait 300
-if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then click unit 1:ZEP:0 soft
-if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then wait 300
-if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then click unit 1:TERROR:0 soft
-if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then wait 300
-if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then click unit 1:CRAZYV:0 soft
-if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then wait 300
-if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then click cell 80 60 soft
-if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
-if outcome == RUNNING then dump
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -884,6 +770,87 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
+if outcome == RUNNING and buildings(1,NACNST) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:0 soft
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then click building 1:NAREFN:0 soft
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:0 soft
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:0 soft
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:0 soft
+if outcome == RUNNING and buildings(1,NARADR) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:0 soft
+if outcome == RUNNING and buildings(1,NALASR) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then click building 1:NAFLAK:0 soft
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then wait 300
+if outcome == RUNNING and buildings(1,TESLA) > 0 then click building 1:TESLA:0 soft
+if outcome == RUNNING and buildings(1,TESLA) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then click building 1:NAIRON:0 soft
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then click building 1:NANRCT:0 soft
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NATECH) > 0 then click building 1:NATECH:0 soft
+if outcome == RUNNING and buildings(1,NATECH) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then click building 1:NAMISL:0 soft
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then click building 1:NADEPT:0 soft
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then click building 1:NAYARD:0 soft
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then click building 1:NABNKR:0 soft
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then wait 300
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then click unit 1:SMCV:0 soft
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then wait 300
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then click unit 1:APOC:0 soft
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then wait 300
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then click unit 1:HTNK:0 soft
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then click unit 1:HTK:0 soft
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then click unit 1:V3:0 soft
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then wait 300
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then click unit 1:FLAKT:0 soft
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then wait 300
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then click unit 1:SHK:0 soft
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then click unit 1:E2:0 soft
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then wait 300
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then click unit 1:DOG:0 soft
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then wait 300
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then click unit 1:DESO:0 soft
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then wait 300
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then click unit 1:DRON:0 soft
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then wait 300
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then click unit 1:TTNK:0 soft
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then click unit 1:HARV:0 soft
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then wait 300
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then click unit 1:SENGINEER:0 soft
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 300
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then click unit 1:IVAN:0 soft
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then wait 300
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then click unit 1:SAPC:0 soft
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then wait 300
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then click unit 1:ZEP:0 soft
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then wait 300
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then click unit 1:TERROR:0 soft
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then wait 300
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then click unit 1:CRAZYV:0 soft
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then wait 300
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then click cell 80 60 soft
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
@@ -963,84 +930,100 @@ if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > c
 if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then click cell 80 60 soft
 if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
-if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
-if outcome == RUNNING and buildings(2,NACNST) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAPOWR) > 0 then click building 2:NAPOWR:0 soft
-if outcome == RUNNING and buildings(2,NAPOWR) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAREFN) > 0 then click building 2:NAREFN:0 soft
-if outcome == RUNNING and buildings(2,NAREFN) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAHAND) > 0 then click building 2:NAHAND:0 soft
-if outcome == RUNNING and buildings(2,NAHAND) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAWEAP) > 0 then click building 2:NAWEAP:0 soft
-if outcome == RUNNING and buildings(2,NAWEAP) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NARADR) > 0 then click building 2:NARADR:0 soft
-if outcome == RUNNING and buildings(2,NARADR) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NALASR) > 0 then click building 2:NALASR:0 soft
-if outcome == RUNNING and buildings(2,NALASR) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAFLAK) > 0 then click building 2:NAFLAK:0 soft
-if outcome == RUNNING and buildings(2,NAFLAK) > 0 then wait 300
-if outcome == RUNNING and buildings(2,TESLA) > 0 then click building 2:TESLA:0 soft
-if outcome == RUNNING and buildings(2,TESLA) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAIRON) > 0 then click building 2:NAIRON:0 soft
-if outcome == RUNNING and buildings(2,NAIRON) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NANRCT) > 0 then click building 2:NANRCT:0 soft
-if outcome == RUNNING and buildings(2,NANRCT) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NATECH) > 0 then click building 2:NATECH:0 soft
-if outcome == RUNNING and buildings(2,NATECH) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0 soft
-if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NADEPT) > 0 then click building 2:NADEPT:0 soft
-if outcome == RUNNING and buildings(2,NADEPT) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAYARD) > 0 then click building 2:NAYARD:0 soft
-if outcome == RUNNING and buildings(2,NAYARD) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NABNKR) > 0 then click building 2:NABNKR:0 soft
-if outcome == RUNNING and buildings(2,NABNKR) > 0 then wait 300
-if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then click unit 2:SMCV:0 soft
-if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then wait 300
-if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then click unit 2:APOC:0 soft
-if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then wait 300
-if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then click unit 2:HTNK:0 soft
-if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then click unit 2:HTK:0 soft
-if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then click unit 2:V3:0 soft
-if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then wait 300
-if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then click unit 2:FLAKT:0 soft
-if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then wait 300
-if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then click unit 2:SHK:0 soft
-if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then click unit 2:E2:0 soft
-if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then wait 300
-if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then click unit 2:DOG:0 soft
-if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then wait 300
-if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then click unit 2:DESO:0 soft
-if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then wait 300
-if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then click unit 2:DRON:0 soft
-if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then wait 300
-if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then click unit 2:TTNK:0 soft
-if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then click unit 2:HARV:0 soft
-if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then wait 300
-if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then click unit 2:SENGINEER:0 soft
-if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then wait 300
-if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then click unit 2:IVAN:0 soft
-if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then wait 300
-if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then click unit 2:SAPC:0 soft
-if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then wait 300
-if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then click unit 2:ZEP:0 soft
-if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then wait 300
-if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then click unit 2:TERROR:0 soft
-if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then wait 300
-if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then click unit 2:CRAZYV:0 soft
-if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then wait 300
-if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then click cell 110 44 soft
-if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
+if outcome == RUNNING and buildings(1,NACNST) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:0 soft
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then click building 1:NAREFN:0 soft
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:0 soft
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:0 soft
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:0 soft
+if outcome == RUNNING and buildings(1,NARADR) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:0 soft
+if outcome == RUNNING and buildings(1,NALASR) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then click building 1:NAFLAK:0 soft
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then wait 300
+if outcome == RUNNING and buildings(1,TESLA) > 0 then click building 1:TESLA:0 soft
+if outcome == RUNNING and buildings(1,TESLA) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then click building 1:NAIRON:0 soft
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then click building 1:NANRCT:0 soft
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NATECH) > 0 then click building 1:NATECH:0 soft
+if outcome == RUNNING and buildings(1,NATECH) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then click building 1:NAMISL:0 soft
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then click building 1:NADEPT:0 soft
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then click building 1:NAYARD:0 soft
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then wait 300
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then click building 1:NABNKR:0 soft
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then wait 300
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then click unit 1:SMCV:0 soft
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then wait 300
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then click unit 1:APOC:0 soft
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then wait 300
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then click unit 1:HTNK:0 soft
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then click unit 1:HTK:0 soft
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then click unit 1:V3:0 soft
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then wait 300
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then click unit 1:FLAKT:0 soft
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then wait 300
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then click unit 1:SHK:0 soft
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then click unit 1:E2:0 soft
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then wait 300
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then click unit 1:DOG:0 soft
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then wait 300
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then click unit 1:DESO:0 soft
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then wait 300
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then click unit 1:DRON:0 soft
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then wait 300
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then click unit 1:TTNK:0 soft
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then wait 300
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then click unit 1:HARV:0 soft
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then wait 300
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then click unit 1:SENGINEER:0 soft
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 300
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then click unit 1:IVAN:0 soft
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then wait 300
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then click unit 1:SAPC:0 soft
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then wait 300
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then click unit 1:ZEP:0 soft
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then wait 300
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then click unit 1:TERROR:0 soft
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then wait 300
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then click unit 1:CRAZYV:0 soft
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then wait 300
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then click cell 80 60 soft
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(2) > 0 then wait 900
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -1123,85 +1106,6 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
-if outcome == RUNNING and buildings(2,NACNST) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAPOWR) > 0 then click building 2:NAPOWR:0 soft
-if outcome == RUNNING and buildings(2,NAPOWR) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAREFN) > 0 then click building 2:NAREFN:0 soft
-if outcome == RUNNING and buildings(2,NAREFN) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAHAND) > 0 then click building 2:NAHAND:0 soft
-if outcome == RUNNING and buildings(2,NAHAND) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAWEAP) > 0 then click building 2:NAWEAP:0 soft
-if outcome == RUNNING and buildings(2,NAWEAP) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NARADR) > 0 then click building 2:NARADR:0 soft
-if outcome == RUNNING and buildings(2,NARADR) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NALASR) > 0 then click building 2:NALASR:0 soft
-if outcome == RUNNING and buildings(2,NALASR) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAFLAK) > 0 then click building 2:NAFLAK:0 soft
-if outcome == RUNNING and buildings(2,NAFLAK) > 0 then wait 300
-if outcome == RUNNING and buildings(2,TESLA) > 0 then click building 2:TESLA:0 soft
-if outcome == RUNNING and buildings(2,TESLA) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAIRON) > 0 then click building 2:NAIRON:0 soft
-if outcome == RUNNING and buildings(2,NAIRON) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NANRCT) > 0 then click building 2:NANRCT:0 soft
-if outcome == RUNNING and buildings(2,NANRCT) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NATECH) > 0 then click building 2:NATECH:0 soft
-if outcome == RUNNING and buildings(2,NATECH) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0 soft
-if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NADEPT) > 0 then click building 2:NADEPT:0 soft
-if outcome == RUNNING and buildings(2,NADEPT) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NAYARD) > 0 then click building 2:NAYARD:0 soft
-if outcome == RUNNING and buildings(2,NAYARD) > 0 then wait 300
-if outcome == RUNNING and buildings(2,NABNKR) > 0 then click building 2:NABNKR:0 soft
-if outcome == RUNNING and buildings(2,NABNKR) > 0 then wait 300
-if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then click unit 2:SMCV:0 soft
-if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then wait 300
-if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then click unit 2:APOC:0 soft
-if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then wait 300
-if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then click unit 2:HTNK:0 soft
-if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then click unit 2:HTK:0 soft
-if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then click unit 2:V3:0 soft
-if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then wait 300
-if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then click unit 2:FLAKT:0 soft
-if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then wait 300
-if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then click unit 2:SHK:0 soft
-if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then click unit 2:E2:0 soft
-if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then wait 300
-if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then click unit 2:DOG:0 soft
-if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then wait 300
-if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then click unit 2:DESO:0 soft
-if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then wait 300
-if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then click unit 2:DRON:0 soft
-if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then wait 300
-if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then click unit 2:TTNK:0 soft
-if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then wait 300
-if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then click unit 2:HARV:0 soft
-if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then wait 300
-if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then click unit 2:SENGINEER:0 soft
-if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then wait 300
-if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then click unit 2:IVAN:0 soft
-if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then wait 300
-if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then click unit 2:SAPC:0 soft
-if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then wait 300
-if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then click unit 2:ZEP:0 soft
-if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then wait 300
-if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then click unit 2:TERROR:0 soft
-if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then wait 300
-if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then click unit 2:CRAZYV:0 soft
-if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then wait 300
-if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then click cell 110 44 soft
-if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
-if outcome == RUNNING then dump
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -1284,6 +1188,87 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
+if outcome == RUNNING and buildings(2,NACNST) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then click building 2:NAPOWR:0 soft
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then click building 2:NAREFN:0 soft
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then click building 2:NAHAND:0 soft
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then click building 2:NAWEAP:0 soft
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NARADR) > 0 then click building 2:NARADR:0 soft
+if outcome == RUNNING and buildings(2,NARADR) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NALASR) > 0 then click building 2:NALASR:0 soft
+if outcome == RUNNING and buildings(2,NALASR) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then click building 2:NAFLAK:0 soft
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then wait 300
+if outcome == RUNNING and buildings(2,TESLA) > 0 then click building 2:TESLA:0 soft
+if outcome == RUNNING and buildings(2,TESLA) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then click building 2:NAIRON:0 soft
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then click building 2:NANRCT:0 soft
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NATECH) > 0 then click building 2:NATECH:0 soft
+if outcome == RUNNING and buildings(2,NATECH) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0 soft
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then click building 2:NADEPT:0 soft
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then click building 2:NAYARD:0 soft
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then click building 2:NABNKR:0 soft
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then wait 300
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then click unit 2:SMCV:0 soft
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then wait 300
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then click unit 2:APOC:0 soft
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then wait 300
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then click unit 2:HTNK:0 soft
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then click unit 2:HTK:0 soft
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then click unit 2:V3:0 soft
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then wait 300
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then click unit 2:FLAKT:0 soft
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then wait 300
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then click unit 2:SHK:0 soft
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then click unit 2:E2:0 soft
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then wait 300
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then click unit 2:DOG:0 soft
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then wait 300
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then click unit 2:DESO:0 soft
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then wait 300
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then click unit 2:DRON:0 soft
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then wait 300
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then click unit 2:TTNK:0 soft
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then click unit 2:HARV:0 soft
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then wait 300
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then click unit 2:SENGINEER:0 soft
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then wait 300
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then click unit 2:IVAN:0 soft
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then wait 300
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then click unit 2:SAPC:0 soft
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then wait 300
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then click unit 2:ZEP:0 soft
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then wait 300
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then click unit 2:TERROR:0 soft
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then wait 300
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then click unit 2:CRAZYV:0 soft
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then wait 300
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then click cell 110 44 soft
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
@@ -1363,6 +1348,92 @@ if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > c
 if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then click cell 110 44 soft
 if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
+if outcome == RUNNING and buildings(2,NACNST) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then click building 2:NAPOWR:0 soft
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then click building 2:NAREFN:0 soft
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then click building 2:NAHAND:0 soft
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then click building 2:NAWEAP:0 soft
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NARADR) > 0 then click building 2:NARADR:0 soft
+if outcome == RUNNING and buildings(2,NARADR) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NALASR) > 0 then click building 2:NALASR:0 soft
+if outcome == RUNNING and buildings(2,NALASR) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then click building 2:NAFLAK:0 soft
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then wait 300
+if outcome == RUNNING and buildings(2,TESLA) > 0 then click building 2:TESLA:0 soft
+if outcome == RUNNING and buildings(2,TESLA) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then click building 2:NAIRON:0 soft
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then click building 2:NANRCT:0 soft
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NATECH) > 0 then click building 2:NATECH:0 soft
+if outcome == RUNNING and buildings(2,NATECH) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0 soft
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then click building 2:NADEPT:0 soft
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then click building 2:NAYARD:0 soft
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then wait 300
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then click building 2:NABNKR:0 soft
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then wait 300
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then click unit 2:SMCV:0 soft
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then wait 300
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then click unit 2:APOC:0 soft
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then wait 300
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then click unit 2:HTNK:0 soft
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then click unit 2:HTK:0 soft
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then click unit 2:V3:0 soft
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then wait 300
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then click unit 2:FLAKT:0 soft
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then wait 300
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then click unit 2:SHK:0 soft
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then click unit 2:E2:0 soft
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then wait 300
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then click unit 2:DOG:0 soft
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then wait 300
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then click unit 2:DESO:0 soft
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then wait 300
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then click unit 2:DRON:0 soft
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then wait 300
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then click unit 2:TTNK:0 soft
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then wait 300
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then click unit 2:HARV:0 soft
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then wait 300
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then click unit 2:SENGINEER:0 soft
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then wait 300
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then click unit 2:IVAN:0 soft
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then wait 300
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then click unit 2:SAPC:0 soft
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then wait 300
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then click unit 2:ZEP:0 soft
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then wait 300
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then click unit 2:TERROR:0 soft
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then wait 300
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then click unit 2:CRAZYV:0 soft
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then wait 300
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then click cell 110 44 soft
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -1595,6 +1666,11 @@ if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > c
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -1827,6 +1903,11 @@ if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > c
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -2059,6 +2140,11 @@ if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > c
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -2291,6 +2377,11 @@ if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > c
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -2523,6 +2614,11 @@ if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > c
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
@@ -2755,5 +2851,484 @@ if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > c
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
 if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
 if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
+if outcome == RUNNING and buildings(1,NACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:0 soft
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then click building 1:NAREFN:0 soft
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:0 soft
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:0 soft
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:0 soft
+if outcome == RUNNING and buildings(1,NARADR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:0 soft
+if outcome == RUNNING and buildings(1,NALASR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then click building 1:NAFLAK:0 soft
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then wait 150
+if outcome == RUNNING and buildings(1,TESLA) > 0 then click building 1:TESLA:0 soft
+if outcome == RUNNING and buildings(1,TESLA) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then click building 1:NAIRON:0 soft
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then click building 1:NANRCT:0 soft
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NATECH) > 0 then click building 1:NATECH:0 soft
+if outcome == RUNNING and buildings(1,NATECH) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then click building 1:NAMISL:0 soft
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then click building 1:NADEPT:0 soft
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then click building 1:NAYARD:0 soft
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then click building 1:NABNKR:0 soft
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then wait 150
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then click unit 1:SMCV:0 soft
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then click unit 1:APOC:0 soft
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then wait 150
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then click unit 1:HTNK:0 soft
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then click unit 1:HTK:0 soft
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then click unit 1:V3:0 soft
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then click unit 1:FLAKT:0 soft
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then click unit 1:SHK:0 soft
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then click unit 1:E2:0 soft
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then wait 150
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then click unit 1:DOG:0 soft
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then wait 150
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then click unit 1:DESO:0 soft
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then wait 150
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then click unit 1:DRON:0 soft
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then wait 150
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then click unit 1:TTNK:0 soft
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then click unit 1:HARV:0 soft
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then click unit 1:SENGINEER:0 soft
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then click unit 1:IVAN:0 soft
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then click unit 1:SAPC:0 soft
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then click unit 1:ZEP:0 soft
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then wait 150
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then click unit 1:TERROR:0 soft
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then click unit 1:CRAZYV:0 soft
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then click cell 80 60 soft
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
+if outcome == RUNNING and buildings(2,NACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then click building 2:NAPOWR:0 soft
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then click building 2:NAREFN:0 soft
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then click building 2:NAHAND:0 soft
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then click building 2:NAWEAP:0 soft
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NARADR) > 0 then click building 2:NARADR:0 soft
+if outcome == RUNNING and buildings(2,NARADR) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NALASR) > 0 then click building 2:NALASR:0 soft
+if outcome == RUNNING and buildings(2,NALASR) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then click building 2:NAFLAK:0 soft
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then wait 150
+if outcome == RUNNING and buildings(2,TESLA) > 0 then click building 2:TESLA:0 soft
+if outcome == RUNNING and buildings(2,TESLA) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then click building 2:NAIRON:0 soft
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then click building 2:NANRCT:0 soft
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NATECH) > 0 then click building 2:NATECH:0 soft
+if outcome == RUNNING and buildings(2,NATECH) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0 soft
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then click building 2:NADEPT:0 soft
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then click building 2:NAYARD:0 soft
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then click building 2:NABNKR:0 soft
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then wait 150
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then click unit 2:SMCV:0 soft
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then wait 150
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then click unit 2:APOC:0 soft
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then wait 150
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then click unit 2:HTNK:0 soft
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then click unit 2:HTK:0 soft
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then click unit 2:V3:0 soft
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then wait 150
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then click unit 2:FLAKT:0 soft
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then wait 150
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then click unit 2:SHK:0 soft
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then click unit 2:E2:0 soft
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then wait 150
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then click unit 2:DOG:0 soft
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then wait 150
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then click unit 2:DESO:0 soft
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then wait 150
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then click unit 2:DRON:0 soft
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then wait 150
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then click unit 2:TTNK:0 soft
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then click unit 2:HARV:0 soft
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then wait 150
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then click unit 2:SENGINEER:0 soft
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then wait 150
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then click unit 2:IVAN:0 soft
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then wait 150
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then click unit 2:SAPC:0 soft
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then wait 150
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then click unit 2:ZEP:0 soft
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then wait 150
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then click unit 2:TERROR:0 soft
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then wait 150
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then click unit 2:CRAZYV:0 soft
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then wait 150
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then click cell 110 44 soft
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
+if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
+if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
+if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 150
+if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
+if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
+if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 150
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 150
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 150
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 150
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 150
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 150
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 150
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 150
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 150
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 150
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 150
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 150
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 150
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 150
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 150
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 150
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
+if outcome == RUNNING and buildings(1,NACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:0 soft
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then click building 1:NAREFN:0 soft
+if outcome == RUNNING and buildings(1,NAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:0 soft
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:0 soft
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:0 soft
+if outcome == RUNNING and buildings(1,NARADR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:0 soft
+if outcome == RUNNING and buildings(1,NALASR) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then click building 1:NAFLAK:0 soft
+if outcome == RUNNING and buildings(1,NAFLAK) > 0 then wait 150
+if outcome == RUNNING and buildings(1,TESLA) > 0 then click building 1:TESLA:0 soft
+if outcome == RUNNING and buildings(1,TESLA) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then click building 1:NAIRON:0 soft
+if outcome == RUNNING and buildings(1,NAIRON) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then click building 1:NANRCT:0 soft
+if outcome == RUNNING and buildings(1,NANRCT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NATECH) > 0 then click building 1:NATECH:0 soft
+if outcome == RUNNING and buildings(1,NATECH) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then click building 1:NAMISL:0 soft
+if outcome == RUNNING and buildings(1,NAMISL) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then click building 1:NADEPT:0 soft
+if outcome == RUNNING and buildings(1,NADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then click building 1:NAYARD:0 soft
+if outcome == RUNNING and buildings(1,NAYARD) > 0 then wait 150
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then click building 1:NABNKR:0 soft
+if outcome == RUNNING and buildings(1,NABNKR) > 0 then wait 150
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then click unit 1:SMCV:0 soft
+if outcome == RUNNING and units(1,SMCV) > occupants(1) and units(1,SMCV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then click unit 1:APOC:0 soft
+if outcome == RUNNING and units(1,APOC) > occupants(1) and units(1,APOC) > carried(1) then wait 150
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then click unit 1:HTNK:0 soft
+if outcome == RUNNING and units(1,HTNK) > occupants(1) and units(1,HTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then click unit 1:HTK:0 soft
+if outcome == RUNNING and units(1,HTK) > occupants(1) and units(1,HTK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then click unit 1:V3:0 soft
+if outcome == RUNNING and units(1,V3) > occupants(1) and units(1,V3) > carried(1) then wait 150
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then click unit 1:FLAKT:0 soft
+if outcome == RUNNING and units(1,FLAKT) > occupants(1) and units(1,FLAKT) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then click unit 1:SHK:0 soft
+if outcome == RUNNING and units(1,SHK) > occupants(1) and units(1,SHK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then click unit 1:E2:0 soft
+if outcome == RUNNING and units(1,E2) > occupants(1) and units(1,E2) > carried(1) then wait 150
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then click unit 1:DOG:0 soft
+if outcome == RUNNING and units(1,DOG) > occupants(1) and units(1,DOG) > carried(1) then wait 150
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then click unit 1:DESO:0 soft
+if outcome == RUNNING and units(1,DESO) > occupants(1) and units(1,DESO) > carried(1) then wait 150
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then click unit 1:DRON:0 soft
+if outcome == RUNNING and units(1,DRON) > occupants(1) and units(1,DRON) > carried(1) then wait 150
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then click unit 1:TTNK:0 soft
+if outcome == RUNNING and units(1,TTNK) > occupants(1) and units(1,TTNK) > carried(1) then wait 150
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then click unit 1:HARV:0 soft
+if outcome == RUNNING and units(1,HARV) > occupants(1) and units(1,HARV) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then click unit 1:SENGINEER:0 soft
+if outcome == RUNNING and units(1,SENGINEER) > occupants(1) and units(1,SENGINEER) > carried(1) then wait 150
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then click unit 1:IVAN:0 soft
+if outcome == RUNNING and units(1,IVAN) > occupants(1) and units(1,IVAN) > carried(1) then wait 150
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then click unit 1:SAPC:0 soft
+if outcome == RUNNING and units(1,SAPC) > occupants(1) and units(1,SAPC) > carried(1) then wait 150
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then click unit 1:ZEP:0 soft
+if outcome == RUNNING and units(1,ZEP) > occupants(1) and units(1,ZEP) > carried(1) then wait 150
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then click unit 1:TERROR:0 soft
+if outcome == RUNNING and units(1,TERROR) > occupants(1) and units(1,TERROR) > carried(1) then wait 150
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then click unit 1:CRAZYV:0 soft
+if outcome == RUNNING and units(1,CRAZYV) > occupants(1) and units(1,CRAZYV) > carried(1) then wait 150
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then click cell 80 60 soft
+if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
+if outcome == RUNNING and buildings(2,NACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then click building 2:NAPOWR:0 soft
+if outcome == RUNNING and buildings(2,NAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then click building 2:NAREFN:0 soft
+if outcome == RUNNING and buildings(2,NAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then click building 2:NAHAND:0 soft
+if outcome == RUNNING and buildings(2,NAHAND) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then click building 2:NAWEAP:0 soft
+if outcome == RUNNING and buildings(2,NAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NARADR) > 0 then click building 2:NARADR:0 soft
+if outcome == RUNNING and buildings(2,NARADR) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NALASR) > 0 then click building 2:NALASR:0 soft
+if outcome == RUNNING and buildings(2,NALASR) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then click building 2:NAFLAK:0 soft
+if outcome == RUNNING and buildings(2,NAFLAK) > 0 then wait 150
+if outcome == RUNNING and buildings(2,TESLA) > 0 then click building 2:TESLA:0 soft
+if outcome == RUNNING and buildings(2,TESLA) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then click building 2:NAIRON:0 soft
+if outcome == RUNNING and buildings(2,NAIRON) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then click building 2:NANRCT:0 soft
+if outcome == RUNNING and buildings(2,NANRCT) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NATECH) > 0 then click building 2:NATECH:0 soft
+if outcome == RUNNING and buildings(2,NATECH) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0 soft
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then click building 2:NADEPT:0 soft
+if outcome == RUNNING and buildings(2,NADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then click building 2:NAYARD:0 soft
+if outcome == RUNNING and buildings(2,NAYARD) > 0 then wait 150
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then click building 2:NABNKR:0 soft
+if outcome == RUNNING and buildings(2,NABNKR) > 0 then wait 150
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then click unit 2:SMCV:0 soft
+if outcome == RUNNING and units(2,SMCV) > occupants(2) and units(2,SMCV) > carried(2) then wait 150
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then click unit 2:APOC:0 soft
+if outcome == RUNNING and units(2,APOC) > occupants(2) and units(2,APOC) > carried(2) then wait 150
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then click unit 2:HTNK:0 soft
+if outcome == RUNNING and units(2,HTNK) > occupants(2) and units(2,HTNK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then click unit 2:HTK:0 soft
+if outcome == RUNNING and units(2,HTK) > occupants(2) and units(2,HTK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then click unit 2:V3:0 soft
+if outcome == RUNNING and units(2,V3) > occupants(2) and units(2,V3) > carried(2) then wait 150
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then click unit 2:FLAKT:0 soft
+if outcome == RUNNING and units(2,FLAKT) > occupants(2) and units(2,FLAKT) > carried(2) then wait 150
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then click unit 2:SHK:0 soft
+if outcome == RUNNING and units(2,SHK) > occupants(2) and units(2,SHK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then click unit 2:E2:0 soft
+if outcome == RUNNING and units(2,E2) > occupants(2) and units(2,E2) > carried(2) then wait 150
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then click unit 2:DOG:0 soft
+if outcome == RUNNING and units(2,DOG) > occupants(2) and units(2,DOG) > carried(2) then wait 150
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then click unit 2:DESO:0 soft
+if outcome == RUNNING and units(2,DESO) > occupants(2) and units(2,DESO) > carried(2) then wait 150
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then click unit 2:DRON:0 soft
+if outcome == RUNNING and units(2,DRON) > occupants(2) and units(2,DRON) > carried(2) then wait 150
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then click unit 2:TTNK:0 soft
+if outcome == RUNNING and units(2,TTNK) > occupants(2) and units(2,TTNK) > carried(2) then wait 150
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then click unit 2:HARV:0 soft
+if outcome == RUNNING and units(2,HARV) > occupants(2) and units(2,HARV) > carried(2) then wait 150
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then click unit 2:SENGINEER:0 soft
+if outcome == RUNNING and units(2,SENGINEER) > occupants(2) and units(2,SENGINEER) > carried(2) then wait 150
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then click unit 2:IVAN:0 soft
+if outcome == RUNNING and units(2,IVAN) > occupants(2) and units(2,IVAN) > carried(2) then wait 150
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then click unit 2:SAPC:0 soft
+if outcome == RUNNING and units(2,SAPC) > occupants(2) and units(2,SAPC) > carried(2) then wait 150
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then click unit 2:ZEP:0 soft
+if outcome == RUNNING and units(2,ZEP) > occupants(2) and units(2,ZEP) > carried(2) then wait 150
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then click unit 2:TERROR:0 soft
+if outcome == RUNNING and units(2,TERROR) > occupants(2) and units(2,TERROR) > carried(2) then wait 150
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then click unit 2:CRAZYV:0 soft
+if outcome == RUNNING and units(2,CRAZYV) > occupants(2) and units(2,CRAZYV) > carried(2) then wait 150
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then click cell 110 44 soft
+if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
+if outcome == RUNNING and buildings(6,NACNST) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then click building 6:NAPOWR:0 soft
+if outcome == RUNNING and buildings(6,NAPOWR) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then click building 6:NAREFN:0 soft
+if outcome == RUNNING and buildings(6,NAREFN) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then click building 6:NAHAND:0 soft
+if outcome == RUNNING and buildings(6,NAHAND) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then click building 6:NAWEAP:0 soft
+if outcome == RUNNING and buildings(6,NAWEAP) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NARADR) > 0 then click building 6:NARADR:0 soft
+if outcome == RUNNING and buildings(6,NARADR) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NALASR) > 0 then click building 6:NALASR:0 soft
+if outcome == RUNNING and buildings(6,NALASR) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then click building 6:NAFLAK:0 soft
+if outcome == RUNNING and buildings(6,NAFLAK) > 0 then wait 150
+if outcome == RUNNING and buildings(6,TESLA) > 0 then click building 6:TESLA:0 soft
+if outcome == RUNNING and buildings(6,TESLA) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then click building 6:NAIRON:0 soft
+if outcome == RUNNING and buildings(6,NAIRON) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then click building 6:NANRCT:0 soft
+if outcome == RUNNING and buildings(6,NANRCT) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NATECH) > 0 then click building 6:NATECH:0 soft
+if outcome == RUNNING and buildings(6,NATECH) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then click building 6:NAMISL:0 soft
+if outcome == RUNNING and buildings(6,NAMISL) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then click building 6:NADEPT:0 soft
+if outcome == RUNNING and buildings(6,NADEPT) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then click building 6:NAYARD:0 soft
+if outcome == RUNNING and buildings(6,NAYARD) > 0 then wait 150
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then click building 6:NABNKR:0 soft
+if outcome == RUNNING and buildings(6,NABNKR) > 0 then wait 150
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then click unit 6:SMCV:0 soft
+if outcome == RUNNING and units(6,SMCV) > occupants(6) and units(6,SMCV) > carried(6) then wait 150
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then click unit 6:APOC:0 soft
+if outcome == RUNNING and units(6,APOC) > occupants(6) and units(6,APOC) > carried(6) then wait 150
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then click unit 6:HTNK:0 soft
+if outcome == RUNNING and units(6,HTNK) > occupants(6) and units(6,HTNK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then click unit 6:HTK:0 soft
+if outcome == RUNNING and units(6,HTK) > occupants(6) and units(6,HTK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then click unit 6:V3:0 soft
+if outcome == RUNNING and units(6,V3) > occupants(6) and units(6,V3) > carried(6) then wait 150
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then click unit 6:FLAKT:0 soft
+if outcome == RUNNING and units(6,FLAKT) > occupants(6) and units(6,FLAKT) > carried(6) then wait 150
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then click unit 6:SHK:0 soft
+if outcome == RUNNING and units(6,SHK) > occupants(6) and units(6,SHK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then click unit 6:E2:0 soft
+if outcome == RUNNING and units(6,E2) > occupants(6) and units(6,E2) > carried(6) then wait 150
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then click unit 6:DOG:0 soft
+if outcome == RUNNING and units(6,DOG) > occupants(6) and units(6,DOG) > carried(6) then wait 150
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then click unit 6:DESO:0 soft
+if outcome == RUNNING and units(6,DESO) > occupants(6) and units(6,DESO) > carried(6) then wait 150
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then click unit 6:DRON:0 soft
+if outcome == RUNNING and units(6,DRON) > occupants(6) and units(6,DRON) > carried(6) then wait 150
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then click unit 6:TTNK:0 soft
+if outcome == RUNNING and units(6,TTNK) > occupants(6) and units(6,TTNK) > carried(6) then wait 150
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then click unit 6:HARV:0 soft
+if outcome == RUNNING and units(6,HARV) > occupants(6) and units(6,HARV) > carried(6) then wait 150
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then click unit 6:SENGINEER:0 soft
+if outcome == RUNNING and units(6,SENGINEER) > occupants(6) and units(6,SENGINEER) > carried(6) then wait 150
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then click unit 6:IVAN:0 soft
+if outcome == RUNNING and units(6,IVAN) > occupants(6) and units(6,IVAN) > carried(6) then wait 150
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then click unit 6:SAPC:0 soft
+if outcome == RUNNING and units(6,SAPC) > occupants(6) and units(6,SAPC) > carried(6) then wait 150
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then click unit 6:ZEP:0 soft
+if outcome == RUNNING and units(6,ZEP) > occupants(6) and units(6,ZEP) > carried(6) then wait 150
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then click unit 6:TERROR:0 soft
+if outcome == RUNNING and units(6,TERROR) > occupants(6) and units(6,TERROR) > carried(6) then wait 150
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then click unit 6:CRAZYV:0 soft
+if outcome == RUNNING and units(6,CRAZYV) > occupants(6) and units(6,CRAZYV) > carried(6) then wait 150
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then click cell 143 72 soft
+if outcome == RUNNING and buildings(6) == 0 and units(6) > 0 then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 until 3000 outcome == WON
 end expect WON

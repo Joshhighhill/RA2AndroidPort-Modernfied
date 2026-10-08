@@ -21,11 +21,11 @@ until 1500 input_locked == 0
 # Einstein's lab (99,173) stands among barrels: the 12 GIs and the Rocketeers
 # guard it against the assault squads (they are not in the attack army).
 p.select_types(["E1", "JUMPJET"]).add("click cell 101 168", "wait 300")
-p.build("GAREFN").build("GAPOWR").build("GAREFN")
+p.build("GAREFN", lenient=True).build("GAPOWR", lenient=True).build("GAREFN", lenient=True)
 p.train("MTNK", 3, 5)
-p.build("GAWEAP").build("GAPOWR")
-for r in range(5):
-    p.train("MTNK", 3, 4)
+p.build("GAWEAP", lenient=True).build("GAPOWR", lenient=True)
+for r in range(6):
+    p.train("MTNK", 3, 5)
     p.train("FV", 3, 1)
     p.add("wait 500", "dump")
 p.add("until 9000 campaign_frame >= 5400", "dump")
@@ -55,13 +55,17 @@ def house_round(h, wait):
 # One house at a time (nearest first), so the army arrives instead of
 # shuttling between bases; then sweeps of all three.
 for h in [6, 1, 2]:
+    # regroup: wait for a fresh army before each base (credits pile up)
+    p.train("MTNK", 3, 6, guard=True)
+    p.add(f"if {g} and buildings({h}) > 0 then wait 900")
     for k in range(5):
         house_round(h, 300)
         p.add(f"if {g} then dump")
-        if k % 2 == 1: p.train("MTNK", 3, 4, guard=True)
-for k in range(6):
+        p.train("MTNK", 3, 3, guard=True)
+for k in range(8):
     for h in HOUSES:
         house_round(h, 150)
     p.add(f"if {g} then dump")
+    p.train("MTNK", 3, 4, guard=True)
 p.add("until 3000 outcome == WON", "end expect WON")
 p.save(sys.argv[1] if len(sys.argv) > 1 else "../m-all10-real.play")

@@ -10,7 +10,7 @@ class P:
             self.l.append(x)
         return self
 
-    def build(self, bid, tab=0, wait=2400, cat="structure", count_key=None, near=None):
+    def build(self, bid, tab=0, wait=2400, cat="structure", count_key=None, near=None, lenient=False):
         """Queue one structure, wait for it, place it, wait until it exists."""
         ck = count_key or f"buildings(0,{bid})"
         pl = f"place near {near[0]} {near[1]}" if near else "place auto"
@@ -23,7 +23,10 @@ class P:
                  pl)
         for _ in range(4):   # a refused click (pointer on a raised neighbour) -> next candidate
             self.add("wait 1", f"if placing == 1 then {pl}")
-        self.add(f"until 600 built(0,{bid}) > $n_{bid}")
+        # lenient: also done once the placement went through (the queue slot
+        # emptied) -- a base under attack may lose another copy meanwhile.
+        done = f"placing == 0 and queue_ready({cat}) == 0 or " if lenient else ""
+        self.add(f"until 600 {done}built(0,{bid}) > $n_{bid}")
         return self
 
     def train(self, uid, tab, n, guard=False):
