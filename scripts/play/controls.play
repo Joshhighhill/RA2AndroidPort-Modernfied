@@ -1,5 +1,5 @@
 # controls -- agent B's --controls-selftest core folded into a --play script
-# (engine/controls_selftest_steps.inc is the full ~140-step version). The
+# (the ~140-step selftest itself was retired in wave 5, R-183). The
 # ORIGINAL control scheme: left-click selects AND orders, right-click cancels /
 # deselects, Esc backs out of shell pages and opens the in-game options menu,
 # KeyboardMD.ini hotkeys. Uses B's dotted probe keys (absent = 0).

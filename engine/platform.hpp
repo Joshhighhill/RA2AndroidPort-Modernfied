@@ -11,7 +11,8 @@ struct InputEvent {
     // TERMINATING -- save now, the process may be killed), AppForeground,
     // AppLowMemory (drop caches), RenderReset (GL context lost: textures gone).
     enum Kind { None, Quit, PointerDown, PointerUp, PointerMove, Key, Text, Pan,
-                AppBackground, AppForeground, AppLowMemory, RenderReset } kind = None;
+                AppBackground, AppForeground, AppLowMemory, RenderReset,
+                Resize /* R-162: the window / panel changed size */ } kind = None;
     int x = 0, y = 0;                       // pointer position (window pixels)
     enum Button { Left, Right } button = Left;  // valid on PointerDown/PointerUp
     bool shift = false;                     // Shift held at event time
@@ -34,7 +35,8 @@ struct InputEvent {
     int x0 = 0, y0 = 0;
 };
 enum : int { kKeyBackspace = 1, kKeyEnter = 2, kKeyUp = 3, kKeyDown = 4, kKeyDelete = 5,
-             kKeyF10 = 6, kKeyF1 = 7 /* P10 briefing */, kKeyEscape = 8 /* G-01 */ };
+             kKeyF10 = 6, kKeyF1 = 7 /* P10 briefing */, kKeyEscape = 8 /* G-01 */,
+             kKeyPerfToggle = 9 /* R-170: three-finger tap / Ctrl+Shift+F, eaten by the driver */ };
 
 // G0: anything that yields InputEvents -- the real Platform, or the --play
 // harness's scripted source. poll() returns false when no event is pending.

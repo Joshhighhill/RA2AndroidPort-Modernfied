@@ -65,6 +65,7 @@
 #include "iso_renderer.hpp"
 #include "platform.hpp"
 #include "platform_os.hpp"   // W2-AR-22 registry / folder picker / console
+#include "os_profiler.hpp"   // R-171 dev sampling profiler (RA2_PROFILE)
 #include <functional>        // W2-AR-10 deferred scene factories
 #include <optional>
 #include "production.hpp"
@@ -4881,6 +4882,20 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
     Uint32 prev = SDL_GetTicks();
     int frame = 0;
     g_platform = &plat;
+    // R-184: --record writes this run's events + time steps; --replay
+    // (run_menu passes the InputReplay as `src`) plays them back.
+    std::unique_ptr<InputRecorder> rec;
+    if (!g_record_path.empty()) {
+        rec.reset(new InputRecorder);
+        if (!rec->open(g_record_path)) rec.reset();
+        else SDL_Log("[replay] recording input to %s", g_record_path.c_str());
+        g_record_path.clear();   // one driver run per recording
+    }
+    InputReplay* replay = dynamic_cast<InputReplay*>(src);
+    auto finish = [&](const char* why) {
+        if (rec || replay) replay_report(replay ? "replay" : "record", frame, scene.get());
+        (void)why;
+    };
     // W2-GA-P6: frame pacing by deadline (60 Hz) instead of a fixed 16 ms
     // sleep AFTER the frame's work; with the vsync'd renderer present()
     // already waits, so this only sleeps the part of the budget left.
@@ -4893,12 +4908,26 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         g_ui_w = scene->logical_width();
         g_ui_h = scene->logical_height();
         plat.set_logical_size(g_ui_w, g_ui_h);
-        if (hooks && !hooks->begin(frame, *scene)) return 0;
+        const Uint64 pc0 = SDL_GetPerformanceCounter();   // R-170 perf phases
+        if (replay) {
+            replay->begin_frame(frame);
+            if (replay->done()) { finish("end of recording"); return 0; }
+        }
+        if (hooks && !hooks->begin(frame, *scene)) { finish("hooks"); return 0; }
         ra2engine::InputEvent ev;
         while (events.poll(ev)) {
+            // R-170: the perf overlay toggle never reaches a scene.
+            if (ev.kind == ra2engine::InputEvent::Key &&
+                (ev.key == ra2engine::kKeyPerfToggle || (ev.vk == 'F' && ev.ctrl && ev.shift))) {
+                perf_toggle();
+                continue;
+            }
+            if (rec) rec->event(ev);
             if (ev.kind == ra2engine::InputEvent::Quit) {
                 if (hooks && hooks->swallow_quit(frame)) continue;   // --play on_quit continue
                 if (hooks) hooks->quit(frame, scene.get(), "Quit event");
+                if (rec) rec->frame(frame, 0.0);
+                finish("quit");
                 return 0;
             }
             // W2-AR-26/-09: GL context lost -> every texture handle is dead
@@ -4912,15 +4941,23 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
             scene->handle(ev);
         }
         const Uint32 now = SDL_GetTicks();
-        const double dt = fixed_dt > 0.0 ? fixed_dt : (now - prev) / 1000.0;
+        const double dt = replay ? replay->dt() : fixed_dt > 0.0 ? fixed_dt : (now - prev) / 1000.0;
         prev = now;
+        if (rec) rec->frame(frame, dt);
+        const Uint64 pc1 = SDL_GetPerformanceCounter();
         scene->update(dt);
+        const Uint64 pc2 = SDL_GetPerformanceCounter();
+        Uint64 pc3 = pc2;
         if (!hooks || hooks->want_render(frame)) {   // --play may render sparsely
             plat.begin_frame();
             scene->render(plat, tc);
+            perf_draw(static_cast<SDL_Renderer*>(plat.renderer()), g_ui_w, g_ui_h);
+            pc3 = SDL_GetPerformanceCounter();
         }
         if (hooks) hooks->end(frame, *scene, plat);   // captures read the back buffer
         if (!hooks || hooks->want_render(frame)) plat.present();
+        perf_frame((pc1 - pc0) * perf_ms, (pc2 - pc1) * perf_ms, (pc3 - pc2) * perf_ms,
+                   (SDL_GetPerformanceCounter() - pc3) * perf_ms);
         if (Scene* nx = scene->next()) {   // transition (variable dt continues)
             if (auto* d = dynamic_cast<DeferredScene*>(nx)) {
                 // W2-AR-10: tear the current scene down BEFORE building the
@@ -4937,7 +4974,7 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
             }
             if (hooks) hooks->transition(frame);
         }
-        if (fixed_dt <= 0.0) {
+        if (fixed_dt <= 0.0 && !(replay && g_replay_hidden)) {   // a hidden replay runs flat out
             const double used = (SDL_GetPerformanceCounter() - frame_start) * perf_ms;
             if (used < 16.0) SDL_Delay(static_cast<Uint32>(16.667 - used));
             frame_start = SDL_GetPerformanceCounter();
@@ -4945,6 +4982,7 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         ++frame;
     }
     if (hooks) hooks->quit(frame, scene.get(), "scene wants_quit");
+    finish("scene wants_quit");
     return 0;
 }
 
@@ -5767,6 +5805,7 @@ public:
             if (logic_steps == kMaxLogicSteps) { logic_acc_ = 0.0; break; }
             logic_acc_ -= kLogicDt;
             ++logic_steps;
+            ++g_perf_logic_ticks;   // R-170 perf overlay
             const double dt = kLogicDt;   // the logic body below steps exactly one tick
         // Repair wallet bridge [RE: repair-sell.md §A2/§A3]: the wrench charges
         // the World's house pool, but the player's money lives HERE
@@ -6185,6 +6224,12 @@ public:
         f.sections[ra2engine::save::kTagConfig] = ra2engine::save::to_bytes(cfg);
         f.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(world_);
         f.sections[ra2engine::save::kTagScene] = ra2engine::save::to_bytes(sc);
+        {   // R-180: the waiting unit copies + the queues on hold
+            ra2engine::save::QueueBacklogSave q;
+            q.backlog = backlog_;
+            q.held.assign(held_.begin(), held_.end());
+            f.sections[ra2engine::save::kTagBacklog] = ra2engine::save::to_bytes(q);
+        }
         if (campaign_) {   // P10: the trigger runtime + the campaign host state
             f.sections[ra2engine::save::kTagTriggers] =
                 ra2engine::save::save_triggers(campaign_->trigger_system());
@@ -6220,6 +6265,17 @@ private:
             // dressing's cells (passability is rebuilt from the map on load).
             for (const auto& [bx, by] : map_dressing_.blocked()) world_.block_cell(bx, by);
             apply_save(sc);
+            // R-180: the backlog / hold state (absent in a file without it).
+            backlog_.clear();
+            held_.clear();
+            ra2engine::save::QueueBacklogSave q;
+            if (const std::vector<uint8_t>* qb = f.section(ra2engine::save::kTagBacklog))
+                if (ra2engine::save::from_bytes(*qb, q)) {
+                    for (const auto& [c, types] : q.backlog)
+                        if (c >= 0 && c < ra2engine::kQueueCats && !types.empty()) backlog_[c] = types;
+                    for (int c : q.held)
+                        if (c >= 0 && c < ra2engine::kQueueCats) held_.insert(c);
+                }
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {
             // Never run a half-loaded World: start the same scenario fresh.
@@ -7895,10 +7951,21 @@ Scene* offer_resume_autosave(ra2engine::Platform& plat, bool no_audio) {
 int run_menu(bool no_audio) {
     g_session_no_audio = no_audio;
     g_interactive_session = true;   // main()'s catch shows a message box
+    perf_init();   // R-170: RA2.INI [Engine] ShowFPS / RA2_PERF / debug.ra2.perf
+    // R-184: --replay plays a --record file back (events + time steps).
+    std::unique_ptr<InputReplay> replay;
+    if (!g_replay_path.empty()) {
+        replay.reset(new InputReplay);
+        if (!replay->load(g_replay_path)) {
+            std::cerr << "[replay] cannot read recording " << g_replay_path << "\n";
+            return 2;
+        }
+        SDL_Log("[replay] %s: %d frames", g_replay_path.c_str(), static_cast<int>(replay->frames.size()));
+    }
     // W2-AR-03: the window comes up FIRST, so a missing/misplaced install is
     // explained on screen (and on Android the app stays open) instead of the
     // process exiting with a stderr/logcat line.
-    ra2engine::Platform plat = ra2engine::Platform::create(kWindowTitle, 1280, 720);
+    ra2engine::Platform plat = ra2engine::Platform::create(kWindowTitle, 1280, 720, replay && g_replay_hidden);
     if (!ensure_data_files(plat)) return 0;
     const std::string dir = env_install_dir();
     // Named local: Rules wraps the Ini by reference, so it must outlive `rules`
@@ -7924,11 +7991,13 @@ int run_menu(bool no_audio) {
     // W2-AR-09: a leftover AUTOSAVE.SAV means the last session was killed in
     // the background (a normal end deletes it): offer to resume it.
     Scene* first = new MainMenuScene(rules, no_audio, store.art);
-    if (Scene* resume = offer_resume_autosave(plat, no_audio)) {
-        delete first;
-        first = new BootScene(resume);
+    if (!replay) {
+        if (Scene* resume = offer_resume_autosave(plat, no_audio)) {
+            delete first;
+            first = new BootScene(resume);
+        }
     }
-    const int rc = run_scene_driver(plat, tc, first);
+    const int rc = run_scene_driver(plat, tc, first, replay.get());
     g_menu_rules = nullptr;
     g_menu_art = nullptr;
     g_user_settings = nullptr;
@@ -16920,8 +16989,6 @@ int run_demo_saveload() {
     return ok ? 0 : 1;
 }
 
-// Agent B controls real-play self-test (dev-only, not a gate).
-#include "controls_selftest.inc"
 // G0 --play front end (agent G): scripted playthroughs (scripts/play/).
 #include "play_driver.inc"
 // G16 (agent G): --depth-survey (bridges / huts / garrisonable structures per MP map).
@@ -16949,6 +17016,23 @@ int main(int argc, char** argv) {
         // this thread raced the Java side's teardown: SIGSEGV on the emulator.)
         return run_menu(/*no_audio=*/false);
 #else
+        // R-171 (dev): RA2_PROFILE=<file> samples the main thread until exit.
+        struct ProfGuard {
+            ProfGuard() { if (const char* p = std::getenv("RA2_PROFILE")) ra2engine::os_profiler_start(p); }
+            ~ProfGuard() { ra2engine::os_profiler_stop(); }
+        } prof_guard;
+        // R-182: ra2game.exe (the WIN32 GUI build, no console window) writes
+        // its log to <pref dir>/ra2engine.log, SDL_Log lines included.
+        if (char* pref = SDL_GetPrefPath("ra2engine", "RA2")) {
+            const std::string log = std::string(pref) + "ra2engine.log";
+            SDL_free(pref);
+            if (ra2engine::os_log_to_file_if_no_console(log)) {
+                SDL_LogSetOutputFunction([](void*, int, SDL_LogPriority, const char* m) {
+                    std::fprintf(stderr, "%s\n", m);
+                }, nullptr);
+                std::fprintf(stderr, "Red Alert 2 engine %s (log: %s)\n", RA2_VERSION, log.c_str());
+            }
+        }
         // W2-AR-22/-23: --version, --help, --data <dir> (any position).
         for (int i = 1; i < argc; ++i) {
             const std::string a = argv[i];
@@ -16965,6 +17049,9 @@ int main(int argc, char** argv) {
                             "                 (else RA2_INSTALL_DIR, RA2.INI [Engine] DataDir, the exe's\n"
                             "                 folder, the retail registry key, D:\\Red Alert 2)\n"
                             "  --no-audio     run silent\n"
+                            "  --fps          show the frame-rate / perf overlay (also Ctrl+Shift+F)\n"
+                            "  --record <f>   record this session's input to <f> (for bug reports)\n"
+                            "  --replay <f>   play a recorded session back (--hidden: no window)\n"
                             "  --version      print the version\n"
                             "developer modes: --play <script> [--out <dir>], --ai-soak, --demo-*\n",
                             RA2_VERSION);
@@ -16974,7 +17061,14 @@ int main(int argc, char** argv) {
                 g_data_dir_cli = argv[i + 1];
                 reset_data_dir();
             }
+            // R-170 / R-184 (interactive runs; --play honours --record too).
+            if (a == "--fps") { g_perf.overlay = true; g_perf.log = true; }
+            if (a == "--record" && i + 1 < argc) g_record_path = argv[i + 1];
+            if (a == "--replay" && i + 1 < argc) g_replay_path = argv[i + 1];
+            if (a == "--hidden") g_replay_hidden = true;
         }
+        if (g_record_path.empty())
+            if (const char* r = std::getenv("RA2_RECORD")) g_record_path = r;
         // G0 verification harness: --play <script> [--out <dir>] drives the
         // REAL shell scene tree with scripted input (engine/play_driver.inc).
         if (argc >= 3 && std::string(argv[1]) == "--play") {
@@ -17019,8 +17113,14 @@ int main(int argc, char** argv) {
                                       std::atoi(argv[i + 4]), std::atoi(argv[i + 5]));
             } else if (arg == "--depth-survey") {
                 return run_depth_survey();   // G16 (agent G) dev survey
-            } else if (arg == "--controls-selftest" && i + 1 < argc) {
-                return run_controls_selftest(argv[++i]);   // agent B dev check
+            } else if (arg == "--controls-selftest") {
+                // R-183: retired (W5-F). It was written for the pre-MCV start
+                // and the old lobby flow, and it wrote the user's own RA2.INI;
+                // scripts/play/controls.play + ctl-*.play cover it through the
+                // isolated --play harness.
+                std::printf("--controls-selftest is retired: run scripts/play/controls.play and "
+                            "scripts/play/ctl-*.play with --play instead.\n");
+                return 2;
             } else if (arg == "--screenshot" && i + 1 < argc) {
                 screenshot = argv[++i];
             } else if (arg == "--demo-move" && i + 2 < argc) {

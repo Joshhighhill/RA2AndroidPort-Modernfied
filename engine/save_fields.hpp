@@ -22,11 +22,17 @@ namespace ra2engine {
 // The single friend every class with private save-state names. Static members
 // only; visitors for private members and private nested types live here.
 struct SaveAccess {
+    // R-181: after a load, every cross-reference index (unit -> unit /
+    // building, building -> type, house numbers) and every grid size must be
+    // in range. The CRC-32 trailer catches random corruption; this catches a
+    // well-formed file whose numbers would index out of bounds (a hand-edited
+    // or mismatched save). Defined in savegame.cpp.
+    static bool valid_world(const World& w, std::string* why = nullptr);
     template <class Ar> static void occupancy(Ar& ar, Occupancy& o) {
         save::io(ar, o.w_);
         save::io(ar, o.h_);
         save::io(ar, o.owner_);
-        save::io(ar, o.spots_);   // v17: W5-B infantry sub-cell spots
+        save::io(ar, o.spots_);   // v18: W5-B infantry sub-cell spots
         save::io(ar, o.inf_);
     }
     template <class Ar> static void ore_field(Ar& ar, OreField& f) {
@@ -235,14 +241,14 @@ struct SaveAccess {
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
         save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
-        // W5-B R-062 land speed (save v17)
+        // W5-B R-062 land speed (save v18)
         save::io(ar, w.land_speed_armed_);
         save::io(ar, w.speed_land_);
         save::io(ar, w.ramp_);
         save::io(ar, w.level_grid_);
         save::io(ar, w.land_rules_);
-        save::io(ar, w.crush_rules_);   // W5-B R-050 (v17)
-        save::io(ar, w.elev_rules_);    // W5-B R-063 (v17)
+        save::io(ar, w.crush_rules_);   // W5-B R-050 (v18)
+        save::io(ar, w.elev_rules_);    // W5-B R-063 (v18)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -442,7 +448,7 @@ template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
     io(ar, v.weapon_range);
     io(ar, v.flh);
     io(ar, v.level); io(ar, v.airburst); io(ar, v.very_high); io(ar, v.course_lock);   // W4 (v15)
-    io(ar, v.subject_to_cliffs);   // v17: W5-B
+    io(ar, v.subject_to_cliffs);   // v18: W5-B
     io(ar, v.subject_to_elevation);
     io(ar, v.subject_to_walls);
 }
@@ -485,7 +491,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
-    io(ar, v.affects_allies);   // v17: W5-B
+    io(ar, v.affects_allies);   // v18: W5-B
     io(ar, v.proj);
     io(ar, v.aa);
     io(ar, v.ag);
@@ -533,7 +539,7 @@ template <class Ar> void fields(Ar& ar, VeterancyRules& v) {
 template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.damage); io(ar, v.rof); io(ar, v.range); io(ar, v.verses);
     io(ar, v.cell_spread); io(ar, v.percent_at_max);
-    io(ar, v.affects_allies);   // v17: W5-B
+    io(ar, v.affects_allies);   // v18: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
@@ -587,13 +593,13 @@ template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
     io(ar, v.picked); io(ar, v.applied); io(ar, v.house); io(ar, v.unit);
     io(ar, v.x); io(ar, v.y); io(ar, v.amount); io(ar, v.affected);
 }
-template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v17)
+template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v18)
     io(ar, v.armed); io(ar, v.increment); io(ar, v.bonus); io(ar, v.cap);
 }
-template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v17)
+template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v18)
     io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush); io(ar, v.ai_any_building);
 }
-template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v17)
+template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v18)
     for (auto& row : v.cost)
         for (float& c : row) io(ar, c);
     io(ar, v.tracked_up); io(ar, v.tracked_down); io(ar, v.wheeled_up); io(ar, v.wheeled_down);
@@ -685,12 +691,12 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
-    io(ar, v.affects_allies);   // v17: W5-B
+    io(ar, v.affects_allies);   // v18: W5-B
     io(ar, v.proj);
     io(ar, v.rot);
     io(ar, v.turret);
     io(ar, v.speed_cps);
-    io(ar, v.speed_type);   // v17: W5-B
+    io(ar, v.speed_type);   // v18: W5-B
     io(ar, v.auto_crush);
     io(ar, v.is_vehicle);
     io(ar, v.passengers);
@@ -820,7 +826,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w_verses);
     io(ar, v.w_cell_spread);
     io(ar, v.w_percent_at_max);
-    io(ar, v.w_affects_allies);   // v17: W5-B
+    io(ar, v.w_affects_allies);   // v18: W5-B
     io(ar, v.spot);
     io(ar, v.sub_x);
     io(ar, v.sub_y);
@@ -1247,6 +1253,17 @@ template <class Ar> void fields(Ar& ar, SceneSave& v) {
     io(ar, v.credits_shown);
     io(ar, v.place_cat);
     io(ar, v.bstates);
+}
+
+// R-180: GameScene's build-queue backlog (QueueCat -> unit types waiting
+// behind the slot, FIFO) and the categories on hold (G-07).
+struct QueueBacklogSave {
+    std::map<int, std::vector<int>> backlog;
+    std::vector<int> held;
+};
+template <class Ar> void fields(Ar& ar, QueueBacklogSave& v) {
+    io(ar, v.backlog);
+    io(ar, v.held);
 }
 
 // --- header ---

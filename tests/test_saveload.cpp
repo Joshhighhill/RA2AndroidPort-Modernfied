@@ -101,6 +101,7 @@ TEST_CASE("saveload: truncated or corrupt input fails cleanly") {
 
 TEST_CASE("saveload: every serialized aggregate's visitor covers all its members") {
     CHECK_ARITY(Unit);
+    CHECK_ARITY(QueueBacklogSave);   // R-180
     CHECK_ARITY(Building);
     CHECK_ARITY(BuildingTypeDef);
     CHECK_ARITY(UnitCombat);
@@ -196,10 +197,10 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 6304);   // W5-B sub-cells/land speed/crush/elevation rules (+592), save v17; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
+    CHECK(sizeof(World) == 6304);   // W5-B sub-cells/land speed/crush/elevation rules (+592), save v18; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
     CHECK(sizeof(MapTriggerSystem) == 368);   // P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 128);   // W2-SK-01 +mines_ (v10)
-    CHECK(sizeof(Occupancy) == 80);   // W5-B +spots_ +inf_ (v17)
+    CHECK(sizeof(Occupancy) == 80);   // W5-B +spots_ +inf_ (v18)
     CHECK(sizeof(ProductionQueues) == 336);
     CHECK(sizeof(GameRandom) == 1008);
     CHECK(sizeof(RadField) == 56);
@@ -411,6 +412,32 @@ TEST_CASE("saveload: load_world rejects a truncated blob") {
     CHECK_FALSE(load_world(b, s));
 }
 
+TEST_CASE("saveload: load_world range-checks every index (R-181)") {
+    ra2assets::MapFile map;
+    World a(map);
+    a.add_combat_unit(0, 0, 0, gun("GI", 10, 3.0));
+    a.add_combat_unit(1, 0, 1, gun("E2", 10, 3.0));
+    a.units()[0].target = 1;   // a valid reference
+    {
+        World b(map);
+        CHECK(load_world(b, save_world(a)));
+    }
+    auto refused = [&](auto mutate) {
+        World c(map);
+        c.add_combat_unit(0, 0, 0, gun("GI", 10, 3.0));
+        c.add_combat_unit(1, 0, 1, gun("E2", 10, 3.0));
+        mutate(c);
+        World d(map);
+        return !load_world(d, save_world(c));
+    };
+    CHECK(refused([](World& w) { w.units()[0].target = 2; }));            // past the end
+    CHECK(refused([](World& w) { w.units()[1].cargo_of = 77; }));
+    CHECK(refused([](World& w) { w.units()[0].target_building = 0; }));   // no buildings
+    CHECK(refused([](World& w) { w.units()[0].house = 1000000; }));
+    CHECK(refused([](World& w) { w.units()[0].target = -5; }));
+    CHECK_FALSE(refused([](World& w) { w.units()[0].target = -1; }));
+}
+
 // ===========================================================================
 // Map-trigger runtime round trip
 // ===========================================================================
@@ -563,4 +590,21 @@ TEST_CASE("saveload: slots - SAVE%04X.SAV naming, newest-first listing, delete")
     CHECK(list_saves(dir.string()).size() == 2);   // "second" + the damaged junk
     fs::remove_all(dir, ec);
     CHECK(clean_description("a\tb\x01" "c") == "abc");
+}
+
+TEST_CASE("saveload: the build-queue backlog + hold section round-trips (R-180)") {
+    QueueBacklogSave q;
+    q.backlog[2] = {5, 5, 7};
+    q.backlog[3] = {1};
+    q.held = {2, 4};
+    SaveFile f;
+    f.sections[kTagBacklog] = to_bytes(q);
+    SaveFile g;
+    REQUIRE(decode_save(encode_save(f), g));
+    const std::vector<std::uint8_t>* b = g.section(kTagBacklog);
+    REQUIRE(b != nullptr);
+    QueueBacklogSave r;
+    REQUIRE(from_bytes(*b, r));
+    CHECK(r.backlog == q.backlog);
+    CHECK(r.held == q.held);
 }
