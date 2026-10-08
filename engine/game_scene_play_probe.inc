@@ -88,6 +88,7 @@
             const std::string hs = std::to_string(h);
             p.set("house_credits(" + hs + ")", world_.house_credits(h));
             p.set("defeated(" + hs + ")", world_.house_defeated(h) ? 1 : 0);
+            p.set("blackout(" + hs + ")", world_.blackout_frames(h));   // P3: spy power-plant blackout left
             p.set("team(" + hs + ")", world_.house_team(h));
             // [SK] what the Skirmish page handed the game, per house.
             const ra2engine::World::Side hsd = world_.house_side(h);
@@ -225,6 +226,7 @@
             p.set("ctl_units", ctl);         // controllable (house 0 + PlayerControl) usable units
             p.set("ctl_on_screen", ctl_on);  // ... of which inside the view
             p.set("input_locked", input_locked_ ? 1 : 0);
+            if (campaign_) p.set("view_resized", campaign_->local_version());   // P3: ResizeView (40) count
             p.set("touch_ui", touch_ui_ ? 1 : 0);              // W4-AM touch keys
             p.set("touch_bar_open", touch_bar_open_ ? 1 : 0);
             p.set("touch_banner", touch_banner_visible() ? 1 : 0);
@@ -268,6 +270,14 @@
         const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, 0);
         p.set("power_out", pt.output);
         p.set("power_drain", pt.drain);
+        // P2: every house's power (campaign proofs that black out an AI base).
+        for (int h = 1; h < world_.house_count() && h < 16; ++h) {
+            const ra2engine::PowerTotals ph = ra2engine::power_totals(world_.buildings(), ba_.roster, h);
+            if (ph.output == 0 && ph.drain == 0) continue;
+            p.set("power_out(" + std::to_string(h) + ")", ph.output);
+            p.set("power_drain(" + std::to_string(h) + ")", ph.drain);
+            p.set("low_power(" + std::to_string(h) + ")", world_.house_low_power(h) ? 1 : 0);
+        }
         // Sidebar: active tab, its cameos (click targets), every tab's roster
         // and whether a click would start each entry now.
         p.set("tab", active_tab_);
@@ -381,6 +391,35 @@
         p.find_unit = [this](const std::string& spec, double& cx, double& cy) {
             int h = 0, n = 0;
             std::string type;
+            // P3: "H:TYPE:near" / "e:TYPE:near" = the live unit of house H (e = any
+            // house hostile to it) nearest the first selected unit, within 9 cells
+            // (in sight) -- what a player clicks to pick off the closest threat.
+            if (spec.size() > 5 && spec.compare(spec.size() - 5, 5, ":near") == 0) {
+                const std::string head = spec.substr(0, spec.size() - 5);
+                const std::size_t c = head.find(':');
+                if (c == std::string::npos) return false;
+                const bool any_enemy = head.substr(0, c) == "e";
+                const int hh = any_enemy ? -1 : std::atoi(head.substr(0, c).c_str());
+                const std::string ty = head.substr(c + 1);
+                const ra2engine::Unit* me = nullptr;
+                for (const ra2engine::Unit& u : world_.units())
+                    if (u.alive && u.die_time < 0.0 && u.selected) { me = &u; break; }
+                if (!me) return false;
+                double best = 9.0 * 9.0 + 1e-9;
+                bool found = false;
+                for (const ra2engine::Unit& u : world_.units()) {
+                    if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft) continue;
+                    if (any_enemy ? !world_.is_enemy(me->house, u.house) : u.house != hh) continue;
+                    if (ty != "*" && play_unit_id(u) != ty && u.image != ty) continue;
+                    const double dx = u.fx - me->fx, dy = u.fy - me->fy, d2 = dx * dx + dy * dy;
+                    if (d2 > best) continue;
+                    best = d2;
+                    cx = u.fx + u.sub_x / 256.0;
+                    cy = u.fy + u.sub_y / 256.0;
+                    found = true;
+                }
+                return found;
+            }
             if (!play_parse_spec(spec, h, type, n)) return false;
             // P1: TYPE ending in '~' = only a transport with no passenger aboard
             // (`unit 0:FV~:0` = the first empty IFV -- a free seat).
@@ -403,6 +442,31 @@
             const ra2engine::Building& b = world_.buildings()[bi];
             cx = b.cx + b.fw / 2;
             cy = b.cy + b.fh / 2;
+            // P3: a ":near" sweep clicks the building's back (origin) cell -- the
+            // centre is often under the player's own tanks crowding its front,
+            // and a click there selects a tank instead of ordering the attack.
+            if (spec.size() > 5 && spec.compare(spec.size() - 5, 5, ":near") == 0) {
+                cx = b.cx; cy = b.cy;
+                // the first foundation cell (back rows first) whose pixel is
+                // the building and no unit -- what a player's click lands on
+                for (int s = 0; s <= b.fw + b.fh - 2; ++s)
+                    for (int dx = 0; dx < b.fw; ++dx) {
+                        const int dy = s - dx;
+                        if (dy < 0 || dy >= b.fh) continue;
+                        int px0 = 0, py0 = 0;
+                        cell_to_window(b.cx + dx, b.cy + dy, px0, py0);
+                        // a 5x5 grid of window points over the cell's diamond
+                        for (int oy = -12; oy <= 12; oy += 6)
+                            for (int ox = -24; ox <= 24; ox += 12) {
+                                const int px = px0 + ox, py = py0 + oy;
+                                if (input_.pick_unit_at(px, py) >= 0 || input_.building_under(px, py) != bi) continue;
+                                const double fx = ox / 30.0, fy = oy / 15.0;
+                                cx = b.cx + dx + (fx + fy) / 2.0;
+                                cy = b.cy + dy + (fy - fx) / 2.0;
+                                return true;
+                            }
+                    }
+            }
             return true;
         };
         // ---- G16 world depth (agent G): garrisons + bridges ----

@@ -1,0 +1,32 @@
+# P3: ALL07 (Hawaii / Pearl Harbor) won with real orders only (no cheats).
+# '_Win Occurred' = DestroyedBuildingsAll(BadGuy1) (event 10, house buildings
+# <= 0, docs/re/map-triggers.md). At the start BadGuy1 owns ONE building: the
+# Sentry Gun outpost at (92,206); its Niihau base only appears after Niihau
+# falls (SMCV 'Niihau Invaders MCV'). After the intro lock (48 s) the player
+# selects the whole Pearl fleet (Destroyers + Aegis + Carriers, T twice) and
+# orders an attack on that sentry; the Carriers' Hornets kill it on the way
+# and the mission is WON at ~3:20 game time.
+set render_every 3000
+set on_quit continue
+set campaign ALL07t.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+wait 30
+until 1500 input_locked == 0
+assert buildings(1) == 1
+assert buildings(1,NALASR) == 1
+view cell 92 206
+if units(0,DEST) > 0 then click unit 0:DEST:0
+if units(0,AEGIS) > 0 then click unit 0:AEGIS:0 shift
+if units(0,CARRIER) > 0 then click unit 0:CARRIER:0 shift
+key t
+key t
+assert selected >= 7
+click building 1:NALASR:0
+wait 600
+dump
+until 3000 buildings(1) == 0
+assert outcome == RUNNING or outcome == WON
+until 600 outcome == WON
+end expect WON

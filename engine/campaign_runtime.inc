@@ -943,6 +943,30 @@ private:
     static bool live(const ra2engine::Building& b) {
         return b.alive && b.state != ra2engine::Building::State::Dead;
     }
+    // [RE: HouseClass RegisterGain FUN_004FF520 / RegisterLoss FUN_004FF370 --
+    // a techno whose type has Insignificant (+0x232, ObjectType INI read at
+    // 0x5F8D0B) or DontScore (+0xC9F, 0x7132F8) set is never added to the
+    // house's building/unit/infantry counters (+0x2F0/+0x2E8/...), which the
+    // Destroyed*All events (9/10/11/55/56) read.] Flags, lamps, gates, guard
+    // shacks therefore do not keep a house "alive" (ALL06: BadGuy1's flags).
+    bool untracked_type(const std::string& id) const {
+        auto it = untracked_.find(id);
+        if (it != untracked_.end()) return it->second;
+        auto yes = [&](const char* k) {
+            const std::string v = rules_ini_.get(id, k, "");
+            const char c = v.empty() ? 'n' : (char)std::tolower((unsigned char)v[0]);
+            return c == 'y' || c == 't' || c == '1';
+        };
+        const bool r = yes("Insignificant") || yes("DontScore");
+        untracked_[id] = r;
+        return r;
+    }
+    bool tracked(const ra2engine::Building& b) const {
+        return live(b) && !(b.type >= 0 && b.type < (int)ba_.roster.size() && untracked_type(ba_.roster[(std::size_t)b.type].id));
+    }
+    bool tracked(const ra2engine::Unit& u) const {
+        return live(u) && !u.vet.dont_score && !untracked_type(u.image);
+    }
     bool free_cell_near(int x, int y, int& ox, int& oy, int maxr = 6) const {
         for (int r = 0; r <= maxr; ++r)
             for (int dy = -r; dy <= r; ++dy)
@@ -1473,8 +1497,13 @@ private:
             }
             ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
             if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
-            const double dx = v.fx - u.fx, dy = v.fy - u.fy;
-            if (std::sqrt(dx * dx + dy * dy) > std::max(1.0, u.w_range) + 0.5) continue;
+            // R-205 [RE: the capture rides the controller's shot -- CaptureManager
+            // FUN_00471C80 is called only from the bullet detonation @0x4692C0, and
+            // the shot leaves only through the fire-range test FUN_006F6750]: use the
+            // SAME 3-D range rule as combat's fire path. A separate 2-D test let the
+            // two disagree near the edge (~8.5 cells): combat thought the Yuri in
+            // range (no approach), the capture thought not, and the order died.
+            if (!ra2engine::unit_in_weapon_range(w_, u, v)) continue;
             const int vi = u.target;
             if (t.mc_victim >= 0 && t.mc_victim != vi) mc_release(t);
             Track& vt = utrack_[(std::size_t)vi];
@@ -1484,6 +1513,18 @@ private:
             v.house = u.house;
             v.target = -1;
             v.target_building = -1;
+            // [RE: FootClass::SetOwningHouse FUN_004DBDE0 -- after the owner
+            // change (TechnoClass FUN_00700940), a foot whose NEW owner is a
+            // human-controlled house (+0x1EC) leaves its team (FUN_006E9DD0)]:
+            // a unit the player's Yuri takes stops running its old script
+            // (SOV09: the x=37 IFV patrol kept driving into the GIs).
+            if (!w_.house_is_computer(u.house) && vt.team >= 0 && vt.team < (int)teams_.size()) {
+                std::vector<int>& mm = teams_[(std::size_t)vt.team].members;
+                mm.erase(std::remove(mm.begin(), mm.end(), vi), mm.end());
+                vt.team = -1;
+                vt.hunt = false;
+                w_.order_stop(vi);
+            }
             u.target = -1;
             u.attack_order = false;
             t.mc_victim = vi;
@@ -1529,7 +1570,12 @@ private:
                 if (std::getenv("RA2_CAMP_DEBUG"))
                     std::cerr << "[camp-debug] f" << frame_ << " unit " << i << " " << t.type << " house " << u.house
                               << " died at " << u.cell_x << "," << u.cell_y << " by house "
-                              << gf_attacker_house((int)i, -1, u.house) << "\n";
+                              << gf_attacker_house((int)i, -1, u.house) << " killer=" << u.vet.killed_by
+                              << (u.vet.killed_by >= 0 && u.vet.killed_by < (int)w_.units().size()
+                                      ? " " + w_.units()[(std::size_t)u.vet.killed_by].image + "/h" +
+                                            std::to_string(w_.units()[(std::size_t)u.vet.killed_by].house)
+                                      : std::string())
+                              << "\n";
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
                 // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
@@ -2505,28 +2551,49 @@ private:
         int house_buildings(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Building& b : rt.w_.buildings()) if (live(b) && b.house == eh) ++n;
+            for (const ra2engine::Building& b : rt.w_.buildings()) if (rt.tracked(b) && b.house == eh) ++n;
             return n;
+        }
+        // P5 [RE: FUN_0071dbe0 case 9/0xB]: the DestroyedUnits/DestroyedAll
+        // counts are the house's OwnedUnitTypes (+0x5564) and OwnedInfantryTypes
+        // (+0x5578) totals -- the RULES lists, not the locomotor. A flying
+        // [VehicleTypes] object (the Kirov ZEP) is a UnitClass and counts as a
+        // vehicle, a jumpjet [InfantryTypes] one (the Rocketeer) as infantry;
+        // only [AircraftTypes] objects stay out. (SOV12: a player whose base has
+        // fallen but whose Kirovs still fly has not lost.)
+        // 0 = not counted (aircraft), 1 = vehicle, 2 = infantry.
+        int flying_class(std::size_t i) const {
+            const ra2engine::Unit& u = rt.w_.units()[i];
+            const std::string& t = i < rt.utrack_.size() ? rt.utrack_[i].type : u.image;
+            if (camp::index_of(rt.ra2_vehicles_, t) >= 0 || camp::index_of(rt.ra2_vehicles_, camp::up(u.image)) >= 0) return 1;
+            if (camp::index_of(rt.ra2_infantry_, t) >= 0 || camp::index_of(rt.ra2_infantry_, camp::up(u.image)) >= 0) return 2;
+            return 0;
         }
         int house_vehicles(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Unit& u : rt.w_.units())
-                if (live(u) && u.house == eh && (u.is_vehicle || u.is_naval) && !u.is_aircraft) ++n;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
+                if (u.is_aircraft ? flying_class(i) == 1 : (u.is_vehicle || u.is_naval)) ++n;
+            }
             return n;
         }
         int house_naval_units(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
             for (const ra2engine::Unit& u : rt.w_.units())
-                if (live(u) && u.house == eh && u.is_naval && !u.is_aircraft) ++n;
+                if (rt.tracked(u) && u.house == eh && u.is_naval && !u.is_aircraft) ++n;
             return n;
         }
         int house_infantry(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Unit& u : rt.w_.units())
-                if (live(u) && u.house == eh && !u.is_vehicle && !u.is_naval && !u.is_aircraft) ++n;
+            for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
+                const ra2engine::Unit& u = rt.w_.units()[i];
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
+                if (u.is_aircraft ? flying_class(i) == 2 : (!u.is_vehicle && !u.is_naval)) ++n;
+            }
             return n;
         }
         int house_building_type_count(int ht, int bt) const override {
@@ -2919,6 +2986,7 @@ private:
     std::vector<std::string> witness_;
     const UnitRoster* ai_roster_ = nullptr;   // W2-CA-07 (GameScene's ur_ai_)
     std::map<std::string, bool> mc_type_;      // W2-CA-15 cache: type -> MindControl weapon
+    mutable std::map<std::string, bool> untracked_;   // P3 cache: type -> Insignificant/DontScore (derived)
     std::vector<std::uint8_t> armed_;         // W2-CA-07 per house: 1 base, 2 map teams (derived)
     std::vector<AudioReq> audio_;   // W2-CA-12 (presentation only, not hashed/saved)
     std::vector<ra2engine::VisualRequest> visuals_;   // W3-FX (presentation only, not hashed/saved)

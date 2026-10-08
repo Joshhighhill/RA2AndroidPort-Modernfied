@@ -294,6 +294,8 @@ public:
     // The alive, non-Dead building under window pixel (px, py) (level-aware
     // ground pick), or -1. Used by main.cpp's mode cursor.
     int building_under(int px, int py) const;
+    // P3 (play harness): the unit a click at (px, py) would hit, or -1.
+    int pick_unit_at(int px, int py) const { return unit_under(px, py); }
     // Hovered foundation ORIGIN cell for the CURRENT pointer position:
     // resolve_ground_cell(cur) minus half the foundation, so the cursor sits
     // near the foundation's center. Meaningful only while placement_active().

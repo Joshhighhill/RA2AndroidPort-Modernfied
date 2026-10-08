@@ -1,0 +1,32 @@
+# R-205: a Yuri ordered to mind-control a target just past its range closes in
+# and captures it. SOV09, real orders only: the IFV patrol turns at y=72, about
+# 8.5 cells from the pulled-back Yuri; before the fix the combat range test
+# (3-D) said "in range" so the Yuri never moved, the capture test (2-D + .5)
+# said "out of range", and the order died with nothing captured.
+set render_every 900
+set on_quit continue
+set campaign sov09u.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 600 airborne(6) >= 1
+until 2000 campaign_frame >= 980
+click unit 6:YURI:0
+click cell 36 74
+click unit 6:YURI:1
+click cell 37 74
+until 600 campaign_frame >= 1150
+click unit 6:YURI:0
+click cell 36 75
+click unit 6:YURI:1
+click cell 37 75
+until 1500 ucy(1,FV,1) >= 72
+# right-click first: clicking an already-selected Yuri deploys him (he then
+# holds his post and never closes in).
+click xy 500 400 right
+click unit 6:YURI:1
+click unit 1:FV:1
+until 600 units(6,FV) >= 1
+assert units(6,FV) >= 1 @R-205
+assert units(6,YURI) >= 2
+end expect RUNNING

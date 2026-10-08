@@ -4230,6 +4230,32 @@ TEST_CASE("World multihouse: AllyReveal shares explored/visible between allies [
     CHECK_FALSE(world.visible_at(2, 8, 8));                   // enemy does NOT share
 }
 
+// P5 [RE: FUN_00566fd0]: the share is ONE hop from the source's own sight --
+// house 2 allied with 1 and 1 allied with 0 does not hand 2's sight to 0, even
+// over many frames; and the source's own Allies view decides (one-sided).
+TEST_CASE("World multihouse: AllyReveal is one hop, from the source's own view [RE: FUN_00566fd0]") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    for (int h = 0; h < 4; ++h) world.set_house(h, {ra2engine::World::Side::Allied, h + 1, "", h, true});
+    world.set_ally_view(0, 1, true); world.set_ally_view(1, 0, true);   // 0 <-> 1
+    world.set_ally_view(1, 2, true); world.set_ally_view(2, 1, true);   // 1 <-> 2 (not 0)
+    world.set_ally_view(3, 0, true);                                     // 3 -> 0 only
+    world.enable_shroud(true);
+    world.enable_ally_reveal(true);
+    ra2engine::UnitCombat c; c.image = "E1"; c.strength = 100; c.armor = "none"; c.sight = 3;
+    world.add_combat_unit(8, 8, /*house=*/2, c);
+    world.add_combat_unit(30, 30, /*house=*/3, c);
+    for (int k = 0; k < 4; ++k) world.step_visibility();
+    CHECK(world.explored_at(1, 8, 8));          // direct ally of the source
+    CHECK_FALSE(world.explored_at(0, 8, 8));    // no chain 2 -> 1 -> 0
+    CHECK(world.explored_at(0, 30, 30));        // 3 counts 0 as an ally: 0 sees it
+    CHECK_FALSE(world.explored_at(1, 30, 30));
+}
+
 TEST_CASE("World multihouse: AllyReveal inert when unconfigured (shroud gate contract) [RE: multihouse.md §3]") {
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
