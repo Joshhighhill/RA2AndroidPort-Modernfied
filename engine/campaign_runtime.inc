@@ -1473,6 +1473,18 @@ private:
             v.house = u.house;
             v.target = -1;
             v.target_building = -1;
+            // [RE: FootClass::SetOwningHouse FUN_004DBDE0 -- after the owner
+            // change (TechnoClass FUN_00700940), a foot whose NEW owner is a
+            // human-controlled house (+0x1EC) leaves its team (FUN_006E9DD0)]:
+            // a unit the player's Yuri takes stops running its old script
+            // (SOV09: the x=37 IFV patrol kept driving into the GIs).
+            if (!w_.house_is_computer(u.house) && vt.team >= 0 && vt.team < (int)teams_.size()) {
+                std::vector<int>& mm = teams_[(std::size_t)vt.team].members;
+                mm.erase(std::remove(mm.begin(), mm.end(), vi), mm.end());
+                vt.team = -1;
+                vt.hunt = false;
+                w_.order_stop(vi);
+            }
             u.target = -1;
             u.attack_order = false;
             t.mc_victim = vi;
@@ -1518,7 +1530,12 @@ private:
                 if (std::getenv("RA2_CAMP_DEBUG"))
                     std::cerr << "[camp-debug] f" << frame_ << " unit " << i << " " << t.type << " house " << u.house
                               << " died at " << u.cell_x << "," << u.cell_y << " by house "
-                              << gf_attacker_house((int)i, -1, u.house) << "\n";
+                              << gf_attacker_house((int)i, -1, u.house) << " killer=" << u.vet.killed_by
+                              << (u.vet.killed_by >= 0 && u.vet.killed_by < (int)w_.units().size()
+                                      ? " " + w_.units()[(std::size_t)u.vet.killed_by].image + "/h" +
+                                            std::to_string(w_.units()[(std::size_t)u.vet.killed_by].house)
+                                      : std::string())
+                              << "\n";
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
                 // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
