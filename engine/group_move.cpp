@@ -77,4 +77,63 @@ std::vector<Cellxy> assign_formation(Cellxy goal, const std::vector<Cellxy>& mov
     return targets;
 }
 
+std::vector<Cellxy> assign_infantry_formation(Cellxy goal, const std::vector<Cellxy>& mover_cells,
+                                              const std::vector<int>& mover_ids,
+                                              const std::vector<uint8_t>& passable, int w, int h,
+                                              const Occupancy& occ,
+                                              const std::vector<Cellxy>& blocked_cells) {
+    const std::size_t n = mover_cells.size();
+    std::vector<Cellxy> targets(mover_cells);
+    if (n == 0 || w <= 0 || h <= 0) return targets;
+    Occupancy tmp = occ;
+    for (std::size_t m = 0; m < n && m < mover_ids.size(); ++m)
+        tmp.release(mover_cells[m].x, mover_cells[m].y, mover_ids[m]);
+    auto blocked = [&](int x, int y) {
+        for (const Cellxy& c : blocked_cells)
+            if (c.x == x && c.y == y) return true;
+        return false;
+    };
+    // Slots: each free cell repeated by its free-spot count, nearest ring first.
+    std::vector<Cellxy> slots;
+    auto consider = [&](int x, int y) {
+        if (slots.size() >= n) return;
+        if (x < 0 || y < 0 || x >= w || y >= h) return;
+        if (passable[static_cast<std::size_t>(y) * w + x] == 0 || blocked(x, y)) return;
+        if (tmp.at(x, y) != Occupancy::kEmpty && !tmp.subcells()) return;
+        const int cap = tmp.subcells() ? (tmp.free_spot(x, y, 0) < 0 ? 0 : Occupancy::kSpots - tmp.infantry_count(x, y))
+                                       : 1;
+        for (int k = 0; k < cap && slots.size() < n; ++k) slots.push_back({x, y});
+    };
+    consider(goal.x, goal.y);
+    for (int r = 1; r <= w + h && slots.size() < n; ++r) {
+        for (int x = goal.x - r; x <= goal.x + r; ++x) {
+            consider(x, goal.y - r);
+            consider(x, goal.y + r);
+        }
+        for (int y = goal.y - r + 1; y <= goal.y + r - 1; ++y) {
+            consider(goal.x - r, y);
+            consider(goal.x + r, y);
+        }
+    }
+    std::vector<bool> taken(n, false);
+    for (const Cellxy& slot : slots) {
+        int best = -1;
+        double best_d2 = 0.0;
+        for (std::size_t m = 0; m < n; ++m) {
+            if (taken[m]) continue;
+            const double dx = mover_cells[m].x - slot.x;
+            const double dy = mover_cells[m].y - slot.y;
+            const double d2 = dx * dx + dy * dy;
+            if (best < 0 || d2 < best_d2) {
+                best = static_cast<int>(m);
+                best_d2 = d2;
+            }
+        }
+        if (best < 0) break;
+        targets[static_cast<std::size_t>(best)] = slot;
+        taken[static_cast<std::size_t>(best)] = true;
+    }
+    return targets;
+}
+
 }  // namespace ra2engine

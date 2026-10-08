@@ -73,7 +73,10 @@ void World::order_scatter(int idx) {
     for (int k = 0; k < 8; ++k) {
         const int d = (start + k) & 7;
         const int x = u.cell_x + kDx[d], y = u.cell_y + kDy[d];
-        if (!walkable(x, y) || unit_at_cell(x, y) >= 0 || building_at_cell(x, y) >= 0) continue;
+        // W5-B R-061: with sub-cells an infantry may scatter into a cell that
+        // still has a free spot.
+        const bool taken = occ_.subcells() ? !occ_.can_enter(x, y, idx) : unit_at_cell(x, y) >= 0;
+        if (!walkable(x, y) || taken || building_at_cell(x, y) >= 0) continue;
         u.target = -1;
         u.target_building = -1;
         u.attack_order = false;

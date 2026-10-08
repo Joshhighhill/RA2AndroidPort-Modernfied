@@ -42,7 +42,14 @@ bool prerequisites_met(const std::vector<std::string>& tokens,
                        const std::vector<std::pair<std::string, std::vector<std::string>>>& groups) {
     auto have = [&](const std::string& id) {
         for (const Building& b : buildings) {
-            if (!b.alive || b.house != house || b.state != Building::State::Idle) continue;
+            // W5-B R-065 (G-31, RE-E1): the original's Prerequisite check reads
+            // HouseClass::ActiveBuildingTypes -- objects "currently owned and
+            // on the map", gained at Unlimbo (placement) -- so a structure
+            // counts from the moment it is placed, build-up included. RE'd:
+            // TechnoClass::Unlimbo (FUN_006F61D0 @0x6F62BF) calls
+            // HouseClass::RegisterGain (FUN_005028A0), which bumps the
+            // per-type counters -- at placement, not at the grand opening.
+            if (!b.alive || b.house != house || b.state == Building::State::Dead) continue;
             if (b.type >= 0 && b.type < (int)types.size() && types[b.type].id == id) return true;
         }
         return false;

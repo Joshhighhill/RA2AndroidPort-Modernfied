@@ -92,7 +92,10 @@ click unit 0:LCRF +0 +0
 wait 1
 click unit 0:E1:1 shift
 click unit 0:LCRF
-until 600 cargo_total(0) >= 1                   @W2-AN-10
+# W5-B: wait for BOTH GIs -- with infantry sub-cells the second one walks a
+# different approach and boards a little later; sailing off with it still
+# walking left it beside the craft, where the next click picked the GI.
+until 600 cargo_total(0) >= 2                   @W2-AN-10
 # sail out onto the water, then beach elsewhere and unload
 click unit 0:LCRF right
 click unit 0:LCRF
@@ -132,6 +135,9 @@ until 300 spawned_out(0) >= 1                   @W2-AN-12
 until 1500 unit_hp(1,DEST) < $ehp or units(1,DEST) == 0   @W2-AN-12
 shot hornets
 until 3000 units(1,DEST) == 0                   @W2-AN-12
+# W5-B: the killing shell now detonates through DamageArea in step_combat, so
+# the death-variant pass (which marks the ship sinking) sees it next frame.
+wait 2
 assert sunk(1) >= 1                             @W2-AN-25
 # Dreadnought: V3-style missiles, MinimumRange=8, at a target 10+ cells off
 cheat spawn DRED 0 point water_near_sel +0 +0
@@ -149,7 +155,9 @@ shot dread_missiles
 cheat spawn DLPH 0 point water_near_sel +0 +0
 wait 5
 assert units(0,DLPH) == 1                       @W2-AN-15
-assert submerged(0) >= 1                        @W2-AN-13 # Underwater+Cloakable
+# W5-B: SHP ships now carry their ROT, so the Dolphin turns to its first
+# target and fires (surfacing) before it dives again -- wait for the dive.
+until 300 submerged(0) >= 1                     @W2-AN-13 # Underwater+Cloakable
 view unit 0:DLPH
 shot dolphin
 end

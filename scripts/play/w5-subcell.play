@@ -1,0 +1,45 @@
+# W5-B R-061: three infantry share a cell (sub-cell spots, FindInfantrySubposition
+# FUN_00481090). Six GIs spawned one per cell are selected with real clicks and
+# ordered to one cell: they pack three to a cell on the right/left/down spots
+# instead of fanning out one per cell.
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:speed=3
+click start
+until 120 scene == game
+require subcells == 1
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn E1 0 building 0:GACNST +5 +4
+cheat spawn E1 0 building 0:GACNST +6 +4
+cheat spawn E1 0 building 0:GACNST +7 +4
+cheat spawn E1 0 building 0:GACNST +5 +5
+cheat spawn E1 0 building 0:GACNST +6 +5
+cheat spawn E1 0 building 0:GACNST +7 +5
+wait 2
+assert max_cell_inf(0) == 1
+view building 0:GACNST +7 +6
+click unit 0:E1:0
+click unit 0:E1:1 shift
+click unit 0:E1:2 shift
+click unit 0:E1:3 shift
+click unit 0:E1:4 shift
+click unit 0:E1:5 shift
+assert selected == 6
+click building 0:GACNST +9 +8
+until 400 moving(0) == 0
+wait 10
+assert max_cell_inf(0) == 3                    @R-061:B
+assert cells3(0) >= 1                          @R-061:B
+# The three in one cell hold three distinct spots (2 right, 3 left, 4 down).
+shot packed
+# A tank may not drive into a cell with infantry in it; infantry may not
+# enter a vehicle's cell (OccupationFlags 0x20).
+end

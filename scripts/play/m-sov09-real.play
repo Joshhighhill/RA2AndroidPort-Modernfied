@@ -15,6 +15,15 @@ click unit 6:YURI:0
 click cell 36 74
 click unit 6:YURI:1
 click cell 37 74
+# W5-B: with infantry sub-cells the drop lands the two Yuris on spots of one
+# cell and the fight timing shifts; the second Yuri later walks back north
+# into the patrols (a re-route after it engages). A player re-issues the
+# pull-back.
+until 600 campaign_frame >= 1150
+click unit 6:YURI:0
+click cell 36 75
+click unit 6:YURI:1
+click cell 37 75
 until 1500 campaign_frame >= 1600
 assert units(6,YURI) >= 1
 assert outcome == RUNNING

@@ -22,7 +22,11 @@ click unit 0:ENGINEER onscreen                @W4-MC-07
 wait 1
 require selected == 1
 let ey = sel_cy
-click unit 0:ENGINEER +0 -3 onscreen          @W4-MC-07
+# W5-B: the engineer now stands on its sub-cell spot (FindInfantrySubposition),
+# so "+0 -3" from it lands on a capturable building (cursor "capture"; before,
+# it hit a second engineer and only the selection moved). +1 -3 is open ground
+# (cursor "move").
+click unit 0:ENGINEER +1 -3 onscreen          @W4-MC-07
 wait 15
 assert sel_cy < $ey                           @W4-MC-07
 
