@@ -1,0 +1,686 @@
+# P1: ALL11 (Cuba) won with real orders only (no cheats).
+# The map's three Chrono Miners harvest (P1 fix: Mission=Harvest). The player
+# builds a war factory, Battle Lab and the Chronosphere ('Chronosphere is
+# Built' reveals Cuba and hands the nuke silos to BadGuy2). IFVs, each
+# carrying a Navy SEAL, gather in a block and are chronoshifted into the
+# Tesla-free pocket of the silo compound; the SEALs get out and C4 the silos.
+# All three silos fall -> 'Win (Nukes KIA)' -> VICTORY.
+set render_every 3000
+set on_quit continue
+set campaign all11t.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+wait 30
+until 3000 input_locked == 0
+until 900 cameo(GHOST) == 1
+click tab:2
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+click cameo:GHOST
+let n_GAPOWR = built(0,GAPOWR)
+until 900 can_build(GAPOWR) == 1
+click tab:0
+click cameo:GAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) > $n_GAPOWR
+let n_GAWEAP = built(0,GAWEAP)
+until 900 can_build(GAWEAP) == 1
+click tab:0
+click cameo:GAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+until 600 built(0,GAWEAP) > $n_GAWEAP
+let n_GAPOWR = built(0,GAPOWR)
+until 900 can_build(GAPOWR) == 1
+click tab:0
+click cameo:GAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) > $n_GAPOWR
+dump
+until 900 cameo(FV) == 1
+click tab:3
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+click cameo:FV
+until 900 cameo(MTNK) == 1
+click tab:3
+click cameo:MTNK
+click cameo:MTNK
+let n_GATECH = built(0,GATECH)
+until 900 can_build(GATECH) == 1
+click tab:0
+click cameo:GATECH
+until 2400 queue_ready(structure) == 1
+click cameo:GATECH
+place auto
+until 600 built(0,GATECH) > $n_GATECH
+dump
+until 900 can_build(GACSPH) == 1
+click tab:1
+click cameo:GACSPH
+until 3000 queue_ready(defense) == 1
+cycle cameo:GACSPH placing == 1
+place auto
+until 900 buildings(0,GACSPH) >= 1
+dump
+shot csph
+until 3000 units(0,FV) >= 9 and units(0,GHOST) >= 9
+dump
+let cz = carried(0)
+if outcome == RUNNING and units(0,GHOST) > $cz+0 and units(0,FV) > $cz+0 then click unit 0:GHOST:0
+if outcome == RUNNING and units(0,GHOST) > $cz+0 and units(0,FV) > $cz+0 then click unit 0:FV~:0
+if outcome == RUNNING and units(0,GHOST) > $cz+1 and units(0,FV) > $cz+1 then click unit 0:GHOST:1
+if outcome == RUNNING and units(0,GHOST) > $cz+1 and units(0,FV) > $cz+1 then click unit 0:FV~:1
+if outcome == RUNNING and units(0,GHOST) > $cz+2 and units(0,FV) > $cz+2 then click unit 0:GHOST:2
+if outcome == RUNNING and units(0,GHOST) > $cz+2 and units(0,FV) > $cz+2 then click unit 0:FV~:2
+if outcome == RUNNING and units(0,GHOST) > $cz+3 and units(0,FV) > $cz+3 then click unit 0:GHOST:3
+if outcome == RUNNING and units(0,GHOST) > $cz+3 and units(0,FV) > $cz+3 then click unit 0:FV~:3
+if outcome == RUNNING and units(0,GHOST) > $cz+4 and units(0,FV) > $cz+4 then click unit 0:GHOST:4
+if outcome == RUNNING and units(0,GHOST) > $cz+4 and units(0,FV) > $cz+4 then click unit 0:FV~:4
+if outcome == RUNNING and units(0,GHOST) > $cz+5 and units(0,FV) > $cz+5 then click unit 0:GHOST:5
+if outcome == RUNNING and units(0,GHOST) > $cz+5 and units(0,FV) > $cz+5 then click unit 0:FV~:5
+if outcome == RUNNING and units(0,GHOST) > $cz+6 and units(0,FV) > $cz+6 then click unit 0:GHOST:6
+if outcome == RUNNING and units(0,GHOST) > $cz+6 and units(0,FV) > $cz+6 then click unit 0:FV~:6
+if outcome == RUNNING and units(0,GHOST) > $cz+7 and units(0,FV) > $cz+7 then click unit 0:GHOST:7
+if outcome == RUNNING and units(0,GHOST) > $cz+7 and units(0,FV) > $cz+7 then click unit 0:FV~:7
+if outcome == RUNNING and units(0,GHOST) > $cz+8 and units(0,FV) > $cz+8 then click unit 0:GHOST:8
+if outcome == RUNNING and units(0,GHOST) > $cz+8 and units(0,FV) > $cz+8 then click unit 0:FV~:8
+if outcome == RUNNING and units(0,GHOST) > $cz+9 and units(0,FV) > $cz+9 then click unit 0:GHOST:9
+if outcome == RUNNING and units(0,GHOST) > $cz+9 and units(0,FV) > $cz+9 then click unit 0:FV~:9
+wait 400
+dump
+shot loaded
+let n_GAPOWR = built(0,GAPOWR)
+until 900 can_build(GAPOWR) == 1
+click tab:0
+click cameo:GAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) > $n_GAPOWR
+let n_ATESLA = built(0,ATESLA)
+until 900 can_build(ATESLA) == 1
+click tab:1
+click cameo:ATESLA
+until 2400 queue_ready(defense) == 1
+click cameo:ATESLA
+place auto
+until 600 built(0,ATESLA) > $n_ATESLA
+let n_ATESLA = built(0,ATESLA)
+until 900 can_build(ATESLA) == 1
+click tab:1
+click cameo:ATESLA
+until 2400 queue_ready(defense) == 1
+click cameo:ATESLA
+place auto
+until 600 built(0,ATESLA) > $n_ATESLA
+let n_GAPOWR = built(0,GAPOWR)
+until 900 can_build(GAPOWR) == 1
+click tab:0
+click cameo:GAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) > $n_GAPOWR
+let n_ATESLA = built(0,ATESLA)
+until 900 can_build(ATESLA) == 1
+click tab:1
+click cameo:ATESLA
+until 2400 queue_ready(defense) == 1
+click cameo:ATESLA
+place auto
+until 600 built(0,ATESLA) > $n_ATESLA
+let n_ATESLA = built(0,ATESLA)
+until 900 can_build(ATESLA) == 1
+click tab:1
+click cameo:ATESLA
+until 2400 queue_ready(defense) == 1
+click cameo:ATESLA
+place auto
+until 600 built(0,ATESLA) > $n_ATESLA
+if outcome == RUNNING and cameo(GHOST) == 1 then click tab:2
+if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
+if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
+if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
+if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
+if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
+until 9000 sw_ready_t(0,ChronoSphere) == 1
+dump
+let cz = carried(0)
+if outcome == RUNNING and units(0,GHOST) > $cz+0 and units(0,FV) > $cz+0 then click unit 0:GHOST:0
+if outcome == RUNNING and units(0,GHOST) > $cz+0 and units(0,FV) > $cz+0 then click unit 0:FV~:0
+if outcome == RUNNING and units(0,GHOST) > $cz+1 and units(0,FV) > $cz+1 then click unit 0:GHOST:1
+if outcome == RUNNING and units(0,GHOST) > $cz+1 and units(0,FV) > $cz+1 then click unit 0:FV~:1
+if outcome == RUNNING and units(0,GHOST) > $cz+2 and units(0,FV) > $cz+2 then click unit 0:GHOST:2
+if outcome == RUNNING and units(0,GHOST) > $cz+2 and units(0,FV) > $cz+2 then click unit 0:FV~:2
+if outcome == RUNNING and units(0,GHOST) > $cz+3 and units(0,FV) > $cz+3 then click unit 0:GHOST:3
+if outcome == RUNNING and units(0,GHOST) > $cz+3 and units(0,FV) > $cz+3 then click unit 0:FV~:3
+if outcome == RUNNING and units(0,GHOST) > $cz+4 and units(0,FV) > $cz+4 then click unit 0:GHOST:4
+if outcome == RUNNING and units(0,GHOST) > $cz+4 and units(0,FV) > $cz+4 then click unit 0:FV~:4
+if outcome == RUNNING and units(0,GHOST) > $cz+5 and units(0,FV) > $cz+5 then click unit 0:GHOST:5
+if outcome == RUNNING and units(0,GHOST) > $cz+5 and units(0,FV) > $cz+5 then click unit 0:FV~:5
+if outcome == RUNNING and units(0,GHOST) > $cz+6 and units(0,FV) > $cz+6 then click unit 0:GHOST:6
+if outcome == RUNNING and units(0,GHOST) > $cz+6 and units(0,FV) > $cz+6 then click unit 0:FV~:6
+if outcome == RUNNING and units(0,GHOST) > $cz+7 and units(0,FV) > $cz+7 then click unit 0:GHOST:7
+if outcome == RUNNING and units(0,GHOST) > $cz+7 and units(0,FV) > $cz+7 then click unit 0:FV~:7
+if outcome == RUNNING and units(0,GHOST) > $cz+8 and units(0,FV) > $cz+8 then click unit 0:GHOST:8
+if outcome == RUNNING and units(0,GHOST) > $cz+8 and units(0,FV) > $cz+8 then click unit 0:FV~:8
+wait 150
+dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 0 then click unit 0:FV:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 1 then click unit 0:FV:1 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 2 then click unit 0:FV:2 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 3 then click unit 0:FV:3 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 4 then click unit 0:FV:4 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 5 then click unit 0:FV:5 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 6 then click unit 0:FV:6 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 7 then click unit 0:FV:7 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,FV) > 8 then click unit 0:FV:8 shift
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click cell 116 96
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 300
+dump
+view cell 116 96
+shot staged1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click sw:ChronoSphere
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click point sel_pack
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then click cell 190 195
+wait 2
+dump
+shot chrono1
+until 300 chrono_units(0) == 0
+wait 2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then key d
+wait 20
+dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+shot fight1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 then click unit 0:GHOST:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 0 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 then click unit 0:GHOST:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 1 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 then click unit 0:GHOST:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 2 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 then click unit 0:GHOST:3
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 3 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 then click unit 0:GHOST:4
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 4 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 then click unit 0:GHOST:5
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 5 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 then click unit 0:GHOST:6
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) > 1 then click building 2:NAMISL:1
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 6 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 then click unit 0:GHOST:7
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) > 2 then click building 2:NAMISL:2
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 7 and buildings(2,NAMISL) <= 2 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 then click unit 0:GHOST:8
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) > 0 then click building 2:NAMISL:0
+if outcome == RUNNING and buildings(2,NAMISL) > 0 and units(0,GHOST) > 8 and buildings(2,NAMISL) <= 0 then click building 2:NAMISL:0
+if outcome == RUNNING then wait 30
+if outcome == RUNNING then dump
+shot final
+until 3000 outcome == WON
+end expect WON
