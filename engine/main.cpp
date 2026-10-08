@@ -5567,7 +5567,10 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
         const int ry = 199 + 42 * r;
         blit_layer("shell:sdbtnbkgd", art.sdbtnbkgd, 0, shell2_pal, 472, ry, 168, 42);
         if (!row_used[r] && art.sdbtnanm && sdbtn_pal && art.sdbtnanm->count() > 10) {
-            SDL_Texture* et = shp_frame_tex(tc, "shell:sdbtn10", *art.sdbtnanm, 10, *sdbtn_pal);
+            // W5-E2: an empty row plays the 11..16 plate band while leaving.
+            int ef = 10;
+            if (row_frames && row_frames[r] >= 0 && row_frames[r] < art.sdbtnanm->count()) ef = row_frames[r];
+            SDL_Texture* et = shp_frame_tex(tc, "shell:sdbtn" + std::to_string(ef), *art.sdbtnanm, ef, *sdbtn_pal);
             if (et) {
                 SDL_SetTextureColorMod(et, 255, 255, 255);
                 SDL_Rect ed = dev(484, ry, 156, 42);
@@ -7821,6 +7824,7 @@ public:
     void   play_probe(ra2play::Probe& p) override {
         p.scene = std::string("shell:") + header();
         p.set_s("page", header());
+        p.n["shell_leaving"] = leave_t_ >= 0.0 ? 1 : 0;   // W5-E2: --play holds while the leave band plays
         kb_.play_probe(p);   // W5-E
         if (kb_.open_) return;
         if (page_ == PAGE_OPTIONS) {   // W5-E: options controls (opt:res, opt:res:<i>, opt:slider:<name>=<v>)
@@ -8045,16 +8049,40 @@ private:
     // W2-UI-24 [RE: FUN_005E5150, mainmenu_true.md §7.2]: page enter =
     // staggered top-to-bottom power-on, one SDBTNANM step per 30 ms tick, row
     // k starting k ticks late. [RE-FALLBACK: the enter band plays 10 -> 5 (the
-    // button face sliding in over the empty socket); the 11..16 leave band is
-    // not played (page switches stay immediate so scripted clicks land).]
+    // button face sliding in over the empty socket) on button rows only.]
+    // W5-E2 (R-143) [RE: gamemd FUN_00606980, the page animator -- leave flag
+    // off: Sleep(0x1E) per tick, row i (top to bottom, the bottom-anchored
+    // button included) starts i+1 ticks late, the loop runs max-stagger + 6
+    // ticks; a live button row plays 5 + step (the face sliding out into the
+    // socket, ending on 10), a row without a button plays 11 + step (the plate
+    // band, ending on 10); then WM 0x4ED switches the page]. The page switch
+    // waits for it; input is ignored meanwhile (--play holds on shell_leaving).
+    // [RE-FALLBACK: a row that has not started keeps its settled look -- the
+    // original redraws the live face as frame 1 / the empty row as frame 0.]
     double       enter_t_ = 0.0;
+    static constexpr int kLeaveTicks = 15;   // 6 rows + 3 (the array's sentinels) + 6
+    double       leave_t_ = -1.0;            // >= 0 while the leave band plays
+    Scene*       leave_next_ = nullptr;      // the page to switch to when it ends
     bool transition_frames(int out[6]) const {
+        bool row_used[6] = {false, false, false, false, false, false};
+        for (const ShellButton& b : layout()) {
+            const int r = (b.rect.y - 199) / 42;
+            if (r >= 0 && r < 6) row_used[r] = true;
+        }
+        if (leave_t_ >= 0.0) {   // W5-E2: the leave band
+            const int tick = static_cast<int>(leave_t_ / 0.030);
+            for (int r = 0; r < 6; ++r) {
+                const int step = tick - (r + 1);
+                out[r] = step < 0 ? -1 : step < 6 ? (row_used[r] ? 5 : 11) + step : 10;
+            }
+            return true;
+        }
         if (enter_t_ <= 0.0) return false;   // a never-updated page (--menu-shot) draws settled
         const int tick = static_cast<int>(enter_t_ / 0.030);
         bool any = false;
         for (int r = 0; r < 6; ++r) {
             const int step = tick - r;
-            out[r] = step < 0 ? 10 : step < 6 ? 10 - step : -1;
+            out[r] = !row_used[r] ? -1 : step < 0 ? 10 : step < 6 ? 10 - step : -1;
             any = any || out[r] >= 0;
         }
         return any;
@@ -8136,7 +8164,10 @@ private:
     }
 
 public:
-    ~ShellScene() override { if (bink_tex_) SDL_DestroyTexture(bink_tex_); }
+    ~ShellScene() override {
+        if (bink_tex_) SDL_DestroyTexture(bink_tex_);
+        delete leave_next_;   // W5-E2: a page switch still waiting on its leave band
+    }
 };
 
 // The main-menu entry is just a ShellScene on PAGE_MAIN. Existing call sites
@@ -8153,6 +8184,13 @@ void MainMenuScene::update(double dt) {
     // (the scene driver calls update()+render() per frame, so it loops live).
     mon_accum_ += dt;
     enter_t_ += dt;   // W2-UI-24
+    if (leave_t_ >= 0.0) {   // W5-E2 (R-143): the leave band, then the page switch
+        leave_t_ += dt;
+        if (leave_t_ >= kLeaveTicks * 0.030 && leave_next_) {   // the last frame keeps the emptied sockets
+            next_ = leave_next_;
+            leave_next_ = nullptr;
+        }
+    }
     // [Task 5 / §9] Advance the Bink CRT movie at 15 fps (decode one frame/step).
     // [P8] Dialog 0xD5 has no CRT movie control (options.md §1) -> no movie.
     if (page_ != PAGE_OPTIONS) bink_advance(dt);
@@ -8359,6 +8397,7 @@ int run_campaign_direct(const std::string& map, bool no_audio) {
 // out-of-line handles (both scene types now complete; GameScene defined above) ---
 
 void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
+    if (leave_t_ >= 0.0) return;   // W5-E2: the leave band plays; the page is going
     // Track pointer position + button state for the 3-state button rendering.
     if (ev.kind == ra2engine::InputEvent::PointerMove ||
         ev.kind == ra2engine::InputEvent::PointerDown ||
@@ -8475,7 +8514,9 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
                     save_user_settings(*g_user_settings);
                     if (audio_live()) apply_audio_settings(*art_.audio->sys.mixer, *g_user_settings);
                 }
-                next_ = new ShellScene(rules_, no_audio_, art_, b.target);
+                // W5-E2 (R-143): play the leave band first (FUN_00606980).
+                leave_next_ = new ShellScene(rules_, no_audio_, art_, b.target);
+                leave_t_ = 0.0;
                 return;
             default:           return;
         }

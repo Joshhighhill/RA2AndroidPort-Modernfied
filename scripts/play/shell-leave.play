@@ -1,0 +1,29 @@
+# shell-leave -- W5-E2 acceptance (R-143): a shell page leaves with the
+# SDBTNANM leave band before the next page enters [RE: gamemd FUN_00606980,
+# leave flag off]: live button rows play 5..10 (the face sliding back into its
+# socket), rows without a button play the 11..16 plate band, row i starting
+# i+1 ticks of 30 ms late; the page switch waits for it. `set leave_hold 0`
+# lets this script see the band (by default --play holds until the switch).
+set on_quit continue
+set leave_hold 0
+require scene == "shell:Main Menu"
+click button "Single Player"
+assert shell_leaving == 1                               @R-143
+assert scene == "shell:Main Menu"                       @R-143
+wait 1
+shot sl01_main_leaving
+wait 2
+shot sl02_main_leaving_late
+until 40 scene == "shell:Single Player"
+assert shell_leaving == 0                               @R-143
+wait 30
+shot sl03_single_settled
+click button "Main Menu"
+wait 2
+shot sl04_single_leaving_plates
+until 40 scene == "shell:Main Menu"
+set leave_hold 1
+click button "Single Player"
+assert scene == "shell:Single Player"                   @R-143
+assert shell_leaving == 0
+end
