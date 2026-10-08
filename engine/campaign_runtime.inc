@@ -352,6 +352,14 @@ public:
     // hunters, mission-end bookkeeping. The caller steps the World afterwards.
     void frame() {
         if (finished()) return;
+        // W5-A: a capture / infiltration raises EnteredBy synchronously in the
+        // original (the infantry's Enter code calls TagClass::RaiseEvent before
+        // any later house AI pass), so the World's entered events of the last
+        // step are raised BEFORE this frame's trigger loops. Raised after them,
+        // an engineer capturing ALL02's chapel on a house-loop frame let
+        // 'Chapel Destroyed' (BuildingDoesNotExist for the old owner) fire first.
+        sync_tracks();
+        poll_entered();
         sys_->tick(host_);
         drain_log();
         arm_production_houses();   // [G-69]
