@@ -50,7 +50,7 @@ public:
     // tech buildings that join the world). Returns cells to block.
     void load(const ra2assets::MixFile& ra2, const Ini& map_ini, const Ini& rules_ini, const Ini& art_ini,
               const ra2assets::MapFile& map) {
-        objects_.clear(); smudges_.clear(); overlays_.clear(); wall_ids_.clear(); block_.clear(); lights_.clear();
+        objects_.clear(); smudges_.clear(); overlays_.clear(); wall_ids_.clear(); crush_ids_.clear(); block_.clear(); lights_.clear();
         decks_.clear(); deck_cells_.clear();
         missing_ = placed_ = civ_ = 0;
         ra2_ = &ra2;
@@ -147,6 +147,8 @@ public:
                 }
                 overlays_.push_back(o);
                 if (wall) { wall_ids_[c.y * 1000 + c.x] = id; block_.push_back({c.x, c.y}); }
+                // P4: OverlayType Crushable=yes walls (sandbags, prison fences)
+                if (wall && pres_lower(rget(name, "Crushable")).rfind("y", 0) == 0) crush_ids_.insert(c.y * 1000 + c.x);
             }
             // Walls draw their N/E/S/W connection frame (roster2.md §D: frame =
             // stage*16 + mask; map walls start undamaged).
@@ -248,6 +250,7 @@ public:
     }
     const std::vector<std::pair<int, int>>& blocked() const { return block_; }
     bool is_wall(int x, int y) const { return wall_ids_.count(y * 1000 + x) != 0; }   // W5-A
+    bool is_crushable_wall(int x, int y) const { return crush_ids_.count(y * 1000 + x) != 0; }   // P4
     // W2-SK-01: the map's ore mines ([Terrain] types with SpawnsTiberium=yes)
     // with their animation data, for World::add_ore_mine.
     template <class F> void for_each_ore_mine(F f) const {
@@ -276,6 +279,7 @@ public:
             if (o.high_deck && layer_decks_) continue;   // W5-PRES R-100: sorted with the objects
             // W4-SQ-10: a broken high bridge deck is gone.
             if (o.high_deck && w.high_bridge_destroyed(o.x, o.y)) continue;
+            if (w.wall_crushed(o.x, o.y) && is_wall(o.x, o.y)) continue;   // P4: flattened by a tank
             draw(ren, tc, w, o, pals, cam, W, H);
         }
         draw_tile_anims(ren, tc, w, pals, cam, W, H);   // W3-B
@@ -523,6 +527,7 @@ private:
     bool layer_decks_ = true;
     std::vector<std::string> names_;   // [OverlayTypes] by runtime index
     std::map<int, int> wall_ids_;
+    std::set<int> crush_ids_;   // P4: crushable wall cells (y*1000+x)
     std::vector<std::pair<int, int>> block_;
     int missing_ = 0, placed_ = 0, civ_ = 0, invisible_ = 0;
     std::vector<LightObj> lights_;

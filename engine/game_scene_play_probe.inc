@@ -9,6 +9,11 @@
     // scripts/play/README.md; a field that a later phase renames or removes
     // makes scripts report missing-probe:<key> instead of crashing.
     mutable int w5_peak_sorties_ = 0;   // wave-5: peak AI fixed-wing sorties seen
+    // P4: cells `place` already clicked for the armed type; a repeated `place`
+    // while the same placement is still armed (the click was refused, e.g. the
+    // pointer resolved onto a raised neighbour cell) tries the next candidate.
+    int play_place_type_ = -1;
+    std::vector<std::pair<int, int>> play_place_tried_;
     void play_probe(ra2play::Probe& p) override {
         p.scene = "game";
         p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
@@ -345,6 +350,17 @@
         }
         // Armed modes / overlays.
         p.set("placing", input_.placement_active() ? 1 : 0);
+        if (!input_.placement_active()) { play_place_tried_.clear(); play_place_type_ = -1; }
+        if (input_.placement_active()) {   // P4: the origin a click would place at now
+            int ox = 0, oy = 0;
+            input_.placement_cell(ox, oy);
+            p.set("place_origin_x", ox);
+            p.set("place_origin_y", oy);
+            if (!play_place_tried_.empty() && play_place_type_ == input_.placement_type()) {
+                p.set("place_target_x", play_place_tried_.back().first);
+                p.set("place_target_y", play_place_tried_.back().second);
+            }
+        }
         p.set_s("placing_type", input_.placement_active() && input_.placement_type() >= 0 &&
                                         input_.placement_type() < static_cast<int>(ba_.roster.size())
                                     ? ba_.roster[input_.placement_type()].id : "");
@@ -370,6 +386,11 @@
             p.set("triggers_fired", campaign_->triggers().fired_count());
             p.set("campaign_outcome", campaign_->outcome());
             p.set("briefing_open", show_briefing_ ? 1 : 0);
+            {   // P4: the newest trigger that fired ("f=N fire ID \"Name\" k=K"), for proof debugging
+                const std::vector<std::string>& wl = campaign_->witness();
+                for (auto it = wl.rbegin(); it != wl.rend(); ++it)
+                    if (it->find(" fire ") != std::string::npos) { p.set_s("last_fired", *it); break; }
+            }
         } else {
             p.set_s("map", cfg_.map_file);
         }
@@ -427,16 +448,27 @@
             // (`unit 0:FV~:0` = the first empty IFV -- a free seat).
             const bool empty_only = !type.empty() && type.back() == '~';
             if (empty_only) type.pop_back();
+            double nx = 0, ny = 0;
+            const bool near = n < 0 && play_sel_centre(nx, ny);   // P4 `H:TYPE:near`
+            const ra2engine::Unit* best = nullptr;
+            double best_d = 0;
             for (const ra2engine::Unit& u : world_.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;
                 if (type != "*" && play_unit_id(u) != type && u.image != type) continue;
                 if (empty_only && !u.cargo.empty()) continue;
+                if (near) {
+                    const double d = std::hypot(u.fx - nx, u.fy - ny);
+                    if (!best || d < best_d) { best = &u; best_d = d; }
+                    continue;
+                }
                 if (n-- > 0) continue;
-                cx = u.fx + u.sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
-                cy = u.fy + u.sub_y / 256.0;
-                return true;
+                best = &u;
+                break;
             }
-            return false;
+            if (!best) return false;
+            cx = best->fx + best->sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
+            cy = best->fy + best->sub_y / 256.0;
+            return true;
         };
         p.find_building = [this](const std::string& spec, double& cx, double& cy) {
             const int bi = play_find_building(spec);
@@ -469,6 +501,13 @@
                             }
                     }
             }
+            return true;
+        };
+        p.find_building_rect = [this](const std::string& spec, int& ox, int& oy, int& fw, int& fh) {
+            const int bi = play_find_building(spec);
+            if (bi < 0) return false;
+            const ra2engine::Building& b = world_.buildings()[bi];
+            ox = b.cx; oy = b.cy; fw = b.fw; fh = b.fh;
             return true;
         };
         // ---- G16 world depth (agent G): garrisons + bridges ----
@@ -572,22 +611,50 @@
         }
         w2_play_probe(p);   // wave-2 air/naval/SW keys (w2air_play.inc)
         w5_play_probe(p);   // W5-B combat/movement keys (w5_play.inc)
+        {   // P4: sel_near(h,TYPE) = cells from the selection's centre to the
+            // nearest live unit of that house/type (only while units are selected)
+            double nx = 0, ny = 0;
+            if (play_sel_centre(nx, ny)) {
+                for (const ra2engine::Unit& u : world_.units()) {
+                    if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house == 0) continue;
+                    const std::string k = "sel_near(" + std::to_string(u.house) + "," + play_unit_id(u) + ")";
+                    const double d = std::floor(std::hypot(u.fx - nx, u.fy - ny));
+                    auto it = p.n.find(k);
+                    if (it == p.n.end() || d < it->second) p.set(k, d);
+                }
+            }
+        }
         p.find_point = [this](const std::string& name, double& cx, double& cy) {
             return play_find_point(name, cx, cy);
         };
-        p.auto_place = [this](int& cx, int& cy) {
+        auto place_near = [this](int ax, int ay, int& cx, int& cy) {
             if (!input_.placement_active()) return false;
             const int type = input_.placement_type();
             if (type < 0 || type >= static_cast<int>(ba_.roster.size())) return false;
             const ra2engine::BuildingTypeDef& d = ba_.roster[type];
-            int ax = -1, ay = -1;   // anchor: the player's first live building
-            for (const ra2engine::Building& b : world_.buildings())
-                if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) {
-                    ax = b.cx + b.fw / 2;
-                    ay = b.cy + b.fh / 2;
-                    break;
-                }
+            if (ax < 0) {   // default anchor: the player's first live building
+                for (const ra2engine::Building& b : world_.buildings())
+                    if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) {
+                        ax = b.cx + b.fw / 2;
+                        ay = b.cy + b.fh / 2;
+                        break;
+                    }
+            }
             if (ax < 0) return false;
+            if (type != play_place_type_) { play_place_type_ = type; play_place_tried_.clear(); }
+            // On a retry (an earlier click for this placement was refused) only
+            // flat candidates: the pointer's level-aware inversion is exact there.
+            const bool retry = !play_place_tried_.empty();
+            auto flat = [this, &d](int ox, int oy) {
+                const ra2assets::MapCell* c0 = world_.map().at(ox, oy);
+                if (!c0) return false;
+                for (int y = oy - 1; y <= oy + d.fh; ++y)
+                    for (int x = ox - 1; x <= ox + d.fw; ++x) {
+                        const ra2assets::MapCell* c = world_.map().at(x, y);
+                        if (!c || c->level != c0->level) return false;
+                    }
+                return true;
+            };
             for (int r = 1; r <= 24; ++r)
                 for (int oy = ay - r; oy <= ay + r; ++oy)
                     for (int ox = ax - r; ox <= ax + r; ++ox) {
@@ -596,6 +663,11 @@
                         // W4-MC-04: a human places where the view can show it --
                         // not on the last rows at the LocalSize edge.
                         if (!on_board(ox - 2, oy - 2) || !on_board(ox + d.fw + 1, oy + d.fh + 1)) continue;
+                        if (retry && !flat(ox, oy)) continue;
+                        if (std::find(play_place_tried_.begin(), play_place_tried_.end(),
+                                      std::make_pair(ox, oy)) != play_place_tried_.end())
+                            continue;
+                        play_place_tried_.emplace_back(ox, oy);
                         cx = ox + d.fw / 2;
                         cy = oy + d.fh / 2;
                         // P1: the click must resolve back to this cell (the
@@ -609,6 +681,8 @@
                     }
             return false;
         };
+        p.auto_place_near = place_near;
+        p.auto_place = [place_near](int& cx, int& cy) { return place_near(-1, -1, cx, cy); };
         p.cheat = [this](const std::vector<std::string>& a) -> std::string {
             const std::string c = a.empty() ? "" : a[0];
             if (c == "kill_house" && a.size() >= 2) {

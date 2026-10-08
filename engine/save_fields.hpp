@@ -253,6 +253,9 @@ struct SaveAccess {
         save::io(ar, w.crush_rules_);   // W5-B R-050 (v20)
         save::io(ar, w.elev_rules_);    // W5-B R-063 (v20)
         save::io(ar, w.wall_leak_);   // W5-A diagonal wall gaps (save v21)
+        save::io(ar, w.crush_wall_);  // P4 crushable / crushed walls (save v23)
+        save::io(ar, w.crush_grid_);  // P4 derived scratch (the amphib_passable_ precedent)
+        save::io(ar, w.crush_leak_);
         save::io(ar, w.sw_quarry_);   // W5-A AI SW PreferredTarget (save v21)
     }
 
@@ -626,6 +629,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.rad_level);
     io(ar, v.kind);
     io(ar, v.slot_set); io(ar, v.aa); io(ar, v.ag); io(ar, v.proj);   // wave-5 R-048
+    io(ar, v.delay_kill); io(ar, v.delay_kill_frames); io(ar, v.delay_kill_at_max);   // P4 (v23)
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);
@@ -690,6 +694,7 @@ template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
     io(ar, v.spy_purpose); io(ar, v.radar); io(ar, v.prism); io(ar, v.overpowerable);
     io(ar, v.gap_radius); io(ar, v.inf_self_heal); io(ar, v.unit_self_heal); io(ar, v.cloning);
     io(ar, v.psychic_radius); io(ar, v.sensors_sight); io(ar, v.delayed_fire_delay);
+    io(ar, v.explodes); io(ar, v.delay_kill_eligible); io(ar, v.death);   // P4 (v23)
 }
 template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
     io(ar, v.requires_stolen); io(ar, v.base_tech_level);

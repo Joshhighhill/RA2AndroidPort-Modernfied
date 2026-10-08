@@ -142,8 +142,14 @@ struct Probe : ProbeData {
     // "H:TYPE[:n]" -> the n-th (0-based) live unit / building of that house+type.
     std::function<bool(const std::string& spec, double& cx, double& cy)> find_unit;
     std::function<bool(const std::string& spec, double& cx, double& cy)> find_building;
+    // P4: the building's foundation (origin + size), so a click can fall back
+    // to another of its cells when the centre cannot be brought on screen.
+    std::function<bool(const std::string& spec, int& ox, int& oy, int& fw, int& fh)> find_building_rect;
     // The nearest valid origin cell for the currently armed placement.
     std::function<bool(int& cx, int& cy)> auto_place;
+    // P4: `place near X Y` -- the same search anchored on cell (ax,ay) instead of
+    // the player's first building (a human places next to the yard they look at).
+    std::function<bool(int ax, int ay, int& cx, int& cy)> auto_place_near;
     // Named map points ("bridge", "bridge_near", "bridge_far", "garrison", "hut").
     std::function<bool(const std::string& name, double& cx, double& cy)> find_point;
     // Dev cheats: returns "" on success or an error string.

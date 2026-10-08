@@ -252,8 +252,41 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
         const double s = area_scale(d, radius, w.percent_at_max);
         if (s < 0.0) continue;
         const int dmg = damage_vs(ability_ftol(damage * s), w.verses, bb.armor_ix);
-        if (dmg > 0) ability_damage_building(b, dmg);
+        if (dmg <= 0) continue;
+        if (w.delay_kill && bb.hp - dmg <= 0 && bb.iron_left <= 0.0 && bb.type >= 0 &&
+            bb.type < static_cast<int>(btypes().size()) &&
+            btypes()[static_cast<std::size_t>(bb.type)].w5.delay_kill_eligible) {
+            ability_delay_kill(b, w, d);
+            continue;
+        }
+        ability_damage_building(b, dmg);
     }
+}
+
+// P4 [RE: FUN_00700DA0 @0x701327..0x701403]: a lethal hit by a CausesDelayKill
+// warhead on an EligibleForDelayKill building does not destroy it. The delay is
+// ftol(F + (F*AtMax - F) * distance / (ftol(CellSpread) * 256)) frames
+// (F = DelayKillFrames); an already running timer (+0x6DF/+0x528/+0x530, the C4
+// slot) is kept when its remaining frames are <= the new delay. Strength = 1;
+// BuildingClass::AI (0x440152..0x4402A0) kills it with C4Warhead when the timer
+// runs out -- the C4 expiry below.
+void World::ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_leptons) {
+    Building& b = buildings_[static_cast<std::size_t>(b_idx)];
+    const double f = static_cast<double>(w.delay_kill_frames);
+    const int spread = ability_ftol(w.cell_spread) * 256;
+    const double span = (f * w.delay_kill_at_max - f) * static_cast<int>(dist_leptons);
+    const int delay = ability_ftol(spread > 0 ? f + span / spread : f);
+    const std::int64_t F = static_cast<std::int64_t>(ability_frame_);
+    bool set = true;
+    if (b.c4_applied) {
+        const std::int64_t remaining = std::max<std::int64_t>(0, b.c4_frame - F);
+        if (delay >= remaining) set = false;
+    }
+    if (set) {
+        b.c4_applied = true;
+        b.c4_frame = F + delay;
+    }
+    b.hp = 1;
 }
 
 void World::ability_bind_unit(Unit& u) { bind_profile(u, ability_profiles_); }
@@ -474,6 +507,15 @@ void World::ability_death_pass() {
             bb.ability_death_done = true;
             bb.c4_applied = false;
             bb.warp_remaining = 0;
+            // P4 [RE: FUN_00700DA0 -> FUN_0070CAC0]: an Explodes=yes building fires
+            // its DeathWeapon in place (not when sold / erased).
+            if (!bb.sold && bb.type >= 0 && bb.type < static_cast<int>(btypes().size())) {
+                const BldTypeW5& tw = btypes()[static_cast<std::size_t>(bb.type)].w5;
+                if (tw.explodes && tw.death.valid) {
+                    any = true;
+                    ability_area_damage(-1, bld_cx(bb), bld_cy(bb), tw.death, tw.death.damage);
+                }
+            }
             if (bb.bomb_frame >= 0) {
                 any = true;
                 bb.bomb_frame = -1;

@@ -366,6 +366,7 @@ public:
         // an engineer capturing ALL02's chapel on a house-loop frame let
         // 'Chapel Destroyed' (BuildingDoesNotExist for the old owner) fire first.
         sync_tracks();
+        wake_ordered();   // P4: an ordered Sleep/Harmless unit leaves that mission
         poll_entered();
         sys_->tick(host_);
         drain_log();
@@ -1222,6 +1223,22 @@ private:
     bool rules_flag_default(const std::string& id, const char* key, bool def) const {
         const std::string v = camp::up(camp::trim_comment(rules_ini_.get(id, key, def ? "yes" : "no")));
         return !v.empty() && (v[0] == 'Y' || v[0] == 'T' || v[0] == '1');
+    }
+    // P4 [RE-FALLBACK: the TS/RA1 mission model -- an order is Assign_Mission,
+    // which replaces Mission_Sleep / Mission_Harmless; the unit then arrives into
+    // Guard and acquires as usual]: a dormant (W4-SQ-05) unit that is moving or
+    // carries an attack order -- the player's or its team's -- wakes up. ALL09's
+    // freed POW GIs / Grizzlies (Harmless, handed to the player by ChangeHouse)
+    // otherwise never fired a shot for the rest of the mission.
+    void wake_ordered() {
+        for (std::size_t i = 0; i < utrack_.size() && i < w_.units().size(); ++i) {
+            Track& t = utrack_[i];
+            if (t.dead || t.mission == 0) continue;
+            const ra2engine::Unit& u = w_.units()[i];
+            if (!live(u) || !(u.moving() || u.attack_order)) continue;
+            t.mission = 0;
+            set_dormant((int)i, false);
+        }
     }
     // 81 WakeupSelf (tagged objects), 82 WakeupAllSleepers, 83 WakeupAllHarmless.
     int wake(int kind, int trigger_type) {
@@ -2548,6 +2565,9 @@ private:
         bool house_exists(int ht) const override { return ht >= 0 && rt.engine_house(ht) >= 0; }
         std::vector<int> house_instances() const override { return rt.houses_order_ht_; }
         int player_house_type() const override { return rt.house_type(0); }
+        // P3 + P4 [RE: HouseClass RegisterGain FUN_004FF520 @0x4FF53B..0x4FF55B]:
+        // the counters skip Insignificant= (+0x232) / DontScore= (+0xC9F) types
+        // (CampaignRuntime::tracked).
         int house_buildings(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;

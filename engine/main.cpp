@@ -1109,6 +1109,11 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
     s.rad_level = static_cast<int>(rules.section_double(w, "RadLevel", 0.0));
+    // P4 [RE: FUN_00700DA0 @0x701327]: warhead CausesDelayKill (+0x130),
+    // DelayKillFrames (+0x134), DelayKillAtMax (+0x138).
+    s.delay_kill = ability_flag(ini, wh, "CausesDelayKill", false);
+    s.delay_kill_frames = static_cast<int>(rules.section_double(wh, "DelayKillFrames", 0.0));
+    s.delay_kill_at_max = rules.section_double(wh, "DelayKillAtMax", 1.0);
     if (ability_flag(ini, w, "Suicide", false)) s.kind = ra2engine::AbilityKind::Suicide;
     else if (ability_flag(ini, wh, "Parasite", false)) s.kind = ra2engine::AbilityKind::Parasite;
     else if (ability_flag(ini, wh, "Temporal", false)) s.kind = ra2engine::AbilityKind::Temporal;
@@ -1223,6 +1228,22 @@ void w5_arm_building_art(BuildingAssets& ba, const Ini& art_ini) {
         d.w5.delayed_fire_delay = on ? std::max(0, std::atoi(art_ini.get(img, "DelayedFireDelay", "0").c_str())) : 0;
     }
 }
+// P4 [RE: FUN_00700DA0 -> FireDeathWeapon FUN_0070CAC0; delay kill @0x701327]:
+// every roster building's Explodes= / DeathWeapon= / EligibleForDelayKill=
+// (barrels CAMISC01/02 and AMMOCRAT chain-explode). Interactive only (GameScene
+// after wire_w5 and again after a campaign grew the roster) -- never a gate.
+void wire_building_deaths(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, const Ini& ini) {
+    bool any = false;
+    for (ra2engine::BuildingTypeDef& d : ba.roster) {
+        d.w5.explodes = ability_flag(ini, d.id, "Explodes", false);
+        d.w5.delay_kill_eligible = ability_flag(ini, d.id, "EligibleForDelayKill", false);
+        d.w5.death = d.w5.explodes ? resolve_weapon_spec(rules, ini, ability_ini_str(ini, d.id, "DeathWeapon"))
+                                   : ra2engine::WeaponSpec{};
+        any = any || (d.w5.explodes && d.w5.death.valid);
+    }
+    world.refresh_building_types(ba.roster);
+    if (any) world.arm_building_deaths();
+}
 void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, const Ini& ini,
              const Ini& art_ini) {
     ra2engine::RulesW5 r;
@@ -1293,6 +1314,7 @@ void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, co
     w5_arm_building_art(ba, art_ini);
     world.refresh_building_types(ba.roster);
     world.arm_w5(r, prof);
+    wire_building_deaths(world, ba, rules, ini);
 }
 
 // Logs the fire/die entries (mirrors resolve_combat_unit's [unit] log line)
@@ -5916,6 +5938,7 @@ public:
         // the mission's extra building types).
         if (!cfg.campaign_map.empty()) {
             setup_campaign(cfg);
+            wire_building_deaths(world_, ba_, rules_, rules_ini_);   // P4: the mission's barrels
             gf_arm_mcv(world_, ba_, rules_, /*skirmish_session=*/false);   // gF: MCVs deploy
             gf_load_assets({});
         }
@@ -6334,6 +6357,7 @@ public:
             for (const auto& [x, y] : map_dressing_.blocked()) {
                 if (map_dressing_.is_wall(x, y)) world_.block_wall_cell(x, y);   // W5-A diagonal gaps
                 else world_.block_cell(x, y);
+                if (map_dressing_.is_crushable_wall(x, y)) world_.mark_crushable_wall(x, y);   // P4
             }
             // W2-SK-01: ore mines spawn ore (TerrainClass::AI, see ore.hpp).
             map_dressing_.for_each_ore_mine([&](int x, int y, int half, int rate, double prob) {
@@ -6654,6 +6678,7 @@ private:
             for (const auto& [bx, by] : map_dressing_.blocked()) {
                 if (map_dressing_.is_wall(bx, by)) world_.block_wall_cell(bx, by);
                 else world_.block_cell(bx, by);
+                if (map_dressing_.is_crushable_wall(bx, by)) world_.mark_crushable_wall(bx, by);   // P4
             }
             apply_save(sc);
             // R-180: the backlog / hold state (absent in a file without it).
@@ -6999,7 +7024,21 @@ private:
         const std::size_t b = spec.find(':', a + 1);
         type = spec.substr(a + 1, b == std::string::npos ? std::string::npos : b - a - 1);
         n = b == std::string::npos ? 0 : std::atoi(spec.substr(b + 1).c_str());
+        if (b != std::string::npos && spec.compare(b + 1, std::string::npos, "near") == 0) n = -1;   // P4
         return !type.empty();
+    }
+    // P4: `H:TYPE:near` -- the candidate nearest the centre of the player's
+    // selection (no selection: the first candidate): what a player clicks is
+    // the enemy next to the units he is commanding.
+    bool play_sel_centre(double& x, double& y) const {
+        double sx = 0, sy = 0;
+        int k = 0;
+        for (const ra2engine::Unit& u : world_.units())
+            if (u.selected && u.alive && u.die_time < 0.0 && u.house == 0) { sx += u.fx; sy += u.fy; ++k; }
+        if (k == 0) return false;
+        x = sx / k;
+        y = sy / k;
+        return true;
     }
     int play_find_building(const std::string& spec) const {
         int h = 0, n = 0;
@@ -7030,16 +7069,25 @@ private:
             return best;
         }
         if (!play_parse_spec(spec, h, type, n)) return -1;
+        double nx = 0, ny = 0;
+        const bool near = n < 0 && play_sel_centre(nx, ny);
+        int best = -1;
+        double best_d = 0;
         for (int i = 0; i < static_cast<int>(world_.buildings().size()); ++i) {
             const ra2engine::Building& b = world_.buildings()[i];
             if (!b.alive || b.house != h || b.state == ra2engine::Building::State::Dead) continue;
             if (type != "*" && (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) ||
                                 ba_.roster[b.type].id != type))
                 continue;
+            if (near) {
+                const double d = std::hypot(b.cx + b.fw / 2.0 - nx, b.cy + b.fh / 2.0 - ny);
+                if (best < 0 || d < best_d) { best = i; best_d = d; }
+                continue;
+            }
             if (n-- > 0) continue;
             return i;
         }
-        return -1;
+        return best;
     }
 
     // Active sidebar tab (0=Structures,1=Defenses,2=Infantry,3=Vehicles).

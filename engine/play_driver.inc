@@ -414,6 +414,7 @@ private:
             std::string d;
             if (eval_expr(c.expr, p, vars_, d) != Eval::True) {
                 emit("PLAY skip L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " (" + d + ")", trace_console_);
+                if (!c.sub.empty() && c.sub[0].op == "place") place_n_ = 0;   // an interrupted multi-frame place
                 ++pc_;
                 return kNext;
             }
@@ -457,7 +458,13 @@ private:
                 tab_tries_ = 0;
             }
             ++pc_;
-            if (!point_of(c, p, 0, x, y)) return kConsume;
+            // P4: `soft` -- a target that cannot be resolved / brought on screen
+            // is skipped (logged), not a failure (a player who cannot see it
+            // simply does not click it).
+            soft_ = has_word(c, "soft");
+            const bool found = point_of(c, p, 0, x, y);
+            soft_ = false;
+            if (!found) return kConsume;
             const bool right = has_word(c, "right");
             const int mods = mods_of(c, 1);
             press_mods(mods);
@@ -535,13 +542,54 @@ private:
             return kConsume;
         }
         if (op == "place") {
+            // Frame 0: pick the candidate and point at it; a first try clicks at
+            // once. A retry (P4; this placement's last click was refused) acts
+            // like a player watching the placement grid: while the hovered origin
+            // (place_origin_*) is not the chosen one (the level-aware pointer
+            // pick can land one cell off next to a cliff), nudge the pointer
+            // (max 12 frames), then click.
+            static const int kNudge[][2] = {{0, 0}, {0, -15}, {0, 15}, {-30, 0}, {30, 0}, {0, -30}, {0, 30},
+                                            {-15, -8}, {15, -8}, {-15, 8}, {15, 8}, {0, -45}, {0, 45}};
+            if (place_n_ == 0) {
+                if (!p.auto_place) { fail(c, "missing-probe:auto_place"); ++pc_; return kConsume; }
+                int cx = 0, cy = 0;
+                const bool near = lower(c.args[0]) == "near" && c.args.size() >= 3;
+                if (near && !p.auto_place_near) { fail(c, "missing-probe:auto_place_near"); ++pc_; return kConsume; }
+                if (near ? !p.auto_place_near(std::atoi(c.args[1].c_str()), std::atoi(c.args[2].c_str()), cx, cy)
+                         : !p.auto_place(cx, cy)) { fail(c, "no valid placement cell (or nothing armed)"); ++pc_; return kConsume; }
+                if (!cell_point(p, cx, cy, place_x_, place_y_)) { fail(c, "placement cell off-screen (" + std::to_string(cx) + "," + std::to_string(cy) + ")"); ++pc_; return kConsume; }
+                emit("PLAY place L" + std::to_string(c.line) + " cell=" + std::to_string(cx) + "," + std::to_string(cy) +
+                     " xy=" + std::to_string(place_x_) + "," + std::to_string(place_y_), false);
+                move_to(place_x_, place_y_);
+                if (!p.n.count("place_target_x")) {   // first try: one-frame click (as before P4)
+                    ++pc_;
+                    button(place_x_, place_y_, false, true);
+                    button(place_x_, place_y_, false, false);
+                    park_pending_ = true;
+                    return kConsume;
+                }
+                place_n_ = 1;   // a retry (the last click was refused): watch the hovered origin
+                return kConsume;
+            }
+            const auto num = [&p](const char* k, double& v) {
+                const auto it = p.n.find(k);
+                if (it == p.n.end()) return false;
+                v = it->second;
+                return true;
+            };
+            double hx = 0, hy = 0, tx = 0, ty = 0;
+            const bool known = num("place_origin_x", hx) && num("place_origin_y", hy) &&
+                               num("place_target_x", tx) && num("place_target_y", ty);
+            const int last = static_cast<int>(sizeof kNudge / sizeof kNudge[0]);
+            if (known && (hx != tx || hy != ty) && place_n_ < last) {
+                move_to(place_x_ + kNudge[place_n_][0], place_y_ + kNudge[place_n_][1]);
+                ++place_n_;
+                return kConsume;
+            }
+            const int k = (known && hx == tx && hy == ty) ? place_n_ - 1 : 0;
+            const int x = place_x_ + kNudge[k][0], y = place_y_ + kNudge[k][1];
+            place_n_ = 0;
             ++pc_;
-            if (!p.auto_place) { fail(c, "missing-probe:auto_place"); return kConsume; }
-            int cx = 0, cy = 0;
-            if (!p.auto_place(cx, cy)) { fail(c, "no valid placement cell (or nothing armed)"); return kConsume; }
-            int x = 0, y = 0;
-            if (!cell_point(p, cx, cy, x, y)) { fail(c, "placement cell off-screen (" + std::to_string(cx) + "," + std::to_string(cy) + ")"); return kConsume; }
-            move_to(x, y);
             button(x, y, false, true);
             button(x, y, false, false);
             park_pending_ = true;
@@ -602,7 +650,8 @@ private:
     // labels, B's form), "cameo ID" -> "cameo:ID", else args[i] itself.
     static bool is_flag(const std::string& a) {
         const std::string l = lower(a);
-        return l == "right" || l == "shift" || l == "ctrl" || l == "alt" || l == "nopark" || l == "onscreen";
+        return l == "right" || l == "shift" || l == "ctrl" || l == "alt" || l == "nopark" || l == "onscreen" ||
+               l == "soft";
     }
     static std::string target_name(const Cmd& c, std::size_t i) {
         std::string name = c.args[i];
@@ -641,7 +690,27 @@ private:
                 if (!p.cell_to_screen(cx, cy, x, y)) { fail(c, "target off-screen (no centring with onscreen)"); return false; }
                 return true;
             }
-            if (!cell_point(p, cx, cy, x, y)) { fail(c, "cell off-screen and cannot centre"); return false; }
+            if (!cell_point(p, cx, cy, x, y)) {
+                // P4: a building whose centre stays outside the playfield margin
+                // when the camera is clamped at the map edge (e.g. behind the
+                // sidebar) -- a player clicks the part they can see: try its
+                // other foundation cells, nearest the centre first.
+                int ox = 0, oy = 0, fw = 0, fh = 0;
+                if (k == "building" && p.find_building_rect && c.args.size() > i + 1 &&
+                    p.find_building_rect(c.args[i + 1], ox, oy, fw, fh)) {
+                    std::vector<std::pair<int, int>> cells;
+                    for (int yy = oy; yy < oy + fh; ++yy)
+                        for (int xx = ox; xx < ox + fw; ++xx) cells.emplace_back(xx, yy);
+                    std::stable_sort(cells.begin(), cells.end(), [&](const auto& a, const auto& b) {
+                        return std::abs(a.first - cx) + std::abs(a.second - cy) <
+                               std::abs(b.first - cx) + std::abs(b.second - cy);
+                    });
+                    for (const auto& cl : cells)
+                        if (p.cell_to_screen(cl.first, cl.second, x, y)) return true;
+                }
+                fail(c, "cell off-screen and cannot centre");
+                return false;
+            }
             return true;
         }
         const std::string name = target_name(c, i);
@@ -774,7 +843,9 @@ private:
     }
     int data_missing_optional_ = -1;
     void trace(const Cmd& c) {
-        if (((c.op == "until" || c.op == "waituntil") && until_active_) || (c.op == "cycle" && cycle_n_ > 0)) return;
+        if (((c.op == "until" || c.op == "waituntil") && until_active_) || (c.op == "cycle" && cycle_n_ > 0) ||
+            (c.op == "place" && place_n_ > 0))
+            return;
         emit("PLAY step L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " " + c.raw, trace_console_);
     }
     void say(const char* what, const Cmd& c, const std::string& d) {
@@ -783,6 +854,10 @@ private:
              true);
     }
     void fail(const Cmd& c, const std::string& d) {
+        if (soft_) {
+            emit("PLAY skip L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " soft: " + d, trace_console_);
+            return;
+        }
         fails_.push_back({c.line, f_, c.raw, d, c.tags, false});
         emit("PLAY FAIL L" + std::to_string(c.line) + " f=" + std::to_string(f_) + " " + c.raw + "  [" + d +
                  "] " + join_tags(c.tags),
@@ -815,6 +890,8 @@ private:
     std::size_t pc_ = 0;
     int wait_left_ = 0;
     int cycle_n_ = 0;
+    int place_n_ = 0, place_x_ = 0, place_y_ = 0;   // P4: multi-frame `place`
+    bool soft_ = false;                              // P4: `click ... soft`
     int cycle_max_ = 8;
     bool until_active_ = false;
     int until_left_ = 0;
