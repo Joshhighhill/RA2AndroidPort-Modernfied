@@ -1187,6 +1187,17 @@ private:
                 t.mission = mi == ra2engine::kMissionSleep ? 1 : 2;
                 set_dormant(idx, true);
             }
+            // P1 [RE: campaign.md §4 -- campaign objects get their INI
+            // mission (vtbl+0x1E8); economy.md §1 -- Mission_Harvest runs the
+            // harvester FSM FUN_0073C560]: a map-placed miner with
+            // Mission=Harvest (ALL11's three Chrono Miners, the AI's HARVs in
+            // 14 maps) starts hunting ore like a factory-built one. Before,
+            // it stood idle forever (ALL11: no income at all).
+            if (mi == 10 /* Harvest */ && rules_flag_default(camp::up(type), "Harvester", false)) {
+                const std::string id = camp::up(type);
+                const int st = std::atoi(camp::trim_comment(rules_ini_.get(id, "Storage", "0")).c_str());
+                w_.make_harvester(idx, id == "CMIN", st > 0 ? st : 20);
+            }
         }
         return idx;
     }

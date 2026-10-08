@@ -107,6 +107,9 @@ struct InputActions {
 //     Input::pan() directly (arrow keys / screen-edge scroll).
 class Input {
 public:
+    // Level-aware window pixel -> ground cell (the click resolver; public for
+    // the --play harness's `place auto` round-trip check).
+    void resolve_ground_cell(int px, int py, int& cx, int& cy) const;
     Input(World& world, Camera& camera, int view_w, int view_h);
 
     // Feed one polled event (RA2-classic model, see input.cpp).
@@ -382,7 +385,6 @@ private:
     void unit_ground_px(const Unit& u, int& gx, int& gy) const;  // ground point in window px
     // Level-aware two-pass window-pixel -> ground cell (the exact resolution
     // the right-click move path uses); shared with placement_cell.
-    void resolve_ground_cell(int px, int py, int& cx, int& cy) const;
     void commit_click(int px, int py, bool shift);  // house-0-only selection (see .cpp)
     void commit_box(bool shift);                    // house-0-only, corpse-skipping box select
     void commit_double(int px, int py);             // house-0-only type-select

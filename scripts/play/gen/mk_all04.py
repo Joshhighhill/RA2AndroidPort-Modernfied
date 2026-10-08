@@ -1,0 +1,62 @@
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gen import P
+out = sys.argv[1] if len(sys.argv) > 1 else "../m-all04-real.play"
+p = P("""# P1: ALL04 (Chicago) won with real orders only (no cheats).
+# W4-SQ-01/02 opening: the landing craft arrive CARRYING the MCV and the
+# tank/GI groups (TeamType Full=yes); Soviet garrison teams occupy civilian
+# buildings (script 46 type arg). The player beaches the MCV craft, unloads it
+# with the Deploy key and deploys the MCV ('ConYdBuilt' hands PlayerAlt2's
+# landed Grizzlies/GIs over). Then a base from the sidebar and a Grizzly/IFV
+# army that destroys the Psychic Amplifier before the 50-minute timer.
+set render_every 3000
+set on_quit continue
+set campaign ALL04u.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 200 carried(0) >= 1
+assert carried(0) >= 1
+until 2000 in_garrison(1) >= 20
+assert garrisoned(1) >= 3
+until 2000 moving(0) == 0
+click unit 0:LCRF
+click cell 120 68
+until 1200 moving(0) == 0
+click unit 0:LCRF
+assert selected >= 1
+key d
+wait 5
+until 600 carried(0) == 0
+assert units(0,AMCV) >= 1
+assert carried(0) == 0
+shot landed
+click unit 0:AMCV
+click xy 560 140
+wait 30
+until 900 sel_moving == 0
+log mcv-at
+dump
+key d
+until 900 built(0,GACNST) >= 1
+dump
+""")
+army = int(sys.argv[2]) if len(sys.argv) > 2 else 12
+stage = sys.argv[3] if len(sys.argv) > 3 else "90 75"
+p.build("GAPOWR").build("GAREFN").build("GAPILE").build("GAWEAP")
+p.add("dump", "shot base")
+p.train("MTNK", 3, 12)
+p.add(f"until 9000 units(0,MTNK) >= {army}", "dump")
+types = ["MTNK", "FV"]
+p.select_types(types).add(f"click cell {stage}", "wait 600", "dump", "shot staged")
+for k in range(20):
+    g = "outcome == RUNNING and buildings(2,NAPSYA) > 0"
+    p.add(f"if {g} and units(0,MTNK) > 0 then click unit 0:MTNK:0",
+          f"if {g} and units(0,FV) > 0 then click unit 0:FV:0 shift",
+          f"if {g} then key t", f"if {g} then key t",
+          f"if {g} then click building 2:NAPSYA:0", "if outcome == RUNNING then wait 300",
+          "if outcome == RUNNING then dump")
+    if k % 3 == 2:
+        p.train("MTNK", 3, 3, guard=True)
+p.add("shot final", "until 6000 outcome == WON", "end expect WON")
+p.save(out)

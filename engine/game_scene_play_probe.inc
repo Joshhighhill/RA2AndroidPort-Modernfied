@@ -121,6 +121,8 @@
             p.add("units(" + hs + ")", 1);
             p.add("units(" + hs + "," + id + ")", 1);
             if (u.cargo_of >= 0 && u.cargo_of != ra2engine::kGarrisonCargo) p.add("carried(" + hs + ")", 1);
+            // P1: units a `unit H:TYPE:n` target can reach (not aboard anything).
+            if (u.cargo_of < 0) p.add("free(" + hs + "," + id + ")", 1);
             if (u.moving()) p.add("moving(" + hs + ")", 1);
             if (!p.n.count("uhp(" + hs + "," + id + ")")) {   // W2-SK: first live unit's HP / rank
                 p.set("uhp(" + hs + "," + id + ")", u.hp);
@@ -421,9 +423,14 @@
                 return found;
             }
             if (!play_parse_spec(spec, h, type, n)) return false;
+            // P1: TYPE ending in '~' = only a transport with no passenger aboard
+            // (`unit 0:FV~:0` = the first empty IFV -- a free seat).
+            const bool empty_only = !type.empty() && type.back() == '~';
+            if (empty_only) type.pop_back();
             for (const ra2engine::Unit& u : world_.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;
                 if (type != "*" && play_unit_id(u) != type && u.image != type) continue;
+                if (empty_only && !u.cargo.empty()) continue;
                 if (n-- > 0) continue;
                 cx = u.fx + u.sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
                 cy = u.fy + u.sub_y / 256.0;
@@ -591,6 +598,13 @@
                         if (!on_board(ox - 2, oy - 2) || !on_board(ox + d.fw + 1, oy + d.fh + 1)) continue;
                         cx = ox + d.fw / 2;
                         cy = oy + d.fh / 2;
+                        // P1: the click must resolve back to this cell (the
+                        // level-aware resolver can land one cell off on raised
+                        // ground, putting a 4x4 Chronosphere on the factory).
+                        int wx = 0, wy = 0, rx = -1, ry = -1;
+                        cell_to_window(cx, cy, wx, wy);
+                        input_.resolve_ground_cell(wx, wy, rx, ry);
+                        if (rx != cx || ry != cy) continue;
                         return true;
                     }
             return false;

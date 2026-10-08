@@ -210,6 +210,38 @@ campaign Destroyed*All events and orphaned parasites). Save format unchanged (v2
   before a base defence kills it. The Prisms need < 575; the remaining plants are only reachable inside the Prism
   compound, and the roaming SEALs kill every infantry escort. No engine blocker identified.
 
+## P1 status (mission-proof agent P1, branch `p1-missions`)
+
+Real-order proofs (no `camp_*`/kill/reveal/spawn cheats; harness help is limited to choosing which visible unit,
+building or cell to click):
+
+| Mission | Before | P1 | Evidence / what blocks |
+|---|---|---|---|
+| ALL04 | YES (probable) | **YES (proven)** | `m-all04-real` WON (f~10870, gen `gen/mk_all04.py`, Normal): beach the MCV craft, unload (Deploy), drive the MCV off the quay and deploy; power, refinery, barracks, war factory; 12 Grizzlies (incl. PlayerAlt2's handed-over ones) staged mid-map, then type-selected Grizzlies/IFVs destroy the Psychic Amplifier -> `AmplifierDestroyed` -> Win |
+| ALL11 | PROBABLE | **YES (proven)** | `m-all11-real` WON (f~10070, gen `gen/mk_all11.py`, Normal): war factory, Battle Lab, Chronosphere ('Chronosphere is Built' reveals Cuba and hands the silos to BadGuy2), Prism towers; 12 IFVs + 12 Navy SEALs, each SEAL boards an empty IFV; the loaded IFVs gather and are chronoshifted (source = the 3x3 holding most of the group) to (190,195) -- a building-free 3x3 between silos B and C; Deploy unloads, the SEALs C4 all three silos -> `Win (Nukes KIA)`. Needed the Mission=Harvest fix (no income at all before) |
+| ALL12 | PROBABLE | PROBABLE (blocked) | `m-all12-real` still proves the opening only. WIP generator `gen/mk_all12.py` (Easy): Chronosphere + Weather Control built; a Chronoshift dumps the eastern Black Guard Apocalypse pair into the lake (MammothDead1/2), a Lightning Storm on (118,122) kills the western pair and BadGuy3's Tesla coil. Blockers: the last four BadGuy3 buildings (2 flak, 2 sentry guns): no SEALs on ALL12's sidebar, the player's units do not survive at home long enough to mass Prism tanks for a yard Chronoshift, and a second storm at (127,121) is followed by `Kremlin is Destroyed` (Kremlin 1000 -> 838 -> lost; IonWH is 2% vs concrete, so this needs a look -- see below). On Normal the base dies at ~6.5 min to a Kirov bomb run (`Kirov Medium` AITrigger, faithful) before the Battle Lab completes |
+
+Engine fixes (separate commits):
+
+1. `fix(campaign): map-placed miners with Mission=Harvest start harvesting` (`engine/campaign_runtime.inc`
+   `place_unit`) [RE: campaign.md §4 -- campaign objects get their INI mission (vtbl+0x1E8); economy.md §1 --
+   Mission_Harvest runs the harvester FSM FUN_0073C560]. Every map-placed HARV/CMIN with Mission=Harvest (ALL11's three
+   player Chrono Miners, the AI miners of 14 maps) stood idle; ALL11 had no income at all. Shared: also strengthens AI
+   economies (ALL04 Russian1, ALL12 BadGuy1 -- the earlier Kirov in ALL12 Normal follows from that, faithful).
+
+Harness (no sim change): `place auto` only offers origins whose click resolves back to the intended cell (a 4x4
+Chronosphere was dropped onto the war factory on raised ground); `point sel_pack` / `sel_pack_n` (Chronoshift source =
+the 3x3 holding most selected units); `unit H:TYPE~:n` (n-th transport with a free seat); probes `free(h,ID)` (units not
+aboard anything) and `sw_last_nuke_house/x/y`. Note: superweapon buildings (Chronosphere, Weather Control) are built
+through the DEFENSE queue (`queue_ready(defense)`), not `structure`.
+
+Open questions: (a) ALL12 Kremlin lost ~700 frames after a Lightning Storm centred 2 cells from it (IonWH verses give
+2% vs concrete; check the building armor/insignificant path in `World::an_area_damage`, or another cause); (b) the
+AI nuke picker scores every enemy house's objects (RE-FALLBACK) where FUN_0050CA10 walks only house+0x5600's objects --
+harmless in these missions (Civilian houses share BadGuy's alliance team), not changed.
+
+Gates: `--demo-campaign` re-run, unchanged (`dd71d9faceb255e1`). Save format unchanged (v22).
+
 ## How this was exercised
 
 | Tool | What it does | Where (all under `D:\ra2-wt\w4-seq\scratch\`) |

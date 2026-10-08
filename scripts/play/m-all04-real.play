@@ -1,8 +1,11 @@
-# W4-SQ-01/02: ALL04 opening with real orders. The landing craft arrive
-# CARRYING the MCV and the tank/GI groups (TeamType Full=yes); Soviet garrison
-# teams occupy civilian buildings (script 46 type arg). The player unloads the
-# MCV craft with the Deploy key and deploys the MCV.
-set render_every 900
+# P1: ALL04 (Chicago) won with real orders only (no cheats).
+# W4-SQ-01/02 opening: the landing craft arrive CARRYING the MCV and the
+# tank/GI groups (TeamType Full=yes); Soviet garrison teams occupy civilian
+# buildings (script 46 type arg). The player beaches the MCV craft, unloads it
+# with the Deploy key and deploys the MCV ('ConYdBuilt' hands PlayerAlt2's
+# landed Grizzlies/GIs over). Then a base from the sidebar and a Grizzly/IFV
+# army that destroys the Psychic Amplifier before the 50-minute timer.
+set render_every 3000
 set on_quit continue
 set campaign ALL04u.MAP GDI
 until 60 scene == campaign-load
@@ -20,10 +23,241 @@ click unit 0:LCRF
 assert selected >= 1
 key d
 wait 5
-log after-d
 until 600 carried(0) == 0
 assert units(0,AMCV) >= 1
 assert carried(0) == 0
 shot landed
+click unit 0:AMCV
+click xy 560 140
+wait 30
+until 900 sel_moving == 0
+log mcv-at
 dump
-end
+key d
+until 900 built(0,GACNST) >= 1
+dump
+let n_GAPOWR = built(0,GAPOWR)
+until 900 can_build(GAPOWR) == 1
+click tab:0
+click cameo:GAPOWR
+until 2400 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) > $n_GAPOWR
+let n_GAREFN = built(0,GAREFN)
+until 900 can_build(GAREFN) == 1
+click tab:0
+click cameo:GAREFN
+until 2400 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 600 built(0,GAREFN) > $n_GAREFN
+let n_GAPILE = built(0,GAPILE)
+until 900 can_build(GAPILE) == 1
+click tab:0
+click cameo:GAPILE
+until 2400 queue_ready(structure) == 1
+click cameo:GAPILE
+place auto
+until 600 built(0,GAPILE) > $n_GAPILE
+let n_GAWEAP = built(0,GAWEAP)
+until 900 can_build(GAWEAP) == 1
+click tab:0
+click cameo:GAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+until 600 built(0,GAWEAP) > $n_GAWEAP
+dump
+shot base
+until 900 cameo(MTNK) == 1
+click tab:3
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+until 9000 units(0,MTNK) >= 12
+dump
+if units(0,MTNK) > 0 then click unit 0:MTNK:0
+if units(0,FV) > 0 then click unit 0:FV:0 shift
+key t
+key t
+click cell 90 75
+wait 600
+dump
+shot staged
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 and units(0,FV) > 0 then click unit 0:FV:0 shift
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then key t
+if outcome == RUNNING and buildings(2,NAPSYA) > 0 then click building 2:NAPSYA:0
+if outcome == RUNNING then wait 300
+if outcome == RUNNING then dump
+shot final
+until 6000 outcome == WON
+end expect WON
