@@ -446,5 +446,5 @@ Fixed on the way to the ALL09/ALL10/SOV04 proofs (details and RE citations: `doc
 | P4-3 | A Sleep/Harmless object stayed dormant after the player (or its team) ordered it | FIXED (`81b6570`, RE-FALLBACK) |
 | P4-4 | Crushable= wall overlays (sandbags, prison fences) could not be crushed by Crusher vehicles | FIXED (`629b1e3`, RE-FALLBACK, save v23) |
 | P4-5 | Wall=yes warheads do not damage wall overlays (force-firing a wall does nothing); only crushing removes one | OPEN (not needed by the P4 proofs) |
-| P4-6 | ALL09 not won by real orders: the pyramid approach is held by BadGuy1's flak tracks/Tesla troopers; needs a finer micro script | OPEN (tactical) |
+| P4-6 | ALL09 not won by real orders: `m-all09-opening` reaches the BadGuy1 ConYard capture (airport, Pyramid 1, Reactors 1/2 done), then BadGuy1's Attk Response teams overrun the force; needs a finer micro script | OPEN (tactical) |
 
