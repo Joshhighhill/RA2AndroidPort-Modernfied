@@ -429,6 +429,10 @@
             const ra2engine::Building& b = world_.buildings()[bi];
             cx = b.cx + b.fw / 2;
             cy = b.cy + b.fh / 2;
+            // P3: a ":near" sweep clicks the building's back (origin) cell -- the
+            // centre is often under the player's own tanks crowding its front,
+            // and a click there selects a tank instead of ordering the attack.
+            if (spec.size() > 5 && spec.compare(spec.size() - 5, 5, ":near") == 0) { cx = b.cx; cy = b.cy; }
             return true;
         };
         // ---- G16 world depth (agent G): garrisons + bridges ----
