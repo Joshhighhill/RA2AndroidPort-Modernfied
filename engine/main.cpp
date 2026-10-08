@@ -6388,6 +6388,7 @@ private:
     }
     bool play_find_point(const std::string& name, double& cx, double& cy) const {
         if (w2_find_point(name, cx, cy)) return true;   // wave-2 air/naval/SW points
+        if (w5_find_point(name, cx, cy)) return true;   // W5-B points (w5_play.inc)
         int ax = 0, ay = 0;
         if (!play_anchor(ax, ay)) return false;
         auto d2 = [&](int x, int y) { return (x - ax) * (x - ax) + (y - ay) * (y - ay); };

@@ -7,11 +7,14 @@
 //   uhpn(h,ID,n) ucx/ucy/uspot/ulx/uly(h,ID,n)  n-th live unit of the type:
 //                            HP, cell, sub-cell spot, lepton position (+sub)
 //   bhp(h,ID) bmaxhp(h,ID)   first live building of the type
-//   land(x,y)                LandType index of a cell; uspeed(h,ID,n) = the
-//                            n-th unit's current cells/s (W5-B R-062)
+//   uspeed(h,ID,n) / uland(h,ID,n)  current cells/s and effective LandType
+//                            of the unit's cell (W5-B R-062)
+// Points: ore_near (the ore cell nearest the first selected unit),
+//         clear_near (the nearest free Clear-land, ore-free cell 6+ cells
+//         from the selected unit, same row band).
     void w5_play_probe(ra2play::Probe& p) const {
         for (const char* f : {"max_cell_inf", "cells3", "uhpn", "ucx", "ucy", "uspot", "ulx", "uly",
-                              "bhp", "bmaxhp", "uspeed", "utgt", "umov", "uwait"})
+                              "bhp", "bmaxhp", "uspeed", "uland", "utgt", "umov", "uwait"})
             p.zero_families.insert(f);
         p.set("subcells", world_.subcells_enabled() ? 1 : 0);
         std::map<std::pair<int, int>, int> per_cell[16];
@@ -31,6 +34,7 @@
             p.set("ulx(" + k + ")", u.fx * 256.0 + u.sub_x);
             p.set("uly(" + k + ")", u.fy * 256.0 + u.sub_y);
             p.set("uspeed(" + k + ")", world_.unit_speed_cps(i));
+            p.set("uland(" + k + ")", world_.speed_land_at(u.cell_x, u.cell_y));
             p.set("utgt(" + k + ")", u.target);
             p.set("umov(" + k + ")", u.moving() ? 1 : 0);
             p.set("uwait(" + k + ")", u.wait_time);
@@ -55,4 +59,27 @@
             p.set("bhp(" + k + ")", b.hp);
             p.set("bmaxhp(" + k + ")", b.max_hp);
         }
+    }
+
+    bool w5_find_point(const std::string& name, double& cx, double& cy) const {
+        if (name != "ore_near" && name != "clear_near") return false;
+        const int si = w2_first_selected();
+        if (si < 0) return false;
+        const ra2engine::Unit& s = world_.units()[(std::size_t)si];
+        int best = -1;
+        long bd = 0;
+        for (int y = 0; y < world_.grid_h(); ++y)
+            for (int x = 0; x < world_.grid_w(); ++x) {
+                if (!world_.walkable(x, y) || !world_.occupancy().is_free(x, y)) continue;
+                const bool ore = world_.ore().has_ore(x, y);
+                const long d = (long)(x - s.cell_x) * (x - s.cell_x) + (long)(y - s.cell_y) * (y - s.cell_y);
+                if (name == "ore_near" && !ore) continue;
+                if (name == "clear_near" && (ore || world_.speed_land_at(x, y) != 0 || d < 36 || std::abs(y - s.cell_y) > 1))
+                    continue;
+                if (best < 0 || d < bd) { best = y * world_.grid_w() + x; bd = d; }
+            }
+        if (best < 0) return false;
+        cx = best % world_.grid_w();
+        cy = best / world_.grid_w();
+        return true;
     }
