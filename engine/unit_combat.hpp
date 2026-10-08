@@ -162,6 +162,7 @@ struct UnitCombat {
     bool crusher = false;             // Crusher=
     bool crushable = false;           // Crushable=
     bool auto_crush = false;          // W5-B R-050: TechnoType AutoCrush= (+0xD2D; HARV/CMIN yes)
+    bool is_infantry = false;         // W5-B R-061: an [InfantryTypes] type (uses sub-cell spots)
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= building id (AMCV->GACNST).
     std::string deploys_into;
     // --- G16 (agent G) [RE: docs/re/world-depth.md] ---

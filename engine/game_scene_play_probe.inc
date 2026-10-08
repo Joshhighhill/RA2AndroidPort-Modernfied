@@ -361,8 +361,8 @@
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;
                 if (type != "*" && play_unit_id(u) != type && u.image != type) continue;
                 if (n-- > 0) continue;
-                cx = u.fx;
-                cy = u.fy;
+                cx = u.fx + u.sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
+                cy = u.fy + u.sub_y / 256.0;
                 return true;
             }
             return false;

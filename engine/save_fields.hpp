@@ -698,6 +698,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.speed_cps);
     io(ar, v.speed_type);   // v18: W5-B
     io(ar, v.auto_crush);
+    io(ar, v.is_infantry);
     io(ar, v.is_vehicle);
     io(ar, v.passengers);
     io(ar, v.size_limit);
@@ -834,6 +835,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.speed_mult);
     io(ar, v.auto_crush);   // W5-B R-050
     io(ar, v.crushing);
+    io(ar, v.is_infantry);
     io(ar, v.w_proj);
     io(ar, v.target);
     io(ar, v.target_building);

@@ -353,6 +353,7 @@ struct Unit {
     // World::enable_original_combat; see combat.cpp.
     bool crusher = false;            // Crusher=yes (vehicles)
     bool auto_crush = false;         // W5-B R-050: AutoCrush=yes (the player's harvesters)
+    bool is_infantry = false;        // W5-B R-061: InfantryTypes type -> sub-cell spots
     bool crushing = false;           // W5-B R-050: driving onto its crushable target
     bool crushable = false;          // Crushable=yes (infantry)
     // --- gF MCV deploy [RE: docs/re/mcv-deploy.md] --- inert defaults.

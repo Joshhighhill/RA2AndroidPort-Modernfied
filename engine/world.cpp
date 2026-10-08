@@ -583,7 +583,9 @@ void World::enable_subcells() {
 void World::subcell_register(int idx) {
     if (!occ_.subcells() || idx < 0 || idx >= static_cast<int>(units_.size())) return;
     const Unit& u = units_[static_cast<std::size_t>(idx)];
-    const bool inf = !u.is_vehicle && !u.is_aircraft && !u.is_naval;
+    // W5-B: only real [InfantryTypes] units take spots (an SHP vehicle such
+    // as the landing craft is drawn like an infantry but holds a whole cell).
+    const bool inf = u.is_infantry && !u.is_vehicle && !u.is_aircraft && !u.is_naval;
     const bool held = occ_.at(u.cell_x, u.cell_y) == idx || occ_.spot_of(u.cell_x, u.cell_y, idx) >= 0;
     if (held) occ_.release(u.cell_x, u.cell_y, idx);
     occ_.mark_infantry(idx, inf);
@@ -803,6 +805,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.deploy_fire_slot = c.deploy_fire_slot;
     u.crusher = c.crusher;
     u.auto_crush = c.auto_crush;   // W5-B R-050
+    u.is_infantry = c.is_infantry; // W5-B R-061
     u.crushable = c.crushable;
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= -> roster index (inert -1
     // for every unit type without the key, i.e. everything but AMCV/SMCV).
@@ -4918,12 +4921,13 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             // W5-B R-050: a vehicle held up by idle infantry of its own house
             // asks them to scatter out of the way (the original's
             // Map[cell].Incoming -> Scatter for friendly occupants).
-            if (speed && speed->scatter_out && u.is_vehicle && occ.subcells() && u.path_idx < u.path.size()) {
+            if (speed && speed->scatter_out && u.is_vehicle && occ.subcells() && u.wait_time == 0.0 &&
+                u.path_idx < u.path.size()) {   // once per hold-up, not every frame
                 const Cellxy bc = u.path[u.path_idx];
                 for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
                     const int o = occ.spot_unit(bc.x, bc.y, s);
                     if (o >= 0 && o < static_cast<int>(units.size()) && units[o].house == u.house &&
-                        !units[o].moving() && units[o].target < 0)
+                        !units[o].moving() && units[o].target < 0 && units[o].enter_target < 0)
                         speed->scatter_out->push_back(o);
                 }
             }
