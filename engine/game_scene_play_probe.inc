@@ -88,6 +88,7 @@
             const std::string hs = std::to_string(h);
             p.set("house_credits(" + hs + ")", world_.house_credits(h));
             p.set("defeated(" + hs + ")", world_.house_defeated(h) ? 1 : 0);
+            p.set("blackout(" + hs + ")", world_.blackout_frames(h));   // P3: spy power-plant blackout left
             p.set("team(" + hs + ")", world_.house_team(h));
             // [SK] what the Skirmish page handed the game, per house.
             const ra2engine::World::Side hsd = world_.house_side(h);
@@ -225,6 +226,7 @@
             p.set("ctl_units", ctl);         // controllable (house 0 + PlayerControl) usable units
             p.set("ctl_on_screen", ctl_on);  // ... of which inside the view
             p.set("input_locked", input_locked_ ? 1 : 0);
+            if (campaign_) p.set("view_resized", campaign_->local_version());   // P3: ResizeView (40) count
             p.set("touch_ui", touch_ui_ ? 1 : 0);              // W4-AM touch keys
             p.set("touch_bar_open", touch_bar_open_ ? 1 : 0);
             p.set("touch_banner", touch_banner_visible() ? 1 : 0);
@@ -381,6 +383,35 @@
         p.find_unit = [this](const std::string& spec, double& cx, double& cy) {
             int h = 0, n = 0;
             std::string type;
+            // P3: "H:TYPE:near" / "e:TYPE:near" = the live unit of house H (e = any
+            // house hostile to it) nearest the first selected unit, within 9 cells
+            // (in sight) -- what a player clicks to pick off the closest threat.
+            if (spec.size() > 5 && spec.compare(spec.size() - 5, 5, ":near") == 0) {
+                const std::string head = spec.substr(0, spec.size() - 5);
+                const std::size_t c = head.find(':');
+                if (c == std::string::npos) return false;
+                const bool any_enemy = head.substr(0, c) == "e";
+                const int hh = any_enemy ? -1 : std::atoi(head.substr(0, c).c_str());
+                const std::string ty = head.substr(c + 1);
+                const ra2engine::Unit* me = nullptr;
+                for (const ra2engine::Unit& u : world_.units())
+                    if (u.alive && u.die_time < 0.0 && u.selected) { me = &u; break; }
+                if (!me) return false;
+                double best = 9.0 * 9.0 + 1e-9;
+                bool found = false;
+                for (const ra2engine::Unit& u : world_.units()) {
+                    if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft) continue;
+                    if (any_enemy ? !world_.is_enemy(me->house, u.house) : u.house != hh) continue;
+                    if (ty != "*" && play_unit_id(u) != ty && u.image != ty) continue;
+                    const double dx = u.fx - me->fx, dy = u.fy - me->fy, d2 = dx * dx + dy * dy;
+                    if (d2 > best) continue;
+                    best = d2;
+                    cx = u.fx + u.sub_x / 256.0;
+                    cy = u.fy + u.sub_y / 256.0;
+                    found = true;
+                }
+                return found;
+            }
             if (!play_parse_spec(spec, h, type, n)) return false;
             for (const ra2engine::Unit& u : world_.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;

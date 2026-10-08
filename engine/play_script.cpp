@@ -203,10 +203,50 @@ const std::set<std::string>& known_ops() {
     return k;
 }
 
+// P3: `repeat N` ... `endrepeat` (nestable) is expanded textually before
+// parsing: the body runs N times exactly as if it were written out N times
+// (long real-order micro loops without multi-megabyte scripts). Returns at the
+// matching endrepeat when `nested`, else at the end of the text.
+bool expand_repeats(const std::vector<std::string>& lines, std::size_t& i, bool nested,
+                    std::string& out, std::string& err) {
+    while (i < lines.size()) {
+        const std::string t = lower(trim(strip_comment(lines[i])));
+        ++i;
+        if (t == "endrepeat") {
+            if (nested) return true;
+            err = "line " + std::to_string(i) + ": endrepeat without repeat";
+            return false;
+        }
+        if (t.rfind("repeat ", 0) == 0) {
+            int n = 0;
+            if (!to_int(trim(t.substr(7)), n) || n < 0) {
+                err = "line " + std::to_string(i) + ": repeat needs a non-negative count";
+                return false;
+            }
+            std::string body;
+            if (!expand_repeats(lines, i, true, body, err)) return false;
+            for (int k = 0; k < n; ++k) out += body;
+            continue;
+        }
+        out += lines[i - 1];
+        out += '\n';
+    }
+    if (nested) { err = "repeat without endrepeat"; return false; }
+    return true;
+}
+
 }  // namespace
 
-bool parse_script(const std::string& text, Script& out, std::string& err) {
+bool parse_script(const std::string& text_in, Script& out, std::string& err) {
     out.cmds.clear();
+    std::string text;
+    {
+        std::vector<std::string> lines;
+        std::istringstream src(text_in);
+        for (std::string l; std::getline(src, l);) lines.push_back(l);
+        std::size_t i = 0;
+        if (!expand_repeats(lines, i, false, text, err)) return false;
+    }
     std::istringstream in(text);
     std::string line;
     int ln = 0;
