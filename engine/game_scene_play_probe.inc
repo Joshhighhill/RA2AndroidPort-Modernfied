@@ -121,6 +121,8 @@
             p.add("units(" + hs + ")", 1);
             p.add("units(" + hs + "," + id + ")", 1);
             if (u.cargo_of >= 0 && u.cargo_of != ra2engine::kGarrisonCargo) p.add("carried(" + hs + ")", 1);
+            // P1: units a `unit H:TYPE:n` target can reach (not aboard anything).
+            if (u.cargo_of < 0) p.add("free(" + hs + "," + id + ")", 1);
             if (u.moving()) p.add("moving(" + hs + ")", 1);
             if (!p.n.count("uhp(" + hs + "," + id + ")")) {   // W2-SK: first live unit's HP / rank
                 p.set("uhp(" + hs + "," + id + ")", u.hp);

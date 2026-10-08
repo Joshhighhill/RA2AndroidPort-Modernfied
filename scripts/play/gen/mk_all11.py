@@ -46,9 +46,10 @@ def strike(tag):
     for r in range(16):
         for k in range(9):
             want = [1, 1, 2, 2, 0, 0, 1, 2, 0][k]
-            p.add(f"if {G} and units(0,GHOST) > {k} then click unit 0:GHOST:{k}",
-                  f"if {G} and units(0,GHOST) > {k} and buildings(2,NAMISL) > {want} then click building 2:NAMISL:{want}",
-                  f"if {G} and units(0,GHOST) > {k} and buildings(2,NAMISL) <= {want} then click building 2:NAMISL:0")
+            f_ = f"{G} and free(0,GHOST) > {k}"
+            p.add(f"if {f_} then click unit 0:GHOST:{k}",
+                  f"if {f_} and buildings(2,NAMISL) > {want} then click building 2:NAMISL:{want}",
+                  f"if {f_} and buildings(2,NAMISL) <= {want} then click building 2:NAMISL:0")
         p.add("if outcome == RUNNING then wait 30", "if outcome == RUNNING then dump")
         if r == 1: p.add(f"shot fight{tag}")
 

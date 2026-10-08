@@ -129,7 +129,7 @@
         for (const char* f : {"submerged", "sub_detected_by0", "iron_units", "chrono_units", "airborne",
                               "spawned_out", "planes", "planes_docked", "plane_ammo", "amphib_on_water",
                               "unit_hp", "cargo_total", "iron_buildings", "sw_has", "sw_ready_t",
-                              "sw_charge", "sunk", "crashing"})
+                              "sw_charge", "sunk", "crashing", "free"})
             p.zero_families.insert(f);
         p.set("sw_armed", input_.sw_targeting() ? input_.sw_armed_type() : 0);
         p.set("sw_armed_phase", input_.sw_armed_phase());
