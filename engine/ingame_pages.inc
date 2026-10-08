@@ -339,6 +339,38 @@ private:
 // ============================================================================
 #include "keyboard_page.inc"   // W5-E: dialog 0xA3 (R-140)
 
+// W5-E (R-034): the mission briefing page -- Restate.cpp FUN_0065EF60
+// (Restate_Mission): MISSIONMD.INI [<map>] Briefing= (CSF) into dialog 0x10C,
+// "Brief:Error" when the key is missing; a modal loop until the Return button
+// (0x423). It is reached from the sidebar's second top tab (0x80F3 ->
+// special dialog 1, FUN_00653290) and from the event dispatcher
+// (FUN_004C6BD0). [RE-FALLBACK: the 0x10C template was not dumped -- the
+// text well (24,60,423,380) and Return in button row 5 follow the other
+// in-game pages; the clone also opens it with F1.]
+struct RestatePage {
+    static ra2engine::SbRect text_rect() { return {24, 92, 423, 340}; }
+    static ra2engine::SbRect return_rect() { return shell_row(5); }
+    bool return_hit(int dx, int dy) const { return ui_dev(return_rect()).contains(dx, dy); }
+    void render(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& name, const std::string& text,
+                int mx, int my) const {
+        const MenuArt& art = shell_art();
+        const ShellXform xf = ui_xform();
+        const ShellPainter p{ren, tc, art, xf};
+        const bool hov = ui_dev(return_rect()).contains(mx, my);
+        const std::vector<ShellButton> b{ShellButton{return_rect(), gf_csf("GUI:Return", "Return"), true, 0, PAGE_MAIN}};
+        draw_shell(ren, tc, art, xf, b, hov ? 0 : -1, -1, gf_csf("GUI:Briefing", "Briefing"), "", -1);
+        p.header(name, 24, 56, 423, 26, 1);
+        const ra2engine::SbRect r = text_rect();
+        p.fill(p.dev(r), 0, 0, 0, 150);
+        p.frame(p.dev(r), true);
+        const std::string body = text.empty() ? gf_csf("Brief:Error", "No briefing available.") : text;
+        const std::vector<std::string> lines = shell_wrap(p, body, r.w - 16);
+        for (std::size_t i = 0; i < lines.size() && i < 20; ++i)
+            p.label(lines[i], r.x + 8, r.y + 8 + static_cast<int>(i) * 16, r.w - 16, 16, 0);
+        if (hov) shell_status_line(p, gf_csf("STT:BriefingButtonReturn", ""));
+    }
+};
+
 class InGameMenu {
 public:
     enum Choice { None, Resume, Load, Save, Delete, Abort, Restart, Settings, Committed, MusicPlay, MusicStop };

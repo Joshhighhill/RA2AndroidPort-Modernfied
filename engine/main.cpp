@@ -5385,6 +5385,8 @@ inline void draw_shell(ra2engine::Platform& plat, ra2engine::TextureCache& tc, c
 Scene* defer_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg);
 Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
 
+#include "movie_player.inc"   // W5-E campaign movies (Bink)
+
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
@@ -5708,7 +5710,12 @@ public:
         touch_hint_tick(dt);  // W4-AM-01: the gesture hint
         // P7: the options menu / save-load dialog pause the game (the original
         // runs them as a modal loop; the scenario does not advance meanwhile).
-        if (menu_.open_ || sld_.is_open()) {
+        if (ingame_movie_.active()) {   // W5-E: a trigger movie pauses the scenario
+            ingame_movie_.update(dt);
+            now_ = SDL_GetTicks();
+            return;
+        }
+        if (menu_.open_ || sld_.is_open() || show_briefing_) {   // W5-E: the briefing is modal too
             now_ = SDL_GetTicks();
             return;
         }
@@ -5812,6 +5819,13 @@ public:
             g_campaign_last_stats = gf_stats();   // W5-E: 0xBC7 graph / places
             next_scene_ = make_campaign_result_scene(no_audio_, cfg_, campaign_->outcome(),
                                                      campaign_->frame_count());
+            // W5-E [RE: campaign.md §3.4/§8]: the map's Win= / Lose= movie
+            // first, when the file exists (stubbed on this install -> skipped).
+            const std::string mv = campaign_->outcome() == 1 ? campaign_->basic().win : campaign_->basic().lose;
+            if (any_movie({mv})) {
+                Scene* res = next_scene_;
+                next_scene_ = new MovieScene({mv}, [res]() { return res; });
+            }
         }
         // P5: drain the promotion / crate events (the EVA/sound hook is a
         // carry-forward -- veterancy.md §5); draining keeps the queues bounded.
@@ -6132,6 +6146,7 @@ public:
         // W2-UI-13..17: the in-game options / save-load pages are full-screen
         // shell pages (they clear the frame); popups draw over them.
         const bool soviet_ui = std::string(g_sidebar_mix) == "sidec02.mix";
+        if (ingame_movie_.active()) ingame_movie_.render(ren);   // W5-E trigger movie (full screen)
         menu_.render(ren, tc);
         gf_abort_.render(ren, tc, soviet_ui);   // gF G-14
         sld_.render(ren, tc, SDL_GetTicks(), soviet_ui);
@@ -6338,6 +6353,25 @@ private:
             show_briefing_ = !show_briefing_;   // P10: the mission briefing (Brief:<map>)
             return true;
         }
+        if (ingame_movie_.active()) {   // W5-E: a key / click skips the trigger movie
+            if (ev.kind == ra2engine::InputEvent::Key ||
+                (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left))
+                ingame_movie_.skip();
+            return ev.kind != ra2engine::InputEvent::Quit;
+        }
+        // W5-E: the briefing page (Restate dialog 0x10C) is modal -- Return or
+        // Esc closes it, every other input is swallowed.
+        if (show_briefing_) {
+            if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown) {
+                brief_mx_ = ev.x;
+                brief_my_ = ev.y;
+            }
+            if ((ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) ||
+                (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left &&
+                 (restate_.return_hit(ev.x, ev.y) || ev.touch)))   // W4-AM-11: a tap closes it on touch
+                show_briefing_ = false;
+            return ev.kind != ra2engine::InputEvent::Quit;
+        }
         // G-01: Esc = [Hotkey] Options=27 (exec FUN_00646AE0 -> options dialog).
         const bool open_key = ev.kind == ra2engine::InputEvent::Key &&
                               (ev.key == ra2engine::kKeyF10 || ev.key == ra2engine::kKeyEscape);
@@ -6347,10 +6381,13 @@ private:
             menu_.open();
             return true;
         }
-        // W2-UI-29: the sidebar Diplomacy button opens dialog 0x73.
+        // W2-UI-29: the sidebar Diplomacy button opens dialog 0x73; W5-E: in a
+        // campaign the same second tab (0x80F3) is the briefing (FUN_00653290
+        // -> special dialog 1 -> Restate_Mission).
         if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left &&
             sidebar_up_ && ba_.has_optbtns && lay_.diplo_btn.contains(ev.x, ev.y)) {
-            open_diplomacy();
+            if (campaign_) show_briefing_ = true;
+            else open_diplomacy();
             return true;
         }
         return false;
@@ -6360,16 +6397,20 @@ private:
     // came from the lobby), volumes go to the mixer buses.
     std::vector<std::string> jukebox_sections_;   // W2-UI-14 0xB8 list -> theme section
     void open_diplomacy() {   // W2-UI-29: rows = the lobby houses (score-page tallies)
-        const GfSkirmishStats st = gf_stats();
+        GfSkirmishStats st = gf_stats();
+        // W5-E: gf_stats sorts by score; the diplomacy rows stay in house order.
+        std::stable_sort(st.rows.begin(), st.rows.end(),
+                         [](const GfSkirmishStats::Row& a, const GfSkirmishStats::Row& b) { return a.house < b.house; });
         std::vector<InGameMenu::DipRow> rows;
-        for (std::size_t h = 0; h < st.rows.size(); ++h) {
-            if (!st.rows[h].listed) continue;
+        for (std::size_t i = 0; i < st.rows.size(); ++i) {
+            if (!st.rows[i].listed) continue;
+            const int h = st.rows[i].house;
             InGameMenu::DipRow r;
-            r.name = st.rows[h].name;
-            r.kills = st.rows[h].kills;
+            r.name = st.rows[i].name;
+            r.kills = st.rows[i].kills;
             r.self = h == 0;
-            r.ally = world_.house_team((int)h) == world_.house_team(0);
-            const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, (int)h)[24];
+            r.ally = world_.house_team(h) == world_.house_team(0);
+            const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, h)[24];
             r.color = SDL_Color{c.r, c.g, c.b, 255};
             rows.push_back(r);
         }
@@ -6695,6 +6736,9 @@ private:
     std::string          mission_name_ = "Mission";
     std::string          briefing_;
     bool                 show_briefing_ = false;  // F1 toggles the mission briefing
+    RestatePage          restate_;                // W5-E: the briefing as dialog 0x10C
+    MoviePlayer          ingame_movie_;           // W5-E: trigger actions 10 / 100 / 116
+    int                  brief_mx_ = -1, brief_my_ = -1;
     static bool soviet_campaign(const ra2engine::SkirmishConfig& c) {
         return !c.campaign_map.empty() && camp::up(c.campaign_side) == "NOD";
     }
@@ -6813,15 +6857,7 @@ private:
         if (campaign_->outcome() != 0)
             draw_end_banner(ren, tc, camp::csf_text(dir_, campaign_->outcome() == 1 ? "TXT_SCENARIO_WON"
                                                                                    : "TXT_SCENARIO_LOST"));
-        if (show_briefing_) {
-            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 210);
-            SDL_Rect bg{60, 80, playfield_w_ - 120, 440};
-            SDL_RenderFillRect(ren, &bg);
-            hud_text(ren, tc, mission_name_, 80, 96, col, kHudLeft, false, true, 2.0);
-            hud_text(ren, tc, hud_wrap(briefing_, (playfield_w_ - 180) / 2), 80, 140, col, kHudLeft, false, true,
-                     2.0);
-        }
+        if (show_briefing_) restate_.render(ren, tc, mission_name_, briefing_, brief_mx_, brief_my_);   // W5-E
     }
 };
 

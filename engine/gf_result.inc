@@ -81,10 +81,11 @@ public:
         p.set_s("outcome", outcome_ > 0 ? "WON" : "LOST");
         p.set("result_frames", static_cast<double>(frames_));
         p.set("score_rows", static_cast<int>(st_.rows.size()));
-        if (!st_.rows.empty()) {
-            p.set("score_kills0", st_.rows[0].kills);
-            p.set("score_losses0", st_.rows[0].losses);
-        }
+        for (const GfSkirmishStats::Row& r : st_.rows)
+            if (r.house == 0) {   // the player's row (the rows are score-sorted)
+                p.set("score_kills0", r.kills);
+                p.set("score_losses0", r.losses);
+            }
         for (const GfSkirmishStats::Row& r : st_.rows)   // W5-E: per house, sorted by score
             if (r.house >= 0) {
                 p.set("score(" + std::to_string(r.house) + ")", static_cast<double>(r.score));

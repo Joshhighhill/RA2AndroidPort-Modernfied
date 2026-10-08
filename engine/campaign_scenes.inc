@@ -38,6 +38,11 @@ public:
             hud_font_load(ra2);   // W2-UI-19: the loading text is game.fnt
             const ra2engine::CampaignTables tables = camp::load_tables(ra2);
             const ra2engine::MissionInfo mi = tables.mission(cfg_.campaign_map);
+            try {   // W5-E: the map's Intro= / Brief= movies [RE: campaign.md §8]
+                const ra2engine::ScenarioBasic b = ra2engine::parse_scenario_basic(camp::load_map_ini(dir_, cfg_.campaign_map));
+                for (const std::string& m : {b.intro, b.brief})
+                    if (!m.empty()) movies_.push_back(m);
+            } catch (const std::exception&) {}
             name_ = mi.ui_name.empty() ? cfg_.campaign_map : camp::csf_text(dir_, mi.ui_name);
             text_ = mi.ls_load_briefing.empty() ? std::string() : camp::csf_text(dir_, mi.ls_load_briefing);
             msg_ = mi.ls_load_message.empty() ? std::string() : camp::csf_text(dir_, mi.ls_load_message);
@@ -122,6 +127,16 @@ public:
             return nullptr;
         }
         if (!start_) return nullptr;
+        // W5-E: the Intro / Brief movies play before the mission when the files
+        // exist (the install's MOVIES0x.MIX are stubs -> straight on).
+        if (!movies_shown_) {
+            movies_shown_ = true;
+            if (any_movie(movies_)) {
+                auto self = std::make_shared<CampaignLoadScene>(*this);
+                self->start_ = true;
+                return new MovieScene(movies_, [self]() -> Scene* { return new CampaignLoadScene(*self); });
+            }
+        }
         // Draw one full-bar frame before the (multi-second) GameScene build.
         if (!loading_) { loading_ = true; return nullptr; }
         start_ = false;
@@ -176,6 +191,8 @@ private:
     bool has_bg_ = false;
     bool start_ = false, back_ = false, loading_ = false, quit_ = false;
     double clock_ = 0.0;
+    std::vector<std::string> movies_;   // W5-E Intro / Brief
+    bool movies_shown_ = false;
 };
 
 // A campaign config for mission `map` of side `side` ("GDI" / "Nod").

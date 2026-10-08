@@ -1624,7 +1624,7 @@ private:
                 int k = 0, v = 0, wp = -1;
                 char name[128] = {0};
                 if (std::sscanf(l.c_str(), "  a%d %*s v=%d wp=%d %127s", &k, &v, &wp, name) == 4 &&
-                    (k == 19 || k == 20 || k == 21 || k == 99) &&
+                    (k == 19 || k == 20 || k == 21 || k == 99 || k == 10 || k == 100 || k == 116) &&   // W5-E movies
                     l.find("(recorded)") != std::string::npos)
                     audio_.push_back({k, name[0] == '-' && name[1] == 0 ? std::string() : std::string(name), v, wp});
             }
