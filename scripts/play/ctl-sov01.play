@@ -21,20 +21,22 @@ assert ctl_on_screen >= 1                     @W4-MC-07
 shot unlocked
 
 # --- band select whatever of ours is on screen, order a move ----------------------
+# (`:near` = the E2 nearest the selection: since the w5-camp merge the first E2
+# of the list walks off-screen during the opening, a player clicks one he sees)
 drag xy 30 30 1080 690                        @W4-MC-07
 wait 1
 assert selected >= 1                          @W4-MC-07
 let n = selected
-click unit 0:E2 +2 +2 onscreen                @W4-MC-07
+click unit 0:E2:near +2 +2 onscreen                @W4-MC-07
 wait 1
 assert sel_moving >= 1                        @W4-MC-07
 wait 45
 
 # --- the same by touch: one-finger scroll, tap-select, tap-move ---------------------
-touch tap unit 0:E2 onscreen                  @W4-MC-07
+touch tap unit 0:E2:near onscreen                  @W4-MC-07
 wait 1
 assert selected == 1
-touch tap unit 0:E2 -2 +2 onscreen            @W4-MC-07
+touch tap unit 0:E2:near -2 +2 onscreen            @W4-MC-07
 wait 1
 assert sel_moving >= 1                        @W4-MC-07
 let cx0 = cam_x

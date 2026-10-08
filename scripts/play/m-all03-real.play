@@ -1,6 +1,6 @@
 # W5-A: ALL03 (Washington) won with real orders only (no cheats). Base from
 # the sidebar (power, 2 refineries, barracks, war factory), Grizzly batches
-# trained to an army of 25+, staged mid-map, then the type-selected tanks + IFVs
+# trained to an army of 30+ (topped up after raids), staged mid-map, then the type-selected tanks + IFVs
 # attack the Psychic Beacon until it falls; the scripted Dugan/helicopter exit
 # then wins the mission. (Needs the W5-A campaign economy: harvest income.)
 set render_every 3000
@@ -18,6 +18,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 let n_GAREFN = built(0,GAREFN)
 until 900 can_build(GAREFN) == 1
@@ -26,6 +34,14 @@ click cameo:GAREFN
 until 2400 queue_ready(structure) == 1
 click cameo:GAREFN
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAREFN) > $n_GAREFN
 let n_GAPILE = built(0,GAPILE)
 until 900 can_build(GAPILE) == 1
@@ -34,6 +50,14 @@ click cameo:GAPILE
 until 2400 queue_ready(structure) == 1
 click cameo:GAPILE
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPILE) > $n_GAPILE
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
@@ -42,6 +66,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
@@ -50,6 +82,14 @@ click cameo:GAWEAP
 until 2400 queue_ready(structure) == 1
 click cameo:GAWEAP
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAWEAP) > $n_GAWEAP
 let n_GAREFN = built(0,GAREFN)
 until 900 can_build(GAREFN) == 1
@@ -58,6 +98,14 @@ click cameo:GAREFN
 until 2400 queue_ready(structure) == 1
 click cameo:GAREFN
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAREFN) > $n_GAREFN
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
@@ -66,6 +114,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 until 900 cameo(MTNK) == 1
 click tab:3
@@ -79,6 +135,24 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 9
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 9
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 9
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 until 4000 units(0,MTNK) >= 9
 until 900 cameo(MTNK) == 1
 click tab:3
@@ -92,6 +166,24 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 18
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 18
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 18
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 until 4000 units(0,MTNK) >= 18
 until 900 cameo(MTNK) == 1
 click tab:3
@@ -105,7 +197,25 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
-until 4000 units(0,MTNK) >= 25
+waituntil 2000 units(0,MTNK) >= 27
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 27
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 27
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+until 4000 units(0,MTNK) >= 27
 until 900 cameo(MTNK) == 1
 click tab:3
 click cameo:MTNK
@@ -118,7 +228,25 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
-until 4000 units(0,MTNK) >= 25
+waituntil 2000 units(0,MTNK) >= 30
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 30
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+waituntil 2000 units(0,MTNK) >= 30
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+until 4000 units(0,MTNK) >= 30
 dump
 if units(0,MTNK) > 0 then click unit 0:MTNK:0
 if units(0,FV) > 0 then click unit 0:FV:0 shift

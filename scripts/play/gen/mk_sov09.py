@@ -99,7 +99,10 @@ def main(out):
     order(p, "6:YURI:0", "unit 1:GHOST:11")
     p.add("until 300 units(6,GHOST) >= 1")
     order(p, "6:GHOST:0", "cell 65 52")
-    yuri_go(p, 0, 64, 37)
+    # 62,36 (was 64,37): with the mind-control shot no longer damaging, the
+    # timing shifts and a wandering civilian stands on 64,38 -- the click
+    # became an attack order that traded the SEAL for the civilian.
+    yuri_go(p, 0, 62, 36)
     p.add("until 900 power_out(1) <= 800",
           "assert power_out(1) <= 800", "assert units(6,YURI) >= 2",
           "assert outcome == RUNNING", "dump", "shot blackout1", "end expect RUNNING")

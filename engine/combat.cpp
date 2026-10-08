@@ -122,6 +122,10 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
         u.ability_fired_unit = victim_idx;
         return;
     }
+    // Campaign mind control: the Controller shot captures (CampaignRuntime::
+    // poll_mind_control), it never damages. Only campaign-armed units carry
+    // the flag -> every gate / skirmish path below is unchanged.
+    if (u.w_mind_control) return;
     if (launches && u.w_proj.flies()) {
         launches->push_back({attacker_idx, victim_idx, -1});
         return;

@@ -200,6 +200,30 @@ if queue_ready(structure) == 1 then click cameo:NAREFN
 if placing == 1 then place auto
 let t_NAREFN = f
 until 600 built(0,NAREFN) > $n_NAREFN or $ok_NAREFN == 0 or f >= $t_NAREFN+599
+let n_NAPOWR = built(0,NAPOWR)
+let tc_NAPOWR = f
+until 900 can_build(NAPOWR) == 1 or f >= $tc_NAPOWR+899
+let ok_NAPOWR = can_build(NAPOWR)
+if $ok_NAPOWR == 1 then click tab:0
+if $ok_NAPOWR == 1 then click cameo:NAPOWR
+let tq_NAPOWR = f
+until 2400 queue_ready(structure) == 1 or $ok_NAPOWR == 0 or f >= $tq_NAPOWR+2399
+if queue_ready(structure) == 1 then click cameo:NAPOWR
+if placing == 1 then place auto
+let t_NAPOWR = f
+until 600 built(0,NAPOWR) > $n_NAPOWR or $ok_NAPOWR == 0 or f >= $t_NAPOWR+599
+let n_NAPOWR = built(0,NAPOWR)
+let tc_NAPOWR = f
+until 900 can_build(NAPOWR) == 1 or f >= $tc_NAPOWR+899
+let ok_NAPOWR = can_build(NAPOWR)
+if $ok_NAPOWR == 1 then click tab:0
+if $ok_NAPOWR == 1 then click cameo:NAPOWR
+let tq_NAPOWR = f
+until 2400 queue_ready(structure) == 1 or $ok_NAPOWR == 0 or f >= $tq_NAPOWR+2399
+if queue_ready(structure) == 1 then click cameo:NAPOWR
+if placing == 1 then place auto
+let t_NAPOWR = f
+until 600 built(0,NAPOWR) > $n_NAPOWR or $ok_NAPOWR == 0 or f >= $t_NAPOWR+599
 dump
 if outcome == RUNNING and cameo(APOC) == 1 then click tab:3
 if outcome == RUNNING and cameo(APOC) == 1 then click cameo:APOC

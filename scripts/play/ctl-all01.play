@@ -64,7 +64,9 @@ until 60 ctl_on_screen >= 4                   @W4-MC-07
 drag xy 300 150 1050 650
 wait 1
 assert selected >= 4                          @W4-MC-07
-click xy 600 420
+# (a free island cell: since the w5-camp merge the Soviet paradrop lands on
+# the island earlier and a fixed pixel click could hit a conscript = attack)
+click cell 61 72 onscreen
 wait 1
 assert sel_moving >= 1                        @W4-MC-07
 end

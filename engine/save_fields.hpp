@@ -880,6 +880,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w_cell_spread);
     io(ar, v.w_percent_at_max);
     io(ar, v.w_affects_allies);   // v20: W5-B
+    io(ar, v.w_mind_control);     // v24: campaign mind-control shot (re-armed each frame)
     io(ar, v.spot);
     io(ar, v.sub_x);
     io(ar, v.sub_y);
