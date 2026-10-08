@@ -117,6 +117,13 @@ struct Unit {
     double w_cell_spread = 0.0;    // warhead CellSpread (cells) [aircraft.md §4]
     double w_percent_at_max = 1.0; // warhead PercentAtMax (edge damage scale)
     bool w_affects_allies = true;  // W5-B R-060: warhead AffectsAllies= (default yes)
+    // Campaign mind control [RE: the Controller warhead's shot ends in
+    // CaptureManager FUN_00471C80 from the bullet detonation @0x4692C0 -- the
+    // victim is taken, not damaged]: set every frame by CampaignRuntime
+    // (poll_mind_control, BEFORE World::step) on a live MindControl=yes
+    // controller; try_fire then deals no damage and the runtime captures the
+    // victim (same 3-D range rule). Derived, never saved (re-armed each frame).
+    bool w_mind_control = false;
     // W5-B R-061 infantry sub-cells [RE: FindInfantrySubposition FUN_00481090,
     // spot coords DAT_0089D960]: the spot (2 right, 3 left, 4 down; 0 centre =
     // vehicles / sub-cells off) the unit holds in its cell, and its lepton

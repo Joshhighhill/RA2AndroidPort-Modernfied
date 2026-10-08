@@ -1499,6 +1499,13 @@ private:
             Track& t = utrack_[i];
             ra2engine::Unit& u = w_.units()[i];
             if (t.mc_victim >= 0 && (!live(u))) { mc_release(t); continue; }
+            // The Controller shot captures instead of damaging (World Unit::
+            // w_mind_control, read by try_fire in the World::step after this
+            // frame). Before, with R-205's shared 3-D range rule, the shot
+            // landed in the same step the Yuri came into range -- one frame
+            // before this poll could capture -- and its Damage=10 killed SOV09's
+            // President (Strength=10) instead of taking him.
+            if (!t.dead && live(u)) u.w_mind_control = mind_controller(t.type);
             if (t.dead || !live(u) || u.target < 0 || u.target >= (int)w_.units().size()) continue;
             if (!mind_controller(t.type)) continue;
             // W5-A R-036 [RE-FALLBACK: the YR CaptureManager capacity (1 for the
