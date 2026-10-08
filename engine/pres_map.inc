@@ -43,6 +43,7 @@ public:
         mutable std::vector<SDL_Texture*> tex, stex;
         mutable uint64_t tex_tc = 0;
         std::string anim_image;       // W3-B: civilian building art section (slot anims)
+        bool high_deck = false;       // W5-PRES R-100: a high-bridge deck (BRIDGE1/2, BRIDGEB1/B2)
     };
 
     // `map_ini` = the raw map text, `defs` the playable building roster (for
@@ -50,6 +51,7 @@ public:
     void load(const ra2assets::MixFile& ra2, const Ini& map_ini, const Ini& rules_ini, const Ini& art_ini,
               const ra2assets::MapFile& map) {
         objects_.clear(); smudges_.clear(); overlays_.clear(); wall_ids_.clear(); block_.clear(); lights_.clear();
+        decks_.clear(); deck_cells_.clear();
         missing_ = placed_ = civ_ = 0;
         ra2_ = &ra2;
         rules_ = &rules_ini;
@@ -138,6 +140,11 @@ public:
                 const bool rail = pres_lower(rget(name, "Land")) == "railroad";
                 const bool high_bridge = name.rfind("BRIDGE", 0) == 0;
                 o.yoff = ra2engine::overlay_y_offset(wall || crate, rail, id, high_bridge, o.frame);
+                o.high_deck = high_bridge;
+                if (high_bridge) {   // W5-PRES R-100: the deck joins the object sort
+                    decks_.push_back(static_cast<int>(overlays_.size()));
+                    deck_cells_.insert(c.y * 1000 + c.x);
+                }
                 overlays_.push_back(o);
                 if (wall) { wall_ids_[c.y * 1000 + c.x] = id; block_.push_back({c.x, c.y}); }
             }
@@ -265,13 +272,53 @@ public:
         step_anims();
         for (const Obj& o : smudges_) draw(ren, tc, w, o, pals, cam, W, H);
         for (const Obj& o : overlays_) {
+            if (o.high_deck && layer_decks_) continue;   // W5-PRES R-100: sorted with the objects
             // W4-SQ-10: a broken high bridge deck is gone.
-            if ((o.ovl_id == 0x18 || o.ovl_id == 0x19 || o.ovl_id == 0xED || o.ovl_id == 0xEE) &&
-                w.high_bridge_destroyed(o.x, o.y))
-                continue;
+            if (o.high_deck && w.high_bridge_destroyed(o.x, o.y)) continue;
             draw(ren, tc, w, o, pals, cam, W, H);
         }
         draw_tile_anims(ren, tc, w, pals, cam, W, H);   // W3-B
+    }
+    // W5-PRES R-100 [RE-FALLBACK pending: docs/re/w5-presentation.md §1]: the
+    // high-bridge decks leave the ground pass and are depth-sorted with the
+    // objects (render_world, kind 3) so a ship under a deck is covered by it and
+    // a unit on the deck draws over it. `layer_decks_` false = the old ground
+    // pass (diagnostic).
+    // W5-PRES R-047: a disguised Mirage drawn as its DefaultMirageDisguises
+    // tree (a [Terrain] object at the unit's cell, shadow half included).
+    bool draw_tree_at(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w,
+                      const std::string& type, int x, int y, int lvl, const ra2assets::Palette* pals[3],
+                      const ra2engine::Camera& cam, int W, int H) {
+        auto it = trees_.find(type);
+        if (it == trees_.end()) {
+            Obj o;
+            o.shp = art_shp(pres_upper(type));
+            o.key = "terr:" + pres_upper(type);
+            o.shadow = true;
+            it = trees_.emplace(type, o).first;
+        }
+        if (!it->second.shp) return false;
+        Obj o = it->second;
+        o.x = x;
+        o.y = y;
+        o.level = lvl;
+        o.tex.clear();
+        o.stex.clear();
+        o.tex_tc = 0;
+        draw(ren, tc, w, o, pals, cam, W, H);
+        return true;
+    }
+    const std::vector<int>& decks() const { return decks_; }
+    const ra2assets::MapFile* map() const { return map_; }
+    bool deck_cell(int x, int y) const { return deck_cells_.count(y * 1000 + x) != 0; }
+    void set_layer_decks(bool on) { layer_decks_ = on; }
+    bool layer_decks() const { return layer_decks_; }
+    void draw_deck(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w, int i,
+                   const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
+        if (i < 0 || i >= static_cast<int>(overlays_.size())) return;
+        const Obj& o = overlays_[static_cast<std::size_t>(i)];
+        if (pres_high_deck_destroyed(w, o.x, o.y)) return;   // w4fix-seq: a broken span is gone
+        draw(ren, tc, w, o, pals, cam, W, H);
     }
     // W3-B [RE-Q6]: theater tile anims (ALL07's waterfalls). One anim per
     // template instance, on the cell whose sub-tile == AttachesTo, at that
@@ -469,6 +516,10 @@ private:
     std::map<std::string, std::unique_ptr<MixFile>> nested_;
     std::map<std::string, std::shared_ptr<ra2assets::ShpFile>> cache_;
     std::vector<Obj> objects_, smudges_, overlays_;
+    std::vector<int> decks_;               // W5-PRES R-100: overlays_ indices of high decks
+    std::map<std::string, Obj> trees_;     // W5-PRES R-047: Mirage disguise art
+    std::set<int> deck_cells_;             // 1000*y + x
+    bool layer_decks_ = true;
     std::vector<std::string> names_;   // [OverlayTypes] by runtime index
     std::map<int, int> wall_ids_;
     std::vector<std::pair<int, int>> block_;

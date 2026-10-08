@@ -123,9 +123,47 @@ void World::step_building_combat(double dt) {
         if (!t.armed) continue;
 
         b.def_fire_flash = std::max(0.0, b.def_fire_flash - dt);
+        // Wave-5 (R-043) [RE: abilities-w5.md §2, BuildingClass::PrismUpdate
+        // FUN_004503E0, every frame from BuildingClass::AI]: a charging prism
+        // (master or slave) counts DelayBeforeFiring down; at zero a slave
+        // fires its support beam (FireLaser FUN_0044ABD0) and a master its
+        // boosted shot. Nothing else fires while charging (GetFireError
+        // REARM).
+        if (w5_.armed && b.w5.prism_stage != 0) {
+            b.def_rof_cool = std::max(0.0, b.def_rof_cool - dt);
+            if (--b.w5.delay > 0) continue;
+            b.w5.delay = 0;
+            const int stage = b.w5.prism_stage;
+            b.w5.prism_stage = 0;
+            if (stage == 2) {
+                // FireLaser: beam to the master's muzzle (PrismSupportDuration),
+                // SupportingPrisms = 0, ReloadTimer = PrismSupportDelay.
+                fire_events_.push_back({-1, bi, -1, b.w5.master, 1, "PrismSupport"});
+                b.def_fire_flash = kFireFlashSecs;
+                b.w5.supporting = 0;
+                b.w5.master = -1;
+                b.def_rof_cool = w5_.rules.prism_support_delay / 15.0;
+                ++w5_.prism_supports;
+                continue;
+            }
+            const int tu = b.def_target;
+            const bool valid = tu >= 0 && tu < nu && units_[tu].alive && units_[tu].die_time < 0.0 &&
+                               units_[tu].cargo_of < 0 && is_enemy(b.house, units_[tu].house);
+            if (valid) w5_prism_fire(bi, tu, 0);
+            b.w5.supporting = 0;
+            continue;
+        }
         // [defenses.md §2] Powered=yes: offline while the house is short of power.
         b.def_offline = false;
-        if (t.powered) {
+        if (w5_.armed && t.powered) {
+            // Wave-5 (R-045): IsPowerOnline with the overpower exception
+            // (two Tesla troopers keep a coil firing without base power).
+            if (!w5_power_online(bi)) {
+                b.def_offline = true;
+                b.def_target = -1;
+                continue;
+            }
+        } else if (t.powered) {
             if (b.house >= static_cast<int>(power_cache.size()))
                 power_cache.resize(static_cast<std::size_t>(b.house) + 1, -1);
             if (power_cache[b.house] < 0) power_cache[b.house] = defense_power_ok(b.house) ? 1 : 0;
@@ -139,6 +177,10 @@ void World::step_building_combat(double dt) {
 
         const double cx = bcenter_x(b), cy = bcenter_y(b);
         auto slot_for = [&](const Unit& v) {
+            if (w5_.armed && t.w5.prism) return 0;   // PrismSupport is the beam, not a gun
+            // Wave-5 (R-045) [TechnoClass::SelectWeapon FUN_006F2890]: an
+            // overpowered building fires its Secondary (OPCoilBolt).
+            if (w5_.armed && t.w5.overpowerable) return b.w5.overpowered ? 1 : 0;
             return choose_weapon(t.weapon[0], t.weapon[1], unit_airborne(v), v.armor_ix);
         };
         auto in_range = [&](const Unit& v, int slot) {
@@ -182,6 +224,62 @@ void World::step_building_combat(double dt) {
             if (b.def_turret_facing != want) continue;
         }
         if (b.def_rof_cool > 0.0) continue;
+        // Wave-5 (R-043) [RE: abilities-w5.md §2, BuildingClass::Mission_Attack
+        // 0x44B2F8]: a delayed-fire building (art IsAnimDelayedFire) charges
+        // first. A prism recruits ONE supporter per frame -- the nearest own
+        // idle prism within this tower's Secondary range whose reload is over
+        // and that is not charging -- until none is left or PrismSupportMax;
+        // then it becomes the master and fires DelayedFireDelay frames later.
+        if (w5_.armed && t.w5.delayed_fire_delay > 0) {
+            // [RE-FALLBACK: the original's per-object target-scan stagger means
+            // the first tower to acquire recruits the idle ones around it; here
+            // every tower acquires in the same frame, so a tower inside the
+            // reach of an own prism that is already recruiting stands down and
+            // stays available as its supporter.]
+            if (t.w5.prism) {
+                bool lead = false;
+                for (int li = 0; li < nb && !lead; ++li) {
+                    if (li == bi) continue;
+                    const Building& L = buildings_[li];
+                    if (!L.alive || L.house != b.house || L.type != b.type || L.w5.prism_stage != 0) continue;
+                    if (L.w5.supporting <= 0 || L.def_target < 0) continue;
+                    lead = std::hypot(bcenter_x(L) - cx, bcenter_y(L) - cy) <= types[L.type].weapon[1].range;
+                }
+                if (lead) {
+                    b.def_target = -1;
+                    continue;
+                }
+            }
+            if (t.w5.prism && b.w5.supporting < w5_.rules.prism_support_max) {
+                int best = -1;
+                double bestd = 0.0;
+                const double reach = t.weapon[1].range;
+                for (int ci = 0; ci < nb; ++ci) {
+                    if (ci == bi) continue;
+                    const Building& c = buildings_[ci];
+                    if (!c.alive || c.state != Building::State::Idle || c.house != b.house) continue;
+                    if (c.type != b.type) continue;   // Rules->PrismType
+                    if (c.def_rof_cool > 0.0 || c.w5.delay != 0 || c.w5.prism_stage != 0) continue;
+                    if (c.def_target >= 0) continue;  // a tower in its Attack mission
+                    const double d = std::hypot(bcenter_x(c) - cx, bcenter_y(c) - cy);
+                    if (d > reach) continue;
+                    if (best >= 0 && d >= bestd) continue;
+                    best = ci;
+                    bestd = d;
+                }
+                if (best >= 0) {
+                    Building& c = buildings_[best];
+                    ++b.w5.supporting;
+                    c.w5.delay = types[c.type].w5.delayed_fire_delay;
+                    c.w5.prism_stage = 2;
+                    c.w5.master = bi;
+                    continue;
+                }
+            }
+            b.w5.delay = t.w5.delayed_fire_delay;
+            b.w5.prism_stage = 1;
+            continue;
+        }
         const WeaponSlot& w = t.weapon[slot];
         b.def_rof_cool = rearm_secs(w.rof, &combat_rng_);   // G-50 jitter
         b.def_fire_flash = kFireFlashSecs;
@@ -197,6 +295,29 @@ void World::step_building_combat(double dt) {
         damage_area(*this, units_, buildings_, occ_, shooter, -1, bi, unit_lept_x(tv),
                     unit_lept_y(tv), unit_lept_z(tv));
     }
+}
+
+// The master prism's shot [RE: abilities-w5.md §2, PrismUpdate 0x4504A0 +
+// BulletClass::Detonate 0x469973]: DamageMultiplier = (PrismSupportModifier *
+// SupportingPrisms + 100) * 256 / 100 (unsigned), damage = (Damage * mult) >> 8.
+bool World::w5_prism_fire(int bi, int target_unit, int slot) {
+    Building& b = buildings_[bi];
+    const BuildingTypeDef& t = btypes()[b.type];
+    const WeaponSlot& w = t.weapon[slot];
+    const int n = b.w5.supporting;
+    const unsigned mult = n > 0 ? static_cast<unsigned>(w5_.rules.prism_support_modifier * n + 100) * 256u / 100u
+                                : 256u;
+    b.def_rof_cool = rearm_secs(w.rof, &combat_rng_);
+    b.def_fire_flash = kFireFlashSecs;
+    b.def_slot = slot;
+    fire_events_.push_back({-1, bi, target_unit, -1, slot, n > 0 ? "PrismShotSupported" : w.id});
+    Unit shooter = defense_shooter(bi, slot);
+    shooter.w_damage = static_cast<int>((static_cast<long long>(w.damage) * mult) >> 8);
+    if (w.cell_spread >= 1.0)
+        apply_spread_damage(units_, occ_, shooter, units_[target_unit]);
+    else
+        deliver_hit_from(units_, occ_, shooter, -1, bi, target_unit);
+    return true;
 }
 
 }  // namespace ra2engine

@@ -1,0 +1,23 @@
+# PRES-MIRAGE -- W5-PRES R-047: an enemy Mirage tank that stands still is
+# drawn as its DefaultMirageDisguises tree (agent C's u.w5.mirage_tree; before
+# that lands run with RA2_PRES_MIRAGE=TREE05 to exercise the draw path); the
+# player's own still Mirage stays a tank.
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn MGTK 1 building 0:GACNST -6 +9
+cheat spawn MGTK 0 building 0:GACNST -9 +9
+cheat spawn MGTK 1 building 0:GACNST -6 +11
+wait 40
+cheat view_unit RTNK 0
+wait 1
+shot mirage
+end

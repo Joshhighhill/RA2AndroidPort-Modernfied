@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "projectile.hpp"   // ProjectileSpec (wave-5 IFV projectile swap)
+
 namespace ra2engine {
 
 // What a weapon does INSTEAD of plain damage when combat.cpp would fire it.
@@ -28,6 +30,11 @@ struct WeaponSpec {
     double percent_at_max = 1.0;       // warhead PercentAtMax
     int rad_level = 0;                 // weapon RadLevel (§A1; 0 = no RadSite)
     AbilityKind kind = AbilityKind::None;
+    // Wave-5 (R-048): the weapon's projectile AA=/AG= and flight -- an IFV
+    // passenger swap now also swaps what the gun can hit and how it flies.
+    bool slot_set = false;             // aa/ag/proj below were resolved
+    bool aa = false, ag = true;
+    ProjectileSpec proj;
 };
 
 // Per-type ability profile, resolved once from rules by the caller (World is

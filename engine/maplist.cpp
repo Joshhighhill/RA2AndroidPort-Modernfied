@@ -86,4 +86,61 @@ MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_t
     return cat;
 }
 
+std::string map_theater_of(const std::string& text) {
+    // The [Map] section's Theater= key (INI rules: case-insensitive section and
+    // key, ';' comments, surrounding blanks ignored).
+    bool in_map = false;
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        std::size_t eol = text.find('\n', pos);
+        if (eol == std::string::npos) eol = text.size();
+        std::string line = text.substr(pos, eol - pos);
+        pos = eol + 1;
+        const std::size_t sc = line.find(';');
+        if (sc != std::string::npos) line.resize(sc);
+        auto trim = [](std::string v) {
+            const char* ws = " \t\r";
+            const std::size_t a = v.find_first_not_of(ws);
+            if (a == std::string::npos) return std::string();
+            return v.substr(a, v.find_last_not_of(ws) - a + 1);
+        };
+        line = trim(line);
+        if (line.empty()) continue;
+        if (line[0] == '[') {
+            in_map = lower(line) == "[map]";
+            continue;
+        }
+        if (!in_map) continue;
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        if (lower(trim(line.substr(0, eq))) != "theater") continue;
+        std::string v = trim(line.substr(eq + 1));
+        for (char& c : v) c = (char)std::toupper((unsigned char)c);
+        return v;
+    }
+    return std::string();
+}
+
+bool lobby_theater_supported(const std::string& t) {
+    return t != "DESERT" && t != "NEWURBAN" && t != "LUNAR";
+}
+
+int filter_lobby_theaters(MapCatalog& cat) {
+    int removed = 0;
+    std::vector<MapEntry> keep;
+    keep.reserve(cat.entries.size());
+    for (MapEntry& e : cat.entries) {
+        if (const ra2assets::MixEntry* me = cat.maps.find(e.file_name)) {
+            try {
+                const auto raw = cat.maps.read(*me);
+                e.theater = map_theater_of(std::string(raw.begin(), raw.end()));
+            } catch (const std::exception&) {}
+        }
+        if (!lobby_theater_supported(e.theater)) { ++removed; continue; }
+        keep.push_back(std::move(e));
+    }
+    cat.entries.swap(keep);
+    return removed;
+}
+
 }  // namespace ra2engine

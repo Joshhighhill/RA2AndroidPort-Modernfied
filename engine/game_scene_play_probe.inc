@@ -8,6 +8,7 @@
     // only a script can call them). Keys are documented in
     // scripts/play/README.md; a field that a later phase renames or removes
     // makes scripts report missing-probe:<key> instead of crashing.
+    mutable int w5_peak_sorties_ = 0;   // wave-5: peak AI fixed-wing sorties seen
     void play_probe(ra2play::Probe& p) override {
         p.scene = "game";
         p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
@@ -397,6 +398,51 @@
         }
         p.set("garrisonable", garrisonable);
         p.set("garrison_shots", static_cast<double>(world_.garrison_shots()));
+        // Wave-5 (agent C) witnesses.
+        p.set("prism_supports", static_cast<double>(world_.w5_state().prism_supports));
+        {
+            int bombs = 0;
+            for (const ra2engine::Unit& u : world_.units()) bombs += u.alive && u.house == 0 && u.bomb_frame >= 0;
+            for (const ra2engine::Building& b : world_.buildings()) bombs += b.alive && b.house == 0 && b.bomb_frame >= 0;
+            p.set("bombs", static_cast<double>(bombs));
+        }
+        {
+            int air = 0;
+            for (const ra2engine::Unit& u : world_.units())
+                air += u.alive && u.house == 1 && u.an.t.fixed_wing && !u.an.t.spawned && u.an.sortie != 0;
+            if (air > w5_peak_sorties_) w5_peak_sorties_ = air;
+            p.set("ai_air_sorties", static_cast<double>(w5_peak_sorties_));
+        }
+        p.set("ai_garrisons", static_cast<double>(world_.w5_state().ai_garrisons));
+        p.set("ai_tech_captures", static_cast<double>(world_.w5_state().ai_tech_captures));
+        p.set("ship_c4", static_cast<double>(world_.w5_state().ship_c4));
+        p.set("culls", static_cast<double>(world_.w5_state().culls));
+        {
+            int grabbed = 0;
+            for (const ra2engine::Unit& u : world_.units()) grabbed += u.alive && u.parasite_on_me >= 0;
+            p.set("parasited", static_cast<double>(grabbed));
+        }
+        p.set("airstrikes", static_cast<double>(world_.w5_state().airstrikes));
+        p.set("ifv_repairs", static_cast<double>(world_.w5_state().repairs));
+        p.set("defusals", static_cast<double>(world_.w5_state().defusals));
+        p.set("passenger_shots", static_cast<double>(world_.w5_state().passenger_shots));
+        p.set("stolen_tech", static_cast<double>(world_.stolen_tech(0)));
+        p.set("gap_hidden", static_cast<double>(world_.w5_gap_hidden(0)));
+        {
+            int carried = 0;
+            for (const ra2engine::Unit& u : world_.units())
+                carried += u.alive && u.house == 0 && u.cargo_of >= 0 && u.cargo_of != ra2engine::kGarrisonCargo;
+            p.set("in_cargo", static_cast<double>(carried));
+        }
+        {
+            int ov = 0, opw = 0;
+            for (const ra2engine::Building& b : world_.buildings()) {
+                ov += b.alive && b.house == 0 && b.w5.overpowered;
+                opw += b.alive && b.house == 0 ? (int)b.w5.overpowerers.size() : 0;
+            }
+            p.set("overpowered", static_cast<double>(ov));
+            p.set("overpowerers", static_cast<double>(opw));
+        }
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.alive || u.die_time >= 0.0) continue;
             if (u.garrison_of >= 0) p.add("in_garrison(" + std::to_string(u.house) + ")", 1);
@@ -528,7 +574,11 @@
                 return "no unit " + a[1];
             }
             if (c == "place" && a.size() >= 7 && a[3] == "building") {
-                const int t = roster_index(ba_, a[1]);
+                int t = roster_index(ba_, a[1]);
+                if (t < 0 && depth_world_building(rules_, a[1])) {   // wave-5: tech/civilian types
+                    t = depth_register_building(ba_, ra2_, rules_, art_, a[1]);
+                    world_.refresh_building_types(ba_.roster);
+                }
                 if (t < 0) return "no building type " + a[1];
                 const int bi = play_find_building(a[4]);
                 if (bi < 0) return "no building " + a[4];

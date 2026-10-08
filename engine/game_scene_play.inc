@@ -213,6 +213,7 @@
     bool cheat(const std::vector<std::string>& args) override {
         if (campaign_cheat(args)) return true;   // W2-CA-19 (campaign_play.inc)
 #include "play_art_cheats.inc"   // W3-FIX-A art acceptance verbs (--play only)
+#include "pres_play_cheats.inc"  // W5-PRES presentation acceptance verbs (--play only)
         if (args.size() == 1 && args[0] == "center_own") {   // camera on the first own unit
             for (const ra2engine::Unit& u : world_.units())
                 if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {

@@ -31,7 +31,7 @@ struct PresLight {
         int vis = 0;                    // LightVisibility (leptons)
         int intensity = 0, r = 0, g = 0, b = 0;   // per mille (x1000)
     };
-    struct LitCell { int x, y, level; Uint8 c[3]; };
+    struct LitCell { int x, y, level; Uint8 c[3]; Uint8 e[3]; };
     bool active = false;          // false = neutral lighting, nothing to do
     double ambient = 1.0, red = 1.0, green = 1.0, blue = 1.0, ground = 0.0, level = 0.0;
     double tint[3] = {1000, 1000, 1000};
@@ -41,17 +41,19 @@ struct PresLight {
     std::vector<LitCell> lit_;
     uint64_t src_sig_ = 0;
     SDL_Texture* lmap_ = nullptr;      // the light map (freed with its renderer)
-    SDL_Renderer* lmap_ren_ = nullptr;
-    int lmap_w_ = 0, lmap_h_ = 0;
-    // W5-F (phone perf): the light map is redrawn only when what it shows
-    // changes (camera, canvas, base colour, lit set) -- every redraw is two
+    SDL_Texture* xmap_ = nullptr;      // W5-PRES: the > 1.0 excess map (MUL)
+    // W5-F (phone perf): the light maps are redrawn only when what they show
+    // changes (camera, canvas, base colours, lit set) -- every redraw is
     // render-target switches, a synchronous GL round-trip in SDL's GLES2
-    // backend (62% of an emulator frame) and a framebuffer resolve on tiled
-    // phone GPUs. Same pixels by construction; a periodic refresh guards a
-    // lost target texture.
+    // backend and a framebuffer resolve on tiled phone GPUs. Same pixels by
+    // construction; a periodic refresh guards a lost target texture.
+    // W5-PRES: the excess (> 1.0) map and its base colour are in the key too.
     unsigned lit_gen_ = 0, lmap_gen_ = ~0u;
     int lmap_cx_ = 0, lmap_cy_ = 0, lmap_age_ = 0;
-    Uint8 lmap_base_[3] = {0, 0, 0};
+    Uint8 lmap_base_[6] = {0, 0, 0, 0, 0, 0};
+    bool lmap_excess_ = false;
+    SDL_Renderer* lmap_ren_ = nullptr;
+    int lmap_w_ = 0, lmap_h_ = 0;
 
     // Intensity (per mille, after normalisation) at height h.
     double intensity(int h) const {
@@ -120,7 +122,11 @@ struct PresLight {
     // The MOD colour (0..255 per channel) of a cell given its summed source
     // contributions (per mille), at ground height (terrain height is already
     // in the per-level tile palettes).
-    void cell_colour(double add_i, double add_r, double add_g, double add_b, Uint8 out[3]) const {
+    // W5-PRES R-104: light above 1.0 brightens (cap 2.0x) [RE: cell I clamp
+    // 0..2000 at 0x484590, LightConvert 53 shades 0..2.0x at 0x555D20]. `out`
+    // is the MOD part (<= 1.0), `extra` the MUL part ((v - 1.0) * 255).
+    void cell_colour(double add_i, double add_r, double add_g, double add_b, Uint8 out[3],
+                     Uint8* extra = nullptr) const {
         double i = std::min(ambient * 1000.0 + add_i - ground * 1000.0, 2000.0);
         double r = std::clamp(red * 1000.0 + add_r, 0.0, 2000.0), g = std::clamp(green * 1000.0 + add_g, 0.0, 2000.0),
                b = std::clamp(blue * 1000.0 + add_b, 0.0, 2000.0);
@@ -133,12 +139,15 @@ struct PresLight {
         }
         i = std::clamp(i * sc, 0.0, 2000.0);
         const double t[3] = {r, g, b};
-        for (int k = 0; k < 3; ++k)
-            out[k] = static_cast<Uint8>(std::clamp(i / 1000.0 * t[k] / 1000.0 * 255.0, 0.0, 255.0));
+        for (int k = 0; k < 3; ++k) {
+            const double v = std::clamp(i / 1000.0 * t[k] / 1000.0, 0.0, 2.0);
+            out[k] = static_cast<Uint8>(std::min(1.0, v) * 255.0);
+            if (extra) extra[k] = static_cast<Uint8>(std::max(0.0, v - 1.0) * 255.0);
+        }
     }
     void rebuild(const ra2assets::MapFile& map) {
-        ++lit_gen_;
         lit_.clear();
+        ++lit_gen_;
         if (srcs_.empty()) return;
         struct Acc { double i = 0, r = 0, g = 0, b = 0; };
         std::map<long, Acc> acc;
@@ -170,34 +179,41 @@ struct PresLight {
             c.y = static_cast<int>(k / 4096);
             const ra2assets::MapCell* mc = map.at(c.x, c.y);
             c.level = mc ? mc->level : 0;
-            cell_colour(a.i, a.r, a.g, a.b, c.c);
-            if (c.c[0] == base[0] && c.c[1] == base[1] && c.c[2] == base[2]) continue;
+            cell_colour(a.i, a.r, a.g, a.b, c.c, c.e);
+            if (c.c[0] == base[0] && c.c[1] == base[1] && c.c[2] == base[2] && !c.e[0] && !c.e[1] && !c.e[2]) continue;
             lit_.push_back(c);
         }
         std::cerr << "[light] sources=" << srcs_.size() << " lit-cells=" << lit_.size() << "\n";
     }
 
     // Ambient*tint (and the light sources' cells) multiplied over the playfield.
+    // W5-PRES R-104: two maps -- MOD (the <= 1.0 part) then MUL with alpha 0
+    // (dst*src + dst = dst*(1 + excess)) for the 1.0..2.0 brightening.
     void pass(SDL_Renderer* ren, int W, int H, const ra2engine::Camera& cam) {
         if (lit_.empty()) { pass(ren, W, H); return; }
-        Uint8 base[3];
-        cell_colour(0, 0, 0, 0, base);
+        Uint8 base[3], bex[3];
+        cell_colour(0, 0, 0, 0, base, bex);
         bool fresh = false;
         if (!lmap_ || lmap_ren_ != ren || lmap_w_ != W || lmap_h_ != H) {
             lmap_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, W, H);
+            xmap_ = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, W, H);
             lmap_ren_ = ren;
             lmap_w_ = W;
             lmap_h_ = H;
             fresh = true;
         }
-        if (!lmap_) { pass(ren, W, H); return; }
+        if (!lmap_ || !xmap_) { pass(ren, W, H); return; }
+        const Uint8 key[6] = {base[0], base[1], base[2], bex[0], bex[1], bex[2]};
         const bool same = !fresh && lmap_gen_ == lit_gen_ && lmap_cx_ == cam.x && lmap_cy_ == cam.y &&
-                          lmap_base_[0] == base[0] && lmap_base_[1] == base[1] && lmap_base_[2] == base[2] &&
-                          ++lmap_age_ < 120;
-        if (same) {   // the map is unchanged: just multiply it over the playfield
+                          std::equal(key, key + 6, lmap_base_) && ++lmap_age_ < 120;
+        const SDL_Rect all{0, 0, W, H};
+        if (same) {   // the maps are unchanged: just apply them over the playfield
             SDL_SetTextureBlendMode(lmap_, SDL_BLENDMODE_MOD);
-            const SDL_Rect all{0, 0, W, H};
             SDL_RenderCopy(ren, lmap_, nullptr, &all);
+            if (lmap_excess_) {
+                SDL_SetTextureBlendMode(xmap_, SDL_BLENDMODE_MUL);
+                SDL_RenderCopy(ren, xmap_, nullptr, &all);
+            }
             SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
             return;
         }
@@ -205,48 +221,75 @@ struct PresLight {
         lmap_cx_ = cam.x;
         lmap_cy_ = cam.y;
         lmap_age_ = 0;
-        for (int k = 0; k < 3; ++k) lmap_base_[k] = base[k];
+        std::copy(key, key + 6, lmap_base_);
+        bool any_excess = bex[0] || bex[1] || bex[2];
+        for (const LitCell& c : lit_) any_excess = any_excess || c.e[0] || c.e[1] || c.e[2];
+        lmap_excess_ = any_excess;
         SDL_Texture* prev = SDL_GetRenderTarget(ren);
-        SDL_SetRenderTarget(ren, lmap_);
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
-        SDL_SetRenderDrawColor(ren, base[0], base[1], base[2], 255);
-        SDL_RenderClear(ren);
-        std::vector<SDL_Vertex> v;
-        std::vector<int> idx;
-        for (const LitCell& c : lit_) {
-            const ra2engine::ScreenPt p = ra2engine::cell_to_screen(c.x, c.y, c.level, 60, 30, 15);
-            const float x0 = static_cast<float>(p.x + cam.x), y0 = static_cast<float>(p.y + cam.y);
-            if (x0 + 60 < 0 || y0 + 30 < 0 || x0 > W || y0 > H) continue;
-            const SDL_Color col{c.c[0], c.c[1], c.c[2], 255};
-            const int b0 = static_cast<int>(v.size());
-            v.push_back({{x0 + 30, y0}, col, {0, 0}});
-            v.push_back({{x0 + 60, y0 + 15}, col, {0, 0}});
-            v.push_back({{x0 + 30, y0 + 30}, col, {0, 0}});
-            v.push_back({{x0, y0 + 15}, col, {0, 0}});
-            for (int k : {0, 1, 2, 0, 2, 3}) idx.push_back(b0 + k);
+        for (int m = 0; m < (any_excess ? 2 : 1); ++m) {
+            SDL_SetRenderTarget(ren, m == 0 ? lmap_ : xmap_);
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+            const Uint8* bc = m == 0 ? base : bex;
+            SDL_SetRenderDrawColor(ren, bc[0], bc[1], bc[2], m == 0 ? 255 : 0);
+            SDL_RenderClear(ren);
+            std::vector<SDL_Vertex> v;
+            std::vector<int> idx;
+            for (const LitCell& c : lit_) {
+                const ra2engine::ScreenPt p = ra2engine::cell_to_screen(c.x, c.y, c.level, 60, 30, 15);
+                const float x0 = static_cast<float>(p.x + cam.x), y0 = static_cast<float>(p.y + cam.y);
+                if (x0 + 60 < 0 || y0 + 30 < 0 || x0 > W || y0 > H) continue;
+                const Uint8* cc = m == 0 ? c.c : c.e;
+                const SDL_Color col{cc[0], cc[1], cc[2], static_cast<Uint8>(m == 0 ? 255 : 0)};
+                const int b0 = static_cast<int>(v.size());
+                v.push_back({{x0 + 30, y0}, col, {0, 0}});
+                v.push_back({{x0 + 60, y0 + 15}, col, {0, 0}});
+                v.push_back({{x0 + 30, y0 + 30}, col, {0, 0}});
+                v.push_back({{x0, y0 + 15}, col, {0, 0}});
+                for (int k : {0, 1, 2, 0, 2, 3}) idx.push_back(b0 + k);
+            }
+            if (!v.empty())
+                SDL_RenderGeometry(ren, nullptr, v.data(), static_cast<int>(v.size()), idx.data(),
+                                   static_cast<int>(idx.size()));
         }
-        if (!v.empty())
-            SDL_RenderGeometry(ren, nullptr, v.data(), static_cast<int>(v.size()), idx.data(),
-                               static_cast<int>(idx.size()));
         SDL_SetRenderTarget(ren, prev);
         SDL_SetTextureBlendMode(lmap_, SDL_BLENDMODE_MOD);
-        const SDL_Rect all{0, 0, W, H};
         SDL_RenderCopy(ren, lmap_, nullptr, &all);
+        if (any_excess) {
+            SDL_SetTextureBlendMode(xmap_, SDL_BLENDMODE_MUL);
+            SDL_RenderCopy(ren, xmap_, nullptr, &all);
+        }
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     }
 
-    // Level-0 ambient*tint multiply over the playfield (all world sprites).
+    // Level-0 ambient*tint multiply over the playfield (all world sprites);
+    // W5-PRES R-104: the part above 1.0 brightens through a MUL fill.
     void pass(SDL_Renderer* ren, int W, int H) const {
         if (!active) return;
         const double i0 = intensity(0) / 1000.0;
-        auto ch = [&](int c) { return static_cast<Uint8>(std::clamp(i0 * tint[c] / 1000.0 * 255.0, 0.0, 255.0)); };
-        const Uint8 r = ch(0), g = ch(1), b = ch(2);
-        if (r == 255 && g == 255 && b == 255) return;
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_MOD);
-        SDL_SetRenderDrawColor(ren, r, g, b, 255);
+        double v[3];
+        for (int c = 0; c < 3; ++c) v[c] = std::clamp(i0 * tint[c] / 1000.0, 0.0, 2.0);
         const SDL_Rect all{0, 0, W, H};
-        SDL_RenderFillRect(ren, &all);
+        auto u8 = [](double x) { return static_cast<Uint8>(std::clamp(x, 0.0, 1.0) * 255.0); };
+        if (v[0] < 1.0 || v[1] < 1.0 || v[2] < 1.0) {
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_MOD);
+            SDL_SetRenderDrawColor(ren, u8(v[0]), u8(v[1]), u8(v[2]), 255);
+            SDL_RenderFillRect(ren, &all);
+        }
+        if (v[0] > 1.0 || v[1] > 1.0 || v[2] > 1.0) {
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_MUL);
+            SDL_SetRenderDrawColor(ren, u8(v[0] - 1.0), u8(v[1] - 1.0), u8(v[2] - 1.0), 0);
+            SDL_RenderFillRect(ren, &all);
+        }
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    }
+
+    // W5-PRES R-104: an object's own light relative to the ground-level pass
+    // [RE: cell I includes Level*height; a unit on a bridge adds Level*4 --
+    // UnitClass::DrawIt 0x73BF87]: I(h) / I(0).
+    double object_rel(int h) const {
+        if (!active) return 1.0;
+        const double i0 = intensity(0);
+        return i0 > 0.0 ? intensity(h) / i0 : 1.0;
     }
 };
 

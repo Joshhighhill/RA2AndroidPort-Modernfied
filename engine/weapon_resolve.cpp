@@ -1,4 +1,5 @@
 #include "weapon_resolve.hpp"
+#include "abil_w5_rules.hpp"   // wave-5 (agent C)
 
 #include "ra2assets/rules.hpp"
 #include <cctype>
@@ -151,6 +152,7 @@ void fill_building_weapons(const ra2assets::Rules& rules, const std::string& typ
     d.can_occupy_fire = rules.section_flag(type_id, "CanOccupyFire", false);
     d.max_occupants = static_cast<int>(rules.section_double(type_id, "MaxNumberOccupants", 0.0));
     d.bridge_repair_hut = rules.section_flag(type_id, "BridgeRepairHut", false);
+    fill_building_abilities(rules, type_id, d);   // wave-5 (agent C): abil_w5_rules.cpp
 }
 
 }  // namespace ra2engine

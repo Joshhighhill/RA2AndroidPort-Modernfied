@@ -123,6 +123,32 @@ const ra2assets::TmpFile* Theater::tmp_for_tile(uint32_t global_index) {
 
 static const World* g_color_world = nullptr;
 void set_color_world(const World* w) { g_color_world = w; }
+
+namespace {
+const ObjTint* g_obj_tint = nullptr;
+}
+void set_obj_tint(const ObjTint* t) { g_obj_tint = (t && !t->plain()) ? t : nullptr; }
+const ObjTint* obj_tint() { return g_obj_tint; }
+void blit_object(void* sdl_renderer, void* texp, const void* dstp) {
+    SDL_Renderer* ren = static_cast<SDL_Renderer*>(sdl_renderer);
+    SDL_Texture* tex = static_cast<SDL_Texture*>(texp);
+    const SDL_Rect* dst = static_cast<const SDL_Rect*>(dstp);
+    const ObjTint* t = g_obj_tint;
+    if (!t || !tex) { SDL_RenderCopy(ren, tex, nullptr, dst); return; }
+    SDL_SetTextureColorMod(tex, t->mod[0], t->mod[1], t->mod[2]);
+    SDL_SetTextureAlphaMod(tex, t->alpha);
+    SDL_RenderCopy(ren, tex, nullptr, dst);
+    if (t->add[0] || t->add[1] || t->add[2]) {
+        SDL_BlendMode prev = SDL_BLENDMODE_BLEND;
+        SDL_GetTextureBlendMode(tex, &prev);
+        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_ADD);
+        SDL_SetTextureColorMod(tex, t->add[0], t->add[1], t->add[2]);
+        SDL_RenderCopy(ren, tex, nullptr, dst);
+        SDL_SetTextureBlendMode(tex, prev);
+    }
+    SDL_SetTextureColorMod(tex, 255, 255, 255);
+    SDL_SetTextureAlphaMod(tex, 255);
+}
 ra2assets::Palette house_draw_palette(const ra2assets::Palette& base, int house) {
     return g_color_world ? g_color_world->house_palette(base, house) : pal_for_house(base, house);
 }
@@ -508,7 +534,7 @@ bool draw_unit(void* sdl_renderer, TextureCache& tc, const Unit& unit,
         // [RE-FALLBACK: RE-P7 open -- index + blend from the binary's blitter.]
         tex = static_cast<SDL_Texture*>(tc.get_shadowed(key, idx.data(), f.w, f.h, house_pal, 12, 128));
     }
-    SDL_RenderCopy(renderer, tex, nullptr, &dst);
+    blit_object(renderer, tex, &dst);   // W5-PRES ObjTint (none in the gates)
     return true;
 }
 
@@ -542,7 +568,7 @@ bool draw_voxel_sprite(void* sdl_renderer, TextureCache& tc, const std::string& 
 
     SDL_Texture* tex = static_cast<SDL_Texture*>(tc.peek(key));
     if (!tex) tex = static_cast<SDL_Texture*>(tc.get_rgba(key, s.rgba.data(), s.w, s.h));
-    SDL_RenderCopy(renderer, tex, nullptr, &dst);
+    blit_object(renderer, tex, &dst);   // W5-PRES ObjTint (none in the gates)
     return true;
 }
 

@@ -212,7 +212,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | R-036 | Mind control is guessed: capacity and release rules (W2-CA-15, RE-W2-5) | Campaign | MINOR | RE-FALLBACK | `engine/campaign_runtime.inc:1148-1175` | M | Y |
 | R-037 | Guessed trigger plumbing: the SpiedBy raise site (raised alongside EnteredBy), damage-threshold event ratios (38-43), which map-INI rules sections are merged, and the AttackedByHouse attacker (RE-W2-2/3/4) | Campaign | MINOR | RE-FALLBACK | `engine/campaign_runtime.inc:1071,1107,1135`; `engine/campaign_rules.inc:38` | S | Y |
 | R-038 | Reinforcement details are guessed: the placement spiral, the Unload argument modes, the paradrop plane type per house (the branch uses PDPLANE) and the entry edge (RE-W4-SQ-1, RE-C1 rest) | Campaign | MINOR | RE-FALLBACK | `engine/world_an.cpp:639`; `engine/campaign_runtime.inc:883,947` | S | Y |
-| R-039 | FlashCameo (action 115): the sidebar cameo flash is never drawn (RC-8 115) | Campaign | COSMETIC | OPEN | `engine/campaign_visuals.inc:145` | S | N |
+| R-039 | FlashCameo (action 115): the sidebar cameo flash is never drawn (RC-8 115) | Campaign | COSMETIC | FIXED (w5-pres 5d84724) | `engine/campaign_visuals.inc:145` | S | N |
 | R-040 | DoExplosionAt (action 42): the WeaponTypes index order is guessed (RC-8 42) | Campaign | MINOR | RE-FALLBACK | `engine/campaign_runtime.inc:522` | S | Y |
 | R-041 | SOV05 has no visual for the "energized" Paris Tower (CAPARS01). The objective itself fires (wave3/02 SOV05) | Campaign | COSMETIC | OPEN | `git grep CAPARS01 engine` returns 0 | S | Y |
 
@@ -220,21 +220,21 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-042 | Spying on a Battle Lab gives no stolen tech, so the Chrono Commando, Psi-Corps Trooper and Chrono Ivan can never be built (W2-SK-20 part) | Units & abilities | MAJOR | OPEN | `engine/realplay_economy.inc:146-149`; `engine/world.hpp:1210` (no TechLab infiltrate purpose) | M | N |
-| R-043 | Prism Tower chaining (PrismSupport, PrismForwarding) is not modelled (W2-SK-22) | Units & abilities | MAJOR | OPEN | `git grep PrismSupport engine` returns 0 | M | Y |
-| R-044 | The Gap Generator does nothing: no shroud field (G-27, W2-SK-22) | Units & abilities | MAJOR | OPEN | `git grep GapGenerator engine` returns 0 | M | Y |
-| R-045 | Tesla Troopers cannot charge Tesla Coils (Overpowerable) (W2-SK-22) | Units & abilities | MINOR | OPEN | `git grep Overpowerable engine` returns 0 | M | N |
-| R-046 | No Boris airstrike (AirstrikeTeam), and Engineers cannot defuse Ivan bombs (W2-SK-22) | Units & abilities | MINOR | OPEN | `git grep AirstrikeTeam engine` and `git grep BombDisarm engine` both return 0 | M | Y |
-| R-047 | A disguised Mirage is still drawn as the tank, not as a tree (W2-SK-22) | Units & abilities | MINOR | PARTIAL | `engine/world.cpp:1983-2000` | M | N |
-| R-048 | The IFV passenger swap changes only damage, ROF, range and Verses; the projectile and AA/AG flags stay. The Engineer IFV RepairBullet still targets enemies (W2-SK-26 part) | Units & abilities | MINOR | PARTIAL | `engine/world_abilities.cpp:261-269` | S | N |
-| R-049 | The Giant Squid grab (ParasitePlus) is not modelled (W2-AN-15 part) | Units & abilities | MINOR | PARTIAL | `docs/gap/wave2/02-air-naval-sw.md` §5 row 15 | M | Y |
+| R-042 | Spying on a Battle Lab gives no stolen tech, so the Chrono Commando, Psi-Corps Trooper and Chrono Ivan can never be built (W2-SK-20 part) | Units & abilities | MAJOR | FIXED (w5-abil 06e4827; RE FUN_004571E0; play abil-stolen-tech) | `engine/realplay_economy.inc:146-149`; `engine/world.hpp:1210` (no TechLab infiltrate purpose) | M | N |
+| R-043 | Prism Tower chaining (PrismSupport, PrismForwarding) is not modelled (W2-SK-22) | Units & abilities | MAJOR | FIXED (w5-abil faad5ac; RE Mission_Attack/PrismUpdate; play abil-prism-chain) | `git grep PrismSupport engine` returns 0 | M | Y |
+| R-044 | The Gap Generator does nothing: no shroud field (G-27, W2-SK-22) | Units & abilities | MAJOR | FIXED (w5-abil faad5ac; RE CreateGap + 120-frame re-shroud; play abil-gap) | `git grep GapGenerator engine` returns 0 | M | Y |
+| R-045 | Tesla Troopers cannot charge Tesla Coils (Overpowerable) (W2-SK-22) | Units & abilities | MINOR | FIXED (w5-abil faad5ac; RE Overpower/IsPowerOnline; play abil-tesla-charge) | `git grep Overpowerable engine` returns 0 | M | N |
+| R-046 | No Boris airstrike (AirstrikeTeam), and Engineers cannot defuse Ivan bombs (W2-SK-22) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4 defuse, a4ac30c Boris; plays abil-defuse, abil-boris; plane path RE-FALLBACK) | `git grep AirstrikeTeam engine` and `git grep BombDisarm engine` both return 0 | M | Y |
+| R-047 | A disguised Mirage is still drawn as the tank, not as a tree (W2-SK-22) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4 sim tree pick + w5-pres 66dc750 tree draw for non-owners) | `engine/world.cpp:1983-2000` | M | N |
+| R-048 | The IFV passenger swap changes only damage, ROF, range and Verses; the projectile and AA/AG flags stay. The Engineer IFV RepairBullet still targets enemies (W2-SK-26 part) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4: AA/AG/projectile follow the swap; RepairBullet heals allies; play abil-ifv-repair) | `engine/world_abilities.cpp:261-269` | S | N |
+| R-049 | The Giant Squid grab (ParasitePlus) is not modelled (W2-AN-15 part) | Units & abilities | MINOR | PARTIAL (w5-abil 9aefae3: ParasitePlus paralysis/culling on the P4 parasite; the squid never fires at a ship in play -- combat.cpp aim gate, agent B) | `docs/gap/wave2/02-air-naval-sw.md` §5 row 15 | M | Y |
 | R-050 | `Crush=1.8`, AutoCrush and PlayerAutoCrush steering are missing; vehicles crush only what they drive into (G-47 part, RE-W6) | Units & abilities | MINOR | FIXED (W5-B) | `engine/combat.cpp` crush steering (FUN_00742720/FUN_007402F0), friendly scatter; `scripts/play/w5-crush.play` | M | Y |
-| R-051 | Transport `DeployTime` delay not modelled (03 transports) | Units & abilities | MINOR | OPEN | `engine/world.cpp:1423` | S | N |
-| R-052 | Allies cannot board each other's transports | Units & abilities | MINOR | OPEN | `engine/cargo.cpp:31`, `engine/cargo.hpp:36` | S | N |
+| R-051 | Transport `DeployTime` delay not modelled (03 transports) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4; RE FUN_004A5150 DeployTime*900) | `engine/world.cpp:1423` | S | N |
+| R-052 | Allies cannot board each other's transports | Units & abilities | MINOR | FIXED (w5-abil 06e4827; can_load takes IsAlliedWith; both control schemes) | `engine/cargo.cpp:31`, `engine/cargo.hpp:36` | S | N |
 | R-053 | Garrison combat: Assaulter clearing of garrisons and DistributedFire are missing. Garrison shots are instant hits (README:3385) | Units & abilities | MINOR | OPEN | README:3385; `engine/world_depth.cpp:262` `[RE-FALLBACK]` | S | Y |
 | R-054 | Jump projectiles are not drawn (Terror Drone, dog, Squid leap); they stay scripted abilities (W4-PJ-14) | Units & abilities | MINOR | OPEN | `engine/projectile.hpp:35` (no jump kind) | M | N |
 | R-055 | V3 single-shot: the root cause (spawn slot not freed) is only "probable". 1edba43 also changed spawn regen (W4-PJ-12) | Units & abilities | MINOR | PARTIAL | `docs/gap/wave4/04-projectiles.md` status table | S | N |
-| R-056 | The Tech Airport (CAAIRP) paradrop is missing. The generic ParaDrop effect and the American paradrop work (W2-AN-17) | Units & abilities | MINOR | PARTIAL | `git grep CAAIRP engine` returns 0 | S | N |
+| R-056 | The Tech Airport (CAAIRP) paradrop is missing. The generic ParaDrop effect and the American paradrop work (W2-AN-17) | Units & abilities | MINOR | FIXED (w5-abil faad5ac; Capturable+NeedsEngineer map structures are World buildings; play abil-tech-buildings) | `git grep CAAIRP engine` returns 0 | S | N |
 | R-057 | FlakProj impact scatter and the Inviso cliff/wall trace are not modelled (no SubjectToCliffs/Walls). Flak MinimumRange is also missing (W4-PJ-15) | Units & abilities | MINOR | PARTIAL (W5-B) | FlakProj impact scatter + cliff trace done (combat.md §9/§10); wall trace not modelled | S | Y |
 
 ### Gameplay / simulation
@@ -255,9 +255,9 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-080 | The AI never fields fixed-wing aircraft (Harrier, Black Eagle) (W2-AN still-open, 04#17) | AI | MINOR | OPEN | `engine/world.cpp:3047` skips `fixed_wing`; `engine/ai_skirmish.inc:32` | M | N |
-| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | PARTIAL | no AI caller of `order_occupy` | M | N |
-| R-082 | Difficulty pacing is not calibrated against an original capture. The Armor and Groundspeed handicaps are not applied, so Brutal units are not tougher or faster (RE-Q5, G-63 part) | AI | MINOR | RE-FALLBACK | `engine/ai_base.hpp:101-105` | M | Y |
+| R-080 | The AI never fields fixed-wing aircraft (Harrier, Black Eagle) (W2-AN still-open, 04#17) | AI | MINOR | FIXED (w5-abil 7818961; ORCA/BEAG in the AI roster, built onto airfield pads; play abil-ai-air) | `engine/world.cpp:3047` skips `fixed_wing`; `engine/ai_skirmish.inc:32` | M | N |
+| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | FIXED (w5-abil 7818961, RE-FALLBACK choice rule; play abil-ai-air) | no AI caller of `order_occupy` | M | N |
+| R-082 | Difficulty pacing is not calibrated against an original capture. The Armor and Groundspeed handicaps are not applied, so Brutal units are not tougher or faster (RE-Q5, G-63 part) | AI | MINOR | RE-FALLBACK (w5-abil: AssignHandicap FUN_004F6DD0 traced; ReceiveDamage divides by the COUNTRY armor mult, no reader of house Armor/Groundspeed found -- left unapplied, docs/re/abilities-w5.md §12) | `engine/ai_base.hpp:101-105` | M | Y |
 | R-083 | AI behaviour fallbacks (about 55 markers): xorshift RNG instead of the lockstep RNG, wall ring and placement scan, team tie-break, base-defence triggers dropped, target picker proxy, moves abandoned after 10 s, 60 s boarding cap (RE-A4 and others) | AI | MINOR | RE-FALLBACK | `engine/ai_base.cpp:9,48,176`; `engine/ai_team.cpp:157,309,385`; `engine/ai_trigger.cpp:113`; `engine/world.cpp:2587,3093,3919` | L | Y |
 | R-084 | On May Day (2 ore mines) AI-vs-AI ends with no winner after 40 min. This may be faithful | AI | MINOR | OPEN | `docs/gap/wave2/03-skirmish-match.md` §7.3 | S | Y |
 
@@ -274,16 +274,16 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-100 | High-bridge decks draw in the ground pass, and there is no bridge layer for units on or under a deck. Rockets have no bridge layer either (W2-GA-07 layer, G-49) | Graphics | MINOR | OPEN | `engine/bridges.hpp`; `engine/rocket.cpp:143` | L | Y |
-| R-101 | There is no render layer system: aircraft and Kirovs are mixed into the ground depth sort, walls are in the ground pass, ground FX are not depth-sorted, and the building-anim ZAdjust/YSort are unused (W2-GA-17, W2-GA-14, RE-Q2/Q8/Q10/Q13) | Graphics | MINOR | OPEN | `engine/main.cpp:3545-3590`; `engine/pres_fx.inc:290,548-551` | M | Y |
-| R-102 | The placement grid is 1-px SDL diamond outlines, not `PLACE.SHP` (W2-GA-18, 01#19) | Graphics | MINOR | OPEN | `engine/main.cpp:4559-4590` | S | N |
-| R-103 | The house remap is a heuristic HSV ramp from 8 hard-coded YR colour triples (W2-GA-20) | Graphics | MINOR | OPEN | `engine/world.cpp:327-340` | M | Y |
-| R-104 | Lighting is incomplete: no ion-storm or Dominator lighting, no per-height brightening on objects, `Powered` lamps not checked, and light clamps at 1.0 (W2-GA-05) | Graphics | MINOR | PARTIAL | `engine/pres_light.inc:18-25` | M | Y |
-| R-105 | The lobby offers 27 YR DESERT/NEWURBAN maps drawn with temperate art, and 3 lobby maps carry SCHP with no voxel (W2-GA-09, wave3/03 §1.1) | Graphics | MINOR | OPEN | no theater filter in `engine/maplist.cpp`; `engine/main.cpp:139-141` | S | N |
+| R-100 | High-bridge decks draw in the ground pass, and there is no bridge layer for units on or under a deck. Rockets have no bridge layer either (W2-GA-07 layer, G-49) | Graphics | MINOR | FIXED (w5-pres add7b84: deck layer in the depth sort, on-deck lift; RE-FALLBACK for the Z-buffer) | `engine/bridges.hpp`; `engine/rocket.cpp:143` | L | Y |
+| R-101 | There is no render layer system: aircraft and Kirovs are mixed into the ground depth sort, walls are in the ground pass, ground FX are not depth-sorted, and the building-anim ZAdjust/YSort are unused (W2-GA-17, W2-GA-14, RE-Q2/Q8/Q10/Q13) | Graphics | MINOR | PARTIAL (w5-pres add7b84: air layer; building-anim YSort still with the building) | `engine/main.cpp:3545-3590`; `engine/pres_fx.inc:290,548-551` | M | Y |
+| R-102 | The placement grid is 1-px SDL diamond outlines, not `PLACE.SHP` (W2-GA-18, 01#19) | Graphics | MINOR | FIXED (w5-pres 6e2e616) | `engine/main.cpp:4559-4590` | S | N |
+| R-103 | The house remap is a heuristic HSV ramp from 8 hard-coded YR colour triples (W2-GA-20) | Graphics | MINOR | FIXED (w5-pres 7deb00d) | `engine/world.cpp:327-340` | M | Y |
+| R-104 | Lighting is incomplete: no ion-storm or Dominator lighting, no per-height brightening on objects, `Powered` lamps not checked, and light clamps at 1.0 (W2-GA-05) | Graphics | MINOR | PARTIAL (w5-pres 658663c: >1.0 brightening, per-height object light; ion storm / dominator lighting open) | `engine/pres_light.inc:18-25` | M | Y |
+| R-105 | The lobby offers 27 YR DESERT/NEWURBAN maps drawn with temperate art, and 3 lobby maps carry SCHP with no voxel (W2-GA-09, wave3/03 §1.1) | Graphics | MINOR | FIXED (w5-pres d31b548) | no theater filter in `engine/maplist.cpp`; `engine/main.cpp:139-141` | S | N |
 | R-106 | The shell is the 640x480 "S" asset set scaled to 1280x720, so it looks blocky. There are no 800x600 "L" assets (MNSCRNL/RA2TS_L) and no 9-row grid (W2-UI-28) | Graphics | MINOR | OPEN | `engine/main.cpp:4795`; no MNSCRNL references | M | Y |
 | R-107 | Fog of war is off by default (`IsLocationFogged` is a stub), the BlendedFog compose is untraced, and explored cliff extras are not clipped against neighbouring shroud (G-84 part, W2-GA-02) | Graphics | MINOR | RE-FALLBACK | `engine/world.hpp:1431-1442,1956`; `engine/pres_shroud.inc:15` | M | Y |
-| R-108 | Shadows are guessed: the voxel shadow is a z-flattened 50% silhouette with no light offset, the infantry shadow is index 12 at 50%, and the aircraft shadow is a dark diamond (W2-GA-12, RE-Q9) | Graphics | COSMETIC | RE-FALLBACK | `engine/voxel_raster.hpp:52`; `engine/iso_renderer.hpp:194` | S | Y |
-| R-109 | Building sprites that cross into unexplored black cells draw over the black (wave3/01 §3, not re-checked since the shroud post-pass) | Graphics | MINOR | OPEN | `engine/main.cpp:3616` | S | N |
+| R-108 | Shadows are guessed: the voxel shadow is a z-flattened 50% silhouette with no light offset, the infantry shadow is index 12 at 50%, and the aircraft shadow is a dark diamond (W2-GA-12, RE-Q9) | Graphics | COSMETIC | PARTIAL (w5-pres: airborne voxel silhouette shadow; light offset open) | `engine/voxel_raster.hpp:52`; `engine/iso_renderer.hpp:194` | S | Y |
+| R-109 | Building sprites that cross into unexplored black cells draw over the black (wave3/01 §3, not re-checked since the shroud post-pass) | Graphics | MINOR | FIXED (verified on w5-pres: the shroud post-pass covers building sprites over unexplored cells, play-out pres-place) | `engine/main.cpp:3616` | S | N |
 | R-110 | Positioning leftovers: units step whole height levels on ramps (no continuous z), the tile-anim (waterfall) origin and the aircraft altitude-to-pixel constant are untraced, and the high-bridge Y offset uses the BRIDGE* overlay family as a proxy (W4-POS P3b/c, ramps, RE-Q6) | Graphics | COSMETIC | RE-FALLBACK | `engine/flight.cpp:36-40`; `engine/pres_map.inc:134-140,272` | M | Y |
 | R-111 | The theater name munge goes by name pattern, not `NewTheater` (1 lobby NAPSIS object, possibly flags and guard shacks) (RC-1c, RE-W3-1) | Graphics | COSMETIC | OPEN | `src/theater_name.cpp:19-31` | S | Y |
 
@@ -291,10 +291,10 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-120 | Missing state effects: no Iron Curtain tint on protected objects, no chrono warp on the teleported units (only the ChronoBlast/Dest anims), and no elite promotion flash (the sound does play) (W2-GA-15, 05 promotion) | Animation/FX | MINOR | PARTIAL | `engine/pres_game.inc:161,524-531`; `iron_left` read only in `engine/world_an.cpp:136,143` | M | Y |
-| R-121 | Defence turrets snap to the target (no turret ROT), and TurretRotateSound is not played (W2-GA-13) | Animation/FX | MINOR | PARTIAL | `engine/pres_turret.inc:10-11` | S | Y |
-| R-122 | The paratrooper `PARACH` parachute anim is never drawn; the w4fix-seq branch adds only the fall (wave3 §3.3) | Animation/FX | MINOR | OPEN | `git grep -i parach engine` returns 0 | S | N |
-| R-123 | AnimClass keys not read: PingPong, Reverse, Spawns/SpawnCount, IsMeteor, MakeInfantry, Damage and Normalized (wave3/03 §3.6) | Animation/FX | MINOR | OPEN | `engine/pres_fx.inc:450-490` `fill_type` | S | N |
+| R-120 | Missing state effects: no Iron Curtain tint on protected objects, no chrono warp on the teleported units (only the ChronoBlast/Dest anims), and no elite promotion flash (the sound does play) (W2-GA-15, 05 promotion) | Animation/FX | MINOR | FIXED (w5-pres 0fbc9a4) | `engine/pres_game.inc:161,524-531`; `iron_left` read only in `engine/world_an.cpp:136,143` | M | Y |
+| R-121 | Defence turrets snap to the target (no turret ROT), and TurretRotateSound is not played (W2-GA-13) | Animation/FX | MINOR | FIXED (w5-pres 5c32f44; TurretRotateSound to the audio owner) | `engine/pres_turret.inc:10-11` | S | Y |
+| R-122 | The paratrooper `PARACH` parachute anim is never drawn; the w4fix-seq branch adds only the fall (wave3 §3.3) | Animation/FX | MINOR | FIXED (w5-pres b4db729) | `git grep -i parach engine` returns 0 | S | N |
+| R-123 | AnimClass keys not read: PingPong, Reverse, Spawns/SpawnCount, IsMeteor, MakeInfantry, Damage and Normalized (wave3/03 §3.6) | Animation/FX | MINOR | PARTIAL (w5-pres d9974b6: PingPong/Reverse/Normalized/RandomRate/IsMeteor/Spawns; MakeInfantry has no RA2 user; anim Damage cosmetic) | `engine/pres_fx.inc:450-490` `fill_type` | S | N |
 | R-124 | Small guessed animation rules (RE-Q7/Q13, W3-B, W4-PJ-13): | Animation/FX | COSMETIC | RE-FALLBACK | `engine/pres_bldanim.inc:227-228,359-363` | S | Y |
 |  | Building damage fires start from index 0; the SuperAnim state order and GateCloseDelay timing are guessed | | | | | | |
 |  | The refinery storage level follows the money share; the ring mark on the launch frame is unexplained | | | | | | |
@@ -319,11 +319,11 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 |---|---|---|---|---|---|---|---|
 | R-140 | No hotkey remap page (Options 0xA3). The Keyboard button is greyed on the shell and in-game pages; the bindings themselves are live from KeyboardMD.ini (W2-UI-27, 06#16/#34) | UI/Shell | MINOR | OPEN | `engine/main.cpp:7283-7288`; `engine/ingame_pages.inc:24-25` | M | N |
 | R-141 | Score page: the Score formula is untraced, and the campaign Results page (0xBC7) has no graph well and no first/second place panel (W2-UI-20, G-02, RE-I8) | UI/Shell | MINOR | PARTIAL | `engine/gf_result.inc:5-11`; `engine/campaign_scenes.inc:223-228` | M | Y |
-| R-142 | Sidebar polish is missing or guessed (W2-UI-05/06/10, 01#14, 02#9): | UI/Shell | COSMETIC | PARTIAL | `engine/main.cpp:4365-4372,4427-4460,5786-5792` | S | Y |
+| R-142 | Sidebar polish is missing or guessed (W2-UI-05/06/10, 01#14, 02#9): | UI/Shell | COSMETIC | PARTIAL (w5-pres 49d53b4: credits roll/colour, tab flash; CreditTicks sound to the audio owner) | `engine/main.cpp:4365-4372,4427-4460,5786-5792` | S | Y |
 |  | No DARKEN flash on a new cameo, and no tab flash (`tab0N` frames 3/4) | | | | | | |
 |  | The credits counter colour, roll rate and tick sound are guesses | | | | | | |
 | R-143 | No shell page *leave* transition (SDBTNANM 11..16) and no main-menu header shimmer (W2-UI-24/25, SK-33) | UI/Shell | COSMETIC | PARTIAL | `engine/main.cpp:7382-7386` | S | N |
-| R-144 | The rally point and primary-building marker is a placeholder cyan X and triangle (W2-UI-30, 01#32) | UI/Shell | COSMETIC | OPEN | `engine/main.cpp:4677-4690` | S | Y |
+| R-144 | The rally point and primary-building marker is a placeholder cyan X and triangle (W2-UI-30, 01#32) | UI/Shell | COSMETIC | FIXED (w5-pres 6e2e616, a7e43ec) | `engine/main.cpp:4677-4690` | S | Y |
 | R-145 | Guessed UI details (W2-UI-07/11/18, SK-16/30/32, Q3/Q4/Q7/Q8/Q9): | UI/Shell | COSMETIC | RE-FALLBACK | `engine/hud_tooltip.inc:11`; `engine/hud_pips.inc:21`; `engine/campaign_page.inc:16`; `docs/gap/07-skirmish-page.md` §8 | S | Y |
 |  | HUD: tooltip delay and box art, building pip-line lift | | | | | | |
 |  | Campaign page: emblem hover art | | | | | | |

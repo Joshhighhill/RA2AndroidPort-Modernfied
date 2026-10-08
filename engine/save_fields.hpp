@@ -32,7 +32,7 @@ struct SaveAccess {
         save::io(ar, o.w_);
         save::io(ar, o.h_);
         save::io(ar, o.owner_);
-        save::io(ar, o.spots_);   // v18: W5-B infantry sub-cell spots
+        save::io(ar, o.spots_);   // v19: W5-B infantry sub-cell spots
         save::io(ar, o.inf_);
     }
     template <class Ar> static void ore_field(Ar& ar, OreField& f) {
@@ -241,14 +241,17 @@ struct SaveAccess {
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
         save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
-        // W5-B R-062 land speed (save v18)
+        save::io(ar, w.w5_);   // wave-5 abilities (agent C)
+        save::io(ar, w.w5_hide_);   // wave-5 gap scratch (the amphib_passable_ precedent)
+        save::io(ar, w.w5_own_);
+        // W5-B R-062 land speed (save v19)
         save::io(ar, w.land_speed_armed_);
         save::io(ar, w.speed_land_);
         save::io(ar, w.ramp_);
         save::io(ar, w.level_grid_);
         save::io(ar, w.land_rules_);
-        save::io(ar, w.crush_rules_);   // W5-B R-050 (v18)
-        save::io(ar, w.elev_rules_);    // W5-B R-063 (v18)
+        save::io(ar, w.crush_rules_);   // W5-B R-050 (v19)
+        save::io(ar, w.elev_rules_);    // W5-B R-063 (v19)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
@@ -448,7 +451,7 @@ template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
     io(ar, v.weapon_range);
     io(ar, v.flh);
     io(ar, v.level); io(ar, v.airburst); io(ar, v.very_high); io(ar, v.course_lock);   // W4 (v15)
-    io(ar, v.subject_to_cliffs);   // v18: W5-B
+    io(ar, v.subject_to_cliffs);   // v19: W5-B
     io(ar, v.subject_to_elevation);
     io(ar, v.subject_to_walls);
 }
@@ -491,7 +494,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
-    io(ar, v.affects_allies);   // v18: W5-B
+    io(ar, v.affects_allies);   // v19: W5-B
     io(ar, v.proj);
     io(ar, v.aa);
     io(ar, v.ag);
@@ -539,7 +542,7 @@ template <class Ar> void fields(Ar& ar, VeterancyRules& v) {
 template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.damage); io(ar, v.rof); io(ar, v.range); io(ar, v.verses);
     io(ar, v.cell_spread); io(ar, v.percent_at_max);
-    io(ar, v.affects_allies);   // v18: W5-B
+    io(ar, v.affects_allies);   // v19: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
@@ -593,13 +596,13 @@ template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
     io(ar, v.picked); io(ar, v.applied); io(ar, v.house); io(ar, v.unit);
     io(ar, v.x); io(ar, v.y); io(ar, v.amount); io(ar, v.affected);
 }
-template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v18)
+template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v19)
     io(ar, v.armed); io(ar, v.increment); io(ar, v.bonus); io(ar, v.cap);
 }
-template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v18)
+template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v19)
     io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush); io(ar, v.ai_any_building);
 }
-template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v18)
+template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v19)
     for (auto& row : v.cost)
         for (float& c : row) io(ar, c);
     io(ar, v.tracked_up); io(ar, v.tracked_down); io(ar, v.wheeled_up); io(ar, v.wheeled_down);
@@ -620,6 +623,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.percent_at_max);
     io(ar, v.rad_level);
     io(ar, v.kind);
+    io(ar, v.slot_set); io(ar, v.aa); io(ar, v.ag); io(ar, v.proj);   // wave-5 R-048
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);
@@ -679,6 +683,44 @@ template <class Ar> void fields(Ar& ar, World::AbilityEvent& v) {
     io(ar, v.kind); io(ar, v.a); io(ar, v.b); io(ar, v.x); io(ar, v.y); io(ar, v.building);
 }
 
+// --- wave-5 abilities (agent C, abil_w5.hpp) ---
+template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
+    io(ar, v.spy_purpose); io(ar, v.radar); io(ar, v.prism); io(ar, v.overpowerable);
+    io(ar, v.gap_radius); io(ar, v.inf_self_heal); io(ar, v.unit_self_heal); io(ar, v.cloning);
+    io(ar, v.psychic_radius); io(ar, v.sensors_sight); io(ar, v.delayed_fire_delay);
+}
+template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
+    io(ar, v.requires_stolen); io(ar, v.base_tech_level);
+}
+template <class Ar> void fields(Ar& ar, BldW5& v) {
+    io(ar, v.prism_stage); io(ar, v.delay); io(ar, v.supporting); io(ar, v.master);
+    io(ar, v.overpowerers); io(ar, v.overpowered); io(ar, v.gap_on);
+}
+template <class Ar> void fields(Ar& ar, UnitProfileW5& v) {
+    io(ar, v.assault); io(ar, v.assault_rof); io(ar, v.open_topped); io(ar, v.deploy_frames);
+    io(ar, v.airstrike_team); io(ar, v.elite_airstrike_team); io(ar, v.airstrike_type);
+    io(ar, v.airstrike_recharge); io(ar, v.elite_airstrike_recharge); io(ar, v.flare_range);
+    io(ar, v.paralyzes); io(ar, v.culling);
+}
+template <class Ar> void fields(Ar& ar, UnitW5& v) {
+    io(ar, v.bound); io(ar, v.p); io(ar, v.charging); io(ar, v.next_assault); io(ar, v.door_until);
+    io(ar, v.defuse_unit); io(ar, v.defuse_bld); io(ar, v.healer); io(ar, v.heal_target); io(ar, v.mirage_tree);
+    io(ar, v.base_flight_speed); io(ar, v.base_fly_cps); io(ar, v.last_hp);
+    io(ar, v.airstrike_ready); io(ar, v.strike_of); io(ar, v.strike_bld);
+    io(ar, v.c4_frame); io(ar, v.c4_by);
+}
+template <class Ar> void fields(Ar& ar, RulesW5& v) {
+    io(ar, v.prism_support_modifier); io(ar, v.prism_support_max); io(ar, v.prism_support_delay);
+    io(ar, v.prism_support_duration); io(ar, v.self_heal_inf_frames); io(ar, v.self_heal_inf_amount);
+    io(ar, v.self_heal_unit_frames); io(ar, v.self_heal_unit_amount);
+    io(ar, v.open_topped_range_bonus); io(ar, v.open_topped_damage_mult); io(ar, v.mirage_trees);
+}
+template <class Ar> void fields(Ar& ar, WorldW5& v) {
+    io(ar, v.stolen_tech); io(ar, v.armed); io(ar, v.rules); io(ar, v.profiles); io(ar, v.frame);
+    io(ar, v.gap_created); io(ar, v.passenger_shots); io(ar, v.prism_supports); io(ar, v.defusals); io(ar, v.repairs);
+    io(ar, v.ai_garrisons); io(ar, v.ai_tech_captures); io(ar, v.scatters); io(ar, v.airstrikes); io(ar, v.culls); io(ar, v.ship_c4);
+}
+
 // --- unit / building types ---
 template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.strength);
@@ -691,12 +733,12 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.verses);
     io(ar, v.cell_spread);
     io(ar, v.percent_at_max);
-    io(ar, v.affects_allies);   // v18: W5-B
+    io(ar, v.affects_allies);   // v19: W5-B
     io(ar, v.proj);
     io(ar, v.rot);
     io(ar, v.turret);
     io(ar, v.speed_cps);
-    io(ar, v.speed_type);   // v18: W5-B
+    io(ar, v.speed_type);   // v19: W5-B
     io(ar, v.auto_crush);
     io(ar, v.is_infantry);
     io(ar, v.land_speed_loco);
@@ -763,6 +805,7 @@ template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.aircraft);
     io(ar, v.harvester);
     io(ar, v.storage);
+    io(ar, v.w5);   // wave-5 stolen tech (agent C)
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.id);
@@ -806,6 +849,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.can_occupy_fire);
     io(ar, v.max_occupants);
     io(ar, v.bridge_repair_hut);
+    io(ar, v.w5);   // wave-5 abilities (agent C)
 }
 
 // --- the live objects ---
@@ -828,7 +872,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w_verses);
     io(ar, v.w_cell_spread);
     io(ar, v.w_percent_at_max);
-    io(ar, v.w_affects_allies);   // v18: W5-B
+    io(ar, v.w_affects_allies);   // v19: W5-B
     io(ar, v.spot);
     io(ar, v.sub_x);
     io(ar, v.sub_y);
@@ -963,6 +1007,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.disguise_when_still);
     io(ar, v.still_frames);
     io(ar, v.an);   // W2-AN (save v9)
+    io(ar, v.w5);   // wave-5 abilities (agent C)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -1014,6 +1059,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.garrison_rof_cool);
     io(ar, v.garrison_target);
     io(ar, v.iron_left);   // W2-AN-04 (save v9)
+    io(ar, v.w5);          // wave-5 abilities (agent C)
 }
 
 // --- production ---
