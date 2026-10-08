@@ -1137,6 +1137,25 @@ bool MapTriggerSystem::raise_cell(int x, int y, int kind, const RaiseContext& ct
     return false;
 }
 
+bool MapTriggerSystem::tag_waits_on(int tag_type, int kind) const {
+    if (tag_type < 0 || tag_type >= (int)d_.tags.size()) return false;
+    std::vector<int> seen;
+    for (int t = d_.tags[(std::size_t)tag_type].first_trigger; t >= 0 && t < (int)d_.triggers.size();
+         t = d_.triggers[(std::size_t)t].linked) {
+        if (std::find(seen.begin(), seen.end(), t) != seen.end()) break;   // a cyclic chain
+        seen.push_back(t);
+        for (const MapEvent& e : d_.triggers[(std::size_t)t].events)
+            if (e.kind == kind) return true;
+    }
+    return false;
+}
+
+bool MapTriggerSystem::cell_waits_on(int x, int y, int kind) const {
+    for (const MapCellTag& c : d_.cell_tags)
+        if (c.x == x && c.y == y) return tag_waits_on(c.tag, kind);
+    return false;
+}
+
 bool MapTriggerSystem::raise_logic(int kind, const RaiseContext& ctx, TriggerHost& host) {
     // Only the tags whose chain waits on `kind` [RE-FALLBACK: the original's
     // raise site for 23 was not traced; raising it on every logic tag would

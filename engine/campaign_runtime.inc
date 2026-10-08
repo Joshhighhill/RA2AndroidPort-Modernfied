@@ -1283,7 +1283,7 @@ private:
         for (std::size_t i = 0; i < data_.cell_tags.size(); ++i) {
             const ra2engine::MapCellTag& ct = data_.cell_tags[i];
             const std::uint8_t now = bridge_cell_broken(ct.x, ct.y) ? 1 : 0;
-            if (now && !bridge_seen_[i]) {
+            if (now && !bridge_seen_[i] && sys_->tag_waits_on(ct.tag, ra2engine::kEvAllBridgesDestroyed)) {
                 ra2engine::RaiseContext c;
                 if (sys_->raise_cell(ct.x, ct.y, ra2engine::kEvAllBridgesDestroyed, c, host_)) ++raises_;
                 char b[96];
@@ -1516,11 +1516,13 @@ private:
                     ra2engine::RaiseContext dc = c;
                     dc.disguise_house_type = house_type(u.disguised_as_house);
                     dc.disguise_infantry = camp::up(u.disguised_as_type);
-                    sys_->raise_cell(t.cx, t.cy, 53, dc, host_);
-                    sys_->raise_cell(t.cx, t.cy, 54, dc, host_);
+                    if (sys_->cell_waits_on(t.cx, t.cy, 53)) sys_->raise_cell(t.cx, t.cy, 53, dc, host_);
+                    if (sys_->cell_waits_on(t.cx, t.cy, 54)) sys_->raise_cell(t.cx, t.cy, 54, dc, host_);
                 }
-                // W5-A 34 ComesNearWaypoint (an Object kind) on the unit's own tag.
-                raise_obj_ctx(t, 34, c);
+                // W5-A 34 ComesNearWaypoint (an Object kind) on the unit's own tag
+                // [RE-FALLBACK: the original's raise site is untraced; raised on
+                // each cell change, only on a tag that waits for 34].
+                if (t.tag >= 0 && sys_->tag_waits_on(t.tag, 34)) raise_obj_ctx(t, 34, c);
             }
             if (u.hp < t.hp) raise_attacked(t, u.house, gf_attacker_house((int)i, -1, u.house));
             if (u.hp < t.hp) raise_damage_stages(t, u.hp, u.max_hp, u.house);

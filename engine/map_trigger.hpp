@@ -277,6 +277,11 @@ public:
     ObjectRaise raise_object(int tag_type, int kind, const RaiseContext& ctx, TriggerHost& host);
     // True if trigger `trigger_type` is in tag type `tag_type`'s chain.
     bool tag_has_trigger(int tag_type, int trigger_type) const;
+    // W5-A: true if a trigger in tag type `tag_type`'s chain has an event of
+    // `kind` (the clone's own raise sites for 31/34/53/54 only raise on such
+    // tags, so they never re-evaluate unrelated timer / variable events).
+    bool tag_waits_on(int tag_type, int kind) const;
+    bool cell_waits_on(int x, int y, int kind) const;
     // The data this system runs (for hosts that need the tables).
     const MapTriggerData& data() const { return d_; }
 
