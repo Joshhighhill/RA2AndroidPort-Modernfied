@@ -1462,8 +1462,13 @@ private:
             }
             ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
             if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
-            const double dx = v.fx - u.fx, dy = v.fy - u.fy;
-            if (std::sqrt(dx * dx + dy * dy) > std::max(1.0, u.w_range) + 0.5) continue;
+            // R-205 [RE: the capture rides the controller's shot -- CaptureManager
+            // FUN_00471C80 is called only from the bullet detonation @0x4692C0, and
+            // the shot leaves only through the fire-range test FUN_006F6750]: use the
+            // SAME 3-D range rule as combat's fire path. A separate 2-D test let the
+            // two disagree near the edge (~8.5 cells): combat thought the Yuri in
+            // range (no approach), the capture thought not, and the order died.
+            if (!ra2engine::unit_in_weapon_range(w_, u, v)) continue;
             const int vi = u.target;
             if (t.mc_victim >= 0 && t.mc_victim != vi) mc_release(t);
             Track& vt = utrack_[(std::size_t)vi];
