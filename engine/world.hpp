@@ -124,7 +124,8 @@ struct Unit {
     // damaged]: set every frame by CampaignRuntime
     // (poll_mind_control, BEFORE World::step) on a live MindControl=yes
     // controller; try_fire then deals no damage and the runtime captures the
-    // victim (same 3-D range rule). Derived, never saved (re-armed each frame).
+    // victim (same 3-D range rule). Re-armed each frame; saved (v24) only
+    // because every Unit member is (the save tripwire).
     bool w_mind_control = false;
     // W5-B R-061 infantry sub-cells [RE: FindInfantrySubposition FUN_00481090,
     // spot coords DAT_0089D960]: the spot (2 right, 3 left, 4 down; 0 centre =
