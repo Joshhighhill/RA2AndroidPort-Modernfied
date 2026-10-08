@@ -943,6 +943,30 @@ private:
     static bool live(const ra2engine::Building& b) {
         return b.alive && b.state != ra2engine::Building::State::Dead;
     }
+    // [RE: HouseClass RegisterGain FUN_004FF520 / RegisterLoss FUN_004FF370 --
+    // a techno whose type has Insignificant (+0x232, ObjectType INI read at
+    // 0x5F8D0B) or DontScore (+0xC9F, 0x7132F8) set is never added to the
+    // house's building/unit/infantry counters (+0x2F0/+0x2E8/...), which the
+    // Destroyed*All events (9/10/11/55/56) read.] Flags, lamps, gates, guard
+    // shacks therefore do not keep a house "alive" (ALL06: BadGuy1's flags).
+    bool untracked_type(const std::string& id) const {
+        auto it = untracked_.find(id);
+        if (it != untracked_.end()) return it->second;
+        auto yes = [&](const char* k) {
+            const std::string v = rules_ini_.get(id, k, "");
+            const char c = v.empty() ? 'n' : (char)std::tolower((unsigned char)v[0]);
+            return c == 'y' || c == 't' || c == '1';
+        };
+        const bool r = yes("Insignificant") || yes("DontScore");
+        untracked_[id] = r;
+        return r;
+    }
+    bool tracked(const ra2engine::Building& b) const {
+        return live(b) && !(b.type >= 0 && b.type < (int)ba_.roster.size() && untracked_type(ba_.roster[(std::size_t)b.type].id));
+    }
+    bool tracked(const ra2engine::Unit& u) const {
+        return live(u) && !u.vet.dont_score && !untracked_type(u.image);
+    }
     bool free_cell_near(int x, int y, int& ox, int& oy, int maxr = 6) const {
         for (int r = 0; r <= maxr; ++r)
             for (int dy = -r; dy <= r; ++dy)
@@ -2516,7 +2540,7 @@ private:
         int house_buildings(int ht) const override {
             const int eh = rt.engine_house(ht);
             int n = 0;
-            for (const ra2engine::Building& b : rt.w_.buildings()) if (live(b) && b.house == eh) ++n;
+            for (const ra2engine::Building& b : rt.w_.buildings()) if (rt.tracked(b) && b.house == eh) ++n;
             return n;
         }
         // P5 [RE: FUN_0071dbe0 case 9/0xB]: the DestroyedUnits/DestroyedAll
@@ -2539,7 +2563,7 @@ private:
             int n = 0;
             for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
                 const ra2engine::Unit& u = rt.w_.units()[i];
-                if (!live(u) || u.house != eh) continue;
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
                 if (u.is_aircraft ? flying_class(i) == 1 : (u.is_vehicle || u.is_naval)) ++n;
             }
             return n;
@@ -2548,7 +2572,7 @@ private:
             const int eh = rt.engine_house(ht);
             int n = 0;
             for (const ra2engine::Unit& u : rt.w_.units())
-                if (live(u) && u.house == eh && u.is_naval && !u.is_aircraft) ++n;
+                if (rt.tracked(u) && u.house == eh && u.is_naval && !u.is_aircraft) ++n;
             return n;
         }
         int house_infantry(int ht) const override {
@@ -2556,7 +2580,7 @@ private:
             int n = 0;
             for (std::size_t i = 0; i < rt.w_.units().size(); ++i) {
                 const ra2engine::Unit& u = rt.w_.units()[i];
-                if (!live(u) || u.house != eh) continue;
+                if (!rt.tracked(u) || u.house != eh) continue;   // P3: + Insignificant/DontScore
                 if (u.is_aircraft ? flying_class(i) == 2 : (!u.is_vehicle && !u.is_naval)) ++n;
             }
             return n;
@@ -2951,6 +2975,7 @@ private:
     std::vector<std::string> witness_;
     const UnitRoster* ai_roster_ = nullptr;   // W2-CA-07 (GameScene's ur_ai_)
     std::map<std::string, bool> mc_type_;      // W2-CA-15 cache: type -> MindControl weapon
+    mutable std::map<std::string, bool> untracked_;   // P3 cache: type -> Insignificant/DontScore (derived)
     std::vector<std::uint8_t> armed_;         // W2-CA-07 per house: 1 base, 2 map teams (derived)
     std::vector<AudioReq> audio_;   // W2-CA-12 (presentation only, not hashed/saved)
     std::vector<ra2engine::VisualRequest> visuals_;   // W3-FX (presentation only, not hashed/saved)

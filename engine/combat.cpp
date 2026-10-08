@@ -769,7 +769,19 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 // building's centre with the range widened by (w+h)*64 leptons.
                 int bax, bay, baz;
                 building_aim_lept(*b, world.cell_level(b->cx, b->cy), bax, bay, baz);
-                const bool b_in_range = u.abil.c4 ? best_d <= range_leptons
+                // P3: the Sapper shot uses the same in-range test [RE: combat.md §9,
+                // FUN_006F6750 -- any weapon vs a building: to its centre, range
+                // + (w+h)*64]; it was the nearest-foundation-cell distance, so a
+                // wall-ringed silo (ALL05) could never be reached. c4_reach_from
+                // is that test from a cell (2-D: the plant is a ground action).
+                const int c4_reach = ftol_i(u.abil.c4_range * 256.0) + (b->fw + b->fh) * 64;
+                // [Sapper]/[Sapper2] CellRangefinding=yes: the range is taken
+                // from the CELL the sapper stands in (its centre), not its
+                // sub-cell spot -- so the goal cell and the plant test agree.
+                auto c4_reach_from = [&](int cx, int cy) {
+                    return dist3_i(bax - cx * 256, bay - cy * 256, 0) <= c4_reach;
+                };
+                const bool b_in_range = u.abil.c4 ? c4_reach_from(u.cell_x, u.cell_y)
                                                   : weapon_in_range(world, u, bax, bay, baz,
                                                                     (b->fw + b->fh) * 64);
                 if (b_in_range) {
@@ -837,9 +849,39 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                 static_cast<double>(cell.x), static_cast<double>(cell.y));
                             if (g_best < 0.0 || d < g_best) g_best = d;
                         }
-                        need = g_best > range_leptons;
+                        need = u.abil.c4 ? !c4_reach_from(g.x, g.y) : g_best > range_leptons;
                     }
-                    if (need) requests.push_back({i, nx, ny, /*approach=*/true});
+                    // P3 [RE: infantry-anim.md §7 -- FootClass::ApproachTarget
+                    // heads for a FIRING POSITION near the target; RE-FALLBACK:
+                    // its cell choice is not decompiled]: a C4 infantry goes to
+                    // the walkable cell nearest to it from which the plant is in
+                    // range (c4_reach_from). The generic approach (a free cell
+                    // next to the foundation cell nearest the unit) can pick a
+                    // cell out of range behind a fence or wall, and the sapper
+                    // then stood still forever (ALL05: wired-in Tesla Reactors,
+                    // wall-ringed nuclear silos).
+                    int cgx = -1, cgy = -1;
+                    if (need && u.abil.c4) {
+                        const std::vector<std::uint8_t>& pass = world.passable();
+                        const int gw = world.grid_w(), gh = world.grid_h();
+                        const int ccx = bax / 256, ccy = bay / 256;
+                        const int rr = c4_reach / 256 + 2;
+                        double cbest = -1.0;
+                        for (int y = ccy - rr; y <= ccy + rr; ++y)
+                            for (int x = ccx - rr; x <= ccx + rr; ++x) {
+                                if (x < 0 || y < 0 || x >= gw || y >= gh) continue;
+                                if (!pass[static_cast<std::size_t>(y) * gw + x] || !c4_reach_from(x, y)) continue;
+                                const double ddx = x - u.cell_x, ddy = y - u.cell_y;
+                                const double d2 = ddx * ddx + ddy * ddy;
+                                if (cbest < 0.0 || d2 < cbest) {   // scan order breaks ties (y, then x)
+                                    cbest = d2;
+                                    cgx = x;
+                                    cgy = y;
+                                }
+                            }
+                    }
+                    if (need && cgx >= 0) requests.push_back({i, cgx, cgy, /*approach=*/false});
+                    else if (need) requests.push_back({i, nx, ny, /*approach=*/true});
                 } else if (!u.attack_order) {
                     // Gap fix C: a retaliation/auto target (not an explicit
                     // order) out of range is dropped -- the unit goes back to

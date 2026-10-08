@@ -199,14 +199,54 @@ const std::set<std::string>& known_ops() {
     static const std::set<std::string> k = {
         "set",  "wait", "click", "drag",   "move",    "key",   "hold", "type", "view",
         "place", "shot", "assert", "until", "require", "let",  "cheat", "log", "end",
-        "expect", "dump", "cycle", "if", "touch"};
+        "expect", "dump", "cycle", "if", "touch", "waituntil"};
     return k;
+}
+
+// P3: `repeat N` ... `endrepeat` (nestable) is expanded textually before
+// parsing: the body runs N times exactly as if it were written out N times
+// (long real-order micro loops without multi-megabyte scripts). Returns at the
+// matching endrepeat when `nested`, else at the end of the text.
+bool expand_repeats(const std::vector<std::string>& lines, std::size_t& i, bool nested,
+                    std::string& out, std::string& err) {
+    while (i < lines.size()) {
+        const std::string t = lower(trim(strip_comment(lines[i])));
+        ++i;
+        if (t == "endrepeat") {
+            if (nested) return true;
+            err = "line " + std::to_string(i) + ": endrepeat without repeat";
+            return false;
+        }
+        if (t.rfind("repeat ", 0) == 0) {
+            int n = 0;
+            if (!to_int(trim(t.substr(7)), n) || n < 0) {
+                err = "line " + std::to_string(i) + ": repeat needs a non-negative count";
+                return false;
+            }
+            std::string body;
+            if (!expand_repeats(lines, i, true, body, err)) return false;
+            for (int k = 0; k < n; ++k) out += body;
+            continue;
+        }
+        out += lines[i - 1];
+        out += '\n';
+    }
+    if (nested) { err = "repeat without endrepeat"; return false; }
+    return true;
 }
 
 }  // namespace
 
-bool parse_script(const std::string& text, Script& out, std::string& err) {
+bool parse_script(const std::string& text_in, Script& out, std::string& err) {
     out.cmds.clear();
+    std::string text;
+    {
+        std::vector<std::string> lines;
+        std::istringstream src(text_in);
+        for (std::string l; std::getline(src, l);) lines.push_back(l);
+        std::size_t i = 0;
+        if (!expand_repeats(lines, i, false, text, err)) return false;
+    }
     std::istringstream in(text);
     std::string line;
     int ln = 0;
@@ -271,7 +311,7 @@ bool parse_script(const std::string& text, Script& out, std::string& err) {
                 if (err.empty()) err = "line " + std::to_string(ln) + ": wait N";
                 return false;
             }
-        } else if (c.op == "until") {
+        } else if (c.op == "until" || c.op == "waituntil") {
             if (!need(2) || !to_int(c.args[0], c.n) || c.n < 0) {
                 if (err.empty()) err = "line " + std::to_string(ln) + ": until N EXPR";
                 return false;
@@ -299,7 +339,7 @@ bool parse_script(const std::string& text, Script& out, std::string& err) {
             const std::string& so = one.cmds[0].op;
             // R-183: `if EXPR then end` is allowed (a script that does not
             // apply to this install ends early, e.g. robust-missing).
-            if (so == "until" || so == "cycle" || so == "if") {
+            if (so == "until" || so == "waituntil" || so == "cycle" || so == "if") {
                 err = "line " + std::to_string(ln) + ": 'if' cannot guard '" + so + "'";
                 return false;
             }

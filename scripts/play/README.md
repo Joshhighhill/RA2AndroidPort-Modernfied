@@ -74,6 +74,8 @@ A `"double quoted"` run is one argument.
 | `log <text>` | Note in the log. | 0 |
 | `expect quit` | The next Quit is the expected end of the run. | 0 |
 | `end [expect WON\|LOST\|RUNNING]` | Stop; optionally check `outcome`. | - |
+| `waituntil <n> <expr>` | P3: `until` without the timeout failure (logs `PLAY timeout`). | <= n |
+| `repeat N` ... `endrepeat` | P3: the body (nestable) is expanded N times before parsing -- exactly as if written out. | body x N |
 
 **Targets.** `point NAME [+dx +dy]` (G16 named map points relative to the
 player's first building: `garrison` (nearest empty neutral garrison),
@@ -149,6 +151,14 @@ Battle), `status` (tooltip line), `confirm_open` / `confirm_text`.
 | `garrisonable`, `owned_garrisons(h)`, `garrisoned(h)`, `occupants(h)`, `in_garrison(h)`, `garrison_shots` | G16 garrisons |
 | `bridge_cells`, `bridge_destroyed`, `bridge_version`, `depth_armed`, `on_bridge(h)`, `pt_<name>_x/y`, `sel_dist_<name>` | G16 low bridges; named points below |
 | `sel_occupier`, `sel_occupy_target`, `sel_attack_cell`, `sel_target`, `sel_rof_cool`, `sel_turret`, `sel_body`, `sel_damage`, `sel_wall` | first selected unit (debug) |
+
+**P3 keys / targets** (real-order micro): per controllable unit `nenemy(h,ID,n)` / `ndog(h,ID,n)` (cells to the
+nearest hostile ground unit / dog), `utgtb(h,ID,n)` (building target index), `ucell(h,ID,n)` (`x*1000+y`);
+`bc4n(h,ID)` (buildings with C4 ticking); per house `blackout(h)` (spy power-plant blackout left); campaign
+`view_resized` (ResizeView count). Target `unit H:TYPE:near` / `unit e:TYPE:near`: the unit of house H (e = any
+house hostile to the first selected unit) nearest that unit, within 9 cells; `building H:TYPE:near` (TYPE or `*`):
+that house's building nearest the first selected unit (TYPE `*` skips Insignificant decorations), clicked at a
+footprint point no unit covers. P3 real-order wins: `m-all05-real`, `m-all06-real`, `m-all07-real` (gen/mk_all05.py, mk_all06.py).
 
 **W2-AN keys** (engine/w2air_play.inc): `cursor_name` (Input action name),
 `sel_on_water`, `sel_hp`, `sel_max_hp`, `sel_cargo`, `sel_altitude`, `sel_flight_state`,
