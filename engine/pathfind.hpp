@@ -18,7 +18,9 @@ struct Cellxy { int x, y; };
 // `passable[y*width+x] != 0` means the cell is walkable. Movement is
 // 8-directional (4 cardinal + 4 diagonal); diagonal moves are blocked if
 // either of the two orthogonal "corner" cells they would cut across is
-// impassable (prevents cutting through a wall's corner). The heuristic is
+// impassable (prevents cutting through a wall's corner) -- unless that corner
+// cell is flagged in the optional `leak` mask (same size; W5-A: wall overlays,
+// whose corner-only contacts leave a gap). The heuristic is
 // the standard octile distance, scaled to integers (cardinal step cost 10,
 // diagonal step cost 14, i.e. 10*sqrt(2) rounded) to keep the search
 // deterministic.
@@ -29,12 +31,14 @@ struct Cellxy { int x, y; };
 // `start == goal` (and it is in range and passable), returns a single-cell
 // path containing just that cell.
 std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, int height,
-                              Cellxy start, Cellxy goal);
+                              Cellxy start, Cellxy goal,
+                              const std::vector<uint8_t>* leak = nullptr);
 
 // W2-SK-16: find_path with an expansion budget (> 0): empty when the goal is
 // not reached within `max_expand` closed nodes (same path otherwise).
 std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int width, int height,
-                                      Cellxy start, Cellxy goal, int max_expand);
+                                      Cellxy start, Cellxy goal, int max_expand,
+                                      const std::vector<uint8_t>* leak = nullptr);
 
 // W2-SK-05/16 [RE-FALLBACK: the original walks a unit ordered onto an
 // impassable or unreachable cell to the nearest place it can reach]: an
@@ -43,6 +47,7 @@ std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int 
 // path ends at the expanded cell nearest the goal. Empty only for bad input or
 // an impassable start; a single-cell path means "already as close as it gets".
 std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int width, int height,
-                                      Cellxy start, Cellxy goal, int max_expand);
+                                      Cellxy start, Cellxy goal, int max_expand,
+                                      const std::vector<uint8_t>* leak = nullptr);
 
 }  // namespace ra2engine

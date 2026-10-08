@@ -940,8 +940,9 @@ void World::order_unit_move(int idx, int gx, int gy) {
     std::vector<Cellxy> path =
         u.movement_domain == MovementDomain::Land
             ? find_path_nearest(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y},
-                                {gx, gy}, kNearestPathBudget)
-            : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy});
+                                {gx, gy}, kNearestPathBudget, wall_leak())
+            : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy},
+                        u.movement_domain == MovementDomain::Water ? nullptr : wall_leak());
     if (path.size() <= 1) {
         // Assigned its own cell / unreachable: stay put, snap cleanly
         // (mirrors the single-unit Finding-1 cancel branch).
@@ -4137,7 +4138,7 @@ void World::step(double dt) {
         for (const Unit& u : units_)
             if (u.movement_domain == MovementDomain::Amphibious && u.alive) { amph = true; break; }
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
-                   amph ? &amphib_grid() : nullptr);
+                   amph ? &amphib_grid() : nullptr, wall_leak());
     }
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
@@ -4566,7 +4567,8 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable) {
+                const std::vector<std::uint8_t>* amphib_passable,
+                const std::vector<std::uint8_t>* wall_leak) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
@@ -4756,7 +4758,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used
                 // to flood the whole grid every 0.3 s per blocked unit).
                 std::vector<Cellxy> np =
-                    find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget);
+                    find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget,
+                                      u.movement_domain == MovementDomain::Water ? nullptr : wall_leak);
                 if (np.size() > 1) {
                     u.path = std::move(np);
                     u.path_idx = 1;

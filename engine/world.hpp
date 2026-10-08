@@ -496,7 +496,8 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable = nullptr);
+                const std::vector<std::uint8_t>* amphib_passable = nullptr,
+                const std::vector<std::uint8_t>* wall_leak = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -705,6 +706,18 @@ public:
     void block_cell(int x, int y) {
         if (x >= 0 && y >= 0 && x < grid_w_ && y < grid_h_ && !passable_.empty())
             passable_[static_cast<std::size_t>(y) * grid_w_ + x] = 0;
+    }
+    // W5-A: a wall overlay cell -- blocked like block_cell, and flagged in the
+    // diagonal leak mask (pathfind.hpp: two walls touching only at a corner
+    // leave a gap units walk through). Derived from the map, never saved.
+    void block_wall_cell(int x, int y) {
+        if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || passable_.empty()) return;
+        block_cell(x, y);
+        if (wall_leak_.size() != passable_.size()) wall_leak_.assign(passable_.size(), 0);
+        wall_leak_[static_cast<std::size_t>(y) * grid_w_ + x] = 1;
+    }
+    const std::vector<std::uint8_t>* wall_leak() const {
+        return wall_leak_.size() == passable_.size() && !wall_leak_.empty() ? &wall_leak_ : nullptr;
     }
     // CB-3 Naval [RE: naval.md §1]: the passability grid for a movement domain.
     // Land (the DEFAULT -- every existing unit) returns the SAME passable_
@@ -2094,6 +2107,7 @@ private:
     std::vector<Unit> units_;
     std::vector<Building> buildings_;
     std::vector<std::uint8_t> passable_;
+    std::vector<std::uint8_t> wall_leak_;   // W5-A: block_wall_cell cells (pathfind leak mask)
     // CB-3 Naval [RE: naval.md §1]: the WATER passability grid, empty by default
     // (built only by set_water_terrain -- the naval demo). Same grid_w_*grid_h_
     // shape as passable_. naval_any_ is a diagnostics/guard flag opened by the

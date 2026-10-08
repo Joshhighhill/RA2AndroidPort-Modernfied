@@ -66,7 +66,9 @@ enum class Mode { Exact, Nearest };
 // when a budget > 0 runs out). Nearest: when the goal is not reached, the path
 // to the closed cell nearest the goal (lowest h, then lowest g, then index).
 std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int height,
-                          Cellxy start, Cellxy goal, int max_expand, Mode mode) {
+                          Cellxy start, Cellxy goal, int max_expand, Mode mode,
+                          const std::vector<uint8_t>* leak) {
+    if (leak && leak->size() != passable.size()) leak = nullptr;
     const int n = width * height;
     auto index_of = [&](int x, int y) { return y * width + x; };
     auto in_range = [&](int x, int y) { return x >= 0 && x < width && y >= 0 && y < height; };
@@ -129,9 +131,16 @@ std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int h
             if (is_closed(ncell)) continue;
             // Block diagonal corner-cutting: both orthogonal "corner" cells
             // must be passable for a diagonal move to be allowed.
+            // W5-A: a corner cell blocked only by a wall overlay (`leak`) does
+            // not block the diagonal -- walls touching only at their corners
+            // leave a gap [RE-FALLBACK: the original's corner rule is untraced;
+            // map evidence: ALL12's Tesla Reactor fence has exactly such a gap at
+            // the ParaSEALS drop point, and the reactor (objective 1) is
+            // unreachable otherwise].
             if (kDx[dir] != 0 && kDy[dir] != 0) {
-                if (!passable[(size_t)index_of(cx + kDx[dir], cy)]) continue;
-                if (!passable[(size_t)index_of(cx, cy + kDy[dir])]) continue;
+                const int c1 = index_of(cx + kDx[dir], cy), c2 = index_of(cx, cy + kDy[dir]);
+                if (!passable[(size_t)c1] && !(leak && (*leak)[(size_t)c1])) continue;
+                if (!passable[(size_t)c2] && !(leak && (*leak)[(size_t)c2])) continue;
             }
             const int tentative_g = S.g[(size_t)cur.cell] + kCost[dir];
             if (tentative_g < gval(ncell)) {
@@ -167,25 +176,27 @@ bool basic_checks(const std::vector<uint8_t>& passable, int width, int height, C
 }  // namespace
 
 std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, int height,
-                              Cellxy start, Cellxy goal) {
+                              Cellxy start, Cellxy goal, const std::vector<uint8_t>* leak) {
     if (!basic_checks(passable, width, height, start, goal)) return {};
     if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
     if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar(passable, width, height, start, goal, 0, Mode::Exact);
+    return astar(passable, width, height, start, goal, 0, Mode::Exact, leak);
 }
 
 std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int width, int height,
-                                      Cellxy start, Cellxy goal, int max_expand) {
+                                      Cellxy start, Cellxy goal, int max_expand,
+                                      const std::vector<uint8_t>* leak) {
     if (!basic_checks(passable, width, height, start, goal)) return {};
     if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
     if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar(passable, width, height, start, goal, max_expand, Mode::Exact);
+    return astar(passable, width, height, start, goal, max_expand, Mode::Exact, leak);
 }
 
 std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int width, int height,
-                                      Cellxy start, Cellxy goal, int max_expand) {
+                                      Cellxy start, Cellxy goal, int max_expand,
+                                      const std::vector<uint8_t>* leak) {
     if (!basic_checks(passable, width, height, start, goal)) return {};
     if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
     // Goal relaxation: an impassable goal becomes the nearest passable cell
@@ -209,7 +220,7 @@ std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int 
         if (!found) return { start };
     }
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar(passable, width, height, start, goal, max_expand, Mode::Nearest);
+    return astar(passable, width, height, start, goal, max_expand, Mode::Nearest, leak);
 }
 
 }  // namespace ra2engine

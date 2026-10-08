@@ -5937,7 +5937,10 @@ public:
                 });
                 world_.refresh_building_types(ba_.roster);   // G16: newly registered types
             }
-            for (const auto& [x, y] : map_dressing_.blocked()) world_.block_cell(x, y);
+            for (const auto& [x, y] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(x, y)) world_.block_wall_cell(x, y);   // W5-A diagonal gaps
+                else world_.block_cell(x, y);
+            }
             // W2-SK-01: ore mines spawn ore (TerrainClass::AI, see ore.hpp).
             map_dressing_.for_each_ore_mine([&](int x, int y, int half, int rate, double prob) {
                 world_.add_ore_mine(x, y, half, rate, prob);
@@ -6199,7 +6202,10 @@ private:
         if (ok) {
             // G-87: the saved World carries the neutral structures; re-block the
             // dressing's cells (passability is rebuilt from the map on load).
-            for (const auto& [bx, by] : map_dressing_.blocked()) world_.block_cell(bx, by);
+            for (const auto& [bx, by] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(bx, by)) world_.block_wall_cell(bx, by);
+                else world_.block_cell(bx, by);
+            }
             apply_save(sc);
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {

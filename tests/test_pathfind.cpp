@@ -128,6 +128,28 @@ TEST_CASE("path: diagonal corner-cutting through a blocked orthogonal cell is fo
     check_valid_path(path, grid, w, h);
 }
 
+TEST_CASE("path: W5-A walls touching only at a corner leave a diagonal gap") {
+    // Walls along row 2 and column 2 with the crossing cell (2,2) open: the
+    // wall cells around it touch only at corners, so (1,1)->(2,2)->(3,3) is
+    // the only way through.
+    const int w = 5, h = 5;
+    auto grid = open_grid(w, h);
+    for (int i = 0; i < w; ++i) { grid[idx(w, i, 2)] = 0; grid[idx(w, 2, i)] = 0; }
+    grid[idx(w, 2, 2)] = 1;   // the gap cell
+    std::vector<uint8_t> leak(grid.size(), 0);
+    for (std::size_t i = 0; i < grid.size(); ++i) leak[i] = grid[i] ? 0 : 1;   // every block is a wall
+    // Without the mask the corner rule seals the gap.
+    CHECK(find_path(grid, w, h, Cellxy{1, 1}, Cellxy{3, 3}).empty());
+    // With the wall mask the units walk through it diagonally.
+    auto path = find_path(grid, w, h, Cellxy{1, 1}, Cellxy{3, 3}, &leak);
+    REQUIRE(path.size() == 3);
+    CHECK(path[1].x == 2);
+    CHECK(path[1].y == 2);
+    // A non-wall blocked corner still blocks even with a mask present.
+    std::vector<uint8_t> none(grid.size(), 0);
+    CHECK(find_path(grid, w, h, Cellxy{1, 1}, Cellxy{3, 3}, &none).empty());
+}
+
 TEST_CASE("path: blocked goal returns empty") {
     const int w = 5, h = 5;
     auto grid = open_grid(w, h);
