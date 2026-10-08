@@ -63,7 +63,7 @@ inline void pres_draw_parachute(SDL_Renderer* ren, ra2engine::TextureCache& tc, 
     const FxAnimType* t = g_fx->type("PARACH");
     if (!t) return;
     PresChute& c = g_chutes[idx];
-    if (c.start < 0 || c.landed >= 0) c = PresChute{g_pres_tick, -1};
+    if (c.start < 0 || c.landed >= 0) c = PresChute{g_pres_tick, -1};   // (pres_state_tick registers it first)
     c.fx = at.fx; c.fy = at.fy; c.level = at.level; c.house = at.house;
     const long step = (g_pres_tick - c.start) / std::max(1, t->delay);
     const int open = t->loop_start - t->start, span = std::max(1, t->loop_end - t->loop_start);

@@ -137,6 +137,11 @@ void pres_state_tick(const ra2engine::World& w, PresFx& fx) {
         if (warp && g_pres_tick % 24 == 0 && w.object_visible_at(0, u.cell_x, u.cell_y))
             fx.spawn("CHRONOSK", u.fx + 120.0 / 256.0, u.fy + 120.0 / 256.0, u.level, 0.0);
         pc = {u.cell_x, u.cell_y};
+        // R-122: a chute opens on the tick its paratrooper starts to fall.
+        if (u.alive && pres_para_alt(u) > 0.0) {
+            PresChute& c = g_chutes[static_cast<int>(i)];
+            if (c.start < 0 || c.landed >= 0) c = PresChute{g_pres_tick, -1};
+        }
         g_state_fx.prev_warp[i] = warp ? 1 : 0;
     }
 }

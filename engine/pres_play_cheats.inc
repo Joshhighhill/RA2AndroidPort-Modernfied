@@ -82,3 +82,18 @@ if (args.size() == 3 && args[0] == "pres_vet") {
     world_.units()[static_cast<std::size_t>(i)].vet.veterancy = static_cast<float>(std::atof(args[2].c_str()));
     return true;
 }
+//   cheat pres_para TYPE H DX DY ALT  a paratrooper hanging at ALT leptons over
+//                                    the player's first building + (DX, DY)
+if (args.size() == 6 && args[0] == "pres_para") {
+    int x = std::atoi(args[3].c_str()), y = std::atoi(args[4].c_str());
+    for (const ra2engine::Building& b : world_.buildings())
+        if (b.alive && b.house == 0) { x += b.cx; y += b.cy; break; }
+    const std::size_t n0 = world_.units().size();
+    if (!pres_spawn_at(args[1], std::atoi(args[2].c_str()), x, y) || world_.units().size() <= n0) return false;
+    ra2engine::Unit& u = world_.units().back();
+    u.cargo_of = ra2engine::kParachuteCargo;
+    u.an.para_alt = std::atof(args[5].c_str());
+    input_.center_on_cell(x, y);
+    std::cerr << "[pres_para] " << u.image << " at " << x << "," << y << " alt " << u.an.para_alt << std::endl;
+    return true;
+}
