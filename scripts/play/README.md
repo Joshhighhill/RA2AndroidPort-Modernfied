@@ -82,7 +82,7 @@ player's first building: `garrison` (nearest empty neutral garrison),
 intact low-bridge centre cell), `bridge_near` / `bridge_far` (its two banks), `bridge_span` (a middle section 4 cells in from the near bank)),
 `cell X Y` (map cell centre; the view is centred first when it is
 off-screen), `xy X Y` (window pixels), `unit H:TYPE[:n] [+dx +dy]` (the n-th
-live unit of house H and rules id TYPE, `*` = any; optional signed cell offset),
+live unit of house H and rules id TYPE, `*` = any; optional signed cell offset), `unit H:TYPE:near` / `building H:TYPE:near` (P4: the one nearest the centre of the player's current selection),
 `building H:TYPE[:n] [+dx +dy]`, or a **named target** from the probe:
 
 | Scene (`scene`) | Named targets |
@@ -147,6 +147,7 @@ Battle), `status` (tooltip line), `confirm_open` / `confirm_text`.
 | `menu_open`, `dialog_open`, `dialog_mode` (1 load, 2 save, 3 delete), `dialog_rows`, `dialog_sel`, `dialog_confirm`, `dialog_message`, `banner` | in-game menu / save-load dialog |
 | `map`, `cam_x`, `cam_y`, `playfield_w` | view |
 | campaign only: `campaign_frame`, `objectives`, `triggers_fired`, `campaign_outcome`, `briefing_open` | mission runtime |
+| `sel_near(h,ID)` | P4: cells from the centre of the player's selection to the nearest live house-h unit of type ID (present only while something is selected) |
 | `garrisonable`, `owned_garrisons(h)`, `garrisoned(h)`, `occupants(h)`, `in_garrison(h)`, `garrison_shots` | G16 garrisons |
 | `bridge_cells`, `bridge_destroyed`, `bridge_version`, `depth_armed`, `on_bridge(h)`, `pt_<name>_x/y`, `sel_dist_<name>` | G16 low bridges; named points below |
 | `sel_occupier`, `sel_occupy_target`, `sel_attack_cell`, `sel_target`, `sel_rof_cool`, `sel_turret`, `sel_body`, `sel_damage`, `sel_wall` | first selected unit (debug) |

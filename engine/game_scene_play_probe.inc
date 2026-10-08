@@ -403,15 +403,26 @@
             int h = 0, n = 0;
             std::string type;
             if (!play_parse_spec(spec, h, type, n)) return false;
+            double nx = 0, ny = 0;
+            const bool near = n < 0 && play_sel_centre(nx, ny);   // P4 `H:TYPE:near`
+            const ra2engine::Unit* best = nullptr;
+            double best_d = 0;
             for (const ra2engine::Unit& u : world_.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != h) continue;
                 if (type != "*" && play_unit_id(u) != type && u.image != type) continue;
+                if (near) {
+                    const double d = std::hypot(u.fx - nx, u.fy - ny);
+                    if (!best || d < best_d) { best = &u; best_d = d; }
+                    continue;
+                }
                 if (n-- > 0) continue;
-                cx = u.fx + u.sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
-                cy = u.fy + u.sub_y / 256.0;
-                return true;
+                best = &u;
+                break;
             }
-            return false;
+            if (!best) return false;
+            cx = best->fx + best->sub_x / 256.0;   // W5-B: the infantry's sub-cell spot
+            cy = best->fy + best->sub_y / 256.0;
+            return true;
         };
         p.find_building = [this](const std::string& spec, double& cx, double& cy) {
             const int bi = play_find_building(spec);
@@ -529,6 +540,19 @@
         }
         w2_play_probe(p);   // wave-2 air/naval/SW keys (w2air_play.inc)
         w5_play_probe(p);   // W5-B combat/movement keys (w5_play.inc)
+        {   // P4: sel_near(h,TYPE) = cells from the selection's centre to the
+            // nearest live unit of that house/type (only while units are selected)
+            double nx = 0, ny = 0;
+            if (play_sel_centre(nx, ny)) {
+                for (const ra2engine::Unit& u : world_.units()) {
+                    if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house == 0) continue;
+                    const std::string k = "sel_near(" + std::to_string(u.house) + "," + play_unit_id(u) + ")";
+                    const double d = std::floor(std::hypot(u.fx - nx, u.fy - ny));
+                    auto it = p.n.find(k);
+                    if (it == p.n.end() || d < it->second) p.set(k, d);
+                }
+            }
+        }
         p.find_point = [this](const std::string& name, double& cx, double& cy) {
             return play_find_point(name, cx, cy);
         };

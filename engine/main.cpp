@@ -7024,22 +7024,45 @@ private:
         const std::size_t b = spec.find(':', a + 1);
         type = spec.substr(a + 1, b == std::string::npos ? std::string::npos : b - a - 1);
         n = b == std::string::npos ? 0 : std::atoi(spec.substr(b + 1).c_str());
+        if (b != std::string::npos && spec.compare(b + 1, std::string::npos, "near") == 0) n = -1;   // P4
         return !type.empty();
+    }
+    // P4: `H:TYPE:near` -- the candidate nearest the centre of the player's
+    // selection (no selection: the first candidate): what a player clicks is
+    // the enemy next to the units he is commanding.
+    bool play_sel_centre(double& x, double& y) const {
+        double sx = 0, sy = 0;
+        int k = 0;
+        for (const ra2engine::Unit& u : world_.units())
+            if (u.selected && u.alive && u.die_time < 0.0 && u.house == 0) { sx += u.fx; sy += u.fy; ++k; }
+        if (k == 0) return false;
+        x = sx / k;
+        y = sy / k;
+        return true;
     }
     int play_find_building(const std::string& spec) const {
         int h = 0, n = 0;
         std::string type;
         if (!play_parse_spec(spec, h, type, n)) return -1;
+        double nx = 0, ny = 0;
+        const bool near = n < 0 && play_sel_centre(nx, ny);
+        int best = -1;
+        double best_d = 0;
         for (int i = 0; i < static_cast<int>(world_.buildings().size()); ++i) {
             const ra2engine::Building& b = world_.buildings()[i];
             if (!b.alive || b.house != h || b.state == ra2engine::Building::State::Dead) continue;
             if (type != "*" && (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()) ||
                                 ba_.roster[b.type].id != type))
                 continue;
+            if (near) {
+                const double d = std::hypot(b.cx + b.fw / 2.0 - nx, b.cy + b.fh / 2.0 - ny);
+                if (best < 0 || d < best_d) { best = i; best_d = d; }
+                continue;
+            }
             if (n-- > 0) continue;
             return i;
         }
-        return -1;
+        return best;
     }
 
     // Active sidebar tab (0=Structures,1=Defenses,2=Infantry,3=Vehicles).
