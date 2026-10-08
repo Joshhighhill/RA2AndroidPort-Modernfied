@@ -234,6 +234,8 @@ struct SaveAccess {
         save::io(ar, w.bridge_rng_);
         save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
         save::io(ar, w.w5_);   // wave-5 abilities (agent C)
+        save::io(ar, w.w5_hide_);   // wave-5 gap scratch (the amphib_passable_ precedent)
+        save::io(ar, w.w5_own_);
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
