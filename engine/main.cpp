@@ -7788,6 +7788,8 @@ class SkirmishSetupScene;
 // Exit quits. All pages share the SINGLE layout()+ShellXform transform, so the
 // click==draw invariant holds on every page. Back is just a nav button to the
 // parent page. `MainMenuScene` is an alias for the PAGE_MAIN entry (below).
+// W5-E2 (R-143): `set leave_band 1` in a --play script (see ShellScene).
+bool g_play_leave_band = false;
 class ShellScene : public Scene {
 public:
     ShellScene(const Rules& rules, bool no_audio, const MenuArt& art,
@@ -7824,7 +7826,7 @@ public:
     void   play_probe(ra2play::Probe& p) override {
         p.scene = std::string("shell:") + header();
         p.set_s("page", header());
-        p.n["shell_leaving"] = leave_t_ >= 0.0 ? 1 : 0;   // W5-E2: --play holds while the leave band plays
+        p.n["shell_leaving"] = leave_t_ >= 0.0 ? 1 : 0;   // W5-E2: the leave band is playing
         kb_.play_probe(p);   // W5-E
         if (kb_.open_) return;
         if (page_ == PAGE_OPTIONS) {   // W5-E: options controls (opt:res, opt:res:<i>, opt:slider:<name>=<v>)
@@ -8056,10 +8058,13 @@ private:
     // ticks; a live button row plays 5 + step (the face sliding out into the
     // socket, ending on 10), a row without a button plays 11 + step (the plate
     // band, ending on 10); then WM 0x4ED switches the page]. The page switch
-    // waits for it; input is ignored meanwhile (--play holds on shell_leaving).
+    // waits for it; input is ignored meanwhile.
     // [RE-FALLBACK: a row that has not started keeps its settled look -- the
     // original redraws the live face as frame 1 / the empty row as frame 0.]
     double       enter_t_ = 0.0;
+    // --play: the band is skipped (an immediate switch keeps every existing
+    // script frame-identical -- several skirmish scripts are sensitive to the
+    // frame the game starts on) unless the script says `set leave_band 1`.
     static constexpr int kLeaveTicks = 15;   // 6 rows + 3 (the array's sentinels) + 6
     double       leave_t_ = -1.0;            // >= 0 while the leave band plays
     Scene*       leave_next_ = nullptr;      // the page to switch to when it ends
@@ -8515,6 +8520,10 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
                     if (audio_live()) apply_audio_settings(*art_.audio->sys.mixer, *g_user_settings);
                 }
                 // W5-E2 (R-143): play the leave band first (FUN_00606980).
+                if (g_pres_play_log && !g_play_leave_band) {
+                    next_ = new ShellScene(rules_, no_audio_, art_, b.target);
+                    return;
+                }
                 leave_next_ = new ShellScene(rules_, no_audio_, art_, b.target);
                 leave_t_ = 0.0;
                 return;

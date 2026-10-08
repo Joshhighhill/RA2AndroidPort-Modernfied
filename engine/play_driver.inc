@@ -131,14 +131,6 @@ public:
                 return true;
             }
             if (pc_ >= s_.cmds.size()) { finished_ = true; return false; }
-            // W5-E2 (R-143): a shell page playing its leave band is about to
-            // switch; hold the script (bounded) so clicks / asserts land on
-            // the page the click led to.
-            {
-                auto lv = p.n.find("shell_leaving");
-                if (leave_hold_on_ && lv != p.n.end() && lv->second > 0 && leave_hold_ < 120) { ++leave_hold_; return true; }
-                leave_hold_ = 0;
-            }
             const Cmd& c = s_.cmds[pc_];
             // W3-B `set align N`: every input / cheat waits for an anim tick
             // that is a multiple of N and (for frame-consuming input) later
@@ -294,7 +286,7 @@ private:
             const std::string v = c.args.size() > 1 ? c.args[1] : "";
             if (k == "dt" || k == "hz") {}   // W3-B: applied before the run (Runner ctor)
             else if (k == "align") align_ = std::max(0, std::atoi(v.c_str()));   // W3-B
-            else if (k == "leave_hold") leave_hold_on_ = std::atoi(v.c_str()) != 0;   // W5-E2: 0 = shots see the leave band
+            else if (k == "leave_band") g_play_leave_band = std::atoi(v.c_str()) != 0;   // W5-E2 (R-143)
             else if (k == "render_every") render_every_ = std::max(1, std::atoi(v.c_str()));
             else if (k == "max_frames") max_frames_ = std::atol(v.c_str());
             else if (k == "park" && c.args.size() > 2) { park_x_ = std::atoi(v.c_str()); park_y_ = std::atoi(c.args[2].c_str()); }
@@ -816,8 +808,6 @@ private:
     std::string scene_ = "(none)";
     std::size_t pc_ = 0;
     int wait_left_ = 0;
-    int leave_hold_ = 0;   // W5-E2: frames held on shell_leaving
-    bool leave_hold_on_ = true;
     int cycle_n_ = 0;
     int cycle_max_ = 8;
     bool until_active_ = false;

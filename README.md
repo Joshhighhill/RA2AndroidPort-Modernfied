@@ -4086,7 +4086,7 @@ details in `engine/pres_audio_events.inc`, `keyboard_page.inc`, `movie_player.in
   SelectTarget, StructureGarrisoned / Abandoned (RadarEvent 15), UnitRepaired (RadarEvent 8),
   BridgeRepaired (RadarEvent 14), TechBuildingLost + the type's `CaptureEvaEvent` /
   BuildingCaptured (RadarEvent 10, `FUN_004481AB`), crate Unit{Armor,Speed,FirePower}Upgraded,
-  BuildingOffLine / OnLine (hook only: the power-toggle mode is not modelled).
+  BuildingOffLine / OnLine (the power-toggle mode: see W5-E2 below).
 - **sound.ini (R-132).** PREDELAY / AMBIENT predelay from `Delay=` (lo = 33 ms for AMBIENT,
   re-drawn on every loop pass), Type=LOCAL and Type=SHROUD (silent over unrevealed cells), the
   0.05 audibility floor, and the corrected attenuation: a source anywhere on screen is at full
@@ -4110,7 +4110,7 @@ details in `engine/pres_audio_events.inc`, `keyboard_page.inc`, `movie_player.in
 - **Options (R-146).** Visual Details drives the anim `DetailLevel=` filter (low detail drops
   wakes, twinkles, power-plant lights); the non-volume sliders tick, Sound / Voice play a
   preview; the resolution combobox works on desktop (window + RA2.INI `[Video]`).
-  "See Hidden Objects" is saved but still has no effect (it needs the occlusion draw path).
+  "See Hidden Objects": see W5-E2 below.
 - **Shell (R-173 part).** Skirmish loading screen `ls800<country>.shp` + `MPLS<country>.PAL`
   (YR `loadmd.mix`, `FUN_005529F0`) with the player list; the menu CRT movie keeps its place
   across shell pages and pauses when the window loses focus.
@@ -4121,6 +4121,54 @@ details in `engine/pres_audio_events.inc`, `keyboard_page.inc`, `movie_player.in
   `score-pages`, `briefing-movies`, `options-w5`, `save-w5`; shots in `docs/gap/wave5/E-evidence/`.
 
 
+
+## Audio and shell UI, part 2 (wave-5 W5-E2, branch `w5-audio2`)
+
+RE on `gamemd.exe` with the private Ghidra copy `D:\ra2-re\w5-audio` (jobs j51..j90).
+
+- **Power toggle (R-150, R-131).** `DisplayClass::SetPowerToggleMode` (`FUN_004AC730`,
+  +0x11B2) exists, but YR 1.001 has no caller that arms it (the sidebar Action handler knows only
+  repair 0x8065 and sell 0x8066). The engine models what it does: in the mode, a click on an own
+  building with `Power<0` powers it down or up (`GoOffline` / `GoOnline`, `FUN_00452350` /
+  `FUN_00452250`, flag +0x660). The drain leaves the house's power totals, a powered-down
+  defence goes offline, and EVA BuildingOffLine / BuildingOnLine plays. The mode is reached via
+  the `--play` cheat `power_mode`; `World::set_building_power` is also the hook for trigger
+  actions TurnOff / TurnOn (`FUN_006DCE20`). `Building::power_off` is saved (**save format v21**).
+  PlanningMode stays open.
+- **Infiltration EVA (R-131).** Follows the spy infiltration in `FUN_004571E0`. The victim
+  hears RadarSabotaged, PowerSabotaged, CashStolen or TechnologyStolen. The spy's owner hears
+  BuildingInfRadarSabotaged, BuildingInfCashStolen, or BuildingInfiltrated, with
+  EnemyBasePoweredDown or NewTechnologyAcquired where they apply.
+- **Sequence sounds (R-133).** The `<Sequence>Sounds= frame sound [frame sound]` line
+  (`FUN_00523A30`, at most two pairs) plays when `stage % count == frame`. Only the YR T-Rex
+  (`TrexSequence`) uses it.
+- **See Hidden Objects (R-146).** `TechnoClass::AI` -> `FUN_0070E600` attaches the
+  `[AudioVisual] Behind=` anim (BEHIND). It applies to a `CanBeHidden` non-aircraft object that
+  a structure drawn after it covers. The anim is only drawn when the option is on (Options+0x1F,
+  `FUN_00423AE0`). Infantry use their sub-cell offsets.
+- **Movie and BAG audio (R-134).** Stereo IMA-ADPCM BAG clips are decoded: per chunk, an L
+  header and an R header, then 4-byte L/R sub-blocks. A new Bink Audio decoder handles RDFT and
+  DCT, mono and stereo. It matches ffmpeg's decode of crafted files sample for sample
+  (`tests/test_bink_audio.cpp`; [RE-FALLBACK: the published bitstream, not binkw32.dll]). A
+  movie's first audio track plays through the mixer's music slot. The theme pauses for the
+  movie and comes back after it. The install's own `.bik` files carry no audio, so the menu CRT
+  stays silent because of the data.
+- **Bink off the main thread (R-173).** `engine/bink_async.hpp`: a worker owns the decoder.
+  It decodes frames in order up to the one the clock asks for. The main thread only uploads the
+  newest finished picture. It is used by the menu CRT and by the movie player. Under `--play`
+  the worker blocks on each frame, so captures stay deterministic. A damaged frame ends the
+  movie instead of crashing it.
+- **Shell leave transition (R-143).** `FUN_00606980` with the leave flag off works in 30 ms
+  ticks. Row i starts i+1 ticks late. A button row slides its face back into the socket (SDBTNANM
+  5..10). A row without a button plays the plate band (11..16). The page switch waits for the
+  animation, and input is ignored meanwhile. Under `--play` the switch stays immediate unless a
+  script says `set leave_band 1`, because several skirmish scripts depend on the frame the game
+  starts on (`air` fails with a 6-frame shift even on master). The main-menu header shimmer is
+  still open.
+- **Evidence.** New scripts: `power-toggle`, `spy-eva`, `seq-sounds`, `see-hidden`,
+  `shell-leave`. Shots are in `docs/gap/wave5/E2-evidence/`. Unit tests: `test_world_power_w5`,
+  `test_bink_audio` (3 fixtures), `test_bink_async`, and the stereo case in `test_audio`.
+- **Verification (W5-E2).** @@VERIFY@@
 
 ## Presentation: layers, base-building chrome, state effects, lighting (wave-5 W5-PRES, branch `w5-pres`)
 
