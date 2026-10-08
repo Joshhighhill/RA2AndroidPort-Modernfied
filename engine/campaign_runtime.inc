@@ -1530,7 +1530,12 @@ private:
                 if (std::getenv("RA2_CAMP_DEBUG"))
                     std::cerr << "[camp-debug] f" << frame_ << " unit " << i << " " << t.type << " house " << u.house
                               << " died at " << u.cell_x << "," << u.cell_y << " by house "
-                              << gf_attacker_house((int)i, -1, u.house) << "\n";
+                              << gf_attacker_house((int)i, -1, u.house) << " killer=" << u.vet.killed_by
+                              << (u.vet.killed_by >= 0 && u.vet.killed_by < (int)w_.units().size()
+                                      ? " " + w_.units()[(std::size_t)u.vet.killed_by].image + "/h" +
+                                            std::to_string(w_.units()[(std::size_t)u.vet.killed_by].house)
+                                      : std::string())
+                              << "\n";
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
                 // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is
