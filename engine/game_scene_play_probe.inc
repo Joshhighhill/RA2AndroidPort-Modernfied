@@ -413,6 +413,13 @@
         }
         p.set("ai_garrisons", static_cast<double>(world_.w5_state().ai_garrisons));
         p.set("ai_tech_captures", static_cast<double>(world_.w5_state().ai_tech_captures));
+        p.set("ship_c4", static_cast<double>(world_.w5_state().ship_c4));
+        p.set("culls", static_cast<double>(world_.w5_state().culls));
+        {
+            int grabbed = 0;
+            for (const ra2engine::Unit& u : world_.units()) grabbed += u.alive && u.parasite_on_me >= 0;
+            p.set("parasited", static_cast<double>(grabbed));
+        }
         p.set("airstrikes", static_cast<double>(world_.w5_state().airstrikes));
         p.set("ifv_repairs", static_cast<double>(world_.w5_state().repairs));
         p.set("defusals", static_cast<double>(world_.w5_state().defusals));

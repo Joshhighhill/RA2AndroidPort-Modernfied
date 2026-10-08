@@ -189,6 +189,28 @@ void World::step_w5(double dt) {
             ++w5_.scatters;
         }
     w5_step_airstrike();   // (R-046) Boris calls MiG airstrikes
+    // (R-049) Giant Squid grapple [RE: abilities-w5.md §11 -- warhead
+    // ParasitePlus Paralyzes=32767 "reset to last as long as the Squid
+    // grapples", Culling=yes "kills instead of damages if victim in Red"]:
+    // a host ridden by a paralysing parasite cannot move; a culling parasite
+    // kills a host at or below ConditionRed (25%).
+    for (int i = 0; i < nu; ++i) {
+        Unit& h = units_[(std::size_t)i];
+        if (h.parasite_on_me < 0 || h.parasite_on_me >= nu || !h.alive || h.die_time >= 0.0) continue;
+        const Unit& d = units_[(std::size_t)h.parasite_on_me];
+        if (d.w5.p.paralyzes && h.moving()) {
+            occ_.release_all_of(i, h.cell_x, h.cell_y);
+            occ_.set(h.cell_x, h.cell_y, i);
+            h.path.clear();
+            h.path_idx = 0;
+            h.fx = h.cell_x;
+            h.fy = h.cell_y;
+        }
+        if (d.w5.p.culling && h.hp > 0 && h.hp * 4 <= h.max_hp) {
+            ++w5_.culls;
+            ability_kill_unit(i);
+        }
+    }
     w5_step_defuse();   // (R-046) engineers disarming Ivan bombs
     w5_step_repair_ifv(dt);   // (R-048) the Engineer IFV repairs friendly vehicles
 

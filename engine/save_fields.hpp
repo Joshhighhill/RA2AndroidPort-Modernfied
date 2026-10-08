@@ -658,12 +658,14 @@ template <class Ar> void fields(Ar& ar, UnitProfileW5& v) {
     io(ar, v.assault); io(ar, v.assault_rof); io(ar, v.open_topped); io(ar, v.deploy_frames);
     io(ar, v.airstrike_team); io(ar, v.elite_airstrike_team); io(ar, v.airstrike_type);
     io(ar, v.airstrike_recharge); io(ar, v.elite_airstrike_recharge); io(ar, v.flare_range);
+    io(ar, v.paralyzes); io(ar, v.culling);
 }
 template <class Ar> void fields(Ar& ar, UnitW5& v) {
     io(ar, v.bound); io(ar, v.p); io(ar, v.charging); io(ar, v.next_assault); io(ar, v.door_until);
     io(ar, v.defuse_unit); io(ar, v.defuse_bld); io(ar, v.healer); io(ar, v.heal_target); io(ar, v.mirage_tree);
     io(ar, v.base_flight_speed); io(ar, v.base_fly_cps); io(ar, v.last_hp);
     io(ar, v.airstrike_ready); io(ar, v.strike_of); io(ar, v.strike_bld);
+    io(ar, v.c4_frame); io(ar, v.c4_by);
 }
 template <class Ar> void fields(Ar& ar, RulesW5& v) {
     io(ar, v.prism_support_modifier); io(ar, v.prism_support_max); io(ar, v.prism_support_delay);
@@ -674,7 +676,7 @@ template <class Ar> void fields(Ar& ar, RulesW5& v) {
 template <class Ar> void fields(Ar& ar, WorldW5& v) {
     io(ar, v.stolen_tech); io(ar, v.armed); io(ar, v.rules); io(ar, v.profiles); io(ar, v.frame);
     io(ar, v.gap_created); io(ar, v.passenger_shots); io(ar, v.prism_supports); io(ar, v.defusals); io(ar, v.repairs);
-    io(ar, v.ai_garrisons); io(ar, v.ai_tech_captures); io(ar, v.scatters); io(ar, v.airstrikes);
+    io(ar, v.ai_garrisons); io(ar, v.ai_tech_captures); io(ar, v.scatters); io(ar, v.airstrikes); io(ar, v.culls); io(ar, v.ship_c4);
 }
 
 // --- unit / building types ---

@@ -1170,6 +1170,9 @@ void wire_abilities(ra2engine::World& world, const Rules& rules, const Ini& ini)
     // Apocalypse (Explodes=yes) and both attack dogs (ParasiteDog warhead,
     // Parasite=yes: one bite kills any infantry, Verses 0% vs vehicles).
     for (const char* extra : {"DTRUCK", "APOC", "DOG", "ADOG"}) ids.push_back(extra);
+    // Wave-5 (R-049): the Giant Squid's SquidGrab warhead ParasitePlus is
+    // Parasite=yes -- the P4 parasite rides the ship it grabs.
+    ids.push_back("SQD");
     for (const auto& kv : ini.section("InfantryTypes")) {
         const std::string& id = kv.second;   // RC-5: comment already cut by Ini
         if (!id.empty() && rules.section_double(id, "IFVMode", 0.0) != 0.0 &&
@@ -1249,7 +1252,16 @@ void wire_w5(ra2engine::World& world, BuildingAssets& ba, const Rules& rules, co
                 p.flare_range = fl.empty() ? 12.0 : rules.weapon_range(fl);
                 if (p.airstrike_type.empty()) p.airstrike_team = 0;
             }
-            if (p.assault || p.open_topped || p.deploy_frames > 0 || p.airstrike_team > 0)
+            {
+                const std::string pw = ra2engine::type_weapon_id(rules, id, 0, false);
+                const std::string wh = pw.empty() ? std::string() : rules.section_string(pw, "Warhead", "");
+                if (!wh.empty() && rules.section_flag(wh, "Parasite", false)) {
+                    p.paralyzes = rules.section_double(wh, "Paralyzes", 0.0) > 0.0;
+                    p.culling = rules.section_flag(wh, "Culling", false);
+                }
+            }
+            if (p.assault || p.open_topped || p.deploy_frames > 0 || p.airstrike_team > 0 || p.paralyzes ||
+                p.culling)
                 prof[rules.image(id)] = p;
         }
     }
