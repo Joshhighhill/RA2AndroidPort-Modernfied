@@ -10,17 +10,20 @@ class P:
             self.l.append(x)
         return self
 
-    def build(self, bid, tab=0, wait=2400, cat="structure", count_key=None):
+    def build(self, bid, tab=0, wait=2400, cat="structure", count_key=None, near=None):
         """Queue one structure, wait for it, place it, wait until it exists."""
         ck = count_key or f"buildings(0,{bid})"
+        pl = f"place near {near[0]} {near[1]}" if near else "place auto"
         self.add(f"let n_{bid} = built(0,{bid})",
                  f"until 900 can_build({bid}) == 1",
                  f"click tab:{tab}",
                  f"click cameo:{bid}",
                  f"until {wait} queue_ready({cat}) == 1",
                  f"click cameo:{bid}",
-                 "place auto",
-                 f"until 600 built(0,{bid}) > $n_{bid}")
+                 pl)
+        for _ in range(4):   # a refused click (pointer on a raised neighbour) -> next candidate
+            self.add("wait 1", f"if placing == 1 then {pl}")
+        self.add(f"until 600 built(0,{bid}) > $n_{bid}")
         return self
 
     def train(self, uid, tab, n, guard=False):

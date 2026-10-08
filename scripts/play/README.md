@@ -62,6 +62,7 @@ A `"double quoted"` run is one argument.
 | `type "<text>"` | One `SDL_TEXTINPUT` event. | 1 |
 | `view <cell\|unit\|building ...>` | Pan the camera so the cell is centred (as scrolling would). | 0 |
 | `place auto` | With a building armed for placement, click the nearest valid origin to the player's first building (same `placement_check` as the game). | 1 |
+| `place near <x> <y>` | As `place auto`, but the search is anchored on cell (x,y) (the yard the player is looking at) instead of the player's first building -- e.g. SOV04, whose first building is a map lamp post far from the ConYard. | 1 |
 | `shot <name>` | PNG of this frame. | 1 |
 | `assert <expr>` | Soft check: a failure is logged and the run continues. | 0 |
 | `require <expr>` | Hard check: a failure ends the run. | 0 |
