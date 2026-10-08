@@ -101,6 +101,7 @@ TEST_CASE("saveload: truncated or corrupt input fails cleanly") {
 
 TEST_CASE("saveload: every serialized aggregate's visitor covers all its members") {
     CHECK_ARITY(Unit);
+    CHECK_ARITY(QueueBacklogSave);   // R-180
     CHECK_ARITY(Building);
     CHECK_ARITY(BuildingTypeDef);
     CHECK_ARITY(UnitCombat);
@@ -418,6 +419,32 @@ TEST_CASE("saveload: load_world rejects a truncated blob") {
     CHECK_FALSE(load_world(b, s));
 }
 
+TEST_CASE("saveload: load_world range-checks every index (R-181)") {
+    ra2assets::MapFile map;
+    World a(map);
+    a.add_combat_unit(0, 0, 0, gun("GI", 10, 3.0));
+    a.add_combat_unit(1, 0, 1, gun("E2", 10, 3.0));
+    a.units()[0].target = 1;   // a valid reference
+    {
+        World b(map);
+        CHECK(load_world(b, save_world(a)));
+    }
+    auto refused = [&](auto mutate) {
+        World c(map);
+        c.add_combat_unit(0, 0, 0, gun("GI", 10, 3.0));
+        c.add_combat_unit(1, 0, 1, gun("E2", 10, 3.0));
+        mutate(c);
+        World d(map);
+        return !load_world(d, save_world(c));
+    };
+    CHECK(refused([](World& w) { w.units()[0].target = 2; }));            // past the end
+    CHECK(refused([](World& w) { w.units()[1].cargo_of = 77; }));
+    CHECK(refused([](World& w) { w.units()[0].target_building = 0; }));   // no buildings
+    CHECK(refused([](World& w) { w.units()[0].house = 1000000; }));
+    CHECK(refused([](World& w) { w.units()[0].target = -5; }));
+    CHECK_FALSE(refused([](World& w) { w.units()[0].target = -1; }));
+}
+
 // ===========================================================================
 // Map-trigger runtime round trip
 // ===========================================================================
@@ -570,4 +597,21 @@ TEST_CASE("saveload: slots - SAVE%04X.SAV naming, newest-first listing, delete")
     CHECK(list_saves(dir.string()).size() == 2);   // "second" + the damaged junk
     fs::remove_all(dir, ec);
     CHECK(clean_description("a\tb\x01" "c") == "abc");
+}
+
+TEST_CASE("saveload: the build-queue backlog + hold section round-trips (R-180)") {
+    QueueBacklogSave q;
+    q.backlog[2] = {5, 5, 7};
+    q.backlog[3] = {1};
+    q.held = {2, 4};
+    SaveFile f;
+    f.sections[kTagBacklog] = to_bytes(q);
+    SaveFile g;
+    REQUIRE(decode_save(encode_save(f), g));
+    const std::vector<std::uint8_t>* b = g.section(kTagBacklog);
+    REQUIRE(b != nullptr);
+    QueueBacklogSave r;
+    REQUIRE(from_bytes(*b, r));
+    CHECK(r.backlog == q.backlog);
+    CHECK(r.held == q.held);
 }

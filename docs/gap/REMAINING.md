@@ -337,37 +337,37 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
 | R-150 | Hotkeys that are parsed but do nothing: CombatantSelect, Follow, VeterancyNav, PlaceBeacon, AllToCheer and PlanningMode. The PowerToggle, Planning and Beacon modes are not modelled; the beacon, alliance and taunt keys are swallowed (W2-SK-28) | Controls/Touch | MINOR | OPEN | `engine/hotkeys.cpp:14-22`; `engine/input.cpp:225-227` | M | N |
-| R-151 | Touch targets on phone: shell campaign and load list rows are about 14 dp, and the sidebar tabs about 21 dp (an art limit). View bookmarks have no touch path (W4-AM-08 rest, W2-AR-07 part) | Controls/Touch | MINOR | PARTIAL | `engine/sidebar.hpp:31,40` | S | N |
-| R-152 | IME: the SAVE button sits above the visible area while typing, and prefilled text is not selected on focus (W2-AR-15) | Controls/Touch | MINOR | PARTIAL | `engine/app_robust.inc:177-188`; `engine/ingame_pages.inc:67` | S | N |
+| R-151 | Touch targets on phone: shell campaign and load list rows are about 14 dp, and the sidebar tabs about 21 dp (an art limit). View bookmarks have no touch path (W4-AM-08 rest, W2-AR-07 part) | Controls/Touch | MINOR | PARTIAL (w5-android: campaign list snaps a finger to the nearest row; sidebar near-miss snap from w4fix-ctl; save/load list rows and the ~21 dp tab width remain) | `engine/sidebar.hpp:31,40` | S | N |
+| R-152 | IME: the SAVE button sits above the visible area while typing, and prefilled text is not selected on focus (W2-AR-15) | Controls/Touch | MINOR | FIXED (w5-android: IME rect spans SAVE..edit, SAVE stays above the keyboard on the emulator; prefilled text selected, typing/Backspace replace it) | `engine/app_robust.inc:177-188`; `engine/ingame_pages.inc:67` | S | N |
 | R-153 | SDL clamps touches in the shell's pillarbox bars to the viewport edge (harmless today) | Controls/Touch | COSMETIC | OPEN | SDL `SDL_render.c:825-830` | S | N |
 
 ### Android / Platform
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-160 | Setup UX: the text never says to pick a sub-folder (the picker refuses Download itself), there is no `EXTRA_INITIAL_URI`, and the phone package has no README (W4-AM-10) | Android/Platform | MINOR | OPEN | `android/app/src/main/res/values/strings.xml:9` | S | N |
-| R-161 | Exit stays enabled during the import copy, which runs on an unowned thread and can leave `*.part` files (W4-AM-10b) | Android/Platform | MINOR | OPEN | `SetupActivity.java:144,173-174` | S | N |
-| R-162 | A mid-game panel resize (foldables, split-screen) keeps the old canvas, pillarboxed; there is no SIZE_CHANGED re-layout (W4-AM-13) | Android/Platform | MINOR | OPEN | no `SIZE_CHANGED` handler in `engine/` | M | N |
-| R-163 | Audio focus is never requested, so calls and other apps do not duck or pause the game (W2-AR-19) | Android/Platform | MINOR | OPEN | no `requestAudioFocus` in `android/` or `engine/` | S | N |
+| R-160 | Setup UX: the text never says to pick a sub-folder (the picker refuses Download itself), there is no `EXTRA_INITIAL_URI`, and the phone package has no README (W4-AM-10) | Android/Platform | MINOR | FIXED (w5-android: setup text names the RA2 sub-folder rule, EXTRA_INITIAL_URI opens Download/RA2, picking the parent folder also works; docs/PHONE-README.txt for the package) | `android/app/src/main/res/values/strings.xml:9` | S | N |
+| R-161 | Exit stays enabled during the import copy, which runs on an unowned thread and can leave `*.part` files (W4-AM-10b) | Android/Platform | MINOR | FIXED (w5-android: Exit/Back disabled while copying, owned copy thread cancelled on destroy, *.part cleaned at start and on failure) | `SetupActivity.java:144,173-174` | S | N |
+| R-162 | A mid-game panel resize (foldables, split-screen) keeps the old canvas, pillarboxed; there is no SIZE_CHANGED re-layout (W4-AM-13) | Android/Platform | MINOR | FIXED (w5-android: SDL_WINDOWEVENT_SIZE_CHANGED -> GameScene::relayout_canvas; emulator 974x548 -> 1218x548 mid-game) | no `SIZE_CHANGED` handler in `engine/` | M | N |
+| R-163 | Audio focus is never requested, so calls and other apps do not duck or pause the game (W2-AR-19) | Android/Platform | MINOR | FIXED (w5-android: AUDIOFOCUS_GAIN, USAGE_GAME; loss/transient -> mute, can-duck -> 20 %; emulator call: gain 0.00 then 1.00) | no `requestAudioFocus` in `android/` or `engine/` | S | N |
 
 ### Performance
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-170 | Phone performance is unknown: there are no real arm64 fps or load-time numbers. The emulator floor is 15.4 fps on ALL01 at 1080p and 19.6 fps on SOV01, with RSS 405 MB and about 6 s per mission load (W2-AR-29/Q2, W4-AM perf) | Performance | MAJOR | OPEN | `docs/gap/wave4/06-android-missions.md:139-142,195` | S | N |
-| R-171 | The ALL03 opening runs at about 8.6 logic frames/s (many idle infantry) and has never been profiled (W4-SQ-14) | Performance | MAJOR | OPEN | `docs/gap/wave4/05-mission-sequences.md:94` | M | N |
-| R-172 | 15 Hz fixed logic with no render interpolation. 8-player desktop logic runs 290-400 frames/s headless (W2-GA-P3) | Performance | MINOR | PARTIAL | `engine/main.cpp:5702-5710` | M | N |
+| R-170 | Phone performance is unknown: there are no real arm64 fps or load-time numbers. The emulator floor is 15.4 fps on ALL01 at 1080p and 19.6 fps on SOV01, with RSS 405 MB and about 6 s per mission load (W2-AR-29/Q2, W4-AM perf) | Performance | MAJOR | PARTIAL (w5-android: perf overlay (3-finger tap / Ctrl+Shift+F / debug.ra2.perf) + [perf] log + INSTALL.md section 5 "how to measure"; emulator ALL01 14.0 -> ~17 fps; still no real arm64 phone numbers) | `docs/gap/wave4/06-android-missions.md:139-142,195` | S | N |
+| R-171 | The ALL03 opening runs at about 8.6 logic frames/s (many idle infantry) and has never been profiled (W4-SQ-14) | Performance | MAJOR | FIXED (w5-android: profiled with RA2_PROFILE -- 86 % in A* for unreachable approach re-requests; content-validated path memo: ALL03 ~11 -> ~100 logic frames/s headless, play_hash identical) | `docs/gap/wave4/05-mission-sequences.md:94` | M | N |
+| R-172 | 15 Hz fixed logic with no render interpolation. 8-player desktop logic runs 290-400 frames/s headless (W2-GA-P3) | Performance | MINOR | RE-FALLBACK (w5-android: not interpolated -- the original renders once per logic frame (gamespeed.md); render cost cut instead: light map cached, 62 % of an emulator frame) | `engine/main.cpp:5702-5710` | M | N |
 | R-173 | Bink decodes on the main thread, does not pause on focus loss, and does not restart the CRT per page (README:1647) | Performance | COSMETIC | OPEN | `src/bink.cpp` | M | N |
 
 ### Robustness / Release
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-180 | The production backlog and hold state are not written to save games | Robustness/Release | MINOR | OPEN | `engine/game_scene_controls.inc:238` `[RE-FALLBACK]` | S | N |
-| R-181 | `load_world` has no index range checks; the CRC-32 trailer catches random corruption only (W2-AR-20 residual) | Robustness/Release | MINOR | PARTIAL | `engine/savegame.cpp:56-67` | S | N |
-| R-182 | The Windows exe is a console-subsystem app (no `WIN32_EXECUTABLE`), so a double-click opens a console (W2-AR-22 residual) | Robustness/Release | MINOR | PARTIAL | `CMakeLists.txt:368-372` | S | N |
-| R-183 | Stale play scripts. `probe-bridge` uses the removed `map:+` lobby target and `probe-flow` expects a ConYard at start; both fail (re-checked in this audit). `robust-missing` needs a stripped install via `RA2_INSTALL_DIR` | Robustness/Release | MINOR | OPEN | `scripts/play/probe-bridge.play:9`, `scripts/play/probe-flow.play:6`; README:3789 | S | N |
-| R-184 | No raw SDL input record/replay (`RA2_INPUT_RECORD`/`REPLAY`) for reproducing player bugs (W4-MC-09) | Robustness/Release | MINOR | OPEN | no hits in `engine/` or `src/` | M | N |
+| R-180 | The production backlog and hold state are not written to save games | Robustness/Release | MINOR | FIXED (w5-android: QBKL save section, format v17) | `engine/game_scene_controls.inc:238` `[RE-FALLBACK]` | S | N |
+| R-181 | `load_world` has no index range checks; the CRC-32 trailer catches random corruption only (W2-AR-20 residual) | Robustness/Release | MINOR | FIXED (w5-android: SaveAccess::valid_world range-checks unit/building/house/type/grid indices after load) | `engine/savegame.cpp:56-67` | S | N |
+| R-182 | The Windows exe is a console-subsystem app (no `WIN32_EXECUTABLE`), so a double-click opens a console (W2-AR-22 residual) | Robustness/Release | MINOR | FIXED (w5-android: ra2game.exe WIN32_EXECUTABLE from the same objects; log to %APPDATA%/ra2engine/RA2/ra2engine.log) | `CMakeLists.txt:368-372` | S | N |
+| R-183 | Stale play scripts. `probe-bridge` uses the removed `map:+` lobby target and `probe-flow` expects a ConYard at start; both fail (re-checked in this audit). `robust-missing` needs a stripped install via `RA2_INSTALL_DIR` | Robustness/Release | MINOR | FIXED (w5-android: probe-bridge/probe-flow pass; robust-missing skips on a full install, passes on a stripped one; --controls-selftest retired) | `scripts/play/probe-bridge.play:9`, `scripts/play/probe-flow.play:6`; README:3789 | S | N |
+| R-184 | No raw SDL input record/replay (`RA2_INPUT_RECORD`/`REPLAY`) for reproducing player bugs (W4-MC-09) | Robustness/Release | MINOR | FIXED (w5-android: --record/--replay [--hidden], RA2_RECORD; replay of ctl-sov01 reproduces probe_hash d621403ea1f8ffb0) | no hits in `engine/` or `src/` | M | N |
 | R-185 | Map dressing with no art is dropped and its cell left unblocked (0 cases on RA2 maps today) | Robustness/Release | MINOR | PARTIAL | `engine/pres_map.inc:66,93,118,191` | S | N |
 
 ### Fidelity guesses (cross-cutting `[RE-FALLBACK]` groups not already listed)
@@ -398,6 +398,10 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | U-3 | **License.** MIT, "Copyright (c) 2026 Omar El Arab", covering the engine only. Confirm the owner or entity name. THIRD_PARTY_NOTICES covers SDL 2.30.9, stb_image_write, doctest and libc++ (W2-AR-23) | User decisions | MINOR | USER-DECISION | `LICENSE:3`; `THIRD_PARTY_NOTICES.md` | S | N |
 | U-4 | **Release.** Signing keystore, timing of 0.9.0 → 1.0, and the shipping channel (Play Store or side-load) (W2-AR Q5) | User decisions | – | USER-DECISION | `VERSION`; README:3626-3630 | S | N |
 | U-5 | **Movies and scope.** Either accept speech-only cinematics or support user-supplied movie files, which needs the campaign Bink path from R-034. Also confirm the scope cuts: random map generator (button greyed, SK-19), Yuri faction, LAN/online, map editor | User decisions | – | USER-DECISION | `engine/skirmish_page.inc:13`; README:1566,1583,3292 | – | N |
+
+## Wave-5 agent F status (branch `w5-android`)
+
+Rows R-151, R-152, R-160..R-163, R-170..R-172 and R-180..R-184 carry their `w5-android` status above. Evidence: `docs/gap/wave5/06-evidence/` (emulator). Perf: ALL03 opening ~11 -> ~100 logic frames/s (desktop, headless); emulator ALL01 14.0 -> ~17 fps (SwiftShader; 85 % of the remaining frame is the host GL pipe). Save format v17.
 
 ## Proposed next fix wave (wave 5, at most 6 parallel agents)
 

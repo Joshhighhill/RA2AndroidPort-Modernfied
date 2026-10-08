@@ -24,6 +24,9 @@ struct SharedDevice {
     std::atomic<Mixer*> mixer{nullptr};
 };
 SharedDevice g_audio;
+// R-163: 0..256 fixed-point focus gain (256 = unity), set from the Android
+// AudioManager listener thread (RA2Activity), read by the callback.
+std::atomic<int> g_focus_gain{256};
 }  // namespace
 
 void AudioOutput::callback(void*, uint8_t* stream, int len) {
@@ -33,8 +36,19 @@ void AudioOutput::callback(void*, uint8_t* stream, int len) {
         std::memset(stream, 0, static_cast<std::size_t>(len));
         return;
     }
-    m->render_stereo(reinterpret_cast<int16_t*>(stream), frames);
+    int16_t* out = reinterpret_cast<int16_t*>(stream);
+    m->render_stereo(out, frames);
+    const int g = g_focus_gain.load(std::memory_order_relaxed);
+    if (g < 256) {
+        for (std::size_t i = 0; i < frames * 2; ++i) out[i] = static_cast<int16_t>((out[i] * g) >> 8);
+    }
 }
+
+void AudioOutput::set_focus_gain(float gain) {
+    const int g = static_cast<int>(gain * 256.0f + 0.5f);
+    g_focus_gain.store(g < 0 ? 0 : g > 256 ? 256 : g);
+}
+float AudioOutput::focus_gain() { return g_focus_gain.load() / 256.0f; }
 
 bool AudioOutput::open() {
     if (dev_ != 0) return true;
@@ -102,3 +116,12 @@ int AudioOutput::open_device_count() { return g_audio.dev != 0 ? 1 : 0; }
 int AudioOutput::handle_count() { return g_audio.refs; }
 
 }  // namespace ra2engine
+
+#ifdef __ANDROID__
+#include <jni.h>
+// R-163: RA2Activity's OnAudioFocusChangeListener -> the sink's gain.
+extern "C" JNIEXPORT void JNICALL Java_org_ra2_engine_RA2Activity_nativeAudioFocusGain(JNIEnv*, jclass, jfloat gain) {
+    ra2engine::AudioOutput::set_focus_gain(gain);
+    SDL_Log("[lifecycle] audio focus gain %.2f", static_cast<double>(gain));
+}
+#endif

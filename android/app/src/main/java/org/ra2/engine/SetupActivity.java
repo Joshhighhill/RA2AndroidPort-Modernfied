@@ -62,9 +62,13 @@ public class SetupActivity extends Activity {
 
     private TextView status;
     private ProgressBar progress;
-    private Button importButton, startButton;
+    private Button importButton, startButton, exitButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean copying = false;
+    // R-161: the copy thread is owned by the activity; leaving (finish /
+    // destroy) cancels it, and its partial file is deleted.
+    private Thread importThread;
+    private volatile boolean cancelImport = false;
 
     static File dataDir(Activity a) {
         File ext = a.getExternalFilesDir(null);
@@ -83,10 +87,23 @@ public class SetupActivity extends Activity {
         return m;
     }
 
+    /** R-161: delete *.part leftovers of an interrupted copy (app killed mid-import). */
+    static int cleanParts(File dir) {
+        int n = 0;
+        File[] list = dir.listFiles();
+        if (list == null) return 0;
+        for (File f : list) {
+            if (f.isFile() && f.getName().endsWith(".part") && f.delete()) ++n;
+        }
+        if (n > 0) Log.i(TAG, "removed " + n + " partial file(s) of an interrupted import");
+        return n;
+    }
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         File dir = dataDir(this);
+        cleanParts(dir);
         boolean forceImport = getIntent() != null && getIntent().getBooleanExtra(EXTRA_IMPORT, false);
         if (!forceImport && missing(dir, true).isEmpty()) {
             startGame();
@@ -141,10 +158,10 @@ public class SetupActivity extends Activity {
         row.setGravity(Gravity.CENTER);
         importButton = button(getString(R.string.setup_import), v -> pickFolder());
         startButton = button(getString(R.string.setup_start), v -> startGame());
-        Button exit = button(getString(R.string.setup_exit), v -> finish());
+        exitButton = button(getString(R.string.setup_exit), v -> finish());
         row.addView(importButton);
         row.addView(startButton);
-        row.addView(exit);
+        row.addView(exitButton);
         root.addView(row);
         setContentView(root);
     }
@@ -172,11 +189,35 @@ public class SetupActivity extends Activity {
         status.setText(sb.toString());
         startButton.setEnabled(req.isEmpty() && !copying);
         importButton.setEnabled(!copying);
+        exitButton.setEnabled(!copying);   // R-161: no Exit in the middle of a copy
+    }
+
+    /** R-161: Back does not abandon a running copy either. */
+    @Override
+    public void onBackPressed() {
+        if (copying) return;
+        super.onBackPressed();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (importThread != null && importThread.isAlive()) {
+            cancelImport = true;   // the thread deletes its .part file and stops
+            try { importThread.join(2000); } catch (InterruptedException ignored) { }
+        }
+        super.onDestroy();
     }
 
     private void pickFolder() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        // R-160: open the picker at Download/RA2 (where the instructions say
+        // to put the files). Android 11+ refuses Download itself as a tree,
+        // so the user must open the RA2 sub-folder and tap USE THIS FOLDER.
+        if (Build.VERSION.SDK_INT >= 26) {
+            i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, DocumentsContract.buildDocumentUri(
+                    "com.android.externalstorage.documents", "primary:Download/RA2"));
+        }
         startActivityForResult(i, REQ_TREE);
     }
 
@@ -186,10 +227,35 @@ public class SetupActivity extends Activity {
         if (req != REQ_TREE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri tree = data.getData();
         copying = true;
+        cancelImport = false;
         progress.setVisibility(View.VISIBLE);
         progress.setProgress(0);
         refresh();
-        new Thread(() -> importFrom(tree), "ra2-import").start();
+        importThread = new Thread(() -> importFrom(tree), "ra2-import");
+        importThread.start();
+    }
+
+    /** Lists the known game files directly inside `docId` (case-insensitive). */
+    private void scan(ContentResolver cr, Uri tree, String docId, Map<String, String> canon,
+                      Map<String, Uri> found, Map<String, Long> sizes, List<String> subdirs) {
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId);
+        try (Cursor c = cr.query(children, new String[]{
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_MIME_TYPE}, null, null, null)) {
+            while (c != null && c.moveToNext()) {
+                String name = c.getString(1);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(3))) {
+                    if (subdirs != null) subdirs.add(c.getString(0));
+                    continue;
+                }
+                String key = name == null ? null : canon.get(name.toLowerCase(Locale.ROOT));
+                if (key == null || found.containsKey(key)) continue;
+                found.put(key, DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)));
+                sizes.put(key, c.isNull(2) ? 0L : c.getLong(2));
+            }
+        }
     }
 
     /** Copies every known file found in the picked folder (case-insensitive match). */
@@ -203,25 +269,22 @@ public class SetupActivity extends Activity {
         long total = 0;
         String error = null;
         try {
-            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree,
-                    DocumentsContract.getTreeDocumentId(tree));
-            try (Cursor c = cr.query(children, new String[]{
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_SIZE}, null, null, null)) {
-                while (c != null && c.moveToNext()) {
-                    String name = c.getString(1);
-                    String key = name == null ? null : canon.get(name.toLowerCase(Locale.ROOT));
-                    if (key == null) continue;
-                    found.put(key, DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)));
-                    long sz = c.isNull(2) ? 0 : c.getLong(2);
-                    sizes.put(key, sz);
-                    total += sz;
-                }
+            // R-160: the picked folder itself, then (when it holds none of the
+            // required files) one level of sub-folders -- picking the folder
+            // that CONTAINS RA2 (e.g. the copied RA2-phone package) works too.
+            List<String> subdirs = new ArrayList<>();
+            scan(cr, tree, DocumentsContract.getTreeDocumentId(tree), canon, found, sizes, subdirs);
+            boolean anyRequired = false;
+            for (int i = 0; i < REQUIRED; ++i) anyRequired |= found.containsKey(FILES[i]);
+            if (!anyRequired) {
+                for (String sub : subdirs) scan(cr, tree, sub, canon, found, sizes, null);
             }
+            if (found.isEmpty()) throw new java.io.IOException(getString(R.string.setup_no_files));
+            for (Long sz : sizes.values()) total += sz;
             long done = 0;
             byte[] buf = new byte[1 << 20];
             for (Map.Entry<String, Uri> e : found.entrySet()) {
+                if (cancelImport) throw new java.io.IOException("cancelled");
                 File out = new File(dir, e.getKey());
                 File tmp = new File(dir, e.getKey() + ".part");
                 final String name = e.getKey();
@@ -231,6 +294,7 @@ public class SetupActivity extends Activity {
                     if (in == null) throw new java.io.IOException("cannot open " + name);
                     int n;
                     while ((n = in.read(buf)) > 0) {
+                        if (cancelImport) throw new java.io.IOException("cancelled");
                         os.write(buf, 0, n);
                         done += n;
                         final int p = total > 0 ? (int) (done * 1000 / total) : 0;
@@ -249,7 +313,9 @@ public class SetupActivity extends Activity {
         } catch (Exception ex) {
             Log.e(TAG, "import failed", ex);
             error = ex.getMessage();
+            cleanParts(dir);   // R-161: never leave a partial file behind
         }
+        if (cancelImport) return;   // the activity is gone
         final String err = error;
         final int count = found.size();
         ui.post(() -> {

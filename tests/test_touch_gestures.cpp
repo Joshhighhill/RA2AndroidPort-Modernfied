@@ -156,3 +156,42 @@ TEST_CASE("touch: a system-cancelled gesture never clicks (W2-AR-18)") {
     REQUIRE(v.size() == 1);
     CHECK(v[0].kind == InputEvent::PointerUp);
 }
+
+TEST_CASE("touch: a three-finger tap toggles the perf overlay, never clicks (R-170)") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_down(2, 200, 100, 1020);
+    g.finger_down(3, 300, 100, 1040);
+    g.finger_up(3, 300, 100, 1200);
+    g.finger_up(2, 200, 100, 1210);
+    g.finger_up(1, 100, 100, 1220);
+    const auto v = drain(g);
+    REQUIRE(v.size() == 1);
+    CHECK(v[0].kind == InputEvent::Key);
+    CHECK(v[0].key == kKeyPerfToggle);
+    CHECK(v[0].touch);
+
+    TouchGestures s;   // a slow three-finger rest is nothing
+    s.finger_down(1, 100, 100, 1000);
+    s.finger_down(2, 200, 100, 1020);
+    s.finger_down(3, 300, 100, 1040);
+    s.finger_up(3, 300, 100, 2000);
+    s.finger_up(2, 200, 100, 2010);
+    s.finger_up(1, 100, 100, 2020);
+    CHECK(drain(s).empty());
+
+    TouchGestures t;   // after it, a normal tap still works
+    t.finger_down(1, 100, 100, 1000);
+    t.finger_down(2, 200, 100, 1020);
+    t.finger_down(3, 300, 100, 1040);
+    t.finger_up(1, 100, 100, 1200);
+    t.finger_up(2, 200, 100, 1210);
+    t.finger_up(3, 300, 100, 1220);
+    drain(t);
+    t.finger_down(7, 50, 60, 3000);
+    t.finger_up(7, 50, 60, 3100);
+    const auto w = drain(t);
+    REQUIRE(w.size() == 3);
+    CHECK(w[1].kind == InputEvent::PointerDown);
+    CHECK(w[1].x == 50);
+}

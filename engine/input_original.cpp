@@ -546,6 +546,20 @@ void Input::set_view_limits(int min_x, int min_y, int max_x, int max_y) {
     clamp_camera();
 }
 
+void Input::set_viewport(int view_w, int view_h) {
+    view_w_ = view_w;
+    view_h_ = view_h;
+    int mnx, mny, mxx, mxy;   // the same rule as the constructor
+    if (terrain_screen_bounds(world_.map(), mnx, mny, mxx, mxy)) {
+        const int margin_x = view_w_ / 2, margin_y = view_h_ / 2;
+        min_cam_x_ = -margin_x - mxx;
+        max_cam_x_ = view_w_ + margin_x - mnx;
+        min_cam_y_ = -margin_y - mxy;
+        max_cam_y_ = view_h_ + margin_y - mny;
+    }
+    clamp_camera();
+}
+
 void Input::center_on_selection() {
     std::vector<const Unit*> sel;
     for (const Unit& u : world_.units())

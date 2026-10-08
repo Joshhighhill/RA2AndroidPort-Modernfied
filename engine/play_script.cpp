@@ -297,7 +297,9 @@ bool parse_script(const std::string& text, Script& out, std::string& err) {
                 return false;
             }
             const std::string& so = one.cmds[0].op;
-            if (so == "until" || so == "cycle" || so == "if" || so == "end") {
+            // R-183: `if EXPR then end` is allowed (a script that does not
+            // apply to this install ends early, e.g. robust-missing).
+            if (so == "until" || so == "cycle" || so == "if") {
                 err = "line " + std::to_string(ln) + ": 'if' cannot guard '" + so + "'";
                 return false;
             }
