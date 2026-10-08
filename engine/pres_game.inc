@@ -25,6 +25,7 @@ public:
             for (const ra2engine::UnitTypeDef& d : *list) effects_.note_unit_id(d.combat.image, d.id);
         g_fx3 = &effects_;
         rules_ini_ = &rules_ini;
+        w5_art_ini_ = &art_ini;   // W5-E2 sequence sounds
         snd_.open(dir, &audio, audio_on || g_pres_log_on);
         snd_.set_side(side_ix);
         // [G-81] Every producible / AI / crew unit gets its voice, death and
