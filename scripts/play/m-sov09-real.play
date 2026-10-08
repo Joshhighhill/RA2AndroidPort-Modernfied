@@ -101,7 +101,7 @@ click unit 6:GHOST:0
 click cell 65 52
 click xy 500 400 right
 click unit 6:YURI:0
-click cell 64 37
+click cell 62 36
 wait 20
 until 2500 umov(6,YURI,0) == 0
 until 900 power_out(1) <= 800
