@@ -3982,3 +3982,7 @@ gamemd.exe in `docs/re/campaign.md` §9 and `docs/re/world-depth.md` §B3.
   full install (`if data_missing_optional == 0 then end`, `if ... then end` is now allowed);
   `--controls-selftest` retired (pre-MCV flow, wrote the user's RA2.INI).
 - Evidence: `docs/gap/wave5/06-evidence/`.
+- **Verification** (merged with master `f0fbd7b`): unit suite 829/829; **82/82** `--play`
+  scripts pass (one at a time; `probe-bridge`, `probe-flow`, `robust-missing` included);
+  all 27 `--demo-*` hash gates print their pins (no re-pin; `--demo-saveload` does not hash
+  the format version or the new optional section).
