@@ -15,6 +15,14 @@ until 3000 input_locked == 0
 until 3000 carried(0) == 0
 click unit 0:AMCV
 key d
+waituntil 300 built(0,GACNST) >= 1
+# P4: when the unloaded troops crowd every legal spot around the beach (the
+# ring search finds none -- "cannot deploy"), drive the AMCV to the open
+# ground just north-west and deploy there.
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then click unit 0:AMCV
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then click cell 91 160
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then wait 200
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then key d
 until 900 built(0,GACNST) >= 1
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
@@ -23,6 +31,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 let n_GAREFN = built(0,GAREFN)
 until 900 can_build(GAREFN) == 1
@@ -31,6 +47,14 @@ click cameo:GAREFN
 until 2400 queue_ready(structure) == 1
 click cameo:GAREFN
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAREFN) > $n_GAREFN
 let n_GAPILE = built(0,GAPILE)
 until 900 can_build(GAPILE) == 1
@@ -39,6 +63,14 @@ click cameo:GAPILE
 until 2400 queue_ready(structure) == 1
 click cameo:GAPILE
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPILE) > $n_GAPILE
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
@@ -47,6 +79,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
@@ -55,6 +95,14 @@ click cameo:GAWEAP
 until 2400 queue_ready(structure) == 1
 click cameo:GAWEAP
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAWEAP) > $n_GAWEAP
 if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
@@ -74,6 +122,14 @@ click cameo:GAREFN
 until 2400 queue_ready(structure) == 1
 click cameo:GAREFN
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAREFN) > $n_GAREFN
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
@@ -82,6 +138,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
@@ -90,6 +154,14 @@ click cameo:GAWEAP
 until 2400 queue_ready(structure) == 1
 click cameo:GAWEAP
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAWEAP) > $n_GAWEAP
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
@@ -98,6 +170,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 let n_GAREFN = built(0,GAREFN)
 until 900 can_build(GAREFN) == 1
@@ -106,6 +186,14 @@ click cameo:GAREFN
 until 2400 queue_ready(structure) == 1
 click cameo:GAREFN
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAREFN) > $n_GAREFN
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
@@ -114,6 +202,14 @@ click cameo:GAWEAP
 until 2400 queue_ready(structure) == 1
 click cameo:GAWEAP
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAWEAP) > $n_GAWEAP
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
@@ -122,6 +218,14 @@ click cameo:GAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:GAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
 if outcome == RUNNING and cameo(MTNK) == 1 then click tab:3
 if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK

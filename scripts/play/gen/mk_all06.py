@@ -20,6 +20,14 @@ until 3000 input_locked == 0
 until 3000 carried(0) == 0
 click unit 0:AMCV
 key d
+waituntil 300 built(0,GACNST) >= 1
+# P4: when the unloaded troops crowd every legal spot around the beach (the
+# ring search finds none -- "cannot deploy"), drive the AMCV to the open
+# ground just north-west and deploy there.
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then click unit 0:AMCV
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then click cell 91 160
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then wait 200
+if built(0,GACNST) == 0 and units(0,AMCV) == 1 then key d
 until 900 built(0,GACNST) >= 1
 """)
 for b in ["GAPOWR", "GAREFN", "GAPILE", "GAPOWR", "GAWEAP"]:
