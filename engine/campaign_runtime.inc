@@ -615,10 +615,6 @@ private:
         int mc_victim = -1;         // W2-CA-15: unit this controller holds
         int mc_orig = -1;           // W2-CA-15: house before it was mind-controlled
         std::uint8_t mission = 0;   // W4-SQ-05: 1 Sleep, 2 Harmless (placed Mission=)
-        // W5-A R-033 hook: the map [Infantry] SubCell (0 centre, 2..4 the
-        // spots). Kept for the 3-infantry-per-cell occupancy (R-061, W5-B):
-        // once Occupancy has sub-cell spots, place the infantry on this spot.
-        std::int8_t subcell = -1;
         bool off = false;           // W5-A 61/62 TurnOff/TurnOn (buildings)
     };
     struct Team {
@@ -1069,10 +1065,19 @@ private:
         return false;
     }
     int place_unit(const std::string& type, int eh, int x, int y, int health, const std::string& tag,
-                   const std::string& mission, bool far = false, int goal_x = -1, int goal_y = -1) {
+                   const std::string& mission, bool far = false, int goal_x = -1, int goal_y = -1,
+                   int subcell = -1) {
         const camp::UnitType* ut = types_.unit(type);
         if (!ut) return -1;
         int cx = 0, cy = 0;
+        // W5-B R-061 [RE: map [Infantry] SubCell indexes the spot table
+        // DAT_0089D960 directly, FUN_0051F810]: a map infantry goes into its
+        // own spot of its own cell -- up to three share a cell.
+        const bool inf = !ut->combat.is_vehicle && !ut->combat.is_aircraft && !ut->combat.is_naval;
+        int spot = -1;
+        if (inf && subcell >= 0 && w_.subcells_enabled() && w_.walkable(x, y) &&
+            w_.building_at_cell(x, y) < 0)
+            spot = w_.occupancy().free_spot(x, y, subcell);
         // gF G-73: a ship is placed on the nearest free WATER cell (naval.md
         // §1 water grid); a ground unit whose waypoint lies at sea goes to the
         // nearest free shore cell within 12 [RE-FALLBACK §9.3: the original
@@ -1100,6 +1105,9 @@ private:
             if (!free_water_near(x, y, cx, cy, 12) &&
                 !(far && far_cell(x, y, /*water=*/true, -1, -1, cx, cy)))
                 return -1;
+        } else if (spot >= 0) {
+            cx = x;
+            cy = y;
         } else if (!free_cell_near(x, y, cx, cy) && !free_cell_near(x, y, cx, cy, 12) &&
                    !(far && far_cell(x, y, /*water=*/false, goal_x, goal_y, cx, cy))) {
             return -1;
@@ -1112,6 +1120,7 @@ private:
             w_.add_combat_unit(cx, cy, eh, ut->combat);
         }
         const int idx = (int)w_.units().size() - 1;
+        if (spot >= 0) w_.place_in_spot(idx, spot);   // W5-B R-061
         ra2engine::Unit& u = w_.units()[(std::size_t)idx];
         if (health > 0) u.hp = ra2engine::campaign_strength(u.max_hp, health, false);
         if (ua_anims_has(u.image)) {}
@@ -1230,12 +1239,12 @@ private:
                 // VeterancyStruct value x100) and Facing (0..255 = DirStruct >> 8)
                 // to the new techno]: per-object rank and facing.
                 place_vet_ = o.veterancy >= 200 ? 2 : o.veterancy >= 100 ? 1 : 0;
-                const int idx = place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission);
+                const int idx = place_unit(o.type, eh, o.x, o.y, o.health, o.tag, o.mission, false, -1, -1,
+                                           o.kind == 2 ? o.subcell : -1);   // W5-B SubCell
                 place_vet_ = 0;
                 if (idx < 0) { ++skipped_; continue; }
                 ++placed_u_;
                 apply_map_facing(idx, o.facing);
-                if (o.kind == 2) utrack_[(std::size_t)idx].subcell = (std::int8_t)o.subcell;
             }
         }
     }
@@ -2896,7 +2905,7 @@ private:
     int teams_created_ = 0, raises_ = 0;
     bool placing_ = false;
     int place_vet_ = 0;      // W4-SQ-04: rank given to the members being created
-    // W5-A (saved, v20): house quarries (35), FireSale houses (9), TeamTypes
+    // W5-A (saved, v21): house quarries (35), FireSale houses (9), TeamTypes
     // that left the map (23), the ResizeView usable area (40).
     std::vector<int> quarry_;
     std::vector<std::uint8_t> fire_sale_;

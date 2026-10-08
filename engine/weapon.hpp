@@ -20,6 +20,7 @@ struct WeaponSlot {
     std::vector<int> verses;       // warhead Verses percents
     double cell_spread = 0.0;
     double percent_at_max = 1.0;
+    bool affects_allies = true;    // W5-B R-060: warhead AffectsAllies= (WarheadType +0x179)
     ProjectileSpec proj;           // projectile flight (P2)
     bool aa = false;               // projectile AA= (can hit airborne)
     bool ag = true;                // projectile AG= (can hit ground)

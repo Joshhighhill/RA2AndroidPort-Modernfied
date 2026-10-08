@@ -283,7 +283,7 @@ struct CampaignHostSave {
     std::uint64_t logged = 0;
     int teams_created = 0;
     int raises = 0;
-    // W5-A (save v20): 61/62 building power switch, 35 house quarries, 9 FireSale
+    // W5-A (save v21): 61/62 building power switch, 35 house quarries, 9 FireSale
     // houses, 23 TeamTypes that left the map, 40 ResizeView area (valid,x,y,w,h).
     std::vector<std::uint8_t> b_off;
     std::vector<int> house_quarry;

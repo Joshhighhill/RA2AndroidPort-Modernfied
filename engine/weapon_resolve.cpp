@@ -2,6 +2,7 @@
 #include "abil_w5_rules.hpp"   // wave-5 (agent C)
 
 #include "ra2assets/rules.hpp"
+#include <cctype>
 
 namespace ra2engine {
 
@@ -22,6 +23,7 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.verses = rules.verses(wh);
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
+    s.affects_allies = rules.section_flag(wh, "AffectsAllies", true);   // W5-B R-060
     s.proj = resolve_projectile_spec(rules, weapon);
     // BulletType AA=/AG= [RE-FALLBACK defaults AA=no, AG=yes: the BulletType
     // loader sits in an unanalysed gap (voxel-render.md §7); these are the
@@ -107,6 +109,15 @@ void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& t
         }
     }
     c.crusher = rules.section_flag(type_id, "Crusher", false);
+    c.auto_crush = rules.section_flag(type_id, "AutoCrush", false);   // W5-B R-050
+    c.is_infantry = rules.is_infantry(type_id);                         // W5-B R-061 (sub-cells)
+    {   // W5-B R-062: only the Drive {4A582741} and Ship {2BEA74E1} locomotors
+        // read the GroundType speed table (FUN_004B2550 / FUN_006A1310); Hover,
+        // Walk, Mech, Jumpjet, Teleport, Rocket... do not. Absent -> Drive.
+        std::string loco = rules.section_string(type_id, "Locomotor", "");
+        for (char& ch : loco) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        c.land_speed_loco = loco.empty() || loco.rfind("{4A582741", 0) == 0 || loco.rfind("{2BEA74E1", 0) == 0;
+    }
     // Crushable defaults YES for infantry (Conscripts carry no key and are
     // crushed in the original), NO otherwise [RE-FALLBACK: InfantryTypeClass
     // ctor default not read; rulesmd sets Crushable=yes/no explicitly on the

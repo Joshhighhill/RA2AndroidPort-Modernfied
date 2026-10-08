@@ -793,6 +793,17 @@ inline std::string to_lower(std::string s) {
 // str=125).
 #include "w2air_main.inc"   // W2-AN: resolve_an_type / resolve_sw_params (wave-2 air/naval/SW)
 
+// W5-B R-062: SpeedType= -> GroundType Cost column (FUN_00673A40 read order).
+inline int w5_speed_type_index(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const std::size_t sc = s.find_first_of(" ;	");
+    if (sc != std::string::npos) s = s.substr(0, sc);
+    static const char* kNames[8] = {"foot", "track", "wheel", "hover", "winged", "float", "amphibious", "floatbeach"};
+    for (int i = 0; i < 8; ++i)
+        if (s == kNames[i]) return i;
+    return -1;
+}
+
 ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id) {
     ResolvedUnit r;
     r.combat.image = rules.image(unit_id);
@@ -801,6 +812,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // included -- they used to share World::move_cps).
     g_game_speed_bias = rules.general_double("GameSpeedBias", g_game_speed_bias);
     r.combat.speed_cps = speed_to_cps(r.speed);
+    r.combat.speed_type = w5_speed_type_index(rules.section_string(unit_id, "SpeedType", ""));   // W5-B R-062
     r.combat.strength = rules.strength(unit_id);
     r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
@@ -827,6 +839,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // CellSpread>=1 warheads (BlimpHE=2) splash. Default 0 = single-target.
     r.combat.cell_spread = rules.section_double(warhead, "CellSpread", 0.0);
     r.combat.percent_at_max = rules.section_double(warhead, "PercentAtMax", 1.0);
+    r.combat.affects_allies = rules.section_flag(warhead, "AffectsAllies", true);   // W5-B R-060
 
     // Projectile phase (P2) [RE: projectile.md §2/§6]: the primary weapon's
     // projectile class + flight parameters. Resolved for EVERY unit (like every
@@ -968,6 +981,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.verses = rules.verses(ewh);
         r.combat.elite.cell_spread = rules.section_double(ewh, "CellSpread", 0.0);
         r.combat.elite.percent_at_max = rules.section_double(ewh, "PercentAtMax", 1.0);
+        r.combat.elite.affects_allies = rules.section_flag(ewh, "AffectsAllies", true);   // W5-B R-060
         r.combat.elite.inf_death = static_cast<int>(rules.section_double(ewh, "InfDeath", 0.0));   // W3-B
         r.combat.elite.prone_damage = ra2engine::warhead_prone_damage(rules, ewh);
         r.combat.elite_proj = tw.elite[0].proj;
@@ -1893,6 +1907,10 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 d.combat = ru.combat;
                 d.combat.is_vehicle = true;
                 d.combat.speed_cps = speed_to_cps(ru.speed);
+                // W5-B: the SHP ship needs its ROT too -- with rot 0 its aim
+                // facing never slewed onto a target, so the vehicle aim gate
+                // (FireError::FACING) held the Giant Squid's / Dolphin's fire forever.
+                d.combat.rot = rules.rot(e.id);
             } else if (e.vehicle) {
                 VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, e.id);
                 if (!va.ok) continue;                 // assets missing -> drop
@@ -2873,6 +2891,7 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_layers.inc"   // W5-PRES R-100/R-101 deck + air layers
 #include "pres_state.inc"    // W5-PRES R-120 Iron Curtain / elite flash / chrono warp
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
+#include "w5_combat_arm.inc"  // W5-B: sub-cells / land speed / crush arming of the real World
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
@@ -3429,8 +3448,9 @@ void draw_p5_chevrons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2e
                                                    : (u.veteran_rank > 0 ? 1 : 0);
         if (rank <= 0) continue;
         const int frame = rank >= 2 ? 15 : 14;
-        const int sx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
-        const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam.y + 15;
+        const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B sub-cell
+        const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
+        const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - u.level * 15)) + cam.y + 15;
         const int ox = u.is_vehicle ? 10 : 5, oy = u.is_vehicle ? 6 : 2;
         draw_shp_centered(ren, tc, g_p5_art->pips, frame, pal, "pips", sx + ox, sy + oy, W, H);
     }
@@ -3846,9 +3866,10 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (input && g_pips) {   // W2-UI-11: PIPBRD + PIPS on the selected units only
             if (u.selected) {
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
-                const int sx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam.x + 30;
+                const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B
+                const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
                 const int lv = u.level + pres_unit_lift_levels(world, u);   // W5-PRES R-100 deck
-                const int sy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - lv * 15)) + cam.y + 15 - up;
+                const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - lv * 15)) + cam.y + 15 - up;
                 draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red);
             }
         } else if (u.selected || u.hp < u.max_hp)
@@ -5736,6 +5757,7 @@ public:
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
+        w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
 
         // --- vehicle render list (voxel hulls for launched MTNK/FV/etc.) ---
         vlist_ = {&va_, &miners_.harv, &miners_.cmin};
@@ -6471,6 +6493,7 @@ public:
     // Agent G --play extended probe (scripts/play/README.md).
 #include "game_scene_play_probe.inc"
 #include "w2air_play.inc"   // wave-2 air/naval/SW --play keys, points, cheats
+#include "w5_play.inc"      // W5-B combat/movement --play keys
 
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
@@ -6647,6 +6670,7 @@ private:
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
+        w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
             wire_abilities(world_, rules_, rules_ini_);
             wire_w5(world_, ba_, rules_, rules_ini_, art_ini_);   // wave-5 (agent C)
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
@@ -6842,6 +6866,7 @@ private:
     }
     bool play_find_point(const std::string& name, double& cx, double& cy) const {
         if (w2_find_point(name, cx, cy)) return true;   // wave-2 air/naval/SW points
+        if (w5_find_point(name, cx, cy)) return true;   // W5-B points (w5_play.inc)
         int ax = 0, ay = 0;
         if (!play_anchor(ax, ay)) return false;
         auto d2 = [&](int x, int y) { return (x - ax) * (x - ax) + (y - ay) * (y - ay); };
@@ -17137,6 +17162,7 @@ ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
     ra2engine::World w = launch_skirmish(e.cfg, e.a, e.ua, e.ba, e.rules);
     wire_economy(w, e.ba, e.rules);
     w.enable_projectiles(ra2engine::resolve_projectile_rules(e.rules));
+    w5_arm_combat(w, e.rules, &e.a.map, &e.a.theater);   // W5-B: the real game's movement/combat rules
     {
         std::vector<int> bcost;
         for (const ra2engine::BuildingTypeDef& t : e.ba.roster) bcost.push_back(t.cost);

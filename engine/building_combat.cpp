@@ -49,6 +49,7 @@ Unit World::defense_shooter(int b_idx, int slot) const {
     s.w_verses = w.verses;
     s.w_cell_spread = w.cell_spread;
     s.w_percent_at_max = w.percent_at_max;
+    s.w_affects_allies = w.affects_allies;   // W5-B R-060
     s.w_inf_death = w.inf_death;          // W3-B
     s.w_prone_damage = w.prone_damage;
     s.w_proj = w.proj;
@@ -289,10 +290,10 @@ void World::step_building_combat(double dt) {
             continue;
         }
         const Unit shooter = defense_shooter(bi, slot);
-        if (w.cell_spread >= 1.0)
-            apply_spread_damage(units_, occ_, shooter, units_[b.def_target]);
-        else
-            deliver_hit_from(units_, occ_, shooter, -1, bi, b.def_target);
+        // W5-B R-060 [RE: DamageArea FUN_00489190]: detonate at the target.
+        const Unit& tv = units_[b.def_target];
+        damage_area(*this, units_, buildings_, occ_, shooter, -1, bi, unit_lept_x(tv),
+                    unit_lept_y(tv), unit_lept_z(tv));
     }
 }
 

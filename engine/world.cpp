@@ -579,6 +579,112 @@ void World::set_house(int h, HouseRec rec) {
     houses_configured_ = true;   // open the firewall
 }
 
+int World::cell_level(int x, int y) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
+    const ra2assets::MapCell* mc = map_->at(x, y);
+    return mc ? mc->level : 0;
+}
+
+void World::enable_subcells() {
+    if (occ_.subcells()) return;
+    occ_.enable_subcells();
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) subcell_register(i);
+    update_sub_offsets();
+}
+
+void World::subcell_register(int idx) {
+    if (!occ_.subcells() || idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    const Unit& u = units_[static_cast<std::size_t>(idx)];
+    // W5-B: only real [InfantryTypes] units take spots (an SHP vehicle such
+    // as the landing craft is drawn like an infantry but holds a whole cell).
+    const bool inf = u.is_infantry && !u.is_vehicle && !u.is_aircraft && !u.is_naval;
+    const bool held = occ_.at(u.cell_x, u.cell_y) == idx || occ_.spot_of(u.cell_x, u.cell_y, idx) >= 0;
+    if (held) occ_.release(u.cell_x, u.cell_y, idx);
+    occ_.mark_infantry(idx, inf);
+    if (held) occ_.set(u.cell_x, u.cell_y, idx);
+}
+
+void World::place_in_spot(int idx, int spot) {
+    if (!occ_.subcells() || idx < 0 || idx >= static_cast<int>(units_.size()) || !occ_.is_infantry(idx))
+        return;
+    const Unit& u = units_[static_cast<std::size_t>(idx)];
+    if (occ_.spot_unit(u.cell_x, u.cell_y, spot) != Occupancy::kEmpty &&
+        occ_.spot_unit(u.cell_x, u.cell_y, spot) != idx)
+        return;
+    occ_.set_spot(u.cell_x, u.cell_y, idx, spot);
+    update_sub_offsets();
+}
+
+void World::arm_land_speed(const std::vector<std::uint8_t>& land, const std::vector<std::uint8_t>& ramp,
+                           const LandSpeedRules& r) {
+    const std::size_t n = static_cast<std::size_t>(grid_w_) * grid_h_;
+    speed_land_ = land;
+    speed_land_.resize(n, 0);
+    ramp_ = ramp;
+    ramp_.resize(n, 0);
+    level_grid_.assign(n, 0);
+    for (int y = 0; y < grid_h_; ++y)
+        for (int x = 0; x < grid_w_; ++x)
+            level_grid_[static_cast<std::size_t>(y) * grid_w_ + x] = static_cast<std::int8_t>(cell_level(x, y));
+    land_rules_ = r;
+    land_speed_armed_ = true;
+}
+
+int World::speed_land_at(int x, int y) const {
+    if (!land_speed_armed_ || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
+    const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+    // Ore on a flat cell is Tiberium land (FUN_0047D1C0: a Tiberium overlay with
+    // Land=Clear and ramp type < 5).
+    if (ore_.has_ore(x, y) && ramp_[i] < 5) return 5;
+    return speed_land_[i];
+}
+
+double World::unit_speed_cps(int i) const {
+    if (i < 0 || i >= static_cast<int>(units_.size())) return 0.0;
+    const Unit& u = units_[static_cast<std::size_t>(i)];
+    return (u.speed_cps > 0.0 ? u.speed_cps : move_cps_) * u.speed_mult;
+}
+
+void World::update_sub_offsets() {
+    if (!occ_.subcells()) return;
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        Unit& u = units_[static_cast<std::size_t>(i)];
+        if (!occ_.is_infantry(i)) {
+            u.spot = 0;
+            u.sub_x = u.sub_y = 0.0;
+            continue;
+        }
+        int s = occ_.spot_of(u.cell_x, u.cell_y, i);
+        if (s < 0) s = 0;
+        u.spot = s;
+        int ax, ay;
+        spot_offset(s, ax, ay);
+        double ox = ax, oy = ay;
+        // Mid-segment toward a reserved spot of the next path cell: blend.
+        if (u.moving() && (u.fx != u.cell_x || u.fy != u.cell_y)) {
+            std::size_t pi = u.path_idx;
+            while (pi < u.path.size() && u.path[pi].x == u.cell_x && u.path[pi].y == u.cell_y) ++pi;
+            if (pi < u.path.size()) {
+                const Cellxy t = u.path[pi];
+                const int ns = occ_.spot_of(t.x, t.y, i);
+                if (ns >= 0) {
+                    const double seg = std::hypot(t.x - u.cell_x, t.y - u.cell_y);
+                    const double rem = std::hypot(t.x - u.fx, t.y - u.fy);
+                    double f = seg > 0.0 ? 1.0 - rem / seg : 1.0;
+                    if (f < 0.0) f = 0.0;
+                    if (f > 1.0) f = 1.0;
+                    int bx, by;
+                    spot_offset(ns, bx, by);
+                    ox = ax + (bx - ax) * f;
+                    oy = ay + (by - ay) * f;
+                }
+            }
+        }
+        u.sub_x = ox;
+        u.sub_y = oy;
+    }
+}
+
 bool World::walkable(int x, int y) const {
     if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
     return passable_[static_cast<size_t>(y) * grid_w_ + x] != 0;
@@ -627,6 +733,7 @@ Unit& World::add_unit(int cell_x, int cell_y, const std::string& image, int fram
     if (const ra2assets::MapCell* mc = map_->at(cell_x, cell_y)) u.level = mc->level;
     units_.push_back(std::move(u));
     const int idx = static_cast<int>(units_.size()) - 1;
+    occ_.mark_infantry(idx, true);   // W5-B: re-registered by add_combat_unit once typed
     occ_.set(cell_x, cell_y, idx);
     return units_.back();
 }
@@ -658,6 +765,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_prone_damage = c.prone_damage;
     u.w_cell_spread = c.cell_spread;        // CB-2 [aircraft.md §4]: warhead splash
     u.w_percent_at_max = c.percent_at_max;  // radius + edge scale (0 = single-target)
+    u.w_affects_allies = c.affects_allies;  // W5-B R-060
+    u.speed_type = c.speed_type;            // W5-B R-062
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // spec. Copied unconditionally but READ ONLY behind projectiles_enabled_
     // (the firewall) -- inert in every existing gate.
@@ -707,6 +816,9 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.deploy_fire = c.deploy_fire;
     u.deploy_fire_slot = c.deploy_fire_slot;
     u.crusher = c.crusher;
+    u.auto_crush = c.auto_crush;   // W5-B R-050
+    u.is_infantry = c.is_infantry; // W5-B R-061
+    u.land_speed_loco = c.land_speed_loco;   // W5-B R-062
     u.crushable = c.crushable;
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= -> roster index (inert -1
     // for every unit type without the key, i.e. everything but AMCV/SMCV).
@@ -741,6 +853,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.verses = c.verses;
     u.vet.base.cell_spread = c.cell_spread;
     u.vet.base.percent_at_max = c.percent_at_max;
+    u.vet.base.affects_allies = c.affects_allies;
     u.vet.base.inf_death = c.inf_death;     // W3-B
     u.vet.base.prone_damage = c.prone_damage;
     u.vet.has_elite = c.has_elite;
@@ -757,6 +870,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // very first shot is already intercepted. A strict no-op unless
     // abilities_any_ (no pre-P4 gate registers a profile).
     if (abilities_any_) ability_bind_unit(u);
+    subcell_register(static_cast<int>(&u - units_.data()));   // W5-B R-061
     return u;
 }
 
@@ -1009,6 +1123,27 @@ void World::order_move_selected(int goal_x, int goal_y) {
             else if (dom == 3) {
                 air_grid.assign(static_cast<std::size_t>(grid_w_) * grid_h_, 1);
                 g = &air_grid;
+            }
+            if (dom == 0 && occ_.subcells() && !g->empty()) {
+                // W5-B R-061: vehicles take whole cells first; the infantry then
+                // pack three to a cell around the goal (sub-cell spots).
+                std::vector<std::size_t> vk, ik;
+                std::vector<Cellxy> vcur, icur;
+                std::vector<int> iid;
+                for (std::size_t j = 0; j < ks.size(); ++j) {
+                    const int ui = sel[ks[j]];
+                    if (occ_.is_infantry(ui)) { ik.push_back(ks[j]); icur.push_back(dcur[j]); iid.push_back(ui); }
+                    else { vk.push_back(ks[j]); vcur.push_back(dcur[j]); }
+                }
+                std::vector<Cellxy> vt;
+                if (!vk.empty()) vt = assign_formation({goal_x, goal_y}, vcur, *g, grid_w_, grid_h_, occ_);
+                for (std::size_t j = 0; j < vk.size(); ++j) targets[vk[j]] = vt[j];
+                if (!ik.empty()) {
+                    const std::vector<Cellxy> it =
+                        assign_infantry_formation({goal_x, goal_y}, icur, iid, *g, grid_w_, grid_h_, occ_, vt);
+                    for (std::size_t j = 0; j < ik.size(); ++j) targets[ik[j]] = it[j];
+                }
+                continue;
             }
             const std::vector<Cellxy> t =
                 (g->empty()) ? dcur : assign_formation({goal_x, goal_y}, dcur, *g, grid_w_, grid_h_, occ_);
@@ -4241,8 +4376,32 @@ void World::step(double dt) {
         bool amph = false;
         for (const Unit& u : units_)
             if (u.movement_domain == MovementDomain::Amphibious && u.alive) { amph = true; break; }
+        // W5-B R-062: the land speed inputs (armed by w5_arm_combat only).
+        MoveSpeedCtx sc;
+        if (land_speed_armed_) {
+            sc.armed = true;
+            sc.land = &speed_land_;
+            sc.ramp = &ramp_;
+            sc.level = &level_grid_;
+            sc.ore = &ore_;
+            for (int a = 0; a < 12; ++a)
+                for (int b = 0; b < 8; ++b) sc.cost[a][b] = land_rules_.cost[a][b];
+            sc.up[0] = land_rules_.tracked_up;
+            sc.up[1] = land_rules_.wheeled_up;
+            sc.down[0] = land_rules_.tracked_down;
+            sc.down[1] = land_rules_.wheeled_down;
+            sc.condition_red = land_rules_.condition_red;
+        }
+        std::vector<int> scatter;
+        if (occ_.subcells()) {
+            sc.scatter_out = &scatter;
+            if (!land_speed_armed_) sc.armed = false;
+        }
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
-                   amph ? &amphib_grid() : nullptr, wall_leak());
+                   amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr, wall_leak());
+        std::sort(scatter.begin(), scatter.end());
+        scatter.erase(std::unique(scatter.begin(), scatter.end()), scatter.end());
+        for (int s : scatter) order_scatter(s);
     }
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
@@ -4402,7 +4561,17 @@ void World::step(double dt) {
         // auto-acquires both land and naval targets by the ordinary Verses>0 rule
         // (no valid_target change -- a naval unit IS a valid target).
         if (u.is_naval) {
-            order_unit_move(r.unit, r.goal_x, r.goal_y);
+            // W5-B: an approach request names the TARGET's (occupied) cell;
+            // a ship heads for the nearest free cell of its own domain grid
+            // beside it (the exact water A* to the target's cell itself could
+            // fail and left the Giant Squid parked out of its 1.5-cell range).
+            int gx = r.goal_x, gy = r.goal_y;
+            if (r.approach) {
+                const std::vector<Cellxy> g =
+                    nearest_free_cells({r.goal_x, r.goal_y}, 1, grid_for(u.movement_domain), grid_w_, grid_h_, occ_);
+                if (!g.empty()) { gx = g[0].x; gy = g[0].y; }
+            }
+            order_unit_move(r.unit, gx, gy);
             continue;
         }
         if (r.approach)
@@ -4492,12 +4661,16 @@ void World::step(double dt) {
     // forward and settles first try.
     for (Unit& u : units_) {
         if (!u.alive || u.die_time >= 0.0) continue;
+        if (u.crushing) continue;   // W5-B R-050: driving onto a crush target, not holding at range
         if (u.target < 0 || !u.attack_order || u.target >= (int)units_.size()) continue;   // only explicit attackers hold at range
         const Unit& t = units_[u.target];
         if (!t.alive || t.die_time >= 0.0) continue;
-        const double dx = (t.fx - static_cast<double>(u.cell_x)) * 256.0;
-        const double dy = (t.fy - static_cast<double>(u.cell_y)) * 256.0;
-        if (std::sqrt(dx * dx + dy * dy) <= u.w_range * 256.0 && !u.path.empty()) {
+        // W5-B R-063: the same 3-D / elevation / cliff test step_combat fires
+        // on, measured from the committed cell (Finding-1 semantics above).
+        if (!u.path.empty() &&
+            weapon_in_range_from(*this, u, u.cell_x * 256 + static_cast<int>(u.sub_x),
+                                 u.cell_y * 256 + static_cast<int>(u.sub_y), unit_lept_z(u),
+                                 unit_lept_x(t), unit_lept_y(t), unit_lept_z(t))) {
             // In range with a live pursue-path -> stop and hold (snap onto the
             // committed cell so we don't strand mid-segment; Finding-1 semantics).
             u.path.clear();
@@ -4635,6 +4808,7 @@ void World::step(double dt) {
     // is the only cost every pre-P4 demo pays -- none registers a profile.
     step_abilities(dt);
     step_victory();
+    update_sub_offsets();   // W5-B R-061: derive the infantry sub-cell offsets
 }
 
 std::vector<int> unit_draw_order(const std::vector<Unit>& units) {
@@ -4662,8 +4836,9 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
     std::vector<std::uint8_t> out = passable;
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
-            const int o = occ.at(x, y);
-            if (o != Occupancy::kEmpty && o != self)
+            // W5-B R-061: "can this unit enter" -- an infantry may share a
+            // cell that still has a free sub-cell spot (whole-cell otherwise).
+            if (!occ.can_enter(x, y, self))
                 out[static_cast<std::size_t>(y) * w + x] = 0;
         }
     if (start_x >= 0 && start_y >= 0 && start_x < w && start_y < h)
@@ -4671,10 +4846,41 @@ static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uin
     return out;
 }
 
+double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny) {
+    // Only the Drive/Ship/Hover locomotors read the GroundType table for speed
+    // (FUN_004B2550 / FUN_006A1310); the Walk locomotor (infantry) does not.
+    if (!c.armed || !c.land || (!u.is_vehicle && !u.is_naval) || u.is_aircraft || !u.land_speed_loco)
+        return 1.0;
+    if (nx < 0 || ny < 0 || nx >= w || ny >= h) return 1.0;
+    const std::size_t i = static_cast<std::size_t>(ny) * w + nx;
+    if (i >= c.land->size()) return 1.0;
+    int land = (*c.land)[i];
+    if (c.ore && c.ramp && i < c.ramp->size() && c.ore->has_ore(nx, ny) && (*c.ramp)[i] < 5) land = 5;
+    if (land < 0 || land > 11) land = 0;
+    int st = u.speed_type;
+    if (st < 0 || st > 7) st = u.is_naval ? 5 : 1;   // default: Track (Drive), Float (ship)
+    double m = c.cost[land][st];
+    if (m > 1.0) m = 1.0;
+    // Slope (UnitClass only): the next cell higher -> *Uphill, lower -> *Downhill;
+    // SpeedType Track uses the Tracked pair, every other type the Wheeled pair.
+    if (c.level && !u.is_naval) {
+        const std::size_t ci = static_cast<std::size_t>(u.cell_y) * w + u.cell_x;
+        if (u.cell_x >= 0 && u.cell_y >= 0 && u.cell_x < w && u.cell_y < h && ci < c.level->size()) {
+            const int cur = (*c.level)[ci], nxt = (*c.level)[i];
+            const int k = st == 1 ? 0 : 1;
+            if (cur < nxt) m *= c.up[k];
+            else if (nxt < cur) m *= c.down[k];
+        }
+    }
+    if (m == 0.0) m = 0.5;
+    if (u.max_hp > 0 && static_cast<double>(u.hp) / u.max_hp <= c.condition_red) m *= 0.75;
+    return m;
+}
+
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable,
+                const std::vector<std::uint8_t>* amphib_passable, const MoveSpeedCtx* speed,
                 const std::vector<std::uint8_t>* wall_leak) {
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
@@ -4726,7 +4932,9 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 
         // Per-unit speed: a vehicle rolls at its own speed_cps; infantry (and
         // any unit with speed_cps == 0) use the World-wide move_cps unchanged.
-        const double cps = u.speed_cps > 0.0 ? u.speed_cps : move_cps;
+        // W5-B R-062: x the land/slope/damage multiplier the locomotor set
+        // when it committed to the cell being entered (1.0 when unarmed).
+        const double cps = (u.speed_cps > 0.0 ? u.speed_cps : move_cps) * u.speed_mult;
         double budget = cps * dt;
         bool blocked = false;
         while (budget > 0.0 && u.path_idx < u.path.size()) {
@@ -4750,9 +4958,15 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             // the Drive locomotor not unwound -- RE-W6 open]: a Crusher vehicle
             // driving into a cell held by enemy Crushable infantry squashes it
             // (the infantry dies, the cell frees) instead of waiting for it.
+            // W5-B R-061: with sub-cells, every crushable enemy infantry in the
+            // cell's three spots is squashed.
             if (u.crusher && u.is_vehicle) {
-                const int o = occ.at(tgt.x, tgt.y);
-                if (o >= 0 && o != self && o < static_cast<int>(units.size())) {
+                int victims[4] = {occ.at(tgt.x, tgt.y), -1, -1, -1};
+                if (occ.subcells())
+                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
+                        victims[s - 1] = occ.spot_unit(tgt.x, tgt.y, s);
+                for (int o : victims) {
+                    if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
                     Unit& v = units[o];
                     if (v.crushable && !v.is_vehicle && v.house != u.house && v.alive &&
                         v.die_time < 0.0 && v.cargo_of < 0) {
@@ -4768,9 +4982,25 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 }
             }
             // Reserve the next cell before stepping into it.
-            if (occ.at(tgt.x, tgt.y) != self) {
+            if (occ.is_infantry(self)) {
+                // W5-B R-061 [RE: FindInfantrySubposition FUN_00481090]: an
+                // infantry reserves a SPOT in the next cell -- the quadrant of
+                // its current in-cell position (it keeps its lane), else the
+                // spot preference row; no free spot (or a vehicle there) blocks.
+                if (occ.spot_of(tgt.x, tgt.y, self) < 0) {
+                    int cur = occ.spot_of(u.cell_x, u.cell_y, self);
+                    if (cur < 0) cur = 0;
+                    const int sp = occ.free_spot(tgt.x, tgt.y, cur, self & 3);
+                    if (sp < 0) {
+                        blocked = true;
+                        break;
+                    }
+                    occ.set_spot(tgt.x, tgt.y, self, sp);
+                }
+            } else if (occ.at(tgt.x, tgt.y) != self || !occ.can_enter(tgt.x, tgt.y, self)) {
                 if (occ.can_enter(tgt.x, tgt.y, self)) {
                     occ.set(tgt.x, tgt.y, self);  // reserve (now owns current + next)
+                    if (speed) u.speed_mult = land_speed_mult(*speed, u, w, h, tgt.x, tgt.y);   // W5-B R-062
                 } else {
                     blocked = true;
                     break;
@@ -4809,6 +5039,19 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         }
 
         if (blocked) {
+            // W5-B R-050: a vehicle held up by idle infantry of its own house
+            // asks them to scatter out of the way (the original's
+            // Map[cell].Incoming -> Scatter for friendly occupants).
+            if (speed && speed->scatter_out && u.is_vehicle && occ.subcells() && u.wait_time == 0.0 &&
+                u.path_idx < u.path.size()) {   // once per hold-up, not every frame
+                const Cellxy bc = u.path[u.path_idx];
+                for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
+                    const int o = occ.spot_unit(bc.x, bc.y, s);
+                    if (o >= 0 && o < static_cast<int>(units.size()) && units[o].house == u.house &&
+                        !units[o].moving() && units[o].target < 0 && units[o].enter_target < 0)
+                        speed->scatter_out->push_back(o);
+                }
+            }
             const double prev_wait = u.wait_time;
             u.wait_time += dt;
             u.frame = seq_frame(seq.stand, u.facing, 0);  // stand while waiting (reads as "holding")
@@ -4897,8 +5140,8 @@ constexpr double kProjFrameSecs = 1.0 / 15.0;  // one logic frame (§3: lept/fra
 constexpr int kProjMaxLifetime = 1800;
 constexpr double kProjPi = 3.14159265358979323846;
 
-int unit_lx(const Unit& u) { return ftol(u.fx * 256.0); }
-int unit_ly(const Unit& u) { return ftol(u.fy * 256.0); }
+int unit_lx(const Unit& u) { return ftol(u.fx * 256.0 + u.sub_x); }   // W5-B: + sub-cell spot
+int unit_ly(const Unit& u) { return ftol(u.fy * 256.0 + u.sub_y); }
 int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : 0; }
 int dist3(int ax, int ay, int az, int bx, int by, int bz) {
     const double dx = ax - bx, dy = ay - by, dz = az - bz;
@@ -5242,6 +5485,20 @@ void World::detonate_projectile(Projectile& p, int victim) {
             dist3(ix, iy, iz, unit_lx(t), unit_ly(t), unit_lz(t)) <= kSnapRadius) {
             ix = unit_lx(t); iy = unit_ly(t); iz = unit_lz(t);
         }
+        // W5-B [RE: BulletClass::Update tail @0x467D60..0x467E3E -- the
+        // "close enough" re-aim]: a non-Inaccurate, non-Airburst shell whose
+        // cell holds its target re-aims onto it when dist/3 <= max(2*|V|, 128)
+        // (FUN_004666D0, DAT_007E1808 = 128.0). With infantry on sub-cell
+        // spots this is what lets a tank shell that bursts on entering the
+        // cell still land on the soldier.
+        else if (!p.airburst && t.alive && t.die_time < 0.0 &&
+                 lepton_to_cell(unit_lx(t)) == lepton_to_cell(ix) &&
+                 lepton_to_cell(unit_ly(t)) == lepton_to_cell(iy)) {
+            const double lim = std::max(2.0 * p.speed, 128.0);
+            if (dist3(ix, iy, iz, unit_lx(t), unit_ly(t), unit_lz(t)) / 3 <= lim) {
+                ix = unit_lx(t); iy = unit_ly(t); iz = unit_lz(t);
+            }
+        }
     }
     const int icx = lepton_to_cell(ix), icy = lepton_to_cell(iy);
 
@@ -5265,86 +5522,37 @@ void World::detonate_projectile(Projectile& p, int victim) {
         restore_slot = units_[p.attacker].w_active;
         activate_weapon_slot(units_[p.attacker], p.weapon_slot, vet_any_ ? &vet_rules_ : nullptr);
     }
+    // W5-B R-060 [RE: BulletClass::Detonate FUN_004690A0 -> DamageArea
+    // FUN_00489190]: every shell detonates through the one area applicator at
+    // its impact point -- the target (snapped within 32 leptons), bystanders,
+    // own/allied units and buildings in the CellSpread alike. The projectile Z
+    // is terrain-relative; the applicator's is absolute (level*104 added).
+    const int impact_z = iz + cell_level(icx, icy) * 104;
+    const int tb = (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size()))
+                       ? p.target_building : -1;
+    const int tb_before = tb >= 0 ? buildings_[tb].hp : 0;
+    AreaResult ar;
     if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) {
-        const Unit& att = units_[p.attacker];
-        if (p.target_building >= 0 && p.target_building < static_cast<int>(buildings_.size())) {
-            // Building target: the pre-P2 attack-building hit, iff the impact cell
-            // is inside its (still standing) foundation.
-            Building& b = buildings_[p.target_building];
-            if (b.alive && b.state != Building::State::Dead && icx >= b.cx && icy >= b.cy &&
-                icx < b.cx + b.fw && icy < b.cy + b.fh) {
-                const int before = b.hp;
-                deliver_building_hit(units_, buildings_, p.attacker, p.target_building);
-                building_dmg = before - b.hp;
-                ev.building = p.target_building;
-            }
-        } else if (att.w_cell_spread >= 1.0) {
-            // CellSpread >= 1 (BlimpHE, FlakTWH): the EXISTING area applicator,
-            // centred on the impact point instead of the victim (§7 Detonate ->
-            // FUN_00489190).
-            Unit center;
-            center.fx = ix / 256.0;
-            center.fy = iy / 256.0;
-            // Gap fix C (G-44): a burst aimed at an airborne target detonates in
-            // the air layer (apply_spread_damage layers by unit_airborne).
-            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
-                unit_airborne(units_[p.target_unit])) {
-                center.is_aircraft = true;
-                center.altitude = 1.0;
-            }
-            apply_spread_damage(units_, occ_, att, center);
-        } else {
-            // Single-target warhead: the collided unit, else the original target
-            // if it is still in the impact cell (§8: a dead/moved target is a
-            // miss -- the shell detonates on the cell).
-            int v = victim;
-            if (v < 0 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
-                const Unit& t = units_[p.target_unit];
-                if (lepton_to_cell(unit_lx(t)) == icx && lepton_to_cell(unit_ly(t)) == icy)
-                    v = p.target_unit;
-            }
-            if (v >= 0) {
-                const Unit& w = units_[v];
-                if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(att.house, w.house)) {
-                    deliver_unit_hit(units_, occ_, p.attacker, v);
-                    ev.victim = v;
-                }
-            }
-        }
-    }
-    // Gap fix C (G-40): a base defense's shell -- the same damage layer with a
-    // transient shooter carrying the building's weapon slot.
-    if (p.attacker < 0 && p.attacker_building >= 0 &&
-        p.attacker_building < static_cast<int>(buildings_.size()) &&
-        buildings_[p.attacker_building].type >= 0 &&
-        buildings_[p.attacker_building].type < static_cast<int>(btypes().size())) {
+        ar = damage_area(*this, units_, buildings_, occ_, units_[p.attacker], p.attacker, -1, ix, iy,
+                         impact_z);
+    } else if (p.attacker < 0 && p.attacker_building >= 0 &&
+               p.attacker_building < static_cast<int>(buildings_.size()) &&
+               buildings_[p.attacker_building].type >= 0 &&
+               buildings_[p.attacker_building].type < static_cast<int>(btypes().size())) {
+        // Gap fix C (G-40): a base defense's shell -- a transient shooter
+        // carrying the building's weapon slot.
         const Unit shooter = defense_shooter(p.attacker_building, p.weapon_slot);
-        if (shooter.w_cell_spread >= 1.0) {
-            Unit center;
-            center.fx = ix / 256.0;
-            center.fy = iy / 256.0;
-            if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
-                unit_airborne(units_[p.target_unit])) {
-                center.is_aircraft = true;
-                center.altitude = 1.0;
-            }
-            apply_spread_damage(units_, occ_, shooter, center);
-        } else {
-            int v = victim;
-            if (v < 0 && p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
-                const Unit& t = units_[p.target_unit];
-                if (lepton_to_cell(unit_lx(t)) == icx && lepton_to_cell(unit_ly(t)) == icy)
-                    v = p.target_unit;
-            }
-            if (v >= 0) {
-                const Unit& w = units_[v];
-                if (w.alive && w.die_time < 0.0 && w.cargo_of < 0 && is_enemy(shooter.house, w.house)) {
-                    deliver_hit_from(units_, occ_, shooter, -1, p.attacker_building, v);
-                    ev.victim = v;
-                }
-            }
-        }
+        ar = damage_area(*this, units_, buildings_, occ_, shooter, -1, p.attacker_building, ix, iy,
+                         impact_z);
     }
+    if (tb >= 0 && buildings_[tb].hp != tb_before) {
+        building_dmg = tb_before - buildings_[tb].hp;
+        ev.building = tb;
+    }
+    if (ar.first_unit >= 0)
+        ev.victim = (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size()) &&
+                     units_[p.target_unit].hp != hp_before[static_cast<std::size_t>(p.target_unit)])
+                        ? p.target_unit : ar.first_unit;
     // G16 (agent G) [RE: world-depth.md §B2, FUN_00489190]: the shell's
     // explosion may break a low bridge section in the impact cell (inert unless
     // GameScene armed the depth rules and the map has low bridges).
@@ -5355,9 +5563,9 @@ void World::detonate_projectile(Projectile& p, int victim) {
     }
     if (restore_slot >= 0)
         activate_weapon_slot(units_[p.attacker], restore_slot, vet_any_ ? &vet_rules_ : nullptr);
-    int total = building_dmg;
-    for (std::size_t k = 0; k < units_.size(); ++k) total += hp_before[k] - units_[k].hp;
-    ev.damage = total;
+    (void)victim;   // the collided unit is simply inside the explosion (W5-B)
+    (void)building_dmg;
+    ev.damage = ar.damage;   // W5-B: every object the explosion hurt
     proj_events_.push_back(ev);
 }
 

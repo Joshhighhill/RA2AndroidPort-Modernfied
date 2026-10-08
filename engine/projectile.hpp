@@ -55,6 +55,11 @@ struct ProjectileSpec {
     bool airburst = false;      // Airburst (+0x294)
     bool very_high = false;     // VeryHigh (+0x299)
     int course_lock = 0;        // CourseLockDuration (+0x2E0) frames
+    // W5-B R-063/R-057 [RE: BulletTypeClass_ReadINI 0x46BE00]: +0x296
+    // SubjectToCliffs, +0x297 SubjectToElevation, +0x298 SubjectToWalls.
+    bool subject_to_cliffs = false;
+    bool subject_to_elevation = false;
+    bool subject_to_walls = false;
     bool flies() const { return kind != ProjKind::Instant; }
 };
 

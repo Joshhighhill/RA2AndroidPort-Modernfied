@@ -1,0 +1,47 @@
+# W5-B: the Giant Squid (house 1, AI roster) grabs a ship (the vehicle aim
+# gate needs the SHP ship's ROT; it used to hold its fire forever).
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xbayopigs.map
+click button "Use Map"
+wait 2
+click start
+until 120 scene == game
+require scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+click tab:0
+click cameo:GAPOWR
+until 1500 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) == 1
+click cameo:GAREFN
+until 2000 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+until 600 built(0,GAREFN) == 1
+click cameo:GAYARD
+until 2000 queue_ready(structure) == 1
+click cameo:GAYARD
+place auto
+until 600 built(0,GAYARD) == 1                 @W2-AN-09
+cheat spawn DEST 1 building 0:GAYARD +0 +3
+wait 2
+let dhp = uhpn(1,DEST,0)
+cheat spawn SQD 0 building 0:GAYARD -3 +3
+wait 2
+click unit 0:SQD
+click unit 1:DEST
+view unit 1:DEST
+wait 200
+dump
+until 600 uhpn(1,DEST,0) < $dhp or units(1,DEST) == 0            @R-049:B
+shot squid
+end

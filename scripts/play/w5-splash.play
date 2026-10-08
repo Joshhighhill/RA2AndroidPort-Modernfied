@@ -1,0 +1,40 @@
+# W5-B R-060: every hit goes through DamageArea (FUN_00489190). A Flak Track's
+# FlakTrackGun (FlakTWH CellSpread=1, PercentAtMax=1) fired with a real
+# attack click at an enemy engineer standing in a cell beside our own power
+# plant, with our own engineer sharing that cell: the splash hurts the enemy,
+# our engineer (friendly fire) and our power plant (buildings take splash).
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:speed=3
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+# Far (12+ cells) from our start GIs so nothing else shoots the target.
+cheat place GAPOWR 0 building 0:GACNST +14 +4
+wait 2
+# Own engineer first (takes spot 2, right), the enemy then takes spot 3 (left),
+# 202 leptons from the power plant's nearest foundation cell centre.
+cheat spawn ENGINEER 0 building 0:GAPOWR +2 +0
+cheat spawn SENGINEER 1 building 0:GAPOWR +2 +0
+cheat spawn HTK 0 building 0:GAPOWR +6 +3
+wait 5
+let own0 = uhpn(0,ENGINEER,0)
+let pp0 = bhp(0,GAPOWR)
+view unit 1:ENGINEER
+shot before
+click unit 0:HTK
+click unit 1:ENGINEER
+until 300 units(1,ENGINEER) == 0 or uhpn(0,ENGINEER,0) < $own0
+wait 20
+shot after
+assert uhpn(0,ENGINEER,0) < $own0 or units(0,ENGINEER) == 0     @R-060:B
+assert bhp(0,GAPOWR) < $pp0                                     @R-060:B
+end
