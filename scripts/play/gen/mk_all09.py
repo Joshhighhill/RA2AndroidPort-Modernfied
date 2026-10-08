@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gen import P
 
 DEBUG = "--debug" in sys.argv
-STOP = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 9
+STOP = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 5
 U = "cheat units_dump D:/ra2-wt/p4-scratch/a9units.txt"
 p = P("""# P4: ALL09 (Yucatan) OPENING proven with real orders only (no cheats) -- NOT a win.
 # The elite SEALs clear the village; the freed Grizzlies crush out of their camp and
@@ -11,9 +11,10 @@ p = P("""# P4: ALL09 (Yucatan) OPENING proven with real orders only (no cheats) 
 # against the POW-check teams and the flak patrol; an engineer captures the Tech
 # Airport (ParaDrop: 8 GIs every 4 min); the paradropped GIs push north, destroy
 # Pyramid 1 and an engineer takes Reactor 2; the SEALs plant C4 on Reactor 1 and
-# an engineer behind the GI wave captures the BadGuy1 Construction Yard. Beyond
-# this point BadGuy1's 'Attk Response' teams overrun the small force (see
-# docs/gap/wave4/05-mission-sequences.md "P4 status").
+# an engineer behind the GI wave captures the BadGuy1 Construction Yard (phases
+# 6-9, `python mk_all09.py out.play 9`; after the P3 C4 merge that run no longer
+# reproduces). The committed script stops at phase 5: airport held, 20+ GIs.
+# See docs/gap/wave4/05-mission-sequences.md "P4 status".
 set render_every 3000
 set on_quit continue
 set campaign ALL09t.MAP GDI
@@ -50,7 +51,7 @@ ARMY = ["MTNK", "GHOST", "E1"]
 import json
 VAR = json.loads(os.environ.get("A9VAR", "{}"))
 ENG = VAR.get("eng", [62, 70])
-HOLD = VAR.get("hold", [64, 74])
+HOLD = VAR.get("hold", [62, 74])
 # P1: the SEALs clear the village guards (frees the POWs and the vehicles)
 sel(["GHOST"])
 p.add("click cell 58 84", "wait 200")
@@ -151,5 +152,7 @@ if STOP >= 9:
 if STOP >= 9:
     p.add("until 1500 buildings(0,NACNST) >= 1", "assert buildings(0,CAAIRP) >= 1",
           "assert buildings(8,MAYAN) <= 1", "assert outcome == RUNNING")
+if STOP == 5:
+    p.add("assert buildings(0,CAAIRP) >= 1", "assert units(0,E1) >= 20", "assert outcome == RUNNING")
 p.add("end expect RUNNING")
 p.save(sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].endswith(".play") else "../m-all09-opening.play")
