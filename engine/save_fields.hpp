@@ -1152,6 +1152,7 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.start_credits);
     io(ar, v.team);
     io(ar, v.multiple_factory);   // W2-SK-06 (v13)
+    io(ar, v.fire_superweapons);  // W5-A IQ gate (v18)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---

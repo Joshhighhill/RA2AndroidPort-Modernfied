@@ -628,6 +628,11 @@ struct AiHouseConfig {
     // house]: each extra same-class factory multiplies build time by this.
     // 1.0 = off (the synthetic gate configs); real play passes rules 0.8.
     double multiple_factory = 1.0;
+    // W5-A R-028 [RE: HouseClass AI FUN_004FD320 -- the superweapon pass
+    // FUN_00509710 runs only when Rules [IQ] SuperWeapons <= house IQ
+    // (+0x24C, the map's [<House>] IQ=); skirmish AI houses get MaxIQLevels]:
+    // false = this house never fires its superweapons by itself.
+    bool fire_superweapons = true;
 };
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed

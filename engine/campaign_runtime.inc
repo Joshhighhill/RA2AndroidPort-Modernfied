@@ -704,7 +704,17 @@ private:
             }
             // [X House] Credits= is in hundreds (RA1 HouseClass::Read_INI
             // lineage, PROBABLE).
-            const double credits = 100.0 * map_.get_int(hn, "Credits", 0);
+            double credits = 100.0 * map_.get_int(hn, "Credits", 0);
+            {   // W5-A [RE: FUN_00500960 -- a PlayerControl house on Easy / Hard
+                // gets [General] CampaignMoneyDeltaEasy / Hard added (0 in the
+                // YR rulesmd), floored at 0]
+                const std::string pc = camp::up(camp::trim_comment(map_.get(hn, "PlayerControl", "no")));
+                if (!pc.empty() && (pc[0] == 'Y' || pc[0] == 'T' || pc[0] == '1') && launch_.difficulty != 1) {
+                    const char* key = launch_.difficulty == 0 ? "CampaignMoneyDeltaEasy" : "CampaignMoneyDeltaHard";
+                    credits += std::atof(camp::trim_comment(rules_ini_.get("General", key, "0")).c_str());
+                    if (credits < 0.0) credits = 0.0;
+                }
+            }
             if (i == 0) player_credits_ = credits;
             else w_.grant_credits_for_test((int)i, credits);
         }
@@ -786,7 +796,13 @@ private:
             const ra2engine::World::Side side = w_.house_side((int)i);
             if (side == ra2engine::World::Side::Neutral) continue;
             const unsigned fl = sys_->house_flags(house_type((int)i));
-            const bool want_base = (fl & 1u) && i < base_nodes_.size() && !base_nodes_[i].empty();
+            // W5-A R-028 [RE: HouseClass::ReadINI FUN_00500960 -- IQ= (default
+            // 0; above [IQ] MaxIQLevels it becomes 1) -> house+0x24C; the RA1
+            // lineage runs AI production only at IQ >= [IQ] Production]: a
+            // computer house below the Production IQ builds no base and trains
+            // nothing; its map teams recruit the units it already has.
+            const bool producer = house_iq((int)i) >= iq_rule("Production", 5);
+            const bool want_base = producer && (fl & 1u) && i < base_nodes_.size() && !base_nodes_[i].empty();
             const bool want_teams = (fl & 4u) && ai_roster_ && map_.has("AITriggerTypes");
             if (armed_.size() < house_names_.size()) armed_.resize(house_names_.size(), 0);
             // A loaded game's AI houses come back armed with the saved config.
@@ -802,6 +818,11 @@ private:
             const bool base = want_base || has_base;
             if (!base) cfg.catalog = ra2engine::AiCatalog{};   // trains, never plans a base
             if (want_teams || has_teams) arm_map_teams(cfg, (int)i, side, country, rules);
+            if (!producer) {   // W5-A: below the Production IQ -> no training
+                cfg.team.inf_factory_types.clear();
+                cfg.team.veh_factory_types.clear();
+            }
+            cfg.fire_superweapons = house_iq((int)i) >= iq_rule("SuperWeapons", 4);
             armed_[i] = (std::uint8_t)((base ? 1 : 0) | ((want_teams || has_teams) ? 2 : 0) | 4);
             w_.enable_ai_house((int)i, std::move(cfg));
             if (base) w_.set_ai_base_nodes((int)i, base_nodes_[i]);
@@ -823,7 +844,15 @@ private:
         int ax = w_.grid_w() / 2, ay = w_.grid_h() / 2;
         for (const ra2engine::Unit& u : w_.units())
             if (live(u) && u.house == 0) { ax = u.cell_x; ay = u.cell_y; break; }
-        cfg.team = make_ai_team_config(ba_, mine, rules, map_, cfg.difficulty, ax, ay,
+        // W5-A R-028 [RE: AITriggerTypeClass filter FUN_0041E740 -- a global
+        // (aimd.ini) trigger (+0x9C == 1) is rejected only when Scenario+0x34B4
+        // ([Basic] IgnoreGlobalAITriggers) is set; the map's own lists load on
+        // top (find-or-create by ID, map-definition wins)]: 19 stock missions
+        // set it (map triggers only), ALL05/09/12 and SOV04/12 keep aimd.ini.
+        const std::string ig = camp::up(camp::trim_comment(map_.get("Basic", "IgnoreGlobalAITriggers", "no")));
+        const bool ignore_global = !ig.empty() && (ig[0] == 'Y' || ig[0] == 'T' || ig[0] == '1');
+        const Ini merged = ignore_global ? Ini::parse("") : merged_ai_ini();
+        cfg.team = make_ai_team_config(ba_, mine, rules, ignore_global ? map_ : merged, cfg.difficulty, ax, ay,
                                        /*enable_triggers=*/true, &w_.map());
         for (ra2engine::AITriggerType& t : cfg.team.aimd.triggers) t.is_for_skirmish = true;
         auto id_of = [&](int t) -> const char* {
@@ -836,6 +865,51 @@ private:
         cfg.team.trigger_tech_level = map_.get_int(house_names_[(std::size_t)h], "TechLevel", 10);
         cfg.team.house_name = country;
         fill_ai_building_maps(cfg.team, ba_, rules, rules_ini_);
+    }
+    // W5-A R-028: aimd.ini (global) + the map's AI lists, the map's entries
+    // overriding same-ID ones and its index entries appended after aimd.ini's.
+    Ini merged_ai_ini() const {
+        Ini aimd = Ini::parse("");
+        try { aimd = load_ini_from_ra2md(dir_, "aimd.ini"); } catch (const std::exception&) {}
+        static const char* kIndex[] = {"TaskForces", "ScriptTypes", "TeamTypes"};
+        std::string out;
+        std::vector<std::string> ids;   // every entity section id written
+        for (const char* ix : kIndex) {
+            out += std::string("[") + ix + "]\n";
+            std::vector<std::string> list;
+            for (const Ini* src : std::initializer_list<const Ini*>{&aimd, &map_})
+                for (const auto& kv : src->section(ix)) {
+                    const std::string id = camp::trim_comment(kv.second);
+                    if (id.empty() || std::find(list.begin(), list.end(), camp::up(id)) != list.end()) continue;
+                    list.push_back(camp::up(id));
+                    out += std::to_string(list.size() - 1) + "=" + id + "\n";
+                }
+            for (const std::string& id : list) {
+                const Ini& src = map_.has(id) ? map_ : aimd;
+                out += "[" + id + "]\n";
+                for (const auto& kv : src.section(id)) out += kv.first + "=" + kv.second + "\n";
+            }
+        }
+        for (const char* flat : {"AITriggerTypes", "AITriggerTypesEnable"}) {
+            out += std::string("[") + flat + "]\n";
+            std::vector<std::string> keys;
+            for (const auto& kv : map_.section(flat)) keys.push_back(camp::up(kv.first));
+            for (const auto& kv : aimd.section(flat))
+                if (std::find(keys.begin(), keys.end(), camp::up(kv.first)) == keys.end())
+                    out += kv.first + "=" + kv.second + "\n";
+            for (const auto& kv : map_.section(flat)) out += kv.first + "=" + kv.second + "\n";
+        }
+        return Ini::parse(out);
+    }
+    // W5-A R-028: the map house's IQ (FUN_00500960) and a Rules [IQ] threshold.
+    int house_iq(int eh) const {
+        if (eh < 0 || eh >= (int)house_names_.size()) return 0;
+        int iq = map_.get_int(house_names_[(std::size_t)eh], "IQ", 0);
+        if (iq > iq_rule("MaxIQLevels", 5)) iq = 1;
+        return iq;
+    }
+    int iq_rule(const char* key, int def) const {
+        return std::atoi(camp::trim_comment(rules_ini_.get("IQ", key, std::to_string(def))).c_str());
     }
 public:
     // W2-CA-07: the GameScene's AI roster (unit defs the map teams can field).
@@ -1829,6 +1903,7 @@ private:
         for (const Team& tm : teams_) {
             if (tm.st.done || !tm.recruiting || tm.house <= 0 || tm.house >= (int)want.size()) continue;
             if (w_.controllable(tm.house) || !w_.ai_enabled(tm.house)) continue;
+            if (house_iq(tm.house) < iq_rule("Production", 5)) continue;   // W5-A R-028: no production
             std::vector<std::string> types;
             std::vector<int> need = taskforce_counts(tm, types);
             for (int m : tm.members)

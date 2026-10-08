@@ -2799,7 +2799,7 @@ void World::step_ai_houses(double dt) {
         }
         // 6c) [G-66] superweapon autofire on the house AI tick (FUN_004fd320 ->
         //     FUN_00509710, IQ-gated; always on for skirmish AI).
-        ai_try_fire_superweapon(h, rec);
+        if (cfg.fire_superweapons) ai_try_fire_superweapon(h, rec);   // W5-A IQ gate
         if (!conyard) continue;  // no factory: nothing can start
 
         // 7) Decide.
