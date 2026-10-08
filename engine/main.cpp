@@ -3050,11 +3050,18 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     // Guarded on is_aircraft && altitude > 0 -- no existing demo spawns an
     // aircraft, so no existing screenshot changes [spec §8].
     const int extra_dy =
-        (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude)
+        (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) +
+                                                  pres_jumpjet_wobble_px(g_draw_unit_idx, u)   // W5-PRES wobble
         : (u.an.sinking && u.die_time >= 0.0) ? -static_cast<int>(u.die_time * 24.0)   // W2-AN-25
         : 0;
     if (u.an.t.no_shadow) {
         // W4: NoShadow=yes (V3ROCKET / DMISL) -- no ground shadow at all.
+    } else if (extra_dy > 0 && g_map_dressing && vxl_shadow(va, bi)) {
+        // W5-PRES [RE: Shadow_Point 0x55A550 / AircraftClass::Draw 0x4144B0 /
+        // FUN_00755680]: an airborne voxel casts its own silhouette straight
+        // down on the ground, same size at any height (live game).
+        ra2engine::draw_voxel_sprite(ren, tc, "vxlsh:" + img + ":" + std::to_string(bi), *vxl_shadow(va, bi), u.fx,
+                                     u.fy, u.level, cam, W, H, 0);
     } else if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
                                       vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);

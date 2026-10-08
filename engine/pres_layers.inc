@@ -92,3 +92,35 @@ inline void pres_draw_landed_chutes(const ra2engine::World& w, SDL_Renderer* ren
         ++it;
     }
 }
+
+// W5-PRES (item 4) [RE: JumpjetLocomotionClass movement 0x54CDA0 (ILocomotion
+// vtable 0x7EBD68), docs/re/w5-presentation.md §13]: a hovering jumpjet's
+// target height swings sin(phase) * Deviation leptons, phase += 2pi /
+// (15 / WobblesPerSecond) per frame, unless JumpjetNoWobbles. Type keys
+// JumpjetWobbles / JumpjetDeviation / JumpjetNoWobbles, defaults [JumpjetControls]
+// WobblesPerSecond / WobbleDeviation. Render-only here: the screen lift of the
+// wobble (the sim keeps its altitude) [RE-FALLBACK: the per-unit phase starts
+// at 0 on spawn in the original; the clone offsets it by the unit index].
+inline int pres_jumpjet_wobble_px(int idx, const ra2engine::Unit& u) {
+    if (!g_walk_rules || !u.is_aircraft || u.an.t.fixed_wing || u.altitude <= 0.0 || u.an.crashing) return 0;
+    struct Wob { double per_sec = 0.15; double dev = 40.0; bool off = false; };
+    static std::map<std::string, Wob> cache;
+    auto it = cache.find(u.image);
+    if (it == cache.end()) {
+        auto num = [&](const char* sec, const char* k, double d) {
+            const std::string v = pres_clean(g_walk_rules->get(sec, k));
+            return v.empty() ? d : std::atof(v.c_str());
+        };
+        Wob w;
+        w.per_sec = num(u.image.c_str(), "JumpjetWobbles", num("JumpjetControls", "WobblesPerSecond", 0.15));
+        w.dev = num(u.image.c_str(), "JumpjetDeviation", num("JumpjetControls", "WobbleDeviation", 40.0));
+        const std::string nw = pres_lower(pres_clean(g_walk_rules->get(u.image, "JumpjetNoWobbles")));
+        w.off = !nw.empty() && (nw[0] == 'y' || nw[0] == 't' || nw[0] == '1');
+        it = cache.emplace(u.image, w).first;
+    }
+    const Wob& w = it->second;
+    if (w.off || w.per_sec <= 0.0 || w.dev == 0.0) return 0;
+    const double phase = (g_pres_tick + idx * 37L) * 6.283185307179586 / (15.0 / w.per_sec);
+    const double lep = std::sin(phase) * w.dev;
+    return static_cast<int>(std::lround(lep / 256.0 * 36.74));
+}

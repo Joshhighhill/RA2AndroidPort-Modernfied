@@ -1,0 +1,26 @@
+# PRES-AIR -- W5-PRES air layer + jumpjet wobble + airborne voxel shadow:
+# a Kirov (ZEP) in flight draws above the ground layer (air layer), casts its
+# own silhouette on the ground; it does not bob (ZEP JumpjetNoWobbles=yes --
+# the original's wobble only moves jumpjets without that key).
+set render_every 600
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+cheat spawn ZEP 0 building 0:GACNST +3 -3
+wait 2
+click unit 0:ZEP
+click building 0:GACNST -4 +6
+until 200 airborne(0) >= 1
+wait 60
+view unit 0:ZEP
+shot kirov-a
+wait 50
+shot kirov-b
+end
