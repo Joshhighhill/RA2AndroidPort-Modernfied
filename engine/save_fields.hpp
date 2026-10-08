@@ -1018,6 +1018,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.garrison_target);
     io(ar, v.iron_left);   // W2-AN-04 (save v9)
     io(ar, v.w5);          // wave-5 abilities (agent C)
+    io(ar, v.power_off);   // W5-E2 power-down (save v20)
 }
 
 // --- production ---

@@ -316,9 +316,13 @@ private:
                 (ba.ok && b.type >= 0 && b.type < static_cast<int>(ba.roster.size())) ? &ba.roster[static_cast<std::size_t>(b.type)]
                                                                                        : nullptr;
             if (!p.seen) {
-                p = W5B{true, b.hp, b.house, b.def_turret_facing, b.being_repaired, 0};
+                p = W5B{true, b.hp, b.house, b.def_turret_facing, b.being_repaired, 0, b.power_off};
                 continue;
             }
+            // W5-E2 [RE: FUN_00452350 / FUN_00452250 -- IsPlayerControl(owner)]:
+            // the player's building powered down / up (toggle mode or trigger).
+            if (!dead && b.house == 0 && b.power_off != p.power_off) note_power_toggle(!b.power_off);
+            p.power_off = b.power_off;
             if (t) {
                 const std::string& trs = w5_bld_key(t->id, "TurretRotateSound");
                 if (!trs.empty())
@@ -432,6 +436,7 @@ private:
         double turret = 0.0;
         bool wrench = false;
         std::uint32_t turret_loop = 0;
+        bool power_off = false;
     };
     std::vector<W5U> w5_u_;
     std::vector<W5B> w5_b_;

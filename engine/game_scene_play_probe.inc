@@ -337,7 +337,13 @@
                                     ? ba_.roster[input_.placement_type()].id : "");
         const ra2engine::Input::BaseMode bm = input_.base_mode();
         p.set_s("base_mode", bm == ra2engine::Input::BaseMode::Repair ? "repair"
-                             : bm == ra2engine::Input::BaseMode::Sell ? "sell" : "none");
+                             : bm == ra2engine::Input::BaseMode::Sell ? "sell"
+                             : bm == ra2engine::Input::BaseMode::PowerToggle ? "power" : "none");
+        {   // W5-E2: the player's powered-down buildings
+            int off = 0;
+            for (const ra2engine::Building& b : world_.buildings()) off += (b.alive && b.house == 0 && b.power_off);
+            p.set("powered_down(0)", off);
+        }
         p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
         p.set("dialog_open", 0);
         gf_abort_.play_probe(p);   // gF G-14: Abort Mission confirm

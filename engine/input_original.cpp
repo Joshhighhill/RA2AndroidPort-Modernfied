@@ -108,6 +108,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         const int b = building_under(px, py);
         const bool own = b >= 0 && world_.buildings()[b].house == 0;
         if (mode_ == BaseMode::Repair) return own ? Action::Repair : Action::NoRepair;
+        if (mode_ == BaseMode::PowerToggle) return own ? Action::Repair : Action::NoRepair;   // [RE-FALLBACK: power cursor]
         return own ? Action::Sell : Action::NoSell;
     }
     const auto& us = world_.units();
@@ -393,6 +394,9 @@ void Input::handle_original(const InputEvent& ev) {
                     if (mode_ == BaseMode::Repair) {
                         actions_.repair_clicked = true;
                         actions_.repair_building = bi;
+                    } else if (mode_ == BaseMode::PowerToggle) {   // W5-E2
+                        actions_.power_clicked = true;
+                        actions_.power_building = bi;
                     } else {
                         actions_.sell_clicked = true;
                         actions_.sell_building = bi;

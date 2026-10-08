@@ -20,7 +20,7 @@ PowerTotals power_totals(const std::vector<Building>& buildings,
         if (b.type < 0 || b.type >= (int)types.size()) continue;
         int pw = types[b.type].power;
         if (pw >= 0) p.output += pw;
-        else p.drain -= pw;
+        else if (!b.power_off) p.drain -= pw;   // W5-E2: a powered-down building draws nothing
     }
     return p;
 }

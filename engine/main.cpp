@@ -4853,7 +4853,8 @@ bool draw_mode_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Mode
                       const ra2engine::World& world, const BuildingAssets& ba,
                       const ra2engine::Input& input, int mx, int my, std::uint64_t game_frame) {
     const ra2engine::Input::BaseMode mode = input.base_mode();
-    if (!mc.ok || mode == ra2engine::Input::BaseMode::None) return false;
+    if (!mc.ok || mode == ra2engine::Input::BaseMode::None || mode == ra2engine::Input::BaseMode::PowerToggle)
+        return false;   // W5-E2: no power-toggle cursor art in YR [RE-FALLBACK: the normal cursor]
     const bool repair = (mode == ra2engine::Input::BaseMode::Repair);
     const int bi = input.building_under(mx, my);
     // 0 = armed over nothing, 1 = valid target, 2 = refused target.
@@ -6197,6 +6198,7 @@ public:
         // armed (it is not one-shot), so the player can work through a base.
         if (act.deploy_clicked) deploy_selected();   // ACTION_SELF (click the selected unit)
         if (act.repair_clicked) world_.toggle_repair(act.repair_building, 0);
+        if (act.power_clicked) world_.set_building_power(act.power_building, -1);   // W5-E2 (EVA: pres edge)
         if (act.sell_clicked) world_.begin_sell(act.sell_building, 0);
         // Placement confirm.
         if (act.place_confirmed && input_.placement_active()) {
