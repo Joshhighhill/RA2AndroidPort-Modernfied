@@ -1,0 +1,49 @@
+# PRES-PLACE -- W5-PRES R-102 / R-144 acceptance (real shell -> lobby -> game):
+#   place-ok      PLACE.SHP frame 0 cells beside the ConYard (valid)
+#   place-blocked frame 2+ramp cells over the ConYard (blocked)
+#   primary       the selected primary Barracks shows the TXT_PRIMARY label
+#   rally         its rally point: a dashed house-colour line to the cell
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+cheat credits 50000
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+view building 0:GACNST
+click tab:0
+click cameo:GAPOWR
+until 900 queue_ready(structure) == 1
+click cameo:GAPOWR
+require placing == 1
+move building 0:GACNST +4 +0
+wait 1
+shot place-ok
+move building 0:GACNST +0 +0
+wait 1
+shot place-blocked
+place auto
+until 120 built(0,GAPOWR) == 1
+click tab:0
+click cameo:GAPILE
+until 900 queue_ready(structure) == 1
+click cameo:GAPILE
+place auto
+until 300 built(0,GAPILE) == 1
+view building 0:GAPILE
+click building 0:GAPILE
+wait 2
+click building 0:GAPILE
+wait 2
+dump
+shot primary
+# rally: the selected factory + a ground click -> the marching-ants rally line
+click building 0:GAPILE +5 +4
+wait 3
+shot rally
+end
