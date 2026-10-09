@@ -49,8 +49,24 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
         requestFocus();
     }
 
+    /** engine/platform_os.cpp: keep AUTOSAVE.SAV through the scene teardown. */
+    private static native void nativeKeepAutosave();
+
     @Override
     protected void onDestroy() {
+        // W6-01-10: destroyed without the player quitting (a configuration
+        // change the activity cannot take in place, e.g. switching to gesture
+        // navigation or an overlay/theme change): the engine is about to tear
+        // the running game down; its background autosave must survive so the
+        // next start offers RESUME instead of deleting it.
+        if (!isFinishing()) {
+            Log.i(TAG, "onDestroy without finishing (activity restart): keeping the autosave");
+            try {
+                nativeKeepAutosave();
+            } catch (UnsatisfiedLinkError e) {
+                // libmain.so not loaded: no game is running.
+            }
+        }
         abandonFocus();
         super.onDestroy();   // SDLActivity joins the SDL (engine) thread here
         // W2-AR-17: the engine keeps process-wide state in C++ statics; once

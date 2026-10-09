@@ -5169,6 +5169,11 @@ struct DriverHooks {
     virtual bool want_render(int f) { (void)f; return true; }
     virtual bool swallow_quit(int f) { (void)f; return false; }
     virtual void transition(int f) { (void)f; }
+    // W6-01-10 --play `lifecycle relaunch`: true once to end the current scene
+    // (its destructor runs, as on an Android activity restart) and start the
+    // next from relaunch_scene() -- the app's startup path.
+    virtual bool want_relaunch() { return false; }
+    virtual Scene* relaunch_scene() { return nullptr; }
     virtual ~DriverHooks() = default;
 };
 
@@ -5267,6 +5272,13 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         if (!hooks || hooks->want_render(frame)) plat.present();
         perf_frame((pc1 - pc0) * perf_ms, (pc2 - pc1) * perf_ms, (pc3 - pc2) * perf_ms,
                    (SDL_GetPerformanceCounter() - pc3) * perf_ms);
+        if (hooks && hooks->want_relaunch()) {   // W6-01-10 (--play only)
+            scene.reset();
+            scene.reset(hooks->relaunch_scene());
+            hooks->transition(frame);
+            ++frame;
+            continue;
+        }
         if (Scene* nx = scene->next()) {   // transition (variable dt continues)
             if (auto* d = dynamic_cast<DeferredScene*>(nx)) {
                 // W2-AR-10: tear the current scene down BEFORE building the
@@ -5731,6 +5743,20 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
 #include "skirmish_load.inc"   // W5-E: the ls800<country>.shp loading screen
 #include "pres_hidden.inc"     // W5-E2: See Hidden Objects (Behind= anim)
 
+// W6-06-09: the startup Resume page loads AUTOSAVE.SAV without deleting it;
+// the GameScene built from it takes this flag (game_scene_lifecycle.inc
+// autosaved_) so the file is removed only when that game ends normally.
+bool g_resumed_from_autosave = false;
+bool g_resumed_from_autosave_take() {
+    const bool r = g_resumed_from_autosave;
+    g_resumed_from_autosave = false;
+    return r;
+}
+// W6-06-10: the campaign checkpoint (RA2.INI [Engine] ResumeCampaign=
+// <map>,<side>,<difficulty>) -- defined in resume_scene.inc.
+void campaign_checkpoint_set(const std::string& map, const std::string& side, int difficulty);
+void campaign_checkpoint_clear();
+
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
@@ -5937,6 +5963,7 @@ public:
         // triggers and teams (before P5, whose veterancy cost table must see
         // the mission's extra building types).
         if (!cfg.campaign_map.empty()) {
+            campaign_checkpoint_clear();   // W6-06-10: a mission is under way again
             setup_campaign(cfg);
             wire_building_deaths(world_, ba_, rules_, rules_ini_);   // P4: the mission's barrels
             gf_arm_mcv(world_, ba_, rules_, /*skirmish_session=*/false);   // gF: MCVs deploy
@@ -8488,6 +8515,8 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
 #include "credits_scene.inc"
 // gF: skirmish result screen.
 #include "gf_result.inc"
+// W6-06-09/-10, W6-01-10: the startup Resume page (autosave / campaign checkpoint).
+#include "resume_scene.inc"
 
 // --campaign <MAP>: open a mission's loading screen directly (no main menu;
 // result/abort then exit). Side from the map name (SOV* = Nod).
@@ -8631,34 +8660,6 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
     }
 }
 
-// W2-AR-09: the resume prompt for a leftover background autosave. Returns
-// the deferred load scene, or nullptr (no autosave / declined / unreadable).
-Scene* offer_resume_autosave(ra2engine::Platform& plat, bool no_audio) {
-    const std::string dir = save_games_dir();
-    if (dir.empty()) return nullptr;
-    const std::string path = dir + "/AUTOSAVE.SAV";
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) return nullptr;
-    std::vector<uint8_t> bytes;
-    ra2engine::save::SaveFile f;
-    const bool ok = ra2engine::save::read_file_bytes(path, bytes) && ra2engine::save::decode_save(bytes, f) &&
-                    f.header.version == ra2engine::save::kFormatVersion &&
-                    f.section(ra2engine::save::kTagWorld) && f.section(ra2engine::save::kTagConfig);
-    int choice = 1;
-    if (ok) {
-        std::vector<std::string> lines = {
-            "THE LAST GAME WAS INTERRUPTED WHILE IN THE BACKGROUND.",
-            "IT WAS SAVED AUTOMATICALLY:",
-            "#  " + (f.header.map_file.empty() ? std::string("GAME") : f.header.map_file) + "  -  FRAME " +
-                std::to_string(f.header.frame)};
-        choice = run_message_page(plat, "RESUME GAME?", lines, {"RESUME", "MAIN MENU"});
-    }
-    std::filesystem::remove(path, ec);   // consumed either way (a new one is written on the next background)
-    SDL_Log("[lifecycle] autosave found (%s): %s", ok ? "valid" : "unreadable", choice == 0 ? "resumed" : "declined");
-    if (!ok || choice != 0) return nullptr;
-    return defer_load_scene(no_audio, std::move(f));
-}
-
 // [RE: skirmish.md §2, D6] The default desktop/Android entry: create the
 // Platform/TextureCache, parse Rules (kept alive for the scene lifetime since
 // the scenes hold it by reference), and drive from MainMenuScene. run_interactive
@@ -8705,13 +8706,11 @@ int run_menu(bool no_audio) {
     g_menu_art = &store.art;
     // W2-AR-09: a leftover AUTOSAVE.SAV means the last session was killed in
     // the background (a normal end deletes it): offer to resume it.
-    Scene* first = new MainMenuScene(rules, no_audio, store.art);
-    if (!replay) {
-        if (Scene* resume = offer_resume_autosave(plat, no_audio)) {
-            delete first;
-            first = new BootScene(resume);
-        }
-    }
+    // W6-06-09/-10: a leftover autosave or a campaign checkpoint opens the
+    // Resume page (resume_scene.inc) instead of the main menu.
+    Scene* first = nullptr;
+    if (!replay) first = make_resume_scene(no_audio);
+    if (!first) first = new MainMenuScene(rules, no_audio, store.art);
     const int rc = run_scene_driver(plat, tc, first, replay.get());
     g_menu_rules = nullptr;
     g_menu_art = nullptr;

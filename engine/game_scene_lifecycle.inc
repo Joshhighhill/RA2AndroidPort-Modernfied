@@ -47,13 +47,23 @@ bool game_over_for_autosave() const {
 }
 void lifecycle_teardown() {
     if (!autosaved_) return;
+    // W6-01-10: Android destroyed the activity without the player quitting
+    // (an activity restart / config change): keep the autosave so the next
+    // launch offers RESUME.
+    if (ra2engine::os_keep_autosave()) {
+        SDL_Log("[lifecycle] teardown: activity restart, autosave kept");
+        return;
+    }
     const std::string p = autosave_path();
     if (!p.empty()) {
         std::error_code ec;
         std::filesystem::remove(p, ec);
     }
 }
-bool autosaved_ = false;
+// W6-06-09: true too when this game was resumed FROM the autosave (the file
+// is kept until the resumed game ends normally, so a kill during the reload
+// does not lose it).
+bool autosaved_ = g_resumed_from_autosave_take();
 
 // R-162: the panel changed size mid-game (a foldable opened, split screen, a
 // resized desktop window). Recompute the canvas exactly as a new game would

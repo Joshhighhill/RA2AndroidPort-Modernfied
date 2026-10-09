@@ -122,6 +122,7 @@ public:
     Scene* next() override {
         if (back_) {
             back_ = false;
+            campaign_checkpoint_clear();   // W6-06-10: the player left the campaign
             if (Scene* m = make_main_menu_scene(no_audio_)) return m;
             quit_ = true;
             return nullptr;
@@ -299,6 +300,7 @@ public:
                                                                     cfg_.campaign_difficulty));
         if (c == 2) return new CampaignLoadScene(no_audio_, cfg_);
         if (c == 3) {
+            campaign_checkpoint_clear();   // W6-06-10: the player left the campaign
             if (Scene* m = make_main_menu_scene(no_audio_)) return m;
             quit_ = true;
         }

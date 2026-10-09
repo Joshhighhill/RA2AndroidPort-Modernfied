@@ -59,13 +59,17 @@
         </activity>
 
         <!-- The game (SDL). W2-AR-12: sensorLandscape so the device can be
-             flipped 180 degrees. -->
+             flipped 180 degrees. W6-01-10: every configuration change an app
+             may declare is handled in place (density / font scale / colour
+             mode / ... no longer restart the activity). Changes that cannot
+             be declared (an overlay or navigation-mode switch) still restart
+             it; RA2Activity.onDestroy then keeps the background autosave. -->
         <activity android:name="org.ra2.engine.RA2Activity"
             android:label="@string/app_name"
             android:alwaysRetainTaskState="true"
             android:launchMode="singleInstance"
             android:screenOrientation="sensorLandscape"
-            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation|density|fontScale|colorMode|touchscreen|mcc|mnc|fontWeightAdjustment|grammaticalGender"
             android:preferMinimalPostProcessing="true"
             android:windowSoftInputMode="adjustPan"
             android:exported="false"
