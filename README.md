@@ -4306,3 +4306,31 @@ Everything is armed by `wire_w5` in the real `GameScene` only.
   scripts pass one at a time (the 8 new `pres-*` included; `probe-bridge` / `world-depth` now
   scroll 2 rows to xmp31s2 in the 80-map lobby); `--demo-combat` / `--demo-projectile` /
   `--demo-veterancy` print their pins -- no gate moved (every change is render-only).
+
+## Shell, save/load, Android lifecycle and release (wave-6 W6-FIX-REL, branch `w6fix-rel`)
+
+Fixes `docs/gap/wave6/06-shell-release.md` (W6-06-02..16) and W6-01-10; per-item status in that
+report's section 6.
+
+- **Windows package (W6-06-02).** MinGW runtime linked statically, VERSIONINFO resource,
+  `pwsh scripts/package-win.ps1 [-Configure]` -> `dist/ra2engine-<version>-win64/` + `.zip`
+  (exes, `SDL2.dll`, INSTALL.md, LICENSE, THIRD_PARTY_NOTICES.md); the script checks the
+  imports and runs `--version` from the folder with PATH limited to Windows.
+- **Android lifecycle (W6-01-10, W6-06-09/10).** An activity destroyed without finishing (a
+  config change Android cannot hand over) keeps `AUTOSAVE.SAV` (`nativeKeepAutosave`); wider
+  `configChanges`. The startup Resume page is a shell page (`engine/resume_scene.inc`), MAIN
+  MENU asks first; a won mission writes RA2.INI `[Engine] ResumeCampaign=` until the next
+  mission starts. `--play` gained `lifecycle background|foreground|relaunch`.
+- **Importer (W6-06-05/06).** Launcher shortcut + Options > Game Files re-open it at any time;
+  it copies patches (`expand/ecache/elocal##.mix`), `thememd.mix` and movies.
+- **Save/load (W6-06-03/04).** No superweapon EVA replay after a load; damage smoke rebuilt;
+  trigger particle systems saved (section `PFX `). **Save format v25.**
+- **Campaign shell (W6-06-07/08/11).** EndOfGame -> FinalMovie -> credits -> menu; PostScore /
+  PreMapSelect movies; Results rows by side, map objects not Built, no places after a loss/tie;
+  Back on Results / loading screens.
+- **RA2.INI (W6-06-12)**, **Play Movies (W6-06-13)**, **SDL pin + fresh-checkout Android build
+  (W6-06-14)**, **versionCode from VERSION + release-signing guard (W6-06-15)**, **About page +
+  notices in the APK (W6-06-16)**.
+- **Play scripts:** `lifecycle-w6`, `campaign-end-w6`, `save-w6-fx`, `about-w6`, `movies-w6`
+  (needs `RA2_MOVIE_DIR` with a movie file).
+- **Gates:** none moved (`--demo-saveload` prints `4cf40c63a14f07e7` with format v25).

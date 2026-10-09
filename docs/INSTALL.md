@@ -85,11 +85,27 @@ Alternative: copy the files over USB (MTP) straight into
 and on-phone file managers can no longer write to `Android/data`, so use the
 importer or a PC.
 
+**Adding or replacing files later.** Put them in `Download/RA2` and import
+again: long-press the app icon and choose **Import game files**, or in the
+game open **Options**, then **Game Files**. Saves and settings are kept; you
+never need to clear the app's data. Besides the files in the table, the
+importer copies patch archives (`expand##.mix`, `ecache##.mix`,
+`elocal##.mix`), `thememd.mix`, and movie files (`MOVIES##.MIX`,
+`MOVMD##.MIX`, and loose `*.bik`, also from a `Movies` sub-folder).
+
 Settings (`RA2.INI`) and saves are in the app's internal storage. They are
 included in Android backups; the game files are not.
 
-If the app is closed in the background (low memory), the game was saved to
-`AUTOSAVE`. The next launch asks **RESUME GAME?**.
+If Android closes the app in the background (low memory), or restarts it
+(for example after a switch to gesture navigation or a theme change), the
+game was saved to `AUTOSAVE`. The next launch shows **RESUME GAME?** with
+the mission name and play time; **MAIN MENU** asks before it discards that
+game. If you won a mission and the app was closed on the results page or
+on the next loading screen, the next launch offers **CONTINUE CAMPAIGN?**.
+
+**Updates.** Install the new APK over the old one: the game files and
+settings are kept. Saved games do not carry over between engine versions
+yet (they are listed as "Older version"), so finish a mission first.
 
 ## 4. Controls
 
@@ -151,6 +167,10 @@ If the app is closed in the background (low memory), the game was saved to
   exit on the main menu.
 - The engine build (for example `ENGINE 0.9.0+g1a2b3c4`) is shown in the
   bottom-left corner of the main menu and as the app's version name.
+  **Options > About** shows the version, the licence and the third-party
+  notices.
+- Back on the mission results page = Continue (Main Menu after a lost
+  mission); on a mission loading screen Back returns to the main menu.
 
 ### Movies
 
@@ -162,9 +182,16 @@ put the Bink files (`A01_f00e.bik`, ...) in any of:
 
 - a folder named by the environment variable `RA2_MOVIE_DIR`;
 - the game folder, or a `Movies` folder inside it;
-- `Movies` inside the settings folder (`%APPDATA%\ra2engine\RA2\Movies\`,
-  or the app's files folder on Android);
+- `Movies` inside the settings folder (`%APPDATA%\ra2engine\RA2\Movies\`);
 - or replace the placeholder `MOVIES0x.MIX` / `MOVMD03.MIX` with real ones.
+
+On Android, put the movie files next to the game files and import them
+(section 3): the importer copies them where the engine looks.
+
+With movie files present, **Movies & Credits > Play Movies** lists every
+campaign movie it finds (by mission) and plays the one you pick. Winning the
+last mission of a campaign plays the campaign's final movie (when present),
+then the credits, then returns to the main menu.
 
 A movie's sound plays with it when the file carries a Bink Audio track (RDFT or
 DCT, mono or stereo). The music pauses for the movie and resumes after it. The
@@ -215,7 +242,8 @@ Optional system-side numbers: `adb shell dumpsys gfxinfo org.ra2.engine`
 | **GAME FILES NEEDED** page | Copy or import the listed files. File names are case-sensitive on Android; the importer fixes the case for you. |
 | "COULD NOT START THE GAME: THE GAME FILE X IS MISSING" | An optional file needed by that mode (for example a campaign's maps) is missing. Add it and try again. |
 | A save shows "Damaged" | The file failed its checksum. It cannot be loaded. |
-| A save shows "Wrong version" | It was written by another engine version. |
+| The window is 1280x720 although `RA2.INI` asked for more | `ScreenWidth` / `ScreenHeight` did not fit the display (or the graphics driver's limit); the engine fell back and rewrote `[Video]`. Pick a size in Options. |
+| A save shows "Older version" / "Newer version" | It was written by another engine version and cannot be loaded (saves do not carry over between versions yet). |
 | Android: logs | `adb logcat -s SDL SDL/APP RA2Setup` shows the asset folder, `[load]` timings and `[lifecycle]` events. |
 | Windows: logs of `ra2game.exe` | `%APPDATA%\ra2engine\RA2\ra2engine.log` (rewritten on each start). |
 | "COULD NOT LOAD THAT SAVED GAME" / "Error loading game" | The save is from another engine version, or its contents point outside the game (the loader range-checks every unit and building reference). |
