@@ -304,6 +304,53 @@ TEST_CASE("step_combat: leash drop off-anchor emits a return-to-anchor move requ
     CHECK(reqs[0].approach == false);  // guard-return: move exactly there, no firing-position resolution
 }
 
+TEST_CASE("step_combat: an auto-acquired target that vanishes mid-approach sends the unit home (fv-a, ALL01 Tanya)") {
+    // The GI auto-acquires the Conscript (anchor (0,0)) and is walking an
+    // approach path when the target dies: the stale approach ends and the GI
+    // returns to its guard anchor instead of finishing the path and
+    // re-anchoring wherever it stops.
+    Occupancy occ(20, 1);
+    std::vector<Unit> units;
+    units.push_back(make_soldier(0, 0, 0, 0, occ));
+    units.push_back(make_soldier(3, 0, 1, 1, occ));
+    units[1].w_damage = 0;
+    std::vector<Building> bs;
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
+    REQUIRE(units[0].target == 1);
+    REQUIRE(units[0].attack_order == false);
+    // On its approach path, one cell out from the anchor.
+    occ.release_all_of(0, -1, -1);
+    units[0].cell_x = 1;
+    units[0].fx = 1.0;
+    occ.set(1, 0, 0);
+    units[0].path = {{1, 0}, {2, 0}, {3, 0}, {4, 0}};
+    units[0].path_idx = 1;
+    // The target vanishes (dies).
+    units[1].alive = false;
+    const auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
+    CHECK(units[0].target == -1);
+    REQUIRE(reqs.size() == 1);
+    CHECK(reqs[0].unit == 0);
+    CHECK(reqs[0].goal_x == 0);
+    CHECK(reqs[0].goal_y == 0);
+    CHECK(reqs[0].approach == false);
+}
+
+TEST_CASE("step_combat: a vanished target does not recall a unit that is not walking an approach") {
+    Occupancy occ(20, 1);
+    std::vector<Unit> units;
+    units.push_back(make_soldier(0, 0, 0, 0, occ));
+    units.push_back(make_soldier(3, 0, 1, 1, occ));
+    units[1].w_damage = 0;
+    std::vector<Building> bs;
+    ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
+    REQUIRE(units[0].target == 1);
+    units[1].alive = false;   // killed while the GI stands at its post
+    const auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
+    CHECK(units[0].target == -1);
+    CHECK(reqs.empty());
+}
+
 // ---- Task 4: attack-building (docs/superpowers/plans buildings phase) ----
 
 TEST_CASE("combat: attack-building — range to nearest foundation cell, kill, tombstone") {

@@ -1088,8 +1088,22 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // stale "pursue indefinitely" flag for a target it hasn't picked
         // yet.
         if (u.target != -1 && !valid_target(units, world, u, u.target)) {
+            // fv-a (ALL01 idle Tanya): an AUTO-acquired target that vanishes
+            // (killed, out of sight, loaded into a transport) while the unit is
+            // still walking its approach path ends that approach -- the move's
+            // destination was the target [RE-FALLBACK: the C&C-family FootClass
+            // drops a NavCom that was the TarCom it chased (RA1 GPL source); not
+            // traced in gamemd]. Like the leash drop in
+            // (f), the unit then walks back to its guard anchor instead of
+            // finishing a stale path and re-anchoring wherever it ends (Tanya
+            // followed a Soviet transport's stale approach to the Dreadnought
+            // pier, re-anchored there and died).
+            const bool chasing = !u.attack_order && u.moving() && !u.path.empty() &&
+                                 (u.path.back().x != u.guard_x || u.path.back().y != u.guard_y);
             u.target = -1;
             u.attack_order = false;
+            if (chasing && (u.cell_x != u.guard_x || u.cell_y != u.guard_y))
+                requests.push_back({i, u.guard_x, u.guard_y});
         }
 
         // (e) Auto-acquire: nearest hostile within weapon range, ties ->
