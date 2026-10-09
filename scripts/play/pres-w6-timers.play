@@ -1,0 +1,29 @@
+# W6-05-05 / W6-05-04: the bottom-right timer stack [RE: TacticalClass draw
+# FUN_006a45a0 -> FUN_006a5280]. Every ShowTimer=yes superweapon of EVERY
+# house that has started charging is listed "<UIName>  mm:ss" in its owner's colour, right-aligned at
+# the bottom-right of the tactical view, stacking upward.
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+assert timer_lines == 0                                  @W6-05-05
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat place GAWEAT 0 building 0:GACNST +8 -6
+cheat place NAPOWR 1 building 0:GACNST +14 -2
+cheat place NAPOWR 1 building 0:GACNST +17 -2
+cheat place NAMISL 1 building 0:GACNST +14 -6
+until 60 timer_lines == 2                                @W6-05-05
+wait 30
+dump
+view building 0:GACNST
+shot timers
+end

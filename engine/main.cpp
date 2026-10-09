@@ -6507,6 +6507,7 @@ public:
             os_cursor_hidden_ = drew;
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
+        draw_timer_stack(ren, tc);   // W6-05-04/05 mission timer + SW countdowns
         draw_touch_bar(ren);      // W2-AR-08 (touch only)
         draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
         draw_touch_hint(ren);          // W4-AM-01 (touch only)
@@ -7361,13 +7362,6 @@ private:
             const std::string t = hud_wrap(o.text, playfield_w_ - 32);
             hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true);
             y += hud_text_height(t) + 4;
-        }
-        // Mission timer (actions 23-27) when running.
-        const ra2engine::MapTriggerSystem& ts = campaign_->triggers();
-        if (ts.mission_timer_start() != -1) {
-            const long left =
-                std::max(0L, ts.mission_timer_left() - (ts.frame() - ts.mission_timer_start()));
-            draw_mission_timer(ren, tc, left);
         }
         if (campaign_->outcome() != 0)
             draw_end_banner(ren, tc, camp::csf_text(dir_, campaign_->outcome() == 1 ? "TXT_SCENARIO_WON"

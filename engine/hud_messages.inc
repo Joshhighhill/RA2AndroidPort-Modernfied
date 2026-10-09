@@ -55,12 +55,87 @@
             y += hud_text_height(m.text) + 4;
         }
     }
-    void draw_mission_timer(SDL_Renderer* ren, ra2engine::TextureCache& tc, long frames_left) const {
+    // W6-05-04/05 [RE: TacticalClass draw FUN_006a45a0 -> FUN_006a5280]: the
+    // bottom-right timer stack. Line 0 is the mission timer (when running)
+    // with its TimerText label (Scenario+0x7D4, action 103) in the player's
+    // colour; then one line per ShowTimer superweapon (the SuperClass list
+    // DAT_00a35dbc) "<UIName>  mm:ss" in the OWNER house's colour, skipped
+    // while it has not started charging (+0x58 and TimeLeft == RechargeTime).
+    // Each line: "%s  %02d:%02d" ("%s  %d:%02d:%02d" from one hour), right-
+    // aligned at x = TacticalW - 3, y = TacticalH - (fontH + 2) * (line + 1).
+    // At 0:00 a SW line toggles every 1000 ms to ColorSchemes[0]
+    // (*DAT_00ab6efc). [RE-FALLBACK: the ShowTimer list-insert site was not
+    // traced; ShowTimer=yes gates membership.]
+    struct TimerLine { std::string text; SDL_Color col; };
+    std::vector<TimerLine> timer_lines_;   // the last drawn stack (probe)
+    std::map<int, std::string> sw_timer_names_;   // SW type -> UIName text ("" = no ShowTimer)
+    static std::string timer_fmt(const std::string& label, long secs) {
         char b[64];
-        std::snprintf(b, sizeof b, " %02ld:%02ld", frames_left / 15 / 60, (frames_left / 15) % 60);
-        const std::string label = camp::csf_text(dir_, "GUI:TimeRemaining");
-        hud_text(ren, tc, (label == "GUI:TimeRemaining" ? std::string("Time Remaining:") : label) + b,
-                 playfield_w_ / 2, 8, hud_ui_color(), kHudCenter, true, true);
+        if (secs < 0) secs = 0;
+        if (secs / 3600) std::snprintf(b, sizeof b, "  %ld:%02ld:%02ld", secs / 3600, (secs / 60) % 60, secs % 60);
+        else std::snprintf(b, sizeof b, "  %02ld:%02ld", (secs / 60) % 60, secs % 60);
+        return label + b;
+    }
+    SDL_Color house_text_color(int house) const {
+        const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, house)[16];
+        return SDL_Color{c.r, c.g, c.b, 255};
+    }
+    const std::string& sw_timer_name(ra2engine::SuperweaponType t) {
+        auto it = sw_timer_names_.find(static_cast<int>(t));
+        if (it != sw_timer_names_.end()) return it->second;
+        std::string name;
+        for (const auto& bt : ba_.roster) {
+            const std::string sw = rp_building_classic_sw(rules_, bt.id);
+            if (sw.empty() || rp_sw_type_of(rp_upper(rules_.section_string(sw, "Type", ""))) != t) continue;
+            if (!rp_flag(rules_, sw, "ShowTimer")) break;
+            const std::string ui = rules_.section_string(sw, "UIName", "");
+            name = ui.empty() ? sw : camp::csf_text(dir_, ui);
+            break;
+        }
+        return sw_timer_names_[static_cast<int>(t)] = name;
+    }
+    SDL_Color blink_color() const {
+        const auto& cs = rules_ini_.section("Colors");
+        int hh = 25, ss = 255, vv = 255;   // LightGold
+        if (!cs.empty()) std::sscanf(cs.front().second.c_str(), "%d,%d,%d", &hh, &ss, &vv);
+        const ra2assets::Rgba c = ra2engine::pal_for_hsv(ba_.unit_pal, hh, ss, vv)[16];
+        return SDL_Color{c.r, c.g, c.b, 255};
+    }
+    void build_timer_stack() {
+        timer_lines_.clear();
+        if (campaign_) {
+            const ra2engine::MapTriggerSystem& ts = campaign_->triggers();
+            if (ts.mission_timer_start() != -1) {
+                const long left = std::max(0L, ts.mission_timer_left() - (ts.frame() - ts.mission_timer_start()));
+                std::string label;
+                if (!ts.timer_text().empty()) label = camp::csf_text(dir_, ts.timer_text());
+                if (label.empty()) {
+                    label = camp::csf_text(dir_, "GUI:TimeRemaining");
+                    if (label == "GUI:TimeRemaining") label = "Time Remaining:";
+                }
+                timer_lines_.push_back({timer_fmt(label, left / 15), house_text_color(0)});
+            }
+        }
+        const bool blink_on = static_cast<long>(msg_clock_) % 2 == 1;
+        for (int h = 0; h < world_.house_count(); ++h)
+            for (ra2engine::SuperweaponType t : world_.sw_types(h)) {
+                const ra2engine::Superweapon* sw = world_.sw_state(h, t);
+                if (!sw) continue;
+                const std::string& name = sw_timer_name(t);
+                if (name.empty()) continue;
+                if (!sw->ready && sw->timer <= 0.0) continue;   // not started charging
+                const long secs = sw->ready ? 0 : static_cast<long>(std::max(0.0, sw->recharge_secs - sw->timer));
+                SDL_Color col = house_text_color(h);
+                if (secs == 0 && blink_on) col = blink_color();   // ColorSchemes[0]
+                timer_lines_.push_back({timer_fmt(name, secs), col});
+            }
+    }
+    void draw_timer_stack(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
+        build_timer_stack();
+        const int fh = hud_line_h();
+        for (std::size_t i = 0; i < timer_lines_.size(); ++i)
+            hud_text(ren, tc, timer_lines_[i].text, playfield_w_ - 3, kWinH - (fh + 2) * static_cast<int>(i + 1),
+                     timer_lines_[i].col, kHudRight, false, true);
     }
     void draw_end_banner(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& s) const {
         if (s.empty()) return;

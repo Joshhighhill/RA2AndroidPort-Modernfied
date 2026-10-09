@@ -90,6 +90,12 @@
         const int houses = world_.house_count();
         p.set("houses", houses);
         p.set("tile_misses", a_.theater.miss_count());             // W6-05-02 tile files found nowhere
+        // W6-05-04/05: the bottom-right timer stack, line i's text.
+        build_timer_stack();
+        p.set("timer_lines", static_cast<int>(timer_lines_.size()));
+        for (std::size_t i = 0; i < timer_lines_.size(); ++i)
+            p.set_s("timer_line(" + std::to_string(i) + ")", timer_lines_[i].text);
+        if (campaign_) p.set_s("timer_text", campaign_->triggers().timer_text());
         for (int h = 0; h < houses; ++h) {
             const std::string hs = std::to_string(h);
             p.set("house_credits(" + hs + ")", world_.house_credits(h));
