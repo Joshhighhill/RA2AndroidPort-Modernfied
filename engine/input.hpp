@@ -371,6 +371,20 @@ public:
 
     bool wants_quit() const { return quit_; }
 
+    // W6-01-05 [engine deviation, touch]: a finger tap on the lone selected
+    // deployable unit (ACTION_SELF) waits out the double-tap window before it
+    // deploys, so the first tap of a double tap never deploys. GameScene calls
+    // this once per frame (before take_actions) with the frame's dt; when the
+    // window has passed with no second tap it reports deploy_clicked.
+    void touch_tick(double dt) {
+        if (touch_deploy_wait_ < 0.0) return;
+        touch_deploy_wait_ -= dt;
+        if (touch_deploy_wait_ <= 0.0) {
+            touch_deploy_wait_ = -1.0;
+            actions_.deploy_clicked = true;
+        }
+    }
+
     // Consume the actions accumulated by every handle() call since the
     // previous take_actions(): returns them and resets the accumulator (see
     // InputActions above for the accumulate-then-consume rationale). Call
@@ -450,6 +464,8 @@ private:
     // Double-click detection (uses event t_ms; no clock read here).
     uint32_t last_click_t_ = 0;
     int last_click_x_ = 0, last_click_y_ = 0;
+    int touch_last_kind_ = 0;   // W6-01-05: 1 = the last touch tap selected / re-tapped an own unit
+    double touch_deploy_wait_ = -1.0;   // W6-01-05: a deferred touch deploy (seconds left; < 0 none)
 
     // Placement mode (Task 7a): place_type_ >= 0 while placing a building of
     // that roster type; place_fw_/fh_ is its foundation size.

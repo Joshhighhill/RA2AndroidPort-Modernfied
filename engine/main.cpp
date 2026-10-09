@@ -6307,6 +6307,7 @@ public:
             pres_.credit_tick(d > 0);   // W5-E CreditTicks up / down (FUN_004A2280)
         }
         follow_tick();   // W5-E Follow hotkey
+        input_.touch_tick(dt);   // W6-01-05: a deferred touch deploy
         // Consume input actions ONCE per frame.
         const ra2engine::InputActions act = input_.take_actions();
         // [RE: repair-sell.md §C1/§D5] arming a mode requires >= 1 owned
