@@ -80,6 +80,8 @@ SkirmishConfig default_skirmish_config(const ra2assets::Rules& rules);
 // with the full roster-backed make_ai_config before the sim runs). Never spawns
 // units/bases (that needs assets -> launch_skirmish). Host-testable on a hand-
 // built World; NOT read by world_hash.
+// W6-a: the Paranoid computer alliance of a plain skirmish (skirmish.cpp).
+void apply_computer_alliance(World& world, const SkirmishConfig& cfg);
 void configure_skirmish_houses(World& world, const SkirmishConfig& cfg);
 
 }  // namespace ra2engine

@@ -49,6 +49,22 @@ int damage_vs(int damage, const std::vector<int>& verses, int ai);
 // spec's "combat.cpp literally untouched" wording -- necessitated because the
 // applicator has internal linkage and is otherwise uncallable from world.cpp;
 // reimplementing the falloff loop (a "new damage system") is what §5/§8 forbid.
+// W6-03-04 damage -> anger feed [RE: TechnoClass::ReceiveDamage FUN_00700da0
+// @0x7012CD-0x7012FD -- after the damage lands, victim->Owner->AddAnger(
+// ftol(type->Cost * damage / type->Strength), attacker->Owner) (FUN_005045b0)].
+// The pure combat helpers have no World, so the World arms this sink for the
+// length of its step and every damage tail reports (victim, attacker house,
+// damage) through it. Unset (nullptr) everywhere else: a strict no-op.
+struct DamageFeed {
+    void* ctx = nullptr;
+    void (*fn)(void* ctx, bool building, int victim, int attacker_house, int dmg) = nullptr;
+};
+DamageFeed& damage_feed();
+inline void feed_damage(bool building, int victim, int attacker_house, int dmg) {
+    const DamageFeed& f = damage_feed();
+    if (f.fn && dmg > 0 && attacker_house >= 0) f.fn(f.ctx, building, victim, attacker_house, dmg);
+}
+
 void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ,
                          const Unit& attacker, const Unit& center);
 

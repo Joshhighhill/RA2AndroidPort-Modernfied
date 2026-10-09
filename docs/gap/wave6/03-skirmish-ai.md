@@ -333,3 +333,49 @@ Ordered by player impact over effort. Items 1–4 are small and independent; do 
 Then re-run the six difficulty soaks (W6-03-10) and record the new table.
 
 Leave W6-03-07 (needs RE W6-c) and W6-03-11 (needs RE W6-d) for an RE pass.
+
+---
+
+## 6. Fix status (fix agent #3, branch `w6fix-ai`)
+
+RE for every row: `docs/re/ai-base.md` §7 (private Ghidra copy `D:\ra2-re\w6fix-ai`, outputs in
+`D:\ra2-re\w6fix-ai-out`). Save format **v25**. Gate hashes: all six AI gates unchanged
+(`--demo-ai-base` `b61f283f7fd56db9`, `--demo-ai-team` `fdd60988623ca3ef`, `--demo-ai-trigger`
+`287a87c0aefdfec7`, `--demo-skirmish` `fde3f587e747f765`, `--demo-multihouse` `39412ae996cce8ae`,
+`--demo-superweapon` `e6969fed3e772bd3`); no re-pin.
+
+| Row | Status | What changed |
+|---|---|---|
+| W6-03-01 | **FIXED** | `Wall=`/`Insignificant=` types never count for victory or `ai_house_alive`; walls are never an AI quarry or SW target. `scripts/play/sk-walls.play` ends WON. |
+| W6-03-02 | **FIXED** | 1v3 Brutal Arena with the simple scripted player (`a1v3_brutal_arena.play`): LOST at f≈9450 (min ≈ 10.5; was a 28-min stall). Fast form `scripts/play/sk-1v3.play` (passive player, LOST at f=1664). Main causes removed: W6-a (the AIs ally against the human), walls, anger. |
+| W6-03-03 | **FIXED** | `AIVirtualPurifiers` 4,2,0 → Brutal 2×, Medium 1.5× harvest income (unit test). |
+| W6-03-04 | **FIXED** | Anger table + damage feed + `AIHateDelays` seed + arg-max Enemy + MakeAlly/MakeEnemy; `ai_find_typed_building` ranks the Enemy (and neutral) first. Saved. |
+| W6-03-05 | **FIXED** | SW picker scores only the Enemy's ground objects with the original order/values; no fire without an Enemy; paradrops to the Enemy base; the invented IC/Chrono auto-fire is gone. ct=5/6 AITriggers and script actions 55/56/57 work. |
+| W6-03-06 | **FIXED** | `FUN_005052d0` plan tail: 1 + `AIExtraRefineries` refineries, defence placeholders at rand(3,n-1)+1, `AIPickWallDefensePercent` walls. Brutal Soviet first defence at min 5 (was 20). |
+| W6-03-07 | **RE done, no code** | W6-c: `WarLimit`/`BarracksLimit` have no runtime reader; the plan holds one war factory and one barracks; no surplus-spending path outside team demand was found. Hoarding remains (Allied Normal AI-vs-AI: 46–60k from min 20). |
+| W6-03-08 | **FIXED** | Raise money: sell plan buildings from the tail to rebuild a refinery / miner (`--ai-soak --ruin-ai-at`). |
+| W6-03-09 | **FIXED** | The invented civilian garrison is off; the start force stays in the recruit pool. |
+| W6-03-10 | **PARTIAL** | New handicaps: `MultiplayerAICM` (Brutal starts with 5× money), virtual purifiers, hate delays, defence %. Table below. |
+| W6-03-11 | **RE done, owned by agent #6** | W6-d: the score page shows `Scenario+0x614` elapsed time on the `timeGetTime()>>4` clock / 60 (wall-clock play time ≈ ms/960), not game frames. |
+| W6-a | **ANSWERED: yes, implemented** | `FUN_00501460` + `MPBattleMD.ini AlliesAllowed=yes`: in a skirmish with no lobby teams every AI allies with every other AI against the human. |
+| W6-b | Partly | An occupied civilian building is `Insignificant=yes`, so it never keeps a house alive (W6-03-01). Whether the original AI garrisons at all is still open. |
+
+**AI-vs-AI** (`--ai-soak --ai-vs-ai --diff brutal --map hillbtwn.map --minutes 40`): Soviet Brutal wins,
+the Allied Normal house is defeated at min ≈ 35.
+
+**Difficulty soaks** (20 min, passive human, Soviet AI):
+
+| Run | Human dead by (min) | Units built @10 / @15 | Max AI units alive |
+|---|---|---|---|
+| hillbtwn Easy | 11 | 8 / 16 | 19 |
+| hillbtwn Normal | 18 | 12 / 19 | 20 |
+| hillbtwn Brutal | 8 | 22 / 44 | 51 |
+| May Day Easy | alive at 20 (base 268/1000) | 6 / 8 | 16 |
+| May Day Normal | 12 | 13 / 16 | 15 |
+| May Day Brutal | 16 | 22 / 44 | 50 |
+
+Strength (units built, army size) is now distinct and ordered on both maps. Time-to-kill against a
+passive player is still not monotonic: the Brutal May Day AI razed the base to one ConYard at
+188 HP by min 7, then its "attack anything" teams chased the human's 5 start infantry for 8 minutes
+(the nearest-unit quarry pick, R-083); Easy on hillbtwn plans only 6 defences and spends the rest on
+units.

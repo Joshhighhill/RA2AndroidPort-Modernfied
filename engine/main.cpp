@@ -2462,6 +2462,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.crewed           = rules.section_flag(id, "Crewed", false);
         d.soylent          = (int)rules.section_double(id, "Soylent", 0.0);
         d.ore_purifier     = rules.section_flag(id, "OrePurifier", false);   // G-27
+        d.wall             = rules.section_flag(id, "Wall", false);            // W6-03-01
+        d.insignificant    = rules.section_flag(id, "Insignificant", false);   // W6-03-01
         // W2-SK-12/19/20: Capturable= / Spyable= / UnitRepair= (absent = no in
         // rulesmd: GAPILL/TESLA/ATESLA/NAMISL/GACSPH/GAGAP say false, walls say
         // nothing) and the factory category a spy's veterancy bonus follows.
@@ -2782,6 +2784,11 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         cfg.ai.sw_value_tech = val("AIIonCannonTechCenterValue", 100);
         cfg.ai.sw_value_defense = val("AIIonCannonBaseDefenseValue", 35);
         cfg.ai.sw_value_harvester = val("AIIonCannonHarvesterValue", 1);
+        cfg.ai.sw_value_engineer = val("AIIonCannonEngineerValue", 1);   // W6-02-09
+        cfg.ai.sw_value_thief = val("AIIonCannonThiefValue", 1);
+        cfg.ai.sw_value_mcv = val("AIIonCannonMCVValue", 1);
+        cfg.ai.sw_value_apc = val("AIIonCannonAPCValue", 1);
+        cfg.ai.minor_super_ready = rules.general_double("AIMinorSuperReadyPercent", 0.7);   // W6-03-05
     }
     {   // [G-65] "ConditionRed=25%" -> strtod 25 -> the 0.25 fraction
         const double cr = rules.section_double("AudioVisual", "ConditionRed", 0.25);

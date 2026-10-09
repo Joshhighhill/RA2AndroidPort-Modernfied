@@ -465,10 +465,16 @@ void World::w5_ai_pass() {
         auto dist_base = [&](const Building& b) {
             return std::hypot(b.cx + b.fw / 2.0 - view.center_x, b.cy + b.fh / 2.0 - view.center_y);
         };
-        // (a) garrison
+        // (a) garrison -- W6-03-09: OFF. No original source for a computer
+        // house garrisoning civilian buildings was found (the stock aimd
+        // scripts never name one; RE-W6-b open), and the invented rule locked
+        // the AI's starting infantry -- the first teams' free recruit pool --
+        // inside civilian buildings for the whole game. Kept behind this
+        // switch until the original trigger is found.
+        constexpr bool kAiGarrisonCivilian = false;
         int gb = -1;
         double gbd = 0.0;
-        for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+        for (int bi = 0; kAiGarrisonCivilian && bi < (int)buildings_.size(); ++bi) {
             const Building& b = buildings_[(std::size_t)bi];
             if (!live_bld(b) || house_combatant(b.house) || !b.occupants.empty()) continue;
             if (b.type < 0 || b.type >= (int)types.size() || !types[(std::size_t)b.type].can_be_occupied) continue;

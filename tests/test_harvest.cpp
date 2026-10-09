@@ -687,6 +687,29 @@ TEST_CASE("harvest: Ore Purifier bonus + house 2+ paid to its own pool (gap G-27
     CHECK(credits[2] == doctest::Approx(25 + 2 * 0.25 * 25));   // 25 + 12.5
 }
 
+// W6-03-03 [RE: FUN_00522a80 -- n = own purifiers + Rules AIVirtualPurifiers
+// [house+0x184] for a computer house outside a campaign; rulesmd 4,2,0 h,m,e]:
+// at PurifierBonus .25 a Brutal AI (4 virtual) earns 2x, a Medium AI (2) 1.5x.
+TEST_CASE("harvest: AIVirtualPurifiers -- Brutal 2x, Medium 1.5x, Easy 1x the human unload (W6-03-03)") {
+    const int virt[3] = {4, 2, 0};   // hard, medium, easy
+    const double want[3] = {2.0, 1.5, 1.0};
+    for (int k = 0; k < 3; ++k) {
+        Rig r;
+        r.harv(2, 2);
+        r.units[0].house = 1;
+        r.units[0].harv = HarvState::Unloading;
+        r.units[0].dock_refinery = 0;
+        r.units[0].bales_ore = 1;
+        r.units[0].harv_timer = 0.0;
+        double credits[2] = {0, 0};
+        const int purifiers[2] = {0, virt[k]};
+        r.moves.clear(); r.events.clear();
+        step_harvest(r.units, r.buildings, r.types, r.ref_types, r.ore, r.pass, 20, 20, r.occ,
+                     kUnloadSecsPerBale, r.values, credits, r.moves, r.events, 2, purifiers, 0.25);
+        CHECK(credits[1] == doctest::Approx(25.0 * want[k]));
+    }
+}
+
 TEST_CASE("harvest: a War Miner whose dock cell is blocked drives to the QueueingCell and unloads (NEW-3)") {
     Rig r;
     // Rig refinery NAREFN at (8,8) 4x3 -> dock cell (10,11); block it.

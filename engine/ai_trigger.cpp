@@ -95,11 +95,19 @@ bool trigger_condition_true(const AITriggerType& t, const TriggerView& view) {
                                        view.neutral_buildings);
             return n >= 0 && compare_count(n, t.comparator);
         }
+        case kCondIronCurtainCharged:
+        case kCondChronoSphereCharged: {
+            // W6-03-05 [RE: FUN_0041f0f0 / FUN_0041f1a0]: the owner's SW of
+            // that type is present (+0x6d) and (1.0 - Rules+0xd70) >= the
+            // fraction of its recharge still to run, i.e. charged >=
+            // AIMinorSuperReadyPercent. The comparator is not consulted.
+            const double ch = t.condition_type == kCondIronCurtainCharged ? view.iron_charge
+                                                                          : view.chrono_charge;
+            return ch >= 0.0 && (float)(1.0 - view.minor_ready) >= (float)(1.0 - ch);
+        }
         default:
-            // kCondHouseMetric2 / kCondHouseMetric3 (unused in stock) +
-            // kCondIronCurtainCharged / kCondChronoSphereCharged
-            // (superweapons absent) + every unknown value: INERT -> FALSE
-            // [RE: ai-trigger.md §2].
+            // kCondHouseMetric2 / kCondHouseMetric3 (unused in stock) + every
+            // unknown value: INERT -> FALSE [RE: ai-trigger.md §2].
             return false;
     }
 }
