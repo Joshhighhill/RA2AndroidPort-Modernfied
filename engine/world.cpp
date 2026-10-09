@@ -5079,7 +5079,15 @@ void World::step(double dt) {
         // unit's firing position is chosen on the Land-OR-Water grid, so a
         // swimming Tanya reaches a Destroyer and a SEAL on the shore enters the
         // water to plant C4 (the Land-grid batch found no cell next to a ship).
-        if (r.approach && u.movement_domain == MovementDomain::Amphibious)
+        // Only an EXPLICIT attack order on a target the land grid cannot
+        // reach (a ship on water) switches grids [RE-FALLBACK scope: the idle
+        // guard-leash chase (W2-SK-25) stays on land, so a SEAL raid does not
+        // wander off after ships -- ALL11 depends on it]; a land target keeps
+        // the land batch exactly as before.
+        if (r.approach && u.attack_order && u.movement_domain == MovementDomain::Amphibious &&
+            r.goal_x >= 0 && r.goal_y >= 0 && r.goal_x < grid_w_ && r.goal_y < grid_h_ &&
+            !passable_[static_cast<std::size_t>(r.goal_y) * grid_w_ + r.goal_x] &&
+            !water_passable_.empty() && water_passable_[static_cast<std::size_t>(r.goal_y) * grid_w_ + r.goal_x])
             amphib_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
         else if (r.approach)
             approach_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
