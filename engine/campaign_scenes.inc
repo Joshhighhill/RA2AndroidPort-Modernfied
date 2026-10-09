@@ -12,6 +12,10 @@
 const Rules* g_menu_rules = nullptr;
 // g_menu_art lives in shell_pages.inc (W2-UI-13: also the in-game pages' art).
 
+// W6-06-07: the end-of-campaign credits roll, then the main menu
+// (credits_scene.inc).
+Scene* make_campaign_credits_scene(bool no_audio);
+
 Scene* make_main_menu_scene(bool no_audio) {
     if (!g_menu_rules || !g_menu_art) return nullptr;
     return new MainMenuScene(*g_menu_rules, no_audio, *g_menu_art);
@@ -68,6 +72,12 @@ public:
     // it at once). [RE-FALLBACK: text anchors (the art's dark top-left box),
     // the bar (the art's bottom strip, UI colour) and the 1.5 s fill.]
     void handle(const ra2engine::InputEvent& ev) override {
+        // W6-06-11: Esc / Android Back leaves for the main menu (before the
+        // mission build starts) instead of doing nothing.
+        if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape && !loading_) {
+            back_ = true;
+            return;
+        }
         if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEnter) start_ = true;
         if (ev.kind == ra2engine::InputEvent::PointerDown && ev.button == ra2engine::InputEvent::Left) start_ = true;
     }
@@ -234,9 +244,28 @@ public:
                 ra2engine::parse_scenario_basic(camp::load_map_ini(dir, cfg_.campaign_map));
             end_of_game_ = b.end_of_game;
             if (!end_of_game_ && !b.one_time_only) next_ = t.next_scenario(cfg_.campaign_side, cfg_.campaign_map);
+            // W6-06-07 [RE: campaign.md §3 step 4, Do_Win FUN_006850b0]: the
+            // PostScore / PreMapSelect movies follow the score screen; an
+            // EndOfGame mission then plays the campaign's battle.ini
+            // FinalMovie and the credits, then the menu. SkipScore=yes skips
+            // the score screen itself. [ANCHORED: the campaign is ALL1 for
+            // the Allied side and SOV1 for the Soviet one -- the battles the
+            // menu starts.]
+            skip_score_ = b.skip_score;
+            for (const std::string& m : {b.post_score, b.pre_map_select})
+                if (!m.empty()) after_movies_.push_back(m);
+            if (end_of_game_)
+                if (const ra2engine::BattleEntry* be = t.battle(camp::up(cfg_.campaign_side) == "NOD" ? "SOV1" : "ALL1"))
+                    final_movie_ = be->final_movie;
             const ra2engine::MissionInfo mi = t.mission(cfg_.campaign_map);
             name_ = mi.ui_name.empty() ? cfg_.campaign_map : camp::csf_text(dir, mi.ui_name);
         } catch (const std::exception&) {}
+        // W6-06-10: a won mission with a next one is checkpointed in RA2.INI
+        // so an OS kill on this page (or on the next loading screen) does not
+        // lose it; the next launch offers to continue (resume_scene.inc).
+        if (cont_enabled() && !next_.empty())
+            campaign_checkpoint_set(next_, cfg_.campaign_side, cfg_.campaign_difficulty);
+        if (skip_score_ && cont_enabled()) choice_ = 1;   // W6-06-07: SkipScore=yes
     }
     // W2-UI-20: a shell page -- header GUI:CampaignResults, the CSF
     // TXT_SCENARIO_WON / TXT_SCENARIO_LOST line, the mission name and time;
@@ -255,6 +284,17 @@ public:
             my_ = ev.y;
         }
         if (ev.button == ra2engine::InputEvent::Left && ev.kind == ra2engine::InputEvent::PointerUp) down_ = false;
+        // W6-06-11 [RE-FALLBACK: Esc on the results dialog = its default
+        // button]: Esc / Android Back = Continue when it is enabled, else
+        // Main Menu; Enter = Continue.
+        if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape) {
+            choice_ = cont_enabled() ? 1 : 3;
+            return;
+        }
+        if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEnter && cont_enabled()) {
+            choice_ = 1;
+            return;
+        }
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left) return;
         down_ = true;
         if (cont_enabled() && ui_dev(shell_row(0)).contains(ev.x, ev.y)) choice_ = 1;
@@ -295,9 +335,7 @@ public:
     Scene* next() override {
         const int c = choice_;
         choice_ = 0;
-        if (c == 1)
-            return new CampaignLoadScene(no_audio_, campaign_config(next_, cfg_.campaign_side,
-                                                                    cfg_.campaign_difficulty));
+        if (c == 1) return after_score();
         if (c == 2) return new CampaignLoadScene(no_audio_, cfg_);
         if (c == 3) {
             campaign_checkpoint_clear();   // W6-06-10: the player left the campaign
@@ -319,6 +357,8 @@ public:
             p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
         };
         if (cont_enabled()) put("continue", 0);
+        p.set("end_of_game", end_of_game_ ? 1 : 0);
+        p.set_s("final_movie", final_movie_);
         put("retry", 1);
         put("menu", 5);
         const Pair pr = pair();
@@ -326,6 +366,13 @@ public:
         if (pr.me) p.set("graph_me_score", static_cast<double>(pr.me->score));
         if (pr.them) p.set("graph_them_score", static_cast<double>(pr.them->score));
         p.set_s("first_place", pr.first ? pr.first->name : std::string());
+        // W6-06-08: the row labels, the Built tallies and whether the place
+        // panel is drawn (not after a loss or on a tie).
+        p.set_s("graph_me_name", pr.me ? pr.me->name : std::string());
+        p.set_s("graph_them_name", pr.them ? pr.them->name : std::string());
+        if (pr.me) p.set("graph_me_built", pr.me->built);
+        if (pr.them) p.set("graph_them_built", pr.them->built);
+        p.set("places_shown", (pr.me && pr.them && outcome_ == 1 && pr.me->score != pr.them->score) ? 1 : 0);
     }
 
 private:
@@ -335,7 +382,8 @@ private:
         Pair r;
         for (const GfSkirmishStats::Row& x : st_.rows) {
             if (x.house == 0) r.me = &x;
-            else if (x.house > 0 && (x.kills > 0 || x.built > 0) && (!r.them || x.score > r.them->score)) r.them = &x;
+            else if (x.house > 0 && (x.kills > 0 || x.built > 0 || x.losses > 0) && (!r.them || x.score > r.them->score))
+                r.them = &x;
         }
         if (r.me && r.them) {
             const bool me_first = r.me->score >= r.them->score;
@@ -365,13 +413,47 @@ private:
             p.label(std::to_string(a[i]), bx + wa + 4, y - 3, 66, 16, 0);
             p.label(std::to_string(b[i]), bx + wb + 4, y + 12, 66, 16, 0);
         }
-        // First / Second Place panel.
+        // First / Second Place panel. W6-06-08: not after a lost mission or a
+        // tie (the player was never "First Place" in a failed mission).
         const int py = kWell.y + kWell.h - 50;
+        if (outcome_ != 1 || pr.me->score == pr.them->score) {
+            // Instead, a key naming the two bar colours.
+            p.fill(p.dev(kWell.x + 8, py + 4, 12, 12), 40, 110, 255);
+            p.label(pr.me->name, kWell.x + 26, py, 180, 20, 0);
+            p.fill(p.dev(kWell.x + 8, py + 26, 12, 12), 230, 30, 30);
+            p.label(pr.them->name, kWell.x + 26, py + 22, 180, 20, 0);
+            return;
+        }
         p.header(gf_csf("GUI:FirstPlace", "First Place") + ": " + pr.first->name, kWell.x + 8, py, kWell.w - 16, 20, 0);
         p.label(gf_csf("GUI:SecondPlace", "Second Place") + ": " + pr.second->name, kWell.x + 8, py + 22, kWell.w - 16, 18, 0);
     }
     GfSkirmishStats st_ = g_campaign_last_stats;
-    bool cont_enabled() const { return outcome_ == 1 && !next_.empty(); }
+    // W6-06-07: Continue also ends a finished campaign (final movie, credits).
+    bool cont_enabled() const { return outcome_ == 1 && (!next_.empty() || end_of_game_); }
+    // W6-06-07 [RE: Do_Win FUN_006850b0]: what follows the score screen.
+    Scene* after_score() {
+        const bool na = no_audio_;
+        std::function<Scene*()> then;
+        if (end_of_game_) {
+            const std::string fm = final_movie_;
+            then = [na, fm]() -> Scene* {
+                auto credits = [na]() -> Scene* { return make_campaign_credits_scene(na); };
+                if (!fm.empty() && any_movie({fm})) return new MovieScene({fm}, credits);
+                return credits();
+            };
+        } else {
+            const ra2engine::SkirmishConfig nx = campaign_config(next_, cfg_.campaign_side, cfg_.campaign_difficulty);
+            then = [na, nx]() -> Scene* { return new CampaignLoadScene(na, nx); };
+        }
+        std::vector<std::string> mv;
+        for (const std::string& m : after_movies_)
+            if (any_movie({m})) mv.push_back(m);
+        if (!mv.empty()) return new MovieScene(mv, then);
+        return then();
+    }
+    bool skip_score_ = false;
+    std::vector<std::string> after_movies_;
+    std::string final_movie_;
     bool no_audio_;
     ra2engine::SkirmishConfig cfg_;
     int outcome_;

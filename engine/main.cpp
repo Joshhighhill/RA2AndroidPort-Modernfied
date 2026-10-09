@@ -5968,6 +5968,8 @@ public:
         if (!cfg.campaign_map.empty()) {
             campaign_checkpoint_clear();   // W6-06-10: a mission is under way again
             setup_campaign(cfg);
+            map_units_ = world_.units().size();          // W6-06-08
+            map_buildings_ = world_.buildings().size();
             wire_building_deaths(world_, ba_, rules_, rules_ini_);   // P4: the mission's barrels
             gf_arm_mcv(world_, ba_, rules_, /*skirmish_session=*/false);   // gF: MCVs deploy
             gf_load_assets({});
@@ -7284,6 +7286,11 @@ private:
     // --- P10 Campaign [RE: campaign.md] ---
     std::unique_ptr<CampaignRuntime> campaign_;   // null in skirmish
     bool                 campaign_done_ = false;  // result scene already queued
+    // W6-06-08: the mission's own (map-placed) objects -- World indices below
+    // these are not "Built" on the Campaign Results page. Set right after
+    // setup_campaign, so a loaded game (built fresh, then overwritten) has
+    // the same values.
+    std::size_t          map_units_ = 0, map_buildings_ = 0;
     std::string          mission_name_ = "Mission";
     std::string          briefing_;
     bool                 show_briefing_ = false;  // F1 toggles the mission briefing
