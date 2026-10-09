@@ -759,6 +759,7 @@ template <class Ar> void fields(Ar& ar, UnitW6& v) {
 template <class Ar> void fields(Ar& ar, BldW6& v) {
     io(ar, v.burst_index);
     io(ar, v.wall_stage);   // W6-04-04
+    io(ar, v.def_target_building);   // W6-04-13
 }
 template <class Ar> void fields(Ar& ar, BldTypeW6& v) {
     io(ar, v.wall_levels);

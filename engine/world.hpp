@@ -2470,7 +2470,7 @@ private:
     // G-50: the sync-RNG stand-in for the ROF Random(0,2) draw (xorshift32
     // with FUN_0065C220's range mapping, like ProjRng; fixed seed).
     ProjRng combat_rng_{0x2545F491u};
-    void launch_defense_projectile(int b_idx, int target_unit, int slot);
+    void launch_defense_projectile(int b_idx, int target_unit, int slot, int target_building = -1);
     Unit defense_shooter(int b_idx, int slot) const;
     // gF MCV deploy state (inert until order_deploy_mcv / set_undeploy_unit).
     bool deploy_any_ = false;

@@ -71,6 +71,7 @@ struct UnitW6 {
 struct BldW6 {
     int burst_index = 0;   // W6-04-01: a defence's CurrentBurstIndex
     int wall_stage = 0;    // W6-04-04: a built wall's damage stage (OverlayData >> 4)
+    int def_target_building = -1;   // W6-04-13: a defence's structure target (-1 none)
 };
 
 // W6-04-04/05 [RE: DamageArea FUN_00489190 @0x489581..0x4895BD]: the warhead
