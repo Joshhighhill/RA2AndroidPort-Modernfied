@@ -7336,21 +7336,11 @@ private:
         }
         return y;
     }
-    // W2-UI-21: objectives (TextTrigger lines, 20 s each) join the top-left
-    // message list; the mission timer / end banner / F1 briefing use the HUD
-    // font (hud_messages.inc). The permanent "F1 BRIEFING" hint is gone.
+    // W2-UI-21: the end banner / F1 briefing use the HUD font
+    // (hud_messages.inc). W6-05-08: objectives (TextTrigger lines) are posted
+    // to the message list (post_campaign_texts); the timers draw in
+    // draw_timer_stack. The permanent "F1 BRIEFING" hint is gone.
     void draw_campaign_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
-        const long f = campaign_->frame_count();
-        int y = 8;
-        for (const HudMsg& m : msgs_)
-            if (m.expire > msg_clock_) y += hud_text_height(m.text) + 4;
-        const SDL_Color col = hud_ui_color();
-        for (const CampaignRuntime::Objective& o : campaign_->objectives()) {
-            if (f - o.frame > 300) continue;
-            const std::string t = hud_wrap(o.text, playfield_w_ - 32);
-            hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true);
-            y += hud_text_height(t) + 4;
-        }
         if (campaign_->outcome() != 0)
             draw_end_banner(ren, tc, camp::csf_text(dir_, campaign_->outcome() == 1 ? "TXT_SCENARIO_WON"
                                                                                    : "TXT_SCENARIO_LOST"));

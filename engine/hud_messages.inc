@@ -45,6 +45,26 @@
         const bool low = pt.drain > pt.output;
         if (low && !low_power_was_) post_message(camp::csf_text(dir_, "TXT_LOW_POWER"));
         low_power_was_ = low;
+        post_campaign_texts();
+    }
+    // W6-05-08 [RE: wave2/04 W2-UI-21 -- TextTrigger lines go to the one
+    // message list]: a mission's TextTrigger / objective lines are posted to
+    // the same list as every other message, so they share its line cap
+    // (kMaxMsgs, oldest dropped) and its [General] MessageDelay timeout,
+    // instead of a separate unbounded list (ALL05: 17 stacked lines).
+    // Lines older than 20 s when first seen (a loaded game) are not replayed.
+    std::size_t campaign_texts_posted_ = 0;
+    bool campaign_texts_seen_ = false;
+    void post_campaign_texts() {
+        if (!campaign_) return;
+        const auto& obj = campaign_->objectives();
+        if (obj.size() < campaign_texts_posted_) campaign_texts_posted_ = 0;   // list reset (load)
+        const long f = campaign_->frame_count();
+        for (std::size_t i = campaign_texts_posted_; i < obj.size(); ++i)
+            if (campaign_texts_seen_ || f - obj[i].frame <= 300)
+                post_message(hud_wrap(obj[i].text, std::max(playfield_w_ - 32, 400)));
+        campaign_texts_posted_ = obj.size();
+        campaign_texts_seen_ = true;
     }
     void draw_messages(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         int y = 8;
