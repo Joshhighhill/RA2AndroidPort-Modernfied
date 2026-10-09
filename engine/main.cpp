@@ -824,6 +824,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     const std::string primary = tw.slot[0].id;
     r.combat.damage = rules.weapon_damage(primary);
     r.combat.rof = rules.weapon_rof(primary);
+    r.combat.w6.burst = tw.slot[0].valid ? tw.slot[0].burst : 1;   // W6-04-01
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
@@ -977,6 +978,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.has_elite = true;
         r.combat.elite.damage = rules.weapon_damage(elite);
         r.combat.elite.rof = rules.weapon_rof(elite);
+        r.combat.elite.burst = tw.elite[0].valid ? tw.elite[0].burst : 1;   // W6-04-01
         r.combat.elite.range = rules.weapon_range(elite);
         const std::string ewh = rules.weapon_warhead(elite);
         r.combat.elite.verses = rules.verses(ewh);
@@ -1124,6 +1126,7 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
         s.aa = ws.aa;
         s.ag = ws.ag;
         s.proj = ws.proj;
+        s.burst = ws.valid ? ws.burst : 1;   // W6-04-01
     }
     return s;
 }

@@ -393,6 +393,7 @@ struct Unit {
     int still_frames = 0;            // Mirage: frames stopped and not firing
     AnUnit an;                       // W2-AN: naval/air/SW runtime state (air_naval.hpp)
     UnitW5 w5;                       // wave-5 abilities (abil_w5.hpp)
+    UnitW6 w6;                       // wave-6 #4 units/weapons (unit_w6.hpp)
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;

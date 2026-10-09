@@ -254,7 +254,7 @@ void World::step_w5(double dt) {
                 shooter.cell_x = t.cell_x;
                 shooter.cell_y = t.cell_y;
                 shooter.w_damage = static_cast<int>(p.w_damage * R.open_topped_damage_mult);
-                p.rof_cool = rearm_secs(p.w_rof, &combat_rng_);
+                p.rof_cool = unit_rearm_secs(p, &combat_rng_);   // W6-04-01 Burst
                 fire_events_.push_back({ti, -1, tgt, -1, 0, "OpenTopped"});
                 deliver_hit_from(units_, occ_, shooter, pi, -1, tgt);
                 ++w5_.passenger_shots;
@@ -436,7 +436,7 @@ void World::w5_step_repair_ifv(double dt) {
             if (u.rof_cool > 0.0) continue;
             const int heal = damage_vs(-u.w_damage, u.w_verses, v.armor_ix);
             v.hp += std::min(heal, v.max_hp - v.hp);
-            u.rof_cool = rearm_secs(u.w_rof, &combat_rng_);
+            u.rof_cool = unit_rearm_secs(u, &combat_rng_);   // W6-04-01 Burst
             u.fire_flash = 0.4;
             fire_events_.push_back({i, -1, t, -1, 0, "RepairBullet"});
             ++w5_.repairs;

@@ -64,6 +64,7 @@ struct WeaponStats {
     // and ProneDamage= (damage multiplier on a prone infantry; absent = 1).
     int inf_death = 0;
     double prone_damage = 1.0;
+    int burst = 1;                // W6-04-01: weapon Burst= (+0x9C)
 };
 
 // V1: rank bands. 0 = rookie (incl. negative), 1 = veteran, 2 = elite.

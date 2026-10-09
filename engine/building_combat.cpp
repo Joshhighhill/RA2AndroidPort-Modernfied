@@ -286,7 +286,7 @@ void World::step_building_combat(double dt) {
             continue;
         }
         const WeaponSlot& w = t.weapon[slot];
-        b.def_rof_cool = rearm_secs(w.rof, &combat_rng_);   // G-50 jitter
+        b.def_rof_cool = burst_rearm_secs(b.w6.burst_index, w.burst, w.rof, &combat_rng_);   // G-50 jitter, W6-04-01 Burst
         b.def_fire_flash = kFireFlashSecs;
         b.def_slot = slot;
         fire_events_.push_back({-1, bi, b.def_target, -1, slot, w.id});
@@ -312,7 +312,7 @@ bool World::w5_prism_fire(int bi, int target_unit, int slot) {
     const int n = b.w5.supporting;
     const unsigned mult = n > 0 ? static_cast<unsigned>(w5_.rules.prism_support_modifier * n + 100) * 256u / 100u
                                 : 256u;
-    b.def_rof_cool = rearm_secs(w.rof, &combat_rng_);
+    b.def_rof_cool = burst_rearm_secs(b.w6.burst_index, w.burst, w.rof, &combat_rng_);   // W6-04-01
     b.def_fire_flash = kFireFlashSecs;
     b.def_slot = slot;
     fire_events_.push_back({-1, bi, target_unit, -1, slot, n > 0 ? "PrismShotSupported" : w.id});

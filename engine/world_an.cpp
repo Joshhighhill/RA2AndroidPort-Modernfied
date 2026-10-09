@@ -450,20 +450,31 @@ void World::an_step_fixed_wing(double dt) {
                     // W4: a flying projectile (the Harrier / Black Eagle
                     // Maverick, the Hornet / Osprey bombs: ROT>0 homing) is
                     // launched behind the P2 firewall and hits at detonation.
+                    // W6-04-01 [RE: AircraftClass::Mission_Attack FUN_00417FE0
+                    // case 4: on GetFireError OK it sets the fired flag (+0x6C8)
+                    // and calls Fire Burst (+0x9C) times in the same frame; the
+                    // flag is consumed as ONE Ammo (+0x2FC) decrement]: Boris's
+                    // MiG (Maverick3 Ammo=1 Burst=2) puts both missiles in one pass.
                     if (tu >= 0) {
                         const int slot = unit_weapon_for_unit(u, units_[tu]);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, tu, -1);
-                            else if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
-                            else deliver_unit_hit(units_, occ_, i, tu);
+                            for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
+                                if (k > 0 && !live(units_[tu])) break;
+                                if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, tu, -1);
+                                else if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
+                                else deliver_unit_hit(units_, occ_, i, tu);
+                            }
                         }
                     } else if (tb >= 0) {
                         const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
-                            else if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
+                            for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
+                                if (k > 0 && (!buildings_[tb].alive || buildings_[tb].hp <= 0)) break;
+                                if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
+                                else if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
+                            }
                         }
                     }
                     u.rof_cool = std::max(1, u.w_rof) / 15.0;

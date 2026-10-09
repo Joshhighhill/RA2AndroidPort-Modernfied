@@ -6,6 +6,7 @@
 #include "veterancy.hpp"  // P5: AbilityMask / WeaponStats (pure, World-free)
 #include "weapon.hpp"     // Gap fix C: WeaponSlot (pure)
 #include "air_naval.hpp"  // W2-AN: AnType (pure)
+#include "unit_w6.hpp"    // wave-6 #4: UnitTypeW6 (pure)
 
 namespace ra2engine {
 
@@ -182,6 +183,7 @@ struct UnitCombat {
     // primary warhead's InfDeath= (absent 0) and ProneDamage= (absent 1).
     int inf_death = 0;
     double prone_damage = 1.0;
+    UnitTypeW6 w6;                    // wave-6 #4 type data (unit_w6.hpp)
 };
 
 }  // namespace ra2engine

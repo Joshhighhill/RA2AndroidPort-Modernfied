@@ -57,6 +57,7 @@ void World::refresh_vet_stats(int idx) {
     u.w_damage = fire_damage(w.damage, v.firepower_mult, has(Ability::Firepower), vet_rules_.combat,
                              house_fp);
     u.w_rof = rof_frames(w.rof, has(Ability::Rof), vet_rules_.rof, house_rof);
+    u.w6.burst = w.burst;   // W6-04-01: the elite slot's Burst (105mmE 2, 120mmxE 4)
     u.w_range = w.range;
     u.w_verses = w.verses;
     u.w_cell_spread = w.cell_spread;

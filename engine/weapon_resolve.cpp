@@ -2,6 +2,7 @@
 #include "abil_w5_rules.hpp"   // wave-5 (agent C)
 
 #include "ra2assets/rules.hpp"
+#include <algorithm>
 #include <cctype>
 
 namespace ra2engine {
@@ -35,6 +36,8 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.wall = rules.section_flag(wh, "Wall", false);   // G16: WarheadType +0x144
     s.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));   // W3-B
     s.prone_damage = warhead_prone_damage(rules, wh);
+    // W6-04-01 [RE: WeaponTypeClass::LoadFromINI Burst -> +0x9C, default 1]
+    s.burst = std::max(1, static_cast<int>(rules.section_double(weapon, "Burst", 1.0)));
     return s;
 }
 

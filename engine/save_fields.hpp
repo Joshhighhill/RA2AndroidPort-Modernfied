@@ -506,6 +506,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.omni_fire);
     io(ar, v.wall);   // G16
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
+    io(ar, v.burst);   // v25: W6-04-01
 }
 // G16 world depth (agent G)
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
@@ -549,6 +550,7 @@ template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.cell_spread); io(ar, v.percent_at_max);
     io(ar, v.affects_allies);   // v20: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
+    io(ar, v.burst);   // v25: W6-04-01
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
 template <class Ar> void fields(Ar& ar, InfSeqEntry& v) {
@@ -630,6 +632,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.kind);
     io(ar, v.slot_set); io(ar, v.aa); io(ar, v.ag); io(ar, v.proj);   // wave-5 R-048
     io(ar, v.delay_kill); io(ar, v.delay_kill_frames); io(ar, v.delay_kill_at_max);   // P4 (v23)
+    io(ar, v.burst);   // v25: W6-04-01
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);
@@ -716,6 +719,16 @@ template <class Ar> void fields(Ar& ar, UnitW5& v) {
     io(ar, v.airstrike_ready); io(ar, v.strike_of); io(ar, v.strike_bld);
     io(ar, v.c4_frame); io(ar, v.c4_by);
 }
+// --- wave-6 #4 units/weapons (unit_w6.hpp), save v25 ---
+template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
+    io(ar, v.burst); io(ar, v.omni_fire);
+}
+template <class Ar> void fields(Ar& ar, UnitW6& v) {
+    io(ar, v.t); io(ar, v.burst); io(ar, v.burst_index); io(ar, v.omni_fire);
+}
+template <class Ar> void fields(Ar& ar, BldW6& v) {
+    io(ar, v.burst_index);
+}
 template <class Ar> void fields(Ar& ar, RulesW5& v) {
     io(ar, v.prism_support_modifier); io(ar, v.prism_support_max); io(ar, v.prism_support_delay);
     io(ar, v.prism_support_duration); io(ar, v.self_heal_inf_frames); io(ar, v.self_heal_inf_amount);
@@ -798,6 +811,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.shrapnel_verses);
     io(ar, v.disguise_when_still);
     io(ar, v.an);   // W2-AN (save v9)
+    io(ar, v.w6);   // v25: wave-6 #4
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -1016,6 +1030,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.still_frames);
     io(ar, v.an);   // W2-AN (save v9)
     io(ar, v.w5);   // wave-5 abilities (agent C)
+    io(ar, v.w6);   // v25: wave-6 #4
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -1069,6 +1084,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.iron_left);   // W2-AN-04 (save v9)
     io(ar, v.w5);          // wave-5 abilities (agent C)
     io(ar, v.power_off);   // W5-E2 power-down (save v21)
+    io(ar, v.w6);          // v25: wave-6 #4
 }
 
 // --- production ---

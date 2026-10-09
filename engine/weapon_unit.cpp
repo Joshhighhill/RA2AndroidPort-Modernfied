@@ -74,6 +74,7 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         const WeaponStats& w = el ? v.elite : v.base;
         u.w_damage = dmg(w.damage);
         u.w_rof = rof(w.rof);
+        u.w6.burst = w.burst;                 // W6-04-01
         u.w_range = w.range;
         u.w_verses = w.verses;
         u.w_cell_spread = w.cell_spread;
@@ -88,6 +89,7 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         const WeaponSlot& s = secondary_view(u);
         u.w_damage = dmg(s.damage);
         u.w_rof = rof(s.rof);
+        u.w6.burst = s.burst;                 // W6-04-01
         u.w_range = s.range;
         u.w_verses = s.verses;
         u.w_cell_spread = s.cell_spread;

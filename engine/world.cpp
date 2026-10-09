@@ -798,6 +798,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
         u.hp = u.max_hp;
     }
     u.w_rof = c.rof;
+    u.w6.t = c.w6;                          // wave-6 #4 type data
+    u.w6.burst = c.w6.burst;                // W6-04-01: the active weapon's Burst=
     u.w_range = c.range;
     u.w_verses = c.verses;
     u.w_inf_death = c.inf_death;            // W3-B
@@ -895,6 +897,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.affects_allies = c.affects_allies;
     u.vet.base.inf_death = c.inf_death;     // W3-B
     u.vet.base.prone_damage = c.prone_damage;
+    u.vet.base.burst = c.w6.burst;          // W6-04-01
     u.vet.has_elite = c.has_elite;
     u.vet.elite = c.elite;
     u.vet.base_speed_cps = c.speed_cps;

@@ -103,7 +103,7 @@ const VeterancyRules* vet_rules_of(const World& world) {
 void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
               Unit& u, Unit& v, int attacker_idx, int victim_idx, Occupancy& occ,
               std::vector<ProjectileLaunch>* launches, ProjRng* rng) {
-    u.rof_cool = rearm_secs(u.w_rof, rng);
+    u.rof_cool = unit_rearm_secs(u, rng);   // W6-04-01 Burst
     u.fire_flash = kFireFlashSecs;
     // W2-AN-12 [rules Spawner=yes: HornetLauncher/ASWLauncher/DredLauncher/
     // V3Launcher]: the "shot" launches a spawned aircraft/missile at the
@@ -183,6 +183,20 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
 double rearm_secs(int rof_frames, ProjRng* rng) {
     const int jitter = rng ? rng->random(0, 2) : 0;
     return (rof_frames + jitter) / kLogicFps;
+}
+
+double burst_rearm_secs(int& burst_index, int burst, int rof_frames, ProjRng* rng) {
+    burst = std::max(1, burst);
+    ++burst_index;
+    double secs;
+    if (burst_index < burst) secs = (rng ? rng->random(3, 5) : 3) / kLogicFps;
+    else secs = rearm_secs(rof_frames, rng);
+    burst_index %= burst;
+    return secs;
+}
+
+double unit_rearm_secs(Unit& u, ProjRng* rng) {
+    return burst_rearm_secs(u.w6.burst_index, u.w6.burst, u.w_rof, rng);
 }
 
 // P2: the single-target damage tail extracted VERBATIM from try_fire's old
@@ -802,7 +816,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                                   static_cast<double>(nx) - u.fx,
                                                   static_cast<double>(ny) - u.fy)))
                             continue;  // hold fire this frame; rof_cool untouched
-                        u.rof_cool = rearm_secs(u.w_rof, rof_rng);   // G-50 jitter
+                        u.rof_cool = unit_rearm_secs(u, rof_rng);   // G-50 jitter, W6-04-01 Burst
                         u.fire_flash = kFireFlashSecs;
                         // P4 [RE: abilities.md §C2/§D/§E/§F]: an ability weapon
                         // (or a C4 infantry) hands the building shot to
@@ -913,7 +927,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                               static_cast<double>(u.attack_cell_x) - u.fx,
                                               static_cast<double>(u.attack_cell_y) - u.fy)))
                         continue;
-                    u.rof_cool = rearm_secs(u.w_rof, rof_rng);
+                    u.rof_cool = unit_rearm_secs(u, rof_rng);   // W6-04-01 Burst
                     u.fire_flash = kFireFlashSecs;
                     u.cell_shot = true;
                 }

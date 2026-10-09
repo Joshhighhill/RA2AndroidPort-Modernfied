@@ -202,4 +202,14 @@ bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int
 // [veterancy.md V7]; rng null -> no jitter.
 double rearm_secs(int rof_frames, ProjRng* rng);
 
+// W6-04-01 [RE: TechnoClass::Fire FUN_006FD210 @0x6FDD2C..: CurrentBurstIndex
+// (+0x3B8)++, RearmTimer = GetROF(), CurrentBurstIndex %= Burst (+0x9C);
+// GetROF FUN_006FC460 @0x6FC4D6: while CurrentBurstIndex < Burst the rearm is
+// Random(3,5) (the per-burst delay table at UnitType+0xE44 has no rulesmd
+// key on this install), after the last shot of the burst the full
+// ROF + Random(0,2)]. Burst=1 is exactly rearm_secs (same RNG draw).
+double burst_rearm_secs(int& burst_index, int burst, int rof_frames, ProjRng* rng);
+// The unit form: the active weapon's Burst (Unit::w6.burst).
+double unit_rearm_secs(Unit& u, ProjRng* rng);
+
 }  // namespace ra2engine
