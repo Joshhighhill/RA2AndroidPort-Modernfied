@@ -6,8 +6,9 @@
 // cancel/deselect, right-drag = scroll; see input_original.cpp) maps onto a
 // finger like this (W4-AM-01, the common mobile-RTS convention) [RE-FALLBACK:
 // no original touch mapping exists; the slop is Android's touch slop (8 dp
-// ~ 12 logical px), the hold is 600 ms (Android's 500 ms long-press timeout
-// turned slow taps into deselects, W4-AM-07)]:
+// ~ 12 logical px); the hold is 450 ms (W6-01-11: it was 600 ms while a slow
+// tap could deselect -- W4-AM-07 made a hold never deselect, so the hold now
+// sits inside Android's own 400-500 ms long-press window)]:
 //   tap                         -> left click (select / order / sidebar / menu)
 //   one-finger drag             -> Pan (the map follows the finger)
 //   hold, then drag             -> left band box from the hold point (box select)
@@ -19,6 +20,9 @@
 //   two-finger tap              -> right click (cancel a mode, else deselect)
 //   three-finger tap            -> Key kKeyPerfToggle (R-170: the FPS / perf
 //                                  overlay; the scene driver eats it)
+//   W6-01-11: while BOX mode is on (the sticky [BOX] button of the command
+//   column, set_box_mode), a one-finger drag draws the band box at once (no
+//   hold); two fingers still scroll.
 // Every emitted event has touch = true (GameScene then never edge-scrolls).
 // hold_feedback() reports the hold progress so the scene can draw a ring at
 // the finger before the hold fires.
@@ -32,7 +36,7 @@ namespace ra2engine {
 class TouchGestures {
 public:
     struct Config {
-        uint32_t long_press_ms = 600;
+        uint32_t long_press_ms = 450;
         int slop_px = 12;
         uint32_t two_finger_tap_ms = 300;
         uint32_t feedback_delay_ms = 150;   // the hold ring appears after this
@@ -54,6 +58,11 @@ public:
     // W4-AM-07: the hold ring. True while one finger rests (within the slop)
     // past feedback_delay_ms; progress 0..1 reaches 1 when the hold fires.
     bool hold_feedback(uint32_t now_ms, int& x, int& y, float& progress) const;
+
+    // W6-01-11: the sticky BOX toggle, shared by every gesture layer (the
+    // Platform's and the --play harness's); GameScene's [BOX] button sets it.
+    static void set_box_mode(bool on) { box_mode_ = on; }
+    static bool box_mode() { return box_mode_; }
 
     bool pending() const { return !out_.empty(); }
     bool pop(InputEvent& ev) {
@@ -82,6 +91,7 @@ private:
     bool three_ = false;                      // R-170: a third finger joined
     int up_left_ = 0;                         // fingers still down after a 3-finger lift
     std::deque<InputEvent> out_;
+    inline static bool box_mode_ = false;
 };
 
 }  // namespace ra2engine

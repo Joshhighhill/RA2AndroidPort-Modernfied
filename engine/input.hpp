@@ -291,9 +291,29 @@ public:
     void set_owned_buildings(int n) { owned_buildings_ = n; }
     int owned_buildings() const { return owned_buildings_; }
 
-    // The alive, non-Dead building under window pixel (px, py) (level-aware
-    // ground pick), or -1. Used by main.cpp's mode cursor.
-    int building_under(int px, int py) const;
+    // The alive, non-Dead building under window pixel (px, py), or -1. Used
+    // by main.cpp's mode cursor; = pick_building(px, py, latest event touch).
+    int building_under(int px, int py) const { return pick_building(px, py, ev_touch_); }
+    // W6-01-01: the building a click / tap at window pixel (px, py) picks.
+    // [RE: FUN_00691d00 -> FUN_006d98f0] The original first scans the
+    // tactical's list of drawn objects (DAT_00b0be30 {obj, x, y}, filled each
+    // redraw by FUN_006d9250 for every alive on-map building at the screen
+    // point of its Location = the origin cell's centre, and by FUN_006d9460
+    // for infantry / vehicles / aircraft at their draw point) and keeps the
+    // nearest entry with dx*dx + 0.5*dy*dy < 200 (a ~14 x 20 px ellipse);
+    // only then does it take the first object of the level-aware cell under
+    // the point (FUN_006d5b00 -> cell+0xE4). So a mouse picks a building by
+    // its foundation (plus that small hotspot), never by its upper art.
+    // Touch (engine deviation, W6-01-01): a finger has no cursor preview, so
+    // a tap first tests every building's DRAWN ART (the opaque pixels of the
+    // frame the renderer draws; set_building_art_test) front-most first, then
+    // falls back to the original rule.
+    int pick_building(int px, int py, bool touch) const;
+    // W6-01-01: the renderer's art test -- true when building index `b`'s
+    // drawn frame has an opaque pixel at window pixel (px, py).
+    void set_building_art_test(std::function<bool(int, int, int)> f) { art_hit_ = std::move(f); }
+    // The building whose drawn art (touch test) holds (px, py), front first; -1.
+    int building_art_at(int px, int py) const;
     // P3 (play harness): the unit a click at (px, py) would hit, or -1.
     int pick_unit_at(int px, int py) const { return unit_under(px, py); }
     // Hovered foundation ORIGIN cell for the CURRENT pointer position:
@@ -350,6 +370,20 @@ public:
     int selected_building() const { return selected_building_; }
 
     bool wants_quit() const { return quit_; }
+
+    // W6-01-05 [engine deviation, touch]: a finger tap on the lone selected
+    // deployable unit (ACTION_SELF) waits out the double-tap window before it
+    // deploys, so the first tap of a double tap never deploys. GameScene calls
+    // this once per frame (before take_actions) with the frame's dt; when the
+    // window has passed with no second tap it reports deploy_clicked.
+    void touch_tick(double dt) {
+        if (touch_deploy_wait_ < 0.0) return;
+        touch_deploy_wait_ -= dt;
+        if (touch_deploy_wait_ <= 0.0) {
+            touch_deploy_wait_ = -1.0;
+            actions_.deploy_clicked = true;
+        }
+    }
 
     // Consume the actions accumulated by every handle() call since the
     // previous take_actions(): returns them and resets the accumulator (see
@@ -430,6 +464,8 @@ private:
     // Double-click detection (uses event t_ms; no clock read here).
     uint32_t last_click_t_ = 0;
     int last_click_x_ = 0, last_click_y_ = 0;
+    int touch_last_kind_ = 0;   // W6-01-05: 1 = the last touch tap selected / re-tapped an own unit
+    double touch_deploy_wait_ = -1.0;   // W6-01-05: a deferred touch deploy (seconds left; < 0 none)
 
     // Placement mode (Task 7a): place_type_ >= 0 while placing a building of
     // that roster type; place_fw_/fh_ is its foundation size.
@@ -474,6 +510,10 @@ private:
     int last_group_ = 0;                       // TeamSelect double-press detection
     uint32_t last_group_t_ = 0;
     std::function<bool(const Unit&)> deploy_check_;
+    std::function<bool(int, int, int)> art_hit_;   // W6-01-01 renderer art test
+    // W6-01-01/06: a finger tap hits a unit's BODY (the original's hotspot
+    // ellipse, see pick_building), not just the generous selection box.
+    bool unit_body_hit(int idx, int px, int py) const;
 
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).

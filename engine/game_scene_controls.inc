@@ -562,7 +562,13 @@
         bool any = false;
         for (const ra2engine::Unit& u : world_.units())
             if (u.selected && world_.controllable(u.house) && u.alive && u.die_time < 0.0) { any = true; break; }
-        if (any) world_.order_move_selected(cx, cy);
+        // W6-01-08 [engine deviation, touch]: a phone player looks around with
+        // the radar, so a finger tap always centres the view; a radar MOVE
+        // order by touch needs [MOVE] armed in the command column (one-shot).
+        // A mouse keeps the original rule (selection -> move, else centre).
+        const bool order = any && (!ev.touch || touch_move_);
+        if (ev.touch && touch_move_) touch_move_ = false;
+        if (order) world_.order_move_selected(cx, cy);
         else input_.center_on_cell(cx, cy);
         return true;
     }

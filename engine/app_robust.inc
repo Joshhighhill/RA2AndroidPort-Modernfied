@@ -27,6 +27,11 @@ ra2engine::Platform* g_platform = nullptr;
 void game_logical_size(int& out_w, int& out_h) {
     out_w = 1280;
     out_h = 720;
+    if (g_play_canvas_w > 0 && g_play_canvas_h > 0) {   // W6-01-15 (--play `set canvas`)
+        out_w = g_play_canvas_w;
+        out_h = g_play_canvas_h;
+        return;
+    }
     if (!g_platform) return;
     int w = 0, h = 0;
     g_platform->output_size(w, h);

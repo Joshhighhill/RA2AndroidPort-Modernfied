@@ -112,13 +112,18 @@ If the app is closed in the background (low memory), the game was saved to
 | Gesture | Does |
 |---|---|
 | Tap | Select, or give an order with a selection (a left-click) |
-| Double tap a unit | Select every unit of that type on screen |
-| Drag with one finger | Scroll the map |
+| Tap a building's picture | Picks that building, also its upper part (a tower's head, a lab's dome), even with a soldier standing next to it |
+| Tap one of your selected units (two or more selected) | Moves the selection there (it does not re-select that one unit). Tap a unit that is NOT selected to select it. |
+| Double tap a unit | Select every unit of that type on screen. It never deploys. |
+| Tap the only selected unit (wait half a second) | Deploy / unload it (or use **DPLY**) |
+| Drag with one finger | Scroll the map (with **BOX** on: draw a selection box) |
 | Drag with two fingers | Scroll the map |
 | Hold (a ring fills at the finger), then drag | Draw a selection box |
-| Hold, then lift | Cancel the armed mode (sell, repair, placement, superweapon target). It never deselects. On a cameo: hold / cancel the build. On a team button: create the team. |
+| Hold, then lift | Cancel the armed mode (sell, repair, placement, superweapon target). It never deselects. On a team button: create the team. |
+| Hold on a cameo | Show its name and price above the finger. It does not pause the build. If the cameo is building, a small menu opens beside it: **PAUSE** / **RESUME**, **CANCEL** (one), **ALL** (every queued copy). Tap elsewhere to close it. |
 | Two-finger tap | Right-click: cancel a mode, else deselect everything |
-| Hold on a cameo or a sidebar button | Show its tooltip |
+| Hold on a sidebar button | Show its tooltip |
+| Tap the radar | Look there (it never moves the selection; arm **MOVE** first to send units there) |
 | Drag on the radar | Scroll the view with the finger |
 | Swipe up / down on the cameo strip | Scroll the build list |
 
@@ -128,16 +133,32 @@ If the app is closed in the background (low memory), the game was saved to
   or after 6 seconds. It holds:
   - **+SEL**: taps add to the selection;
   - **FIRE**: force-fire the next order;
-  - **MOVE**: force-move the next order;
+  - **MOVE**: force-move the next order (also a radar tap);
   - **STOP**, **GRD**, **SCAT**, **DPLY**;
+  - **BOX**: stays on until tapped again; while on, a one-finger drag draws a
+    selection box at once (two fingers still scroll);
   - **BRF**: the mission briefing (campaign; tap the map to close it);
-  - **1**..**5**: tap to select the team, hold to create it.
-  While +SEL, FIRE or MOVE is armed, the closed **CMD** button shows it.
+  - **1**..**5**: tap to select the team, hold to create it;
+  - **MORE**: the second page -- **TYPE** (every unit of the selected types),
+    **HOME** (centre on the base), **EVT** (jump to the latest radar event),
+    **NEXT** / **PREV** (step through your units), **FOLW** (follow the
+    selected unit), **6**..**0** (teams 6-10), **V1**..**V3** (view bookmarks:
+    hold to save the view, tap to jump back), **BACK**.
+  While +SEL, FIRE, MOVE or BOX is armed, the closed **CMD** button shows it.
 - Sell, repair, placement and superweapon targeting show a banner at the
   bottom of the battlefield. Tap **X** on the banner (or hold anywhere) to
   cancel the mode.
+- **Sell / repair**: tap a building to mark it (its foundation lights up and
+  the banner names it), then tap it again to sell / repair it. Tapping another
+  building moves the mark.
+- **Superweapons**: tap the target to see the area it hits, then tap the same
+  spot again to fire.
 - To place a building, tap once to see where it goes, then tap the same spot
   again to place it.
+- Messages, objectives and tooltips are drawn 1.5x larger on a phone.
+- With gesture navigation, a swipe in from the left edge next to the command
+  column, or from the right edge along the build list, stays in the game
+  (Android 10+); a swipe elsewhere on the edge is the system's.
 - During a mission's intro the game ignores input (as the original does) until
   the intro ends; Back still opens the options menu.
 - Back opens the options menu in a game, goes back on menu pages, and asks to
