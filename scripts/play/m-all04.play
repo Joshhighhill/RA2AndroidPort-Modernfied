@@ -15,12 +15,18 @@ require scene == game
 assert mode == campaign
 until 3000 units(0) >= 8
 assert units(0) >= 8
+# R-210: the landing craft now enter on the water at the sea waypoint and
+# sail in under their team script; an order given before the team reaches
+# its landing point is overridden by the team's next move. Wait for the
+# landing (the Soviet garrison teams are in place by then, as in m-all04-real).
+until 2000 in_garrison(1) >= 20
 until 2000 moving(0) == 0
 click unit 0:LCRF
 click cell 120 68
 until 1200 moving(0) == 0
 click unit 0:LCRF
 key d
+wait 5
 until 600 carried(0) == 0
 cheat camp_move E1 115 45
 cheat camp_move GI 115 45
