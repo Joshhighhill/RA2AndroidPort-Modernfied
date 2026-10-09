@@ -1733,6 +1733,16 @@ private:
             }
         return need;
     }
+    // W6-02-16: the TaskForce total the team must reach before its script
+    // starts (types the clone cannot resolve are left out).
+    int team_total(const Team& tm) {
+        std::vector<std::string> types;
+        const std::vector<int> need = taskforce_counts(tm, types);
+        int total = 0;
+        for (std::size_t k = 0; k < types.size(); ++k)
+            if (types_.unit(types[k])) total += std::max(0, need[k]);
+        return total;
+    }
     bool recruit(Team& tm) {
         std::vector<std::string> types;
         std::vector<int> need = taskforce_counts(tm, types);
@@ -2050,7 +2060,8 @@ private:
             if (placed == 0) { note_ = b; return false; }
         } else {
             recruit(tm);
-            tm.recruiting = tm.members.empty() || tt.full;
+            // W6-02-16: the team waits (recruits, regroups) until full strength.
+            tm.recruiting = (int)tm.members.size() < team_total(tm);
             std::snprintf(b, sizeof b, "[house=%d recruited=%d]", tm.house, (int)tm.members.size());
         }
         note_ = b;
@@ -2167,18 +2178,28 @@ private:
                 if (live(w_.units()[(std::size_t)m]) && w_.units()[(std::size_t)m].house == tm.house)
                     live_m.push_back(m);
             tm.members = live_m;
-            if (tm.recruiting) {
-                // W4-SQ-12: the wait for members restarts on every recruit (the
-                // house may be training them).
-                if (recruit(tm)) { adopt(tm, (int)ti); tm.created = frame_; }
-                const bool full = teams_data_.teams[(std::size_t)tm.type].full;
-                std::vector<std::string> types;
-                std::vector<int> need = taskforce_counts(tm, types);
-                int total = 0;
-                for (int n : need) total += n;
-                if ((!full && !tm.members.empty()) || (int)tm.members.size() >= total)
-                    tm.recruiting = false;
-                else if (frame_ - tm.created > 900) tm.st.done = true;
+            // W6-02-16 [RE: TeamClass::AI FUN_006E86B0 -- a team that has not
+            // begun (+0x7F) starts its script only once IsFullStrength (+0x79,
+            // FUN_006E9950: TotalObjects == the TaskForce total) or
+            // IsForcedActive (+0x77, never set: Force_Active FUN_006E95F0 has no
+            // callers); until then it recruits per TaskForce entry
+            // (FUN_006E9FF0) and regroups (FUN_006EB030). In a campaign a team
+            // that never filled is never dropped. A begun Reinforce=yes (+0xAB)
+            // team keeps recruiting while under strength, and at count <=
+            // total/3 goes back to regroup and refill (FUN_006E9640). Full= is
+            // not read by team code.] Before, a team ran as soon as it had one
+            // member and was dropped after 900 member-less frames.
+            // [RE-FALLBACK: the regroup movement itself is not modelled -- a
+            // waiting team's members hold their posts.]
+            {
+                const int total = team_total(tm);
+                const int count = (int)tm.members.size();
+                const bool reinforce = teams_data_.teams[(std::size_t)tm.type].reinforce;
+                if (!tm.recruiting && reinforce && total > 0 && count <= total / 3) tm.recruiting = true;
+                if (tm.recruiting || (reinforce && count < total)) {
+                    if (recruit(tm)) { adopt(tm, (int)ti); tm.created = frame_; }
+                    if ((int)tm.members.size() >= total) tm.recruiting = false;
+                }
                 if (tm.recruiting) continue;
             }
             // W4-SQ-06: the script starts once the paratroopers are down.

@@ -178,6 +178,7 @@ struct MapTeamType {
     bool recruitable = false;   // AreTeamMembersRecruitable= (W2-CA-09)
     int veteran_level = 0;
     int priority = 0;           // W5-A: Priority= (+0xB4), the recruit rule
+    bool reinforce = false;     // W6-02-16: Reinforce= (+0xAB) -- refill under strength
     // W4-SQ-01/06 [RE: TeamType writer FUN_006f0ab0 -- +0xB0 Droppod, +0xB1
     // UseTransportOrigin, +0xF4 TransportsReturnOnUnload; TransportWaypoint=].
     bool droppod = false;

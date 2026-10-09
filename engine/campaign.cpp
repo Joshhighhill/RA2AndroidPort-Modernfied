@@ -398,6 +398,7 @@ MapTeamData parse_map_teams(const ra2assets::Ini& map) {
         t.recruitable = yes(map.get(id, "AreTeamMembersRecruitable", "no"));
         t.veteran_level = map.get_int(id, "VeteranLevel", 0);
         t.priority = map.get_int(id, "Priority", 0);
+        t.reinforce = yes(map.get(id, "Reinforce", "no"));   // W6-02-16 (+0xAB)
         t.droppod = yes(map.get(id, "Droppod", "no"));
         t.use_transport_origin = yes(map.get(id, "UseTransportOrigin", "no"));
         t.transports_return = yes(map.get(id, "TransportsReturnOnUnload", "no"));
