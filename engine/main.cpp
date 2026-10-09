@@ -2788,6 +2788,7 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         cfg.ai.sw_value_thief = val("AIIonCannonThiefValue", 1);
         cfg.ai.sw_value_mcv = val("AIIonCannonMCVValue", 1);
         cfg.ai.sw_value_apc = val("AIIonCannonAPCValue", 1);
+        cfg.ai.minor_super_ready = rules.general_double("AIMinorSuperReadyPercent", 0.7);   // W6-03-05
     }
     {   // [G-65] "ConditionRed=25%" -> strtod 25 -> the 0.25 fraction
         const double cr = rules.section_double("AudioVisual", "ConditionRed", 0.25);

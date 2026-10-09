@@ -139,6 +139,10 @@ struct AiRules {
     // campaign config) keeps the legacy deterministic plan.
     int extra_refineries = -1;   // [General] AIExtraRefineries=2,1,0 (Rules+0x1378)
     int pick_wall_pct = -1;      // [General] AIPickWallDefensePercent=50,25,10 (Rules+0xdd8)
+    // W6-03-05 [RE: FUN_0041f0f0 / FUN_006ef1d0 -- Rules+0xd70]: [General]
+    // AIMinorSuperReadyPercent=.7, the Curtain/Sphere charge the AITriggers
+    // and script actions 55-57 wait for.
+    double minor_super_ready = 0.7;
 };
 
 // mods for difficulty d: values from groups[d], defense_target from

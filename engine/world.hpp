@@ -2071,6 +2071,7 @@ private:
     void ai_note_damage(bool building, int victim, int attacker_house, int dmg);   // W6-03-04
     static void ai_damage_feed_cb(void* ctx, bool building, int victim, int attacker_house, int dmg);
     bool ai_house_out(int house) const;   // W6-03-04: house+0x1f5 (defeated)
+    int ai_team_sw_state(int house, const HouseAiRec& rec, SuperweaponType t) const;   // W6-03-05
     bool ai_house_alive(int house) const;                   // W2-SK-08
 public:
     int ai_enemy_house(int house) const {                   // W2-SK-08 (probe)

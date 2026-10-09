@@ -31,6 +31,9 @@ OpClass classify_op(int action) {
         case kSaWaitLoaded:           return OpClass::WaitLoaded;   // W2-SK-09
         case kSaUnload:               return OpClass::Unload;       // W2-SK-09
         case kSaDeploy:               return OpClass::Deploy;       // W2-SK-10
+        case kSaIronCurtainMe:        return OpClass::IronCurtainMe;   // W6-03-05
+        case kSaChronoPrepAB:
+        case kSaChronoPrepAQ:         return OpClass::ChronoPrep;      // W6-03-05
         default:                      return OpClass::Inert;
     }
 }
@@ -317,6 +320,19 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                     return c;
                 case OpClass::Deploy:
                     c.kind = TeamCommand::Kind::Deploy;
+                    advance();
+                    return c;
+                // W6-03-05 [RE: FUN_006ef1d0 / FUN_006ef3c0 / FUN_006ef690]:
+                // fire-and-complete, wait, or complete without firing.
+                case OpClass::IronCurtainMe:
+                case OpClass::ChronoPrep:
+                    if (view.sw_state == 2) { c.kind = TeamCommand::Kind::Wait; return c; }
+                    if (view.sw_state == 1) {
+                        c.kind = oc == OpClass::IronCurtainMe ? TeamCommand::Kind::IronCurtain
+                                                              : TeamCommand::Kind::ChronoShift;
+                        c.quarry = a.argument;
+                        c.building_arg = a.action == kSaChronoPrepAB ? a.argument : -1;
+                    }
                     advance();
                     return c;
                 case OpClass::WaitLoaded:

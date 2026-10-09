@@ -1113,6 +1113,7 @@ template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.sw_value_engineer); io(ar, v.sw_value_thief);   // W6-02-09 (v25)
     io(ar, v.sw_value_mcv); io(ar, v.sw_value_apc);
     io(ar, v.extra_refineries); io(ar, v.pick_wall_pct);   // W6-03-06 (v25)
+    io(ar, v.minor_super_ready);   // W6-03-05 (v25)
 }
 template <class Ar> void fields(Ar& ar, PlannedNode& v) {
     io(ar, v.id); io(ar, v.type); io(ar, v.cx); io(ar, v.cy); io(ar, v.building); io(ar, v.dead);

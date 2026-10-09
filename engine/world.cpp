@@ -3220,6 +3220,16 @@ bool World::ai_base_centre(int hh, int& x, int& y) const {
 //    allies included, which the arg-max then filters out.
 //  * [RE: FUN_004fd320] an Enemy that is defeated has its anger removed
 //    and the Enemy is cleared to -1.
+// W6-03-05 [RE: FUN_006ef1d0 / FUN_006ef3c0 / FUN_006ef690]: script 55-57
+// line state for `house`'s Iron Curtain / Chronosphere (see TeamView).
+int World::ai_team_sw_state(int house, const HouseAiRec& rec, SuperweaponType t) const {
+    bool has = false;
+    for (SuperweaponType k : sw_types(house)) has |= k == t;
+    if (!has) return 0;
+    if (sw_ready(house, t)) return house_low_power(house) ? 0 : 1;
+    return (float)(1.0 - rec.cfg.ai.minor_super_ready) >= (float)(1.0 - sw_charge_fraction(house, t)) ? 2 : 0;
+}
+
 bool World::ai_house_out(int h) const {
     if (h < 0 || h >= house_count()) return true;
     if (victory_enabled_) return house_defeated(h);
@@ -3738,6 +3748,10 @@ void World::ai_fill_team_view(int house, const HouseAiRec& rec,
             } else if (oc == OpClass::AttackBuilding) {
                 v.quarry_exists = ai_find_typed_building(house, rec, a.argument,
                                                          /*enemy=*/true, lx, ly) >= 0;
+            } else if (oc == OpClass::IronCurtainMe || oc == OpClass::ChronoPrep) {
+                v.sw_state = ai_team_sw_state(house, rec, oc == OpClass::IronCurtainMe
+                                                              ? SuperweaponType::IronCurtain
+                                                              : SuperweaponType::ChronoSphere);
             } else if (oc == OpClass::MoveEnemyBuilding ||
                        oc == OpClass::MoveFriendlyBuilding) {
                 const int bi = ai_find_typed_building(
@@ -3915,6 +3929,51 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                     units_[(std::size_t)m].cargo_of < 0 && !is_mcv(m))
                     order_deploy(m);
             break;
+        case TeamCommand::Kind::IronCurtain:
+        case TeamCommand::Kind::ChronoShift: {
+            // W6-03-05 [RE: FUN_006ef1d0 / FUN_006ef3c0 / FUN_006ef690]: the
+            // leader is the vehicle member with the highest +0x5FC rating
+            // [RE-FALLBACK: the first live vehicle member, else the first
+            // live member]. 55 curtains the team at the leader; 57 asks the
+            // leader's Greatest_Threat of quarry <arg> (56: the building of
+            // type <arg>) and chronoshifts the team there -- Sphere at the
+            // leader, Warp at the target -- then the line completes.
+            int lead = -1;
+            for (int pass = 0; pass < 2 && lead < 0; ++pass)
+                for (int m : team.members)
+                    if (m >= 0 && m < (int)units_.size() && units_[m].alive && units_[m].die_time < 0.0 &&
+                        units_[m].cargo_of < 0 && (pass == 1 || units_[m].is_vehicle)) {
+                        lead = m;
+                        break;
+                    }
+            if (lead < 0) break;
+            const Unit& lu = units_[(std::size_t)lead];
+            if (c.kind == TeamCommand::Kind::IronCurtain) {
+                fire_superweapon_at(house, SuperweaponType::IronCurtain, lu.cell_x, lu.cell_y);
+                break;
+            }
+            int tx = -1, ty = -1;
+            if (c.building_arg >= 0) {
+                const int tb = ai_find_typed_building(house, rec, c.building_arg, true, lu.cell_x, lu.cell_y);
+                if (tb >= 0) { tx = buildings_[(std::size_t)tb].cx; ty = buildings_[(std::size_t)tb].cy; }
+            } else {
+                const int tb = ai_pick_quarry_building(house, rec, c.quarry, lu.cell_x, lu.cell_y,
+                                                       rec.team_state.rng);
+                if (tb >= 0) {
+                    tx = buildings_[(std::size_t)tb].cx; ty = buildings_[(std::size_t)tb].cy;
+                } else {
+                    const int tu = ai_pick_quarry_unit(house, c.quarry, lu.cell_x, lu.cell_y,
+                                                       rec.team_state.rng, lu.w_aa);
+                    if (tu >= 0) { tx = units_[(std::size_t)tu].cell_x; ty = units_[(std::size_t)tu].cell_y; }
+                }
+            }
+            if (tx < 0) break;   // no target: the line completes without a shift
+            // Land next to the target, not inside its foundation.
+            tx = std::max(1, std::min(grid_w_ - 2, tx - 2));
+            ty = std::max(1, std::min(grid_h_ - 2, ty - 2));
+            fire_superweapon_at(house, SuperweaponType::ChronoSphere, lu.cell_x, lu.cell_y, tx, ty);
+            break;
+        }
         case TeamCommand::Kind::Inert:  // logged skip — pc already advanced
         case TeamCommand::Kind::Wait:
         case TeamCommand::Kind::None:
@@ -4550,6 +4609,13 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
     v.house_name = tc.house_name;
     v.side = tc.trigger_side;                 // 1=Allied/2=Soviet/3=Yuri [RE: §5]
     v.tech_level = tc.trigger_tech_level;
+    // W6-03-05: ct=5/6 read the owner's Iron Curtain / Chronosphere charge.
+    v.minor_ready = rec.cfg.ai.minor_super_ready;
+    v.iron_charge = v.chrono_charge = -1.0;
+    for (SuperweaponType t : sw_types(house)) {
+        if (t == SuperweaponType::IronCurtain) v.iron_charge = sw_charge_fraction(house, t);
+        if (t == SuperweaponType::ChronoSphere) v.chrono_charge = sw_charge_fraction(house, t);
+    }
 }
 
 void World::step(double dt) {
