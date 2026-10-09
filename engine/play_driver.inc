@@ -313,6 +313,7 @@ private:
             else if (k == "on_quit") quit_continue_ = (v == "continue");
             else if (k == "cycle_max") cycle_max_ = std::max(1, std::atoi(v.c_str()));
             else if (k == "campaign") {}   // W2-CA-19: consumed by run_play (start scene)
+            else if (k == "movie_dir") {}  // consumed by run_play (RA2_MOVIE_DIR before the shell starts)
             else if (k == "canvas") {   // W6-01-15: `set canvas WxH` (or W H) -- before the game starts
                 int w = 0, h = 0;
                 if (c.args.size() > 2) { w = std::atoi(v.c_str()); h = std::atoi(c.args[2].c_str()); }
@@ -1000,6 +1001,22 @@ int run_play(const std::string& script_path, const std::string& out_dir_in) {
 #else
     setenv("RA2_PREF_DIR", pref_abs.c_str(), 1);
 #endif
+
+    // `set movie_dir <dir>` (relative to the script's folder): the movie folder
+    // a sweep uses when the player did not set RA2_MOVIE_DIR (movies-w6 plays
+    // the repo's test .bik), so the Play Movies row is live in a standard run.
+    for (const ra2play::Cmd& c : s.cmds)
+        if (c.op == "set" && c.args.size() >= 2 && ra2play_drv::lower(c.args[0]) == "movie_dir" &&
+            !std::getenv("RA2_MOVIE_DIR")) {
+            std::filesystem::path md(c.args[1]);
+            if (md.is_relative()) md = std::filesystem::path(script_path).parent_path() / md;
+            const std::string mds = std::filesystem::absolute(md, ec).lexically_normal().string();
+#ifdef _WIN32
+            _putenv_s("RA2_MOVIE_DIR", mds.c_str());
+#else
+            setenv("RA2_MOVIE_DIR", mds.c_str(), 1);
+#endif
+        }
 
     g_pres_play_log = true;   // W5-E: <out>/pres.log + the snd()/eva() probe counters
     g_pres_log.clear();
