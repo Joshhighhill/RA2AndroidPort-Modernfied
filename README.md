@@ -4306,3 +4306,74 @@ Everything is armed by `wire_w5` in the real `GameScene` only.
   scripts pass one at a time (the 8 new `pres-*` included; `probe-bridge` / `world-depth` now
   scroll 2 rows to xmp31s2 in the 80-map lobby); `--demo-combat` / `--demo-projectile` /
   `--demo-veterancy` print their pins -- no gate moved (every change is render-only).
+
+## Touch play (wave-6 W6FIX-TOUCH, branch `w6fix-touch`)
+
+Fixes `docs/gap/wave6/01-touch.md` (all items but W6-01-10, the Android
+config-change autosave, which is the release agent's). RE note:
+`docs/re/object-pick.md`. Player-facing gesture table: `docs/INSTALL.md` §4 and
+`docs/PHONE-README.txt`.
+
+- **Building pick (W6-01-01).** [RE: FUN_00691d00 -> FUN_006d98f0] the original
+  picks the nearest object of the tactical's drawn-object list (`DAT_00b0be30`)
+  within `dx^2 + 0.5 dy^2 < 200`; buildings are registered at their origin
+  cell's centre (FUN_006d9250 over the BuildingClass vector `0xA8DAA8`), units
+  at their draw point (FUN_006d9460); else the cell's first object. So a mouse
+  picks a building by its foundation (plus that hotspot) -- `Input::pick_building`
+  now does exactly that for the mouse. On touch [engine deviation] the drawn art
+  (main frame + ActiveAnim / IdleAnim / SuperAnim slots, front-most first) is
+  tested first, and a unit's generous 65x63 selection box only claims a tap that
+  lands on its BODY (the original's hotspot ellipse) or on nothing better. Select,
+  sell, repair, capture, spy, C4, attack, garrison, rally and primary all use the
+  pick. Hit maps (`docs/gap/wave6/01-evidence-fix/`, one fresh skirmish per type,
+  `hitmap_per_type.ps1`): art samples that select the building, before -> after:
+  Prism Tower 32 % -> **100 %**, Tesla Coil 36 % -> **100 %**, Battle Lab 31 % ->
+  **100 %**, Power Plant 58 -> 94 %, Air Force Command 62 -> 98 %, Barracks
+  70 -> 100 %, Weather Device 75 -> 100 %, War Factory 79 -> 100 %, Pillbox
+  86 -> 100 %. The Prism Tower's head selects the tower with GIs at its foot
+  (`ctl-touch-w6`).
+- **Sell / repair / superweapon confirm (W6-01-02 / -07).** On touch the first tap
+  marks the building (foundation outline, banner "TAP AGAIN TO SELL <NAME>") or
+  the SW target (the 3x3 / CellSpread area, "TAP THE SAME SPOT AGAIN TO FIRE");
+  a second tap on the same building / cell commits through the normal Input path.
+  The Weather Device's dome no longer sells the ConYard behind it.
+- **Crowd rule (W6-01-06)** [engine deviation, touch; the original's rule is the
+  cursor: an own unit under the pointer shows Select]: with two or more units
+  selected, a tap on a unit of the selection is a move order to its cell (the army
+  stays selected); a tap beside an own unit (inside its selection box, outside its
+  body) is a ground tap; a tap on the body of an unselected own unit is a
+  deliberate select; enemies keep the generous box. A deploy by tap needs a lone
+  selection (or DPLY).
+- **Double tap (W6-01-05)** selects every on-screen unit of the type and never
+  deploys: a touch tap on the lone selected deployer (ACTION_SELF) waits out the
+  500 ms double-tap window (`Input::touch_tick`) before it deploys; a two-finger
+  tap resets the double-tap tracking.
+- **Cameo hold (W6-01-03 / -04).** A hold shows the name + price ABOVE the finger
+  and no longer suspends / abandons; with something in production a popup beside
+  the cameo offers PAUSE / RESUME, CANCEL (one) and ALL (Shift + right click).
+- **Radar tap (W6-01-08)** always centres the view on touch; a radar move order
+  needs MOVE armed. The mouse keeps the original (selection -> move).
+- **Command column (W6-01-09 / -11)**: 8 rows; page 1 adds **BOX** (sticky: a
+  one-finger drag boxes at once, two fingers scroll) and **MORE**; page 2 has
+  TYPE, HOME, EVT, NEXT, PREV, FOLW, teams 6-0 and view bookmarks V1-V3 (hold =
+  SetView, tap = View; BACK returns). The hold is
+  450 ms (was 600 ms; Android's long-press is 400-500 ms).
+- **HUD text (W6-01-12)**: messages, objectives and tooltips draw 1.5x on a touch
+  canvas. **Options button (W6-01-13)** joins the sidebar near-miss snap.
+  **Edge swipes (W6-01-14)**: `RA2Activity` excludes the left-edge strip by the
+  command column and the right-edge strip by the cameo strip from system gestures
+  (Android 10+, 200 dp each); the cutout mode stays the default (the window sits
+  beside a notch). **Perf overlay (W6-01-16)** moved right of the command column.
+- **`--play`**: `set canvas WxH` (W6-01-15, the phone canvas, e.g. `974x548`);
+  the edge-band trap is documented in `scripts/play/README.md`; probe keys
+  `touch_aim`, `touch_aim_sw`, `cameo_menu`, `touch_box`, `touch_page2`,
+  `selected_building_type`; targets `art:<ID>`, `cmenu:<BUTTON>`, the page-2
+  `touch:<label>`s. New script `ctl-touch-w6` (on the 974x548 canvas). Unit tests
+  `tests/test_input_touch_w6.cpp` and the BOX case in `tests/test_touch_gestures.cpp`.
+- **Save format** unchanged (v24): every new state is UI-only and not saved.
+- **Verification** (branch on `409e807`, scoped per the wave-6 rules): unit tests `W6-01*`,
+  `touch:*`, `Input*` 56/56; `--play` one at a time: `ctl-touch-w6` (new), `ctl-touch-all01`,
+  `ctl-all01`, `ctl-all02`, `ctl-sov01` (touch step adapted to W6-01-06), `ctl-sides`,
+  `controls`, `keyboard`, `m-all01`, `m-sov01` all PASS; the per-type hit-map runs. Gates:
+  `--demo-superweapon` prints its pin `e6969fed3e772bd3` (the only gate whose headers changed:
+  a const accessor); no other gate constructs Input / TouchGestures / GameScene, so no re-pin.
