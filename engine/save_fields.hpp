@@ -310,6 +310,7 @@ struct SaveAccess {
         save::io(ar, s.cur_trigger_);
         save::io(ar, s.campaign_mode_);   // P10
         save::io(ar, s.semi_detached_);   // P10
+        save::io(ar, s.timer_text_);      // W6-05-04 (save v25)
     }
     static std::size_t trig_arity() { return save::aggregate_arity<Trig>(); }
     static std::size_t tag_arity() { return save::aggregate_arity<Tag>(); }

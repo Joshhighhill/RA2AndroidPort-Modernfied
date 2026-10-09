@@ -1056,6 +1056,7 @@ void MapTriggerSystem::execute(const MapAction& a, Trig& t, TriggerHost& host) {
                 break;
             }
         }
+        if (a.kind == 103) timer_text_ = a.text;   // W6-05-04 TimerText
         if (presentation_action(a.kind)) {
             logf("  a%d %s v=%d wp=%d %s (recorded)", a.kind, action_label(a.kind), a.value,
                  a.waypoint, a.text.empty() ? "-" : a.text.c_str());

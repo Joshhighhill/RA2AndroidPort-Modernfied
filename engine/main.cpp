@@ -165,8 +165,11 @@ std::map<std::string, long> g_cameo_flash;   // W5-PRES R-039: building id -> lo
 struct PipArt;
 extern const PipArt* g_pips;
 extern double g_pip_yellow, g_pip_red;
+// W6-05-07: the unit under the mouse pointer (GameScene, real mouse only;
+// -1 = none) -- render_world draws its pip row without the board.
+int g_hover_unit = -1;
 void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
-                    double yellow, double red);
+                    double yellow, double red, bool board = true);
 inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
@@ -276,6 +279,14 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
     MixFile iso = parent.open_nested(chain->iso_mix);
 
     ra2engine::Theater th(std::move(iso), ini_text, chain->ext);
+    // W6-05-02: the theater art mix and generic.mix are on the same search
+    // list as the iso mix in the original (Init_Theater FUN_00519e70), so
+    // tiles stored there (warub*.urb, Ovrpsb*.tem) resolve too.
+    for (const std::string& name : {std::string(chain->art_mix), std::string("generic.mix")}) {
+        try {
+            th.add_fallback(parent.open_nested(name));
+        } catch (const std::exception&) {}
+    }
 
     std::cerr << "[assets] theater=" << theater << " size=" << map.width() << "x"
               << map.height() << " cells=" << map.cells().size()
@@ -3946,13 +3957,14 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         if (world.unit_hidden_from(0, u)) continue;   // W2-AN-13 submerged, no sonar contact
         if (input && g_pips) {   // W2-UI-11: PIPBRD + PIPS on the selected units only
-            if (u.selected) {
+            const bool hovered = g_hover_unit == static_cast<int>(&u - us.data());   // W6-05-07
+            if (u.selected || hovered) {
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
                 const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B
                 const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
                 const int lv = u.level + pres_unit_lift_levels(world, u);   // W5-PRES R-100 deck
                 const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - lv * 15)) + cam.y + 15 - up;
-                draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red);
+                draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red, u.selected);
             }
         } else if (u.selected || u.hp < u.max_hp)
             ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
@@ -6332,24 +6344,12 @@ public:
         // Chrono Miner teleport sounds.
         {
             std::vector<ra2engine::HarvestEvent> hev = world_.take_harvest_events();
-            if (audio_.enabled)
-                for (const ra2engine::HarvestEvent& e : hev) {
-                    if (e.kind == ra2engine::HarvestEvent::Kind::ChronoOut)
-                        audio_.mixer->play(audio_.chrono_out);
-                    else if (e.kind == ra2engine::HarvestEvent::Kind::ChronoIn)
-                        audio_.mixer->play(audio_.chrono_in);
-                }
+            pres_.w6_harvest_events(world_, hev);   // W6-04-27: per type, positional
         }
         // CB-1 Enter/LeaveTransportSound (non-gating).
         {
             const std::vector<ra2engine::CargoEvent> cev = world_.take_cargo_events();
-            if (audio_.enabled)
-                for (const ra2engine::CargoEvent& e : cev) {
-                    if (e.kind == ra2engine::CargoEvent::Kind::Board)
-                        audio_.mixer->play(audio_.enter_transport);
-                    else if (e.kind == ra2engine::CargoEvent::Kind::Eject)
-                        audio_.mixer->play(audio_.leave_transport);
-                }
+            pres_.w6_cargo_events(world_, cev);   // W6-04-27: the transport type's sound, positional
         }
         }   // G-13 fixed logic tick
         // Rolling credits tally (display-only).
@@ -6565,6 +6565,9 @@ public:
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
         update_light_sources();   // W3-FIX-A
+        // W6-05-07: the hovered unit's health pips (a real mouse over the
+        // tactical view; a touch has no hover).
+        g_hover_unit = (mouse_present_ && mx_ < playfield_w_ && !input_locked_) ? input_.pick_unit_at(mx_, my_) : -1;
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
         hidden_.rules = &rules_ini_;   // W5-E2 R-146: the Behind= marker over occluded objects
@@ -6620,6 +6623,7 @@ public:
             os_cursor_hidden_ = drew;
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
+        draw_timer_stack(ren, tc);   // W6-05-04/05 mission timer + SW countdowns
         draw_touch_bar(ren);      // W2-AR-08 (touch only)
         draw_touch_aim(ren);           // W6-01-02 / -07 (touch only)
         draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
@@ -7489,29 +7493,11 @@ private:
         }
         return y;
     }
-    // W2-UI-21: objectives (TextTrigger lines, 20 s each) join the top-left
-    // message list; the mission timer / end banner / F1 briefing use the HUD
-    // font (hud_messages.inc). The permanent "F1 BRIEFING" hint is gone.
+    // W2-UI-21: the end banner / F1 briefing use the HUD font
+    // (hud_messages.inc). W6-05-08: objectives (TextTrigger lines) are posted
+    // to the message list (post_campaign_texts); the timers draw in
+    // draw_timer_stack. The permanent "F1 BRIEFING" hint is gone.
     void draw_campaign_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
-        const long f = campaign_->frame_count();
-        int y = 8;
-        const double sc = hud_touch_scale();   // W6-01-12: 1.5x on a touch canvas
-        for (const HudMsg& m : msgs_)
-            if (m.expire > msg_clock_) y += static_cast<int>(hud_text_height(m.text) * sc) + 4;
-        const SDL_Color col = hud_ui_color();
-        for (const CampaignRuntime::Objective& o : campaign_->objectives()) {
-            if (f - o.frame > 300) continue;
-            const std::string t = hud_wrap(o.text, static_cast<int>((playfield_w_ - 32) / sc));
-            hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true, sc);
-            y += static_cast<int>(hud_text_height(t) * sc) + 4;
-        }
-        // Mission timer (actions 23-27) when running.
-        const ra2engine::MapTriggerSystem& ts = campaign_->triggers();
-        if (ts.mission_timer_start() != -1) {
-            const long left =
-                std::max(0L, ts.mission_timer_left() - (ts.frame() - ts.mission_timer_start()));
-            draw_mission_timer(ren, tc, left);
-        }
         if (campaign_->outcome() != 0)
             draw_end_banner(ren, tc, camp::csf_text(dir_, campaign_->outcome() == 1 ? "TXT_SCENARIO_WON"
                                                                                    : "TXT_SCENARIO_LOST"));

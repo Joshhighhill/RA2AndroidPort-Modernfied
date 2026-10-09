@@ -1,5 +1,7 @@
 #include "iso_renderer.hpp"
 
+#include <iostream>
+
 #include <SDL.h>
 
 #include <algorithm>
@@ -98,13 +100,18 @@ const ra2assets::TmpFile* Theater::tmp_for_tile(uint32_t global_index) {
     if (hit != cache_.end()) return &hit->second;
     if (misses_.count(name)) return nullptr;
 
+    const ra2assets::MixFile* src = &mix_;
     const ra2assets::MixEntry* e = mix_.find(name);
+    for (std::size_t i = 0; !e && i < fallbacks_.size(); ++i) {   // W6-05-02
+        e = fallbacks_[i].find(name);
+        if (e) src = &fallbacks_[i];
+    }
     if (!e) {
         misses_.emplace(name, true);
         return nullptr;
     }
     try {
-        ra2assets::TmpFile t = ra2assets::TmpFile::load(mix_.read(*e));
+        ra2assets::TmpFile t = ra2assets::TmpFile::load(src->read(*e));
         auto ins = cache_.emplace(name, std::move(t));
         return &ins.first->second;
     } catch (const std::exception&) {
@@ -261,9 +268,11 @@ struct TerrainDrawList {
     std::vector<TerrainItem> items;
     std::vector<TerrainSlot> slots;
     int top_px = 0, bottom_px = kTileH;   // union of item extents rel. to p.y
+    int fallbacks = 0;   // W6-05-10 cells drawn as clear ground (no tile image)
 };
 
 uint64_t g_terrain_builds = 0;
+int g_terrain_fallbacks = 0;
 // W2-GA-05: per-height lit terrain palettes (GameScene's map [Lighting]); null
 // in every gate. g_level_sum keys the cached draw list.
 const std::vector<ra2assets::Palette>* g_level_pals = nullptr;
@@ -356,28 +365,42 @@ TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, T
         const ScreenPt p = cell_to_screen(c.x, c.y, static_cast<int>(c.level), kTileW, kTileH, kLevelPx);
         it.px = p.x;
         it.py = p.y;
-        const ra2assets::TmpFile* tmp = theater.tmp_for_tile(c.tile);
-        if (!tmp || c.subtile >= tmp->count()) continue;
+        uint32_t tile = c.tile;
+        uint8_t sub = c.subtile;
+        const ra2assets::TmpFile* tmp = theater.tmp_for_tile(tile);
+        if (!tmp || sub >= tmp->count()) {
+            // W6-05-10: a tile no archive holds (SOV01 MWater07.tem) or a
+            // sub-tile past the template's image count (ALL01 glat15 BADSUB)
+            // draws as clear ground -- template 0 sub-tile 0, the same
+            // fallback the map loader applies to the 0xFFFF sentinel
+            // (src/map.cpp) [RE-FALLBACK: the original's missing-image path
+            // was not traced].
+            ++L.fallbacks;
+            tile = 0;
+            sub = 0;
+            tmp = theater.tmp_for_tile(tile);
+            if (!tmp || sub >= tmp->count()) continue;
+        }
         it.w = static_cast<uint16_t>(tmp->tile_w());
         it.h = static_cast<uint16_t>(tmp->tile_h());
         const int lvl = g_level_pals ? std::min<int>(c.level, static_cast<int>(g_level_pals->size()) - 1) : -1;
-        const uint64_t key = (static_cast<uint64_t>(c.tile) << 16) | (static_cast<uint64_t>(c.subtile) << 8) |
+        const uint64_t key = (static_cast<uint64_t>(tile) << 16) | (static_cast<uint64_t>(sub) << 8) |
                              static_cast<uint64_t>(lvl + 1);
         auto f = slot_of.find(key);
         if (f == slot_of.end()) {
             f = slot_of.emplace(key, static_cast<int32_t>(L.slots.size())).first;
             TerrainSlot s;
-            s.tile = c.tile;
-            s.sub = c.subtile;
+            s.tile = tile;
+            s.sub = sub;
             s.level = lvl;
             L.slots.push_back(s);
         }
         it.slot = f->second;
-        if (tmp->has_extra(c.subtile)) {
+        if (tmp->has_extra(sub)) {
             // Same placement rule as before: the extra's offset relative to
             // THIS subtile's diamond is (x_extra - x, y_extra - y).
-            it.ex = static_cast<int16_t>(tmp->extra_x(c.subtile) - tmp->tile_x(c.subtile));
-            it.ey = static_cast<int16_t>(tmp->extra_y(c.subtile) - tmp->tile_y(c.subtile));
+            it.ex = static_cast<int16_t>(tmp->extra_x(sub) - tmp->tile_x(sub));
+            it.ey = static_cast<int16_t>(tmp->extra_y(sub) - tmp->tile_y(sub));
             if (SDL_Texture* et = extra_texture(tc, theater, pal, L.slots[static_cast<size_t>(it.slot)])) {
                 int ew = 0, eh = 0;
                 SDL_QueryTexture(et, nullptr, nullptr, &ew, &eh);
@@ -388,10 +411,14 @@ TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, T
         L.top_px = std::min(L.top_px, it.ew ? static_cast<int>(it.ey) : 0);
         L.bottom_px = std::max(L.bottom_px, std::max(static_cast<int>(it.h), it.ew ? it.ey + static_cast<int>(it.eh) : 0));
     }
+    g_terrain_fallbacks = L.fallbacks;
+    if (L.fallbacks) std::cerr << "[terrain] " << L.fallbacks << " cells have no tile image: drawn as clear ground" << std::endl;
     return L;
 }
 
 }  // namespace
+
+int terrain_fallback_cells() { return g_terrain_fallbacks; }
 
 void set_terrain_level_palettes(const std::vector<ra2assets::Palette>* pals) {
     g_level_pals = (pals && !pals->empty()) ? pals : nullptr;
