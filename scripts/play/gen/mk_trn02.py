@@ -63,7 +63,10 @@ def main(out):
     for r in range(12):
         for b in RED:
             p.select_types(["E1"])
-            p.add(f"if {g} and buildings(1,{b}) > 0 then click building 1:{b}", "click xy 500 400 right")
+            # R3: since an attack on a building holds at weapon range, the
+            # squad stands in front of its target; ':near' clicks a footprint
+            # point no GI covers (a click on a selected GI deploys it).
+            p.add(f"if {g} and buildings(1,{b}) > 0 then click building 1:{b}:near", "click xy 500 400 right")
             p.add("let tw = f", "until 300 outcome != RUNNING or f >= $tw+299", "if outcome == WON then end expect WON")
         p.train("E1", 2, 5, guard=True)
         p.add(f"if {g} then dump", "if outcome == WON then end expect WON")

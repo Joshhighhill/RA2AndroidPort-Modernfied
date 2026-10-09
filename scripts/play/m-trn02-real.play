@@ -139,7 +139,7 @@ shot trn02_army
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -147,7 +147,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -155,7 +155,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -163,7 +163,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -171,7 +171,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -179,7 +179,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -187,7 +187,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -195,7 +195,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -203,7 +203,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -211,95 +211,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if outcome == RUNNING and cameo(E1) == 1 then click tab:2
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING then dump
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -315,7 +227,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -323,7 +235,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -331,7 +243,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -339,7 +251,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -347,7 +259,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -355,7 +267,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -363,7 +275,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -371,7 +283,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -379,7 +291,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -387,95 +299,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if outcome == RUNNING and cameo(E1) == 1 then click tab:2
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING then dump
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -491,7 +315,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -499,7 +323,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -507,7 +331,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -515,7 +339,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -523,7 +347,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -531,7 +355,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -539,7 +363,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -547,7 +371,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -555,7 +379,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -563,95 +387,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if outcome == RUNNING and cameo(E1) == 1 then click tab:2
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING then dump
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -667,7 +403,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -675,7 +411,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -683,7 +419,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -691,7 +427,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -699,7 +435,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -707,7 +443,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -715,7 +451,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -723,7 +459,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -731,7 +467,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -739,95 +475,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if outcome == RUNNING and cameo(E1) == 1 then click tab:2
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING then dump
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -843,7 +491,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -851,7 +499,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -859,7 +507,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -867,7 +515,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -875,7 +523,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -883,7 +531,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -891,7 +539,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -899,7 +547,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -907,7 +555,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -915,95 +563,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if outcome == RUNNING and cameo(E1) == 1 then click tab:2
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
-if outcome == RUNNING then dump
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
-click xy 500 400 right
-let tw = f
-until 300 outcome != RUNNING or f >= $tw+299
-if outcome == WON then end expect WON
-if units(0,E1) > 0 then click unit 0:E1:0
-key t
-key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1019,7 +579,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1027,7 +587,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1035,7 +595,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1043,7 +603,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1051,7 +611,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1059,7 +619,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1067,7 +627,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1075,7 +635,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1083,7 +643,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1091,7 +651,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1107,7 +667,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1115,7 +675,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1123,7 +683,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1131,7 +691,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1139,7 +699,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1147,7 +707,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1155,7 +715,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1163,7 +723,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1171,7 +731,7 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
@@ -1179,7 +739,447 @@ if outcome == WON then end expect WON
 if units(0,E1) > 0 then click unit 0:E1:0
 key t
 key t
-if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if outcome == RUNNING and cameo(E1) == 1 then click tab:2
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING then dump
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if outcome == RUNNING and cameo(E1) == 1 then click tab:2
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING then dump
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if outcome == RUNNING and cameo(E1) == 1 then click tab:2
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING then dump
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if outcome == RUNNING and cameo(E1) == 1 then click tab:2
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING then dump
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if outcome == RUNNING and cameo(E1) == 1 then click tab:2
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING and cameo(E1) == 1 then click cameo:E1
+if outcome == RUNNING then dump
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NALASR) > 0 then click building 1:NALASR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPILE) > 0 then click building 1:GAPILE:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAHAND) > 0 then click building 1:NAHAND:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAPOWR) > 0 then click building 1:GAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GACNST) > 0 then click building 1:GACNST:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,GAREFN) > 0 then click building 1:GAREFN:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAWEAP) > 0 then click building 1:NAWEAP:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NAPOWR) > 0 then click building 1:NAPOWR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NARADR) > 0 then click building 1:NARADR:near
+click xy 500 400 right
+let tw = f
+until 300 outcome != RUNNING or f >= $tw+299
+if outcome == WON then end expect WON
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:near
 click xy 500 400 right
 let tw = f
 until 300 outcome != RUNNING or f >= $tw+299
