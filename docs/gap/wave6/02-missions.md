@@ -10,6 +10,47 @@ This is a read-only audit: no engine code was changed.
 
 **Method.** Four opus sub-agents did the RE and probe work: (a) difficulty, (b) SOV08/SOV09, (c) ALL12/SOV10 and the superweapon AI, (d) ALL09/ALL05/Boot Camp. Every gap below was then spot-checked against the cited clone line. The difficulty binding was confirmed independently a second time (see W6-02-01).
 
+## Fix status (w6fix-missions, wave-6 fix agent #2)
+
+| ID | Status | Where |
+|---|---|---|
+| W6-02-07 | **FIXED.** `World::legal_threat_unit/_building` (LegalTarget, IsInPlayfield, campaign Insignificant unit / Insignificant building of a MultiplayPassive house), used by the idle auto-acquire (unit + building branch), campaign `nearest_enemy` (team Attack / Patrol) and the AI team quarry pickers. krem2 probe: Civie1 keeps all 141 buildings (was 8 at f20260). | `engine/world_w6.cpp`, `combat.cpp`, `campaign_runtime.inc`, `world.cpp` |
+| W6-02-08 | **FIXED.** Per-object IsInPlayfield (`Unit/Building::tg.in_playfield`): set from IsWithinUsableArea at placement, gained when a unit moves in, recomputed for every object at scenario start and on action 40 ResizeView (`World::set_playfield`). The w6fix-ai SW picker scores 0 outside the usable area (`cell_in_playfield`). | `world_w6.cpp`, `campaign_runtime.inc` `apply_playfield` |
+| W6-02-01/02 | **FIXED.** Per-house handicap set for every campaign house at scenario start (player + PlayerControl = slider class, others 2 - slider), existing units refreshed; `refresh_vet_stats` reads it. SOV09 Easy probe: enemy E1 ROF 24, GHOST 12, MTNK 72 frames. | `World::set_house_handicap`, `setup_houses` |
+| W6-02-03 | **FIXED.** Defence rearm (incl. #4's Burst and defence-vs-building rearms) = ftol(ROF x owner handicap). | `building_combat.cpp` (ROF multiplier only) |
+| W6-02-04 | **FIXED.** `build_time_mul` = 1.0 (BuildTime/BuildDelay are CRC-only). R-082 closed as faithful. | `ai_base.cpp`, `docs/re/ai-base.md` |
+| W6-02-05 | **FIXED (campaign).** An AI house armed later starts its TeamDelays clock as if it had run since frame 0, + HouseArray index x 175. Skirmish arming is #3's area and unchanged. | `arm_production_houses` |
+| W6-02-09 / 10 | Done by #3 (w6fix-ai); the playfield TODO in its picker is wired. | |
+| W6-02-11 | **FIXED.** Threat radius = GuardRange, else larger weapon range + 1 cell (+AirRangeBonus); area guard (map Mission=Area Guard, player Guard order) 2x, max 16 cells; Sight never read (also the leash). | `combat.cpp` `acquire_radius` |
+| W6-02-12 | **FIXED.** ImmuneToPsionics (map overrides merged, also for voxel types) blocks mind-control acquisition and capture. SOV09 probe: no Yuri holds a car at f1500 (was f1156). | `combat.cpp`, `poll_mind_control` |
+| W6-02-13 | Left to #4 (building_combat owner); #4 merged a 3-D defence range. | |
+| W6-02-14 | **FIXED.** The TeamType Tag is attached to recruited members (AttachTrigger replace semantics). ALL05 probe: 'Tanya Dies' fires, LOST. R-P3-4 closed. | `adopt` |
+| W6-02-15 | **FIXED.** Units carry their rules id (`tg.t.rules_id`); the campaign tracks built units by it. TRN02: '6Complete(GIBuilt)' fires on the 6th GI. | `sync_tracks`, `resolve_unit_w6` |
+| W6-02-16 | **FIXED.** A team starts its script only at full strength (never dropped while waiting); Reinforce=yes teams refill and regroup at <= total/3. RE-FALLBACK: the regroup movement is not modelled. | `step_teams`, `team_total` |
+| W6-02-17 | **FIXED (partial).** Recruit skips Sleep/Harmless/Hunt/Harvest/Capture and mind-controlled units; one per TaskForce entry per call, nearest the team anchor. Foreign-group penalty / RecruitableA/B not modelled. | `recruit` |
+| W6-02-18 | **FIXED.** Script 16 Patrol is an attack-move (lead-member scan, weapon range + 1, every 15 frames; disguised spies skipped). | `patrol_tick` |
+| W6-02-19 | **ANSWERED.** CAAIRP grants ParaDropSpecial (Type=ParaDrop): an Allied owner drops AllyParaDropNum=6 E1, not 8 (wave4/05 corrected). | |
+| FUN_006862D0 | **APPLIED.** MultiplayerAICM start money also applies to campaign houses (no GameMode gate): +400 % for class 0 (computer houses on Hard, PlayerControl houses on Easy). | `setup_houses` |
+
+### Mission scripts after the fixes (merged with master incl. w6fix-units, one at a time)
+
+Temporary env toggles (removed before hand-back) bisected each regression to one fix.
+
+| Script | Result | Cause / change |
+|---|---|---|
+| m-all03/04/07-real, m-all09-opening, m-sov02/04/11-real | PASS unchanged | |
+| m-sov01-real | PASS after a generator change | W6-02-11: the engineer walks inside the Conscript group (it trailed it and died). |
+| m-sov07-real, m-sov12-real | PASS on Easy | W6-02-11/16; on Normal the defence no longer holds. Easy = player ROF x0.8, computers x1.2. |
+| m-all12-real (opening) | PASS after a script change | W6-02-11 area guard: BadGuy1's Area Guard tanks (2 x range) attack the Con Yard; the IFVs are sent at them. |
+| **m-trn02-real (new)** | **WON** (real orders, `mk_trn02.py`) | needs W6-02-15. |
+| m-all05-real | FAIL | W6-02-11 (toggle 1 alone restores the win): the first disguised spy no longer reaches its power plant, so no blackout; Tanya then dies waiting. Not re-tuned. |
+| m-all10-real | FAIL (RUNNING at the end) | W6-02-16 / W6-02-18 (either toggle restores the win): BadGuy2's waiting full-strength team (14 units) stays at its Con Yard and the broke army cannot clear it. |
+| m-all11-real | FAIL | W6-02-18: hydrofoil / Dreadnought patrols attack-move through the IFV staging area. With it off it still ends RUNNING (w6fix-units transport Size, see the coordinator note on the GHOST:8 / FV~:8 pairs). |
+| m-sov09-real | FAIL | the opening's timing (SOV09 is now Easy-calibrated: no Yuri wastes its slot on a car, SEALs engage at range + 1); not re-tuned. |
+| m-all06-real | FAIL (RUNNING at f140096) | long sweep; not bisected (802 s per run). |
+| SOV08 V3 siege attempt | not won | the V3 cameo clicks queued nothing (only one V3 built, f10385); the Vlad2 flak circles also cover every 18-cell V3 site west of the White House except (84,22)/(84,23) (path within 9.7 of a flak). Generator not committed. |
+| ALL12 / SOV09 / ALL09 / SOV10 full wins | not attempted | time spent on the regressions above. |
+
 ## Headline
 
 The earlier agents concluded "tactics, not engine". For four of the five missions that conclusion does not hold.

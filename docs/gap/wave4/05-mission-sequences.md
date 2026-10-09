@@ -8,6 +8,13 @@ The question here is not "can the trigger chain reach Win" (wave 2 proved that w
 out the way the map's own triggers, teams and scripts intend": intro sequences, enemy waves, AI-vs-AI set pieces,
 reinforcement arrivals, objectives and end sequences.
 
+## W6 fix #2 status (wave-6 fix agent 2, branch `w6fix-missions`)
+
+Engine fixes from docs/gap/wave6/02-missions.md (W6-02-01..05, 07, 08, 11, 12, 14..18): per-house difficulty handicap (Easy really is easier now: player ROF x0.8, every computer house and its defences x1.2), the Evaluate_Object target rejects (ALL12's Moscow is no longer razed, so `Kremlin is Destroyed` no longer fires; SOV10's WCD is not a target outside the playfield), the original threat radius (weapon range + 1, area guard x2, never Sight), ImmuneToPsionics, team tags on recruits (ALL05 is lost when Tanya dies), build events by rules id (TRN02 objective 6), full-strength team start, recruit filters, Patrol = attack-move.
+
+- **TRN02 (Boot Camp 2): WON by real orders** (`m-trn02-real`, `gen/mk_trn02.py`).
+- **ALL09 paradrop correction (W6-02-19):** the captured Tech Airport grants ParaDropSpecial (Type=ParaDrop): an Allied owner drops AllyParaDropNum = **6** GIs per cycle (AmerParaDrop's 8 is the American power).
+- Real-order scripts re-run after the fixes: see the table in docs/gap/wave6/02-missions.md ("Mission scripts after the fixes"). SOV01 / SOV07 / SOV12 / ALL12-opening adapted; ALL05, ALL06, ALL10, ALL11, SOV09 now fail with the bisected causes listed there.
 ## W4-FIX-SEQ status (wave-4 fix agent 4, branch `w4fix-seq`)
 
 The same no-input runs (`scratch\play\sq-*.play`, 400 campaign seconds) were re-run on the fixed tree; real-order play

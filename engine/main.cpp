@@ -12675,10 +12675,16 @@ DemoNavalResult simulate_naval(Assets& a, UnitAssets& ua, const NavalAssets& na,
     const int before_x = world.units()[s_idx].cell_x, before_y = world.units()[s_idx].cell_y;
     world.order_unit_move(s_idx, land.x, land.y);
     const bool empty_path = world.units()[s_idx].path.empty();
-    for (int f = 0; f < 60; ++f) step_one();
-    if (empty_path && world.units()[s_idx].cell_x == before_x &&
-        world.units()[s_idx].cell_y == before_y)
-        land_blocked = true;
+    // W6-02-11: an idle ship now auto-acquires at weapon range + 1 and may close
+    // in on the shore enemy during these frames -- that is not the land order.
+    // The order is refused when it yields no path and the ship never stands on land.
+    bool on_land = false;
+    for (int f = 0; f < 60; ++f) {
+        step_one();
+        if (!is_water(world.units()[s_idx].cell_x, world.units()[s_idx].cell_y)) on_land = true;
+    }
+    (void)before_x; (void)before_y;
+    if (empty_path && !on_land) land_blocked = true;
     h = naval_fold(h, world, water_cells);       // checkpoint 2: post-land-block
     {
         char b[144];
