@@ -31,7 +31,9 @@ in the Transports/Cargo plan Tasks 2–6.
 
 Four load-bearing findings differ from the plan and need RE-GATE adjudication:
 
-1. **Capacity is a passenger COUNT, not a Size-sum.** The load gate is
+1. **[SUPERSEDED in wave 6, W6-04-08 -- see §1: vehicle transports ARE a Size
+   pool (`UnitClass::ReceiveMessage` FUN_00736500); the count below is the
+   AircraftClass rule.]** **Capacity is a passenger COUNT, not a Size-sum.** The load gate is
    `NumPassengers < Passengers` (each body = 1 slot). `Size`/`SizeLimit` are a
    **separate per-passenger size cap** (`passenger.Size <= transport.SizeLimit`),
    not a running total against `Passengers`. `GetTotalSize()` (Σ Size) exists but
@@ -84,69 +86,64 @@ rules loader): `OpenToppedRangeBonus=2`, `OpenToppedDamageMultiplier=1.2`,
 
 ---
 
-## §1 Capacity accounting — COUNT, with a per-passenger Size cap
+## §1 Capacity accounting — a Size POOL for vehicle transports, a COUNT for aircraft and garrisons
 
-**The load gate is a passenger COUNT.** `Foot/UnitClass::ReceiveMessage`
-(`FUN_004190B0`) answers the load queries:
+> **Corrected in wave 6 (W6-04-08).** This section used to say the load gate is a
+> body count for every transport. That read `FUN_004190B0`, which is
+> **`AircraftClass::ReceiveMessage`** (it sits in the AircraftClass vtable at
+> `0x7E1438`, next to `AircraftClass::Mission_Attack` `FUN_00417FE0` at
+> `0x7E14B4`), not a FootClass base. Vehicle and ship transports are UnitClass,
+> whose `ReceiveMessage` `FUN_00736500` overrides it with a Size sum.
 
-- **`case 0xF`** (RADIO "Can I be loaded?"):
+**Vehicle / ship transports (UnitClass): `ΣSize + Size ≤ Passengers`.**
+`UnitClass::ReceiveMessage` (`FUN_00736500`, decompiled in wave 6,
+`D:/ra2-re/w6fix-units-out/a3.txt`):
+
+- **`case 0xF`** ("Can I be loaded?") and **`case 0xE`** (do the load), after the
+  `Passengers != 0` / `IsAlliedWith` gates:
   ```c
-  if (type->Passengers(+0x5e0) != 0 && sender != 0 && IsAlliedWith(sender)) {
-      // return 1 (ROGER) iff NumPassengers < Passengers, else 10 (NEGATIVE)
-      return ((type->Passengers <= this->NumPassengers(+0x114)) - 1 & 0xFFFFFFF7) + 10;
-  }
-  return 0;
+  int total = GetTotalSize();                       // FUN_00473390: sum of the passengers' Size
+  if ((double)type->Passengers(+0x5E0) < total + passenger->Type->Size(+0x380))
+      return 10;                                    // NEGATIVE: no room
+  if (type->SizeLimit(+0x388) < passenger->Type->Size(+0x380))
+      return 10;                                    // NEGATIVE: too big
+  return 1;                                         // ROGER
   ```
-  Arithmetic check: `Passengers=5, NumPassengers=4 → (0-1 & ~8)+10 = 1` (room);
-  `Passengers=5, NumPassengers=5 → (1-1 & ~8)+10 = 10` (full). So **room ⇔
-  `NumPassengers < Passengers`**.
-- **`case 0xE`** (do the load): same `NumPassengers < Passengers` guard.
-- **`case 0x15`**: when `NumPassengers == Passengers` (full) it arms the
+  So `Passengers` is a **Size pool**: the Amphibious Transport (`[LCRF]`/`[SAPC]`
+  `Passengers=12 SizeLimit=6`) takes 12 infantry (Size 1), 4 Grizzlies (Size 3)
+  or 2 Apocalypses (Size 6). Every Allied/Soviet infantry is Size 1, so the IFV
+  (`Passengers=1`), Flak Track (`Passengers=5`) and Battle Fortress
+  (`Passengers=5`) behave exactly as a body count for infantry.
+- **`case 0x15`**: when `GetTotalSize() == Passengers` (full) it arms the
   `DeployTime` timer (`FUN_004A5150(type+0x3C8, …)`).
 
-`AddPassenger` (`FUN_004732D0`) increments `NumPassengers` by **1 per node**
-(it recomputes the count by walking the list, `count=0; do count++; node=node->next`),
-so the count is a body-count, independent of `Size`.
+**Aircraft transports (AircraftClass, the Night Hawk): a COUNT.**
+`AircraftClass::ReceiveMessage` (`FUN_004190B0`) answers `case 0xF` with
+`((Passengers <= NumPassengers(+0x114)) - 1 & ~8) + 10`, i.e. room ⇔
+`NumPassengers < Passengers`, and `case 0xE` uses the same guard.
 
-**`Size`/`SizeLimit` are a separate per-passenger eligibility test**, not a pool.
-The fully-explicit predicate is visible in the building-garrison branch of
-`BuildingClass::ReceiveMessage` (`FUN_0043C250` `case 0xF`, the occupiable
-`+0x16AE/+0x16AF` path):
+**Garrisons (BuildingClass): a COUNT plus the per-passenger cap.**
+`BuildingClass::ReceiveMessage` (`FUN_0043C250` `case 0xF`, occupiable path):
 ```c
-if (this->NumPassengers(+0x114) + 1 <= type->Passengers(+0x5e0)   // COUNT gate
+if (this->NumPassengers(+0x114) + 1 <= type->Passengers(+0x5e0)       // COUNT gate
     && passenger->Type->Size(+0x380) <= this->Type->SizeLimit(+0x388))  // per-passenger cap
-    return 1;   // yes, can enter
+    return 1;
 ```
-Same count gate (`NumPassengers + 1 <= Passengers`), plus `Size <= SizeLimit`.
 
-**`GetTotalSize()` (`FUN_00473390`) is display-only.** Disassembly:
-```
-MOV EBX,[ECX]        ; NumPassengers
-MOV ECX,[ECX+4]      ; FirstPassenger
-loop: MOV EAX,[ESI]; CALL [EAX+0x84]   ; passenger->GetTechnoType()
-      FILD [ESP+c]; FADD qword [EAX+0x380]  ; total += Type->Size (double)
-      CALL 0x7C4D00                          ; ftol(total)  (NOT the RNG — see note)
-      MOV ESI,[ESI+0x30]                      ; node = node->NextObject
-```
-Its only callers are the refinery pip animation (`FUN_004509C0`) and the unit pip
-draw (`0x7363xx`). No capacity path calls it. So the pip row shows the size-sum,
-but capacity is the body-count — for the all-Size-1 roster (infantry) the two
-coincide (5 GIs → count 5, Σsize 5); they only diverge if a Size≥2 passenger is
-loaded (e.g. a Terror Drone, Size 2, allowed by `SizeLimit=2`), which would show
-2 pips yet consume 1 count slot.
+`AddPassenger` (`FUN_004732D0`) increments `NumPassengers` by 1 per node.
+`GetTotalSize()` (`FUN_00473390`, `total += Type->Size` per node, then `ftol`)
+feeds the UnitClass capacity gate above, the refinery pip animation
+(`FUN_004509C0`) and the unit pip draw (`0x7363xx`).
 
 **Defaults when a key is absent** (from `FUN_00711510` read helpers, all pass the
 current field value as the INI default so an absent key leaves the ctor default):
-`Passengers` absent → 0 (not a transport); `Size` absent → the ctor default; the
-game's convention (and the roster) treats missing `Size` as **1** and missing
-`SizeLimit`/`Passengers` as **0**. Recommend the Task-4 fallbacks
-(`Passengers/SizeLimit absent → 0`, `Size absent → 1`) unchanged.
+`Passengers` absent → 0 (not a transport); missing `Size` → **1**; missing
+`SizeLimit` → **0**.
 
-**Confidence: CONFIRMED** (count gate `FUN_004190B0`/`FUN_0043C250`; per-passenger
-`Size<=SizeLimit` CONFIRMED for the building path; the exact enforcement *site* of
-`Size<=SizeLimit` for a mobile transport — action-cursor/AI vs the load message —
-was not isolated 1:1, so that *placement* is **PROBABLE**, though the semantics
-are pinned).
+**Confidence: CONFIRMED** (UnitClass Size pool `FUN_00736500`; aircraft count
+`FUN_004190B0`; garrison count + cap `FUN_0043C250`). The clone:
+`engine/cargo.cpp` `can_load` (aircraft: count; every other unit transport: Size
+pool; `Size <= SizeLimit` for both); garrisons are counted in `world_depth.cpp`.
 
 ## §2 The "can X enter Y" predicate (evaluation order)
 
@@ -343,7 +340,7 @@ CONFIRMED (`FUN_007C4D00` = ftol by content).**
 
 | Item | Finding | Evidence | Confidence |
 |------|---------|----------|:----------:|
-| §1 | capacity = **COUNT** `NumPassengers<Passengers`; Size/SizeLimit = per-passenger cap; GetTotalSize is pip-only | `FUN_004190B0` case 0xF/0xE + `FUN_0043C250` case 0xF + `AddPassenger` recount + `GetTotalSize` callers | **CONFIRMED** |
+| §1 | (wave 6) vehicle transports: **Size pool** `ΣSize + Size <= Passengers`; aircraft and garrisons: **COUNT**; Size <= SizeLimit per passenger | `FUN_00736500` (UnitClass) case 0xE/0xF + `FUN_004190B0` (AircraftClass) + `FUN_0043C250` case 0xF | **CONFIRMED** |
 | §1 | `Size<=SizeLimit` enforcement site for *mobile* transports | inline for buildings; mobile site not isolated | **PROBABLE** |
 | §2 | transport flag = `Passengers>0` | `FUN_0073EB90` + `FUN_004190B0` | **CONFIRMED** |
 | §2 | ownership = **IsAlliedWith** (same-house OR allied), not same-house-only | `FUN_004F98B0` content | **CONFIRMED** |
@@ -359,7 +356,8 @@ CONFIRMED (`FUN_007C4D00` = ftol by content).**
 
 ## Deviations we will take
 
-- **[PLAN DIFF — §1 capacity model, RE-GATE STOP].** The plan's size-sum
+- **[SUPERSEDED in wave 6, W6-04-08 -- §1: the plan's size-sum was right for
+  vehicle transports.]** **[PLAN DIFF — §1 capacity model, RE-GATE STOP].** The plan's size-sum
   `cargo_slots_used + p.size <= t.passengers_max` is WRONG. The original is a
   **body-COUNT**: `NumPassengers < Passengers`. `SizeLimit` is a per-passenger
   cap (`p.size <= t.size_limit`), and `Size` feeds only the pip display
