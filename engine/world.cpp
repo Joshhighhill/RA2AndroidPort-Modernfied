@@ -3179,6 +3179,24 @@ bool World::ai_house_alive(int house) const {
     return false;
 }
 
+// The base centre of house `hh` [RE: house+0x5490, set to the ConYard cell when
+// it unfolds (FUN_0050a3e0); RE-FALLBACK: else its first significant building,
+// else its first unit]. false = the house owns nothing.
+bool World::ai_base_centre(int hh, int& x, int& y) const {
+    const std::vector<BuildingTypeDef>& bts = btypes();
+    bool got = false;
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.house != hh || b.state == Building::State::Dead || building_insignificant(b))
+            continue;
+        const bool cy = b.type >= 0 && b.type < (int)bts.size() && bts[b.type].conyard;
+        if (cy || !got) { x = b.cx; y = b.cy; got = true; if (cy) return true; }
+    }
+    if (got) return true;
+    for (const Unit& u : units_)
+        if (u.alive && u.die_time < 0.0 && u.house == hh) { x = u.cell_x; y = u.cell_y; return true; }
+    return false;
+}
+
 // W2-SK-08 [RE: ai-trigger.md deviations -- the original keeps ONE current
 // enemy per house (house+0x5600) that the trigger conditions, the threat view
 // and the team targeting read; RE-FALLBACK for the pick: the nearest living
@@ -3222,106 +3240,132 @@ bool quarry_building_match(int quarry, const Building& b, const AiTeamConfig& tc
 }  // namespace
 
 void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
-    // [G-66; RE: FUN_00509710 (per charged SW, by type) -> for the nuke
-    // FUN_0050ca10: walk every object of the house's ENEMY, score it from the
-    // [General] AIIonCannon*Value arrays (ConYard / war factory / power /
-    // tech centre / base defense / harvester; other buildings 4, other units
-    // 2), keep the highest score, pick one of the ties at random, fire at its
-    // cell]. RE-FALLBACK: "the enemy" = every enemy house (the engine keeps no
-    // single house+0x5600 enemy); factory = any Factory= building; the class
-    // tests are the engine's building/unit flags. Seeded ai_rand, deterministic.
-    // W2-AN-21: every charged type fires (one per tick):
-    //  * Nuke / Lightning Storm / paradrops: the highest-value enemy object.
-    //  * Iron Curtain: the own 3x3 holding the most own vehicles, preferring
-    //    units already ordered at a target [RE-FALLBACK: the per-type picker
-    //    of FUN_00509710 for IronCurtain was not unwound].
-    //  * Chronosphere: that own vehicle cluster -> next to the highest-value
-    //    enemy building [RE-FALLBACK, same].
-    const std::vector<SuperweaponType> types = sw_types(house);
-    SuperweaponType fire_t = SuperweaponType::None;
-    for (SuperweaponType t : types)
-        if (sw_ready(house, t)) { fire_t = t; break; }
-    if (fire_t == SuperweaponType::None) return;
-    const AiRules& ai = rec.cfg.ai;
-    const AiTeamConfig& tc = rec.cfg.team;
-    int best = -1;
-    std::vector<Cellxy> ties;
-    Cellxy best_bld{-1, -1};
-    int best_bld_v = -1;
-    // W5-A R-021 [RE: FUN_00509710 -- a house PreferredTarget (+0x54EC, map
-    // action 35) other than 1 Anything aims through FUN_0050CF90 (the threat
-    // of that QuarryType); RE-FALLBACK: the highest-valued enemy object of
-    // that quarry stands in for Greatest_Threat].
+    // W6-03-05 / W6-02-09 / W6-02-10 [RE: FUN_00509710, the house superweapon
+    // AI run from FUN_004fd320, walks every charged SW and switches on its
+    // type]:
+    //  * 0 Nuke: only with an Enemy (house+0x5600 != -1); the target is the
+    //    PreferredTarget quarry pick (FUN_0050cf90) or FUN_0050ca10.
+    //  * 2 Lightning Storm (FUN_00509c20): not while a storm rages
+    //    (FUN_00539e30), only with an Enemy, same pickers.
+    //  * 5/6 ParaDrop / AmerParaDrop, 8 SpyPlane, 11 PsychicReveal
+    //    (FUN_00509af0): the Enemy's base centre (house+0x5494, else +0x5490),
+    //    or this house's own base when it has no Enemy, nearest free cell
+    //    (FUN_0056d750) + (2,2).
+    //  * There is NO case for 1 IronCurtain, 3 ChronoSphere or 4 ChronoWarp:
+    //    the house AI never fires them; they are used only through team
+    //    script actions 55/56/57 and the ct=5/6 AITriggers.
+    // FUN_0050ca10 scores ONLY objects owned by HouseArray[house+0x5600] from
+    // the [General] AIIonCannon*Value arrays (see ai_sw_score) and fires at a
+    // random one of the best-scoring cells.
+    const int enemy = rec.enemy_house;
     const int quarry = (house >= 0 && house < (int)sw_quarry_.size()) ? sw_quarry_[house] : 1;
-    int qbest = -1;
-    std::vector<Cellxy> qties;
-    for (const Building& b : buildings_) {
-        if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
-        if (building_is_wall(b)) continue;   // W6-03-01: walls are overlays, never a target
-        int v = ai.sw_value_building;
-        const std::uint8_t bits = (b.type >= 0 && b.type < (int)tc.building_class.size())
-                                      ? tc.building_class[b.type] : 0;
-        const bool cy = b.type >= 0 && b.type < (int)rec.cfg.roster.size() &&
-                        rec.cfg.roster[b.type].conyard;
-        if (cy) v = ai.sw_value_conyard;
-        else if (bits & kAiBldDefense) v = ai.sw_value_defense;
-        else if (bits & kAiBldFactory) v = ai.sw_value_factory;
-        else if (bits & kAiBldPower) v = ai.sw_value_power;
-        else if (b.type >= 0 && b.type < (int)rec.cfg.roster.size() &&
-                 (rec.cfg.roster[b.type].id == "GATECH" || rec.cfg.roster[b.type].id == "NATECH"))
-            v = ai.sw_value_tech;   // [RE-FALLBACK: tech centre by id]
-        const Cellxy c{b.cx + b.fw / 2, b.cy + b.fh / 2};
-        if (v > best) { best = v; ties.clear(); }
-        if (v == best) ties.push_back(c);
-        if (quarry != 1 && quarry_building_match(quarry, b, tc)) {
-            if (v > qbest) { qbest = v; qties.clear(); }
-            if (v == qbest) qties.push_back(c);
+    for (SuperweaponType t : sw_types(house)) {
+        if (!sw_ready(house, t)) continue;
+        switch (t) {
+            case SuperweaponType::Nuke:
+            case SuperweaponType::LightningStorm: {
+                if (enemy < 0) break;
+                if (t == SuperweaponType::LightningStorm) {
+                    bool raging = false;   // LightningStorm::IsActive (FUN_00539e30)
+                    for (const SwStrike& s : an_.strikes)
+                        if (s.kind == 2 && !s.done) raging = true;
+                    if (raging) break;
+                }
+                Cellxy c{-1, -1};
+                if (!ai_sw_pick_target(house, rec, enemy, quarry, c)) break;
+                fire_superweapon_at(house, t, c.x, c.y);
+                break;
+            }
+            case SuperweaponType::ParaDrop:
+            case SuperweaponType::AmerParaDrop:
+            case SuperweaponType::SpyPlane:
+            case SuperweaponType::PsychicReveal: {
+                int x = 0, y = 0;
+                const int th = enemy >= 0 ? enemy : house;
+                if (quarry != 1 && enemy >= 0) {
+                    Cellxy c{-1, -1};
+                    if (!ai_sw_pick_target(house, rec, enemy, quarry, c)) break;
+                    x = c.x; y = c.y;
+                } else {
+                    if (!ai_base_centre(th, x, y)) break;
+                    x = std::min(grid_w_ - 1, x + 2);   // FUN_00509af0: nearby cell + (2,2)
+                    y = std::min(grid_h_ - 1, y + 2);
+                }
+                fire_superweapon_at(house, t, x, y);
+                break;
+            }
+            default:
+                break;   // IronCurtain / Chrono / Yuri types: no house-AI case
         }
-        if (v > best_bld_v) { best_bld_v = v; best_bld = Cellxy{b.cx + b.fw, b.cy + b.fh}; }
+    }
+}
+
+// FUN_0050ca10 / FUN_0050cf90: the best-valued cell among `enemy`'s objects on
+// the ground (alive, not carried, not airborne); quarry != 1 (PreferredTarget,
+// map action 35) restricts to that QuarryType [RE-FALLBACK: the highest-valued
+// object of the quarry stands in for FUN_0050cf90's Greatest_Threat]. A hidden
+// (cloaked/disguised) object scores rand(0, best + 10). Ties -> seeded random.
+bool World::ai_sw_pick_target(int house, HouseAiRec& rec, int enemy, int quarry, Cellxy& out) {
+    const AiTeamConfig& tc = rec.cfg.team;
+    int best = 0;
+    std::vector<Cellxy> ties;
+    auto consider = [&](int v, Cellxy c) {
+        if (v > best) { best = v; ties.clear(); }
+        if (v == best && v > 0) ties.push_back(c);
+    };
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.state == Building::State::Dead || b.house != enemy) continue;
+        if (building_is_wall(b)) continue;   // W6-03-01: walls are overlays
+        if (quarry != 1 && !quarry_building_match(quarry, b, tc)) continue;
+        consider(ai_sw_score_building(rec, b), Cellxy{b.cx + b.fw / 2, b.cy + b.fh / 2});
     }
     for (const Unit& u : units_) {
-        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || !is_enemy(house, u.house)) continue;
-        if (unit_hidden_from(house, u)) continue;
-        const int v = u.is_harvester ? ai.sw_value_harvester : ai.sw_value_unit;
-        if (v > best) { best = v; ties.clear(); }
-        if (v == best) ties.push_back(Cellxy{u.cell_x, u.cell_y});
-        if (quarry != 1 && quarry_unit_match(quarry, u)) {
-            if (v > qbest) { qbest = v; qties.clear(); }
-            if (v == qbest) qties.push_back(Cellxy{u.cell_x, u.cell_y});
-        }
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != enemy) continue;
+        if (u.is_aircraft && u.flight_state != FlightState::Grounded) continue;   // ground layer only
+        if (quarry != 1 && !quarry_unit_match(quarry, u)) continue;
+        int v = ai_sw_score_unit(rec, u);
+        if (unit_hidden_from(house, u))
+            v = (int)(ai_rand(rec.state.rng) % (std::uint32_t)(best + 11));   // rand(0, best+10)
+        consider(v, Cellxy{u.cell_x, u.cell_y});
     }
-    if (!qties.empty()) ties = qties;
-    if (fire_t == SuperweaponType::IronCurtain || fire_t == SuperweaponType::ChronoSphere ||
-        fire_t == SuperweaponType::ChronoWarp) {
-        // Own vehicle cluster: the unit whose 3x3 holds the most own vehicles
-        // (an ordered attacker counts double).
-        int cbest = 0;
-        Cellxy src{-1, -1};
-        for (const Unit& u : units_) {
-            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != house) continue;
-            if (!u.is_vehicle || u.is_aircraft || u.is_harvester) continue;
-            int score = 0;
-            for (const Unit& o : units_) {
-                if (!o.alive || o.die_time >= 0.0 || o.cargo_of >= 0 || o.house != house) continue;
-                if (!o.is_vehicle || o.is_aircraft) continue;
-                if (std::abs(o.cell_x - u.cell_x) <= 1 && std::abs(o.cell_y - u.cell_y) <= 1)
-                    score += (o.target >= 0 || o.target_building >= 0) ? 2 : 1;
-            }
-            if (score > cbest) { cbest = score; src = Cellxy{u.cell_x, u.cell_y}; }
-        }
-        if (src.x < 0 || cbest < 2) return;   // nothing worth protecting / moving yet
-        if (fire_t == SuperweaponType::IronCurtain) {
-            fire_superweapon_at(house, fire_t, src.x, src.y);
-            return;
-        }
-        if (best_bld.x < 0) return;
-        fire_superweapon_at(house, fire_t, src.x, src.y, std::min(grid_w_ - 2, best_bld.x + 1),
-                            std::min(grid_h_ - 2, best_bld.y + 1));
-        return;
-    }
-    if (ties.empty()) return;
-    const Cellxy t = ties[ai_rand(rec.state.rng) % (std::uint32_t)ties.size()];
-    fire_superweapon_at(house, fire_t, t.x, t.y);
+    if (ties.empty()) return false;
+    out = ties[ai_rand(rec.state.rng) % (std::uint32_t)ties.size()];
+    return true;
+}
+
+// FUN_0050ca10 building score, in the original's order: ConYard (Factory=
+// BuildingType) -> War Factory (Factory=UnitType, not Naval) -> Power (output
+// > 0) -> base defence -> tech centre -> any other building 4.
+int World::ai_sw_score_building(const HouseAiRec& rec, const Building& b) const {
+    const AiRules& ai = rec.cfg.ai;
+    const std::vector<BuildingTypeDef>& bts = btypes();
+    if (b.type < 0 || b.type >= (int)bts.size()) return ai.sw_value_building;
+    const BuildingTypeDef& t = bts[b.type];
+    const std::uint8_t bits = b.type < (int)rec.cfg.team.building_class.size()
+                                  ? rec.cfg.team.building_class[b.type] : 0;
+    if (t.conyard) return ai.sw_value_conyard;
+    if (t.factory_kind == 2) return ai.sw_value_factory;
+    if (t.power > 0) return ai.sw_value_power;
+    if (bits & kAiBldDefense) return ai.sw_value_defense;
+    if (t.id == "GATECH" || t.id == "NATECH" || t.id == "YATECH")
+        return ai.sw_value_tech;   // [RE-FALLBACK: Rules+0x920 tech list by id]
+    return ai.sw_value_building;
+}
+
+// FUN_0050ca10 unit score: vehicles -- harvester / MCV (deploys into a
+// ConYard) / transport (Passengers > 0) values, else 2; infantry -- engineer
+// / thief values, else 2; aircraft 1.
+int World::ai_sw_score_unit(const HouseAiRec& rec, const Unit& u) const {
+    const AiRules& ai = rec.cfg.ai;
+    if (u.is_aircraft) return 1;
+    if (u.is_harvester) return ai.sw_value_harvester;
+    const std::vector<BuildingTypeDef>& bts = btypes();
+    if (u.deploys_into >= 0 && u.deploys_into < (int)bts.size() && bts[u.deploys_into].conyard)
+        return ai.sw_value_mcv;
+    if (u.is_vehicle) return u.passengers_max > 0 ? ai.sw_value_apc : ai.sw_value_unit;
+    if (u.image == "ENGINEER" || u.image == "SENGINEER") return ai.sw_value_engineer;
+    if (u.image == "SPY" || u.image == "THIEF") return ai.sw_value_thief;
+    return ai.sw_value_unit;
 }
 
 // --- AI-2 offensive-teams phase [RE: ai-team.md] ----------------------------

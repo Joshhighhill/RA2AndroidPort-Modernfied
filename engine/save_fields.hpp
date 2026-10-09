@@ -1108,6 +1108,8 @@ template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.sw_value_conyard); io(ar, v.sw_value_factory); io(ar, v.sw_value_power);
     io(ar, v.sw_value_tech); io(ar, v.sw_value_defense); io(ar, v.sw_value_harvester);
     io(ar, v.sw_value_building); io(ar, v.sw_value_unit);
+    io(ar, v.sw_value_engineer); io(ar, v.sw_value_thief);   // W6-02-09 (v25)
+    io(ar, v.sw_value_mcv); io(ar, v.sw_value_apc);
 }
 template <class Ar> void fields(Ar& ar, PlannedNode& v) {
     io(ar, v.id); io(ar, v.type); io(ar, v.cx); io(ar, v.cy); io(ar, v.building); io(ar, v.dead);

@@ -131,6 +131,9 @@ struct AiRules {
     int sw_value_conyard = 100, sw_value_factory = 100, sw_value_power = 100,
         sw_value_tech = 100, sw_value_defense = 35, sw_value_harvester = 1,
         sw_value_building = 4, sw_value_unit = 2;
+    // W6-02-09 [RE: FUN_0050ca10 -- Rules+0x1208 Engineer, +0x1224 Thief,
+    // +0x125c MCV, +0x1278 APC (Passengers > 0); rulesmd 1,1,1 each].
+    int sw_value_engineer = 1, sw_value_thief = 1, sw_value_mcv = 1, sw_value_apc = 1;
 };
 
 // mods for difficulty d: values from groups[d], defense_target from

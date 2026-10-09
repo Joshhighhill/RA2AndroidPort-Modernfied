@@ -2784,6 +2784,10 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         cfg.ai.sw_value_tech = val("AIIonCannonTechCenterValue", 100);
         cfg.ai.sw_value_defense = val("AIIonCannonBaseDefenseValue", 35);
         cfg.ai.sw_value_harvester = val("AIIonCannonHarvesterValue", 1);
+        cfg.ai.sw_value_engineer = val("AIIonCannonEngineerValue", 1);   // W6-02-09
+        cfg.ai.sw_value_thief = val("AIIonCannonThiefValue", 1);
+        cfg.ai.sw_value_mcv = val("AIIonCannonMCVValue", 1);
+        cfg.ai.sw_value_apc = val("AIIonCannonAPCValue", 1);
     }
     {   // [G-65] "ConditionRed=25%" -> strtod 25 -> the 0.25 fraction
         const double cr = rules.section_double("AudioVisual", "ConditionRed", 0.25);

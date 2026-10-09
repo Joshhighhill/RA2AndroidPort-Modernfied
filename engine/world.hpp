@@ -2064,6 +2064,11 @@ public:
     }
 private:
     void ai_try_fire_superweapon(int house, HouseAiRec& rec);   // [G-66]
+    // W6-03-05 [RE: FUN_0050ca10]: the best-valued object of `enemy`; scores.
+    bool ai_sw_pick_target(int house, HouseAiRec& rec, int enemy, int quarry, Cellxy& out);
+    int ai_sw_score_building(const HouseAiRec& rec, const Building& b) const;
+    int ai_sw_score_unit(const HouseAiRec& rec, const Unit& u) const;
+    bool ai_base_centre(int house, int& x, int& y) const;   // house+0x5490
     BaseView make_ai_base_view(int house, const HouseAiRec& rec) const;
     bool ai_place_ready(int house, HouseAiRec& rec, QueueCat cat);
     // W2-AN-16: an AI Naval Yard spot -- every foundation cell water, free, no
