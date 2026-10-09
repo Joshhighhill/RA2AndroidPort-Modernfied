@@ -3100,6 +3100,58 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     }
 }
 
+// W6-01-01: true when building `b`'s drawn art has an opaque pixel at window
+// pixel (px, py): the main frame draw_building uses (the SAME SHP / frame /
+// anchor: buildup, mirrored sell, healthy / damaged) and, in the live game,
+// its always-on slot anims (ActiveAnim..Four, IdleAnim, SuperAnim..Four --
+// the Prism Tower's head, the Weather Device's dish) at their slot offsets.
+// `masks` caches each decoded frame (key = SHP address + frame). The touch
+// pick tests this before the original foundation pick (Input::pick_building).
+// Turrets and a wall's connection frame are not tested: the foundation
+// fallback covers walls.
+using ArtMaskCache = std::map<std::pair<const void*, int>, std::vector<uint8_t>>;
+bool shp_frame_opaque(const ra2assets::ShpFile& shp, int frame, int cx, int cy, int px, int py,
+                      ArtMaskCache& masks) {
+    if (frame < 0 || frame >= shp.count()) return false;
+    const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+    const int x0 = cx - shp.width() / 2 + f.x, y0 = cy - shp.height() / 2 + f.y;
+    if (f.w <= 0 || f.h <= 0 || px < x0 || py < y0 || px >= x0 + f.w || py >= y0 + f.h) return false;
+    const auto key = std::make_pair(static_cast<const void*>(&shp), frame);
+    auto it = masks.find(key);
+    if (it == masks.end()) it = masks.emplace(key, shp.decode_indexed(frame)).first;
+    const std::size_t k = static_cast<std::size_t>(py - y0) * f.w + static_cast<std::size_t>(px - x0);
+    return k < it->second.size() && it->second[k] != 0;
+}
+bool building_art_opaque(const ra2engine::Building& b, const BuildingAssets& ba, int level,
+                         double condition_yellow, const ra2engine::Camera& cam, int px, int py,
+                         ArtMaskCache& masks) {
+    if (b.type < 0 || b.type >= static_cast<int>(ba.art.size())) return false;
+    const BuildingArt& art = ba.art[b.type];
+    if (!art.ok || art.invisible) return false;
+    const bool selling = (b.selling && art.has_buildup);
+    const bool buildup =
+        selling || (b.state == ra2engine::Building::State::Buildup && art.has_buildup);
+    const ra2assets::ShpFile& shp = buildup ? art.buildup : art.shp;
+    const int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
+                    : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
+                              : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    const ra2engine::ScreenPt dp = ra2engine::building_draw_point(b.cx, b.cy, level);
+    const int fcx = dp.x + cam.x, fcy = dp.y + cam.y;
+    if (shp_frame_opaque(shp, frame, fcx, fcy, px, py, masks)) return true;
+    if (buildup || !g_fx || b.type >= static_cast<int>(ba.roster.size())) return false;
+    const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
+    const PresFx::BldAnims& an = g_fx->building(pres_upper(def.image.empty() ? def.id : def.image));
+    static const int kSlots[] = {kBsActive, kBsActive + 1, kBsActive + 2, kBsActive4, kBsIdle,
+                                 kBsSuper, kBsSuper + 1, kBsSuper + 2, kBsSuper4};
+    for (int s : kSlots) {
+        const PresFx::BldAnims::Slot& sl = an.slot[s];
+        if (!sl.t || !sl.t->shp) continue;
+        if (shp_frame_opaque(*sl.t->shp, sl.t->start, fcx + sl.x, fcy + sl.y + sl.t->ydraw, px, py, masks))
+            return true;
+    }
+    return false;
+}
+
 // Draws one voxel vehicle in render_world's back-to-front loop: a dying tank
 // shows the death-explosion SHP (frame = min(die_time*15, count-1), the same
 // 15 fps as infantry deaths); a live tank draws its hull, then (if turreted)
@@ -5858,6 +5910,16 @@ public:
 
         // Input wiring: refinery-return + factory-select/rally + spy-infiltrate.
         if (ba_.ok) input_.set_refinery_types(refinery_type_indices(ba_, rules_));
+        // W6-01-01: a finger picks a building by its drawn art.
+        if (ba_.ok)
+            input_.set_building_art_test([this](int bi, int px, int py) {
+                const auto& bs = world_.buildings();
+                if (bi < 0 || bi >= static_cast<int>(bs.size())) return false;
+                const ra2engine::Building& b = bs[static_cast<std::size_t>(bi)];
+                const ra2assets::MapCell* mc = a_.map.at(b.cx, b.cy);
+                return building_art_opaque(b, ba_, mc ? mc->level : 0, ba_.condition_yellow, cam_, px, py,
+                                           art_masks_);
+            });
         inf_ft_ = factory_types_for(ba_, "GAPILE");
         veh_ft_ = factory_types_for(ba_, "GAWEAP");
         {
@@ -7129,6 +7191,7 @@ private:
     bool                     sidebar_up_ = false;
     int                      playfield_w_ = 0;
     ra2engine::Camera        cam_;
+    ArtMaskCache art_masks_;   // W6-01-01 touch art pick
     ra2engine::Input         input_;
     // --- production / economy ---
     ra2engine::ProductionQueues queues_;

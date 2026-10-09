@@ -204,6 +204,15 @@
             if (b.state == ra2engine::Building::State::Idle) p.add("built(" + hs + "," + id + ")", 1);
         }
         p.set("selected_building", input_.selected_building());
+        {   // W6-01-01: the selected building's rules id ("" none)
+            const int sb = input_.selected_building();
+            const auto& bs = world_.buildings();
+            std::string sid;
+            if (sb >= 0 && sb < static_cast<int>(bs.size()) && bs[(size_t)sb].type >= 0 &&
+                bs[(size_t)sb].type < static_cast<int>(ba_.roster.size()))
+                sid = ba_.roster[(size_t)bs[(size_t)sb].type].id;
+            p.set_s("selected_building_type", sid);
+        }
         {   // own objects inside the playfield view (camera opens on the player?)
             int on = 0;
             auto vis = [&](double fx, double fy) {
@@ -318,6 +327,33 @@
                 const SDL_Rect r = touch_btn_rect(i);
                 p.targets[std::string("touch:") + touch_buttons()[static_cast<std::size_t>(i)].label] =
                     ra2play::Rect{r.x, r.y, r.w, r.h};
+            }
+        }
+        // W6-01-01: `art:<ID>` -- a point on the UPPER art of house 0's first
+        // building of that type (an opaque pixel of the drawn frame, one fifth
+        // down, nearest the frame's centre column): a tap there is a tap on
+        // the tower head / the lab dome, not on the foundation.
+        if (ba_.ok) {
+            for (int bi = 0; bi < static_cast<int>(world_.buildings().size()); ++bi) {
+                const ra2engine::Building& b = world_.buildings()[static_cast<std::size_t>(bi)];
+                if (b.house != 0 || !b.alive || b.state == ra2engine::Building::State::Dead) continue;
+                if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size())) continue;
+                const std::string key = "art:" + ba_.roster[static_cast<std::size_t>(b.type)].id;
+                if (p.targets.count(key)) continue;
+                const BuildingArt& art = ba_.art[static_cast<std::size_t>(b.type)];
+                if (!art.ok || art.shp.count() <= 0) continue;
+                const ra2assets::MapCell* mc = a_.map.at(b.cx, b.cy);
+                const ra2engine::ScreenPt dp = ra2engine::building_draw_point(b.cx, b.cy, mc ? mc->level : 0);
+                const ra2assets::ShpFile::Frame f = art.shp.frame_info(0);
+                const int x0 = dp.x + cam_.x - art.shp.width() / 2 + f.x, y0 = dp.y + cam_.y - art.shp.height() / 2 + f.y;
+                const int yy = y0 + f.h / 5;
+                for (int d = 0; d < f.w; ++d) {
+                    const int xx = x0 + f.w / 2 + ((d & 1) ? -(d + 1) / 2 : d / 2);
+                    if (input_.building_art_at(xx, yy) == bi) {
+                        p.targets[key] = ra2play::Rect{xx, yy, 1, 1};
+                        break;
+                    }
+                }
             }
         }
         if (touch_banner_visible()) {

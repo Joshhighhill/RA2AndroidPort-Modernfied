@@ -112,11 +112,25 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         return own ? Action::Sell : Action::NoSell;
     }
     const auto& us = world_.units();
-    const int idx = unit_under(px, py);
+    int idx = unit_under(px, py);
     int cx = 0, cy = 0;
     resolve_ground_cell(px, py, cx, cy);
-    const int b = world_.building_at_cell(cx, cy);
+    // W6-01-01: the object pick (touch: a building's drawn art first).
+    const int b_art = ev_touch_ ? building_art_at(px, py) : -1;
+    const int b = b_art >= 0 ? b_art : pick_building(px, py, false);
     const bool units_sel = any_own_selected();
+    // Touch [engine deviation, W6-01-01 / W6-01-06]: a finger has no cursor
+    // preview, so the generous selection box (kHitHalfW x kHitUp) only claims
+    // a tap that lands on nothing better. Outside a unit's BODY (the
+    // original's hotspot ellipse, unit_body_hit):
+    //   * a tap on a building's drawn art picks the building;
+    //   * with own units selected, a tap beside an own unit is a ground tap
+    //     (the order), not a re-select -- crowds have no gaps otherwise.
+    // Enemy units keep the generous box (attack orders stay easy to give).
+    if (ev_touch_ && idx >= 0 && !unit_body_hit(idx, px, py)) {
+        if (b_art >= 0) idx = -1;
+        else if (units_sel && !shift && world_.controllable(us[idx].house)) idx = -1;
+    }
 
     if (!units_sel) {
         if (idx >= 0 && world_.controllable(us[idx].house)) return shift ? Action::ToggleSelect : Action::Select;
@@ -229,9 +243,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         case Action::SelectBuilding:
         case Action::SetPrimary: {
-            int cx = 0, cy = 0;
-            resolve_ground_cell(px, py, cx, cy);
-            const int b = world_.building_at_cell(cx, cy);
+            const int b = pick_building(px, py, ev_touch_);   // W6-01-01
             if (b < 0) return;
             if (a == Action::SetPrimary || !is_unit_factory_type(world_.buildings()[b].type)) {
                 if (a == Action::SetPrimary) {
@@ -258,7 +270,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                 } else {
                     int cx = 0, cy = 0;
                     resolve_ground_cell(px, py, cx, cy);
-                    const int b = world_.building_at_cell(cx, cy);
+                    const int b = pick_building(px, py, ev_touch_);   // W6-01-01
                     world_.mark_player_order();   // W4-SQ
                     if (b >= 0) world_.order_attack_building(b);
                     else world_.order_attack_cell_selected(cx, cy);   // G16: ground
