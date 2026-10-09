@@ -58,6 +58,13 @@ key t
 click cell 97 92
 until 900 sel_moving == 0
 wait 60
+if units(0,E2) > 0 then click unit 0:E2:0
+if units(0,SENGINEER) > 0 then click unit 0:SENGINEER:0 shift
+key t
+key t
+click cell 99 95
+until 1500 sel_moving == 0
+wait 30
 if units(0,SENGINEER) > 0 then click unit 0:SENGINEER:0
 key t
 key t
@@ -100,6 +107,18 @@ click cameo:E2
 click cameo:E2
 click cameo:E2
 wait 1500
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click cell 66 85
+until 1800 sel_moving == 0
+wait 450
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click cell 50 84
+until 1800 sel_moving == 0
+wait 300
 if outcome == RUNNING and buildings(4,CAWA2A) > 0 and units(0,HTNK) > 0 then click unit 0:HTNK:0
 if outcome == RUNNING and buildings(4,CAWA2A) > 0 and units(0,E2) > carried(0) then click unit 0:E2:0 shift
 if outcome == RUNNING and buildings(4,CAWA2A) > 0 then key t
