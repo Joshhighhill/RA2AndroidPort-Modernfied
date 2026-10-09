@@ -6563,6 +6563,7 @@ public:
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
         draw_touch_bar(ren);      // W2-AR-08 (touch only)
+        draw_touch_aim(ren);           // W6-01-02 / -07 (touch only)
         draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
         draw_touch_hint(ren);          // W4-AM-01 (touch only)
         draw_touch_hold_ring(ren);     // W4-AM-07 (touch only)

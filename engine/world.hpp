@@ -1252,6 +1252,12 @@ public:
         an_.airfield_btype = airfield;
     }
     const SwParams& sw_params() const { return an_.sw; }
+    // W6-01-07: the resolved detonation CellSpread of `house`'s `type` (the
+    // touch target preview's radius; 0 when the house lacks it).
+    double sw_cell_spread(int house, SuperweaponType type) const {
+        const HouseSuperweapon* r = sw_rec(house, type);
+        return r ? r->eff_cell_spread : 0.0;
+    }
     const std::vector<SwStrike>& sw_strikes() const { return an_.strikes; }
     // The presentation feed (append-only, capped; read by sequence number).
     const std::vector<SwEvent>& sw_events() const { return an_.events; }
