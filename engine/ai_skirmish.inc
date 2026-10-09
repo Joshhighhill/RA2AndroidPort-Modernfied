@@ -160,6 +160,11 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
         acfg.ai.pick_wall_pct = at("AIPickWallDefensePercent", 0);
         // W6-03-04 [RE: FUN_006862d0 -> Rules+0x1178]: AIHateDelays=30,50,70 frames.
         acfg.hate_delay_frames = at("AIHateDelays", 0);
+        // W6-03-10 [RE: FUN_006862d0 @0x686492-0x6864B3 -- at the game start
+        // every computer house gets GiveMoney(ftol(Rules+0x1308[house+0x184]
+        // (MultiplayerAICM=400,0,0) * 0.01 * its money)) (FUN_004f9770 adds to
+        // house+0x30c)]: a Brutal AI starts with 5x the lobby money.
+        acfg.start_credits += (double)(int)((double)at("MultiplayerAICM", 0) * 0.01 * (double)(int)start_cash);
     }
     {   // W6-03-03 [RE: FUN_00522a80; loader FUN_0066cf70 -> Rules+0x1320]:
         // AIVirtualPurifiers=4,2,0 ;h,m,e -- the skirmish AI's harvest bonus.
