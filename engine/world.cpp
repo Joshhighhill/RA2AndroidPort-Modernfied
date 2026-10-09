@@ -324,8 +324,23 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house) 
 // a Value taken from each source entry's brightness (so the art's shading ramp
 // is preserved). Render-only; NEVER read by world_hash. Declared in
 // iso_renderer.hpp; defined here (SDL-free TU) so ra2assets_tests can call it.
+namespace {
+std::vector<std::array<int, 3>>& color_schemes() {
+    static std::vector<std::array<int, 3>> v;
+    return v;
+}
+}  // namespace
+void set_color_schemes(const std::vector<std::array<int, 3>>& hsv) { color_schemes() = hsv; }
+int color_scheme_count() { return static_cast<int>(color_schemes().size()); }
+
 ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_ix) {
     ra2assets::Palette out = unit_pal;
+    if (color_ix >= kColorSchemeBase) {   // W6-05-01: a rules [Colors] scheme
+        const auto& cs = color_schemes();
+        const int k = color_ix - kColorSchemeBase;
+        if (k >= static_cast<int>(cs.size())) return out;
+        return pal_for_hsv(unit_pal, cs[(std::size_t)k][0], cs[(std::size_t)k][1], cs[(std::size_t)k][2]);
+    }
     if (color_ix < 0 || color_ix > 7) return out;   // out of range -> unchanged
     // The 8 MP colors as RA2 HSV triples (hue/sat/val, each 0..255).
     static const int kHsv[8][3] = {

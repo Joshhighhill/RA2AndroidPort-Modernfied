@@ -17,6 +17,10 @@ until 450 built(0,GACNST) == 1
 cheat spawn SREF 0 building 0:GACNST -14 -6
 cheat spawn IVAN 1 building 0:GACNST -14 -4
 until 200 bombs >= 1 @R-046:C
+# W6-04-11: [AudioVisual] BombAttachSound once, BombTickingSound loop while armed.
+until 5 why(bomb_attach) >= 1 @W6-04-11
+assert snd(CrazyIvanAttack) >= 1 @W6-04-11
+assert why(bomb_ticking) >= 1 @W6-04-11
 cheat spawn ENGINEER 0 building 0:GACNST -12 -7
 wait 2
 click unit 0:ENGINEER

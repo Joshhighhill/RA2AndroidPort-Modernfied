@@ -39,6 +39,8 @@ struct PresLight {
     std::vector<ra2assets::Palette> level_pals;   // terrain palette per height 0..15
     std::vector<Src> srcs_;
     std::vector<LitCell> lit_;
+    struct PCell { int x = 0, y = 0, level = 0, drop = 0, lit = -1; };
+    std::vector<PCell> order_;   // W6-05-03 painter-ordered light-map cells
     uint64_t src_sig_ = 0;
     SDL_Texture* lmap_ = nullptr;      // the light map (freed with its renderer)
     SDL_Texture* xmap_ = nullptr;      // W5-PRES: the > 1.0 excess map (MUL)
@@ -183,7 +185,36 @@ struct PresLight {
             if (c.c[0] == base[0] && c.c[1] == base[1] && c.c[2] == base[2] && !c.e[0] && !c.e[1] && !c.e[2]) continue;
             lit_.push_back(c);
         }
+        build_order(map);
         std::cerr << "[light] sources=" << srcs_.size() << " lit-cells=" << lit_.size() << "\n";
+    }
+    // W6-05-03: the painter-ordered cell list the light map is drawn from.
+    // drop = levels down to the lowest front neighbour (the cliff/ramp face
+    // under this cell's diamond).
+    void build_order(const ra2assets::MapFile& map) {
+        order_.clear();
+        if (lit_.empty()) return;
+        std::unordered_map<long, int> lit_ix;
+        for (std::size_t i = 0; i < lit_.size(); ++i) lit_ix[static_cast<long>(lit_[i].y) * 4096 + lit_[i].x] = (int)i;
+        order_.reserve(map.cells().size());
+        for (const ra2assets::MapCell& mc : map.cells()) {
+            PCell c;
+            c.x = mc.x;
+            c.y = mc.y;
+            c.level = mc.level;
+            int lo = mc.level;
+            for (const auto& d : {std::pair<int, int>{1, 0}, {0, 1}, {1, 1}})
+                if (const ra2assets::MapCell* n = map.at(mc.x + d.first, mc.y + d.second)) lo = std::min<int>(lo, n->level);
+            c.drop = mc.level - lo;
+            auto it = lit_ix.find(static_cast<long>(mc.y) * 4096 + mc.x);
+            c.lit = it == lit_ix.end() ? -1 : it->second;
+            order_.push_back(c);
+        }
+        std::sort(order_.begin(), order_.end(), [](const PCell& a, const PCell& b) {
+            if (a.x + a.y != b.x + b.y) return a.x + a.y < b.x + b.y;
+            if (a.level != b.level) return a.level < b.level;
+            return a.x < b.x;
+        });
     }
 
     // Ambient*tint (and the light sources' cells) multiplied over the playfield.
@@ -234,18 +265,31 @@ struct PresLight {
             SDL_RenderClear(ren);
             std::vector<SDL_Vertex> v;
             std::vector<int> idx;
-            for (const LitCell& c : lit_) {
-                const ra2engine::ScreenPt p = ra2engine::cell_to_screen(c.x, c.y, c.level, 60, 30, 15);
+            // W6-05-03: every cell's light covers its tile as drawn, the
+            // diamond AND the cliff/ramp face below it (the face belongs to
+            // the higher cell's tile and takes that cell's light [RE: the
+            // tile blits through its own cell's LightConvert, FUN_00484090]).
+            // Each cell is a prism from its diamond down to its lowest front
+            // neighbour, painted back-to-front like the terrain (x+y, level,
+            // x), so a nearer cell owns the pixels it covers. Unlit cells
+            // paint the base colour so a lit face never bleeds over them.
+            const Uint8 bcol[3] = {bc[0], bc[1], bc[2]};
+            for (const PCell& pc : order_) {
+                const ra2engine::ScreenPt p = ra2engine::cell_to_screen(pc.x, pc.y, pc.level, 60, 30, 15);
                 const float x0 = static_cast<float>(p.x + cam.x), y0 = static_cast<float>(p.y + cam.y);
-                if (x0 + 60 < 0 || y0 + 30 < 0 || x0 > W || y0 > H) continue;
-                const Uint8* cc = m == 0 ? c.c : c.e;
+                const float dh = static_cast<float>(pc.drop * 15);
+                if (x0 + 60 < 0 || y0 + 30 + dh < 0 || x0 > W || y0 > H) continue;
+                const Uint8* cc = bcol;
+                if (pc.lit >= 0) cc = m == 0 ? lit_[(std::size_t)pc.lit].c : lit_[(std::size_t)pc.lit].e;
                 const SDL_Color col{cc[0], cc[1], cc[2], static_cast<Uint8>(m == 0 ? 255 : 0)};
                 const int b0 = static_cast<int>(v.size());
                 v.push_back({{x0 + 30, y0}, col, {0, 0}});
                 v.push_back({{x0 + 60, y0 + 15}, col, {0, 0}});
-                v.push_back({{x0 + 30, y0 + 30}, col, {0, 0}});
+                v.push_back({{x0 + 60, y0 + 15 + dh}, col, {0, 0}});
+                v.push_back({{x0 + 30, y0 + 30 + dh}, col, {0, 0}});
+                v.push_back({{x0, y0 + 15 + dh}, col, {0, 0}});
                 v.push_back({{x0, y0 + 15}, col, {0, 0}});
-                for (int k : {0, 1, 2, 0, 2, 3}) idx.push_back(b0 + k);
+                for (int k : {0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5}) idx.push_back(b0 + k);
             }
             if (!v.empty())
                 SDL_RenderGeometry(ren, nullptr, v.data(), static_cast<int>(v.size()), idx.data(),

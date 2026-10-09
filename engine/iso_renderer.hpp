@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -60,6 +61,14 @@ public:
     // recovered LandType source (the .tmp TerrainType byte was FALSIFIED).
     ra2assets::LandType land_type_of_cell(uint32_t global_index) const;
 
+    // W6-05-02 [RE: Init_Theater FUN_00519e70 registers the iso AND the theater
+    // art mix; a file opens from whichever registered MIX holds it]: archives
+    // searched after the iso mix, in order (warub*.urb lives in urban.mix,
+    // Ovrpsb*.tem in temperat.mix).
+    void add_fallback(ra2assets::MixFile mix) { fallbacks_.push_back(std::move(mix)); }
+    // Distinct tile file names that resolved nowhere (diagnostic).
+    int miss_count() const { return static_cast<int>(misses_.size()); }
+
     // W3-B [RE-Q6]: theater tile animations -- the set's SetName section of
     // the control INI lists Tile<NN>Anim / XOffset / YOffset / AttachesTo /
     // ZAdjust for template NN (temperat.ini [Waterfalls] WA01X..WD04X, the
@@ -81,6 +90,7 @@ private:
     std::string entry_name(const Slot& s) const;
 
     ra2assets::MixFile mix_;
+    std::vector<ra2assets::MixFile> fallbacks_;
     std::string ext_;
     std::vector<Slot> slots_;  // global index -> slot
     ra2assets::TileSetClass general_;  // [General] tile-set classification [RE: naval.md §2]
@@ -226,6 +236,14 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house);
 //   3 Magenta=221,102,255  4 Purple=201,201,189  5 DarkBlue=153,214,212
 //   6 DarkSky=131,200,230  7 DarkGreen=81,200,210
 ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_ix);
+// W6-05-01: the rules [Colors] ColorSchemes (HSV per entry, in INI order). A
+// house colour index >= kColorSchemeBase names entry (ix - kColorSchemeBase):
+// the campaign houses' map Color= [RE: HouseClass::ReadINI Color= -> a
+// ColorScheme index; the remap is ColorScheme 0x68C110 = pal_for_hsv]. Set once
+// by the campaign runtime before the first draw; render-only, NOT hashed.
+constexpr int kColorSchemeBase = 8;
+void set_color_schemes(const std::vector<std::array<int, 3>>& hsv);
+int color_scheme_count();
 // W3-B: the pal_for_color remap for an explicit RA2 HSV triple (0..255 each).
 ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s, int v);
 
@@ -258,6 +276,9 @@ const ObjTint* obj_tint();
 void blit_object(void* sdl_renderer, void* tex, const void* dst);
 ra2assets::Palette house_draw_palette(const ra2assets::Palette& base, int house);
 int house_draw_key(int house);
+// W6-05-10: cells of the current terrain draw list that have no tile image
+// (missing TMP / bad sub-tile) and are drawn as clear ground instead.
+int terrain_fallback_cells();
 
 // Draw a green isometric-diamond selection marker on the unit's tile
 // (at its interpolated fx/fy position). No-op if fully off-screen. Call
