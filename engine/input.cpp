@@ -14,6 +14,7 @@ namespace ra2engine {
 static constexpr int kTileW = 60;
 static constexpr int kTileH = 30;
 static constexpr int kLevelPx = 15;
+static constexpr int kMaxPickLevel = 18;   // R-210: highest standing height picked (Level 14 + a deck)
 
 // Selection hit box around a unit's on-screen ground point (its feet): about
 // half a tile to each side, most of a sprite height up, a little below.
@@ -143,6 +144,26 @@ int Input::unit_under(int px, int py) const {
 }
 
 void Input::resolve_ground_cell(int px, int py, int& cx, int& cy) const {
+    // R-210 [RE-FALLBACK: the TS-lineage click-cell calculation was not traced]:
+    // the visible surface under the pointer. Two cells project onto the same
+    // pixel when one stands k levels above the other k cells further forward
+    // (a cliff top over the river below it); the higher one is drawn in
+    // front. Scan the heights top-down and take the first cell whose own
+    // standing height (Level, + 4 on an intact high-bridge deck) is that
+    // height -- the front-most surface. The old two-pass inversion picked the
+    // river cell BEHIND a cliff edge, so a click on the edge ordered a drop.
+    for (int h = kMaxPickLevel; h >= 1; --h) {
+        int hx = 0, hy = 0;
+        screen_to_cell(px - cam_.x - kTileW / 2, py - cam_.y - kTileH / 2 + h * kLevelPx, kTileW, kTileH, hx, hy);
+        const ra2assets::MapCell* c = world_.map().at(hx, hy);
+        if (!c) continue;
+        const bool deck = world_.high_bridge_cell(hx, hy) && !world_.high_bridge_destroyed(hx, hy);
+        if (c->level == h || (deck && c->level + 4 == h)) {
+            cx = hx;
+            cy = hy;
+            return;
+        }
+    }
     // LEVEL-AWARE two-pass inversion, identical to the right-click move path
     // (see handle()'s PointerDown/Right branch for the full rationale). Pass 1
     // inverts at level 0; if the resolved cell's real terrain level > 0, add
