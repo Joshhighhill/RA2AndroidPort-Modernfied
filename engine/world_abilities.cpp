@@ -33,15 +33,6 @@ void bind_profile(Unit& u, const std::map<std::string, AbilityProfile>& profiles
 double bld_cx(const Building& b) { return b.cx + (b.fw - 1) / 2.0; }
 double bld_cy(const Building& b) { return b.cy + (b.fh - 1) / 2.0; }
 
-double nearest_foundation_leptons(const Building& b, double x, double y) {
-    double best = -1.0;
-    for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
-        const double d = std::hypot((c.x - x) * kAbilityLeptonsPerCell, (c.y - y) * kAbilityLeptonsPerCell);
-        if (best < 0.0 || d < best) best = d;
-    }
-    return best;
-}
-
 }  // namespace
 
 void World::register_ability_profile(const std::string& image, const AbilityProfile& p) {
@@ -228,39 +219,43 @@ void World::ability_damage_building(int b_idx, int dmg) {
     if (b.hp <= 0) kill_building(b);
 }
 
-// DamageArea (FUN_00489190) as the clone adjudicated it (combat.md §7 /
-// superweapon.md): radius = CellSpread*256 leptons, linear 100% -> PercentAtMax,
-// trunc, then the warhead Verses. ALL houses, units AND buildings (building
-// distance = nearest foundation cell); the source unit is excluded
-// [RE: abilities.md §Deviations 3].
+// W6-04-03 [RE: BombClass::Detonate 0x4386A0 -> DamageArea; FireDeathWeapon
+// FUN_0070CAC0 -> BulletClass::Detonate FUN_004690A0 -> DamageArea; both are
+// FUN_00489190, abilities.md §E/§F]: an ability blast (Ivan bomb, Terrorist /
+// Demo Truck / death weapons, the Desolator eruption) is the faithful
+// combat.cpp damage_area -- a building takes one hit per foundation cell in the
+// rings, Iron Curtain / AffectsAllies / veterancy armour / ProneDamage apply.
+// It used to be a 2-D linear falloff with one hit per building at its nearest
+// cell (an Ivan left a Battle Lab at 50/500). The blast centre is (cx, cy) in
+// cells at that cell's ground level; the source unit is excluded.
 void World::ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage) {
-    const double radius = w.cell_spread * kAbilityLeptonsPerCell;
-    for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
-        if (j == src_unit) continue;
-        const Unit& v = units_[j];
-        if (!on_map_alive(v) || v.is_aircraft) continue;
-        const double d = std::hypot((v.fx - cx) * kAbilityLeptonsPerCell, (v.fy - cy) * kAbilityLeptonsPerCell);
-        const double s = area_scale(d, radius, w.percent_at_max);
-        if (s < 0.0) continue;
-        const int dmg = damage_vs(ability_ftol(damage * s), w.verses, v.armor_ix);
-        if (dmg > 0) ability_damage_unit(j, dmg);
-    }
-    for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
-        const Building& bb = buildings_[b];
-        if (!bb.alive || bb.state == Building::State::Dead) continue;
-        const double d = nearest_foundation_leptons(bb, cx, cy);
-        const double s = area_scale(d, radius, w.percent_at_max);
-        if (s < 0.0) continue;
-        const int dmg = damage_vs(ability_ftol(damage * s), w.verses, bb.armor_ix);
-        if (dmg <= 0) continue;
-        if (w.delay_kill && bb.hp - dmg <= 0 && bb.iron_left <= 0.0 && bb.type >= 0 &&
-            bb.type < static_cast<int>(btypes().size()) &&
-            btypes()[static_cast<std::size_t>(bb.type)].w5.delay_kill_eligible) {
-            ability_delay_kill(b, w, d);
-            continue;
-        }
-        ability_damage_building(b, dmg);
-    }
+    Unit shooter;
+    shooter.alive = false;   // never a real unit
+    shooter.house = (src_unit >= 0 && src_unit < static_cast<int>(units_.size()))
+                        ? units_[static_cast<std::size_t>(src_unit)].house : -1;
+    shooter.w_damage = damage;
+    shooter.w_verses = w.verses;
+    shooter.w_cell_spread = w.cell_spread;
+    shooter.w_percent_at_max = w.percent_at_max;
+    shooter.w_affects_allies = w.affects_allies;
+    shooter.w_prone_damage = w.prone_damage;
+    shooter.w_inf_death = w.inf_death;
+    const int ix = ability_ftol(cx * kAbilityLeptonsPerCell);
+    const int iy = ability_ftol(cy * kAbilityLeptonsPerCell);
+    const int iz = cell_level(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) * 104;
+    // P4 [RE: FUN_00700DA0 @0x701327]: a lethal CausesDelayKill hit on an
+    // EligibleForDelayKill building starts the delay instead.
+    const AreaBuildingHook delay = [&](int b, int dmg, int dist) {
+        const Building& bb = buildings_[static_cast<std::size_t>(b)];
+        if (!(bb.hp - dmg <= 0 && bb.iron_left <= 0.0 && bb.type >= 0 &&
+              bb.type < static_cast<int>(btypes().size()) &&
+              btypes()[static_cast<std::size_t>(bb.type)].w5.delay_kill_eligible))
+            return false;
+        ability_delay_kill(b, w, static_cast<double>(dist));
+        return true;
+    };
+    damage_area(*this, units_, buildings_, occ_, shooter, src_unit, -1, ix, iy, iz,
+                w.delay_kill ? &delay : nullptr);
 }
 
 // P4 [RE: FUN_00700DA0 @0x701327..0x701403]: a lethal hit by a CausesDelayKill
@@ -516,6 +511,15 @@ void World::ability_death_pass() {
                 if (tw.explodes && tw.death.valid) {
                     any = true;
                     ability_area_damage(-1, bld_cx(bb), bld_cy(bb), tw.death, tw.death.damage);
+                    // W6-04-12 [RE: FireDeathWeapon detonates a real bullet,
+                    // BulletClass::Detonate FUN_004690A0]: a RadLevel death
+                    // weapon (the Nuclear Reactor's NukePayload, RadLevel 500)
+                    // leaves its fallout like a unit's (§F above).
+                    if (tw.death.rad_level > 0)
+                        rad_.detonate(static_cast<int>(std::lround(bld_cx(bb))),
+                                      static_cast<int>(std::lround(bld_cy(bb))),
+                                      ability_ftol(tw.death.cell_spread), tw.death.rad_level,
+                                      ability_frame_, ability_rules_);
                 }
             }
             if (bb.bomb_frame >= 0) {

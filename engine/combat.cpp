@@ -522,7 +522,8 @@ bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t) {
 
 AreaResult damage_area(const World& world, std::vector<Unit>& units,
                        std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
-                       int src_unit, int src_building, int ix, int iy, int iz) {
+                       int src_unit, int src_building, int ix, int iy, int iz,
+                       const AreaBuildingHook* building_hook) {
     AreaResult res;
     if (shooter.w_damage == 0) return res;
     const int radius = ftol_i(static_cast<float>(shooter.w_cell_spread) * 256.0f);   // local_80
@@ -629,6 +630,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                 int dmg = modify_damage(raw, shooter.w_verses, b.armor_ix, shooter.w_cell_spread,
                                         shooter.w_percent_at_max, d);
                 if (dmg < 1) dmg = 1;                    // FUN_005F4BA0: buildings floor at 1
+                if (building_hook && *building_hook && (*building_hook)(bi, dmg, d)) continue;
                 b.hp -= dmg;
                 res.damage += dmg;
                 if (b.hp <= 0) {

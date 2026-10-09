@@ -42,6 +42,11 @@ struct WeaponSpec {
     double delay_kill_at_max = 1.0;
     int burst = 1;                     // W6-04-01: weapon Burst= (+0x9C)
     bool omni_fire = false;            // W6-04-06: weapon OmniFire= (+0x12B)
+    // W6-04-03: the warhead keys the faithful DamageArea reads (ability blasts
+    // now go through it): AffectsAllies (+0x179), ProneDamage, InfDeath.
+    bool affects_allies = true;
+    double prone_damage = 1.0;
+    int inf_death = 0;
 };
 
 // Per-type ability profile, resolved once from rules by the caller (World is

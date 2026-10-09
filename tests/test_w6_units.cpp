@@ -99,3 +99,57 @@ TEST_CASE("w6units W6-04-06: OmniFire is read for every weapon slot (Aegis Medus
     activate_weapon_slot(u, 0, nullptr);
     CHECK_FALSE(u.w6.omni_fire);
 }
+
+namespace {
+UnitCombat w6mk(const char* image, int strength, const char* armor, int dmg, int rof, double range,
+                std::vector<int> verses, bool vehicle = false) {
+    UnitCombat c;
+    c.image = image;
+    c.strength = strength;
+    c.armor = armor;
+    c.damage = dmg;
+    c.rof = rof;
+    c.range = range;
+    c.verses = std::move(verses);
+    c.is_vehicle = vehicle;
+    return c;
+}
+bool w6_open_rect(const World& w, int W, int H, int& x0, int& y0) {
+    for (int y = 4; y + H < w.grid_h() - 4; ++y)
+        for (int x = 4; x + W < w.grid_w() - 4; ++x) {
+            bool ok = true;
+            for (int dy = 0; dy < H && ok; ++dy)
+                for (int dx = 0; dx < W && ok; ++dx)
+                    if (!w.walkable(x + dx, y + dy) || w.unit_at_cell(x + dx, y + dy) >= 0) ok = false;
+            if (ok && w.cell_level(x, y) == w.cell_level(x + W - 1, y + H - 1)) { x0 = x; y0 = y; return true; }
+        }
+    return false;
+}
+}  // namespace
+
+TEST_CASE("w6units W6-04-03: an Ivan bomb on a 2x2 building hits once per foundation cell (DamageArea)") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("no install"); return; }
+    World world(ra2fixture::mapsmd03_map());
+    int x0 = 0, y0 = 0;
+    REQUIRE(w6_open_rect(world, 12, 4, x0, y0));
+    AbilityProfile ip;
+    ip.fire_kind = AbilityKind::IvanBomb;
+    ip.infantry = true;
+    world.register_ability_profile("IVAN", ip);
+    const std::vector<int> all100 = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+    const int b = world.add_building(1, x0 + 6, y0, 2, 2, 1, 2000, armor_index("wood"), 0.0,
+                                     /*instant=*/true);
+    world.add_combat_unit(x0, y0, 0, w6mk("IVAN", 125, "none", 400, 50, 1.5, all100));
+    world.units()[0].target_building = b;
+    world.units()[0].attack_order = true;
+    int blast = -1;
+    for (int k = 0; k < 900 && blast < 0; ++k) {
+        world.step(1.0 / 15.0);
+        for (const World::AbilityEvent& e : world.take_ability_events())
+            if (e.kind == World::AbilityEvent::Kind::BombBlast) blast = k;
+    }
+    REQUIRE(blast >= 0);
+    // IvanWH 450, CellSpread 1.5 (384 lept), PercentAtMax .25, wood 100 %: the
+    // impact cell takes 450, the other three cells (181 lept) 290 each.
+    CHECK(world.buildings()[b].hp == 2000 - 450 - 3 * 290);
+}

@@ -8,6 +8,7 @@
 // Pure: no SDL/OS deps (same pattern as pathfind.hpp/occupancy.hpp), so it is
 // unit-testable and compiled into both ra2assets_tests and ra2engine from a
 // single source of truth (see CMakeLists.txt / cmake/ra2_sources.cmake).
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -173,9 +174,14 @@ struct AreaResult {
     int damage = 0;              // total HP removed (units + buildings)
     int first_unit = -1;         // lowest-index unit damaged (event victim)
 };
+// W6-04-03: `building_hook` (optional) sees every building hit before it is
+// applied -- (building index, damage, distance in leptons); returning true
+// means it handled the hit (the P4 CausesDelayKill rule of ability blasts).
+using AreaBuildingHook = std::function<bool(int, int, int)>;
 AreaResult damage_area(const World& world, std::vector<Unit>& units,
                        std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
-                       int src_unit, int src_building, int ix, int iy, int iz);
+                       int src_unit, int src_building, int ix, int iy, int iz,
+                       const AreaBuildingHook* building_hook = nullptr);
 
 // Lepton position of a unit for damage/aim: cell-centred fx/fy plus the
 // infantry sub-cell offset, z = level*104 + altitude when airborne.

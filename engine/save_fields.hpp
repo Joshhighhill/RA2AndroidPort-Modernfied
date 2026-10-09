@@ -637,6 +637,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.delay_kill); io(ar, v.delay_kill_frames); io(ar, v.delay_kill_at_max);   // P4 (v23)
     io(ar, v.burst);   // v25: W6-04-01
     io(ar, v.omni_fire);   // v25: W6-04-06
+    io(ar, v.affects_allies); io(ar, v.prone_damage); io(ar, v.inf_death);   // v25: W6-04-03
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);

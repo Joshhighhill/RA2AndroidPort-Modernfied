@@ -1115,6 +1115,9 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     s.verses = rules.verses(wh);
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
+    s.affects_allies = rules.section_flag(wh, "AffectsAllies", true);   // W6-04-03
+    s.prone_damage = ra2engine::warhead_prone_damage(rules, wh);
+    s.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));
     s.rad_level = static_cast<int>(rules.section_double(w, "RadLevel", 0.0));
     // P4 [RE: FUN_00700DA0 @0x701327]: warhead CausesDelayKill (+0x130),
     // DelayKillFrames (+0x134), DelayKillAtMax (+0x138).
@@ -1150,6 +1153,10 @@ ra2engine::AbilityProfile resolve_ability_profile(const Rules& rules, const Ini&
     p.explodes = ability_flag(ini, id, "Explodes", false);                  // §F +0xD15
     const std::string dw = ability_ini_str(ini, id, "DeathWeapon");          // §F +0xD18
     p.death = dw.empty() ? prim : resolve_weapon_spec(rules, ini, dw);
+    // W6-04-12 [RE: FireDeathWeapon FUN_0070CAC0 @0x70CB1B]: the death shot's
+    // damage is ftol(Damage * DeathWeaponDamageModifier) (+0xD1C, default 1).
+    if (p.death.valid)
+        p.death.damage = static_cast<int>(p.death.damage * rules.section_double(id, "DeathWeaponDamageModifier", 1.0));
     p.deployer = ability_flag(ini, id, "Deployer", false) &&
                  ability_flag(ini, id, "DeployFire", false);                // §A +0x6AC
     if (p.deployer) p.deploy = sec;
@@ -1194,6 +1201,9 @@ ra2engine::AbilityRules resolve_ability_rules(const Rules& rules, const Ini& ini
         r.ivan_warhead.verses = rules.verses(iwh);
         r.ivan_warhead.cell_spread = rules.section_double(iwh, "CellSpread", 1.5);
         r.ivan_warhead.percent_at_max = rules.section_double(iwh, "PercentAtMax", 0.25);
+        r.ivan_warhead.affects_allies = rules.section_flag(iwh, "AffectsAllies", true);   // W6-04-03
+        r.ivan_warhead.prone_damage = ra2engine::warhead_prone_damage(rules, iwh);
+        r.ivan_warhead.inf_death = static_cast<int>(rules.section_double(iwh, "InfDeath", 0.0));
     }
     r.ivan_warhead.damage = r.ivan_damage;
     return r;
@@ -1248,6 +1258,12 @@ void wire_building_deaths(ra2engine::World& world, BuildingAssets& ba, const Rul
         d.w5.delay_kill_eligible = ability_flag(ini, d.id, "EligibleForDelayKill", false);
         d.w5.death = d.w5.explodes ? resolve_weapon_spec(rules, ini, ability_ini_str(ini, d.id, "DeathWeapon"))
                                    : ra2engine::WeaponSpec{};
+        // W6-04-12 [RE: FireDeathWeapon FUN_0070CAC0 @0x70CB1B: damage =
+        // ftol(Weapon.Damage * Type.DeathWeaponDamageModifier (+0xD1C))]:
+        // [NANRCT] NukePayload 600 x 0.5 = 300.
+        if (d.w5.death.valid)
+            d.w5.death.damage = static_cast<int>(
+                d.w5.death.damage * rules.section_double(d.id, "DeathWeaponDamageModifier", 1.0));
         any = any || (d.w5.explodes && d.w5.death.valid);
     }
     world.refresh_building_types(ba.roster);
