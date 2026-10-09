@@ -149,6 +149,13 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
         const int c = ra2engine::difficulty_class_index(s.diff);
         acfg.team.harvesters_per_refinery = c < (int)v.size() ? std::atoi(v[(std::size_t)c].c_str()) : 1;
     }
+    {   // W6-03-03 [RE: FUN_00522a80; loader FUN_0066cf70 -> Rules+0x1320]:
+        // AIVirtualPurifiers=4,2,0 ;h,m,e -- the skirmish AI's harvest bonus.
+        const std::vector<std::string> v =
+            aiside::csv_tokens(rules.section_string("General", "AIVirtualPurifiers", ""));
+        const int c = ra2engine::difficulty_class_index(s.diff);
+        acfg.virtual_purifiers = c < (int)v.size() ? std::max(0, std::atoi(v[(std::size_t)c].c_str())) : 0;
+    }
     std::cerr << "[ai] slot side=" << (s.side == ra2engine::World::Side::Soviet ? "Soviet" : "Allied")
               << " country=" << country << " diff=" << (int)s.diff
               << " roster=" << acfg.team.unit_roster.size()

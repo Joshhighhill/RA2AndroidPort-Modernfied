@@ -688,6 +688,12 @@ struct AiHouseConfig {
     // (+0x24C, the map's [<House>] IQ=); skirmish AI houses get MaxIQLevels]:
     // false = this house never fires its superweapons by itself.
     bool fire_superweapons = true;
+    // W6-03-03 [RE: FUN_00522a80 / FUN_0073c560 @0x73D30B -- an unload adds
+    // n * PurifierBonus * value where n = own purifiers (house+0x538c) PLUS,
+    // for a computer house outside a campaign, Rules AIVirtualPurifiers
+    // [house+0x184] (Rules+0x1324; rulesmd 4,2,0 = h,m,e)]. 0 = none (the
+    // campaign and every synthetic gate config).
+    int virtual_purifiers = 0;
 };
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed

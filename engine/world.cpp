@@ -4684,6 +4684,13 @@ void World::step(double dt) {
                 ++purifiers[b.house];
                 any_purifier = true;
             }
+        // W6-03-03 [RE: FUN_00522a80]: + AIVirtualPurifiers for a computer
+        // house (0 outside skirmish -> the purifier vector is unchanged).
+        for (int h = 0; h < (int)ai_houses_.size() && h < (int)purifiers.size(); ++h)
+            if (ai_houses_[h].is_ai && ai_houses_[h].cfg.virtual_purifiers > 0) {
+                purifiers[h] += ai_houses_[h].cfg.virtual_purifiers;
+                any_purifier = true;
+            }
         const std::vector<double> before_harvest = house_credits_;   // W2-SK income witness
         step_harvest(units_, buildings_, types_, refinery_types_, ore_, passable_, grid_w_,
                     grid_h_, occ_, dt, OreValues{ore_value_ore_, ore_value_gems_},
