@@ -128,6 +128,10 @@ click unit 9:ENGINEER:0
 key t
 key t
 click cell 62 70
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+key t
+key t
+click cell 62 74
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 key t
 key t
@@ -143,7 +147,32 @@ if units(0,E1) > 0 then click unit 0:E1:0 soft
 key t
 key t
 click cell 60 76
-wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 dump
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
@@ -151,21 +180,135 @@ if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
 if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
 if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 dump
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
@@ -173,21 +316,135 @@ if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
 if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
 if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 dump
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
@@ -195,21 +452,135 @@ if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
 if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
 if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 dump
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
@@ -217,7 +588,45 @@ if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 62 74
-wait 150
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 dump
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
@@ -225,19 +634,343 @@ if units(0,E1) > 0 then click unit 0:E1:0 shift soft
 key t
 key t
 click cell 25 87
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
 click unit 9:ENGINEER:0
 key t
 key t
 click cell 27 85
-wait 200
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+click cell 25 87
 dump
-wait 200
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+click cell 25 87
 dump
-wait 200
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+click cell 25 87
 dump
-wait 200
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+click cell 25 87
 dump
-wait 200
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+key t
+key t
+if sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+if sel_near(1,SHK) < 7 then click unit 1:SHK:near soft
+if sel_near(1,E2) < 7 then click unit 1:E2:near soft
+if sel_near(1,DOG) < 7 then click unit 1:DOG:near soft
+wait 50
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift soft
+if units(0,E1) > 0 then click unit 0:E1:0 shift soft
+key t
+key t
+click cell 25 87
 dump
 click unit 9:ENGINEER:0
 click building 5:CAAIRP:0

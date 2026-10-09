@@ -8,6 +8,28 @@ The question here is not "can the trigger chain reach Win" (wave 2 proved that w
 out the way the map's own triggers, teams and scripts intend": intro sequences, enemy waves, AI-vs-AI set pieces,
 reinforcement arrivals, objectives and end sequences.
 
+## FV-B status (final-verify cleanup B, branch `fv-b`: ALL09 opening, ALL10, ALL06)
+
+The three real-order scripts that failed the final verify on 961a748, re-run on the merged build (master with
+fv-a's step-(d) return-to-anchor). Real player orders only.
+
+| Script | Result | Cause | Change |
+|---|---|---|---|
+| `m-all09-opening` | **PASS** (Normal), airport captured f5086, 27 GIs at f17330, `play_hash=59855eec9b5541a9` | **Engine bug.** An idle computer engineer (house 3) scanned its GuardRange and "shot" the captured Tech Airport with the DefuseKit, 1 HP per shot (800 HP -> 0 by f12000). | Engine fix (below). Once engineers stopped drawing fire, the POW-check teams (Shock Trooper, Flak Tracks, Conscripts) wiped the village (LOST at f~2300): `gen/mk_all09.py` regroups the SEALs at the hold point when the Hack engineers land, Grizzlies/infantry micro on the teams within 8/7 cells while holding (`hold_micro`), and the engineers follow the army to the airport 150 frames later (with the tanks two were run over, ahead of them all five were shot). |
+| `m-all10-real` | **WON** (Normal), f21171, `play_hash=11488d3ac8fa19af` (Easy `A10VAR={"diff": 0}` also wins, f15330) | No engine bug: R3's hold-at-range. The invasion (V3s, Conscripts, Flak Tracks, Rhinos) stops at weapon range and razes the base from outside the idle defenders' reach (power first; LOST f7494), and a lone assault-squad Conscript shoots Einstein's lab (`Loss Einstein KIA`) from (95,175), in shroud, outside the GI guard radius at (101,168). | `gen/mk_all10.py`: the start Grizzlies/Mirage tanks stage in the base (110,122) and hunt invaders within 22 cells (V3s first) while the base is built (`build_h` polls) and the army trained; the lab guard stands at (97,170) and hunts invaders within 12 cells between every sweep target and regroup wait. |
+| `m-all06-real` | **WON** (Easy, as since R1), f43630, `play_hash=797fb1f116df0a7d` | No engine bug found: with R3/R-210/fv-a the 70-Grizzly sweep died at BadGuy1's Tesla/Sentry line to Shock Troopers and Rhinos (80 -> 15) and the run ended RUNNING at f83054 with ~50k credits unspent. | `gen/mk_all06.py`: mass 70 before BadGuy2 and 90 before BadGuy1; each sweep step re-targets Rhinos/Shock Troopers within 9 cells before the next structure. |
+
+Engine fix (commit `dad73d3`): **a BombDisarm weapon only fires at an object carrying an Ivan bomb** [RE:
+TechnoClass::GetFireError FUN_006FB5D0 -- `Weapon->Warhead->BombDisarm (+0x16E) && Target->AttachedBomb (+0x38) == 0`
+-> FireError ILLEGAL, on the weapon already selected]. WarheadType `BombDisarm=` is read into WeaponSlot /
+UnitTypeW6; `unit_weapon_for_unit` / `unit_weapon_for_building` return -1 for it against an unbombed target.
+Save **v31**; `--demo-saveload` re-pinned (A/B proof in README). capture, abilities, triggers, campaign, combat,
+tank, skirmish, ai-team, ai-trigger, ai-base print their pins. `m-all01`, `m-sov01` PASS.
+
+Open (not changed, not RE'd): in ALL09 a Grizzly ran over two **allied** (house 9, Hack) engineers -- the crush
+path tests `v.house != u.house`, not the alliance (`world.cpp` crush branch, RE-W6 open). If the original spares
+allied infantry this is a bug; the script avoids it.
+
 ## R3 status (mission-win agent R3, branch `w6r3`: SOV09 + SOV08)
 
 Real orders only (no `camp_*`/kill/reveal/spawn cheats), Easy (slider 0: the player reloads x0.8, every computer

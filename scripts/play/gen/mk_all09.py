@@ -64,26 +64,66 @@ dump("p1")
 # P2: the Hack engineers step back; the Grizzlies crush out and open the POW camp
 p.add("until 2000 units(9,ENGINEER) >= 5 and carried(9) == 0",
       "click unit 9:ENGINEER:0", "key t", "key t", f"click cell {ENG[0]} {ENG[1]}")
+# fv-b: the SEALs come back to the hold point from the south-west edge, where the
+# last guard fell, before the first POW-check team (Shock Trooper + Flak
+# Tracks) arrives there; left out alone all five die at (52,90).
+SEAL_BACK = VAR.get("seal_back", HOLD)
+if SEAL_BACK:
+    sel(["GHOST"])
+    p.add(f"click cell {SEAL_BACK[0]} {SEAL_BACK[1]}")
+MICRO = VAR.get("micro", 1)
+
+
+def hold_micro(frames, step=50):
+    """fv-b: while waiting, the Grizzlies take on the Flak Tracks / Rhinos that
+    come within 8 cells and the infantry (SEALs, GIs) the Soviet infantry
+    within 7 -- a player answering the POW-check teams. Without it the Flak
+    Track's ground gun kills the idle GIs one by one (W6 guard-range scan)."""
+    if not MICRO:
+        p.add(f"wait {frames}")
+        return
+    for _ in range(max(1, frames // step)):
+        for types, targets, r in ((["MTNK"], ["HTK", "HTNK"], 8), (["GHOST", "E1"], ["SHK", "E2", "DOG"], 7)):
+            first = True
+            for t in types:
+                p.add(f"if units(0,{t}) > 0 then click unit 0:{t}:0{'' if first else ' shift'} soft")
+                first = False
+            p.add("key t", "key t")
+            for t in targets:
+                c = f"sel_near(1,{t}) < {r}"
+                p.add(f"if {c} then click unit 1:{t}:near soft")
+        p.add(f"wait {step}")
+
+
 sel(["MTNK"])
 p.add("click cell 62 74", "wait 200", "click unit 0:MTNK:0", "click cell 66 80", "wait 150",
       "click unit 0:MTNK:0", "click cell 63 76", "wait 60")
 sel(["E1"])
-p.add("click cell 60 76", "wait 100")
+p.add("click cell 60 76")
+hold_micro(100)
 dump("p2")
 # P3: hold the village against the POW-check teams and the flak patrol
 for k in range(10):
     sel(ARMY)
-    p.add(f"click cell {HOLD[0]} {HOLD[1]}", "wait 150")
+    p.add(f"click cell {HOLD[0]} {HOLD[1]}")
+    hold_micro(150)
     if k % 3 == 2:
         dump()
 dump("p3")
 if STOP >= 4:
     # P4: everyone to the Tech Airport; one engineer captures it (ParaDrop)
+    # fv-b: the army leaves first and fights its way (micro) past the
+    # conscripts at (51,82); the engineers follow ENG_DELAY frames later
+    # (walking with the tanks, two were run over at (59,71); walking ahead,
+    # all five were shot at (47..36,81..94)).
     sel(ARMY)
     p.add("click cell 25 87")
+    hold_micro(VAR.get("eng_delay", 150))
     p.add("click unit 9:ENGINEER:0", "key t", "key t", "click cell 27 85")
     for k in range(5):
-        p.add("wait 200")
+        hold_micro(200)
+        sel(ARMY)
+        p.add("click cell 25 87")
         dump()
     p.add("click unit 9:ENGINEER:0", "click building 5:CAAIRP:0", "until 900 buildings(0,CAAIRP) >= 1")
     dump("p4")

@@ -524,6 +524,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.burst);   // v25: W6-04-01
     io(ar, v.sonic);   // v25: W6-04-09
+    io(ar, v.bomb_disarm);   // v31: warhead BombDisarm=
     io(ar, v.wall_flags);   // v25: W6-04-04
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
     io(ar, v.min_range);   // v25: W6-04-22
@@ -762,6 +763,7 @@ template <class Ar> void fields(Ar& ar, UnitW5& v) {
 // --- wave-6 #4 units/weapons (unit_w6.hpp), save v25 ---
 template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
     io(ar, v.burst); io(ar, v.omni_fire); io(ar, v.sonic);   // W6-04-09
+    io(ar, v.bomb_disarm);   // v31: the primary warhead's BombDisarm=
     io(ar, v.open_transport_weapon); io(ar, v.air_range_bonus); io(ar, v.deployed_crushable);   // W6-04-15/16/29
     io(ar, v.can_approach_target);   // W6-04-30
     io(ar, v.omni_crusher); io(ar, v.omni_crush_resistant);   // W6-04-14

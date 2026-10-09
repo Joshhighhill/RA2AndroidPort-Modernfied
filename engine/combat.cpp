@@ -901,7 +901,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 const int b_idx = u.target_building;
                 // Gap fix C: the slot that can hit this structure's armor (a
                 // pure-AA weapon or a 0 % Verses warhead cannot) [weapons.md §2].
-                const int ws = unit_weapon_for_building(u, b->armor_ix);
+                const int ws = unit_weapon_for_building(u, b->armor_ix, b->bomb_frame >= 0);
                 if (ws < 0 && !u.abil.c4 && u.abil.fire_kind == AbilityKind::None) {
                     u.target_building = -1;
                     u.attack_order = false;
@@ -1214,7 +1214,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         if (!world.is_enemy(u.house, b.house)) continue;
                         if (!world.legal_threat_building(u.house, b)) continue;   // W6-02-07/08
                         if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
-                        const int ws = unit_weapon_for_building(u, b.armor_ix);
+                        const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0);
                         if (ws < 0) continue;
                         const double rng = slot_range(u, ws) * kLeptonsPerCell;
                         for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
