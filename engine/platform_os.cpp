@@ -1,4 +1,5 @@
 #include "platform_os.hpp"
+#include <atomic>
 
 #ifdef __ANDROID__
 #include <SDL.h>
@@ -116,4 +117,18 @@ bool os_android_open_importer() { return false; }
 #endif
 #endif
 
+// W6-01-10: see platform_os.hpp.
+static std::atomic<bool> g_keep_autosave{false};
+void os_set_keep_autosave(bool keep) { g_keep_autosave = keep; }
+bool os_keep_autosave() { return g_keep_autosave; }
+
 }  // namespace ra2engine
+
+#ifdef __ANDROID__
+// W6-01-10: RA2Activity.onDestroy() while !isFinishing() (called on the UI
+// thread before SDL joins the engine thread, so the scene teardown sees it).
+extern "C" JNIEXPORT void JNICALL Java_org_ra2_engine_RA2Activity_nativeKeepAutosave(JNIEnv*, jclass) {
+    ra2engine::os_set_keep_autosave(true);
+    SDL_Log("[lifecycle] activity destroyed without finishing: the autosave is kept");
+}
+#endif

@@ -198,27 +198,40 @@ private:
                                          ? gf_default_country(cfg_.slots[(std::size_t)h].side)
                                          : cfg_.slots[(std::size_t)h].country)
                                   : std::string("Computer");
-            if (campaign_ && h < (int)campaign_->house_names().size())   // W5-E: the map's house
-                who = campaign_->house_names()[(std::size_t)h];
             const std::string lbl = camp::csf_text(dir_, "Name:" + who);
             s.rows[(std::size_t)h].name = lbl.rfind("Name:", 0) == 0 ? who : lbl;
+            if (campaign_) {
+                // W6-06-08: the map's houses are INI ids ("Player House",
+                // "BadGuy1 House") the original never shows; name the row by
+                // the house's side (GUI:Allies / GUI:Soviets).
+                using Sd = ra2engine::World::Side;
+                const Sd sd = world_.house_side(h);
+                s.rows[(std::size_t)h].name = sd == Sd::Allied   ? gf_csf("GUI:Allies", "Allies")
+                                              : sd == Sd::Soviet ? gf_csf("GUI:Soviets", "Soviets")
+                                              : sd == Sd::Yuri   ? std::string("Yuri")
+                                                                 : std::string("Neutral");
+            }
             // Only the lobby's playing slots are listed (not the neutral house).
             s.rows[(std::size_t)h].listed = cfg_.slots.empty() || cfg_.slots[(std::size_t)h].combatant;
         }
         auto killer_house = [&](int ui) {
             return (ui >= 0 && ui < (int)world_.units().size()) ? world_.units()[(std::size_t)ui].house : -1;
         };
-        for (const ra2engine::Unit& u : world_.units()) {
+        // W6-06-08: in a campaign the map's own objects were not built.
+        const std::size_t built_u0 = campaign_ ? map_units_ : 0, built_b0 = campaign_ ? map_buildings_ : 0;
+        for (std::size_t ui = 0; ui < world_.units().size(); ++ui) {
+            const ra2engine::Unit& u = world_.units()[ui];
             if (u.deployed_away || u.house < 0 || u.house >= n) continue;
-            ++s.rows[(std::size_t)u.house].built;
+            if (ui >= built_u0) ++s.rows[(std::size_t)u.house].built;
             if (u.alive && u.die_time < 0.0) continue;
             ++s.rows[(std::size_t)u.house].losses;
             const int k = killer_house(u.vet.killed_by);
             if (k >= 0 && k < n && k != u.house) ++s.rows[(std::size_t)k].kills;
         }
-        for (const ra2engine::Building& b : world_.buildings()) {
+        for (std::size_t bi = 0; bi < world_.buildings().size(); ++bi) {
+            const ra2engine::Building& b = world_.buildings()[bi];
             if (b.house < 0 || b.house >= n) continue;
-            ++s.rows[(std::size_t)b.house].built;
+            if (bi >= built_b0) ++s.rows[(std::size_t)b.house].built;
             if ((b.alive && b.state != ra2engine::Building::State::Dead) || b.sold) continue;
             ++s.rows[(std::size_t)b.house].losses;
             const int k = killer_house(b.killed_by);

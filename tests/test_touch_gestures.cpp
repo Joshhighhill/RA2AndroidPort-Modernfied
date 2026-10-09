@@ -32,17 +32,17 @@ TEST_CASE("touch: a tap is ONE left click (no synthetic duplicate)") {
 TEST_CASE("touch: a hold fires on the lift as a right click marked hold (W4-AM-07)") {
     TouchGestures g;
     g.finger_down(1, 50, 60, 1000);
-    g.tick(1500);                        // 500 ms: still a tap (old threshold)
+    g.tick(1400);                        // 400 ms: still a tap
     CHECK_FALSE(g.pending());
     int hx = 0, hy = 0;
     float pr = 0.0f;
-    CHECK(g.hold_feedback(1500, hx, hy, pr));   // ring shown after 150 ms
+    CHECK(g.hold_feedback(1400, hx, hy, pr));   // ring shown after 150 ms
     CHECK(hx == 50);
     CHECK(pr > 0.0f);
     CHECK(pr < 1.0f);
-    g.tick(1600);                        // 600 ms: held, nothing emitted yet
+    g.tick(1450);                        // 450 ms (W6-01-11): held, nothing emitted yet
     CHECK_FALSE(g.pending());
-    CHECK(g.hold_feedback(1600, hx, hy, pr));
+    CHECK(g.hold_feedback(1450, hx, hy, pr));
     CHECK(pr == doctest::Approx(1.0f));
     g.finger_up(1, 50, 60, 1700);
     auto v = drain(g);
@@ -52,10 +52,10 @@ TEST_CASE("touch: a hold fires on the lift as a right click marked hold (W4-AM-0
     CHECK(v[2].button == InputEvent::Right);
     CHECK(v[2].hold);
 
-    TouchGestures s;                     // a 550 ms slow tap is a TAP
+    TouchGestures s;                     // a 400 ms slow tap is a TAP
     s.finger_down(1, 50, 60, 1000);
-    s.tick(1550);
-    s.finger_up(1, 50, 60, 1550);
+    s.tick(1400);
+    s.finger_up(1, 50, 60, 1400);
     v = drain(s);
     REQUIRE(v.size() == 3);
     CHECK(v[1].button == InputEvent::Left);
@@ -83,6 +83,38 @@ TEST_CASE("touch: one-finger drag PANS the map (W4-AM-01)") {
     }
     CHECK(dx == 100);   // the map follows the finger from the touch-down point
     CHECK(dy == 80);
+}
+
+TEST_CASE("touch: BOX mode -- a one-finger drag is a band box at once (W6-01-11)") {
+    TouchGestures::set_box_mode(true);
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_move(1, 105, 105, 1010);   // within slop: nothing yet
+    CHECK_FALSE(g.pending());
+    g.finger_move(1, 160, 140, 1020);
+    g.finger_move(1, 200, 180, 1030);
+    g.finger_up(1, 200, 180, 1040);
+    TouchGestures::set_box_mode(false);
+    const auto v = drain(g);
+    REQUIRE(v.size() == 5);
+    CHECK(v[1].kind == InputEvent::PointerDown);
+    CHECK(v[1].button == InputEvent::Left);
+    CHECK(v[1].x == 100);
+    CHECK(v[1].y == 100);
+    CHECK(v[3].kind == InputEvent::PointerMove);
+    CHECK(v[3].x == 200);
+    CHECK(v[4].kind == InputEvent::PointerUp);
+    for (const auto& e : v) CHECK(e.kind != InputEvent::Pan);
+    // two fingers still scroll in BOX mode
+    TouchGestures::set_box_mode(true);
+    TouchGestures t;
+    t.finger_down(1, 100, 100, 1000);
+    t.finger_down(2, 200, 100, 1010);
+    t.finger_move(1, 130, 120, 1020);
+    TouchGestures::set_box_mode(false);
+    const auto w = drain(t);
+    REQUIRE_FALSE(w.empty());
+    CHECK(w[0].kind == InputEvent::Pan);
 }
 
 TEST_CASE("touch: hold then drag is a left band box from the hold point") {

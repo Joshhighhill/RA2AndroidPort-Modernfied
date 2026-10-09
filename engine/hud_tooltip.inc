@@ -111,6 +111,14 @@
         if (t.empty()) return;
         int px = mx_, py = my_;
         float pr = 0.0f;
-        if (!mouse_present_ && g_platform) g_platform->touch_hold(px, py, pr);
+        if (!mouse_present_ && g_platform && g_platform->touch_hold(px, py, pr)) {
+            // W6-01-04 [engine affordance, touch]: the box sits ABOVE and left
+            // of the finger (a thumb covers everything below the touch point),
+            // at the touch text scale.
+            const double sc = hud_touch_scale();
+            const int h = static_cast<int>((hud_text_height(t) + 6) * sc);
+            draw_tooltip_box(ren, tc, t, px, std::max(0, py - 44 - h), kWinW, kWinH, /*left_of_pointer=*/true, sc);
+            return;
+        }
         draw_tooltip_box(ren, tc, t, px, py, kWinW, kWinH, /*left_of_pointer=*/lay_.contains(px, py));
     }

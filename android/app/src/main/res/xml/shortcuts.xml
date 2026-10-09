@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- W6-06-05: long-press the app icon -> "Import game files": the importer
+     at any time (add Maps01.mix / theme.mix / patches / movies later, or
+     replace the files) without clearing the app's data. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="import"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_import_short"
+        android:shortcutLongLabel="@string/shortcut_import_long">
+        <intent
+            android:action="org.ra2.engine.action.IMPORT"
+            android:targetPackage="org.ra2.engine"
+            android:targetClass="org.ra2.engine.SetupActivity" />
+    </shortcut>
+</shortcuts>

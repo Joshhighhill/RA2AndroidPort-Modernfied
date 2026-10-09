@@ -21,7 +21,7 @@ struct AiSoakProbe {
     static const BuildingAssets& ba(GameScene& g) { return g.ba_; }
 
     static int run(int argc, char** argv) {
-        int minutes = 15, damage_ai_at = -1, kill_cy_at = -1;
+        int minutes = 15, damage_ai_at = -1, kill_cy_at = -1, ruin_at = -1;
         double cash = -1.0;   // W2-AN: --cash N
         ra2engine::AiDifficulty diff = ra2engine::AiDifficulty::Normal;
         bool ai_allied = false, ai_vs_ai = false;
@@ -42,6 +42,7 @@ struct AiSoakProbe {
             else if (a == "--ai-vs-ai") ai_vs_ai = true;   // house 0 is an AI too
             else if (a == "--kill-ai-conyard-at") kill_cy_at = std::atoi(next().c_str());   // W2-SK-07 probe
             else if (a == "--cash") cash = std::atof(next().c_str());
+            else if (a == "--ruin-ai-at") ruin_at = std::atoi(next().c_str());   // W6-03-08 probe
         }
         const std::string dir = env_install_dir();
         Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -99,6 +100,28 @@ struct AiSoakProbe {
                         w.campaign_damage_building(bi, b.hp + 1);
                 }
                 std::cout << "[ai-soak] probe: AI ConYard destroyed at min " << kill_cy_at << "\n";
+            }
+            if (ruin_at >= 0 && f == (long long)ruin_at * 900) {   // W6-03-08: wreck the AI economy
+                int nb = 0, nu = 0;
+                for (int bi = 0; bi < (int)w.buildings().size(); ++bi) {
+                    const ra2engine::Building& b = w.buildings()[(std::size_t)bi];
+                    if (b.alive && b.house == ai && b.state != ra2engine::Building::State::Dead && b.type >= 0 &&
+                        b.type < (int)b_a.roster.size() &&
+                        (b_a.roster[b.type].id == "NAREFN" || b_a.roster[b.type].id == "GAREFN")) {
+                        w.campaign_damage_building(bi, b.hp + 1);
+                        ++nb;
+                    }
+                }
+                for (int ui = 0; ui < (int)w.units().size(); ++ui) {
+                    const ra2engine::Unit& u = w.units()[(std::size_t)ui];
+                    if (u.alive && u.die_time < 0.0 && u.house == ai && u.is_harvester) {
+                        w.campaign_damage_unit(ui, u.hp + 1);
+                        ++nu;
+                    }
+                }
+                w.ai_set_credits_for_test(ai, 300.0);
+                std::cout << "[ai-soak] probe: AI economy ruined at min " << ruin_at << " refineries=" << nb
+                          << " miners=" << nu << " credits=300" << std::endl;
             }
             bool ready_before = false;
             for (ra2engine::SuperweaponType t : w.sw_types(ai)) ready_before |= w.sw_ready(ai, t);

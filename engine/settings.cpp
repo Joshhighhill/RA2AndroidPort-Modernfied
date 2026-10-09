@@ -219,6 +219,10 @@ float rd_vol(const IniDoc& d, const char* s, const char* k, float def) {
     // Stored as a float (fld/fst of a float member) and clamped by
     // `if (1.0 <= v) v = 1.0` -- no lower clamp (FUN_005d8b00).
     float f = v ? static_cast<float>(ww_parse_double(*v, def)) : def;
+    // W6-06-12: a non-finite value ("nan", "inf") would reach the mixer as
+    // its gain; MSVC6's atof gives 0 for "nan" and the clamp maps +inf to 1,
+    // but a NaN passes both compares. Reject it: the default.
+    if (!std::isfinite(f)) f = def;
     if (f >= 1.0f) f = 1.0f;
     return f;
 }

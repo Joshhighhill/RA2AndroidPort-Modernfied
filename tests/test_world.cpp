@@ -1675,6 +1675,49 @@ TEST_CASE("World: step_ai_houses firewall - no AI house means a byte-identical s
     CHECK(world.units().size() == nu);
 }
 
+// W6-03-04 [RE: FUN_005045b0 / FUN_004fd320 / FUN_004f9990]: the Enemy is
+// the living, non-allied house with the highest anger; the AIHateDelays seed
+// adds 1 toward the nearest house; MakeAlly clears the anger toward the ally.
+TEST_CASE("World: W6-03-04 AI enemy is the arg-max of anger (seed, damage, alliance)") {
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2engine::World world(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    for (int h = 0; h < 3; ++h) {
+        ra2engine::World::HouseRec r;
+        r.side = h == 1 ? ra2engine::World::Side::Soviet : ra2engine::World::Side::Allied;
+        r.color_ix = h;
+        world.set_house(h, r);
+    }
+    ra2engine::AiHouseConfig cfg;   // no catalog: the AI plans nothing
+    cfg.hate_delay_frames = 30;
+    // House 1 (AI) at the start cell; house 0 near, house 2 far.
+    world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+    world.add_building(0, c->x + 4, c->y, 1, 1, /*house=*/0, 100, 0, 0.0, true);
+    world.add_building(0, c->x + 20, c->y + 20, 1, 1, /*house=*/2, 100, 0, 0.0, true);
+    world.enable_ai_house(1, cfg);
+    CHECK(world.ai_enemy_house(1) == -1);
+    // The hate-delay seed: within the first AI ticks the nearest house gets 1.
+    for (int i = 0; i < 240 && world.ai_enemy_house(1) < 0; ++i) world.step(1.0 / 15.0);
+    CHECK(world.ai_enemy_house(1) == 0);
+    CHECK(world.ai_anger(1, 0) >= 1);
+    // Damage anger toward house 2 outweighs the seed -> the Enemy switches.
+    world.ai_add_anger(1, 2, 50);
+    CHECK(world.ai_enemy_house(1) == 2);
+    // Self is never the Enemy, whatever its anger.
+    world.ai_add_anger(1, 1, 1000);
+    CHECK(world.ai_enemy_house(1) == 2);
+    // Allying with house 2 clears that anger (MakeAlly) -> back to house 0.
+    world.set_pair_alliance(1, 2, true);
+    CHECK(world.ai_anger(1, 2) == 0);
+    CHECK(world.ai_enemy_house(1) == 0);
+    // Breaking the alliance (MakeEnemy) adds 1 -- below house 0's anger.
+    world.set_pair_alliance(1, 2, false);
+    CHECK(world.ai_anger(1, 2) == 1);
+    CHECK(world.ai_enemy_house(1) == 0);
+}
+
 TEST_CASE("World: an AI house builds out through the EXISTING queue+placement machinery") {
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) { MESSAGE("skipped: real map assets not found"); return; }

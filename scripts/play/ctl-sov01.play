@@ -33,7 +33,17 @@ assert sel_moving >= 1                        @W4-MC-07
 wait 45
 
 # --- the same by touch: one-finger scroll, tap-select, tap-move ---------------------
-touch tap unit 0:E2:near onscreen                  @W4-MC-07
+# W6-01-06: a tap on a unit of a selected army is an order, so deselect first
+# (two-finger tap) to make the next tap a select.
+# (`:near` needs a selection: tap a conscript before the deselect, which with
+# the army selected is an order to its cell, then deselect and select it.)
+touch tap unit 0:E2:near onscreen                  @W6-01-06
+wait 1
+assert selected == $n                         @W6-01-06
+touch pan2 xy 400 300 400 300
+wait 1
+assert selected == 0
+touch tap unit 0:E2                                @W4-MC-07
 wait 1
 assert selected == 1
 touch tap unit 0:E2:near -2 +2 onscreen            @W4-MC-07

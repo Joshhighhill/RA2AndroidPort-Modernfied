@@ -310,7 +310,9 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int dmg = damage_vs(static_cast<int>(damage * scale), vv, w.armor_ix);
+        const int hp0 = w.hp;
         an_damage_unit(j, dmg, -1);
+        feed_damage(false, j, house, hp0 - units_[j].hp);   // W6-03-04 anger
     }
     for (int bi = 0; bi < static_cast<int>(buildings_.size()); ++bi) {
         const Building& b = buildings_[bi];
@@ -324,7 +326,9 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (z > 0.0 && d >= 0.0) d = std::hypot(d, z);   // W4: 3-D (see above)
         if (d < 0.0 || d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
+        const int hp0 = b.hp;
         an_damage_building(bi, damage_vs(static_cast<int>(damage * scale), vv, b.armor_ix));
+        feed_damage(true, bi, house, hp0 - buildings_[bi].hp);   // W6-03-04 anger
     }
 }
 

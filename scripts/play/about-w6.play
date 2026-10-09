@@ -1,0 +1,17 @@
+# about-w6 -- W6-06-16: Options > About shows the version, the disclaimer,
+# the licence (placeholder line until decision U-3) and the embedded
+# THIRD_PARTY_NOTICES.md (SDL zlib licence, stb_image_write MIT notice, ...).
+set render_every 1
+set on_quit continue
+click button Options
+until 30 scene == "shell:Options"
+click button About
+until 30 scene == about                                  @W6-06-16
+wait 2
+assert about_lines > 60                                  @W6-06-16
+assert about_has_sdl == 1                                @W6-06-16
+assert about_has_stb == 1                                @W6-06-16
+shot about
+click back
+until 30 scene == "shell:Options"                        @W6-06-16
+end

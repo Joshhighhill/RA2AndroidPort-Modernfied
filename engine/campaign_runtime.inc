@@ -757,6 +757,26 @@ private:
                     if (credits < 0.0) credits = 0.0;
                 }
             }
+            {   // [RE: FUN_006862D0 @0x686421..0x6864B3 (Start_Scenario tail, no
+                // GameMode gate): every house that is not IsHuman (+0x1EC) and not
+                // MultiplayPassive gets GiveMoney FUN_004F9770(ftol(
+                // MultiplayerAICM[+0x184] (Rules+0x1308) x 0.01 x Available_Money))].
+                // +0x184 is the handicap class (computer 2 - slider, PlayerControl
+                // the slider); YR rulesmd 400,0,0 -> only class 0 gets +400 %:
+                // computer houses on Hard, PlayerControl houses on Easy.
+                std::string mp = camp::up(camp::trim_comment(map_.get(country, "MultiplayPassive", "")));
+                if (mp.empty()) mp = camp::up(camp::trim_comment(ra2_rules_.get(country, "MultiplayPassive", "no")));
+                const bool passive = !mp.empty() && (mp[0] == 'Y' || mp[0] == 'T' || mp[0] == '1');
+                if (i != 0 && !passive) {
+                    const int d = std::clamp(launch_.difficulty, 0, 2);
+                    const int cls = rec.player_control ? d : 2 - d;
+                    std::vector<std::string> cm(1);
+                    for (char ch : camp::trim_comment(rules_ini_.get("General", "MultiplayerAICM", "")))
+                        if (ch == ',') cm.emplace_back(); else cm.back() += ch;
+                    const int pct = cls < (int)cm.size() ? std::atoi(camp::trim_comment(cm[(std::size_t)cls]).c_str()) : 0;
+                    credits += (double)(int)((double)pct * 0.01 * (double)(int)credits);
+                }
+            }
             if (i == 0) player_credits_ = credits;
             else w_.grant_credits_for_test((int)i, credits);
         }

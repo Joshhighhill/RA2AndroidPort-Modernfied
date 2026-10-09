@@ -140,11 +140,65 @@ bool prereqs_in_plan(int type, const std::vector<PlannedNode>& plan,
     }
     return true;
 }
+
+// rand(lo, hi) inclusive over the house's seeded xorshift32 [RE: FUN_0065c220;
+// RE-FALLBACK: ai_rand stands in for the lockstep RNG].
+int rand_in(std::uint32_t& rng, int lo, int hi) {
+    if (hi <= lo) return lo;
+    return lo + (int)(ai_rand(rng) % (std::uint32_t)(hi - lo + 1));
+}
+
+// W6-03-06 [RE: FUN_005052d0 tail + FUN_004fe200 -1 dispatch; see the
+// header]. Marker -1 = a base-defence placeholder until resolved below.
+void spread_plan_tail(std::vector<PlannedNode>& plan, int& next_id, const AiCatalog& cat,
+                      const std::vector<BuildingTypeDef>& roster, const AiRules& ai, int defs,
+                      std::uint32_t& rng) {
+    auto make = [&](int t) { PlannedNode n; n.id = next_id++; n.type = t; return n; };
+    // Extra refineries: rand(first refinery, n-1) + 1, AIExtraRefineries times.
+    int fr = -1;
+    for (int i = 0; i < (int)plan.size(); ++i)
+        if (cat.refinery >= 0 && plan[i].type == cat.refinery) { fr = i; break; }
+    if (fr >= 0)
+        for (int k = 0; k < ai.extra_refineries; ++k) {
+            const int pos = rand_in(rng, fr, (int)plan.size() - 1);
+            plan.insert(plan.begin() + pos + 1, make(cat.refinery));
+        }
+    // Base-defence placeholders: rand(3, n-1) + 1 each.
+    if (cat.defenses.empty() || (int)plan.size() < 4) return;
+    for (int k = 0; k < defs; ++k) {
+        const int pos = rand_in(rng, 3, (int)plan.size() - 1);
+        plan.insert(plan.begin() + pos + 1, make(-1));
+    }
+    // Resolve each placeholder against the plan before it.
+    std::vector<PlannedNode> out;
+    int walls_owed = 0, cycle = 0;
+    for (const PlannedNode& n : plan) {
+        if (n.type != -1) { out.push_back(n); continue; }
+        PlannedNode r = n;
+        if (cat.wall >= 0 && walls_owed > 0 && ai.pick_wall_pct > 0 &&
+            rand_in(rng, 0, 99) < ai.pick_wall_pct && prereqs_in_plan(cat.wall, out, roster, cat)) {
+            r.type = cat.wall;   // FUN_0050c160: walls for a defence that still needs them
+            --walls_owed;
+            out.push_back(r);
+            continue;
+        }
+        std::vector<int> ok;   // FUN_00506d10: a defence this house can build here
+        for (int t : cat.defenses)
+            if (t >= 0 && t < (int)roster.size() && prereqs_in_plan(t, out, roster, cat)) ok.push_back(t);
+        if (ok.empty()) continue;   // nothing buildable: the node is removed
+        r.type = ok[(std::size_t)(cycle++ % (int)ok.size())];   // [RE-FALLBACK: AIForcePrediction pick]
+        ++walls_owed;
+        out.push_back(r);
+    }
+    plan.swap(out);
+}
 }  // namespace
 
 std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& cat,
                                          const std::vector<BuildingTypeDef>& roster,
-                                         const AiRules& ai, const DifficultyMods& mods) {
+                                         const AiRules& ai, const DifficultyMods& mods,
+                                         std::uint32_t* rng) {
+    const bool spread = rng != nullptr && ai.extra_refineries >= 0;   // W6-03-06
     // [RE-GATE APPLIED: ai-base.md §2a — FUN_005052d0 is a Kahn-style
     // TOPOLOGICAL PREREQ-SORT, not a fixed-order append. ConYard + Power
     // are appended directly (§2 steps 1-2); Barracks/War Factory are
@@ -185,7 +239,7 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
     add_cand(cat.barracks);
     add_cand(cat.war_factory);
     add_cand(cat.radar);
-    for (int i = 0; i < ai.refinery_limit; ++i) add_cand(cat.refinery);
+    for (int i = 0; i < (spread ? 1 : ai.refinery_limit); ++i) add_cand(cat.refinery);
     // [G-66] tech centre + superweapon structures [RE-FALLBACK: position --
     // W2-AN-21 moves them (and the W2-AN-16 Naval Yard) from the plan tail to
     // right after the refineries, ahead of the up-to-25 defenses and their
@@ -196,10 +250,10 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
     add_cand(cat.tech);
     for (int t : cat.superweapons) add_cand(t);
     const int defs = std::min(mods.defense_target, ai.defense_limit);
-    if (!cat.defenses.empty())
+    if (!spread && !cat.defenses.empty())
         for (int i = 0; i < defs; ++i)
             add_cand(cat.defenses[i % (int)cat.defenses.size()]);
-    if (cat.wall >= 0 && !cat.defenses.empty())
+    if (!spread && cat.wall >= 0 && !cat.defenses.empty())
         for (int i = 0; i < defs; ++i) add_cand(cat.wall);
     // 5) Kahn-style topological loop [RE-GATE APPLIED: ai-base.md §2a —
     // FUN_005052d0's main loop]: emit the FIRST candidate whose prereqs are
@@ -229,6 +283,7 @@ std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& 
             cand.pop_back();
         }
     }
+    if (spread) spread_plan_tail(plan, next_id, cat, roster, ai, defs, *rng);
     // NOTE: the static plan is NOT trimmed by BaseSizeAdd — the cap gates
     // DYNAMIC expansion (next_build) at rival + BaseSizeAdd(3) [RE: §2].
     return plan;
@@ -241,7 +296,7 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
     // Lazy plan build — the original builds the node vector iff empty
     // (FUN_0050a3e0 -> FUN_005052d0) [RE: ai-base.md §2/§3].
     if (state.plan.empty()) {
-        state.plan = build_base_plan(view, cat, roster, ai, mods);
+        state.plan = build_base_plan(view, cat, roster, ai, mods, &state.rng);
         // Continue the stable-id counter past the ids build_base_plan assigned
         // so every later insert/append draws a fresh, never-reused id.
         state.next_node_id = 0;

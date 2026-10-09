@@ -2478,6 +2478,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.crewed           = rules.section_flag(id, "Crewed", false);
         d.soylent          = (int)rules.section_double(id, "Soylent", 0.0);
         d.ore_purifier     = rules.section_flag(id, "OrePurifier", false);   // G-27
+        d.wall             = rules.section_flag(id, "Wall", false);            // W6-03-01
+        d.insignificant    = rules.section_flag(id, "Insignificant", false);   // W6-03-01
         // W2-SK-12/19/20: Capturable= / Spyable= / UnitRepair= (absent = no in
         // rulesmd: GAPILL/TESLA/ATESLA/NAMISL/GACSPH/GAGAP say false, walls say
         // nothing) and the factory category a spy's veterancy bonus follows.
@@ -2798,6 +2800,11 @@ ra2engine::AiHouseConfig make_ai_config(const BuildingAssets& ba, const Rules& r
         cfg.ai.sw_value_tech = val("AIIonCannonTechCenterValue", 100);
         cfg.ai.sw_value_defense = val("AIIonCannonBaseDefenseValue", 35);
         cfg.ai.sw_value_harvester = val("AIIonCannonHarvesterValue", 1);
+        cfg.ai.sw_value_engineer = val("AIIonCannonEngineerValue", 1);   // W6-02-09
+        cfg.ai.sw_value_thief = val("AIIonCannonThiefValue", 1);
+        cfg.ai.sw_value_mcv = val("AIIonCannonMCVValue", 1);
+        cfg.ai.sw_value_apc = val("AIIonCannonAPCValue", 1);
+        cfg.ai.minor_super_ready = rules.general_double("AIMinorSuperReadyPercent", 0.7);   // W6-03-05
     }
     {   // [G-65] "ConditionRed=25%" -> strtod 25 -> the 0.25 fraction
         const double cr = rules.section_double("AudioVisual", "ConditionRed", 0.25);
@@ -3114,6 +3121,58 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         else SDL_SetRenderDrawColor(ren, 220, 0, 0, 255);
         SDL_RenderFillRect(ren, &fg);
     }
+}
+
+// W6-01-01: true when building `b`'s drawn art has an opaque pixel at window
+// pixel (px, py): the main frame draw_building uses (the SAME SHP / frame /
+// anchor: buildup, mirrored sell, healthy / damaged) and, in the live game,
+// its always-on slot anims (ActiveAnim..Four, IdleAnim, SuperAnim..Four --
+// the Prism Tower's head, the Weather Device's dish) at their slot offsets.
+// `masks` caches each decoded frame (key = SHP address + frame). The touch
+// pick tests this before the original foundation pick (Input::pick_building).
+// Turrets and a wall's connection frame are not tested: the foundation
+// fallback covers walls.
+using ArtMaskCache = std::map<std::pair<const void*, int>, std::vector<uint8_t>>;
+bool shp_frame_opaque(const ra2assets::ShpFile& shp, int frame, int cx, int cy, int px, int py,
+                      ArtMaskCache& masks) {
+    if (frame < 0 || frame >= shp.count()) return false;
+    const ra2assets::ShpFile::Frame f = shp.frame_info(frame);
+    const int x0 = cx - shp.width() / 2 + f.x, y0 = cy - shp.height() / 2 + f.y;
+    if (f.w <= 0 || f.h <= 0 || px < x0 || py < y0 || px >= x0 + f.w || py >= y0 + f.h) return false;
+    const auto key = std::make_pair(static_cast<const void*>(&shp), frame);
+    auto it = masks.find(key);
+    if (it == masks.end()) it = masks.emplace(key, shp.decode_indexed(frame)).first;
+    const std::size_t k = static_cast<std::size_t>(py - y0) * f.w + static_cast<std::size_t>(px - x0);
+    return k < it->second.size() && it->second[k] != 0;
+}
+bool building_art_opaque(const ra2engine::Building& b, const BuildingAssets& ba, int level,
+                         double condition_yellow, const ra2engine::Camera& cam, int px, int py,
+                         ArtMaskCache& masks) {
+    if (b.type < 0 || b.type >= static_cast<int>(ba.art.size())) return false;
+    const BuildingArt& art = ba.art[b.type];
+    if (!art.ok || art.invisible) return false;
+    const bool selling = (b.selling && art.has_buildup);
+    const bool buildup =
+        selling || (b.state == ra2engine::Building::State::Buildup && art.has_buildup);
+    const ra2assets::ShpFile& shp = buildup ? art.buildup : art.shp;
+    const int frame = selling ? ra2engine::mirrored_buildup_frame(b, art.buildup.count())
+                    : buildup ? ra2engine::buildup_frame(b, art.buildup.count())
+                              : ra2engine::building_frame(b, art.shp.count(), condition_yellow);
+    const ra2engine::ScreenPt dp = ra2engine::building_draw_point(b.cx, b.cy, level);
+    const int fcx = dp.x + cam.x, fcy = dp.y + cam.y;
+    if (shp_frame_opaque(shp, frame, fcx, fcy, px, py, masks)) return true;
+    if (buildup || !g_fx || b.type >= static_cast<int>(ba.roster.size())) return false;
+    const ra2engine::BuildingTypeDef& def = ba.roster[b.type];
+    const PresFx::BldAnims& an = g_fx->building(pres_upper(def.image.empty() ? def.id : def.image));
+    static const int kSlots[] = {kBsActive, kBsActive + 1, kBsActive + 2, kBsActive4, kBsIdle,
+                                 kBsSuper, kBsSuper + 1, kBsSuper + 2, kBsSuper4};
+    for (int s : kSlots) {
+        const PresFx::BldAnims::Slot& sl = an.slot[s];
+        if (!sl.t || !sl.t->shp) continue;
+        if (shp_frame_opaque(*sl.t->shp, sl.t->start, fcx + sl.x, fcy + sl.y + sl.t->ydraw, px, py, masks))
+            return true;
+    }
+    return false;
 }
 
 // Draws one voxel vehicle in render_world's back-to-front loop: a dying tank
@@ -5185,11 +5244,19 @@ struct DriverHooks {
     virtual bool want_render(int f) { (void)f; return true; }
     virtual bool swallow_quit(int f) { (void)f; return false; }
     virtual void transition(int f) { (void)f; }
+    // W6-01-10 --play `lifecycle relaunch`: true once to end the current scene
+    // (its destructor runs, as on an Android activity restart) and start the
+    // next from relaunch_scene() -- the app's startup path.
+    virtual bool want_relaunch() { return false; }
+    virtual Scene* relaunch_scene() { return nullptr; }
     virtual ~DriverHooks() = default;
 };
 
 // W2-AR-02/-03/-05/-10/-30: loading screen, deferred scene construction,
 // error page, missing-files page, SDL assertion handler.
+// W6-01-15: `set canvas WxH` in a --play script -- the game canvas a phone
+// would get (e.g. 974x548), instead of the harness's 1280x720 (0 = default).
+int g_play_canvas_w = 0, g_play_canvas_h = 0;
 #include "app_robust.inc"
 
 // The scene-loop driver: owns the active Scene*, pumps input -> handle, ticks
@@ -5250,6 +5317,16 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
             if (rec) rec->event(ev);
             if (ev.kind == ra2engine::InputEvent::Quit) {
                 if (hooks && hooks->swallow_quit(frame)) continue;   // --play on_quit continue
+                // W6-01-10: Android is restarting the activity (not the
+                // player quitting). SDL queues this Quit (nativeQuit) ahead
+                // of the pause's WILLENTERBACKGROUND, so the scene would never
+                // see the background event: hand it one now, which writes
+                // the autosave the next start offers to resume.
+                if (ra2engine::os_keep_autosave() && scene) {
+                    ra2engine::InputEvent bg;
+                    bg.kind = ra2engine::InputEvent::AppBackground;
+                    scene->handle(bg);
+                }
                 if (hooks) hooks->quit(frame, scene.get(), "Quit event");
                 if (rec) rec->frame(frame, 0.0);
                 finish("quit");
@@ -5283,6 +5360,13 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         if (!hooks || hooks->want_render(frame)) plat.present();
         perf_frame((pc1 - pc0) * perf_ms, (pc2 - pc1) * perf_ms, (pc3 - pc2) * perf_ms,
                    (SDL_GetPerformanceCounter() - pc3) * perf_ms);
+        if (hooks && hooks->want_relaunch()) {   // W6-01-10 (--play only)
+            scene.reset();
+            scene.reset(hooks->relaunch_scene());
+            hooks->transition(frame);
+            ++frame;
+            continue;
+        }
         if (Scene* nx = scene->next()) {   // transition (variable dt continues)
             if (auto* d = dynamic_cast<DeferredScene*>(nx)) {
                 // W2-AR-10: tear the current scene down BEFORE building the
@@ -5491,7 +5575,11 @@ enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME 
                    ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */,
                    ACT_CAMPAIGN_LOAD /* W2-UI-18: 0x94 Load */,
                    ACT_CREDITS /* W2-UI-26: View Credits */,
-                   ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */ };
+                   ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */,
+                   ACT_IMPORT /* W6-06-05: Android -- re-open the game-file importer */,
+                   ACT_MOVIES /* W6-06-13: Play Movies (movies_page.inc) */,
+                   ACT_ABOUT /* W6-06-16: Options > About (about_page.inc) */ };
+bool movies_supplied();   // W6-06-13 (movies_page.inc)
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -5747,6 +5835,20 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
 #include "skirmish_load.inc"   // W5-E: the ls800<country>.shp loading screen
 #include "pres_hidden.inc"     // W5-E2: See Hidden Objects (Behind= anim)
 
+// W6-06-09: the startup Resume page loads AUTOSAVE.SAV without deleting it;
+// the GameScene built from it takes this flag (game_scene_lifecycle.inc
+// autosaved_) so the file is removed only when that game ends normally.
+bool g_resumed_from_autosave = false;
+bool g_resumed_from_autosave_take() {
+    const bool r = g_resumed_from_autosave;
+    g_resumed_from_autosave = false;
+    return r;
+}
+// W6-06-10: the campaign checkpoint (RA2.INI [Engine] ResumeCampaign=
+// <map>,<side>,<difficulty>) -- defined in resume_scene.inc.
+void campaign_checkpoint_set(const std::string& map, const std::string& side, int difficulty);
+void campaign_checkpoint_clear();
+
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
@@ -5874,6 +5976,16 @@ public:
 
         // Input wiring: refinery-return + factory-select/rally + spy-infiltrate.
         if (ba_.ok) input_.set_refinery_types(refinery_type_indices(ba_, rules_));
+        // W6-01-01: a finger picks a building by its drawn art.
+        if (ba_.ok)
+            input_.set_building_art_test([this](int bi, int px, int py) {
+                const auto& bs = world_.buildings();
+                if (bi < 0 || bi >= static_cast<int>(bs.size())) return false;
+                const ra2engine::Building& b = bs[static_cast<std::size_t>(bi)];
+                const ra2assets::MapCell* mc = a_.map.at(b.cx, b.cy);
+                return building_art_opaque(b, ba_, mc ? mc->level : 0, ba_.condition_yellow, cam_, px, py,
+                                           art_masks_);
+            });
         inf_ft_ = factory_types_for(ba_, "GAPILE");
         veh_ft_ = factory_types_for(ba_, "GAWEAP");
         {
@@ -5953,7 +6065,10 @@ public:
         // triggers and teams (before P5, whose veterancy cost table must see
         // the mission's extra building types).
         if (!cfg.campaign_map.empty()) {
+            campaign_checkpoint_clear();   // W6-06-10: a mission is under way again
             setup_campaign(cfg);
+            map_units_ = world_.units().size();          // W6-06-08
+            map_buildings_ = world_.buildings().size();
             wire_building_deaths(world_, ba_, rules_, rules_ini_);   // P4: the mission's barrels
             gf_arm_mcv(world_, ba_, rules_, /*skirmish_session=*/false);   // gF: MCVs deploy
             gf_load_assets({});
@@ -5974,6 +6089,7 @@ public:
         apply_loaded(f);
     }
     ~GameScene() override {
+        ra2engine::TouchGestures::set_box_mode(false);   // W6-01-11: BOX never outlives the game
         lifecycle_teardown();   // W2-AR-09: a normal end removes the autosave
         prewarm_stop_ = true;
         if (prewarm_.joinable()) prewarm_.join();
@@ -6052,9 +6168,13 @@ public:
                     cameo_click(lay_.cameos[ci].type, /*right=*/false, ev.shift);
             } else {
                 // G-07: cameo RIGHT click: hold, then abandon (Shift: abandon all).
+                // W6-01-03: a finger HOLD is the tooltip gesture -- it never
+                // suspends / abandons; it opens the cameo popup instead.
                 const int ci = lay_.cameo_at(ev.x, ev.y);
-                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size()))
-                    cameo_click(lay_.cameos[ci].type, /*right=*/true, ev.shift);
+                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size())) {
+                    if (ev.touch && ev.hold) cameo_menu_open(lay_.cameos[ci].type, lay_.cameos[ci].rect);
+                    else cameo_click(lay_.cameos[ci].type, /*right=*/true, ev.shift);
+                }
             }
             return;  // consumed by the sidebar
         }
@@ -6261,6 +6381,7 @@ public:
             pres_.credit_tick(d > 0);   // W5-E CreditTicks up / down (FUN_004A2280)
         }
         follow_tick();   // W5-E Follow hotkey
+        input_.touch_tick(dt);   // W6-01-05: a deferred touch deploy
         // Consume input actions ONCE per frame.
         const ra2engine::InputActions act = input_.take_actions();
         // [RE: repair-sell.md §C1/§D5] arming a mode requires >= 1 owned
@@ -6516,9 +6637,11 @@ public:
         }
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
         draw_touch_bar(ren);      // W2-AR-08 (touch only)
+        draw_touch_aim(ren);           // W6-01-02 / -07 (touch only)
         draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
         draw_touch_hint(ren);          // W4-AM-01 (touch only)
         draw_touch_hold_ring(ren);     // W4-AM-07 (touch only)
+        draw_cameo_menu(ren);          // W6-01-03 (touch only)
         if (campaign_) draw_campaign_overlay(ren, tc);   // P10 objectives / mission end (W2-UI-21)
         gf_render(ren, tc);   // gF: victory / defeat text during BorrowedTime (W2-UI-20 game font)
         // P7 overlays + the transient "game saved / load failed" banner.
@@ -6622,6 +6745,16 @@ public:
             const std::string a = pa.current_track() + "\n" + (pa.music_on() ? "1" : "0") + "\n";
             f.sections[ra2engine::save::kTagAudio] = std::vector<uint8_t>(a.begin(), a.end());
         }
+        if (campaign_) {   // W6-06-04: the live trigger particle systems
+            std::string fx;
+            char ln[160];
+            for (const TrigFx& t : trig_fx_) {
+                if (!const_cast<Presentation&>(pres_).effects().system_alive(t.id)) continue;
+                std::snprintf(ln, sizeof ln, "%s %.3f %.3f %.3f\n", t.name.c_str(), t.x, t.y, t.z);
+                fx += ln;
+            }
+            if (!fx.empty()) f.sections[ra2engine::save::kTagParticles] = std::vector<uint8_t>(fx.begin(), fx.end());
+        }
         if (campaign_) {   // P10: the trigger runtime + the campaign host state
             f.sections[ra2engine::save::kTagTriggers] =
                 ra2engine::save::save_triggers(campaign_->trigger_system());
@@ -6717,6 +6850,17 @@ private:
                 else if (!track.empty()) pres_.sound().jukebox_play(track);
                 loaded_track_ = track;
                 loaded_audio_ = true;
+            }
+            pres_.after_load(world_);   // W6-06-03/-04: no EVA replay, damage smoke rebuilt
+            trig_fx_.clear();
+            if (const std::vector<uint8_t>* px = f.section(ra2engine::save::kTagParticles)) {   // W6-06-04
+                std::istringstream in(std::string(px->begin(), px->end()));
+                std::string nm;
+                double x = 0, y = 0, z = 0;
+                while (in >> nm >> x >> y >> z) {
+                    const int id = pres_.effects().spawn_system(nm, x, y, z);
+                    if (id) trig_fx_.push_back({nm, x, y, z, id});
+                }
             }
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {
@@ -7145,6 +7289,7 @@ private:
     bool                     sidebar_up_ = false;
     int                      playfield_w_ = 0;
     ra2engine::Camera        cam_;
+    ArtMaskCache art_masks_;   // W6-01-01 touch art pick
     ra2engine::Input         input_;
     // --- production / economy ---
     ra2engine::ProductionQueues queues_;
@@ -7249,6 +7394,11 @@ private:
     // --- P10 Campaign [RE: campaign.md] ---
     std::unique_ptr<CampaignRuntime> campaign_;   // null in skirmish
     bool                 campaign_done_ = false;  // result scene already queued
+    // W6-06-08: the mission's own (map-placed) objects -- World indices below
+    // these are not "Built" on the Campaign Results page. Set right after
+    // setup_campaign, so a loaded game (built fresh, then overwritten) has
+    // the same values.
+    std::size_t          map_units_ = 0, map_buildings_ = 0;
     std::string          mission_name_ = "Mission";
     std::string          briefing_;
     bool                 show_briefing_ = false;  // F1 toggles the mission briefing
@@ -7361,14 +7511,15 @@ private:
     void draw_campaign_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         const long f = campaign_->frame_count();
         int y = 8;
+        const double sc = hud_touch_scale();   // W6-01-12: 1.5x on a touch canvas
         for (const HudMsg& m : msgs_)
-            if (m.expire > msg_clock_) y += hud_text_height(m.text) + 4;
+            if (m.expire > msg_clock_) y += static_cast<int>(hud_text_height(m.text) * sc) + 4;
         const SDL_Color col = hud_ui_color();
         for (const CampaignRuntime::Objective& o : campaign_->objectives()) {
             if (f - o.frame > 300) continue;
-            const std::string t = hud_wrap(o.text, playfield_w_ - 32);
-            hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true);
-            y += hud_text_height(t) + 4;
+            const std::string t = hud_wrap(o.text, static_cast<int>((playfield_w_ - 32) / sc));
+            hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true, sc);
+            y += static_cast<int>(hud_text_height(t) * sc) + 4;
         }
         // Mission timer (actions 23-27) when running.
         const ra2engine::MapTriggerSystem& ts = campaign_->triggers();
@@ -8034,7 +8185,8 @@ private:
             case PAGE_MOVIES:   // dialog 0x101
                 return {
                     btn(0, "Sneak Peeks",  false, ACT_GOTO, PAGE_MAIN),
-                    btn(1, "Play Movies",  false, ACT_GOTO, PAGE_MAIN),
+                    // W6-06-13: live when the player supplied movie files.
+                    btn(1, "Play Movies",  movies_supplied(), ACT_MOVIES, PAGE_MOVIES),
                     btn(2, "View Credits", true,  ACT_CREDITS, PAGE_MOVIES),   // W2-UI-26
                     btn(5, "Main Menu",    true,  ACT_GOTO, PAGE_MAIN),   // W2-UI-22
                 };
@@ -8045,6 +8197,14 @@ private:
                 return {
                     btn(0, "Keyboard",  true,  ACT_KEYBOARD, PAGE_OPTIONS),
                     btn(1, "Network",   false, ACT_GOTO, PAGE_MAIN),
+#ifdef __ANDROID__
+                    // W6-06-05 [engine affordance]: add or replace game files
+                    // at any time (the launcher only offers it when a
+                    // required file is missing).
+                    btn(2, "Game Files", true, ACT_IMPORT, PAGE_OPTIONS),
+#endif
+                    // W6-06-16: version, licence, third-party notices, disclaimer.
+                    btn(3, "About",     true,  ACT_ABOUT, PAGE_OPTIONS),
                     btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
             case PAGE_CAMPAIGN: // dialog 0x94 (W2-UI-18): Load row 0, Back row 5; the
@@ -8096,6 +8256,8 @@ private:
                 return gf_csf(page_ == PAGE_SINGLE ? "STT:SingleButtonBack"
                               : page_ == PAGE_OPTIONS ? "STT:MainOptButtonBack" : "STT:OptionsButtonBack", "");
             if (b.label == "Network" && page_ == PAGE_OPTIONS) return gf_csf("STT:MainOptButtonNetwork", "");
+            if (b.label == "Game Files") return "Add or replace the game files (the game restarts)";
+            if (b.label == "About") return "Version, licence and third-party notices";
             const char* k = stt_key(b.label);
             return k ? gf_csf(k, "") : std::string();
         }
@@ -8502,8 +8664,14 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
 #include "campaign_scenes.inc"
 // W2-UI-26: Movies & Credits > View Credits (credits.txt scroller).
 #include "credits_scene.inc"
+// W6-06-13: Play Movies (the movie list over the campaign's movie names).
+#include "movies_page.inc"
+// W6-06-16: Options > About (version, licence, notices, disclaimer).
+#include "about_page.inc"
 // gF: skirmish result screen.
 #include "gf_result.inc"
+// W6-06-09/-10, W6-01-10: the startup Resume page (autosave / campaign checkpoint).
+#include "resume_scene.inc"
 
 // --campaign <MAP>: open a mission's loading screen directly (no main menu;
 // result/abort then exit). Side from the map name (SOV* = Nod).
@@ -8616,7 +8784,23 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             case ACT_CAMPAIGN_ALLIED: next_ = make_campaign_start_scene(no_audio_, "ALL1", "GDI"); return;
             case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
             case ACT_CREDITS: next_ = new CreditsScene(rules_, no_audio_, art_); return;   // W2-UI-26
+            case ACT_MOVIES: next_ = new MoviesPageScene(rules_, no_audio_, art_); return;   // W6-06-13
+            case ACT_ABOUT:   // W6-06-16 (Options are committed + saved as on leaving the page)
+                if (g_user_settings) {
+                    opt_.commit(*g_user_settings);
+                    save_user_settings(*g_user_settings);
+                }
+                next_ = new AboutScene(rules_, no_audio_, art_);
+                return;
             case ACT_KEYBOARD: kb_.open(); return;   // W5-E [RE: options.md §1/§6 0x5CE -> 0xA3]
+            case ACT_IMPORT:   // W6-06-05: the launcher's importer; the engine
+                               // quits so the next start reads the new files.
+                if (g_user_settings) {
+                    opt_.commit(*g_user_settings);
+                    save_user_settings(*g_user_settings);
+                }
+                if (ra2engine::os_android_open_importer()) quit_ = true;
+                return;
             case ACT_CAMPAIGN_LOAD:   // W2-UI-18: 0x94 Load = the selected campaign
                 if (camp_.selected() >= 0 && camp_.selected() < CampaignPageState::kEntries) {
                     if (g_user_settings) save_user_settings(*g_user_settings);   // the slider's Difficulty
@@ -8645,34 +8829,6 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             default:           return;
         }
     }
-}
-
-// W2-AR-09: the resume prompt for a leftover background autosave. Returns
-// the deferred load scene, or nullptr (no autosave / declined / unreadable).
-Scene* offer_resume_autosave(ra2engine::Platform& plat, bool no_audio) {
-    const std::string dir = save_games_dir();
-    if (dir.empty()) return nullptr;
-    const std::string path = dir + "/AUTOSAVE.SAV";
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) return nullptr;
-    std::vector<uint8_t> bytes;
-    ra2engine::save::SaveFile f;
-    const bool ok = ra2engine::save::read_file_bytes(path, bytes) && ra2engine::save::decode_save(bytes, f) &&
-                    f.header.version == ra2engine::save::kFormatVersion &&
-                    f.section(ra2engine::save::kTagWorld) && f.section(ra2engine::save::kTagConfig);
-    int choice = 1;
-    if (ok) {
-        std::vector<std::string> lines = {
-            "THE LAST GAME WAS INTERRUPTED WHILE IN THE BACKGROUND.",
-            "IT WAS SAVED AUTOMATICALLY:",
-            "#  " + (f.header.map_file.empty() ? std::string("GAME") : f.header.map_file) + "  -  FRAME " +
-                std::to_string(f.header.frame)};
-        choice = run_message_page(plat, "RESUME GAME?", lines, {"RESUME", "MAIN MENU"});
-    }
-    std::filesystem::remove(path, ec);   // consumed either way (a new one is written on the next background)
-    SDL_Log("[lifecycle] autosave found (%s): %s", ok ? "valid" : "unreadable", choice == 0 ? "resumed" : "declined");
-    if (!ok || choice != 0) return nullptr;
-    return defer_load_scene(no_audio, std::move(f));
 }
 
 // [RE: skirmish.md §2, D6] The default desktop/Android entry: create the
@@ -8714,20 +8870,22 @@ int run_menu(bool no_audio) {
     ra2engine::Settings user = load_user_settings();
     g_user_settings = &user;
     // G-89: honour RA2.INI [Video] ScreenWidth/ScreenHeight for the window.
-    if (user.screen_width > 0 && user.screen_height > 0) plat.set_window_size(user.screen_width, user.screen_height);
+    if (user.screen_width > 0 && user.screen_height > 0 && !plat.set_window_size(user.screen_width, user.screen_height)) {
+        user.screen_width = 1280;   // W6-06-12: rewrite [Video] so the next start is clean too
+        user.screen_height = 720;
+        save_user_settings(user);
+    }
     if (store.audio && store.audio->sys.mixer)
         apply_audio_settings(*store.audio->sys.mixer, user);
     g_menu_rules = &rules;        // P10: a finished/aborted mission returns here
     g_menu_art = &store.art;
     // W2-AR-09: a leftover AUTOSAVE.SAV means the last session was killed in
     // the background (a normal end deletes it): offer to resume it.
-    Scene* first = new MainMenuScene(rules, no_audio, store.art);
-    if (!replay) {
-        if (Scene* resume = offer_resume_autosave(plat, no_audio)) {
-            delete first;
-            first = new BootScene(resume);
-        }
-    }
+    // W6-06-09/-10: a leftover autosave or a campaign checkpoint opens the
+    // Resume page (resume_scene.inc) instead of the main menu.
+    Scene* first = nullptr;
+    if (!replay) first = make_resume_scene(no_audio);
+    if (!first) first = new MainMenuScene(rules, no_audio, store.art);
     const int rc = run_scene_driver(plat, tc, first, replay.get());
     g_menu_rules = nullptr;
     g_menu_art = nullptr;

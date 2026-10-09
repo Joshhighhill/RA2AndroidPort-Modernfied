@@ -99,7 +99,8 @@ enum class OpClass {
     AttackQuarry, AttackBuilding, MoveWaypoint, MoveCell, MoveEnemyBuilding,
     MoveFriendlyBuilding, GatherEnemy, RegroupBase, TimedGuard, DoMission,
     Scatter, Jump, Success, Inert,
-    Load, WaitLoaded, Unload, Deploy   // W2-SK-09/10: 14 / 43 / 8 / 9
+    Load, WaitLoaded, Unload, Deploy,  // W2-SK-09/10: 14 / 43 / 8 / 9
+    IronCurtainMe, ChronoPrep          // W6-03-05: 55 / 56-57
 };
 OpClass classify_op(int action);  // [G-61: the 0..64 executor table]
 
@@ -131,13 +132,20 @@ struct TeamView {
     // W2-SK-09: every non-transport live member is aboard the team's
     // transport (true when the team has no transport).
     bool all_loaded = true;
+    // W6-03-05 [RE: FUN_006ef1d0 (55) / FUN_006ef3c0 (56) / FUN_006ef690
+    // (57)], for the CURRENT line: 1 = the house's Curtain/Sphere is charged
+    // and its power is full -> fire and complete; 2 = still charging but past
+    // AIMinorSuperReadyPercent -> the line waits; 0 = absent / not near ->
+    // the line completes without firing.
+    int sw_state = 0;
 };
 
 // One command per team per tick; the caller fans it out per member
 // [RE: ai-team.md §3 — spec §3's opcode-class -> command table].
 struct TeamCommand {
     enum class Kind { None, MoveTeam, AttackQuarry, GuardArea, Wait, Inert,
-                      Load, Unload, Deploy };   // W2-SK-09/10
+                      Load, Unload, Deploy,     // W2-SK-09/10
+                      IronCurtain, ChronoShift };   // W6-03-05 (55 / 56-57)
     Kind kind = Kind::None;
     int x = 0, y = 0;      // MoveTeam goal / GuardArea center
     int radius = 0;        // GuardArea radius (kAiGatherRadius)

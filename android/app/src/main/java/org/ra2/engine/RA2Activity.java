@@ -2,11 +2,17 @@ package org.ra2.engine;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.libsdl.app.SDLActivity;
 
@@ -43,14 +49,70 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
         }
     }
 
+    /*
+     * W6-01-14: with gesture navigation, a drag from the screen edge is the
+     * system's back / bars gesture -- it revealed the bars over the game and
+     * scrolled the map. Exclude (Android 10+, at most 200 dp per edge, the
+     * system's cap) the two edge strips a player drags on: the left edge
+     * around the command column (vertically centred, engine/touch_bar.inc
+     * tb_y0) and the right edge along the sidebar's cameo strip. A swipe
+     * elsewhere on the edge is still the system's. The cutout mode stays the
+     * platform default: in landscape the window is laid out beside a notch,
+     * so the command column never sits under it.
+     */
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT >= 29) {
+            final View root = getWindow().getDecorView();
+            root.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                @Override
+                public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
+                    updateGestureExclusion(v);
+                }
+            });
+        }
+    }
+
+    private void updateGestureExclusion(View v) {
+        if (Build.VERSION.SDK_INT < 29) return;
+        final int w = v.getWidth(), h = v.getHeight();
+        if (w <= 0 || h <= 0) return;
+        final float dp = getResources().getDisplayMetrics().density;
+        final int strip = Math.round(48 * dp);     // wider than any gesture inset
+        final int span = Math.min(h, Math.round(200 * dp));
+        List<Rect> rects = new ArrayList<>();
+        final int ly = (h - span) / 2;              // the command column is centred
+        rects.add(new Rect(0, ly, strip, ly + span));
+        final int ry = Math.min(h - span, h * 2 / 5);   // the cameo strip (below the radar)
+        rects.add(new Rect(w - strip, ry, w, ry + span));
+        v.setSystemGestureExclusionRects(rects);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         requestFocus();
     }
 
+    /** engine/platform_os.cpp: keep AUTOSAVE.SAV through the scene teardown. */
+    private static native void nativeKeepAutosave();
+
     @Override
     protected void onDestroy() {
+        // W6-01-10: destroyed without the player quitting (a configuration
+        // change the activity cannot take in place, e.g. switching to gesture
+        // navigation or an overlay/theme change): the engine is about to tear
+        // the running game down; its background autosave must survive so the
+        // next start offers RESUME instead of deleting it.
+        if (!isFinishing()) {
+            Log.i(TAG, "onDestroy without finishing (activity restart): keeping the autosave");
+            try {
+                nativeKeepAutosave();
+            } catch (UnsatisfiedLinkError e) {
+                // libmain.so not loaded: no game is running.
+            }
+        }
         abandonFocus();
         super.onDestroy();   // SDLActivity joins the SDL (engine) thread here
         // W2-AR-17: the engine keeps process-wide state in C++ statics; once
