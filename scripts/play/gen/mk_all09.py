@@ -64,10 +64,10 @@ dump("p1")
 # P2: the Hack engineers step back; the Grizzlies crush out and open the POW camp
 p.add("until 2000 units(9,ENGINEER) >= 5 and carried(9) == 0",
       "click unit 9:ENGINEER:0", "key t", "key t", f"click cell {ENG[0]} {ENG[1]}")
-# fv-b: the SEALs come back from the village's south-west edge, where the
+# fv-b: the SEALs come back to the hold point from the south-west edge, where the
 # last guard fell, before the first POW-check team (Shock Trooper + Flak
 # Tracks) arrives there; left out alone all five die at (52,90).
-SEAL_BACK = VAR.get("seal_back", [58, 75])
+SEAL_BACK = VAR.get("seal_back", HOLD)
 if SEAL_BACK:
     sel(["GHOST"])
     p.add(f"click cell {SEAL_BACK[0]} {SEAL_BACK[1]}")

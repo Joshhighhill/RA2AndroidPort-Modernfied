@@ -131,7 +131,7 @@ click cell 62 70
 if units(0,GHOST) > 0 then click unit 0:GHOST:0 soft
 key t
 key t
-click cell 58 75
+click cell 62 74
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 key t
 key t
