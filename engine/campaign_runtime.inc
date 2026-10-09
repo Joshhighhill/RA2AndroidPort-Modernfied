@@ -335,6 +335,8 @@ public:
         w_.refresh_building_types(ba_.roster);   // G16: btypes() must see mission types
         w_.set_repair_sell_rules(ba_.repair_sell);
         place_objects(objs);
+        sync_tracks();       // W6 fix #2: the placed buildings' Insignificant/LegalTarget flags
+        apply_playfield();   // W6-02-08: IsInPlayfield of every placed object (Unlimbo)
 
         sys_ = std::make_unique<ra2engine::MapTriggerSystem>(data_, launch.difficulty, 0x5EEDu);
         sys_->set_campaign_mode(true);
@@ -402,6 +404,13 @@ public:
         return local_overridden_ ? local_override_ : ra2engine::parse_map_local_size(map_);
     }
     int local_version() const { return local_version_; }   // W5-A: bumped by 40 ResizeView
+    // W6-02-08 [RE: Unlimbo FUN_006F61D0 / ResizeView FUN_00566E60]: hand the
+    // usable area to the World, which recomputes every object's IsInPlayfield
+    // and switches on the campaign Evaluate_Object rules (legal_threat_*).
+    void apply_playfield() {
+        const ra2engine::MapLocalSize m = local_size();
+        w_.set_playfield(/*campaign=*/true, m.valid, m.size_w, m.x, m.y, m.w, m.h);
+    }
     const std::vector<Objective>& objectives() const { return objectives_; }
     const std::vector<std::string>& witness() const { return witness_; }
     std::vector<const VehicleAssets*> vehicle_assets() const { return types_.vehicle_assets(); }
@@ -1034,6 +1043,11 @@ private:
             if (b.type >= 0 && b.type < (int)ba_.roster.size())
                 t.type = camp::up(ba_.roster[(std::size_t)b.type].id);
             t.hp = b.hp;
+            // W6-02-07: the type's Insignificant= / LegalTarget= (map overrides
+            // merged) for World::legal_threat_building.
+            if (!t.type.empty())
+                w_.set_building_target_flags((int)btrack_.size(), rules_flag_default(t.type, "Insignificant", false),
+                                             rules_flag_default(t.type, "LegalTarget", true));
             if (!placing_ && b.house >= 0 && b.house < (int)last_built_.size())
                 last_built_[(std::size_t)b.house][0] = data_.find_building_type(t.type);
             btrack_.push_back(t);
@@ -1996,6 +2010,9 @@ private:
             for (std::size_t i = 0; i < w_.units().size(); ++i) {
                 const ra2engine::Unit& u = w_.units()[i];
                 if (!live(u) || !w_.is_enemy(house, u.house)) continue;
+                // W6-02-07/08 [RE: Evaluate_Object FUN_006F71D0]: LegalTarget,
+                // IsInPlayfield, campaign Insignificant (World::legal_threat_*).
+                if (!w_.legal_threat_unit(house, (int)i)) continue;
                 if (want_inf && u.is_vehicle) continue;
                 if (want_veh && !u.is_vehicle) continue;
                 const long d = (long)(u.cell_x - x) * (u.cell_x - x) + (long)(u.cell_y - y) * (u.cell_y - y);
@@ -2005,6 +2022,7 @@ private:
             for (std::size_t i = 0; i < w_.buildings().size(); ++i) {
                 const ra2engine::Building& b = w_.buildings()[i];
                 if (!live(b) || !w_.is_enemy(house, b.house)) continue;
+                if (!w_.legal_threat_building(house, (int)i)) continue;   // W6-02-07/08
                 const long d = (long)(b.cx - x) * (b.cx - x) + (long)(b.cy - y) * (b.cy - y);
                 if (best < 0 || d < bd || (!is_building && quarry != 1 && want_b)) {
                     best = (int)i;
@@ -2874,6 +2892,7 @@ private:
             local_override_ = m;
             local_overridden_ = true;
             ++local_version_;
+            apply_playfield();   // W6-02-08: every object's IsInPlayfield recomputed
             char b[64];
             std::snprintf(b, sizeof b, "[local %d,%d,%d,%d]", m.x, m.y, m.w, m.h);
             note_ = b;

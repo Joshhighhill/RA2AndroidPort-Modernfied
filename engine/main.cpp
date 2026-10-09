@@ -817,6 +817,18 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.strength = rules.strength(unit_id);
     r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
+    // W6 fix #2: rules id + the targeting type data (map overrides merged in a
+    // campaign: its Rules is rulesmd with the scenario overlaid).
+    {
+        std::string id = unit_id;
+        for (char& ch : id) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        r.combat.w6.rules_id = id;
+        r.combat.w6.insignificant = rules.section_flag(unit_id, "Insignificant", false);
+        r.combat.w6.legal_target = rules.section_flag(unit_id, "LegalTarget", true);
+        r.combat.w6.immune_psionics = rules.section_flag(unit_id, "ImmuneToPsionics", false);
+        r.combat.w6.guard_range = rules.section_double(unit_id, "GuardRange", 0.0);
+        r.combat.w6.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);
+    }
     // Gap fix C (G-41) [RE: docs/re/weapons.md §1]: the TechnoType slot rule
     // (Primary/Secondary, or Weapon1..N for TurretCount>=1 types -- SREF's
     // Primary is commented out and Weapon1=Comet) via engine/weapon_resolve.

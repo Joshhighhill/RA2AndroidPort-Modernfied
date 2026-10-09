@@ -806,6 +806,10 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w_percent_at_max = c.percent_at_max;  // radius + edge scale (0 = single-target)
     u.w_affects_allies = c.affects_allies;  // W5-B R-060
     u.speed_type = c.speed_type;            // W5-B R-062
+    // W6 fix #2: rules id + targeting type data; IsInPlayfield from the cell
+    // [RE: Unlimbo FUN_006F61D0 -> IsWithinUsableArea FUN_00577E90].
+    u.w6.t = c.w6;
+    u.w6.in_playfield = cell_in_playfield(cell_x, cell_y);
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // spec. Copied unconditionally but READ ONLY behind projectiles_enabled_
     // (the firewall) -- inert in every existing gate.
@@ -1268,6 +1272,7 @@ int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int
     b.buildup_total = buildup_total;
     b.state = instant ? Building::State::Idle : Building::State::Buildup;
     b.vet_recv = vet_any_;   // P5 [RE: veterancy.md V6]: false in every legacy World
+    b.w6.in_playfield = cell_in_playfield(cx + fw / 2, cy + fh / 2);   // W6 fix #2 (Unlimbo)
     buildings_.push_back(b);
     const int idx = static_cast<int>(buildings_.size()) - 1;
     for (const Cellxy& cell : foundation_cells(cx, cy, fw, fh)) {
@@ -3387,14 +3392,19 @@ std::vector<IdleUnitView> World::ai_idle_units(int house, const HouseAiRec& rec)
 }
 
 bool World::ai_quarry_exists(int house, const HouseAiRec& rec, int quarry) const {
-    for (const Unit& u : units_)
+    // W6-02-07/08: only targets a threat scan may pick (legal_threat_*).
+    for (int i = 0; i < (int)units_.size(); ++i) {
+        const Unit& u = units_[(std::size_t)i];
         if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !u.an.t.fixed_wing && !u.an.t.missile &&
-            is_enemy(house, u.house) && quarry_unit_match(quarry, u))  // W2-AN-16: jumpjets count
+            is_enemy(house, u.house) && quarry_unit_match(quarry, u) && legal_threat_unit(house, i))  // W2-AN-16: jumpjets count
             return true;
-    for (const Building& b : buildings_)
+    }
+    for (int i = 0; i < (int)buildings_.size(); ++i) {
+        const Building& b = buildings_[(std::size_t)i];
         if (b.alive && b.state != Building::State::Dead && is_enemy(house, b.house) &&
-            quarry_building_match(quarry, b, rec.cfg.team))
+            quarry_building_match(quarry, b, rec.cfg.team) && legal_threat_building(house, i))
             return true;
+    }
     return false;
 }
 
@@ -3415,6 +3425,7 @@ int World::ai_pick_quarry_unit(int house, int quarry, int nx, int ny,
         // target [weapons.md §2].
         if (u.is_aircraft && u.flight_state != FlightState::Grounded && !can_aa) continue;
         if (!quarry_unit_match(quarry, u)) continue;
+        if (!legal_threat_unit(house, i)) continue;   // W6-02-07/08
         const long long dx = u.cell_x - nx, dy = u.cell_y - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);  // 0.90x .. 1.10x, x100
@@ -3436,6 +3447,7 @@ int World::ai_pick_quarry_building(int house, const HouseAiRec& rec, int quarry,
         const Building& b = buildings_[i];
         if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
         if (!quarry_building_match(quarry, b, rec.cfg.team)) continue;
+        if (!legal_threat_building(house, i)) continue;   // W6-02-07/08
         const long long dx = b.cx - nx, dy = b.cy - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy
         const long long jitter = 90 + (ai_rand(rng) % 21);
@@ -4458,6 +4470,7 @@ void World::step(double dt) {
     // `if (!crates_any_) return;` inside is the only cost every existing gate
     // pays (no existing demo calls enable_crates).
     step_crates();
+    step_playfield();   // W6 fix #2: units moving into the usable area (no-op without one)
 
     // Shroud/Fog [RE: shroud.md §3]: recompute per-house visibility after
     // movement and before combat reads it (via seen_by_mask). Firewalled behind

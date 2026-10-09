@@ -993,8 +993,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     // combat 78 / tank 144 byte-identical. This lives ONLY in the
                     // AUTO-acquire scan, NOT valid_target (an explicit
                     // order_attack on a known unit is never blocked, §6).
+                    // W6-02-07/08: the Evaluate_Object rejects (LegalTarget,
+                    // IsInPlayfield, campaign Insignificant) -- World::legal_threat_unit.
                     if (j == i || !valid_target(units, world, u, j) || units[j].disguised
-                        || !(units[j].seen_by_mask & (1u << u.house)))
+                        || !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, j))
                         continue;
                     const Unit& v = units[j];
                     const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
@@ -1034,6 +1036,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             (!bt[b.type].armed && !(world.house_is_computer(u.house) && world.ai_threat_any_building())))
                             continue;
                         if (!world.is_enemy(u.house, b.house)) continue;
+                        if (!world.legal_threat_building(u.house, bj)) continue;   // W6-02-07/08
                         if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
                         const int ws = unit_weapon_for_building(u, b.armor_ix);
                         if (ws < 0) continue;
