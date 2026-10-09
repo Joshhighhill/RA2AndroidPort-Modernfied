@@ -1224,6 +1224,8 @@ private:
         // clone's acquire/retaliate switches stand in for the mission].
         {
             const int mi = ra2engine::mission_from_name(mission);
+            // W6-02-11: Mission=Area Guard scans at the doubled guard radius.
+            if (mi == ra2engine::kMissionAreaGuard) w_.units()[(std::size_t)idx].w6.area_guard = true;
             if (mi == ra2engine::kMissionSleep || mi == 23 /* Harmless */) {
                 t.mission = mi == ra2engine::kMissionSleep ? 1 : 2;
                 set_dormant(idx, true);
@@ -1560,6 +1562,15 @@ private:
                 continue;
             }
             ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
+            // W6-02-12 [RE-FALLBACK: standard YR behaviour (YRpp/ModEnc) -- a
+            // MindControl warhead cannot target or capture an ImmuneToPsionics
+            // object; SOV09 sets [CAR]/[DOG] ImmuneToPsionics=yes for exactly
+            // this]: the shot is refused and the target dropped.
+            if (!w_.psionic_target_ok(u.target)) {
+                u.target = -1;
+                u.attack_order = false;
+                continue;
+            }
             if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
             // R-205 [RE: the capture rides the controller's shot -- CaptureManager
             // FUN_00471C80 is called only from the bullet detonation @0x4692C0, and

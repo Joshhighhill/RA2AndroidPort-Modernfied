@@ -1952,6 +1952,10 @@ public:
     // significant) -> every skirmish gate is unchanged.
     bool legal_threat_unit(int scanner_house, int unit_idx) const;
     bool legal_threat_building(int scanner_house, int b_idx) const;
+    // The same tests on an object the caller holds (step_combat scans the
+    // vectors it is handed, which pure tests build outside the World).
+    bool legal_threat_unit(int scanner_house, const Unit& v) const;
+    bool legal_threat_building(int scanner_house, const Building& b) const;
     // The usable area (Map LocalSize, then every ResizeView) and the campaign
     // switch. set_playfield recomputes IsInPlayfield for EVERY object (the
     // ResizeView FUN_00566E60 rule; also the scenario-start Unlimbo pass).

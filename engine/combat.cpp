@@ -84,6 +84,22 @@ double slot_range(const Unit& u, int slot) {
     return u.vet.base.range;
 }
 
+// W6-02-11 [RE: the threat scan FUN_006F8320 @0x6F8520..0x6F8678 takes its
+// radius from the guard-range virtual vtbl+0x31C = FUN_007072E0]: idle
+// infantry / units scan with threat 1 (@0x51F092, FUN_004D4CE0 @0x4D4D5E):
+// FUN_007072E0(0) = the type's GuardRange= (0 when unset), and a zero radius
+// falls back to (larger weapon range >> 8) + 1 + (AirRangeBonus >> 8). Area
+// guard scans with threat 2 (@0x4D4234): FUN_007072E0(1) = 2 x (GuardRange,
+// else the larger weapon range), at most 0x1000 leptons. Whole cells
+// (lepton >> 8). Sight is never read.
+double acquire_radius(const Unit& u) {
+    const double gr = u.w6.t.guard_range;
+    const double wr = std::max(slot_range(u, 0), slot_range(u, 1));
+    if (u.w6.area_guard) return std::floor(std::min(2.0 * (gr > 0.0 ? gr : wr), 16.0) + 1e-9);
+    if (gr > 0.0) return std::floor(gr + 1e-9);
+    return std::floor(wr + 1e-9) + 1.0 + std::floor(u.w6.t.air_range_bonus + 1e-9);
+}
+
 const VeterancyRules* vet_rules_of(const World& world) {
     return world.veterancy_enabled() ? &world.veterancy_rules() : nullptr;
 }
@@ -961,11 +977,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             else {
                 int best = -1;
                 double best_d = 0.0;
-                // W2-SK-25 [RE-FALLBACK, RE-Q3 open: an idle original unit in
-                // Guard engages what enters its Sight, chases within a leash and
-                // returns]: acquisition radius = max(weapon range, Sight).
-                const double sight = static_cast<double>(u.sight);
-                const double rmax = std::max(std::max(slot_range(u, 0), slot_range(u, 1)), sight) + 1.0;
+                // W6-02-11 (supersedes the W2-SK-25 max(weapon range, Sight)
+                // fallback): the threat-scan radius of acquire_radius.
+                const double acq = acquire_radius(u);
+                const double rmax = std::max(std::max(slot_range(u, 0), slot_range(u, 1)), acq) + 1.0;
                 const int bx0 = bucket_of(u.fx - rmax, bgw), bx1 = bucket_of(u.fx + rmax, bgw);
                 const int by0 = bucket_of(u.fy - rmax, bgh), by1 = bucket_of(u.fy + rmax, bgh);
                 for (int by = by0; by <= by1; ++by)
@@ -995,14 +1010,19 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                     // order_attack on a known unit is never blocked, §6).
                     // W6-02-07/08: the Evaluate_Object rejects (LegalTarget,
                     // IsInPlayfield, campaign Insignificant) -- World::legal_threat_unit.
+                    // W6-02-12: a mind-control shooter never picks an
+                    // ImmuneToPsionics unit (map overrides merged).
                     if (j == i || !valid_target(units, world, u, j) || units[j].disguised
-                        || !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, j))
+                        || !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j])
+                        || (u.w_mind_control && units[j].w6.t.immune_psionics))
                         continue;
                     const Unit& v = units[j];
                     const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
-                    // Gap fix C: in range of the weapon that WOULD engage v.
-                    const double rng = std::max(slot_range(u, unit_weapon_for_unit(u, v)),
-                                                (u.is_aircraft || (u.deploy_fire && u.deployed)) ? 0.0 : sight);
+                    // Gap fix C: in range of the weapon that WOULD engage v; a
+                    // ground unit scans its whole threat radius (W6-02-11).
+                    const double rng = (u.is_aircraft || (u.deploy_fire && u.deployed))
+                                           ? slot_range(u, unit_weapon_for_unit(u, v))
+                                           : acq;
                     if (d <= rng * kLeptonsPerCell &&
                         (best == -1 || d < best_d || (d == best_d && j < best))) {
                         best = j;
@@ -1036,7 +1056,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             (!bt[b.type].armed && !(world.house_is_computer(u.house) && world.ai_threat_any_building())))
                             continue;
                         if (!world.is_enemy(u.house, b.house)) continue;
-                        if (!world.legal_threat_building(u.house, bj)) continue;   // W6-02-07/08
+                        if (!world.legal_threat_building(u.house, b)) continue;   // W6-02-07/08
                         if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
                         const int ws = unit_weapon_for_building(u, b.armor_ix);
                         if (ws < 0) continue;
@@ -1136,7 +1156,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             // strayed past weapon range + kGuardStray from that anchor (§7,
             // ModEnc fallback, Low), then ask to return home if not already
             // there.
-            const double leash = std::max(range_leptons, static_cast<double>(u.sight) * kLeptonsPerCell);
+            // W6-02-11: the leash is the threat-scan radius, not Sight.
+            const double leash = std::max(range_leptons, acquire_radius(u) * kLeptonsPerCell);
             const double stray = leash + kGuardStray * kLeptonsPerCell;
             const double d_self = dist_leptons(u.fx, u.fy, static_cast<double>(u.guard_x),
                                                 static_cast<double>(u.guard_y));

@@ -55,12 +55,17 @@ void World::order_stop(int idx) {
     const Cellxy post = u.moving() ? u.path.back() : Cellxy{u.cell_x, u.cell_y};
     u.guard_x = post.x;
     u.guard_y = post.y;
+    u.w6.area_guard = false;   // W6-02-11: Stop leaves Area_Guard
 }
 
 void World::order_guard(int idx) {
     // Guard = stop and hold this post (the guard anchor step_combat leashes
     // auto-acquired engagements to).
     order_stop(idx);
+    // W6-02-11 [RE: GuardObject FUN_0072FE30 = MegaMission(Area_Guard)]: the
+    // doubled area-guard threat radius.
+    if (idx >= 0 && idx < static_cast<int>(units_.size()) && orderable(units_[idx]) && !units_[idx].is_aircraft)
+        units_[idx].w6.area_guard = true;
 }
 
 void World::order_scatter(int idx) {

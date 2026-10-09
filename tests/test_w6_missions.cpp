@@ -2,6 +2,8 @@
 #include "doctest.h"
 
 #include "asset_fixture.hpp"
+#include "combat.hpp"
+#include "occupancy.hpp"
 #include "world.hpp"
 
 using namespace ra2engine;
@@ -68,4 +70,45 @@ TEST_CASE("w6 handicap: the house ROF multiplies a defence rearm (ftol)") {
     w.set_house_handicap(0, 1.0, 0.8);   // [Easy] ROF=.8
     CHECK(w.house_rof_frames(0, 60) == 48);
     CHECK(w.house_rof_frames(2, 60) == 60);
+}
+
+namespace {
+Unit w6_soldier(int x, int house, Occupancy& occ, int idx) {
+    Unit u;
+    u.cell_x = x;
+    u.fx = x;
+    u.house = house;
+    u.hp = u.max_hp = 125;
+    u.w_verses = std::vector<int>(11, 100);
+    u.w_damage = 15;
+    u.w_rof = 20;
+    u.w_range = 4.0;
+    u.vet.base.range = 4.0;
+    u.sight = 12;   // never read by the threat scan any more
+    occ.set(x, 0, idx);
+    return u;
+}
+int acquire_at(int dist, bool area_guard, double guard_range = 0.0) {
+    static ra2assets::MapFile map;
+    static World w(map);
+    Occupancy occ(40, 1);
+    std::vector<Unit> units;
+    units.push_back(w6_soldier(0, 0, occ, 0));
+    units.push_back(w6_soldier(dist, 1, occ, 1));
+    units[1].w_damage = 0;
+    units[0].w6.area_guard = area_guard;
+    units[0].w6.t.guard_range = guard_range;
+    std::vector<Building> bs;
+    ra2engine::step_combat(w, units, bs, occ, 1.0 / 60.0);
+    return units[0].target;
+}
+}  // namespace
+
+TEST_CASE("w6 threat radius: weapon range + 1, never Sight; area guard doubles; GuardRange wins") {
+    CHECK(acquire_at(5, false) == 1);    // range 4 + 1
+    CHECK(acquire_at(6, false) == -1);   // Sight 12 is not the radius
+    CHECK(acquire_at(8, true) == 1);     // area guard: 2 x 4
+    CHECK(acquire_at(9, true) == -1);
+    CHECK(acquire_at(3, false, 2.0) == -1);   // GuardRange=2 replaces the weapon range
+    CHECK(acquire_at(2, false, 2.0) == 1);
 }

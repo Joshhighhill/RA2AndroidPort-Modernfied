@@ -28,6 +28,12 @@ struct UnitW6 {
     // (FUN_006F45F0, false -> true only), ResizeView FUN_00566E60 recomputes
     // every object; Evaluate_Object FUN_006F71D0 rejects a target without it].
     bool in_playfield = true;
+    // W6-02-11 [RE: Mission Area_Guard (11) scans with threat 2 (@0x4D4234):
+    // FUN_007072E0(1) = 2 x (GuardRange or the larger weapon range), at most
+    // 16 cells]: a map object with Mission=Area Guard or a unit the player
+    // ordered to Guard (GuardObject FUN_0072FE30 = Area_Guard). Any other order
+    // clears it.
+    bool area_guard = false;
 };
 
 // Per-building state (the campaign host sets the type flags at placement).

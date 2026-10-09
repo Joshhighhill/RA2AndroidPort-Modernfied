@@ -1045,6 +1045,7 @@ int World::unit_at_cell(int x, int y) const {
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
+    u.w6.area_guard = false;   // W6-02-11: a move order leaves Area_Guard
     // P4 [RE: abilities.md §C1/§C2/§A]: a FROZEN unit (warping in, being
     // erased, deployed) takes no move; a Teleporter's move is a TELEPORT.
     // Both fields are inert (false) unless a P4 profile is bound, which no
@@ -3499,6 +3500,7 @@ void World::commit_attack_target(int unit_idx, int target_unit, int target_build
     u.target = target_unit;
     u.target_building = target_building;
     u.attack_order = true;
+    u.w6.area_guard = false;   // W6-02-11: an attack order leaves Area_Guard
     // CB-1: an attack order supersedes a pending enter/unload [RE-GATE
     // APPLIED: transport-cargo.md §3/§4 -- kept: our order-model
     // convention; the hunt pinned no contrary rule].

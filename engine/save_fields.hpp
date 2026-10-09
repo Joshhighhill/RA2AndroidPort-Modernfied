@@ -708,7 +708,7 @@ template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
     io(ar, v.rules_id); io(ar, v.insignificant); io(ar, v.legal_target); io(ar, v.immune_psionics);
     io(ar, v.guard_range); io(ar, v.air_range_bonus);
 }
-template <class Ar> void fields(Ar& ar, UnitW6& v) { io(ar, v.t); io(ar, v.in_playfield); }
+template <class Ar> void fields(Ar& ar, UnitW6& v) { io(ar, v.t); io(ar, v.in_playfield); io(ar, v.area_guard); }
 template <class Ar> void fields(Ar& ar, BldW6& v) {
     io(ar, v.in_playfield); io(ar, v.insignificant); io(ar, v.legal_target);
 }

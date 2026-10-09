@@ -8,9 +8,17 @@
 
 namespace ra2engine {
 
-bool World::legal_threat_unit(int /*scanner_house*/, int j) const {
+bool World::legal_threat_unit(int scanner_house, int j) const {
     if (j < 0 || j >= static_cast<int>(units_.size())) return false;
-    const Unit& v = units_[static_cast<std::size_t>(j)];
+    return legal_threat_unit(scanner_house, units_[static_cast<std::size_t>(j)]);
+}
+
+bool World::legal_threat_building(int scanner_house, int bi) const {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
+    return legal_threat_building(scanner_house, buildings_[static_cast<std::size_t>(bi)]);
+}
+
+bool World::legal_threat_unit(int /*scanner_house*/, const Unit& v) const {
     if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
     // [RE: Evaluate_Object FUN_006F71D0 @0x6F7A5C: type +0x231 LegalTarget]
     if (!v.w6.t.legal_target) return false;
@@ -24,9 +32,7 @@ bool World::legal_threat_unit(int /*scanner_house*/, int j) const {
     return true;
 }
 
-bool World::legal_threat_building(int /*scanner_house*/, int bi) const {
-    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
-    const Building& b = buildings_[static_cast<std::size_t>(bi)];
+bool World::legal_threat_building(int /*scanner_house*/, const Building& b) const {
     if (!b.alive || b.state == Building::State::Dead) return false;
     if (!b.w6.legal_target) return false;
     if (!b.w6.in_playfield) return false;
