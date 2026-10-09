@@ -9,6 +9,10 @@ p = P("""# P4: ALL10 (Mirage) won with real orders only (no cheats). After the i
 # type-selected army (Grizzlies, IFVs, Einstein's Mirage tanks) attacks every
 # BadGuy1/2/3 building and unit in turn -- the three ConYards the landed MCVs
 # deployed first; 'Win' (DestroyedAll BG1+BG2+BG3) -> VICTORY.
+# W6 re-tune (full-strength team start + Patrol attack-move left BadGuy2's
+# 14-unit team waiting at its Con Yard): two extra Chrono Miners fund the
+# army, and the lab guard joins the final sweeps. Normal (loading-screen
+# default).
 set render_every 3000
 set on_quit continue
 set campaign ALL10s.MAP GDI
@@ -24,6 +28,10 @@ p.select_types(["E1", "JUMPJET"]).add("click cell 101 168", "wait 300")
 p.build("GAREFN", lenient=True).build("GAPOWR", lenient=True).build("GAREFN", lenient=True)
 p.train("MTNK", 3, 5)
 p.build("GAWEAP", lenient=True).build("GAPOWR", lenient=True)
+# W6 re-tune: two more Chrono Miners -- the start miner dies and ~9400
+# credits used to sit idle while the army was trained; without them the
+# army is broke before BadGuy2's (now full-strength, waiting) team falls.
+p.train("CMIN", 3, 2)
 for r in range(6):
     p.train("MTNK", 3, 5)
     p.train("FV", 3, 1)
@@ -36,16 +44,16 @@ UT = ["SMCV", "APOC", "HTNK", "HTK", "V3", "FLAKT", "SHK", "E2", "DOG", "DESO", 
 BT = ["NACNST", "NAPOWR", "NAREFN", "NAHAND", "NAWEAP", "NARADR", "NALASR", "NAFLAK", "TESLA", "NAIRON",
       "NANRCT", "NATECH", "NAMISL", "NADEPT", "NAYARD", "NABNKR"]
 g = "outcome == RUNNING"
-def select_army():
+def select_army(types=ARMY):
     first = True
-    for t in ARMY:
+    for t in types:
         p.add(f"if {g} and units(0,{t}) > 0 then click unit 0:{t}:0{'' if first else ' shift'} soft")
         first = False
     p.add(f"if {g} then key t", f"if {g} then key t")
-def house_round(h, wait):
+def house_round(h, wait, types=ARMY):
     targets = [(f"buildings({h},{t}) > 0", f"building {h}:{t}:0") for t in BT]
     targets += [(f"units({h},{t}) > occupants({h}) and units({h},{t}) > carried({h})", f"unit {h}:{t}:0") for t in UT]
-    select_army()
+    select_army(types)
     for cond, tgt in targets:
         p.add(f"if {g} and {cond} then click {tgt} soft", f"if {g} and {cond} then wait {wait}")
     # stragglers a click cannot reach: walk the army through the house's base
@@ -62,9 +70,13 @@ for h in [6, 1, 2]:
         house_round(h, 300)
         p.add(f"if {g} then dump")
         p.train("MTNK", 3, 3, guard=True)
+# W6 re-tune: BadGuy2 keeps its waiting full-strength team (14 infantry and
+# Flak Tracks) at its Con Yard [RE: TeamClass::AI FUN_006E86B0 -- a team
+# starts only at full strength]; once BadGuy1/3 are gone (the assault squads
+# with them) the lab guard -- GIs and Rocketeers -- joins the final sweeps.
 for k in range(8):
     for h in HOUSES:
-        house_round(h, 150)
+        house_round(h, 150, ARMY + ["E1", "JUMPJET"])
     p.add(f"if {g} then dump")
     p.train("MTNK", 3, 4, guard=True)
 p.add("until 3000 outcome == WON", "end expect WON")
