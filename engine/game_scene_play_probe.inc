@@ -664,6 +664,7 @@
         }
         w2_play_probe(p);   // wave-2 air/naval/SW keys (w2air_play.inc)
         w5_play_probe(p);   // W5-B combat/movement keys (w5_play.inc)
+        r210_play_probe(p);   // R-210 bridges and cliffs (r210_play.inc)
         {   // P4: sel_near(h,TYPE) = cells from the selection's centre to the
             // nearest live unit of that house/type (only while units are selected)
             double nx = 0, ny = 0;

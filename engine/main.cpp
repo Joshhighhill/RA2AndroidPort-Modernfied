@@ -6399,6 +6399,7 @@ public:
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);
+        r210_track_steps();   // R-210 --play probes (scene-side, never saved)
         world_.apply_stolen_tech_gate(ur_.defs, 0);   // wave-5 (R-042): spy-stolen tech unlocks
         pres_.logic_tick(world_, ba_, player_credits_, world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
@@ -6778,6 +6779,7 @@ public:
 #include "game_scene_play_probe.inc"
 #include "w2air_play.inc"   // wave-2 air/naval/SW --play keys, points, cheats
 #include "w5_play.inc"      // W5-B combat/movement --play keys
+#include "r210_play.inc"    // R-210 bridges and cliffs --play keys
 
     // --- P7 Save / Load -------------------------------------------------------
     // Everything GameScene keeps outside the World that matters to the resumed
