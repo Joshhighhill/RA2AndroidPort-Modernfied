@@ -165,8 +165,11 @@ std::map<std::string, long> g_cameo_flash;   // W5-PRES R-039: building id -> lo
 struct PipArt;
 extern const PipArt* g_pips;
 extern double g_pip_yellow, g_pip_red;
+// W6-05-07: the unit under the mouse pointer (GameScene, real mouse only;
+// -1 = none) -- render_world draws its pip row without the board.
+int g_hover_unit = -1;
 void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
-                    double yellow, double red);
+                    double yellow, double red, bool board = true);
 inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
@@ -3895,13 +3898,14 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         if (world.unit_hidden_from(0, u)) continue;   // W2-AN-13 submerged, no sonar contact
         if (input && g_pips) {   // W2-UI-11: PIPBRD + PIPS on the selected units only
-            if (u.selected) {
+            const bool hovered = g_hover_unit == static_cast<int>(&u - us.data());   // W6-05-07
+            if (u.selected || hovered) {
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
                 const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B
                 const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
                 const int lv = u.level + pres_unit_lift_levels(world, u);   // W5-PRES R-100 deck
                 const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - lv * 15)) + cam.y + 15 - up;
-                draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red);
+                draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red, u.selected);
             }
         } else if (u.selected || u.hp < u.max_hp)
             ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
@@ -6440,6 +6444,9 @@ public:
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
         update_light_sources();   // W3-FIX-A
+        // W6-05-07: the hovered unit's health pips (a real mouse over the
+        // tactical view; a touch has no hover).
+        g_hover_unit = (mouse_present_ && mx_ < playfield_w_ && !input_locked_) ? input_.pick_unit_at(mx_, my_) : -1;
         render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
         hidden_.rules = &rules_ini_;   // W5-E2 R-146: the Behind= marker over occluded objects

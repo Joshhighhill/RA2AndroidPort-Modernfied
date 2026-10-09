@@ -55,4 +55,18 @@ click tab:0
 move button:repair
 wait 40
 shot h09_repair_hover
+# W6-05-07: the pointer over an unselected unit shows its health pips (no
+# PIPBRD board) [RE: DrawHealthBar FUN_006c3f00 gates only the board on
+# IsSelected].
+click xy 600 300 right
+cheat spawn MTNK 0 building 0:GACNST +3 +3
+wait 2
+cheat w2 damage 0:MTNK 150
+view building 0:GACNST
+move unit 0:MTNK
+wait 2
+# (the hover is resolved at render time: the shot renders)
+shot h10_hover_pips
+assert hover_unit >= 0                                   @W6-05-07
+assert selected_type(MTNK) == 0                          @W6-05-07
 end

@@ -68,12 +68,15 @@ inline int pip_frame_unit(double ratio, double yellow, double red) {
 }
 
 // Selected unit: board + pips at the unit's screen point.
+// W6-05-07 [RE: DrawHealthBar FUN_006c3f00 gates ONLY the PIPBRD board on
+// IsSelected (+0x77); the pip row is drawn unconditionally, so a hovered,
+// unselected object shows its pips without the board]: board = selected.
 void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
-                    double yellow, double red) {
+                    double yellow, double red, bool board) {
     if (!g_pips || u.max_hp <= 0) return;
     const bool inf = !u.is_vehicle && !u.is_aircraft;
-    if (inf) blit_shp_centered(ren, tc, "pip:brd1", g_pips->pipbrd, 1, g_pips->pal, x + 11, y - 25);
-    else blit_shp_centered(ren, tc, "pip:brd0", g_pips->pipbrd, 0, g_pips->pal, x + 1, y - 26);
+    if (board && inf) blit_shp_centered(ren, tc, "pip:brd1", g_pips->pipbrd, 1, g_pips->pal, x + 11, y - 25);
+    else if (board) blit_shp_centered(ren, tc, "pip:brd0", g_pips->pipbrd, 0, g_pips->pal, x + 1, y - 26);
     const int max = inf ? 8 : 17;
     const double ratio = static_cast<double>(std::max(0, u.hp)) / u.max_hp;
     int n = static_cast<int>(ratio * max);
