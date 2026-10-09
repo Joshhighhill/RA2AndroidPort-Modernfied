@@ -8745,7 +8745,11 @@ int run_menu(bool no_audio) {
     ra2engine::Settings user = load_user_settings();
     g_user_settings = &user;
     // G-89: honour RA2.INI [Video] ScreenWidth/ScreenHeight for the window.
-    if (user.screen_width > 0 && user.screen_height > 0) plat.set_window_size(user.screen_width, user.screen_height);
+    if (user.screen_width > 0 && user.screen_height > 0 && !plat.set_window_size(user.screen_width, user.screen_height)) {
+        user.screen_width = 1280;   // W6-06-12: rewrite [Video] so the next start is clean too
+        user.screen_height = 720;
+        save_user_settings(user);
+    }
     if (store.audio && store.audio->sys.mixer)
         apply_audio_settings(*store.audio->sys.mixer, user);
     g_menu_rules = &rules;        // P10: a finished/aborted mission returns here
