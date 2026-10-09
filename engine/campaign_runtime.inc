@@ -1796,7 +1796,29 @@ private:
         w_.order_leave_map(m);
     }
     void adopt(Team& tm, int team_idx) {
-        for (int m : tm.members) utrack_[(std::size_t)m].team = team_idx;
+        // W6-02-14 [RE: the team ctor FUN_006E8000 builds the TagClass
+        // (FUN_006E4350) from TeamType+0xD0; AddMember FUN_006E9A70 calls
+        // ObjectClass::AttachTrigger FUN_005F5360 on EVERY member -- it
+        // replaces the member's own tag (old count -1, new +1); a change of
+        // owner keeps obj+0x34]. Recruited members carried no tag before: ALL05
+        // Tanya (CreateTeam 'Tanya (2)', Tag=088361A0) died without 'Tanya
+        // Dies'. [RE-FALLBACK: the original skips OnTransOnly non-transports;
+        // OnTransOnly is not parsed. The clone's tags are shared by index, as
+        // for reinforcements, not one instance per team.]
+        int tg = -1;
+        if (tm.type >= 0 && tm.type < (int)teams_data_.teams.size()) {
+            const std::string& tag = teams_data_.teams[(std::size_t)tm.type].tag;
+            if (!tag.empty() && camp::up(tag) != "<NONE>") tg = data_.find_tag(tag);
+        }
+        for (int m : tm.members) {
+            Track& t = utrack_[(std::size_t)m];
+            t.team = team_idx;
+            if (tg >= 0 && sys_ && t.tag != tg) {
+                if (t.tag >= 0) sys_->detach_tag(t.tag);
+                t.tag = tg;
+                sys_->attach_tag(tg);
+            }
+        }
     }
     // --- W4-SQ-01/06 reinforcement delivery [RE: FUN_0065d770] -------------
     struct Member { std::string type; bool transport = false; };
