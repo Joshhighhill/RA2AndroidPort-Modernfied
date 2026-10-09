@@ -805,6 +805,19 @@ inline int w5_speed_type_index(std::string s) {
     return -1;
 }
 
+// W6 fix #2: a unit type's rules id + targeting data (target_w6.hpp).
+ra2engine::UnitTypeW6 resolve_unit_w6(const Rules& rules, const std::string& unit_id) {
+    ra2engine::UnitTypeW6 w;
+    w.rules_id = unit_id;
+    for (char& ch : w.rules_id) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    w.insignificant = rules.section_flag(unit_id, "Insignificant", false);
+    w.legal_target = rules.section_flag(unit_id, "LegalTarget", true);
+    w.immune_psionics = rules.section_flag(unit_id, "ImmuneToPsionics", false);
+    w.guard_range = rules.section_double(unit_id, "GuardRange", 0.0);
+    w.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);
+    return w;
+}
+
 ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id) {
     ResolvedUnit r;
     r.combat.image = rules.image(unit_id);
@@ -819,16 +832,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.armor = rules.armor(unit_id);
     // W6 fix #2: rules id + the targeting type data (map overrides merged in a
     // campaign: its Rules is rulesmd with the scenario overlaid).
-    {
-        std::string id = unit_id;
-        for (char& ch : id) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-        r.combat.w6.rules_id = id;
-        r.combat.w6.insignificant = rules.section_flag(unit_id, "Insignificant", false);
-        r.combat.w6.legal_target = rules.section_flag(unit_id, "LegalTarget", true);
-        r.combat.w6.immune_psionics = rules.section_flag(unit_id, "ImmuneToPsionics", false);
-        r.combat.w6.guard_range = rules.section_double(unit_id, "GuardRange", 0.0);
-        r.combat.w6.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);
-    }
+    r.combat.w6 = resolve_unit_w6(rules, unit_id);
     // Gap fix C (G-41) [RE: docs/re/weapons.md §1]: the TechnoType slot rule
     // (Primary/Secondary, or Weapon1..N for TurretCount>=1 types -- SREF's
     // Primary is commented out and Weapon1=Comet) via engine/weapon_resolve.

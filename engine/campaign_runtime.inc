@@ -201,6 +201,10 @@ public:
                 auto va = std::make_unique<VehicleAssets>(load_vehicle_assets(dir_, ra2_, ua_.pal, id));
                 if (va->ok) {
                     t.combat = va->combat;
+                    // W6 fix #2: the voxel loader resolves with the stock rulesmd;
+                    // the targeting data takes the MAP overrides (SOV09 [CAR]
+                    // ImmuneToPsionics=yes).
+                    t.combat.w6 = resolve_unit_w6(rules_, id);
                     t.vehicle = true;
                     t.ok = true;
                     vas_.push_back(std::move(va));
@@ -992,7 +996,8 @@ private:
         return live(b) && !(b.type >= 0 && b.type < (int)ba_.roster.size() && untracked_type(ba_.roster[(std::size_t)b.type].id));
     }
     bool tracked(const ra2engine::Unit& u) const {
-        return live(u) && !u.vet.dont_score && !untracked_type(u.image);
+        return live(u) && !u.vet.dont_score &&
+               !untracked_type(u.w6.t.rules_id.empty() ? u.image : u.w6.t.rules_id);   // W6-02-15
     }
     bool free_cell_near(int x, int y, int& ox, int& oy, int maxr = 6) const {
         for (int r = 0; r <= maxr; ++r)
@@ -1037,7 +1042,11 @@ private:
             Track t;
             t.initial = false;
             const ra2engine::Unit& u = w_.units()[utrack_.size()];
-            t.type = camp::up(u.image);
+            // W6-02-15 [RE: the build events 19-22 compare the produced
+            // TechnoType index, map-triggers.md]: a factory-built unit is
+            // tracked under its RULES id (E1), not its art Image= (GI);
+            // the image is the fallback for a hand-built UnitCombat.
+            t.type = camp::up(u.w6.t.rules_id.empty() ? u.image : u.w6.t.rules_id);
             t.cx = u.cell_x;
             t.cy = u.cell_y;
             t.hp = u.hp;
