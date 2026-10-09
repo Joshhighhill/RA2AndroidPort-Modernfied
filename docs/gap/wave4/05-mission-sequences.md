@@ -38,15 +38,18 @@ Engine fixes (each a separate commit, with a unit test):
 Harness (no sim change, `a5a140c`): `cheat map_levels PATH` (cell heights) and, with `RA2_CAMP_DEBUG`, the base
 defences aiming at a unit on its death line (` def=TYPE@x,y`).
 
-Other scripts (scoped re-run, final tree): `m-all01`, `m-sov01`, `m-sov09`, `m-sov01/04/07/11/12-real`,
-`m-sov02-real`, `m-sov02-mcv`, `m-all04/07/12-real`, `m-all09-opening`, `m-trn02-real`, `sk-a` PASS.
-`m-trn02-real` needed a script change (`gen/mk_trn02.py`: `building 1:TYPE:near`; with the hold the GI squad
-stands in front of its target and a centre click hit a selected GI). **`m-all03-real` now FAILS (LOST at f12689)**
-because of the faithful building hold: ALL03's map-placed Rhino raid now shells the base from 6-7 cells south
-instead of driving up to the buildings, beyond the reach (range + 1) of the Grizzlies idling north of it, and the
-base falls at f9090-10125 (area guard or parking the tanks south did not save it in three tries); it needs a
-re-tuned defence. `mc-range` and `sk-s` fail with and without the R3 building hold (pre-existing on this tree).
-R1/R2 scripts were not run here; any proof that relied on attackers walking up to buildings may move.
+Scripts re-run after merging master (w6r1, w6r2, fix-bridge R-210) into `w6r3` (`dd99b29`): `m-sov09-real`
+(**WON**, f9612, `play_hash=3260811105355be1`), `m-sov09`, `m-all01`, `m-sov01`, `m-sov01-real`, `m-sov07-real`,
+`m-sov12-real`, `m-trn02-real`, `m-all03-real`, `m-all04-real`, `m-all05-real`, `m-all11-real`, `sk-a` PASS.
+Script changes needed by the R3 engine fixes: `m-trn02-real` (`gen/mk_trn02.py`: `building 1:TYPE:near`; with the
+hold the GI squad stands in front of its target and a centre click hit a selected GI) and `m-all04-real`
+(`gen/mk_all04.py`: soft Grizzly selection with fallbacks -- the first Grizzly stood at the LocalSize edge).
+`m-all03-real` failed on the pre-merge tree (ALL03's Rhino raid shelled the base from 6-7 cells instead of driving
+up to it) and passes again after the R-210 height gate. **`m-all10-real` does not win**: on merged master without
+the R3 engine changes it ends RUNNING at f27126; with them it is LOST at f7494 -- the Soviet invasion now holds at
+weapon range and shells the base (buildings 20 -> 0 from f3105), beyond the reach of the idle defenders, the same
+faithful change that broke ALL03 before the merge. It needs a re-tuned defence (R2's mission). `mc-range` (SOV09
+Normal opening) and `sk-s` fail with and without the R3 building hold (pre-existing).
 
 ## W6 fix #2 status (wave-6 fix agent 2, branch `w6fix-missions`)
 
