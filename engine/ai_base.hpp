@@ -199,6 +199,12 @@ struct AiBaseState {
                                       // (plan build, preemption insert, and
                                       // economy-expansion append) draws from
                                       // it so ids never collide or reuse
+    // W6-03-08 [RE: FUN_004fdb30 sets house+0x564c (building) / +0x5650
+    // (unit) to the recovery target and abandons other production]: the
+    // refinery (roster index) / harvester (unit-roster index) the house is
+    // raising money for; -1 = none.
+    int raise_building = -1;
+    int raise_unit = -1;
 };
 
 // xorshift32 step (same algorithm family the economy phase adjudicated).

@@ -1748,6 +1748,10 @@ public:
     void grant_credits_for_test(int house, double amount) {
         if (house >= 0 && house < house_count()) house_credits_[house] = amount;
     }
+    // W6-03-08 probe: set a computer house's AI wallet (harness only).
+    void ai_set_credits_for_test(int house, double amount) {
+        if (ai_enabled(house)) ai_houses_[(std::size_t)house].credits = amount;
+    }
 
     // --- P5 Veterancy + Crates [RE: docs/re/veterancy.md] --------------------
     // BYTE-IDENTITY FIREWALL: nothing below runs unless enable_veterancy (and,
@@ -2072,6 +2076,7 @@ private:
     static void ai_damage_feed_cb(void* ctx, bool building, int victim, int attacker_house, int dmg);
     bool ai_house_out(int house) const;   // W6-03-04: house+0x1f5 (defeated)
     int ai_team_sw_state(int house, const HouseAiRec& rec, SuperweaponType t) const;   // W6-03-05
+    void ai_raise_money(int house, HouseAiRec& rec);   // W6-03-08 (FUN_004fdb30)
     bool ai_house_alive(int house) const;                   // W2-SK-08
 public:
     int ai_enemy_house(int house) const {                   // W2-SK-08 (probe)

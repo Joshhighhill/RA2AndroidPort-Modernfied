@@ -3073,6 +3073,16 @@ void World::step_ai_houses(double dt) {
                 break;
             }
         }
+        // 6c') W6-03-08 raise money [RE: FUN_004fd320 -> FUN_004fd7c0 urgency,
+        //     FUN_004fdb30]: a computer house with no refinery (house+0x15c <
+        //     1) that cannot afford its BuildRefinery, or with refineries but
+        //     no harvester at work that cannot afford its HarvesterUnit, walks
+        //     its base plan from the TAIL backwards selling each standing
+        //     building (vt+0x1a0, refund vt+700) until credits + refunds
+        //     exceed that cost; the ordinary rebuild/miner logic then buys it.
+        //     [RE-FALLBACK: the ConYard and refineries are never sold; the
+        //     refund is the AI's unscaled GetRefund (repair_sell.hpp).]
+        if (rec.cfg.team.enabled) ai_raise_money(h, rec);
         // 6c) [G-66] superweapon autofire on the house AI tick (FUN_004fd320 ->
         //     FUN_00509710, IQ-gated; always on for skirmish AI).
         if (cfg.fire_superweapons) ai_try_fire_superweapon(h, rec);   // W5-A IQ gate
@@ -3080,8 +3090,32 @@ void World::step_ai_houses(double dt) {
 
         // 7) Decide.
         const BaseView view = make_ai_base_view(h, rec);
-        const BuildDecision d =
+        BuildDecision d =
             next_build(rec.state, view, cfg.catalog, cfg.roster, cfg.ai, cfg.mods);
+        // W6-03-08 [RE: FUN_004fdb30 -> house+0x564c]: the recovery refinery
+        // goes ahead of the plan head (its first unsatisfied node, or a new one).
+        if (rec.state.raise_building >= 0) {
+            const int rt = rec.state.raise_building;
+            int ni = -1;
+            for (int i = 0; i < (int)rec.state.plan.size() && ni < 0; ++i) {
+                const PlannedNode& n = rec.state.plan[(std::size_t)i];
+                if (n.type != rt) continue;
+                const bool standing = n.building >= 0 && n.building < (int)buildings_.size() &&
+                                      buildings_[(std::size_t)n.building].alive &&
+                                      buildings_[(std::size_t)n.building].house == h &&
+                                      buildings_[(std::size_t)n.building].state != Building::State::Dead;
+                if (!standing) ni = i;
+            }
+            if (ni < 0) {
+                PlannedNode n;
+                n.id = rec.state.next_node_id++;
+                n.type = rt;
+                rec.state.plan.push_back(n);
+                ni = (int)rec.state.plan.size() - 1;
+            }
+            d.type = rt;
+            d.node = ni;
+        }
         if (d.type < 0) continue;  // nothing needed, or wait/bank
 
         // 8) Route to the queue the player would use [RE: ai-base.md §6]:
@@ -3220,6 +3254,64 @@ bool World::ai_base_centre(int hh, int& x, int& y) const {
 //    allies included, which the arg-max then filters out.
 //  * [RE: FUN_004fd320] an Enemy that is defeated has its anger removed
 //    and the Enemy is cleared to -1.
+void World::ai_raise_money(int h, HouseAiRec& rec) {
+    const AiHouseConfig& cfg = rec.cfg;
+    const AiTeamConfig& tc = cfg.team;
+    auto is_ref = [&](int type) {
+        return std::find(refinery_types_.begin(), refinery_types_.end(), type) != refinery_types_.end();
+    };
+    int refineries = 0, miners = 0;
+    for (const Building& b : buildings_)
+        if (b.alive && b.house == h && b.state == Building::State::Idle && is_ref(b.type)) ++refineries;
+    for (const Unit& u : units_)
+        if (u.alive && u.die_time < 0.0 && u.house == h && u.is_harvester) ++miners;
+    // Already in production: the original compares the remaining charge with
+    // the money instead; the clone's queues pay as they go, so it waits.
+    // A recovery target stays set (house+0x564c / +0x5650) until it stands.
+    if (rec.state.raise_building >= 0 && refineries >= 1) rec.state.raise_building = -1;
+    if (rec.state.raise_unit >= 0 && miners >= 1) rec.state.raise_unit = -1;
+    double need = 0.0;
+    int nb = -1, nu = -1;
+    if (refineries < 1) {
+        const int t = cfg.catalog.refinery >= 0 ? cfg.catalog.refinery : cfg.catalog.war_factory;
+        if (t >= 0 && t < (int)cfg.roster.size() && rec.queues.producing(QueueCat::Structure) != t) {
+            nb = t;
+            need = cfg.roster[(std::size_t)t].cost * cfg.mods.cost_mul;
+        }
+    } else if (miners < 1) {
+        for (int k = 0; k < (int)tc.unit_roster.size(); ++k)
+            if (tc.unit_roster[(std::size_t)k].harvester) {
+                if (rec.queues.producing(QueueCat::Vehicle) != k) {
+                    nu = k;
+                    need = tc.unit_roster[(std::size_t)k].cost * cfg.mods.cost_mul;
+                }
+                break;
+            }
+    }
+    // FUN_004fd7c0: urgent only when the house cannot afford it.
+    if (need <= 0.0 || rec.credits >= need) return;
+    if (nb >= 0) rec.state.raise_building = nb;
+    if (nu >= 0) rec.state.raise_unit = nu;
+    const std::vector<BuildingTypeDef>& bts = btypes();
+    double raised = 0.0;   // refunds still on their way count already
+    for (const Building& b : buildings_)
+        if (b.alive && b.house == h && b.selling && b.type >= 0 && b.type < (int)bts.size())
+            raised += sell_refund(bts[(std::size_t)b.type].cost, bts[(std::size_t)b.type].soylent, 0.5, false);
+    if (rec.credits + raised > need) return;
+    for (int i = (int)rec.state.plan.size() - 1; i >= 0; --i) {
+        const int bi = rec.state.plan[(std::size_t)i].building;
+        if (bi < 0 || bi >= (int)buildings_.size()) continue;
+        const Building& b = buildings_[(std::size_t)bi];
+        if (!b.alive || b.house != h || b.state != Building::State::Idle || b.selling) continue;
+        if (b.type < 0 || b.type >= (int)bts.size() || bts[(std::size_t)b.type].conyard || is_ref(b.type))
+            continue;
+        const BuildingTypeDef& t = bts[(std::size_t)b.type];
+        if (!begin_sell(bi, h)) continue;
+        raised += sell_refund(t.cost, t.soylent, 0.5, /*owner_is_human=*/false);
+        if (rec.credits + raised > need) break;
+    }
+}
+
 // W6-03-05 [RE: FUN_006ef1d0 / FUN_006ef3c0 / FUN_006ef690]: script 55-57
 // line state for `house`'s Iron Curtain / Chronosphere (see TeamView).
 int World::ai_team_sw_state(int house, const HouseAiRec& rec, SuperweaponType t) const {
@@ -4342,6 +4434,10 @@ void World::step_ai_teams(double dt) {
                     break;
                 }
         }
+        // W6-03-08 [RE: FUN_004fdb30 abandons the house's production when it
+        // raises money]: while a refinery / harvester is owed, only the
+        // harvester (pass 1 below) may start.
+        if (rec.state.raise_building >= 0 || rec.state.raise_unit >= 0) want_inf = want_veh = -1;
         for (int pass = 0; pass < 2; ++pass) {
         want = pass == 0 ? want_inf : want_veh;
         if (pass == 1 && tc.harvesters_per_refinery > 0 &&

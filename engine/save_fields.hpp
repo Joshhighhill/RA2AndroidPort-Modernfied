@@ -1127,6 +1127,7 @@ template <class Ar> void fields(Ar& ar, AiBaseState& v) {
     io(ar, v.repair_clock);
     io(ar, v.pending);
     io(ar, v.next_node_id);
+    io(ar, v.raise_building); io(ar, v.raise_unit);   // W6-03-08 (v25)
 }
 template <class Ar> void fields(Ar& ar, AiCatalog& v) {
     io(ar, v.conyard); io(ar, v.power); io(ar, v.refinery); io(ar, v.barracks);
