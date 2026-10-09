@@ -92,6 +92,13 @@ void TouchGestures::finger_move(int64_t id, int x, int y, uint32_t t) {
     cx_ = x;
     cy_ = y;
     const bool beyond = std::abs(x - x0_) > cfg_.slop_px || std::abs(y - y0_) > cfg_.slop_px;
+    if (st_ == State::Pending && beyond && box_mode_) {
+        st_ = State::BandDrag;   // W6-01-11: BOX mode -- the drag is a band box
+        emit(InputEvent::PointerMove, x0_, y0_, false, t0_);
+        emit(InputEvent::PointerDown, x0_, y0_, false, t0_);
+        emit(InputEvent::PointerMove, x, y, false, t);
+        return;
+    }
     if (st_ == State::Pending && beyond) {
         st_ = State::Panning;   // W4-AM-01: one-finger drag scrolls
         emit_pan(x - px_, y - py_, x, y, t);

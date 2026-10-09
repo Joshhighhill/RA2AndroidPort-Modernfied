@@ -6020,6 +6020,7 @@ public:
         apply_loaded(f);
     }
     ~GameScene() override {
+        ra2engine::TouchGestures::set_box_mode(false);   // W6-01-11: BOX never outlives the game
         lifecycle_teardown();   // W2-AR-09: a normal end removes the autosave
         prewarm_stop_ = true;
         if (prewarm_.joinable()) prewarm_.join();

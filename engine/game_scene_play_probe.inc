@@ -247,6 +247,11 @@
             p.set("touch_bar_open", touch_bar_open_ ? 1 : 0);
             p.set("touch_banner", touch_banner_visible() ? 1 : 0);
             p.set("touch_mode", touch_mode());
+            p.set("touch_aim", touch_aim_bld_);                 // W6-01-02 aimed building (-1 none)
+            p.set("touch_aim_sw", touch_aim_cx_ != INT_MIN ? 1 : 0);   // W6-01-07 SW target aimed
+            p.set("cameo_menu", cameo_menu_buttons().empty() ? 0 : 1); // W6-01-03 cameo popup up
+            p.set("touch_box", touch_box_ ? 1 : 0);             // W6-01-11 sticky BOX
+            p.set("touch_page2", touch_page2_ ? 1 : 0);         // W6-01-09 MORE page
             p.set("tooltip_up", tooltip_now().empty() ? 0 : 1);
             double vcx = 0, vcy = 0;
             if (campaign_) camp_view_cell(vcx, vcy);
