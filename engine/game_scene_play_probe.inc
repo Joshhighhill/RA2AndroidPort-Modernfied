@@ -90,6 +90,7 @@
         const int houses = world_.house_count();
         p.set("houses", houses);
         p.set("tile_misses", a_.theater.miss_count());             // W6-05-02 tile files found nowhere
+        p.set("tile_fallbacks", ra2engine::terrain_fallback_cells());   // W6-05-10 cells drawn as clear
         // W6-05-04/05: the bottom-right timer stack, line i's text.
         build_timer_stack();
         p.set("timer_lines", static_cast<int>(timer_lines_.size()));

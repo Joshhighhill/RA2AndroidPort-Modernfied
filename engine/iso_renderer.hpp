@@ -276,6 +276,9 @@ const ObjTint* obj_tint();
 void blit_object(void* sdl_renderer, void* tex, const void* dst);
 ra2assets::Palette house_draw_palette(const ra2assets::Palette& base, int house);
 int house_draw_key(int house);
+// W6-05-10: cells of the current terrain draw list that have no tile image
+// (missing TMP / bad sub-tile) and are drawn as clear ground instead.
+int terrain_fallback_cells();
 
 // Draw a green isometric-diamond selection marker on the unit's tile
 // (at its interpolated fx/fy position). No-op if fully off-screen. Call
