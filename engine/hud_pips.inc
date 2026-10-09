@@ -30,6 +30,8 @@ struct PipArt {
     ra2assets::ShpFile pipbrd, pips;
     ra2assets::Palette pal;
     bool ok = false;
+    ra2assets::ShpFile bomb;   // W6-04-11: conquer.mix bomb.shp (the Ivan bomb icon)
+    bool has_bomb = false;
 };
 const PipArt* g_pips = nullptr;
 // [AudioVisual] ConditionYellow / ConditionRed (set with g_pips by GameScene).
@@ -50,6 +52,10 @@ void pips_load(const ra2assets::MixFile& ra2) {
             const auto raw = cache.read(*pe);
             art.pal = ra2assets::Palette::load(raw.data(), raw.size());
             art.ok = art.pipbrd.count() >= 2 && art.pips.count() >= 18;
+        }
+        if (const ra2assets::MixEntry* bm = conquer.find(std::string("bomb.shp"))) {   // W6-04-11
+            art.bomb = ra2assets::ShpFile::load(conquer.read(*bm));
+            art.has_bomb = art.bomb.count() > 0;
         }
     } catch (const std::exception& ex) {
         std::cerr << "[pips] unavailable: " << ex.what() << "\n";
@@ -112,5 +118,39 @@ void draw_building_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, int hp, 
         const int fr = i < filled ? f : 0;
         blit_shp_centered(ren, tc, "pipb:" + std::to_string(fr), g_pips->pips, fr, g_pips->pal, x0 - 4 * i,
                           y0 + 2 * i);
+    }
+}
+
+// W6-04-11: see the declaration in main.cpp.
+void draw_bomb_icons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
+                     const std::vector<ra2engine::Unit>& us, const ra2engine::Camera& cam) {
+    if (g_pips && g_pips->has_bomb) {
+        const std::uint64_t now = world.ability_frame();
+        const int nf = g_pips->bomb.count();
+        auto bomb_frame = [&](std::int64_t det) {
+            const long left = std::max<long>(0, static_cast<long>(det - static_cast<std::int64_t>(now)));
+            const int stage = std::clamp(5 - static_cast<int>(left * 6 / 451), 0, 5);
+            const int f = stage * 2 + static_cast<int>((now / 8) & 1);
+            return nf >= 12 ? f : f % nf;
+        };
+        for (const ra2engine::Unit& u : us) {
+            if (u.bomb_frame < 0 || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+            if (world.unit_hidden_from(0, u) || !(u.seen_by_mask & 1u)) continue;
+            const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
+            const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;
+            const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
+            const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - u.level * 15)) + cam.y + 15 - up;
+            blit_shp_centered(ren, tc, "w6bomb:" + std::to_string(bomb_frame(u.bomb_frame)), g_pips->bomb,
+                              bomb_frame(u.bomb_frame), g_pips->pal, sx, sy - 34);
+        }
+        for (const ra2engine::Building& b : world.buildings()) {
+            if (b.bomb_frame < 0 || !b.alive || b.state == ra2engine::Building::State::Dead) continue;
+            const double cx = b.cx + (b.fw - 1) / 2.0, cy = b.cy + (b.fh - 1) / 2.0;
+            const int sx = static_cast<int>(std::lround((cx - cy) * 30.0)) + cam.x + 30;
+            const int sy = static_cast<int>(std::lround((cx + cy) * 15.0 - world.cell_level(b.cx, b.cy) * 15)) +
+                           cam.y + 15 - 40;
+            blit_shp_centered(ren, tc, "w6bomb:" + std::to_string(bomb_frame(b.bomb_frame)), g_pips->bomb,
+                              bomb_frame(b.bomb_frame), g_pips->pal, sx, sy);
+        }
     }
 }

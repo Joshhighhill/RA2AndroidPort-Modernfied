@@ -2,6 +2,7 @@
 #include "abil_w5_rules.hpp"   // wave-5 (agent C)
 
 #include "ra2assets/rules.hpp"
+#include <algorithm>
 #include <cctype>
 
 namespace ra2engine {
@@ -35,7 +36,33 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.wall = rules.section_flag(wh, "Wall", false);   // G16: WarheadType +0x144
     s.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));   // W3-B
     s.prone_damage = warhead_prone_damage(rules, wh);
+    // W6-04-01 [RE: WeaponTypeClass::LoadFromINI Burst -> +0x9C, default 1]
+    s.burst = std::max(1, static_cast<int>(rules.section_double(weapon, "Burst", 1.0)));
+    s.sonic = rules.section_flag(wh, "Sonic", false);   // W6-04-09 (WarheadType +0x14B)
+    s.wall_flags = warhead_wall_flags(rules, wh);         // W6-04-04
+    s.min_range = rules.section_double(weapon, "MinimumRange", 0.0);   // W6-04-22 (+0xB8)
+    // W6-04-02: ShrapnelWeapon/ShrapnelCount are BulletType keys (the
+    // projectile section), not WeaponType keys.
+    const std::string sw = rules.section_string(proj, "ShrapnelWeapon", "");
+    const int sc = static_cast<int>(rules.section_double(proj, "ShrapnelCount", 0.0));
+    if (!sw.empty() && sc > 0) {
+        s.shrapnel_count = sc;
+        s.shrapnel_damage = rules.weapon_damage(sw);
+        s.shrapnel_range = rules.weapon_range(sw);
+        s.shrapnel_verses = rules.verses(rules.weapon_warhead(sw));
+    }
     return s;
+}
+
+// W6-04-04 [RE: FUN_00489190 @0x48958B: WallAbsoluteDestroyer +0x145, Wall
+// +0x144, Wood +0x147]: the warhead's wall keys as W6WallFlags.
+int warhead_wall_flags(const ra2assets::Rules& rules, const std::string& wh) {
+    if (wh.empty()) return 0;
+    int f = 0;
+    if (rules.section_flag(wh, "Wall", false)) f |= kW6Wall;
+    if (rules.section_flag(wh, "Wood", false)) f |= kW6Wood;
+    if (rules.section_flag(wh, "WallAbsoluteDestroyer", false)) f |= kW6WallAbs;
+    return f;
 }
 
 // W3-B: ProneDamage= "50%" (or a fraction) -> multiplier; absent -> 1.0.

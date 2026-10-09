@@ -8,6 +8,7 @@
 // Pure: no SDL/OS deps (same pattern as pathfind.hpp/occupancy.hpp), so it is
 // unit-testable and compiled into both ra2assets_tests and ra2engine from a
 // single source of truth (see CMakeLists.txt / cmake/ra2_sources.cmake).
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -189,9 +190,14 @@ struct AreaResult {
     int damage = 0;              // total HP removed (units + buildings)
     int first_unit = -1;         // lowest-index unit damaged (event victim)
 };
+// W6-04-03: `building_hook` (optional) sees every building hit before it is
+// applied -- (building index, damage, distance in leptons); returning true
+// means it handled the hit (the P4 CausesDelayKill rule of ability blasts).
+using AreaBuildingHook = std::function<bool(int, int, int)>;
 AreaResult damage_area(const World& world, std::vector<Unit>& units,
                        std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
-                       int src_unit, int src_building, int ix, int iy, int iz);
+                       int src_unit, int src_building, int ix, int iy, int iz,
+                       const AreaBuildingHook* building_hook = nullptr);
 
 // Lepton position of a unit for damage/aim: cell-centred fx/fy plus the
 // infantry sub-cell offset, z = level*104 + altitude when airborne.
@@ -210,6 +216,22 @@ void building_aim_lept(const Building& b, int level, int& x, int& y, int& z);
 // until World::arm_elevation (unit-test Worlds keep the plain 3-D check).
 bool weapon_in_range(const World& world, const Unit& u, int tx, int ty, int tz, int extra = 0);
 bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t);
+// W6-04-14/29: may crusher `u` squash `v` (OmniCrusher / OmniCrushResistant,
+// DeployedCrushable, else Crushable infantry)?
+bool can_crush(const Unit& u, const Unit& v);
+
+// W6-04-04 [RE: Reduce_Wall FUN_00480BC0] one hit on a wall (see WallStep in
+// unit_w6.hpp). `rng` null (pure tests) = the random gate always passes.
+WallStep reduce_wall(int stage, int levels, int strength, int dmg, bool connected, ProjRng* rng);
+// The damage Reduce_Wall gets from a warhead (DamageArea @0x48958B): -1 for
+// WallAbsoluteDestroyer, `damage` for Wall (or Wood on a wood wall), else 0 =
+// the wall is untouched.
+int wall_hit_damage(int wall_flags, bool wood_wall, int damage);
+// A built wall (BuildingTypeDef::w6.wall_levels > 0) hit by a warhead with
+// `wall_flags`: the stage model instead of HP. Returns true when `bi` is a
+// wall (handled, hit or not).
+bool w6_wall_building_hit(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int bi, int wall_flags, int damage);
 // The same test from an explicit shooter point.
 bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
                           int tz, int extra = 0);
@@ -217,5 +239,15 @@ bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int
 // Gap fix C (G-50): RearmTimer in seconds = (ROF + Random(0,2)) / 15
 // [veterancy.md V7]; rng null -> no jitter.
 double rearm_secs(int rof_frames, ProjRng* rng);
+
+// W6-04-01 [RE: TechnoClass::Fire FUN_006FD210 @0x6FDD2C..: CurrentBurstIndex
+// (+0x3B8)++, RearmTimer = GetROF(), CurrentBurstIndex %= Burst (+0x9C);
+// GetROF FUN_006FC460 @0x6FC4D6: while CurrentBurstIndex < Burst the rearm is
+// Random(3,5) (the per-burst delay table at UnitType+0xE44 has no rulesmd
+// key on this install), after the last shot of the burst the full
+// ROF + Random(0,2)]. Burst=1 is exactly rearm_secs (same RNG draw).
+double burst_rearm_secs(int& burst_index, int burst, int rof_frames, ProjRng* rng);
+// The unit form: the active weapon's Burst (Unit::w6.burst).
+double unit_rearm_secs(Unit& u, ProjRng* rng);
 
 }  // namespace ra2engine

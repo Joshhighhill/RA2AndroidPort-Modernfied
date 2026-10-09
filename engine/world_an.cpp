@@ -128,7 +128,9 @@ void World::an_step_naval(double dt) {
             if (u.die_time >= 0.0) {
                 u.an.submerged = false;
             } else {
-                if (u.fire_flash >= 0.4 - 1e-9) u.an.surface_left = P.cloak_delay_frames / 15.0;
+                // W6-04-25: a DecloakToFire=no weapon fires without surfacing.
+                if (u.fire_flash >= 0.4 - 1e-9 && u.w6.t.decloak_to_fire)
+                    u.an.surface_left = P.cloak_delay_frames / 15.0;
                 u.an.surface_left = std::max(0.0, u.an.surface_left - dt);
                 u.an.submerged = u.an.surface_left <= 0.0;
             }
@@ -176,6 +178,9 @@ void World::an_step_naval(double dt) {
                     const int dy = u.cell_y < b.cy ? b.cy - u.cell_y : (u.cell_y >= b.cy + b.fh ? u.cell_y - (b.cy + b.fh - 1) : 0);
                     if (std::max(dx, dy) > 1) continue;
                     u.hp = std::min(u.max_hp, u.hp + P.repair_step);
+                    // W6-04-09 [RE-FALLBACK: the yard repair taken as a healing
+                    // (negative) hit, which ejects a parasite in FUN_004D7250]
+                    if (u.parasite_on_me >= 0) u.w6.heal_hit = true;
                 }
             }
     }
@@ -231,7 +236,8 @@ void World::rocket_explode(int i, int end) {
     const int house = u.house;
     if (end == 1)
         an_area_damage(house, nx / kLept, ny / kLept, rocket_damage(blk, u.an.rocket_elite), wh.spread,
-                       wh.pmax, wh.verses, /*hit_air=*/false, /*spare_house=*/false, std::max(0.0, nz));
+                       wh.pmax, wh.verses, /*hit_air=*/false, /*spare_house=*/false, std::max(0.0, nz),
+                       wh.wall_flags);   // W6-04-04 (V3WH / DMISLWH: Wall + Wood)
     Unit& r = units_[i];   // (an_area_damage never reallocates units_; re-fetch anyway)
     if (end == 1) {
         fire_events_.push_back({i, -1, -1, -1, 0, ""});
@@ -450,20 +456,33 @@ void World::an_step_fixed_wing(double dt) {
                     // W4: a flying projectile (the Harrier / Black Eagle
                     // Maverick, the Hornet / Osprey bombs: ROT>0 homing) is
                     // launched behind the P2 firewall and hits at detonation.
+                    // W6-04-01 [RE: AircraftClass::Mission_Attack FUN_00417FE0
+                    // case 4: on GetFireError OK it sets the fired flag (+0x6C8)
+                    // and calls Fire Burst (+0x9C) times in the same frame; the
+                    // flag is consumed as ONE Ammo (+0x2FC) decrement]: Boris's
+                    // MiG (Maverick3 Ammo=1 Burst=2) puts both missiles in one pass.
                     if (tu >= 0) {
                         const int slot = unit_weapon_for_unit(u, units_[tu]);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, tu, -1);
-                            else if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
-                            else deliver_unit_hit(units_, occ_, i, tu);
+                            for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
+                                if (k > 0 && !live(units_[tu])) break;
+                                if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, tu, -1);
+                                else if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
+                                else deliver_unit_hit(units_, occ_, i, tu);
+                            }
                         }
                     } else if (tb >= 0) {
                         const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
-                            else if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
+                            for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
+                                if (k > 0 && (!buildings_[tb].alive || buildings_[tb].hp <= 0)) break;
+                                if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
+                                else if (buildings_[tb].iron_left <= 0.0 &&
+                                         !w6_wall_building_hit(*this, units_, buildings_, tb, u.w6.wall_flags, u.w_damage))   // W6-04-04
+                                    deliver_building_hit(units_, buildings_, i, tb);
+                            }
                         }
                     }
                     u.rof_cool = std::max(1, u.w_rof) / 15.0;
@@ -544,6 +563,9 @@ void World::an_step_fixed_wing(double dt) {
                         const int ow = u.an.owner;
                         units_[i].alive = false;
                         units_[i].die_time = 1.0;
+                        // W6-04-26: back aboard, not destroyed -- no unit lost on
+                        // the score screen (the W4-SQ-03 deployed_away rule).
+                        units_[i].deployed_away = true;
                         if (ow >= 0 && ow < n) {
                             if (units_[ow].an.spawn_out > 0) --units_[ow].an.spawn_out;
                             ++units_[ow].an.spawn_pending;
@@ -629,7 +651,9 @@ void World::an_step_deaths(double dt) {
                 const int dmg = std::max(10, u.max_hp / 4);
                 const double fx = u.fx, fy = u.fy;
                 const int house = u.house;
-                an_area_damage(house, fx, fy, dmg, 1.0, 0.5, verses, false, false);
+                // W6-04-04 [RE-FALLBACK: the crash blast's warhead is not
+                // traced; taken as the Kirov's BlimpHE, Wall + Wood].
+                an_area_damage(house, fx, fy, dmg, 1.0, 0.5, verses, false, false, 0.0, kW6Wall | kW6Wood);
             }
             continue;
         }

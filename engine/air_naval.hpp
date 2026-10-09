@@ -147,6 +147,8 @@ struct SwParams {
     double storm_wh_spread = 2.0;     // [IonWH] CellSpread
     double storm_wh_pmax = 0.5;       // [IonWH] PercentAtMax
     std::array<int, 11> storm_verses{};
+    int storm_wall_flags = 0;         // W6-04-04: [IonWH] Wall/Wood
+    int nuke_wall_flags = 0;          // W6-04-04: [NUKE] WallAbsoluteDestroyer/Wood
     // Chrono kill warhead [Rules+0xFA8; damage = the victim's full Strength].
     // Paradrops [AmerParaDropInf/Num, AllyParaDropInf/Num, SovParaDropInf/Num,
     // ParadropRadius=1024 leptons].

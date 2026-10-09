@@ -634,3 +634,38 @@ The Part column gives the appendix with the details: A = Allied ground, B = Sovi
 | D | GAWEAT Weather Control (10) | N/A | OK: charge 9000 | 10x10 scatter | OK: first bolt about 256 frames (Deferment 250), storm ends about 432 (250+180), target GAGAP destroyed | N/A | OK | N/A | N/A | N/A | OK? |
 | D | Paradrops (AMRADR AmerParaDrop, CAAIRP ParaDrop) | N/A | – | – | – | – | OK? (sw.play; R-056 FIXED) | N/A | – | – | OK? |
 | D | SpyPlaneSpecial (NARADR), ForceShieldSpecial (Battle Labs) | N/A | – | – | – | – | **MISSING** (W6-04-19, W6-04-20) | N/A | – | – | – |
+
+## Fix status (wave-6 fix agent #4, branch `w6fix-units`)
+
+| ID | Status | Commit | RE / basis |
+|---|---|---|---|
+| W6-04-01 | FIXED | `afaccad` | TechnoClass::Fire FUN_006FD210 (index++, GetROF, index %= Burst), GetROF FUN_006FC460 (Random(3,5) inside a burst), AircraftClass::Mission_Attack FUN_00417FE0 case 4 (Burst shots per ammo point) |
+| W6-04-02 | FIXED | `8433c78` | BulletType ShrapnelWeapon/ShrapnelCount (rulesmd projectile sections); fragment targeting stays W2-SK-22 RE-FALLBACK |
+| W6-04-03 | FIXED | `392cf1f` | BombClass::Detonate 0x4386A0 / FireDeathWeapon FUN_0070CAC0 -> DamageArea FUN_00489190 |
+| W6-04-04 | FIXED | `fba6ff5` | DamageArea @0x489581..0x4895BD + Reduce_Wall FUN_00480BC0 |
+| W6-04-05 | FIXED | `fba6ff5` | as W6-04-04 (map overlays: per-cell stage, destroyed walls open) |
+| W6-04-06 | FIXED | `355a063` | WeaponType OmniFire +0x12B |
+| W6-04-07 | FIXED | `2fe84c9` | naval.md §1/§4 (approach on the unit's own zone) |
+| W6-04-08 | FIXED | `4ccc77d` | UnitClass::ReceiveMessage FUN_00736500; FUN_004190B0 is AircraftClass's |
+| W6-04-09 | FIXED | `b03b13d` | FootClass::ReceiveDamage FUN_004D7250 (Sonic +0x14B, heal -> ExitUnit FUN_00629F40) |
+| W6-04-10 | FIXED | `a3ca80d` | rules [DRON]; the campaign/cheat infantry-path registration |
+| W6-04-11 | FIXED (icon) | `f795dc5` | IvanIconFlickerRate=8; icon conquer.mix bomb.shp [RE-FALLBACK]; sounds by #5 |
+| W6-04-12 | FIXED | `392cf1f` | FireDeathWeapon FUN_0070CAC0 @0x70CB1B (Damage x DeathWeaponDamageModifier), RadSite on detonation |
+| W6-04-13 | FIXED | `ba1b4b3` | BuildingClass::Greatest_Threat FUN_00445E60, GetThreatFlags FUN_007718B0 (AG = 0xB8 incl. BUILDINGS), FUN_006F8320 @0x6F8410, Evaluate_Object R-064 rule |
+| W6-04-14 | FIXED | `7348982` | rules semantics [RE-FALLBACK] |
+| W6-04-15 | FIXED | `7348982` | rules OpenTransportWeapon= |
+| W6-04-16 | FIXED | `7348982` | FUN_006F6750 adds AirRangeBonus vs an airborne target (combat.md §9) |
+| W6-04-17 | PARTIAL | `afc11ee` | buildable (art present: localmd.mix schp/schd; no turret voxel -> hull only); deploy-to-artillery OPEN |
+| W6-04-18 | FIXED | `afc11ee` | GAROBO rostered (YR art); PoweredUnit stop [RE-FALLBACK] |
+| W6-04-19 / 20 | OPEN | – | user decision |
+| W6-04-21 | PARTIAL | `afc11ee` | NABNKR / NAINDP buildable (YR art); NAINDP UnitsCostBonus not applied (R-066) |
+| W6-04-22 | FIXED | `1aefcca` | FUN_006F6750 / FUN_006F6490 for building shooters |
+| W6-04-24 | FIXED | `f795dc5` | IsRadBeam / IsLine [colours RE-FALLBACK] |
+| W6-04-25 | FIXED | `b885a04` | DecloakToFire +0x133 |
+| W6-04-26 | FIXED | `b885a04` | deployed_away on dock |
+| W6-04-27 | FIXED by #5 | `e24699f` | – |
+| W6-04-28 | FIXED | `b885a04` | veterancy.md V5/V7/V10 |
+| W6-04-29 / 30 | FIXED | `7348982` | rules keys |
+| W6-04-35 | FIXED | `b885a04` | harness |
+| W6-04-23, 31..34, 36..38 | OPEN | – | not in this fix list |
+

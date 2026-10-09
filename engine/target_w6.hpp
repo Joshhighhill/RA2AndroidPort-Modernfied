@@ -8,21 +8,20 @@
 namespace ra2engine {
 
 // Type data resolved once from the rules (map overrides merged in a campaign)
-// by resolve_combat_unit and copied onto Unit::w6.t at add_combat_unit.
-struct UnitTypeW6 {
+// by resolve_combat_unit and copied onto Unit::tg.t at add_combat_unit.
+struct UnitTypeTgt {
     // W6-02-15: the rules type id (E1), not its art Image= (GI). Empty for a
     // hand-built UnitCombat (tests / old gates).
     std::string rules_id;
     bool insignificant = false;    // Insignificant=   (ObjectType +0x232)
     bool legal_target = true;      // LegalTarget=     (ObjectType +0x231)
     bool immune_psionics = false;  // ImmuneToPsionics= (W6-02-12)
-    double guard_range = 0.0;      // GuardRange= cells (TechnoType +0x5B8; 0 = unset)
-    double air_range_bonus = 0.0;  // AirRangeBonus= cells (TechnoType +0x68C)
+    double guard_range = 0.0;     // (AirRangeBonus= lives in wave-6 #4's UnitTypeW6)      // GuardRange= cells (TechnoType +0x5B8; 0 = unset)
 };
 
 // Per-unit state.
-struct UnitW6 {
-    UnitTypeW6 t;
+struct UnitTgt {
+    UnitTypeTgt t;
     // W6-02-08 [RE: TechnoClass +0x3D5 IsInPlayfield -- Unlimbo FUN_006F61D0
     // sets it from IsWithinUsableArea FUN_00577E90, a unit moving in sets it
     // (FUN_006F45F0, false -> true only), ResizeView FUN_00566E60 recomputes
@@ -37,7 +36,7 @@ struct UnitW6 {
 };
 
 // Per-building state (the campaign host sets the type flags at placement).
-struct BldW6 {
+struct BldTgt {
     bool in_playfield = true;
     bool insignificant = false;
     bool legal_target = true;

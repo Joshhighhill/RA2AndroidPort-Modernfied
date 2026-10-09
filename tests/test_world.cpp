@@ -4924,6 +4924,10 @@ TEST_CASE("World: G-66 a charged AI superweapon fires at the enemy's highest-val
     world.add_building(0, c->x, c->y, 1, 1, /*house=*/1, 1000, 0, 0.0, true);
     const int pw = world.add_building(1, c->x + 12, c->y, 1, 1, /*house=*/0, 750, 0, 0.0, true);
     world.enable_ai_house(1, cfg);
+    // W6-03-05 [RE: FUN_0050ca10]: the picker needs an Enemy (house+0x5600);
+    // this synthetic config never arms the hate delay, so seed the anger.
+    world.ai_add_anger(1, 0, 1);
+    REQUIRE(world.ai_enemy_house(1) == 0);
     std::array<int, 11> verses; verses.fill(100);
     world.grant_superweapon(1, ra2engine::SuperweaponType::Nuke, 2.0, 600, 3.0, 0.02, verses);
     const int hp0 = world.buildings()[pw].hp;

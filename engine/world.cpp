@@ -751,6 +751,105 @@ const std::vector<std::uint8_t>* World::crush_leak() const {
 // P4: a Crusher land vehicle about to drive into a standing crushable wall
 // cell (its next path cell, adjacent) flattens it: the cell opens for every
 // unit and leaves the leak mask; the renderer stops drawing the overlay.
+void World::mark_wall_overlay(int x, int y, int strength, int levels, bool wood) {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || passable_.empty()) return;
+    const std::size_t n = passable_.size();
+    if (wall_ov_type_.size() != n) wall_ov_type_.assign(n, 0);
+    if (wall_ov_stage_.size() != n) wall_ov_stage_.assign(n, 0);
+    std::size_t t = 0;
+    for (; t < wall_ov_types_.size(); ++t)
+        if (wall_ov_types_[t].strength == strength && wall_ov_types_[t].levels == levels &&
+            wall_ov_types_[t].wood == wood)
+            break;
+    if (t == wall_ov_types_.size()) {
+        if (t >= 255) return;
+        wall_ov_types_.push_back({std::max(1, strength), std::max(1, levels), wood});
+    }
+    wall_ov_type_[static_cast<std::size_t>(y) * grid_w_ + x] = static_cast<std::uint8_t>(t + 1);
+}
+
+int World::wall_overlay_stage(int x, int y) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || wall_ov_stage_.size() != passable_.size()) return 0;
+    return wall_ov_stage_[static_cast<std::size_t>(y) * grid_w_ + x];
+}
+
+void World::w6_overlay_wall_hit(int x, int y, int wall_flags, int damage) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || wall_ov_type_.size() != passable_.size()) return;
+    const std::uint8_t t = wall_ov_type_[static_cast<std::size_t>(y) * grid_w_ + x];
+    if (t == 0 || wall_crushed(x, y)) return;
+    w6_overlay_reduce(x, y, wall_hit_damage(wall_flags, wall_ov_types_[t - 1u].wood, damage));
+}
+
+void World::w6_overlay_reduce(int x, int y, int dmg) const {
+    if (dmg == 0) return;
+    const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+    const std::uint8_t t = wall_ov_type_[i];
+    if (t == 0 || wall_crushed(x, y)) return;
+    if (std::find(w6_wall_kills_.begin(), w6_wall_kills_.end(), static_cast<int>(i)) != w6_wall_kills_.end()) return;
+    const WallOvType& ty = wall_ov_types_[t - 1u];
+    static const int kDx[4] = {0, 1, 0, -1}, kDy[4] = {-1, 0, 1, 0};   // N, E, S, W
+    auto same = [&](int nx, int ny) {
+        if (nx < 0 || ny < 0 || nx >= grid_w_ || ny >= grid_h_) return false;
+        const std::size_t j = static_cast<std::size_t>(ny) * grid_w_ + nx;
+        return wall_ov_type_[j] == t && !wall_crushed(nx, ny) &&
+               std::find(w6_wall_kills_.begin(), w6_wall_kills_.end(), static_cast<int>(j)) == w6_wall_kills_.end();
+    };
+    bool connected = false;
+    for (int k = 0; k < 4; ++k) connected = connected || same(x + kDx[k], y + kDy[k]);
+    const WallStep r = reduce_wall(wall_ov_stage_[i], ty.levels, ty.strength, dmg, connected, combat_rng_ptr());
+    if (!r.advanced) return;
+    wall_ov_stage_[i] = static_cast<std::uint8_t>(r.stage);
+    if (r.cascade)
+        for (int k = 0; k < 4; ++k) {
+            const int nx = x + kDx[k], ny = y + kDy[k];
+            if (same(nx, ny) && wall_ov_stage_[static_cast<std::size_t>(ny) * grid_w_ + nx] < 1)
+                w6_overlay_reduce(nx, ny, 200);
+        }
+    if (r.destroyed) w6_wall_kills_.push_back(static_cast<int>(i));
+}
+
+void World::w6_apply_wall_kills() {
+    if (w6_wall_kills_.empty()) return;
+    if (crush_wall_.size() != passable_.size()) crush_wall_.assign(passable_.size(), 0);
+    for (int i : w6_wall_kills_) {
+        if (i < 0 || static_cast<std::size_t>(i) >= passable_.size()) continue;
+        crush_wall_[static_cast<std::size_t>(i)] = 2;   // gone: drawn and blocked no more
+        passable_[static_cast<std::size_t>(i)] = 1;
+        if (static_cast<std::size_t>(i) < wall_leak_.size()) wall_leak_[static_cast<std::size_t>(i)] = 0;
+        if (static_cast<std::size_t>(i) < wall_ov_stage_.size()) wall_ov_stage_[static_cast<std::size_t>(i)] = 0;
+    }
+    w6_wall_kills_.clear();
+}
+
+void World::w6_step_powered_units() {
+    bool any = false;
+    for (const Unit& u : units_) any = any || (u.w6.t.powered_unit && u.alive);
+    if (!any) return;
+    const std::vector<BuildingTypeDef>& bt = btypes();
+    for (Unit& u : units_) {
+        if (!u.w6.t.powered_unit || !u.alive || u.die_time >= 0.0) continue;
+        bool on = false;
+        for (const Building& b : buildings_) {
+            if (!b.alive || b.state != Building::State::Idle || b.house != u.house || b.power_off) continue;
+            if (b.type < 0 || b.type >= static_cast<int>(bt.size())) continue;
+            const std::string& pu = bt[static_cast<std::size_t>(b.type)].w6.powers_unit;
+            if (pu.empty() || pu != u.image) continue;
+            if (house_low_power(u.house)) continue;
+            on = true;
+            break;
+        }
+        if (!on && !u.w6.unpowered) {   // turned off: it stops where it is
+            u.path.clear();
+            u.path_idx = 0;
+            u.target = -1;
+            u.target_building = -1;
+            u.attack_order = false;
+        }
+        u.w6.unpowered = !on;
+        if (!u.abil_bound) u.frozen = !on;   // abilities recompute frozen for bound units (below)
+    }
+}
+
 void World::step_wall_crush() {
     if (crush_wall_.size() != passable_.size()) return;
     for (const Unit& u : units_) {
@@ -838,6 +937,11 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
         u.hp = u.max_hp;
     }
     u.w_rof = c.rof;
+    u.w6.t = c.w6;                          // wave-6 #4 type data
+    u.w6.burst = c.w6.burst;                // W6-04-01: the active weapon's Burst=
+    u.w6.omni_fire = c.w6.omni_fire;        // W6-04-06: ... and OmniFire=
+    u.w6.sonic = c.w6.sonic;                // W6-04-09: ... and Sonic=
+    u.w6.wall_flags = c.w6.wall_flags;      // W6-04-04: ... and its wall keys
     u.w_range = c.range;
     u.w_verses = c.verses;
     u.w_inf_death = c.inf_death;            // W3-B
@@ -848,8 +952,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.speed_type = c.speed_type;            // W5-B R-062
     // W6 fix #2: rules id + targeting type data; IsInPlayfield from the cell
     // [RE: Unlimbo FUN_006F61D0 -> IsWithinUsableArea FUN_00577E90].
-    u.w6.t = c.w6;
-    u.w6.in_playfield = cell_in_playfield(cell_x, cell_y);
+    u.tg.t = c.tg;
+    u.tg.in_playfield = cell_in_playfield(cell_x, cell_y);
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // spec. Copied unconditionally but READ ONLY behind projectiles_enabled_
     // (the firewall) -- inert in every existing gate.
@@ -939,6 +1043,14 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.affects_allies = c.affects_allies;
     u.vet.base.inf_death = c.inf_death;     // W3-B
     u.vet.base.prone_damage = c.prone_damage;
+    u.vet.base.burst = c.w6.burst;          // W6-04-01
+    u.vet.base.omni_fire = c.w6.omni_fire;  // W6-04-06
+    u.vet.base.sonic = c.w6.sonic;          // W6-04-09
+    u.vet.base.wall_flags = c.w6.wall_flags;   // W6-04-04
+    u.vet.base.shrapnel_count = c.shrapnel_count;   // W6-04-02
+    u.vet.base.shrapnel_damage = c.shrapnel_damage;
+    u.vet.base.shrapnel_range = c.shrapnel_range;
+    u.vet.base.shrapnel_verses = c.shrapnel_verses;
     u.vet.has_elite = c.has_elite;
     u.vet.elite = c.elite;
     u.vet.base_speed_cps = c.speed_cps;
@@ -1085,7 +1197,7 @@ int World::unit_at_cell(int x, int y) const {
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
-    u.w6.area_guard = false;   // W6-02-11: a move order leaves Area_Guard
+    u.tg.area_guard = false;   // W6-02-11: a move order leaves Area_Guard
     // P4 [RE: abilities.md §C1/§C2/§A]: a FROZEN unit (warping in, being
     // erased, deployed) takes no move; a Teleporter's move is a TELEPORT.
     // Both fields are inert (false) unless a P4 profile is bound, which no
@@ -1313,7 +1425,7 @@ int World::add_building(int type, int cx, int cy, int fw, int fh, int house, int
     b.buildup_total = buildup_total;
     b.state = instant ? Building::State::Idle : Building::State::Buildup;
     b.vet_recv = vet_any_;   // P5 [RE: veterancy.md V6]: false in every legacy World
-    b.w6.in_playfield = cell_in_playfield(cx + fw / 2, cy + fh / 2);   // W6 fix #2 (Unlimbo)
+    b.tg.in_playfield = cell_in_playfield(cx + fw / 2, cy + fh / 2);   // W6 fix #2 (Unlimbo)
     buildings_.push_back(b);
     const int idx = static_cast<int>(buildings_.size()) - 1;
     for (const Cellxy& cell : foundation_cells(cx, cy, fw, fh)) {
@@ -3770,7 +3882,7 @@ void World::commit_attack_target(int unit_idx, int target_unit, int target_build
     u.target = target_unit;
     u.target_building = target_building;
     u.attack_order = true;
-    u.w6.area_guard = false;   // W6-02-11: an attack order leaves Area_Guard
+    u.tg.area_guard = false;   // W6-02-11: an attack order leaves Area_Guard
     // CB-1: an attack order supersedes a pending enter/unload [RE-GATE
     // APPLIED: transport-cargo.md §3/§4 -- kept: our order-model
     // convention; the hunt pinned no contrary rule].
@@ -4796,6 +4908,8 @@ void World::step(double dt) {
             sc.scatter_out = &scatter;
             if (!land_speed_armed_) sc.armed = false;
         }
+        w6_apply_wall_kills();   // W6-04-05: walls shot down last step open now
+        w6_step_powered_units();   // W6-04-18: robots without a powered control centre stop
         step_wall_crush();   // P4 (no-op without crushable walls)
         const bool crush = !crush_wall_.empty();
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
@@ -4938,6 +5052,7 @@ void World::step(double dt) {
     // bug). A crowded-out attacker re-assigned its own cell re-requests
     // next frame: bounded churn, accepted for this unit count.
     std::map<std::pair<int, int>, std::vector<int>> approach_groups;
+    std::map<std::pair<int, int>, std::vector<int>> amphib_groups;   // W6-04-07
     for (const MoveRequest& r : reqs) {
         if (r.unit < 0 || r.unit >= static_cast<int>(units_.size())) continue;
         const Unit& u = units_[r.unit];
@@ -4977,21 +5092,44 @@ void World::step(double dt) {
             order_unit_move(r.unit, gx, gy);
             continue;
         }
-        if (r.approach)
+        // W6-04-07 [RE: naval.md §1/§4 -- the approach uses the unit's own
+        // MovementZone; Tanya / SEAL are AmphibiousDestroyer]: an amphibious
+        // unit's firing position is chosen on the Land-OR-Water grid, so a
+        // swimming Tanya reaches a Destroyer and a SEAL on the shore enters the
+        // water to plant C4 (the Land-grid batch found no cell next to a ship).
+        // Only an EXPLICIT attack order on a target the land grid cannot
+        // reach (a ship on water) switches grids [RE-FALLBACK scope: the idle
+        // guard-leash chase (W2-SK-25) stays on land, so a SEAL raid does not
+        // wander off after ships -- ALL11 depends on it]; a land target keeps
+        // the land batch exactly as before.
+        if (r.approach && u.attack_order && u.movement_domain == MovementDomain::Amphibious &&
+            r.goal_x >= 0 && r.goal_y >= 0 && r.goal_x < grid_w_ && r.goal_y < grid_h_ &&
+            !passable_[static_cast<std::size_t>(r.goal_y) * grid_w_ + r.goal_x] &&
+            !water_passable_.empty() && water_passable_[static_cast<std::size_t>(r.goal_y) * grid_w_ + r.goal_x])
+            amphib_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
+        else if (r.approach)
             approach_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
         else
             order_unit_move(r.unit, r.goal_x, r.goal_y);
     }
-    for (const auto& group : approach_groups) {
-        const std::vector<int>& movers = group.second;
-        std::vector<Cellxy> cur;
-        cur.reserve(movers.size());
-        for (int idx : movers) cur.push_back({units_[idx].cell_x, units_[idx].cell_y});
-        const std::vector<Cellxy> targets =
-            assign_formation({group.first.first, group.first.second}, cur, passable_,
-                             grid_w_, grid_h_, occ_);
-        for (std::size_t k = 0; k < movers.size(); ++k)
-            order_unit_move(movers[k], targets[k].x, targets[k].y);
+    auto dispatch_groups = [&](const std::map<std::pair<int, int>, std::vector<int>>& groups,
+                               const std::vector<std::uint8_t>& grid) {
+        for (const auto& group : groups) {
+            const std::vector<int>& movers = group.second;
+            std::vector<Cellxy> cur;
+            cur.reserve(movers.size());
+            for (int idx : movers) cur.push_back({units_[idx].cell_x, units_[idx].cell_y});
+            const std::vector<Cellxy> targets =
+                assign_formation({group.first.first, group.first.second}, cur, grid,
+                                 grid_w_, grid_h_, occ_);
+            for (std::size_t k = 0; k < movers.size(); ++k)
+                order_unit_move(movers[k], targets[k].x, targets[k].y);
+        }
+    };
+    dispatch_groups(approach_groups, passable_);
+    if (!amphib_groups.empty()) {
+        const std::vector<std::uint8_t> amphib = amphib_grid();   // cached buffer: copy once
+        dispatch_groups(amphib_groups, amphib);
     }
 
     // Economy phase [RE: economy.md]: ore growth/spread + harvester mission
@@ -5379,7 +5517,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 for (int o : victims) {
                     if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
                     Unit& v = units[o];
-                    if (v.crushable && !v.is_vehicle && v.house != u.house && v.alive &&
+                    if (can_crush(u, v) && v.house != u.house && v.alive &&   // W6-04-14/29
                         v.die_time < 0.0 && v.cargo_of < 0) {
                         v.hp = 0;
                         v.die_time = 0.0;

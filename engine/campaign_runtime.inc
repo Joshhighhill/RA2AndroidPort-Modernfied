@@ -204,7 +204,7 @@ public:
                     // W6 fix #2: the voxel loader resolves with the stock rulesmd;
                     // the targeting data takes the MAP overrides (SOV09 [CAR]
                     // ImmuneToPsionics=yes).
-                    t.combat.w6 = resolve_unit_w6(rules_, id);
+                    t.combat.tg = resolve_unit_w6(rules_, id);
                     t.vehicle = true;
                     t.ok = true;
                     vas_.push_back(std::move(va));
@@ -259,6 +259,8 @@ public:
         if (slot.ok) building_art_extras(slot, art_, rules_, id, art_id);
         else std::cerr << "[campaign] building " << id << " image " << art_id << " has no art\n";
         ra2engine::fill_building_weapons(rules_, id, d);   // Gap fix C (G-40)
+        d.wall = rules_.section_flag(id, "Wall", false);                // W6-03-01 flag (campaign roster too)
+        d.w6.wall_levels = d.wall ? art_.damage_levels(art_id) : 0;   // W6-04-04
         ba.roster.push_back(d);
         ba.art.push_back(std::move(slot));
         ba.defense.push_back(rules_.is_buildcat_combat(id) ? 1 : 0);
@@ -1055,7 +1057,7 @@ private:
     }
     bool tracked(const ra2engine::Unit& u) const {
         return live(u) && !u.vet.dont_score &&
-               !untracked_type(u.w6.t.rules_id.empty() ? u.image : u.w6.t.rules_id);   // W6-02-15
+               !untracked_type(u.tg.t.rules_id.empty() ? u.image : u.tg.t.rules_id);   // W6-02-15
     }
     bool free_cell_near(int x, int y, int& ox, int& oy, int maxr = 6) const {
         for (int r = 0; r <= maxr; ++r)
@@ -1104,7 +1106,7 @@ private:
             // TechnoType index, map-triggers.md]: a factory-built unit is
             // tracked under its RULES id (E1), not its art Image= (GI);
             // the image is the fallback for a hand-built UnitCombat.
-            t.type = camp::up(u.w6.t.rules_id.empty() ? u.image : u.w6.t.rules_id);
+            t.type = camp::up(u.tg.t.rules_id.empty() ? u.image : u.tg.t.rules_id);
             t.cx = u.cell_x;
             t.cy = u.cell_y;
             t.hp = u.hp;
@@ -1283,7 +1285,7 @@ private:
         {
             const int mi = ra2engine::mission_from_name(mission);
             // W6-02-11: Mission=Area Guard scans at the doubled guard radius.
-            if (mi == ra2engine::kMissionAreaGuard) w_.units()[(std::size_t)idx].w6.area_guard = true;
+            if (mi == ra2engine::kMissionAreaGuard) w_.units()[(std::size_t)idx].tg.area_guard = true;
             if (mi == ra2engine::kMissionSleep || mi == 23 /* Harmless */) {
                 t.mission = mi == ra2engine::kMissionSleep ? 1 : 2;
                 set_dormant(idx, true);

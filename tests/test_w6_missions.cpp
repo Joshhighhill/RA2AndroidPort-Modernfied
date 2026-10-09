@@ -29,7 +29,7 @@ TEST_CASE("w6 legal_threat: campaign Insignificant + passive owner, LegalTarget,
     const int b = w.add_building(-1, x, y, 2, 2, 2, 500, 0, 0.0, true);
     UnitCombat c;
     c.strength = 100;
-    c.w6.insignificant = true;
+    c.tg.insignificant = true;
     w.add_combat_unit(x + 4, y + 4, 2, c);
     const int u = static_cast<int>(w.units().size()) - 1;
     // Inert outside a campaign host: everything is a legal threat.
@@ -96,8 +96,8 @@ int acquire_at(int dist, bool area_guard, double guard_range = 0.0) {
     units.push_back(w6_soldier(0, 0, occ, 0));
     units.push_back(w6_soldier(dist, 1, occ, 1));
     units[1].w_damage = 0;
-    units[0].w6.area_guard = area_guard;
-    units[0].w6.t.guard_range = guard_range;
+    units[0].tg.area_guard = area_guard;
+    units[0].tg.t.guard_range = guard_range;
     std::vector<Building> bs;
     ra2engine::step_combat(w, units, bs, occ, 1.0 / 60.0);
     return units[0].target;

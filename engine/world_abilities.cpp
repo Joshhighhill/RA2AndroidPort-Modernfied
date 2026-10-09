@@ -33,15 +33,6 @@ void bind_profile(Unit& u, const std::map<std::string, AbilityProfile>& profiles
 double bld_cx(const Building& b) { return b.cx + (b.fw - 1) / 2.0; }
 double bld_cy(const Building& b) { return b.cy + (b.fh - 1) / 2.0; }
 
-double nearest_foundation_leptons(const Building& b, double x, double y) {
-    double best = -1.0;
-    for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
-        const double d = std::hypot((c.x - x) * kAbilityLeptonsPerCell, (c.y - y) * kAbilityLeptonsPerCell);
-        if (best < 0.0 || d < best) best = d;
-    }
-    return best;
-}
-
 }  // namespace
 
 void World::register_ability_profile(const std::string& image, const AbilityProfile& p) {
@@ -228,39 +219,44 @@ void World::ability_damage_building(int b_idx, int dmg) {
     if (b.hp <= 0) kill_building(b);
 }
 
-// DamageArea (FUN_00489190) as the clone adjudicated it (combat.md §7 /
-// superweapon.md): radius = CellSpread*256 leptons, linear 100% -> PercentAtMax,
-// trunc, then the warhead Verses. ALL houses, units AND buildings (building
-// distance = nearest foundation cell); the source unit is excluded
-// [RE: abilities.md §Deviations 3].
+// W6-04-03 [RE: BombClass::Detonate 0x4386A0 -> DamageArea; FireDeathWeapon
+// FUN_0070CAC0 -> BulletClass::Detonate FUN_004690A0 -> DamageArea; both are
+// FUN_00489190, abilities.md §E/§F]: an ability blast (Ivan bomb, Terrorist /
+// Demo Truck / death weapons, the Desolator eruption) is the faithful
+// combat.cpp damage_area -- a building takes one hit per foundation cell in the
+// rings, Iron Curtain / AffectsAllies / veterancy armour / ProneDamage apply.
+// It used to be a 2-D linear falloff with one hit per building at its nearest
+// cell (an Ivan left a Battle Lab at 50/500). The blast centre is (cx, cy) in
+// cells at that cell's ground level; the source unit is excluded.
 void World::ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage) {
-    const double radius = w.cell_spread * kAbilityLeptonsPerCell;
-    for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
-        if (j == src_unit) continue;
-        const Unit& v = units_[j];
-        if (!on_map_alive(v) || v.is_aircraft) continue;
-        const double d = std::hypot((v.fx - cx) * kAbilityLeptonsPerCell, (v.fy - cy) * kAbilityLeptonsPerCell);
-        const double s = area_scale(d, radius, w.percent_at_max);
-        if (s < 0.0) continue;
-        const int dmg = damage_vs(ability_ftol(damage * s), w.verses, v.armor_ix);
-        if (dmg > 0) ability_damage_unit(j, dmg);
-    }
-    for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
-        const Building& bb = buildings_[b];
-        if (!bb.alive || bb.state == Building::State::Dead) continue;
-        const double d = nearest_foundation_leptons(bb, cx, cy);
-        const double s = area_scale(d, radius, w.percent_at_max);
-        if (s < 0.0) continue;
-        const int dmg = damage_vs(ability_ftol(damage * s), w.verses, bb.armor_ix);
-        if (dmg <= 0) continue;
-        if (w.delay_kill && bb.hp - dmg <= 0 && bb.iron_left <= 0.0 && bb.type >= 0 &&
-            bb.type < static_cast<int>(btypes().size()) &&
-            btypes()[static_cast<std::size_t>(bb.type)].w5.delay_kill_eligible) {
-            ability_delay_kill(b, w, d);
-            continue;
-        }
-        ability_damage_building(b, dmg);
-    }
+    Unit shooter;
+    shooter.alive = false;   // never a real unit
+    shooter.house = (src_unit >= 0 && src_unit < static_cast<int>(units_.size()))
+                        ? units_[static_cast<std::size_t>(src_unit)].house : -1;
+    shooter.w_damage = damage;
+    shooter.w_verses = w.verses;
+    shooter.w_cell_spread = w.cell_spread;
+    shooter.w_percent_at_max = w.percent_at_max;
+    shooter.w_affects_allies = w.affects_allies;
+    shooter.w_prone_damage = w.prone_damage;
+    shooter.w_inf_death = w.inf_death;
+    shooter.w6.wall_flags = w.wall_flags;   // W6-04-04
+    const int ix = ability_ftol(cx * kAbilityLeptonsPerCell);
+    const int iy = ability_ftol(cy * kAbilityLeptonsPerCell);
+    const int iz = cell_level(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) * 104;
+    // P4 [RE: FUN_00700DA0 @0x701327]: a lethal CausesDelayKill hit on an
+    // EligibleForDelayKill building starts the delay instead.
+    const AreaBuildingHook delay = [&](int b, int dmg, int dist) {
+        const Building& bb = buildings_[static_cast<std::size_t>(b)];
+        if (!(bb.hp - dmg <= 0 && bb.iron_left <= 0.0 && bb.type >= 0 &&
+              bb.type < static_cast<int>(btypes().size()) &&
+              btypes()[static_cast<std::size_t>(bb.type)].w5.delay_kill_eligible))
+            return false;
+        ability_delay_kill(b, w, static_cast<double>(dist));
+        return true;
+    };
+    damage_area(*this, units_, buildings_, occ_, shooter, src_unit, -1, ix, iy, iz,
+                w.delay_kill ? &delay : nullptr);
 }
 
 // P4 [RE: FUN_00700DA0 @0x701327..0x701403]: a lethal hit by a CausesDelayKill
@@ -291,9 +287,36 @@ void World::ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_lepto
 
 void World::ability_bind_unit(Unit& u) { bind_profile(u, ability_profiles_); }
 
-void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w) {
+void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w_base) {
+    // W6-04-28 [RE: veterancy.md V5/V7/V10]: an IFV passenger weapon follows
+    // the gunner's rank like any slot -- the elite EliteWeapon<k>, then
+    // FIREPOWER / ROF (and the AI handicap) as refresh_vet_stats applies them.
+    const WeaponSpec* wp = &w_base;
+    if (vet_any_ && u.vet.recv && is_elite(u.vet.veterancy) && u.abil.gunner) {
+        for (std::size_t k = 0; k < u.abil.ifv_weapons.size() && k < u.abil.ifv_weapons_elite.size(); ++k)
+            if (&u.abil.ifv_weapons[k] == &w_base && u.abil.ifv_weapons_elite[k].valid) {
+                wp = &u.abil.ifv_weapons_elite[k];
+                break;
+            }
+    }
+    const WeaponSpec& w = *wp;
     u.w_damage = w.damage;
     u.w_rof = w.rof;
+    if (vet_any_ && u.vet.recv) {
+        const UnitVet& v = u.vet;
+        auto has = [&](Ability a) { return has_ability(v.veterancy, v.vet_abilities, v.elite_abilities, a); };
+        double house_fp = 1.0, house_rof = 1.0;
+        if (ai_enabled(u.house)) {
+            house_fp = ai_houses_[u.house].cfg.mods.firepower_mul;
+            house_rof = ai_houses_[u.house].cfg.mods.rof_mul;
+        }
+        if (w.damage > 0)   // a healing weapon (RepairBullet) keeps its raw value
+            u.w_damage = fire_damage(w.damage, v.firepower_mult, has(Ability::Firepower), vet_rules_.combat, house_fp);
+        u.w_rof = rof_frames(w.rof, has(Ability::Rof), vet_rules_.rof, house_rof);
+    }
+    u.w6.burst = w.burst;   // W6-04-01 (IFV HoverMissile 2, CRMP5 ...)
+    u.w6.omni_fire = w.omni_fire;   // W6-04-06
+    u.w6.wall_flags = w.wall_flags; // W6-04-04
     u.w_range = w.range;
     u.w_verses = w.verses;
     u.w_cell_spread = w.cell_spread;
@@ -398,6 +421,7 @@ void World::ability_fire_event(int i) {
         u.parasite_next_tick = F;             // DamageDeliveryTimer = {Frame, 0}: expired
         u.suppress_until = -1;
         v.parasite_on_me = i;
+        v.w6.sonic_hit = v.w6.heal_hit = false;   // W6-04-09: marks from before the grab
         v.last_hp = v.hp;
         ability_events_.push_back({Ev::Kind::Infect, i, vt, 0, 0, false});
         break;
@@ -514,6 +538,15 @@ void World::ability_death_pass() {
                 if (tw.explodes && tw.death.valid) {
                     any = true;
                     ability_area_damage(-1, bld_cx(bb), bld_cy(bb), tw.death, tw.death.damage);
+                    // W6-04-12 [RE: FireDeathWeapon detonates a real bullet,
+                    // BulletClass::Detonate FUN_004690A0]: a RadLevel death
+                    // weapon (the Nuclear Reactor's NukePayload, RadLevel 500)
+                    // leaves its fallout like a unit's (§F above).
+                    if (tw.death.rad_level > 0)
+                        rad_.detonate(static_cast<int>(std::lround(bld_cx(bb))),
+                                      static_cast<int>(std::lround(bld_cy(bb))),
+                                      ability_ftol(tw.death.cell_spread), tw.death.rad_level,
+                                      ability_frame_, ability_rules_);
                 }
             }
             if (bb.bomb_frame >= 0) {
@@ -611,6 +644,30 @@ void World::step_abilities(double dt) {
         }
         Unit& host = units_[h];
         if (host.die_time >= 0.0) continue;       // the death pass ejects
+        // W6-04-09 [RE: FootClass::ReceiveDamage FUN_004D7250]: a Sonic hit
+        // (the Dolphin) or a healing hit (negative damage: SuppressionTimer =
+        // 50, then ExitUnit) on the host frees it -- the parasite is put back
+        // on a free cell of its own domain beside the host (a Giant Squid in
+        // the water), else it stays.
+        if (host.w6.sonic_hit || host.w6.heal_hit) {
+            const bool heal = host.w6.heal_hit;
+            host.w6.sonic_hit = host.w6.heal_hit = false;
+            const std::vector<Cellxy> g = nearest_free_cells({host.cell_x, host.cell_y}, 1,
+                                                             grid_for(d.movement_domain), grid_w_, grid_h_, occ_);
+            if (!g.empty()) {
+                if (heal) d.suppress_until = F + 50;
+                host.parasite_on_me = -1;
+                host.last_hp = -1;
+                d.cargo_of = -1;
+                d.cell_x = g[0].x; d.cell_y = g[0].y; d.fx = g[0].x; d.fy = g[0].y;
+                d.guard_x = g[0].x; d.guard_y = g[0].y;
+                d.target = -1;
+                d.attack_order = false;
+                occ_.set(g[0].x, g[0].y, i);
+                ability_events_.push_back({Ev::Kind::DroneExit, i, h, g[0].x, g[0].y, false});
+                continue;
+            }
+        }
         // Suppression: the host's external HP loss since the last pass.
         if (host.last_hp >= 0) {
             const int ext = host.last_hp - host.hp;
@@ -746,7 +803,7 @@ void World::step_abilities(double dt) {
         // Gap fix C (G-45): a DeployFire GI's "deployed" is a firing post, not
         // the Desolator freeze.
         u.frozen = u.alive && ((u.deployed && !u.deploy_fire) || next < u.warp_until ||
-                               u.warp_remaining > 0);
+                               u.warp_remaining > 0 || u.w6.unpowered);   // W6-04-18
         if (was && !u.frozen && u.warp_until >= 0 && next >= u.warp_until && u.alive &&
             u.warp_remaining <= 0 && (!u.deployed || u.deploy_fire)) {
             ability_events_.push_back({Ev::Kind::Unfreeze, i, -1, static_cast<int>(next), 0, false});

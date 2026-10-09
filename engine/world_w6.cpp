@@ -21,25 +21,25 @@ bool World::legal_threat_building(int scanner_house, int bi) const {
 bool World::legal_threat_unit(int /*scanner_house*/, const Unit& v) const {
     if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
     // [RE: Evaluate_Object FUN_006F71D0 @0x6F7A5C: type +0x231 LegalTarget]
-    if (!v.w6.t.legal_target) return false;
+    if (!v.tg.t.legal_target) return false;
     // [@0x6F735E: +0x3D5 IsInPlayfield]
-    if (!v.w6.in_playfield) return false;
+    if (!v.tg.in_playfield) return false;
     // [@0x6F7B60..: an Insignificant (+0x232) non-building is rejected in a
     // campaign (GameMode DAT_00A8A1A0 == 0); in a multiplayer game only an
     // infantry capture/occupy case passes -- not modelled, the flag is
     // campaign-only here.]
-    if (playfield_.campaign && v.w6.t.insignificant) return false;
+    if (playfield_.campaign && v.tg.t.insignificant) return false;
     return true;
 }
 
 bool World::legal_threat_building(int /*scanner_house*/, const Building& b) const {
     if (!b.alive || b.state == Building::State::Dead) return false;
-    if (!b.w6.legal_target) return false;
-    if (!b.w6.in_playfield) return false;
+    if (!b.tg.legal_target) return false;
+    if (!b.tg.in_playfield) return false;
     // [same block: an Insignificant BUILDING is rejected only when its owner's
     // country is MultiplayPassive (+0x1A6) -- the civilian houses. ALL12:
     // 31 of the 32 Civie1 types, the Kremlin included.]
-    if (playfield_.campaign && b.w6.insignificant && passive_house(b.house)) return false;
+    if (playfield_.campaign && b.tg.insignificant && passive_house(b.house)) return false;
     return true;
 }
 
@@ -67,9 +67,9 @@ void World::set_playfield(bool campaign, bool valid, int size_w, int x, int y, i
     playfield_.h = h;
     // [RE: ResizeView FUN_00566E60 -- every object's IsInPlayfield is
     // recomputed from its cell, both ways.]
-    for (Unit& u : units_) u.w6.in_playfield = cell_in_playfield(u.cell_x, u.cell_y);
+    for (Unit& u : units_) u.tg.in_playfield = cell_in_playfield(u.cell_x, u.cell_y);
     for (Building& b : buildings_)
-        b.w6.in_playfield = cell_in_playfield(b.cx + b.fw / 2, b.cy + b.fh / 2);
+        b.tg.in_playfield = cell_in_playfield(b.cx + b.fw / 2, b.cy + b.fh / 2);
 }
 
 void World::step_playfield() {
@@ -77,16 +77,16 @@ void World::step_playfield() {
     // [RE: FUN_006F45F0 -- a unit that moves into the usable area gains the
     // flag; it never loses it by moving out.]
     for (Unit& u : units_) {
-        if (u.w6.in_playfield || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-        if (cell_in_playfield(u.cell_x, u.cell_y)) u.w6.in_playfield = true;
+        if (u.tg.in_playfield || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+        if (cell_in_playfield(u.cell_x, u.cell_y)) u.tg.in_playfield = true;
     }
 }
 
 void World::set_building_target_flags(int bi, bool insignificant, bool legal_target) {
     if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return;
     Building& b = buildings_[static_cast<std::size_t>(bi)];
-    b.w6.insignificant = insignificant;
-    b.w6.legal_target = legal_target;
+    b.tg.insignificant = insignificant;
+    b.tg.legal_target = legal_target;
 }
 
 void World::set_house_handicap(int h, double firepower, double rof) {
@@ -126,7 +126,7 @@ int World::house_rof_frames(int h, int rof) const {
 
 bool World::psionic_target_ok(int j) const {
     if (j < 0 || j >= static_cast<int>(units_.size())) return false;
-    return !units_[static_cast<std::size_t>(j)].w6.t.immune_psionics;
+    return !units_[static_cast<std::size_t>(j)].tg.t.immune_psionics;
 }
 
 }  // namespace ra2engine

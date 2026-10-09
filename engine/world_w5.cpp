@@ -9,6 +9,7 @@
 #include "combat.hpp"   // deliver_hit_from, rearm_secs
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // has_ability (SCATTER)
+#include "weapon_unit.hpp"  // activate_weapon_slot (W6-04-15)
 #include "world.hpp"
 
 namespace ra2engine {
@@ -225,6 +226,12 @@ void World::step_w5(double dt) {
                 Unit& p = units_[(std::size_t)pi];
                 if (!p.alive || p.die_time >= 0.0) continue;
                 p.rof_cool = std::max(0.0, p.rof_cool - dt);
+                // W6-04-15 [rules OpenTransportWeapon=, abilities-w5.md §6]: a
+                // passenger fires that slot out of the transport (a GI's Para,
+                // not its M60); -1 keeps the current weapon.
+                if (p.w6.t.open_transport_weapon == 0 || (p.w6.t.open_transport_weapon == 1 && p.w2.valid))
+                    activate_weapon_slot(p, p.w6.t.open_transport_weapon,
+                                         veterancy_enabled() ? &veterancy_rules() : nullptr);
                 if (p.w_damage <= 0 || p.w_range <= 0.0) continue;
                 const double range = p.w_range + R.open_topped_range_bonus;
                 auto ok = [&](int j) {
@@ -254,7 +261,7 @@ void World::step_w5(double dt) {
                 shooter.cell_x = t.cell_x;
                 shooter.cell_y = t.cell_y;
                 shooter.w_damage = static_cast<int>(p.w_damage * R.open_topped_damage_mult);
-                p.rof_cool = rearm_secs(p.w_rof, &combat_rng_);
+                p.rof_cool = unit_rearm_secs(p, &combat_rng_);   // W6-04-01 Burst
                 fire_events_.push_back({ti, -1, tgt, -1, 0, "OpenTopped"});
                 deliver_hit_from(units_, occ_, shooter, pi, -1, tgt);
                 ++w5_.passenger_shots;
@@ -436,7 +443,8 @@ void World::w5_step_repair_ifv(double dt) {
             if (u.rof_cool > 0.0) continue;
             const int heal = damage_vs(-u.w_damage, u.w_verses, v.armor_ix);
             v.hp += std::min(heal, v.max_hp - v.hp);
-            u.rof_cool = rearm_secs(u.w_rof, &combat_rng_);
+            if (v.parasite_on_me >= 0) v.w6.heal_hit = true;   // W6-04-09: a healing hit ejects
+            u.rof_cool = unit_rearm_secs(u, &combat_rng_);   // W6-04-01 Burst
             u.fire_flash = 0.4;
             fire_events_.push_back({i, -1, t, -1, 0, "RepairBullet"});
             ++w5_.repairs;

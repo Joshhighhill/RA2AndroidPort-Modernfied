@@ -40,6 +40,14 @@ struct WeaponSpec {
     bool delay_kill = false;
     int delay_kill_frames = 0;
     double delay_kill_at_max = 1.0;
+    int burst = 1;                     // W6-04-01: weapon Burst= (+0x9C)
+    bool omni_fire = false;            // W6-04-06: weapon OmniFire= (+0x12B)
+    // W6-04-03: the warhead keys the faithful DamageArea reads (ability blasts
+    // now go through it): AffectsAllies (+0x179), ProneDamage, InfDeath.
+    bool affects_allies = true;
+    double prone_damage = 1.0;
+    int inf_death = 0;
+    int wall_flags = 0;   // W6-04-04: warhead Wall/Wood/WallAbsoluteDestroyer
 };
 
 // Per-type ability profile, resolved once from rules by the caller (World is
@@ -63,6 +71,7 @@ struct AbilityProfile {
     int ifv_mode = 0;                // IFVMode (+0x688) -- as a passenger
     bool gunner = false;             // Gunner=yes (+0x805) -- as an IFV
     std::vector<WeaponSpec> ifv_weapons;  // Weapon1..WeaponN, 0-based (§G)
+    std::vector<WeaponSpec> ifv_weapons_elite;   // W6-04-28: EliteWeapon1..N (invalid = the base one)
     bool infantry = false;           // the parasite's instant-kill branch (§B2)
 };
 

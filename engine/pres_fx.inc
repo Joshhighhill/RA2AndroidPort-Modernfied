@@ -101,6 +101,10 @@ struct FxWeapon {
     // tank), IsLaser + LaserDuration + IsHouseColor (Prism)]: drawn as a beam
     // from the muzzle to the target instead of only an impact.
     bool bolt = false, laser = false, laser_house = false;
+    // W6-04-24 [rules IsRadBeam= (Desolator RadBeamWeapon), IsLine= (Boris's
+    // Flare)]: two more beam kinds. [RE-FALLBACK: colours / life -- the rad
+    // beam in [Radiation] RadColor, the flare line red, LaserDuration-like life.]
+    bool rad_beam = false, line = false;
     int laser_frames = 15;
     bool conventional = false;   // W3-FX warhead Conventional= (water -> SplashList)
 };
@@ -168,6 +172,13 @@ public:
         }
         weapons_[image] = fw;
         explosions_[image] = split(rget(id, "Explosion"));
+        // W6-04-24: the Secondary's beam (Boris's Flare IsLine) for slot-1 shots.
+        const std::string w2 = rget(id, "Secondary");
+        if (!w2.empty()) {
+            FxWeapon f2;
+            fill_beam(f2, w2);
+            weapons2_[image] = f2;
+        }
     }
     void fill_beam(FxWeapon& fw, const std::string& w) {
         auto yes = [&](const char* k) {
@@ -177,6 +188,8 @@ public:
         fw.bolt = yes("IsElectricBolt");
         fw.laser = yes("IsLaser");
         fw.laser_house = yes("IsHouseColor");
+        fw.rad_beam = yes("IsRadBeam");   // W6-04-24
+        fw.line = yes("IsLine");
         const std::string ld = rget(w, "LaserDuration");
         if (!ld.empty()) fw.laser_frames = std::max(1, std::atoi(ld.c_str()));
     }
@@ -202,6 +215,15 @@ public:
                   const FxWeapon& fw, SDL_Color house) {
         Beam b{x0, y0, lift0, x1, y1, lift1, l0, l1, fw.bolt, fw.bolt ? 8 : fw.laser_frames, 0,
                SDL_Color{255, 255, 255, 255}, SDL_Color{110, 110, 255, 255}, beam_seed_++ * 2654435761u};
+        if (fw.rad_beam) {   // W6-04-24 [RE-FALLBACK: RadColor beam, 10 frames]
+            b.outer = rad_color_;
+            b.inner = SDL_Color{200, 255, 200, 255};
+            b.life = 10;
+        } else if (fw.line) {   // W6-04-24 [RE-FALLBACK: a thin red designator line]
+            b.outer = SDL_Color{160, 0, 0, 255};
+            b.inner = SDL_Color{255, 40, 40, 255};
+            b.life = 8;
+        }
         if (fw.laser) {
             // [RE-FALLBACK: LaserInner/OuterColor are commented out in rulesmd;
             // IsHouseColor=yes -> the firing house's colour, white core]
@@ -293,6 +315,10 @@ public:
     const FxWeapon* weapon(const std::string& image) const {
         auto it = weapons_.find(image);
         return it == weapons_.end() ? nullptr : &it->second;
+    }
+    const FxWeapon* weapon2(const std::string& image) const {   // W6-04-24: the Secondary
+        auto it = weapons2_.find(image);
+        return it == weapons2_.end() ? nullptr : &it->second;
     }
     const std::vector<std::string>* explosions(const std::string& id_or_image) {
         auto it = explosions_.find(id_or_image);
@@ -763,6 +789,7 @@ private:
     bool has_pal_ = false;
     std::map<std::string, std::unique_ptr<FxAnimType>> types_;
     std::map<std::string, FxWeapon> weapons_;
+    std::map<std::string, FxWeapon> weapons2_;   // W6-04-24
     std::map<std::string, FxWeapon> weapon_defs_;   // W2-GA-15 defence weapons by id
     std::vector<Beam> beams_;
     uint32_t beam_seed_ = 1;

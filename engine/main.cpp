@@ -170,6 +170,9 @@ extern double g_pip_yellow, g_pip_red;
 int g_hover_unit = -1;
 void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
                     double yellow, double red, bool board = true);
+// W6-04-11 (hud_pips.inc): the flickering Ivan bomb over every bombed object.
+void draw_bomb_icons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
+                     const std::vector<ra2engine::Unit>& us, const ra2engine::Camera& cam);
 inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
@@ -817,15 +820,14 @@ inline int w5_speed_type_index(std::string s) {
 }
 
 // W6 fix #2: a unit type's rules id + targeting data (target_w6.hpp).
-ra2engine::UnitTypeW6 resolve_unit_w6(const Rules& rules, const std::string& unit_id) {
-    ra2engine::UnitTypeW6 w;
+ra2engine::UnitTypeTgt resolve_unit_w6(const Rules& rules, const std::string& unit_id) {
+    ra2engine::UnitTypeTgt w;
     w.rules_id = unit_id;
     for (char& ch : w.rules_id) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
     w.insignificant = rules.section_flag(unit_id, "Insignificant", false);
     w.legal_target = rules.section_flag(unit_id, "LegalTarget", true);
     w.immune_psionics = rules.section_flag(unit_id, "ImmuneToPsionics", false);
     w.guard_range = rules.section_double(unit_id, "GuardRange", 0.0);
-    w.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);
     return w;
 }
 
@@ -843,7 +845,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.armor = rules.armor(unit_id);
     // W6 fix #2: rules id + the targeting type data (map overrides merged in a
     // campaign: its Rules is rulesmd with the scenario overlaid).
-    r.combat.w6 = resolve_unit_w6(rules, unit_id);
+    r.combat.tg = resolve_unit_w6(rules, unit_id);
     // Gap fix C (G-41) [RE: docs/re/weapons.md §1]: the TechnoType slot rule
     // (Primary/Secondary, or Weapon1..N for TurretCount>=1 types -- SREF's
     // Primary is commented out and Weapon1=Comet) via engine/weapon_resolve.
@@ -851,6 +853,19 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     const std::string primary = tw.slot[0].id;
     r.combat.damage = rules.weapon_damage(primary);
     r.combat.rof = rules.weapon_rof(primary);
+    r.combat.w6.burst = tw.slot[0].valid ? tw.slot[0].burst : 1;   // W6-04-01
+    r.combat.w6.omni_fire = tw.slot[0].valid && tw.slot[0].omni_fire;   // W6-04-06
+    r.combat.w6.sonic = tw.slot[0].valid && tw.slot[0].sonic;           // W6-04-09
+    r.combat.w6.wall_flags = tw.slot[0].valid ? tw.slot[0].wall_flags : 0;   // W6-04-04
+    r.combat.w6.powered_unit = rules.section_flag(unit_id, "PoweredUnit", false);   // W6-04-18
+    r.combat.w6.decloak_to_fire = !tw.slot[0].valid || rules.section_flag(tw.slot[0].id, "DecloakToFire", true);   // W6-04-25
+    r.combat.w6.open_transport_weapon =   // W6-04-15
+        static_cast<int>(rules.section_double(unit_id, "OpenTransportWeapon", -1.0));
+    r.combat.w6.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);   // W6-04-16
+    r.combat.w6.deployed_crushable = rules.section_flag(unit_id, "DeployedCrushable", true);   // W6-04-29
+    r.combat.w6.can_approach_target = rules.section_flag(unit_id, "CanApproachTarget", true);   // W6-04-30
+    r.combat.w6.omni_crusher = rules.section_flag(unit_id, "OmniCrusher", false);   // W6-04-14
+    r.combat.w6.omni_crush_resistant = rules.section_flag(unit_id, "OmniCrushResistant", false);   // W6-04-14
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
@@ -878,14 +893,13 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // [CometFragment] Damage=30 Range=3 Warhead=CometWH]: the Prism Tank beam
     // splits on impact.
     {
-        const std::string sw = rules.section_string(primary, "ShrapnelWeapon", "");
-        const int sc = (int)rules.section_double(primary, "ShrapnelCount", 0.0);
-        if (!sw.empty() && sc > 0) {
-            r.combat.shrapnel_count = sc;
-            r.combat.shrapnel_damage = rules.weapon_damage(sw);
-            r.combat.shrapnel_range = rules.weapon_range(sw);
-            r.combat.shrapnel_verses = rules.verses(rules.weapon_warhead(sw));
-        }
+        // W6-04-02: the keys live on the projectile ([LargeCometP]
+        // ShrapnelWeapon=CometFragment ShrapnelCount=5); resolve_weapon_slot
+        // reads them there (they were read from [Comet], which has none).
+        r.combat.shrapnel_count = tw.slot[0].shrapnel_count;
+        r.combat.shrapnel_damage = tw.slot[0].shrapnel_damage;
+        r.combat.shrapnel_range = tw.slot[0].shrapnel_range;
+        r.combat.shrapnel_verses = tw.slot[0].shrapnel_verses;
         r.combat.disguise_when_still = rules.section_flag(unit_id, "CanDisguise", false) &&
                                        rules.section_flag(unit_id, "DisguiseWhenStill", false);
     }
@@ -1004,6 +1018,14 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.has_elite = true;
         r.combat.elite.damage = rules.weapon_damage(elite);
         r.combat.elite.rof = rules.weapon_rof(elite);
+        r.combat.elite.burst = tw.elite[0].valid ? tw.elite[0].burst : 1;   // W6-04-01
+        r.combat.elite.omni_fire = tw.elite[0].valid && tw.elite[0].omni_fire;   // W6-04-06
+        r.combat.elite.sonic = tw.elite[0].valid && tw.elite[0].sonic;           // W6-04-09
+        r.combat.elite.wall_flags = tw.elite[0].valid ? tw.elite[0].wall_flags : 0;   // W6-04-04
+        r.combat.elite.shrapnel_count = tw.elite[0].shrapnel_count;         // W6-04-02
+        r.combat.elite.shrapnel_damage = tw.elite[0].shrapnel_damage;
+        r.combat.elite.shrapnel_range = tw.elite[0].shrapnel_range;
+        r.combat.elite.shrapnel_verses = tw.elite[0].shrapnel_verses;
         r.combat.elite.range = rules.weapon_range(elite);
         const std::string ewh = rules.weapon_warhead(elite);
         r.combat.elite.verses = rules.verses(ewh);
@@ -1135,6 +1157,10 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     s.verses = rules.verses(wh);
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
+    s.affects_allies = rules.section_flag(wh, "AffectsAllies", true);   // W6-04-03
+    s.prone_damage = ra2engine::warhead_prone_damage(rules, wh);
+    s.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));
+    s.wall_flags = ra2engine::warhead_wall_flags(rules, wh);   // W6-04-04
     s.rad_level = static_cast<int>(rules.section_double(w, "RadLevel", 0.0));
     // P4 [RE: FUN_00700DA0 @0x701327]: warhead CausesDelayKill (+0x130),
     // DelayKillFrames (+0x134), DelayKillAtMax (+0x138).
@@ -1151,6 +1177,8 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
         s.aa = ws.aa;
         s.ag = ws.ag;
         s.proj = ws.proj;
+        s.burst = ws.valid ? ws.burst : 1;   // W6-04-01
+        s.omni_fire = ws.valid && ws.omni_fire;   // W6-04-06
     }
     return s;
 }
@@ -1168,6 +1196,10 @@ ra2engine::AbilityProfile resolve_ability_profile(const Rules& rules, const Ini&
     p.explodes = ability_flag(ini, id, "Explodes", false);                  // §F +0xD15
     const std::string dw = ability_ini_str(ini, id, "DeathWeapon");          // §F +0xD18
     p.death = dw.empty() ? prim : resolve_weapon_spec(rules, ini, dw);
+    // W6-04-12 [RE: FireDeathWeapon FUN_0070CAC0 @0x70CB1B]: the death shot's
+    // damage is ftol(Damage * DeathWeaponDamageModifier) (+0xD1C, default 1).
+    if (p.death.valid)
+        p.death.damage = static_cast<int>(p.death.damage * rules.section_double(id, "DeathWeaponDamageModifier", 1.0));
     p.deployer = ability_flag(ini, id, "Deployer", false) &&
                  ability_flag(ini, id, "DeployFire", false);                // §A +0x6AC
     if (p.deployer) p.deploy = sec;
@@ -1186,6 +1218,10 @@ ra2engine::AbilityProfile resolve_ability_profile(const Rules& rules, const Ini&
             p.ifv_weapons.push_back(
                 resolve_weapon_spec(rules, ini, ability_ini_str(ini, id, "Weapon" + std::to_string(k))));
         if (!p.ifv_weapons.empty() && !p.ifv_weapons[0].valid) p.ifv_weapons[0] = prim;
+        // W6-04-28: the elite IFV fires EliteWeapon<k> (the V10 elite slot rule).
+        for (int k = 1; k <= n; ++k)
+            p.ifv_weapons_elite.push_back(
+                resolve_weapon_spec(rules, ini, ability_ini_str(ini, id, "EliteWeapon" + std::to_string(k))));
     }
     p.infantry = rules.is_infantry(id);
     return p;
@@ -1212,6 +1248,10 @@ ra2engine::AbilityRules resolve_ability_rules(const Rules& rules, const Ini& ini
         r.ivan_warhead.verses = rules.verses(iwh);
         r.ivan_warhead.cell_spread = rules.section_double(iwh, "CellSpread", 1.5);
         r.ivan_warhead.percent_at_max = rules.section_double(iwh, "PercentAtMax", 0.25);
+        r.ivan_warhead.affects_allies = rules.section_flag(iwh, "AffectsAllies", true);   // W6-04-03
+        r.ivan_warhead.prone_damage = ra2engine::warhead_prone_damage(rules, iwh);
+        r.ivan_warhead.inf_death = static_cast<int>(rules.section_double(iwh, "InfDeath", 0.0));
+        r.ivan_warhead.wall_flags = ra2engine::warhead_wall_flags(rules, iwh);   // W6-04-04
     }
     r.ivan_warhead.damage = r.ivan_damage;
     return r;
@@ -1266,6 +1306,12 @@ void wire_building_deaths(ra2engine::World& world, BuildingAssets& ba, const Rul
         d.w5.delay_kill_eligible = ability_flag(ini, d.id, "EligibleForDelayKill", false);
         d.w5.death = d.w5.explodes ? resolve_weapon_spec(rules, ini, ability_ini_str(ini, d.id, "DeathWeapon"))
                                    : ra2engine::WeaponSpec{};
+        // W6-04-12 [RE: FireDeathWeapon FUN_0070CAC0 @0x70CB1B: damage =
+        // ftol(Weapon.Damage * Type.DeathWeaponDamageModifier (+0xD1C))]:
+        // [NANRCT] NukePayload 600 x 0.5 = 300.
+        if (d.w5.death.valid)
+            d.w5.death.damage = static_cast<int>(
+                d.w5.death.damage * rules.section_double(d.id, "DeathWeaponDamageModifier", 1.0));
         any = any || (d.w5.explodes && d.w5.death.valid);
     }
     world.refresh_building_types(ba.roster);
@@ -1615,9 +1661,15 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
 
         va.has_turret = rules.has_turret(unit_id);
         if (va.has_turret) {
-            if (!load_part(base + "tur", tur_m, tur_h))
-                throw std::runtime_error("turret vxl/hva missing (" + base + "tur)");
-            va.has_barrel = load_part(base + "barl", barl_m, barl_h);  // barrel absence OK
+            // W6-04-17 [RE-FALLBACK: a Turret=yes type without a turret voxel
+            // draws its body only]: the YR Siege Chopper ([SCHP] Turret=yes, no
+            // schptur.vxl in any archive) was dropped from the roster here.
+            if (!load_part(base + "tur", tur_m, tur_h)) {
+                std::cerr << "[vehicle] " << base << ": no turret voxel, hull only\n";
+                va.has_turret = false;
+            } else {
+                va.has_barrel = load_part(base + "barl", barl_m, barl_h);  // barrel absence OK
+            }
         }
 
         const MixEntry* pe = local.find("voxels.vpl");
@@ -1961,6 +2013,18 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 // facing never slewed onto a target, so the vehicle aim gate
                 // (FireError::FACING) held the Giant Squid's / Dolphin's fire forever.
                 d.combat.rot = rules.rot(e.id);
+            } else if (e.vehicle && !art.voxel(image)) {
+                // W6-04-10 [rules [DRON] TechLevel=4 Prerequisite=NAWEAP; artmd
+                // [DRON] Voxel=no]: a LAND SHP vehicle (the Terror Drone) went to
+                // the voxel loader, failed and was dropped -- no cameo, and the
+                // AI roster lost it too. It rides the infantry path, the same
+                // registration as the campaign (W3-FIX-A) and the cheat spawn
+                // (W2-GA-11 draws it with the SHP-vehicle frame rule); it is
+                // still built at the War Factory (UnitTypeDef::is_vehicle).
+                const ResolvedUnit ru = resolve_combat_unit(rules, e.id);
+                d.combat = ru.combat;
+                d.combat.is_vehicle = false;
+                d.combat.speed_cps = speed_to_cps(ru.speed);
             } else if (e.vehicle) {
                 VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, e.id);
                 if (!va.ok) continue;                 // assets missing -> drop
@@ -2329,7 +2393,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
     // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
     // placeholder (buildings are never dropped on art failure).
-    static const char* kRoster[40] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    static const char* kRoster[41] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
@@ -2362,7 +2426,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                        // SpySat=yes -> grants_map_reveal, the shroud.md
                                        // §7A latch that had no rostered owner). Only
                                        // the roster= WITNESS grows 39 -> 40.
-                                       "GASPYSAT"};
+                                       "GASPYSAT",
+                                       // Wave-6 #4 (W6-04-18) APPEND-ONLY at index 40:
+                                       // the YR Robot Control Center (art present in
+                                       // genermd.mix / snowmd.mix; [GAROBO]
+                                       // Prerequisite=GAWEAP,GACNST TechLevel=10
+                                       // PowersUnit=ROBO). Only the roster= WITNESS grows.
+                                       "GAROBO"};
     constexpr int kRoster2First = 24;   // first P6-appended index
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
@@ -2427,6 +2497,11 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     auto resolve_shp = [&](const std::string& image) -> ShpFile {
         ShpFile shp;
         if (asset_building_shp(image, shp, /*ra2_only=*/true)) return shp;
+        // W6-04-17/18/21 (U-1: the engine runs the YR data set): a roster
+        // building the RA2 archives lack (NABNKR, NAINDP, GAROBO) takes its YR
+        // art (genermd.mix / snowmd.mix -- the R-201 "art absent" census was
+        // stale). Every RA2-resolved building is unchanged.
+        if (asset_building_shp(image, shp, /*ra2_only=*/false)) return shp;
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
     (void)get_mix;
@@ -2552,6 +2627,10 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
             std::cerr << (k ? "," : "") << d.prerequisite[k];
         std::cerr << "]\n";
         ra2engine::fill_building_weapons(rules, id, d);   // Gap fix C (G-40): defenses
+        // W6-04-04: a Wall=yes building takes damage stages (art DamageLevels=).
+        d.w6.wall_levels = d.wall ? art.damage_levels(art_id) : 0;   // reuses W6-03-01 BuildingTypeDef::wall
+        d.w6.powers_unit = rules.image(rules.section_string(id, "PowersUnit", ""));   // W6-04-18
+        if (rules.section_string(id, "PowersUnit", "").empty()) d.w6.powers_unit.clear();
         ba.roster.push_back(std::move(d));
         ba.art.push_back(std::move(slot));
         // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is
@@ -3988,6 +4067,12 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
                                        u.passengers_max, cam, W, H);
     }
+    // W6-04-11 [rules [AudioVisual] IvanIconFlickerRate=8 "this many frames
+    // and the icon goes back and forth within one of the 6 2-frame anims";
+    // RE-FALLBACK: the icon is conquer.mix bomb.shp, the anim picked by the
+    // fuse's elapsed sixth, drawn above the object]: a bombed object shows
+    // the flickering bomb, so the player sees what carries one.
+    draw_bomb_icons(ren, tc, world, us, cam);
     // P5 [RE: veterancy.md V13]: veterancy chevrons (no-op unless g_p5_art).
     draw_p5_chevrons(ren, tc, world, ua.pal, cam, W, H);
     // Live selection box on top (interactive only).
@@ -5951,7 +6036,9 @@ public:
             MixFile conquer = ra2_.open_nested("conquer.mix");
             for (const std::vector<ra2engine::UnitTypeDef>* defs : {&ur_.defs, &ur_ai_.defs})
                 for (const ra2engine::UnitTypeDef& d : *defs) {
-                    if (d.is_vehicle || ua_.shps.count(d.combat.image)) continue;
+                    // W6-04-10: a land SHP vehicle (DRON) rides the infantry
+                    // path (combat.is_vehicle false) and needs its SHP here.
+                    if ((d.is_vehicle && d.combat.is_vehicle) || ua_.shps.count(d.combat.image)) continue;
                     try {
                         ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
                         ua_.anims.emplace(d.combat.image, anim_from_art(art_, d.combat.image));
@@ -6491,7 +6578,18 @@ public:
                 });
                 world_.refresh_building_types(ba_.roster);   // G16: newly registered types
             }
+            // W6-04-05: a map wall overlay cell becomes shootable (rules Strength=,
+            // art DamageLevels=, Armor=wood -> the Wood warhead key applies).
+            auto w6_register_wall = [&](int x, int y) {
+                const std::string nm = map_dressing_.wall_name(x, y);
+                if (nm.empty()) return;
+                std::string arm = rules_.armor(nm);
+                for (char& ch : arm) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                world_.mark_wall_overlay(x, y, static_cast<int>(rules_.section_double(nm, "Strength", 1.0)),
+                                         art_.damage_levels(nm), arm == "wood");
+            };
             for (const auto& [x, y] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(x, y)) w6_register_wall(x, y);         // W6-04-05
                 if (map_dressing_.is_wall(x, y)) world_.block_wall_cell(x, y);   // W5-A diagonal gaps
                 else world_.block_cell(x, y);
                 if (map_dressing_.is_crushable_wall(x, y)) world_.mark_crushable_wall(x, y);   // P4
@@ -6828,7 +6926,18 @@ private:
         if (ok) {
             // G-87: the saved World carries the neutral structures; re-block the
             // dressing's cells (passability is rebuilt from the map on load).
+            // W6-04-05: a map wall overlay cell becomes shootable (rules Strength=,
+            // art DamageLevels=, Armor=wood -> the Wood warhead key applies).
+            auto w6_register_wall = [&](int x, int y) {
+                const std::string nm = map_dressing_.wall_name(x, y);
+                if (nm.empty()) return;
+                std::string arm = rules_.armor(nm);
+                for (char& ch : arm) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                world_.mark_wall_overlay(x, y, static_cast<int>(rules_.section_double(nm, "Strength", 1.0)),
+                                         art_.damage_levels(nm), arm == "wood");
+            };
             for (const auto& [bx, by] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(bx, by)) w6_register_wall(bx, by);   // W6-04-05
                 if (map_dressing_.is_wall(bx, by)) world_.block_wall_cell(bx, by);
                 else world_.block_cell(bx, by);
                 if (map_dressing_.is_crushable_wall(bx, by)) world_.mark_crushable_wall(bx, by);   // P4

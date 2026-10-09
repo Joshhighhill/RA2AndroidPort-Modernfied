@@ -111,6 +111,7 @@ ra2engine::SwParams resolve_sw_params(const Rules& rules) {
     p.storm_wh_spread = rules.section_double(swh, "CellSpread", 2.0);
     p.storm_wh_pmax = rules.section_double(swh, "PercentAtMax", 0.5);
     p.storm_verses = w2_verses11(rules, swh);
+    p.storm_wall_flags = ra2engine::warhead_wall_flags(rules, swh);   // W6-04-04 (IonWH Wall/Wood)
     p.amer_para_inf = gs("AmerParaDropInf", "E1");
     p.amer_para_num = static_cast<int>(gd("AmerParaDropNum", 8.0));
     p.ally_para_inf = gs("AllyParaDropInf", "E1");
@@ -130,5 +131,7 @@ ra2engine::SwParams resolve_sw_params(const Rules& rules) {
     p.repair_percent = gd("RepairPercent", 0.15);
     const std::string payload = "NukePayload";
     p.nuke_rad_level = static_cast<int>(rules.section_double(payload, "RadLevel", 500.0));
+    p.nuke_wall_flags = ra2engine::warhead_wall_flags(   // W6-04-04: [NUKE] WallAbsoluteDestroyer
+        rules, rules.section_string(payload, "Warhead", "NUKE"));
     return p;
 }

@@ -38,6 +38,7 @@ struct RocketWarhead {
     double spread = 1.0;                // CellSpread
     double pmax = 0.5;                  // PercentAtMax
     std::array<int, 11> verses{};       // Verses (percent), 100 when absent
+    int wall_flags = 0;                 // W6-04-04: Wall/Wood/WallAbsoluteDestroyer
 };
 
 // One RocketStruct (Rules+0x4B0 / +0x4E4 / +0x518) + its two warheads.
