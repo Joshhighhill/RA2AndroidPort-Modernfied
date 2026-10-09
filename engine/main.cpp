@@ -5226,6 +5226,9 @@ struct DriverHooks {
 
 // W2-AR-02/-03/-05/-10/-30: loading screen, deferred scene construction,
 // error page, missing-files page, SDL assertion handler.
+// W6-01-15: `set canvas WxH` in a --play script -- the game canvas a phone
+// would get (e.g. 974x548), instead of the harness's 1280x720 (0 = default).
+int g_play_canvas_w = 0, g_play_canvas_h = 0;
 #include "app_robust.inc"
 
 // The scene-loop driver: owns the active Scene*, pumps input -> handle, ticks
