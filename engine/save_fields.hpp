@@ -247,6 +247,9 @@ struct SaveAccess {
         save::io(ar, w.bridge_version_);
         save::io(ar, w.bridge_rng_);
         save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
+        save::io(ar, w.deck_land_);   // R-210 derived scratch (save v30)
+        save::io(ar, w.deck_amph_);
+        save::io(ar, w.deck_ver_);
         save::io(ar, w.w5_);   // wave-5 abilities (agent C)
         save::io(ar, w.w5_hide_);   // wave-5 gap scratch (the amphib_passable_ precedent)
         save::io(ar, w.w5_own_);
@@ -780,6 +783,7 @@ template <class Ar> void fields(Ar& ar, BldW6& v) {
 template <class Ar> void fields(Ar& ar, BldTypeW6& v) {
     io(ar, v.wall_levels);
     io(ar, v.powers_unit);   // W6-04-18
+    io(ar, v.gate);          // R-210 (save v30)
 }
 template <class Ar> void fields(Ar& ar, WallOvType& v) {
     io(ar, v.strength); io(ar, v.levels); io(ar, v.wood);
@@ -1091,6 +1095,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w5);   // wave-5 abilities (agent C)
     io(ar, v.w6);   // v25: wave-6 #4
     io(ar, v.tg);   // W6 fix #2 (save v29)
+    io(ar, v.on_deck);   // R-210 (save v30)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);

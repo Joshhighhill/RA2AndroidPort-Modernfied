@@ -168,6 +168,128 @@ std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int h
     return path;
 }
 
+// R-210: is cell `c` an open gate for this mover?
+bool gate_open(const PathTerrain* t, int c) {
+    return t && t->open_cells && std::binary_search(t->open_cells->begin(), t->open_cells->end(), c);
+}
+
+// R-210: the height-aware A* over (cell, layer) states [RE: FUN_00429A10 keeps
+// a ground and a bridge ("alt") plane of visit marks / distances and asks
+// IsCellOccupied -> the height gate FUN_004D9B70 for every neighbour]. Same
+// costs, heuristic, tie-breaks and corner rule as astar(); a state is
+// cell + layer * n.
+Scratch& terrain_scratch() {
+    thread_local Scratch s;
+    return s;
+}
+
+std::vector<Cellxy> astar_terrain(const std::vector<uint8_t>& passable, int width, int height,
+                                  Cellxy start, Cellxy goal, int max_expand, Mode mode,
+                                  const std::vector<uint8_t>* leak, const PathTerrain& t) {
+    if (leak && leak->size() != passable.size()) leak = nullptr;
+    const int n = width * height;
+    const bool decks = t.deck && t.deck->size() == passable.size();
+    const int layers = decks ? 2 : 1;
+    auto base_ok = [&](int c) { return passable[(size_t)c] != 0 || gate_open(&t, c); };
+    auto deck_of = [&](int c) { return decks ? (*t.deck)[(size_t)c] : 0; };
+    auto state_ok = [&](int c, int layer) {
+        if (!base_ok(c)) return false;
+        return layer == 0 ? deck_of(c) != 2 : deck_of(c) != 0;
+    };
+    auto in_range = [&](int x, int y) { return x >= 0 && x < width && y >= 0 && y < height; };
+    const int kInf = std::numeric_limits<int>::max();
+    auto octile_h = [&](int x, int y) {
+        int dx = std::abs(x - goal.x);
+        int dy = std::abs(y - goal.y);
+        int mn = std::min(dx, dy);
+        int mx = std::max(dx, dy);
+        return kDiagonal * mn + kCardinal * (mx - mn);
+    };
+    const int start_cell = start.y * width + start.x;
+    const int goal_cell = goal.y * width + goal.x;
+    int start_layer = (decks && t.start_layer == 1 && deck_of(start_cell) != 0) ? 1 : 0;
+    if (deck_of(start_cell) == 2) start_layer = 1;
+    const int start_idx = start_cell + start_layer * n;
+    Scratch& S = terrain_scratch();
+    S.prepare(n * layers);
+    const std::uint32_t gen = S.gen;
+    auto touch = [&](int c) {
+        if (S.stamp[(size_t)c] != gen) {
+            S.stamp[(size_t)c] = gen;
+            S.g[(size_t)c] = kInf;
+            S.came[(size_t)c] = -1;
+            S.closed[(size_t)c] = 0;
+        }
+    };
+    auto gval = [&](int c) { return S.stamp[(size_t)c] == gen ? S.g[(size_t)c] : kInf; };
+    auto is_closed = [&](int c) { return S.stamp[(size_t)c] == gen && S.closed[(size_t)c] != 0; };
+
+    std::priority_queue<OpenNode, std::vector<OpenNode>, OpenNodeGreater> open;
+    touch(start_idx);
+    S.g[(size_t)start_idx] = 0;
+    const int h_start = octile_h(start.x, start.y);
+    open.push(OpenNode{ h_start, h_start, start_idx });
+    int best_state = start_idx, best_h = h_start, best_g = 0;
+    int expanded = 0;
+    int reached_state = -1;
+    while (!open.empty()) {
+        OpenNode cur = open.top();
+        open.pop();
+        if (is_closed(cur.cell)) continue;   // stale entry
+        const int cc = cur.cell % n, cl = cur.cell / n;
+        if (cc == goal_cell) { reached_state = cur.cell; break; }
+        S.closed[(size_t)cur.cell] = 1;
+        if (mode == Mode::Nearest) {
+            const int gc = S.g[(size_t)cur.cell];
+            if (cur.h < best_h ||
+                (cur.h == best_h && (gc < best_g || (gc == best_g && cur.cell < best_state)))) {
+                best_h = cur.h;
+                best_g = gc;
+                best_state = cur.cell;
+            }
+        }
+        if (max_expand > 0 && ++expanded >= max_expand) break;
+        const int cx = cc % width;
+        const int cy = cc / width;
+        for (int dir = 0; dir < 8; ++dir) {
+            const int nx = cx + kDx[dir];
+            const int ny = cy + kDy[dir];
+            if (!in_range(nx, ny)) continue;
+            const int ncell = ny * width + nx;
+            if (!base_ok(ncell)) continue;
+            if (kDx[dir] != 0 && kDy[dir] != 0) {
+                const int c1 = cy * width + cx + kDx[dir], c2 = (cy + kDy[dir]) * width + cx;
+                if (!base_ok(c1) && !(leak && (*leak)[(size_t)c1])) continue;
+                if (!base_ok(c2) && !(leak && (*leak)[(size_t)c2])) continue;
+            }
+            const int nl = path_step_layer(t, width, cx, cy, cl, nx, ny);
+            if (nl < 0 || nl >= layers || !state_ok(ncell, nl)) continue;
+            const int nstate = ncell + nl * n;
+            if (is_closed(nstate)) continue;
+            const int tentative_g = S.g[(size_t)cur.cell] + kCost[dir];
+            if (tentative_g < gval(nstate)) {
+                touch(nstate);
+                S.g[(size_t)nstate] = tentative_g;
+                S.came[(size_t)nstate] = cur.cell;
+                const int h = octile_h(nx, ny);
+                open.push(OpenNode{ tentative_g + h, h, nstate });
+            }
+        }
+    }
+    int end_state;
+    if (reached_state >= 0) end_state = reached_state;
+    else if (mode == Mode::Exact) return {};
+    else end_state = best_state;
+    std::vector<Cellxy> path;
+    for (int s = end_state; s >= 0; s = S.came[(size_t)s]) {
+        const int c = s % n;
+        path.push_back(Cellxy{ c % width, c / width });
+        if (s == start_idx) break;
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
 // R-171 (W5-F): a result memo for astar. astar is a PURE function of (the
 // grid's bytes, width, height, start, goal, budget, mode) -- the scratch is
 // internal -- so returning a remembered path for an identical query is
@@ -180,9 +302,18 @@ std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int h
 struct MemoKey {
     int sx, sy, gx, gy, budget, mode;
     const void* leak;   // W5-A: the wall leak mask in use (derived per map, fixed for a World)
+    // R-210: the terrain (null = the historical 2-D search). The level / slope
+    // grids are fixed per World; the deck grid is keyed by its version, the
+    // open gates by a hash of their cells.
+    const void* level = nullptr;
+    const void* deck = nullptr;
+    std::uint32_t tver = 0;
+    int tlayer = 0;
+    std::uint64_t gates = 0;
     bool operator==(const MemoKey& o) const {
         return sx == o.sx && sy == o.sy && gx == o.gx && gy == o.gy && budget == o.budget && mode == o.mode &&
-               leak == o.leak;
+               leak == o.leak && level == o.level && deck == o.deck && tver == o.tver && tlayer == o.tlayer &&
+               gates == o.gates;
     }
 };
 struct MemoKeyHash {
@@ -194,6 +325,14 @@ struct MemoKeyHash {
         }
         h ^= static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(k.leak));
         h *= 1099511628211ull;
+        if (k.level) {   // R-210 (a null terrain hashes exactly as before)
+            for (std::uint64_t v : {static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(k.level)),
+                                    static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(k.deck)),
+                                    static_cast<std::uint64_t>(k.tver), static_cast<std::uint64_t>(k.tlayer), k.gates}) {
+                h ^= v;
+                h *= 1099511628211ull;
+            }
+        }
         return static_cast<std::size_t>(h);
     }
 };
@@ -234,14 +373,43 @@ PathMemo& memo_for(const std::vector<uint8_t>& passable, int width, int height) 
     return m;
 }
 
+// R-210: a usable terrain (null when absent or malformed -> the 2-D search).
+const PathTerrain* terrain_of(const PathTerrain* t, const std::vector<uint8_t>& passable) {
+    if (!t) return nullptr;
+    if (!t->level || t->level->size() != passable.size()) {
+        // Gates alone still need the terrain search (it reads open_cells).
+        return (t->open_cells && !t->open_cells->empty()) ? t : nullptr;
+    }
+    return t;
+}
+
+std::uint64_t gates_hash(const PathTerrain* t) {
+    if (!t || !t->open_cells) return 0;
+    std::uint64_t h = 1469598103934665603ull;
+    for (int c : *t->open_cells) {
+        h ^= static_cast<std::uint32_t>(c);
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
 std::vector<Cellxy> astar_memo(const std::vector<uint8_t>& passable, int width, int height, Cellxy start,
-                               Cellxy goal, int max_expand, Mode mode, const std::vector<uint8_t>* leak) {
+                               Cellxy goal, int max_expand, Mode mode, const std::vector<uint8_t>* leak,
+                               const PathTerrain* t = nullptr) {
     if (leak && leak->size() != passable.size()) leak = nullptr;
     PathMemo& m = memo_for(passable, width, height);
-    const MemoKey k{start.x, start.y, goal.x, goal.y, max_expand, mode == Mode::Nearest ? 1 : 0, leak};
+    MemoKey k{start.x, start.y, goal.x, goal.y, max_expand, mode == Mode::Nearest ? 1 : 0, leak};
+    if (t) {
+        k.level = t->level ? static_cast<const void*>(t->level) : static_cast<const void*>(t);
+        k.deck = t->deck;
+        k.tver = t->version;
+        k.tlayer = t->start_layer;
+        k.gates = gates_hash(t);
+    }
     const auto it = m.paths.find(k);
     if (it != m.paths.end()) return it->second;
-    std::vector<Cellxy> r = astar(passable, width, height, start, goal, max_expand, mode, leak);
+    std::vector<Cellxy> r = t ? astar_terrain(passable, width, height, start, goal, max_expand, mode, leak, *t)
+                              : astar(passable, width, height, start, goal, max_expand, mode, leak);
     if (m.paths.size() >= kMemoPaths) m.paths.clear();
     m.paths.emplace(k, r);
     return r;
@@ -255,35 +423,84 @@ bool basic_checks(const std::vector<uint8_t>& passable, int width, int height, C
     return in_range(start.x, start.y) && in_range(goal.x, goal.y);
 }
 
+// A cell this mover may stand in at some layer (the grid, or an open gate).
+bool cell_ok(const std::vector<uint8_t>& passable, const PathTerrain* t, int c) {
+    return passable[(size_t)c] != 0 || gate_open(t, c);
+}
+
 }  // namespace
+
+int path_step_layer(const PathTerrain& t, int width, int sx, int sy, int sl, int dx, int dy) {
+    if (!t.level) return 0;
+    const std::vector<std::int8_t>& lv = *t.level;
+    const long long s = (long long)sy * width + sx, d = (long long)dy * width + dx;
+    if (s < 0 || d < 0 || s >= (long long)lv.size() || d >= (long long)lv.size()) return -1;
+    const int hs = lv[(size_t)s] + (sl == 1 ? 4 : 0);
+    const int dk = (t.deck && (size_t)d < t.deck->size()) ? (*t.deck)[(size_t)d] : 0;
+    if (dk != 2) {   // the ground of the next cell
+        const int hd = lv[(size_t)d];
+        if (hd == hs) return 0;
+        // One level up or down only over a slope: the LOWER cell must be a
+        // ramp [FUN_004D9B70: |diff| == 1 -> SlopeIndex (+0x11C) of the lower].
+        if (sl != 1 && (hd - hs == 1 || hs - hd == 1)) {
+            const long long lower = hd > hs ? s : d;
+            if (t.slope && (size_t)lower < t.slope->size() && (*t.slope)[(size_t)lower] != 0) return 0;
+        }
+    }
+    // A deck (Level + 4) entered at the same height: from the high ground at
+    // its ends or from the next deck cell [FUN_004D9B70 |diff| == 4 cases].
+    if (dk != 0 && lv[(size_t)d] + 4 == hs) return 1;
+    return -1;
+}
 
 std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, int height,
                               Cellxy start, Cellxy goal, const std::vector<uint8_t>* leak) {
-    if (!basic_checks(passable, width, height, start, goal)) return {};
-    if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
-    if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
-    if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar_memo(passable, width, height, start, goal, 0, Mode::Exact, leak);
+    return find_path_t(passable, width, height, start, goal, leak, nullptr);
 }
 
 std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int width, int height,
                                       Cellxy start, Cellxy goal, int max_expand,
                                       const std::vector<uint8_t>* leak) {
-    if (!basic_checks(passable, width, height, start, goal)) return {};
-    if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
-    if (passable[(size_t)(goal.y * width + goal.x)] == 0) return {};
-    if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Exact, leak);
+    return find_path_bounded_t(passable, width, height, start, goal, max_expand, leak, nullptr);
 }
 
 std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int width, int height,
                                       Cellxy start, Cellxy goal, int max_expand,
                                       const std::vector<uint8_t>* leak) {
+    return find_path_nearest_t(passable, width, height, start, goal, max_expand, leak, nullptr);
+}
+
+std::vector<Cellxy> find_path_t(const std::vector<uint8_t>& passable, int width, int height,
+                                Cellxy start, Cellxy goal, const std::vector<uint8_t>* leak,
+                                const PathTerrain* terrain) {
     if (!basic_checks(passable, width, height, start, goal)) return {};
-    if (passable[(size_t)(start.y * width + start.x)] == 0) return {};
+    const PathTerrain* t = terrain_of(terrain, passable);
+    if (!cell_ok(passable, t, start.y * width + start.x)) return {};
+    if (!cell_ok(passable, t, goal.y * width + goal.x)) return {};
+    if (start.x == goal.x && start.y == goal.y) return { start };
+    return astar_memo(passable, width, height, start, goal, 0, Mode::Exact, leak, t);
+}
+
+std::vector<Cellxy> find_path_bounded_t(const std::vector<uint8_t>& passable, int width, int height,
+                                        Cellxy start, Cellxy goal, int max_expand,
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain) {
+    if (!basic_checks(passable, width, height, start, goal)) return {};
+    const PathTerrain* t = terrain_of(terrain, passable);
+    if (!cell_ok(passable, t, start.y * width + start.x)) return {};
+    if (!cell_ok(passable, t, goal.y * width + goal.x)) return {};
+    if (start.x == goal.x && start.y == goal.y) return { start };
+    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Exact, leak, t);
+}
+
+std::vector<Cellxy> find_path_nearest_t(const std::vector<uint8_t>& passable, int width, int height,
+                                        Cellxy start, Cellxy goal, int max_expand,
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain) {
+    if (!basic_checks(passable, width, height, start, goal)) return {};
+    const PathTerrain* t = terrain_of(terrain, passable);
+    if (!cell_ok(passable, t, start.y * width + start.x)) return {};
     // Goal relaxation: an impassable goal becomes the nearest passable cell
     // (Chebyshev rings out to 16, Euclid-nearest per ring, scan order ties).
-    if (passable[(size_t)(goal.y * width + goal.x)] == 0) {
+    if (!cell_ok(passable, t, goal.y * width + goal.x)) {
         bool found = false;
         for (int r = 1; r <= 16 && !found; ++r) {
             int best = -1;
@@ -292,7 +509,7 @@ std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int 
                 for (int x = goal.x - r; x <= goal.x + r; ++x) {
                     if (std::max(std::abs(x - goal.x), std::abs(y - goal.y)) != r) continue;
                     if (x < 0 || y < 0 || x >= width || y >= height) continue;
-                    if (!passable[(size_t)(y * width + x)]) continue;
+                    if (!cell_ok(passable, t, y * width + x)) continue;
                     const long long d = (long long)(x - goal.x) * (x - goal.x) +
                                         (long long)(y - goal.y) * (y - goal.y);
                     if (best < 0 || d < bd) { best = y * width + x; bd = d; }
@@ -302,7 +519,7 @@ std::vector<Cellxy> find_path_nearest(const std::vector<uint8_t>& passable, int 
         if (!found) return { start };
     }
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Nearest, leak);
+    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Nearest, leak, t);
 }
 
 }  // namespace ra2engine

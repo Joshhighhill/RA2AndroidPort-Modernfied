@@ -90,6 +90,25 @@ if (args.size() == 2 && args[0] == "map_ascii") {
     for (int y = 0; y < gh; ++y) f << g[(std::size_t)y] << "\n";
     return true;
 }
+// `cheat map_terrain PATH` (debug only): one line per cell
+// "x y level ramp speedland land water amph hbridge lowovl".
+if (args.size() == 2 && args[0] == "map_terrain") {
+    const int gw = world_.grid_w(), gh = world_.grid_h();
+    const std::vector<std::uint8_t>& wg = world_.grid_for(ra2engine::MovementDomain::Water);
+    const std::vector<std::uint8_t>& ag = world_.grid_for(ra2engine::MovementDomain::Amphibious);
+    std::ofstream f(args[1]);
+    for (int y = 0; y < gh; ++y)
+        for (int x = 0; x < gw; ++x) {
+            const std::size_t i = static_cast<std::size_t>(y) * gw + x;
+            if (!world_.map().at(x, y)) continue;
+            f << x << ' ' << y << ' ' << world_.cell_level(x, y) << ' ' << world_.ramp_at(x, y) << ' '
+              << world_.speed_land_at(x, y) << ' ' << (world_.walkable(x, y) ? 1 : 0) << ' '
+              << (i < wg.size() ? (int)wg[i] : -1) << ' ' << (i < ag.size() ? (int)ag[i] : -1) << ' '
+              << (world_.high_bridge_cell(x, y) ? (world_.high_bridge_destroyed(x, y) ? 2 : 1) : 0) << ' '
+              << world_.bridge_overlay_at(x, y) << '\n';
+        }
+    return true;
+}
 if ((args.size() == 2 || args.size() == 3) && args[0] == "view_key") {
     int want = args.size() == 3 ? std::atoi(args[2].c_str()) : 0;
     for (const std::vector<PresMap::Obj>* v : {&map_dressing_.objects(), &map_dressing_.overlays(), &map_dressing_.smudges()})

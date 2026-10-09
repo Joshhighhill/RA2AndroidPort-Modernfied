@@ -395,6 +395,10 @@ struct Unit {
     UnitW5 w5;                       // wave-5 abilities (abil_w5.hpp)
     UnitW6 w6;                       // wave-6 #4 units/weapons (unit_w6.hpp)
     UnitTgt tg;                      // W6 fix #2: rules id, targeting data, IsInPlayfield, area guard (save v29)
+    // R-210 [RE: CellClass::GetLevel +4 on a bridge cell, FootClass height gate
+    // FUN_004D9B70]: 1 while the unit stands on a high-bridge deck (Level + 4),
+    // 0 on the ground (or under the deck). Kept by step_units (save v30).
+    std::uint8_t on_deck = 0;
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -544,6 +548,15 @@ struct MoveSpeedCtx {
     // friendly infantry blocking a vehicle's next cell, asked to step aside.
     std::vector<int>* scatter_out = nullptr;
 };
+// R-210 bridges and cliffs: the terrain step_units walks over -- the height
+// gate (FUN_004D9B70) on every step, the deck layer (Unit::on_deck) and the
+// allied gates of each house. Null -> the 2-D walk (byte-identical).
+struct StepTerrain {
+    PathTerrain land;    // level / slope / Land deck grid / version
+    PathTerrain amph;    // the same with the Amphibious deck grid
+    PathTerrain water;   // level / slope, no deck
+    const std::vector<std::vector<int>>* gates = nullptr;   // open gate cells per house
+};
 // The speed multiplier for unit u entering cell (nx, ny) from its cell.
 double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny);
 
@@ -554,7 +567,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 const MoveSpeedCtx* speed = nullptr,
                 const std::vector<std::uint8_t>* wall_leak = nullptr,
                 const std::vector<std::uint8_t>* crush_passable = nullptr,
-                const std::vector<std::uint8_t>* crush_leak = nullptr);
+                const std::vector<std::uint8_t>* crush_leak = nullptr,
+                const struct StepTerrain* terrain = nullptr);
 
 // Slew each alive, non-dying vehicle's turret_facing toward its target (via
 // turn_toward at rot_u16_per_sec*dt) when it has a live target, else toward
@@ -769,6 +783,10 @@ public:
                         const LandSpeedRules& r);
     bool land_speed_armed() const { return land_speed_armed_; }
     int speed_land_at(int x, int y) const;   // effective LandType (ore -> Tiberium)
+    int ramp_at(int x, int y) const {        // TMP ramp type (0 flat; unarmed 0)
+        if (ramp_.empty() || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
+        return ramp_[static_cast<std::size_t>(y) * grid_w_ + x];
+    }
     // Cells per second unit i moves at right now (flat speed x speed_mult).
     double unit_speed_cps(int i) const;
 
@@ -2060,6 +2078,20 @@ public:
     // deck over land (always passable).
     void set_high_bridges(std::vector<std::uint8_t> cells);
     bool high_bridge_cell(int x, int y) const;               // any high-bridge cell (the CellFlags stand-in)
+    // R-210 bridges and cliffs [RE: FootClass height gate FUN_004D9B70,
+    // CellClass::IsClearToMove FUN_004833B0; docs/re/movement-height.md]. Armed
+    // with the map heights (arm_land_speed: the real game); every unit-test /
+    // gate World without heights keeps the flat 2-D search.
+    bool terrain_armed() const { return !level_grid_.empty() && level_grid_.size() == passable_.size(); }
+    // The height / deck / gate terrain unit u searches with (null = 2-D).
+    // `gates` receives the cells of the Gate=yes buildings open to u.
+    const PathTerrain* terrain_for(const Unit& u, PathTerrain& out, std::vector<int>& gates) const;
+    // Deck availability per cell for a movement domain (null: none / water).
+    const std::vector<std::uint8_t>* deck_grid(MovementDomain d) const;
+    // Cells of Gate=yes buildings whose owner allies house h (sorted).
+    void open_gates_for(int h, std::vector<int>& out) const;
+    // Normalise u.on_deck to its cell: 0 off a deck, 1 on a deck-only cell.
+    void sync_deck_layer(Unit& u) const;
     bool high_bridge_destroyed(int x, int y) const;
     int break_high_bridge(int x, int y);                     // the whole span through (x,y) (or a neighbour)
     int repair_high_bridge_near(int b_idx);                  // hut repair (FUN_0056FB80)
@@ -2564,6 +2596,10 @@ private:
     std::vector<std::int16_t> bridge_ovl_;         // current runtime overlay per cell (-1)
     std::vector<std::uint8_t> bridge_tile_land_;   // the tile's LandType under each cell
     std::uint32_t bridge_version_ = 0;
+    // R-210: per-domain deck availability derived from hbridge_ (scratch,
+    // rebuilt when bridge_version_ moves; saved like amphib_passable_).
+    mutable std::vector<std::uint8_t> deck_land_, deck_amph_;
+    mutable std::uint32_t deck_ver_ = 0xFFFFFFFFu;
     std::vector<std::uint8_t> hbridge_;   // W4-SQ-10: 1/2 per set_high_bridges, +4 destroyed (save v16)
     ProjRng bridge_rng_{0x42524447u};              // Random(1, BridgeStrength) stand-in
     void occupy_now(int unit_idx, int b_idx);      // InfantryClass::Occupy (FUN_00522640)

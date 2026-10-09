@@ -1,0 +1,92 @@
+# MOVE-BRIDGE-CLIFF -- R-210 (user report on ALL01: "none of the troops can
+# walk on a bridge; even Tanya is able to jump off the cliff and swim").
+# [RE: FootClass height gate FUN_004D9B70 (a step keeps its height, or moves
+# one level over a slope; a high-bridge deck stands at Level + 4), IsClearToMove
+# FUN_004833B0, IsCellOccupied FUN_0051BD70 / FUN_0073DFA0 (an allied Gate=yes
+# building opens -> Move::ClosedGate)]. docs/re/movement-height.md.
+#  1. Tanya swims to Liberty Island (real clicks), climbs to the island's north
+#     edge and is ordered into the river BELOW the cliff: she must not drop the
+#     four levels -- she walks down the island's stairs to the shore and swims.
+#  2. Fort Bradley: the rendezvous hands the fort (and its border gate) to the
+#     player; GIs ordered over the broken east bridge stay on the bank; an
+#     engineer repairs the bridge at the hut (real clicks); the GIs then pass
+#     their own gate, cross ON the deck and reach the far bank.
+# Set-up cheats only spawn the engineer / GIs and walk one GI into the fort's
+# rendezvous ring (the mission's own Change House 2a trigger does the rest).
+set render_every 0
+set campaign ALL01T.MAP GDI
+click start
+until 300 scene == game
+require scene == game
+until 60 input_locked == 1
+until 1500 input_locked == 0
+wait 5
+
+# --- 1. Tanya and the cliff --------------------------------------------------------
+click unit 0:TANY
+wait 1
+require selected == 1
+click cell 62 77
+until 900 units(0,E1) >= 8
+assert units(0,TANY) == 1
+# up to the island's north edge (level 6) above the river (level 2)
+click unit 0:TANY
+wait 1
+click cell 61 62
+waituntil 600 ucell(0,TANY,0) == 61062
+require ucell(0,TANY,0) == 61062
+assert uheight(0,TANY,0) == 6
+view cell 59 60
+wait 2
+shot tanya_on_edge
+# the river at the foot of the cliff (a cell the cliff does not hide)
+click unit 0:TANY
+wait 1
+click cell 57 58
+until 2400 ucell(0,TANY,0) == 57058              @R-210
+assert uheight(0,TANY,0) == 2
+assert cliff_steps(0) == 0                         @R-210
+assert cliff_steps == 0                            @R-210
+shot tanya_in_river
+
+# --- 2. Fort Bradley and the east bridge --------------------------------------------
+cheat camp_spawn E1 0 62 38
+cheat camp_move E1 70 38
+until 900 buildings(0,GAGATE_A) >= 1               @R-210
+cheat camp_spawn E1 0 83 46 3
+cheat camp_spawn ENGINEER 0 82 46
+wait 5
+# the span is down (the mission's Break Bridges trigger)
+assert bridge_destroyed >= 5
+view cell 83 47
+wait 2
+shot fort_gate
+# the engineer repairs the bridge at the hut
+click unit 0:ENGINEER
+wait 1
+require selected == 1
+click building 4:CABHUT
+until 900 bridge_destroyed <= 4                    @R-210
+view cell 82 50
+wait 2
+shot bridge_repaired
+# the GIs cross: through their own gate, onto the deck, to the far bank
+drag cell 79 45 86 46
+wait 1
+require sel_n >= 3
+assert sel_max_cy <= 47
+click cell 82 54
+waituntil 600 sel_deck >= 1
+assert sel_deck >= 1                               @R-210
+assert deck_steps(0) > 0                           @R-210
+shot on_deck
+waituntil 900 sel_moving == 0
+view cell 82 56
+wait 2
+click cell 82 57
+waituntil 900 sel_min_cy >= 56
+assert sel_min_cy >= 56                            @R-210
+assert sel_deck == 0
+assert cliff_steps(0) == 0                         @R-210
+shot crossed
+end

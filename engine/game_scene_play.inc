@@ -21,7 +21,9 @@
     // projection Input::unit_ground_px / resolve_ground_cell use).
     void cell_to_window(int cx, int cy, int& x, int& y) const {
         const ra2assets::MapCell* c = world_.map().at(cx, cy);
-        const int level = c ? c->level : 0;
+        int level = c ? c->level : 0;
+        // R-210: an intact high-bridge deck is clicked on its deck (Level + 4).
+        if (world_.high_bridge_cell(cx, cy) && !world_.high_bridge_destroyed(cx, cy)) level += 4;
         x = (cx - cy) * 30 + 30 + cam_.x;
         y = (cx + cy) * 15 + 15 - level * 15 + cam_.y;
     }

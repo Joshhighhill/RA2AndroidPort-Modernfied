@@ -467,12 +467,17 @@ int World::break_high_bridge(int x, int y) {
         if (hbridge_[i] & 4) continue;
         hbridge_[i] |= 4;
         ++n;
-        if ((hbridge_[i] & 3) == 1) {
-            passable_[i] = 0;
+        if ((hbridge_[i] & 3) == 1) passable_[i] = 0;
+        // The objects on the deck die with it (FUN_0047DC80). R-210: with the
+        // heights armed that is every unit standing ON the deck (a deck over
+        // land too; an amphibious unit swimming under it lives); otherwise the
+        // historical rule (a ground unit on a deck over water).
+        if (terrain_armed() || (hbridge_[i] & 3) == 1) {
             const int ou = occ_.at(c.x, c.y);
             if (ou >= 0 && ou < static_cast<int>(units_.size())) {
                 const Unit& u = units_[ou];
-                if (u.alive && u.die_time < 0.0 && !u.is_naval && !u.is_aircraft) ability_kill_unit(ou);
+                const bool on = terrain_armed() ? u.on_deck != 0 : (!u.is_naval && !u.is_aircraft);
+                if (u.alive && u.die_time < 0.0 && on && !u.is_naval && !u.is_aircraft) ability_kill_unit(ou);
             }
         }
         for (int dy = -1; dy <= 1; ++dy)
@@ -614,6 +619,70 @@ void World::step_depth(double dt) {
         if (b.alive && b.state != Building::State::Dead) sync_garrison_owner(bi);
     }
     step_garrison_combat(dt);
+}
+
+// ------------------------------------------------------- R-210 terrain
+// [RE: FootClass height gate FUN_004D9B70; CellClass::IsClearToMove
+// FUN_004833B0 (a bridge cell's deck at Level + 4 skips the land-type test,
+// the ground under it keeps it); InfantryClass FUN_0051BD70 / UnitClass
+// FUN_0073DFA0 IsCellOccupied: a Gate=yes building (+0x16B7) opens
+// (Move::ClosedGate) when its owner IsAlliedWith (FUN_004F9870) the mover].
+const std::vector<std::uint8_t>* World::deck_grid(MovementDomain d) const {
+    if (hbridge_.empty() || d == MovementDomain::Water) return nullptr;
+    const std::size_t n = static_cast<std::size_t>(grid_w_) * grid_h_;
+    if (deck_ver_ != bridge_version_ || deck_land_.size() != n || deck_amph_.size() != n) {
+        deck_land_.assign(n, 0);
+        deck_amph_.assign(n, 0);
+        for (std::size_t i = 0; i < n && i < hbridge_.size(); ++i) {
+            const std::uint8_t v = hbridge_[i];
+            if ((v & 3) == 0 || (v & 4)) continue;   // no deck / broken span
+            // Over water / cliff (1) the ground is not a land mover's: deck
+            // only; over land (2) both the deck and the ground under it.
+            deck_land_[i] = (v & 3) == 1 ? 2 : 1;
+            deck_amph_[i] = 1;   // an amphibious mover swims under or walks over
+        }
+        deck_ver_ = bridge_version_;
+    }
+    return d == MovementDomain::Amphibious ? &deck_amph_ : &deck_land_;
+}
+
+void World::open_gates_for(int h, std::vector<int>& out) const {
+    out.clear();
+    const std::vector<BuildingTypeDef>& bt = btypes();
+    for (const Building& b : buildings_) {
+        if (!b.alive || b.type < 0 || b.type >= static_cast<int>(bt.size())) continue;
+        if (b.state == Building::State::Dead || !bt[static_cast<std::size_t>(b.type)].w6.gate) continue;
+        if (!are_allied(b.house, h)) continue;   // the gate owner's view (FUN_004F9870)
+        for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh))
+            if (c.x >= 0 && c.y >= 0 && c.x < grid_w_ && c.y < grid_h_)
+                out.push_back(c.y * grid_w_ + c.x);
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+
+const PathTerrain* World::terrain_for(const Unit& u, PathTerrain& out, std::vector<int>& gates) const {
+    out = PathTerrain{};
+    gates.clear();
+    if (u.movement_domain != MovementDomain::Water) open_gates_for(u.house, gates);
+    if (!gates.empty()) out.open_cells = &gates;
+    if (!terrain_armed()) return gates.empty() ? nullptr : &out;
+    out.level = &level_grid_;
+    out.slope = ramp_.size() == level_grid_.size() ? &ramp_ : nullptr;
+    out.deck = deck_grid(u.movement_domain);
+    out.version = bridge_version_;
+    out.start_layer = out.deck ? u.on_deck : 0;
+    return &out;
+}
+
+void World::sync_deck_layer(Unit& u) const {
+    if (!terrain_armed()) return;
+    const std::vector<std::uint8_t>* dk = deck_grid(u.movement_domain);
+    const int x = u.cell_x, y = u.cell_y;
+    if (!dk || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) { u.on_deck = 0; return; }
+    const std::uint8_t v = (*dk)[static_cast<std::size_t>(y) * grid_w_ + x];
+    if (v == 0) u.on_deck = 0;
+    else if (v == 2) u.on_deck = 1;
 }
 
 }  // namespace ra2engine

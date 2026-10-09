@@ -27,6 +27,7 @@ inline bool pres_on_high_deck(const ra2engine::World& w, const ra2engine::Unit& 
     if (u.is_naval || u.is_aircraft || u.cargo_of >= 0) return false;
     if (!g_map_dressing->deck_cell(u.cell_x, u.cell_y)) return false;
     if (pres_high_deck_destroyed(w, u.cell_x, u.cell_y)) return false;
+    if (w.terrain_armed()) return u.on_deck != 0;   // R-210: the unit's own layer
     const std::vector<std::uint8_t>& wg = w.grid_for(ra2engine::MovementDomain::Water);
     const std::size_t i = static_cast<std::size_t>(u.cell_y) * w.grid_w() + u.cell_x;
     return u.cell_x >= 0 && u.cell_y >= 0 && u.cell_x < w.grid_w() && i < wg.size() && wg[i] != 0;

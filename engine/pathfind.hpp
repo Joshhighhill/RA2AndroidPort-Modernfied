@@ -34,6 +34,55 @@ std::vector<Cellxy> find_path(const std::vector<uint8_t>& passable, int width, i
                               Cellxy start, Cellxy goal,
                               const std::vector<uint8_t>* leak = nullptr);
 
+// R-210 (bridges and cliffs) [RE: FootClass height gate FUN_004D9B70, reached
+// from InfantryClass / UnitClass IsCellOccupied (vtable +0x1AC -> +0x1B0) for
+// every A* neighbour in FUN_00429A10 and for every step a locomotor takes;
+// CellClass::IsClearToMove FUN_004833B0 (Level +0x11B, bridge flag 0x100,
+// deck at Level+4)]. The optional terrain makes the search height-aware:
+//   * a cell is entered at its ground (layer 0, height Level) or, where
+//     `deck` says so, on an intact high-bridge deck (layer 1, Level + 4);
+//   * a step keeps its height, or climbs / descends ONE level when the LOWER
+//     of the two cells is a slope (SlopeIndex != 0, the TMP ramp type);
+//     every other height change (a cliff: 2, 3, 4+ levels) is refused. The
+//     original's +-4 bridge-end cases are the "same height" steps between a
+//     deck and the high ground at its ends.
+// `deck` per cell: 0 none, 1 deck AND ground both enterable, 2 deck only (the
+// ground under it -- water -- is not this mover's). `version` changes with
+// the deck state (World::bridge_version) and keys the result memo: the
+// level / slope grids are taken as fixed for a given pointer, so a caller that
+// edits them (or the deck grid) must move `version`.
+// With a null `terrain` (or null `level`) every function below behaves
+// exactly as before (byte-identical paths).
+struct PathTerrain {
+    const std::vector<std::int8_t>* level = nullptr;    // ground Level per cell
+    const std::vector<std::uint8_t>* slope = nullptr;   // TMP ramp type (0 = flat)
+    const std::vector<std::uint8_t>* deck = nullptr;    // 0 / 1 / 2 (above); null = no decks
+    std::uint32_t version = 0;
+    int start_layer = 0;                                // the mover's layer at `start`
+    // Gate=yes buildings that open for this mover (sorted cell indices): passable
+    // although the grid holds 0 there [RE: InfantryClass/UnitClass IsCellOccupied
+    // -> Move::ClosedGate (3) when the gate's owner IsAlliedWith the mover].
+    const std::vector<int>* open_cells = nullptr;
+};
+
+// The layer a mover at (sx, sy, layer `sl`) stands on after stepping to the
+// neighbour (dx, dy): 0 ground, 1 deck, -1 when the height gate refuses the
+// step (a cliff). Shared by the A* and the step-by-step movement. Needs
+// `t.level`; without it every step keeps layer 0.
+int path_step_layer(const PathTerrain& t, int width, int sx, int sy, int sl, int dx, int dy);
+
+// The layer-aware searches (same contracts as the functions below; a null
+// terrain reproduces them exactly).
+std::vector<Cellxy> find_path_t(const std::vector<uint8_t>& passable, int width, int height,
+                                Cellxy start, Cellxy goal, const std::vector<uint8_t>* leak,
+                                const PathTerrain* terrain);
+std::vector<Cellxy> find_path_bounded_t(const std::vector<uint8_t>& passable, int width, int height,
+                                        Cellxy start, Cellxy goal, int max_expand,
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain);
+std::vector<Cellxy> find_path_nearest_t(const std::vector<uint8_t>& passable, int width, int height,
+                                        Cellxy start, Cellxy goal, int max_expand,
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain);
+
 // W2-SK-16: find_path with an expansion budget (> 0): empty when the goal is
 // not reached within `max_expand` closed nodes (same path otherwise).
 std::vector<Cellxy> find_path_bounded(const std::vector<uint8_t>& passable, int width, int height,

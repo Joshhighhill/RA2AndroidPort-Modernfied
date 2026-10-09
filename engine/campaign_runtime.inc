@@ -1240,6 +1240,13 @@ private:
         } else if (spot >= 0) {
             cx = x;
             cy = y;
+        } else if (ut->combat.movement_domain == ra2engine::MovementDomain::Amphibious && !w_.walkable(x, y) &&
+                   free_water_near(x, y, cx, cy, 12)) {
+            // R-210: an amphibious unit (the ALL04 landing craft, LCRF) whose
+            // waypoint lies at sea enters on the water there. It used to be put
+            // on the nearest LAND cell -- the ALL04 craft landed on the level-4
+            // pier at (127,57) and only reached the sea by dropping four levels,
+            // which the height gate (FUN_004D9B70) now refuses.
         } else if (!free_cell_near(x, y, cx, cy) && !free_cell_near(x, y, cx, cy, 12) &&
                    !(far && far_cell(x, y, /*water=*/false, goal_x, goal_y, cx, cy))) {
             return -1;
