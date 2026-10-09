@@ -7,7 +7,8 @@ the following third-party software.
 
 Linked as `SDL2.dll` (desktop) / `libSDL2.so` (Android); the Android Java glue
 (`android/app/src/main/java/org/libsdl/app/*`) is SDL's.
-Source: https://github.com/libsdl-org/SDL (tag `release-2.30.9`).
+Source: https://github.com/libsdl-org/SDL (tag `release-2.30.9`; the build
+downloads the release tarball pinned by SHA-256 in `cmake/sdl2_pin.cmake`).
 
 ```
 Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
@@ -58,6 +59,35 @@ SOFTWARE.
 
 `third_party/doctest.h`, compiled into the `ra2assets_tests` test binary only
 (not shipped). MIT License, Copyright (c) 2016-2023 Viktor Kirilov.
+
+## MinGW-w64 runtime (Windows build)
+
+The Windows `ra2engine.exe` / `ra2game.exe` link the GCC runtime statically:
+libstdc++ and libgcc (GPL-3.0 with the GCC Runtime Library Exception, which
+allows this without imposing terms on the program) and the MinGW-w64
+winpthreads library:
+
+```
+Copyright (c) 2011 mingw-w64 project
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
 
 ## Android toolchain runtime
 

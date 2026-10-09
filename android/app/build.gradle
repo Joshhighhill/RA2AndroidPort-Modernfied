@@ -145,7 +145,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    // W6-06-16: LICENSE + THIRD_PARTY_NOTICES.md ship in the APK's assets/
+    // (the same texts are embedded in the engine's Options > About page).
+    sourceSets.main.assets.srcDirs += ["$buildDir/generated/ra2-notices"]
     applicationVariants.all { variant ->
+        tasks["merge${variant.name.capitalize()}Assets"].dependsOn("ra2CopyNotices")
         tasks["merge${variant.name.capitalize()}Assets"]
             .dependsOn("externalNativeBuild${variant.name.capitalize()}")
     }
@@ -189,4 +193,11 @@ gradle.taskGraph.whenReady { graph ->
                 "storePassword, keyAlias, keyPassword). Pass -Pra2.allowDebugSigning=true for a test build " +
                 "signed with the debug key.")
     }
+}
+
+// W6-06-16: copy the licence + notices into the generated assets folder.
+tasks.register('ra2CopyNotices', Copy) {
+    from(rootProject.file('../LICENSE'))
+    from(rootProject.file('../THIRD_PARTY_NOTICES.md'))
+    into("$buildDir/generated/ra2-notices")
 }

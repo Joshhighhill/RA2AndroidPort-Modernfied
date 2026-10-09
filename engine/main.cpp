@@ -5499,7 +5499,8 @@ enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME 
                    ACT_CREDITS /* W2-UI-26: View Credits */,
                    ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */,
                    ACT_IMPORT /* W6-06-05: Android -- re-open the game-file importer */,
-                   ACT_MOVIES /* W6-06-13: Play Movies (movies_page.inc) */ };
+                   ACT_MOVIES /* W6-06-13: Play Movies (movies_page.inc) */,
+                   ACT_ABOUT /* W6-06-16: Options > About (about_page.inc) */ };
 bool movies_supplied();   // W6-06-13 (movies_page.inc)
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
@@ -8086,7 +8087,8 @@ private:
             case PAGE_MOVIES:   // dialog 0x101
                 return {
                     btn(0, "Sneak Peeks",  false, ACT_GOTO, PAGE_MAIN),
-                    btn(1, "Play Movies",  false, ACT_GOTO, PAGE_MAIN),
+                    // W6-06-13: live when the player supplied movie files.
+                    btn(1, "Play Movies",  movies_supplied(), ACT_MOVIES, PAGE_MOVIES),
                     btn(2, "View Credits", true,  ACT_CREDITS, PAGE_MOVIES),   // W2-UI-26
                     btn(5, "Main Menu",    true,  ACT_GOTO, PAGE_MAIN),   // W2-UI-22
                 };
@@ -8103,6 +8105,8 @@ private:
                     // required file is missing).
                     btn(2, "Game Files", true, ACT_IMPORT, PAGE_OPTIONS),
 #endif
+                    // W6-06-16: version, licence, third-party notices, disclaimer.
+                    btn(3, "About",     true,  ACT_ABOUT, PAGE_OPTIONS),
                     btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
             case PAGE_CAMPAIGN: // dialog 0x94 (W2-UI-18): Load row 0, Back row 5; the
@@ -8155,6 +8159,7 @@ private:
                               : page_ == PAGE_OPTIONS ? "STT:MainOptButtonBack" : "STT:OptionsButtonBack", "");
             if (b.label == "Network" && page_ == PAGE_OPTIONS) return gf_csf("STT:MainOptButtonNetwork", "");
             if (b.label == "Game Files") return "Add or replace the game files (the game restarts)";
+            if (b.label == "About") return "Version, licence and third-party notices";
             const char* k = stt_key(b.label);
             return k ? gf_csf(k, "") : std::string();
         }
@@ -8561,6 +8566,10 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
 #include "campaign_scenes.inc"
 // W2-UI-26: Movies & Credits > View Credits (credits.txt scroller).
 #include "credits_scene.inc"
+// W6-06-13: Play Movies (the movie list over the campaign's movie names).
+#include "movies_page.inc"
+// W6-06-16: Options > About (version, licence, notices, disclaimer).
+#include "about_page.inc"
 // gF: skirmish result screen.
 #include "gf_result.inc"
 // W6-06-09/-10, W6-01-10: the startup Resume page (autosave / campaign checkpoint).
@@ -8677,6 +8686,14 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             case ACT_CAMPAIGN_ALLIED: next_ = make_campaign_start_scene(no_audio_, "ALL1", "GDI"); return;
             case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
             case ACT_CREDITS: next_ = new CreditsScene(rules_, no_audio_, art_); return;   // W2-UI-26
+            case ACT_MOVIES: next_ = new MoviesPageScene(rules_, no_audio_, art_); return;   // W6-06-13
+            case ACT_ABOUT:   // W6-06-16 (Options are committed + saved as on leaving the page)
+                if (g_user_settings) {
+                    opt_.commit(*g_user_settings);
+                    save_user_settings(*g_user_settings);
+                }
+                next_ = new AboutScene(rules_, no_audio_, art_);
+                return;
             case ACT_KEYBOARD: kb_.open(); return;   // W5-E [RE: options.md §1/§6 0x5CE -> 0xA3]
             case ACT_IMPORT:   // W6-06-05: the launcher's importer; the engine
                                // quits so the next start reads the new files.

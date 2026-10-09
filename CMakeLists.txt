@@ -361,7 +361,7 @@ if (RA2_BUILD_ENGINE)
   target_compile_options(ra2engine_obj PRIVATE -ffp-contract=off)
   # third_party for the vendored stb_image_write.h (screenshot PNG output);
   # STB_IMAGE_WRITE_IMPLEMENTATION is defined in exactly one TU (engine/main.cpp).
-  target_include_directories(ra2engine_obj PRIVATE include engine)
+  target_include_directories(ra2engine_obj PRIVATE include engine ${RA2_GENERATED_DIR})   # W6-06-16 notices
   # W2-AR-25: warnings on for the engine; vendored headers are SYSTEM so
   # their own warnings (stb) stay out of the count.
   target_include_directories(ra2engine_obj SYSTEM PRIVATE third_party)

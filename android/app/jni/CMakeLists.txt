@@ -73,6 +73,7 @@ set_target_properties(main PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
 target_include_directories(main PRIVATE
+    "${RA2_GENERATED_DIR}"   # W6-06-16: ra2_notices.inc (cmake/ra2_sources.cmake)
     "${RA2_ROOT}/include"
     "${RA2_ROOT}/engine"
     "${RA2_ROOT}/third_party")
