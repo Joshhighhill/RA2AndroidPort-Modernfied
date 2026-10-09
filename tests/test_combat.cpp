@@ -199,6 +199,24 @@ TEST_CASE("step_combat: return fire — idle victim retaliates against its attac
     CHECK(units[1].target == 0);
 }
 
+TEST_CASE("step_combat: R3 a victim cruising to a flight goal does not return fire") {
+    // A flyer on a move order (has_flight_goal, empty ground path) is not idle:
+    // like a walking unit it keeps going instead of retaliating [aircraft.md
+    // §6 -- a Move order overrides auto-attack; the same gate as acquisition].
+    auto p = open_grid(10, 1);
+    Occupancy occ(10, 1);
+    std::vector<Unit> units;
+    units.push_back(make_soldier(0, 0, 0, 0, occ));
+    units.push_back(make_soldier(3, 0, 1, 1, occ));
+    units[1].has_flight_goal = true;
+    std::vector<Building> bs;
+    const double dt = 1.0 / 60.0;
+    double t = 0;
+    while (units[1].hp >= 125 && t < 5.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
+    REQUIRE(units[1].hp < 125);
+    CHECK(units[1].target == -1);
+}
+
 TEST_CASE("step_combat: auto-acquired target dropped beyond guard stray; anchor return requested") {
     // Auto-acquire at range, then teleport the victim beyond range+kGuardStray:
     // target dropped, MoveRequest back to the guard anchor.

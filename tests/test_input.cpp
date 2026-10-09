@@ -526,6 +526,33 @@ TEST_CASE("Input: W2-CA-02 a PlayerControl house's unit is selectable like house
     CHECK(world.units()[fx.cons].selected);
 }
 
+TEST_CASE("Input: R3 a PlayerControl house's unit takes force-fire and Stop like house 0") {
+    // [RE: StopCommandClass FUN_0072ff70 / Scatter FUN_007300b0 walk every
+    // selected object the player commands -- no Owner == PlayerPtr test.]
+    MapFile map;
+    if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }
+    World world(map);
+    CombatFixture fx = spawn_combat_fixture(world);
+    if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
+    const int h = world.units()[fx.cons].house;
+    REQUIRE(h != 0);
+    world.units()[fx.cons].selected = true;
+    // Not controllable yet: the order is refused.
+    CHECK(world.order_attack_cell_selected(10, 10) == 0);
+    World::HouseRec rec;
+    rec.side = World::Side::Allied;
+    rec.alliance_team = 0;
+    rec.player_control = true;
+    world.set_house(h, rec);
+    REQUIRE(world.controllable(h));
+    const int cx = world.units()[fx.cons].cell_x + 2, cy = world.units()[fx.cons].cell_y;
+    CHECK(world.order_attack_cell_selected(cx, cy) >= 1);
+    CHECK(world.units()[fx.cons].attack_cell_x == cx);
+    CHECK(world.units()[fx.cons].attack_cell_y == cy);
+    world.order_stop_selected();
+    CHECK(world.units()[fx.cons].attack_cell_x == -1);
+}
+
 TEST_CASE("Input: box over both squads selects only house-0") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }

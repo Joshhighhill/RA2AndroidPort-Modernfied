@@ -1502,6 +1502,16 @@ private:
     // (FUN_005F4BA0 @0x5F5015, BuildingClass FUN_004690A0 @0x4692A8). World
     // keeps no per-hit source, so the attacker is the first live enemy unit
     // whose current target is the victim [RE-FALLBACK: inferred source].
+    // RA2_CAMP_DEBUG only: the base defences aiming at a unit as it dies
+    // (" def=TYPE@x,y" each) -- a defence kill leaves killed_by at -1.
+    std::string debug_defence_shooters(int victim) const {
+        std::string s;
+        for (const ra2engine::Building& b : w_.buildings())
+            if (b.alive && b.def_target == victim && b.type >= 0 && b.type < (int)w_.btypes().size())
+                s += " def=" + w_.btypes()[(std::size_t)b.type].id + "@" + std::to_string(b.cx) + "," +
+                     std::to_string(b.cy);
+        return s;
+    }
     int gf_attacker_house(int unit_victim, int building_victim, int victim_house) const {
         const std::vector<ra2engine::Unit>& us = w_.units();
         for (const ra2engine::Unit& a : us) {
@@ -1717,7 +1727,7 @@ private:
                                       ? " " + w_.units()[(std::size_t)u.vet.killed_by].image + "/h" +
                                             std::to_string(w_.units()[(std::size_t)u.vet.killed_by].house)
                                       : std::string())
-                              << "\n";
+                              << debug_defence_shooters((int)i) << "\n";
                 if (u.house >= 0 && u.house < (int)destroyed_units_.size())
                     ++destroyed_units_[(std::size_t)u.house];
                 // gF G-74 [FUN_00743550 / FUN_007021D0]: the original order is

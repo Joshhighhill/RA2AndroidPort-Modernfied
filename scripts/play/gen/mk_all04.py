@@ -51,7 +51,10 @@ types = ["MTNK", "FV"]
 p.select_types(types).add(f"click cell {stage}", "wait 600", "dump", "shot staged")
 for k in range(20):
     g = "outcome == RUNNING and buildings(2,NAPSYA) > 0"
-    p.add(f"if {g} and units(0,MTNK) > 0 then click unit 0:MTNK:0",
+    # R3: soft + fallbacks -- a first Grizzly standing where the camera
+    # cannot centre (the LocalSize edge) must not fail the selection.
+    p.add(f"if {g} and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft",
+          *[f"if {g} and selected == 0 and units(0,MTNK) > {n} then click unit 0:MTNK:{n} soft" for n in (1, 2, 3)],
           f"if {g} and units(0,FV) > 0 then click unit 0:FV:0 shift",
           f"if {g} then key t", f"if {g} then key t",
           f"if {g} then click building 2:NAPSYA:0", "if outcome == RUNNING then wait 300",

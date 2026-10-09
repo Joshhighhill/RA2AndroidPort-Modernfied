@@ -5261,6 +5261,32 @@ void World::step(double dt) {
             u.fy = u.cell_y;
         }
     }
+    // R3 [RE: infantry-anim.md §7 -- Mission_Attack re-checks weapon range
+    // every frame while approaching ANY target and stops as soon as it is in
+    // range; FUN_006F6750 in-range test, a building measured to its centre
+    // with the range widened by (w+h)*64]: the same hold for an explicit
+    // attack on a BUILDING. The clone held only unit targets, so a unit
+    // ordered onto a structure out of range drove up to its foundation (V3s
+    // into SOV08's base, an IFV into SOV09's Prism compound). A C4 sapper is
+    // left alone: its approach goal is already a plant position.
+    for (Unit& u : units_) {
+        if (!u.alive || u.die_time >= 0.0 || u.crushing || u.path.empty()) continue;
+        if (u.target >= 0 || !u.attack_order || u.abil.c4) continue;
+        const int tb = u.target_building;
+        if (tb < 0 || tb >= static_cast<int>(buildings_.size())) continue;
+        const Building& b = buildings_[static_cast<std::size_t>(tb)];
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        int bax = 0, bay = 0, baz = 0;
+        building_aim_lept(b, cell_level(b.cx, b.cy), bax, bay, baz);
+        if (weapon_in_range_from(*this, u, u.cell_x * 256 + static_cast<int>(u.sub_x),
+                                 u.cell_y * 256 + static_cast<int>(u.sub_y), unit_lept_z(u), bax, bay, baz,
+                                 (b.fw + b.fh) * 64)) {
+            u.path.clear();
+            u.path_idx = 0;
+            u.fx = u.cell_x;
+            u.fy = u.cell_y;
+        }
+    }
 
     // Fire/die animation override (Task 7, facing added Task 2): step_units
     // (above) already picked a stand/walk frame assuming the unit is simply

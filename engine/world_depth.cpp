@@ -552,9 +552,13 @@ void World::order_attack_cell(int ui, int cx, int cy) {
 }
 
 int World::order_attack_cell_selected(int cx, int cy) {
+    // R3: every selected unit the player commands -- house 0 and the
+    // PlayerControl houses (W2-CA-02), as order_attack / order_move do since
+    // W5-A. The original issues the order for each CurrentObjects entry the
+    // player owns; there is no Owner == PlayerPtr test (see order_stop_selected).
     int n = 0;
     for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && units_[i].house == 0 && units_[i].cargo_of < 0) {
+        if (units_[i].selected && controllable(units_[i].house) && units_[i].cargo_of < 0) {
             order_attack_cell(i, cx, cy);
             ++n;
         }
