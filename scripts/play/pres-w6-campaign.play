@@ -1,0 +1,19 @@
+# W6-05-01 / W6-05-02 / W6-05-10 on a real campaign map (ALL04, Chicago):
+# - the player's house colour is its map Color=DarkBlue through rules
+#   [Colors] (kColorSchemeBase 8 + DarkBlue's index 10 = 18), not list gold;
+# - every map cell's tile resolves (warub*.urb from urban.mix: no black
+#   holes), and no cell needs the clear-ground fallback.
+set render_every 900
+set on_quit continue
+set campaign ALL04U.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+wait 3
+assert house_color(0) == 18                              @W6-05-01
+cheat reveal
+wait 2
+shot all04_revealed
+assert tile_misses == 0                                  @W6-05-02
+assert tile_fallbacks == 0                               @W6-05-10
+end

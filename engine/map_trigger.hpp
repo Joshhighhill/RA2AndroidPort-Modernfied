@@ -302,6 +302,9 @@ public:
     // Mission timer: -1 = stopped.
     long mission_timer_start() const { return mt_start_; }
     long mission_timer_left() const { return mt_left_; }
+    // W6-05-04 [RE: action 103 TimerText sets Scenario+0x7D4, the label
+    // FUN_006a45a0 draws before the mission timer]: the CSF label ("" = none).
+    const std::string& timer_text() const { return timer_text_; }
     // Per-house flags set by actions 3/13/74/75 (RE §5): bit0 production,
     // bit1 autocreate, bit2 AI triggers.
     unsigned house_flags(int ht) const;
@@ -356,6 +359,7 @@ private:
     std::vector<std::uint8_t> globals_, locals_;
     bool vars_changed_ = false;
     long mt_start_ = -1, mt_left_ = 0;
+    std::string timer_text_;   // W6-05-04 action 103 label (save v25)
     int outcome_ = 0;
     std::vector<Tag> tags_;                 // instances, creation order
     std::vector<int> tag_of_type_;          // tag type -> instance (-1)

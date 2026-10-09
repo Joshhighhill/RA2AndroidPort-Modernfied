@@ -668,6 +668,29 @@ private:
             const std::string hn = camp::trim_comment(kv.second);
             houses_order_ht_.push_back(data_.find_house_type(map_.get(hn, "Country", "")));
         }
+        // W6-05-01: the rules [Colors] ColorSchemes (rulesmd.ini, else the RA2
+        // rules.ini) in INI order; each house's Color= names one [RE: HouseClass
+        // ::ReadINI Color= -> ColorScheme; country Color= is the default].
+        std::vector<std::string> scheme_names;
+        {
+            std::vector<std::array<int, 3>> hsv;
+            const Ini& cini = rules_ini_.section("Colors").empty() ? ra2_rules_ : rules_ini_;
+            for (const auto& kv : cini.section("Colors")) {
+                int h = 0, s = 0, v = 0;
+                if (std::sscanf(camp::trim_comment(kv.second).c_str(), "%d,%d,%d", &h, &s, &v) != 3) continue;
+                scheme_names.push_back(camp::up(camp::trim_comment(kv.first)));
+                hsv.push_back({h, s, v});
+            }
+            ra2engine::set_color_schemes(hsv);
+        }
+        auto scheme_of = [&](const std::string& hn, const std::string& country) {
+            std::string c = camp::trim_comment(map_.get(hn, "Color", ""));
+            if (c.empty()) c = camp::trim_comment(map_.get(country, "Color", ""));
+            if (c.empty()) c = camp::trim_comment(rules_ini_.get(country, "Color", ""));
+            if (c.empty()) c = camp::trim_comment(ra2_rules_.get(country, "Color", ""));
+            const int k = camp::index_of(scheme_names, c);
+            return k < 0 ? -1 : ra2engine::kColorSchemeBase + k;
+        };
         auto allies_of = [&](const std::string& h) {
             std::vector<std::string> v;
             std::string cur;
@@ -697,6 +720,7 @@ private:
                                      : ra2engine::World::Side::Neutral;
             rec.country = country;
             rec.color_ix = (int)(i % 8);
+            if (const int sc = scheme_of(hn, country); sc >= 0) rec.color_ix = sc;   // W6-05-01
             // [DEVIATION: engine alliances are symmetric teams] team 0 = the
             // player + houses MUTUALLY allied with it; a civilian-side house the
             // player lists as an ally is a neutral non-combatant; every other

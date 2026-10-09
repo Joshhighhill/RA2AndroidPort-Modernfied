@@ -326,7 +326,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 |  | The credits counter colour, roll rate and tick sound are guesses | | | | | | |
 | R-143 | No shell page *leave* transition (SDBTNANM 11..16) and no main-menu header shimmer (W2-UI-24/25, SK-33) | UI/Shell | COSMETIC | PARTIAL (w5-audio2 eaeea68: leave band 5..10 / 11..16 per FUN_00606980; header shimmer still open) | `engine/main.cpp:7382-7386` | S | N |
 | R-144 | The rally point and primary-building marker is a placeholder cyan X and triangle (W2-UI-30, 01#32) | UI/Shell | COSMETIC | FIXED (w5-pres 6e2e616, a7e43ec) | `engine/main.cpp:4677-4690` | S | Y |
-| R-145 | Guessed UI details (W2-UI-07/11/18, SK-16/30/32, Q3/Q4/Q7/Q8/Q9): | UI/Shell | COSMETIC | RE-FALLBACK | `engine/hud_tooltip.inc:11`; `engine/hud_pips.inc:21`; `engine/campaign_page.inc:16`; `docs/gap/07-skirmish-page.md` §8 | S | Y |
+| R-145 | Guessed UI details (W2-UI-07/11/18, SK-16/30/32, Q3/Q4/Q7/Q8/Q9): | UI/Shell | COSMETIC | PARTIAL (w6fix-pres 84b2cf7: the building pip-line lift is RE'd -- Height x CellHeight, default Height 2; the rest is still RE-FALLBACK) | `engine/hud_tooltip.inc:11`; `engine/hud_pips.inc:21`; `engine/campaign_page.inc:16`; `docs/gap/07-skirmish-page.md` §8 | S | Y |
 |  | HUD: tooltip delay and box art, building pip-line lift | | | | | | |
 |  | Campaign page: emblem hover art | | | | | | |
 |  | Lobby: dropdown art drawn as primitives, no slider tick sound, preview scaling, ScenIndex mapping | | | | | | |
@@ -424,6 +424,27 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 ## Wave-5 agent F status (branch `w5-android`)
 
 Rows R-151, R-152, R-160..R-163, R-170..R-172 and R-180..R-184 carry their `w5-android` status above. Evidence: `docs/gap/wave5/06-evidence/` (emulator). Perf: ALL03 opening ~11 -> ~100 logic frames/s (desktop, headless); emulator ALL01 14.0 -> ~17 fps (SwiftShader; 85 % of the remaining frame is the host GL pipe). Save format v17.
+
+## Wave-6 agent #5 (presentation) status (branch `w6fix-pres`)
+
+Full per-item table: `docs/gap/wave6/05-presentation.md` "Fix status". Save format v27 after the master merge (MapTriggerSystem `timer_text_`); gate re-pins `--demo-saveload` and `--demo-campaign` (saved-trigger byte count only).
+
+| Item | Status |
+|---|---|
+| W6-05-01 campaign house colours from `Color=` | FIXED (`b000536`) |
+| W6-05-02 tiles outside `iso*.mix` (black holes ALL03/04/06/08, SOV01, SOV08) | FIXED (`a8a6a46`) |
+| W6-05-03 lamp-light strips (ALL02/05, SOV07/11) | FIXED (`9a6ffb5`) |
+| W6-05-04 TimerText label + bottom-right timer | FIXED (`b2fa93f`, save v27 after the merge) |
+| W6-05-05 superweapon `ShowTimer` countdowns | FIXED (`b2fa93f`) |
+| W6-05-06 CreateSound / ImpactLandSound / Working+NotWorkingSound | FIXED (`e24699f`) |
+| W6-04-27 sound batch | FIXED (`e24699f`) except Robot Tank Activate/DeactivateSound (no sim state) and HasRadialIndicator (a draw) |
+| W6-04-11 bomb attach / ticking sounds | FIXED (`e24699f`); the bomb icon stays with the units agent |
+| W6-05-08 message cap / MessageDelay for mission text | FIXED (`32e3d8b`) |
+| W6-05-07 hover health pips | FIXED (`dc905bc`) |
+| W6-05-10 missing tile -> clear ground | FIXED (`eb9f4c0`, safety net; no campaign map needs it now) |
+| R-145 building pip line | PARTIAL (`84b2cf7`, lift RE'd) |
+| R-068 skirmish LocalSize view clamp | OPEN: a camera-only clamp works but breaks `--play` scripts that target cells outside the local area; needs a skirmish-script sweep |
+| R-107 cliff extras under shroud; Kirov on the ground | OPEN |
 
 ## Proposed next fix wave (wave 5, at most 6 parallel agents)
 

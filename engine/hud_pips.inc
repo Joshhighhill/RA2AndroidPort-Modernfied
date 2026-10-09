@@ -18,10 +18,13 @@
 //      frame 0 (empty).
 //  * palette: cache.mix/palette.pal (frames 15/16/17 decode green / yellow / red
 //      under it only).
-// [RE-FALLBACK: the building line is lifted above the foundation's top-left
-// edge by art.ini Height x 15 px (the 3-D box top the original projects);
-// the unit anchor is the ground point the clone already uses (raised by the
-// flight altitude).]
+// The building line sits on the top of the building's 3-D box [RE: DrawHealth
+// Bar FUN_006c3f00 building branch projects the type's Dimension2 corner
+// (-w/2, +d/2, z); BuildingType Dimension2 @45D8B0 = (FoundationW * 256,
+// FoundationH * 256, art Height * CellHeight), so the lift is Height levels
+// = Height x 15 px (W6-05-09 / R-145: GAPOWR Height=4 really does sit that
+// high); Height defaults to 2]. [RE-FALLBACK: the unit anchor is the ground
+// point the clone already uses (raised by the flight altitude).]
 
 struct PipArt {
     ra2assets::ShpFile pipbrd, pips;
@@ -68,12 +71,15 @@ inline int pip_frame_unit(double ratio, double yellow, double red) {
 }
 
 // Selected unit: board + pips at the unit's screen point.
+// W6-05-07 [RE: DrawHealthBar FUN_006c3f00 gates ONLY the PIPBRD board on
+// IsSelected (+0x77); the pip row is drawn unconditionally, so a hovered,
+// unselected object shows its pips without the board]: board = selected.
 void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
-                    double yellow, double red) {
+                    double yellow, double red, bool board) {
     if (!g_pips || u.max_hp <= 0) return;
     const bool inf = !u.is_vehicle && !u.is_aircraft;
-    if (inf) blit_shp_centered(ren, tc, "pip:brd1", g_pips->pipbrd, 1, g_pips->pal, x + 11, y - 25);
-    else blit_shp_centered(ren, tc, "pip:brd0", g_pips->pipbrd, 0, g_pips->pal, x + 1, y - 26);
+    if (board && inf) blit_shp_centered(ren, tc, "pip:brd1", g_pips->pipbrd, 1, g_pips->pal, x + 11, y - 25);
+    else if (board) blit_shp_centered(ren, tc, "pip:brd0", g_pips->pipbrd, 0, g_pips->pal, x + 1, y - 26);
     const int max = inf ? 8 : 17;
     const double ratio = static_cast<double>(std::max(0, u.hp)) / u.max_hp;
     int n = static_cast<int>(ratio * max);
