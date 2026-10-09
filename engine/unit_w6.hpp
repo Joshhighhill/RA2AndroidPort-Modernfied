@@ -17,6 +17,7 @@ struct UnitTypeW6 {
     // weapon's OmniFire= (fires without turning to face).
     bool omni_fire = false;
     bool sonic = false;   // W6-04-09: the PRIMARY warhead's Sonic=
+    bool bomb_disarm = false;   // the PRIMARY warhead's BombDisarm= (+0x16E; the Engineer's DefuseKit)
     // W6-04-15 [rules key, abilities-w5.md §6]: InfantryType
     // OpenTransportWeapon= -- the slot a passenger fires out of an OpenTopped
     // transport (E1/GGI 1, GHOST/TANY/BORIS 0); -1 = the normal choice.

@@ -856,6 +856,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.w6.burst = tw.slot[0].valid ? tw.slot[0].burst : 1;   // W6-04-01
     r.combat.w6.omni_fire = tw.slot[0].valid && tw.slot[0].omni_fire;   // W6-04-06
     r.combat.w6.sonic = tw.slot[0].valid && tw.slot[0].sonic;           // W6-04-09
+    r.combat.w6.bomb_disarm = tw.slot[0].valid && tw.slot[0].bomb_disarm;   // DefuseKit (+0x16E)
     r.combat.w6.wall_flags = tw.slot[0].valid ? tw.slot[0].wall_flags : 0;   // W6-04-04
     r.combat.w6.powered_unit = rules.section_flag(unit_id, "PoweredUnit", false);   // W6-04-18
     r.combat.w6.decloak_to_fire = !tw.slot[0].valid || rules.section_flag(tw.slot[0].id, "DecloakToFire", true);   // W6-04-25

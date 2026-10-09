@@ -19,9 +19,10 @@ const WeaponSlot& secondary_view(const Unit& u);
 
 // Weapon slot `u` would use against unit `v` / a building (ground, armor
 // `armor_ix`); -1 = none can engage. A deployed GI-type forces its
-// DeployFireWeapon slot.
+// DeployFireWeapon slot. A BombDisarm weapon (DefuseKit) is -1 unless the
+// target carries an Ivan bomb (`target_bombed` for a building).
 int unit_weapon_for_unit(const Unit& u, const Unit& v);
-int unit_weapon_for_building(const Unit& u, int armor_ix);
+int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed = false);
 
 // Load slot `slot` into u.w_* (damage/rof/range/verses/spread/proj/AA/AG),
 // applying the veterancy multipliers when `vr` is non-null and u.vet.recv

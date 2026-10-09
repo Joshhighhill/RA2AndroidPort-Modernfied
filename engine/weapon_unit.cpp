@@ -35,6 +35,19 @@ int unit_weapon_for_unit_base(const Unit& u, const Unit& v) {
     }
     return choose_weapon(primary_view(u), secondary_view(u), unit_airborne(v), v.armor_ix);
 }
+
+// [RE: TechnoClass::GetFireError FUN_006FB5D0 -- `if (Weapon->Warhead
+// ->BombDisarm (+0x16E) && Target->AttachedBomb (+0x38) == 0) return
+// FireError ILLEGAL (5)`]: a BombDisarm weapon (the Engineer's DefuseKit)
+// may only fire at an object carrying an Ivan bomb; the check runs on the
+// weapon already selected for the target, so it does not fall back to the
+// other slot. Without it an idle computer engineer scanned its GuardRange
+// and "shot" an enemy building to death 1 HP at a time (ALL09's Tech Airport).
+bool slot_bomb_disarm(const Unit& u, int slot) {
+    if (slot == 0) return u.w6.t.bomb_disarm;
+    if (slot == 1) return u.w2.valid && secondary_view(u).bomb_disarm;
+    return false;
+}
 }  // namespace
 
 int unit_weapon_for_unit(const Unit& u, const Unit& v) {
@@ -42,18 +55,22 @@ int unit_weapon_for_unit(const Unit& u, const Unit& v) {
     // W2-AN-14 [rules NavalTargeting/LandTargeting, defaults 0]: the water /
     // land / underwater split. A unit with all-default keys attacking a land
     // or surfaced target is unchanged (the rule returns `want`).
-    return an_naval_slot(u.an.t, want, u.w2.valid, v.an.in_water, v.an.submerged,
-                         v.an.t.organic || (!v.is_vehicle && !v.is_aircraft && !v.is_naval),
-                         unit_airborne(v), false);
+    const int slot = an_naval_slot(u.an.t, want, u.w2.valid, v.an.in_water, v.an.submerged,
+                                   v.an.t.organic || (!v.is_vehicle && !v.is_aircraft && !v.is_naval),
+                                   unit_airborne(v), false);
+    if (slot >= 0 && v.bomb_frame < 0 && slot_bomb_disarm(u, slot)) return -1;
+    return slot;
 }
 
-int unit_weapon_for_building(const Unit& u, int armor_ix) {
+int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed) {
     int want;
     if (u.deploy_fire && u.deployed) want = u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
     else if (!u.w2.valid) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;
     else want = choose_weapon(primary_view(u), secondary_view(u), false, armor_ix);
     // W2-AN-14: LandTargeting=1 / UnderwaterOnly cannot hit a structure.
-    return an_naval_slot(u.an.t, want, u.w2.valid, false, false, false, false, true);
+    const int slot = an_naval_slot(u.an.t, want, u.w2.valid, false, false, false, false, true);
+    if (slot >= 0 && !target_bombed && slot_bomb_disarm(u, slot)) return -1;
+    return slot;
 }
 
 void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {

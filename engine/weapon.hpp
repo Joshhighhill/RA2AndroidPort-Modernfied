@@ -33,6 +33,7 @@ struct WeaponSlot {
     double prone_damage = 1.0;
     int burst = 1;                 // W6-04-01: weapon Burst= (+0x9C)
     bool sonic = false;            // W6-04-09: warhead Sonic= (+0x14B)
+    bool bomb_disarm = false;      // warhead BombDisarm= (+0x16E): GetFireError ILLEGAL on an unbombed target
     int wall_flags = 0;            // W6-04-04: warhead Wall/Wood/WallAbsoluteDestroyer
     double min_range = 0.0;        // W6-04-22: weapon MinimumRange= (+0xB8, cells)
     // W6-04-02 [RE: BulletTypeClass ShrapnelWeapon/ShrapnelCount -- keys of the

@@ -473,7 +473,7 @@ void World::an_step_fixed_wing(double dt) {
                             }
                         }
                     } else if (tb >= 0) {
-                        const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix);
+                        const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix, buildings_[tb].bomb_frame >= 0);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
                             for (int k = 0; k < std::max(1, u.w6.burst); ++k) {

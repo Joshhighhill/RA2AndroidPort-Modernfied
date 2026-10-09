@@ -241,3 +241,32 @@ TEST_CASE("w6units W6-04-04: Reduce_Wall stage model (FUN_00480BC0) and the warh
     CHECK(wall_hit_damage(kW6Wood, true, 90) == 90);
     CHECK(wall_hit_damage(kW6WallAbs | kW6Wood, false, 600) == -1);
 }
+
+TEST_CASE("w6units BombDisarm: the DefuseKit only targets an object carrying an Ivan bomb (GetFireError FUN_006FB5D0)") {
+    // [RE: FUN_006FB5D0 -- Warhead->BombDisarm (+0x16E) && Target->AttachedBomb
+    // (+0x38) == 0 -> FireError ILLEGAL]. Before the fix an idle computer
+    // engineer acquired an enemy building in its GuardRange and wore it down
+    // 1 HP per DefuseKit shot (ALL09's Tech Airport, 800 HP in ~7000 frames).
+    Unit eng;
+    eng.w6.t.bomb_disarm = true;
+    eng.w_verses = std::vector<int>(11, 100);
+    eng.vet.base.verses = eng.w_verses;
+    Unit victim;
+    CHECK(unit_weapon_for_unit(eng, victim) == -1);
+    CHECK(unit_weapon_for_building(eng, 0, false) == -1);
+    CHECK(unit_weapon_for_building(eng, 0) == -1);
+    victim.bomb_frame = 500;
+    CHECK(unit_weapon_for_unit(eng, victim) == 0);
+    CHECK(unit_weapon_for_building(eng, 0, true) == 0);
+    // An ordinary weapon is unaffected.
+    Unit gi;
+    gi.w_verses = eng.w_verses;
+    gi.vet.base.verses = eng.w_verses;
+    victim.bomb_frame = -1;
+    CHECK(unit_weapon_for_unit(gi, victim) == 0);
+    CHECK(unit_weapon_for_building(gi, 0, false) == 0);
+    if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("no install"); return; }
+    CHECK(resolve_weapon_slot(ra2fixture::rulesmd(), "DefuseKit").bomb_disarm);
+    CHECK_FALSE(resolve_weapon_slot(ra2fixture::rulesmd(), "M60").bomb_disarm);
+    CHECK(resolve_type_weapons(ra2fixture::rulesmd(), "ENGINEER").slot[0].bomb_disarm);
+}
