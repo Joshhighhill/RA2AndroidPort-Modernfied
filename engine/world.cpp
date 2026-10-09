@@ -4593,6 +4593,7 @@ void World::step(double dt) {
     // bug). A crowded-out attacker re-assigned its own cell re-requests
     // next frame: bounded churn, accepted for this unit count.
     std::map<std::pair<int, int>, std::vector<int>> approach_groups;
+    std::map<std::pair<int, int>, std::vector<int>> amphib_groups;   // W6-04-07
     for (const MoveRequest& r : reqs) {
         if (r.unit < 0 || r.unit >= static_cast<int>(units_.size())) continue;
         const Unit& u = units_[r.unit];
@@ -4632,21 +4633,36 @@ void World::step(double dt) {
             order_unit_move(r.unit, gx, gy);
             continue;
         }
-        if (r.approach)
+        // W6-04-07 [RE: naval.md §1/§4 -- the approach uses the unit's own
+        // MovementZone; Tanya / SEAL are AmphibiousDestroyer]: an amphibious
+        // unit's firing position is chosen on the Land-OR-Water grid, so a
+        // swimming Tanya reaches a Destroyer and a SEAL on the shore enters the
+        // water to plant C4 (the Land-grid batch found no cell next to a ship).
+        if (r.approach && u.movement_domain == MovementDomain::Amphibious)
+            amphib_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
+        else if (r.approach)
             approach_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
         else
             order_unit_move(r.unit, r.goal_x, r.goal_y);
     }
-    for (const auto& group : approach_groups) {
-        const std::vector<int>& movers = group.second;
-        std::vector<Cellxy> cur;
-        cur.reserve(movers.size());
-        for (int idx : movers) cur.push_back({units_[idx].cell_x, units_[idx].cell_y});
-        const std::vector<Cellxy> targets =
-            assign_formation({group.first.first, group.first.second}, cur, passable_,
-                             grid_w_, grid_h_, occ_);
-        for (std::size_t k = 0; k < movers.size(); ++k)
-            order_unit_move(movers[k], targets[k].x, targets[k].y);
+    auto dispatch_groups = [&](const std::map<std::pair<int, int>, std::vector<int>>& groups,
+                               const std::vector<std::uint8_t>& grid) {
+        for (const auto& group : groups) {
+            const std::vector<int>& movers = group.second;
+            std::vector<Cellxy> cur;
+            cur.reserve(movers.size());
+            for (int idx : movers) cur.push_back({units_[idx].cell_x, units_[idx].cell_y});
+            const std::vector<Cellxy> targets =
+                assign_formation({group.first.first, group.first.second}, cur, grid,
+                                 grid_w_, grid_h_, occ_);
+            for (std::size_t k = 0; k < movers.size(); ++k)
+                order_unit_move(movers[k], targets[k].x, targets[k].y);
+        }
+    };
+    dispatch_groups(approach_groups, passable_);
+    if (!amphib_groups.empty()) {
+        const std::vector<std::uint8_t> amphib = amphib_grid();   // cached buffer: copy once
+        dispatch_groups(amphib_groups, amphib);
     }
 
     // Economy phase [RE: economy.md]: ore growth/spread + harvester mission
