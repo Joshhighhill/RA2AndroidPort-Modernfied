@@ -18,10 +18,13 @@
 //      frame 0 (empty).
 //  * palette: cache.mix/palette.pal (frames 15/16/17 decode green / yellow / red
 //      under it only).
-// [RE-FALLBACK: the building line is lifted above the foundation's top-left
-// edge by art.ini Height x 15 px (the 3-D box top the original projects);
-// the unit anchor is the ground point the clone already uses (raised by the
-// flight altitude).]
+// The building line sits on the top of the building's 3-D box [RE: DrawHealth
+// Bar FUN_006c3f00 building branch projects the type's Dimension2 corner
+// (-w/2, +d/2, z); BuildingType Dimension2 @45D8B0 = (FoundationW * 256,
+// FoundationH * 256, art Height * CellHeight), so the lift is Height levels
+// = Height x 15 px (W6-05-09 / R-145: GAPOWR Height=4 really does sit that
+// high); Height defaults to 2]. [RE-FALLBACK: the unit anchor is the ground
+// point the clone already uses (raised by the flight altitude).]
 
 struct PipArt {
     ra2assets::ShpFile pipbrd, pips;

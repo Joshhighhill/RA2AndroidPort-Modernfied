@@ -34,7 +34,10 @@
             const std::string& id = ba_.roster[(std::size_t)b.type].id;
             const std::string h = pres_clean(art_ini_.get(ba_.roster[(std::size_t)b.type].image.empty()
                                                               ? id : ba_.roster[(std::size_t)b.type].image, "Height"));
-            const int height = h.empty() ? 4 : std::atoi(h.c_str());
+            // W6-05-09 / R-145 [RE: BuildingTypeClass ctor FUN_00457AC0 @457C2A sets
+            // Height (+0xC7C) = 2; the art reader @45A965 keeps it when the key
+            // is absent].
+            const int height = h.empty() ? 2 : std::atoi(h.c_str());
             draw_building_pips(ren, *pip_tc_, b.hp, b.max_hp, tx, ty, b.fh, height * 15, g_pip_yellow, g_pip_red);
             return;
         }
