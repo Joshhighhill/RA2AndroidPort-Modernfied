@@ -128,7 +128,9 @@ void World::an_step_naval(double dt) {
             if (u.die_time >= 0.0) {
                 u.an.submerged = false;
             } else {
-                if (u.fire_flash >= 0.4 - 1e-9) u.an.surface_left = P.cloak_delay_frames / 15.0;
+                // W6-04-25: a DecloakToFire=no weapon fires without surfacing.
+                if (u.fire_flash >= 0.4 - 1e-9 && u.w6.t.decloak_to_fire)
+                    u.an.surface_left = P.cloak_delay_frames / 15.0;
                 u.an.surface_left = std::max(0.0, u.an.surface_left - dt);
                 u.an.submerged = u.an.surface_left <= 0.0;
             }
@@ -561,6 +563,9 @@ void World::an_step_fixed_wing(double dt) {
                         const int ow = u.an.owner;
                         units_[i].alive = false;
                         units_[i].die_time = 1.0;
+                        // W6-04-26: back aboard, not destroyed -- no unit lost on
+                        // the score screen (the W4-SQ-03 deployed_away rule).
+                        units_[i].deployed_away = true;
                         if (ow >= 0 && ow < n) {
                             if (units_[ow].an.spawn_out > 0) --units_[ow].an.spawn_out;
                             ++units_[ow].an.spawn_pending;

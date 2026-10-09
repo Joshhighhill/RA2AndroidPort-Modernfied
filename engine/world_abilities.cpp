@@ -287,9 +287,33 @@ void World::ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_lepto
 
 void World::ability_bind_unit(Unit& u) { bind_profile(u, ability_profiles_); }
 
-void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w) {
+void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w_base) {
+    // W6-04-28 [RE: veterancy.md V5/V7/V10]: an IFV passenger weapon follows
+    // the gunner's rank like any slot -- the elite EliteWeapon<k>, then
+    // FIREPOWER / ROF (and the AI handicap) as refresh_vet_stats applies them.
+    const WeaponSpec* wp = &w_base;
+    if (vet_any_ && u.vet.recv && is_elite(u.vet.veterancy) && u.abil.gunner) {
+        for (std::size_t k = 0; k < u.abil.ifv_weapons.size() && k < u.abil.ifv_weapons_elite.size(); ++k)
+            if (&u.abil.ifv_weapons[k] == &w_base && u.abil.ifv_weapons_elite[k].valid) {
+                wp = &u.abil.ifv_weapons_elite[k];
+                break;
+            }
+    }
+    const WeaponSpec& w = *wp;
     u.w_damage = w.damage;
     u.w_rof = w.rof;
+    if (vet_any_ && u.vet.recv) {
+        const UnitVet& v = u.vet;
+        auto has = [&](Ability a) { return has_ability(v.veterancy, v.vet_abilities, v.elite_abilities, a); };
+        double house_fp = 1.0, house_rof = 1.0;
+        if (ai_enabled(u.house)) {
+            house_fp = ai_houses_[u.house].cfg.mods.firepower_mul;
+            house_rof = ai_houses_[u.house].cfg.mods.rof_mul;
+        }
+        if (w.damage > 0)   // a healing weapon (RepairBullet) keeps its raw value
+            u.w_damage = fire_damage(w.damage, v.firepower_mult, has(Ability::Firepower), vet_rules_.combat, house_fp);
+        u.w_rof = rof_frames(w.rof, has(Ability::Rof), vet_rules_.rof, house_rof);
+    }
     u.w6.burst = w.burst;   // W6-04-01 (IFV HoverMissile 2, CRMP5 ...)
     u.w6.omni_fire = w.omni_fire;   // W6-04-06
     u.w6.wall_flags = w.wall_flags; // W6-04-04

@@ -71,6 +71,7 @@ struct AbilityProfile {
     int ifv_mode = 0;                // IFVMode (+0x688) -- as a passenger
     bool gunner = false;             // Gunner=yes (+0x805) -- as an IFV
     std::vector<WeaponSpec> ifv_weapons;  // Weapon1..WeaponN, 0-based (§G)
+    std::vector<WeaponSpec> ifv_weapons_elite;   // W6-04-28: EliteWeapon1..N (invalid = the base one)
     bool infantry = false;           // the parasite's instant-kill branch (§B2)
 };
 

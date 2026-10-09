@@ -669,6 +669,7 @@ template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.ifv_mode);
     io(ar, v.gunner);
     io(ar, v.ifv_weapons);
+    io(ar, v.ifv_weapons_elite);   // v25: W6-04-28
     io(ar, v.infantry);
 }
 template <class Ar> void fields(Ar& ar, AbilityRules& v) {
@@ -743,6 +744,7 @@ template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
     io(ar, v.can_approach_target);   // W6-04-30
     io(ar, v.omni_crusher); io(ar, v.omni_crush_resistant);   // W6-04-14
     io(ar, v.wall_flags);   // W6-04-04
+    io(ar, v.decloak_to_fire);   // W6-04-25
 }
 template <class Ar> void fields(Ar& ar, UnitW6& v) {
     io(ar, v.t); io(ar, v.burst); io(ar, v.burst_index); io(ar, v.omni_fire);

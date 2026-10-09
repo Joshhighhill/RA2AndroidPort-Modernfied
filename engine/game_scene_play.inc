@@ -50,6 +50,9 @@
                 x = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + 30 + cam_.x;
                 y = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + 15 +
                     cam_.y - 10;   // a little above the feet: inside the hit box
+                // W6-04-35: an airborne unit is drawn (and hit-tested by
+                // Input::unit_under) at its altitude, not on its shadow.
+                if (u.is_aircraft && u.altitude > 0.0) y -= ra2engine::altitude_to_screen_dy(u.altitude);
                 return true;
             }
             return false;

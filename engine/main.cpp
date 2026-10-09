@@ -831,6 +831,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.w6.omni_fire = tw.slot[0].valid && tw.slot[0].omni_fire;   // W6-04-06
     r.combat.w6.sonic = tw.slot[0].valid && tw.slot[0].sonic;           // W6-04-09
     r.combat.w6.wall_flags = tw.slot[0].valid ? tw.slot[0].wall_flags : 0;   // W6-04-04
+    r.combat.w6.decloak_to_fire = !tw.slot[0].valid || rules.section_flag(tw.slot[0].id, "DecloakToFire", true);   // W6-04-25
     r.combat.w6.open_transport_weapon =   // W6-04-15
         static_cast<int>(rules.section_double(unit_id, "OpenTransportWeapon", -1.0));
     r.combat.w6.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);   // W6-04-16
@@ -1190,6 +1191,10 @@ ra2engine::AbilityProfile resolve_ability_profile(const Rules& rules, const Ini&
             p.ifv_weapons.push_back(
                 resolve_weapon_spec(rules, ini, ability_ini_str(ini, id, "Weapon" + std::to_string(k))));
         if (!p.ifv_weapons.empty() && !p.ifv_weapons[0].valid) p.ifv_weapons[0] = prim;
+        // W6-04-28: the elite IFV fires EliteWeapon<k> (the V10 elite slot rule).
+        for (int k = 1; k <= n; ++k)
+            p.ifv_weapons_elite.push_back(
+                resolve_weapon_spec(rules, ini, ability_ini_str(ini, id, "EliteWeapon" + std::to_string(k))));
     }
     p.infantry = rules.is_infantry(id);
     return p;

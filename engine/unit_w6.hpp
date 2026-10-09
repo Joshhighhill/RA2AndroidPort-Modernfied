@@ -32,6 +32,10 @@ struct UnitTypeW6 {
     bool omni_crusher = false;
     bool omni_crush_resistant = false;
     int wall_flags = 0;   // W6-04-04: the PRIMARY warhead's W6WallFlags
+    // W6-04-25 [RE: DecloakToFire WeaponType+0x133, read by GetFireError
+    // FUN_006FB5D0 @0x6FBF4A]: the primary's DecloakToFire= (default yes);
+    // SubTorpedo / SonicZap / SquidGrab say no -- they fire submerged.
+    bool decloak_to_fire = true;
 };
 
 // Per-unit state.
