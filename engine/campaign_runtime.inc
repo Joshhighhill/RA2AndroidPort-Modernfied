@@ -862,6 +862,20 @@ private:
             armed_[i] = (std::uint8_t)((base ? 1 : 0) | ((want_teams || has_teams) ? 2 : 0) | 4);
             w_.enable_ai_house((int)i, std::move(cfg));
             if (base) w_.set_ai_base_nodes((int)i, base_nodes_[i]);
+            {   // W6-02-05 [RE: AssignHandicap FUN_004F6DD0 seeds the team-check
+                // timer at scenario start: +0x5798 = now, +0x57A0 = TeamDelays[d]
+                // + HouseArray index (+0x30) x 175; HouseClass::AI FUN_004F8350
+                // checks and resets it]: the timer has been running since frame 0,
+                // so the first pass is due at TeamDelays + index x 175, not a
+                // whole period after arming.
+                int arr = (int)i;
+                int k = 0;
+                for (const auto& kv : map_.section("Houses")) {
+                    if (camp::up(camp::trim_comment(kv.second)) == camp::up(house_names_[i])) { arr = k; break; }
+                    ++k;
+                }
+                w_.set_ai_team_check_clock((int)i, (double)(frame_ - 175L * arr) / 15.0);
+            }
             char b[200];
             std::snprintf(b, sizeof b, "[camp] f%ld %s%s: %s nodes=%d", frame_,
                           base ? "production begins" : "", (want_teams || has_teams) ? " +map AI triggers" : "",
@@ -1750,6 +1764,20 @@ private:
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (utrack_[(std::size_t)m].type == types[k] && need[k] > 0) { --need[k]; break; }
         bool any = false;
+        // W6-02-17 [RE: Recruit FUN_006E9FF0 -- per TaskForce entry, ONE unit
+        // per call, the candidate nearest the team's anchor]: the anchor is the
+        // first live member, else the TeamType Waypoint=, else none (index
+        // order). [RE-FALLBACK: the +0x3200 foreign-group penalty and the
+        // RecruitableA/B (+0x421/+0x422) autocreate split are not modelled.]
+        int ax = -1, ay = -1;
+        for (int m : tm.members)
+            if (live(w_.units()[(std::size_t)m])) { ax = w_.units()[(std::size_t)m].cell_x; ay = w_.units()[(std::size_t)m].cell_y; break; }
+        if (ax < 0 && tm.type >= 0) {
+            const int wp = teams_data_.teams[(std::size_t)tm.type].waypoint;
+            if (wp >= 0 && !waypoint_cell(wp, ax, ay)) ax = ay = -1;
+        }
+        std::vector<int> best(types.size(), -1);
+        std::vector<long> best_d(types.size(), 0);
         for (std::size_t i = 0; i < utrack_.size(); ++i) {
             Track& t = utrack_[i];
             if (t.dead) continue;
@@ -1762,18 +1790,30 @@ private:
             // the carried-passenger count -- PROBABLE]: a loaded transport is
             // never recruited (SOV02's MCV boat keeps its MCV).
             if (!u.cargo.empty()) continue;
+            // W6-02-17 [RE: Can_Add FUN_006E9B80 / the mission test FUN_005B3110]:
+            // a Sleeping / Harmless / Hunting / Harvesting / Capturing unit is
+            // not recruitable, nor a mind-controlled one.
+            if (t.mission != 0 || t.hunt || t.mc_orig >= 0) continue;
+            if (u.is_harvester || u.capture_target >= 0 || u.infiltrate_target >= 0) continue;
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (need[k] > 0 && t.type == types[k]) {
-                    --need[k];
-                    if (t.team >= 0) {   // leave the old team
-                        std::vector<int>& om = teams_[(std::size_t)t.team].members;
-                        om.erase(std::remove(om.begin(), om.end(), (int)i), om.end());
-                        t.team = -1;
-                    }
-                    tm.members.push_back((int)i);
-                    any = true;
+                    const long d = ax < 0 ? (long)i
+                                          : (long)(u.cell_x - ax) * (u.cell_x - ax) + (long)(u.cell_y - ay) * (u.cell_y - ay);
+                    if (best[k] < 0 || d < best_d[k]) { best[k] = (int)i; best_d[k] = d; }
                     break;
                 }
+        }
+        for (std::size_t k = 0; k < types.size(); ++k) {
+            const int i = best[k];
+            if (i < 0) continue;
+            Track& t = utrack_[(std::size_t)i];
+            if (t.team >= 0) {   // leave the old team
+                std::vector<int>& om = teams_[(std::size_t)t.team].members;
+                om.erase(std::remove(om.begin(), om.end(), i), om.end());
+                t.team = -1;
+            }
+            tm.members.push_back(i);
+            any = true;
         }
         return any;
     }
@@ -2322,11 +2362,56 @@ private:
         const int b = ra2engine::facing_from_delta(std::sin(th), -std::cos(th));   // inverse of facing_u16_from_delta
         if (b >= 0) u.facing = b;
     }
+    // W6-02-18 [RE: TMission_Patrol FUN_006EC240 -- every few frames the team
+    // scans for a threat from its strongest member, retargets (FUN_006E85C0)
+    // and attacks (FUN_006EA9F0); otherwise it regroups and moves on]: script
+    // 16 Patrol is an attack-move, not a plain move (supersedes the R-027
+    // "patrol = move" fallback). [RE-FALLBACK: the lead member stands in for
+    // the strongest one; the scan radius is its weapon range + 1 cell and runs
+    // every 15 frames.] While a member fights, the team is kept from
+    // "arriving"; once the fight is over the members resume the move.
+    void patrol_tick(Team& tm, int lead) {
+        bool fighting = false, moving = false, all_close = true;
+        for (int m : tm.members) {
+            if (!on_map(m)) continue;
+            const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+            if (u.target >= 0 || u.target_building >= 0) fighting = true;
+            if (busy(u)) moving = true;
+            if (tm.goal_x >= 0) {
+                const double dx = u.cell_x - tm.goal_x, dy = u.cell_y - tm.goal_y;
+                if (dx * dx + dy * dy > 2.25 * 2.25) all_close = false;
+            }
+        }
+        if (fighting) { tm.issued_frame = frame_; return; }
+        if (frame_ % 15 == 0) {
+            const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
+            const long r = (long)std::floor(lu.w_range) + 1;
+            bool isb = false;
+            const int t = nearest_enemy(tm.house, lu.cell_x, lu.cell_y, 1, isb);
+            if (t >= 0) {
+                const int tx = isb ? w_.buildings()[(std::size_t)t].cx : w_.units()[(std::size_t)t].cell_x;
+                const int ty = isb ? w_.buildings()[(std::size_t)t].cy : w_.units()[(std::size_t)t].cell_y;
+                if ((long)(tx - lu.cell_x) * (tx - lu.cell_x) + (long)(ty - lu.cell_y) * (ty - lu.cell_y) <= r * r) {
+                    for (int m : tm.members)
+                        if (on_map(m)) order_attack(m, t, isb);
+                    tm.issued_frame = frame_;
+                    return;
+                }
+            }
+        }
+        if (!moving && !all_close && tm.goal_x >= 0) {   // the fight is over: move on
+            for (int m : tm.members)
+                if (on_map(m) && !w_.order_fixed_wing(m, -1, -1, tm.goal_x, tm.goal_y))
+                    w_.order_unit_move(m, tm.goal_x, tm.goal_y);
+            tm.issued_frame = frame_;
+        }
+    }
     void execute_team(Team& tm, int team_idx, const ra2engine::MapTeamCommand& c, bool all_idle, int lead) {
         using K = ra2engine::MapTeamCommand::Kind;
         switch (c.kind) {
         case K::MoveWaypoint:
         case K::MoveCell: {
+            if (c.action == ra2engine::kSaPatrol && !c.fresh && lead >= 0) { patrol_tick(tm, lead); return; }
             if (!c.fresh || lead < 0) return;
             int x = -1, y = -1;
             const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];

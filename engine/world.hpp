@@ -1973,6 +1973,11 @@ public:
     // the house's existing units. Read by units (refresh_vet_stats) AND
     // defence buildings (building_combat rearm).
     void set_house_handicap(int h, double firepower, double rof);
+    // W6-02-05: start an armed AI house's TeamDelays check clock at `secs`
+    // (it fires when the clock reaches TeamDelays / 15).
+    void set_ai_team_check_clock(int h, double secs) {
+        if (ai_enabled(h)) ai_houses_[static_cast<std::size_t>(h)].team_state.check_clock = secs;
+    }
     double house_rof_mul(int h) const;
     double house_firepower_mul(int h) const;
     // ftol(rof * house ROF): the rearm frames of a defence weapon (exactly
