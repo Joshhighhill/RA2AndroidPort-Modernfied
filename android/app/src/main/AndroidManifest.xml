@@ -56,6 +56,8 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- W6-06-05: the "Import game files" launcher shortcut. -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- The game (SDL). W2-AR-12: sensorLandscape so the device can be

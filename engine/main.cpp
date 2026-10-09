@@ -5487,7 +5487,10 @@ enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME 
                    ACT_CAMPAIGN_ALLIED, ACT_CAMPAIGN_SOVIET /* P10 */,
                    ACT_CAMPAIGN_LOAD /* W2-UI-18: 0x94 Load */,
                    ACT_CREDITS /* W2-UI-26: View Credits */,
-                   ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */ };
+                   ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */,
+                   ACT_IMPORT /* W6-06-05: Android -- re-open the game-file importer */,
+                   ACT_MOVIES /* W6-06-13: Play Movies (movies_page.inc) */ };
+bool movies_supplied();   // W6-06-13 (movies_page.inc)
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
 // render() (via draw_shell) and handle() both derive device rects from `rect`
@@ -8056,6 +8059,12 @@ private:
                 return {
                     btn(0, "Keyboard",  true,  ACT_KEYBOARD, PAGE_OPTIONS),
                     btn(1, "Network",   false, ACT_GOTO, PAGE_MAIN),
+#ifdef __ANDROID__
+                    // W6-06-05 [engine affordance]: add or replace game files
+                    // at any time (the launcher only offers it when a
+                    // required file is missing).
+                    btn(2, "Game Files", true, ACT_IMPORT, PAGE_OPTIONS),
+#endif
                     btn(5, "Main Menu", true,  ACT_GOTO, PAGE_MAIN),
                 };
             case PAGE_CAMPAIGN: // dialog 0x94 (W2-UI-18): Load row 0, Back row 5; the
@@ -8107,6 +8116,7 @@ private:
                 return gf_csf(page_ == PAGE_SINGLE ? "STT:SingleButtonBack"
                               : page_ == PAGE_OPTIONS ? "STT:MainOptButtonBack" : "STT:OptionsButtonBack", "");
             if (b.label == "Network" && page_ == PAGE_OPTIONS) return gf_csf("STT:MainOptButtonNetwork", "");
+            if (b.label == "Game Files") return "Add or replace the game files (the game restarts)";
             const char* k = stt_key(b.label);
             return k ? gf_csf(k, "") : std::string();
         }
@@ -8630,6 +8640,14 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
             case ACT_CAMPAIGN_SOVIET: next_ = make_campaign_start_scene(no_audio_, "SOV1", "Nod"); return;
             case ACT_CREDITS: next_ = new CreditsScene(rules_, no_audio_, art_); return;   // W2-UI-26
             case ACT_KEYBOARD: kb_.open(); return;   // W5-E [RE: options.md §1/§6 0x5CE -> 0xA3]
+            case ACT_IMPORT:   // W6-06-05: the launcher's importer; the engine
+                               // quits so the next start reads the new files.
+                if (g_user_settings) {
+                    opt_.commit(*g_user_settings);
+                    save_user_settings(*g_user_settings);
+                }
+                if (ra2engine::os_android_open_importer()) quit_ = true;
+                return;
             case ACT_CAMPAIGN_LOAD:   // W2-UI-18: 0x94 Load = the selected campaign
                 if (camp_.selected() >= 0 && camp_.selected() < CampaignPageState::kEntries) {
                     if (g_user_settings) save_user_settings(*g_user_settings);   // the slider's Difficulty

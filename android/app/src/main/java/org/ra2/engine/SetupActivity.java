@@ -51,6 +51,8 @@ public class SetupActivity extends Activity {
     private static final String TAG = "RA2Setup";
     private static final int REQ_TREE = 1;
     public static final String EXTRA_IMPORT = "org.ra2.engine.IMPORT";
+    /** W6-06-05: the launcher shortcut ("Import game files", res/xml/shortcuts.xml). */
+    public static final String ACTION_IMPORT = "org.ra2.engine.action.IMPORT";
 
     /** The files the engine reads; the first four are required (engine/data_dir.inc). */
     static final String[] FILES = {
@@ -59,6 +61,26 @@ public class SetupActivity extends Activity {
         "Maps01.mix", "MAPS02.MIX", "ra2.csf",
     };
     static final int REQUIRED = 4;
+
+    /**
+     * W6-06-06: the file a picked document is copied to (relative to the data
+     * dir), or null when the engine does not read it. The fixed FILES keep
+     * their retail spelling; the patch archives the desktop AssetFS scans
+     * (src/asset_fs.cpp: expandNN / ecacheNN / elocalNN), thememd.mix and the
+     * movies (MOVIESnn.MIX / MOVMDnn.MIX archives and loose .bik files, which
+     * engine/movie_player.inc finds in the data dir and its Movies/ folder,
+     * case-insensitively) are copied too.
+     */
+    static String target(String name) {
+        if (name == null) return null;
+        String l = name.toLowerCase(Locale.ROOT);
+        for (String f : FILES) if (f.toLowerCase(Locale.ROOT).equals(l)) return f;
+        if (l.matches("(expand|ecache|elocal)\\d\\d\\.mix")) return l;
+        if (l.equals("thememd.mix")) return l;
+        if (l.matches("(movies\\d\\d|movmd\\d\\d)\\.mix")) return l;
+        if (l.endsWith(".bik") && l.length() > 4) return "Movies/" + l;
+        return null;
+    }
 
     private TextView status;
     private ProgressBar progress;
@@ -94,6 +116,7 @@ public class SetupActivity extends Activity {
         if (list == null) return 0;
         for (File f : list) {
             if (f.isFile() && f.getName().endsWith(".part") && f.delete()) ++n;
+            else if (f.isDirectory() && f.getName().equals("Movies")) n += cleanParts(f);
         }
         if (n > 0) Log.i(TAG, "removed " + n + " partial file(s) of an interrupted import");
         return n;
@@ -104,7 +127,8 @@ public class SetupActivity extends Activity {
         super.onCreate(state);
         File dir = dataDir(this);
         cleanParts(dir);
-        boolean forceImport = getIntent() != null && getIntent().getBooleanExtra(EXTRA_IMPORT, false);
+        Intent in = getIntent();
+        boolean forceImport = in != null && (in.getBooleanExtra(EXTRA_IMPORT, false) || ACTION_IMPORT.equals(in.getAction()));
         if (!forceImport && missing(dir, true).isEmpty()) {
             startGame();
             return;
@@ -186,6 +210,7 @@ public class SetupActivity extends Activity {
             for (String f : opt) sb.append("  ").append(f).append("\n");
         }
         sb.append("\n").append(getString(R.string.setup_how));
+        sb.append("\n\n").append(getString(R.string.setup_reimport_note));   // W6-06-05
         status.setText(sb.toString());
         startButton.setEnabled(req.isEmpty() && !copying);
         importButton.setEnabled(!copying);
@@ -235,9 +260,12 @@ public class SetupActivity extends Activity {
         importThread.start();
     }
 
-    /** Lists the known game files directly inside `docId` (case-insensitive). */
-    private void scan(ContentResolver cr, Uri tree, String docId, Map<String, String> canon,
-                      Map<String, Uri> found, Map<String, Long> sizes, List<String> subdirs) {
+    /**
+     * Lists the game files directly inside `docId` (case-insensitive, see
+     * target()); sub-folders go to `subdirs` (document id, display name).
+     */
+    private void scan(ContentResolver cr, Uri tree, String docId,
+                      Map<String, Uri> found, Map<String, Long> sizes, List<String[]> subdirs) {
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId);
         try (Cursor c = cr.query(children, new String[]{
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -247,10 +275,10 @@ public class SetupActivity extends Activity {
             while (c != null && c.moveToNext()) {
                 String name = c.getString(1);
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(3))) {
-                    if (subdirs != null) subdirs.add(c.getString(0));
+                    if (subdirs != null) subdirs.add(new String[]{c.getString(0), name == null ? "" : name});
                     continue;
                 }
-                String key = name == null ? null : canon.get(name.toLowerCase(Locale.ROOT));
+                String key = target(name);
                 if (key == null || found.containsKey(key)) continue;
                 found.put(key, DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)));
                 sizes.put(key, c.isNull(2) ? 0L : c.getLong(2));
@@ -262,8 +290,6 @@ public class SetupActivity extends Activity {
     private void importFrom(Uri tree) {
         ContentResolver cr = getContentResolver();
         File dir = dataDir(this);
-        Map<String, String> canon = new HashMap<>();
-        for (String f : FILES) canon.put(f.toLowerCase(Locale.ROOT), f);
         Map<String, Uri> found = new HashMap<>();
         Map<String, Long> sizes = new HashMap<>();
         long total = 0;
@@ -272,13 +298,20 @@ public class SetupActivity extends Activity {
             // R-160: the picked folder itself, then (when it holds none of the
             // required files) one level of sub-folders -- picking the folder
             // that CONTAINS RA2 (e.g. the copied RA2-phone package) works too.
-            List<String> subdirs = new ArrayList<>();
-            scan(cr, tree, DocumentsContract.getTreeDocumentId(tree), canon, found, sizes, subdirs);
+            List<String[]> subdirs = new ArrayList<>();
+            scan(cr, tree, DocumentsContract.getTreeDocumentId(tree), found, sizes, subdirs);
             boolean anyRequired = false;
             for (int i = 0; i < REQUIRED; ++i) anyRequired |= found.containsKey(FILES[i]);
-            if (!anyRequired) {
-                for (String sub : subdirs) scan(cr, tree, sub, canon, found, sizes, null);
+            List<String[]> deeper = new ArrayList<>();
+            for (String[] sub : subdirs) {
+                // W6-06-06: a Movies folder next to the files is always read;
+                // R-160: other sub-folders only when the picked folder holds
+                // none of the required files (the folder that CONTAINS RA2).
+                if (!anyRequired || sub[1].equalsIgnoreCase("movies"))
+                    scan(cr, tree, sub[0], found, sizes, anyRequired ? null : deeper);
             }
+            for (String[] sub : deeper)
+                if (sub[1].equalsIgnoreCase("movies")) scan(cr, tree, sub[0], found, sizes, null);
             if (found.isEmpty()) throw new java.io.IOException(getString(R.string.setup_no_files));
             for (Long sz : sizes.values()) total += sz;
             long done = 0;
@@ -287,6 +320,9 @@ public class SetupActivity extends Activity {
                 if (cancelImport) throw new java.io.IOException("cancelled");
                 File out = new File(dir, e.getKey());
                 File tmp = new File(dir, e.getKey() + ".part");
+                File parent = out.getParentFile();
+                //noinspection ResultOfMethodCallIgnored
+                if (parent != null) parent.mkdirs();   // Movies/
                 final String name = e.getKey();
                 ui.post(() -> status.setText(getString(R.string.setup_copying, name)));
                 try (InputStream in = cr.openInputStream(e.getValue());
